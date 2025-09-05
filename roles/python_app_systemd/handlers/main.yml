@@ -1,0 +1,22 @@
+---
+- name: restart service
+  systemd:
+    name: "{{ service.name }}"
+    state: restarted
+    daemon_reload: yes
+  become: yes
+
+- name: restart monitoring
+  systemd:
+    name: "{{ monitoring_service_name }}"
+    state: restarted
+    daemon_reload: yes
+  become: yes
+  when: monitoring_enabled
+
+- name: reload traefik
+  systemd:
+    name: traefik
+    state: reloaded
+  become: yes
+  ignore_errors: yes

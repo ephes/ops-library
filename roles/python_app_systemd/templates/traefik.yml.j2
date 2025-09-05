@@ -1,0 +1,15 @@
+http:
+  routers:
+    {{ service.name }}:
+      rule: "{{ traefik_host_rule }}"
+      service: {{ service.name }}
+      entryPoints:
+        - web-secure
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    {{ service.name }}:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:{{ traefik_port }}"

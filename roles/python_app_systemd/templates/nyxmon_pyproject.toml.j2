@@ -1,0 +1,16 @@
+[project]
+name = "nyxmon-deployment"
+version = "0.1.0"
+requires-python = ">=3.13"
+
+dependencies = [
+    "nyxmon[prod]",
+    "granian",
+    "django",
+    "whitenoise",
+    "django-environ",
+    "psutil",
+]
+
+[tool.uv]
+dev-dependencies = []

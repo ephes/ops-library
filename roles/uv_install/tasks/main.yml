@@ -1,0 +1,63 @@
+---
+# Install uv package manager
+
+- name: Check if uv is already installed
+  stat:
+    path: "{{ uv_install_dir }}/uv"
+  register: uv_installed
+
+- name: Get current uv version if installed
+  command: "{{ uv_install_dir }}/uv --version"
+  register: current_uv_version
+  changed_when: false
+  failed_when: false
+  when: uv_installed.stat.exists
+
+- name: Install or update uv
+  when: not uv_installed.stat.exists or uv_update_existing
+  block:
+    - name: Download and run uv installer script
+      shell: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+      args:
+        executable: /bin/bash
+      environment:
+        HOME: "{{ uv_install_dir | dirname | dirname }}"
+      register: install_result
+
+    - name: Display installation output
+      debug:
+        var: install_result.stdout_lines
+      when: install_result.stdout_lines is defined
+
+- name: Create system-wide symlinks
+  file:
+    src: "{{ uv_install_dir }}/{{ item }}"
+    dest: "{{ uv_symlink_dir }}/{{ item }}"
+    state: link
+    force: yes
+  loop:
+    - uv
+    - uvx
+  when: uv_create_symlinks
+  become: yes
+
+- name: Verify uv installation
+  command: "{{ uv_symlink_dir }}/uv --version"
+  register: uv_version_check
+  changed_when: false
+
+- name: Display uv version
+  debug:
+    msg: "uv {{ uv_version_check.stdout }} is installed"
+
+- name: Test self-update capability
+  command: "{{ uv_symlink_dir }}/uv self update"
+  register: self_update_test
+  changed_when: "'Upgraded' in self_update_test.stdout"
+  failed_when: false
+
+- name: Display self-update status
+  debug:
+    msg: "{{ self_update_test.stdout }}"
+  when: self_update_test.stdout is defined

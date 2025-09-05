@@ -1,0 +1,66 @@
+---
+galaxy_info:
+  author: Jochen Wersdörfer
+  description: Deploy Python applications with systemd service management
+  license: MIT
+  min_ansible_version: "2.9"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+
+dependencies: []
+
+argument_specs:
+  main:
+    short_description: Deploy Python applications with systemd
+    description:
+      - Deploy Python applications with systemd service management
+      - Supports rsync deployment strategy for working tree
+      - Virtual environment management with uv
+      - Django application support with migrations and static files
+    options:
+      service:
+        type: dict
+        required: true
+        description: Service configuration dictionary from manifest
+        options:
+          name:
+            type: str
+            required: true
+            description: Service name
+          host:
+            type: str
+            description: Target host for deployment
+          role:
+            type: str  
+            description: Role to use for deployment
+          type:
+            type: str
+            description: Service type (app_native, compose, etc)
+          strategy:
+            type: str
+            choices: [rsync, git, artifact]
+            default: rsync
+            description: Deployment strategy
+          rsync:
+            type: dict
+            description: Rsync configuration when strategy is rsync
+          app:
+            type: dict
+            required: true
+            description: Application configuration
+          env:
+            type: dict
+            description: Environment variables
+          monitoring:
+            type: dict
+            description: Monitoring agent configuration
+          traefik:
+            type: dict
+            description: Traefik reverse proxy configuration

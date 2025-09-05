@@ -1,0 +1,36 @@
+---
+# Default values for python_app_systemd role
+
+# Python and virtual environment
+python_version: "3.13.7"
+uv_path: /usr/local/bin/uv
+venv_path: "{{ service.app.venv | default('/opt/apps/' + service.name + '/.venv') }}"
+
+# Service configuration
+service_user: "{{ service.app.user | default('app-' + service.name) }}"
+service_group: "{{ service.app.user | default('app-' + service.name) }}"
+service_home: "{{ service.app.home | default('/opt/apps/' + service.name) }}"
+service_work_dir: "{{ service.rsync.dest | default(service_home + '/src') }}"
+
+# Systemd service
+systemd_restart: always
+systemd_after: network-online.target
+systemd_wants: network-online.target
+
+# Django specific settings (optional)
+django_enabled: "{{ service.app.django.enabled | default(false) }}"
+django_settings_module: "{{ service.app.django.settings_module | default('config.settings.production') }}"
+django_migrate: "{{ service.app.django.migrate | default(true) }}"
+django_collectstatic: "{{ service.app.django.collectstatic | default(true) }}"
+django_cache_dir: "{{ service.app.django.cache_dir | default(service_home + '/cache') }}"
+
+# Monitoring agent (optional)
+monitoring_enabled: "{{ service.monitoring.enabled | default(false) }}"
+monitoring_service_name: "{{ service.monitoring.service_name | default(service.name + '_monitor') }}"
+monitoring_telegram_enabled: "{{ service.monitoring.telegram.enabled | default(false) }}"
+
+# Traefik integration (optional)
+traefik_enabled: "{{ service.traefik.enabled | default(false) }}"
+traefik_config_dir: /etc/traefik/dynamic
+traefik_host_rule: "{{ service.traefik.host_rule | default('Host(`' + service.name + '.local`)') }}"
+traefik_port: "{{ service.traefik.port | default(8000) }}"

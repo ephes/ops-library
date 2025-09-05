@@ -1,0 +1,11 @@
+[project]
+name = "{{ service.name }}"
+version = "0.1.0"
+requires-python = ">={{ python_version }}"
+
+dependencies = [
+    "nyxmon[prod]",
+]
+
+[tool.uv]
+dev-dependencies = []

@@ -1,0 +1,18 @@
+---
+namespace: local
+name: ops_library
+version: 0.1.0
+readme: README.md
+authors:
+  - Jochen Wersdörfer
+description: Collection of reusable Ansible roles for homelab automation
+license:
+  - MIT
+tags:
+  - homelab
+  - automation
+  - deployment
+repository: https://github.com/yourusername/ops-library
+dependencies:
+  community.general: ">=5.0.0"
+  ansible.posix: ">=1.0.0"

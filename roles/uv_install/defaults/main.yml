@@ -1,0 +1,17 @@
+---
+# Default values for uv_install role
+
+# Version to install (latest, or specific like "0.8.15")
+uv_version: latest
+
+# Installation directory (user's local bin)
+uv_install_dir: "/root/.local/bin"
+
+# System-wide symlink location
+uv_symlink_dir: "/usr/local/bin"
+
+# Whether to create system-wide symlinks
+uv_create_symlinks: true
+
+# Whether to update if already installed
+uv_update_existing: true

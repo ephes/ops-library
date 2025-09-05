@@ -1,0 +1,21 @@
+[Unit]
+Description={{ service.name }} web application
+After={{ systemd_after }}
+Wants={{ systemd_wants }}
+
+[Service]
+Type=simple
+Restart={{ systemd_restart }}
+WorkingDirectory={{ service_work_dir }}
+User={{ service_user }}
+Group={{ service_group }}
+{% if service.env is defined %}
+EnvironmentFile={{ service_home }}/.env
+{% endif %}
+{% if django_enabled %}
+Environment="DJANGO_SETTINGS_MODULE={{ django_settings_module }}"
+{% endif %}
+ExecStart={{ service.app.cmd }}
+
+[Install]
+WantedBy=multi-user.target
