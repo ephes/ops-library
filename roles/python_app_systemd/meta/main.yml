@@ -64,3 +64,9 @@ argument_specs:
           traefik:
             type: dict
             description: Traefik reverse proxy configuration
+          secrets_file:
+            type: str
+            description: Path to SOPS-encrypted secrets file relative to ops-control root
+          secrets:
+            type: list
+            description: List of secret mappings from SOPS file to environment variables
