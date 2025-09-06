@@ -4,7 +4,7 @@ http:
       rule: "{{ traefik_host_rule }}"
       service: {{ service.name }}
       entryPoints:
-        - web-secure
+        - websecure
       tls:
         certResolver: letsencrypt
 
@@ -13,3 +13,7 @@ http:
       loadBalancer:
         servers:
           - url: "http://127.0.0.1:{{ traefik_port }}"
+        healthCheck:
+          path: /health
+          interval: 30s
+          timeout: 5s

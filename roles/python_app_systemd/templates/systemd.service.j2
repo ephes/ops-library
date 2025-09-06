@@ -1,21 +1,93 @@
 [Unit]
 Description={{ service.name }} web application
+Documentation=file://{{ service_home }}/README.md
 After={{ systemd_after }}
 Wants={{ systemd_wants }}
+StartLimitIntervalSec=30
+StartLimitBurst=5
 
 [Service]
 Type=simple
 Restart={{ systemd_restart }}
+RestartSec=5
+TimeoutStartSec=60
+TimeoutStopSec=30
+KillSignal=SIGINT
+KillMode=mixed
+
+# Working directory and user/group
 WorkingDirectory={{ service_work_dir }}
 User={{ service_user }}
 Group={{ service_group }}
+
+# Runtime directories
+RuntimeDirectory={{ service.name }}
+RuntimeDirectoryMode=0750
+StateDirectory={{ service.name }}
+StateDirectoryMode=0750
+CacheDirectory={{ service.name }}
+CacheDirectoryMode=0750
+LogsDirectory={{ service.name }}
+LogsDirectoryMode=0750
+
+# Environment variables
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONIOENCODING=utf-8
 {% if service.env is defined %}
 EnvironmentFile={{ service_home }}/.env
 {% endif %}
 {% if django_enabled %}
 Environment="DJANGO_SETTINGS_MODULE={{ django_settings_module }}"
+Environment="DJANGO_CACHE_DIR=%C/{{ service.name }}"
 {% endif %}
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+RestrictNamespaces=~CLONE_NEWUSER
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Capabilities
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+# File system access
+ReadWritePaths={{ service_work_dir }}
+ReadWritePaths=%S/{{ service.name }}
+ReadWritePaths=%C/{{ service.name }}
+ReadWritePaths=%L/{{ service.name }}
+ReadWritePaths=%t/{{ service.name }}
+{% if django_enabled %}
+ReadWritePaths={{ django_cache_dir }}
+{% endif %}
+{% if service.app.additional_paths is defined %}
+{% for path in service.app.additional_paths %}
+ReadWritePaths={{ path }}
+{% endfor %}
+{% endif %}
+
+# Process limits
+LimitNOFILE=65536
+LimitNPROC=4096
+TasksMax=4096
+
+# Service execution
 ExecStart={{ service.app.cmd }}
+ExecReload=/bin/kill -USR1 $MAINPID
 
 [Install]
 WantedBy=multi-user.target
