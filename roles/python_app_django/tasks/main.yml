@@ -1,0 +1,78 @@
+---
+# Include the python_app_systemd role to handle basic Python app deployment
+- name: Include python_app_systemd role
+  include_role:
+    name: python_app_systemd
+
+# Django-specific tasks that run after the base role
+- name: Create Django cache directory
+  file:
+    path: "{{ django_cache_dir }}"
+    state: directory
+    owner: "{{ service_user | default('app-' + service.name) }}"
+    group: "{{ service_group | default('app-' + service.name) }}"
+    mode: "0755"
+  when: django_cache_dir is defined and django_cache_dir != ""
+  become: yes
+
+- name: Run Django migrations
+  shell: |
+    set -a
+    [ -f "{{ service_home | default('/opt/apps/' + service.name) }}/.env" ] && . "{{ service_home | default('/opt/apps/' + service.name) }}/.env"
+    set +a
+    {{ venv_path | default('/opt/apps/' + service.name + '/.venv') }}/bin/python manage.py migrate --noinput
+  args:
+    chdir: "{{ service_work_dir | default(service_home | default('/opt/apps/' + service.name) + '/src') }}"
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ django_settings_module }}"
+  become: yes
+  become_user: "{{ service_user | default('app-' + service.name) }}"
+  register: django_migrate_result
+  changed_when: "'Applying' in django_migrate_result.stdout"
+  when: django_migrate | default(true)
+
+- name: Collect Django static files
+  shell: |
+    set -a
+    [ -f "{{ service_home | default('/opt/apps/' + service.name) }}/.env" ] && . "{{ service_home | default('/opt/apps/' + service.name) }}/.env"
+    set +a
+    {{ venv_path | default('/opt/apps/' + service.name + '/.venv') }}/bin/python manage.py collectstatic --noinput
+  args:
+    chdir: "{{ service_work_dir | default(service_home | default('/opt/apps/' + service.name) + '/src') }}"
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ django_settings_module }}"
+  become: yes
+  become_user: "{{ service_user | default('app-' + service.name) }}"
+  register: django_collectstatic_result
+  changed_when: "'0 static files copied' not in django_collectstatic_result.stdout"
+  when: django_collectstatic | default(true)
+
+- name: Create Django media directory
+  file:
+    path: "{{ django_media_dir }}"
+    state: directory
+    owner: "{{ service_user | default('app-' + service.name) }}"
+    group: "{{ service_group | default('app-' + service.name) }}"
+    mode: "0755"
+  when: django_media_dir is defined and django_media_dir != ""
+  become: yes
+
+- name: Ensure Django database file permissions (SQLite)
+  file:
+    path: "{{ service_work_dir | default(service_home | default('/opt/apps/' + service.name) + '/src') }}/{{ django_db_file }}"
+    owner: "{{ service_user | default('app-' + service.name) }}"
+    group: "{{ service_group | default('app-' + service.name) }}"
+    mode: "0664"
+  when: django_db_file is defined and django_db_file != ""
+  become: yes
+  ignore_errors: yes
+
+- name: Create Django log directory
+  file:
+    path: "{{ django_log_dir }}"
+    state: directory
+    owner: "{{ service_user | default('app-' + service.name) }}"
+    group: "{{ service_group | default('app-' + service.name) }}"
+    mode: "0755"
+  when: django_log_dir is defined and django_log_dir != ""
+  become: yes

@@ -1,0 +1,92 @@
+---
+galaxy_info:
+  author: Jochen Wersdörfer
+  description: Deploy Django applications with systemd service management
+  license: MIT
+  min_ansible_version: "2.9"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+
+dependencies:
+  - name: python_app_systemd
+    src: python_app_systemd
+
+argument_specs:
+  main:
+    short_description: Deploy Django applications with systemd
+    description:
+      - Deploy Django applications with systemd service management
+      - Wraps python_app_systemd role with Django-specific functionality
+      - Handles Django migrations, static file collection, and directory setup
+      - All Django operations run with proper environment sourcing
+    options:
+      service:
+        type: dict
+        required: true
+        description: Service configuration dictionary from manifest
+        options:
+          name:
+            type: str
+            required: true
+            description: Service name
+          host:
+            type: str
+            description: Target host for deployment
+          role:
+            type: str  
+            description: Role to use for deployment
+          type:
+            type: str
+            description: Service type (app_native, compose, etc)
+          strategy:
+            type: str
+            choices: [rsync, git, artifact]
+            default: rsync
+            description: Deployment strategy
+          rsync:
+            type: dict
+            description: Rsync configuration when strategy is rsync
+          app:
+            type: dict
+            required: true
+            description: Application configuration
+          env:
+            type: dict
+            description: Environment variables
+          monitoring:
+            type: dict
+            description: Monitoring agent configuration
+          traefik:
+            type: dict
+            description: Traefik reverse proxy configuration
+      django_settings_module:
+        type: str
+        default: "config.settings.production"
+        description: Django settings module to use
+      django_migrate:
+        type: bool
+        default: true
+        description: Whether to run Django migrations
+      django_collectstatic:
+        type: bool
+        default: true
+        description: Whether to collect Django static files
+      django_cache_dir:
+        type: str
+        description: Directory for Django cache files
+      django_media_dir:
+        type: str
+        description: Directory for Django media files
+      django_log_dir:
+        type: str
+        description: Directory for Django log files
+      django_db_file:
+        type: str
+        description: SQLite database filename (relative to work directory)
