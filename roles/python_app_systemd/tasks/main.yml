@@ -33,19 +33,9 @@
   when: django_enabled and django_cache_dir is defined
   become: yes
 
-- name: Rsync working tree (strategy=rsync)
-  ansible.posix.synchronize:
-    src: "{{ service.rsync.src }}"
-    dest: "{{ service.rsync.dest }}/"
-    archive: true
-    delete: "{{ service.rsync.delete | default(true) }}"
-    rsync_opts: "{{ rsync_options }}"
-  vars:
-    rsync_options: >-
-      {{ (service.rsync.excludes | default([])) | map('regex_replace', '^(.*)$', '--exclude=\1') | list }}
+- name: Include rsync tasks
+  include_tasks: rsync.yml
   when: service.strategy == 'rsync'
-  register: sync_result
-  become: yes
 
 - name: Fix ownership after rsync
   file:
@@ -53,7 +43,7 @@
     owner: "{{ service_user }}"
     group: "{{ service_group }}"
     recurse: yes
-  when: service.strategy == 'rsync' and sync_result.changed
+  when: service.strategy == 'rsync' and sync_out.changed
   become: yes
 
 - name: Create Python virtual environment
@@ -88,6 +78,17 @@
   become: yes
   ignore_errors: yes
 
+- name: Create environment file
+  template:
+    src: env.j2
+    dest: "{{ service_home }}/.env"
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
+    mode: "0600"
+  become: yes
+  when: service.env is defined or service.secrets is defined
+  notify: "restart {{ service.name }}"
+
 - name: Install Python dependencies
   shell: |
     {{ service.app.install }}
@@ -100,18 +101,10 @@
   register: install_result
   changed_when: >
     'Installing' in install_result.stdout or 
-    'Upgrading' in install_result.stdout or
-    sync_result.changed | default(false)
-
-- name: Create environment file
-  template:
-    src: env.j2
-    dest: "{{ service_home }}/.env"
-    owner: "{{ service_user }}"
-    group: "{{ service_group }}"
-    mode: "0600"
-  become: yes
-  when: service.env is defined
+    'Updated' in install_result.stdout or
+    'Audited' in install_result.stdout or
+    sync_out.changed | default(false)
+  notify: "restart {{ service.name }}"
 
 - name: Run Django migrations
   shell: |
@@ -128,6 +121,7 @@
   when: django_enabled and django_migrate
   register: migrate_result
   changed_when: "'Applying' in migrate_result.stdout"
+  notify: "restart {{ service.name }}"
 
 - name: Ensure Django database is writable
   file:
@@ -163,7 +157,9 @@
     group: root
     mode: "0644"
   become: yes
-  notify: restart service
+  notify:
+    - reload systemd
+    - "restart {{ service.name }}"
 
 - name: Create monitoring agent service unit
   template:
@@ -174,7 +170,9 @@
     mode: "0644"
   become: yes
   when: monitoring_enabled
-  notify: restart monitoring
+  notify:
+    - reload systemd
+    - "restart {{ monitoring_service_name }}"
 
 - name: Create Traefik configuration
   template:
