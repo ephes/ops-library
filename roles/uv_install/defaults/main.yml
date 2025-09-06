@@ -4,14 +4,23 @@
 # Version to install (latest, or specific like "0.8.15")
 uv_version: latest
 
-# Installation directory (user's local bin)
-uv_install_dir: "/root/.local/bin"
+# User to install uv for
+uv_install_user: root
 
-# System-wide symlink location
+# Installation directory
+uv_install_dir: "/usr/local/bin"
+
+# Installation method (curl or manual)
+uv_install_method: curl
+
+# Whether to create system-wide symlinks (deprecated, use uv_install_dir instead)
+uv_create_symlinks: false
+
+# System-wide symlink location (deprecated, use uv_install_dir instead)
 uv_symlink_dir: "/usr/local/bin"
 
-# Whether to create system-wide symlinks
-uv_create_symlinks: true
-
 # Whether to update if already installed
-uv_update_existing: true
+uv_update_existing: false
+
+# Force reinstallation even if same version exists
+uv_force_reinstall: false

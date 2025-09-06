@@ -1,5 +1,21 @@
 ---
-# Install uv package manager
+# Install uv package manager with improved safety and flexibility
+
+- name: Validate installation directory
+  assert:
+    that:
+      - uv_install_dir is defined
+      - uv_install_dir | length > 0
+      - uv_install_dir != "/"
+    fail_msg: "uv_install_dir must be defined and cannot be root directory"
+
+- name: Ensure installation directory exists
+  file:
+    path: "{{ uv_install_dir }}"
+    state: directory
+    mode: '0755'
+    owner: "{{ uv_install_user }}"
+  become: yes
 
 - name: Check if uv is already installed
   stat:
@@ -13,24 +29,68 @@
   failed_when: false
   when: uv_installed.stat.exists
 
+- name: Parse current version
+  set_fact:
+    current_version: "{{ current_uv_version.stdout | regex_replace('^uv ([0-9.]+).*', '\\1') }}"
+  when: 
+    - uv_installed.stat.exists
+    - current_uv_version.rc == 0
+
+- name: Determine if installation is needed
+  set_fact:
+    needs_install: >-
+      {{
+        not uv_installed.stat.exists or
+        uv_force_reinstall or
+        (uv_update_existing and uv_version != "latest" and current_version is defined and current_version != uv_version)
+      }}
+
 - name: Install or update uv
-  when: not uv_installed.stat.exists or uv_update_existing
+  when: needs_install | bool
   block:
-    - name: Download and run uv installer script
+    - name: Create temporary directory for installation
+      tempfile:
+        state: directory
+        suffix: .uv_install
+      register: temp_dir
+
+    - name: Download uv installer script
+      get_url:
+        url: https://astral.sh/uv/install.sh
+        dest: "{{ temp_dir.path }}/install.sh"
+        mode: '0755'
+        timeout: 30
+      register: download_result
+
+    - name: Run uv installer script
       shell: |
-        curl -LsSf https://astral.sh/uv/install.sh | sh
+        export UV_INSTALL_DIR="{{ uv_install_dir }}"
+        {% if uv_version != "latest" %}
+        export UV_VERSION="{{ uv_version }}"
+        {% endif %}
+        "{{ temp_dir.path }}/install.sh"
       args:
         executable: /bin/bash
       environment:
-        HOME: "{{ uv_install_dir | dirname | dirname }}"
+        HOME: "{{ ansible_env.HOME | default('/root') }}"
+      become: yes
+      become_user: "{{ uv_install_user }}"
       register: install_result
+      notify: uv installed
+
+    - name: Clean up temporary directory
+      file:
+        path: "{{ temp_dir.path }}"
+        state: absent
 
     - name: Display installation output
       debug:
         var: install_result.stdout_lines
-      when: install_result.stdout_lines is defined
+      when: 
+        - install_result.stdout_lines is defined
+        - ansible_verbosity >= 1
 
-- name: Create system-wide symlinks
+- name: Create system-wide symlinks (deprecated - use uv_install_dir instead)
   file:
     src: "{{ uv_install_dir }}/{{ item }}"
     dest: "{{ uv_symlink_dir }}/{{ item }}"
@@ -39,25 +99,27 @@
   loop:
     - uv
     - uvx
-  when: uv_create_symlinks
+  when: 
+    - uv_create_symlinks
+    - uv_install_dir != uv_symlink_dir
   become: yes
 
 - name: Verify uv installation
-  command: "{{ uv_symlink_dir }}/uv --version"
+  command: "{{ uv_install_dir }}/uv --version"
   register: uv_version_check
   changed_when: false
+  failed_when: uv_version_check.rc != 0
 
-- name: Display uv version
+- name: Set final version fact
+  set_fact:
+    installed_uv_version: "{{ uv_version_check.stdout | regex_replace('^uv ([0-9.]+).*', '\\1') }}"
+
+- name: Display installation result
   debug:
-    msg: "uv {{ uv_version_check.stdout }} is installed"
+    msg: "uv {{ installed_uv_version }} is installed at {{ uv_install_dir }}/uv"
 
-- name: Test self-update capability
-  command: "{{ uv_symlink_dir }}/uv self update"
-  register: self_update_test
-  changed_when: "'Upgraded' in self_update_test.stdout"
-  failed_when: false
-
-- name: Display self-update status
-  debug:
-    msg: "{{ self_update_test.stdout }}"
-  when: self_update_test.stdout is defined
+- name: Test uv functionality
+  command: "{{ uv_install_dir }}/uv --help"
+  register: uv_help_test
+  changed_when: false
+  failed_when: uv_help_test.rc != 0
