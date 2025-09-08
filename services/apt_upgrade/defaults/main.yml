@@ -1,0 +1,15 @@
+---
+# APT upgrade configuration
+apt_upgrade_update_cache: true
+apt_upgrade_cache_valid_time: 3600
+apt_upgrade_dist_upgrade: true
+apt_upgrade_auto_remove: true
+apt_upgrade_auto_clean: true
+apt_upgrade_reboot_if_required: false
+
+# FastDeploy integration
+apt_upgrade_fastdeploy_enabled: true
+apt_upgrade_fastdeploy_user: fastdeploy
+apt_upgrade_deploy_user: deploy
+apt_upgrade_service_path: "/home/{{ apt_upgrade_fastdeploy_user }}/site/services/apt_upgrade"
+apt_upgrade_ansible_venv: "/home/{{ apt_upgrade_fastdeploy_user }}/ansible_venv"
