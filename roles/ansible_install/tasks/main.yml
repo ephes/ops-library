@@ -1,0 +1,28 @@
+---
+- name: Ensure ansible is installed (Debian/Ubuntu)
+  apt:
+    name:
+      - ansible
+      - ansible-core
+    state: present
+    update_cache: yes
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+
+- name: Ensure ansible is installed (RedHat/CentOS)
+  yum:
+    name:
+      - ansible
+      - ansible-core
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Verify ansible installation
+  command: ansible --version
+  register: ansible_version
+  changed_when: false
+
+- name: Display ansible version
+  debug:
+    msg: "Ansible installed: {{ ansible_version.stdout_lines[0] | default('Version check failed') }}"
+  when: ansible_version.stdout_lines is defined

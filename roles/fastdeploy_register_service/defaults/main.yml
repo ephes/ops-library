@@ -1,0 +1,59 @@
+---
+# Service identity
+fd_service_name: "{{ service_name | mandatory }}"
+fd_service_description: "Deploy {{ fd_service_name }} via ops-control"
+
+# FastDeploy paths (where config.json goes)
+fd_fastdeploy_root: "/home/fastdeploy/fastdeploy"
+fd_fastdeploy_user: "fastdeploy"
+fd_services_root: "services"
+fd_service_config_dir: "{{ fd_fastdeploy_root }}/{{ fd_services_root }}/{{ fd_service_name }}"
+
+# Deploy user configuration
+fd_deploy_user: "deploy"
+fd_deploy_group: "deploy"
+fd_deploy_home: "/home/{{ fd_deploy_user }}"
+fd_deploy_shell: "/bin/bash"
+
+# Deploy user paths (where runner and secrets go)
+fd_runner_dir: "{{ fd_deploy_home }}/runners/{{ fd_service_name }}"
+fd_runner_script: "{{ fd_runner_dir }}/deploy.py"
+fd_ops_control_dir: "{{ fd_deploy_home }}/ops-control"
+fd_workspace_dir: "{{ fd_deploy_home }}/_workspace"
+
+# SOPS configuration
+fd_sops_age_key_path: "{{ fd_deploy_home }}/.config/sops/age/keys.txt"
+fd_sops_age_key_contents: ""  # Must be provided via vars
+
+# Ops-control deployment method
+fd_ops_control_method: "rsync"  # or "git"
+fd_ops_control_local_path: "/Users/jochen/projects/ops-control"  # Your local ops-control
+fd_ops_control_remote_path: "{{ fd_deploy_home }}/ops-control"  # Where to deploy it
+
+# Git configuration (only if using git method)
+fd_ops_control_git: ""  # git@github.com:yourorg/ops-control.git
+fd_ops_control_ref: "main"
+
+# Ansible execution settings
+fd_ansible_playbook_bin: "/usr/bin/ansible-playbook"
+fd_ansible_galaxy_bin: "/usr/bin/ansible-galaxy"
+fd_ansible_config: "{{ fd_ops_control_dir }}/ansible.cfg"
+
+# FastDeploy API configuration
+fd_api_base: "http://localhost:8000"
+fd_api_token: ""  # Bearer token for API calls
+fd_sync_services: true
+
+# Deployment context defaults
+fd_context_defaults:
+  OPS_CONTROL_GIT: "{{ fd_ops_control_git }}"
+  OPS_CONTROL_REF: "{{ fd_ops_control_ref }}"
+  FILTER: "{{ fd_service_name }}"
+  LIMIT: "macmini,localhost"
+  ANSIBLE_PLAYBOOK: "{{ fd_ansible_playbook_bin }}"
+  ANSIBLE_GALAXY: "{{ fd_ansible_galaxy_bin }}"
+  SOPS_AGE_KEY_FILE: "{{ fd_sops_age_key_path }}"
+  ANSIBLE_CONFIG: "{{ fd_ansible_config }}"
+
+# Sudoers configuration
+fd_sudoers_file: "/etc/sudoers.d/fastdeploy_{{ fd_service_name }}"

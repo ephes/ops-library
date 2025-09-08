@@ -1,0 +1,223 @@
+#!/usr/bin/env python3
+"""
+FastDeploy runner for {{ fd_service_name }}
+Deployed by Ansible from ops-control
+"""
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+from typing import Dict, Optional
+from urllib.request import Request, urlopen
+from urllib.error import URLError
+
+
+def post_json(url: str, token: str, payload: Dict) -> bool:
+    """Post JSON data to fastDeploy API."""
+    try:
+        data = json.dumps(payload).encode("utf-8")
+        req = Request(url, data=data, headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+        })
+        with urlopen(req, timeout=10) as response:
+            return response.status == 200
+    except (URLError, Exception) as e:
+        print(f"Failed to post to {url}: {e}", file=sys.stderr)
+        return False
+
+
+def update_step(name: str, state: str, message: str = "") -> None:
+    """Update deployment step status."""
+    token = os.environ.get("ACCESS_TOKEN", "")
+    steps_url = os.environ.get("STEPS_URL", "")
+    
+    if token and steps_url:
+        success = post_json(steps_url, token, {
+            "name": name,
+            "state": state,
+            "message": message
+        })
+        if not success:
+            print(f"Warning: Failed to update step {name}", file=sys.stderr)
+    
+    # Always log to stdout for debugging
+    print(f"[{state.upper()}] {name}: {message}")
+
+
+def finish_deployment() -> None:
+    """Mark deployment as finished."""
+    token = os.environ.get("ACCESS_TOKEN", "")
+    finish_url = os.environ.get("DEPLOYMENT_FINISH_URL", "")
+    
+    if token and finish_url:
+        post_json(finish_url, token, {})
+
+
+def run_command(cmd: list, cwd: Optional[Path] = None, env: Optional[dict] = None) -> int:
+    """Run a command and return exit code."""
+    print(f"Running: {' '.join(cmd)}")
+    result = subprocess.run(
+        cmd,
+        cwd=str(cwd) if cwd else None,
+        env=env,
+        capture_output=False,
+        text=True
+    )
+    return result.returncode
+
+
+def main() -> int:
+    """Main deployment logic."""
+    # Parse context from environment
+    context_raw = os.environ.get("CONTEXT", "{}")
+    try:
+        context = json.loads(context_raw)
+    except json.JSONDecodeError:
+        context = {}
+    
+    # Get configuration from context or defaults
+    cenv = context.get("env", {})
+    
+    # Use Jinja2 template variables as defaults
+    OPS_CONTROL_METHOD = cenv.get("OPS_CONTROL_METHOD", "{{ fd_ops_control_method }}")
+    OPS_CONTROL_GIT = cenv.get("OPS_CONTROL_GIT", "{{ fd_ops_control_git | default('') }}")
+    OPS_CONTROL_REF = cenv.get("OPS_CONTROL_REF", "{{ fd_ops_control_ref }}")
+    FILTER = cenv.get("FILTER", "{{ fd_service_name }}")
+    LIMIT = cenv.get("LIMIT", "macmini,localhost")
+    ANSIBLE_PLAYBOOK = cenv.get("ANSIBLE_PLAYBOOK", "{{ fd_ansible_playbook_bin }}")
+    ANSIBLE_GALAXY = cenv.get("ANSIBLE_GALAXY", "{{ fd_ansible_galaxy_bin }}")
+    SOPS_AGE_KEY_FILE = cenv.get("SOPS_AGE_KEY_FILE", "{{ fd_sops_age_key_path }}")
+    ANSIBLE_CONFIG = cenv.get("ANSIBLE_CONFIG", "{{ fd_ansible_config }}")
+    
+    # Paths
+    deploy_home = Path("{{ fd_deploy_home }}")
+    ops_control_dir = Path("{{ fd_ops_control_remote_path }}")
+    
+    # Step 1: Prepare
+    update_step("prepare", "running", "Preparing ops-control")
+    
+    if OPS_CONTROL_METHOD == "rsync":
+        # Using rsync method - ops-control is already deployed
+        if not ops_control_dir.exists():
+            update_step("prepare", "failure", f"ops-control not found at {ops_control_dir}")
+            finish_deployment()
+            return 1
+        workspace = ops_control_dir
+        update_step("prepare", "success", "Using pre-deployed ops-control")
+    
+    elif OPS_CONTROL_METHOD == "git":
+        # Git method - clone/update from repository
+        workspace = Path("{{ fd_workspace_dir }}") / "ops-control"
+        workspace.parent.mkdir(parents=True, exist_ok=True)
+        
+        if workspace.exists():
+            # Update existing clone
+            rc = run_command(["git", "fetch", "--all", "--prune"], cwd=workspace)
+            if rc != 0:
+                update_step("prepare", "failure", "Failed to fetch updates")
+                finish_deployment()
+                return 1
+            
+            run_command(["git", "checkout", OPS_CONTROL_REF], cwd=workspace)
+            run_command(["git", "reset", "--hard", f"origin/{OPS_CONTROL_REF}"], cwd=workspace)
+        else:
+            # Fresh clone
+            if not OPS_CONTROL_GIT:
+                update_step("prepare", "failure", "OPS_CONTROL_GIT not configured for git method")
+                finish_deployment()
+                return 1
+                
+            rc = run_command([
+                "git", "clone",
+                "--branch", OPS_CONTROL_REF,
+                "--single-branch",
+                OPS_CONTROL_GIT,
+                str(workspace)
+            ])
+            if rc != 0:
+                update_step("prepare", "failure", "Failed to clone repository")
+                finish_deployment()
+                return 1
+        
+        update_step("prepare", "success", "Repository ready")
+    
+    else:
+        update_step("prepare", "failure", f"Unknown OPS_CONTROL_METHOD: {OPS_CONTROL_METHOD}")
+        finish_deployment()
+        return 1
+    
+    # Step 2: Bootstrap - Install Ansible collections
+    update_step("bootstrap", "running", "Installing Ansible collections")
+    
+    requirements_file = workspace / "collections" / "requirements.yml"
+    if requirements_file.exists():
+        rc = run_command([
+            ANSIBLE_GALAXY, "collection", "install",
+            "-r", str(requirements_file),
+            "-p", str(workspace / "collections")
+        ])
+        if rc != 0:
+            update_step("bootstrap", "failure", "Failed to install collections")
+            finish_deployment()
+            return 1
+    
+    update_step("bootstrap", "success", "Collections installed")
+    
+    # Step 3: Ansible - Run the deployment
+    update_step("ansible", "running", f"Deploying {FILTER}")
+    
+    # Prepare environment
+    env = os.environ.copy()
+    env["SOPS_AGE_KEY_FILE"] = SOPS_AGE_KEY_FILE
+    env["ANSIBLE_CONFIG"] = ANSIBLE_CONFIG
+    
+    # Build ansible-playbook command
+    # When deploying on the same host, use local connection to avoid SSH
+    cmd = [
+        ANSIBLE_PLAYBOOK,
+        "-i", str(workspace / "inventories" / "prod" / "hosts.yml"),
+        str(workspace / "playbooks" / "site.yml"),
+        "-l", LIMIT,
+        "--extra-vars", f"filter={FILTER}",
+        "--extra-vars", "ansible_connection=local",
+        "--become",
+        "--become-user", "root"
+    ]
+    
+    rc = run_command(cmd, env=env)
+    if rc != 0:
+        update_step("ansible", "failure", f"Ansible playbook failed with exit code {rc}")
+        finish_deployment()
+        return 1
+    
+    update_step("ansible", "success", "Deployment completed")
+    
+    # Step 4: Verify - Check service status
+    update_step("verify", "running", "Checking service status")
+    
+    # Check if the service is running (adjust service name as needed)
+    service_name = "{{ fd_service_name }}.service"
+    rc = run_command(["systemctl", "is-active", "--quiet", service_name])
+    
+    if rc == 0:
+        update_step("verify", "success", f"{service_name} is active")
+    else:
+        update_step("verify", "warning", f"{service_name} is not active (might be expected)")
+    
+    # Mark deployment as finished
+    finish_deployment()
+    
+    print(f"\nDeployment of {{ fd_service_name }} completed successfully!")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception as e:
+        print(f"Deployment failed with error: {e}", file=sys.stderr)
+        update_step("error", "failure", str(e))
+        finish_deployment()
+        sys.exit(1)

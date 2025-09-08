@@ -1,0 +1,21 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Register a service with fastDeploy for automated deployment
+  license: MIT
+  min_ansible_version: "2.9"
+  platforms:
+    - name: Darwin
+      versions:
+        - all
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+  galaxy_tags:
+    - deployment
+    - fastdeploy
+    - automation
+
+dependencies:
+  - role: ansible_install

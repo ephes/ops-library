@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Ensure ansible is installed on target systems
+  license: MIT
+  min_ansible_version: "2.9"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - ansible
+    - system
+    - prerequisites
+
+dependencies: []

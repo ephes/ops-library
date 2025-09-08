@@ -1,0 +1,140 @@
+---
+- name: Create deploy group
+  group:
+    name: "{{ fd_deploy_group }}"
+    state: present
+    system: yes
+
+- name: Create deploy user
+  user:
+    name: "{{ fd_deploy_user }}"
+    group: "{{ fd_deploy_group }}"
+    home: "{{ fd_deploy_home }}"
+    shell: "{{ fd_deploy_shell }}"
+    create_home: yes
+    system: yes
+    state: present
+
+- name: Create required directories for deploy user
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ fd_deploy_user }}"
+    group: "{{ fd_deploy_group }}"
+    mode: "0755"
+  loop:
+    - "{{ fd_deploy_home }}/runners"
+    - "{{ fd_runner_dir }}"
+    - "{{ fd_workspace_dir }}"
+    - "{{ fd_deploy_home }}/.ssh"
+
+- name: Create SOPS key directory
+  file:
+    path: "{{ fd_sops_age_key_path | dirname }}"
+    state: directory
+    owner: "{{ fd_deploy_user }}"
+    group: "{{ fd_deploy_group }}"
+    mode: "0700"
+    recurse: yes
+
+- name: Install SOPS age key
+  copy:
+    content: "{{ fd_sops_age_key_contents }}"
+    dest: "{{ fd_sops_age_key_path }}"
+    owner: "{{ fd_deploy_user }}"
+    group: "{{ fd_deploy_group }}"
+    mode: "0600"
+  when: fd_sops_age_key_contents | length > 0
+
+- name: Deploy ops-control via rsync
+  synchronize:
+    src: "{{ fd_ops_control_local_path }}/"
+    dest: "{{ fd_ops_control_remote_path }}"
+    delete: yes
+    rsync_opts:
+      - "--exclude=.git"
+      - "--exclude=*.pyc"
+      - "--exclude=__pycache__"
+      - "--exclude=.DS_Store"
+      - "--exclude=collections/ansible_collections"  # Don't sync downloaded collections
+  when: fd_ops_control_method == "rsync"
+
+- name: Set ownership of ops-control directory
+  file:
+    path: "{{ fd_ops_control_remote_path }}"
+    owner: "{{ fd_deploy_user }}"
+    group: "{{ fd_deploy_group }}"
+    recurse: yes
+  when: fd_ops_control_method == "rsync"
+
+- name: Deploy runner script
+  template:
+    src: deploy.py.j2
+    dest: "{{ fd_runner_script }}"
+    owner: "{{ fd_deploy_user }}"
+    group: "{{ fd_deploy_group }}"
+    mode: "0755"
+
+- name: Create fastDeploy service directory
+  file:
+    path: "{{ fd_service_config_dir }}"
+    state: directory
+    owner: "{{ fd_fastdeploy_user }}"
+    group: "{{ fd_fastdeploy_user }}"
+    mode: "0755"
+
+- name: Create service config.json
+  copy:
+    content: |
+      {
+        "name": "{{ fd_service_name }}",
+        "description": "{{ fd_service_description }}",
+        "deploy_script": "{{ fd_runner_script }}",
+        "steps": [
+          {"name": "prepare"},
+          {"name": "bootstrap"},
+          {"name": "ansible"},
+          {"name": "verify"}
+        ]
+      }
+    dest: "{{ fd_service_config_dir }}/config.json"
+    owner: "{{ fd_fastdeploy_user }}"
+    group: "{{ fd_fastdeploy_user }}"
+    mode: "0644"
+
+- name: Configure sudoers rules
+  copy:
+    content: |
+      # Allow fastdeploy user to run the deployment script as deploy user
+      {{ fd_fastdeploy_user }} ALL=({{ fd_deploy_user }}) NOPASSWD: {{ fd_runner_script }}
+      
+      # Allow deploy user to run ansible commands as root (needed for deployments)
+      {{ fd_deploy_user }} ALL=(root) NOPASSWD: ALL
+      
+      # Preserve environment variables for deployment context
+      Defaults!{{ fd_runner_script }} env_keep += "ACCESS_TOKEN STEPS_URL DEPLOYMENT_FINISH_URL CONTEXT SSH_AUTH_SOCK"
+    dest: "{{ fd_sudoers_file }}"
+    mode: "0440"
+    validate: 'visudo -cf %s'
+
+- name: Sync services with fastDeploy API
+  uri:
+    url: "{{ fd_api_base }}/services/sync"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ fd_api_token }}"
+    status_code: [200, 201]
+  when:
+    - fd_sync_services
+    - fd_api_token | length > 0
+  register: sync_result
+  failed_when: false  # Don't fail the play if sync fails
+
+- name: Display sync result
+  debug:
+    msg: "Service sync result: {{ sync_result.json | default('No response') }}"
+  when: 
+    - sync_result is defined
+    - sync_result is not skipped
+    - sync_result.status is defined
+    - sync_result.status in [200, 201]
