@@ -1,3 +1,4 @@
+---
 name: apt_upgrade
 description: System package updates via apt for Debian/Ubuntu systems
 version: 1.0.0
