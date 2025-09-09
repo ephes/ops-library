@@ -1,0 +1,36 @@
+---
+# YAML linting configuration for ops-library
+extends: default
+
+rules:
+  line-length:
+    max: 120
+    level: warning
+  
+  comments:
+    min-spaces-from-content: 1
+  
+  comments-indentation: disable
+  
+  indentation:
+    spaces: 2
+    indent-sequences: true
+  
+  truthy:
+    allowed-values: ['true', 'false', 'yes', 'no', 'True', 'False']
+  
+  braces:
+    max-spaces-inside: 1
+  
+  brackets:
+    max-spaces-inside: 1
+  
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: true
+
+ignore: |
+  .venv/
+  venv/
+  .git/
+  molecule/

@@ -1,0 +1,51 @@
+---
+# Ansible-lint configuration for ops-library
+profile: shared
+
+# Skip collection installation
+offline: true
+
+# Paths to exclude
+exclude_paths:
+  - .venv/
+  - venv/
+  - .git/
+  - .github/
+  - molecule/
+  - __pycache__/
+
+# Enable additional rules
+enable_list:
+  - args
+  - empty-string-compare
+  - no-log-password
+  - no-same-owner
+  - name[prefix]
+
+# Rules to skip
+skip_list:
+  - yaml[line-length]  # Handled by yamllint
+  - name[missing]  # Allow tasks without names during development
+
+# Warnings to treat as errors
+warn_list:
+  - experimental
+  - role-name[path]
+
+# Don't fail on warnings
+strict: false
+
+# Task name prefix checking
+task_name_prefix: "{stem} | "
+
+# Variables naming pattern
+var_naming_pattern: "^[a-z_][a-z0-9_]*$"
+
+# Mock modules for testing
+mock_modules:
+  - community.general.ufw
+  - community.general.timezone
+
+# Mock roles for testing  
+mock_roles:
+  - local.ops_library.apt_upgrade

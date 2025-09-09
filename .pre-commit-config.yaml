@@ -1,0 +1,109 @@
+---
+# Pre-commit hooks for ops-library
+# Install with: pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--unsafe]  # Allow custom tags like !vault
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  # YAML linting
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.33.0
+    hooks:
+      - id: yamllint
+        args: [-c=.yamllint]
+        types: [yaml]
+
+  # Ansible linting
+  - repo: https://github.com/ansible/ansible-lint
+    rev: v6.22.1
+    hooks:
+      - id: ansible-lint
+        files: \.(yaml|yml)$
+        exclude: |
+          (?x)^(
+            .github/.*|
+            molecule/.*
+          )$
+        additional_dependencies:
+          - ansible-core>=2.15
+
+  # Python code formatting (for deploy.py scripts)
+  - repo: https://github.com/psf/black
+    rev: 23.12.1
+    hooks:
+      - id: black
+        language_version: python3
+        files: \.py$
+
+  # Python linting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.9
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        files: \.py$
+
+  # Shell script linting
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.9.0.6
+    hooks:
+      - id: shellcheck
+        files: \.(sh|bash)$
+        args: [--severity=warning]
+
+  # Jinja2 template linting
+  - repo: https://github.com/motet-a/jinjalint
+    rev: 0.5
+    hooks:
+      - id: jinjalint
+        files: \.j2$
+
+  # Security checks
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+
+  # Markdown linting (for documentation)
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.38.0
+    hooks:
+      - id: markdownlint
+        args: [--fix]
+        files: \.md$
+
+# Configuration for specific file types
+files: |
+  (?x)^(
+    .*\.(yml|yaml|py|sh|bash|j2|md)|
+    Justfile|
+    Makefile
+  )$
+
+# Don't run on these paths
+exclude: |
+  (?x)^(
+    .venv/.*|
+    venv/.*|
+    __pycache__/.*|
+    \.git/.*|
+    \.pytest_cache/.*
+  )$
