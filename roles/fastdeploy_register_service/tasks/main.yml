@@ -106,13 +106,14 @@
   copy:
     content: |
       # Allow fastdeploy user to run the deployment script as deploy user
+      # NOTE: Environment variables removed for security - using secure config files instead
       {{ fd_fastdeploy_user }} ALL=({{ fd_deploy_user }}) NOPASSWD: {{ fd_runner_script }}
       
       # Allow deploy user to run ansible commands as root (needed for deployments)
       {{ fd_deploy_user }} ALL=(root) NOPASSWD: ALL
       
-      # Preserve environment variables for deployment context
-      Defaults!{{ fd_runner_script }} env_keep += "ACCESS_TOKEN STEPS_URL DEPLOYMENT_FINISH_URL CONTEXT SSH_AUTH_SOCK"
+      # NOTE: env_keep removed for security - deployment config passed via secure files
+      # Previously used: Defaults!{{ fd_runner_script }} env_keep += "ACCESS_TOKEN STEPS_URL DEPLOYMENT_FINISH_URL CONTEXT SSH_AUTH_SOCK"
     dest: "{{ fd_sudoers_file }}"
     mode: "0440"
     validate: 'visudo -cf %s'

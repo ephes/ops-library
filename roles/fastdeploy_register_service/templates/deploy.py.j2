@@ -2,6 +2,7 @@
 """
 FastDeploy runner for {{ fd_service_name }}
 Deployed by Ansible from ops-control
+Updated to use secure configuration files instead of environment variables
 """
 import json
 import os
@@ -11,6 +12,35 @@ from pathlib import Path
 from typing import Dict, Optional
 from urllib.request import Request, urlopen
 from urllib.error import URLError
+
+
+def read_config_file() -> Optional[Dict]:
+    """Read deployment configuration from secure file if available."""
+    # Check for config file path in environment or command line
+    config_file = os.environ.get("DEPLOY_CONFIG_FILE")
+    
+    # Also check command line arguments for --config
+    if "--config" in sys.argv:
+        idx = sys.argv.index("--config")
+        if idx + 1 < len(sys.argv):
+            config_file = sys.argv[idx + 1]
+    
+    if not config_file or not Path(config_file).exists():
+        return None
+    
+    try:
+        # Verify secure permissions
+        stat_info = Path(config_file).stat()
+        mode = stat_info.st_mode & 0o777
+        if mode != 0o600:
+            print(f"Warning: Config file has insecure permissions: {oct(mode)}", file=sys.stderr)
+            return None
+        
+        with open(config_file, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Failed to read config file: {e}", file=sys.stderr)
+        return None
 
 
 def post_json(url: str, token: str, payload: Dict) -> bool:
@@ -30,8 +60,14 @@ def post_json(url: str, token: str, payload: Dict) -> bool:
 
 def update_step(name: str, state: str, message: str = "") -> None:
     """Update deployment step status."""
-    token = os.environ.get("ACCESS_TOKEN", "")
-    steps_url = os.environ.get("STEPS_URL", "")
+    # Read from config file if available, fallback to env vars
+    config = read_config_file()
+    if config:
+        token = config.get("access_token", "")
+        steps_url = config.get("steps_url", "")
+    else:
+        token = os.environ.get("ACCESS_TOKEN", "")
+        steps_url = os.environ.get("STEPS_URL", "")
     
     if token and steps_url:
         success = post_json(steps_url, token, {
@@ -48,8 +84,13 @@ def update_step(name: str, state: str, message: str = "") -> None:
 
 def finish_deployment() -> None:
     """Mark deployment as finished."""
-    token = os.environ.get("ACCESS_TOKEN", "")
-    finish_url = os.environ.get("DEPLOYMENT_FINISH_URL", "")
+    config = read_config_file()
+    if config:
+        token = config.get("access_token", "")
+        finish_url = config.get("deployment_finish_url", "")
+    else:
+        token = os.environ.get("ACCESS_TOKEN", "")
+        finish_url = os.environ.get("DEPLOYMENT_FINISH_URL", "")
     
     if token and finish_url:
         post_json(finish_url, token, {})
@@ -70,12 +111,22 @@ def run_command(cmd: list, cwd: Optional[Path] = None, env: Optional[dict] = Non
 
 def main() -> int:
     """Main deployment logic."""
-    # Parse context from environment
-    context_raw = os.environ.get("CONTEXT", "{}")
-    try:
-        context = json.loads(context_raw)
-    except json.JSONDecodeError:
-        context = {}
+    # Try to read from secure config file first
+    config = read_config_file()
+    
+    if config:
+        # Use configuration from secure file
+        context = config.get("context", {})
+        ssh_auth_sock = config.get("ssh_auth_sock")
+        if ssh_auth_sock:
+            os.environ["SSH_AUTH_SOCK"] = ssh_auth_sock
+    else:
+        # Fallback to environment variables
+        context_raw = os.environ.get("CONTEXT", "{}")
+        try:
+            context = json.loads(context_raw)
+        except json.JSONDecodeError:
+            context = {}
     
     # Get configuration from context or defaults
     cenv = context.get("env", {})
