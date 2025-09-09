@@ -1,0 +1,62 @@
+---
+- name: Verify
+  hosts: all
+  gather_facts: true
+  
+  tasks:
+    - name: Check if apt cache was updated
+      command: ls -la /var/lib/apt/lists/
+      register: apt_lists
+      changed_when: false
+      
+    - name: Verify apt lists are not empty
+      assert:
+        that:
+          - apt_lists.stdout_lines | length > 3
+        fail_msg: "APT lists directory appears to be empty"
+        success_msg: "APT cache has been updated"
+        
+    - name: Check for pending upgrades
+      shell: apt list --upgradable 2>/dev/null | grep -c upgradable || true
+      register: pending_upgrades
+      changed_when: false
+      
+    - name: Display upgrade status
+      debug:
+        msg: "System has {{ pending_upgrades.stdout }} pending upgrades"
+        
+    - name: Check if reboot is required
+      stat:
+        path: /var/run/reboot-required
+      register: reboot_check
+      
+    - name: Report reboot status
+      debug:
+        msg: "Reboot required: {{ reboot_check.stat.exists | default(false) }}"
+        
+    - name: When fastdeploy is enabled, verify service files
+      when: apt_upgrade_fastdeploy_enabled | default(false)
+      block:
+        - name: Check if deploy.py exists
+          stat:
+            path: "{{ apt_upgrade_service_path }}/deploy.py"
+          register: deploy_py
+          
+        - name: Check if deploy.sh exists
+          stat:
+            path: "{{ apt_upgrade_service_path }}/deploy.sh"
+          register: deploy_sh
+          
+        - name: Check if config.json exists
+          stat:
+            path: "{{ apt_upgrade_service_path }}/config.json"
+          register: config_json
+          
+        - name: Verify all fastdeploy files exist
+          assert:
+            that:
+              - deploy_py.stat.exists
+              - deploy_sh.stat.exists
+              - config_json.stat.exists
+            fail_msg: "FastDeploy files are missing"
+            success_msg: "All FastDeploy files are present"

@@ -1,0 +1,27 @@
+---
+# Example inventory for testing ops-library services
+# Copy to test/inventory.yml and customize for your environment
+
+all:
+  children:
+    test_hosts:
+      hosts:
+        # Local testing
+        localhost:
+          ansible_connection: local
+          ansible_python_interpreter: "{{ ansible_playbook_python }}"
+        
+        # Remote test hosts - ADD YOUR OWN HOSTS HERE
+        # example-host:
+        #   ansible_host: your-host.example.com
+        #   ansible_user: your-user
+        #   ansible_python_interpreter: /usr/bin/python3
+        #   ansible_ssh_private_key_file: ~/.ssh/your_key
+          
+  vars:
+    # Default test variables - override in host_vars or group_vars
+    apt_upgrade_fastdeploy_enabled: false
+    apt_upgrade_update_cache: true
+    apt_upgrade_dist_upgrade: false  # Set to false for testing
+    apt_upgrade_auto_clean: true
+    apt_upgrade_auto_remove: true

@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+*.egg-info/
+.pytest_cache/
+
+# Ansible
+*.retry
+*.log
+
+# Testing
+test/inventory.yml
+test/inventory.ini
+test/inventory
+test/*.yml
+!test/inventory.example.yml
+.molecule/
+molecule/*/.molecule/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Secrets
+*.key
+*.pem
+*.crt
+.secrets.baseline
+secrets/
+vault.yml
+
+# Temporary files
+tmp/
+temp/
+*.tmp
