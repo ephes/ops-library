@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Deployment script for apt_upgrade service that outputs JSON steps for fastDeploy
+Updated to support secure configuration files from security hardening
 """
 
 import json
@@ -8,6 +9,31 @@ import subprocess
 import sys
 import os
 from pathlib import Path
+from typing import Dict, Optional
+
+def read_config_file() -> Optional[Dict]:
+    """Read deployment configuration from secure file if available."""
+    config_file = None
+    
+    # Check for --config argument
+    if "--config" in sys.argv:
+        idx = sys.argv.index("--config")
+        if idx + 1 < len(sys.argv):
+            config_file = sys.argv[idx + 1]
+    
+    # Also check environment variable as fallback
+    if not config_file:
+        config_file = os.environ.get("DEPLOY_CONFIG_FILE")
+    
+    if not config_file or not Path(config_file).exists():
+        return None
+    
+    try:
+        with open(config_file, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Warning: Failed to read config file: {e}", file=sys.stderr)
+        return None
 
 def output_step(name: str, state: str, message: str = "", error_message: str = "") -> None:
     """Output step as JSON for fastDeploy to parse."""
@@ -118,6 +144,14 @@ def run_ansible_playbook():
 def main():
     """Main entry point."""
     try:
+        # Read config file if available (for compatibility with security hardening)
+        config = read_config_file()
+        if config:
+            # Config file exists, we're running with secure configuration
+            # The deployment context and tokens are in the config file
+            # But for apt_upgrade, we don't need them as we run ansible locally
+            pass
+        
         # Change to service directory
         service_path = Path("{{ apt_upgrade_service_path }}")
         os.chdir(service_path)

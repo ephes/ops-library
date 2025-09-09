@@ -1,3 +1,4 @@
 #!/bin/bash
 cd {{ apt_upgrade_service_path }}
-/usr/bin/python3 deploy.py
+# Pass through all arguments (including --config) to the Python script
+/usr/bin/python3 deploy.py "$@"
