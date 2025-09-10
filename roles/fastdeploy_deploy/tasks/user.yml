@@ -1,0 +1,25 @@
+---
+# User and directory setup for FastDeploy
+
+- name: Create FastDeploy user
+  user:
+    name: "{{ fastdeploy_user }}"
+    group: "{{ fastdeploy_group }}"
+    shell: /bin/bash
+    home: "{{ fastdeploy_home }}"
+    create_home: yes
+    comment: "FastDeploy Service Account"
+    system: no
+
+- name: Create directory structure
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ fastdeploy_user }}"
+    group: "{{ fastdeploy_group }}"
+    mode: "0755"
+  loop:
+    - "{{ fastdeploy_site_path }}"
+    - "{{ fastdeploy_site_path }}/bin"
+    - "{{ fastdeploy_site_path }}/logs"
+    - "{{ fastdeploy_services_path }}"

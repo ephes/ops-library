@@ -1,0 +1,26 @@
+[Unit]
+Description=FastDeploy Service
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=exec
+User={{ fastdeploy_user }}
+Group={{ fastdeploy_group }}
+WorkingDirectory={{ fastdeploy_site_path }}
+Environment="PATH={{ fastdeploy_venv_bin }}:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile={{ fastdeploy_site_path }}/.env
+ExecStart={{ fastdeploy_venv_bin }}/python -m uvicorn deploy.entrypoints.fastapi_app:app --port {{ fastdeploy_app_port }} --host {{ fastdeploy_app_host }}
+{% if fastdeploy_service_restart_on_failure %}
+Restart=always
+RestartSec={{ fastdeploy_service_restart_sec }}
+{% else %}
+Restart=no
+{% endif %}
+
+# Security settings (simplified for compatibility)
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

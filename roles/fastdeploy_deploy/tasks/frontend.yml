@@ -1,0 +1,54 @@
+---
+# Frontend build tasks for FastDeploy
+
+- name: Check if Node.js is installed
+  command: which node
+  register: node_check
+  failed_when: false
+  changed_when: false
+
+- name: Check if npm is installed
+  command: which npm
+  register: npm_check
+  failed_when: false
+  changed_when: false
+
+- name: Install Node.js and npm if not present
+  package:
+    name:
+      - nodejs
+      - npm
+    state: present
+  when: node_check.rc != 0 or npm_check.rc != 0
+
+- name: Check if package-lock.json exists
+  stat:
+    path: "{{ fastdeploy_site_path }}/frontend/package-lock.json"
+  register: package_lock
+
+- name: Install frontend dependencies (npm ci)
+  shell: npm ci
+  args:
+    chdir: "{{ fastdeploy_site_path }}/frontend"
+  become: true
+  become_user: "{{ fastdeploy_user }}"
+  when: package_lock.stat.exists
+
+- name: Install frontend dependencies (npm install)
+  shell: npm install
+  args:
+    chdir: "{{ fastdeploy_site_path }}/frontend"
+  become: true
+  become_user: "{{ fastdeploy_user }}"
+  when: not package_lock.stat.exists
+
+- name: Build frontend application
+  shell: npm run build
+  args:
+    chdir: "{{ fastdeploy_site_path }}/frontend"
+  become: true
+  become_user: "{{ fastdeploy_user }}"
+  environment:
+    NODE_ENV: production
+    VITE_API_BASE_PROD: "{{ fastdeploy_api_url }}"
+    VITE_WEBSOCKET_URL_PROD: "{{ fastdeploy_websocket_url }}"

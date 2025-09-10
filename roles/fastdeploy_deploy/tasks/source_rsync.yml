@@ -1,0 +1,33 @@
+---
+# Sync FastDeploy source code from local directory
+
+- name: Validate source path exists
+  stat:
+    path: "{{ fastdeploy_source_path }}"
+  delegate_to: localhost
+  become: false
+  register: source_check
+
+- name: Fail if source path doesn't exist
+  fail:
+    msg: "Source path {{ fastdeploy_source_path }} does not exist on local machine"
+  when: not source_check.stat.exists
+
+- name: Build rsync exclude options
+  set_fact:
+    rsync_exclude_opts: "{{ fastdeploy_rsync_excludes | map('regex_replace', '^', '--exclude=') | list }}"
+
+- name: Sync FastDeploy source code
+  ansible.posix.synchronize:
+    src: "{{ fastdeploy_source_path }}/"
+    dest: "{{ fastdeploy_site_path }}/"
+    rsync_opts: "{{ rsync_exclude_opts }}"
+  delegate_to: localhost
+  become: no
+
+- name: Ensure correct ownership of synced files
+  file:
+    path: "{{ fastdeploy_site_path }}"
+    owner: "{{ fastdeploy_user }}"
+    group: "{{ fastdeploy_group }}"
+    recurse: yes

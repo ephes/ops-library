@@ -1,0 +1,72 @@
+---
+# Git-based deployment for FastDeploy
+# Used for self-deployment via UI
+
+- name: Install git if not present
+  ansible.builtin.package:
+    name: git
+    state: present
+  become: true
+
+- name: Check if destination is already a git repository
+  ansible.builtin.stat:
+    path: "{{ fastdeploy_git_dest }}/.git"
+  register: git_dir
+
+- name: Check if destination directory exists
+  ansible.builtin.stat:
+    path: "{{ fastdeploy_git_dest }}"
+  register: dest_dir
+
+- name: Handle existing non-git directory
+  block:
+    - name: Backup existing directory if it's not a git repo
+      ansible.builtin.command:
+        cmd: "mv {{ fastdeploy_git_dest }} {{ fastdeploy_git_dest }}.backup.{{ ansible_date_time.epoch }}"
+      when: dest_dir.stat.exists
+      
+    - name: Create parent directory if needed
+      ansible.builtin.file:
+        path: "{{ fastdeploy_git_dest | dirname }}"
+        state: directory
+        owner: "{{ fastdeploy_user }}"
+        group: "{{ fastdeploy_group }}"
+        mode: '0755'
+  when: not git_dir.stat.exists
+
+- name: Clone or update FastDeploy repository
+  ansible.builtin.git:
+    repo: "{{ fastdeploy_git_repo }}"
+    dest: "{{ fastdeploy_git_dest }}"
+    version: "{{ fastdeploy_git_version }}"
+    force: true
+    accept_hostkey: true
+  become: true
+  become_user: "{{ fastdeploy_user }}"
+  register: git_result
+
+- name: Ensure correct ownership of git repository
+  ansible.builtin.file:
+    path: "{{ fastdeploy_git_dest }}"
+    owner: "{{ fastdeploy_user }}"
+    group: "{{ fastdeploy_group }}"
+    recurse: true
+  become: true
+  when: git_result.changed
+
+- name: Clean Python bytecode files after git update
+  ansible.builtin.command:
+    cmd: "find {{ fastdeploy_git_dest }} -type f -name '*.pyc' -delete"
+  become: true
+  become_user: "{{ fastdeploy_user }}"
+  when: git_result.changed
+  changed_when: false
+
+- name: Clean Python cache directories after git update
+  ansible.builtin.command:
+    cmd: "find {{ fastdeploy_git_dest }} -type d -name '__pycache__' -exec rm -rf {} +"
+  become: true
+  become_user: "{{ fastdeploy_user }}"
+  when: git_result.changed
+  changed_when: false
+  failed_when: false  # Ignore errors if directories are already deleted

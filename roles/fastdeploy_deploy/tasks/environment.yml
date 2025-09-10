@@ -1,0 +1,10 @@
+---
+# Create environment configuration for FastDeploy
+
+- name: Create .env file from template
+  template:
+    src: fastdeploy.env.j2
+    dest: "{{ fastdeploy_site_path }}/.env"
+    owner: "{{ fastdeploy_user }}"
+    group: "{{ fastdeploy_group }}"
+    mode: '0600'

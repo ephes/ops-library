@@ -1,0 +1,25 @@
+---
+# Setup Traefik routing for FastDeploy
+
+- name: Ensure Traefik dynamic directory exists
+  file:
+    path: /etc/traefik/dynamic
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy Traefik configuration
+  template:
+    src: traefik.yml.j2
+    dest: "/etc/traefik/dynamic/{{ fastdeploy_service_name }}.yml"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart traefik
+
+- name: Ensure Traefik picks up the service
+  systemd:
+    name: traefik
+    state: restarted
+  changed_when: false  # Always restart to ensure service is picked up

@@ -1,0 +1,85 @@
+---
+# FastDeploy deployment role defaults
+# These are safe defaults that can be public
+# Sensitive values should be overridden in ops-control
+
+# User and paths
+fastdeploy_user: fastdeploy
+fastdeploy_group: "{{ fastdeploy_user }}"
+fastdeploy_home: "/home/{{ fastdeploy_user }}"
+fastdeploy_site_path: "{{ fastdeploy_home }}/site"
+fastdeploy_services_path: "{{ fastdeploy_site_path }}/services"
+fastdeploy_venv_path: "{{ fastdeploy_site_path }}/.venv"
+fastdeploy_venv_bin: "{{ fastdeploy_venv_path }}/bin"
+
+# Deployment method
+fastdeploy_deploy_method: rsync  # Options: rsync, git
+
+# Source code location for rsync method (must be provided when using rsync)
+# This is the local path to the fastdeploy source code
+fastdeploy_source_path: ""  # REQUIRED for rsync - e.g., /Users/jochen/projects/fastdeploy
+
+# Git repository settings (for git deployment method)
+fastdeploy_git_repo: "https://github.com/ephes/fastdeploy.git"
+fastdeploy_git_version: main
+fastdeploy_git_dest: "{{ fastdeploy_site_path }}"
+
+# Application settings
+fastdeploy_app_port: 9999
+fastdeploy_app_host: "127.0.0.1"
+fastdeploy_environment: production
+
+# PostgreSQL settings
+fastdeploy_postgres_database: fastdeploy
+fastdeploy_postgres_user: fastdeploy
+fastdeploy_postgres_password: "CHANGEME"  # Override in ops-control
+fastdeploy_postgres_host: localhost
+fastdeploy_postgres_port: 5432
+
+# API and frontend URLs
+fastdeploy_api_url: "https://deploy.example.com"  # Override with real URL
+fastdeploy_websocket_url: "wss://deploy.example.com/deployments/ws"
+
+# Initial admin user
+fastdeploy_initial_user: "admin"
+fastdeploy_initial_password_hash: "CHANGEME"  # REQUIRED - bcrypt hash
+
+# Secret key for sessions
+fastdeploy_secret_key: "CHANGEME"  # REQUIRED - generate with openssl rand -hex 32
+
+# Node.js and npm
+fastdeploy_nodejs_version: 20  # Major version for Node.js
+fastdeploy_build_frontend: true
+
+# Systemd service
+fastdeploy_service_name: fastdeploy
+fastdeploy_service_restart_on_failure: true
+fastdeploy_service_restart_sec: 5
+
+# Traefik integration
+fastdeploy_traefik_enabled: true
+fastdeploy_traefik_host: "{{ fastdeploy_api_url | regex_replace('^https?://', '') }}"
+fastdeploy_traefik_cert_resolver: letsencrypt
+
+# rsync options for deployment
+fastdeploy_rsync_excludes:
+  - ".git"
+  - "__pycache__"
+  - "*.pyc"
+  - ".env"
+  - ".venv"
+  - "venv"
+  - "databases"
+  - "frontend/node_modules"
+  - "frontend/dist"
+  - ".mypy_cache"
+  - ".pytest_cache"  
+  - ".ruff_cache"
+  - "htmlcov"
+  - "site"
+  - ".DS_Store"
+
+# Feature flags
+fastdeploy_create_initial_user: true
+fastdeploy_sync_services: true
+fastdeploy_install_uv: true

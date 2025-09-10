@@ -1,0 +1,52 @@
+---
+# Main tasks for FastDeploy deployment
+
+- name: Validate required variables
+  assert:
+    that:
+      - fastdeploy_deploy_method in ['rsync', 'git']
+      - fastdeploy_source_path != "" or fastdeploy_deploy_method == "git"
+      - fastdeploy_secret_key != "CHANGEME"
+      - fastdeploy_initial_password_hash != "CHANGEME"
+      - fastdeploy_postgres_password != "CHANGEME"
+    fail_msg: |
+      Required variables not set or invalid:
+      - fastdeploy_deploy_method: Must be 'rsync' or 'git'
+      - fastdeploy_source_path: Required for rsync method
+      - fastdeploy_secret_key: Secret key for sessions
+      - fastdeploy_initial_password_hash: BCrypt hash for initial user
+      - fastdeploy_postgres_password: PostgreSQL password
+
+- name: Setup user and directories
+  include_tasks: user.yml
+
+- name: Setup PostgreSQL database
+  include_tasks: database.yml
+
+- name: Sync source code (rsync method)
+  include_tasks: source_rsync.yml
+  when: fastdeploy_deploy_method == 'rsync'
+
+- name: Sync source code (git method)
+  include_tasks: source_git.yml
+  when: fastdeploy_deploy_method == 'git'
+
+- name: Create environment configuration
+  include_tasks: environment.yml
+
+- name: Setup Python environment
+  include_tasks: python.yml
+
+- name: Build frontend
+  include_tasks: frontend.yml
+  when: fastdeploy_build_frontend
+
+- name: Initialize application
+  include_tasks: initialize.yml
+
+- name: Setup systemd service
+  include_tasks: service.yml
+
+- name: Setup Traefik routing
+  include_tasks: traefik.yml
+  when: fastdeploy_traefik_enabled

@@ -1,0 +1,45 @@
+---
+# PostgreSQL database setup for FastDeploy
+
+- name: Install PostgreSQL client libraries
+  package:
+    name:
+      - libpq-dev
+      - postgresql-client
+    state: present
+
+- name: Create PostgreSQL database
+  community.general.postgresql_db:
+    name: "{{ fastdeploy_postgres_database }}"
+    state: present
+  become: true
+  become_user: postgres
+
+- name: Create PostgreSQL user
+  community.general.postgresql_user:
+    db: "{{ fastdeploy_postgres_database }}"
+    name: "{{ fastdeploy_postgres_user }}"
+    password: "{{ fastdeploy_postgres_password }}"
+    priv: ALL
+    state: present
+  become: true
+  become_user: postgres
+
+- name: Grant all privileges on database
+  community.general.postgresql_privs:
+    database: "{{ fastdeploy_postgres_database }}"
+    privs: ALL
+    type: database
+    role: "{{ fastdeploy_postgres_user }}"
+  become: true
+  become_user: postgres
+
+- name: Grant schema privileges
+  community.general.postgresql_privs:
+    database: "{{ fastdeploy_postgres_database }}"
+    privs: ALL
+    type: schema
+    objs: public
+    role: "{{ fastdeploy_postgres_user }}"
+  become: true
+  become_user: postgres

@@ -1,0 +1,37 @@
+# Traefik configuration for FastDeploy
+# Managed by Ansible
+
+http:
+  services:
+    {{ fastdeploy_service_name }}:
+      loadBalancer:
+        servers:
+          - url: "http://{{ fastdeploy_app_host }}:{{ fastdeploy_app_port }}"
+        healthCheck:
+          path: /
+          interval: 30s
+          timeout: 3s
+          
+  routers:
+    {{ fastdeploy_service_name }}:
+      rule: "Host(`{{ fastdeploy_traefik_host }}`)"
+      service: {{ fastdeploy_service_name }}
+      tls:
+        certResolver: {{ fastdeploy_traefik_cert_resolver }}
+      middlewares:
+        - {{ fastdeploy_service_name }}-headers
+        - {{ fastdeploy_service_name }}-redirect
+
+  middlewares:
+    {{ fastdeploy_service_name }}-headers:
+      headers:
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+    {{ fastdeploy_service_name }}-redirect:
+      redirectRegex:
+        regex: "^https://{{ fastdeploy_traefik_host }}/$"
+        replacement: "https://{{ fastdeploy_traefik_host }}/static/index.html"
+        permanent: false
