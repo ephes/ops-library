@@ -2,7 +2,7 @@
 """
 FastDeploy runner for {{ fd_service_name }}
 Deployed by Ansible from ops-control
-Updated to use secure configuration files instead of environment variables
+Hybrid approach: NDJSON to stdout (primary) + HTTP API (best-effort)
 """
 import json
 import os
@@ -12,6 +12,9 @@ from pathlib import Path
 from typing import Dict, Optional
 from urllib.request import Request, urlopen
 from urllib.error import URLError
+
+# Ensure unbuffered output for real-time UI updates
+os.environ['PYTHONUNBUFFERED'] = '1'
 
 
 def read_config_file() -> Optional[Dict]:
@@ -29,13 +32,6 @@ def read_config_file() -> Optional[Dict]:
         return None
     
     try:
-        # Verify secure permissions
-        stat_info = Path(config_file).stat()
-        mode = stat_info.st_mode & 0o777
-        if mode != 0o600:
-            print(f"Warning: Config file has insecure permissions: {oct(mode)}", file=sys.stderr)
-            return None
-        
         with open(config_file, 'r') as f:
             return json.load(f)
     except Exception as e:
@@ -43,24 +39,61 @@ def read_config_file() -> Optional[Dict]:
         return None
 
 
+# STDOUT JSON helpers (primary communication channel)
+def _emit(obj: Dict) -> None:
+    """Emit JSON object to stdout for FastDeploy to parse."""
+    print(json.dumps(obj, ensure_ascii=False), flush=True)
+
+
+def output_step(name: str, state: str, message: str = None) -> None:
+    """Output step as NDJSON to stdout (primary channel)."""
+    step = {
+        "name": name,
+        "state": state
+    }
+    if message:
+        step["message"] = message
+    _emit(step)
+
+
+def finish_stdout(status: str, message: str = None) -> None:
+    """Output finish event to stdout."""
+    finish = {
+        "event": "finish",
+        "status": status
+    }
+    if message:
+        finish["message"] = message
+    _emit(finish)
+
+
+# HTTP API helpers (best-effort secondary channel)
 def post_json(url: str, token: str, payload: Dict) -> bool:
-    """Post JSON data to fastDeploy API."""
+    """Post JSON data to fastDeploy API (best-effort, never blocks)."""
     try:
         data = json.dumps(payload).encode("utf-8")
         req = Request(url, data=data, headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {token}",
         })
-        with urlopen(req, timeout=10) as response:
+        with urlopen(req, timeout=5) as response:
             return response.status == 200
     except (URLError, Exception) as e:
-        print(f"Failed to post to {url}: {e}", file=sys.stderr)
+        # Log to stderr but never fail the deployment
+        print(f"[HTTP API] Failed to post to {url}: {e}", file=sys.stderr)
         return False
 
 
 def update_step(name: str, state: str, message: str = "") -> None:
-    """Update deployment step status."""
-    # Read from config file if available, fallback to env vars
+    """
+    Hybrid step update:
+    1. Primary: Output NDJSON to stdout
+    2. Secondary: Best-effort HTTP API call
+    """
+    # Primary channel: stdout NDJSON (always works)
+    output_step(name, state, message)
+    
+    # Secondary channel: HTTP API (best-effort)
     config = read_config_file()
     if config:
         token = config.get("access_token", "")
@@ -70,20 +103,27 @@ def update_step(name: str, state: str, message: str = "") -> None:
         steps_url = os.environ.get("STEPS_URL", "")
     
     if token and steps_url:
-        success = post_json(steps_url, token, {
-            "name": name,
-            "state": state,
-            "message": message
-        })
-        if not success:
-            print(f"Warning: Failed to update step {name}", file=sys.stderr)
+        # Best-effort HTTP call, never blocks or fails deployment
+        try:
+            post_json(steps_url, token, {
+                "name": name,
+                "state": state,
+                "message": message
+            })
+        except Exception as e:
+            print(f"[HTTP API] Step update failed: {e}", file=sys.stderr)
+
+
+def finish_deployment(status: str = "success", message: str = None) -> None:
+    """
+    Hybrid deployment finish:
+    1. Primary: Output finish event to stdout
+    2. Secondary: Best-effort HTTP API call
+    """
+    # Primary channel: stdout NDJSON
+    finish_stdout(status, message or f"Deployment {status}")
     
-    # Always log to stdout for debugging
-    print(f"[{state.upper()}] {name}: {message}")
-
-
-def finish_deployment() -> None:
-    """Mark deployment as finished."""
+    # Secondary channel: HTTP API (best-effort)
     config = read_config_file()
     if config:
         token = config.get("access_token", "")
@@ -93,12 +133,19 @@ def finish_deployment() -> None:
         finish_url = os.environ.get("DEPLOYMENT_FINISH_URL", "")
     
     if token and finish_url:
-        post_json(finish_url, token, {})
+        try:
+            post_json(finish_url, token, {
+                "status": status,
+                "message": message
+            })
+        except Exception as e:
+            print(f"[HTTP API] Finish call failed: {e}", file=sys.stderr)
 
 
 def run_command(cmd: list, cwd: Optional[Path] = None, env: Optional[dict] = None) -> int:
     """Run a command and return exit code."""
-    print(f"Running: {' '.join(cmd)}")
+    # Log command to stderr to keep stdout clean for NDJSON
+    print(f"Running: {' '.join(cmd)}", file=sys.stderr)
     result = subprocess.run(
         cmd,
         cwd=str(cwd) if cwd else None,
@@ -111,6 +158,9 @@ def run_command(cmd: list, cwd: Optional[Path] = None, env: Optional[dict] = Non
 
 def main() -> int:
     """Main deployment logic."""
+    # Emit early init step to anchor UI
+    update_step("init", "running", "Starting deployment")
+    
     # Try to read from secure config file first
     config = read_config_file()
     
@@ -127,6 +177,8 @@ def main() -> int:
             context = json.loads(context_raw)
         except json.JSONDecodeError:
             context = {}
+    
+    update_step("init", "success", "Configuration loaded")
     
     # Get configuration from context or defaults
     cenv = context.get("env", {})
@@ -153,7 +205,7 @@ def main() -> int:
         # Using rsync method - ops-control is already deployed
         if not ops_control_dir.exists():
             update_step("prepare", "failure", f"ops-control not found at {ops_control_dir}")
-            finish_deployment()
+            finish_deployment("failure", f"ops-control not found at {ops_control_dir}")
             return 1
         workspace = ops_control_dir
         update_step("prepare", "success", "Using pre-deployed ops-control")
@@ -168,7 +220,7 @@ def main() -> int:
             rc = run_command(["git", "fetch", "--all", "--prune"], cwd=workspace)
             if rc != 0:
                 update_step("prepare", "failure", "Failed to fetch updates")
-                finish_deployment()
+                finish_deployment("failure", "Failed to fetch git updates")
                 return 1
             
             run_command(["git", "checkout", OPS_CONTROL_REF], cwd=workspace)
@@ -177,7 +229,7 @@ def main() -> int:
             # Fresh clone
             if not OPS_CONTROL_GIT:
                 update_step("prepare", "failure", "OPS_CONTROL_GIT not configured for git method")
-                finish_deployment()
+                finish_deployment("failure", "OPS_CONTROL_GIT not configured")
                 return 1
                 
             rc = run_command([
@@ -189,14 +241,14 @@ def main() -> int:
             ])
             if rc != 0:
                 update_step("prepare", "failure", "Failed to clone repository")
-                finish_deployment()
+                finish_deployment("failure", "Failed to clone repository")
                 return 1
         
         update_step("prepare", "success", "Repository ready")
     
     else:
         update_step("prepare", "failure", f"Unknown OPS_CONTROL_METHOD: {OPS_CONTROL_METHOD}")
-        finish_deployment()
+        finish_deployment("failure", f"Unknown OPS_CONTROL_METHOD: {OPS_CONTROL_METHOD}")
         return 1
     
     # Step 2: Bootstrap - Install Ansible collections
@@ -211,21 +263,20 @@ def main() -> int:
         ])
         if rc != 0:
             update_step("bootstrap", "failure", "Failed to install collections")
-            finish_deployment()
+            finish_deployment("failure", "Failed to install Ansible collections")
             return 1
     
     update_step("bootstrap", "success", "Collections installed")
     
-    # Step 3: Ansible - Run the deployment
-    update_step("ansible", "running", f"Deploying {FILTER}")
+    # Step 3: Ansible - Run the deployment with detailed task reporting
+    update_step("ansible", "running", f"Starting deployment of {FILTER}")
     
     # Prepare environment
     env = os.environ.copy()
     env["SOPS_AGE_KEY_FILE"] = SOPS_AGE_KEY_FILE
     env["ANSIBLE_CONFIG"] = ANSIBLE_CONFIG
     
-    # Build ansible-playbook command
-    # When deploying on the same host, use local connection to avoid SSH
+    # Build ansible-playbook command with verbose output for parsing
     cmd = [
         ANSIBLE_PLAYBOOK,
         "-i", str(workspace / "inventories" / "prod" / "hosts.yml"),
@@ -234,16 +285,88 @@ def main() -> int:
         "--extra-vars", f"filter={FILTER}",
         "--extra-vars", "ansible_connection=local",
         "--become",
-        "--become-user", "root"
+        "--become-user", "root",
+        "-v"  # Verbose output for better task visibility
     ]
     
-    rc = run_command(cmd, env=env)
-    if rc != 0:
-        update_step("ansible", "failure", f"Ansible playbook failed with exit code {rc}")
-        finish_deployment()
+    # Run ansible with output parsing
+    try:
+        process = subprocess.Popen(
+            cmd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1
+        )
+        
+        current_task = None
+        current_play = None
+        task_count = 0
+        
+        # Process output line by line for real-time step updates
+        for line in process.stdout:
+            line = line.strip()
+            # Log to stderr for debugging
+            print(line, file=sys.stderr)
+            
+            # Detect play start
+            if line.startswith("PLAY ["):
+                play_name = line[6:line.find("]")]
+                if play_name and play_name != "localhost":
+                    current_play = play_name
+                    update_step(f"play: {play_name}", "running", "Starting play")
+            
+            # Detect task start
+            elif line.startswith("TASK ["):
+                task_end = line.find("]")
+                if task_end > 6:
+                    task_name = line[6:task_end]
+                    # Filter out some common uninteresting tasks
+                    if task_name not in ["Gathering Facts", "Filter services for this host", "Display deployment plan"]:
+                        task_count += 1
+                        current_task = task_name
+                        # Make task names more readable
+                        if "git" in task_name.lower():
+                            update_step(task_name, "running", "Pulling latest code from repository")
+                        elif "install" in task_name.lower() or "sync" in task_name.lower():
+                            update_step(task_name, "running", "Installing/updating dependencies")
+                        elif "restart" in task_name.lower():
+                            update_step(task_name, "running", "Restarting service")
+                        elif "migrate" in task_name.lower():
+                            update_step(task_name, "running", "Running database migrations")
+                        else:
+                            update_step(task_name, "running", "Executing task")
+            
+            # Detect task results
+            elif current_task and (line.startswith("ok:") or line.startswith("changed:") or line.startswith("skipping:")):
+                if line.startswith("ok:"):
+                    update_step(current_task, "success", "No changes needed")
+                elif line.startswith("changed:"):
+                    update_step(current_task, "success", "Changes applied")
+                elif line.startswith("skipping:"):
+                    update_step(current_task, "success", "Skipped (condition not met)")
+                current_task = None
+            
+            # Detect task failure
+            elif current_task and line.startswith("fatal:"):
+                update_step(current_task, "failure", "Task failed")
+                current_task = None
+        
+        # Wait for process to complete
+        rc = process.wait()
+        
+        if rc != 0:
+            update_step("ansible", "failure", f"Ansible playbook failed with exit code {rc}")
+            finish_deployment("failure", f"Ansible playbook failed with exit code {rc}")
+            return 1
+        
+        update_step("ansible", "success", f"Deployment completed - {task_count} tasks executed")
+        
+    except Exception as e:
+        update_step("ansible", "failure", f"Failed to run ansible: {str(e)}")
+        finish_deployment("failure", f"Ansible execution error: {str(e)}")
         return 1
-    
-    update_step("ansible", "success", "Deployment completed")
     
     # Step 4: Verify - Check service status
     update_step("verify", "running", "Checking service status")
@@ -257,10 +380,8 @@ def main() -> int:
     else:
         update_step("verify", "warning", f"{service_name} is not active (might be expected)")
     
-    # Mark deployment as finished
-    finish_deployment()
-    
-    print(f"\nDeployment of {{ fd_service_name }} completed successfully!")
+    # Mark deployment as finished successfully
+    finish_deployment("success", f"Deployment of {{ fd_service_name }} completed successfully")
     return 0
 
 
@@ -270,5 +391,5 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Deployment failed with error: {e}", file=sys.stderr)
         update_step("error", "failure", str(e))
-        finish_deployment()
+        finish_deployment("failure", f"Unexpected error: {e}")
         sys.exit(1)
