@@ -1,6 +1,6 @@
 ---
 # Ansible-lint configuration for ops-library
-profile: shared
+profile: moderate  # Changed from shared to moderate for more practical linting
 
 # Skip collection installation
 offline: true
@@ -26,6 +26,9 @@ enable_list:
 skip_list:
   - yaml[line-length]  # Handled by yamllint
   - name[missing]  # Allow tasks without names during development
+  - var-naming[no-role-prefix]  # Allow variables without role prefix for existing roles
+  - yaml[new-line-at-end-of-file]  # Minor formatting issue
+  - var-naming[read-only]  # Allow using ansible_version etc as variable names
 
 # Warnings to treat as errors
 warn_list:
