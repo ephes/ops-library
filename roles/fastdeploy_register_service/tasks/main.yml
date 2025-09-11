@@ -15,6 +15,12 @@
     system: yes
     state: present
 
+- name: Add deploy user to fastdeploy group for script access
+  user:
+    name: "{{ fd_deploy_user }}"
+    groups: "{{ fd_fastdeploy_user }}"
+    append: yes
+
 - name: Create required directories for deploy user
   file:
     path: "{{ item }}"
