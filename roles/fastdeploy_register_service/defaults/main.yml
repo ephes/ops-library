@@ -4,7 +4,7 @@ fd_service_name: "{{ service_name | mandatory }}"
 fd_service_description: "Deploy {{ fd_service_name }} via ops-control"
 
 # FastDeploy paths (where config.json goes)
-fd_fastdeploy_root: "/home/fastdeploy/fastdeploy"
+fd_fastdeploy_root: "/home/fastdeploy/site"
 fd_fastdeploy_user: "fastdeploy"
 fd_services_root: "services"
 fd_service_config_dir: "{{ fd_fastdeploy_root }}/{{ fd_services_root }}/{{ fd_service_name }}"
@@ -57,3 +57,7 @@ fd_context_defaults:
 
 # Sudoers configuration
 fd_sudoers_file: "/etc/sudoers.d/fastdeploy_{{ fd_service_name }}"
+
+# Custom runner script content (optional)
+# If provided, this will be used instead of the default deploy.py.j2 template
+fd_runner_content: ""

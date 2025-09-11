@@ -67,13 +67,23 @@
     recurse: yes
   when: fd_ops_control_method == "rsync"
 
-- name: Deploy runner script
+- name: Deploy custom runner script
+  copy:
+    content: "{{ fd_runner_content }}"
+    dest: "{{ fd_runner_script }}"
+    owner: "{{ fd_deploy_user }}"
+    group: "{{ fd_deploy_group }}"
+    mode: "0755"
+  when: fd_runner_content | length > 0
+
+- name: Deploy default runner script template
   template:
     src: deploy.py.j2
     dest: "{{ fd_runner_script }}"
     owner: "{{ fd_deploy_user }}"
     group: "{{ fd_deploy_group }}"
     mode: "0755"
+  when: fd_runner_content | length == 0
 
 - name: Create fastDeploy service directory
   file:
@@ -83,13 +93,22 @@
     group: "{{ fd_fastdeploy_user }}"
     mode: "0755"
 
+- name: Copy deployment script to FastDeploy service directory
+  copy:
+    src: "{{ fd_runner_script }}"
+    dest: "{{ fd_service_config_dir }}/deploy.py"
+    owner: "{{ fd_fastdeploy_user }}"
+    group: "{{ fd_fastdeploy_user }}"
+    mode: "0755"
+    remote_src: yes
+
 - name: Create service config.json
   copy:
     content: |
       {
         "name": "{{ fd_service_name }}",
         "description": "{{ fd_service_description }}",
-        "deploy_script": "{{ fd_runner_script }}",
+        "deploy_script": "deploy.py",
         "steps": [
           {"name": "prepare"},
           {"name": "bootstrap"},
