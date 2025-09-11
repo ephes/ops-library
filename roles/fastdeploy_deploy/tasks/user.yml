@@ -1,6 +1,12 @@
 ---
 # User and directory setup for FastDeploy
 
+- name: Create FastDeploy group
+  group:
+    name: "{{ fastdeploy_group }}"
+    state: present
+    system: no
+
 - name: Create FastDeploy user
   user:
     name: "{{ fastdeploy_user }}"
