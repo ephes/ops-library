@@ -2,16 +2,15 @@
 # Initialize FastDeploy application
 
 - name: Create initial admin user
-  ansible.builtin.command:
-    cmd: "{{ fastdeploy_venv_bin }}/python commands.py createuser"
+  ansible.builtin.shell:
+    cmd: |
+      export INITIAL_USER_NAME='{{ fastdeploy_initial_user }}'
+      export INITIAL_PASSWORD_HASH='{{ fastdeploy_initial_password_hash }}'
+      export DATABASE_URL='postgresql+asyncpg://{{ fastdeploy_postgres_user }}:{{ fastdeploy_postgres_password }}@{{ fastdeploy_postgres_host }}/{{ fastdeploy_postgres_database }}'
+      export SECRET_KEY='{{ fastdeploy_secret_key }}'
+      export PRODUCTION='true'
+      {{ fastdeploy_venv_bin }}/python commands.py createuser
     chdir: "{{ fastdeploy_site_path }}"
-  environment:
-    INITIAL_USER_NAME: "{{ fastdeploy_initial_user }}"
-    INITIAL_PASSWORD_HASH: "{{ fastdeploy_initial_password_hash }}"
-    # Include .env variables manually to avoid shell expansion issues
-    DATABASE_URL: "postgresql+asyncpg://{{ fastdeploy_postgres_user }}:{{ fastdeploy_postgres_password }}@{{ fastdeploy_postgres_host }}/{{ fastdeploy_postgres_database }}"
-    SECRET_KEY: "{{ fastdeploy_secret_key }}"
-    PRODUCTION: "true"
   become: true
   become_user: "{{ fastdeploy_user }}"
   register: create_user_result
