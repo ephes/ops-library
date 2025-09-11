@@ -33,6 +33,15 @@ Deploy Python applications with systemd service management. Supports:
 - Systemd service configuration
 - Optional monitoring agent setup
 
+### fastdeploy_remove
+
+Complete removal of FastDeploy installation for testing. Features:
+- Removes FastDeploy systemd service and database
+- Removes FastDeploy and deploy users/groups
+- Cleans up all home directories and configuration files
+- Removes Traefik configuration and sudoers rules
+- Safety confirmation required to prevent accidents
+
 ### test_dummy
 
 Example service demonstrating deployment patterns. Features:

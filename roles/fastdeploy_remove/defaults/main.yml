@@ -1,0 +1,25 @@
+---
+# Default variables for FastDeploy removal
+
+# Service configuration
+fastdeploy_service_name: fastdeploy
+fastdeploy_user: fastdeploy
+fastdeploy_group: fastdeploy
+fastdeploy_home: "/home/{{ fastdeploy_user }}"
+fastdeploy_site_path: "{{ fastdeploy_home }}/site"
+
+# Deploy user configuration
+deploy_user: deploy
+deploy_group: deploy
+deploy_home: "/home/{{ deploy_user }}"
+
+# Database configuration
+fastdeploy_postgres_database: fastdeploy
+fastdeploy_postgres_user: fastdeploy
+
+# Traefik configuration
+traefik_dynamic_config_dir: /etc/traefik/dynamic
+traefik_config_file: "{{ traefik_dynamic_config_dir }}/fastdeploy.yml"
+
+# Safety confirmation - must be set to true to actually remove
+fastdeploy_confirm_removal: false

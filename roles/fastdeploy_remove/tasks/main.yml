@@ -1,0 +1,134 @@
+---
+# Complete removal of FastDeploy installation
+# This role removes FastDeploy service, database, users, and all associated files
+
+- name: Fail if removal not confirmed
+  fail:
+    msg: |
+      SAFETY CHECK: FastDeploy removal not confirmed!
+      
+      This role will completely remove:
+      - FastDeploy systemd service
+      - FastDeploy PostgreSQL database and user
+      - FastDeploy user and group  
+      - Deploy user and group
+      - All home directories (/home/fastdeploy, /home/deploy)
+      - Traefik configuration
+      - All sudoers rules for FastDeploy services
+      
+      To proceed, set: fastdeploy_confirm_removal: true
+  when: not fastdeploy_confirm_removal
+
+- name: Stop and disable FastDeploy service
+  systemd:
+    name: "{{ fastdeploy_service_name }}"
+    state: stopped
+    enabled: no
+    daemon_reload: yes
+  ignore_errors: yes
+
+- name: Remove systemd service file
+  file:
+    path: "/etc/systemd/system/{{ fastdeploy_service_name }}.service"
+    state: absent
+  notify: reload systemd
+
+- name: Remove Traefik configuration
+  file:
+    path: "{{ traefik_config_file }}"
+    state: absent
+
+- name: Remove FastDeploy sudoers rules
+  find:
+    paths: /etc/sudoers.d
+    patterns: "fastdeploy_*"
+  register: sudoers_files
+
+- name: Delete sudoers files
+  file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ sudoers_files.files }}"
+
+- name: Drop FastDeploy PostgreSQL database
+  postgresql_db:
+    name: "{{ fastdeploy_postgres_database }}"
+    state: absent
+  become: yes
+  become_user: postgres
+  ignore_errors: yes
+
+- name: Drop FastDeploy PostgreSQL user
+  postgresql_user:
+    name: "{{ fastdeploy_postgres_user }}"
+    state: absent
+  become: yes
+  become_user: postgres
+  ignore_errors: yes
+
+- name: Stop any processes running as fastdeploy user
+  shell: pkill -u {{ fastdeploy_user }} || true
+  ignore_errors: yes
+
+- name: Stop any processes running as deploy user  
+  shell: pkill -u {{ deploy_user }} || true
+  ignore_errors: yes
+
+- name: Remove fastdeploy home directory
+  file:
+    path: "{{ fastdeploy_home }}"
+    state: absent
+  ignore_errors: yes
+
+- name: Remove deploy home directory
+  file:
+    path: "{{ deploy_home }}"
+    state: absent
+  ignore_errors: yes
+
+- name: Remove fastdeploy user
+  user:
+    name: "{{ fastdeploy_user }}"
+    state: absent
+    remove: yes
+  ignore_errors: yes
+
+- name: Remove deploy user
+  user:
+    name: "{{ deploy_user }}"
+    state: absent
+    remove: yes
+  ignore_errors: yes
+
+- name: Remove fastdeploy group
+  group:
+    name: "{{ fastdeploy_group }}"
+    state: absent
+  ignore_errors: yes
+
+- name: Remove deploy group
+  group:
+    name: "{{ deploy_group }}"
+    state: absent
+  ignore_errors: yes
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+
+- name: Display removal summary
+  debug:
+    msg: |
+      FastDeploy removal completed successfully!
+      
+      Removed components:
+      - SystemD service: {{ fastdeploy_service_name }}
+      - Database: {{ fastdeploy_postgres_database }}
+      - Database user: {{ fastdeploy_postgres_user }}
+      - System users: {{ fastdeploy_user }}, {{ deploy_user }}
+      - System groups: {{ fastdeploy_group }}, {{ deploy_group }}
+      - Home directories: {{ fastdeploy_home }}, {{ deploy_home }}
+      - Traefik configuration: {{ traefik_config_file }}
+      - All sudoers rules (fastdeploy_*)
+      
+      The system is now clean and ready for fresh FastDeploy installation.
