@@ -4,6 +4,26 @@ A collection of reusable Ansible roles for homelab automation and service deploy
 
 ## Roles
 
+### fastdeploy_deploy
+
+Deploy FastDeploy web-based deployment platform. Supports:
+- Both rsync (development) and git (production) deployment methods
+- PostgreSQL database setup and migrations
+- Frontend build with Node.js/npm
+- Python virtual environment with uv
+- Systemd service configuration
+- Environment-specific configuration
+
+### fastdeploy_register_service
+
+Register services with FastDeploy for web-based deployments. Features:
+- Service configuration in FastDeploy UI
+- Deployment runner script with security isolation
+- Sudoers rules for cross-user execution
+- SOPS integration for secrets management
+- Real-time deployment progress tracking
+- From-scratch deployment compatibility
+
 ### python_app_systemd
 
 Deploy Python applications with systemd service management. Supports:
@@ -12,6 +32,14 @@ Deploy Python applications with systemd service management. Supports:
 - Django application support
 - Systemd service configuration
 - Optional monitoring agent setup
+
+### test_dummy
+
+Example service demonstrating deployment patterns. Features:
+- Optional FastDeploy registration capabilities
+- JSON status output for progress tracking
+- Realistic deployment simulation
+- Template for building other services
 
 ## Installation
 
