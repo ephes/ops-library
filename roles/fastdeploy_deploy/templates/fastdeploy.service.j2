@@ -19,8 +19,12 @@ Restart=no
 {% endif %}
 
 # Security settings (simplified for compatibility)
-NoNewPrivileges=true
-PrivateTmp=true
+# NoNewPrivileges disabled to allow subprocess to use sudo -u deploy
+# The subprocess needs to switch from fastdeploy user to deploy user
+NoNewPrivileges=false
+# PrivateTmp disabled to allow subprocess with sudo to access config files
+# The subprocess runs as 'deploy' user and needs to read config files created by 'fastdeploy' user
+PrivateTmp=false
 
 [Install]
 WantedBy=multi-user.target
