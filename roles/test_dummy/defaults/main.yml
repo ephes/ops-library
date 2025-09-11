@@ -1,0 +1,31 @@
+---
+# Defaults for test_dummy role
+
+# Directory where test files will be created
+test_dummy_output_dir: /tmp/test_dummy
+
+# Number of steps to simulate
+test_dummy_step_count: 5
+
+# Delay between steps (in seconds)
+test_dummy_step_delay: 2
+
+# Whether to simulate a failure
+test_dummy_simulate_failure: false
+
+# Step to fail on (if simulate_failure is true)
+test_dummy_fail_at_step: 3
+
+# === FastDeploy Service Registration (Optional) ===
+# Set to true to register this as a FastDeploy service
+test_dummy_register_with_fastdeploy: false
+
+# FastDeploy service registration settings (when enabled)
+test_dummy_fastdeploy_service_name: "test_dummy"
+test_dummy_fastdeploy_description: "Example service demonstrating FastDeploy registration patterns"
+test_dummy_fastdeploy_git_repo: "https://github.com/example/test-dummy.git"
+test_dummy_fastdeploy_git_branch: "main"
+test_dummy_fastdeploy_services_root: "/home/fastdeploy/site/services"
+
+# Create deployment script templates (when registering with FastDeploy)
+test_dummy_create_deploy_scripts: "{{ test_dummy_register_with_fastdeploy }}"

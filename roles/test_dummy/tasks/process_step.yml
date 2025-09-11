@@ -1,0 +1,28 @@
+---
+# Process a single step in the test dummy deployment
+
+- name: Processing step {{ step_number }}
+  debug:
+    msg: "Executing test step {{ step_number }} of {{ test_dummy_step_count }}"
+
+- name: Simulate failure if configured
+  fail:
+    msg: "Simulated failure at step {{ step_number }}"
+  when:
+    - test_dummy_simulate_failure | bool
+    - step_number == test_dummy_fail_at_step
+
+- name: Create step marker file
+  file:
+    path: "{{ test_dummy_output_dir }}/step_{{ step_number }}_{{ ansible_date_time.epoch }}"
+    state: touch
+    mode: '0644'
+
+- name: Simulate processing delay
+  pause:
+    seconds: "{{ test_dummy_step_delay }}"
+  when: test_dummy_step_delay > 0
+
+- name: Report step completion
+  debug:
+    msg: "Step {{ step_number }} completed successfully"

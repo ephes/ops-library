@@ -1,0 +1,65 @@
+---
+# FastDeploy service registration tasks for test_dummy
+# This demonstrates how to register a service with FastDeploy for git-based deployments
+
+- name: Create FastDeploy service directory
+  file:
+    path: "{{ test_dummy_fastdeploy_services_root }}/{{ test_dummy_fastdeploy_service_name }}"
+    state: directory
+    owner: fastdeploy
+    group: fastdeploy
+    mode: '0755'
+  become: true
+
+- name: Create service configuration file
+  template:
+    src: fastdeploy_config.json.j2
+    dest: "{{ test_dummy_fastdeploy_services_root }}/{{ test_dummy_fastdeploy_service_name }}/config.json"
+    owner: fastdeploy
+    group: fastdeploy
+    mode: '0644'
+  become: true
+
+- name: Create Python deployment script
+  template:
+    src: fastdeploy_deploy.py.j2
+    dest: "{{ test_dummy_fastdeploy_services_root }}/{{ test_dummy_fastdeploy_service_name }}/deploy.py"
+    owner: fastdeploy
+    group: fastdeploy
+    mode: '0755'
+  become: true
+  when: test_dummy_create_deploy_scripts | bool
+
+- name: Create shell deployment script wrapper
+  template:
+    src: fastdeploy_deploy.sh.j2
+    dest: "{{ test_dummy_fastdeploy_services_root }}/{{ test_dummy_fastdeploy_service_name }}/deploy.sh"
+    owner: fastdeploy
+    group: fastdeploy
+    mode: '0755'
+  become: true
+  when: test_dummy_create_deploy_scripts | bool
+
+- name: Create service documentation
+  template:
+    src: fastdeploy_readme.md.j2
+    dest: "{{ test_dummy_fastdeploy_services_root }}/{{ test_dummy_fastdeploy_service_name }}/README.md"
+    owner: fastdeploy
+    group: fastdeploy
+    mode: '0644'
+  become: true
+
+- name: FastDeploy registration completed
+  debug:
+    msg: |
+      FastDeploy service registration completed!
+      Service: {{ test_dummy_fastdeploy_service_name }}
+      Location: {{ test_dummy_fastdeploy_services_root }}/{{ test_dummy_fastdeploy_service_name }}
+      
+      The service is now ready to be deployed through the FastDeploy UI.
+      
+      Files created:
+      - config.json (service metadata)
+      - deploy.py (Python deployment script)
+      - deploy.sh (Shell deployment script)
+      - README.md (documentation)

@@ -1,0 +1,70 @@
+{
+    "deploy_script": "deploy.py",
+    "description": "{{ test_dummy_fastdeploy_description }}",
+    "repository": "{{ test_dummy_fastdeploy_git_repo }}",
+    "branch": "{{ test_dummy_fastdeploy_git_branch }}",
+    "environment": "{{ ansible_environment | default('production') }}",
+    "created_by_role": "test_dummy",
+    "documentation": {
+        "purpose": "Comprehensive example service demonstrating FastDeploy registration best practices",
+        "features": [
+            "JSON status output for real-time progress tracking",
+            "Proper error handling with detailed error reporting",
+            "Configuration file and environment variable support",
+            "Git-based deployment with repository management",
+            "Ansible task integration with FastDeploy output format",
+            "Configurable step count and timing for testing",
+            "Failure simulation for error handling testing",
+            "Clean separation of Ansible role and FastDeploy service"
+        ],
+        "usage": [
+            "Standard deployment: ./deploy.py",
+            "Simulate failure: ./deploy.py --fail-at-step 3",
+            "Custom step count: ./deploy.py --step-count 10",
+            "Fast execution: ./deploy.py --step-delay 0"
+        ],
+        "role_integration": "This service was created by the test_dummy Ansible role with fastdeploy registration enabled"
+    },
+    "deployment_steps": [
+{% for i in range(1, 10) %}
+        {
+            "name": "Step {{ i }}",
+            "description": "{{ 
+                {
+                    1: "Initialize test deployment", 
+                    2: "Create test directory", 
+                    3: "Process test steps", 
+                    4: "Create completion marker", 
+                    5: "Verify deployment", 
+                    6: "Display results", 
+                    7: "Clean up old files", 
+                    8: "Remove old test files", 
+                    9: "Final status"
+                }[i] 
+            }}"
+        }{% if not loop.last %},{% endif %}
+{% endfor %}
+    ],
+    "configuration": {
+        "service_name": "{{ test_dummy_fastdeploy_service_name }}",
+        "output_dir": "{{ test_dummy_output_dir }}",
+        "step_count": {{ test_dummy_step_count }},
+        "step_delay": {{ test_dummy_step_delay }},
+        "simulate_failure": {{ test_dummy_simulate_failure | lower }},
+        "fail_at_step": {{ test_dummy_fail_at_step }},
+        "created_by": "ops-library test_dummy role",
+        "deployment_method": "ansible_integration"
+    },
+    "ansible_role_info": {
+        "role_name": "test_dummy",
+        "collection": "local.ops_library",
+        "purpose": "Demonstrates how Ansible roles can register services with FastDeploy",
+        "variables_used": [
+            "test_dummy_register_with_fastdeploy",
+            "test_dummy_fastdeploy_service_name", 
+            "test_dummy_fastdeploy_description",
+            "test_dummy_fastdeploy_git_repo",
+            "test_dummy_fastdeploy_services_root"
+        ]
+    }
+}

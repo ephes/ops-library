@@ -1,0 +1,60 @@
+---
+# Main tasks for test_dummy role
+
+- name: Step 1 - Initialize test deployment
+  debug:
+    msg: "Starting dummy test deployment"
+
+- name: Step 2 - Create test directory
+  file:
+    path: "{{ test_dummy_output_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Step 3 - Simulate processing steps
+  include_tasks: process_step.yml
+  loop: "{{ range(1, test_dummy_step_count + 1) | list }}"
+  loop_control:
+    loop_var: step_number
+
+- name: Step 4 - Create completion marker
+  file:
+    path: "{{ test_dummy_output_dir }}/deployment_complete_{{ ansible_date_time.epoch }}"
+    state: touch
+    mode: '0644'
+
+- name: Step 5 - Verify deployment
+  stat:
+    path: "{{ test_dummy_output_dir }}"
+  register: test_dir_stat
+
+- name: Step 6 - Display results
+  debug:
+    msg: |
+      Deployment completed successfully!
+      Test directory: {{ test_dummy_output_dir }}
+      Directory exists: {{ test_dir_stat.stat.exists }}
+      Deployment timestamp: {{ ansible_date_time.epoch }}
+
+- name: Step 7 - Clean up old test files
+  find:
+    paths: "{{ test_dummy_output_dir }}"
+    patterns: "deployment_complete_*"
+    age: "1d"
+  register: old_files
+
+- name: Step 8 - Remove old test files
+  file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ old_files.files }}"
+  when: old_files.files | length > 0
+
+- name: Step 9 - Final status
+  debug:
+    msg: "Test dummy deployment completed successfully!"
+
+# === Optional FastDeploy Service Registration ===
+- name: Register with FastDeploy (if enabled)
+  include_tasks: fastdeploy_registration.yml
+  when: test_dummy_register_with_fastdeploy | bool
