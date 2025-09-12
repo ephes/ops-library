@@ -1,6 +1,22 @@
 ---
 # User and directory setup for FastDeploy
 
+- name: Create deploy group
+  group:
+    name: deploy
+    state: present
+    system: no
+
+- name: Create deploy user
+  user:
+    name: deploy
+    group: deploy
+    shell: /bin/bash
+    home: /home/deploy
+    create_home: yes
+    comment: "Deployment Service Account"
+    system: no
+
 - name: Create FastDeploy group
   group:
     name: "{{ fastdeploy_group }}"
