@@ -1,0 +1,142 @@
+---
+# Test playbook for fastdeploy_self_deploy role
+# Run with: ansible-playbook tests/test_fastdeploy_self_deploy.yml -i tests/inventory/test.yml
+
+- name: Test FastDeploy Self-Deploy Role Components
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  
+  tasks:
+    - name: Test 1 - Verify role files exist
+      block:
+        - name: Check runner.py exists
+          stat:
+            path: "{{ playbook_dir }}/../roles/fastdeploy_self_deploy/files/runner.py"
+          register: runner_file
+          
+        - name: Check playbook.yml exists
+          stat:
+            path: "{{ playbook_dir }}/../roles/fastdeploy_self_deploy/files/playbook.yml"
+          register: playbook_file
+          
+        - name: Check ansible.cfg exists
+          stat:
+            path: "{{ playbook_dir }}/../roles/fastdeploy_self_deploy/files/ansible.cfg"
+          register: ansible_cfg_file
+          
+        - name: Assert all files exist
+          assert:
+            that:
+              - runner_file.stat.exists
+              - playbook_file.stat.exists
+              - ansible_cfg_file.stat.exists
+            fail_msg: "Required role files are missing"
+            success_msg: "All required role files exist"
+    
+    - name: Test 2 - Validate runner.py syntax
+      block:
+        - name: Check Python syntax
+          shell: |
+            python3 -m py_compile {{ playbook_dir }}/../roles/fastdeploy_self_deploy/files/runner.py
+          register: syntax_check
+          failed_when: syntax_check.rc != 0
+          
+        - name: Verify DeploymentReporter class exists
+          shell: |
+            grep -q "class DeploymentReporter" {{ playbook_dir }}/../roles/fastdeploy_self_deploy/files/runner.py
+          register: class_check
+          
+        - name: Assert Python code is valid
+          assert:
+            that:
+              - syntax_check.rc == 0
+              - class_check.rc == 0
+            fail_msg: "Python syntax validation failed"
+            success_msg: "Python code is syntactically valid"
+    
+    - name: Test 3 - Validate ansible.cfg configuration
+      block:
+        - name: Check SOPS plugin is configured
+          shell: |
+            grep -q "community.sops" {{ playbook_dir }}/../roles/fastdeploy_self_deploy/files/ansible.cfg
+          register: sops_config
+          
+        - name: Assert SOPS is configured
+          assert:
+            that:
+              - sops_config.rc == 0
+            fail_msg: "SOPS plugin not configured in ansible.cfg"
+            success_msg: "SOPS plugin properly configured"
+    
+    - name: Test 4 - Validate playbook.yml structure
+      block:
+        - name: Check playbook YAML syntax
+          shell: |
+            ansible-playbook --syntax-check \
+              {{ playbook_dir }}/../roles/fastdeploy_self_deploy/files/playbook.yml \
+              -i localhost, -c local
+          register: yaml_syntax
+          failed_when: yaml_syntax.rc != 0
+          
+        - name: Check for required tasks
+          shell: |
+            grep -E "(Check if site directory exists|git init|git fetch|Restart FastDeploy)" \
+              {{ playbook_dir }}/../roles/fastdeploy_self_deploy/files/playbook.yml
+          register: tasks_check
+          
+        - name: Assert playbook structure is valid
+          assert:
+            that:
+              - yaml_syntax.rc == 0
+              - tasks_check.rc == 0
+            fail_msg: "Playbook structure validation failed"
+            success_msg: "Playbook structure is valid"
+    
+    - name: Test 5 - Check role metadata
+      block:
+        - name: Load role metadata
+          include_vars:
+            file: "{{ playbook_dir }}/../roles/fastdeploy_self_deploy/meta/main.yml"
+            name: role_meta
+            
+        - name: Assert metadata is valid
+          assert:
+            that:
+              - role_meta.galaxy_info is defined
+              - role_meta.galaxy_info.author is defined
+              - role_meta.galaxy_info.description is defined
+            fail_msg: "Role metadata is incomplete"
+            success_msg: "Role metadata is valid"
+    
+    - name: Test 6 - Verify templates exist
+      block:
+        - name: Check for template files
+          stat:
+            path: "{{ playbook_dir }}/../roles/fastdeploy_self_deploy/templates/{{ item }}"
+          loop:
+            - systemd_service.j2
+            - env.j2
+          register: template_files
+          
+        - name: Assert templates exist
+          assert:
+            that:
+              - item.stat.exists
+            fail_msg: "Template {{ item.item }} is missing"
+            success_msg: "Template {{ item.item }} exists"
+          loop: "{{ template_files.results }}"
+    
+    - name: Test Summary
+      debug:
+        msg: |
+          FastDeploy Self-Deploy Role Tests Completed Successfully!
+          
+          ✓ All required files exist
+          ✓ Python syntax is valid
+          ✓ SOPS configuration present
+          ✓ Playbook structure validated
+          ✓ Role metadata complete
+          ✓ Templates available
+          
+          The role is ready for use.
