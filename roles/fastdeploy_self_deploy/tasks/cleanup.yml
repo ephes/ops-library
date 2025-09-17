@@ -1,0 +1,20 @@
+---
+- name: Find old deployments
+  find:
+    paths: "{{ fd_self_base_dir }}"
+    patterns: "fastdeploy*.old.*"
+    age: "{{ fd_self_cleanup_days }}d"
+  register: old_deployments
+
+- name: Remove old deployments
+  file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ old_deployments.files }}"
+  when: old_deployments.files | length > 0
+  become: true
+
+- name: Log cleanup
+  debug:
+    msg: "Cleaned up {{ old_deployments.files | length }} old deployment(s)"
+  when: old_deployments.files | length > 0

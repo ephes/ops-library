@@ -1,0 +1,23 @@
+[Unit]
+Description=FastDeploy {{ service_name }}
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User={{ fd_self_user }}
+Group={{ fd_self_group }}
+WorkingDirectory={{ service_dir }}
+Environment="PATH={{ service_dir }}/.venv/bin:/home/{{ fd_self_user }}/.local/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="DATABASE_URL=postgresql+asyncpg://{{ postgres_user | default('fastdeploy') }}:{{ postgres_password }}@{{ postgres_host }}:{{ postgres_port | default('5432') }}/{{ postgres_db_name }}"
+Environment="SECRET_KEY={{ secret_key }}"
+Environment="PATH_FOR_DEPLOY={{ fd_self_base_dir }}"
+ExecStart={{ service_dir }}/.venv/bin/python -m uvicorn \
+    deploy.entrypoints.fastapi_app:app \
+    --host 127.0.0.1 \
+    --port {{ service_port }}
+
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

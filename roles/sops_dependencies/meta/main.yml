@@ -1,0 +1,23 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Install SOPS and Age dependencies for secrets management
+  license: MIT
+  min_ansible_version: "2.9"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - sops
+    - age
+    - secrets
+    - encryption
+    - dependencies
+
+dependencies: []

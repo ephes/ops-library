@@ -1,0 +1,55 @@
+---
+# Note: FastDeploy uses Traefik, not nginx. For self-deployment,
+# we're just testing the deployment mechanism without touching the proxy config
+
+- name: Stop old production service
+  systemd:
+    name: fastdeploy
+    state: stopped
+  become: true
+  when: current_deployment.stat.exists
+  ignore_errors: yes
+
+- name: Swap directories
+  shell: |
+    set -e
+    if [ -d "{{ fd_current_dir }}" ]; then
+      mv "{{ fd_current_dir }}" "{{ fd_current_dir }}.old.$(date +%Y%m%d%H%M%S)"
+    fi
+    mv "{{ fd_staging_dir }}" "{{ fd_current_dir }}"
+  become: true
+
+- name: Update production systemd service
+  template:
+    src: systemd_service.j2
+    dest: "/etc/systemd/system/fastdeploy.service"
+  vars:
+    service_name: "fastdeploy"
+    service_dir: "{{ fd_current_dir }}"
+    service_port: "{{ fd_self_service_port_blue }}"
+  become: true
+
+- name: Start production service
+  systemd:
+    name: fastdeploy
+    state: started
+    daemon_reload: yes
+    enabled: yes
+  become: true
+
+# Traefik configuration is managed separately and points to the main service port
+
+- name: Stop staging service after successful swap
+  systemd:
+    name: fastdeploy-staging
+    state: stopped
+    enabled: no
+  become: true
+
+- name: Log successful deployment
+  lineinfile:
+    path: "{{ fd_self_log_dir }}/deployments.log"
+    line: "{{ ansible_date_time.iso8601 }} - SUCCESS - {{ git_result.after | default('unknown') }} - {{ fd_self_branch }}"
+    create: yes
+    mode: '0644'
+  become: true

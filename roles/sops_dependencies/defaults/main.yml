@@ -1,0 +1,22 @@
+---
+# SOPS Dependencies Installation Defaults
+
+# User configuration
+sops_deps_user: "deploy"
+sops_deps_group: "deploy"
+sops_deps_home: "/home/deploy"
+
+# Age configuration
+sops_deps_age_key_path: "{{ sops_deps_home }}/.config/sops/age/keys.txt"
+sops_deps_age_generate_key: true  # Generate if doesn't exist
+
+# Package installation method
+sops_deps_install_method: "apt"  # apt, snap, or binary
+
+# Binary versions (if using binary installation)
+sops_deps_age_version: "1.1.1"
+sops_deps_sops_version: "3.8.1"
+
+# Ansible collection dependencies
+sops_deps_install_ansible_collection: true
+sops_deps_ansible_user: "{{ sops_deps_user }}"

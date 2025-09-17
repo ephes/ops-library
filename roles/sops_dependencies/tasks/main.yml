@@ -1,0 +1,121 @@
+---
+- name: Install SOPS and Age dependencies
+  debug:
+    msg: "Installing SOPS dependencies for user {{ sops_deps_user }}"
+
+- name: Ensure user exists
+  user:
+    name: "{{ sops_deps_user }}"
+    group: "{{ sops_deps_group }}"
+    home: "{{ sops_deps_home }}"
+    state: present
+
+- name: Install age via apt
+  apt:
+    name:
+      - age
+    state: present
+    update_cache: yes
+  become: true
+  when: sops_deps_install_method == "apt"
+
+- name: Check if sops is already installed
+  stat:
+    path: /usr/local/bin/sops
+  register: sops_binary
+  when: sops_deps_install_method == "apt"
+
+- name: Install sops via binary (not in apt)
+  get_url:
+    url: "https://github.com/getsops/sops/releases/download/v{{ sops_deps_sops_version }}/sops-v{{ sops_deps_sops_version }}.linux.amd64"
+    dest: "/usr/local/bin/sops"
+    mode: '0755'
+    timeout: 30
+  become: true
+  when: 
+    - sops_deps_install_method == "apt"
+    - not (sops_binary.stat.exists | default(false))
+
+- name: Install age and sops via snap
+  snap:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - age
+    - sops
+  become: true
+  when: sops_deps_install_method == "snap"
+
+- name: Install age via binary
+  include_tasks: install_age_binary.yml
+  when: sops_deps_install_method == "binary"
+
+- name: Install sops via binary
+  include_tasks: install_sops_binary.yml
+  when: sops_deps_install_method == "binary"
+
+- name: Ensure age key directory exists
+  file:
+    path: "{{ sops_deps_age_key_path | dirname }}"
+    state: directory
+    owner: "{{ sops_deps_user }}"
+    group: "{{ sops_deps_group }}"
+    mode: '0700'
+  become: true
+
+- name: Check if age key exists
+  stat:
+    path: "{{ sops_deps_age_key_path }}"
+  register: age_key_stat
+  become: true
+  become_user: "{{ sops_deps_user }}"
+
+- name: Generate age key if it doesn't exist
+  shell: |
+    age-keygen -o {{ sops_deps_age_key_path }}
+  become: true
+  become_user: "{{ sops_deps_user }}"
+  when:
+    - sops_deps_age_generate_key
+    - not age_key_stat.stat.exists
+  register: age_keygen_result
+
+- name: Display age public key
+  shell: age-keygen -y {{ sops_deps_age_key_path }}
+  become: true
+  become_user: "{{ sops_deps_user }}"
+  register: age_public_key
+  changed_when: false
+  when: age_key_stat.stat.exists or age_keygen_result is changed
+
+- name: Show age public key
+  debug:
+    msg: "Age public key for {{ sops_deps_user }}: {{ age_public_key.stdout }}"
+  when: age_public_key is not skipped
+
+- name: Install Ansible SOPS collection
+  become: true
+  become_user: "{{ sops_deps_ansible_user }}"
+  ansible.builtin.command:
+    cmd: ansible-galaxy collection install community.sops
+  register: collection_install
+  changed_when: "'was installed' in collection_install.stdout"
+  when: sops_deps_install_ansible_collection
+
+- name: Verify age installation
+  command: age --version
+  register: age_version
+  changed_when: false
+  failed_when: age_version.rc != 0
+
+- name: Verify sops installation
+  command: sops --version
+  register: sops_version
+  changed_when: false
+  failed_when: sops_version.rc != 0
+
+- name: Display installed versions
+  debug:
+    msg:
+      - "Age version: {{ age_version.stdout }}"
+      - "SOPS version: {{ sops_version.stdout }}"

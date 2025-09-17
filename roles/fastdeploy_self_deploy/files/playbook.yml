@@ -1,0 +1,45 @@
+---
+- name: FastDeploy Self-Deployment (In-place Update)
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars_files:
+    - secrets.sops.yml
+  
+  vars:
+    fd_self_git_repo: "https://github.com/ephes/fastdeploy.git"
+    fd_self_git_version: "main"
+    
+  tasks:
+    - name: Check if site directory exists
+      stat:
+        path: /home/fastdeploy/site/.git
+      register: git_dir
+      
+    - name: Initialize git repository if needed
+      shell: |
+        cd /home/fastdeploy/site
+        git init
+        git remote add origin {{ fd_self_git_repo }}
+        git fetch origin
+        git reset --hard origin/{{ fd_self_git_version }}
+      when: not git_dir.stat.exists
+      become: true
+      become_user: fastdeploy
+      
+    - name: Pull latest code from git
+      shell: |
+        cd /home/fastdeploy/site
+        git fetch origin
+        git reset --hard origin/{{ fd_self_git_version }}
+      when: git_dir.stat.exists
+      become: true
+      become_user: fastdeploy
+      changed_when: true
+    
+    - name: Restart FastDeploy service
+      systemd:
+        name: fastdeploy
+        state: restarted
+        daemon_reload: true
+      become: true

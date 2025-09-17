@@ -1,0 +1,37 @@
+---
+# FastDeploy Self-Deployment Defaults
+
+# Deployment configuration
+fd_self_base_dir: "/home/deploy/apps"
+fd_self_repo_url: "https://github.com/ephes/fastdeploy.git"
+fd_self_branch: "main"
+fd_self_python_version: "python3.11"
+
+# Service ports for blue-green deployment
+fd_self_service_port_blue: 8000
+fd_self_service_port_green: 8001
+
+# Health check configuration
+fd_self_health_check_endpoint: "/"
+fd_self_health_check_retries: 30
+fd_self_health_check_delay: 2
+fd_self_health_check_timeout: 300
+
+# Service user and paths
+fd_self_user: "deploy"
+fd_self_group: "deploy"
+fd_self_log_dir: "/var/log/fastdeploy"
+
+# FastAPI configuration
+fd_self_uvicorn_workers: 1  # Uvicorn recommends 1 worker, use multiple processes via systemd
+
+# Password hashing algorithm
+fd_self_password_hash_algorithm: "bcrypt"
+
+# Cleanup configuration
+fd_self_cleanup_old_deployments: true
+fd_self_cleanup_days: 7
+
+# Runner configuration for FastDeploy registration
+fd_self_runner_dir: "/home/deploy/runners/fastdeploy-self"
+fd_self_sops_age_key_file: "/home/deploy/.config/sops/age/keys.txt"

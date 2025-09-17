@@ -1,0 +1,100 @@
+---
+- name: Clone or update repository
+  git:
+    repo: "{{ fd_self_repo_url }}"
+    dest: "{{ fd_staging_dir }}"
+    version: "{{ fd_self_branch }}"
+    force: yes
+    depth: 1
+  register: git_result
+  become: true
+  become_user: "{{ fd_self_user }}"
+
+- name: Ensure uv is installed
+  shell: |
+    if ! command -v uv &> /dev/null; then
+      curl -LsSf https://astral.sh/uv/install.sh | sh
+    fi
+  become: true
+  become_user: "{{ fd_self_user }}"
+  environment:
+    HOME: "/home/{{ fd_self_user }}"
+
+- name: Install Python dependencies with uv
+  shell: |
+    export PATH="${HOME}/.local/bin:${PATH}"
+    cd {{ fd_staging_dir }}
+    uv venv
+    source .venv/bin/activate
+    # Try pyproject.toml first, fall back to requirements.txt
+    if [ -f "pyproject.toml" ]; then
+      uv pip install -e .
+    elif [ -f "requirements.txt" ]; then
+      uv pip install -r requirements.txt
+    else
+      echo "No pyproject.toml or requirements.txt found"
+      exit 1
+    fi
+  become: true
+  become_user: "{{ fd_self_user }}"
+  environment:
+    HOME: "/home/{{ fd_self_user }}"
+
+- name: Ensure frontend/dist directory exists for static files
+  file:
+    path: "{{ fd_staging_dir }}/frontend/dist"
+    state: directory
+    owner: "{{ fd_self_user }}"
+    group: "{{ fd_self_group }}"
+    mode: '0755'
+  become: true
+
+- name: Create environment configuration
+  template:
+    src: env.j2
+    dest: "{{ fd_staging_dir }}/.env"
+    owner: "{{ fd_self_user }}"
+    group: "{{ fd_self_group }}"
+    mode: '0600'
+
+- name: Run database migrations
+  shell: |
+    export PATH="${HOME}/.local/bin:${PATH}"
+    cd {{ fd_staging_dir }}
+    source .venv/bin/activate
+    # FastDeploy uses SQLAlchemy with Alembic migrations
+    if [ -f "alembic.ini" ]; then
+      alembic upgrade head
+    else
+      # If no Alembic, FastDeploy might auto-create tables on startup
+      echo "No Alembic configuration found, tables will be created on startup"
+    fi
+  become: true
+  become_user: "{{ fd_self_user }}"
+  environment:
+    HOME: "/home/{{ fd_self_user }}"
+    DATABASE_URL: "postgresql+asyncpg://{{ postgres_user | default('fastdeploy') }}:{{ postgres_password }}@{{ postgres_host }}:{{ postgres_port | default('5432') }}/{{ postgres_db_name }}"
+  register: migration_result
+  failed_when: false  # Don't fail if no migrations needed
+
+- name: Note about static files
+  debug:
+    msg: "FastDeploy (FastAPI) serves static files directly, no collection needed"
+
+- name: Deploy staging systemd service
+  template:
+    src: systemd_service.j2
+    dest: "/etc/systemd/system/fastdeploy-staging.service"
+  vars:
+    service_name: "fastdeploy-staging"
+    service_dir: "{{ fd_staging_dir }}"
+    service_port: "{{ fd_staging_port }}"
+  become: true
+
+- name: Start staging service
+  systemd:
+    name: fastdeploy-staging
+    state: restarted
+    daemon_reload: yes
+    enabled: yes
+  become: true

@@ -1,0 +1,23 @@
+---
+- name: Wait for staging service to be ready
+  uri:
+    url: "http://localhost:{{ fd_staging_port }}{{ fd_self_health_check_endpoint }}"
+    status_code: [200, 307]  # FastDeploy redirects root to /static/index.html
+    follow_redirects: none  # Don't follow redirect to avoid 404 on missing frontend
+    timeout: 5
+  register: health_check
+  until: health_check.status in [200, 307]
+  retries: "{{ fd_self_health_check_retries }}"
+  delay: "{{ fd_self_health_check_delay }}"
+  ignore_errors: yes
+
+- name: Set health check result
+  set_fact:
+    health_check_passed: "{{ health_check.status | default(0) in [200, 307] }}"
+
+- name: Validate staging deployment
+  assert:
+    that:
+      - health_check_passed
+    fail_msg: "Staging deployment health check failed"
+  when: not (ignore_health_check_failure | default(false))

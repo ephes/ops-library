@@ -1,0 +1,62 @@
+---
+- name: FastDeploy Self-Deployment (Blue-Green)
+  debug:
+    msg: "Starting FastDeploy self-deployment with blue-green strategy"
+
+- name: Validate required variables
+  assert:
+    that:
+      - secret_key is defined
+      - postgres_password is defined
+      - postgres_host is defined
+      - postgres_db_name is defined
+    fail_msg: "Required secrets are missing"
+    quiet: true
+  no_log: true
+
+- name: Ensure deployment directories exist
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ fd_self_user }}"
+    group: "{{ fd_self_group }}"
+    mode: '0755'
+  loop:
+    - "{{ fd_self_base_dir }}"
+    - "{{ fd_self_base_dir }}/fastdeploy-staging"
+  
+- name: Ensure log directory exists
+  file:
+    path: "{{ fd_self_log_dir }}"
+    state: directory
+    mode: '0755'
+  become: "{{ ansible_user_id != 'root' }}"
+
+- name: Determine current and staging slots
+  set_fact:
+    fd_current_dir: "{{ fd_self_base_dir }}/fastdeploy"
+    fd_staging_dir: "{{ fd_self_base_dir }}/fastdeploy-staging"
+    fd_staging_port: "{{ fd_self_service_port_green }}"
+
+- name: Check current deployment status
+  stat:
+    path: "{{ fd_current_dir }}"
+  register: current_deployment
+
+- name: Deploy to staging slot
+  include_tasks: deploy_staging.yml
+
+- name: Perform health checks
+  include_tasks: health_check.yml
+
+- name: Perform blue-green swap
+  include_tasks: blue_green_swap.yml
+  when: health_check_passed | default(false)
+
+- name: Rollback on failure
+  include_tasks: rollback.yml
+  when: not (health_check_passed | default(false))
+
+- name: Cleanup old deployments
+  include_tasks: cleanup.yml
+  when: fd_self_cleanup_old_deployments

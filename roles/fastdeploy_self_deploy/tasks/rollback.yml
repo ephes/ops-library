@@ -1,0 +1,42 @@
+---
+- name: Rollback - Restore nginx configuration
+  template:
+    src: nginx_site.j2
+    dest: "/etc/nginx/sites-available/fastdeploy"
+  vars:
+    upstream_port: "{{ fd_self_service_port_blue }}"
+  become: true
+  when: current_deployment.stat.exists
+
+- name: Rollback - Reload nginx
+  systemd:
+    name: nginx
+    state: reloaded
+  become: true
+
+- name: Rollback - Ensure production service is running
+  systemd:
+    name: fastdeploy
+    state: started
+  become: true
+  when: current_deployment.stat.exists
+  ignore_errors: yes
+
+- name: Rollback - Stop staging service
+  systemd:
+    name: fastdeploy-staging
+    state: stopped
+  become: true
+  ignore_errors: yes
+
+- name: Rollback - Log rollback event
+  lineinfile:
+    path: "{{ fd_self_log_dir }}/deployments.log"
+    line: "{{ ansible_date_time.iso8601 }} - ROLLBACK - {{ git_result.after | default('unknown') }}"
+    create: yes
+    mode: '0644'
+  become: true
+
+- name: Rollback - Fail after rollback
+  fail:
+    msg: "Deployment failed and was rolled back"
