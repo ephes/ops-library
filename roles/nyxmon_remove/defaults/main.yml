@@ -1,0 +1,16 @@
+---
+# Defaults for Nyxmon removal
+nyxmon_confirm_removal: false
+
+# User and paths
+nyxmon_user: nyxmon
+nyxmon_group: "{{ nyxmon_user }}"
+nyxmon_home: /home/nyxmon
+nyxmon_site_path: "{{ nyxmon_home }}/site"
+
+# Service names
+nyxmon_service_name: nyxmon
+nyxmon_monitor_service_name: nyxmon-monitor
+
+# Traefik configuration
+traefik_config_file: /etc/traefik/dynamic/nyxmon.yml

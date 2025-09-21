@@ -1,0 +1,6 @@
+---
+# Handlers for nyxmon_remove role
+
+- name: reload systemd
+  systemd:
+    daemon_reload: yes

@@ -1,0 +1,155 @@
+---
+# Complete removal of Nyxmon installation
+# This role removes Nyxmon services, user, and all associated files
+
+- name: Fail if removal not confirmed
+  fail:
+    msg: |
+      SAFETY CHECK: Nyxmon removal not confirmed!
+
+      This role will completely remove:
+      - Nyxmon web application service
+      - Nyxmon monitoring agent service
+      - Nyxmon user and group
+      - All Nyxmon data (/home/nyxmon)
+      - SQLite database with all monitoring history
+      - Traefik configuration
+      - All environment files and secrets
+
+      To proceed, set: nyxmon_confirm_removal: true
+  when: not nyxmon_confirm_removal
+
+- name: Stop and disable Nyxmon web service
+  systemd:
+    name: "{{ nyxmon_service_name }}"
+    state: stopped
+    enabled: no
+    daemon_reload: yes
+  ignore_errors: yes
+
+- name: Stop and disable Nyxmon monitoring service
+  systemd:
+    name: "{{ nyxmon_monitor_service_name }}"
+    state: stopped
+    enabled: no
+    daemon_reload: yes
+  ignore_errors: yes
+
+- name: Remove systemd service files
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "/etc/systemd/system/{{ nyxmon_service_name }}.service"
+    - "/etc/systemd/system/{{ nyxmon_monitor_service_name }}.service"
+  notify: reload systemd
+
+- name: Remove Traefik configuration
+  file:
+    path: "{{ traefik_config_file }}"
+    state: absent
+
+- name: Check for backup database files
+  find:
+    paths: "{{ nyxmon_home }}"
+    patterns: "*.sqlite3*"
+    recurse: yes
+  register: database_files
+
+- name: List database files that will be removed
+  debug:
+    msg: "Database files to be removed: {{ database_files.files | map(attribute='path') | list }}"
+  when: database_files.files | length > 0
+
+- name: Get all PIDs for nyxmon user
+  shell: ps -u {{ nyxmon_user }} -o pid --no-headers || true
+  register: nyxmon_pids
+  ignore_errors: yes
+
+- name: Kill all processes running as nyxmon user (SIGTERM)
+  shell: kill {{ item }} || true
+  loop: "{{ nyxmon_pids.stdout_lines }}"
+  when: nyxmon_pids.stdout_lines | length > 0
+  ignore_errors: yes
+
+- name: Wait for processes to terminate gracefully
+  pause:
+    seconds: 5
+
+- name: Get remaining PIDs for nyxmon user
+  shell: ps -u {{ nyxmon_user }} -o pid --no-headers || true
+  register: remaining_pids
+  ignore_errors: yes
+
+- name: Force kill any remaining nyxmon processes (SIGKILL)
+  shell: kill -9 {{ item }} || true
+  loop: "{{ remaining_pids.stdout_lines }}"
+  when: remaining_pids.stdout_lines | length > 0
+  ignore_errors: yes
+
+- name: Final wait for process cleanup
+  pause:
+    seconds: 3
+
+- name: Verify no processes remain for nyxmon user
+  shell: |
+    if ps -u {{ nyxmon_user }} > /dev/null 2>&1; then
+      echo "WARNING: Some processes still running as {{ nyxmon_user }}"
+      ps -u {{ nyxmon_user }}
+      # Use systemd-run to force kill in a new scope
+      systemd-run --uid=0 --gid=0 --wait -- pkill -9 -u {{ nyxmon_user }} || true
+      sleep 2
+    fi
+  ignore_errors: yes
+
+- name: Remove nyxmon home directory (includes all data and databases)
+  file:
+    path: "{{ nyxmon_home }}"
+    state: absent
+  ignore_errors: yes
+
+- name: Remove nyxmon user
+  user:
+    name: "{{ nyxmon_user }}"
+    state: absent
+    remove: yes
+  ignore_errors: yes
+
+- name: Remove nyxmon group
+  group:
+    name: "{{ nyxmon_group }}"
+    state: absent
+  ignore_errors: yes
+
+- name: Remove any remaining nyxmon-related files in /tmp
+  shell: rm -rf /tmp/*nyxmon* || true
+  ignore_errors: yes
+
+- name: Remove any nyxmon-related systemd runtime files
+  file:
+    path: "/run/systemd/system/{{ item }}"
+    state: absent
+  loop:
+    - "{{ nyxmon_service_name }}.service.d"
+    - "{{ nyxmon_monitor_service_name }}.service.d"
+  ignore_errors: yes
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+
+- name: Display removal summary
+  debug:
+    msg: |
+      Nyxmon removal completed successfully!
+
+      Removed components:
+      - SystemD services: {{ nyxmon_service_name }}, {{ nyxmon_monitor_service_name }}
+      - System user: {{ nyxmon_user }}
+      - System group: {{ nyxmon_group }}
+      - Home directory: {{ nyxmon_home }}
+      - All monitoring data and databases
+      - Traefik configuration: {{ traefik_config_file }}
+      - All environment files and secrets
+
+      The system is now clean and ready for fresh Nyxmon installation.
