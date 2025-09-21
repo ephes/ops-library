@@ -1,0 +1,20 @@
+---
+# Setup monitoring for Nyxmon
+
+- name: Create monitoring service file
+  template:
+    src: nyxmon-monitor.service.j2
+    dest: /etc/systemd/system/nyxmon-monitor.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - reload systemd
+    - restart nyxmon-monitor
+
+- name: Enable and start monitoring service
+  systemd:
+    name: nyxmon-monitor
+    enabled: true
+    state: started
+    daemon_reload: true

@@ -1,0 +1,61 @@
+---
+# Nyxmon deployment role defaults
+# These are safe defaults that can be public
+# Sensitive values should be overridden in ops-control
+
+# User and paths
+nyxmon_user: nyxmon
+nyxmon_group: "{{ nyxmon_user }}"
+nyxmon_home: /home/nyxmon
+nyxmon_site_path: "{{ nyxmon_home }}/site"
+nyxmon_venv_path: "{{ nyxmon_site_path }}/.venv"
+nyxmon_venv_bin: "{{ nyxmon_venv_path }}/bin"
+nyxmon_cache_dir: "{{ nyxmon_site_path }}/cache"
+
+# Deployment method
+nyxmon_deploy_method: rsync  # Options: rsync, git
+
+# Source for rsync method (required for development)
+nyxmon_source_path: ""  # REQUIRED for rsync - e.g., /Users/jochen/projects/nyxmon
+
+# Git settings (for production deployment via FastDeploy)
+nyxmon_git_repo: "git@github.com:ephes/nyxmon.git"
+nyxmon_git_version: main
+nyxmon_git_subdirectory: "src/django"  # Django app is in subdirectory
+
+# Application settings
+nyxmon_app_port: 10017
+nyxmon_app_host: "127.0.0.1"
+nyxmon_workers: 4
+
+# Django settings
+nyxmon_django_settings_module: "config.settings.production"
+nyxmon_django_allowed_hosts: "127.0.0.1"
+nyxmon_django_admin_url: "admin/"
+# REQUIRED - Must be provided, no default for security
+# nyxmon_django_secret_key: ""
+nyxmon_django_debug: false
+
+# Telegram settings (for monitoring)
+# REQUIRED - Must be provided, no defaults for security
+# nyxmon_telegram_bot_token: ""
+# nyxmon_telegram_chat_id: ""
+
+# Traefik configuration
+nyxmon_traefik_enabled: true
+nyxmon_traefik_host: "nyxmon.example.com"  # Override in ops-control
+nyxmon_traefik_cert_resolver: letsencrypt
+nyxmon_traefik_middlewares: []
+
+# Monitoring
+nyxmon_monitoring_enabled: true
+nyxmon_monitoring_service_name: nyxmon_monitor
+
+# Python package management
+nyxmon_use_uv: true  # Use uv for package management
+
+# Service restart
+nyxmon_service_restart_on_change: true
+
+# Node.js version (if frontend build is needed)
+nyxmon_node_version: 20

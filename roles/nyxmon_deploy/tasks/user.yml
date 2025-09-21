@@ -1,0 +1,45 @@
+---
+# Setup user and directories for Nyxmon
+
+- name: Ensure nyxmon group exists
+  group:
+    name: "{{ nyxmon_group }}"
+    state: present
+
+- name: Check if nyxmon user exists
+  getent:
+    database: passwd
+    key: "{{ nyxmon_user }}"
+  register: nyxmon_user_check
+  failed_when: false
+
+- name: Ensure nyxmon user exists
+  user:
+    name: "{{ nyxmon_user }}"
+    group: "{{ nyxmon_group }}"
+    home: "{{ nyxmon_home }}"
+    system: true
+    shell: /bin/bash
+    state: present
+    move_home: false  # Don't try to move home if it's in use
+  when: nyxmon_user_check.failed  # Only create if user doesn't exist
+
+- name: Ensure nyxmon user is in correct group
+  user:
+    name: "{{ nyxmon_user }}"
+    groups: "{{ nyxmon_group }}"
+    append: true
+  when: not nyxmon_user_check.failed  # Only modify group if user exists
+
+- name: Create application directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ nyxmon_user }}"
+    group: "{{ nyxmon_group }}"
+    mode: '0755'
+  loop:
+    - "{{ nyxmon_home }}"
+    - "{{ nyxmon_site_path }}"
+    - "{{ nyxmon_cache_dir }}"
+    - "{{ nyxmon_home }}/logs"

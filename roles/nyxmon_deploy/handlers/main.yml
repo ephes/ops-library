@@ -1,0 +1,26 @@
+---
+# Handlers for Nyxmon deployment
+
+- name: reload systemd
+  systemd:
+    daemon_reload: true
+
+- name: restart nyxmon
+  systemd:
+    name: nyxmon
+    state: restarted
+  when: nyxmon_service_restart_on_change
+
+- name: restart nyxmon-monitor
+  systemd:
+    name: nyxmon-monitor
+    state: restarted
+  when:
+    - nyxmon_monitoring_enabled
+    - nyxmon_service_restart_on_change
+
+- name: reload traefik
+  systemd:
+    name: traefik
+    state: restarted
+  ignore_errors: true  # Traefik might not be installed or might not support reload

@@ -1,0 +1,44 @@
+---
+# Deploy Nyxmon source code using rsync
+
+- name: Ensure source directory exists
+  delegate_to: localhost
+  stat:
+    path: "{{ nyxmon_source_path }}"
+  register: source_dir
+  become: false
+
+- name: Fail if source directory doesn't exist
+  fail:
+    msg: "Source directory {{ nyxmon_source_path }} does not exist"
+  when: not source_dir.stat.exists or not source_dir.stat.isdir
+
+- name: Sync Django source code to target
+  ansible.posix.synchronize:
+    src: "{{ nyxmon_source_path }}/src/django/"
+    dest: "{{ nyxmon_site_path }}/"
+    delete: true
+    rsync_opts:
+      - "--exclude=.git"
+      - "--exclude=.venv"
+      - "--exclude=__pycache__"
+      - "--exclude=*.pyc"
+      - "--exclude=.pytest_cache"
+      - "--exclude=.coverage"
+      - "--exclude=htmlcov"
+      - "--exclude=.tox"
+      - "--exclude=.mypy_cache"
+      - "--exclude=node_modules"
+      - "--exclude=cache"
+      - "--exclude=db.sqlite3"  # Don't overwrite the database
+      - "--exclude=media/"
+      - "--exclude=staticfiles/"
+  become: false
+  delegate_to: localhost
+
+- name: Set ownership for synced files
+  file:
+    path: "{{ nyxmon_site_path }}"
+    owner: "{{ nyxmon_user }}"
+    group: "{{ nyxmon_group }}"
+    recurse: true

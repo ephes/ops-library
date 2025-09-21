@@ -1,0 +1,41 @@
+---
+# Configure Django application
+
+- name: Create environment file for Django
+  template:
+    src: nyxmon.env.j2
+    dest: "{{ nyxmon_site_path }}/.env"
+    owner: "{{ nyxmon_user }}"
+    group: "{{ nyxmon_group }}"
+    mode: '0600'
+  notify: restart nyxmon
+
+- name: Run Django migrations
+  django_manage:
+    command: migrate
+    app_path: "{{ nyxmon_django_path }}"
+    virtualenv: "{{ nyxmon_site_path }}/venv"
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ nyxmon_django_settings_module }}"
+    DJANGO_SECRET_KEY: "{{ nyxmon_django_secret_key }}"
+    DJANGO_ALLOWED_HOSTS: "{{ nyxmon_django_allowed_hosts }}"
+    DJANGO_CACHE_LOCATION: "{{ nyxmon_cache_dir }}"
+    DJANGO_ADMIN_URL: "{{ nyxmon_django_admin_url }}"
+    TELEGRAM_BOT_TOKEN: "{{ nyxmon_telegram_bot_token }}"
+    TELEGRAM_CHAT_ID: "{{ nyxmon_telegram_chat_id }}"
+  become_user: "{{ nyxmon_user }}"
+
+- name: Collect static files
+  django_manage:
+    command: collectstatic
+    app_path: "{{ nyxmon_django_path }}"
+    virtualenv: "{{ nyxmon_site_path }}/venv"
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ nyxmon_django_settings_module }}"
+    DJANGO_SECRET_KEY: "{{ nyxmon_django_secret_key }}"
+    DJANGO_ALLOWED_HOSTS: "{{ nyxmon_django_allowed_hosts }}"
+    DJANGO_CACHE_LOCATION: "{{ nyxmon_cache_dir }}"
+    DJANGO_ADMIN_URL: "{{ nyxmon_django_admin_url }}"
+    TELEGRAM_BOT_TOKEN: "{{ nyxmon_telegram_bot_token }}"
+    TELEGRAM_CHAT_ID: "{{ nyxmon_telegram_chat_id }}"
+  become_user: "{{ nyxmon_user }}"

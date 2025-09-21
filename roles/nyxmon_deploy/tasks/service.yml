@@ -1,0 +1,20 @@
+---
+# Setup systemd service for Nyxmon
+
+- name: Create systemd service file
+  template:
+    src: nyxmon.service.j2
+    dest: /etc/systemd/system/nyxmon.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - reload systemd
+    - restart nyxmon
+
+- name: Enable and start nyxmon service
+  systemd:
+    name: nyxmon
+    enabled: true
+    state: started
+    daemon_reload: true

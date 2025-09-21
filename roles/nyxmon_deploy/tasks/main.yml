@@ -1,0 +1,61 @@
+---
+# Nyxmon deployment main tasks
+
+- name: Validate required variables
+  assert:
+    that:
+      - nyxmon_django_secret_key is defined
+      - nyxmon_django_secret_key != ""
+      - nyxmon_django_secret_key != "CHANGEME"
+      - nyxmon_django_secret_key != "development-secret-key-change-in-production"
+      - nyxmon_telegram_bot_token is defined
+      - nyxmon_telegram_bot_token != ""
+      - nyxmon_telegram_bot_token != "CHANGEME"
+      - nyxmon_telegram_bot_token != "development-token"
+      - nyxmon_telegram_chat_id is defined
+      - nyxmon_telegram_chat_id != ""
+      - nyxmon_telegram_chat_id != "CHANGEME"
+      - nyxmon_telegram_chat_id != "-1001234567890"
+      - nyxmon_deploy_method in ['rsync', 'git']
+    fail_msg: |
+      SECURITY ERROR: Required secrets are missing or contain placeholder values!
+
+      The following secrets MUST be properly configured:
+      - nyxmon_django_secret_key: {{ nyxmon_django_secret_key | default('NOT SET') }}
+      - nyxmon_telegram_bot_token: {{ nyxmon_telegram_bot_token | default('NOT SET') | regex_replace('.', '*') }}
+      - nyxmon_telegram_chat_id: {{ nyxmon_telegram_chat_id | default('NOT SET') }}
+
+      Placeholder or development values are NOT allowed in production.
+      Please update secrets/prod/nyxmon.yml with real values using:
+      SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt sops secrets/prod/nyxmon.yml
+
+- name: Validate rsync-specific requirements
+  assert:
+    that:
+      - nyxmon_source_path != ""
+      - nyxmon_source_path is defined
+    fail_msg: "nyxmon_source_path must be set when using rsync deployment method"
+  when: nyxmon_deploy_method == "rsync"
+
+- name: Setup user and directories
+  include_tasks: user.yml
+
+- name: Deploy source code
+  include_tasks: "source_{{ nyxmon_deploy_method }}.yml"
+
+- name: Setup Python environment
+  include_tasks: python.yml
+
+- name: Configure Django application
+  include_tasks: django.yml
+
+- name: Setup systemd service
+  include_tasks: service.yml
+
+- name: Configure Traefik
+  include_tasks: traefik.yml
+  when: nyxmon_traefik_enabled
+
+- name: Setup monitoring
+  include_tasks: monitoring.yml
+  when: nyxmon_monitoring_enabled

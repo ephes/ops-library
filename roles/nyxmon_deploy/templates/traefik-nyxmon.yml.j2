@@ -1,0 +1,22 @@
+# Traefik dynamic configuration for Nyxmon
+# Managed by Ansible - do not edit manually
+
+http:
+  routers:
+    nyxmon:
+      rule: "Host(`{{ nyxmon_traefik_host }}`)"
+      service: nyxmon
+      tls:
+        certResolver: {{ nyxmon_traefik_cert_resolver }}
+{% if nyxmon_traefik_middlewares %}
+      middlewares:
+{% for middleware in nyxmon_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+{% endif %}
+
+  services:
+    nyxmon:
+      loadBalancer:
+        servers:
+          - url: "http://{{ nyxmon_app_host }}:{{ nyxmon_app_port }}"

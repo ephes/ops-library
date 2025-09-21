@@ -1,0 +1,19 @@
+---
+# Configure Traefik for Nyxmon
+
+- name: Ensure Traefik dynamic config directory exists
+  file:
+    path: /etc/traefik/dynamic
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create Traefik configuration for Nyxmon
+  template:
+    src: traefik-nyxmon.yml.j2
+    dest: /etc/traefik/dynamic/nyxmon.yml
+    owner: root
+    group: root
+    mode: '0644'
+  notify: reload traefik

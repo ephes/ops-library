@@ -1,0 +1,83 @@
+---
+# Setup Python environment for Nyxmon
+
+- name: Ensure Python and pip are installed
+  package:
+    name:
+      - python3
+      - python3-pip
+      - python3-venv
+    state: present
+
+- name: Check if uv is installed
+  command: which uv
+  register: uv_check
+  failed_when: false
+  changed_when: false
+  when: nyxmon_use_uv
+
+- name: Fail if uv is not installed
+  fail:
+    msg: "uv is required but not installed. Please install it globally first."
+  when:
+    - nyxmon_use_uv
+    - uv_check.rc != 0
+
+- name: Determine Django project path
+  set_fact:
+    nyxmon_django_path: "{{ nyxmon_site_path }}"
+
+- name: Create pyproject.toml for site
+  template:
+    src: pyproject.toml.j2
+    dest: "{{ nyxmon_site_path }}/pyproject.toml"
+    owner: "{{ nyxmon_user }}"
+    group: "{{ nyxmon_group }}"
+    mode: '0644'
+  when: nyxmon_use_uv
+
+- name: Create virtual environment using uv
+  command: uv venv {{ nyxmon_venv_path }}
+  args:
+    creates: "{{ nyxmon_venv_path }}/bin/python"
+  become_user: "{{ nyxmon_user }}"
+  when: nyxmon_use_uv
+
+- name: Check if venv symlink exists
+  stat:
+    path: "{{ nyxmon_site_path }}/venv"
+  register: venv_link
+
+- name: Create venv symlink to .venv
+  file:
+    src: ".venv"
+    dest: "{{ nyxmon_site_path }}/venv"
+    state: link
+    owner: "{{ nyxmon_user }}"
+    group: "{{ nyxmon_group }}"
+    force: true  # Replace if exists with wrong owner
+
+- name: Create virtual environment using venv
+  command: python3 -m venv {{ nyxmon_venv_path }}
+  args:
+    creates: "{{ nyxmon_venv_path }}/bin/python"
+  become_user: "{{ nyxmon_user }}"
+  when: not nyxmon_use_uv
+
+- name: Install dependencies using uv
+  command: uv sync
+  args:
+    chdir: "{{ nyxmon_django_path }}"
+  environment:
+    VIRTUAL_ENV: "{{ nyxmon_venv_path }}"
+  become_user: "{{ nyxmon_user }}"
+  when: nyxmon_use_uv
+  register: uv_sync
+
+- name: Install dependencies using pip
+  pip:
+    requirements: "{{ nyxmon_django_path }}/requirements.txt"
+    virtualenv: "{{ nyxmon_venv_path }}"
+    state: present
+  become_user: "{{ nyxmon_user }}"
+  when: not nyxmon_use_uv
