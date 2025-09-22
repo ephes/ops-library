@@ -1,15 +1,28 @@
 # FastDeploy Deploy Role
 
-This Ansible role deploys FastDeploy from a local source directory to a target server.
+Deploy the FastDeploy web-based deployment platform with full database, frontend, and service management.
+
+## Description
+
+This role deploys FastDeploy, a web-based platform for managing service deployments. It handles the complete deployment lifecycle including:
+- PostgreSQL database setup and migrations
+- Python environment management with uv
+- Frontend application building
+- Systemd service configuration
+- Traefik reverse proxy integration
+- Initial admin user creation
+- Service synchronization from filesystem
 
 ## Requirements
 
-- Target server running Ubuntu/Debian
+- Ubuntu/Debian-based target system
 - PostgreSQL installed and running
-- Local FastDeploy source code directory
+- Node.js 16+ (for frontend build)
+- Python 3.8+
 - Ansible 2.9+
-- ansible.posix collection (for synchronize module)
-- community.general collection (for PostgreSQL modules)
+- Required collections:
+  - `ansible.posix` (for synchronize module)
+  - `community.general` (for PostgreSQL modules)
 
 ## Role Variables
 
@@ -18,16 +31,18 @@ This Ansible role deploys FastDeploy from a local source directory to a target s
 These variables MUST be set when using this role:
 
 ```yaml
-fastdeploy_source_path: /path/to/local/fastdeploy  # Local path to FastDeploy source
-fastdeploy_secret_key: "generate-with-openssl-rand-hex-32"
-fastdeploy_initial_password_hash: "bcrypt-hash-of-password"
-fastdeploy_postgres_password: "secure-database-password"
+fastdeploy_source_path: ""         # Local path to FastDeploy source code
+fastdeploy_secret_key: ""          # Django secret key (generate with: openssl rand -hex 32)
+fastdeploy_initial_password_hash: ""  # BCrypt hash (generate with: python -c "import bcrypt; print(bcrypt.hashpw(b'password', bcrypt.gensalt()).decode())")
+fastdeploy_postgres_password: ""   # PostgreSQL password for FastDeploy database
 ```
 
-### Important Configuration
+### Common Configuration
+
+Frequently modified settings with sensible defaults:
 
 ```yaml
-# API and frontend URLs
+# API and WebSocket URLs
 fastdeploy_api_url: "https://deploy.example.com"
 fastdeploy_websocket_url: "wss://deploy.example.com/deployments/ws"
 
@@ -35,12 +50,33 @@ fastdeploy_websocket_url: "wss://deploy.example.com/deployments/ws"
 fastdeploy_initial_user: "admin"
 
 # Traefik configuration
+fastdeploy_traefik_enabled: true
 fastdeploy_traefik_host: "deploy.example.com"
+
+# Application settings
+fastdeploy_app_port: 9999
+fastdeploy_workers: 4
 ```
 
-### Optional Variables
+### Advanced Configuration
 
-See `defaults/main.yml` for all available variables and their default values.
+```yaml
+# User and paths
+fastdeploy_user: "fastdeploy"
+fastdeploy_home: "/home/fastdeploy"
+fastdeploy_site_path: "{{ fastdeploy_home }}/site"
+
+# Database configuration
+fastdeploy_postgres_database: "fastdeploy"
+fastdeploy_postgres_user: "fastdeploy"
+
+# Feature flags
+fastdeploy_build_frontend: true
+fastdeploy_create_initial_user: true
+fastdeploy_sync_services: true
+```
+
+For a complete list of variables, see `defaults/main.yml`.
 
 ## Dependencies
 
@@ -48,88 +84,77 @@ None.
 
 ## Example Playbook
 
-### Minimal example (with secrets from SOPS):
+### Basic Usage
 
 ```yaml
----
-- hosts: production
+- name: Deploy FastDeploy
+  hosts: production
   become: true
   vars:
-    secrets: "{{ lookup('community.sops.sops', 'secrets/fastdeploy.yml') | from_yaml }}"
+    secrets: "{{ lookup('community.sops.sops', 'secrets/prod/fastdeploy.yml') | from_yaml }}"
   roles:
-    - role: ops_library.fastdeploy_deploy
+    - role: local.ops_library.fastdeploy_deploy
       vars:
         fastdeploy_source_path: "/Users/john/projects/fastdeploy"
-        fastdeploy_secret_key: "{{ secrets.secret_key }}"
-        fastdeploy_initial_password_hash: "{{ secrets.password_hash }}"
+        fastdeploy_secret_key: "{{ secrets.django_secret_key }}"
+        fastdeploy_initial_password_hash: "{{ secrets.admin_password_hash }}"
         fastdeploy_postgres_password: "{{ secrets.db_password }}"
-        fastdeploy_api_url: "https://deploy.mycompany.com"
-        fastdeploy_websocket_url: "wss://deploy.mycompany.com/deployments/ws"
-        fastdeploy_traefik_host: "deploy.mycompany.com"
 ```
 
-### Full example with all options:
+### Advanced Usage with Custom Configuration
 
 ```yaml
----
-- hosts: production
+- name: Deploy FastDeploy with Custom Settings
+  hosts: production
   become: true
+  vars:
+    sops_secrets: "{{ lookup('community.sops.sops', 'secrets/prod/fastdeploy.yml') | from_yaml }}"
   roles:
-    - role: ops_library.fastdeploy_deploy
+    - role: local.ops_library.fastdeploy_deploy
       vars:
-        # Source and target
+        # Required secrets
         fastdeploy_source_path: "/Users/john/projects/fastdeploy"
-        fastdeploy_user: fastdeploy
-        fastdeploy_home: /home/fastdeploy
-        
-        # Application settings
-        fastdeploy_app_port: 9999
-        fastdeploy_environment: production
-        
-        # Database
-        fastdeploy_postgres_database: fastdeploy_prod
-        fastdeploy_postgres_user: fastdeploy_app
-        fastdeploy_postgres_password: "{{ vault_db_password }}"
-        
-        # Security
-        fastdeploy_secret_key: "{{ vault_secret_key }}"
-        fastdeploy_initial_user: admin
-        fastdeploy_initial_password_hash: "{{ vault_admin_password_hash }}"
-        
-        # URLs
-        fastdeploy_api_url: "https://deploy.mycompany.com"
-        fastdeploy_websocket_url: "wss://deploy.mycompany.com/deployments/ws"
-        
-        # Features
-        fastdeploy_build_frontend: true
-        fastdeploy_create_initial_user: true
-        fastdeploy_sync_services: true
-        
-        # Traefik
-        fastdeploy_traefik_enabled: true
-        fastdeploy_traefik_host: "deploy.mycompany.com"
-        fastdeploy_traefik_cert_resolver: letsencrypt
+        fastdeploy_secret_key: "{{ sops_secrets.django_secret_key }}"
+        fastdeploy_initial_password_hash: "{{ sops_secrets.admin_password_hash }}"
+        fastdeploy_postgres_password: "{{ sops_secrets.db_password }}"
+
+        # Custom configuration
+        fastdeploy_app_port: 10000
+        fastdeploy_workers: 8
+        fastdeploy_api_url: "https://deploy.internal.example.com"
+        fastdeploy_websocket_url: "wss://deploy.internal.example.com/deployments/ws"
+        fastdeploy_traefik_host: "deploy.internal.example.com"
+        fastdeploy_traefik_cert_resolver: "internal-ca"
 ```
 
-## Deployment Process
+## Handlers
 
-1. Creates fastdeploy user and directory structure
-2. Sets up PostgreSQL database and user
-3. Syncs source code from local directory using rsync
-4. Creates .env configuration file
-5. Installs Python dependencies using uv
-6. Builds frontend application
-7. Creates initial admin user
-8. Syncs services from filesystem
-9. Sets up systemd service
-10. Configures Traefik routing (optional)
+This role provides the following handlers:
 
-## Security Notes
+- `restart fastdeploy` - Restarts the FastDeploy systemd service
+- `reload systemd` - Reloads systemd daemon configuration
 
-- Never commit secrets to version control
-- Use Ansible Vault or SOPS for sensitive variables
-- Generate strong passwords and secret keys
-- The PostgreSQL password is stored in the .env file with 0600 permissions
+## Tags
+
+Available tags for selective execution:
+
+- `fastdeploy_database` - Database setup tasks
+- `fastdeploy_frontend` - Frontend build tasks
+- `fastdeploy_service` - Systemd service configuration
+- `fastdeploy_traefik` - Traefik reverse proxy configuration
+
+## Testing
+
+```bash
+# Run role tests
+cd /path/to/ops-library
+just test-role fastdeploy_deploy
+```
+
+## Changelog
+
+- **1.0.0** (2024-09-22): Initial release with rsync deployment support
+- See [CHANGELOG.md](../../CHANGELOG.md) for full history
 
 ## License
 
@@ -137,4 +162,4 @@ MIT
 
 ## Author Information
 
-Created for the FastDeploy project.
+Created for homelab automation - part of the ops-library collection.

@@ -1,125 +1,190 @@
-# apt_upgrade_register
+# APT Upgrade Register Role
 
 Register apt upgrade maintenance tasks with FastDeploy for remote execution.
 
 ## Description
 
-This role sets up the necessary infrastructure for FastDeploy to execute apt upgrades remotely. It creates:
+This role sets up the necessary infrastructure for FastDeploy to execute apt upgrades remotely. It enables unprivileged services to trigger system updates through the FastDeploy API without requiring direct SSH root access. The role creates:
 - Deployment scripts that FastDeploy can trigger
 - Ansible playbook for performing the actual upgrades
-- Sudoers configuration for secure execution
+- Sudoers configuration for secure cross-user execution
 - Service configuration for FastDeploy UI
+- SSH key deployment for remote server access
 
-**Important**: This role only registers the service with FastDeploy. Actual upgrades are triggered through the FastDeploy web interface, not by running this role.
+**Important**: This role only registers the service with FastDeploy. Actual upgrades are triggered through the FastDeploy web interface or API, not by running this role.
 
 ## Requirements
 
-- FastDeploy must be installed and configured on the target system
+- FastDeploy must be installed and running on the target system
 - Ansible must be available in the specified virtual environment
-- The deploy user must exist or will be created
+- PostgreSQL (for FastDeploy service registration)
+- Python 3.8+
+- Ansible 2.9+
+- Required collections:
+  - `ansible.posix` (for file operations)
+  - `community.general` (for system tasks)
 
 ## Role Variables
 
 ### Required Variables
 
+These variables MUST be set when using this role:
+
 ```yaml
-apt_upgrade_service_name: ""  # Name of the service (e.g., "apt_upgrade_local")
+apt_upgrade_service_name: ""  # Service identifier (e.g., "apt_upgrade_staging")
 ```
 
-### Optional Variables
+### Common Configuration
+
+Frequently used settings with sensible defaults:
 
 ```yaml
-# Service description
+# Service metadata
 apt_upgrade_service_description: "System package updates via apt"
-
-# FastDeploy configuration
-apt_upgrade_fastdeploy_user: fastdeploy
-apt_upgrade_fastdeploy_home: /home/fastdeploy
-apt_upgrade_fastdeploy_site_path: "{{ apt_upgrade_fastdeploy_home }}/site"
-apt_upgrade_service_path: "{{ apt_upgrade_fastdeploy_site_path }}/services/{{ apt_upgrade_service_name }}"
-
-# Deploy user configuration
-apt_upgrade_deploy_user: deploy
-apt_upgrade_deploy_group: "{{ apt_upgrade_deploy_user }}"
-
-# Ansible configuration
-apt_upgrade_ansible_venv: "{{ apt_upgrade_fastdeploy_home }}/ansible_venv"
+apt_upgrade_service_category: "system"
 
 # Target configuration
-apt_upgrade_target: "{{ inventory_hostname }}"  # Target host for upgrades
-apt_upgrade_target_type: "local"  # "local" or "remote"
+apt_upgrade_target: "{{ inventory_hostname }}"  # Host to run upgrades on
+apt_upgrade_target_type: "local"                # "local" or "remote"
 
-# APT upgrade options
-apt_upgrade_cache_valid_time: 3600
-apt_upgrade_update_cache: true
-apt_upgrade_dist_upgrade: true
-apt_upgrade_auto_clean: true
-apt_upgrade_auto_remove: true
-apt_upgrade_reboot_if_required: false
-
-# FastDeploy integration
-apt_upgrade_dynamic_steps: true
+# For remote targets only
+apt_upgrade_ssh_user: "root"                    # SSH user for remote access
+apt_upgrade_ssh_private_key: ""                 # SSH private key (required for remote)
 ```
+
+### Advanced Configuration
+
+```yaml
+# FastDeploy integration
+apt_upgrade_fastdeploy_user: "fastdeploy"
+apt_upgrade_fastdeploy_home: "/home/fastdeploy"
+apt_upgrade_fastdeploy_site_path: "{{ apt_upgrade_fastdeploy_home }}/site"
+
+# Deploy user configuration
+apt_upgrade_deploy_user: "deploy"
+apt_upgrade_deploy_group: "{{ apt_upgrade_deploy_user }}"
+apt_upgrade_deploy_home: "/home/{{ apt_upgrade_deploy_user }}"
+
+# Ansible environment
+apt_upgrade_ansible_venv: "{{ apt_upgrade_fastdeploy_home }}/ansible_venv"
+
+# Runner paths
+apt_upgrade_runner_dir: "{{ apt_upgrade_deploy_home }}/runners/{{ apt_upgrade_service_name }}"
+```
+
+For a complete list of variables, see `defaults/main.yml`.
+
+## Dependencies
+
+None.
 
 ## Example Playbook
 
-### Register apt_upgrade for local execution (on macmini itself)
+### Basic Usage (Local Updates)
 
 ```yaml
----
-- name: Register apt_upgrade_local with FastDeploy
-  hosts: macmini
+- name: Register Local APT Upgrades
+  hosts: deployment_server
   become: true
   roles:
     - role: local.ops_library.apt_upgrade_register
       vars:
         apt_upgrade_service_name: "apt_upgrade_local"
-        apt_upgrade_target: "localhost"
         apt_upgrade_target_type: "local"
-        apt_upgrade_service_description: "System updates for macmini"
 ```
 
-### Register apt_upgrade for remote execution (staging server)
+### Advanced Usage (Remote Server Updates)
 
 ```yaml
----
-- name: Register apt_upgrade_staging with FastDeploy
-  hosts: macmini  # FastDeploy runs here
+- name: Register Remote APT Upgrades
+  hosts: deployment_server
   become: true
+  vars:
+    ssh_keys: "{{ lookup('community.sops.sops', 'secrets/prod/deploy_ssh_keys.yml') | from_yaml }}"
   roles:
     - role: local.ops_library.apt_upgrade_register
       vars:
         apt_upgrade_service_name: "apt_upgrade_staging"
         apt_upgrade_target: "staging.example.com"
         apt_upgrade_target_type: "remote"
-        apt_upgrade_service_description: "System updates for staging server"
-        # Note: SSH keys must be configured separately for remote access
+        apt_upgrade_ssh_user: "root"
+        apt_upgrade_ssh_private_key: "{{ ssh_keys.staging_private_key }}"
+        apt_upgrade_service_description: "Staging server system updates"
+```
+
+### Multiple Server Registration
+
+```yaml
+- name: Register APT Upgrades for Multiple Servers
+  hosts: deployment_server
+  become: true
+  vars:
+    ssh_keys: "{{ lookup('community.sops.sops', 'secrets/prod/deploy_ssh_keys.yml') | from_yaml }}"
+    servers:
+      - name: staging
+        target: staging.example.com
+      - name: testing
+        target: test.example.com
+  tasks:
+    - name: Register each server
+      include_role:
+        name: local.ops_library.apt_upgrade_register
+      vars:
+        apt_upgrade_service_name: "apt_upgrade_{{ item.name }}"
+        apt_upgrade_target: "{{ item.target }}"
+        apt_upgrade_target_type: "remote"
+        apt_upgrade_ssh_private_key: "{{ ssh_keys[item.name + '_private_key'] }}"
+      loop: "{{ servers }}"
+```
+
+## Handlers
+
+This role does not provide any handlers.
+
+## Tags
+
+Available tags for selective execution:
+
+- `apt_upgrade_ssh` - SSH key deployment tasks
+- `apt_upgrade_scripts` - Script creation tasks
+- `apt_upgrade_sudo` - Sudoers configuration
+
+## Testing
+
+```bash
+# Run role tests
+cd /path/to/ops-library
+just test-role apt_upgrade_register
+
+# Test the registered service
+# After registration, trigger via FastDeploy UI or:
+curl -X POST https://deploy.example.com/api/services/apt_upgrade_staging/deploy \
+  -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
 ## How It Works
 
-1. **Registration**: Running this role creates the FastDeploy runner infrastructure
-2. **Execution**: Users trigger upgrades through FastDeploy web UI
-3. **Process Flow**:
-   ```
-   FastDeploy UI → deploy.sh → deploy.py → ansible-playbook → apt upgrades
-   ```
+1. **Registration Phase**: This role creates all necessary files and configurations
+2. **Execution Phase**: FastDeploy triggers the registered scripts when requested
+3. **Security**: Uses sudoers for privilege escalation, SSH keys for remote access
+4. **Monitoring**: All executions are logged and visible in FastDeploy UI
 
-## Security Considerations
+## Security Notes
 
-- The role creates specific sudoers entries for the deploy user
-- Only allows execution of apt-related commands
-- Reboot permission is conditional based on `apt_upgrade_reboot_if_required`
-- For remote targets, SSH keys must be manually configured
+- SSH private keys are deployed with 0600 permissions
+- Sudoers entries use specific command restrictions
+- The deploy user has minimal privileges
+- All operations are logged for audit purposes
 
-## Migration from site.yml
+## Changelog
 
-This role replaces the complex `site.yml → manifest → system role → services/apt_upgrade` flow with a simple registration pattern that follows the FastDeploy architecture.
+- **1.0.0** (2024-09-22): Initial release with SSH key management
+- See [CHANGELOG.md](../../CHANGELOG.md) for full history
 
 ## License
 
-See main collection license.
+MIT
 
 ## Author Information
 
-Created as part of the site.yml migration project.
+Created for homelab automation - part of the ops-library collection.
