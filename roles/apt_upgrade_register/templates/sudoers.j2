@@ -1,0 +1,26 @@
+# Sudoers configuration for apt_upgrade service {{ apt_upgrade_service_name }}
+# Allows deploy user to run ansible-playbook with elevated privileges
+
+# Allow deploy user to run ansible-playbook for apt upgrades
+{{ apt_upgrade_deploy_user }} ALL=(ALL) NOPASSWD: {{ apt_upgrade_ansible_path }} {{ apt_upgrade_service_path }}/playbook.yml *
+
+# Allow deploy user to run apt commands (needed by ansible)
+{{ apt_upgrade_deploy_user }} ALL=(ALL) NOPASSWD: /usr/bin/apt-get update
+{{ apt_upgrade_deploy_user }} ALL=(ALL) NOPASSWD: /usr/bin/apt-get dist-upgrade *
+{{ apt_upgrade_deploy_user }} ALL=(ALL) NOPASSWD: /usr/bin/apt-get upgrade *
+{{ apt_upgrade_deploy_user }} ALL=(ALL) NOPASSWD: /usr/bin/apt-get autoremove *
+{{ apt_upgrade_deploy_user }} ALL=(ALL) NOPASSWD: /usr/bin/apt-get autoclean *
+{{ apt_upgrade_deploy_user }} ALL=(ALL) NOPASSWD: /usr/bin/apt update
+{{ apt_upgrade_deploy_user }} ALL=(ALL) NOPASSWD: /usr/bin/apt dist-upgrade *
+{{ apt_upgrade_deploy_user }} ALL=(ALL) NOPASSWD: /usr/bin/apt upgrade *
+{{ apt_upgrade_deploy_user }} ALL=(ALL) NOPASSWD: /usr/bin/apt autoremove *
+{{ apt_upgrade_deploy_user }} ALL=(ALL) NOPASSWD: /usr/bin/apt autoclean *
+
+# Allow checking for reboot requirement
+{{ apt_upgrade_deploy_user }} ALL=(ALL) NOPASSWD: /usr/bin/stat /var/run/reboot-required
+
+# Allow system reboot if configured
+{% if apt_upgrade_reboot_if_required %}
+{{ apt_upgrade_deploy_user }} ALL=(ALL) NOPASSWD: /sbin/reboot
+{{ apt_upgrade_deploy_user }} ALL=(ALL) NOPASSWD: /sbin/shutdown -r *
+{% endif %}

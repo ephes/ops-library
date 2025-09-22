@@ -1,0 +1,43 @@
+---
+# apt_upgrade_register role defaults
+# Registers apt upgrade service with FastDeploy
+
+# Service identification
+apt_upgrade_service_name: "apt_upgrade"
+apt_upgrade_service_description: "System package updates via apt"
+
+# FastDeploy configuration
+apt_upgrade_fastdeploy_user: fastdeploy
+apt_upgrade_fastdeploy_home: /home/fastdeploy
+apt_upgrade_fastdeploy_site_path: "{{ apt_upgrade_fastdeploy_home }}/site"
+apt_upgrade_service_path: "{{ apt_upgrade_fastdeploy_site_path }}/services/{{ apt_upgrade_service_name }}"
+
+# Deploy user configuration
+apt_upgrade_deploy_user: deploy
+apt_upgrade_deploy_group: "{{ apt_upgrade_deploy_user }}"
+
+# Ansible configuration for execution
+# Leave empty to use system ansible, or specify venv path
+apt_upgrade_ansible_venv: ""
+
+# Explicit paths for system or venv ansible
+# When venv is empty, these system paths are used
+# When venv is set, these are derived from venv path
+apt_upgrade_python_path: "{{ apt_upgrade_ansible_venv + '/bin/python3' if apt_upgrade_ansible_venv else '/usr/bin/python3' }}"
+apt_upgrade_ansible_path: "{{ apt_upgrade_ansible_venv + '/bin/ansible-playbook' if apt_upgrade_ansible_venv else '/usr/bin/ansible-playbook' }}"
+
+# Target host configuration
+apt_upgrade_target: "{{ inventory_hostname }}"  # Default to current host
+apt_upgrade_target_type: "local"  # Options: local, remote
+
+# APT upgrade options
+apt_upgrade_cache_valid_time: 3600
+apt_upgrade_update_cache: true
+apt_upgrade_dist_upgrade: true
+apt_upgrade_auto_clean: true
+apt_upgrade_auto_remove: true
+apt_upgrade_reboot_if_required: false
+
+# FastDeploy integration
+apt_upgrade_fastdeploy_enabled: true
+apt_upgrade_dynamic_steps: true

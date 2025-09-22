@@ -1,0 +1,66 @@
+---
+# Ansible playbook for apt upgrades
+# Executed by FastDeploy runner when triggered through UI
+
+- name: Perform APT system updates
+  hosts: {% if apt_upgrade_target_type == 'local' %}localhost{% else %}{{ apt_upgrade_target }}{% endif %}
+
+{% if apt_upgrade_target_type == 'local' %}
+  connection: local
+{% else %}
+  remote_user: root
+{% endif %}
+  become: true
+  gather_facts: yes
+
+  vars:
+    apt_upgrade_cache_valid_time: {{ apt_upgrade_cache_valid_time }}
+    apt_upgrade_update_cache: {{ apt_upgrade_update_cache }}
+    apt_upgrade_dist_upgrade: {{ apt_upgrade_dist_upgrade }}
+    apt_upgrade_auto_clean: {{ apt_upgrade_auto_clean }}
+    apt_upgrade_auto_remove: {{ apt_upgrade_auto_remove }}
+    apt_upgrade_reboot_if_required: {{ apt_upgrade_reboot_if_required }}
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: "{{ '{{' }} apt_upgrade_cache_valid_time {{ '}}' }}"
+      when: apt_upgrade_update_cache
+
+    - name: Perform dist-upgrade
+      apt:
+        upgrade: dist
+        autoclean: "{{ '{{' }} apt_upgrade_auto_clean {{ '}}' }}"
+        autoremove: "{{ '{{' }} apt_upgrade_auto_remove {{ '}}' }}"
+      when: apt_upgrade_dist_upgrade
+      register: upgrade_result
+
+    - name: Display upgrade results
+      debug:
+        msg: |
+          Packages upgraded: {{ '{{' }} upgrade_result.changed | default(false) {{ '}}' }}
+          {% if upgrade_result.stdout_lines is defined %}
+          Output: {{ '{{' }} upgrade_result.stdout_lines | join('\n') {{ '}}' }}
+          {% endif %}
+      when: upgrade_result is defined
+
+    - name: Check if reboot is required
+      stat:
+        path: /var/run/reboot-required
+      register: reboot_required
+
+    - name: Report reboot requirement
+      debug:
+        msg: "System reboot required: {{ '{{' }} reboot_required.stat.exists {{ '}}' }}"
+
+    - name: Reboot system if required
+      reboot:
+        msg: "Rebooting system after apt upgrades"
+        connect_timeout: 5
+        reboot_timeout: 300
+        pre_reboot_delay: 5
+        post_reboot_delay: 30
+      when:
+        - apt_upgrade_reboot_if_required
+        - reboot_required.stat.exists

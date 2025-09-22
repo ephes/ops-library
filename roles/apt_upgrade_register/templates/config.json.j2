@@ -1,0 +1,8 @@
+{
+  "name": "{{ apt_upgrade_service_name }}",
+  "description": "{{ apt_upgrade_service_description }}",
+  "deploy_script": "deploy.sh",
+  "dynamic_steps": {{ apt_upgrade_dynamic_steps | to_json }},
+  "target": "{{ apt_upgrade_target }}",
+  "target_type": "{{ apt_upgrade_target_type }}"
+}

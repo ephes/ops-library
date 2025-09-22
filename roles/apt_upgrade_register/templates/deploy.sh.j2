@@ -1,0 +1,11 @@
+#!/bin/bash
+# Wrapper script for apt_upgrade deployment
+# Called by FastDeploy to execute the Python deployment script
+
+set -e
+
+# Change to service directory
+cd {{ apt_upgrade_service_path }}
+
+# Execute the Python deployment script using configured Python path
+exec {{ apt_upgrade_python_path }} deploy.py "$@"

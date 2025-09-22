@@ -1,0 +1,126 @@
+---
+# Main tasks for apt_upgrade_register role
+# This role registers apt upgrade maintenance tasks with FastDeploy for remote execution
+
+- name: Validate required variables
+  assert:
+    that:
+      - apt_upgrade_service_name is defined
+      - apt_upgrade_service_name != ""
+    fail_msg: "apt_upgrade_service_name must be defined"
+
+- name: Display registration info
+  debug:
+    msg: "Registering apt upgrade service '{{ apt_upgrade_service_name }}' with FastDeploy"
+
+- name: Ensure FastDeploy user exists
+  user:
+    name: "{{ apt_upgrade_fastdeploy_user }}"
+    group: "{{ apt_upgrade_fastdeploy_user }}"
+    home: "{{ apt_upgrade_fastdeploy_home }}"
+    shell: /bin/bash
+    system: no
+    state: present
+
+- name: Ensure deploy user exists
+  user:
+    name: "{{ apt_upgrade_deploy_user }}"
+    group: "{{ apt_upgrade_deploy_group }}"
+    system: yes
+    shell: /bin/bash
+    state: present
+
+- name: Add deploy user to FastDeploy group
+  user:
+    name: "{{ apt_upgrade_deploy_user }}"
+    groups: "{{ apt_upgrade_fastdeploy_user }}"
+    append: yes
+
+- name: Create service directory structure
+  file:
+    path: "{{ apt_upgrade_service_path }}"
+    state: directory
+    owner: "{{ apt_upgrade_fastdeploy_user }}"
+    group: "{{ apt_upgrade_fastdeploy_user }}"
+    mode: "0755"
+
+- name: Deploy FastDeploy configuration
+  template:
+    src: config.json.j2
+    dest: "{{ apt_upgrade_service_path }}/config.json"
+    owner: "{{ apt_upgrade_fastdeploy_user }}"
+    group: "{{ apt_upgrade_fastdeploy_user }}"
+    mode: "0644"
+
+- name: Deploy Python deployment script
+  template:
+    src: deploy.py.j2
+    dest: "{{ apt_upgrade_service_path }}/deploy.py"
+    owner: "{{ apt_upgrade_fastdeploy_user }}"
+    group: "{{ apt_upgrade_fastdeploy_user }}"
+    mode: "0755"
+
+- name: Deploy wrapper shell script
+  template:
+    src: deploy.sh.j2
+    dest: "{{ apt_upgrade_service_path }}/deploy.sh"
+    owner: "{{ apt_upgrade_fastdeploy_user }}"
+    group: "{{ apt_upgrade_fastdeploy_user }}"
+    mode: "0755"
+
+- name: Deploy Ansible playbook for execution
+  template:
+    src: playbook.yml.j2
+    dest: "{{ apt_upgrade_service_path }}/playbook.yml"
+    owner: "{{ apt_upgrade_fastdeploy_user }}"
+    group: "{{ apt_upgrade_fastdeploy_user }}"
+    mode: "0644"
+
+- name: Create sudoers file for deploy user
+  template:
+    src: sudoers.j2
+    dest: "/etc/sudoers.d/apt_upgrade_{{ apt_upgrade_service_name }}"
+    mode: "0440"
+    validate: "visudo -cf %s"
+
+- name: Set up SSH key for deploy user (if needed for remote targets)
+  when: apt_upgrade_target_type == "remote"
+  block:
+    - name: Ensure .ssh directory exists
+      file:
+        path: "/home/{{ apt_upgrade_deploy_user }}/.ssh"
+        state: directory
+        owner: "{{ apt_upgrade_deploy_user }}"
+        group: "{{ apt_upgrade_deploy_group }}"
+        mode: "0700"
+
+    - name: Deploy SSH private key
+      when: apt_upgrade_ssh_private_key is defined
+      copy:
+        content: "{{ apt_upgrade_ssh_private_key }}"
+        dest: "/home/{{ apt_upgrade_deploy_user }}/.ssh/id_ed25519"
+        owner: "{{ apt_upgrade_deploy_user }}"
+        group: "{{ apt_upgrade_deploy_group }}"
+        mode: "0600"
+      no_log: true  # Don't log private key content
+
+    - name: Deploy SSH public key
+      when: apt_upgrade_ssh_public_key is defined
+      copy:
+        content: "{{ apt_upgrade_ssh_public_key }}"
+        dest: "/home/{{ apt_upgrade_deploy_user }}/.ssh/id_ed25519.pub"
+        owner: "{{ apt_upgrade_deploy_user }}"
+        group: "{{ apt_upgrade_deploy_group }}"
+        mode: "0644"
+
+    - name: Note about SSH key
+      when: apt_upgrade_ssh_private_key is not defined
+      debug:
+        msg: "WARNING: No SSH keys provided. Remember to manually configure SSH keys for remote target access"
+
+- name: Registration complete
+  debug:
+    msg: |
+      apt_upgrade service '{{ apt_upgrade_service_name }}' has been registered with FastDeploy.
+      The service can now be triggered through the FastDeploy UI at:
+      https://deploy.home.xn--wersdrfer-47a.de/
