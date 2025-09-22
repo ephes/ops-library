@@ -2,77 +2,69 @@
 
 A collection of reusable Ansible roles for homelab automation and service deployment.
 
-## Roles
+📚 **[Architecture Documentation](./ARCHITECTURE.md)** - Detailed design and implementation patterns
 
-### fastdeploy_deploy
-
-Deploy FastDeploy web-based deployment platform. Supports:
-- Both rsync (development) and git (production) deployment methods
-- PostgreSQL database setup and migrations
-- Frontend build with Node.js/npm
-- Python virtual environment with uv
-- Systemd service configuration
-- Environment-specific configuration
-
-### fastdeploy_register_service
-
-Register services with FastDeploy for web-based deployments. Features:
-- Service configuration in FastDeploy UI
-- Deployment runner script with security isolation
-- Sudoers rules for cross-user execution
-- SOPS integration for secrets management
-- Real-time deployment progress tracking
-- From-scratch deployment compatibility
-
-### python_app_systemd
-
-Deploy Python applications with systemd service management. Supports:
-- Working tree deployment via rsync
-- Virtual environment management with uv
-- Django application support
-- Systemd service configuration
-- Optional monitoring agent setup
-
-### fastdeploy_remove
-
-Complete removal of FastDeploy installation for testing. Features:
-- Removes FastDeploy systemd service and database
-- Removes FastDeploy and deploy users/groups
-- Cleans up all home directories and configuration files
-- Removes Traefik configuration and sudoers rules
-- Safety confirmation required to prevent accidents
-
-### test_dummy
-
-Example service demonstrating deployment patterns. Features:
-- Optional FastDeploy registration capabilities
-- JSON status output for progress tracking
-- Realistic deployment simulation
-- Template for building other services
-
-## Installation
-
-### From Git (tagged release)
-```yaml
-# requirements.yml
-collections:
-  - name: https://github.com/yourusername/ops-library.git
-    type: git
-    version: v0.1.0
-```
+## Quick Start
 
 ```bash
-ansible-galaxy collection install -r requirements.yml
+# Build and install the collection locally
+ansible-galaxy collection build .
+ansible-galaxy collection install local-ops_library-*.tar.gz -p ../ops-control/collections
+
+# Or use from ops-control
+cd ../ops-control
+just install-local-library
 ```
 
-### From local directory (development)
+## Available Roles
+
+The table below links each published role to its dedicated documentation. Refer to the role README for full variable reference, workflows, and examples.
+
+| Category | Role | Summary |
+|----------|------|---------|
+| Service deployment | [`fastdeploy_deploy`](roles/fastdeploy_deploy/README.md) | Deploy the FastDeploy platform (database, uv, frontend build, systemd, Traefik). |
+| Service deployment | [`nyxmon_deploy`](roles/nyxmon_deploy/README.md) | Deploy Nyxmon (Django app, monitoring agent, Telegram integration). |
+| Service removal | [`fastdeploy_remove`](roles/fastdeploy_remove/README.md) | Remove FastDeploy and related resources safely. |
+| Service removal | [`nyxmon_remove`](roles/nyxmon_remove/README.md) | Remove Nyxmon while preserving data as needed. |
+| Service registration | [`apt_upgrade_register`](roles/apt_upgrade_register/README.md) | Register apt-upgrade maintenance runners with FastDeploy. |
+| Service registration | [`fastdeploy_register_service`](roles/fastdeploy_register_service/README.md) | Generic FastDeploy service registration helper. |
+| Bootstrap | [`ansible_install`](roles/ansible_install/README.md) | Ensure controller has Ansible and required plugins. |
+| Bootstrap | [`uv_install`](roles/uv_install/README.md) | Install uv for Python environment management. |
+| Bootstrap | [`sops_dependencies`](roles/sops_dependencies/README.md) | Install age/SOPS prerequisites. |
+| Testing/demo | [`test_dummy`](roles/test_dummy/README.md) | Demonstration service for developing and testing runners. |
+
+Legacy compatibility roles such as [`python_app_systemd`](roles/python_app_systemd/README.md) and [`python_app_django`](roles/python_app_django/README.md) remain available while older manifests are retired.
+
+## Development
+
+### Testing
 ```bash
-ansible-galaxy collection install /path/to/ops-library -p ./collections
+# Run all tests
+just test
+
+# Test specific role
+just test-role fastdeploy_deploy
 ```
 
-## Usage
+### Pre-commit Hooks
+```bash
+# Install pre-commit hooks
+just install-hooks
+```
 
-See individual role documentation in `roles/*/README.md` for detailed usage instructions.
+## Documentation
+
+- [ARCHITECTURE.md](./ARCHITECTURE.md) - System design and patterns
+- [CHANGELOG.md](./CHANGELOG.md) - Version history and changes
+- [TESTING.md](./TESTING.md) - Testing guidelines
+- [Role-specific READMEs](./roles/) - Detailed documentation per role
+- [README_TEMPLATE.md](./roles/README_TEMPLATE.md) - Template for role documentation
+
+## Requirements
+
+- Ansible 2.9+
+- Python 3.8+
+- Collections: `community.general`, `ansible.posix`
 
 ## License
 
