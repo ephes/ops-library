@@ -1,0 +1,40 @@
+---
+# Configure Pi-hole adlists and whitelist
+
+- name: Check if gravity.db exists
+  stat:
+    path: /etc/pihole/gravity.db
+  register: gravity_db
+
+# Pi-hole v6 uses SQLite for adlists
+- name: Add adlists to Pi-hole v6
+  command: |
+    sqlite3 /etc/pihole/gravity.db "
+    INSERT OR IGNORE INTO adlist (address, enabled, comment)
+    VALUES ('{{ item }}', 1, 'Managed by Ansible');"
+  loop: "{{ dns_blocklists }}"
+  when: gravity_db.stat.exists
+  notify: update gravity
+
+# Alternative for older Pi-hole versions
+- name: Add adlists (fallback method)
+  command: pihole -a adlist add "{{ item }}"
+  loop: "{{ dns_blocklists }}"
+  when: not gravity_db.stat.exists
+  register: adlist_result
+  changed_when: "'already exists' not in adlist_result.stdout"
+  notify: update gravity
+
+# Add whitelist entries
+- name: Add whitelist domains
+  command: pihole -w "{{ item }}"
+  loop: "{{ dns_whitelist_domains }}"
+  register: whitelist_result
+  changed_when: "'already exists' not in whitelist_result.stdout"
+  notify: reload pihole-lists
+
+# Update gravity database with new lists
+- name: Update gravity (if not triggered by handler)
+  command: pihole -g
+  when: adlist_result is defined and adlist_result is changed
+  tags: ['skip_ansible_lint']

@@ -1,0 +1,36 @@
+---
+# Remove Unbound
+
+- name: Stop Unbound service
+  systemd:
+    name: unbound
+    state: stopped
+    enabled: false
+  failed_when: false
+
+- name: Remove Unbound configuration directory
+  file:
+    path: "{{ dns_unbound_config_dir }}"
+    state: absent
+
+- name: Remove Unbound data directory
+  file:
+    path: "{{ dns_unbound_lib_dir }}"
+    state: absent
+
+- name: Remove Unbound package
+  apt:
+    name: unbound
+    state: absent
+    purge: yes
+  when: dns_remove_pihole_data | bool
+
+- name: Remove Unbound cache and logs
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /var/cache/unbound
+    - /var/log/unbound
+    - /run/unbound
+  failed_when: false

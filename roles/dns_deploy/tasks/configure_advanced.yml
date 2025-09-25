@@ -1,0 +1,29 @@
+---
+# Configure Unbound split-DNS and Pi-hole forwarding (Advanced Mode)
+
+- name: Remove dnsmasq local configs from simple mode
+  file:
+    path: "{{ dns_pihole_dnsmasq_dir }}/{{ item }}"
+    state: absent
+  loop:
+    - 01-local-ttl.conf
+    - 02-wildcard.conf
+    - 03-custom.conf
+  notify: restart pihole-FTL
+
+- name: Clear Pi-hole custom.list
+  copy:
+    content: "# Handled by Unbound split-DNS\n"
+    dest: /etc/pihole/custom.list
+  notify: restart pihole-FTL
+
+- name: Configure Unbound split-DNS
+  template:
+    src: unbound-split-dns.conf.j2
+    dest: "{{ dns_unbound_config_dir }}/10-split-dns.conf"
+  notify: restart unbound
+
+- name: Remove simple-mode Unbound configuration
+  file:
+    path: "{{ dns_unbound_config_dir }}/10-local-simple.conf"
+    state: absent

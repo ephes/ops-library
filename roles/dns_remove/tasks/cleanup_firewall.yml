@@ -1,0 +1,42 @@
+---
+# Clean up firewall rules
+
+- name: Check if ufw is installed
+  command: which ufw
+  register: ufw_installed
+  failed_when: false
+  changed_when: false
+
+- name: Remove DNS firewall rules
+  block:
+    - name: Remove DNS port 53 rules
+      ufw:
+        rule: allow
+        port: '53'
+        proto: "{{ item }}"
+        delete: yes
+      loop:
+        - tcp
+        - udp
+      failed_when: false
+
+    - name: Remove Pi-hole FTL port rule
+      ufw:
+        rule: allow
+        port: '4711'
+        proto: tcp
+        delete: yes
+      failed_when: false
+
+    - name: Remove Unbound port rule
+      ufw:
+        rule: allow
+        port: '5335'
+        proto: "{{ item }}"
+        delete: yes
+      loop:
+        - tcp
+        - udp
+      failed_when: false
+
+  when: ufw_installed.rc == 0

@@ -1,0 +1,34 @@
+---
+# DNS Remove Role - Main Tasks
+
+- name: Confirm DNS removal
+  assert:
+    that:
+      - dns_confirm_removal | default(false) | bool
+    fail_msg: |
+      DNS removal NOT confirmed!
+      Set dns_confirm_removal=true to confirm removal of DNS services.
+      This will remove Pi-hole and Unbound from the system.
+
+- name: Include removal tasks
+  block:
+    - name: Stop DNS services
+      include_tasks: stop_services.yml
+
+    - name: Remove Pi-hole
+      include_tasks: remove_pihole.yml
+
+    - name: Remove Unbound
+      include_tasks: remove_unbound.yml
+
+    - name: Clean up firewall rules
+      include_tasks: cleanup_firewall.yml
+
+    - name: Restore system DNS
+      include_tasks: restore_dns.yml
+      when: dns_restore_systemd_resolved | bool
+
+    - name: Final cleanup
+      include_tasks: final_cleanup.yml
+
+  when: dns_confirm_removal | bool

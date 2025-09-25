@@ -1,0 +1,162 @@
+---
+# Pi-hole Installation
+
+# Check if Pi-hole is already installed
+- name: Check for Pi-hole installation
+  stat:
+    path: /usr/local/bin/pihole
+  register: pihole_installed
+
+- name: Create Pi-hole directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ dns_pihole_config_dir }}"
+    - "{{ dns_pihole_dnsmasq_dir }}"
+
+- name: Remove existing Pi-hole repository if installer will run
+  file:
+    path: /etc/.pihole
+    state: absent
+  when: not pihole_installed.stat.exists
+
+- name: Remove existing Pi-hole gravity backup if installer will run
+  file:
+    path: /etc/pihole
+    state: absent
+  when: not pihole_installed.stat.exists
+
+- name: Recreate Pi-hole configuration directory
+  file:
+    path: /etc/pihole
+    state: directory
+    mode: '0755'
+  when: not pihole_installed.stat.exists
+
+- name: Download Pi-hole installer
+  get_url:
+    url: https://install.pi-hole.net
+    dest: /tmp/pihole-install.sh
+    mode: '0755'
+  when: not pihole_installed.stat.exists
+
+- name: Pre-clone Pi-hole repository
+  git:
+    repo: https://github.com/pi-hole/pi-hole.git
+    dest: /etc/.pihole
+    version: master
+    depth: 1
+  when: not pihole_installed.stat.exists
+
+- name: Create setupVars.conf for unattended installation
+  copy:
+    content: |
+      PIHOLE_INTERFACE={{ ansible_default_ipv4.interface }}
+      QUERY_LOGGING=true
+      INSTALL_WEB_SERVER={{ dns_pihole_web_interface | lower }}
+      INSTALL_WEB_INTERFACE={{ dns_pihole_web_interface | lower }}
+      LIGHTTPD_ENABLED={{ dns_pihole_web_interface | lower }}
+      CACHE_SIZE=10000
+      DNS_FQDN_REQUIRED=true
+      DNS_BOGUS_PRIV=true
+      DNSMASQ_LISTENING=all
+      WEBPASSWORD=
+      BLOCKING_ENABLED=true
+      PIHOLE_DNS_1=127.0.0.1#{{ dns_unbound_port }}
+      PIHOLE_DNS_2=
+      CONDITIONAL_FORWARDING=false
+      IPV4_ADDRESS={{ ansible_default_ipv4.address }}/{{ ansible_default_ipv4.prefix }}
+      IPV6_ADDRESS=
+      TERM=xterm
+    dest: /etc/pihole/setupVars.conf
+    mode: '0644'
+  when: not pihole_installed.stat.exists
+
+- name: Install Pi-hole
+  command: /tmp/pihole-install.sh --unattended
+  args:
+    creates: /usr/local/bin/pihole
+  environment:
+    PIHOLE_SKIP_OS_CHECK: "true"
+    TERM: "xterm"
+
+# Configure Pi-hole after installation
+- name: Wait for Pi-hole to be fully installed
+  wait_for:
+    path: /etc/pihole/pihole.toml
+    state: present
+    timeout: 30
+
+# Configure Pi-hole v6 to use Unbound as upstream DNS
+- name: Check current upstream DNS configuration
+  command: grep -E '^\s*upstreams\s*=' /etc/pihole/pihole.toml
+  register: upstream_check
+  changed_when: false
+  failed_when: false
+
+- name: Set Unbound as upstream DNS server (empty array)
+  replace:
+    path: /etc/pihole/pihole.toml
+    regexp: '^(\s*)upstreams\s*=\s*\[\s*\]'
+    replace: '\1upstreams = ["127.0.0.1#{{ dns_unbound_port }}"]'
+  when: upstream_check.stdout is search('\[\s*\]')
+  notify: restart pihole-FTL
+
+- name: Set Unbound as upstream DNS server (multiline format)
+  blockinfile:
+    path: /etc/pihole/pihole.toml
+    insertafter: '^\s*upstreams\s*=\s*\['
+    marker: ""
+    block: '    "127.0.0.1#{{ dns_unbound_port }}"'
+  when: upstream_check.stdout is search('upstreams\s*=\s*\[') and not upstream_check.stdout is search('127.0.0.1')
+  notify: restart pihole-FTL
+
+- name: Ensure upstream DNS is configured if line doesn't exist
+  lineinfile:
+    path: /etc/pihole/pihole.toml
+    regexp: '^\s*upstreams\s*='
+    line: '  upstreams = ["127.0.0.1#{{ dns_unbound_port }}"]'
+    insertafter: '^\[dns\]'
+    firstmatch: yes
+  when: upstream_check.rc != 0
+  notify: restart pihole-FTL
+
+# Configure dnsmasq settings for Pi-hole v6
+- name: Check if dnsmasq section exists in pihole.toml
+  command: grep '^\[dnsmasq\]' /etc/pihole/pihole.toml
+  register: dnsmasq_section
+  changed_when: false
+  failed_when: false
+
+- name: Add dnsmasq section with config to pihole.toml if missing
+  blockinfile:
+    path: /etc/pihole/pihole.toml
+    block: |
+
+      [dnsmasq]
+      config_dir = "/etc/dnsmasq.d"
+      hostsfile = "/etc/pihole/custom.list"
+      leasesfile = "/etc/pihole/dhcp.leases"
+    marker: ""
+    insertafter: EOF
+  when: dnsmasq_section.rc != 0
+  notify: restart pihole-FTL
+
+- name: Ensure config_dir is set in existing dnsmasq section
+  lineinfile:
+    path: /etc/pihole/pihole.toml
+    regexp: '^\s*config_dir\s*='
+    line: '  config_dir = "/etc/dnsmasq.d"'
+    insertafter: '^\[dnsmasq\]'
+  when: dnsmasq_section.rc == 0
+  notify: restart pihole-FTL
+
+- name: Ensure lighttpd is not running (web interface disabled)
+  systemd:
+    name: lighttpd
+    state: stopped
+    enabled: false
+  failed_when: false
+  when: not dns_pihole_web_interface

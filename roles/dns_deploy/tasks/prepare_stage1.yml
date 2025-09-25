@@ -1,0 +1,43 @@
+---
+# Stage 1: Install dependencies while ensuring DNS resolution works
+
+- name: Stop and disable systemd-resolved early (if present)
+  systemd:
+    name: systemd-resolved
+    state: stopped
+    enabled: false
+  failed_when: false  # May not exist on all systems
+  register: systemd_resolved_stopped
+
+- name: Wait for port 53 to be free
+  wait_for:
+    port: 53
+    state: stopped
+    timeout: 10
+  when: systemd_resolved_stopped.changed | default(false)
+
+- name: Check if an external resolver is available
+  shell: |
+    grep -Ev '^(#|$)' /etc/resolv.conf | grep -v '^nameserver 127\.'
+  register: dns_external_resolver
+  changed_when: false
+  failed_when: false
+
+- name: Add temporary fallback resolver for bootstrap
+  lineinfile:
+    path: /etc/resolv.conf
+    line: "nameserver 1.1.1.1"
+    insertafter: BOF
+  when: dns_external_resolver.rc != 0
+
+- name: Install dependencies
+  apt:
+    name:
+      - curl
+      - git
+      - dnsutils
+      - sqlite3
+      - unbound
+      - unbound-anchor
+    state: present
+    update_cache: yes

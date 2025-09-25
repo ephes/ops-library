@@ -1,0 +1,47 @@
+---
+# Restore system DNS configuration
+
+- name: Check if systemd-resolved is installed
+  stat:
+    path: /lib/systemd/system/systemd-resolved.service
+  register: systemd_resolved_exists
+
+- name: Restore systemd-resolved
+  block:
+    - name: Enable and start systemd-resolved
+      systemd:
+        name: systemd-resolved
+        state: started
+        enabled: true
+        daemon_reload: yes
+
+    - name: Wait for systemd-resolved to start
+      wait_for:
+        port: 53
+        host: 127.0.0.53
+        delay: 2
+        timeout: 30
+      failed_when: false
+
+    - name: Restore resolv.conf symlink to systemd-resolved
+      file:
+        src: /run/systemd/resolve/stub-resolv.conf
+        dest: /etc/resolv.conf
+        state: link
+        force: yes
+
+  when: systemd_resolved_exists.stat.exists
+
+- name: Configure fallback DNS if systemd-resolved not available
+  block:
+    - name: Create static resolv.conf
+      copy:
+        content: |
+          # Fallback DNS configuration
+          nameserver 1.1.1.1
+          nameserver 1.0.0.1
+          nameserver 8.8.8.8
+        dest: /etc/resolv.conf
+        mode: '0644'
+
+  when: not systemd_resolved_exists.stat.exists

@@ -1,0 +1,66 @@
+---
+# Verify DNS resolution
+
+# Test Unbound is listening on correct port
+- name: Test Unbound port connectivity
+  command: dig @127.0.0.1 -p {{ dns_unbound_port }} google.com +short
+  register: unbound_direct_test
+  failed_when: unbound_direct_test.stdout == ""
+  changed_when: false
+
+# Simple Mode tests
+- name: Test wildcard resolution (Simple Mode)
+  command: dig @127.0.0.1 test.{{ dns_local_domain }} +short
+  register: dns_test
+  failed_when: dns_local_ip not in dns_test.stdout
+  when: dns_mode == 'simple'
+  changed_when: false
+
+# Advanced Mode tests - verify different responses per network
+- name: Test LAN view (Advanced Mode)
+  command: dig @127.0.0.1 +subnet=192.168.178.1/32 test.{{ dns_local_domain }} +short
+  register: lan_test
+  failed_when: dns_split_lan_ip not in lan_test.stdout
+  when: dns_mode == 'advanced'
+  changed_when: false
+
+- name: Test Tailscale view (Advanced Mode)
+  command: dig @127.0.0.1 +subnet=100.64.0.1/32 test.{{ dns_local_domain }} +short
+  register: ts_test
+  failed_when: dns_split_tailscale_ip not in ts_test.stdout
+  when: dns_mode == 'advanced'
+  changed_when: false
+
+- name: Verify views return different IPs
+  assert:
+    that:
+      - lan_test.stdout != ts_test.stdout
+    fail_msg: "Split-DNS views must return different IPs for LAN and Tailscale"
+  when: dns_mode == 'advanced'
+
+# Test direct Unbound resolution in Advanced Mode
+- name: Test direct Unbound split-DNS (Advanced Mode)
+  command: dig @127.0.0.1 -p {{ dns_unbound_port }} +subnet=192.168.178.1/32 {{ dns_local_domain }} +short
+  register: unbound_lan_test
+  when: dns_mode == 'advanced'
+  changed_when: false
+
+# Common tests
+- name: Test external resolution
+  command: dig @127.0.0.1 google.com +short
+  register: external_test
+  failed_when: external_test.stdout == ""
+  changed_when: false
+
+- name: Test ad blocking
+  command: dig @127.0.0.1 doubleclick.net +short
+  register: block_test
+  # Note: Result varies by Pi-hole blocking mode:
+  # - NULL blocking mode: returns 0.0.0.0
+  # - NXDOMAIN mode: returns empty (no answer)
+  # - Custom IP mode: returns configured IP
+  failed_when:
+    - block_test.rc != 0
+    - block_test.stdout not in ['0.0.0.0', '', '::']  # Accept common block responses
+  when: dns_blocklists_enabled
+  changed_when: false

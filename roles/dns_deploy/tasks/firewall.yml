@@ -1,0 +1,49 @@
+---
+# Configure firewall rules for DNS services (OPTIONAL - disabled by default)
+# WARNING: This task only ADDS rules. It does NOT enable UFW.
+# Enabling UFW should be done separately and carefully to avoid lockout.
+
+- name: Check if UFW is installed
+  command: which ufw
+  register: ufw_installed
+  failed_when: false
+  changed_when: false
+  when: dns_firewall_enable | default(false)
+
+- name: Configure DNS firewall rules (if UFW exists and enabled)
+  block:
+    # CRITICAL: Ensure SSH is allowed to prevent lockout
+    - name: Allow SSH to prevent lockout
+      ufw:
+        rule: allow
+        name: OpenSSH
+
+    - name: Allow DNS from local networks (TCP)
+      ufw:
+        rule: allow
+        port: '53'
+        proto: tcp
+        src: "{{ item }}"
+      loop:
+        - "{{ dns_split_lan_network | default('192.168.0.0/16') }}"
+        - "{{ dns_split_tailscale_network | default('100.64.0.0/10') }}"
+
+    - name: Allow DNS from local networks (UDP)
+      ufw:
+        rule: allow
+        port: '53'
+        proto: udp
+        src: "{{ item }}"
+      loop:
+        - "{{ dns_split_lan_network | default('192.168.0.0/16') }}"
+        - "{{ dns_split_tailscale_network | default('100.64.0.0/10') }}"
+
+    - name: Display firewall warning
+      debug:
+        msg: |
+          WARNING: DNS firewall rules have been configured but UFW is NOT automatically enabled.
+          To enable the firewall, run: sudo ufw enable
+          Make sure SSH access is allowed first!
+  when:
+    - dns_firewall_enable | default(false)
+    - ufw_installed.rc == 0

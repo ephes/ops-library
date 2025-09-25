@@ -1,0 +1,25 @@
+---
+# Simple mode: serve local records via Unbound
+
+- name: Configure Unbound local zone for simple mode
+  template:
+    src: unbound-simple-local.conf.j2
+    dest: "{{ dns_unbound_config_dir }}/10-local-simple.conf"
+  register: unbound_config_changed
+  notify: restart unbound
+
+- name: Restart Unbound immediately if config changed
+  systemd:
+    name: unbound
+    state: restarted
+  when: unbound_config_changed.changed
+
+- name: Remove legacy dnsmasq local configs
+  file:
+    path: "{{ dns_pihole_dnsmasq_dir }}/{{ item }}"
+    state: absent
+  loop:
+    - 01-local-ttl.conf
+    - 02-wildcard.conf
+    - 03-custom.conf
+  when: dns_remove_legacy_dnsmasq | default(true)

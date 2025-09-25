@@ -1,0 +1,86 @@
+---
+# Remove Pi-hole
+
+- name: Check if Pi-hole uninstall script exists
+  stat:
+    path: /usr/local/bin/pihole
+  register: pihole_binary
+
+- name: Run Pi-hole uninstall script
+  block:
+    - name: Check for Pi-hole uninstall command
+      command: pihole uninstall --help
+      register: uninstall_help
+      failed_when: false
+      changed_when: false
+
+    - name: Uninstall Pi-hole using official uninstaller
+      shell: |
+        timeout 30 bash -c "yes | pihole uninstall" || true
+      when: "'uninstall' in uninstall_help.stdout | default('')"
+      ignore_errors: yes
+      async: 45
+      poll: 5
+
+  when: pihole_binary.stat.exists
+
+# Manual cleanup if uninstaller doesn't exist or fails
+- name: Stop Pi-hole services manually
+  systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop:
+    - pihole-FTL
+    - lighttpd
+  failed_when: false
+
+- name: Remove Pi-hole binaries
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /usr/local/bin/pihole
+    - /opt/pihole
+    - /usr/bin/pihole-FTL
+    - /etc/.pihole  # Pi-hole source directory
+
+- name: Remove Pi-hole configuration directories
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ dns_pihole_config_dir }}"
+    - "{{ dns_pihole_dnsmasq_dir }}"
+    - /var/log/pihole
+    - /var/log/pihole-FTL.log
+    - /run/pihole-FTL.pid
+    - /run/pihole-FTL.port
+  when: dns_remove_pihole_data | bool
+
+- name: Keep Pi-hole data but remove configs
+  block:
+    - name: Remove only Pi-hole service configs
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ dns_pihole_dnsmasq_dir }}/01-pihole.conf"
+        - "{{ dns_pihole_dnsmasq_dir }}/06-rfc6761.conf"
+        - /etc/sudoers.d/pihole
+        - /etc/systemd/system/pihole-FTL.service
+  when: not dns_remove_pihole_data | bool
+
+- name: Remove Pi-hole user and group
+  block:
+    - name: Remove pihole user
+      user:
+        name: pihole
+        state: absent
+        remove: yes
+
+    - name: Remove pihole group
+      group:
+        name: pihole
+        state: absent
+  when: dns_remove_pihole_data | bool

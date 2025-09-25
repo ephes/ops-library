@@ -1,0 +1,62 @@
+---
+# Final cleanup tasks
+
+- name: Remove DNS-related cron jobs
+  cron:
+    name: "{{ item }}"
+    state: absent
+    user: root
+  loop:
+    - "Pi-hole gravity update"
+    - "Pi-hole flush logs"
+    - "Unbound root hints update"
+  failed_when: false
+
+- name: Remove leftover systemd service files
+  file:
+    path: "/etc/systemd/system/{{ item }}"
+    state: absent
+  loop:
+    - pihole-FTL.service
+    - pihole-FTL-prestart.service
+    - pihole-FTL-poststop.service
+  failed_when: false
+
+- name: Remove Pi-hole source directory if exists
+  file:
+    path: /etc/.pihole
+    state: absent
+  failed_when: false
+
+- name: Remove Pi-hole bash completion
+  file:
+    path: /etc/bash_completion.d/pihole
+    state: absent
+  failed_when: false
+
+- name: Remove Unbound directories
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/unbound
+    - /var/lib/unbound
+    - /var/cache/unbound
+  failed_when: false
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+
+- name: Display removal summary
+  debug:
+    msg: |
+      DNS services removal completed:
+      - Pi-hole: Removed
+      - Unbound: Removed
+      - Data removal: {{ dns_remove_pihole_data | bool }}
+      - System DNS: {{ 'Restored to systemd-resolved' if dns_restore_systemd_resolved else 'Left unconfigured' }}
+
+      {% if not dns_remove_pihole_data %}
+      Note: Pi-hole data and blocklists were preserved at {{ dns_pihole_config_dir }}
+      {% endif %}

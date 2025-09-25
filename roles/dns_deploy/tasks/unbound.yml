@@ -1,0 +1,118 @@
+---
+# Unbound Installation and Configuration
+
+# Clean up existing configs if clean install requested
+- name: Check for existing Unbound configs
+  find:
+    paths: "{{ dns_unbound_config_dir }}"
+    patterns: "*.conf"
+  register: existing_configs
+  when: dns_unbound_config_dir is defined
+
+- name: Backup existing Unbound configs
+  copy:
+    src: "{{ item.path }}"
+    dest: "{{ item.path }}.backup.{{ ansible_date_time.epoch }}"
+    remote_src: yes
+  loop: "{{ existing_configs.files }}"
+  when:
+    - existing_configs.files is defined
+    - existing_configs.files | length > 0
+    - dns_backup_existing | default(true)
+
+- name: Remove conflicting Unbound configs
+  file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ existing_configs.files }}"
+  when:
+    - existing_configs.files is defined
+    - existing_configs.files | length > 0
+    - dns_clean_install | default(false) or item.path | basename in ['00-base.conf', '09-local-zones.conf', '10-split-dns.conf', '10-local-simple.conf', '20-forward.conf', 'root-auto-trust-anchor-file.conf']
+
+# Handle corrupted trust anchor - ALWAYS remove and regenerate
+- name: Ensure Unbound library directory exists
+  file:
+    path: /var/lib/unbound
+    state: directory
+    mode: '0755'
+    owner: unbound
+    group: unbound
+
+- name: Remove potentially corrupted trust anchor
+  file:
+    path: /var/lib/unbound/root.key
+    state: absent
+  changed_when: true
+
+# Remove the auto-trust-anchor config that might be duplicated
+- name: Remove root-auto-trust-anchor-file.conf if exists
+  file:
+    path: /etc/unbound/unbound.conf.d/root-auto-trust-anchor-file.conf
+    state: absent
+
+- name: Regenerate trust anchor
+  command: unbound-anchor -a /var/lib/unbound/root.key
+  register: anchor_result
+  failed_when: false  # unbound-anchor returns 1 if key exists but is valid
+  changed_when: anchor_result.rc == 0
+
+- name: Set ownership on trust anchor
+  file:
+    path: /var/lib/unbound/root.key
+    owner: unbound
+    group: unbound
+    mode: '0644'
+
+# Unbound is already installed in prepare_stage1.yml
+- name: Create Unbound config directory
+  file:
+    path: "{{ dns_unbound_config_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Create main Unbound config file
+  copy:
+    content: |
+      # Unbound configuration file
+      # See the unbound.conf(5) man page.
+
+      # The following line includes additional configuration files from the
+      # /etc/unbound/unbound.conf.d directory.
+      include-toplevel: "/etc/unbound/unbound.conf.d/*.conf"
+    dest: /etc/unbound/unbound.conf
+    mode: '0644'
+
+- name: Configure Unbound base settings
+  template:
+    src: unbound-base.conf.j2
+    dest: "{{ dns_unbound_config_dir }}/00-base.conf"
+  register: unbound_base_config
+  notify: restart unbound
+
+- name: Configure Unbound forwarding
+  template:
+    src: unbound-forward.conf.j2
+    dest: "{{ dns_unbound_config_dir }}/20-forward.conf"
+  register: unbound_forward_config
+  notify: restart unbound
+
+# Simple mode: no local data
+# Advanced mode: split-DNS configured in configure_advanced.yml
+
+- name: Validate Unbound configuration
+  command: unbound-checkconf
+  changed_when: false
+
+- name: Start and enable Unbound
+  systemd:
+    name: unbound
+    state: started
+    enabled: yes
+
+- name: Restart Unbound if configuration changed
+  systemd:
+    name: unbound
+    state: restarted
+    daemon_reload: yes
+  when: unbound_base_config.changed or unbound_forward_config.changed

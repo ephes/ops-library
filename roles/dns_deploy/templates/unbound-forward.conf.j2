@@ -1,0 +1,10 @@
+# Forward all queries not handled locally to upstream DNS servers
+forward-zone:
+    name: "."
+{% for upstream in dns_unbound_upstream %}
+    forward-addr: {{ upstream.addr }}
+{% endfor %}
+    # Optional: Enable DNS-over-TLS
+    # forward-tls-upstream: yes
+    # forward-addr: 1.1.1.1@853#cloudflare-dns.com
+    # forward-addr: 1.0.0.1@853#cloudflare-dns.com

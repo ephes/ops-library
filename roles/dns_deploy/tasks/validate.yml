@@ -1,0 +1,25 @@
+---
+# Validate required variables based on mode
+
+- name: Validate common variables
+  assert:
+    that:
+      - dns_local_domain is defined
+      - dns_local_domain_punycode is defined
+      - dns_unbound_port is defined
+    fail_msg: "Required DNS variables are not defined"
+
+- name: Validate Advanced Mode variables
+  assert:
+    that:
+      - dns_split_tailscale_ip is defined
+      - dns_split_tailscale_ip != ""
+    fail_msg: "dns_split_tailscale_ip must be set for Advanced Mode"
+  when: dns_mode == 'advanced'
+
+- name: Validate Simple Mode variables
+  assert:
+    that:
+      - dns_custom_entries is defined
+    fail_msg: "dns_custom_entries must be defined for Simple Mode"
+  when: dns_mode == 'simple'

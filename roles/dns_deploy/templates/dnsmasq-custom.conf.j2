@@ -1,0 +1,12 @@
+# Custom DNS entries for non-Traefik services
+# These override the wildcard for specific hostnames
+
+{% for entry in dns_custom_entries %}
+# {{ entry.name }}
+host-record={{ entry.name }},{{ entry.ip }}
+{% if dns_local_domain in entry.name %}
+# Punycode version
+{% set puny_name = entry.name | replace(dns_local_domain, dns_local_domain_punycode) %}
+host-record={{ puny_name }},{{ entry.ip }}
+{% endif %}
+{% endfor %}
