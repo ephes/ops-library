@@ -1,20 +1,16 @@
 # DNS Deploy Role
 
-Deploy and configure a complete DNS solution using Pi-hole v6 and Unbound for local service discovery and ad blocking.
-
-> **Note**: This role has been thoroughly tested and refined to handle Pi-hole v6's new architecture and Unbound's zone type limitations. It provides a robust solution that supports both wildcard DNS and custom host overrides simultaneously.
+Deploy Unbound DNS with split-horizon views and ad blocking for homelab environments.
 
 ## Features
 
-- **Simple Mode** (default): Pi-hole with Unbound providing both wildcard DNS and custom host overrides
-- **Advanced Mode**: Unbound split-DNS with different responses for LAN vs Tailscale clients
-- Ad blocking via Pi-hole v6 with customizable blocklists
-- Wildcard DNS for Traefik-backed services (using Unbound redirect zones)
-- Custom DNS entries for non-Traefik services (using Unbound static zones)
-- IDN/Punycode support for domains with umlauts
-- Clean install option for handling existing DNS configurations
-- Automatic backup of existing configurations
-- Full support for both wildcards AND custom hosts simultaneously
+- **Split-horizon DNS**: Different responses for LAN vs Tailscale clients
+- **Ad blocking**: Via customizable blocklists (hosts format)
+- **Wildcard DNS**: For Traefik-backed services (`*.home.example.com`)
+- **Custom DNS entries**: Service-specific overrides
+- **IDN/Punycode support**: For domains with special characters
+- **Automatic blocklist updates**: Via systemd timer
+- **DNSSEC validation**: For secure DNS resolution
 
 ## Requirements
 
@@ -24,8 +20,6 @@ Deploy and configure a complete DNS solution using Pi-hole v6 and Unbound for lo
 
 ## Quick Start
 
-### Simple Mode (Default)
-
 ```yaml
 - hosts: dns_server
   become: true
@@ -34,50 +28,32 @@ Deploy and configure a complete DNS solution using Pi-hole v6 and Unbound for lo
       vars:
         dns_local_domain: "home.example.com"
         dns_local_domain_punycode: "home.example.com"  # Same if no special chars
-        dns_custom_entries:
-          - { name: "router.home.example.com", ip: "192.168.1.1" }
-          - { name: "nas.home.example.com", ip: "192.168.1.10" }
-```
 
-### Advanced Mode (Split-DNS)
+        # Split-DNS configuration
+        dns_split_lan_network: "192.168.1.0/24"
+        dns_split_tailscale_network: "100.64.0.0/10"
+        dns_split_lan_ip: "192.168.1.5"
+        dns_split_tailscale_ip: "100.64.0.5"
 
-```yaml
-- hosts: dns_server
-  become: true
-  roles:
-    - role: local.ops_library.dns_deploy
-      vars:
-        dns_mode: "advanced"
-        dns_local_domain: "home.example.com"
-        dns_local_domain_punycode: "home.example.com"
-        dns_split_tailscale_ip: "100.64.0.5"  # Required for advanced mode
+        # Service overrides (optional)
         dns_split_services:
           - { name: "router", lan_ip: "192.168.1.1", tailscale_ip: "192.168.1.1" }
+          - { name: "nas", lan_ip: "192.168.1.10", tailscale_ip: "192.168.1.10" }
 ```
 
 ## Architecture
 
-### Simple Mode
 ```
-Client → Pi-hole (port 53) → Unbound (port 5335) → Internet
-                              ↓
-                              Unbound handles local resolution:
-                              - redirect zone: *.home.example.com → Traefik IP
-                              - static zones: router.home.example.com → specific IP
-```
+LAN Client (192.168.x.x) → Unbound (port 53) → LAN view → Returns LAN IP
+Tailscale Client (100.x.x.x) → Unbound (port 53) → Tailscale view → Returns Tailscale IP
 
-### Advanced Mode
+Unbound handles everything:
+- Split-DNS views based on source IP
+- Ad blocking via blocklists
+- Wildcard DNS for *.home.example.com
+- Custom host overrides
+- Recursive resolution with DNSSEC
 ```
-LAN Client → Pi-hole → Unbound (views) → Returns LAN IP
-Tailscale Client → Pi-hole → Unbound (views) → Returns Tailscale IP
-```
-
-### How Wildcard + Custom Hosts Work Together
-
-The role uses a clever combination of Unbound zone types:
-1. **Base domain** uses `redirect` zone - catches all undefined subdomains
-2. **Custom hosts** use `static` zones - override the redirect for specific hosts
-3. Unbound processes more specific zones first, so custom hosts take precedence
 
 ## Role Variables
 
@@ -85,185 +61,102 @@ The role uses a clever combination of Unbound zone types:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `dns_mode` | `"simple"` | Deployment mode: `"simple"` or `"advanced"` |
 | `dns_local_domain` | `"home.example.com"` | Local domain for services |
-| `dns_local_domain_punycode` | `"home.example.com"` | IDN encoded version (same if no special chars) |
+| `dns_local_domain_punycode` | `"home.example.com"` | IDN encoded version |
 | `dns_local_ip` | `{{ ansible_default_ipv4.address }}` | IP for wildcard resolution |
-| `dns_clean_install` | `false` | Remove existing DNS configs before deployment |
-| `dns_backup_existing` | `true` | Backup existing configs before removal |
 
-### Pi-hole Configuration
+### Split-DNS Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `dns_pihole_web_interface` | `false` | Enable/disable web UI |
-| `dns_pihole_web_password` | `""` | Password for web UI |
-| `dns_pihole_ftl_port` | `4711` | FTL API port |
-
-### Unbound Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `dns_unbound_port` | `5335` | Unbound listening port |
-| `dns_unbound_upstream` | Cloudflare, Google | Upstream DNS servers |
-
-### Simple Mode Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `dns_custom_entries` | Router, Proxmox, Pi-hole | Custom DNS entries |
-| `dns_dnsmasq_local_ttl` | `86400` | TTL for local records |
-
-### Advanced Mode Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `dns_split_lan_network` | `"192.168.178.0/24"` | LAN network range |
+| `dns_split_lan_network` | `"192.168.0.0/16"` | LAN network range |
 | `dns_split_tailscale_network` | `"100.64.0.0/10"` | Tailscale network range |
-| `dns_split_tailscale_ip` | `""` | **Required** - Tailscale IP |
-| `dns_split_services` | Router, Proxmox | Service-specific IPs |
+| `dns_split_lan_ip` | `{{ ansible_default_ipv4.address }}` | IP returned for LAN clients |
+| `dns_split_tailscale_ip` | `""` | IP returned for Tailscale clients |
+| `dns_split_services` | `[]` | Service-specific IP overrides |
 
-### Ad Blocking
+### Blocklist Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `dns_blocklists_enabled` | `true` | Enable ad blocking |
-| `dns_blocklists` | Various lists | Blocklist URLs |
-| `dns_whitelist_domains` | GitHub, PyPI, etc. | Whitelisted domains |
+| `dns_blocklists` | See defaults | List of blocklist URLs |
+| `dns_allowlist` | `["github.com", ...]` | Domains never to block |
 
-### System Configuration
+## How It Works
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `dns_configure_local_resolver` | `true` | Update /etc/resolv.conf |
-| `dns_firewall_enable` | `true` | Configure UFW rules |
+### Split-DNS Views
 
-## Service Discovery
+Unbound uses view-based configuration to return different IPs based on client source:
 
-### Traefik-Backed Services
-Services behind Traefik require no DNS configuration - the wildcard handles everything:
-- `service.home.example.com` → Traefik IP → Traefik routes to service
+1. **LAN clients** (192.168.x.x) get LAN IPs
+2. **Tailscale clients** (100.x.x.x) get Tailscale IPs
+3. **Service overrides** take precedence over wildcards
 
-### Non-Traefik Services
-Use `dns_custom_entries` (Simple) or `dns_split_services` (Advanced) for services that need specific IPs:
-- Router, switches, printers
-- Services on different hosts
-- Services not behind Traefik
+### Ad Blocking
+
+1. Blocklists are downloaded and converted to Unbound format
+2. Systemd timer updates blocklists daily
+3. Allowlist ensures critical domains are never blocked
+
+### Wildcard Resolution
+
+- `*.home.example.com` → Configured IP (LAN or Tailscale based on view)
+- Specific services can override with `dns_split_services`
 
 ## Testing
 
-After deployment, verify DNS resolution:
-
 ```bash
-# Test wildcard resolution
-dig @dns-server test.home.example.com
+# From LAN client
+dig @192.168.1.5 deploy.home.example.com
+# Returns: 192.168.1.5
 
-# Test custom entry
-dig @dns-server router.home.example.com
+# From Tailscale client
+dig @100.64.0.5 deploy.home.example.com
+# Returns: 100.64.0.5
 
 # Test ad blocking
-dig @dns-server doubleclick.net  # Should return 0.0.0.0 or NXDOMAIN
+dig @192.168.1.5 doubleclick.net
+# Returns: 0.0.0.0 or NXDOMAIN
 
-# Test external resolution
-dig @dns-server google.com
-
-# Advanced Mode: Test split-DNS
-dig @dns-server +subnet=192.168.1.0/24 service.home.example.com  # LAN IP
-dig @dns-server +subnet=100.64.0.0/10 service.home.example.com   # Tailscale IP
+# Test DNSSEC
+dig @192.168.1.5 google.com +dnssec
+# Should show AD flag for authenticated data
 ```
+
+## Tailscale Integration
+
+For Tailscale clients to use this DNS:
+
+1. Access [Tailscale Admin Console](https://login.tailscale.com)
+2. Go to DNS settings
+3. Enable Magic DNS
+4. Add nameserver: Your Tailscale IP (e.g., `100.64.0.5`)
+5. Restrict to domain: Your punycode domain (e.g., `home.xn--example-abc.de`)
 
 ## Troubleshooting
 
-### Port 53 already in use
-- The role automatically stops systemd-resolved early in deployment
-- If still issues, check: `sudo lsof -i :53`
-- Manual fix: `sudo systemctl stop systemd-resolved && sudo systemctl disable systemd-resolved`
+### Wrong IP returned
+- Check source network matches configured ranges
+- Verify `dns_split_tailscale_ip` is set correctly
+- Restart Unbound: `sudo systemctl restart unbound`
 
-### Services not resolving
-- Simple Mode: Check `/etc/unbound/unbound.conf.d/10-local-simple.conf`
-- Advanced Mode: Check `/etc/unbound/unbound.conf.d/10-split-dns.conf`
-- Restart services: `sudo systemctl restart unbound && sudo systemctl restart pihole-FTL`
-- Test Unbound directly: `dig @127.0.0.1 -p 5335 test.home.example.com`
+### Domains not blocked
+- Check blocklist download: `sudo systemctl status unbound-blocklist.service`
+- Verify domain not in allowlist
+- Force update: `sudo systemctl start unbound-blocklist.service`
 
-### Wildcards not working after remove/deploy
-- The role now includes immediate Unbound restart to prevent this
-- Manual fix: `sudo systemctl restart unbound`
-- Verify config is active: `sudo unbound-checkconf`
+### Service not resolving
+- Check Unbound config: `sudo unbound-checkconf`
+- View logs: `sudo journalctl -u unbound -f`
+- Test from server: `dig @127.0.0.1 test.home.example.com`
 
-### No ad blocking
-- Check blocklists: `pihole -q doubleclick.net`
-- Update gravity: `pihole -g`
-- Verify upstream DNS: `grep upstreams /etc/pihole/pihole.toml` (should show `127.0.0.1#5335`)
+## Files and Directories
 
-### Wrong IP from Tailscale (Advanced Mode)
-- Verify `dns_split_tailscale_ip` is set
-- Test: `dig @localhost +subnet=100.64.0.1/32 service.home.example.com`
-
-### Trust anchor issues
-- The role automatically cleans and regenerates trust anchors
-- Manual fix: `sudo rm /var/lib/unbound/root.key && sudo unbound-anchor`
-
-### Deployment on Existing DNS Server
-
-If deploying on a system with existing DNS services:
-
-1. **Option A: Clean Install (Recommended)**
-   ```yaml
-   - role: local.ops_library.dns_deploy
-     vars:
-       dns_clean_install: true  # Removes conflicting configs
-   ```
-
-2. **Option B: Remove First**
-   ```bash
-   # Remove existing DNS completely
-   just remove-dns
-   # Then deploy fresh
-   just deploy-one dns
-   ```
-
-3. **Option C: Manual Cleanup**
-   ```bash
-   # On target server
-   sudo rm -rf /etc/unbound/unbound.conf.d/*
-   sudo rm -f /var/lib/unbound/root.key
-   sudo unbound-anchor -a /var/lib/unbound/root.key
-   ```
-
-## Known Issues and Solutions
-
-### Pi-hole v6 Changes
-- **Issue**: Pi-hole v6 uses TOML configuration instead of setupVars.conf
-- **Solution**: Role handles both formats and configures upstream DNS in pihole.toml
-
-### Unbound Zone Limitations
-- **Issue**: No single Unbound zone type supports both wildcards and custom hosts
-- **Solution**: Combination of `redirect` zone for base domain and `static` zones for overrides
-
-### systemd-resolved Port Conflicts
-- **Issue**: systemd-resolved blocks port 53 on Ubuntu systems
-- **Solution**: Early stopping of systemd-resolved in deployment process
-
-### Configuration Timing
-- **Issue**: Unbound config changes require restart before verification
-- **Solution**: Immediate restart after configuration changes in Simple mode
-
-## Removal
-
-To completely remove DNS services, use the companion `dns_remove` role:
-
-```yaml
-- role: local.ops_library.dns_remove
-  vars:
-    dns_confirm_removal: true
-    dns_remove_pihole_data: true  # Also remove data/blocklists
-    dns_restore_systemd_resolved: true  # Restore system DNS
-```
-
-Or use the ops-control command:
-```bash
-just remove-dns
-```
+- `/etc/unbound/unbound.conf.d/` - Unbound configuration
+- `/var/lib/unbound/` - Blocklists and data
+- `/usr/local/bin/update-blocklists.sh` - Blocklist update script
+- `/etc/systemd/system/unbound-blocklist.*` - Update timer and service
 
 ## License
 
@@ -271,4 +164,4 @@ MIT
 
 ## Author
 
-Ansible DNS Deploy Role for ops-library
+Ansible Role for DNS deployment with split-horizon and ad blocking

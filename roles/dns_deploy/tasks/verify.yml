@@ -1,9 +1,17 @@
 ---
 # Verify DNS resolution
 
+# Wait for Unbound to be fully ready after configuration changes
+- name: Wait for Unbound to be ready
+  wait_for:
+    port: "{{ 53 if dns_mode == 'unbound_only' else dns_unbound_port }}"
+    host: 127.0.0.1
+    delay: 2
+    timeout: 30
+
 # Test Unbound is listening on correct port
 - name: Test Unbound port connectivity
-  command: dig @127.0.0.1 -p {{ dns_unbound_port }} google.com +short
+  command: dig @127.0.0.1 -p {{ 53 if dns_mode == 'unbound_only' else dns_unbound_port }} google.com +short
   register: unbound_direct_test
   failed_when: unbound_direct_test.stdout == ""
   changed_when: false

@@ -1,25 +1,29 @@
 ---
-# Validate required variables based on mode
+# Validate required variables
 
-- name: Validate common variables
+- name: Validate core DNS variables
   assert:
     that:
       - dns_local_domain is defined
       - dns_local_domain_punycode is defined
-      - dns_unbound_port is defined
+      - dns_unbound_config_dir is defined
     fail_msg: "Required DNS variables are not defined"
 
-- name: Validate Advanced Mode variables
+- name: Validate split-DNS configuration if Tailscale IP is provided
   assert:
     that:
       - dns_split_tailscale_ip is defined
       - dns_split_tailscale_ip != ""
-    fail_msg: "dns_split_tailscale_ip must be set for Advanced Mode"
-  when: dns_mode == 'advanced'
+    fail_msg: "dns_split_tailscale_ip must be set for split-DNS functionality"
+  when: dns_split_tailscale_ip is defined and dns_split_tailscale_ip != ""
 
-- name: Validate Simple Mode variables
-  assert:
-    that:
-      - dns_custom_entries is defined
-    fail_msg: "dns_custom_entries must be defined for Simple Mode"
-  when: dns_mode == 'simple'
+- name: Display DNS configuration
+  debug:
+    msg: |
+      DNS Configuration:
+      - Local Domain: {{ dns_local_domain }}
+      - LAN Network: {{ dns_split_lan_network }}
+      - LAN IP: {{ dns_split_lan_ip }}
+      - Tailscale Network: {{ dns_split_tailscale_network }}
+      - Tailscale IP: {{ dns_split_tailscale_ip | default('Not configured') }}
+      - Ad Blocking: {{ dns_blocklists_enabled | default(true) }}

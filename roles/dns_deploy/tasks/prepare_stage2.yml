@@ -1,8 +1,0 @@
----
-# Stage 2: Ensure Unbound is running before continuing
-
-- name: Ensure Unbound service is active
-  systemd:
-    name: unbound
-  register: unbound_status
-  failed_when: unbound_status.status.ActiveState != "active"

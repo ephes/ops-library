@@ -1,5 +1,7 @@
 # Split DNS configuration - different responses per client network
 # This file is only used in Advanced Mode
+# Note: Unbound will operate as recursive resolver (no forwarding)
+# because forward-zone conflicts with views
 
 server:
   # Map client networks to views
@@ -19,11 +21,13 @@ view:
   local-zone: "{{ dns_local_domain_punycode }}." redirect
   local-data: "{{ dns_local_domain_punycode }}. IN A {{ dns_split_lan_ip }}"
 
-  # Service-specific overrides (optional)
-  # IMPORTANT: These specific local-data entries take precedence over the redirect wildcard
+  # Service-specific overrides using static zones
+  # IMPORTANT: Static zones take precedence over the redirect wildcard
   # Use for services that need different IPs than the wildcard default
 {% for service in dns_split_services %}
+  local-zone: "{{ service.name }}.{{ dns_local_domain }}." static
   local-data: "{{ service.name }}.{{ dns_local_domain }}. IN A {{ service.lan_ip }}"
+  local-zone: "{{ service.name }}.{{ dns_local_domain_punycode }}." static
   local-data: "{{ service.name }}.{{ dns_local_domain_punycode }}. IN A {{ service.lan_ip }}"
 {% endfor %}
 
@@ -39,11 +43,13 @@ view:
   local-zone: "{{ dns_local_domain_punycode }}." redirect
   local-data: "{{ dns_local_domain_punycode }}. IN A {{ dns_split_tailscale_ip }}"
 
-  # Service-specific overrides (optional)
-  # IMPORTANT: These specific local-data entries take precedence over the redirect wildcard
+  # Service-specific overrides using static zones
+  # IMPORTANT: Static zones take precedence over the redirect wildcard
   # Use for services that need different IPs than the wildcard default
 {% for service in dns_split_services %}
+  local-zone: "{{ service.name }}.{{ dns_local_domain }}." static
   local-data: "{{ service.name }}.{{ dns_local_domain }}. IN A {{ service.tailscale_ip }}"
+  local-zone: "{{ service.name }}.{{ dns_local_domain_punycode }}." static
   local-data: "{{ service.name }}.{{ dns_local_domain_punycode }}. IN A {{ service.tailscale_ip }}"
 {% endfor %}
 
@@ -58,3 +64,11 @@ view:
 
   local-zone: "{{ dns_local_domain_punycode }}." redirect
   local-data: "{{ dns_local_domain_punycode }}. IN A {{ dns_split_lan_ip }}"
+
+  # Service-specific overrides using static zones (same as LAN view)
+{% for service in dns_split_services %}
+  local-zone: "{{ service.name }}.{{ dns_local_domain }}." static
+  local-data: "{{ service.name }}.{{ dns_local_domain }}. IN A {{ service.lan_ip }}"
+  local-zone: "{{ service.name }}.{{ dns_local_domain_punycode }}." static
+  local-data: "{{ service.name }}.{{ dns_local_domain_punycode }}. IN A {{ service.lan_ip }}"
+{% endfor %}

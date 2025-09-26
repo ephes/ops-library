@@ -1,0 +1,180 @@
+---
+# Configure Unbound as standalone DNS server (unbound_only mode)
+
+- name: Remove Pi-hole if present
+  include_tasks: remove_pihole.yml
+  when: dns_clean_install | default(false)
+
+- name: Stop Pi-hole if running
+  systemd:
+    name: pihole-FTL
+    state: stopped
+    enabled: false
+  failed_when: false
+  ignore_errors: true
+
+- name: Remove legacy DNAT rules from Pi-hole setup
+  shell: |
+    # Remove IPv4 DNAT rules if they exist
+    iptables -t nat -D PREROUTING -s 100.64.0.0/10 -p udp --dport 53 -j DNAT --to-destination 127.0.0.1:5335 2>/dev/null || true
+    iptables -t nat -D PREROUTING -s 100.64.0.0/10 -p tcp --dport 53 -j DNAT --to-destination 127.0.0.1:5335 2>/dev/null || true
+    # Remove any other port 5335 DNAT rules
+    iptables -t nat -D PREROUTING -p udp --dport 53 -j DNAT --to-destination 127.0.0.1:5335 2>/dev/null || true
+    iptables -t nat -D PREROUTING -p tcp --dport 53 -j DNAT --to-destination 127.0.0.1:5335 2>/dev/null || true
+    # Remove IPv6 rules if they exist
+    ip6tables -t nat -D PREROUTING -s fd7a:115c:a1e0::/48 -p udp --dport 53 -j DNAT --to-destination [::1]:5335 2>/dev/null || true
+    ip6tables -t nat -D PREROUTING -s fd7a:115c:a1e0::/48 -p tcp --dport 53 -j DNAT --to-destination [::1]:5335 2>/dev/null || true
+    # Remove from persistent rules if present
+    if [ -f /etc/iptables/rules.v4 ]; then
+      sed -i '/5335/d' /etc/iptables/rules.v4
+    fi
+    if [ -f /etc/iptables/rules.v6 ]; then
+      sed -i '/5335/d' /etc/iptables/rules.v6
+    fi
+  args:
+    executable: /bin/bash
+  register: dnat_cleanup
+  changed_when: false
+
+- name: Install Unbound package
+  apt:
+    name:
+      - unbound
+      - unbound-anchor
+      - dns-root-data
+      - dnsutils
+    state: present
+    update_cache: yes
+
+- name: Stop systemd-resolved if present
+  systemd:
+    name: systemd-resolved
+    state: stopped
+    enabled: false
+  failed_when: false
+  ignore_errors: true
+
+- name: Ensure Unbound directories exist
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: unbound
+    group: unbound
+    mode: '0755'
+  loop:
+    - "{{ dns_unbound_config_dir }}"
+    - "{{ dns_unbound_blocklist_dir }}"
+
+- name: Configure Unbound base settings for full DNS mode
+  template:
+    src: unbound-base-full.conf.j2
+    dest: "{{ dns_unbound_config_dir }}/00-base.conf"
+    owner: root
+    group: root
+    mode: '0644'
+  register: unbound_base_config
+  notify: restart unbound
+
+- name: Configure Unbound split-DNS views
+  template:
+    src: unbound-split-dns.conf.j2
+    dest: "{{ dns_unbound_config_dir }}/10-split-dns.conf"
+    owner: root
+    group: root
+    mode: '0644'
+  register: unbound_split_config
+  notify: restart unbound
+
+- name: Create allowlist configuration
+  template:
+    src: unbound-allowlist.conf.j2
+    dest: "{{ dns_unbound_blocklist_dir }}/allowlist.conf"
+    owner: unbound
+    group: unbound
+    mode: '0644'
+  notify: restart unbound
+
+- name: Create initial empty blocklist
+  copy:
+    content: "# Blocklist will be populated by update script\n"
+    dest: "{{ dns_unbound_blocklist_dir }}/blocklist.conf"
+    owner: unbound
+    group: unbound
+    mode: '0644'
+    force: false
+  notify: restart unbound
+
+- name: Deploy blocklist update script
+  template:
+    src: update-blocklists.sh.j2
+    dest: /usr/local/bin/update-blocklists.sh
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy systemd service for blocklist updates
+  template:
+    src: unbound-blocklist.service.j2
+    dest: /etc/systemd/system/unbound-blocklist.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Deploy systemd timer for blocklist updates
+  template:
+    src: unbound-blocklist.timer.j2
+    dest: /etc/systemd/system/unbound-blocklist.timer
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+
+- name: Enable and start blocklist timer
+  systemd:
+    name: unbound-blocklist.timer
+    state: started
+    enabled: yes
+
+- name: Run initial blocklist update
+  systemd:
+    name: unbound-blocklist.service
+    state: started
+  register: blocklist_update
+  failed_when: false  # Don't fail if blocklists are temporarily unavailable
+
+- name: Check if Unbound service exists
+  shell: systemctl list-units --all --type=service | grep -q unbound.service
+  register: unbound_service_exists
+  changed_when: false
+  failed_when: false
+
+- name: Start Unbound for first time if not running
+  systemd:
+    name: unbound
+    state: started
+    enabled: yes
+  when: unbound_service_exists.rc != 0 or (unbound_base_config.changed or unbound_split_config.changed)
+
+- name: Restart Unbound if already running and config changed
+  systemd:
+    name: unbound
+    state: restarted
+  when:
+    - unbound_service_exists.rc == 0
+    - unbound_base_config.changed or unbound_split_config.changed
+
+- name: Ensure Unbound is running and enabled
+  systemd:
+    name: unbound
+    state: started
+    enabled: yes
+
+- name: Wait for Unbound to be ready
+  wait_for:
+    port: 53
+    host: 127.0.0.1
+    delay: 2
+    timeout: 30

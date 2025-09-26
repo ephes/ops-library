@@ -5,19 +5,8 @@
 dns_confirm_removal: false  # Must be explicitly set to true
 
 # Removal options
-dns_remove_pihole_data: false  # Set to true to remove Pi-hole data and blocklists
 dns_restore_systemd_resolved: true  # Set to false to leave DNS unconfigured
-
-# Pi-hole paths
-dns_pihole_config_dir: /etc/pihole
-dns_pihole_dnsmasq_dir: /etc/dnsmasq.d
-dns_pihole_ftl_dir: /etc/pihole
 
 # Unbound paths
 dns_unbound_config_dir: /etc/unbound/unbound.conf.d
 dns_unbound_lib_dir: /var/lib/unbound
-
-# Service names
-dns_services_to_stop:
-  - pihole-FTL
-  - unbound

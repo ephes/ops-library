@@ -1,0 +1,49 @@
+---
+# Remove Pi-hole completely
+
+- name: Stop Pi-hole services
+  systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop:
+    - pihole-FTL
+    - lighttpd
+  failed_when: false
+  ignore_errors: true
+
+- name: Remove Pi-hole packages
+  apt:
+    name:
+      - pihole
+      - pihole-FTL
+    state: absent
+    purge: yes
+  failed_when: false
+  ignore_errors: true
+
+- name: Remove Pi-hole directories
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/pihole
+    - /etc/dnsmasq.d
+    - /var/log/pihole
+    - /var/www/html/pihole
+    - /var/www/html/admin
+    - /opt/pihole
+  failed_when: false
+
+- name: Remove Pi-hole user
+  user:
+    name: pihole
+    state: absent
+    remove: yes
+  failed_when: false
+
+- name: Clean up Pi-hole cron jobs
+  file:
+    path: /etc/cron.d/pihole
+    state: absent
+  failed_when: false

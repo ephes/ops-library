@@ -1,8 +1,0 @@
-# Wildcard DNS for Traefik-backed services
-# All subdomains resolve to the same IP (Traefik handles routing)
-
-# UTF-8 domain
-address=/{{ dns_local_domain }}/{{ dns_local_ip }}
-
-# Punycode version for IDN support
-address=/{{ dns_local_domain_punycode }}/{{ dns_local_ip }}

@@ -1,34 +1,12 @@
 ---
 # DNS Deploy Role - Main Tasks
-
-- name: Validate deployment mode
-  assert:
-    that:
-      - dns_mode in ['simple', 'advanced']
-    fail_msg: "dns_mode must be 'simple' or 'advanced'"
+# Deploys Unbound DNS with split-horizon views and ad blocking
 
 - name: Validate configuration
   include_tasks: validate.yml
 
-- name: Prepare system (stage 1 - dependencies only)
-  include_tasks: prepare_stage1.yml
-
-# Install Unbound first to provide DNS during Pi-hole installation
-- name: Install and configure Unbound
-  include_tasks: unbound.yml
-
-- name: Prepare system (stage 2 - DNS configuration)
-  include_tasks: prepare_stage2.yml
-
-- name: Install Pi-hole
-  include_tasks: pihole.yml
-
-- name: Configure DNS for selected mode
-  include_tasks: "configure_{{ dns_mode }}.yml"
-
-- name: Configure blocklists and whitelist
-  include_tasks: blocklists.yml
-  when: dns_blocklists_enabled
+- name: Configure Unbound DNS with split-horizon and ad blocking
+  include_tasks: configure_unbound_only.yml
 
 - name: Configure firewall rules
   include_tasks: firewall.yml
@@ -36,6 +14,3 @@
 
 - name: Verify DNS resolution
   include_tasks: verify.yml
-
-- name: Finalize local resolver configuration
-  include_tasks: finalize_resolver.yml
