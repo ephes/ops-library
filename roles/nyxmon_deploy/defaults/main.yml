@@ -17,6 +17,15 @@ nyxmon_deploy_method: rsync  # Options: rsync, git
 
 # Source for rsync method (required for development)
 nyxmon_source_path: ""  # REQUIRED for rsync - e.g., /Users/jochen/projects/nyxmon
+# When using rsync, copy these additional source directories to the target host
+nyxmon_rsync_additional_paths:
+  - src/nyxmon/
+  - src/nyxboard/
+# Additional individual files to copy from source
+nyxmon_rsync_extra_files:
+  - README.md
+# Whether to reuse the project's pyproject.toml from nyxmon_source_path (rsync)
+nyxmon_use_source_pyproject: true
 
 # Git settings (for production deployment via FastDeploy)
 nyxmon_git_repo: "git@github.com:ephes/nyxmon.git"
