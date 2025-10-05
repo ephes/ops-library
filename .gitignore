@@ -45,3 +45,5 @@ vault.yml
 tmp/
 temp/
 *.tmp
+# Added by specsync
+specs
