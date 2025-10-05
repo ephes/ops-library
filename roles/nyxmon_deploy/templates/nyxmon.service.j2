@@ -10,7 +10,7 @@ Group={{ nyxmon_group }}
 WorkingDirectory={{ nyxmon_site_path }}
 EnvironmentFile={{ nyxmon_site_path }}/.env
 
-ExecStart={{ nyxmon_site_path }}/venv/bin/granian \
+ExecStart={{ nyxmon_venv_bin }}/granian \
     --workers {{ nyxmon_workers }} \
     --interface wsgi \
     --host {{ nyxmon_app_host }} \

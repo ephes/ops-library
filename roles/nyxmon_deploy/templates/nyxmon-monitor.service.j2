@@ -10,7 +10,7 @@ Group={{ nyxmon_group }}
 WorkingDirectory={{ nyxmon_site_path }}
 EnvironmentFile={{ nyxmon_site_path }}/.env
 
-ExecStart={{ nyxmon_site_path }}/venv/bin/start-agent --db {{ nyxmon_site_path }}/db.sqlite3 --enable-telegram
+ExecStart={{ nyxmon_venv_bin }}/start-agent --db {{ nyxmon_site_path }}/db.sqlite3 --enable-telegram
 
 Restart=always
 RestartSec=30
