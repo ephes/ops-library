@@ -14,7 +14,7 @@ Ansible role for deploying the Nyxmon monitoring service.
 ## Requirements
 
 - Ubuntu/Debian-based system
-- Python 3.8+
+- Python 3.13 (role installs/manageable via uv by default)
 - PostgreSQL (if using database)
 - Traefik (optional, for reverse proxy)
 
@@ -54,6 +54,54 @@ nyxmon_django_allowed_hosts: "127.0.0.1,nyxmon.example.com"
 nyxmon_traefik_enabled: true
 nyxmon_traefik_host: "nyxmon.example.com"
 ```
+
+### Rsync behaviour (default)
+
+By default the role performs a "local source" deployment when `nyxmon_deploy_method: rsync`:
+
+1. Validates that the Nyxmon repository contains `src/django/`, `src/nyxmon/`, `src/nyxboard/`, `pyproject.toml`, and `README.md`.
+2. Rsyncs those directories/files to the target host.
+3. Runs `uv sync --no-default-groups --no-dev` inside `/home/nyxmon/site`, so Nyxmon is installed directly from the freshly synced sources while only runtime dependencies are resolved from PyPI.
+
+This workflow keeps the server in lockstep with the local checkout and avoids the broken-wheel issue we hit earlier.
+
+#### Configuration knobs
+
+```yaml
+# Additional source directories to sync alongside src/django/
+nyxmon_rsync_additional_paths:
+  - src/nyxmon/
+  - src/nyxboard/
+
+# Additional individual files to copy from source (e.g., README.md for package metadata)
+nyxmon_rsync_extra_files:
+  - README.md
+
+# Use the project's pyproject.toml for dependency resolution (default true)
+# Set to false to fall back to the role's template when deploying purely from PyPI
+nyxmon_use_source_pyproject: true
+```
+
+> **Note:** The role validates that `pyproject.toml`, `src/django/`, and any
+> configured `nyxmon_rsync_additional_paths` and `nyxmon_rsync_extra_files` exist
+> under `nyxmon_source_path` to avoid accidentally wiping files on the remote host
+> when rsync runs with `delete: true`.
+
+### Switching back to PyPI-based deployments
+
+If you prefer the original "install from PyPI" mode (e.g. for production), override these variables:
+
+```yaml
+nyxmon_rsync_additional_paths: []
+nyxmon_rsync_extra_files: []
+nyxmon_use_source_pyproject: false
+```
+
+With those settings the role:
+
+- Only rsyncs `src/django/`
+- Templates `pyproject.toml` with the PyPI requirement (`nyxmon>=…`)
+- Runs `uv sync --upgrade-package nyxmon`, pulling the published wheel instead of using the local sources
 
 ## Example Playbook
 
@@ -101,13 +149,15 @@ nyxmon_traefik_host: "nyxmon.example.com"
 The role creates the following structure on the target system:
 
 ```
-/opt/apps/nyxmon/
-├── site/                 # Application code
-│   ├── src/django/      # Django project (rsync method)
-│   ├── .venv/           # Python virtual environment
-│   └── cache/           # Django cache directory
-├── logs/                # Application logs
-└── .env                 # Environment variables
+/home/nyxmon/
+├── site/                 # Application code (nyxmon_site_path)
+│   ├── src/django/       # Django project (rsync method)
+│   ├── src/nyxmon/       # Nyxmon package (rsync defaults)
+│   ├── src/nyxboard/     # Nyxboard package (rsync defaults)
+│   ├── .venv/            # Default uv virtual environment (nyxmon_venv_path)
+│   └── cache/            # Django cache directory
+├── logs/                 # Application logs
+└── .env                  # Environment variables
 ```
 
 ## Services
@@ -132,8 +182,8 @@ journalctl -u nyxmon -f
 systemctl restart nyxmon
 
 # Run Django management commands
-sudo -u nyxmon /opt/apps/nyxmon/site/.venv/bin/python \
-  /opt/apps/nyxmon/site/src/django/manage.py <command>
+sudo -u nyxmon /home/nyxmon/site/.venv/bin/python \
+  /home/nyxmon/site/src/django/manage.py <command>
 ```
 
 ## License
