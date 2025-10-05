@@ -27,13 +27,53 @@
   set_fact:
     nyxmon_django_path: "{{ nyxmon_site_path }}"
 
-- name: Create pyproject.toml for site
+- name: Ensure pyproject.toml exists when using source copy
+  stat:
+    path: "{{ nyxmon_site_path }}/pyproject.toml"
+  register: nyxmon_pyproject
+  when:
+    - nyxmon_use_uv
+    - nyxmon_use_source_pyproject
+
+- name: Fail if pyproject.toml is missing
+  fail:
+    msg: "pyproject.toml was not found at {{ nyxmon_site_path }}. Set nyxmon_use_source_pyproject=false or ensure the file is synced."
+  when:
+    - nyxmon_use_uv
+    - nyxmon_use_source_pyproject
+    - not nyxmon_pyproject.stat.exists
+
+- name: Ensure pyproject.toml ownership and mode
+  file:
+    path: "{{ nyxmon_site_path }}/pyproject.toml"
+    owner: "{{ nyxmon_user }}"
+    group: "{{ nyxmon_group }}"
+    mode: '0644'
+  when:
+    - nyxmon_use_uv
+    - nyxmon_use_source_pyproject
+
+- name: Create pyproject.toml for site from template
   template:
     src: pyproject.toml.j2
     dest: "{{ nyxmon_site_path }}/pyproject.toml"
     owner: "{{ nyxmon_user }}"
     group: "{{ nyxmon_group }}"
     mode: '0644'
+  when:
+    - nyxmon_use_uv
+    - not nyxmon_use_source_pyproject
+
+- name: Remove stale uv.lock before syncing
+  file:
+    path: "{{ nyxmon_site_path }}/uv.lock"
+    state: absent
+  when: nyxmon_use_uv
+
+- name: Build uv sync command arguments
+  set_fact:
+    nyxmon_uv_sync_cmd: >-
+      uv sync --no-default-groups --no-dev{{ '' if nyxmon_use_source_pyproject else ' --upgrade-package nyxmon' }}
   when: nyxmon_use_uv
 
 - name: Create virtual environment using uv
@@ -47,15 +87,17 @@
   stat:
     path: "{{ nyxmon_site_path }}/venv"
   register: venv_link
+  when: nyxmon_use_uv
 
 - name: Create venv symlink to .venv
   file:
-    src: ".venv"
+    src: "{{ nyxmon_venv_path }}"
     dest: "{{ nyxmon_site_path }}/venv"
     state: link
     owner: "{{ nyxmon_user }}"
     group: "{{ nyxmon_group }}"
     force: true  # Replace if exists with wrong owner
+  when: nyxmon_use_uv
 
 - name: Create virtual environment using venv
   command: python3 -m venv {{ nyxmon_venv_path }}
@@ -65,7 +107,7 @@
   when: not nyxmon_use_uv
 
 - name: Install dependencies using uv
-  command: uv sync
+  command: "{{ nyxmon_uv_sync_cmd }}"
   args:
     chdir: "{{ nyxmon_django_path }}"
   environment:
