@@ -1,0 +1,12 @@
+---
+# Handlers for Homelab deployment
+
+- name: reload systemd
+  systemd:
+    daemon_reload: true
+
+- name: restart homelab
+  systemd:
+    name: "{{ homelab_user }}"
+    state: restarted
+  when: homelab_service_restart_on_change

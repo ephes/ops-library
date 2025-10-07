@@ -1,0 +1,51 @@
+---
+# Setup Python environment for Homelab
+
+- name: Ensure Python and pip are installed
+  package:
+    name:
+      - python3
+      - python3-pip
+      - python3-venv
+    state: present
+
+- name: Check if uv is installed
+  stat:
+    path: "{{ homelab_uv_path }}"
+  register: uv_check
+
+- name: Fail if uv is not installed
+  fail:
+    msg: "uv is required but not installed at {{ homelab_uv_path }}. Please install it globally first."
+  when: not uv_check.stat.exists
+
+- name: Create virtual environment using uv
+  command: "{{ homelab_uv_path }} venv {{ homelab_venv_path }}"
+  args:
+    chdir: "{{ homelab_site_path }}"
+    creates: "{{ homelab_venv_path }}/bin/python"
+  become_user: "{{ homelab_user }}"
+
+- name: Check if venv symlink exists
+  stat:
+    path: "{{ homelab_site_path }}/venv"
+  register: venv_link
+
+- name: Create venv symlink to .venv
+  file:
+    src: .venv
+    dest: "{{ homelab_site_path }}/venv"
+    state: link
+    owner: "{{ homelab_user }}"
+    group: "{{ homelab_group }}"
+  when: not venv_link.stat.exists
+
+- name: Install dependencies with uv sync
+  command: "{{ homelab_uv_path }} sync --frozen"
+  args:
+    chdir: "{{ homelab_site_path }}"
+  environment:
+    VIRTUAL_ENV: "{{ homelab_venv_path }}"
+  become_user: "{{ homelab_user }}"
+  register: uv_sync_result
+  changed_when: "'Installed' in uv_sync_result.stdout or 'Updated' in uv_sync_result.stdout"

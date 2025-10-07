@@ -1,0 +1,20 @@
+---
+# Setup systemd service for Homelab
+
+- name: Create systemd service file
+  template:
+    src: systemd.service.j2
+    dest: "{{ homelab_systemd_unit_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - reload systemd
+    - restart homelab
+
+- name: Enable and start homelab service
+  systemd:
+    name: "{{ homelab_user }}"
+    enabled: true
+    state: started
+    daemon_reload: true

@@ -1,0 +1,64 @@
+---
+# Configure Django application
+
+- name: Create environment file for Django
+  template:
+    src: env.j2
+    dest: "{{ homelab_site_path }}/.env"
+    owner: "{{ homelab_user }}"
+    group: "{{ homelab_group }}"
+    mode: '0600'
+  notify: restart homelab
+
+- name: Run Django migrations
+  shell: |
+    set -a
+    . {{ homelab_site_path }}/.env
+    set +a
+    {{ homelab_venv_bin }}/python manage.py migrate
+  args:
+    chdir: "{{ homelab_site_path }}"
+    executable: /bin/bash
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ homelab_django_settings_module }}"
+  become_user: "{{ homelab_user }}"
+  register: migrate_result
+  changed_when: "'No migrations to apply' not in migrate_result.stdout"
+
+- name: Fix database permissions
+  file:
+    path: "{{ homelab_database_path }}"
+    owner: "{{ homelab_user }}"
+    group: "{{ homelab_group }}"
+    mode: '0644'
+  when: ansible_os_family == "Debian"
+
+- name: Collect static files
+  shell: |
+    set -a
+    . {{ homelab_site_path }}/.env
+    set +a
+    {{ homelab_venv_bin }}/python manage.py collectstatic --noinput
+  args:
+    chdir: "{{ homelab_site_path }}"
+    executable: /bin/bash
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ homelab_django_settings_module }}"
+  become_user: "{{ homelab_user }}"
+  register: collectstatic_result
+  changed_when: "'0 static files copied' not in collectstatic_result.stdout"
+
+- name: Add default services with logos
+  shell: |
+    set -a
+    . {{ homelab_site_path }}/.env
+    set +a
+    {{ homelab_venv_bin }}/python manage.py add_default_services
+  args:
+    chdir: "{{ homelab_site_path }}"
+    executable: /bin/bash
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ homelab_django_settings_module }}"
+  become_user: "{{ homelab_user }}"
+  register: default_services_result
+  changed_when: "'Created service' in default_services_result.stdout or 'Updated service' in default_services_result.stdout"

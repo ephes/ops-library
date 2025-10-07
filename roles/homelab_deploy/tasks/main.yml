@@ -1,0 +1,49 @@
+---
+# Homelab deployment main tasks
+
+- name: Validate required variables
+  assert:
+    that:
+      - homelab_secret_key is defined
+      - homelab_secret_key != ""
+      - homelab_secret_key != "CHANGEME"
+      - homelab_source_path is defined
+      - homelab_source_path != ""
+    fail_msg: |
+      SECURITY ERROR: Required variables are missing or contain placeholder values!
+
+      The following variables MUST be properly configured:
+      - homelab_secret_key: {{ homelab_secret_key | default('NOT SET') }}
+      - homelab_source_path: {{ homelab_source_path | default('NOT SET') }}
+
+      Placeholder or development values are NOT allowed in production.
+      Please update secrets/prod/homelab.yml with real values using:
+      SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt sops secrets/prod/homelab.yml
+
+- name: Validate Traefik basic auth password if enabled
+  assert:
+    that:
+      - homelab_basic_auth_password is defined
+      - homelab_basic_auth_password != ""
+      - homelab_basic_auth_password != "CHANGEME"
+    fail_msg: "homelab_basic_auth_password must be set when Traefik basic auth is enabled"
+  when: homelab_traefik_enabled and homelab_basic_auth_enabled
+
+- name: Setup user and directories
+  include_tasks: user.yml
+
+- name: Deploy source code
+  include_tasks: source.yml
+
+- name: Setup Python environment
+  include_tasks: python.yml
+
+- name: Configure Django application
+  include_tasks: django.yml
+
+- name: Setup systemd service
+  include_tasks: service.yml
+
+- name: Configure Traefik
+  include_tasks: traefik.yml
+  when: homelab_traefik_enabled

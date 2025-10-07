@@ -1,0 +1,100 @@
+---
+# Deploy Homelab source code using rsync
+
+- name: Ensure source directory exists
+  delegate_to: localhost
+  stat:
+    path: "{{ homelab_source_path }}"
+  register: source_dir
+  become: false
+
+- name: Fail if source directory doesn't exist
+  fail:
+    msg: "Source directory {{ homelab_source_path }} does not exist"
+  when: not source_dir.stat.exists or not source_dir.stat.isdir
+
+- name: Validate required source paths exist
+  stat:
+    path: "{{ homelab_source_path }}/{{ item }}"
+  register: homelab_source_path_stats
+  delegate_to: localhost
+  become: false
+  loop:
+    - src
+    - manage.py
+    - pyproject.toml
+    - uv.lock
+  loop_control:
+    label: "{{ item }}"
+
+- name: Fail if required source paths are missing
+  assert:
+    that: item.stat.exists
+    fail_msg: "Missing required path for rsync deployment: {{ item.invocation.module_args.path }}"
+  loop: "{{ homelab_source_path_stats.results }}"
+  loop_control:
+    label: "{{ item.invocation.module_args.path }}"
+
+- name: Sync Django source code to target
+  ansible.posix.synchronize:
+    src: "{{ homelab_source_path }}/src"
+    dest: "{{ homelab_site_path }}/"
+    delete: false
+    rsync_opts:
+      - "--exclude=__pycache__"
+      - "--exclude=*.pyc"
+      - "--exclude=.pytest_cache"
+      - "--exclude=.coverage"
+      - "--exclude=htmlcov"
+      - "--exclude=.mypy_cache"
+  become: false
+  delegate_to: localhost
+
+- name: Copy manage.py to site directory
+  copy:
+    src: "{{ homelab_source_path }}/manage.py"
+    dest: "{{ homelab_site_path }}/manage.py"
+    owner: "{{ homelab_user }}"
+    group: "{{ homelab_group }}"
+    mode: '0755'
+
+- name: Copy pyproject.toml to site directory
+  copy:
+    src: "{{ homelab_source_path }}/pyproject.toml"
+    dest: "{{ homelab_site_path }}/pyproject.toml"
+    owner: "{{ homelab_user }}"
+    group: "{{ homelab_group }}"
+    mode: '0644'
+
+- name: Copy uv.lock to site directory
+  copy:
+    src: "{{ homelab_source_path }}/uv.lock"
+    dest: "{{ homelab_site_path }}/uv.lock"
+    owner: "{{ homelab_user }}"
+    group: "{{ homelab_group }}"
+    mode: '0644'
+
+- name: Check if media directory exists in source
+  stat:
+    path: "{{ homelab_source_path }}/media"
+  register: media_dir_check
+  delegate_to: localhost
+  become: false
+
+- name: Sync media files if they exist
+  ansible.posix.synchronize:
+    src: "{{ homelab_source_path }}/media/"
+    dest: "{{ homelab_media_root }}/"
+    delete: false
+    rsync_opts:
+      - "--exclude=.gitkeep"
+  become: false
+  delegate_to: localhost
+  when: media_dir_check.stat.exists and media_dir_check.stat.isdir
+
+- name: Set ownership for synced files
+  file:
+    path: "{{ homelab_site_path }}"
+    owner: "{{ homelab_user }}"
+    group: "{{ homelab_group }}"
+    recurse: true

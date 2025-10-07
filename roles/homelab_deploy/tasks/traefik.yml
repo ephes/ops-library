@@ -1,0 +1,41 @@
+---
+# Configure Traefik for Homelab with dual router authentication
+
+- name: Ensure Traefik dynamic config directory exists
+  file:
+    path: /etc/traefik/dynamic
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install apache2-utils for htpasswd
+  package:
+    name: apache2-utils
+    state: present
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - homelab_basic_auth_enabled
+
+- name: Generate basic auth password hash
+  shell: |
+    echo '{{ homelab_basic_auth_password }}' | htpasswd -nBi {{ homelab_basic_auth_user }} | cut -d: -f2
+  register: password_hash
+  changed_when: false
+  no_log: true
+  when: homelab_basic_auth_enabled
+
+- name: Set password hash fact
+  set_fact:
+    homelab_basic_auth_password_hash: "{{ password_hash.stdout }}"
+  no_log: true
+  when: homelab_basic_auth_enabled
+
+- name: Create Traefik configuration for Homelab
+  template:
+    src: traefik.yml.j2
+    dest: "{{ homelab_traefik_config_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+  # Traefik automatically watches dynamic directory, no reload needed

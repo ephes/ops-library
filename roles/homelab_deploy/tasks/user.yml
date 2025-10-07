@@ -1,0 +1,53 @@
+---
+# Setup user and directories for Homelab
+
+- name: Ensure homelab group exists
+  group:
+    name: "{{ homelab_group }}"
+    state: present
+
+- name: Check if homelab user exists
+  getent:
+    database: passwd
+    key: "{{ homelab_user }}"
+  register: homelab_user_check
+  failed_when: false
+
+- name: Ensure homelab user exists
+  user:
+    name: "{{ homelab_user }}"
+    group: "{{ homelab_group }}"
+    home: "{{ homelab_home }}"
+    shell: /bin/bash
+    state: present
+    move_home: false  # Don't try to move home if it's in use
+  when: homelab_user_check.failed  # Only create if user doesn't exist
+
+- name: Ensure homelab user is in correct group
+  user:
+    name: "{{ homelab_user }}"
+    groups: "{{ homelab_group }}"
+    append: true
+  when: not homelab_user_check.failed  # Only modify group if user exists
+
+- name: Create application directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ homelab_user }}"
+    group: "{{ homelab_group }}"
+    mode: '0755'
+  loop:
+    - "{{ homelab_home }}"
+    - "{{ homelab_site_path }}"
+    - "{{ homelab_static_root }}"
+    - "{{ homelab_cache_dir }}"
+
+- name: Create media directories
+  file:
+    path: "{{ homelab_media_root }}/{{ item }}"
+    state: directory
+    owner: "{{ homelab_user }}"
+    group: "{{ homelab_group }}"
+    mode: '0755'
+  loop: "{{ homelab_media_subdirs }}"
