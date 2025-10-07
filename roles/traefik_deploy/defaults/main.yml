@@ -1,0 +1,67 @@
+---
+# traefik_deploy role defaults
+# All variables with safe/required values
+
+# Traefik version to install
+traefik_version: "3.3.5"
+
+# Platform configuration (auto-detected from ansible_system and ansible_architecture)
+# Override these if auto-detection fails or for cross-platform deployment
+traefik_os: "linux"  # linux, darwin, windows (auto-detected from ansible_system)
+traefik_arch: "amd64"  # amd64, arm64, arm (auto-detected from ansible_architecture)
+
+# Checksum validation (optional but recommended)
+# Get from https://github.com/traefik/traefik/releases
+# Example: traefik_checksum: "sha256:abc123..."
+traefik_checksum: ""  # Empty = skip validation (not recommended for production)
+
+# Let's Encrypt configuration
+traefik_letsencrypt_email: "CHANGEME@example.com"
+
+# Traefik directories
+traefik_config_dir: /etc/traefik
+traefik_dynamic_dir: "{{ traefik_config_dir }}/dynamic"
+traefik_acme_dir: "{{ traefik_config_dir }}/acme"
+traefik_log_dir: /var/log/traefik
+
+# Traefik binary location
+traefik_binary_path: /usr/local/bin/traefik
+
+# Static configuration file
+traefik_static_config: "{{ traefik_config_dir }}/traefik.toml"
+
+# ACME storage
+traefik_acme_storage: "{{ traefik_acme_dir }}/acme.json"
+
+# Log configuration
+traefik_log_level: "INFO"
+traefik_log_format: "json"
+
+# API/Dashboard configuration
+traefik_dashboard_enabled: true
+traefik_dashboard_port: 8090  # Moved from default 8080 to avoid UniFi conflict
+# NOTE: Dashboard port is NOT opened in firewall by default (internal use only)
+# To expose dashboard, either:
+#   1. Set traefik_dashboard_firewall_open: true (security risk!)
+#   2. Use SSH tunnel: ssh -L 8090:localhost:8090 macmini
+#   3. Configure Traefik dynamic config to expose via HTTPS with auth
+traefik_dashboard_firewall_open: false
+
+# Entrypoint configuration
+traefik_http_port: 80
+traefik_https_port: 443
+
+# HTTP to HTTPS redirect
+traefik_http_redirect_to_https: true
+
+# Metrics configuration
+traefik_metrics_enabled: true
+
+# Force update (even if binary exists)
+traefik_force_update: false
+
+# Firewall configuration
+traefik_configure_firewall: true
+
+# Log rotation
+traefik_logrotate_days: 7

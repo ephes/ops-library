@@ -1,0 +1,215 @@
+---
+# Main tasks for traefik_deploy role
+# Installs and configures base Traefik infrastructure
+
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - traefik_letsencrypt_email is defined
+      - traefik_letsencrypt_email != "CHANGEME@example.com"
+    fail_msg: "traefik_letsencrypt_email must be set to a valid email address"
+
+- name: Auto-detect OS if not specified
+  ansible.builtin.set_fact:
+    traefik_os: "{{ ansible_system | lower }}"
+  when: traefik_os == "linux" and ansible_system is defined
+
+- name: Auto-detect architecture if not specified
+  ansible.builtin.set_fact:
+    traefik_arch: >-
+      {%- if ansible_architecture == 'x86_64' -%}
+        amd64
+      {%- elif ansible_architecture == 'aarch64' -%}
+        arm64
+      {%- elif ansible_architecture in ['armv7l', 'armv6l'] -%}
+        arm
+      {%- else -%}
+        {{ ansible_architecture }}
+      {%- endif -%}
+  when: traefik_arch == "amd64" and ansible_architecture is defined
+
+- name: Create Traefik directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - "{{ traefik_config_dir }}"
+    - "{{ traefik_dynamic_dir }}"
+    - "{{ traefik_acme_dir }}"
+    - "{{ traefik_log_dir }}"
+
+- name: Set permissions on acme directory
+  ansible.builtin.file:
+    path: "{{ traefik_acme_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Check if Traefik is already installed
+  ansible.builtin.stat:
+    path: "{{ traefik_binary_path }}"
+  register: traefik_binary
+
+- name: Get installed Traefik version
+  ansible.builtin.command: "{{ traefik_binary_path }} version"
+  register: traefik_installed_version
+  changed_when: false
+  failed_when: false
+  when: traefik_binary.stat.exists
+
+- name: Parse installed version
+  ansible.builtin.set_fact:
+    traefik_current_version: "{{ traefik_installed_version.stdout | regex_search('Version:\\s+v?([0-9.]+)') | regex_replace('Version:\\s+v?', '') }}"
+  when:
+    - traefik_binary.stat.exists
+    - traefik_installed_version.rc == 0
+    - traefik_installed_version.stdout | regex_search('Version:\\s+v?[0-9.]+') is not none
+
+- name: Show installation decision
+  ansible.builtin.debug:
+    msg: |
+      Traefik version check:
+        Target: {{ traefik_version }}
+        Current: {{ traefik_current_version | default('not installed') }}
+        Action: {{ 'install/upgrade' if (not traefik_binary.stat.exists or traefik_force_update or (traefik_current_version is defined and traefik_current_version != traefik_version)) else 'skip (already at correct version)' }}
+
+- name: Download and install Traefik
+  when: not traefik_binary.stat.exists or traefik_force_update or (traefik_current_version is defined and traefik_current_version != traefik_version)
+  block:
+    - name: Download Traefik binary
+      ansible.builtin.get_url:
+        url: "https://github.com/traefik/traefik/releases/download/v{{ traefik_version }}/traefik_v{{ traefik_version }}_{{ traefik_os }}_{{ traefik_arch }}.tar.gz"
+        dest: /tmp/traefik.tar.gz
+        mode: '0644'
+        checksum: "{{ traefik_checksum if traefik_checksum else omit }}"
+
+    - name: Extract Traefik
+      ansible.builtin.unarchive:
+        src: /tmp/traefik.tar.gz
+        dest: /usr/local/bin
+        remote_src: true
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Clean up download
+      ansible.builtin.file:
+        path: /tmp/traefik.tar.gz
+        state: absent
+
+    - name: Verify installation
+      ansible.builtin.command: "{{ traefik_binary_path }} version"
+      register: traefik_verify
+      changed_when: false
+
+    - name: Display installed version
+      ansible.builtin.debug:
+        msg: "{{ traefik_verify.stdout_lines }}"
+
+- name: Deploy Traefik static configuration
+  ansible.builtin.template:
+    src: traefik.toml.j2
+    dest: "{{ traefik_static_config }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart traefik
+
+- name: Deploy Traefik systemd service
+  ansible.builtin.template:
+    src: traefik.service.j2
+    dest: /etc/systemd/system/traefik.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - reload systemd
+    - restart traefik
+
+- name: Create acme.json if it doesn't exist
+  ansible.builtin.file:
+    path: "{{ traefik_acme_storage }}"
+    state: touch
+    owner: root
+    group: root
+    mode: '0600'
+    modification_time: preserve
+    access_time: preserve
+
+- name: Configure log rotation for Traefik
+  ansible.builtin.copy:
+    content: |
+      {{ traefik_log_dir }}/*.log {
+          daily
+          rotate {{ traefik_logrotate_days }}
+          compress
+          delaycompress
+          missingok
+          notifempty
+          create 0644 root root
+          postrotate
+              systemctl reload traefik > /dev/null 2>&1 || true
+          endscript
+      }
+    dest: /etc/logrotate.d/traefik
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Check if UFW is installed
+  ansible.builtin.command: which ufw
+  register: ufw_check
+  failed_when: false
+  changed_when: false
+
+- name: Configure firewall for Traefik (HTTP/HTTPS)
+  community.general.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - "{{ traefik_http_port }}"
+    - "{{ traefik_https_port }}"
+  when:
+    - traefik_configure_firewall
+    - ansible_facts['os_family'] == "Debian"
+    - ufw_check.rc == 0
+
+- name: Configure firewall for Traefik dashboard (if requested)
+  community.general.ufw:
+    rule: allow
+    port: "{{ traefik_dashboard_port }}"
+    proto: tcp
+  when:
+    - traefik_configure_firewall
+    - traefik_dashboard_enabled
+    - traefik_dashboard_firewall_open
+    - ansible_facts['os_family'] == "Debian"
+    - ufw_check.rc == 0
+
+- name: Enable and start Traefik
+  ansible.builtin.systemd:
+    name: traefik
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for Traefik to be ready
+  ansible.builtin.wait_for:
+    port: "{{ traefik_http_port }}"
+    host: 127.0.0.1
+    delay: 2
+    timeout: 30
+
+- name: Check Traefik status
+  ansible.builtin.systemd:
+    name: traefik
+  register: traefik_status
+
+- name: Display Traefik status
+  ansible.builtin.debug:
+    msg: "Traefik is {{ traefik_status.status.ActiveState }}"

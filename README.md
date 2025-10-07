@@ -22,6 +22,7 @@ The table below links each published role to its dedicated documentation. Refer 
 
 | Category | Role | Summary |
 |----------|------|---------|
+| Infrastructure | [`traefik_deploy`](roles/traefik_deploy/README.md) | Deploy Traefik reverse proxy with Let's Encrypt (auto-detects platform, version upgrades). |
 | Service deployment | [`fastdeploy_deploy`](roles/fastdeploy_deploy/README.md) | Deploy the FastDeploy platform (database, uv, frontend build, systemd, Traefik). |
 | Service deployment | [`nyxmon_deploy`](roles/nyxmon_deploy/README.md) | Deploy Nyxmon (Django app, monitoring agent, Telegram integration). |
 | Service removal | [`fastdeploy_remove`](roles/fastdeploy_remove/README.md) | Remove FastDeploy and related resources safely. |
@@ -44,6 +45,10 @@ just test
 
 # Test specific role
 just test-role fastdeploy_deploy
+just test-role traefik_deploy
+
+# Or run test playbooks directly
+ansible-playbook tests/test_traefik_deploy.yml -i tests/inventory/test.yml
 ```
 
 ### Pre-commit Hooks
