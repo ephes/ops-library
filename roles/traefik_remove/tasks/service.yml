@@ -1,0 +1,36 @@
+---
+# Remove Traefik systemd service
+
+- name: Stop Traefik service
+  ansible.builtin.systemd:
+    name: "{{ traefik_service_name }}"
+    state: stopped
+  ignore_errors: true
+  register: traefik_service_stop
+
+- name: Disable Traefik service
+  ansible.builtin.systemd:
+    name: "{{ traefik_service_name }}"
+    enabled: false
+  ignore_errors: true
+  register: traefik_service_disable
+
+- name: Check if systemd service file exists
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ traefik_service_name }}.service"
+  register: traefik_service_file
+
+- name: Remove systemd service file
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ traefik_service_name }}.service"
+    state: absent
+  when: traefik_service_file.stat.exists
+  notify: Reload systemd daemon
+
+- name: Display service removal status
+  ansible.builtin.debug:
+    msg:
+      - "✓ Traefik service removed"
+      - "  - Service stopped: {{ 'yes' if traefik_service_stop is succeeded else 'was not running' }}"
+      - "  - Service disabled: {{ 'yes' if traefik_service_disable is succeeded else 'was not enabled' }}"
+      - "  - Service file removed: {{ 'yes' if traefik_service_file.stat.exists else 'did not exist' }}"

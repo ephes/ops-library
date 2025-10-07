@@ -1,0 +1,33 @@
+---
+# traefik_remove role defaults
+
+# Safety confirmation (REQUIRED)
+traefik_confirm_removal: false
+
+# Preservation options (SAFE DEFAULTS)
+traefik_remove_preserve_certificates: true
+traefik_remove_preserve_dynamic_configs: true
+
+# Force complete removal (DANGEROUS - overrides preservation)
+traefik_remove_force_complete: false
+
+# Service configuration
+traefik_service_name: traefik
+
+# Path configuration (must match traefik_deploy defaults)
+traefik_binary_path: /usr/local/bin/traefik
+traefik_config_dir: /etc/traefik
+traefik_static_config: "{{ traefik_config_dir }}/traefik.toml"
+traefik_dynamic_dir: "{{ traefik_config_dir }}/dynamic"
+traefik_acme_dir: "{{ traefik_config_dir }}/acme"
+traefik_acme_storage: "{{ traefik_acme_dir }}/acme.json"
+traefik_log_dir: /var/log/traefik
+
+# Firewall configuration
+# Mirrors traefik_deploy default (traefik_configure_firewall: true)
+# Set to false if your fleet never configures UFW via traefik_deploy
+# or override via -e traefik_remove_firewall_rules=false
+traefik_remove_firewall_rules: true
+traefik_http_port: 80
+traefik_https_port: 443
+traefik_dashboard_port: 8090

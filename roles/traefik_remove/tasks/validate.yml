@@ -1,0 +1,37 @@
+---
+# Validation and safety checks
+
+- name: Display removal warning
+  ansible.builtin.debug:
+    msg:
+      - "⚠️  SAFETY CHECK: Traefik removal confirmation required!"
+      - ""
+      - "This role will remove:"
+      - "  - Traefik systemd service"
+      - "  - Traefik binary ({{ traefik_binary_path }})"
+      - "  - Static configuration ({{ traefik_static_config }})"
+      - "  - Log files ({{ traefik_log_dir }})"
+      - "  - Logrotate configuration"
+      - "{% if traefik_remove_firewall_rules | bool %}  - Firewall rules (ports {{ traefik_http_port }}, {{ traefik_https_port }}, {{ traefik_dashboard_port }}){% endif %}"
+      - ""
+      - "{% if traefik_remove_force_complete | bool %}⚠️  COMPLETE REMOVAL MODE - ALL DATA WILL BE DELETED!{% else %}By default, these will be PRESERVED:{% endif %}"
+      - "{% if not (traefik_remove_force_complete | bool) and (traefik_remove_preserve_certificates | bool) %}  ✓ Let's Encrypt certificates ({{ traefik_acme_dir }}){% endif %}"
+      - "{% if not (traefik_remove_force_complete | bool) and (traefik_remove_preserve_dynamic_configs | bool) %}  ✓ Dynamic service configs ({{ traefik_dynamic_dir }}){% endif %}"
+      - "{% if (traefik_remove_force_complete | bool) or not (traefik_remove_preserve_certificates | bool) %}  ✗ Let's Encrypt certificates will be DELETED{% endif %}"
+      - "{% if (traefik_remove_force_complete | bool) or not (traefik_remove_preserve_dynamic_configs | bool) %}  ✗ Dynamic service configs will be DELETED{% endif %}"
+      - ""
+      - "⚠️  WARNING: All services using Traefik will become inaccessible!"
+      - ""
+      - "To proceed, set: traefik_confirm_removal: true"
+
+- name: Check removal confirmation
+  ansible.builtin.assert:
+    that:
+      - traefik_confirm_removal is defined
+      - traefik_confirm_removal | bool
+    fail_msg: |
+      ❌ Traefik removal not confirmed!
+
+      Set traefik_confirm_removal: true to proceed with removal.
+      See the warning message above for details on what will be removed.
+    success_msg: "✓ Removal confirmed, proceeding with Traefik removal"

@@ -1,0 +1,38 @@
+---
+# Remove Traefik firewall rules (UFW)
+
+- name: Remove firewall rules
+  when: traefik_remove_firewall_rules | bool
+  block:
+    - name: Check if UFW is installed
+      ansible.builtin.command: which ufw
+      register: ufw_check
+      failed_when: false
+      changed_when: false
+
+    - name: Remove Traefik firewall rules
+      when: ufw_check.rc == 0
+      community.general.ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+        delete: true
+      loop:
+        - "{{ traefik_http_port }}"
+        - "{{ traefik_https_port }}"
+        - "{{ traefik_dashboard_port }}"
+      ignore_errors: true  # Rules may not exist
+      register: ufw_removal
+
+    - name: Display firewall cleanup status
+      ansible.builtin.debug:
+        msg:
+          - "✓ Firewall rules cleaned up"
+          - "  - UFW installed: {{ 'yes' if ufw_check.rc == 0 else 'no' }}"
+          - "  - Rules removed: {{ 'yes' if ufw_check.rc == 0 else 'skipped (UFW not installed)' }}"
+      when: ufw_check is defined
+
+- name: Display firewall skip message
+  ansible.builtin.debug:
+    msg: "ℹ Firewall cleanup skipped (traefik_remove_firewall_rules: false)"
+  when: not traefik_remove_firewall_rules | bool

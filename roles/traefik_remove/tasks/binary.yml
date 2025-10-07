@@ -1,0 +1,28 @@
+---
+# Remove Traefik binary
+
+- name: Check if Traefik binary exists
+  ansible.builtin.stat:
+    path: "{{ traefik_binary_path }}"
+  register: traefik_binary
+
+- name: Remove Traefik binary
+  ansible.builtin.file:
+    path: "{{ traefik_binary_path }}"
+    state: absent
+  when: traefik_binary.stat.exists
+
+- name: Verify binary removal
+  ansible.builtin.stat:
+    path: "{{ traefik_binary_path }}"
+  register: traefik_binary_check
+
+- name: Display binary removal status
+  ansible.builtin.debug:
+    msg: "✓ Traefik binary removed ({{ traefik_binary_path }})"
+  when: traefik_binary.stat.exists
+
+- name: Display binary status if not present
+  ansible.builtin.debug:
+    msg: "ℹ Traefik binary was not present ({{ traefik_binary_path }})"
+  when: not traefik_binary.stat.exists

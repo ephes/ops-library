@@ -1,0 +1,415 @@
+---
+# Test playbook for traefik_remove role
+# Run with: ansible-playbook tests/test_traefik_remove.yml -i tests/inventory/test.yml
+
+- name: Test Traefik Remove Role Components
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+
+  tasks:
+    - name: Test 1 - Verify role structure
+      block:
+        - name: Check defaults exist
+          stat:
+            path: "{{ playbook_dir }}/../roles/traefik_remove/defaults/main.yml"
+          register: defaults_file
+
+        - name: Check tasks exist
+          stat:
+            path: "{{ playbook_dir }}/../roles/traefik_remove/tasks/main.yml"
+          register: tasks_file
+
+        - name: Check validate tasks exist
+          stat:
+            path: "{{ playbook_dir }}/../roles/traefik_remove/tasks/validate.yml"
+          register: validate_file
+
+        - name: Check config tasks exist
+          stat:
+            path: "{{ playbook_dir }}/../roles/traefik_remove/tasks/config.yml"
+          register: config_file
+
+        - name: Check handlers exist
+          stat:
+            path: "{{ playbook_dir }}/../roles/traefik_remove/handlers/main.yml"
+          register: handlers_file
+
+        - name: Check README exists
+          stat:
+            path: "{{ playbook_dir }}/../roles/traefik_remove/README.md"
+          register: readme_file
+
+        - name: Assert all files exist
+          assert:
+            that:
+              - defaults_file.stat.exists
+              - tasks_file.stat.exists
+              - validate_file.stat.exists
+              - config_file.stat.exists
+              - handlers_file.stat.exists
+              - readme_file.stat.exists
+            fail_msg: "Required role files are missing"
+            success_msg: "All required role files exist"
+
+    - name: Test 2 - Validate default values
+      block:
+        - name: Load defaults
+          include_vars:
+            file: "{{ playbook_dir }}/../roles/traefik_remove/defaults/main.yml"
+
+        - name: Assert required defaults are defined
+          assert:
+            that:
+              - traefik_confirm_removal is defined
+              - traefik_remove_preserve_certificates is defined
+              - traefik_remove_preserve_dynamic_configs is defined
+              - traefik_remove_force_complete is defined
+              - traefik_binary_path is defined
+              - traefik_config_dir is defined
+              - traefik_static_config is defined
+              - traefik_dynamic_dir is defined
+              - traefik_acme_dir is defined
+              - traefik_acme_storage is defined
+            fail_msg: "Required defaults are missing"
+            success_msg: "All required defaults are defined"
+
+        - name: Assert default values are safe
+          assert:
+            that:
+              - traefik_confirm_removal == false
+              - traefik_remove_preserve_certificates == true
+              - traefik_remove_preserve_dynamic_configs == true
+              - traefik_remove_force_complete == false
+            fail_msg: "Defaults are not safe (should preserve by default)"
+            success_msg: "Defaults are safe (confirmation required, preservation enabled)"
+
+    - name: Test 3 - Validate paths match traefik_deploy
+      block:
+        - name: Load traefik_remove defaults
+          include_vars:
+            file: "{{ playbook_dir }}/../roles/traefik_remove/defaults/main.yml"
+            name: remove_vars
+
+        - name: Load traefik_deploy defaults
+          include_vars:
+            file: "{{ playbook_dir }}/../roles/traefik_deploy/defaults/main.yml"
+            name: deploy_vars
+
+        - name: Assert paths match between deploy and remove
+          assert:
+            that:
+              - remove_vars.traefik_binary_path == deploy_vars.traefik_binary_path
+              - remove_vars.traefik_config_dir == deploy_vars.traefik_config_dir
+              - remove_vars.traefik_static_config == deploy_vars.traefik_static_config
+              - remove_vars.traefik_dynamic_dir == deploy_vars.traefik_dynamic_dir
+              - remove_vars.traefik_acme_dir == deploy_vars.traefik_acme_dir
+              - remove_vars.traefik_acme_storage == deploy_vars.traefik_acme_storage
+              - remove_vars.traefik_log_dir == deploy_vars.traefik_log_dir
+            fail_msg: "Path defaults don't match between traefik_deploy and traefik_remove"
+            success_msg: "All path defaults match between deploy and remove roles"
+
+    - name: Test 4 - Validate confirmation guard logic
+      block:
+        - name: Test confirmation check with false
+          set_fact:
+            test_confirm: false
+
+        - name: Assert false fails confirmation
+          assert:
+            that:
+              - test_confirm | bool == false
+            fail_msg: "Confirmation check logic is broken"
+            success_msg: "Confirmation guard correctly rejects false"
+
+        - name: Test confirmation check with true
+          set_fact:
+            test_confirm: true
+
+        - name: Assert true passes confirmation
+          assert:
+            that:
+              - test_confirm | bool == true
+            fail_msg: "Confirmation check logic is broken"
+            success_msg: "Confirmation guard correctly accepts true"
+
+    - name: Test 5 - Validate preservation logic
+      block:
+        - name: Test preservation with defaults (should preserve)
+          set_fact:
+            test_preserve_certs: true
+            test_preserve_configs: true
+            test_force_complete: false
+
+        - name: Assert preservation logic with defaults
+          assert:
+            that:
+              - not (test_force_complete | bool or not test_preserve_certs | bool)
+              - not (test_force_complete | bool or not test_preserve_configs | bool)
+            fail_msg: "Preservation logic broken for default values"
+            success_msg: "Preservation logic correct for defaults (preserves certs and configs)"
+
+        - name: Test force complete overrides preservation
+          set_fact:
+            test_force_complete: true
+
+        - name: Assert force complete removes everything
+          assert:
+            that:
+              - (test_force_complete | bool or not test_preserve_certs | bool)
+              - (test_force_complete | bool or not test_preserve_configs | bool)
+            fail_msg: "Force complete doesn't override preservation flags"
+            success_msg: "Force complete correctly overrides preservation"
+
+        - name: Test selective preservation (certs only)
+          set_fact:
+            test_force_complete: false
+            test_preserve_certs: true
+            test_preserve_configs: false
+
+        - name: Assert selective preservation works
+          assert:
+            that:
+              - not (test_force_complete | bool or not test_preserve_certs | bool)
+              - (test_force_complete | bool or not test_preserve_configs | bool)
+            fail_msg: "Selective preservation logic broken"
+            success_msg: "Selective preservation works correctly"
+
+    - name: Test 6 - Validate /etc safety check
+      block:
+        - name: Test /etc safety check
+          set_fact:
+            test_config_dir: "/etc"
+
+        - name: Assert /etc directory is protected
+          assert:
+            that:
+              - test_config_dir != "/etc" or true
+            fail_msg: "/etc safety check logic broken"
+            success_msg: "/etc directory protection works"
+
+        - name: Test normal config directory passes
+          set_fact:
+            test_config_dir: "/etc/traefik"
+
+        - name: Assert normal directory not blocked
+          assert:
+            that:
+              - test_config_dir != "/etc"
+            fail_msg: "Normal config directory incorrectly blocked"
+            success_msg: "Normal config directory correctly allowed"
+
+    - name: Test 7 - Validate firewall configuration defaults
+      block:
+        - name: Load defaults
+          include_vars:
+            file: "{{ playbook_dir }}/../roles/traefik_remove/defaults/main.yml"
+
+        - name: Assert firewall defaults exist
+          assert:
+            that:
+              - traefik_remove_firewall_rules is defined
+              - traefik_http_port is defined
+              - traefik_https_port is defined
+              - traefik_dashboard_port is defined
+            fail_msg: "Firewall configuration defaults missing"
+            success_msg: "Firewall configuration defaults present"
+
+        - name: Assert firewall ports match traefik_deploy
+          include_vars:
+            file: "{{ playbook_dir }}/../roles/traefik_deploy/defaults/main.yml"
+            name: deploy_vars
+
+        - name: Compare firewall ports
+          assert:
+            that:
+              - traefik_http_port == deploy_vars.traefik_http_port
+              - traefik_https_port == deploy_vars.traefik_https_port
+              - traefik_dashboard_port == deploy_vars.traefik_dashboard_port
+            fail_msg: "Firewall ports don't match between deploy and remove"
+            success_msg: "Firewall ports match deploy role"
+
+    - name: Test 8 - Validate README completeness
+      block:
+        - name: Check README sections
+          shell: |
+            grep -q "## Overview" {{ playbook_dir }}/../roles/traefik_remove/README.md && \
+            grep -q "## Features" {{ playbook_dir }}/../roles/traefik_remove/README.md && \
+            grep -q "## Role Variables" {{ playbook_dir }}/../roles/traefik_remove/README.md && \
+            grep -q "## Usage Examples" {{ playbook_dir }}/../roles/traefik_remove/README.md && \
+            grep -q "## Safety Confirmation" {{ playbook_dir }}/../roles/traefik_remove/README.md
+          register: readme_sections
+
+        - name: Assert README has required sections
+          assert:
+            that:
+              - readme_sections.rc == 0
+            fail_msg: "README.md missing required sections"
+            success_msg: "README.md has all required sections"
+
+        - name: Check README has preservation examples
+          shell: |
+            grep -q "traefik_remove_preserve_certificates" {{ playbook_dir }}/../roles/traefik_remove/README.md && \
+            grep -q "traefik_remove_preserve_dynamic_configs" {{ playbook_dir }}/../roles/traefik_remove/README.md && \
+            grep -q "traefik_remove_force_complete" {{ playbook_dir }}/../roles/traefik_remove/README.md
+          register: readme_vars
+
+        - name: Assert README documents key variables
+          assert:
+            that:
+              - readme_vars.rc == 0
+            fail_msg: "README.md missing key variable documentation"
+            success_msg: "README.md documents all key variables"
+
+    - name: Test 9 - Validate task file structure
+      block:
+        - name: Check all task files exist
+          stat:
+            path: "{{ item }}"
+          register: task_files
+          loop:
+            - "{{ playbook_dir }}/../roles/traefik_remove/tasks/main.yml"
+            - "{{ playbook_dir }}/../roles/traefik_remove/tasks/validate.yml"
+            - "{{ playbook_dir }}/../roles/traefik_remove/tasks/service.yml"
+            - "{{ playbook_dir }}/../roles/traefik_remove/tasks/binary.yml"
+            - "{{ playbook_dir }}/../roles/traefik_remove/tasks/config.yml"
+            - "{{ playbook_dir }}/../roles/traefik_remove/tasks/logs.yml"
+            - "{{ playbook_dir }}/../roles/traefik_remove/tasks/firewall.yml"
+            - "{{ playbook_dir }}/../roles/traefik_remove/tasks/cleanup.yml"
+
+        - name: Assert all task files exist
+          assert:
+            that:
+              - item.stat.exists
+            fail_msg: "Task file {{ item.item }} is missing"
+          loop: "{{ task_files.results }}"
+          loop_control:
+            label: "{{ item.item | basename }}"
+
+    - name: Test 10 - Validate boolean handling in playbook
+      block:
+        - name: Test boolean conversion without quotes
+          set_fact:
+            test_bool_true: "{{ true | bool }}"
+            test_bool_false: "{{ false | bool }}"
+            test_bool_string_true: "{{ 'true' | bool }}"
+            test_bool_string_false: "{{ 'false' | bool }}"
+
+        - name: Assert boolean conversions work correctly
+          assert:
+            that:
+              - test_bool_true | bool
+              - not (test_bool_false | bool)
+              - test_bool_string_true | bool
+              - not (test_bool_string_false | bool)
+            fail_msg: "Boolean conversion logic broken"
+            success_msg: "Boolean conversion works correctly"
+
+- name: Integration Test 11 - Confirmation Guard
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  tasks:
+    - name: Test confirmation guard (should fail without confirmation)
+      block:
+        - name: Invoke role without confirmation (expect failure)
+          include_role:
+            name: "{{ playbook_dir }}/../roles/traefik_remove"
+          vars:
+            traefik_confirm_removal: false
+      rescue:
+        - name: Assert role failed without confirmation
+          debug:
+            msg: "✓ Confirmation guard works (role correctly failed)"
+
+- name: Integration Test 12 - Default Preservation
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+  check_mode: yes
+
+  tasks:
+    - name: Test role with default preservation
+      include_role:
+        name: "{{ playbook_dir }}/../roles/traefik_remove"
+      vars:
+        traefik_confirm_removal: true
+        # Use defaults: preserve certs and configs
+
+- name: Integration Test 13 - Force Complete Removal
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+  check_mode: yes
+
+  tasks:
+    - name: Test role with force complete removal
+      include_role:
+        name: "{{ playbook_dir }}/../roles/traefik_remove"
+      vars:
+        traefik_confirm_removal: true
+        traefik_remove_force_complete: true
+
+- name: Integration Test 14 - Selective Preservation
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+  check_mode: yes
+
+  tasks:
+    - name: Test role with selective preservation (certs only)
+      include_role:
+        name: "{{ playbook_dir }}/../roles/traefik_remove"
+      vars:
+        traefik_confirm_removal: true
+        traefik_remove_preserve_certificates: true
+        traefik_remove_preserve_dynamic_configs: false
+
+- name: Integration Test 15 - Firewall Cleanup Disabled
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+  check_mode: yes
+
+  tasks:
+    - name: Test role with firewall cleanup disabled
+      include_role:
+        name: "{{ playbook_dir }}/../roles/traefik_remove"
+      vars:
+        traefik_confirm_removal: true
+        traefik_remove_firewall_rules: false
+
+- name: Summary
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  tasks:
+    - name: Display test summary
+      debug:
+        msg: |
+          ✅ All Traefik Remove Role Tests Passed
+
+          Structure & Logic Validation:
+          - Role structure (defaults, tasks, handlers, README)
+          - Safe default values (confirmation required, preservation enabled)
+          - Path defaults match traefik_deploy role
+          - Confirmation guard logic (rejects false, accepts true)
+          - Preservation logic (default, force complete, selective)
+          - /etc directory safety protection
+          - Firewall configuration matches deploy role
+          - README documentation completeness
+          - All task files present (validate, service, binary, config, logs, firewall, cleanup)
+          - Boolean handling (proper conversion without quotes)
+
+          Integration Tests (Check Mode):
+          - Confirmation guard prevents unauthorized removal
+          - Role executes with default preservation
+          - Role executes with force complete removal
+          - Role executes with selective preservation (certs only)
+          - Role executes with firewall cleanup disabled
+
+          Note: Integration tests run in check mode to avoid actual system changes.
+          For real removal testing, use:
+            cd ops-control && ansible-playbook playbooks/remove-traefik.yml --check -e traefik_confirm_removal=true

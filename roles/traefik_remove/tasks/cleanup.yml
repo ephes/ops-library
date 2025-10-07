@@ -1,0 +1,26 @@
+---
+# Final cleanup tasks
+
+- name: Find temporary Traefik files
+  ansible.builtin.find:
+    paths: /tmp
+    patterns: "traefik*"
+    file_type: any
+  register: traefik_temp_files
+
+- name: Remove temporary files
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ traefik_temp_files.files }}"
+  when: traefik_temp_files.matched > 0
+
+- name: Display cleanup status
+  ansible.builtin.debug:
+    msg: "✓ Temporary files cleaned up ({{ traefik_temp_files.matched }} files removed)"
+  when: traefik_temp_files.matched > 0
+
+- name: Display no temporary files message
+  ansible.builtin.debug:
+    msg: "ℹ No temporary files found"
+  when: traefik_temp_files.matched == 0

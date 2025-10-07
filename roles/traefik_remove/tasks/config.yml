@@ -1,0 +1,64 @@
+---
+# Remove Traefik configuration files (with preservation options)
+
+- name: Check if static config exists
+  ansible.builtin.stat:
+    path: "{{ traefik_static_config }}"
+  register: traefik_static_config_file
+
+- name: Remove static configuration
+  ansible.builtin.file:
+    path: "{{ traefik_static_config }}"
+    state: absent
+  when: traefik_static_config_file.stat.exists
+
+- name: Check if dynamic config directory exists
+  ansible.builtin.stat:
+    path: "{{ traefik_dynamic_dir }}"
+  register: traefik_dynamic_dir_stat
+
+- name: Remove dynamic configurations
+  ansible.builtin.file:
+    path: "{{ traefik_dynamic_dir }}"
+    state: absent
+  when:
+    - traefik_dynamic_dir_stat.stat.exists
+    - traefik_remove_force_complete | bool or not traefik_remove_preserve_dynamic_configs | bool
+
+- name: Check if ACME directory exists
+  ansible.builtin.stat:
+    path: "{{ traefik_acme_dir }}"
+  register: traefik_acme_dir_stat
+
+- name: Remove Let's Encrypt certificates
+  ansible.builtin.file:
+    path: "{{ traefik_acme_dir }}"
+    state: absent
+  when:
+    - traefik_acme_dir_stat.stat.exists
+    - traefik_remove_force_complete | bool or not traefik_remove_preserve_certificates | bool
+
+- name: Check if config directory is empty
+  ansible.builtin.find:
+    paths: "{{ traefik_config_dir }}"
+    file_type: any
+  register: traefik_config_dir_contents
+  when: traefik_config_dir != "/etc"  # Safety check
+
+- name: Remove config directory if empty
+  ansible.builtin.file:
+    path: "{{ traefik_config_dir }}"
+    state: absent
+  when:
+    - traefik_config_dir != "/etc"  # Safety check
+    - traefik_config_dir_contents is defined
+    - traefik_config_dir_contents.matched == 0
+
+- name: Display configuration removal status
+  ansible.builtin.debug:
+    msg:
+      - "✓ Configuration removal complete"
+      - "  - Static config: {{ 'removed' if traefik_static_config_file.stat.exists else 'did not exist' }}"
+      - "  - Dynamic configs: {{ 'removed' if (traefik_remove_force_complete | bool or not traefik_remove_preserve_dynamic_configs | bool) and traefik_dynamic_dir_stat.stat.exists else 'preserved' if traefik_dynamic_dir_stat.stat.exists else 'did not exist' }}"
+      - "  - Let's Encrypt certs: {{ 'removed' if (traefik_remove_force_complete | bool or not traefik_remove_preserve_certificates | bool) and traefik_acme_dir_stat.stat.exists else 'preserved' if traefik_acme_dir_stat.stat.exists else 'did not exist' }}"
+      - "  - Config directory: {{ 'skipped (/etc safety check)' if traefik_config_dir == '/etc' else ('removed (empty)' if traefik_config_dir_contents.matched == 0 else 'preserved (contains files)') if traefik_config_dir_contents is defined else 'preserved' }}"

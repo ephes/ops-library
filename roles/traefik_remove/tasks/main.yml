@@ -1,0 +1,55 @@
+---
+# Main task file for traefik_remove role
+
+- name: Traefik removal - validation and safety checks
+  ansible.builtin.import_tasks: validate.yml
+  tags: ['traefik_remove', 'validate']
+
+- name: Traefik removal - stop and remove service
+  ansible.builtin.import_tasks: service.yml
+  tags: ['traefik_remove', 'service']
+
+- name: Traefik removal - remove binary
+  ansible.builtin.import_tasks: binary.yml
+  tags: ['traefik_remove', 'binary']
+
+- name: Traefik removal - remove configuration files
+  ansible.builtin.import_tasks: config.yml
+  tags: ['traefik_remove', 'config']
+
+- name: Traefik removal - remove log files
+  ansible.builtin.import_tasks: logs.yml
+  tags: ['traefik_remove', 'logs']
+
+- name: Traefik removal - remove firewall rules
+  ansible.builtin.import_tasks: firewall.yml
+  tags: ['traefik_remove', 'firewall']
+
+- name: Traefik removal - final cleanup
+  ansible.builtin.import_tasks: cleanup.yml
+  tags: ['traefik_remove', 'cleanup']
+
+- name: Display removal summary
+  ansible.builtin.debug:
+    msg:
+      - ""
+      - "════════════════════════════════════════════════"
+      - "✓ Traefik removal completed successfully"
+      - "════════════════════════════════════════════════"
+      - ""
+      - "Removed:"
+      - "  ✓ Traefik systemd service"
+      - "  ✓ Traefik binary ({{ traefik_binary_path }})"
+      - "  ✓ Static configuration"
+      - "  ✓ Log files and logrotate config"
+      - "{% if traefik_remove_firewall_rules | bool %}  ✓ Firewall rules{% endif %}"
+      - ""
+      - "{% if not (traefik_remove_force_complete | bool) %}Preserved:{% endif %}"
+      - "{% if not (traefik_remove_force_complete | bool) and (traefik_remove_preserve_certificates | bool) %}  💾 Let's Encrypt certificates ({{ traefik_acme_dir }}){% endif %}"
+      - "{% if not (traefik_remove_force_complete | bool) and (traefik_remove_preserve_dynamic_configs | bool) %}  💾 Dynamic service configs ({{ traefik_dynamic_dir }}){% endif %}"
+      - "{% if traefik_remove_force_complete | bool %}  ⚠️  Complete removal - all data deleted{% endif %}"
+      - ""
+      - "{% if not (traefik_remove_force_complete | bool) and ((traefik_remove_preserve_certificates | bool) or (traefik_remove_preserve_dynamic_configs | bool)) %}To reinstall Traefik with existing certificates:{% endif %}"
+      - "{% if not (traefik_remove_force_complete | bool) and ((traefik_remove_preserve_certificates | bool) or (traefik_remove_preserve_dynamic_configs | bool)) %}  ansible-playbook playbooks/deploy-traefik.yml{% endif %}"
+      - ""
+  tags: ['traefik_remove']
