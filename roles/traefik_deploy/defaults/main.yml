@@ -3,7 +3,7 @@
 # All variables with safe/required values
 
 # Traefik version to install
-traefik_version: "3.3.5"
+traefik_version: "3.5.3"
 
 # Platform configuration (auto-detected from ansible_system and ansible_architecture)
 # Override these if auto-detection fails or for cross-platform deployment
