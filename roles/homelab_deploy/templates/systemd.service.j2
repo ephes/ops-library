@@ -19,7 +19,7 @@ ExecStart={{ homelab_uv_path }} run granian --workers {{ homelab_workers }} --in
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
+# Note: ProtectHome not used because service runs from /home/homelab
 ReadWritePaths={{ homelab_site_path }}
 ReadWritePaths={{ homelab_database_path | dirname }}
 ReadWritePaths={{ homelab_static_root }}

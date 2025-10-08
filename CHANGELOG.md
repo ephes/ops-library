@@ -8,12 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Comprehensive documentation structure with README.md and ARCHITECTURE.md
-- CLAUDE.md for AI assistant context
-- Standardized role README template
+- `homelab_deploy` role - Django/Granian deployment with dual router Traefik authentication
+- `homelab_remove` role - Safe removal with data preservation options
+- Dual router authentication pattern for Traefik (internal: no auth, external: basic auth)
+- Comprehensive Traefik security documentation
+- Broken venv detection and auto-removal in Python deployment tasks
+- Build ignore patterns in galaxy.yml for faster collection builds
 
 ### Changed
 - Streamlined role documentation for consistency
+- Fixed systemd service template to remove `ProtectHome` for services in /home
+- Improved validation.yml to handle undefined variables gracefully in homelab_remove
+
+### Fixed
+- Template evaluation crashes in homelab_remove when home directory doesn't exist
+- Undefined variable errors in removal validation when database/media checks are skipped
+- Permission issues with Python virtual environments on redeployment
 
 ## [1.0.0] - 2024-09-22
 

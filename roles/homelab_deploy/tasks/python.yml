@@ -19,6 +19,19 @@
     msg: "uv is required but not installed at {{ homelab_uv_path }}. Please install it globally first."
   when: not uv_check.stat.exists
 
+- name: Test if venv Python is usable
+  command: "{{ homelab_venv_path }}/bin/python --version"
+  register: venv_python_test
+  become_user: "{{ homelab_user }}"
+  failed_when: false
+  changed_when: false
+
+- name: Remove broken venv if Python is not usable
+  file:
+    path: "{{ homelab_venv_path }}"
+    state: absent
+  when: venv_python_test.rc != 0
+
 - name: Create virtual environment using uv
   command: "{{ homelab_uv_path }} venv {{ homelab_venv_path }}"
   args:

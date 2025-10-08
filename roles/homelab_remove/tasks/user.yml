@@ -1,0 +1,65 @@
+---
+# Remove user and data (conditional)
+
+- name: Check if home directory exists
+  ansible.builtin.stat:
+    path: "{{ homelab_home }}"
+  register: homelab_home_check
+
+- name: Remove database file
+  ansible.builtin.file:
+    path: "{{ homelab_site_path }}/db.sqlite3"
+    state: absent
+  when:
+    - homelab_remove_database
+    - homelab_home_check.stat.exists
+
+- name: Remove media directory
+  ansible.builtin.file:
+    path: "{{ homelab_site_path }}/media"
+    state: absent
+  when:
+    - homelab_remove_media
+    - homelab_home_check.stat.exists
+
+- name: Remove home directory
+  ansible.builtin.file:
+    path: "{{ homelab_home }}"
+    state: absent
+  when:
+    - homelab_remove_home
+    - homelab_home_check.stat.exists
+    - not homelab_remove_user  # If removing user, let user module handle home removal
+
+- name: Remove user account
+  ansible.builtin.user:
+    name: "{{ homelab_user }}"
+    state: absent
+    remove: true  # Also removes home directory if it still exists
+  when: homelab_remove_user
+
+- name: Verify removal
+  ansible.builtin.debug:
+    msg: |
+      ✓ Removal complete
+
+      {% if homelab_remove_database %}
+      Database: DELETED
+      {% else %}
+      Database: Preserved (if existed)
+      {% endif %}
+      {% if homelab_remove_media %}
+      Media: DELETED
+      {% else %}
+      Media: Preserved (if existed)
+      {% endif %}
+      {% if homelab_remove_home %}
+      Home directory: DELETED
+      {% else %}
+      Home directory: Preserved (if existed)
+      {% endif %}
+      {% if homelab_remove_user %}
+      User account: DELETED
+      {% else %}
+      User account: Preserved (if existed)
+      {% endif %}

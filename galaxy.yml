@@ -16,3 +16,11 @@ repository: https://github.com/yourusername/ops-library
 dependencies:
   community.general: ">=5.0.0"
   ansible.posix: ">=1.0.0"
+build_ignore:
+  - .git
+  - .venv
+  - .ansible
+  - "*.pyc"
+  - __pycache__
+  - .DS_Store
+  - tests
