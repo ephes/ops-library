@@ -47,3 +47,7 @@ temp/
 *.tmp
 # Added by specsync
 specs
+
+# Documentation build artifacts
+docs/build/
+docs/source/_build/
