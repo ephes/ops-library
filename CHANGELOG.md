@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- ReadTheDocs integration with Sphinx and MyST parser
+  - Browsable documentation at https://ops-library.readthedocs.io/
+  - Furo theme for modern, clean appearance
+  - Automated role documentation from individual READMEs
+  - Just commands for documentation workflow (docs-build, docs-watch, etc.)
+  - Documentation validation script (validate_docs.py)
+
+### Changed
+- Updated README.md with prominent link to ReadTheDocs
+- Updated repository URLs to https://github.com/ephes/ops-library
+
 ## [2.0.0] - 2025-10-09
 
 ### Breaking Changes
@@ -20,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive Traefik security documentation
 - Broken venv detection and auto-removal in Python deployment tasks
 - Build ignore patterns in galaxy.yml for faster collection builds
+- Comprehensive documentation structure with README.md and ARCHITECTURE.md
+- CLAUDE.md for AI assistant context
+- Standardized role README template
 
 ### Changed
 - Streamlined role documentation for consistency
@@ -76,6 +91,6 @@ If you were using `python_app_systemd` or `python_app_django`:
 ### apt_upgrade_register
 - **1.0.0** (2024-09-22): Initial release with SSH key management
 
-[Unreleased]: https://github.com/yourusername/ops-library/compare/v2.0.0...HEAD
-[2.0.0]: https://github.com/yourusername/ops-library/compare/v1.0.0...v2.0.0
-[1.0.0]: https://github.com/yourusername/ops-library/releases/tag/v1.0.0
+[Unreleased]: https://github.com/ephes/ops-library/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/ephes/ops-library/compare/v1.0.0...v2.0.0
+[1.0.0]: https://github.com/ephes/ops-library/releases/tag/v1.0.0
