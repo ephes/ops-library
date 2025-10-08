@@ -2,7 +2,7 @@
 
 A collection of reusable Ansible roles for homelab automation and service deployment.
 
-📚 **[Architecture Documentation](./ARCHITECTURE.md)** - Detailed design and implementation patterns
+📖 **[Full Documentation](https://ops-library.readthedocs.io/)** | 📚 [Architecture](./ARCHITECTURE.md) | 🧪 [Testing](./TESTING.md)
 
 ## Quick Start
 

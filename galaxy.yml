@@ -12,7 +12,7 @@ tags:
   - homelab
   - automation
   - deployment
-repository: https://github.com/yourusername/ops-library
+repository: https://github.com/ephes/ops-library
 dependencies:
   community.general: ">=5.0.0"
   ansible.posix: ">=1.0.0"
