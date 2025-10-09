@@ -40,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Streamlined role documentation for consistency
 - Fixed systemd service template to remove `ProtectHome` for services in /home
 - Improved validation.yml to handle undefined variables gracefully in homelab_remove
+- Removed legacy role documentation pages
+- Updated role index to reflect removal
+- Added migration guidance for users of removed roles
+- Updated uv_install examples to use modern deployment pattern
 
 ### Fixed
 - Template evaluation crashes in homelab_remove when home directory doesn't exist
