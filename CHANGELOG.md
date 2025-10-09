@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2025-10-09
+
+### Breaking Changes
+- **REMOVED**: `python_app_systemd` role - Legacy manifest-driven deployment (use dedicated `*_deploy` roles instead)
+- **REMOVED**: `python_app_django` role - Legacy manifest-driven Django deployment (use dedicated `*_deploy` roles instead)
+
 ### Added
 - `homelab_deploy` role - Django/Granian deployment with dual router Traefik authentication
 - `homelab_remove` role - Safe removal with data preservation options
@@ -24,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Template evaluation crashes in homelab_remove when home directory doesn't exist
 - Undefined variable errors in removal validation when database/media checks are skipped
 - Permission issues with Python virtual environments on redeployment
+
+### Migration Guide
+If you were using `python_app_systemd` or `python_app_django`:
+1. Migrate to dedicated roles: `fastdeploy_deploy`, `nyxmon_deploy`, `homelab_deploy`, etc.
+2. Follow the role development guide to create custom deployment roles if needed
+3. The old `services.d/` manifest workflow is no longer supported
 
 ## [1.0.0] - 2024-09-22
 
@@ -64,5 +76,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### apt_upgrade_register
 - **1.0.0** (2024-09-22): Initial release with SSH key management
 
-[Unreleased]: https://github.com/yourusername/ops-library/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/yourusername/ops-library/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/yourusername/ops-library/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/yourusername/ops-library/releases/tag/v1.0.0
