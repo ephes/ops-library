@@ -56,11 +56,13 @@ Development and testing utilities.
 
 - {doc}`testing/test_dummy` - Demonstration service for testing
 
-## Legacy Roles
+## Removed in v2.0.0
 
-These roles remain available for backward compatibility:
+The following legacy roles were removed in version 2.0.0:
 
-- `python_app_systemd` - Generic Python app systemd service
-- `python_app_django` - Django application deployment
+- `python_app_systemd` - Use dedicated `*_deploy` roles instead (e.g., `fastdeploy_deploy`, `nyxmon_deploy`)
+- `python_app_django` - Use dedicated `*_deploy` roles instead
+
+**Migration:** Follow the dedicated role pattern for your services. See existing deployment roles for examples.
 
 See individual role documentation for complete details on variables, requirements, and usage examples.
