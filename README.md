@@ -34,8 +34,6 @@ The table below links each published role to its dedicated documentation. Refer 
 | Bootstrap | [`sops_dependencies`](roles/sops_dependencies/README.md) | Install age/SOPS prerequisites. |
 | Testing/demo | [`test_dummy`](roles/test_dummy/README.md) | Demonstration service for developing and testing runners. |
 
-Legacy compatibility roles such as [`python_app_systemd`](roles/python_app_systemd/README.md) and [`python_app_django`](roles/python_app_django/README.md) remain available while older manifests are retired.
-
 ## Development
 
 ### Testing

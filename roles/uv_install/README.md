@@ -44,16 +44,21 @@ uv_update_existing: true
         uv_create_symlinks: true
 ```
 
-## Usage in Service Manifests
+## Usage in Deployment Roles
+
+UV is typically used as a dependency in service deployment roles:
 
 ```yaml
-# ops-control/services.d/python-app.yml
-service:
-  name: myapp
-  host: server1
-  role: local.ops_library.python_app_systemd
-  dependencies:
-    - local.ops_library.uv_install  # Ensure uv is installed first
+# In your custom deployment role's meta/main.yml
+dependencies:
+  - role: local.ops_library.uv_install
+
+# Or in a playbook
+- name: Deploy Python service
+  hosts: servers
+  roles:
+    - role: local.ops_library.uv_install
+    - role: local.ops_library.myservice_deploy
 ```
 
 ## License
