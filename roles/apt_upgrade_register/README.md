@@ -18,8 +18,8 @@ This role sets up the necessary infrastructure for FastDeploy to execute apt upg
 - FastDeploy must be installed and running on the target system
 - Ansible must be available in the specified virtual environment
 - PostgreSQL (for FastDeploy service registration)
-- Python 3.8+
-- Ansible 2.9+
+- Python 3.11+
+- ansible-core 2.15+
 - Required collections:
   - `ansible.posix` (for file operations)
   - `community.general` (for system tasks)
