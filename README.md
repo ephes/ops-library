@@ -65,9 +65,11 @@ just install-hooks
 
 ## Requirements
 
-- Ansible 2.9+
-- Python 3.8+
+- **ansible-core 2.15+** (Ansible 2.9 no longer supported)
+- **Python 3.11+** (3.8-3.10 no longer supported as of v3.0.0)
 - Collections: `community.general`, `ansible.posix`
+
+> **Note:** This collection follows an N-2 Python version support policy, supporting the current release and two prior minor versions (currently 3.11, 3.12, 3.13).
 
 ## License
 
