@@ -145,24 +145,9 @@ dev ROLE:
     @echo "Development test complete for {{ROLE}}"
 
 # Documentation commands
-docs-setup:
-    @echo "Setting up documentation environment..."
-    @if [ ! -d .venv ]; then \
-        echo "Creating virtual environment with uv..."; \
-        uv venv .venv; \
-    fi
-    @echo "Installing documentation dependencies..."
-    @source .venv/bin/activate && uv pip install -r requirements-docs-dev.txt
-    @echo "✅ Documentation environment ready!"
-    @echo "   Run 'just docs-build' to build documentation"
-
 docs-build:
     @echo "Building documentation..."
-    @if [ ! -d .venv ]; then \
-        echo "❌ Virtual environment not found. Run 'just docs-setup' first."; \
-        exit 1; \
-    fi
-    @source .venv/bin/activate && sphinx-build -b html docs/source docs/build/html
+    @uv run --extra docs sphinx-build -b html docs/source docs/build/html
 
 docs-serve:
     @echo "Serving documentation at http://localhost:8000"
@@ -170,31 +155,19 @@ docs-serve:
 
 docs-watch:
     @echo "Starting documentation watch mode..."
-    @if [ ! -d .venv ]; then \
-        echo "❌ Virtual environment not found. Run 'just docs-setup' first."; \
-        exit 1; \
-    fi
-    @source .venv/bin/activate && sphinx-autobuild docs/source docs/build/html --watch roles --watch README.md --watch ARCHITECTURE.md --watch TESTING.md --watch README_TESTING.md --watch CHANGELOG.md
+    @uv run --extra docs sphinx-autobuild docs/source docs/build/html --watch roles --watch README.md --watch ARCHITECTURE.md --watch TESTING.md --watch README_TESTING.md --watch CHANGELOG.md
 
 docs-check:
     @echo "Checking documentation for broken links..."
-    @if [ ! -d .venv ]; then \
-        echo "❌ Virtual environment not found. Run 'just docs-setup' first."; \
-        exit 1; \
-    fi
-    @source .venv/bin/activate && sphinx-build -b linkcheck docs/source docs/build/linkcheck
+    @uv run --extra docs sphinx-build -b linkcheck docs/source docs/build/linkcheck
 
 docs-clean:
     @echo "Cleaning documentation build artifacts..."
-    @if [ ! -d .venv ]; then \
-        echo "❌ Virtual environment not found. Run 'just docs-setup' first."; \
-        exit 1; \
-    fi
-    @source .venv/bin/activate && sphinx-build -M clean docs/source docs/build
+    @uv run --extra docs sphinx-build -M clean docs/source docs/build
 
 docs-lint:
     @echo "Validating documentation integrity..."
-    @python3 validate_docs.py
+    @uv run python validate_docs.py
 
 # Help
 help:
@@ -213,7 +186,6 @@ help:
     @echo "  just lint-role test_dummy"
     @echo ""
     @echo "Documentation:"
-    @echo "  just docs-setup     # Setup documentation environment (first time)"
     @echo "  just docs-build     # Build documentation"
     @echo "  just docs-serve     # Serve documentation locally"
     @echo "  just docs-watch     # Watch and rebuild documentation"
