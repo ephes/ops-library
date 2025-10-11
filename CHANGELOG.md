@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+- **Python 3.11+ required** - Dropped support for Python 3.8, 3.9, and 3.10
+  - Supports Python 3.11, 3.12, 3.13 (following N-2 version support policy)
+  - All roles and testing infrastructure now require Python 3.11+
+  - Update your systems before upgrading to this version
+- **ansible-core 2.15+ required** - Dropped support for Ansible 2.9-2.14
+  - ansible-core 2.15 is the minimum version compatible with Python 3.11+
+  - Update your Ansible installation before upgrading
+
 ### Added
 - ReadTheDocs integration with Sphinx and MyST parser
   - Browsable documentation at https://ops-library.readthedocs.io/
@@ -14,10 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Automated role documentation from individual READMEs
   - Just commands for documentation workflow (docs-build, docs-watch, etc.)
   - Documentation validation script (validate_docs.py)
+- Migrated to uv for Python dependency management
+  - Faster dependency resolution and installation
+  - Simplified justfile commands using `uv run`
+  - Removed manual venv activation requirements
 
 ### Changed
 - Updated README.md with prominent link to ReadTheDocs
 - Updated repository URLs to https://github.com/ephes/ops-library
+- Modernized Python tooling: uv replaces traditional pip/venv workflow
+- Removed `docs-setup` command (auto-handled by uv)
 
 ## [2.0.0] - 2025-10-09
 
