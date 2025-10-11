@@ -3,7 +3,7 @@ galaxy_info:
   author: ops-library
   description: FastDeploy self-deployment with blue-green strategy
   license: MIT
-  min_ansible_version: "2.9"
+  min_ansible_version: "2.15"
   platforms:
     - name: Ubuntu
       versions:

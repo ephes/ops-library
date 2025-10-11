@@ -3,7 +3,7 @@ galaxy_info:
   author: ops-library
   description: Register a service with fastDeploy for automated deployment
   license: MIT
-  min_ansible_version: "2.9"
+  min_ansible_version: "2.15"
   platforms:
     - name: Darwin
       versions:

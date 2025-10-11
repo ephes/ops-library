@@ -5,7 +5,7 @@ galaxy_info:
   description: Deploy the Homelab Django application with dual router Traefik authentication
   license: MIT
 
-  min_ansible_version: "2.9"
+  min_ansible_version: "2.15"
 
   platforms:
     - name: Ubuntu
