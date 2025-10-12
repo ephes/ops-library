@@ -1,0 +1,24 @@
+---
+# Deploy TLS certificates from SOPS content
+
+- name: Deploy TLS certificate
+  copy:
+    content: "{{ minio_tls_cert_content }}"
+    dest: "{{ minio_certs_dir }}/public.crt"
+    owner: "{{ minio_user }}"
+    group: "{{ minio_group }}"
+    mode: '0644'
+  when: minio_tls_enable | bool
+  no_log: true
+  notify: restart minio
+
+- name: Deploy TLS private key
+  copy:
+    content: "{{ minio_tls_key_content }}"
+    dest: "{{ minio_certs_dir }}/private.key"
+    owner: "{{ minio_user }}"
+    group: "{{ minio_group }}"
+    mode: '0600'
+  when: minio_tls_enable | bool
+  no_log: true
+  notify: restart minio

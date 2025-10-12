@@ -1,0 +1,112 @@
+---
+# Bootstrap MinIO with mc client - create buckets, policies, and service accounts
+
+- name: Download mc client with checksum validation
+  get_url:
+    url: "{{ minio_mc_download_url }}"
+    dest: "{{ minio_mc_bin_path }}"
+    checksum: "{{ minio_mc_checksum }}"
+    owner: root
+    group: root
+    mode: '0755'
+  register: mc_binary_download
+
+- name: Display mc client download result
+  debug:
+    msg: "mc client {{ 'updated' if mc_binary_download.changed else 'already present' }} at {{ minio_mc_bin_path }}"
+
+- name: Configure mc alias for MinIO
+  command: >
+    {{ minio_mc_bin_path }} alias set {{ minio_host_alias }}
+    http{% if minio_tls_enable %}s{% endif %}://{{ minio_bind_host }}:{{ minio_api_port }}
+    {{ minio_root_user }} {{ minio_root_password }}
+  no_log: true
+  changed_when: false
+
+- name: Create MinIO buckets
+  command: "{{ minio_mc_bin_path }} mb {{ minio_host_alias }}/{{ item.name }} --ignore-existing"
+  loop: "{{ minio_buckets }}"
+  when: minio_buckets | length > 0
+  register: bucket_create
+  changed_when: "'Bucket created successfully' in bucket_create.stdout"
+
+- name: Enable versioning on buckets
+  command: "{{ minio_mc_bin_path }} version enable {{ minio_host_alias }}/{{ item.name }}"
+  loop: "{{ minio_buckets }}"
+  when:
+    - minio_buckets | length > 0
+    - item.versioning | default(false) | bool
+  changed_when: false
+
+- name: Set bucket policies
+  command: "{{ minio_mc_bin_path }} anonymous set {{ item.policy }} {{ minio_host_alias }}/{{ item.name }}"
+  loop: "{{ minio_buckets }}"
+  when:
+    - minio_buckets | length > 0
+    - item.policy is defined
+    - item.policy in ['private', 'readonly', 'writeonly', 'public']
+  changed_when: false
+
+- name: Create service account users
+  command: >
+    {{ minio_mc_bin_path }} admin user add {{ minio_host_alias }}
+    {{ item.access_key }} {{ item.secret_key }}
+  loop: "{{ minio_service_accounts }}"
+  when: minio_service_accounts | length > 0
+  no_log: true
+  register: user_create
+  failed_when:
+    - user_create.rc != 0
+    - "'already exists' not in user_create.stderr"
+  changed_when:
+    - user_create.rc == 0
+    - "'already exists' not in user_create.stderr"
+
+- name: Create bucket-specific policies for service accounts
+  copy:
+    content: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": ["s3:GetObject", "s3:ListBucket"],
+            "Resource": [
+              {% for bucket in item.allowed_buckets %}
+              "arn:aws:s3:::{{ bucket }}/*"{% if not loop.last %},{% endif %}
+
+              {% endfor %}
+            ]
+          }
+        ]
+      }
+    dest: "/tmp/minio-policy-{{ item.name }}.json"
+    mode: '0600'
+  loop: "{{ minio_service_accounts }}"
+  when:
+    - minio_service_accounts | length > 0
+    - item.policy == 'readonly'
+  no_log: true
+
+- name: Apply policies to service accounts
+  command: >
+    {{ minio_mc_bin_path }} admin policy attach {{ minio_host_alias }}
+    readonly --user {{ item.access_key }}
+  loop: "{{ minio_service_accounts }}"
+  when: minio_service_accounts | length > 0
+  no_log: true
+  changed_when: false
+
+- name: Remove temporary policy files
+  file:
+    path: "/tmp/minio-policy-{{ item.name }}.json"
+    state: absent
+  loop: "{{ minio_service_accounts }}"
+  when: minio_service_accounts | length > 0
+
+- name: Display bootstrap summary
+  debug:
+    msg: |
+      MinIO Bootstrap Completed:
+      - Buckets created: {{ minio_buckets | length }}
+      - Service accounts configured: {{ minio_service_accounts | length }}

@@ -1,0 +1,15 @@
+---
+# MinIO deployment role handlers
+
+- name: restart minio
+  systemd:
+    name: minio
+    state: restarted
+    daemon_reload: true
+  become: true
+
+- name: reload minio
+  systemd:
+    name: minio
+    state: reloaded
+  become: true

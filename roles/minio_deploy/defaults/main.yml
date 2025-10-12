@@ -1,0 +1,84 @@
+---
+# MinIO deployment role defaults
+# These are safe defaults that can be public
+# Sensitive values should be overridden in ops-control
+
+# User, paths
+minio_user: minio
+minio_group: minio
+minio_home: /home/minio
+minio_bin_path: /usr/local/bin/minio
+
+# Binary installation (SECURITY: Version pinning required for reproducible deployments)
+minio_version: "RELEASE.2024-10-02T17-50-41Z"  # REQUIRED - explicit version
+minio_checksum: "sha256:CHANGEME"  # REQUIRED - get from https://dl.min.io/server/minio/release/linux-amd64/archive/minio.RELEASE.xxx.sha256sum
+minio_download_url: "https://dl.min.io/server/minio/release/linux-amd64/archive/minio.{{ minio_version }}"
+
+minio_config_dir: /etc/minio
+minio_env_file: /etc/default/minio
+minio_service_unit: /etc/systemd/system/minio.service
+minio_certs_dir: "{{ minio_config_dir }}/certs"  # certs/public.crt, certs/private.key
+
+# Data layout (single-node baseline)
+# For macmini with LUKS-encrypted disk mounted at /mnt/cryptdata, prefer a single path:
+minio_data_dirs:
+  - /var/lib/minio/data
+# Note: On a single disk MinIO runs without erasure coding. To expand later, add a new pool
+# (separate nodes/drives) rather than adding more dirs to the same disk.
+
+# Network
+minio_bind_host: 127.0.0.1
+minio_api_port: 9001
+minio_console_port: 9002
+
+# Optional external exposure via Traefik + DNS (ops-control handles Traefik/Unbound setup)
+minio_expose_via_traefik: false
+minio_traefik_host: "minio.example.com"  # Override in ops-control
+
+# TLS (deliver certificates via SOPS as PEM content)
+minio_tls_enable: false
+minio_tls_cert_content: ""    # PEM certificate content (from SOPS), not a path
+minio_tls_key_content: ""     # PEM private key content (from SOPS), not a path
+
+# Server-side encryption (SSE) — optional when full-disk encryption (LUKS) is used
+minio_sse_enabled: false
+minio_sse_master_key: ""   # 32-byte key; enable only if you need per-object encryption/replication security
+
+# Credentials (override via ops-control secrets)
+minio_root_user: "CHANGEME"        # REQUIRED via SOPS
+minio_root_password: "CHANGEME"    # REQUIRED via SOPS
+
+# MinIO Client (mc) for bootstrap (SECURITY: Version pinning required)
+minio_bootstrap_with_mc: false  # Opt-in - set to true to enable bucket/policy bootstrap
+minio_mc_version: "RELEASE.2024-10-02T17-50-41Z"  # REQUIRED if bootstrap enabled
+minio_mc_checksum: "sha256:CHANGEME"  # REQUIRED if bootstrap enabled - get from https://dl.min.io/client/mc/release/linux-amd64/archive/mc.RELEASE.xxx.sha256sum
+minio_mc_download_url: "https://dl.min.io/client/mc/release/linux-amd64/archive/mc.{{ minio_mc_version }}"
+minio_mc_bin_path: /usr/local/bin/mc
+minio_host_alias: local
+
+# Buckets and policies (optional bootstrap - requires minio_bootstrap_with_mc: true)
+minio_buckets: []
+# - name: backups
+#   versioning: true
+#   lifecycle: []    # raw JSON rules or simplified schema
+#   policy: private  # private|readonly|writeonly|public|custom
+#   custom_policy_json: {}
+
+minio_service_accounts: []
+# - name: echoport
+#   access_key: ""       # REQUIRED via SOPS
+#   secret_key: ""       # REQUIRED via SOPS
+#   policy: readonly
+#   allowed_buckets:
+#     - backups
+
+# Health & service
+minio_systemd_restart: always
+minio_healthcheck_timeout: 30
+minio_systemd_memory_max: ""     # e.g., "2G" (optional cgroup limit)
+minio_systemd_limit_nofile: 65536 # raise ulimit for many objects
+minio_systemd_tasks_max: "infinity"
+
+# Config backup (env, certs, policies export)
+minio_backup_config_enable: false  # Consider disabling - may be out of scope
+minio_backup_config_dir: /var/backups/minio-config

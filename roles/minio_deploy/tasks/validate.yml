@@ -1,0 +1,138 @@
+---
+# Validate required variables for MinIO deployment
+
+- name: Validate required credentials
+  assert:
+    that:
+      - minio_root_user is defined
+      - minio_root_user != ""
+      - minio_root_user != "CHANGEME"
+      - minio_root_password is defined
+      - minio_root_password != ""
+      - minio_root_password != "CHANGEME"
+    fail_msg: |
+      SECURITY ERROR: MinIO root credentials are missing or contain placeholder values!
+
+      The following secrets MUST be properly configured:
+      - minio_root_user: {{ minio_root_user | default('NOT SET') }}
+      - minio_root_password: *** (hidden)
+
+      Placeholder values are NOT allowed in production.
+      Please update secrets/prod/minio.yml with real values.
+
+- name: Validate version pinning for MinIO binary
+  assert:
+    that:
+      - minio_version is defined
+      - minio_version != ""
+      - minio_checksum is defined
+      - minio_checksum != ""
+      - minio_checksum != "CHANGEME"
+      - minio_checksum | regex_search('^sha256:[a-f0-9]{64}$')
+    fail_msg: |
+      SECURITY ERROR: MinIO version pinning is incomplete or invalid!
+
+      Version pinning is REQUIRED for reproducible and secure deployments.
+
+      Current values:
+      - minio_version: {{ minio_version | default('NOT SET') }}
+      - minio_checksum: {{ minio_checksum | default('NOT SET') | regex_replace('^(sha256:).{8}.*', '\1********') }}
+
+      Requirements:
+      - minio_version must be set to an explicit release (e.g., "RELEASE.2024-10-02T17-50-41Z")
+      - minio_checksum must be in format "sha256:<64-hex-digits>"
+
+      Get checksums from: https://dl.min.io/server/minio/release/linux-amd64/archive/
+
+- name: Validate mc client configuration if bootstrap enabled
+  assert:
+    that:
+      - minio_mc_version is defined
+      - minio_mc_version != ""
+      - minio_mc_checksum is defined
+      - minio_mc_checksum != ""
+      - minio_mc_checksum != "CHANGEME"
+      - minio_mc_checksum | regex_search('^sha256:[a-f0-9]{64}$')
+    fail_msg: |
+      SECURITY ERROR: mc client version pinning is incomplete or invalid!
+
+      When minio_bootstrap_with_mc is enabled, mc client version pinning is REQUIRED.
+
+      Current values:
+      - minio_mc_version: {{ minio_mc_version | default('NOT SET') }}
+      - minio_mc_checksum: {{ minio_mc_checksum | default('NOT SET') | regex_replace('^(sha256:).{8}.*', '\1********') }}
+
+      Requirements:
+      - minio_mc_version must be set to an explicit release
+      - minio_mc_checksum must be in format "sha256:<64-hex-digits>"
+
+      Get checksums from: https://dl.min.io/client/mc/release/linux-amd64/archive/
+  when: minio_bootstrap_with_mc | bool
+
+- name: Validate TLS configuration if TLS enabled
+  assert:
+    that:
+      - minio_tls_cert_content is defined
+      - minio_tls_cert_content != ""
+      - minio_tls_key_content is defined
+      - minio_tls_key_content != ""
+    fail_msg: |
+      ERROR: TLS is enabled but certificate content is missing!
+
+      When minio_tls_enable is true, you must provide:
+      - minio_tls_cert_content: PEM certificate content (from SOPS)
+      - minio_tls_key_content: PEM private key content (from SOPS)
+
+      Please update secrets/prod/minio.yml with TLS certificates.
+  when: minio_tls_enable | bool
+
+- name: Validate data directories are configured
+  assert:
+    that:
+      - minio_data_dirs is defined
+      - minio_data_dirs | length > 0
+    fail_msg: |
+      ERROR: No data directories configured!
+
+      You must configure at least one data directory in minio_data_dirs.
+      Example: minio_data_dirs: ["/mnt/cryptdata/minio/data"]
+
+- name: Validate service accounts if configured
+  assert:
+    that:
+      - item.name is defined
+      - item.access_key is defined
+      - item.access_key != ""
+      - item.access_key != "CHANGEME"
+      - item.secret_key is defined
+      - item.secret_key != ""
+      - item.secret_key != "CHANGEME"
+      - item.allowed_buckets is defined
+      - item.allowed_buckets | length > 0
+    fail_msg: |
+      ERROR: Service account '{{ item.name | default('UNNAMED') }}' has invalid configuration!
+
+      Each service account must have:
+      - name: account identifier
+      - access_key: set via SOPS (not "CHANGEME")
+      - secret_key: set via SOPS (not "CHANGEME")
+      - allowed_buckets: list of bucket names
+  loop: "{{ minio_service_accounts }}"
+  when:
+    - minio_bootstrap_with_mc | bool
+    - minio_service_accounts | length > 0
+
+- name: Display MinIO configuration summary
+  debug:
+    msg: |
+      MinIO Deployment Configuration:
+      - Version: {{ minio_version }}
+      - Bind: {{ minio_bind_host }}:{{ minio_api_port }} (API), :{{ minio_console_port }} (Console)
+      - Data directories: {{ minio_data_dirs | length }}
+      - TLS enabled: {{ minio_tls_enable }}
+      - Bootstrap enabled: {{ minio_bootstrap_with_mc }}
+      {% if minio_bootstrap_with_mc %}
+      - Buckets to create: {{ minio_buckets | length }}
+      - Service accounts: {{ minio_service_accounts | length }}
+      {% endif %}
+      - Traefik exposure: {{ minio_expose_via_traefik }}

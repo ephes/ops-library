@@ -1,0 +1,37 @@
+---
+# Create MinIO directories
+
+- name: Create MinIO config directory
+  file:
+    path: "{{ minio_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create MinIO certs directory
+  file:
+    path: "{{ minio_certs_dir }}"
+    state: directory
+    owner: "{{ minio_user }}"
+    group: "{{ minio_group }}"
+    mode: '0750'
+  when: minio_tls_enable | bool
+
+- name: Create MinIO data directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ minio_user }}"
+    group: "{{ minio_group }}"
+    mode: '0750'
+  loop: "{{ minio_data_dirs }}"
+
+- name: Create MinIO backup config directory
+  file:
+    path: "{{ minio_backup_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0750'
+  when: minio_backup_config_enable | bool

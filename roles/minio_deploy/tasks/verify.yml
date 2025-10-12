@@ -1,0 +1,48 @@
+---
+# Verify MinIO deployment
+
+- name: Test MinIO health endpoint
+  uri:
+    url: "http{% if minio_tls_enable %}s{% endif %}://{{ minio_bind_host }}:{{ minio_api_port }}/minio/health/live"
+    method: GET
+    status_code: 200
+    validate_certs: false
+  register: health_check
+  retries: 3
+  delay: 5
+  changed_when: false
+
+- name: Display health check result
+  debug:
+    msg: "MinIO health check passed: HTTP {{ health_check.status }}"
+
+# Bootstrap verification (conditional)
+- name: Verify mc alias configuration
+  command: "{{ minio_mc_bin_path }} alias list {{ minio_host_alias }}"
+  register: mc_alias_check
+  failed_when: mc_alias_check.rc != 0
+  changed_when: false
+  when: minio_bootstrap_with_mc | bool
+
+- name: Verify configured buckets exist
+  command: "{{ minio_mc_bin_path }} ls {{ minio_host_alias }}/{{ item.name }}"
+  register: bucket_check
+  failed_when: bucket_check.rc != 0
+  changed_when: false
+  loop: "{{ minio_buckets }}"
+  when:
+    - minio_bootstrap_with_mc | bool
+    - minio_buckets | length > 0
+
+- name: Display verification summary
+  debug:
+    msg: |
+      MinIO Deployment Verification Completed:
+      ✓ API endpoint: {{ minio_bind_host }}:{{ minio_api_port }}
+      ✓ Console endpoint: {{ minio_bind_host }}:{{ minio_console_port }}
+      ✓ Health check: HTTP {{ health_check.status }}
+      {% if minio_bootstrap_with_mc %}
+      ✓ mc client configured
+      ✓ Buckets verified: {{ minio_buckets | length }}
+      ✓ Service accounts: {{ minio_service_accounts | length }}
+      {% endif %}

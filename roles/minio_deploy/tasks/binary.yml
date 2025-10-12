@@ -1,0 +1,17 @@
+---
+# Download and install MinIO binary with mandatory checksum validation
+
+- name: Download MinIO binary with checksum validation
+  get_url:
+    url: "{{ minio_download_url }}"
+    dest: "{{ minio_bin_path }}"
+    checksum: "{{ minio_checksum }}"
+    owner: root
+    group: root
+    mode: '0755'
+  register: minio_binary_download
+  notify: restart minio
+
+- name: Display MinIO binary download result
+  debug:
+    msg: "MinIO binary {{ 'updated' if minio_binary_download.changed else 'already present' }} at {{ minio_bin_path }}"

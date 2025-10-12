@@ -1,0 +1,35 @@
+---
+# Setup and start MinIO systemd service
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: true
+
+- name: Enable and start MinIO service
+  systemd:
+    name: minio
+    enabled: true
+    state: started
+
+- name: Wait for MinIO API port to be ready
+  wait_for:
+    port: "{{ minio_api_port }}"
+    host: "{{ minio_bind_host }}"
+    delay: 2
+    timeout: "{{ minio_healthcheck_timeout }}"
+  register: api_wait_result
+
+- name: Wait for MinIO Console port to be ready
+  wait_for:
+    port: "{{ minio_console_port }}"
+    host: "{{ minio_bind_host }}"
+    delay: 1
+    timeout: "{{ minio_healthcheck_timeout }}"
+  register: console_wait_result
+
+- name: Display service startup result
+  debug:
+    msg: |
+      MinIO service started successfully:
+      - API: {{ minio_bind_host }}:{{ minio_api_port }}
+      - Console: {{ minio_bind_host }}:{{ minio_console_port }}

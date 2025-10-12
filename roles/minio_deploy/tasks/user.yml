@@ -1,0 +1,18 @@
+---
+# Create MinIO system user and group
+
+- name: Create MinIO system group
+  group:
+    name: "{{ minio_group }}"
+    system: true
+    state: present
+
+- name: Create MinIO system user
+  user:
+    name: "{{ minio_user }}"
+    group: "{{ minio_group }}"
+    home: "{{ minio_home }}"
+    shell: /usr/sbin/nologin
+    system: true
+    create_home: true
+    state: present

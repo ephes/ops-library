@@ -1,0 +1,21 @@
+---
+# Configure MinIO environment and systemd unit
+
+- name: Render MinIO environment file
+  template:
+    src: minio.env.j2
+    dest: "{{ minio_env_file }}"
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  notify: restart minio
+
+- name: Render MinIO systemd service unit
+  template:
+    src: minio.service.j2
+    dest: "{{ minio_service_unit }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart minio
