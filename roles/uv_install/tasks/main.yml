@@ -32,7 +32,7 @@
 - name: Parse current version
   set_fact:
     current_version: "{{ current_uv_version.stdout | regex_replace('^uv ([0-9.]+).*', '\\1') }}"
-  when: 
+  when:
     - uv_installed.stat.exists
     - current_uv_version.rc == 0
 
@@ -86,7 +86,7 @@
     - name: Display installation output
       debug:
         var: install_result.stdout_lines
-      when: 
+      when:
         - install_result.stdout_lines is defined
         - ansible_verbosity >= 1
 
@@ -99,7 +99,7 @@
   loop:
     - uv
     - uvx
-  when: 
+  when:
     - uv_create_symlinks
     - uv_install_dir != uv_symlink_dir
   become: yes

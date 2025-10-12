@@ -10,8 +10,8 @@ setup:
     @echo "Setting up development environment..."
     @./setup-pre-commit.sh
 
-# Run ALL tests (roles, services, lint)
-test: test-roles test-services lint
+# Run ALL tests (roles, lint)
+test: test-roles lint
     @echo ""
     @echo "✅ All tests completed!"
 
@@ -25,26 +25,10 @@ test-role ROLE:
     @echo "Testing role: {{ROLE}}"
     @./test_roles.py {{ROLE}}
 
-# Test all services
-test-services:
-    @echo "Testing all services..."
-    @./test_runner.sh all
-
-# Test a specific service
-test-service SERVICE="apt_upgrade":
-    @echo "Testing service: {{SERVICE}}"
-    @./test_runner.sh {{SERVICE}}
-
-# Run molecule tests for apt_upgrade service
-test-molecule ACTION="test":
-    @echo "Running molecule {{ACTION}} for apt_upgrade..."
-    @./test_apt_upgrade.sh {{ACTION}}
-
 # Quick syntax check for everything
 syntax-check:
     @echo "Running quick syntax check..."
     @./test_roles.py --all | grep -E "(Testing role:|YAML Syntax|✓ PASSED|✗ FAILED)" || true
-    @./test_runner.sh all | grep -E "(Testing service:|syntax check|✓|✗)" || true
 
 # Run ansible-lint on everything (non-failing for CI)
 lint:
@@ -52,9 +36,7 @@ lint:
     @if [ -d .venv ]; then \
         source .venv/bin/activate && \
         echo "Linting roles..." && \
-        ansible-lint roles/ 2>&1 | tail -3 || true && \
-        echo "Linting services..." && \
-        ansible-lint services/ 2>&1 | tail -3 || true; \
+        ansible-lint roles/ 2>&1 | tail -3 || true; \
     else \
         echo "Virtual environment not found. Run 'just setup' first."; \
     fi
@@ -62,17 +44,12 @@ lint:
 # Run strict ansible-lint (will fail on errors)
 lint-strict:
     @echo "Running ansible-lint (strict mode)..."
-    @source .venv/bin/activate && ansible-lint roles/ services/
+    @source .venv/bin/activate && ansible-lint roles/
 
 # Run ansible-lint on a specific role
 lint-role ROLE:
     @echo "Linting role: {{ROLE}}"
     @source .venv/bin/activate && ansible-lint roles/{{ROLE}}
-
-# Run ansible-lint on a specific service
-lint-service SERVICE="apt_upgrade":
-    @echo "Linting service: {{SERVICE}}"
-    @source .venv/bin/activate && ansible-lint services/{{SERVICE}}
 
 # Run pre-commit on all files
 pre-commit:
@@ -118,24 +95,11 @@ status:
     @echo "Roles ($(ls -1 roles | wc -l) total):"
     @ls -1 roles | sed 's/^/  - /'
     @echo ""
-    @echo "Services ($(ls -1 services | wc -l) total):"
-    @ls -1 services | sed 's/^/  - /'
-    @echo ""
     @echo "Run 'just test' to test everything"
-
-# Test a service against a real host (be careful!)
-test-remote SERVICE HOST:
-    @echo "⚠️  Testing {{SERVICE}} against {{HOST}}"
-    @echo "This will run in check mode only"
-    @./test_service.sh {{SERVICE}} {{HOST}} remote
 
 # Quick test - just syntax and structure
 quick: syntax-check
     @echo "Quick test completed!"
-
-# Full test suite with molecule (requires Docker)
-test-full: test test-molecule
-    @echo "Full test suite completed!"
 
 # Development workflow - test the role you're working on
 dev ROLE:
@@ -176,13 +140,11 @@ help:
     @echo "Quick commands:"
     @echo "  just test           # Run all tests"
     @echo "  just test-roles     # Test all roles"
-    @echo "  just test-services  # Test all services"
     @echo "  just lint           # Run ansible-lint"
     @echo "  just syntax-check   # Quick syntax validation"
     @echo ""
     @echo "Specific testing:"
     @echo "  just test-role fastdeploy_register_service"
-    @echo "  just test-service apt_upgrade"
     @echo "  just lint-role test_dummy"
     @echo ""
     @echo "Documentation:"
