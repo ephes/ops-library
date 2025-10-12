@@ -63,6 +63,24 @@ fastdeploy_service_restart_sec: 5
 fastdeploy_traefik_enabled: true
 fastdeploy_traefik_host: "{{ fastdeploy_api_url | regex_replace('^https?://', '') }}"
 fastdeploy_traefik_cert_resolver: letsencrypt
+fastdeploy_traefik_middlewares: []  # Custom middlewares to add
+
+# Traefik dual router authentication (SECURITY: mandatory for public-facing services)
+fastdeploy_basic_auth_enabled: true  # Follows security policy - dual router pattern
+fastdeploy_basic_auth_user: "admin"
+# REQUIRED when basic_auth_enabled=true - Must be provided, no default for security
+# fastdeploy_basic_auth_password: "CHANGEME"
+
+# Internal network IP ranges (for dual router pattern)
+# These clients bypass basic auth (internal router)
+fastdeploy_internal_ip_ranges:
+  - "192.168.0.0/16"      # RFC1918 private
+  - "10.0.0.0/8"          # RFC1918 private
+  - "172.16.0.0/12"       # RFC1918 private
+  - "100.64.0.0/10"       # Tailscale CGNAT
+  - "fd7a:115c:a1e0::/48" # Tailscale IPv6
+  - "fd50:3e45:c454:0::/64" # ULA IPv6
+  - "2a02:3100:3d40:9c00::/64" # ISP IPv6 (customize per deployment)
 
 # rsync options for deployment
 fastdeploy_rsync_excludes:
