@@ -1,0 +1,93 @@
+---
+# DDNS Updater Deployment Tasks
+# Deploys dynamic DNS updater for Gandi LiveDNS
+# Only runs if dns_ddns_enabled is true
+
+- name: DDNS deployment
+  when: dns_ddns_enabled | default(false)
+  block:
+    - name: DDNS | Validate configuration
+      ansible.builtin.assert:
+        that:
+          - dns_ddns_domain != "CHANGEME"
+          - dns_ddns_api_token != "CHANGEME"
+        fail_msg: |
+          DDNS configuration is incomplete!
+          - dns_ddns_domain must be set (not CHANGEME)
+          - dns_ddns_api_token must be set (not CHANGEME)
+
+    - name: DDNS | Create ddns service account
+      ansible.builtin.user:
+        name: ddns
+        system: true
+        create_home: false
+        shell: /usr/sbin/nologin
+        comment: "DDNS updater service account"
+
+    - name: DDNS | Create directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+        owner: ddns
+        group: ddns
+      loop:
+        - "{{ dns_ddns_log_dir }}"
+        - "{{ dns_ddns_config_dir }}"
+
+    - name: DDNS | Deploy update script
+      ansible.builtin.template:
+        src: ddns-update.sh.j2
+        dest: "{{ dns_ddns_script_path }}"
+        mode: "0755"
+        owner: root
+        group: root
+      notify: restart ddns-update timer
+
+    - name: DDNS | Deploy environment file
+      ansible.builtin.template:
+        src: ddns.env.j2
+        dest: "{{ dns_ddns_config_dir }}/gandi.env"
+        mode: "0600"
+        owner: ddns
+        group: ddns
+      no_log: true  # Don't log API token
+      notify: restart ddns-update service
+
+    - name: DDNS | Deploy systemd service
+      ansible.builtin.template:
+        src: ddns-update.service.j2
+        dest: /etc/systemd/system/ddns-update.service
+        mode: "0644"
+        owner: root
+        group: root
+      notify:
+        - reload systemd
+        - restart ddns-update service
+
+    - name: DDNS | Deploy systemd timer
+      ansible.builtin.template:
+        src: ddns-update.timer.j2
+        dest: /etc/systemd/system/ddns-update.timer
+        mode: "0644"
+        owner: root
+        group: root
+      notify:
+        - reload systemd
+        - restart ddns-update timer
+
+    - name: DDNS | Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: DDNS | Enable and start timer
+      ansible.builtin.systemd:
+        name: ddns-update.timer
+        state: started
+        enabled: true
+
+    - name: DDNS | Trigger initial update
+      ansible.builtin.systemd:
+        name: ddns-update.service
+        state: started
+      ignore_errors: true  # First run might fail if IP hasn't changed

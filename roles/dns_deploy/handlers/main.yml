@@ -17,3 +17,19 @@
     name: unbound-blocklist.timer
     state: restarted
     daemon_reload: yes
+
+- name: reload systemd
+  systemd:
+    daemon_reload: yes
+
+- name: restart ddns-update service
+  systemd:
+    name: ddns-update.service
+    state: restarted
+  when: dns_ddns_enabled | default(false)
+
+- name: restart ddns-update timer
+  systemd:
+    name: ddns-update.timer
+    state: restarted
+  when: dns_ddns_enabled | default(false)

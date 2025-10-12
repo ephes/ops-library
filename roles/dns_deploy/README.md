@@ -11,6 +11,7 @@ Deploy Unbound DNS with split-horizon views and ad blocking for homelab environm
 - **IDN/Punycode support**: For domains with special characters
 - **Automatic blocklist updates**: Via systemd timer
 - **DNSSEC validation**: For secure DNS resolution
+- **Dynamic DNS (DDNS)**: Optional automatic updates for Gandi LiveDNS (opt-in)
 
 ## Requirements
 
@@ -83,6 +84,22 @@ Unbound handles everything:
 | `dns_blocklists` | See defaults | List of blocklist URLs |
 | `dns_allowlist` | `["github.com", ...]` | Domains never to block |
 
+### DDNS Configuration (Optional)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `dns_ddns_enabled` | `false` | Enable dynamic DNS updater |
+| `dns_ddns_provider` | `"gandi"` | DNS provider (only Gandi supported) |
+| `dns_ddns_domain` | `"CHANGEME"` | Base domain (e.g., `"example.com"`) |
+| `dns_ddns_subdomain` | `"home"` | Subdomain to update |
+| `dns_ddns_update_wildcard` | `true` | Also update `*.subdomain` |
+| `dns_ddns_ttl` | `300` | DNS record TTL in seconds |
+| `dns_ddns_interval` | `"5min"` | Update check interval |
+| `dns_ddns_api_token` | `"CHANGEME"` | Gandi LiveDNS API token |
+| `dns_ddns_ipv4_enabled` | `true` | Update IPv4 (A records) |
+| `dns_ddns_ipv6_enabled` | `true` | Update IPv6 (AAAA records) |
+| `dns_ddns_log_max_size_mb` | `10` | Log rotation size in MB |
+
 ## How It Works
 
 ### Split-DNS Views
@@ -104,6 +121,31 @@ Unbound uses view-based configuration to return different IPs based on client so
 - `*.home.example.com` → Configured IP (LAN or Tailscale based on view)
 - Specific services can override with `dns_split_services`
 
+### Dynamic DNS (Optional)
+
+When enabled (`dns_ddns_enabled: true`):
+
+1. Detects current public IPv4 and IPv6 addresses
+2. Updates Gandi LiveDNS via API when IP changes
+3. Updates both base domain and wildcard (e.g., `home.example.com` and `*.home.example.com`)
+4. Runs automatically via systemd timer (default: every 5 minutes)
+5. Logs all updates to `/var/log/ddns/ddns-update.log`
+6. Runs as dedicated `ddns` service account
+
+**Example configuration:**
+
+```yaml
+- role: local.ops_library.dns_deploy
+  vars:
+    # ... other DNS vars ...
+
+    # Enable DDNS
+    dns_ddns_enabled: true
+    dns_ddns_domain: "example.com"
+    dns_ddns_subdomain: "home"
+    dns_ddns_api_token: "{{ vault_gandi_api_token }}"  # From vault/secrets
+```
+
 ## Testing
 
 ```bash
@@ -122,6 +164,21 @@ dig @192.168.1.5 doubleclick.net
 # Test DNSSEC
 dig @192.168.1.5 google.com +dnssec
 # Should show AD flag for authenticated data
+
+# Test DDNS (when enabled)
+sudo systemctl status ddns-update.timer
+# Should be active and show next trigger time
+
+sudo journalctl -u ddns-update.service -n 50
+# View DDNS update logs
+
+# Check DDNS log file
+sudo tail -f /var/log/ddns/ddns-update.log
+# Shows IP detection and DNS update activity
+
+# Manually trigger DDNS update
+sudo systemctl start ddns-update.service
+# Force an immediate update check
 ```
 
 ## Tailscale Integration
@@ -151,12 +208,34 @@ For Tailscale clients to use this DNS:
 - View logs: `sudo journalctl -u unbound -f`
 - Test from server: `dig @127.0.0.1 test.home.example.com`
 
+### DDNS not updating
+- Check timer status: `sudo systemctl status ddns-update.timer`
+- View update logs: `sudo tail /var/log/ddns/ddns-update.log`
+- Check service errors: `sudo journalctl -u ddns-update.service -n 100`
+- Verify API token: `sudo cat /etc/ddns/gandi.env` (check permissions)
+- Test connectivity: `curl -H "Authorization: Bearer YOUR_TOKEN" https://api.gandi.net/v5/livedns/domains/example.com`
+- Manual trigger: `sudo systemctl start ddns-update.service`
+
+### DDNS updates but DNS not resolving
+- Verify records in Gandi: Check domain control panel
+- Check TTL: Wait for TTL expiry (default 300 seconds)
+- Test with public DNS: `dig @8.8.8.8 home.example.com`
+- Verify subdomain matches: Check `dns_ddns_subdomain` variable
+
 ## Files and Directories
 
+### DNS (Unbound)
 - `/etc/unbound/unbound.conf.d/` - Unbound configuration
 - `/var/lib/unbound/` - Blocklists and data
 - `/usr/local/bin/update-blocklists.sh` - Blocklist update script
 - `/etc/systemd/system/unbound-blocklist.*` - Update timer and service
+
+### DDNS (when enabled)
+- `/usr/local/bin/ddns-update.sh` - DDNS update script
+- `/etc/ddns/gandi.env` - Gandi API token (0600 permissions)
+- `/var/log/ddns/ddns-update.log` - Update logs
+- `/etc/systemd/system/ddns-update.service` - DDNS service unit
+- `/etc/systemd/system/ddns-update.timer` - DDNS timer unit
 
 ## License
 
