@@ -1,0 +1,22 @@
+---
+# Defaults for MinIO removal
+minio_confirm_removal: false
+
+# User and paths
+minio_user: minio
+minio_group: minio
+minio_home: /home/minio
+minio_bin_path: /usr/local/bin/minio
+minio_mc_bin_path: /usr/local/bin/mc
+minio_config_dir: /etc/minio
+minio_env_file: /etc/default/minio
+minio_service_unit: /etc/systemd/system/minio.service
+
+# Data directories (must match deployment)
+minio_data_dirs:
+  - /var/lib/minio/data
+
+# Removal options
+minio_remove_data: true        # Remove data directories
+minio_remove_user: true        # Remove system user
+minio_remove_binaries: true    # Remove minio and mc binaries

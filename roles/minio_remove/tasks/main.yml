@@ -1,0 +1,87 @@
+---
+# Main tasks for MinIO removal
+
+- name: Validate removal confirmation
+  assert:
+    that:
+      - minio_confirm_removal | bool
+    fail_msg: |
+      ERROR: Removal not confirmed!
+
+      To remove MinIO, you must explicitly set:
+        minio_confirm_removal: true
+
+      This will remove:
+      - MinIO service and systemd unit
+      - Configuration files
+      - Data directories (if minio_remove_data: true)
+      - System user (if minio_remove_user: true)
+      - Binaries (if minio_remove_binaries: true)
+
+      Use: just remove-one minio
+
+- name: Stop and disable MinIO service
+  systemd:
+    name: minio
+    state: stopped
+    enabled: false
+  failed_when: false
+  ignore_errors: true
+
+- name: Remove MinIO systemd service unit
+  file:
+    path: "{{ minio_service_unit }}"
+    state: absent
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: true
+
+- name: Remove MinIO environment file
+  file:
+    path: "{{ minio_env_file }}"
+    state: absent
+
+- name: Remove MinIO configuration directory
+  file:
+    path: "{{ minio_config_dir }}"
+    state: absent
+
+- name: Remove MinIO data directories
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ minio_data_dirs }}"
+  when: minio_remove_data | bool
+
+- name: Remove MinIO binaries
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ minio_bin_path }}"
+    - "{{ minio_mc_bin_path }}"
+  when: minio_remove_binaries | bool
+
+- name: Remove MinIO system user
+  user:
+    name: "{{ minio_user }}"
+    state: absent
+    remove: true
+  when: minio_remove_user | bool
+
+- name: Remove MinIO system group
+  group:
+    name: "{{ minio_group }}"
+    state: absent
+  when: minio_remove_user | bool
+
+- name: Display removal summary
+  debug:
+    msg: |
+      MinIO Removal Completed:
+      - Service stopped and disabled
+      - Configuration removed
+      - Data directories: {{ 'removed' if minio_remove_data else 'preserved' }}
+      - System user: {{ 'removed' if minio_remove_user else 'preserved' }}
+      - Binaries: {{ 'removed' if minio_remove_binaries else 'preserved' }}
