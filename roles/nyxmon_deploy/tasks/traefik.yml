@@ -9,6 +9,20 @@
     group: root
     mode: '0755'
 
+- name: Generate basic auth password hash
+  shell: |
+    echo '{{ nyxmon_basic_auth_password }}' | htpasswd -nBi {{ nyxmon_basic_auth_user }} | cut -d: -f2
+  register: password_hash
+  changed_when: false
+  no_log: true
+  when: nyxmon_basic_auth_enabled
+
+- name: Set password hash fact
+  set_fact:
+    nyxmon_basic_auth_password_hash: "{{ password_hash.stdout }}"
+  no_log: true
+  when: nyxmon_basic_auth_enabled
+
 - name: Create Traefik configuration for Nyxmon
   template:
     src: traefik-nyxmon.yml.j2

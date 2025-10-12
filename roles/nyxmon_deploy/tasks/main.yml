@@ -37,6 +37,26 @@
     fail_msg: "nyxmon_source_path must be set when using rsync deployment method"
   when: nyxmon_deploy_method == "rsync"
 
+- name: Validate Traefik basic auth configuration
+  assert:
+    that:
+      - not nyxmon_basic_auth_enabled or (
+          nyxmon_basic_auth_password is defined and
+          nyxmon_basic_auth_password != "CHANGEME" and
+          (nyxmon_basic_auth_password | default('') | length) > 0
+        )
+    fail_msg: |
+      Basic auth is enabled but password is invalid.
+
+      Requirements:
+      - Must not be "CHANGEME"
+      - Must not be empty, whitespace, or null
+
+      Please update secrets/prod/traefik.yml with a strong password.
+      The role will automatically hash it using htpasswd (bcrypt).
+
+      Or disable basic auth with: nyxmon_basic_auth_enabled: false
+
 - name: Setup user and directories
   include_tasks: user.yml
 

@@ -56,6 +56,23 @@ nyxmon_traefik_host: "nyxmon.example.com"  # Override in ops-control
 nyxmon_traefik_cert_resolver: letsencrypt
 nyxmon_traefik_middlewares: []
 
+# Traefik dual router authentication (SECURITY: mandatory for public-facing services)
+nyxmon_basic_auth_enabled: true  # Follows security policy - dual router pattern
+nyxmon_basic_auth_user: "admin"
+# REQUIRED when basic_auth_enabled=true - Must be provided, no default for security
+# nyxmon_basic_auth_password: "CHANGEME"
+
+# Internal network IP ranges (for dual router pattern)
+# These clients bypass basic auth (internal router)
+nyxmon_internal_ip_ranges:
+  - "192.168.0.0/16"      # RFC1918 private
+  - "10.0.0.0/8"          # RFC1918 private
+  - "172.16.0.0/12"       # RFC1918 private
+  - "100.64.0.0/10"       # Tailscale CGNAT
+  - "fd7a:115c:a1e0::/48" # Tailscale IPv6
+  - "fd50:3e45:c454:0::/64" # ULA IPv6
+  - "2a02:3100:3d40:9c00::/64" # ISP IPv6 (customize per deployment)
+
 # Monitoring
 nyxmon_monitoring_enabled: true
 nyxmon_monitoring_service_name: nyxmon_monitor
