@@ -43,6 +43,7 @@ homelab_media_subdirs:
 # Python package management
 homelab_use_uv: true  # Use uv for package management
 homelab_uv_path: "/usr/local/bin/uv"
+homelab_python_version: "3.14"  # Python version to use with uv
 
 # Systemd service
 homelab_systemd_unit_path: "/etc/systemd/system/{{ homelab_user }}.service"

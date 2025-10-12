@@ -26,14 +26,28 @@
   failed_when: false
   changed_when: false
 
+- name: Extract current venv Python version
+  set_fact:
+    venv_python_current: "{{ venv_python_test.stdout | regex_replace('^Python (\\d+\\.\\d+).*$', '\\1') }}"
+  when: venv_python_test.rc == 0
+
 - name: Remove broken venv if Python is not usable
   file:
     path: "{{ homelab_venv_path }}"
     state: absent
   when: venv_python_test.rc != 0
 
+- name: Remove venv if Python version doesn't match
+  file:
+    path: "{{ homelab_venv_path }}"
+    state: absent
+  when:
+    - venv_python_test.rc == 0
+    - venv_python_current is defined
+    - venv_python_current != homelab_python_version
+
 - name: Create virtual environment using uv
-  command: "{{ homelab_uv_path }} venv {{ homelab_venv_path }}"
+  command: "{{ homelab_uv_path }} venv --python {{ homelab_python_version }} {{ homelab_venv_path }}"
   args:
     chdir: "{{ homelab_site_path }}"
     creates: "{{ homelab_venv_path }}/bin/python"
