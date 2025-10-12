@@ -76,8 +76,41 @@
       uv sync --no-default-groups --no-dev{{ '' if nyxmon_use_source_pyproject else ' --upgrade-package nyxmon' }}
   when: nyxmon_use_uv
 
+- name: Test if venv Python is usable
+  command: "{{ nyxmon_venv_path }}/bin/python --version"
+  register: venv_python_test
+  become_user: "{{ nyxmon_user }}"
+  failed_when: false
+  changed_when: false
+  when: nyxmon_use_uv
+
+- name: Extract current venv Python version
+  set_fact:
+    venv_python_current: "{{ venv_python_test.stdout | regex_replace('^Python (\\d+\\.\\d+).*$', '\\1') }}"
+  when:
+    - nyxmon_use_uv
+    - venv_python_test.rc == 0
+
+- name: Remove broken venv if Python is not usable
+  file:
+    path: "{{ nyxmon_venv_path }}"
+    state: absent
+  when:
+    - nyxmon_use_uv
+    - venv_python_test.rc != 0
+
+- name: Remove venv if Python version doesn't match
+  file:
+    path: "{{ nyxmon_venv_path }}"
+    state: absent
+  when:
+    - nyxmon_use_uv
+    - venv_python_test.rc == 0
+    - venv_python_current is defined
+    - venv_python_current != nyxmon_python_version
+
 - name: Create virtual environment using uv
-  command: uv venv {{ nyxmon_venv_path }}
+  command: uv venv --python {{ nyxmon_python_version }} {{ nyxmon_venv_path }}
   args:
     creates: "{{ nyxmon_venv_path }}/bin/python"
   become_user: "{{ nyxmon_user }}"

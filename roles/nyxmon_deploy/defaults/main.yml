@@ -79,6 +79,7 @@ nyxmon_monitoring_service_name: nyxmon_monitor
 
 # Python package management
 nyxmon_use_uv: true  # Use uv for package management
+nyxmon_python_version: "3.14"  # Python version to use with uv
 
 # Service restart
 nyxmon_service_restart_on_change: true
