@@ -63,11 +63,18 @@ None.
 
 ## What Gets Removed
 
-1. **Unbound service and packages**
-2. **Configuration files** in `/etc/unbound/`
-3. **Blocklist data** in `/var/lib/unbound/`
-4. **Systemd timers** for blocklist updates
-5. **Firewall rules** for DNS (if configured)
+1. **DDNS updater** (if configured)
+   - Systemd service and timer (`ddns-update.service`, `ddns-update.timer`)
+   - Update script (respects `dns_ddns_script_path`, default: `/usr/local/bin/ddns-update.sh`)
+   - Configuration files (respects `dns_ddns_config_dir`, default: `/etc/ddns/`)
+   - Log files (respects `dns_ddns_log_dir`, default: `/var/log/ddns/`)
+   - Service account (`ddns` user)
+   - **Note**: Paths are read from `dns_deploy` defaults to match deployment configuration
+2. **Unbound service and packages**
+3. **Configuration files** in `/etc/unbound/`
+4. **Blocklist data** in `/var/lib/unbound/`
+5. **Systemd timers** for blocklist updates
+6. **Firewall rules** for DNS (if configured)
 
 ## Safety Features
 

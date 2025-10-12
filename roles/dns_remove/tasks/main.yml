@@ -16,6 +16,9 @@
     - name: Stop DNS services
       include_tasks: stop_services.yml
 
+    - name: Remove DDNS updater
+      include_tasks: remove_ddns.yml
+
     - name: Remove Unbound
       include_tasks: remove_unbound.yml
 

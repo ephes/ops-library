@@ -1,0 +1,65 @@
+---
+# Remove DDNS Updater
+# Removes DDNS service, timer, scripts, and service account
+
+- name: Load dns_deploy defaults for path variables
+  include_vars:
+    file: "{{ role_path }}/../dns_deploy/defaults/main.yml"
+    name: dns_deploy_defaults
+
+- name: Set DDNS paths from dns_deploy defaults
+  set_fact:
+    ddns_script_path: "{{ dns_ddns_script_path | default(dns_deploy_defaults.dns_ddns_script_path) }}"
+    ddns_config_dir: "{{ dns_ddns_config_dir | default(dns_deploy_defaults.dns_ddns_config_dir) }}"
+    ddns_log_dir: "{{ dns_ddns_log_dir | default(dns_deploy_defaults.dns_ddns_log_dir) }}"
+
+- name: Stop and disable DDNS timer
+  systemd:
+    name: ddns-update.timer
+    state: stopped
+    enabled: false
+  failed_when: false
+  ignore_errors: true
+
+- name: Stop and disable DDNS service
+  systemd:
+    name: ddns-update.service
+    state: stopped
+    enabled: false
+  failed_when: false
+  ignore_errors: true
+
+- name: Remove DDNS systemd units
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/systemd/system/ddns-update.service
+    - /etc/systemd/system/ddns-update.timer
+  notify: Reload systemd
+
+- name: Remove DDNS script
+  file:
+    path: "{{ ddns_script_path }}"
+    state: absent
+
+- name: Remove DDNS configuration directory
+  file:
+    path: "{{ ddns_config_dir }}"
+    state: absent
+
+- name: Remove DDNS log directory
+  file:
+    path: "{{ ddns_log_dir }}"
+    state: absent
+
+- name: Remove ddns service account
+  user:
+    name: ddns
+    state: absent
+    remove: true
+  failed_when: false
+
+- name: Reload systemd daemon after DDNS removal
+  systemd:
+    daemon_reload: true
