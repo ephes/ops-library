@@ -52,11 +52,8 @@
   debug:
     msg: |
       DNS services removal completed:
-      - Pi-hole: Removed
       - Unbound: Removed
-      - Data removal: {{ dns_remove_pihole_data | bool }}
+      - DDNS updater: Removed (if present)
+      - Configuration files: Removed
+      - Blocklists: Removed
       - System DNS: {{ 'Restored to systemd-resolved' if dns_restore_systemd_resolved else 'Left unconfigured' }}
-
-      {% if not dns_remove_pihole_data %}
-      Note: Pi-hole data and blocklists were preserved at {{ dns_pihole_config_dir }}
-      {% endif %}

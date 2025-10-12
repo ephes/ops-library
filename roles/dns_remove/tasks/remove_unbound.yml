@@ -23,7 +23,6 @@
     name: unbound
     state: absent
     purge: yes
-  when: dns_remove_pihole_data | bool
 
 - name: Remove Unbound cache and logs
   file:
