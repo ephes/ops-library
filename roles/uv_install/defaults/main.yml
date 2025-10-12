@@ -20,7 +20,8 @@ uv_create_symlinks: false
 uv_symlink_dir: "/usr/local/bin"
 
 # Whether to update if already installed
-uv_update_existing: false
+# When true, will check for newer versions in alternative locations and update symlink
+uv_update_existing: true
 
 # Force reinstallation even if same version exists
 uv_force_reinstall: false
