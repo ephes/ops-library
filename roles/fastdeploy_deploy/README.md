@@ -78,6 +78,36 @@ fastdeploy_sync_services: true
 
 For a complete list of variables, see `defaults/main.yml`.
 
+### Traefik Dual Router Authentication
+
+The role implements a dual router pattern for security:
+
+- **Internal router** (priority 120): LAN and Tailscale clients bypass basic auth
+  - IP ranges: RFC1918 private networks, Tailscale CGNAT (100.64.0.0/10), Tailscale IPv6 (fd7a::/48)
+- **External router** (priority 100): Public internet requires basic auth
+  - Uses shared credentials from `secrets/prod/traefik.yml`
+
+This is **mandatory** for public-facing deployments per security policy.
+
+**Configuration:**
+
+```yaml
+fastdeploy_basic_auth_enabled: true  # Default: true
+fastdeploy_basic_auth_user: "admin"
+fastdeploy_basic_auth_password: "{{ traefik_secrets.basic_auth_password }}"  # Plain text, will be hashed
+fastdeploy_internal_ip_ranges:  # Customize for your network
+  - "192.168.0.0/16"
+  - "100.64.0.0/10"
+  - "YOUR_IPV6_PREFIX::/64"
+```
+
+**Note:** The role expects a plain-text password in `fastdeploy_basic_auth_password`. It will automatically generate the bcrypt hash using `htpasswd` during deployment. Do NOT provide a pre-hashed password.
+
+**Testing:**
+- From LAN (192.168.x): No auth prompt
+- From Tailscale (100.x): No auth prompt
+- From public internet: Basic auth prompt appears
+
 ## Dependencies
 
 None.
