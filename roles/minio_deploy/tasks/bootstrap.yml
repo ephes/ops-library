@@ -55,14 +55,10 @@
   when: minio_service_accounts | length > 0
   no_log: true
   register: user_create
-  failed_when:
-    - user_create.rc != 0
-    - "'already exists' not in user_create.stderr"
-  changed_when:
-    - user_create.rc == 0
-    - "'already exists' not in user_create.stderr"
+  failed_when: user_create.rc != 0 and 'already exists' not in user_create.stderr
+  changed_when: user_create.rc == 0 and 'already exists' not in user_create.stderr
 
-- name: Create bucket-specific policies for service accounts
+- name: Create bucket-specific policy JSON for service accounts
   copy:
     content: |
       {
@@ -70,9 +66,10 @@
         "Statement": [
           {
             "Effect": "Allow",
-            "Action": ["s3:GetObject", "s3:ListBucket"],
+            "Action": ["s3:GetObject", "s3:ListBucket", "s3:GetBucketLocation"],
             "Resource": [
               {% for bucket in item.allowed_buckets %}
+              "arn:aws:s3:::{{ bucket }}",
               "arn:aws:s3:::{{ bucket }}/*"{% if not loop.last %},{% endif %}
 
               {% endfor %}
@@ -86,14 +83,73 @@
   when:
     - minio_service_accounts | length > 0
     - item.policy == 'readonly'
+    - item.allowed_buckets is defined
+    - item.allowed_buckets | length > 0
   no_log: true
 
-- name: Apply policies to service accounts
+- name: Remove existing custom policies to allow updates
+  command: >
+    {{ minio_mc_bin_path }} admin policy remove {{ minio_host_alias }}
+    {{ item.name }}-policy
+  loop: "{{ minio_service_accounts }}"
+  when:
+    - minio_service_accounts | length > 0
+    - item.policy == 'readonly'
+    - item.allowed_buckets is defined
+    - item.allowed_buckets | length > 0
+  register: policy_remove
+  failed_when: false  # Ignore if policy doesn't exist
+  changed_when: policy_remove.rc == 0
+
+- name: Create/update custom policies with MinIO
+  command: >
+    {{ minio_mc_bin_path }} admin policy create {{ minio_host_alias }}
+    {{ item.name }}-policy /tmp/minio-policy-{{ item.name }}.json
+  loop: "{{ minio_service_accounts }}"
+  when:
+    - minio_service_accounts | length > 0
+    - item.policy == 'readonly'
+    - item.allowed_buckets is defined
+    - item.allowed_buckets | length > 0
+  register: policy_create
+  changed_when: policy_create.rc == 0
+
+- name: Detach built-in policies before attaching custom policy
+  command: >
+    {{ minio_mc_bin_path }} admin policy detach {{ minio_host_alias }}
+    {{ item.1 }} --user {{ item.0.access_key }}
+  with_nested:
+    - "{{ minio_service_accounts | selectattr('policy', 'equalto', 'readonly') | list }}"
+    - ['readonly', 'writeonly', 'readwrite', 'consoleAdmin', 'diagnostics']
+  when:
+    - minio_service_accounts | length > 0
+    - item.0.allowed_buckets is defined
+    - item.0.allowed_buckets | length > 0
+  no_log: true
+  failed_when: false  # Ignore if policy not attached
+  changed_when: false
+
+- name: Attach custom policies to service accounts
   command: >
     {{ minio_mc_bin_path }} admin policy attach {{ minio_host_alias }}
-    readonly --user {{ item.access_key }}
+    {{ item.name }}-policy --user {{ item.access_key }}
   loop: "{{ minio_service_accounts }}"
-  when: minio_service_accounts | length > 0
+  when:
+    - minio_service_accounts | length > 0
+    - item.policy == 'readonly'
+    - item.allowed_buckets is defined
+    - item.allowed_buckets | length > 0
+  no_log: true
+  changed_when: false
+
+- name: Attach built-in policies for service accounts without allowed_buckets
+  command: >
+    {{ minio_mc_bin_path }} admin policy attach {{ minio_host_alias }}
+    {{ item.policy }} --user {{ item.access_key }}
+  loop: "{{ minio_service_accounts }}"
+  when:
+    - minio_service_accounts | length > 0
+    - item.allowed_buckets is not defined or item.allowed_buckets | length == 0
   no_log: true
   changed_when: false
 

@@ -28,7 +28,7 @@
       - minio_checksum is defined
       - minio_checksum != ""
       - minio_checksum != "CHANGEME"
-      - minio_checksum | regex_search('^sha256:[a-f0-9]{64}$')
+      - minio_checksum is regex('^sha256:[a-f0-9]{64}$')
     fail_msg: |
       SECURITY ERROR: MinIO version pinning is incomplete or invalid!
 
@@ -52,7 +52,7 @@
       - minio_mc_checksum is defined
       - minio_mc_checksum != ""
       - minio_mc_checksum != "CHANGEME"
-      - minio_mc_checksum | regex_search('^sha256:[a-f0-9]{64}$')
+      - minio_mc_checksum is regex('^sha256:[a-f0-9]{64}$')
     fail_msg: |
       SECURITY ERROR: mc client version pinning is incomplete or invalid!
 
@@ -97,6 +97,38 @@
       You must configure at least one data directory in minio_data_dirs.
       Example: minio_data_dirs: ["/mnt/cryptdata/minio/data"]
 
+- name: Validate Traefik configuration if exposure enabled
+  assert:
+    that:
+      - minio_traefik_host is defined
+      - minio_traefik_host != ""
+      - minio_traefik_host != "minio.example.com"
+    fail_msg: |
+      ERROR: Traefik exposure is enabled but host is not configured!
+
+      When minio_expose_via_traefik is true, you must provide:
+      - minio_traefik_host: Your domain (e.g., "minio.home.wersdörfer.de")
+
+      Please update your playbook with the correct domain.
+  when: minio_expose_via_traefik | bool
+
+- name: Validate console basic auth password if enabled
+  assert:
+    that:
+      - minio_console_basic_auth_password is defined
+      - minio_console_basic_auth_password != ""
+      - minio_console_basic_auth_password != "CHANGEME"
+    fail_msg: |
+      SECURITY ERROR: Console basic auth is enabled but password is missing!
+
+      When minio_console_basic_auth_enabled is true, you must provide:
+      - minio_console_basic_auth_password: Set via SOPS (not "CHANGEME")
+
+      Please update secrets/prod/minio.yml with a secure password.
+  when:
+    - minio_expose_via_traefik | bool
+    - minio_console_basic_auth_enabled | bool
+
 - name: Validate service accounts if configured
   assert:
     that:
@@ -136,3 +168,7 @@
       - Service accounts: {{ minio_service_accounts | length }}
       {% endif %}
       - Traefik exposure: {{ minio_expose_via_traefik }}
+      {% if minio_expose_via_traefik %}
+      - Traefik host: {{ minio_traefik_host }}
+      - Console auth: {{ 'enabled (dual router)' if minio_console_basic_auth_enabled else 'disabled' }}
+      {% endif %}

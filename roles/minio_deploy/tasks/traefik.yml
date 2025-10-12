@@ -1,0 +1,50 @@
+---
+# Configure Traefik for MinIO with dual router authentication on Console
+
+- name: Ensure Traefik dynamic config directory exists
+  file:
+    path: /etc/traefik/dynamic
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install apache2-utils for htpasswd
+  package:
+    name: apache2-utils
+    state: present
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - minio_console_basic_auth_enabled
+
+- name: Generate basic auth password hash for MinIO Console
+  shell: |
+    echo '{{ minio_console_basic_auth_password }}' | htpasswd -nBi {{ minio_console_basic_auth_user }} | cut -d: -f2
+  register: console_password_hash
+  changed_when: false
+  no_log: true
+  when: minio_console_basic_auth_enabled
+
+- name: Set console password hash fact
+  set_fact:
+    minio_console_basic_auth_password_hash: "{{ console_password_hash.stdout }}"
+  no_log: true
+  when: minio_console_basic_auth_enabled
+
+- name: Create Traefik configuration for MinIO
+  template:
+    src: traefik-minio.yml.j2
+    dest: "{{ minio_traefik_config_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+  # Traefik automatically watches dynamic directory, no reload needed
+
+- name: Display Traefik configuration result
+  debug:
+    msg: |
+      MinIO Traefik configuration deployed:
+      - Config: {{ minio_traefik_config_path }}
+      - S3 API URL: https://s3.{{ minio_traefik_host }}/
+      - Web Console URL: https://{{ minio_traefik_host }}/
+      - Console auth: {{ 'enabled (dual router - no auth from LAN/Tailscale)' if minio_console_basic_auth_enabled else 'disabled' }}

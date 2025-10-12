@@ -1,0 +1,20 @@
+---
+# MinIO deploy role metadata
+
+galaxy_info:
+  author: ops-library team
+  description: Deploy MinIO object storage server
+  license: MIT
+  min_ansible_version: "2.9"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+    - name: Debian
+      versions:
+        - buster
+        - bullseye
+        - bookworm
+
+dependencies: []

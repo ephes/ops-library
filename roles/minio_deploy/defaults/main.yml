@@ -10,8 +10,8 @@ minio_home: /home/minio
 minio_bin_path: /usr/local/bin/minio
 
 # Binary installation (SECURITY: Version pinning required for reproducible deployments)
-minio_version: "RELEASE.2024-10-02T17-50-41Z"  # REQUIRED - explicit version
-minio_checksum: "sha256:CHANGEME"  # REQUIRED - get from https://dl.min.io/server/minio/release/linux-amd64/archive/minio.RELEASE.xxx.sha256sum
+minio_version: "RELEASE.2025-09-07T16-13-09Z"  # REQUIRED - explicit version
+minio_checksum: "sha256:7c5bd8512c6e966455b1d198209358b2d191c77a83ab377c4073281065fb855f"  # Get from https://dl.min.io/server/minio/release/linux-amd64/archive/
 minio_download_url: "https://dl.min.io/server/minio/release/linux-amd64/archive/minio.{{ minio_version }}"
 
 minio_config_dir: /etc/minio
@@ -31,9 +31,26 @@ minio_bind_host: 127.0.0.1
 minio_api_port: 9001
 minio_console_port: 9002
 
-# Optional external exposure via Traefik + DNS (ops-control handles Traefik/Unbound setup)
+# Traefik exposure configuration
 minio_expose_via_traefik: false
-minio_traefik_host: "minio.example.com"  # Override in ops-control
+minio_traefik_host: "minio.example.com"  # Override in ops-control (e.g., "minio.home.wersdörfer.de")
+minio_traefik_cert_resolver: letsencrypt
+minio_traefik_config_path: "/etc/traefik/dynamic/minio.yml"
+
+# Traefik dual router authentication (Console Web UI only)
+# API endpoint does not use basic auth (S3 credentials in requests)
+minio_console_basic_auth_enabled: true
+minio_console_basic_auth_user: "admin"
+# REQUIRED when basic auth enabled - Must be provided via SOPS, no default for security
+# minio_console_basic_auth_password: "CHANGEME"
+
+# Internal network IP ranges (for dual router pattern - no auth on these IPs)
+minio_internal_ip_ranges:
+  - "192.168.0.0/16"      # RFC1918 private
+  - "10.0.0.0/8"          # RFC1918 private
+  - "172.16.0.0/12"       # RFC1918 private
+  - "100.64.0.0/10"       # Tailscale CGNAT
+  - "fd7a:115c:a1e0::/48" # Tailscale IPv6
 
 # TLS (deliver certificates via SOPS as PEM content)
 minio_tls_enable: false
@@ -50,8 +67,8 @@ minio_root_password: "CHANGEME"    # REQUIRED via SOPS
 
 # MinIO Client (mc) for bootstrap (SECURITY: Version pinning required)
 minio_bootstrap_with_mc: false  # Opt-in - set to true to enable bucket/policy bootstrap
-minio_mc_version: "RELEASE.2024-10-02T17-50-41Z"  # REQUIRED if bootstrap enabled
-minio_mc_checksum: "sha256:CHANGEME"  # REQUIRED if bootstrap enabled - get from https://dl.min.io/client/mc/release/linux-amd64/archive/mc.RELEASE.xxx.sha256sum
+minio_mc_version: "RELEASE.2025-08-13T08-35-41Z"  # REQUIRED if bootstrap enabled
+minio_mc_checksum: "sha256:01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891"  # Get from https://dl.min.io/client/mc/release/linux-amd64/archive/
 minio_mc_download_url: "https://dl.min.io/client/mc/release/linux-amd64/archive/mc.{{ minio_mc_version }}"
 minio_mc_bin_path: /usr/local/bin/mc
 minio_host_alias: local

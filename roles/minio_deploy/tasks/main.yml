@@ -1,0 +1,35 @@
+---
+# Main tasks for MinIO deployment
+
+- name: Validate configuration
+  include_tasks: validate.yml
+
+- name: Setup MinIO user and group
+  include_tasks: user.yml
+
+- name: Create MinIO directories
+  include_tasks: directories.yml
+
+- name: Download and install MinIO binary
+  include_tasks: binary.yml
+
+- name: Deploy TLS certificates
+  include_tasks: tls.yml
+  when: minio_tls_enable | bool
+
+- name: Configure MinIO
+  include_tasks: configure.yml
+
+- name: Setup MinIO service
+  include_tasks: service.yml
+
+- name: Configure Traefik for MinIO
+  include_tasks: traefik.yml
+  when: minio_expose_via_traefik | bool
+
+- name: Bootstrap with mc client
+  include_tasks: bootstrap.yml
+  when: minio_bootstrap_with_mc | bool
+
+- name: Verify MinIO deployment
+  include_tasks: verify.yml
