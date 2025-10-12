@@ -1,6 +1,31 @@
 ---
 # Verify DNS resolution
 
+# Validate configuration before testing
+- name: Validate dns_mode is set correctly
+  assert:
+    that:
+      - dns_mode is defined
+      - dns_mode in ['simple', 'advanced', 'unbound_only']
+    fail_msg: "dns_mode must be 'simple', 'advanced', or 'unbound_only' (legacy)"
+
+- name: Validate dns_unbound_port
+  assert:
+    that:
+      - dns_unbound_port is defined
+      - dns_unbound_port | int > 0
+      - dns_unbound_port | int <= 65535
+    fail_msg: "dns_unbound_port must be a valid port number (1-65535)"
+
+- name: Normalize legacy dns_mode
+  set_fact:
+    dns_mode_normalized: "{{ 'advanced' if dns_mode == 'unbound_only' else dns_mode }}"
+
+- name: Warn about deprecated dns_mode
+  debug:
+    msg: "WARNING: dns_mode 'unbound_only' is deprecated. Please use 'advanced' for split-DNS or 'simple' for basic setups."
+  when: dns_mode == 'unbound_only'
+
 # Wait for Unbound to be fully ready after configuration changes
 - name: Wait for Unbound to be ready
   wait_for:
@@ -21,7 +46,7 @@
   command: dig @127.0.0.1 test.{{ dns_local_domain }} +short
   register: dns_test
   failed_when: dns_local_ip not in dns_test.stdout
-  when: dns_mode == 'simple'
+  when: dns_mode_normalized == 'simple'
   changed_when: false
 
 # Advanced Mode tests - verify different responses per network
@@ -29,14 +54,14 @@
   command: dig @127.0.0.1 +subnet=192.168.178.1/32 test.{{ dns_local_domain }} +short
   register: lan_test
   failed_when: dns_split_lan_ip not in lan_test.stdout
-  when: dns_mode == 'advanced'
+  when: dns_mode_normalized == 'advanced'
   changed_when: false
 
 - name: Test Tailscale view (Advanced Mode)
   command: dig @127.0.0.1 +subnet=100.64.0.1/32 test.{{ dns_local_domain }} +short
   register: ts_test
   failed_when: dns_split_tailscale_ip not in ts_test.stdout
-  when: dns_mode == 'advanced'
+  when: dns_mode_normalized == 'advanced'
   changed_when: false
 
 - name: Verify views return different IPs
@@ -44,13 +69,13 @@
     that:
       - lan_test.stdout != ts_test.stdout
     fail_msg: "Split-DNS views must return different IPs for LAN and Tailscale"
-  when: dns_mode == 'advanced'
+  when: dns_mode_normalized == 'advanced'
 
 # Test direct Unbound resolution in Advanced Mode
 - name: Test direct Unbound split-DNS (Advanced Mode)
   command: dig @127.0.0.1 -p {{ dns_unbound_port }} +subnet=192.168.178.1/32 {{ dns_local_domain }} +short
   register: unbound_lan_test
-  when: dns_mode == 'advanced'
+  when: dns_mode_normalized == 'advanced'
   changed_when: false
 
 # Common tests
