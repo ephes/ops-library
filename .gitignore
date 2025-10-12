@@ -40,6 +40,7 @@ molecule/*/.molecule/
 .secrets.baseline
 secrets/
 vault.yml
+.envrc
 
 # Temporary files
 tmp/
