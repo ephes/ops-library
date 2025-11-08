@@ -1,0 +1,53 @@
+---
+# Default variables for Home Assistant backup role
+
+# Root directory where backups will be stored on the target host
+homeassistant_backup_root: /opt/backups/homeassistant
+
+# Prefix used when creating the backup directory (e.g. manual, auto, ci)
+homeassistant_backup_prefix: manual
+
+# Paths to back up (can be customised if installation layout differs)
+homeassistant_config_path: /home/homeassistant/site/config
+homeassistant_data_path: /home/homeassistant/site/data
+homeassistant_logs_path: /home/homeassistant/site/logs
+homeassistant_backup_sqlite_path: "{{ homeassistant_config_path }}/home-assistant_v2.db"
+homeassistant_backup_use_sqlite_backup: true
+
+# Additional files to capture
+homeassistant_service_unit_path: /etc/systemd/system/homeassistant.service
+homeassistant_traefik_config_path: /etc/traefik/dynamic/homeassistant.yml
+
+# Whether to include logs in backups (helpful for post-restore debugging)
+homeassistant_backup_include_logs: true
+
+# Whether to run rsync with --delete to keep backups in sync with source dirs
+homeassistant_backup_use_delete: true
+
+# Generate sha256 manifest for all files in the backup directory
+homeassistant_backup_generate_checksums: true
+
+# Create compressed archive after snapshot (set to false to skip)
+homeassistant_backup_create_archive: true
+
+# Archive format (currently only tar.gz supported)
+homeassistant_backup_archive_format: tar.gz
+
+# Fetch the generated archive back to the control machine
+homeassistant_backup_fetch_local: true
+
+# Local directory (on control machine) where archives are stored
+homeassistant_backup_local_dir: "{{ lookup('env', 'HOME') }}/backups/homeassistant"
+
+# File mode for created local directories
+homeassistant_backup_local_dir_mode: '0750'
+
+# Owner/group for created backup directories
+homeassistant_backup_owner: root
+homeassistant_backup_group: root
+
+# File mode for copied single files
+homeassistant_backup_file_mode: '0644'
+
+# Directory mode for created backup directories
+homeassistant_backup_dir_mode: '0750'

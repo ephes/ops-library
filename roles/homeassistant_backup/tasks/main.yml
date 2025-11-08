@@ -1,0 +1,163 @@
+---
+- name: "Validate required paths"
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  register: _ha_backup_path_stats
+  failed_when: not item.optional and not _ha_backup_path_stats.stat.exists
+  with_items:
+    - { path: "{{ homeassistant_config_path }}", optional: false, description: "Home Assistant config directory" }
+    - { path: "{{ homeassistant_data_path }}", optional: true, description: "Home Assistant data directory" }
+    - { path: "{{ homeassistant_logs_path }}", optional: true, description: "Home Assistant logs directory" }
+    - { path: "{{ homeassistant_service_unit_path }}", optional: true, description: "systemd unit file" }
+    - { path: "{{ homeassistant_traefik_config_path }}", optional: true, description: "Traefik dynamic config" }
+    - { path: "{{ homeassistant_backup_sqlite_path }}", optional: true, description: "Home Assistant SQLite database" }
+  loop_control:
+    label: "{{ item.description }}"
+
+- name: "Build path existence map"
+  ansible.builtin.set_fact:
+    _ha_backup_exists: "{{ _ha_backup_exists | default({}) | combine({ item.item.path: item.stat.exists }) }}"
+  loop: "{{ _ha_backup_path_stats.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: "Set backup timestamp"
+  ansible.builtin.set_fact:
+    homeassistant_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+- name: "Compute backup directory"
+  ansible.builtin.set_fact:
+    homeassistant_backup_dir: "{{ homeassistant_backup_root }}/{{ homeassistant_backup_prefix }}-{{ homeassistant_backup_timestamp }}"
+
+- name: "Compute archive path (if enabled)"
+  ansible.builtin.set_fact:
+    homeassistant_backup_archive: "{{ homeassistant_backup_dir }}.{{ homeassistant_backup_archive_format }}"
+  when: homeassistant_backup_create_archive
+
+- name: "Ensure backup directory exists"
+  ansible.builtin.file:
+    path: "{{ homeassistant_backup_dir }}"
+    state: directory
+    owner: "{{ homeassistant_backup_owner }}"
+    group: "{{ homeassistant_backup_group }}"
+    mode: "{{ homeassistant_backup_dir_mode }}"
+
+- name: "Ensure subdirectories exist"
+  ansible.builtin.file:
+    path: "{{ homeassistant_backup_dir }}/{{ item }}"
+    state: directory
+    owner: "{{ homeassistant_backup_owner }}"
+    group: "{{ homeassistant_backup_group }}"
+    mode: "{{ homeassistant_backup_dir_mode }}"
+  loop:
+    - config
+    - data
+    - logs
+  when: not (item == 'logs' and not homeassistant_backup_include_logs)
+
+- name: "Create SQLite backup using .backup"
+  ansible.builtin.command:
+    cmd: >
+      sqlite3 "{{ homeassistant_backup_sqlite_path }}"
+      ".backup '{{ homeassistant_backup_dir }}/config/{{ homeassistant_backup_sqlite_path | basename }}'"
+  when:
+    - homeassistant_backup_use_sqlite_backup | bool
+    - _ha_backup_exists[homeassistant_backup_sqlite_path] | default(false)
+  changed_when: true
+
+- name: "Rsync Home Assistant directories"
+  ansible.builtin.command:
+    cmd: >
+      rsync -a{{ ' --delete' if homeassistant_backup_use_delete else '' }}
+      {{ "--exclude '" ~ (homeassistant_backup_sqlite_path | basename) ~ "'" if item.exclude_db and homeassistant_backup_use_sqlite_backup else '' }}
+      "{{ item.src }}/"
+      "{{ item.dest }}/"
+  loop:
+    - { src: "{{ homeassistant_config_path }}", dest: "{{ homeassistant_backup_dir }}/config", include: true, exclude_db: true }
+    - { src: "{{ homeassistant_data_path }}", dest: "{{ homeassistant_backup_dir }}/data", include: true, exclude_db: false }
+    - { src: "{{ homeassistant_logs_path }}", dest: "{{ homeassistant_backup_dir }}/logs", include: "{{ homeassistant_backup_include_logs }}", exclude_db: false }
+  loop_control:
+    label: "{{ item.src }}"
+  when:
+    - item.include | bool
+    - item.src | length > 0
+    - _ha_backup_exists[item.src] | default(false)
+  register: _ha_backup_rsync
+  changed_when: true
+
+- name: "Copy supporting files"
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ homeassistant_backup_dir }}/{{ item.dest }}"
+    owner: "{{ homeassistant_backup_owner }}"
+    group: "{{ homeassistant_backup_group }}"
+    mode: "{{ homeassistant_backup_file_mode }}"
+    remote_src: true
+  loop:
+    - { src: "{{ homeassistant_service_unit_path }}", dest: "homeassistant.service" }
+    - { src: "{{ homeassistant_traefik_config_path }}", dest: "homeassistant.traefik.yml" }
+  when:
+    - item.src | length > 0
+    - _ha_backup_exists[item.src] | default(false)
+
+- name: "Write metadata file"
+  ansible.builtin.copy:
+    dest: "{{ homeassistant_backup_dir }}/metadata.yml"
+    owner: "{{ homeassistant_backup_owner }}"
+    group: "{{ homeassistant_backup_group }}"
+    mode: "{{ homeassistant_backup_file_mode }}"
+    content: |
+      timestamp: "{{ homeassistant_backup_timestamp }}"
+      host: "{{ inventory_hostname }}"
+      config_path: "{{ homeassistant_config_path }}"
+      data_path: "{{ homeassistant_data_path }}"
+      logs_included: {{ homeassistant_backup_include_logs | bool }}
+      traefik_config: "{{ homeassistant_traefik_config_path }}"
+      service_unit: "{{ homeassistant_service_unit_path }}"
+      ansible_user: "{{ ansible_user | default('') }}"
+
+- name: "Generate checksum manifest"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cd "{{ homeassistant_backup_dir }}"
+    find . -type f ! -name manifest.sha256 -print0 | sort -z | xargs -0 sha256sum > manifest.sha256
+  args:
+    executable: /bin/bash
+  when: homeassistant_backup_generate_checksums
+  changed_when: true
+
+- name: "Create compressed archive"
+  ansible.builtin.command:
+    cmd: >
+      tar -C "{{ homeassistant_backup_root }}"
+      -czf "{{ homeassistant_backup_archive | basename }}"
+      "{{ homeassistant_backup_dir | basename }}"
+  args:
+    chdir: "{{ homeassistant_backup_root }}"
+  when: homeassistant_backup_create_archive and homeassistant_backup_archive_format == 'tar.gz'
+  changed_when: true
+
+- name: "Ensure local archive directory exists"
+  ansible.builtin.file:
+    path: "{{ homeassistant_backup_local_dir }}"
+    state: directory
+    mode: "{{ homeassistant_backup_local_dir_mode }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - homeassistant_backup_fetch_local
+    - homeassistant_backup_create_archive
+    - homeassistant_backup_archive_format == 'tar.gz'
+
+- name: "Fetch archive to control machine"
+  ansible.builtin.fetch:
+    src: "{{ homeassistant_backup_archive }}"
+    dest: "{{ homeassistant_backup_local_dir }}/"
+    flat: true
+  run_once: true
+  become: false
+  when:
+    - homeassistant_backup_fetch_local
+    - homeassistant_backup_create_archive
+    - homeassistant_backup_archive_format == 'tar.gz'
