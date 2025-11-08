@@ -1,0 +1,77 @@
+---
+- name: Validate available disk space when enabled
+  when: homeassistant_restore_check_disk_space | bool
+  block:
+    - name: Ensure python3 is available for disk space calculation
+      ansible.builtin.command: python3 --version
+      register: _ha_restore_python_version
+      changed_when: false
+
+    - name: Verify target has enough free space for restore
+      ansible.builtin.shell: |
+        set -euo pipefail
+        export HA_RESTORE_ARCHIVE="{{ homeassistant_restore_archive_path }}"
+        export HA_RESTORE_TARGET="{{ homeassistant_site_root }}"
+        export HA_RESTORE_MULTIPLIER="{{ homeassistant_restore_disk_space_multiplier }}"
+        python3 - <<'PY'
+        import os
+        import tarfile
+
+        archive_path = os.environ["HA_RESTORE_ARCHIVE"]
+        target_path = os.environ["HA_RESTORE_TARGET"]
+        multiplier = float(os.environ["HA_RESTORE_MULTIPLIER"])
+
+        with tarfile.open(archive_path, 'r:*') as tar:
+            total_size = sum(member.size for member in tar.getmembers())
+
+        if not os.path.exists(target_path):
+            target_path = os.path.dirname(target_path) or '/'
+
+        stat = os.statvfs(target_path)
+        free_bytes = stat.f_bavail * stat.f_frsize
+        required = int(total_size * multiplier)
+
+        if free_bytes < required:
+            raise SystemExit(f"INSUFFICIENT_DISK:{required}:{free_bytes}")
+        print(f"OK:{required}:{free_bytes}")
+        PY
+      args:
+        executable: /bin/bash
+      register: _ha_restore_disk_space
+      changed_when: false
+      failed_when: _ha_restore_disk_space.rc != 0
+
+- name: Determine pre-restore backup path
+  ansible.builtin.set_fact:
+    homeassistant_restore_safety_backup_path: >-
+      {{ homeassistant_site_root }}.{{ homeassistant_restore_safety_backup_prefix }}-{{ homeassistant_restore_timestamp }}
+
+- name: Create pre-restore safety backup
+  when:
+    - homeassistant_restore_create_safety_backup | bool
+    - not homeassistant_restore_dry_run | bool
+  block:
+    - name: Prepare pre-restore directory
+      ansible.builtin.file:
+        path: "{{ homeassistant_restore_safety_backup_path }}"
+        state: directory
+        owner: "{{ homeassistant_restore_site_owner }}"
+        group: "{{ homeassistant_restore_site_group }}"
+        mode: '0750'
+
+    - name: Snapshot current Home Assistant site directory
+      ansible.builtin.command:
+        cmd: >-
+          rsync -a{{ ' --delete' if homeassistant_restore_safety_rsync_delete else '' }}
+          "{{ homeassistant_site_root }}/"
+          "{{ homeassistant_restore_safety_backup_path }}/"
+      register: _ha_restore_prebackup
+      changed_when: true
+
+    - name: Record rollback source path
+      ansible.builtin.set_fact:
+        homeassistant_restore_rollback_source: "{{ homeassistant_restore_safety_backup_path }}"
+
+    - name: Report safety snapshot location
+      ansible.builtin.debug:
+        msg: "Created safety snapshot at {{ homeassistant_restore_safety_backup_path }}"

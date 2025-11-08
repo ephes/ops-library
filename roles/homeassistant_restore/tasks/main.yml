@@ -1,0 +1,14 @@
+---
+- name: Initialise restore context
+  ansible.builtin.set_fact:
+    homeassistant_restore_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+    homeassistant_restore_operation_successful: false
+    homeassistant_restore_rollback_executed: false
+
+- block:
+    - ansible.builtin.include_tasks: validate.yml
+    - ansible.builtin.include_tasks: prepare.yml
+    - ansible.builtin.include_tasks: restore.yml
+    - ansible.builtin.include_tasks: verify.yml
+  always:
+    - ansible.builtin.include_tasks: cleanup.yml

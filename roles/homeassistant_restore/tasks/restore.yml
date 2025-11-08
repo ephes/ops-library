@@ -1,0 +1,104 @@
+---
+- name: Skip destructive restore steps during dry run
+  ansible.builtin.debug:
+    msg: "homeassistant_restore_dry_run=true - skipping service stop and file sync"
+  when: homeassistant_restore_dry_run | bool
+
+- name: Apply backup to target host
+  when: not homeassistant_restore_dry_run | bool
+  block:
+    - name: Stop Home Assistant service
+      ansible.builtin.systemd:
+        name: "{{ homeassistant_service_name }}"
+        state: stopped
+        daemon_reload: false
+      register: _ha_restore_service_stop
+
+    - name: Ensure destination directories exist
+      ansible.builtin.file:
+        path: "{{ item.dest }}"
+        state: directory
+        owner: "{{ homeassistant_restore_site_owner }}"
+        group: "{{ homeassistant_restore_site_group }}"
+        mode: '0750'
+      loop: "{{ homeassistant_restore_dirs }}"
+
+    - name: Check snapshot content availability
+      ansible.builtin.stat:
+        path: "{{ homeassistant_restore_snapshot_path }}/{{ item.name }}"
+      loop: "{{ homeassistant_restore_dirs }}"
+      register: _ha_restore_snapshot_stats
+
+    - name: Validate required snapshot directories exist
+      ansible.builtin.fail:
+        msg: "Required directory '{{ item.item.name }}' is missing from the backup snapshot"
+      when:
+        - not item.stat.exists | default(false)
+        - not item.item.optional | default(false)
+      loop: "{{ _ha_restore_snapshot_stats.results }}"
+
+    - name: Rsync snapshot directories onto target
+      ansible.builtin.command:
+        cmd: >-
+          rsync -a --delete
+          "{{ homeassistant_restore_snapshot_path }}/{{ item.item.name }}/"
+          "{{ item.item.dest }}/"
+      loop: "{{ _ha_restore_snapshot_stats.results }}"
+      when: item.stat.exists | default(false)
+      loop_control:
+        label: "restore {{ item.item.name }}"
+      register: _ha_restore_rsync
+      changed_when: true
+
+    - name: Restore system files from snapshot
+      when: homeassistant_restore_system_files | bool
+      block:
+        - name: Check system file artefacts in snapshot
+          ansible.builtin.stat:
+            path: "{{ homeassistant_restore_snapshot_path }}/{{ item }}"
+          loop:
+            - homeassistant.service
+            - homeassistant.traefik.yml
+          register: _ha_restore_system_files
+
+        - name: Build system file availability map
+          ansible.builtin.set_fact:
+            _ha_restore_system_file_map: "{{ _ha_restore_system_file_map | default({}) | combine({ item.item: item.stat.exists | default(false) }) }}"
+          loop: "{{ _ha_restore_system_files.results }}"
+
+        - name: Copy systemd unit file if present
+          ansible.builtin.copy:
+            src: "{{ homeassistant_restore_snapshot_path }}/homeassistant.service"
+            dest: "{{ homeassistant_service_unit_path }}"
+            owner: root
+            group: root
+            mode: '0644'
+            remote_src: true
+          when: _ha_restore_system_file_map['homeassistant.service'] | default(false)
+          notify: reload systemd
+
+        - name: Copy Traefik configuration if present
+          ansible.builtin.copy:
+            src: "{{ homeassistant_restore_snapshot_path }}/homeassistant.traefik.yml"
+            dest: "{{ homeassistant_traefik_config_path }}"
+            owner: root
+            group: root
+            mode: '0644'
+            remote_src: true
+          when: _ha_restore_system_file_map['homeassistant.traefik.yml'] | default(false)
+
+    - name: Ensure systemd reloaded before service start
+      ansible.builtin.meta: flush_handlers
+      when: homeassistant_restore_system_files | bool
+
+    - name: Fix ownership on site root when requested
+      ansible.builtin.file:
+        path: "{{ homeassistant_site_root }}"
+        owner: "{{ homeassistant_restore_site_owner }}"
+        group: "{{ homeassistant_restore_site_group }}"
+        recurse: true
+      when: homeassistant_restore_fix_ownership | bool
+
+    - name: Mark restore phase as completed
+      ansible.builtin.set_fact:
+        homeassistant_restore_files_restored: true

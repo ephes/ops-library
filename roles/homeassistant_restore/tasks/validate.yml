@@ -1,0 +1,203 @@
+---
+- name: Resolve requested archive input
+  ansible.builtin.set_fact:
+    _ha_restore_archive_input: "{{ homeassistant_restore_archive | default('latest') }}"
+
+- name: Select latest archive on target host
+  when: _ha_restore_archive_input == 'latest'
+  block:
+    - name: List available Home Assistant backups
+      ansible.builtin.find:
+        paths: "{{ homeassistant_restore_archive_search_root }}"
+        patterns: "*.tar.gz"
+        file_type: file
+        use_regex: false
+        recurse: false
+      register: _ha_restore_found_archives
+
+    - name: Fail when no backups are available on the host
+      ansible.builtin.fail:
+        msg: >-
+          No backup archives were found under {{ homeassistant_restore_archive_search_root }}.
+          Provide homeassistant_restore_archive explicitly or copy an archive to the host.
+      when: _ha_restore_found_archives.matched | default(0) | int == 0
+
+    - name: Sort archives by modification time (newest first)
+      ansible.builtin.set_fact:
+        _ha_restore_sorted_archives: "{{ _ha_restore_found_archives.files | sort(attribute='mtime', reverse=true) }}"
+
+    - name: Use the newest archive on the host
+      ansible.builtin.set_fact:
+        homeassistant_restore_archive_path: "{{ _ha_restore_sorted_archives[0].path }}"
+
+- name: Resolve archive path from input
+  when: _ha_restore_archive_input != 'latest'
+  ansible.builtin.set_fact:
+    homeassistant_restore_archive_path: >-
+      {{ _ha_restore_archive_input if _ha_restore_archive_input.startswith('/') else
+         (homeassistant_restore_archive_search_root.rstrip('/') ~ '/' ~ _ha_restore_archive_input) }}
+
+- name: Determine archive basename
+  ansible.builtin.set_fact:
+    homeassistant_restore_archive_basename: "{{ homeassistant_restore_archive_path | basename }}"
+
+- name: Check if archive exists on the target host
+  ansible.builtin.stat:
+    path: "{{ homeassistant_restore_archive_path }}"
+  register: _ha_restore_archive_stat
+
+- name: Record archive existence flag
+  ansible.builtin.set_fact:
+    _ha_restore_archive_missing: "{{ not (_ha_restore_archive_stat.stat.exists | default(false)) }}"
+
+
+- name: Upload archive from control node cache when missing
+  when: _ha_restore_archive_missing | bool
+  block:
+    - name: Ensure upload target directory exists
+      ansible.builtin.file:
+        path: "{{ homeassistant_restore_upload_target }}"
+        state: directory
+        mode: '0750'
+
+    - name: Locate archive on control machine cache
+      ansible.builtin.stat:
+        path: "{{ homeassistant_restore_local_cache.rstrip('/') }}/{{ homeassistant_restore_archive_basename }}"
+      register: _ha_restore_local_archive
+      delegate_to: localhost
+      become: false
+
+    - name: Fail if archive cannot be found locally either
+      ansible.builtin.fail:
+        msg: >-
+          Backup archive {{ homeassistant_restore_archive_basename }} does not exist on the host
+          and was not found under {{ homeassistant_restore_local_cache }} on the control machine.
+      when: not _ha_restore_local_archive.stat.exists | default(false)
+
+    - name: Upload archive from control node
+      ansible.builtin.copy:
+        src: "{{ _ha_restore_local_archive.stat.path }}"
+        dest: "{{ homeassistant_restore_upload_target.rstrip('/') }}/{{ homeassistant_restore_archive_basename }}"
+        mode: '0600'
+      register: _ha_restore_uploaded_archive
+
+    - name: Update archive path after upload
+      ansible.builtin.set_fact:
+        homeassistant_restore_archive_path: "{{ _ha_restore_uploaded_archive.dest }}"
+
+    - name: Re-stat uploaded archive
+      ansible.builtin.stat:
+        path: "{{ homeassistant_restore_archive_path }}"
+      register: _ha_restore_archive_stat
+
+    - name: Refresh archive existence flag after upload
+      ansible.builtin.set_fact:
+        _ha_restore_archive_missing: "{{ not (_ha_restore_archive_stat.stat.exists | default(false)) }}"
+
+- name: Fail if archive is still missing
+  ansible.builtin.fail:
+    msg: "Backup archive {{ homeassistant_restore_archive_path }} does not exist on the target host."
+  when: _ha_restore_archive_missing | bool
+
+- name: Compute staging path for this restore
+  ansible.builtin.set_fact:
+    homeassistant_restore_staging_path: "{{ homeassistant_restore_staging_dir.rstrip('/') }}/{{ homeassistant_restore_archive_basename }}-{{ homeassistant_restore_timestamp }}"
+
+- name: Ensure staging directory exists
+  ansible.builtin.file:
+    path: "{{ homeassistant_restore_staging_path }}"
+    state: directory
+    mode: "{{ homeassistant_restore_staging_mode }}"
+
+- name: Extract archive into staging directory
+  ansible.builtin.unarchive:
+    src: "{{ homeassistant_restore_archive_path }}"
+    dest: "{{ homeassistant_restore_staging_path }}"
+    remote_src: true
+    extra_opts: []
+
+- name: Locate extracted snapshot directory
+  ansible.builtin.find:
+    paths: "{{ homeassistant_restore_staging_path }}"
+    recurse: true
+    file_type: directory
+    depth: 1
+  register: _ha_restore_stage_dirs
+
+- name: Build snapshot candidate list
+  ansible.builtin.set_fact:
+    _ha_restore_snapshot_candidates: "{{ _ha_restore_stage_dirs.files | map(attribute='path') | reject('equalto', homeassistant_restore_staging_path) | list }}"
+
+- name: Fail if snapshot directory is not found
+  ansible.builtin.fail:
+    msg: >-
+      Unable to determine snapshot directory inside {{ homeassistant_restore_staging_path }}.
+      Expected exactly one directory from the archive contents.
+  when: _ha_restore_snapshot_candidates | length != 1
+
+- name: Select snapshot directory
+  ansible.builtin.set_fact:
+    homeassistant_restore_snapshot_path: "{{ _ha_restore_snapshot_candidates[0] }}"
+
+- name: Ensure metadata file exists
+  ansible.builtin.stat:
+    path: "{{ homeassistant_restore_snapshot_path }}/metadata.yml"
+  register: _ha_restore_metadata_stat
+
+- name: Fail if metadata is missing
+  ansible.builtin.fail:
+    msg: "metadata.yml is missing from snapshot {{ homeassistant_restore_snapshot_path }}"
+  when: not _ha_restore_metadata_stat.stat.exists | default(false)
+
+- name: Read metadata information
+  ansible.builtin.slurp:
+    path: "{{ homeassistant_restore_snapshot_path }}/metadata.yml"
+  register: _ha_restore_metadata_file
+
+- name: Parse metadata
+  ansible.builtin.set_fact:
+    homeassistant_restore_metadata: "{{ _ha_restore_metadata_file.content | b64decode | from_yaml }}"
+
+- name: Validate metadata fields are present
+  ansible.builtin.assert:
+    that:
+      - item in homeassistant_restore_metadata
+    fail_msg: "Metadata field '{{ item }}' is missing from metadata.yml"
+  loop: "{{ homeassistant_restore_metadata_required_fields }}"
+
+- name: Ensure backup host matches current host when enforced
+  ansible.builtin.assert:
+    that:
+      - homeassistant_restore_metadata.host | default('') == inventory_hostname
+    fail_msg: >-
+      Backup archive {{ homeassistant_restore_archive_basename }} was taken from
+      host {{ homeassistant_restore_metadata.host | default('unknown') }}, which does not
+      match current inventory host {{ inventory_hostname }}.
+  when: homeassistant_restore_enforce_host_match | bool
+
+- name: Verify checksum manifest
+  when: homeassistant_restore_validate_checksums | bool
+  block:
+    - name: Ensure checksum manifest exists
+      ansible.builtin.stat:
+        path: "{{ homeassistant_restore_snapshot_path }}/manifest.sha256"
+      register: _ha_restore_manifest_stat
+
+    - name: Fail when checksum manifest is missing
+      ansible.builtin.fail:
+        msg: "manifest.sha256 is missing from {{ homeassistant_restore_snapshot_path }}"
+      when: not _ha_restore_manifest_stat.stat.exists | default(false)
+
+    - name: Verify checksum manifest
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd "{{ homeassistant_restore_snapshot_path }}"
+        if grep -qE '  \./manifest\.sha256$' manifest.sha256; then
+          grep -vE '  \./manifest\.sha256$' manifest.sha256 | sha256sum -c -
+        else
+          sha256sum -c manifest.sha256
+        fi
+      args:
+        executable: /bin/bash
+      register: _ha_restore_checksum_validation
+      changed_when: false

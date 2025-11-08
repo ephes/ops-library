@@ -1,0 +1,63 @@
+---
+# Archive selection
+homeassistant_restore_archive: "latest"
+homeassistant_restore_archive_search_root: /opt/backups/homeassistant
+homeassistant_restore_local_cache: "{{ lookup('env','HOME') }}/backups/homeassistant"
+homeassistant_restore_upload_target: "{{ homeassistant_restore_archive_search_root }}"
+homeassistant_restore_staging_dir: /tmp/homeassistant-restore
+homeassistant_restore_staging_mode: '0700'
+homeassistant_restore_validate_checksums: true
+homeassistant_restore_enforce_host_match: true
+homeassistant_restore_dry_run: false
+homeassistant_restore_check_disk_space: true
+homeassistant_restore_disk_space_multiplier: 2.0
+
+# Home Assistant paths/service
+homeassistant_site_root: /home/homeassistant/site
+homeassistant_config_path: /home/homeassistant/site/config
+homeassistant_data_path: /home/homeassistant/site/data
+homeassistant_logs_path: /home/homeassistant/site/logs
+homeassistant_service_name: homeassistant
+homeassistant_service_unit_path: /etc/systemd/system/homeassistant.service
+homeassistant_traefik_config_path: /etc/traefik/dynamic/homeassistant.yml
+
+# Restore behaviour
+homeassistant_restore_stop_timeout: 30
+homeassistant_restore_start_timeout: 60
+homeassistant_restore_start_poll_interval: 3
+homeassistant_restore_verify_http: false
+homeassistant_restore_health_url: http://localhost:10020/auth/providers
+homeassistant_restore_health_retries: 5
+homeassistant_restore_health_delay: 5
+homeassistant_restore_health_expected_status: 200
+homeassistant_restore_health_headers: {}
+homeassistant_restore_system_files: false
+homeassistant_restore_fix_ownership: true
+homeassistant_restore_site_owner: homeassistant
+homeassistant_restore_site_group: homeassistant
+homeassistant_restore_dirs:
+  - name: config
+    dest: "{{ homeassistant_config_path }}"
+    optional: false
+  - name: data
+    dest: "{{ homeassistant_data_path }}"
+    optional: false
+  - name: logs
+    dest: "{{ homeassistant_logs_path }}"
+    optional: true
+
+# Safety backup / rollback
+homeassistant_restore_create_safety_backup: true
+homeassistant_restore_safety_backup_prefix: pre-restore
+homeassistant_restore_safety_rsync_delete: true
+homeassistant_restore_cleanup_safety_backup: true
+homeassistant_restore_cleanup_after_rollback: false
+homeassistant_restore_rollback_on_failure: true
+homeassistant_restore_rollback_source: ""
+
+# Misc
+homeassistant_restore_metadata_required_fields:
+  - timestamp
+  - host
+  - config_path
+  - data_path

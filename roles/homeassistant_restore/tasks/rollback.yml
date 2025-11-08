@@ -1,0 +1,62 @@
+---
+- name: Check rollback snapshot availability
+  when: homeassistant_restore_rollback_source | length > 0
+  ansible.builtin.stat:
+    path: "{{ homeassistant_restore_rollback_source }}"
+  register: _ha_restore_rollback_stat
+
+- name: Warn when rollback snapshot is unavailable
+  ansible.builtin.debug:
+    msg: "Rollback requested but no safety snapshot is available; skipping automatic rollback."
+  when: homeassistant_restore_rollback_source | length == 0 or (_ha_restore_rollback_stat is defined and not (_ha_restore_rollback_stat.stat.exists | default(false)))
+
+- name: Execute rollback to pre-restore snapshot
+  when:
+    - homeassistant_restore_rollback_source | length > 0
+    - _ha_restore_rollback_stat is defined
+    - _ha_restore_rollback_stat.stat.exists | default(false)
+  block:
+    - name: Stop Home Assistant service (rollback)
+      ansible.builtin.systemd:
+        name: "{{ homeassistant_service_name }}"
+        state: stopped
+        daemon_reload: false
+
+    - name: Ensure site root exists for rollback
+      ansible.builtin.file:
+        path: "{{ homeassistant_site_root }}"
+        state: directory
+        owner: "{{ homeassistant_restore_site_owner }}"
+        group: "{{ homeassistant_restore_site_group }}"
+        mode: '0750'
+
+    - name: Restore files from rollback snapshot
+      ansible.builtin.command:
+        cmd: >-
+          rsync -a --delete
+          "{{ homeassistant_restore_rollback_source }}/"
+          "{{ homeassistant_site_root }}/"
+      register: _ha_restore_rollback_rsync
+      changed_when: true
+
+    - name: Fix ownership after rollback when requested
+      ansible.builtin.file:
+        path: "{{ homeassistant_site_root }}"
+        owner: "{{ homeassistant_restore_site_owner }}"
+        group: "{{ homeassistant_restore_site_group }}"
+        recurse: true
+      when: homeassistant_restore_fix_ownership | bool
+
+    - name: Start Home Assistant service after rollback
+      ansible.builtin.systemd:
+        name: "{{ homeassistant_service_name }}"
+        state: started
+        daemon_reload: false
+
+    - name: Mark rollback as executed
+      ansible.builtin.set_fact:
+        homeassistant_restore_rollback_executed: true
+
+    - name: Log rollback completion
+      ansible.builtin.debug:
+        msg: "Rollback completed using snapshot {{ homeassistant_restore_rollback_source }}"

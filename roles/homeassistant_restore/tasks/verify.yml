@@ -1,0 +1,57 @@
+---
+- name: Compute service start retries
+  ansible.builtin.set_fact:
+    _ha_restore_start_retries: "{{ [((homeassistant_restore_start_timeout | int) // (homeassistant_restore_start_poll_interval | int)), 1] | max }}"
+
+- name: Validation-only mode notice
+  ansible.builtin.debug:
+    msg: "Dry run enabled - skipping service start and health checks"
+  when: homeassistant_restore_dry_run | bool
+
+- name: Start service and run verification
+  when: not homeassistant_restore_dry_run | bool
+  block:
+    - name: Start Home Assistant service
+      ansible.builtin.systemd:
+        name: "{{ homeassistant_service_name }}"
+        state: started
+        daemon_reload: true
+
+    - name: Wait for Home Assistant service to become active
+      ansible.builtin.command: "systemctl is-active {{ homeassistant_service_name }}"
+      register: _ha_restore_active_check
+      retries: "{{ _ha_restore_start_retries | int }}"
+      delay: "{{ homeassistant_restore_start_poll_interval | int }}"
+      until: _ha_restore_active_check.stdout.strip() == 'active'
+      failed_when: _ha_restore_active_check.rc != 0 and _ha_restore_active_check.stdout.strip() != 'active'
+      changed_when: false
+
+    - name: Perform HTTP health check
+      when: homeassistant_restore_verify_http | bool
+      ansible.builtin.uri:
+        url: "{{ homeassistant_restore_health_url }}"
+        method: GET
+        status_code: "{{ homeassistant_restore_health_expected_status | int }}"
+        headers: "{{ homeassistant_restore_health_headers }}"
+        return_content: false
+        timeout: 10
+      register: _ha_restore_health_result
+      retries: "{{ homeassistant_restore_health_retries | int }}"
+      delay: "{{ homeassistant_restore_health_delay | int }}"
+      until: _ha_restore_health_result.status == homeassistant_restore_health_expected_status
+
+    - name: Mark restore operation successful
+      ansible.builtin.set_fact:
+        homeassistant_restore_operation_successful: true
+  rescue:
+    - name: Flag verification failure
+      ansible.builtin.set_fact:
+        _ha_restore_verification_failed: true
+
+    - name: Attempt automatic rollback when enabled
+      when: homeassistant_restore_rollback_on_failure | bool
+      ansible.builtin.include_tasks: rollback.yml
+
+    - name: Fail restore after verification error
+      ansible.builtin.fail:
+        msg: "Home Assistant restore verification failed; see previous errors."
