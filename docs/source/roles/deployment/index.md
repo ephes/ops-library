@@ -11,6 +11,7 @@ nyxmon_deploy
 traefik_deploy
 dns_deploy
 homelab_deploy
+homeassistant_deploy
 ```
 
 These roles handle the complete deployment lifecycle including:

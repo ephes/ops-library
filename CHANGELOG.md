@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Faster dependency resolution and installation
   - Simplified justfile commands using `uv run`
   - Removed manual venv activation requirements
+- `homeassistant_restore` role to validate archives, create safety snapshots, restore files, and roll back on failure
 
 ### Changed
 - Updated README.md with prominent link to ReadTheDocs

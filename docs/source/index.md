@@ -30,6 +30,7 @@ The ops-library collection provides reusable Ansible roles organized by category
 
 - **{doc}`Deployment Roles <roles/deployment/index>`** - Deploy services like FastDeploy, Nyxmon, and Traefik
 - **{doc}`Removal Roles <roles/removal/index>`** - Safely remove deployed services
+- **{doc}`Operations Roles <roles/operations/index>`** - Backup and restore production data
 - **{doc}`Registration Roles <roles/registration/index>`** - Register services with FastDeploy
 - **{doc}`Bootstrap Roles <roles/bootstrap/index>`** - Install required tools and dependencies
 - **{doc}`Testing Roles <roles/testing/index>`** - Development and testing utilities

@@ -8,6 +8,7 @@ Complete reference for all roles in the ops-library collection.
 
 deployment/index
 removal/index
+operations/index
 registration/index
 bootstrap/index
 testing/index
@@ -25,6 +26,7 @@ Deploy and configure services for your homelab infrastructure.
 - {doc}`deployment/dns_deploy` - DNS service deployment
 - {doc}`deployment/homelab_deploy` - Homelab infrastructure
 - {doc}`deployment/fastdeploy_self_deploy` - FastDeploy self-deployment
+- {doc}`deployment/homeassistant_deploy` - Home Assistant Core deployment
 
 ### Removal Roles
 
@@ -34,6 +36,14 @@ Safely remove services and clean up resources.
 - {doc}`removal/nyxmon_remove` - Remove Nyxmon
 - {doc}`removal/traefik_remove` - Remove Traefik
 - {doc}`removal/dns_remove` - Remove DNS service
+- {doc}`removal/homeassistant_remove` - Remove Home Assistant
+
+### Operations Roles
+
+Disaster-recovery workflows for long-lived services.
+
+- {doc}`operations/homeassistant_backup` - Snapshot config/data/logs + manifests
+- {doc}`operations/homeassistant_restore` - Restore archives with validation
 
 ### Registration Roles
 

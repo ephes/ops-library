@@ -9,6 +9,7 @@ fastdeploy_remove
 nyxmon_remove
 traefik_remove
 dns_remove
+homeassistant_remove
 ```
 
 These roles handle:
