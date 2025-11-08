@@ -51,25 +51,30 @@
 
 # Advanced Mode tests - verify different responses per network
 - name: Test LAN view (Advanced Mode)
-  command: dig @127.0.0.1 +subnet=192.168.178.1/32 test.{{ dns_local_domain }} +short
+  command: dig @{{ dns_split_lan_ip }} test.{{ dns_local_domain }} +short
   register: lan_test
   failed_when: dns_split_lan_ip not in lan_test.stdout
   when: dns_mode_normalized == 'advanced'
   changed_when: false
 
 - name: Test Tailscale view (Advanced Mode)
-  command: dig @127.0.0.1 +subnet=100.64.0.1/32 test.{{ dns_local_domain }} +short
+  command: dig @{{ dns_split_tailscale_ip }} test.{{ dns_local_domain }} +short
   register: ts_test
   failed_when: dns_split_tailscale_ip not in ts_test.stdout
-  when: dns_mode_normalized == 'advanced'
+  when:
+    - dns_mode_normalized == 'advanced'
+    - dns_split_tailscale_ip | default('') | length > 0
   changed_when: false
 
 - name: Verify views return different IPs
   assert:
     that:
+      - ts_test is defined
       - lan_test.stdout != ts_test.stdout
     fail_msg: "Split-DNS views must return different IPs for LAN and Tailscale"
-  when: dns_mode_normalized == 'advanced'
+  when:
+    - dns_mode_normalized == 'advanced'
+    - dns_split_tailscale_ip | default('') | length > 0
 
 # Test direct Unbound resolution in Advanced Mode
 - name: Test direct Unbound split-DNS (Advanced Mode)

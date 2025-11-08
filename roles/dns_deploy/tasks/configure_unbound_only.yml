@@ -172,6 +172,28 @@
     state: started
     enabled: yes
 
+- name: Manage /etc/resolv.conf for local DNS
+  when: dns_update_resolv_conf | bool
+  block:
+    - name: Gather existing resolv.conf state
+      stat:
+        path: /etc/resolv.conf
+      register: dns_resolv_conf
+
+    - name: Remove stale resolv.conf symlink
+      file:
+        path: /etc/resolv.conf
+        state: absent
+      when: dns_resolv_conf.stat.islnk | default(false)
+
+    - name: Deploy resolver configuration pointing to Unbound
+      template:
+        src: resolv.conf.j2
+        dest: /etc/resolv.conf
+        owner: root
+        group: root
+        mode: '0644'
+
 - name: Wait for Unbound to be ready
   wait_for:
     port: 53

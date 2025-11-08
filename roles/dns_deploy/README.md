@@ -84,6 +84,17 @@ Unbound handles everything:
 | `dns_blocklists` | See defaults | List of blocklist URLs |
 | `dns_allowlist` | `["github.com", ...]` | Domains never to block |
 
+### Local Resolver Management
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `dns_update_resolv_conf` | `true` | Rewrite `/etc/resolv.conf` to point at Unbound |
+| `dns_resolver_nameservers` | `["127.0.0.1", "{{ dns_split_lan_ip }}"]` | Ordered list of nameservers to write into `/etc/resolv.conf` |
+| `dns_resolver_search_domains` | `[]` | Optional search domains appended to `resolv.conf` |
+| `dns_resolver_options` | `["edns0", "trust-ad"]` | Resolver options line |
+
+> When `dns_update_resolv_conf` is enabled (default), the role stops `systemd-resolved` and installs a static `/etc/resolv.conf` pointing at Unbound. This prevents Ubuntu upgrades from recreating a broken stub resolver.
+
 ### DDNS Configuration (Optional)
 
 | Variable | Default | Description |
@@ -207,6 +218,7 @@ For Tailscale clients to use this DNS:
 - Check Unbound config: `sudo unbound-checkconf`
 - View logs: `sudo journalctl -u unbound -f`
 - Test from server: `dig @127.0.0.1 test.home.example.com`
+- Ensure `/etc/resolv.conf` points to `127.0.0.1` (rerun the role with `dns_update_resolv_conf: true` if it was overwritten)
 
 ### DDNS not updating
 - Check timer status: `sudo systemctl status ddns-update.timer`
