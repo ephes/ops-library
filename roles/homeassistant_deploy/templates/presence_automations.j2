@@ -1,0 +1,116 @@
+# Presence-based automations
+# Add these via UI: Settings → Automations → Create Automation → Edit in YAML
+
+# ============================================
+# EVERYONE AWAY - HOUSE TO AWAY MODE
+# ============================================
+- alias: "Away Mode - Nobody Home"
+  description: "Activate away mode when everyone leaves"
+  trigger:
+    - platform: state
+      entity_id: zone.home
+      to: "0"
+      for:
+        minutes: 5  # Wait 5 minutes to avoid false triggers
+  condition: []
+  action:
+    # Turn off all lights
+    - service: light.turn_off
+      target:
+        entity_id: group.all_lights
+    # Send notification
+    - service: notify.notify
+      data:
+        title: "🏠 Away Mode"
+        message: "Everyone has left. House is now in away mode."
+    # Set helper variable (create input_boolean.away_mode first)
+    - service: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.away_mode
+
+# ============================================
+# FIRST PERSON HOME - WELCOME MODE
+# ============================================
+- alias: "Welcome Home - First Person"
+  description: "Welcome the first person home"
+  trigger:
+    - platform: state
+      entity_id: zone.home
+      from: "0"
+  condition:
+    # Only after sunset or before sunrise
+    - condition: or
+      conditions:
+        - condition: sun
+          after: sunset
+        - condition: sun
+          before: sunrise
+  action:
+    # Turn on entrance lights
+    - service: light.turn_on
+      target:
+        entity_id: 
+          - light.entrance
+          - light.hallway
+      data:
+        brightness_pct: 80
+    # Send notification
+    - service: notify.notify
+      data:
+        title: "🏠 Welcome Home"
+        message: "Welcome back! Turning on lights."
+    # Turn off away mode
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.away_mode
+
+# ============================================
+# SPECIFIC PERSON ARRIVALS
+# ============================================
+- alias: "Jochen Arrives Home"
+  description: "Specific actions when Jochen arrives"
+  trigger:
+    - platform: state
+      entity_id: person.jochen
+      from: "not_home"
+      to: "home"
+  condition: []
+  action:
+    - service: notify.notify
+      data:
+        title: "👋 Welcome"
+        message: "Jochen is home"
+
+# ============================================
+# NIGHTTIME - EVERYONE ASLEEP
+# ============================================
+- alias: "Goodnight - All Devices Inactive"
+  description: "Turn off everything when everyone's devices are idle at night"
+  trigger:
+    - platform: time
+      at: "23:30:00"
+  condition:
+    - condition: numeric_state
+      entity_id: zone.home
+      above: 0
+    - condition: time
+      weekday:
+        - mon
+        - tue
+        - wed
+        - thu
+        - sun
+  action:
+    - service: light.turn_off
+      target:
+        entity_id: group.all_lights
+    - service: notify.notify
+      data:
+        title: "🌙 Goodnight"
+        message: "Turning off lights for the night"
+
+# ============================================
+# PRESENCE HISTORY TRACKING (PLACEHOLDER)
+# ============================================
+# Uncomment and customize in Home Assistant UI to avoid templating errors.
+# See docs/homeassistant_presence_automation.md for guidance.

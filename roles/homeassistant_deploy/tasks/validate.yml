@@ -1,0 +1,24 @@
+---
+- name: "Check uv binary"
+  ansible.builtin.stat:
+    path: "{{ homeassistant_uv_path }}"
+  register: _ha_uv
+
+- name: "Fail if uv is missing"
+  ansible.builtin.fail:
+    msg: "uv binary not found at {{ homeassistant_uv_path }}. Install uv before running this role."
+  when: not _ha_uv.stat.exists
+
+- name: "Ensure base directories are defined"
+  ansible.builtin.assert:
+    that:
+      - homeassistant_site_path | length > 0
+      - homeassistant_config_path | length > 0
+    quiet: true
+
+- name: "Resolve inventory IP for defaults"
+  ansible.builtin.set_fact:
+    homeassistant_internal_url: "{{ homeassistant_internal_url | default('http://' + ansible_default_ipv4.address + ':' + (homeassistant_app_port | string), true) }}"
+  when:
+    - (homeassistant_internal_url | default('')) | length == 0
+    - ansible_default_ipv4.address is defined

@@ -1,0 +1,7 @@
+---
+- name: "Ensure Home Assistant service state"
+  ansible.builtin.systemd:
+    name: "{{ homeassistant_service_name }}"
+    enabled: "{{ homeassistant_service_enabled | bool }}"
+    state: "{{ homeassistant_service_state }}"
+    daemon_reload: true

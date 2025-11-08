@@ -1,0 +1,38 @@
+---
+- name: "Run Home Assistant validation tasks"
+  ansible.builtin.import_tasks: validate.yml
+
+- name: "Install required packages"
+  ansible.builtin.import_tasks: packages.yml
+
+- name: "Ensure Home Assistant user exists"
+  ansible.builtin.import_tasks: user.yml
+
+- name: "Create directory structure"
+  ansible.builtin.import_tasks: directories.yml
+
+- name: "Configure udev rules"
+  ansible.builtin.import_tasks: udev.yml
+  when: homeassistant_enable_udev_rule
+
+- name: "Ensure uv runtime prerequisites"
+  ansible.builtin.import_tasks: uv.yml
+
+- name: "Provision Python environment"
+  ansible.builtin.import_tasks: python.yml
+
+- name: "Resolve UniFi integration secrets"
+  ansible.builtin.import_tasks: unifi.yml
+
+- name: "Manage configuration files"
+  ansible.builtin.import_tasks: configuration.yml
+
+- name: "Install systemd service"
+  ansible.builtin.import_tasks: systemd.yml
+
+- name: "Configure Traefik"
+  ansible.builtin.import_tasks: traefik.yml
+  when: homeassistant_traefik_enabled
+
+- name: "Ensure Home Assistant service state"
+  ansible.builtin.import_tasks: service.yml
