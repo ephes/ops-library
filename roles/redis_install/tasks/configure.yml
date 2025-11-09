@@ -1,0 +1,41 @@
+---
+- name: Ensure Redis data directory exists
+  ansible.builtin.file:
+    path: "{{ redis_install_data_dir }}"
+    state: directory
+    owner: "{{ redis_install_user }}"
+    group: "{{ redis_install_group }}"
+    mode: "0750"
+
+- name: Ensure Redis log directory exists
+  ansible.builtin.file:
+    path: "{{ redis_install_log_dir }}"
+    state: directory
+    owner: "{{ redis_install_user }}"
+    group: "{{ redis_install_group }}"
+    mode: "0755"
+
+- name: Ensure Redis config directory exists
+  ansible.builtin.file:
+    path: "{{ redis_install_config_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Render Redis configuration
+  ansible.builtin.template:
+    src: redis.conf.j2
+    dest: "{{ redis_install_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  notify: restart redis
+
+- name: Validate Redis configuration syntax
+  ansible.builtin.command: "redis-server {{ redis_install_config_path }} --test-memory 2"
+  when:
+    - redis_install_validate_config | bool
+    - not ansible_check_mode
+  changed_when: false

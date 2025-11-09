@@ -1,0 +1,6 @@
+---
+- name: restart redis
+  ansible.builtin.service:
+    name: "{{ redis_install_service_name }}"
+    state: restarted
+  when: redis_install_restart_on_change | bool

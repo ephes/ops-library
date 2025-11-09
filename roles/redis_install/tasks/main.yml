@@ -1,0 +1,12 @@
+---
+- name: Include validation
+  ansible.builtin.include_tasks: validate.yml
+
+- name: Include package installation
+  ansible.builtin.include_tasks: install.yml
+
+- name: Include configuration
+  ansible.builtin.include_tasks: configure.yml
+
+- name: Include service management
+  ansible.builtin.include_tasks: service.yml

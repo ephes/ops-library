@@ -1,0 +1,55 @@
+---
+- name: Ensure bind list is not empty
+  ansible.builtin.assert:
+    that:
+      - redis_install_bind_addresses | length > 0
+    fail_msg: "redis_install_bind_addresses must contain at least one address"
+
+- name: Ensure password provided when required
+  ansible.builtin.assert:
+    that:
+      - (not redis_install_requirepass_enabled) or (redis_install_password | length > 0)
+    fail_msg: "redis_install_password must be set when redis_install_requirepass_enabled=true"
+
+- name: Ensure password is not a placeholder
+  ansible.builtin.assert:
+    that:
+      - redis_install_password | lower not in ['changeme', 'password']
+    fail_msg: "redis_install_password must not use placeholder values"
+  when: redis_install_requirepass_enabled | bool
+
+- name: Validate port range
+  ansible.builtin.assert:
+    that:
+      - redis_install_port | int >= 1
+      - redis_install_port | int <= 65535
+    fail_msg: "redis_install_port must be between 1 and 65535"
+
+- name: Validate database count
+  ansible.builtin.assert:
+    that:
+      - redis_install_databases | int > 0
+    fail_msg: "redis_install_databases must be greater than zero"
+
+- name: Validate maxmemory value
+  vars:
+    _redis_maxmemory_string: "{{ redis_install_maxmemory | string }}"
+  ansible.builtin.assert:
+    that:
+      - (_redis_maxmemory_string | regex_search('^[0-9]+([kmgKMG]?[bB]?)?$')) is not none
+    fail_msg: "redis_install_maxmemory must be numeric (optionally with K/M/G/B suffix)"
+
+- name: Validate enum values
+  ansible.builtin.assert:
+    that:
+      - redis_install_maxmemory_policy in ['noeviction','allkeys-lru','volatile-lru','allkeys-lfu','volatile-lfu','allkeys-random','volatile-random','volatile-ttl']
+      - redis_install_appendfsync in ['always','everysec','no']
+    fail_msg: "redis_install_maxmemory_policy or redis_install_appendfsync has invalid value"
+
+- name: Validate TCP/backlog settings
+  ansible.builtin.assert:
+    that:
+      - redis_install_tcp_backlog | int > 0
+      - redis_install_timeout | int >= 0
+      - redis_install_tcp_keepalive | int >= 0
+    fail_msg: "redis_install_tcp_backlog/timeout/tcp_keepalive must be non-negative"

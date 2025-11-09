@@ -8,6 +8,7 @@ Roles for installing required tools and dependencies.
 ansible_install
 uv_install
 sops_dependencies
+redis_install
 ```
 
 These roles prepare controllers and target hosts with:

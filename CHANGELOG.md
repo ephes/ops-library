@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Simplified justfile commands using `uv run`
   - Removed manual venv activation requirements
 - `homeassistant_restore` role to validate archives, create safety snapshots, restore files, and roll back on failure
+- `redis_install` role to provision standalone Redis instances with optional authentication, persistence, and memory tuning
 
 ### Changed
 - Updated README.md with prominent link to ReadTheDocs

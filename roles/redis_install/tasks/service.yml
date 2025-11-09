@@ -1,0 +1,6 @@
+---
+- name: Ensure Redis service is enabled and running
+  ansible.builtin.service:
+    name: "{{ redis_install_service_name }}"
+    state: started
+    enabled: true

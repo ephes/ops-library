@@ -1,0 +1,27 @@
+---
+- name: Download Redis apt key
+  ansible.builtin.get_url:
+    url: "{{ redis_install_repo_key_url }}"
+    dest: "{{ redis_install_repo_keyring_path }}"
+    mode: "0644"
+  when: redis_install_add_official_repo | bool
+
+- name: Configure Redis apt repository (deb822)
+  ansible.builtin.deb822_repository:
+    name: redis-official
+    types: deb
+    uris: "{{ redis_install_apt_repo }}"
+    suites:
+      - "{{ redis_install_apt_suite }}"
+    components: "{{ redis_install_apt_components }}"
+    signed_by: "{{ redis_install_repo_keyring_path }}"
+    state: present
+  when: redis_install_add_official_repo | bool
+
+- name: Install Redis packages
+  ansible.builtin.apt:
+    name:
+      - "{{ redis_install_package_name }}"
+      - redis-tools
+    state: present
+    update_cache: true
