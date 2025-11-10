@@ -1,4 +1,4 @@
-# `redis_install`
+# Redis Install Role
 
 Bootstrap role for installing and configuring a standalone Redis instance.
 

@@ -12,6 +12,7 @@ traefik_deploy
 dns_deploy
 homelab_deploy
 homeassistant_deploy
+paperless_deploy
 ```
 
 These roles handle the complete deployment lifecycle including:

@@ -27,6 +27,7 @@ Deploy and configure services for your homelab infrastructure.
 - {doc}`deployment/homelab_deploy` - Homelab infrastructure
 - {doc}`deployment/fastdeploy_self_deploy` - FastDeploy self-deployment
 - {doc}`deployment/homeassistant_deploy` - Home Assistant Core deployment
+- {doc}`deployment/paperless_deploy` - Paperless-ngx document management
 
 ### Removal Roles
 
@@ -37,6 +38,7 @@ Safely remove services and clean up resources.
 - {doc}`removal/traefik_remove` - Remove Traefik
 - {doc}`removal/dns_remove` - Remove DNS service
 - {doc}`removal/homeassistant_remove` - Remove Home Assistant
+- {doc}`removal/paperless_remove` - Remove Paperless-ngx
 
 ### Operations Roles
 
@@ -44,6 +46,8 @@ Disaster-recovery workflows for long-lived services.
 
 - {doc}`operations/homeassistant_backup` - Snapshot config/data/logs + manifests
 - {doc}`operations/homeassistant_restore` - Restore archives with validation
+- {doc}`operations/paperless_backup` - Paperless database/media/exporter backups
+- {doc}`operations/paperless_restore` - Paperless importer + pg_dump/media restore
 
 ### Registration Roles
 
@@ -59,6 +63,7 @@ Install required tools and dependencies.
 - {doc}`bootstrap/ansible_install` - Install Ansible on controller
 - {doc}`bootstrap/uv_install` - Install uv for Python
 - {doc}`bootstrap/sops_dependencies` - Install age/SOPS
+- {doc}`bootstrap/postgres_install` - Install PostgreSQL with managed databases
 
 ### Testing Roles
 
