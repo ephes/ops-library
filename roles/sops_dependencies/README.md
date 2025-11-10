@@ -1,4 +1,4 @@
-# sops_dependencies Role
+# SOPS Dependencies Role
 
 Ensures the controller or target host has the tooling required for SOPS-encrypted secrets.
 

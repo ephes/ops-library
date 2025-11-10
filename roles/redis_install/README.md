@@ -1,4 +1,4 @@
-# redis_install
+# Redis Install Role
 
 An ops-library role for installing and configuring Redis with predictable defaults.
 

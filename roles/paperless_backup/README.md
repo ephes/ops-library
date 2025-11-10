@@ -1,4 +1,4 @@
-# paperless_backup
+# Paperless Backup Role
 
 Create a full Paperless-ngx snapshot (application exporter + PostgreSQL + storage/config files) under `/opt/backups/paperless/<prefix>-<timestamp>` and optionally pull a compressed archive back to the control host.
 

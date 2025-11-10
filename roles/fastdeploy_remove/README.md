@@ -1,4 +1,4 @@
-# fastdeploy_remove Role
+# FastDeploy Remove Role
 
 Cleanly removes an existing FastDeploy installation from a host.
 

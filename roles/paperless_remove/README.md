@@ -1,4 +1,4 @@
-# paperless_remove
+# Paperless Remove Role
 
 Safely tear down a Paperless-ngx deployment created by `paperless_deploy`. The role stops all services, removes systemd units, cleans up Traefik/SSH drop-ins, deletes application directories, and (optionally) drops the PostgreSQL database/user and scanner resources.
 

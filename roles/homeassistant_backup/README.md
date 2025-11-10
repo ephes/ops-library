@@ -1,4 +1,4 @@
-# homeassistant_backup
+# Home Assistant Backup Role
 
 Ansible role that creates an on-host backup of a Home Assistant Core deployment.
 

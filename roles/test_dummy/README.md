@@ -1,4 +1,4 @@
-# test_dummy Role
+# Test Dummy Role
 
 A sample role used for development and testing of FastDeploy integrations.
 

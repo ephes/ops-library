@@ -1,4 +1,4 @@
-# ansible_install Role
+# Ansible Install Role
 
 Installs Ansible and required collections on a controller host.
 

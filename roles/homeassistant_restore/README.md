@@ -1,4 +1,4 @@
-# homeassistant_restore
+# Home Assistant Restore Role
 
 Role that restores a Home Assistant Core deployment from backups produced by `homeassistant_backup`.
 

@@ -1,4 +1,4 @@
-# nyxmon_remove Role
+# Nyxmon Remove Role
 
 Removes the Nyxmon monitoring service from a host.
 

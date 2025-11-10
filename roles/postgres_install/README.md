@@ -1,4 +1,4 @@
-# postgres_install
+# Postgres Install Role
 
 Install and configure PostgreSQL from the official PGDG repository (or distro packages) with managed databases, roles, and config overrides.
 
