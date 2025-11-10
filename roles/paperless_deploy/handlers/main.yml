@@ -1,0 +1,39 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart paperless
+  ansible.builtin.systemd:
+    name: "{{ paperless_service_name }}"
+    state: restarted
+    enabled: true
+
+- name: restart paperless-worker
+  ansible.builtin.systemd:
+    name: "{{ paperless_service_name }}-worker"
+    state: restarted
+    enabled: true
+
+- name: restart paperless-scheduler
+  ansible.builtin.systemd:
+    name: "{{ paperless_service_name }}-scheduler"
+    state: restarted
+    enabled: true
+
+- name: restart paperless-consumer
+  ansible.builtin.systemd:
+    name: "{{ paperless_service_name }}-consumer"
+    state: restarted
+    enabled: true
+
+- name: restart ssh
+  ansible.builtin.systemd:
+    name: ssh
+    state: restarted
+    enabled: true
+
+- name: reload traefik
+  ansible.builtin.debug:
+    msg: "Traefik watches dynamic configs; no explicit reload required."
+  when: paperless_traefik_enabled

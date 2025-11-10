@@ -1,0 +1,125 @@
+---
+- name: Download Paperless release archive
+  ansible.builtin.get_url:
+    url: "{{ paperless_release_url }}"
+    dest: "{{ paperless_release_archive }}"
+    owner: "{{ paperless_username }}"
+    group: "{{ paperless_group }}"
+    mode: "0644"
+  become: true
+  become_user: "{{ paperless_username }}"
+
+- name: Check if target Paperless release exists
+  ansible.builtin.stat:
+    path: "{{ paperless_release_dir }}"
+  register: paperless_release_dir_stat
+  become: true
+
+- name: Check current Paperless symlink/extract path
+  ansible.builtin.stat:
+    path: "{{ paperless_current_symlink }}"
+    follow: false
+  register: paperless_current_path_stat
+  become: true
+
+- name: Extract Paperless release
+  when: not paperless_release_dir_stat.stat.exists
+  block:
+    - name: Remove existing Paperless current path
+      ansible.builtin.file:
+        path: "{{ paperless_current_symlink }}"
+        state: absent
+      become: true
+      when: paperless_current_path_stat.stat.exists
+
+    - name: Unarchive release tarball
+      ansible.builtin.unarchive:
+        src: "{{ paperless_release_archive }}"
+        dest: "{{ paperless_site_root }}"
+        remote_src: true
+      become: true
+      become_user: "{{ paperless_username }}"
+
+    - name: Move extracted release to versioned directory
+      ansible.builtin.command:
+        cmd: mv "{{ paperless_site_root }}/paperless-ngx" "{{ paperless_release_dir }}"
+      become: true
+      become_user: "{{ paperless_username }}"
+
+- name: Update current release symlink
+  ansible.builtin.file:
+    src: "{{ paperless_release_dir }}"
+    dest: "{{ paperless_current_symlink }}"
+    state: link
+    owner: "{{ paperless_username }}"
+    group: "{{ paperless_group }}"
+    force: true
+  become: true
+
+- name: Detect existing Paperless installation
+  ansible.builtin.stat:
+    path: "{{ paperless_install_marker }}"
+  register: paperless_install_marker_stat
+  become: true
+
+- name: Install Paperless editable package
+  ansible.builtin.command:
+    cmd: >-
+      {{ paperless_uv_binary }} pip install --python {{ paperless_virtualenv }}
+      -e {{ paperless_release_dir }}[postgres]
+    chdir: "{{ paperless_site_root }}"
+  become: true
+  become_user: "{{ paperless_username }}"
+  when: paperless_force_reinstall or not paperless_install_marker_stat.stat.exists
+
+- name: Install supporting Python packages
+  ansible.builtin.command:
+    cmd: >-
+      {{ paperless_uv_binary }} pip install --python {{ paperless_virtualenv }}
+      {{ paperless_uv_extra_packages | join(' ') }}
+    chdir: "{{ paperless_site_root }}"
+  become: true
+  become_user: "{{ paperless_username }}"
+  when: paperless_uv_extra_packages | length > 0
+        and (paperless_force_reinstall or not paperless_install_marker_stat.stat.exists)
+
+- name: Pin fido2 for django-allauth compatibility
+  ansible.builtin.command:
+    cmd: >-
+      {{ paperless_uv_binary }} pip install --python {{ paperless_virtualenv }}
+      --force-reinstall fido2=={{ paperless_fido2_pin_version }}
+    chdir: "{{ paperless_site_root }}"
+  become: true
+  become_user: "{{ paperless_username }}"
+  when: paperless_fido2_pin_version | length > 0
+        and (paperless_force_reinstall or not paperless_install_marker_stat.stat.exists)
+
+- name: Ensure NLTK data directory exists
+  ansible.builtin.file:
+    path: "{{ paperless_nltk_data_path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: paperless_install_nltk_data
+
+- name: Download NLTK datasets
+  ansible.builtin.command:
+    cmd: >-
+      {{ paperless_python_bin }} -m nltk.downloader
+      -d {{ paperless_nltk_data_path }} {{ item }}
+    creates: "{{ paperless_nltk_data_path }}/{{ paperless_nltk_dataset_paths[item] | default(item) }}"
+  loop: "{{ paperless_nltk_datasets }}"
+  become: true
+  when: paperless_install_nltk_data
+
+- name: Record installed Paperless version
+  ansible.builtin.file:
+    path: "{{ paperless_install_marker }}"
+    state: touch
+    owner: "{{ paperless_username }}"
+    group: "{{ paperless_group }}"
+    mode: "0644"
+  become: true
+  when: paperless_force_reinstall or not paperless_install_marker_stat.stat.exists

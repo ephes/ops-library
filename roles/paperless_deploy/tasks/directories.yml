@@ -1,0 +1,15 @@
+---
+- name: Create core Paperless directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ paperless_username }}"
+    group: "{{ paperless_group }}"
+    mode: "0755"
+  loop:
+    - "{{ paperless_site_root }}"
+    - "{{ paperless_site_root }}/bin"
+    - "{{ paperless_site_root }}/staticfiles"
+    - "{{ paperless_site_root }}/logs"
+    - "{{ paperless_home_path }}/.config"
+  become: true

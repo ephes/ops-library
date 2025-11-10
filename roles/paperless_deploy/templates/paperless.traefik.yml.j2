@@ -1,0 +1,36 @@
+http:
+  routers:
+    paperless:
+      rule: "Host(`{{ paperless_traefik_host }}`)"
+      service: paperless
+      entryPoints:
+        - "{{ paperless_traefik_entrypoint }}"
+      tls:
+        certResolver: "{{ paperless_traefik_cert_resolver }}"
+      middlewares:
+        - paperless-headers
+
+  services:
+    paperless:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:{{ paperless_app_port }}"
+        healthCheck:
+          path: /api/
+          interval: "30s"
+          timeout: "10s"
+
+  middlewares:
+    paperless-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        forceSTSHeader: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        customRequestHeaders:
+          X-Forwarded-Proto: "https"
+        customResponseHeaders:
+          X-Robots-Tag: "noindex, nofollow"
+          server: ""

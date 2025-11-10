@@ -1,0 +1,23 @@
+---
+- name: Validate required secrets
+  ansible.builtin.assert:
+    that:
+      - paperless_secret_key is defined and paperless_secret_key != "CHANGEME"
+      - paperless_secret_key | length >= 50
+      - paperless_postgres_password is defined and paperless_postgres_password != "CHANGEME"
+      - paperless_admin_password is defined and paperless_admin_password != "CHANGEME"
+      - paperless_scanner_enabled | bool == false or paperless_scanner_password != "CHANGEME"
+      - paperless_version is defined and paperless_version | length > 0
+    fail_msg: "Set all CHANGEME variables (secret key, DB/admin/scanner passwords, version) before running paperless_deploy."
+
+- name: Validate Redis configuration
+  ansible.builtin.assert:
+    that:
+      - paperless_redis_requirepass_enabled | bool == false or paperless_redis_password | length > 0
+    fail_msg: "paperless_redis_password must be provided when redis_requirepass is enabled."
+
+- name: Validate uv binary path
+  ansible.builtin.assert:
+    that:
+      - paperless_uv_binary | length > 0
+    fail_msg: "paperless_uv_binary must point to the uv executable."

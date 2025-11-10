@@ -1,0 +1,19 @@
+---
+- name: Ensure Traefik dynamic directory exists
+  ansible.builtin.file:
+    path: "{{ paperless_traefik_config_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Deploy Paperless Traefik configuration
+  ansible.builtin.template:
+    src: paperless.traefik.yml.j2
+    dest: "{{ paperless_traefik_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: reload traefik

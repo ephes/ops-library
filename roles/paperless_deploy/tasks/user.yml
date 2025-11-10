@@ -1,0 +1,15 @@
+---
+- name: Ensure paperless group exists
+  ansible.builtin.group:
+    name: "{{ paperless_group }}"
+    state: present
+  become: true
+
+- name: Ensure paperless user exists
+  ansible.builtin.user:
+    name: "{{ paperless_username }}"
+    group: "{{ paperless_group }}"
+    shell: /bin/bash
+    home: "{{ paperless_home_path }}"
+    create_home: true
+  become: true

@@ -1,0 +1,49 @@
+- name: Verify encrypted storage is mounted
+  ansible.builtin.assert:
+    that:
+      - (
+          paperless_mounts
+          | selectattr('mount', 'equalto', (paperless_external_storage_root | dirname))
+          | list
+          | length
+        ) > 0
+    fail_msg: "Encrypted storage root {{ paperless_external_storage_root | dirname }} must be mounted before deploying Paperless."
+  vars:
+    paperless_mounts: "{{ ansible_mounts | default([]) }}"
+  when: paperless_verify_storage_mount
+
+- name: Ensure external storage directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ paperless_username }}"
+    group: "{{ paperless_group }}"
+    mode: "0755"
+  loop:
+    - "{{ paperless_external_storage_root }}"
+    - "{{ paperless_media_path }}"
+    - "{{ paperless_media_path }}/documents"
+    - "{{ paperless_media_path }}/documents/originals"
+    - "{{ paperless_media_path }}/documents/thumbnails"
+    - "{{ paperless_data_path }}"
+    - "{{ paperless_consume_path }}"
+    - "{{ paperless_export_path }}"
+    - "{{ paperless_backup_path }}"
+    - "{{ paperless_tmp_path }}"
+  become: true
+
+- name: Create symlinks to external storage
+  ansible.builtin.file:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    state: link
+    owner: "{{ paperless_username }}"
+    group: "{{ paperless_group }}"
+    force: true
+  loop:
+    - { src: "{{ paperless_media_path }}", dest: "{{ paperless_local_media_path }}" }
+    - { src: "{{ paperless_data_path }}", dest: "{{ paperless_local_data_path }}" }
+    - { src: "{{ paperless_consume_path }}", dest: "{{ paperless_local_consume_path }}" }
+    - { src: "{{ paperless_export_path }}", dest: "{{ paperless_local_export_path }}" }
+  when: paperless_manage_symlinks
+  become: true

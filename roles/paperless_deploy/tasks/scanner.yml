@@ -1,0 +1,97 @@
+---
+- name: Ensure scanner group exists
+  ansible.builtin.group:
+    name: "{{ paperless_scanner_group }}"
+    system: true
+    state: present
+  become: true
+
+- name: Ensure scanner user exists
+  ansible.builtin.user:
+    name: "{{ paperless_scanner_username }}"
+    group: "{{ paperless_scanner_group }}"
+    system: true
+    shell: /bin/false
+    home: "{{ paperless_sftp_chroot_dir }}"
+    create_home: false
+  become: true
+
+- name: Set scanner password via chpasswd
+  ansible.builtin.command: "chpasswd"
+  args:
+    stdin: "{{ paperless_scanner_username }}:{{ paperless_scanner_password }}"
+  no_log: true
+  become: true
+  when:
+    - paperless_scanner_password | length > 0
+
+- name: Ensure scanner user belongs to paperless group
+  ansible.builtin.user:
+    name: "{{ paperless_scanner_username }}"
+    groups: "{{ paperless_group }}"
+    append: true
+  become: true
+
+- name: Create SFTP chroot directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ paperless_sftp_chroot_dir }}", owner: "root", group: "root", mode: "0755" }
+    - { path: "{{ paperless_sftp_inbox_dir }}", owner: "{{ paperless_scanner_username }}", group: "{{ paperless_scanner_group }}", mode: "0755" }
+  become: true
+
+- name: Bind mount scanner inbox to Paperless consume directory
+  ansible.builtin.mount:
+    path: "{{ paperless_sftp_inbox_dir }}"
+    src: "{{ paperless_consume_path }}"
+    fstype: none
+    opts: bind
+    state: mounted
+  become: true
+  when: paperless_scanner_bind_mount_enabled
+
+- name: Ensure RSA host key exists for scanner compatibility
+  ansible.builtin.command: ssh-keygen -t rsa -b 2048 -f /etc/ssh/ssh_host_rsa_key -N ""
+  args:
+    creates: /etc/ssh/ssh_host_rsa_key
+  become: true
+
+- name: Deploy scanner SSH configuration
+  ansible.builtin.template:
+    src: sshd_sftp_scanner.conf.j2
+    dest: "{{ paperless_ssh_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: restart ssh
+
+- name: Validate SSH configuration
+  ansible.builtin.command: sshd -t
+  changed_when: false
+  become: true
+
+- name: Ensure consume directory permissions
+  ansible.builtin.file:
+    path: "{{ paperless_consume_path }}"
+    owner: "{{ paperless_username }}"
+    group: "{{ paperless_group }}"
+    mode: "0775"
+    state: directory
+  become: true
+
+- name: Apply ACLs for scanner on consume directory
+  ansible.posix.acl:
+    path: "{{ paperless_consume_path }}"
+    entity: "{{ paperless_scanner_username }}"
+    etype: user
+    permissions: rwx
+    recursive: true
+    state: present
+    default: true
+  become: true
+  when: paperless_configure_scanner_acl

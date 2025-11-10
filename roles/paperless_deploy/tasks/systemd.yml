@@ -1,0 +1,48 @@
+---
+- name: Deploy Paperless web service unit
+  ansible.builtin.template:
+    src: paperless.service.j2
+    dest: "{{ paperless_systemd_unit_dir }}/{{ paperless_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify:
+    - reload systemd
+    - restart paperless
+
+- name: Deploy Paperless worker unit
+  ansible.builtin.template:
+    src: paperless-worker.service.j2
+    dest: "{{ paperless_systemd_unit_dir }}/{{ paperless_service_name }}-worker.service"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify:
+    - reload systemd
+    - restart paperless-worker
+
+- name: Deploy Paperless scheduler unit
+  ansible.builtin.template:
+    src: paperless-scheduler.service.j2
+    dest: "{{ paperless_systemd_unit_dir }}/{{ paperless_service_name }}-scheduler.service"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify:
+    - reload systemd
+    - restart paperless-scheduler
+
+- name: Deploy Paperless consumer unit
+  ansible.builtin.template:
+    src: paperless-consumer.service.j2
+    dest: "{{ paperless_systemd_unit_dir }}/{{ paperless_service_name }}-consumer.service"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify:
+    - reload systemd
+    - restart paperless-consumer

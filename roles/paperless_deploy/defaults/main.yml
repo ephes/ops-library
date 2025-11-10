@@ -1,0 +1,208 @@
+---
+# Defaults for paperless_deploy role. Host inventories must override any CHANGEME values.
+
+# Identity / paths
+paperless_username: paperless
+paperless_group: "{{ paperless_username }}"
+paperless_service_name: paperless
+paperless_home_path: "/home/{{ paperless_username }}"
+paperless_site_root: "{{ paperless_home_path }}/site"
+paperless_virtualenv: "{{ paperless_site_root }}/.venv"
+paperless_python_bin: "{{ paperless_virtualenv }}/bin/python"
+paperless_env_file: "{{ paperless_site_root }}/.env"
+paperless_current_symlink: "{{ paperless_site_root }}/paperless-ngx"
+paperless_install_marker: "{{ paperless_site_root }}/.paperless-installed-{{ paperless_version }}"
+paperless_force_reinstall: false
+
+# Release / runtime
+paperless_version: "2.18.2"
+paperless_release_url: "https://github.com/paperless-ngx/paperless-ngx/releases/download/v{{ paperless_version }}/paperless-ngx-v{{ paperless_version }}.tar.xz"
+paperless_release_archive: "{{ paperless_site_root }}/paperless-ngx-v{{ paperless_version }}.tar.xz"
+paperless_release_dir: "{{ paperless_site_root }}/paperless-ngx-v{{ paperless_version }}"
+paperless_manage_dir: "{{ paperless_current_symlink }}/src"
+paperless_python_version: "3.13"
+paperless_uv_install_dir: /usr/local/bin
+paperless_uv_binary: "{{ paperless_uv_install_dir }}/uv"
+paperless_create_venv_symlink: true
+paperless_venv_symlink_name: venv
+
+# External storage
+paperless_external_storage_root: /mnt/cryptdata/paperless
+paperless_media_path: "{{ paperless_external_storage_root }}/media"
+paperless_data_path: "{{ paperless_external_storage_root }}/data"
+paperless_consume_path: "{{ paperless_external_storage_root }}/consume"
+paperless_export_path: "{{ paperless_external_storage_root }}/export"
+paperless_backup_path: "{{ paperless_external_storage_root }}/backup"
+paperless_tmp_path: "{{ paperless_external_storage_root }}/tmp"
+paperless_local_media_path: "{{ paperless_site_root }}/media"
+paperless_local_data_path: "{{ paperless_site_root }}/data"
+paperless_local_consume_path: "{{ paperless_site_root }}/consume"
+paperless_local_export_path: "{{ paperless_site_root }}/export"
+
+# Application configuration
+paperless_app_port: 10030
+paperless_time_zone: Europe/Berlin
+paperless_language: en-us
+paperless_url: "https://paperless.{{ paperless_traefik_domain }}"
+paperless_allowed_hosts: "paperless.{{ paperless_traefik_domain }},localhost,127.0.0.1"
+paperless_cors_allowed_hosts: "{{ paperless_url }}"
+paperless_force_script_name: ""
+paperless_static_url: /static/
+paperless_secret_key: "CHANGEME"
+paperless_admin_user: admin
+paperless_admin_password: "CHANGEME"
+paperless_admin_email: admin@example.com
+paperless_manage_superuser: true
+
+# OCR / processing
+paperless_ocr_language: eng+deu
+paperless_ocr_mode: skip
+paperless_ocr_threads: 2
+paperless_filename_format: "{{ '{{' }} created_year {{ '}}' }}/{{ '{{' }} correspondent {{ '}}' }}/{{ '{{' }} title {{ '}}' }}"
+paperless_filename_date_order: YMD
+paperless_consumer_recursive: true
+paperless_consumer_subdirs_as_tags: true
+paperless_task_workers: 2
+paperless_threads_per_worker: 2
+paperless_logrotate_max_size: "10485760"
+paperless_logrotate_max_backups: 5
+
+# Database (variables forwarded to postgres_install dependency)
+paperless_postgres_version: "17"
+paperless_postgres_host: localhost
+paperless_postgres_port: 5432
+paperless_postgres_database: paperless
+paperless_postgres_user: paperless
+paperless_postgres_password: "CHANGEME"
+paperless_postgres_sslmode: prefer
+paperless_postgres_become_user: postgres
+paperless_postgres_packages:
+  - "postgresql-{{ paperless_postgres_version }}"
+  - "postgresql-client-{{ paperless_postgres_version }}"
+  - "postgresql-contrib-{{ paperless_postgres_version }}"
+  - libpq-dev
+paperless_postgres_repo_enabled: true
+paperless_postgres_repo_url: https://apt.postgresql.org/pub/repos/apt
+paperless_postgres_repo_codename: "{{ ansible_distribution_release | default('jammy') }}"
+paperless_postgres_repo_components:
+  - main
+paperless_postgres_repo_keyring: /etc/apt/keyrings/postgresql.asc
+paperless_postgres_repo_key_url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+
+# Redis (managed via redis_install dependency)
+paperless_redis_bind_addresses:
+  - 127.0.0.1
+paperless_redis_host: localhost
+paperless_redis_port: 6379
+paperless_redis_database: 0
+paperless_redis_password: ""
+paperless_redis_requirepass_enabled: false
+
+# Scanner SFTP
+paperless_scanner_enabled: true
+paperless_scanner_username: scanner
+paperless_scanner_group: scanner
+paperless_scanner_password: "CHANGEME"
+paperless_scanner_password_salt: ""
+paperless_sftp_chroot_dir: /srv/sftp-scanner
+paperless_sftp_inbox_dir: "{{ paperless_sftp_chroot_dir }}/inbox"
+paperless_scanner_acl_enabled: true
+paperless_scanner_bind_mount_enabled: true
+
+# Traefik
+paperless_traefik_enabled: true
+paperless_traefik_domain: home.xn--wersdrfer-47a.de
+paperless_traefik_host: "paperless.{{ paperless_traefik_domain }}"
+paperless_traefik_entrypoint: web-secure
+paperless_traefik_cert_resolver: letsencrypt
+paperless_traefik_config_path: /etc/traefik/dynamic/paperless.yml
+paperless_traefik_service_name: traefik
+
+# Systemd
+paperless_systemd_unit_dir: /etc/systemd/system
+paperless_service_units:
+  - "{{ paperless_service_name }}"
+  - "{{ paperless_service_name }}-worker"
+  - "{{ paperless_service_name }}-scheduler"
+  - "{{ paperless_service_name }}-consumer"
+paperless_temp_dir: /tmp/paperless
+
+# APT / dependencies
+paperless_install_prereq_packages:
+  - python3-setuptools
+  - python3-psycopg2
+  - python3-dev
+  - python3-passlib
+paperless_system_packages:
+  - build-essential
+  - default-libmysqlclient-dev
+  - pkg-config
+  - imagemagick
+  - unpaper
+  - ghostscript
+  - icc-profiles-free
+  - qpdf
+  - libleptonica6
+  - libleptonica-dev
+  - libmagic-dev
+  - libpoppler-cpp-dev
+  - libxml2-dev
+  - libxslt1-dev
+  - libffi-dev
+  - tesseract-ocr
+  - tesseract-ocr-eng
+  - tesseract-ocr-deu
+  - tesseract-ocr-fra
+  - tesseract-ocr-ita
+  - tesseract-ocr-spa
+  - poppler-utils
+  - antiword
+  - unrtf
+  - libimage-exiftool-perl
+  - p7zip-full
+  - unrar
+  - gnupg
+  - libssl-dev
+  - libcurl4-openssl-dev
+  - libjpeg-dev
+  - libopenjp2-7-dev
+  - libtiff-dev
+  - libtiff6
+  - zlib1g-dev
+  - libfreetype6-dev
+  - liblcms2-dev
+  - libwebp-dev
+  - libharfbuzz-dev
+  - libfribidi-dev
+  - libxcb1-dev
+  - tzdata
+  - fonts-liberation
+  - acl
+
+# Python packages installed via uv
+paperless_uv_extra_packages:
+  - gunicorn
+  - whitenoise
+  - setproctitle
+paperless_fido2_pin_version: "1.1.3"
+
+# NLTK datasets
+paperless_install_nltk_data: true
+paperless_nltk_data_path: /usr/share/nltk_data
+paperless_nltk_datasets:
+  - stopwords
+  - punkt
+  - punkt_tab
+paperless_nltk_dataset_paths:
+  stopwords: "corpora/stopwords"
+  punkt: "tokenizers/punkt"
+  punkt_tab: "tokenizers/punkt_tab"
+
+# SSH scanner template path
+paperless_ssh_config_path: /etc/ssh/sshd_config.d/sftp-scanner.conf
+
+# Feature toggles
+paperless_manage_symlinks: true
+paperless_manage_tmpdir: true
+paperless_configure_scanner_acl: true
+paperless_verify_storage_mount: true

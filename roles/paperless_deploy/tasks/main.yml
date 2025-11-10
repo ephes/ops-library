@@ -1,0 +1,38 @@
+---
+- name: Validate configuration
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Install system packages
+  ansible.builtin.import_tasks: packages.yml
+
+- name: Ensure paperless user exists
+  ansible.builtin.import_tasks: user.yml
+
+- name: Create application directories
+  ansible.builtin.import_tasks: directories.yml
+
+- name: Manage storage layout
+  ansible.builtin.import_tasks: storage.yml
+
+- name: Configure scanner SFTP integration
+  ansible.builtin.import_tasks: scanner.yml
+  when: paperless_scanner_enabled
+
+- name: Prepare Python environment
+  ansible.builtin.import_tasks: python.yml
+
+- name: Install Paperless application
+  ansible.builtin.import_tasks: application.yml
+
+- name: Configure Paperless runtime
+  ansible.builtin.import_tasks: configuration.yml
+
+- name: Configure systemd services
+  ansible.builtin.import_tasks: systemd.yml
+
+- name: Configure Traefik routing
+  ansible.builtin.import_tasks: traefik.yml
+  when: paperless_traefik_enabled
+
+- name: Ensure service state
+  ansible.builtin.import_tasks: service.yml

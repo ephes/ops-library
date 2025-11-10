@@ -1,0 +1,49 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Deploy Paperless-ngx using uv and systemd
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - paperless
+    - documents
+    - django
+    - uv
+    - deployment
+
+dependencies:
+  - role: local.ops_library.uv_install
+    vars:
+      uv_install_dir: "{{ paperless_uv_install_dir }}"
+  - role: local.ops_library.redis_install
+    vars:
+      redis_install_bind_addresses: "{{ paperless_redis_bind_addresses }}"
+      redis_install_port: "{{ paperless_redis_port }}"
+      redis_install_requirepass_enabled: "{{ paperless_redis_requirepass_enabled }}"
+      redis_install_password: "{{ paperless_redis_password }}"
+  - role: local.ops_library.postgres_install
+    vars:
+      postgres_install_version: "{{ paperless_postgres_version }}"
+      postgres_install_use_pgdg_repo: "{{ paperless_postgres_repo_enabled }}"
+      postgres_install_repo_url: "{{ paperless_postgres_repo_url }}"
+      postgres_install_repo_codename: "{{ paperless_postgres_repo_codename }}"
+      postgres_install_repo_components: "{{ paperless_postgres_repo_components }}"
+      postgres_install_repo_keyring: "{{ paperless_postgres_repo_keyring }}"
+      postgres_install_repo_key_url: "{{ paperless_postgres_repo_key_url }}"
+      postgres_install_packages: "{{ paperless_postgres_packages }}"
+      postgres_install_admin_user: "{{ paperless_postgres_become_user }}"
+      postgres_install_databases:
+        - name: "{{ paperless_postgres_database }}"
+          owner: "{{ paperless_postgres_user }}"
+      postgres_install_users:
+        - name: "{{ paperless_postgres_user }}"
+          password: "{{ paperless_postgres_password }}"

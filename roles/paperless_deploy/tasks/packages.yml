@@ -1,0 +1,7 @@
+---
+- name: Install prerequisite and system packages
+  ansible.builtin.apt:
+    name: "{{ paperless_install_prereq_packages + paperless_system_packages }}"
+    state: present
+    update_cache: true
+  become: true

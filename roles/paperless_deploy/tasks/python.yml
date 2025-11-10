@@ -1,0 +1,27 @@
+---
+- name: Create Python virtualenv with uv
+  ansible.builtin.command:
+    cmd: "{{ paperless_uv_binary }} venv --python {{ paperless_python_version }} {{ paperless_virtualenv }}"
+    chdir: "{{ paperless_site_root }}"
+    creates: "{{ paperless_virtualenv }}"
+  become: true
+  become_user: "{{ paperless_username }}"
+
+- name: Ensure virtualenv ownership
+  ansible.builtin.file:
+    path: "{{ paperless_virtualenv }}"
+    owner: "{{ paperless_username }}"
+    group: "{{ paperless_group }}"
+    recurse: true
+  become: true
+
+- name: Create convenience venv symlink
+  ansible.builtin.file:
+    src: "{{ paperless_virtualenv }}"
+    dest: "{{ paperless_site_root }}/{{ paperless_venv_symlink_name }}"
+    state: link
+    owner: "{{ paperless_username }}"
+    group: "{{ paperless_group }}"
+    force: true
+  become: true
+  when: paperless_create_venv_symlink

@@ -1,0 +1,109 @@
+---
+- name: Deploy Paperless environment file
+  ansible.builtin.template:
+    src: paperless.env.j2
+    dest: "{{ paperless_env_file }}"
+    owner: "{{ paperless_username }}"
+    group: "{{ paperless_group }}"
+    mode: "0600"
+  become: true
+  notify:
+    - restart paperless
+    - restart paperless-worker
+    - restart paperless-scheduler
+    - restart paperless-consumer
+
+- name: Deploy gunicorn configuration
+  ansible.builtin.template:
+    src: gunicorn.conf.py.j2
+    dest: "{{ paperless_site_root }}/gunicorn.conf.py"
+    owner: "{{ paperless_username }}"
+    group: "{{ paperless_group }}"
+    mode: "0644"
+  become: true
+  notify: restart paperless
+
+- name: Run database migrations
+  ansible.builtin.shell: |
+    set -a
+    . {{ paperless_env_file }}
+    set +a
+    {{ paperless_python_bin }} manage.py migrate
+  args:
+    chdir: "{{ paperless_manage_dir }}"
+    executable: /bin/bash
+  become: true
+  become_user: "{{ paperless_username }}"
+
+- name: Ensure Paperless superuser exists
+  ansible.builtin.shell: |
+    set -a
+    . {{ paperless_env_file }}
+    set +a
+    {{ paperless_python_bin }} manage.py shell <<'EOF'
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    if not User.objects.filter(username='{{ paperless_admin_user }}').exists():
+        User.objects.create_superuser('{{ paperless_admin_user }}', '{{ paperless_admin_email }}', '{{ paperless_admin_password }}')
+    EOF
+  args:
+    chdir: "{{ paperless_manage_dir }}"
+    executable: /bin/bash
+  become: true
+  become_user: "{{ paperless_username }}"
+  when: paperless_manage_superuser
+  no_log: true
+
+- name: Collect static files
+  ansible.builtin.shell: |
+    set -a
+    . {{ paperless_env_file }}
+    set +a
+    {{ paperless_python_bin }} manage.py collectstatic --noinput --clear
+  args:
+    chdir: "{{ paperless_manage_dir }}"
+    executable: /bin/bash
+  become: true
+  become_user: "{{ paperless_username }}"
+
+- name: Ensure frontend destination exists
+  ansible.builtin.file:
+    path: "{{ paperless_site_root }}/staticfiles/frontend"
+    state: directory
+    owner: "{{ paperless_username }}"
+    group: "{{ paperless_group }}"
+    mode: "0755"
+  become: true
+
+- name: Check release frontend directory
+  ansible.builtin.stat:
+    path: "{{ paperless_release_dir }}/static/frontend"
+  register: paperless_release_frontend_stat
+  become: true
+
+- name: Check source frontend directory
+  ansible.builtin.stat:
+    path: "{{ paperless_manage_dir }}/documents/static/frontend"
+  register: paperless_src_frontend_stat
+  become: true
+
+- name: Set frontend source path
+  ansible.builtin.set_fact:
+    paperless_frontend_source: >-
+      {{
+        paperless_release_frontend_stat.stat.exists
+        | ternary(paperless_release_dir ~ '/static/frontend',
+                  paperless_src_frontend_stat.stat.exists
+                  | ternary(paperless_manage_dir ~ '/documents/static/frontend', ''))
+      }}
+
+- name: Copy frontend assets
+  ansible.builtin.copy:
+    src: "{{ paperless_frontend_source }}/"
+    dest: "{{ paperless_site_root }}/staticfiles/frontend/"
+    owner: "{{ paperless_username }}"
+    group: "{{ paperless_group }}"
+    mode: "0755"
+    remote_src: true
+  become: true
+  when: paperless_frontend_source | length > 0
