@@ -1,0 +1,29 @@
+---
+- name: Ensure PostgreSQL apt keyring directory exists
+  ansible.builtin.file:
+    path: "{{ postgres_install_repo_keyring | dirname }}"
+    state: directory
+    mode: "0755"
+  become: true
+  when: postgres_install_use_pgdg_repo | bool
+
+- name: Install PostgreSQL apt repository key
+  ansible.builtin.get_url:
+    url: "{{ postgres_install_repo_key_url }}"
+    dest: "{{ postgres_install_repo_keyring }}"
+    mode: "0644"
+  become: true
+  when: postgres_install_use_pgdg_repo | bool
+
+- name: Configure PostgreSQL apt repository
+  ansible.builtin.deb822_repository:
+    name: "{{ postgres_install_repo_name }}"
+    types: deb
+    uris: "{{ postgres_install_repo_url }}"
+    suites: "{{ postgres_install_repo_codename }}-pgdg"
+    components: "{{ postgres_install_repo_components }}"
+    signed_by: "{{ postgres_install_repo_keyring }}"
+    enabled: true
+    state: "{{ 'present' if postgres_install_use_pgdg_repo else 'absent' }}"
+  become: true
+  when: postgres_install_use_pgdg_repo is defined

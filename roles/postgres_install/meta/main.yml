@@ -1,0 +1,24 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Install and configure PostgreSQL clusters with database/user management
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - postgres
+    - postgresql
+    - database
+    - infrastructure
+dependencies: []
+collections:
+  - community.postgresql

@@ -1,0 +1,398 @@
+---
+- name: Resolve requested archive input
+  ansible.builtin.set_fact:
+    paperless_restore_archive_input: "{{ paperless_restore_archive | default('latest') }}"
+
+- name: Discover latest archive on host when requested
+  when: paperless_restore_archive_input == 'latest'
+  block:
+    - name: Locate Paperless backup archives
+      ansible.builtin.find:
+        paths: "{{ paperless_restore_archive_search_root }}"
+        patterns: "*.tar.*"
+        recurse: false
+        file_type: file
+      register: _paperless_restore_archives
+
+    - name: Fail when no archives exist on the host
+      ansible.builtin.fail:
+        msg: >-
+          No Paperless backup archives found under {{ paperless_restore_archive_search_root }}.
+          Upload an archive or set paperless_restore_archive to an absolute path.
+      when: _paperless_restore_archives.matched | default(0) | int == 0
+
+    - name: Sort archives by mtime
+      ansible.builtin.set_fact:
+        _paperless_restore_sorted_archives: "{{ _paperless_restore_archives.files | sort(attribute='mtime', reverse=true) }}"
+
+    - name: Select newest archive
+      ansible.builtin.set_fact:
+        paperless_restore_archive_path: "{{ _paperless_restore_sorted_archives[0].path }}"
+
+- name: Resolve explicit archive path
+  when: paperless_restore_archive_input != 'latest'
+  ansible.builtin.set_fact:
+    paperless_restore_archive_path: >-
+      {{ paperless_restore_archive_input if paperless_restore_archive_input.startswith('/') else
+         (paperless_restore_archive_search_root.rstrip('/') ~ '/' ~ paperless_restore_archive_input) }}
+
+- name: Determine archive basename
+  ansible.builtin.set_fact:
+    paperless_restore_archive_basename: "{{ paperless_restore_archive_path | basename }}"
+
+- name: Stat archive path
+  ansible.builtin.stat:
+    path: "{{ paperless_restore_archive_path }}"
+  register: _paperless_restore_archive_stat
+
+- name: Record archive existence flag
+  ansible.builtin.set_fact:
+    paperless_restore_archive_missing: "{{ not (_paperless_restore_archive_stat.stat.exists | default(false)) }}"
+
+- name: Upload archive from control host cache when missing
+  when: paperless_restore_archive_missing | bool
+  block:
+    - name: Ensure upload target directory exists
+      ansible.builtin.file:
+        path: "{{ paperless_restore_upload_target }}"
+        state: directory
+        mode: "0750"
+
+    - name: Locate archive on controller cache
+      ansible.builtin.stat:
+        path: "{{ paperless_restore_local_cache.rstrip('/') }}/{{ paperless_restore_archive_basename }}"
+      delegate_to: localhost
+      become: false
+      register: _paperless_restore_local_archive
+
+    - name: Fail if archive not present on controller
+      ansible.builtin.fail:
+        msg: >-
+          Archive {{ paperless_restore_archive_basename }} not found on the host or under
+          {{ paperless_restore_local_cache }} on the controller.
+      when: not _paperless_restore_local_archive.stat.exists | default(false)
+
+    - name: Upload archive to target host
+      ansible.builtin.copy:
+        src: "{{ _paperless_restore_local_archive.stat.path }}"
+        dest: "{{ paperless_restore_upload_target.rstrip('/') }}/{{ paperless_restore_archive_basename }}"
+        mode: "0600"
+      register: _paperless_restore_upload
+
+    - name: Update archive path reference
+      ansible.builtin.set_fact:
+        paperless_restore_archive_path: "{{ _paperless_restore_upload.dest }}"
+
+    - name: Re-stat uploaded archive
+      ansible.builtin.stat:
+        path: "{{ paperless_restore_archive_path }}"
+      register: _paperless_restore_archive_stat
+
+    - name: Refresh archive existence flag
+      ansible.builtin.set_fact:
+        paperless_restore_archive_missing: "{{ not (_paperless_restore_archive_stat.stat.exists | default(false)) }}"
+
+- name: Fail if archive (or directory) still missing
+  ansible.builtin.fail:
+    msg: "Backup artifact {{ paperless_restore_archive_path }} does not exist on the host."
+  when: paperless_restore_archive_missing | bool
+
+- name: Flag archive type
+  ansible.builtin.set_fact:
+    paperless_restore_archive_is_dir: "{{ _paperless_restore_archive_stat.stat.isdir | default(false) }}"
+
+- name: Ensure staging root exists
+  ansible.builtin.file:
+    path: "{{ paperless_restore_staging_dir }}"
+    state: directory
+    owner: "{{ paperless_restore_staging_owner }}"
+    group: "{{ paperless_restore_staging_group }}"
+    mode: "{{ paperless_restore_staging_mode }}"
+
+- name: Set staging path for archive extraction
+  when: not paperless_restore_archive_is_dir | bool
+  ansible.builtin.set_fact:
+    paperless_restore_staging_path: "{{ paperless_restore_staging_dir.rstrip('/') }}/{{ paperless_restore_archive_basename }}-{{ paperless_restore_timestamp }}"
+
+- name: Ensure staging directory exists
+  when: paperless_restore_staging_path is defined
+  ansible.builtin.file:
+    path: "{{ paperless_restore_staging_path }}"
+    state: directory
+    mode: "{{ paperless_restore_staging_mode }}"
+    owner: "{{ paperless_restore_staging_owner }}"
+    group: "{{ paperless_restore_staging_group }}"
+
+- name: Extract tar.zst archive
+  when:
+    - not paperless_restore_archive_is_dir | bool
+    - paperless_restore_archive_path.endswith('.tar.zst')
+  ansible.builtin.command: >-
+    tar --extract --zstd
+    --file "{{ paperless_restore_archive_path }}"
+    --directory "{{ paperless_restore_staging_path }}"
+  register: _paperless_restore_extract
+  changed_when: true
+
+- name: Extract archive via unarchive module
+  when:
+    - not paperless_restore_archive_is_dir | bool
+    - not paperless_restore_archive_path.endswith('.tar.zst')
+  ansible.builtin.unarchive:
+    src: "{{ paperless_restore_archive_path }}"
+    dest: "{{ paperless_restore_staging_path }}"
+    remote_src: true
+    mode: "0750"
+
+- name: Determine snapshot directory when archive was extracted
+  when: not paperless_restore_archive_is_dir | bool
+  block:
+    - name: List directories inside staging path
+      ansible.builtin.find:
+        paths: "{{ paperless_restore_staging_path }}"
+        file_type: directory
+        depth: 1
+      register: _paperless_restore_stage_dirs
+
+    - name: Build snapshot candidates
+      ansible.builtin.set_fact:
+        _paperless_restore_snapshot_candidates: "{{ _paperless_restore_stage_dirs.files | map(attribute='path') | reject('equalto', paperless_restore_staging_path) | list }}"
+
+    - name: Fail when snapshot directory count mismatches
+      ansible.builtin.fail:
+        msg: >-
+          Expected exactly one directory inside {{ paperless_restore_staging_path }} but found
+          {{ _paperless_restore_snapshot_candidates | length }}.
+      when: _paperless_restore_snapshot_candidates | length != 1
+
+    - name: Record snapshot directory
+      ansible.builtin.set_fact:
+        paperless_restore_snapshot_path: "{{ _paperless_restore_snapshot_candidates[0] }}"
+
+- name: Record snapshot path when archive is already a directory
+  when: paperless_restore_archive_is_dir | bool
+  ansible.builtin.set_fact:
+    paperless_restore_snapshot_path: "{{ paperless_restore_archive_path }}"
+
+- name: Record snapshot label
+  ansible.builtin.set_fact:
+    paperless_restore_snapshot_label: "{{ paperless_restore_snapshot_path | basename }}"
+
+- name: Ensure snapshot directory allows Postgres access
+  ansible.builtin.file:
+    path: "{{ paperless_restore_snapshot_path }}"
+    state: directory
+    owner: "{{ paperless_restore_staging_owner }}"
+    group: "{{ paperless_restore_staging_group }}"
+    mode: "{{ paperless_restore_staging_mode }}"
+
+- name: Ensure metadata file exists
+  ansible.builtin.stat:
+    path: "{{ paperless_restore_snapshot_path }}/{{ paperless_restore_metadata_file }}"
+  register: _paperless_restore_metadata_stat
+
+- name: Fail when metadata is missing
+  ansible.builtin.fail:
+    msg: "metadata file {{ paperless_restore_metadata_file }} not found inside snapshot."
+  when: not _paperless_restore_metadata_stat.stat.exists | default(false)
+
+- name: Read metadata file
+  ansible.builtin.slurp:
+    path: "{{ paperless_restore_snapshot_path }}/{{ paperless_restore_metadata_file }}"
+  register: _paperless_restore_metadata_file
+
+- name: Parse metadata
+  ansible.builtin.set_fact:
+    paperless_restore_metadata: "{{ _paperless_restore_metadata_file.content | b64decode | from_yaml }}"
+
+- name: Record snapshot storage flags
+  ansible.builtin.set_fact:
+    paperless_restore_storage_flags: "{{ paperless_restore_metadata.storage | default({}) }}"
+
+- name: Detect installed Paperless version
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cd "{{ paperless_manage_dir }}"
+    set -a
+    source "{{ paperless_env_file }}"
+    set +a
+    {{ paperless_manage_python }} manage.py --version
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ paperless_site_owner }}"
+  register: paperless_restore_version_cmd
+  changed_when: false
+  failed_when: false
+
+- name: Record installed Paperless version
+  ansible.builtin.set_fact:
+    paperless_restore_installed_version: "{{ paperless_restore_version_cmd.stdout | default('unknown') | trim }}"
+  when: paperless_restore_version_cmd is defined and paperless_restore_version_cmd.rc == 0
+
+- name: Warn when backup version differs from installed version
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: Backup was taken with Paperless {{ paperless_restore_metadata.paperless_version }},
+      but the target host reports {{ paperless_restore_installed_version }}. Ensure versions match
+      before running document_importer or deploying migrations.
+  when:
+    - paperless_restore_metadata.paperless_version is defined
+    - paperless_restore_installed_version is defined
+    - paperless_restore_metadata.paperless_version | trim != paperless_restore_installed_version | trim
+
+- name: Validate metadata fields
+  when: paperless_restore_validate_metadata | bool
+  ansible.builtin.assert:
+    that:
+      - item in paperless_restore_metadata
+    fail_msg: "Metadata field '{{ item }}' missing from snapshot metadata."
+  loop: "{{ paperless_restore_metadata_required_fields }}"
+
+- name: Enforce host match when enabled
+  when:
+    - paperless_restore_enforce_host_match | bool
+    - paperless_restore_metadata.host is defined
+  ansible.builtin.assert:
+    that:
+      - paperless_restore_metadata.host == inventory_hostname
+    fail_msg: >-
+      Snapshot host {{ paperless_restore_metadata.host }} does not match {{ inventory_hostname }}.
+
+- name: Verify checksum manifest
+  when: paperless_restore_validate_checksums | bool
+  block:
+    - name: Ensure manifest exists
+      ansible.builtin.stat:
+        path: "{{ paperless_restore_snapshot_path }}/{{ paperless_restore_manifest_file }}"
+      register: _paperless_restore_manifest_stat
+
+    - name: Fail when manifest is missing
+      ansible.builtin.fail:
+        msg: "Checksum manifest {{ paperless_restore_manifest_file }} missing from snapshot."
+      when: not _paperless_restore_manifest_stat.stat.exists | default(false)
+
+    - name: Validate manifest entries
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd "{{ paperless_restore_snapshot_path }}"
+        manifest="{{ paperless_restore_manifest_file }}"
+        if grep -q "  ./$(basename "$manifest")$" "$manifest"; then
+          grep -v "  ./$(basename "$manifest")$" "$manifest" | sha256sum -c -
+        else
+          sha256sum -c "$manifest"
+        fi
+      args:
+        executable: /bin/bash
+      register: _paperless_restore_manifest_check
+      changed_when: false
+
+- name: Build snapshot file references
+  ansible.builtin.set_fact:
+    paperless_restore_snapshot_database_path: "{{ paperless_restore_snapshot_path }}/{{ paperless_restore_database_dump }}"
+    paperless_restore_snapshot_exporter_path: "{{ paperless_restore_snapshot_path }}/{{ paperless_restore_exporter_dir }}"
+
+- name: Collect snapshot storage directory stats
+  ansible.builtin.stat:
+    path: "{{ paperless_restore_snapshot_path }}/{{ item.name }}"
+  loop: "{{ paperless_restore_storage_dirs }}"
+  register: _paperless_restore_storage_stats
+
+- name: Build storage restore plan
+  ansible.builtin.set_fact:
+    paperless_restore_storage_plan: "{{ paperless_restore_storage_plan | default([]) + [ {
+      'name': item.item.name,
+      'dest': item.item.dest,
+      'required': item.item.required | default(false),
+      'metadata_flag': item.item.metadata_flag | default(''),
+      'exists': item.stat.exists | default(false),
+      'should_restore': (
+        (item.item.required | default(false)) or
+        (item.item.metadata_flag | default('')) | length == 0 or
+        ((paperless_restore_storage_flags | default({})).get(item.item.metadata_flag, false))
+      )
+    } ] }}"
+  loop: "{{ _paperless_restore_storage_stats.results }}"
+
+- name: Fail when required snapshot directories are missing
+  ansible.builtin.fail:
+    msg: "Required snapshot directory '{{ item.name }}' missing from {{ paperless_restore_snapshot_path }}"
+  when:
+    - item.should_restore | bool
+    - not item.exists | bool
+  loop: "{{ paperless_restore_storage_plan }}"
+
+- name: Determine if external storage is required
+  ansible.builtin.set_fact:
+    paperless_restore_requires_external_root: "{{ (paperless_restore_storage_plan | selectattr('should_restore', 'equalto', True) | selectattr('dest', 'match', '^' ~ (paperless_external_root | regex_escape)) | list | length) > 0 }}"
+
+- name: Verify external storage root exists
+  ansible.builtin.stat:
+    path: "{{ paperless_external_root }}"
+  register: _paperless_restore_external_stat
+  when: paperless_restore_requires_external_root | bool
+
+- name: Fail when external storage root missing
+  ansible.builtin.fail:
+    msg: >-
+      External storage {{ paperless_external_root }} is not mounted or accessible,
+      refusing to restore media/data directories.
+  when:
+    - paperless_restore_requires_external_root | bool
+    - not (_paperless_restore_external_stat.stat.exists | default(false))
+
+- name: Ensure PostgreSQL dump is present
+  ansible.builtin.stat:
+    path: "{{ paperless_restore_snapshot_database_path }}"
+  register: _paperless_restore_db_stat
+
+- name: Fail if PostgreSQL dump missing
+  ansible.builtin.fail:
+    msg: "Database dump {{ paperless_restore_snapshot_database_path }} missing from snapshot."
+  when: not _paperless_restore_db_stat.stat.exists | default(false)
+
+- name: Detect exporter artefact
+  ansible.builtin.stat:
+    path: "{{ paperless_restore_snapshot_exporter_path }}"
+  register: _paperless_restore_exporter_stat
+
+- name: Record exporter availability flag
+  ansible.builtin.set_fact:
+    paperless_restore_snapshot_has_exporter: "{{ _paperless_restore_exporter_stat.stat.isdir | default(false) }}"
+
+- name: Determine importer source path
+  ansible.builtin.set_fact:
+    paperless_restore_importer_source_path: >-
+      {{ paperless_restore_importer_source if (paperless_restore_importer_source | default('') | string | length) > 0
+         else paperless_restore_snapshot_exporter_path }}
+
+- name: Inspect importer source path
+  ansible.builtin.stat:
+    path: "{{ paperless_restore_importer_source_path }}"
+  register: _paperless_restore_importer_source_stat
+  when: paperless_restore_use_importer | bool
+
+- name: Record importer availability flag
+  ansible.builtin.set_fact:
+    paperless_restore_importer_available: >-
+      {{ (paperless_restore_use_importer | bool) and
+         (_paperless_restore_importer_source_stat is defined) and
+         (_paperless_restore_importer_source_stat.stat.isdir | default(false)) }}
+
+- name: Fail when importer is required but exporter artefact is missing
+  ansible.builtin.fail:
+    msg: >-
+      paperless_restore_use_importer=true but no exporter artefact was found at
+      {{ paperless_restore_importer_source_path }}.
+      Either disable importer mode or ensure the backup includes the exporter directory.
+  when:
+    - paperless_restore_use_importer | bool
+    - paperless_restore_importer_require_artifact | bool
+    - not paperless_restore_importer_available | bool
+
+- name: Summarise snapshot
+  ansible.builtin.debug:
+    msg: >-
+      Paperless snapshot ready: {{ paperless_restore_snapshot_path }}
+      (archive: {{ paperless_restore_archive_basename }}).
+      Exporter payload present: {{ paperless_restore_snapshot_has_exporter | bool }}.

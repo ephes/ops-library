@@ -1,0 +1,89 @@
+---
+- name: Ensure python3 available for disk validation
+  ansible.builtin.command: python3 --version
+  register: _paperless_restore_python_version
+  changed_when: false
+  when: paperless_restore_check_disk_space | bool
+
+- name: Validate free disk space before restore
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export PAPERLESS_RESTORE_SNAPSHOT="{{ paperless_restore_snapshot_path }}"
+    export PAPERLESS_RESTORE_TARGET="{{ paperless_restore_disk_space_path }}"
+    export PAPERLESS_RESTORE_MULTIPLIER="{{ paperless_restore_disk_space_multiplier }}"
+    python3 - <<'PY'
+    import math
+    import os
+
+    snapshot = os.environ["PAPERLESS_RESTORE_SNAPSHOT"]
+    target = os.environ["PAPERLESS_RESTORE_TARGET"]
+    multiplier = float(os.environ["PAPERLESS_RESTORE_MULTIPLIER"])
+
+    if not os.path.exists(snapshot):
+        raise SystemExit(f"Snapshot path {snapshot} missing")
+
+    # Size on disk of extracted snapshot
+    total = 0
+    for root, _, files in os.walk(snapshot):
+        for name in files:
+            path = os.path.join(root, name)
+            try:
+                total += os.path.getsize(path)
+            except FileNotFoundError:
+                pass
+
+    if not os.path.exists(target):
+        target = os.path.dirname(target) or '/'
+
+    stat = os.statvfs(target)
+    free_bytes = stat.f_bavail * stat.f_frsize
+    required = math.ceil(total * multiplier)
+
+    if free_bytes < required:
+        raise SystemExit(f"INSUFFICIENT_DISK:{required}:{free_bytes}")
+    print(f"OK:{required}:{free_bytes}")
+    PY
+  args:
+    executable: /bin/bash
+  register: _paperless_restore_disk_check
+  changed_when: false
+  when: paperless_restore_check_disk_space | bool
+
+- name: Prepare pre-restore safety backup (paperless_backup role)
+  when:
+    - paperless_restore_create_safety_backup | bool
+    - not paperless_restore_dry_run | bool
+  block:
+    - name: Set default safety backup variables
+      ansible.builtin.set_fact:
+        paperless_backup_prefix: "{{ paperless_restore_safety_backup_prefix }}"
+        paperless_backup_create_archive: false
+        paperless_backup_fetch_local: false
+        paperless_backup_generate_checksums: true
+        paperless_backup_exporter_enabled: false
+        paperless_backup_postgres_user: "{{ paperless_restore_postgres_admin_user }}"
+        paperless_backup_postgres_password: "{{ paperless_restore_postgres_admin_password }}"
+        paperless_backup_postgres_host: "{{ paperless_restore_postgres_admin_host }}"
+        paperless_backup_postgres_port: "{{ paperless_restore_postgres_admin_port }}"
+
+    - name: Apply safety backup overrides (non-metadata)
+      ansible.builtin.set_fact:
+        "{{ item.key }}": "{{ item.value }}"
+      loop: "{{ (paperless_restore_safety_backup_vars | default({})) | dict2items | rejectattr('key', 'equalto', 'paperless_backup_metadata_extra') | list }}"
+
+    - name: Merge safety metadata extras
+      ansible.builtin.set_fact:
+        paperless_backup_metadata_extra: "{{ {'safety_snapshot': true, 'source_role': 'paperless_restore', 'source_timestamp': paperless_restore_timestamp} | combine((paperless_restore_safety_backup_vars.paperless_backup_metadata_extra | default({})), recursive=True) }}"
+
+    - name: Include paperless_backup role for safety snapshot
+      ansible.builtin.include_role:
+        name: local.ops_library.paperless_backup
+
+    - name: Record safety snapshot path
+      ansible.builtin.set_fact:
+        paperless_restore_safety_backup_path: "{{ paperless_backup_dir }}"
+        paperless_restore_rollback_source: "{{ paperless_backup_dir }}"
+
+    - name: Announce safety snapshot path
+      ansible.builtin.debug:
+        msg: "Safety snapshot captured at {{ paperless_restore_safety_backup_path }}"

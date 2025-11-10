@@ -1,0 +1,172 @@
+---
+# Archive discovery / validation
+paperless_restore_archive: "latest"
+paperless_restore_archive_search_root: /opt/backups/paperless
+paperless_restore_local_cache: "{{ lookup('env', 'HOME') | default('/tmp', true) }}/backups/paperless"
+paperless_restore_upload_target: "{{ paperless_restore_archive_search_root }}"
+paperless_restore_staging_dir: /tmp/paperless-restore
+paperless_restore_staging_mode: "0750"
+paperless_restore_staging_owner: root
+paperless_restore_staging_group: "{{ paperless_restore_postgres_become_user }}"
+paperless_restore_validate_checksums: true
+paperless_restore_validate_metadata: true
+paperless_restore_enforce_host_match: true
+paperless_restore_dry_run: false
+paperless_restore_check_disk_space: true
+paperless_restore_disk_space_multiplier: 1.5
+paperless_restore_disk_space_path: "{{ paperless_site_root }}"
+
+# Paperless paths / ownership
+paperless_site_root: /home/paperless/site
+paperless_site_owner: paperless
+paperless_site_group: paperless
+paperless_manage_dir: "{{ paperless_site_root }}/paperless-ngx/src"
+paperless_virtualenv: "{{ paperless_site_root }}/.venv"
+paperless_manage_python: "{{ paperless_virtualenv }}/bin/python"
+paperless_env_file: "{{ paperless_site_root }}/.env"
+paperless_logs_path: "{{ paperless_site_root }}/logs"
+paperless_external_root: /mnt/cryptdata/paperless
+paperless_media_path: "{{ paperless_external_root }}/media"
+paperless_data_path: "{{ paperless_external_root }}/data"
+paperless_consume_path: "{{ paperless_external_root }}/consume"
+paperless_export_path: "{{ paperless_external_root }}/export"
+
+# Files captured in the backup tree
+paperless_restore_database_dump: "database/paperless.sql"
+paperless_restore_exporter_dir: "exporter"
+paperless_restore_manifest_file: "manifest.sha256"
+paperless_restore_metadata_file: "metadata.yml"
+
+# Directory restore map (relative snapshot dir -> destination)
+paperless_restore_storage_dirs:
+  - name: media
+    dest: "{{ paperless_media_path }}"
+    required: true
+  - name: data
+    dest: "{{ paperless_data_path }}"
+    required: true
+  - name: consume
+    dest: "{{ paperless_consume_path }}"
+    required: false
+    metadata_flag: include_consume
+  - name: export
+    dest: "{{ paperless_export_path }}"
+    required: false
+    metadata_flag: include_export
+  - name: logs
+    dest: "{{ paperless_logs_path }}"
+    required: false
+    metadata_flag: include_logs
+
+paperless_restore_config_files:
+  - src: "config/paperless.env"
+    dest: "{{ paperless_env_file }}"
+    owner: "{{ paperless_site_owner }}"
+    group: "{{ paperless_site_group }}"
+    mode: "0640"
+    required: true
+  - src: "config/gunicorn.conf.py"
+    dest: "{{ paperless_site_root }}/gunicorn.conf.py"
+    owner: "{{ paperless_site_owner }}"
+    group: "{{ paperless_site_group }}"
+    mode: "0644"
+    required: true
+
+paperless_restore_systemd_units:
+  - src: "systemd/paperless.service"
+    dest: "/etc/systemd/system/paperless.service"
+  - src: "systemd/paperless-worker.service"
+    dest: "/etc/systemd/system/paperless-worker.service"
+  - src: "systemd/paperless-scheduler.service"
+    dest: "/etc/systemd/system/paperless-scheduler.service"
+  - src: "systemd/paperless-consumer.service"
+    dest: "/etc/systemd/system/paperless-consumer.service"
+paperless_restore_system_files: true
+
+paperless_restore_traefik_file:
+  src: "traefik/paperless.yml"
+  dest: "/etc/traefik/dynamic/paperless.yml"
+
+paperless_restore_ssh_file:
+  src: "ssh/sftp-scanner.conf"
+  dest: "/etc/ssh/sshd_config.d/sftp-scanner.conf"
+
+paperless_restore_extra_files: []
+
+# Systemd orchestration
+paperless_restore_stop_services:
+  - paperless-consumer
+  - paperless-scheduler
+  - paperless-worker
+  - paperless
+
+paperless_restore_start_services:
+  - paperless
+  - paperless-worker
+  - paperless-scheduler
+  - paperless-consumer
+paperless_restore_service_start_retries: 10
+paperless_restore_service_start_delay: 3
+paperless_restore_service_start_pause: 2
+paperless_restore_http_timeout: 10
+
+paperless_restore_restart_daemon_after_system_files: true
+paperless_restore_fix_permissions: false
+paperless_restore_fix_paths:
+  - "{{ paperless_site_root }}"
+
+# PostgreSQL
+paperless_restore_postgres_host: localhost
+paperless_restore_postgres_port: 5432
+paperless_restore_postgres_user: paperless
+paperless_restore_postgres_password: ""
+paperless_restore_postgres_database: paperless
+paperless_restore_postgres_become_user: postgres
+paperless_restore_postgres_admin_user: postgres
+paperless_restore_postgres_admin_password: ""
+paperless_restore_postgres_admin_host: ""
+paperless_restore_postgres_admin_port: ""
+paperless_restore_postgres_owner: paperless
+paperless_restore_psql_binary: psql
+paperless_restore_drop_database: true
+paperless_restore_create_database: true
+paperless_restore_postgres_sslmode: prefer
+paperless_restore_postgres_test_query: "SELECT 1;"
+paperless_restore_postgres_check_retries: 3
+paperless_restore_postgres_check_delay: 5
+
+# Importer hook
+paperless_restore_use_importer: true
+paperless_restore_importer_flags: ""
+paperless_restore_importer_passphrase: ""
+paperless_restore_importer_require_artifact: true
+paperless_restore_importer_source: ""
+paperless_restore_importer_timeout: 0
+
+# Rsync / copy behaviour
+paperless_restore_rsync_binary: rsync
+paperless_restore_rsync_delete: true
+
+# Health checks
+paperless_restore_verify_http: true
+paperless_restore_health_url: "http://localhost:10030/api/"
+paperless_restore_health_expected_status: 200
+paperless_restore_health_retries: 10
+paperless_restore_health_delay: 6
+paperless_restore_postgres_check_enabled: true
+
+# Rollback / safety snapshot
+paperless_restore_create_safety_backup: true
+paperless_restore_safety_backup_prefix: pre-restore
+paperless_restore_safety_backup_cleanup: true
+paperless_restore_safety_backup_vars: {}
+paperless_restore_rollback_on_failure: true
+paperless_restore_cleanup_after_rollback: false
+
+# Metadata enforcement
+paperless_restore_metadata_required_fields:
+  - timestamp
+  - host
+  - paperless_version
+  - storage
+  - postgres

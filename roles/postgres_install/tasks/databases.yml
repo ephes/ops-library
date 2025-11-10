@@ -1,0 +1,71 @@
+- name: Verify PostgreSQL cluster is initialized
+  ansible.builtin.stat:
+    path: "{{ postgres_install_config_dir }}/postgresql.conf"
+  register: postgres_install_cluster_stat
+  become: true
+
+- name: Ensure PostgreSQL cluster exists
+  ansible.builtin.fail:
+    msg: "PostgreSQL cluster not initialized at {{ postgres_install_config_dir }}. Install/initialize the cluster before managing databases."
+  when: not postgres_install_cluster_stat.stat.exists
+
+- name: Build PostgreSQL admin environment
+  ansible.builtin.set_fact:
+    postgres_install_admin_env: "{{ {'PGPASSWORD': postgres_install_admin_password} if postgres_install_admin_password | default('') | length > 0 else {} }}"
+
+- name: Ensure PostgreSQL users exist
+  community.postgresql.postgresql_user:
+    name: "{{ item.name }}"
+    password: "{{ item.password | default(omit) }}"
+    encrypted: "{{ item.encrypted if item.encrypted is defined else omit }}"
+    role_attr_flags: "{{ item.role_attr_flags | default('LOGIN') }}"
+    state: "{{ item.state | default('present') }}"
+  become: true
+  become_user: "{{ postgres_install_admin_user }}"
+  environment: "{{ postgres_install_admin_env }}"
+  loop: "{{ postgres_install_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: "{{ postgres_install_redact_password_changes and (item.password | default('') | length > 0) }}"
+
+- name: Ensure PostgreSQL databases exist
+  community.postgresql.postgresql_db:
+    name: "{{ item.name }}"
+    owner: "{{ item.owner | default(omit) }}"
+    encoding: "{{ item.encoding | default(omit) }}"
+    lc_collate: "{{ item.lc_collate | default(omit) }}"
+    lc_ctype: "{{ item.lc_ctype | default(omit) }}"
+    template: "{{ item.template | default(omit) }}"
+    state: "{{ item.state | default('present') }}"
+  become: true
+  become_user: "{{ postgres_install_admin_user }}"
+  environment: "{{ postgres_install_admin_env }}"
+  loop: "{{ postgres_install_databases }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Ensure public schema owners match database owners
+  community.postgresql.postgresql_query:
+    db: "{{ item.name }}"
+    query: "ALTER SCHEMA public OWNER TO {{ item.owner }}"
+  when:
+    - item.owner is defined
+    - item.state | default('present') == 'present'
+  become: true
+  become_user: "{{ postgres_install_admin_user }}"
+  environment: "{{ postgres_install_admin_env }}"
+  loop: "{{ postgres_install_databases }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Ensure PostgreSQL extensions are installed
+  community.postgresql.postgresql_ext:
+    name: "{{ item.name }}"
+    db: "{{ item.database }}"
+    state: "{{ item.state | default('present') }}"
+  become: true
+  become_user: "{{ postgres_install_admin_user }}"
+  environment: "{{ postgres_install_admin_env }}"
+  loop: "{{ postgres_install_extensions }}"
+  loop_control:
+    label: "{{ item.database }}:{{ item.name }}"

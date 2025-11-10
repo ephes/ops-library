@@ -1,0 +1,41 @@
+---
+- name: Ensure PostgreSQL config directory exists
+  ansible.builtin.file:
+    path: "{{ postgres_install_config_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0755"
+  become: true
+
+- name: Ensure PostgreSQL conf.d directory exists
+  ansible.builtin.file:
+    path: "{{ postgres_install_conf_d_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0755"
+  become: true
+  when: postgres_install_manage_conf_d | bool
+
+- name: Render PostgreSQL drop-in configuration
+  ansible.builtin.template:
+    src: ops_postgresql.conf.j2
+    dest: "{{ postgres_install_conf_d_dir }}/{{ postgres_install_conf_d_filename }}"
+    owner: postgres
+    group: postgres
+    mode: "0644"
+  notify: Restart PostgreSQL
+  become: true
+  when: postgres_install_manage_conf_d | bool
+
+- name: Render pg_hba.conf
+  ansible.builtin.template:
+    src: pg_hba.conf.j2
+    dest: "{{ postgres_install_pg_hba_path }}"
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  notify: Restart PostgreSQL
+  become: true
+  when: postgres_install_manage_pg_hba | bool

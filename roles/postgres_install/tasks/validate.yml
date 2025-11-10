@@ -1,0 +1,51 @@
+---
+- name: Validate PostgreSQL version format
+  ansible.builtin.assert:
+    that:
+      - (postgres_install_version | string) is match('^\\d+$')
+    fail_msg: "postgres_install_version must be a numeric major version (e.g., '17')"
+
+- name: Validate PostgreSQL port
+  ansible.builtin.assert:
+    that:
+      - postgres_install_port | int > 0
+      - postgres_install_port | int < 65536
+    fail_msg: "postgres_install_port must be between 1 and 65535"
+
+- name: Validate database and user inputs
+  ansible.builtin.assert:
+    that:
+      - postgres_install_databases is iterable
+      - postgres_install_users is iterable
+    fail_msg: "postgres_install_databases and postgres_install_users must be lists"
+
+- name: Ensure databases have names
+  ansible.builtin.assert:
+    that:
+      - item.name is defined
+      - item.name | length > 0
+    fail_msg: "Each database entry must include a non-empty name"
+  loop: "{{ postgres_install_databases }}"
+  loop_control:
+    label: "{{ item.name | default('undefined') }}"
+
+- name: Validate database owners exist in user list
+  ansible.builtin.assert:
+    that:
+      - item.owner in valid_owners
+    fail_msg: "Database {{ item.name }} references owner '{{ item.owner }}' which is not defined in postgres_install_users or as postgres_install_admin_user"
+  vars:
+    valid_owners: "{{ (postgres_install_users | map(attribute='name') | list | default([])) + [postgres_install_admin_user] }}"
+  loop: "{{ postgres_install_databases | selectattr('owner', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Ensure users have names
+  ansible.builtin.assert:
+    that:
+      - item.name is defined
+      - item.name | length > 0
+    fail_msg: "Each user entry must include a non-empty name"
+  loop: "{{ postgres_install_users }}"
+  loop_control:
+    label: "{{ item.name | default('undefined') }}"

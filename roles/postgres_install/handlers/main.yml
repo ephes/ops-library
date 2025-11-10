@@ -1,0 +1,9 @@
+---
+- name: Restart PostgreSQL
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: restarted
+    daemon_reload: true
+  become: true
+  loop: "{{ postgres_install_handler_services + (postgres_install_manage_cluster_service | ternary([postgres_install_cluster_service_name], [])) }}"
+  when: postgres_install_restart_on_change | bool

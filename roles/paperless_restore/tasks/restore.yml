@@ -1,0 +1,271 @@
+---
+- name: Skip destructive restore steps during dry run
+  ansible.builtin.debug:
+    msg: "paperless_restore_dry_run=true - skipping service stop and data restore"
+  when: paperless_restore_dry_run | bool
+
+- block:
+    - name: Compute staged database path
+      ansible.builtin.set_fact:
+        paperless_restore_staged_database_path: "{{ paperless_restore_staging_path }}/paperless.sql"
+
+    - name: Stop Paperless services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        daemon_reload: false
+      loop: "{{ paperless_restore_stop_services }}"
+      register: _paperless_restore_stop_results
+
+    - name: Drop PostgreSQL database
+      community.general.postgresql_db:
+        name: "{{ paperless_restore_postgres_database }}"
+        state: absent
+        login_host: "{{ paperless_restore_postgres_admin_host if (paperless_restore_postgres_admin_host | default('') | string | length) > 0 else omit }}"
+        login_port: "{{ paperless_restore_postgres_admin_port if (paperless_restore_postgres_admin_port | default('') | string | length) > 0 else omit }}"
+        login_user: "{{ paperless_restore_postgres_admin_user }}"
+        login_password: "{{ paperless_restore_postgres_admin_password if (paperless_restore_postgres_admin_password | default('') | string | length) > 0 else omit }}"
+      become: true
+      become_user: "{{ paperless_restore_postgres_become_user }}"
+      no_log: "{{ paperless_restore_postgres_admin_password | default('') | length > 0 }}"
+      when: paperless_restore_drop_database | bool
+
+    - name: Create PostgreSQL database
+      community.general.postgresql_db:
+        name: "{{ paperless_restore_postgres_database }}"
+        owner: "{{ paperless_restore_postgres_owner }}"
+        state: present
+        login_host: "{{ paperless_restore_postgres_admin_host if (paperless_restore_postgres_admin_host | default('') | string | length) > 0 else omit }}"
+        login_port: "{{ paperless_restore_postgres_admin_port if (paperless_restore_postgres_admin_port | default('') | string | length) > 0 else omit }}"
+        login_user: "{{ paperless_restore_postgres_admin_user }}"
+        login_password: "{{ paperless_restore_postgres_admin_password if (paperless_restore_postgres_admin_password | default('') | string | length) > 0 else omit }}"
+      become: true
+      become_user: "{{ paperless_restore_postgres_become_user }}"
+      no_log: "{{ paperless_restore_postgres_admin_password | default('') | length > 0 }}"
+      when: paperless_restore_create_database | bool
+
+    - name: Ensure destination directories exist
+      ansible.builtin.file:
+        path: "{{ item.dest }}"
+        state: directory
+        owner: "{{ paperless_site_owner }}"
+        group: "{{ paperless_site_group }}"
+        mode: "0750"
+      loop: "{{ paperless_restore_storage_plan }}"
+      when: item.should_restore | bool
+
+    - name: Ensure PostgreSQL dump is readable by admin user
+      ansible.builtin.file:
+        path: "{{ paperless_restore_snapshot_database_path }}"
+        owner: "{{ paperless_restore_postgres_become_user }}"
+        group: "{{ paperless_restore_postgres_become_user }}"
+        mode: "0640"
+
+    - name: Stage PostgreSQL dump for restore
+      ansible.builtin.copy:
+        src: "{{ paperless_restore_snapshot_database_path }}"
+        dest: "{{ paperless_restore_staged_database_path }}"
+        owner: "{{ paperless_restore_postgres_become_user }}"
+        group: "{{ paperless_restore_postgres_become_user }}"
+        mode: "0600"
+        remote_src: true
+
+    - name: Initialize importer state
+      ansible.builtin.set_fact:
+        paperless_restore_used_importer: false
+
+    - name: Determine importer execution plan
+      ansible.builtin.set_fact:
+        paperless_restore_attempt_importer: "{{ paperless_restore_importer_available | bool }}"
+
+    - name: Skip importer when artifact is unavailable
+      ansible.builtin.debug:
+        msg: "document_importer skipped: exporter artifact not present or disabled."
+      when:
+        - not paperless_restore_attempt_importer | bool
+        - paperless_restore_use_importer | bool
+
+    - block:
+        - name: Ensure importer source directory exists
+          ansible.builtin.stat:
+            path: "{{ paperless_restore_importer_source_path }}"
+          register: _paperless_restore_importer_source_check
+          failed_when: not (_paperless_restore_importer_source_check.stat.isdir | default(false))
+
+        - name: Run Paperless document_importer
+          ansible.builtin.shell: |
+            set -euo pipefail
+            cd "{{ paperless_manage_dir }}"
+            set -a
+            source "{{ paperless_env_file }}"
+            set +a
+            {{ paperless_manage_python }} manage.py document_importer {{ paperless_restore_importer_flags }} "{{ paperless_restore_importer_source_path }}"
+          args:
+            executable: /bin/bash
+          become: true
+          become_user: "{{ paperless_site_owner }}"
+          environment: "{{ {'PAPERLESS_PASSPHRASE': paperless_restore_importer_passphrase} if (paperless_restore_importer_passphrase | default('') | string | length) > 0 else {} }}"
+          no_log: "{{ paperless_restore_importer_passphrase | default('') | length > 0 }}"
+          timeout: "{{ paperless_restore_importer_timeout | int if paperless_restore_importer_timeout | int > 0 else omit }}"
+
+        - name: Mark importer as successful
+          ansible.builtin.set_fact:
+            paperless_restore_used_importer: true
+            paperless_restore_data_strategy: importer
+      when:
+        - paperless_restore_attempt_importer | bool
+      rescue:
+        - name: Log importer failure
+          ansible.builtin.debug:
+            msg: "document_importer failed; falling back to raw snapshot restore."
+        - name: Reset importer flag after failure
+          ansible.builtin.set_fact:
+            paperless_restore_used_importer: false
+            paperless_restore_data_strategy: raw
+
+    - name: Restore PostgreSQL dump
+      ansible.builtin.shell: |
+        set -euo pipefail
+        {{ paperless_restore_psql_binary }} \
+          {% if paperless_restore_postgres_host | default('') | string | length > 0 -%}
+          --host={{ paperless_restore_postgres_host }} \
+          {%- endif %}
+          {% if paperless_restore_postgres_port | default('') | string | length > 0 -%}
+          --port={{ paperless_restore_postgres_port }} \
+          {%- endif %}
+          --username={{ paperless_restore_postgres_user }} \
+          --dbname={{ paperless_restore_postgres_database }} \
+          --set ON_ERROR_STOP=1 \
+          --file "{{ paperless_restore_staged_database_path }}"
+      args:
+        executable: /bin/bash
+      become: true
+      become_user: "{{ paperless_restore_postgres_become_user }}"
+      environment: "{{ {'PGPASSWORD': paperless_restore_postgres_password} if (paperless_restore_postgres_password | default('') | string | length) > 0 else {} }}"
+      no_log: "{{ paperless_restore_postgres_password | default('') | length > 0 }}"
+      when: not paperless_restore_used_importer | bool
+
+    - name: Rsync snapshot directories
+      ansible.builtin.command:
+        cmd: >
+          {{ paperless_restore_rsync_binary }}
+          -a{{ ' --delete' if paperless_restore_rsync_delete else '' }}
+          "{{ paperless_restore_snapshot_path }}/{{ item.name }}/"
+          "{{ item.dest }}/"
+      loop: "{{ paperless_restore_storage_plan }}"
+      when:
+        - not paperless_restore_used_importer | bool
+        - item.should_restore | bool
+      loop_control:
+        label: "restore {{ item.name }}"
+      register: _paperless_restore_rsync
+      changed_when: true
+
+    - name: Default data strategy when importer is unused
+      ansible.builtin.set_fact:
+        paperless_restore_data_strategy: "{{ paperless_restore_data_strategy | default('raw') }}"
+
+    - name: Check config file availability
+      ansible.builtin.stat:
+        path: "{{ paperless_restore_snapshot_path }}/{{ item.src }}"
+      register: _paperless_restore_config_stats
+      loop: "{{ paperless_restore_config_files }}"
+
+    - name: Validate required config artefacts exist
+      ansible.builtin.fail:
+        msg: "Config file {{ item.item.src }} missing from snapshot"
+      when:
+        - item.item.required | default(false)
+        - not item.stat.exists | default(false)
+      loop: "{{ _paperless_restore_config_stats.results }}"
+
+    - name: Restore config files
+      ansible.builtin.copy:
+        src: "{{ paperless_restore_snapshot_path }}/{{ item.item.src }}"
+        dest: "{{ item.item.dest }}"
+        owner: "{{ item.item.owner | default(paperless_site_owner) }}"
+        group: "{{ item.item.group | default(paperless_site_group) }}"
+        mode: "{{ item.item.mode | default('0640') }}"
+        remote_src: true
+      loop: "{{ _paperless_restore_config_stats.results }}"
+      when: item.stat.exists | default(false)
+
+    - name: Gather system file stats
+      ansible.builtin.stat:
+        path: "{{ paperless_restore_snapshot_path }}/{{ item.src }}"
+      loop: "{{ paperless_restore_systemd_units }}"
+      register: _paperless_restore_systemd_stats
+      when: paperless_restore_system_files | bool
+
+    - name: Copy systemd unit files
+      ansible.builtin.copy:
+        src: "{{ paperless_restore_snapshot_path }}/{{ item.item.src }}"
+        dest: "{{ item.item.dest }}"
+        owner: root
+        group: root
+        mode: "0644"
+        remote_src: true
+      when:
+        - paperless_restore_system_files | bool
+        - item.stat.exists | default(false)
+      loop: "{{ _paperless_restore_systemd_stats.results }}"
+
+    - name: Traefik + SSH snapshot stats
+      ansible.builtin.stat:
+        path: "{{ paperless_restore_snapshot_path }}/{{ item.src }}"
+      register: _paperless_restore_system_extra
+      loop:
+        - "{{ paperless_restore_traefik_file }}"
+        - "{{ paperless_restore_ssh_file }}"
+      when: paperless_restore_system_files | bool
+
+    - name: Build auxiliary system file map
+      ansible.builtin.set_fact:
+        paperless_restore_system_extra_map: "{{ paperless_restore_system_extra_map | default({}) | combine({ item.item.src: item.stat.exists | default(false) }) }}"
+      loop: "{{ _paperless_restore_system_extra.results }}"
+      when: paperless_restore_system_files | bool
+
+    - name: Copy Traefik configuration when present
+      ansible.builtin.copy:
+        src: "{{ paperless_restore_snapshot_path }}/{{ paperless_restore_traefik_file.src }}"
+        dest: "{{ paperless_restore_traefik_file.dest }}"
+        owner: root
+        group: root
+        mode: "0644"
+        remote_src: true
+      when:
+        - paperless_restore_system_files | bool
+        - (paperless_restore_system_extra_map | default({})).get(paperless_restore_traefik_file.src, False)
+
+    - name: Copy scanner SSH snippet when present
+      ansible.builtin.copy:
+        src: "{{ paperless_restore_snapshot_path }}/{{ paperless_restore_ssh_file.src }}"
+        dest: "{{ paperless_restore_ssh_file.dest }}"
+        owner: root
+        group: root
+        mode: "0644"
+        remote_src: true
+      when:
+        - paperless_restore_system_files | bool
+        - (paperless_restore_system_extra_map | default({})).get(paperless_restore_ssh_file.src, False)
+
+    - name: Reload systemd after system file changes
+      ansible.builtin.systemd:
+        daemon_reload: true
+      when:
+        - paperless_restore_system_files | bool
+        - paperless_restore_restart_daemon_after_system_files | bool
+
+    - name: Fix ownership on configured paths
+      ansible.builtin.file:
+        path: "{{ item }}"
+        owner: "{{ paperless_site_owner }}"
+        group: "{{ paperless_site_group }}"
+        recurse: true
+      loop: "{{ paperless_restore_fix_paths }}"
+      when: paperless_restore_fix_permissions | bool
+
+    - name: Mark restore files applied
+      ansible.builtin.set_fact:
+        paperless_restore_files_restored: true
+  when: not paperless_restore_dry_run | bool

@@ -1,0 +1,83 @@
+---
+# Default variables for postgres_install role
+
+postgres_install_version: "17"
+postgres_install_cluster_name: main
+postgres_install_service_name: postgresql
+
+# Repository management
+postgres_install_use_pgdg_repo: true
+postgres_install_repo_name: postgresql
+postgres_install_repo_url: https://apt.postgresql.org/pub/repos/apt
+postgres_install_repo_codename: "{{ ansible_distribution_release | default('jammy') }}"
+postgres_install_repo_components:
+  - main
+postgres_install_repo_key_url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+postgres_install_repo_keyring: /etc/apt/keyrings/postgresql.asc
+
+# Packages (server, client, contrib, development headers)
+postgres_install_packages:
+  - "postgresql-{{ postgres_install_version }}"
+  - "postgresql-client-{{ postgres_install_version }}"
+  - "postgresql-contrib-{{ postgres_install_version }}"
+  - libpq-dev
+postgres_install_extra_packages:
+  - python3-psycopg2
+
+# Configuration
+postgres_install_listen_addresses:
+  - localhost
+postgres_install_port: 5432
+postgres_install_config_dir: "/etc/postgresql/{{ postgres_install_version }}/{{ postgres_install_cluster_name }}"
+postgres_install_conf_d_dir: "{{ postgres_install_config_dir }}/conf.d"
+postgres_install_conf_d_filename: 20-ops-library.conf
+postgres_install_manage_conf_d: true
+postgres_install_config_overrides: {}
+
+# pg_hba.conf management
+postgres_install_manage_pg_hba: true
+postgres_install_pg_hba_path: "{{ postgres_install_config_dir }}/pg_hba.conf"
+postgres_install_pg_hba_rules:
+  - {type: local, database: all, user: postgres, auth_method: peer}
+  - {type: local, database: all, user: all, auth_method: peer}
+  - {type: host, database: all, user: all, address: "127.0.0.1/32", auth_method: scram-sha-256}
+  - {type: host, database: all, user: all, address: "::1/128", auth_method: scram-sha-256}
+
+# Database/user management
+postgres_install_admin_user: postgres
+postgres_install_admin_password: ""
+postgres_install_databases: []
+# Example:
+# postgres_install_databases:
+#   - name: paperless
+#     owner: paperless
+#     encoding: UTF8
+#     lc_collate: en_US.UTF-8
+#     lc_ctype: en_US.UTF-8
+
+postgres_install_users: []
+# Example:
+# postgres_install_users:
+#   - name: paperless
+#     password: "sops://secret"
+#     encrypted: true
+#     role_attr_flags: LOGIN
+
+postgres_install_extensions: []
+# Example:
+# postgres_install_extensions:
+#   - name: unaccent
+#     database: paperless
+#     state: present
+
+# Logging / debugging
+postgres_install_redact_password_changes: true
+
+# Service management
+postgres_install_service_enabled: true
+postgres_install_service_state: started
+postgres_install_restart_on_change: true
+postgres_install_cluster_service_name: "postgresql@{{ postgres_install_version }}-{{ postgres_install_cluster_name }}"
+postgres_install_manage_cluster_service: true
+postgres_install_handler_services:
+  - "{{ postgres_install_service_name }}"

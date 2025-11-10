@@ -1,0 +1,467 @@
+---
+- name: "Validate required paths"
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  register: paperless_backup_path_stats
+  failed_when: not item.optional and not paperless_backup_path_stats.stat.exists
+  loop:
+    - { path: "{{ paperless_backup_manage_dir }}", optional: false, description: "Paperless manage.py directory" }
+    - { path: "{{ paperless_backup_virtualenv }}", optional: false, description: "Paperless virtualenv" }
+    - { path: "{{ paperless_backup_env_file }}", optional: false, description: "Paperless .env" }
+    - { path: "{{ paperless_backup_media_path }}", optional: false, description: "Media directory" }
+    - { path: "{{ paperless_backup_data_path }}", optional: false, description: "Data directory" }
+    - { path: "{{ paperless_backup_logs_path }}", optional: "{{ not paperless_backup_include_logs }}", description: "Logs directory" }
+    - { path: "{{ paperless_backup_consume_path }}", optional: "{{ not paperless_backup_include_consume }}", description: "Consume directory" }
+    - { path: "{{ paperless_backup_export_path }}", optional: "{{ not paperless_backup_include_export }}", description: "Export directory" }
+  loop_control:
+    label: "{{ item.description }}"
+
+- name: "Build path existence map"
+  ansible.builtin.set_fact:
+    paperless_backup_path_exists: "{{ paperless_backup_path_exists | default({}) | combine({ item.item.path: item.stat.exists }) }}"
+  loop: "{{ paperless_backup_path_stats.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: "Initialize disk usage path list"
+  ansible.builtin.set_fact:
+    paperless_backup_disk_usage_paths: []
+
+- name: "Collect disk usage paths"
+  ansible.builtin.set_fact:
+    paperless_backup_disk_usage_paths: "{{ paperless_backup_disk_usage_paths + [item] }}"
+  loop:
+    - "{{ paperless_backup_media_path }}"
+    - "{{ paperless_backup_data_path }}"
+    - "{{ paperless_backup_logs_path if paperless_backup_include_logs else '' }}"
+    - "{{ paperless_backup_consume_path if paperless_backup_include_consume else '' }}"
+    - "{{ paperless_backup_export_path if paperless_backup_include_export else '' }}"
+  when:
+    - item | length > 0
+    - paperless_backup_path_exists.get(item, False)
+
+- name: "Capture backup timestamp"
+  ansible.builtin.set_fact:
+    paperless_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+- name: "Compute backup directories"
+  ansible.builtin.set_fact:
+    paperless_backup_dir: "{{ paperless_backup_root }}/{{ paperless_backup_prefix }}-{{ paperless_backup_timestamp }}"
+    paperless_backup_subdirs:
+      - database
+      - media
+      - data
+      - consume
+      - export
+      - config
+      - systemd
+      - traefik
+      - ssh
+      - logs
+
+- name: "Determine exporter target"
+  ansible.builtin.set_fact:
+    paperless_backup_effective_exporter_target: "{{ paperless_backup_exporter_target if (paperless_backup_exporter_target | default('', true) | string | length) > 0 else paperless_backup_dir ~ '/exporter' }}"
+
+- name: "Ensure backup root directory exists"
+  ansible.builtin.file:
+    path: "{{ paperless_backup_root }}"
+    state: directory
+    owner: "{{ paperless_backup_owner }}"
+    group: "{{ paperless_backup_group }}"
+    mode: "{{ paperless_backup_root_mode }}"
+
+- name: "Ensure backup directory exists"
+  ansible.builtin.file:
+    path: "{{ paperless_backup_dir }}"
+    state: directory
+    owner: "{{ paperless_backup_dir_owner }}"
+    group: "{{ paperless_backup_dir_group }}"
+    mode: "{{ paperless_backup_dir_mode }}"
+
+- name: "Ensure backup subdirectories exist"
+  ansible.builtin.file:
+    path: "{{ paperless_backup_dir }}/{{ item }}"
+    state: directory
+    owner: "{{ paperless_backup_database_dir_owner if item == 'database' else paperless_backup_dir_owner }}"
+    group: "{{ paperless_backup_database_dir_group if item == 'database' else paperless_backup_dir_group }}"
+    mode: "{{ paperless_backup_dir_mode }}"
+  loop: "{{ paperless_backup_subdirs }}"
+
+- name: "Check available disk space under backup root"
+  ansible.builtin.shell: |
+    df -B1 --output=avail "{{ paperless_backup_root }}" | tail -1
+  register: paperless_backup_disk_available
+  changed_when: false
+  when: paperless_backup_disk_check_enabled
+
+- name: "Estimate required disk space for snapshot"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    du -sb {{ paperless_backup_disk_usage_paths | map('quote') | join(' ') }} | awk '{sum+=$1} END {print sum}'
+  register: paperless_backup_disk_required
+  changed_when: false
+  when:
+    - paperless_backup_disk_check_enabled
+    - paperless_backup_disk_usage_paths | length > 0
+
+- name: "Normalize disk space facts"
+  ansible.builtin.set_fact:
+    paperless_backup_disk_available_bytes: "{{ paperless_backup_disk_available.stdout | default('0') | trim | int }}"
+    paperless_backup_disk_required_bytes: "{{ (paperless_backup_disk_required.stdout if paperless_backup_disk_required is defined else '0') | trim | int }}"
+  when: paperless_backup_disk_check_enabled
+
+- name: "Compute disk requirement with overhead (float)"
+  ansible.builtin.set_fact:
+    paperless_backup_disk_required_with_overhead_float: "{{ (paperless_backup_disk_required_bytes | float) * paperless_backup_disk_overhead_ratio }}"
+  when: paperless_backup_disk_check_enabled
+
+- name: "Compute disk requirement with overhead (ceil)"
+  ansible.builtin.set_fact:
+    paperless_backup_disk_required_with_overhead: "{{ ((paperless_backup_disk_required_with_overhead_float | float) + 0.999999) | int }}"
+  when: paperless_backup_disk_check_enabled
+
+- name: "Fail when disk space is insufficient"
+  ansible.builtin.fail:
+    msg: >-
+      Insufficient disk space under {{ paperless_backup_root }} (available={{ paperless_backup_disk_available_bytes }} bytes,
+      required~={{ paperless_backup_disk_required_with_overhead }} bytes including overhead).
+  when:
+    - paperless_backup_disk_check_enabled
+    - paperless_backup_disk_usage_paths | length > 0
+    - (paperless_backup_disk_available_bytes | int) < (paperless_backup_disk_required_with_overhead | int)
+
+- name: "Detect Paperless version"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cd "{{ paperless_backup_manage_dir }}"
+    set -a
+    source "{{ paperless_backup_env_file }}"
+    set +a
+    {{ paperless_backup_manage_python }} manage.py --version
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ paperless_backup_user }}"
+  register: paperless_backup_version_cmd
+  changed_when: false
+
+- name: "Set Paperless version fact"
+  ansible.builtin.set_fact:
+    paperless_backup_version: "{{ paperless_backup_version_cmd.stdout | default('unknown') | trim }}"
+
+- name: "Reset exporter target directory"
+  ansible.builtin.file:
+    path: "{{ paperless_backup_effective_exporter_target }}"
+    state: absent
+  when:
+    - paperless_backup_exporter_enabled
+    - paperless_backup_exporter_clean_target
+
+- name: "Ensure exporter target directory exists"
+  ansible.builtin.file:
+    path: "{{ paperless_backup_effective_exporter_target }}"
+    state: directory
+    owner: "{{ paperless_backup_user }}"
+    group: "{{ paperless_backup_group_runtime }}"
+    mode: "0755"
+  when: paperless_backup_exporter_enabled
+
+- name: "Set exporter environment"
+  ansible.builtin.set_fact:
+    paperless_backup_exporter_environment: "{{ {'PAPERLESS_PASSPHRASE': paperless_backup_exporter_passphrase} if (paperless_backup_exporter_passphrase | default('', true) | string | length) > 0 else {} }}"
+  when: paperless_backup_exporter_enabled
+
+- name: "Run Paperless document_exporter"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cd "{{ paperless_backup_manage_dir }}"
+    set -a
+    source "{{ paperless_backup_env_file }}"
+    set +a
+    {{ paperless_backup_manage_python }} manage.py document_exporter {{ paperless_backup_exporter_flags }} "{{ paperless_backup_effective_exporter_target }}"
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ paperless_backup_user }}"
+  environment: "{{ paperless_backup_exporter_environment | default({}) }}"
+  no_log: "{{ paperless_backup_exporter_passphrase | length > 0 }}"
+  when: paperless_backup_exporter_enabled
+
+- name: "Dump PostgreSQL database"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    {{ paperless_backup_postgres_dump_binary }} \
+      --host={{ paperless_backup_postgres_host }} \
+      --port={{ paperless_backup_postgres_port }} \
+      --username={{ paperless_backup_postgres_user }} \
+      {{ paperless_backup_postgres_dump_options }} \
+      {{ paperless_backup_postgres_database }} > "{{ paperless_backup_dir }}/database/{{ paperless_backup_postgres_database }}.sql"
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ paperless_backup_postgres_become_user }}"
+  environment:
+    PGPASSWORD: "{{ paperless_backup_postgres_password }}"
+  no_log: "{{ paperless_backup_postgres_password | default('') | length > 0 }}"
+
+- name: "Rsync Paperless directories"
+  ansible.builtin.command:
+    cmd: >
+      {{ paperless_backup_rsync_binary }}
+      -a{{ ' --delete' if paperless_backup_rsync_delete else '' }}
+      "{{ item.src }}/"
+      "{{ item.dest }}/"
+  loop:
+    - { src: "{{ paperless_backup_media_path }}", dest: "{{ paperless_backup_dir }}/media", include: true }
+    - { src: "{{ paperless_backup_data_path }}", dest: "{{ paperless_backup_dir }}/data", include: true }
+    - { src: "{{ paperless_backup_logs_path }}", dest: "{{ paperless_backup_dir }}/logs", include: "{{ paperless_backup_include_logs }}" }
+    - { src: "{{ paperless_backup_consume_path }}", dest: "{{ paperless_backup_dir }}/consume", include: "{{ paperless_backup_include_consume }}" }
+    - { src: "{{ paperless_backup_export_path }}", dest: "{{ paperless_backup_dir }}/export", include: "{{ paperless_backup_include_export }}" }
+  loop_control:
+    label: "{{ item.src }}"
+  when:
+    - item.include | bool
+    - paperless_backup_path_exists.get(item.src, False)
+
+- name: "Gather config file stats"
+  ansible.builtin.stat:
+    path: "{{ item.src }}"
+  register: paperless_backup_config_stat
+  loop: "{{ paperless_backup_config_files }}"
+  loop_control:
+    label: "{{ item.src }}"
+
+- name: "Copy configuration files"
+  ansible.builtin.copy:
+    src: "{{ item.item.src }}"
+    dest: "{{ paperless_backup_dir }}/{{ item.item.dest }}"
+    owner: "{{ paperless_backup_owner }}"
+    group: "{{ paperless_backup_group }}"
+    mode: "{{ paperless_backup_file_mode }}"
+    remote_src: true
+  loop: "{{ paperless_backup_config_stat.results }}"
+  loop_control:
+    label: "{{ item.item.src }}"
+  when: item.stat.exists
+
+- name: "Gather systemd unit stats"
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: paperless_backup_systemd_stat
+  loop: "{{ paperless_backup_systemd_units }}"
+
+- name: "Copy systemd unit files"
+  ansible.builtin.copy:
+    src: "{{ item.item }}"
+    dest: "{{ paperless_backup_dir }}/systemd/{{ item.item | basename }}"
+    owner: "{{ paperless_backup_owner }}"
+    group: "{{ paperless_backup_group }}"
+    mode: "{{ paperless_backup_file_mode }}"
+    remote_src: true
+  loop: "{{ paperless_backup_systemd_stat.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stat.exists
+
+- name: "Stat Traefik configuration"
+  ansible.builtin.stat:
+    path: "{{ paperless_backup_traefik_config_path }}"
+  register: paperless_backup_traefik_stat
+  when: (paperless_backup_traefik_config_path | length) > 0
+
+- name: "Copy Traefik configuration"
+  ansible.builtin.copy:
+    src: "{{ paperless_backup_traefik_config_path }}"
+    dest: "{{ paperless_backup_dir }}/traefik/{{ paperless_backup_traefik_config_path | basename }}"
+    owner: "{{ paperless_backup_owner }}"
+    group: "{{ paperless_backup_group }}"
+    mode: "{{ paperless_backup_file_mode }}"
+    remote_src: true
+  when:
+    - (paperless_backup_traefik_config_path | length) > 0
+    - paperless_backup_traefik_stat.stat.exists
+
+- name: "Stat scanner SSH configuration"
+  ansible.builtin.stat:
+    path: "{{ paperless_backup_ssh_config_path }}"
+  register: paperless_backup_ssh_stat
+  when: (paperless_backup_ssh_config_path | length) > 0
+
+- name: "Copy scanner SSH configuration"
+  ansible.builtin.copy:
+    src: "{{ paperless_backup_ssh_config_path }}"
+    dest: "{{ paperless_backup_dir }}/ssh/{{ paperless_backup_ssh_config_path | basename }}"
+    owner: "{{ paperless_backup_owner }}"
+    group: "{{ paperless_backup_group }}"
+    mode: "{{ paperless_backup_file_mode }}"
+    remote_src: true
+  when:
+    - (paperless_backup_ssh_config_path | length) > 0
+    - paperless_backup_ssh_stat.stat.exists
+
+- name: "Ensure extra file parent directories exist"
+  ansible.builtin.file:
+    path: "{{ paperless_backup_dir }}/{{ item.dest | dirname }}"
+    state: directory
+    owner: "{{ paperless_backup_owner }}"
+    group: "{{ paperless_backup_group }}"
+    mode: "{{ paperless_backup_dir_mode }}"
+  loop: "{{ paperless_backup_extra_files }}"
+  when:
+    - item.src | length > 0
+    - (item.dest | dirname) not in ['', '.']
+  loop_control:
+    label: "{{ item.dest }}"
+
+- name: "Copy extra files"
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ paperless_backup_dir }}/{{ item.dest }}"
+    owner: "{{ paperless_backup_owner }}"
+    group: "{{ paperless_backup_group }}"
+    mode: "{{ paperless_backup_file_mode }}"
+    remote_src: true
+  loop: "{{ paperless_backup_extra_files }}"
+  when: item.src | length > 0
+  loop_control:
+    label: "{{ item.src }}"
+
+- name: "Write metadata"
+  ansible.builtin.copy:
+    dest: "{{ paperless_backup_dir }}/metadata.yml"
+    owner: "{{ paperless_backup_owner }}"
+    group: "{{ paperless_backup_group }}"
+    mode: "{{ paperless_backup_file_mode }}"
+    content: |
+      timestamp: "{{ paperless_backup_timestamp }}"
+      timestamp_source: "ansible_date_time.iso8601_basic_short (play start)"
+      host: "{{ inventory_hostname }}"
+      backup_dir: "{{ paperless_backup_dir }}"
+      paperless_version: "{{ paperless_backup_version }}"
+      exporter:
+        enabled: {{ paperless_backup_exporter_enabled | bool }}
+        target: "{{ paperless_backup_effective_exporter_target if paperless_backup_exporter_enabled else '' }}"
+        flags: {{ paperless_backup_exporter_flags | to_json }}
+        passphrase_set: {{ paperless_backup_exporter_passphrase | length > 0 }}
+      postgres:
+        database: "{{ paperless_backup_postgres_database }}"
+        host: "{{ paperless_backup_postgres_host }}"
+        port: {{ paperless_backup_postgres_port }}
+        options: {{ paperless_backup_postgres_dump_options | to_json }}
+      storage:
+        media_path: "{{ paperless_backup_media_path }}"
+        data_path: "{{ paperless_backup_data_path }}"
+        consume_path: "{{ paperless_backup_consume_path }}"
+        export_path: "{{ paperless_backup_export_path }}"
+        logs_path: "{{ paperless_backup_logs_path }}"
+        include_consume: {{ paperless_backup_include_consume | bool }}
+        include_export: {{ paperless_backup_include_export | bool }}
+        include_logs: {{ paperless_backup_include_logs | bool }}
+      archive:
+        create: {{ paperless_backup_create_archive | bool }}
+        format: "{{ paperless_backup_archive_format }}"
+      extra: {{ paperless_backup_metadata_extra | default({}) | to_json }}
+
+- name: "Generate checksum manifest"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cd "{{ paperless_backup_dir }}"
+    find . -type f ! -name manifest.sha256 -print0 | sort -z | xargs -0 sha256sum > manifest.sha256
+  args:
+    executable: /bin/bash
+  when: paperless_backup_generate_checksums
+
+- name: "Compute archive path"
+  ansible.builtin.set_fact:
+    paperless_backup_archive_path: "{{ paperless_backup_dir }}.{{ paperless_backup_archive_format }}"
+  when: paperless_backup_create_archive
+
+- name: "Create tar.gz archive"
+  ansible.builtin.command:
+    cmd: >
+      tar -C "{{ paperless_backup_root }}"
+      -czf "{{ paperless_backup_archive_path | basename }}"
+      "{{ paperless_backup_dir | basename }}"
+  args:
+    chdir: "{{ paperless_backup_root }}"
+  when:
+    - paperless_backup_create_archive
+    - paperless_backup_archive_format == 'tar.gz'
+
+- name: "Create tar.zst archive"
+  ansible.builtin.command:
+    cmd: >
+      tar -C "{{ paperless_backup_root }}"
+      --zstd -cf "{{ paperless_backup_archive_path | basename }}"
+      "{{ paperless_backup_dir | basename }}"
+  args:
+    chdir: "{{ paperless_backup_root }}"
+  when:
+    - paperless_backup_create_archive
+    - paperless_backup_archive_format == 'tar.zst'
+
+- name: "Ensure archive is readable for fetch"
+  ansible.builtin.file:
+    path: "{{ paperless_backup_archive_path }}"
+    mode: "0644"
+  when:
+    - paperless_backup_fetch_local
+    - paperless_backup_create_archive
+
+- name: "Ensure local archive directory exists"
+  ansible.builtin.file:
+    path: "{{ paperless_backup_local_dir }}"
+    state: directory
+    mode: "{{ paperless_backup_local_dir_mode }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - paperless_backup_fetch_local
+    - paperless_backup_create_archive
+
+- name: "Fetch archive to control machine via synchronize"
+  ansible.posix.synchronize:
+    mode: pull
+    src: "{{ paperless_backup_archive_path }}"
+    dest: "{{ paperless_backup_local_dir }}/"
+    archive: false
+    rsync_opts:
+      - "--chmod=ugo=rw"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - paperless_backup_fetch_local
+    - paperless_backup_create_archive
+    - paperless_backup_fetch_method == 'synchronize'
+
+- name: "Fetch archive to control machine via fetch"
+  ansible.builtin.fetch:
+    src: "{{ paperless_backup_archive_path }}"
+    dest: "{{ paperless_backup_local_dir }}/"
+    flat: true
+  run_once: true
+  when:
+    - paperless_backup_fetch_local
+    - paperless_backup_create_archive
+    - paperless_backup_fetch_method == 'fetch'
+
+- name: "Set backup artifact path"
+  ansible.builtin.set_fact:
+    paperless_backup_artifact_path: "{{ paperless_backup_archive_path if paperless_backup_create_archive else paperless_backup_dir }}"
+
+- name: "Gather backup size"
+  ansible.builtin.command:
+    cmd: "du -sh {{ paperless_backup_artifact_path | quote }}"
+  register: paperless_backup_size_cmd
+  changed_when: false
+  when: paperless_backup_report_size
+
+- name: "Report backup completion"
+  ansible.builtin.debug:
+    msg: |
+      Backup complete: {{ paperless_backup_artifact_path }}
+      Size: {{ paperless_backup_size_cmd.stdout | default('unknown') }}
+  when: paperless_backup_report_size

@@ -1,0 +1,84 @@
+---
+- name: Dry-run verification notice
+  ansible.builtin.debug:
+    msg: "paperless_restore_dry_run=true - skipping service start and health checks"
+  when: paperless_restore_dry_run | bool
+
+- block:
+    - name: Start Paperless services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+        daemon_reload: false
+      loop: "{{ paperless_restore_start_services }}"
+      loop_control:
+        label: "{{ item }}"
+        pause: "{{ paperless_restore_service_start_pause | int }}"
+
+    - name: Wait for Paperless services to become active
+      ansible.builtin.command: "systemctl is-active {{ item }}"
+      register: _paperless_restore_active
+      retries: "{{ paperless_restore_service_start_retries | int }}"
+      delay: "{{ paperless_restore_service_start_delay | int }}"
+      until: _paperless_restore_active.stdout.strip() == 'active'
+      failed_when: _paperless_restore_active.rc != 0 and _paperless_restore_active.stdout.strip() != 'active'
+      changed_when: false
+      loop: "{{ paperless_restore_start_services }}"
+
+    - name: Run PostgreSQL connection test
+      ansible.builtin.shell: |
+        set -euo pipefail
+        echo "{{ paperless_restore_postgres_test_query }}" | {{ paperless_restore_psql_binary }} \
+          --host={{ paperless_restore_postgres_host }} \
+          --port={{ paperless_restore_postgres_port }} \
+          --username={{ paperless_restore_postgres_user }} \
+          --dbname={{ paperless_restore_postgres_database }} \
+          --set ON_ERROR_STOP=1
+      args:
+        executable: /bin/bash
+      become: true
+      become_user: "{{ paperless_restore_postgres_become_user }}"
+      environment: "{{ {'PGPASSWORD': paperless_restore_postgres_password} if (paperless_restore_postgres_password | default('') | string | length) > 0 else {} }}"
+      changed_when: false
+      register: _paperless_restore_pg_check
+      retries: "{{ paperless_restore_postgres_check_retries | int }}"
+      delay: "{{ paperless_restore_postgres_check_delay | int }}"
+      until: _paperless_restore_pg_check.rc == 0
+      when: paperless_restore_postgres_check_enabled | bool
+
+    - name: Perform HTTP health check
+      ansible.builtin.uri:
+        url: "{{ paperless_restore_health_url }}"
+        method: GET
+        status_code: "{{ paperless_restore_health_expected_status | int }}"
+        timeout: "{{ paperless_restore_http_timeout | int }}"
+        return_content: false
+      register: _paperless_restore_http
+      retries: "{{ paperless_restore_health_retries | int }}"
+      delay: "{{ paperless_restore_health_delay | int }}"
+      until: _paperless_restore_http.status == paperless_restore_health_expected_status
+      when: paperless_restore_verify_http | bool
+
+    - name: Mark restore as successful
+      ansible.builtin.set_fact:
+        paperless_restore_operation_successful: true
+  when: not paperless_restore_dry_run | bool
+  rescue:
+    - name: Flag verification failure
+      ansible.builtin.set_fact:
+        paperless_restore_verification_failed: true
+
+    - name: Attempt automatic rollback when enabled
+      when:
+        - paperless_restore_rollback_on_failure | bool
+        - paperless_restore_rollback_source is defined
+        - paperless_restore_rollback_source | length > 0
+      block:
+        - ansible.builtin.include_tasks: rollback.yml
+      rescue:
+        - ansible.builtin.debug:
+            msg: "Automatic rollback attempt failed; manual intervention required."
+
+    - name: Fail restore after verification error
+      ansible.builtin.fail:
+        msg: "Paperless restore verification failed; review the errors above."

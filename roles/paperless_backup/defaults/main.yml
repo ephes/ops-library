@@ -1,0 +1,79 @@
+---
+# Defaults for paperless_backup role
+
+paperless_backup_root: /opt/backups/paperless
+paperless_backup_prefix: manual
+paperless_backup_owner: root
+paperless_backup_group: root
+paperless_backup_dir_mode: "0750"
+paperless_backup_file_mode: "0640"
+paperless_backup_local_dir_mode: "0700"
+paperless_backup_root_mode: "0755"
+paperless_backup_dir_owner: "{{ paperless_backup_owner }}"
+paperless_backup_dir_group: "{{ paperless_backup_group }}"
+paperless_backup_database_dir_owner: "{{ paperless_backup_owner }}"
+paperless_backup_database_dir_group: "{{ paperless_backup_group }}"
+
+paperless_backup_create_archive: true
+paperless_backup_archive_format: tar.gz  # tar.gz | tar.zst
+paperless_backup_fetch_local: false
+paperless_backup_local_dir: "{{ lookup('env', 'HOME') | default('/tmp', true) }}/backups/paperless"
+paperless_backup_fetch_method: synchronize  # synchronize | fetch
+paperless_backup_generate_checksums: true
+paperless_backup_disk_check_enabled: true
+paperless_backup_disk_overhead_ratio: 1.15  # Require 15% headroom relative to estimated size
+paperless_backup_report_size: true
+
+paperless_backup_site_root: /home/paperless/site
+paperless_backup_manage_dir: "{{ paperless_backup_site_root }}/paperless-ngx/src"
+paperless_backup_virtualenv: "{{ paperless_backup_site_root }}/.venv"
+paperless_backup_env_file: "{{ paperless_backup_site_root }}/.env"
+paperless_backup_manage_python: "{{ paperless_backup_virtualenv }}/bin/python"
+paperless_backup_user: paperless
+paperless_backup_group_runtime: paperless
+
+paperless_backup_external_root: /mnt/cryptdata/paperless
+paperless_backup_media_path: "{{ paperless_backup_external_root }}/media"
+paperless_backup_data_path: "{{ paperless_backup_external_root }}/data"
+paperless_backup_consume_path: "{{ paperless_backup_external_root }}/consume"
+paperless_backup_export_path: "{{ paperless_backup_external_root }}/export"
+paperless_backup_include_consume: false
+paperless_backup_include_export: false
+paperless_backup_logs_path: "{{ paperless_backup_site_root }}/logs"
+paperless_backup_include_logs: false
+
+paperless_backup_rsync_binary: rsync
+paperless_backup_rsync_delete: false
+
+paperless_backup_exporter_enabled: true
+paperless_backup_exporter_target: ""
+paperless_backup_exporter_flags: "-z --delete"
+paperless_backup_exporter_passphrase: ""
+paperless_backup_exporter_clean_target: true
+
+paperless_backup_postgres_host: localhost
+paperless_backup_postgres_port: 5432
+paperless_backup_postgres_user: paperless
+paperless_backup_postgres_password: ""
+paperless_backup_postgres_become_user: postgres
+paperless_backup_postgres_database: paperless
+paperless_backup_postgres_dump_binary: pg_dump
+paperless_backup_postgres_dump_options: "--clean --if-exists --no-owner"
+
+paperless_backup_config_files:
+  - src: "{{ paperless_backup_env_file }}"
+    dest: config/paperless.env
+  - src: "{{ paperless_backup_site_root }}/gunicorn.conf.py"
+    dest: config/gunicorn.conf.py
+
+paperless_backup_systemd_units:
+  - /etc/systemd/system/paperless.service
+  - /etc/systemd/system/paperless-worker.service
+  - /etc/systemd/system/paperless-scheduler.service
+  - /etc/systemd/system/paperless-consumer.service
+
+paperless_backup_traefik_config_path: /etc/traefik/dynamic/paperless.yml
+paperless_backup_ssh_config_path: /etc/ssh/sshd_config.d/sftp-scanner.conf
+paperless_backup_extra_files: []
+
+paperless_backup_metadata_extra: {}

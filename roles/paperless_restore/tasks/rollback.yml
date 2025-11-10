@@ -1,0 +1,41 @@
+---
+- name: Ensure safety snapshot path is available
+  ansible.builtin.assert:
+    that:
+      - paperless_restore_rollback_source is defined
+      - paperless_restore_rollback_source | length > 0
+    fail_msg: "paperless_restore_rollback_source is not set; cannot execute rollback."
+
+- name: Check safety snapshot directory
+  ansible.builtin.stat:
+    path: "{{ paperless_restore_rollback_source }}"
+  register: paperless_restore_rollback_stat
+
+- name: Abort rollback when snapshot is missing
+  ansible.builtin.fail:
+    msg: "Safety snapshot {{ paperless_restore_rollback_source }} does not exist on the host."
+  when: not paperless_restore_rollback_stat.stat.exists | default(false)
+
+- name: Stop Paperless services before rollback
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    daemon_reload: false
+  loop: "{{ paperless_restore_stop_services }}"
+  ignore_errors: true
+
+- name: Execute rollback restore from safety snapshot
+  ansible.builtin.include_role:
+    name: local.ops_library.paperless_restore
+  vars:
+    paperless_restore_archive: "{{ paperless_restore_rollback_source }}"
+    paperless_restore_archive_search_root: "{{ paperless_restore_rollback_source | dirname }}"
+    paperless_restore_create_safety_backup: false
+    paperless_restore_rollback_on_failure: false
+    paperless_restore_use_importer: false
+    paperless_restore_verify_http: false
+    paperless_restore_postgres_check_enabled: false
+
+- name: Mark rollback as executed
+  ansible.builtin.set_fact:
+    paperless_restore_rollback_executed: true

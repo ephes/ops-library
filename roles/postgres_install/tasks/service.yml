@@ -1,0 +1,17 @@
+---
+- name: Ensure PostgreSQL service state
+  ansible.builtin.systemd:
+    name: "{{ postgres_install_service_name }}"
+    enabled: "{{ postgres_install_service_enabled }}"
+    state: "{{ postgres_install_service_state }}"
+    daemon_reload: true
+  become: true
+
+- name: Ensure PostgreSQL cluster service state
+  ansible.builtin.systemd:
+    name: "{{ postgres_install_cluster_service_name }}"
+    enabled: "{{ postgres_install_service_enabled }}"
+    state: "{{ postgres_install_service_state }}"
+    daemon_reload: true
+  become: true
+  when: postgres_install_manage_cluster_service | bool
