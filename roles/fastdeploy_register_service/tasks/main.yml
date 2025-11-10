@@ -52,6 +52,16 @@
     mode: "0600"
   when: fd_sops_age_key_contents | length > 0
 
+- name: Validate local ops-control path is provided for rsync method
+  assert:
+    that:
+      - fd_ops_control_local_path is defined
+      - fd_ops_control_local_path | length > 0
+    fail_msg: >
+      fd_ops_control_local_path is required when fd_ops_control_method == "rsync".
+      Set it to the local path of your ops-control checkout (e.g., /path/to/ops-control).
+  when: fd_ops_control_method == "rsync"
+
 - name: Deploy ops-control via rsync
   synchronize:
     src: "{{ fd_ops_control_local_path }}/"

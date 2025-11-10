@@ -114,18 +114,18 @@ None.
 ```yaml
 ---
 - name: Deploy Homelab
-  hosts: macmini
+  hosts: homelab
   become: true
   vars:
     secrets: "{{ lookup('community.sops.sops', 'secrets/prod/homelab.yml') | from_yaml }}"
   roles:
     - role: local.ops_library.homelab_deploy
       vars:
-        homelab_source_path: "/Users/jochen/projects/homelab"
+        homelab_source_path: "/path/to/your/homelab"
         homelab_secret_key: "{{ secrets.django_secret_key }}"
         homelab_basic_auth_password: "{{ secrets.traefik_basic_auth_password }}"
-        homelab_traefik_host: "home.xn--wersdrfer-47a.de"
-        homelab_django_allowed_hosts: "127.0.0.1,home.xn--wersdrfer-47a.de"
+        homelab_traefik_host: "home.example.com"
+        homelab_django_allowed_hosts: "127.0.0.1,home.example.com"
 ```
 
 ### Disable Basic Auth (Single Router)
@@ -133,17 +133,17 @@ None.
 ```yaml
 ---
 - name: Deploy Homelab without Basic Auth
-  hosts: macmini
+  hosts: homelab
   become: true
   vars:
     secrets: "{{ lookup('community.sops.sops', 'secrets/prod/homelab.yml') | from_yaml }}"
   roles:
     - role: local.ops_library.homelab_deploy
       vars:
-        homelab_source_path: "/Users/jochen/projects/homelab"
+        homelab_source_path: "/path/to/your/homelab"
         homelab_secret_key: "{{ secrets.django_secret_key }}"
-        homelab_traefik_host: "home.xn--wersdrfer-47a.de"
-        homelab_django_allowed_hosts: "127.0.0.1,home.xn--wersdrfer-47a.de"
+        homelab_traefik_host: "home.example.com"
+        homelab_django_allowed_hosts: "127.0.0.1,home.example.com"
         homelab_basic_auth_enabled: false
 ```
 
@@ -152,14 +152,14 @@ None.
 ```yaml
 ---
 - name: Deploy Homelab with Custom IP Ranges
-  hosts: macmini
+  hosts: homelab
   become: true
   vars:
     secrets: "{{ lookup('community.sops.sops', 'secrets/prod/homelab.yml') | from_yaml }}"
   roles:
     - role: local.ops_library.homelab_deploy
       vars:
-        homelab_source_path: "/Users/jochen/projects/homelab"
+        homelab_source_path: "/path/to/your/homelab"
         homelab_secret_key: "{{ secrets.django_secret_key }}"
         homelab_basic_auth_password: "{{ secrets.traefik_basic_auth_password }}"
         homelab_traefik_host: "home.example.com"

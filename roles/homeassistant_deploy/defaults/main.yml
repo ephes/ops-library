@@ -91,7 +91,7 @@ homeassistant_unifi_password_variable: ""
 
 # Traefik integration
 homeassistant_traefik_enabled: true
-homeassistant_traefik_domain: "home.xn--wersdrfer-47a.de"
+homeassistant_traefik_domain: ""  # REQUIRED - your Traefik domain (e.g., home.example.com)
 homeassistant_traefik_entrypoints:
   - web-secure
 homeassistant_traefik_middlewares:

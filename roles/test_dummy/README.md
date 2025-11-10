@@ -8,7 +8,7 @@ A sample role used for development and testing of FastDeploy integrations.
 
 ## Usage
 ```yaml
-- hosts: macmini
+- hosts: homelab
   become: true
   roles:
     - role: local.ops_library.test_dummy

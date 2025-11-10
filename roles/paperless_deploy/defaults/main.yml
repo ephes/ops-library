@@ -111,7 +111,7 @@ paperless_scanner_bind_mount_enabled: true
 
 # Traefik
 paperless_traefik_enabled: true
-paperless_traefik_domain: home.xn--wersdrfer-47a.de
+paperless_traefik_domain: ""  # REQUIRED - your domain (e.g., home.example.com)
 paperless_traefik_host: "paperless.{{ paperless_traefik_domain }}"
 paperless_traefik_entrypoint: web-secure
 paperless_traefik_cert_resolver: letsencrypt

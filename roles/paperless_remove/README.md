@@ -34,7 +34,7 @@ External storage (`media`, `data`, `consume`, `export`, `backup`, `tmp`) is pres
 ## Example
 
 ```yaml
-- hosts: macmini
+- hosts: homelab
   become: true
   vars:
     paperless_remove_confirm: true

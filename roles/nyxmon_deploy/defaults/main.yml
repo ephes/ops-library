@@ -16,7 +16,7 @@ nyxmon_cache_dir: "{{ nyxmon_site_path }}/cache"
 nyxmon_deploy_method: rsync  # Options: rsync, git
 
 # Source for rsync method (required for development)
-nyxmon_source_path: ""  # REQUIRED for rsync - e.g., /Users/jochen/projects/nyxmon
+nyxmon_source_path: ""  # REQUIRED for rsync - e.g., /path/to/your/nyxmon
 # When using rsync, copy these additional source directories to the target host
 nyxmon_rsync_additional_paths:
   - src/nyxmon/

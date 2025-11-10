@@ -19,7 +19,7 @@ Restores a backup created by `homeassistant_backup`, verifying manifests and opt
 Example:
 
 ```yaml
-- hosts: macmini
+- hosts: homelab
   become: true
   roles:
     - role: local.ops_library.homeassistant_restore

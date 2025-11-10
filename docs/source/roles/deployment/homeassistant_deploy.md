@@ -26,7 +26,7 @@ See `roles/homeassistant_deploy/defaults/main.yml` for the full variable catalog
 ## Usage
 
 ```yaml
-- hosts: macmini
+- hosts: homelab
   become: true
   roles:
     - role: local.ops_library.homeassistant_deploy

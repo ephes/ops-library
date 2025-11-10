@@ -67,11 +67,11 @@
 # ============================================
 # SPECIFIC PERSON ARRIVALS
 # ============================================
-- alias: "Jochen Arrives Home"
-  description: "Specific actions when Jochen arrives"
+- alias: "Person Arrives Home"
+  description: "Specific actions when person arrives"
   trigger:
     - platform: state
-      entity_id: person.jochen
+      entity_id: person.alice
       from: "not_home"
       to: "home"
   condition: []
@@ -79,7 +79,7 @@
     - service: notify.notify
       data:
         title: "👋 Welcome"
-        message: "Jochen is home"
+        message: "Alice is home"
 
 # ============================================
 # NIGHTTIME - EVERYONE ASLEEP

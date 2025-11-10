@@ -17,7 +17,7 @@ fastdeploy_deploy_method: rsync  # Options: rsync, git
 
 # Source code location for rsync method (must be provided when using rsync)
 # This is the local path to the fastdeploy source code
-fastdeploy_source_path: ""  # REQUIRED for rsync - e.g., /Users/jochen/projects/fastdeploy
+fastdeploy_source_path: ""  # REQUIRED for rsync - e.g., /path/to/your/fastdeploy
 
 # Git repository settings (for git deployment method)
 fastdeploy_git_repo: "https://github.com/ephes/fastdeploy.git"

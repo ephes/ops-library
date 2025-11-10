@@ -74,7 +74,7 @@ postgres_install_config_overrides:
 ### Localhost-only database for Paperless
 
 ```yaml
-- hosts: macmini
+- hosts: homelab
   become: true
   roles:
     - role: local.ops_library.postgres_install

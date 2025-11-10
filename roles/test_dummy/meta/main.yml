@@ -2,7 +2,7 @@
 galaxy_info:
   author: jochen
   description: Test dummy service for FastDeploy testing
-  company: wersdoerfer.de
+  company: example.com
   license: MIT
   min_ansible_version: "2.15"
   platforms:

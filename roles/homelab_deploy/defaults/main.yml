@@ -13,7 +13,7 @@ homelab_venv_bin: "{{ homelab_venv_path }}/bin"
 homelab_cache_dir: "{{ homelab_site_path }}/cache"
 
 # Source path for deployment (required)
-homelab_source_path: ""  # REQUIRED - e.g., /Users/jochen/projects/homelab
+homelab_source_path: ""  # REQUIRED - e.g., /path/to/your/homelab
 
 # Application settings
 homelab_app_port: 10010

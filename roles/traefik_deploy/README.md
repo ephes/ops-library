@@ -85,7 +85,7 @@ traefik_dashboard_firewall_open: false
 
 **Dashboard Access Options:**
 
-1. **SSH Tunnel (Recommended)**: `ssh -L 8090:localhost:8090 macmini`
+1. **SSH Tunnel (Recommended)**: `ssh -L 8090:localhost:8090 your-server`
 2. **Firewall Open (Security Risk)**: Set `traefik_dashboard_firewall_open: true`
 3. **Via Traefik HTTPS**: Create dynamic config to expose with authentication
 

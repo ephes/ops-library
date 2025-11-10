@@ -20,7 +20,7 @@ minio_service_unit: /etc/systemd/system/minio.service
 minio_certs_dir: "{{ minio_config_dir }}/certs"  # certs/public.crt, certs/private.key
 
 # Data layout (single-node baseline)
-# For macmini with LUKS-encrypted disk mounted at /mnt/cryptdata, prefer a single path:
+# For single-node setups with encrypted storage, prefer a single path:
 minio_data_dirs:
   - /var/lib/minio/data
 # Note: On a single disk MinIO runs without erasure coding. To expand later, add a new pool
@@ -33,7 +33,7 @@ minio_console_port: 9002
 
 # Traefik exposure configuration
 minio_expose_via_traefik: false
-minio_traefik_host: "minio.example.com"  # Override in ops-control (e.g., "minio.home.wersdörfer.de")
+minio_traefik_host: "minio.home.example.com"  # Override in ops-control as needed
 minio_traefik_cert_resolver: letsencrypt
 minio_traefik_config_path: "/etc/traefik/dynamic/minio.yml"
 

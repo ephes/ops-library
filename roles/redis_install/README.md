@@ -48,7 +48,7 @@ See `defaults/main.yml` for the full list. Key options:
 ### Localhost-only, no password (Paperless default)
 
 ```yaml
-- hosts: macmini
+- hosts: homelab
   become: true
   roles:
     - role: local.ops_library.redis_install

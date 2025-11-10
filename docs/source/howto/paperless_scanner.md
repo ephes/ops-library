@@ -13,7 +13,7 @@ How to configure a Brother MFC-L8690CDW (or similar) to upload scans directly in
 
 | Item | Value | Notes |
 | --- | --- | --- |
-| Host/IP | `macmini.tailde2ec.ts.net` or LAN IP | Use LAN IP if printer lacks DNS |
+| Host/IP | `your-server.taildomain.ts.net` or LAN IP | Use LAN IP if printer lacks DNS |
 | Port | `22` | SFTP only |
 | Username | `scanner` | Match `paperless_scanner_username` |
 | Password | From secrets | Update printer whenever password rotates |
@@ -49,7 +49,7 @@ From printer: run the Paperless shortcut and wait for “Sent Successfully”.
 
 On server:
 ```bash
-ssh root@macmini.tailde2ec.ts.net
+ssh root@your-server.taildomain.ts.net
 ls -lh /mnt/cryptdata/paperless/consume/
 ```
 

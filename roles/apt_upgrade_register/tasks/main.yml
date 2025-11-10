@@ -122,5 +122,4 @@
   debug:
     msg: |
       apt_upgrade service '{{ apt_upgrade_service_name }}' has been registered with FastDeploy.
-      The service can now be triggered through the FastDeploy UI at:
-      https://deploy.home.xn--wersdrfer-47a.de/
+      The service can now be triggered through the FastDeploy UI.

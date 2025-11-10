@@ -43,7 +43,7 @@ homeassistant_restore_dirs:
 
 ```yaml
 - name: Restore Home Assistant from the most recent backup
-  hosts: macmini
+  hosts: homelab
   become: true
   roles:
     - role: local.ops_library.homeassistant_restore

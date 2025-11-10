@@ -29,7 +29,7 @@ The `test_dummy` service demonstrates all features and serves as a template for 
 ```yaml
 # playbooks/register-test-dummy-proper.yml
 - name: Register test_dummy service with FastDeploy
-  hosts: macmini
+  hosts: homelab
   become: true
   tasks:
     - name: Register test_dummy service
@@ -211,7 +211,7 @@ After running this role, the following structure is created:
 ├── ops-control/                     # Git clone workspace
 └── _workspace/                      # Temp workspace
 
-/Users/jochen/projects/fastdeploy/   # FastDeploy installation
+/path/to/your/fastdeploy/            # FastDeploy installation
 └── services/nyxmon/config.json      # Service definition
 ```
 
@@ -228,8 +228,8 @@ fd_sops_age_key_contents: "..."      # SOPS age key for decryption
 
 ```yaml
 # FastDeploy paths
-fd_fastdeploy_root: "/Users/jochen/projects/fastdeploy"
-fd_fastdeploy_user: "jochen"
+fd_fastdeploy_root: "/path/to/your/fastdeploy"
+fd_fastdeploy_user: "fastdeploy"
 fd_services_root: "services"
 
 # Deploy user
@@ -250,7 +250,7 @@ fd_api_token: "your-bearer-token"
 ```yaml
 ---
 - name: Register nyxmon with fastDeploy
-  hosts: macmini
+  hosts: homelab
   become: yes
   
   vars:
@@ -270,7 +270,7 @@ fd_api_token: "your-bearer-token"
 2. **Configure variables** in your playbook or group_vars
 3. **Run the registration**:
    ```bash
-   just fastdeploy-register nyxmon macmini
+   just fastdeploy-register nyxmon homelab
    ```
 4. **Verify** the service appears in fastDeploy UI
 5. **Deploy** by clicking the Deploy button in the UI

@@ -188,7 +188,7 @@ def main() -> int:
     OPS_CONTROL_GIT = cenv.get("OPS_CONTROL_GIT", "{{ fd_ops_control_git | default('') }}")
     OPS_CONTROL_REF = cenv.get("OPS_CONTROL_REF", "{{ fd_ops_control_ref }}")
     FILTER = cenv.get("FILTER", "{{ fd_service_name }}")
-    LIMIT = cenv.get("LIMIT", "macmini,localhost")
+    LIMIT = cenv.get("LIMIT", "{{ fd_context_defaults.LIMIT | default('localhost') }}")
     ANSIBLE_PLAYBOOK = cenv.get("ANSIBLE_PLAYBOOK", "{{ fd_ansible_playbook_bin }}")
     ANSIBLE_GALAXY = cenv.get("ANSIBLE_GALAXY", "{{ fd_ansible_galaxy_bin }}")
     SOPS_AGE_KEY_FILE = cenv.get("SOPS_AGE_KEY_FILE", "{{ fd_sops_age_key_path }}")

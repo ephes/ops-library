@@ -102,12 +102,12 @@
     that:
       - minio_traefik_host is defined
       - minio_traefik_host != ""
-      - minio_traefik_host != "minio.example.com"
+      - minio_traefik_host != "minio.home.example.com"
     fail_msg: |
       ERROR: Traefik exposure is enabled but host is not configured!
 
       When minio_expose_via_traefik is true, you must provide:
-      - minio_traefik_host: Your domain (e.g., "minio.home.wersdörfer.de")
+      - minio_traefik_host: Your domain (e.g., "minio.home.example.com")
 
       Please update your playbook with the correct domain.
   when: minio_expose_via_traefik | bool

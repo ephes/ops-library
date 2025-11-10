@@ -44,7 +44,7 @@ Set `homeassistant_backup_prefix` (e.g. `pre-deploy`, `auto`) to organise snapsh
 
 ```yaml
 - name: Snapshot Home Assistant before changes
-  hosts: macmini
+  hosts: homelab
   become: true
   roles:
     - role: local.ops_library.homeassistant_backup

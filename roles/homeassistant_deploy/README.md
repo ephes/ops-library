@@ -27,7 +27,7 @@ All tunables live in `defaults/main.yml`; the most important ones are listed bel
 | `homeassistant_manage_includes` | `false` | Manage include files defined in `homeassistant_include_files` |
 | `homeassistant_overwrite_config` | `false` | Force re-render of configs/includes even if files exist |
 | `homeassistant_unifi_password_source` | `file` | `file`, `generate`, or `variable` password discovery |
-| `homeassistant_traefik_domain` | `home.xn--wersdrfer-47a.de` | Punycode domain for router host |
+| `homeassistant_traefik_domain` | **(required)** | Domain for router host (e.g., `home.example.com`) |
 | `homeassistant_traefik_entrypoints` | `['web-secure']` | EntryPoints injected into the primary router |
 
 See the defaults file for recorder, logger, timezone, and UniFi integration settings.
@@ -35,7 +35,7 @@ See the defaults file for recorder, logger, timezone, and UniFi integration sett
 ## Example Usage
 
 ```yaml
-- hosts: macmini
+- hosts: homelab
   become: true
   roles:
     - role: local.ops_library.homeassistant_deploy
@@ -54,5 +54,5 @@ See the defaults file for recorder, logger, timezone, and UniFi integration sett
 ## Notes
 
 - The role intentionally defaults to non-destructive config management. Set `homeassistant_initial_deploy: true` or combine `homeassistant_manage_*` flags with `homeassistant_overwrite_config: true` for the first automation run, then relax them for day‑2 updates.
-- Traefik output must match the legacy file byte-for-byte before production cutover. Keep the middleware list/ordering in sync with reality on `macmini`.
+- Traefik output must match the legacy file byte-for-byte before production cutover. Keep the middleware list/ordering in sync with your production Traefik configuration.
 - The role expects `uv` to be preinstalled (handled elsewhere in ops-library). It will fail fast if the binary is missing.

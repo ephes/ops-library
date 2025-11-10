@@ -29,7 +29,7 @@ Refer to `roles/paperless_remove/defaults/main.yml` for the complete list of tog
 ## Example
 
 ```yaml
-- hosts: macmini
+- hosts: homelab
   become: true
   vars:
     paperless_remove_confirm: true

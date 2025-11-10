@@ -47,7 +47,7 @@ Examples:
   $0 apt_upgrade my-inventory.yml
 
   # Test remote host
-  ANSIBLE_HOST=macmini.local ANSIBLE_USER=root $0 apt_upgrade
+  ANSIBLE_HOST=your-server.local ANSIBLE_USER=deploy $0 apt_upgrade
 
 EOF
     exit 0
@@ -190,7 +190,7 @@ echo -e "${GREEN}✅ Testing complete!${NC}"
 echo "==================================="
 echo ""
 echo "To test against a real host:"
-echo "  ANSIBLE_HOST=macmini.local $0 apt_upgrade"
+echo "  ANSIBLE_HOST=your-server.local $0 apt_upgrade"
 echo ""
 echo "To run actual deployment (be careful!):"
 echo "  ansible-playbook -i $INVENTORY playbooks/deploy.yml"

@@ -86,7 +86,7 @@ To preserve data, explicitly override the removal flags:
 ```yaml
 ---
 - name: Remove Homelab Service (complete)
-  hosts: macmini
+  hosts: homelab
   become: true
   roles:
     - role: local.ops_library.homelab_remove
@@ -101,7 +101,7 @@ To preserve data, explicitly override the removal flags:
 ```yaml
 ---
 - name: Remove Homelab Service (preserve data)
-  hosts: macmini
+  hosts: homelab
   become: true
   roles:
     - role: local.ops_library.homelab_remove
@@ -119,7 +119,7 @@ To preserve data, explicitly override the removal flags:
 ```yaml
 ---
 - name: Remove Homelab Service (partial)
-  hosts: macmini
+  hosts: homelab
   become: true
   roles:
     - role: local.ops_library.homelab_remove
@@ -205,15 +205,15 @@ cd ops-control
 just deploy-one homelab
 
 # Verify deployment
-ssh macmini "systemctl status homelab"
+ssh your-server "systemctl status homelab"
 
 # Remove with defaults (complete removal)
 just remove-one homelab
 
 # Verify everything removed
-ssh macmini "systemctl status homelab"  # Should fail
-ssh macmini "id homelab"                # Should fail
-ssh macmini "ls /home/homelab"          # Should fail
+ssh your-server "systemctl status homelab"  # Should fail
+ssh your-server "id homelab"                # Should fail
+ssh your-server "ls /home/homelab"          # Should fail
 ```
 
 ### Test Data Preservation
@@ -234,9 +234,9 @@ Then:
 just remove-one homelab
 
 # Verify partial removal
-ssh macmini "systemctl status homelab"  # Should fail (service removed)
-ssh macmini "id homelab"                # Should succeed (user preserved)
-ssh macmini "ls /home/homelab/site/db.sqlite3"  # Should succeed (DB preserved)
+ssh your-server "systemctl status homelab"  # Should fail (service removed)
+ssh your-server "id homelab"                # Should succeed (user preserved)
+ssh your-server "ls /home/homelab/site/db.sqlite3"  # Should succeed (DB preserved)
 
 # Re-deploy (should use existing data)
 just deploy-one homelab

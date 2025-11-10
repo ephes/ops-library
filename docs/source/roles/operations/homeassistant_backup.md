@@ -20,7 +20,7 @@ Creates on-host and off-host snapshots of Home Assistant configuration, data, lo
 Usage example:
 
 ```yaml
-- hosts: macmini
+- hosts: homelab
   become: true
   roles:
     - role: local.ops_library.homeassistant_backup

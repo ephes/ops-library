@@ -43,7 +43,7 @@ traefik_dashboard_port: 8090  # Moved from default 8080 to avoid UniFi conflict
 # NOTE: Dashboard port is NOT opened in firewall by default (internal use only)
 # To expose dashboard, either:
 #   1. Set traefik_dashboard_firewall_open: true (security risk!)
-#   2. Use SSH tunnel: ssh -L 8090:localhost:8090 macmini
+#   2. Use SSH tunnel: ssh -L 8090:localhost:8090 your-server
 #   3. Configure Traefik dynamic config to expose via HTTPS with auth
 traefik_dashboard_firewall_open: false
 

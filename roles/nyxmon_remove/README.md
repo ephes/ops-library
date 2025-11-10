@@ -15,7 +15,7 @@ See `defaults/main.yml` for options:
 
 ## Example
 ```yaml
-- hosts: macmini
+- hosts: homelab
   become: true
   roles:
     - role: local.ops_library.nyxmon_remove

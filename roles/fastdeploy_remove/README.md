@@ -16,7 +16,7 @@ Key toggles are documented in `defaults/main.yml`, for example:
 
 ## Example
 ```yaml
-- hosts: macmini
+- hosts: homelab
   become: true
   roles:
     - role: local.ops_library.fastdeploy_remove

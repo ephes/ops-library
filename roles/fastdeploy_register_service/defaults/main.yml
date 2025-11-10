@@ -27,7 +27,7 @@ fd_sops_age_key_contents: ""  # Must be provided via vars
 
 # Ops-control deployment method
 fd_ops_control_method: "rsync"  # or "git"
-fd_ops_control_local_path: "/Users/jochen/projects/ops-control"  # Your local ops-control
+fd_ops_control_local_path: ""  # REQUIRED for rsync method - path to your ops-control repository
 fd_ops_control_remote_path: "{{ fd_deploy_home }}/ops-control"  # Where to deploy it
 
 # Git configuration (only if using git method)
@@ -49,7 +49,7 @@ fd_context_defaults:
   OPS_CONTROL_GIT: "{{ fd_ops_control_git }}"
   OPS_CONTROL_REF: "{{ fd_ops_control_ref }}"
   FILTER: "{{ fd_service_name }}"
-  LIMIT: "macmini,localhost"
+  LIMIT: "localhost"
   ANSIBLE_PLAYBOOK: "{{ fd_ansible_playbook_bin }}"
   ANSIBLE_GALAXY: "{{ fd_ansible_galaxy_bin }}"
   SOPS_AGE_KEY_FILE: "{{ fd_sops_age_key_path }}"
