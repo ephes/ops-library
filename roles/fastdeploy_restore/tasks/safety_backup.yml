@@ -1,0 +1,32 @@
+---
+- name: "Build safety backup variables"
+  ansible.builtin.set_fact:
+    fastdeploy_restore_effective_safety_vars: >-
+      {{
+        {
+          'fastdeploy_backup_prefix': fastdeploy_restore_safety_backup_prefix,
+          'fastdeploy_backup_postgres_user': fastdeploy_restore_postgres_become_user,
+          'fastdeploy_backup_postgres_password': '',
+          'fastdeploy_backup_metadata_extra': {'safety_backup': True},
+          'fastdeploy_backup_fetch_local': False,
+          'fastdeploy_backup_include_workspace': fastdeploy_restore_snapshot_includes_workspace,
+          'fastdeploy_backup_include_logs': False
+        }
+        | combine(fastdeploy_restore_safety_backup_vars | default({}), recursive=True)
+      }}
+
+- name: "Capture safety snapshot before restore"
+  ansible.builtin.include_role:
+    name: local.ops_library.fastdeploy_backup
+  vars:
+    fastdeploy_backup_prefix: "{{ fastdeploy_restore_effective_safety_vars.fastdeploy_backup_prefix }}"
+    fastdeploy_backup_postgres_user: "{{ fastdeploy_restore_effective_safety_vars.fastdeploy_backup_postgres_user }}"
+    fastdeploy_backup_postgres_password: "{{ fastdeploy_restore_effective_safety_vars.fastdeploy_backup_postgres_password }}"
+    fastdeploy_backup_metadata_extra: "{{ fastdeploy_restore_effective_safety_vars.fastdeploy_backup_metadata_extra }}"
+    fastdeploy_backup_fetch_local: "{{ fastdeploy_restore_effective_safety_vars.fastdeploy_backup_fetch_local }}"
+    fastdeploy_backup_include_workspace: "{{ fastdeploy_restore_effective_safety_vars.fastdeploy_backup_include_workspace }}"
+    fastdeploy_backup_include_logs: "{{ fastdeploy_restore_effective_safety_vars.fastdeploy_backup_include_logs }}"
+
+- name: "Record safety snapshot directory"
+  ansible.builtin.set_fact:
+    fastdeploy_restore_safety_snapshot_dir: "{{ fastdeploy_backup_dir | default('') }}"

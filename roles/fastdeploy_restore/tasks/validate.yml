@@ -1,0 +1,201 @@
+---
+- name: "Resolve restore artifact when using 'latest'"
+  when: fastdeploy_restore_archive == 'latest'
+  block:
+    - name: "Discover available FastDeploy archives"
+      ansible.builtin.find:
+        paths: "{{ fastdeploy_restore_archive_search_root }}"
+        patterns:
+          - "*.tar.gz"
+          - "*.tar.zst"
+        recurse: false
+        file_type: file
+      register: fastdeploy_restore_available_archives
+
+    - name: "Filter safety backup archives from latest selection"
+      ansible.builtin.set_fact:
+        fastdeploy_restore_non_safety_archives: >-
+          {{
+            fastdeploy_restore_available_archives.files
+            | rejectattr('path', 'search', '/' ~ fastdeploy_restore_safety_backup_prefix ~ '-')
+            | list
+          }}
+
+    - name: "Fail when no archives are available"
+      ansible.builtin.fail:
+        msg: "No FastDeploy archives found under {{ fastdeploy_restore_archive_search_root }}"
+      when: fastdeploy_restore_available_archives.files | length == 0
+
+    - name: "Determine archive candidates for latest selection"
+      ansible.builtin.set_fact:
+        fastdeploy_restore_candidate_archives: >-
+          {{
+            ((fastdeploy_restore_non_safety_archives | default([])) | length > 0)
+            | ternary(fastdeploy_restore_non_safety_archives, fastdeploy_restore_available_archives.files)
+          }}
+
+    - name: "Select newest archive"
+      ansible.builtin.set_fact:
+        fastdeploy_restore_resolved_artifact_path: "{{ (fastdeploy_restore_candidate_archives | sort(attribute='mtime', reverse=true))[0].path }}"
+
+- name: "Resolve restore artifact when explicit path provided"
+  when: fastdeploy_restore_archive != 'latest'
+  block:
+    - name: "Build candidate paths"
+      ansible.builtin.set_fact:
+        fastdeploy_restore_candidate_paths: >-
+          {{
+            [
+              fastdeploy_restore_archive,
+              fastdeploy_restore_archive_search_root ~ '/' ~ fastdeploy_restore_archive,
+              fastdeploy_restore_archive_search_root ~ '/' ~ fastdeploy_restore_archive ~ '.tar.gz',
+              fastdeploy_restore_archive_search_root ~ '/' ~ fastdeploy_restore_archive ~ '.tar.zst'
+            ] | unique
+          }}
+
+    - name: "Probe candidate paths"
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ fastdeploy_restore_candidate_paths }}"
+      register: fastdeploy_restore_candidate_stats
+
+    - name: "Pick first existing candidate"
+      ansible.builtin.set_fact:
+        fastdeploy_restore_resolved_artifact_path: "{{ (fastdeploy_restore_candidate_stats.results | selectattr('stat.exists') | map(attribute='stat.path') | list)[0] }}"
+      when: (fastdeploy_restore_candidate_stats.results | selectattr('stat.exists') | list) | length > 0
+
+    - name: "Fail when no matching artifact was found"
+      ansible.builtin.fail:
+        msg: >-
+          Unable to locate restore artifact "{{ fastdeploy_restore_archive }}".
+          Checked: {{ fastdeploy_restore_candidate_paths | join(', ') }}
+      when: fastdeploy_restore_resolved_artifact_path | length == 0
+
+- name: "Determine if artifact is archive"
+  ansible.builtin.set_fact:
+    fastdeploy_restore_resolved_is_archive: "{{ fastdeploy_restore_resolved_artifact_path | regex_search('\\.tar\\.(gz|zst)$') is not none }}"
+
+- name: "Ensure restore temp root exists"
+  ansible.builtin.file:
+    path: "{{ fastdeploy_restore_temp_dir }}"
+    state: directory
+    owner: "{{ fastdeploy_restore_postgres_become_user }}"
+    group: "{{ fastdeploy_restore_postgres_become_user }}"
+    mode: "0750"
+
+- name: "Ensure staging directory exists when extracting"
+  ansible.builtin.file:
+    path: "{{ fastdeploy_restore_stage_dir }}"
+    state: directory
+    owner: "{{ fastdeploy_restore_postgres_become_user }}"
+    group: "{{ fastdeploy_restore_postgres_become_user }}"
+    mode: "0750"
+  when: fastdeploy_restore_resolved_is_archive
+
+- name: "Extract archive into staging dir"
+  ansible.builtin.command:
+    cmd: >
+      tar -C "{{ fastdeploy_restore_stage_dir }}"
+      -xf "{{ fastdeploy_restore_resolved_artifact_path }}"
+  when: fastdeploy_restore_resolved_is_archive
+
+- name: "Set snapshot directory path"
+  ansible.builtin.set_fact:
+    fastdeploy_restore_snapshot_dir: >-
+      {{
+        fastdeploy_restore_resolved_is_archive
+        | ternary(
+            fastdeploy_restore_stage_dir ~ '/' ~ (fastdeploy_restore_resolved_artifact_path | basename | regex_replace('\\.tar\\.(gz|zst)$', '')),
+            fastdeploy_restore_resolved_artifact_path
+        )
+      }}
+    fastdeploy_restore_extracted_archive: "{{ fastdeploy_restore_resolved_is_archive }}"
+
+- name: "Locate metadata file when archive extracted"
+  ansible.builtin.find:
+    paths: "{{ fastdeploy_restore_stage_dir }}"
+    patterns: "metadata.yml"
+    recurse: true
+    file_type: file
+  register: fastdeploy_restore_metadata_candidates
+  when: fastdeploy_restore_resolved_is_archive
+
+- name: "Set snapshot dir from metadata location"
+  ansible.builtin.set_fact:
+    fastdeploy_restore_snapshot_dir: "{{ (fastdeploy_restore_metadata_candidates.files[0].path | dirname) }}"
+  when:
+    - fastdeploy_restore_resolved_is_archive
+    - fastdeploy_restore_metadata_candidates.matched | default(0) > 0
+
+- name: "Verify snapshot directory exists"
+  ansible.builtin.stat:
+    path: "{{ fastdeploy_restore_snapshot_dir }}"
+  register: fastdeploy_restore_snapshot_stat
+
+- name: "Fail if snapshot directory is missing"
+  ansible.builtin.fail:
+    msg: "Snapshot directory {{ fastdeploy_restore_snapshot_dir }} does not exist."
+  when:
+    - not fastdeploy_restore_snapshot_stat.stat.exists | default(false)
+    - not fastdeploy_restore_snapshot_stat.stat.isdir | default(false)
+
+- name: "Ensure metadata file exists"
+  ansible.builtin.stat:
+    path: "{{ fastdeploy_restore_snapshot_dir }}/metadata.yml"
+  register: fastdeploy_restore_metadata_stat
+
+- name: "Fail if metadata file is missing"
+  ansible.builtin.fail:
+    msg: "metadata.yml not found in snapshot {{ fastdeploy_restore_snapshot_dir }}"
+  when: not fastdeploy_restore_metadata_stat.stat.exists
+
+- name: "Load snapshot metadata"
+  ansible.builtin.slurp:
+    src: "{{ fastdeploy_restore_snapshot_dir }}/metadata.yml"
+  register: fastdeploy_restore_metadata_file
+
+- name: "Set metadata facts"
+  ansible.builtin.set_fact:
+    fastdeploy_restore_metadata: "{{ fastdeploy_restore_metadata_file.content | b64decode | from_yaml }}"
+    fastdeploy_restore_snapshot_includes_database: "{{ (fastdeploy_restore_metadata.components.database | default(true)) | bool }}"
+    fastdeploy_restore_snapshot_includes_workspace: "{{ (fastdeploy_restore_metadata.components.deploy_workspace | default(false)) | bool }}"
+    fastdeploy_restore_snapshot_services_expected: "{{ fastdeploy_restore_metadata.services.count | default(0) }}"
+
+- name: "Stat manifest file"
+  ansible.builtin.stat:
+    path: "{{ fastdeploy_restore_snapshot_dir }}/manifest.sha256"
+  register: fastdeploy_restore_manifest_stat
+
+- name: "Validate checksums"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cd "{{ fastdeploy_restore_snapshot_dir }}"
+    sha256sum --check manifest.sha256
+  args:
+    executable: /bin/bash
+  when:
+    - fastdeploy_restore_validate_checksums
+    - fastdeploy_restore_manifest_stat.stat.exists
+
+- name: "Fail when checksum validation requested but manifest missing"
+  ansible.builtin.fail:
+    msg: "Checksum validation enabled, but manifest.sha256 is missing in {{ fastdeploy_restore_snapshot_dir }}"
+  when:
+    - fastdeploy_restore_validate_checksums
+    - not fastdeploy_restore_manifest_stat.stat.exists
+
+- name: "Ensure deploy user SOPS key exists (required for real restore)"
+  ansible.builtin.stat:
+    path: "{{ fastdeploy_restore_sops_key_path }}"
+  register: fastdeploy_restore_sops_key_stat
+  when:
+    - fastdeploy_restore_require_sops_key
+    - not fastdeploy_restore_dry_run
+
+- name: "Fail when SOPS key is missing"
+  ansible.builtin.fail:
+    msg: "SOPS key {{ fastdeploy_restore_sops_key_path }} is missing. Restore cannot continue."
+  when:
+    - fastdeploy_restore_require_sops_key
+    - not fastdeploy_restore_dry_run
+    - not fastdeploy_restore_sops_key_stat.stat.exists

@@ -1,0 +1,100 @@
+---
+# FastDeploy backup role defaults
+
+# Metadata
+fastdeploy_backup_prefix: "manual"
+
+# Host + user paths
+fastdeploy_backup_user: "fastdeploy"
+fastdeploy_backup_group: "fastdeploy"
+fastdeploy_backup_site_path: "/home/{{ fastdeploy_backup_user }}/site"
+fastdeploy_backup_env_file: "{{ fastdeploy_backup_site_path }}/.env"
+fastdeploy_backup_services_path: "{{ fastdeploy_backup_site_path }}/services"
+fastdeploy_backup_manage_python: "{{ fastdeploy_backup_site_path }}/.venv/bin/python"
+
+# Deploy user (runs FastDeploy jobs)
+fastdeploy_backup_deploy_user: "deploy"
+fastdeploy_backup_deploy_group: "deploy"
+fastdeploy_backup_deploy_home: "/home/{{ fastdeploy_backup_deploy_user }}"
+fastdeploy_backup_runner_root: "{{ fastdeploy_backup_deploy_home }}/runners"
+fastdeploy_backup_workspace_path: "{{ fastdeploy_backup_deploy_home }}/_workspace"
+fastdeploy_backup_sops_key_path: "{{ fastdeploy_backup_deploy_home }}/.config/sops/age/keys.txt"
+fastdeploy_backup_include_workspace: false
+fastdeploy_backup_require_runner_root: false
+
+# Backup destination
+fastdeploy_backup_root: "/opt/backups/fastdeploy"
+fastdeploy_backup_root_owner: "root"
+fastdeploy_backup_root_group: "{{ fastdeploy_backup_postgres_become_user }}"
+fastdeploy_backup_root_mode: "0750"
+fastdeploy_backup_dir_mode: "0750"
+fastdeploy_backup_dir_owner: "root"
+fastdeploy_backup_dir_group: "{{ fastdeploy_backup_postgres_become_user }}"
+fastdeploy_backup_database_dir_owner: "{{ fastdeploy_backup_postgres_become_user }}"
+fastdeploy_backup_database_dir_group: "{{ fastdeploy_backup_postgres_become_user }}"
+
+# Subdirectories created inside each snapshot
+fastdeploy_backup_subdirs:
+  - database
+  - services
+  - config
+  - deploy_runners
+  - deploy_workspace
+  - systemd
+  - traefik
+  - sudoers
+  - logs
+
+# PostgreSQL configuration
+fastdeploy_backup_postgres_database: "fastdeploy"
+fastdeploy_backup_postgres_user: "{{ fastdeploy_backup_postgres_become_user }}"
+fastdeploy_backup_postgres_password: ""
+fastdeploy_backup_postgres_host: ""
+fastdeploy_backup_postgres_port: 5432
+fastdeploy_backup_postgres_become_user: "postgres"
+fastdeploy_backup_postgres_dump_binary: "pg_dump"
+fastdeploy_backup_postgres_dump_options: "--clean --if-exists --no-owner"
+
+# System integration files
+fastdeploy_backup_systemd_units:
+  - "/etc/systemd/system/fastdeploy.service"
+fastdeploy_backup_traefik_config_path: "/etc/traefik/dynamic/fastdeploy.yml"
+fastdeploy_backup_sudoers_glob: "/etc/sudoers.d/fastdeploy_*"
+
+# Archive + fetch options
+fastdeploy_backup_create_archive: true
+fastdeploy_backup_archive_format: "tar.gz"  # or tar.zst
+fastdeploy_backup_fetch_local: false
+fastdeploy_backup_fetch_method: "synchronize"  # synchronize|fetch
+fastdeploy_backup_local_dir: "{{ lookup('env', 'HOME') | default('~', true) }}/backups/fastdeploy"
+fastdeploy_backup_local_dir_mode: "0700"
+
+# Disk usage + reporting
+fastdeploy_backup_disk_check_enabled: true
+fastdeploy_backup_disk_overhead_ratio: 1.5
+fastdeploy_backup_report_size: true
+fastdeploy_backup_generate_checksums: true
+fastdeploy_backup_debug: false
+
+# Logs (journald export)
+fastdeploy_backup_include_logs: false
+fastdeploy_backup_logs_output: "logs/fastdeploy.journal"
+
+# Additional metadata hook
+fastdeploy_backup_metadata_extra: {}
+
+# File permissions
+fastdeploy_backup_file_mode: "0640"
+
+# Components toggles for metadata
+fastdeploy_backup_component_flags:
+  database: true
+  services_tree: true
+  deploy_runners: true
+  deploy_workspace: "{{ fastdeploy_backup_include_workspace | bool }}"
+
+# Rsync options
+fastdeploy_backup_rsync_binary: "rsync"
+fastdeploy_backup_rsync_delete: true
+fastdeploy_backup_runner_rsync_excludes:
+  - ".config/sops/age/keys.txt"

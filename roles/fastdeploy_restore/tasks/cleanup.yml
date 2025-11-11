@@ -1,0 +1,14 @@
+---
+- name: "Remove extracted snapshot directory"
+  ansible.builtin.file:
+    path: "{{ fastdeploy_restore_stage_dir }}"
+    state: absent
+  when:
+    - fastdeploy_restore_extracted_archive | bool
+    - fastdeploy_restore_stage_dir is defined
+
+- name: "Summarize restore status"
+  ansible.builtin.debug:
+    msg: >-
+      FastDeploy restore {{ fastdeploy_restore_operation_successful | ternary('completed successfully', 'failed') }}.
+      Rollback executed: {{ fastdeploy_restore_rollback_executed | bool }}

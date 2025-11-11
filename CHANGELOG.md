@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Removed manual venv activation requirements
 - `homeassistant_deploy`, `homeassistant_backup`, and `homeassistant_remove` roles to cover the full lifecycle alongside the existing restore workflow
 - `homeassistant_restore` role to validate archives, create safety snapshots, restore files, and roll back on failure
+- FastDeploy backup & restore workflow:
+  - `fastdeploy_backup` role with metadata-rich snapshots, disk-space validation, and archive support
+  - `fastdeploy_restore` role with safety snapshots, permission fixes, health-check retries, and rollback automation
 - Paperless-ngx suite: `paperless_deploy`, `paperless_backup`, `paperless_restore`, `paperless_postgres`, and `paperless_remove` roles for deployment, disaster recovery, and safe removal
 - `redis_install` role to provision standalone Redis instances with optional authentication, persistence, and memory tuning
 - `postgres_install` role to install PostgreSQL with manageable config, databases, users, and extensions

@@ -1,0 +1,50 @@
+---
+# FastDeploy restore role defaults
+
+fastdeploy_restore_archive: "latest"
+fastdeploy_restore_archive_search_root: "/opt/backups/fastdeploy"
+fastdeploy_restore_temp_dir: "/tmp/fastdeploy-restore"
+fastdeploy_restore_validate_checksums: true
+fastdeploy_restore_dry_run: false
+
+# Safety backup
+fastdeploy_restore_create_safety_backup: true
+fastdeploy_restore_safety_backup_prefix: "pre-restore"
+fastdeploy_restore_safety_backup_vars: {}
+
+# Paths on target host
+fastdeploy_restore_user: "fastdeploy"
+fastdeploy_restore_group: "fastdeploy"
+fastdeploy_restore_site_path: "/home/{{ fastdeploy_restore_user }}/site"
+fastdeploy_restore_services_path: "{{ fastdeploy_restore_site_path }}/services"
+fastdeploy_restore_env_file: "{{ fastdeploy_restore_site_path }}/.env"
+fastdeploy_restore_deploy_user: "deploy"
+fastdeploy_restore_deploy_group: "deploy"
+fastdeploy_restore_deploy_runner_root: "/home/{{ fastdeploy_restore_deploy_user }}/runners"
+fastdeploy_restore_deploy_workspace: "/home/{{ fastdeploy_restore_deploy_user }}/_workspace"
+fastdeploy_restore_sops_key_path: "/home/{{ fastdeploy_restore_deploy_user }}/.config/sops/age/keys.txt"
+fastdeploy_restore_require_sops_key: false
+fastdeploy_restore_traefik_config_path: "/etc/traefik/dynamic/fastdeploy.yml"
+fastdeploy_restore_sudoers_glob: "/etc/sudoers.d/fastdeploy_*"
+
+# PostgreSQL
+fastdeploy_restore_postgres_database: "fastdeploy"
+fastdeploy_restore_postgres_user: "fastdeploy"
+fastdeploy_restore_postgres_password: ""
+fastdeploy_restore_postgres_host: "localhost"
+fastdeploy_restore_postgres_port: 5432
+fastdeploy_restore_postgres_become_user: "postgres"
+
+# Services to restart/check
+fastdeploy_restore_systemd_service: "fastdeploy"
+
+# Verification
+fastdeploy_restore_http_check_enabled: true
+fastdeploy_restore_health_url: "http://127.0.0.1:9999/docs"
+fastdeploy_restore_http_check_retries: 5
+fastdeploy_restore_http_check_delay: 2
+fastdeploy_restore_service_count_check: true
+fastdeploy_restore_psql_binary: "psql"
+
+# Rollback
+fastdeploy_restore_allow_rollback: true

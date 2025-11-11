@@ -1,0 +1,65 @@
+---
+- name: "Check FastDeploy systemd status"
+  ansible.builtin.command:
+    cmd: "systemctl is-active {{ fastdeploy_restore_systemd_service }}"
+  register: fastdeploy_restore_systemd_status
+  changed_when: false
+  failed_when: fastdeploy_restore_systemd_status.stdout.strip() != "active"
+
+- name: "HTTP health check"
+  ansible.builtin.uri:
+    url: "{{ fastdeploy_restore_health_url }}"
+    status_code: 200
+    validate_certs: false
+  register: fastdeploy_restore_http_check
+  retries: "{{ fastdeploy_restore_http_check_retries }}"
+  delay: "{{ fastdeploy_restore_http_check_delay }}"
+  until: fastdeploy_restore_http_check.status == 200
+  when: fastdeploy_restore_http_check_enabled
+
+- name: "Query FastDeploy services table"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    svc_table="$(
+      {{ fastdeploy_restore_psql_binary }} -tA "{{ fastdeploy_restore_postgres_database }}" \
+        -c "SELECT CASE
+                WHEN to_regclass('public.services_service') IS NOT NULL THEN 'services_service'
+                WHEN to_regclass('public.service') IS NOT NULL THEN 'service'
+                ELSE ''
+              END;"
+    )"
+    svc_table="$(echo "$svc_table" | tr -d '[:space:]')"
+    if [[ -z "$svc_table" ]]; then
+      echo 0
+    else
+      {{ fastdeploy_restore_psql_binary }} -tA "{{ fastdeploy_restore_postgres_database }}" \
+        -c "SELECT COUNT(*) FROM ${svc_table};"
+    fi
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ fastdeploy_restore_postgres_become_user }}"
+  register: fastdeploy_restore_service_count_query
+  changed_when: false
+
+- name: "Set actual service count"
+  ansible.builtin.set_fact:
+    fastdeploy_restore_actual_service_count: "{{ fastdeploy_restore_service_count_query.stdout | default('0') | trim | int }}"
+
+- name: "Gather restored services directory count"
+  ansible.builtin.find:
+    paths: "{{ fastdeploy_restore_services_path }}"
+    file_type: directory
+    recurse: false
+  register: fastdeploy_restore_services_dir_find
+
+- name: "Validate restored service count against metadata"
+  ansible.builtin.assert:
+    that:
+      - fastdeploy_restore_actual_service_count | int == fastdeploy_restore_snapshot_services_expected | int
+    fail_msg: >-
+      Restored FastDeploy database reports {{ fastdeploy_restore_actual_service_count }} services,
+      but metadata expected {{ fastdeploy_restore_snapshot_services_expected }}.
+  when:
+    - fastdeploy_restore_service_count_check
+    - fastdeploy_restore_snapshot_services_expected | int > 0

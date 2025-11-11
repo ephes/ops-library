@@ -1,0 +1,409 @@
+---
+- name: "Validate required paths"
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  register: fastdeploy_backup_path_stats
+  failed_when: not item.optional and not fastdeploy_backup_path_stats.stat.exists
+  loop:
+    - { path: "{{ fastdeploy_backup_site_path }}", optional: false, description: "FastDeploy site root" }
+    - { path: "{{ fastdeploy_backup_env_file }}", optional: false, description: "FastDeploy .env file" }
+    - { path: "{{ fastdeploy_backup_services_path }}", optional: false, description: "FastDeploy services directory" }
+    - { path: "{{ fastdeploy_backup_runner_root }}", optional: "{{ not fastdeploy_backup_require_runner_root }}", description: "Deploy runner root" }
+    - { path: "{{ fastdeploy_backup_workspace_path }}", optional: "{{ not fastdeploy_backup_include_workspace }}", description: "Deploy workspace directory" }
+  loop_control:
+    label: "{{ item.description }}"
+
+- name: "Build path existence map"
+  ansible.builtin.set_fact:
+    fastdeploy_backup_path_exists: "{{ fastdeploy_backup_path_exists | default({}) | combine({ item.item.path: item.stat.exists }) }}"
+  loop: "{{ fastdeploy_backup_path_stats.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: "Warn when deploy runner root is missing"
+  ansible.builtin.debug:
+    msg: >-
+      Deploy runner root {{ fastdeploy_backup_runner_root }} is missing. Continuing backup but runner scripts will not be included.
+  when:
+    - not fastdeploy_backup_require_runner_root
+    - not fastdeploy_backup_path_exists.get(fastdeploy_backup_runner_root, False)
+
+- name: "Initialize disk usage paths"
+  ansible.builtin.set_fact:
+    fastdeploy_backup_disk_usage_paths: []
+
+- name: "Collect disk usage paths"
+  ansible.builtin.set_fact:
+    fastdeploy_backup_disk_usage_paths: "{{ fastdeploy_backup_disk_usage_paths + [item] }}"
+  loop:
+    - "{{ fastdeploy_backup_services_path }}"
+    - "{{ fastdeploy_backup_runner_root }}"
+    - "{{ fastdeploy_backup_workspace_path if fastdeploy_backup_include_workspace else '' }}"
+  when:
+    - item | length > 0
+    - fastdeploy_backup_path_exists.get(item, False)
+
+- name: "Capture backup timestamp"
+  ansible.builtin.set_fact:
+    fastdeploy_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+- name: "Compute backup directories"
+  ansible.builtin.set_fact:
+    fastdeploy_backup_dir: "{{ fastdeploy_backup_root }}/{{ fastdeploy_backup_prefix }}-{{ fastdeploy_backup_timestamp }}"
+
+- name: "Ensure backup root directory exists"
+  ansible.builtin.file:
+    path: "{{ fastdeploy_backup_root }}"
+    state: directory
+    owner: "{{ fastdeploy_backup_root_owner }}"
+    group: "{{ fastdeploy_backup_root_group }}"
+    mode: "{{ fastdeploy_backup_root_mode }}"
+
+- name: "Ensure backup directory exists"
+  ansible.builtin.file:
+    path: "{{ fastdeploy_backup_dir }}"
+    state: directory
+    owner: "{{ fastdeploy_backup_dir_owner }}"
+    group: "{{ fastdeploy_backup_dir_group }}"
+    mode: "{{ fastdeploy_backup_dir_mode }}"
+
+- name: "Ensure backup subdirectories exist"
+  ansible.builtin.file:
+    path: "{{ fastdeploy_backup_dir }}/{{ item }}"
+    state: directory
+    owner: "{{ fastdeploy_backup_database_dir_owner if item == 'database' else fastdeploy_backup_dir_owner }}"
+    group: "{{ fastdeploy_backup_database_dir_group if item == 'database' else fastdeploy_backup_dir_group }}"
+    mode: "{{ fastdeploy_backup_dir_mode }}"
+  loop: "{{ fastdeploy_backup_subdirs }}"
+
+- name: "Check available disk space under backup root"
+  ansible.builtin.shell: |
+    df -B1 --output=avail "{{ fastdeploy_backup_root }}" | tail -1
+  register: fastdeploy_backup_disk_available
+  changed_when: false
+  when: fastdeploy_backup_disk_check_enabled
+
+- name: "Estimate required disk space for snapshot"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    du -sb {{ fastdeploy_backup_disk_usage_paths | map('quote') | join(' ') }} | awk '{sum+=$1} END {print sum}'
+  register: fastdeploy_backup_disk_required
+  changed_when: false
+  when:
+    - fastdeploy_backup_disk_check_enabled
+    - fastdeploy_backup_disk_usage_paths | length > 0
+
+- name: "Normalize disk space facts"
+  ansible.builtin.set_fact:
+    fastdeploy_backup_disk_available_bytes: "{{ fastdeploy_backup_disk_available.stdout | default('0') | trim | int }}"
+    fastdeploy_backup_disk_required_bytes: "{{ (fastdeploy_backup_disk_required.stdout if fastdeploy_backup_disk_required is defined else '0') | trim | int }}"
+  when: fastdeploy_backup_disk_check_enabled
+
+- name: "Compute disk requirement with overhead"
+  ansible.builtin.set_fact:
+    fastdeploy_backup_disk_required_with_overhead: "{{ ((fastdeploy_backup_disk_required_bytes | float) * fastdeploy_backup_disk_overhead_ratio) | round(0, 'ceil') | int }}"
+  when: fastdeploy_backup_disk_check_enabled
+
+- name: "Fail when disk space is insufficient"
+  ansible.builtin.fail:
+    msg: >-
+      Insufficient disk space under {{ fastdeploy_backup_root }} (available={{ fastdeploy_backup_disk_available_bytes }} bytes,
+      required~={{ fastdeploy_backup_disk_required_with_overhead }} bytes including overhead).
+  when:
+    - fastdeploy_backup_disk_check_enabled
+    - fastdeploy_backup_disk_usage_paths | length > 0
+    - (fastdeploy_backup_disk_available_bytes | int) < (fastdeploy_backup_disk_required_with_overhead | int)
+
+- name: "Detect FastDeploy version"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    {{ fastdeploy_backup_manage_python }} - <<'PY'
+    import importlib.metadata as im
+    try:
+        print(im.version("fastDeploy"))
+    except Exception:
+        print("unknown")
+    PY
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ fastdeploy_backup_user }}"
+  register: fastdeploy_backup_version_cmd
+  changed_when: false
+  failed_when: false
+
+- name: "Set FastDeploy version fact"
+  ansible.builtin.set_fact:
+    fastdeploy_backup_version: "{{ fastdeploy_backup_version_cmd.stdout | default('unknown') | trim }}"
+
+- name: "Gather service listing"
+  ansible.builtin.find:
+    paths: "{{ fastdeploy_backup_services_path }}"
+    file_type: directory
+    recurse: false
+  register: fastdeploy_backup_services_find
+
+- name: "Gather runner listing"
+  ansible.builtin.find:
+    paths: "{{ fastdeploy_backup_runner_root }}"
+    file_type: directory
+    recurse: false
+  register: fastdeploy_backup_runners_find
+  when: fastdeploy_backup_path_exists.get(fastdeploy_backup_runner_root, False)
+
+- name: "Set empty runner listing when path missing"
+  ansible.builtin.set_fact:
+    fastdeploy_backup_runners_find:
+      matched: 0
+      files: []
+  when: not fastdeploy_backup_path_exists.get(fastdeploy_backup_runner_root, False)
+
+- name: "Build pg_dump connection flags"
+  ansible.builtin.set_fact:
+    fastdeploy_backup_pg_dump_host_flag: "{{ (fastdeploy_backup_postgres_host | default('') | string | length > 0) | ternary('--host=' ~ fastdeploy_backup_postgres_host, '') }}"
+    fastdeploy_backup_pg_dump_port_flag: "{{ (fastdeploy_backup_postgres_port | default('') | string | length > 0) | ternary('--port=' ~ fastdeploy_backup_postgres_port, '') }}"
+
+- name: "Dump PostgreSQL database"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    {{ fastdeploy_backup_postgres_dump_binary }} \
+      {{ fastdeploy_backup_pg_dump_host_flag }} \
+      {{ fastdeploy_backup_pg_dump_port_flag }} \
+      --username={{ fastdeploy_backup_postgres_user }} \
+      {{ fastdeploy_backup_postgres_dump_options }} \
+      {{ fastdeploy_backup_postgres_database }} > "{{ fastdeploy_backup_dir }}/database/{{ fastdeploy_backup_postgres_database }}.sql"
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ fastdeploy_backup_postgres_become_user }}"
+  environment:
+    PGPASSWORD: "{{ fastdeploy_backup_postgres_password }}"
+  no_log: "{{ (fastdeploy_backup_postgres_password | default('') | length > 0) and not fastdeploy_backup_debug }}"
+
+- name: "Build runner exclude args"
+  ansible.builtin.set_fact:
+    fastdeploy_backup_runner_exclude_args: "{{ fastdeploy_backup_runner_rsync_excludes | default([]) | map('regex_replace', '^', '--exclude=') | list | join(' ') }}"
+
+- name: "Rsync FastDeploy data"
+  ansible.builtin.command:
+    cmd: >
+      {{ fastdeploy_backup_rsync_binary }}
+      -a{{ ' --delete' if fastdeploy_backup_rsync_delete else '' }}
+      {{ item.extra_args | default('') }}
+      "{{ item.src }}/"
+      "{{ item.dest }}/"
+  loop:
+    - { src: "{{ fastdeploy_backup_services_path }}", dest: "{{ fastdeploy_backup_dir }}/services", include: true, extra_args: "" }
+    - { src: "{{ fastdeploy_backup_runner_root }}", dest: "{{ fastdeploy_backup_dir }}/deploy_runners", include: true, extra_args: "{{ fastdeploy_backup_runner_exclude_args }}" }
+    - { src: "{{ fastdeploy_backup_workspace_path }}", dest: "{{ fastdeploy_backup_dir }}/deploy_workspace", include: "{{ fastdeploy_backup_include_workspace }}", extra_args: "" }
+  loop_control:
+    label: "{{ item.src }}"
+  when:
+    - item.include | bool
+    - fastdeploy_backup_path_exists.get(item.src, False)
+  register: fastdeploy_backup_rsync_result
+  changed_when: true
+
+- name: "Copy FastDeploy environment file"
+  ansible.builtin.copy:
+    src: "{{ fastdeploy_backup_env_file }}"
+    dest: "{{ fastdeploy_backup_dir }}/config/fastdeploy.env"
+    owner: "{{ fastdeploy_backup_dir_owner }}"
+    group: "{{ fastdeploy_backup_dir_group }}"
+    mode: "{{ fastdeploy_backup_file_mode }}"
+    remote_src: true
+
+- name: "Gather systemd unit stats"
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: fastdeploy_backup_systemd_stat
+  loop: "{{ fastdeploy_backup_systemd_units }}"
+
+- name: "Copy systemd units"
+  ansible.builtin.copy:
+    src: "{{ item.item }}"
+    dest: "{{ fastdeploy_backup_dir }}/systemd/{{ item.item | basename }}"
+    owner: "{{ fastdeploy_backup_dir_owner }}"
+    group: "{{ fastdeploy_backup_dir_group }}"
+    mode: "{{ fastdeploy_backup_file_mode }}"
+    remote_src: true
+  loop: "{{ fastdeploy_backup_systemd_stat.results }}"
+  when: item.stat.exists
+
+- name: "Stat Traefik configuration"
+  ansible.builtin.stat:
+    path: "{{ fastdeploy_backup_traefik_config_path }}"
+  register: fastdeploy_backup_traefik_stat
+  when: fastdeploy_backup_traefik_config_path | length > 0
+
+- name: "Copy Traefik configuration"
+  ansible.builtin.copy:
+    src: "{{ fastdeploy_backup_traefik_config_path }}"
+    dest: "{{ fastdeploy_backup_dir }}/traefik/{{ fastdeploy_backup_traefik_config_path | basename }}"
+    owner: "{{ fastdeploy_backup_dir_owner }}"
+    group: "{{ fastdeploy_backup_dir_group }}"
+    mode: "{{ fastdeploy_backup_file_mode }}"
+    remote_src: true
+  when:
+    - fastdeploy_backup_traefik_config_path | length > 0
+    - fastdeploy_backup_traefik_stat.stat.exists
+
+- name: "Find sudoers files"
+  ansible.builtin.find:
+    paths: "{{ fastdeploy_backup_sudoers_glob | dirname }}"
+    patterns: "{{ fastdeploy_backup_sudoers_glob | basename }}"
+    file_type: file
+  register: fastdeploy_backup_sudoers_find
+
+- name: "Copy sudoers files"
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: "{{ fastdeploy_backup_dir }}/sudoers/{{ item.path | basename }}"
+    owner: "{{ fastdeploy_backup_dir_owner }}"
+    group: "{{ fastdeploy_backup_dir_group }}"
+    mode: "0440"
+    remote_src: true
+  loop: "{{ fastdeploy_backup_sudoers_find.files }}"
+
+- name: "Export FastDeploy journald logs"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    journalctl -u fastdeploy -o export > "{{ fastdeploy_backup_dir }}/{{ fastdeploy_backup_logs_output }}"
+  args:
+    executable: /bin/bash
+  when: fastdeploy_backup_include_logs
+
+- name: "Write metadata"
+  ansible.builtin.copy:
+    dest: "{{ fastdeploy_backup_dir }}/metadata.yml"
+    owner: "{{ fastdeploy_backup_dir_owner }}"
+    group: "{{ fastdeploy_backup_dir_group }}"
+    mode: "{{ fastdeploy_backup_file_mode }}"
+    content: |
+      timestamp: "{{ fastdeploy_backup_timestamp }}"
+      host: "{{ inventory_hostname }}"
+      backup_dir: "{{ fastdeploy_backup_dir }}"
+      fastdeploy_version: "{{ fastdeploy_backup_version }}"
+      components:
+        database: true
+        services_tree: true
+        deploy_runners: true
+        deploy_workspace: {{ fastdeploy_backup_include_workspace | bool }}
+        sops_key_included: false
+      postgres:
+        database: "{{ fastdeploy_backup_postgres_database }}"
+        host: "{{ fastdeploy_backup_postgres_host }}"
+        port: {{ fastdeploy_backup_postgres_port }}
+        options: {{ fastdeploy_backup_postgres_dump_options | to_json }}
+      services:
+        count: {{ fastdeploy_backup_services_find.matched | default(0) }}
+      deploy_runners:
+        count: {{ fastdeploy_backup_runners_find.matched | default(0) }}
+      archive:
+        create: {{ fastdeploy_backup_create_archive | bool }}
+        format: "{{ fastdeploy_backup_archive_format }}"
+      disk_overhead_ratio: {{ fastdeploy_backup_disk_overhead_ratio }}
+      extra: {{ fastdeploy_backup_metadata_extra | default({}) | to_json }}
+
+- name: "Generate checksum manifest"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cd "{{ fastdeploy_backup_dir }}"
+    find . -type f ! -name manifest.sha256 -print0 | sort -z | xargs -0 sha256sum > manifest.sha256
+  args:
+    executable: /bin/bash
+  when: fastdeploy_backup_generate_checksums
+
+- name: "Compute archive path"
+  ansible.builtin.set_fact:
+    fastdeploy_backup_archive_path: "{{ fastdeploy_backup_dir }}.{{ fastdeploy_backup_archive_format }}"
+  when: fastdeploy_backup_create_archive
+
+- name: "Create tar.gz archive"
+  ansible.builtin.command:
+    cmd: >
+      tar -C "{{ fastdeploy_backup_root }}"
+      -czf "{{ fastdeploy_backup_archive_path | basename }}"
+      "{{ fastdeploy_backup_dir | basename }}"
+  args:
+    chdir: "{{ fastdeploy_backup_root }}"
+  when:
+    - fastdeploy_backup_create_archive
+    - fastdeploy_backup_archive_format == 'tar.gz'
+
+- name: "Create tar.zst archive"
+  ansible.builtin.command:
+    cmd: >
+      tar -C "{{ fastdeploy_backup_root }}"
+      --zstd -cf "{{ fastdeploy_backup_archive_path | basename }}"
+      "{{ fastdeploy_backup_dir | basename }}"
+  args:
+    chdir: "{{ fastdeploy_backup_root }}"
+  when:
+    - fastdeploy_backup_create_archive
+    - fastdeploy_backup_archive_format == 'tar.zst'
+
+- name: "Ensure archive is readable for fetch"
+  ansible.builtin.file:
+    path: "{{ fastdeploy_backup_archive_path }}"
+    mode: "0644"
+  when:
+    - fastdeploy_backup_create_archive
+    - fastdeploy_backup_fetch_local | bool
+
+- name: "Ensure local archive directory exists"
+  ansible.builtin.file:
+    path: "{{ fastdeploy_backup_local_dir }}"
+    state: directory
+    mode: "{{ fastdeploy_backup_local_dir_mode }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - fastdeploy_backup_create_archive
+    - fastdeploy_backup_fetch_local | bool
+
+- name: "Fetch archive via synchronize"
+  ansible.posix.synchronize:
+    mode: pull
+    src: "{{ fastdeploy_backup_archive_path }}"
+    dest: "{{ fastdeploy_backup_local_dir }}/"
+    archive: false
+    rsync_opts:
+      - "--chmod=ugo=rw"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - fastdeploy_backup_create_archive
+    - fastdeploy_backup_fetch_local | bool
+    - fastdeploy_backup_fetch_method == 'synchronize'
+
+- name: "Fetch archive via fetch module"
+  ansible.builtin.fetch:
+    src: "{{ fastdeploy_backup_archive_path }}"
+    dest: "{{ fastdeploy_backup_local_dir }}/"
+    flat: true
+  run_once: true
+  when:
+    - fastdeploy_backup_create_archive
+    - fastdeploy_backup_fetch_local | bool
+    - fastdeploy_backup_fetch_method == 'fetch'
+
+- name: "Set backup artifact path"
+  ansible.builtin.set_fact:
+    fastdeploy_backup_artifact_path: "{{ fastdeploy_backup_archive_path if fastdeploy_backup_create_archive else fastdeploy_backup_dir }}"
+
+- name: "Gather backup size"
+  ansible.builtin.command:
+    cmd: "du -sh {{ fastdeploy_backup_artifact_path | quote }}"
+  register: fastdeploy_backup_size_cmd
+  changed_when: false
+  when: fastdeploy_backup_report_size
+
+- name: "Report backup completion"
+  ansible.builtin.debug:
+    msg: |
+      Backup complete: {{ fastdeploy_backup_artifact_path }}
+      Size: {{ fastdeploy_backup_size_cmd.stdout | default('unknown') }}
+  when: fastdeploy_backup_report_size

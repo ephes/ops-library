@@ -1,0 +1,32 @@
+---
+- name: "Initialize FastDeploy restore context"
+  ansible.builtin.set_fact:
+    fastdeploy_restore_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+    fastdeploy_restore_stage_dir: "{{ fastdeploy_restore_temp_dir }}/fastdeploy-restore-{{ ansible_date_time.iso8601_basic_short }}"
+    fastdeploy_restore_operation_successful: false
+    fastdeploy_restore_snapshot_dir: ""
+    fastdeploy_restore_extracted_archive: false
+    fastdeploy_restore_resolved_artifact_path: ""
+    fastdeploy_restore_safety_snapshot_dir: ""
+    fastdeploy_restore_rollback_executed: false
+
+- block:
+    - ansible.builtin.include_tasks: validate.yml
+
+    - ansible.builtin.include_tasks: safety_backup.yml
+      when:
+        - not fastdeploy_restore_dry_run
+        - fastdeploy_restore_create_safety_backup
+
+    - ansible.builtin.include_tasks: restore.yml
+      when: not fastdeploy_restore_dry_run
+
+    - ansible.builtin.include_tasks: verify.yml
+      when: not fastdeploy_restore_dry_run
+
+    - ansible.builtin.set_fact:
+        fastdeploy_restore_operation_successful: true
+  rescue:
+    - ansible.builtin.include_tasks: rollback.yml
+  always:
+    - ansible.builtin.include_tasks: cleanup.yml

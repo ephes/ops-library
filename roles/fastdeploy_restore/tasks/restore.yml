@@ -1,0 +1,200 @@
+---
+- name: "Stop FastDeploy service"
+  ansible.builtin.systemd:
+    name: "{{ fastdeploy_restore_systemd_service }}"
+    state: stopped
+  failed_when: false
+
+- name: "Drop FastDeploy database"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    dropdb --if-exists "{{ fastdeploy_restore_postgres_database }}"
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ fastdeploy_restore_postgres_become_user }}"
+
+- name: "Recreate FastDeploy database"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    createdb --owner="{{ fastdeploy_restore_postgres_user }}" "{{ fastdeploy_restore_postgres_database }}"
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ fastdeploy_restore_postgres_become_user }}"
+
+- name: "Ensure snapshot root readable by Postgres"
+  ansible.builtin.file:
+    path: "{{ fastdeploy_restore_snapshot_dir }}"
+    state: directory
+    owner: "{{ fastdeploy_restore_postgres_become_user }}"
+    group: "{{ fastdeploy_restore_postgres_become_user }}"
+    mode: "0750"
+  become: true
+  when: fastdeploy_restore_snapshot_includes_database
+
+- name: "Ensure snapshot database directory readable by Postgres"
+  ansible.builtin.file:
+    path: "{{ fastdeploy_restore_snapshot_dir }}/database"
+    state: directory
+    owner: "{{ fastdeploy_restore_postgres_become_user }}"
+    group: "{{ fastdeploy_restore_postgres_become_user }}"
+    mode: "0750"
+  become: true
+  when: fastdeploy_restore_snapshot_includes_database
+
+- name: "Ensure PostgreSQL dump is readable by database user"
+  ansible.builtin.file:
+    path: "{{ fastdeploy_restore_snapshot_dir }}/database/{{ fastdeploy_restore_postgres_database }}.sql"
+    owner: "{{ fastdeploy_restore_postgres_become_user }}"
+    group: "{{ fastdeploy_restore_postgres_become_user }}"
+    mode: "0640"
+  become: true
+  when: fastdeploy_restore_snapshot_includes_database
+
+- name: "Restore PostgreSQL dump"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    {
+      printf 'SET ROLE %s;\n' "{{ fastdeploy_restore_postgres_user }}"
+      cat "{{ fastdeploy_restore_snapshot_dir }}/database/{{ fastdeploy_restore_postgres_database }}.sql"
+    } | {{ fastdeploy_restore_psql_binary }} "{{ fastdeploy_restore_postgres_database }}"
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ fastdeploy_restore_postgres_become_user }}"
+  environment:
+    PGPASSWORD: "{{ fastdeploy_restore_postgres_password }}"
+
+- name: "Prepare directory sync plan"
+  ansible.builtin.set_fact:
+    fastdeploy_restore_sync_items:
+      - name: "services"
+        src: "{{ fastdeploy_restore_snapshot_dir }}/services"
+        dest: "{{ fastdeploy_restore_services_path }}"
+        owner: "{{ fastdeploy_restore_user }}"
+        group: "{{ fastdeploy_restore_group }}"
+        include: true
+      - name: "deploy_runners"
+        src: "{{ fastdeploy_restore_snapshot_dir }}/deploy_runners"
+        dest: "{{ fastdeploy_restore_deploy_runner_root }}"
+        owner: "{{ fastdeploy_restore_deploy_user }}"
+        group: "{{ fastdeploy_restore_deploy_group }}"
+        include: true
+      - name: "deploy_workspace"
+        src: "{{ fastdeploy_restore_snapshot_dir }}/deploy_workspace"
+        dest: "{{ fastdeploy_restore_deploy_workspace }}"
+        owner: "{{ fastdeploy_restore_deploy_user }}"
+        group: "{{ fastdeploy_restore_deploy_group }}"
+        include: "{{ fastdeploy_restore_snapshot_includes_workspace }}"
+
+- name: "Ensure destination directories exist"
+  ansible.builtin.file:
+    path: "{{ item.dest }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "0755"
+  loop: "{{ fastdeploy_restore_sync_items }}"
+  when: item.include | bool
+
+- name: "Gather snapshot directory stats"
+  ansible.builtin.stat:
+    path: "{{ item.src }}"
+  loop: "{{ fastdeploy_restore_sync_items }}"
+  register: fastdeploy_restore_sync_stats
+
+- name: "Rsync snapshot directories"
+  ansible.builtin.command:
+    cmd: >
+      rsync -a --delete "{{ item.item.src }}/" "{{ item.item.dest }}/"
+  loop: "{{ fastdeploy_restore_sync_stats.results }}"
+  when:
+    - item.item.include | bool
+    - item.stat.exists
+
+- name: "Fix ownership on restored directories"
+  ansible.builtin.file:
+    path: "{{ item.dest }}"
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    recurse: true
+  loop: "{{ fastdeploy_restore_sync_items }}"
+  when: item.include | bool
+
+- name: "Restore FastDeploy environment file"
+  ansible.builtin.copy:
+    src: "{{ fastdeploy_restore_snapshot_dir }}/config/fastdeploy.env"
+    dest: "{{ fastdeploy_restore_env_file }}"
+    owner: "{{ fastdeploy_restore_user }}"
+    group: "{{ fastdeploy_restore_group }}"
+    mode: "0640"
+    remote_src: true
+
+- name: "Restore systemd unit files"
+  ansible.builtin.find:
+    paths: "{{ fastdeploy_restore_snapshot_dir }}/systemd"
+    file_type: file
+    recurse: false
+  register: fastdeploy_restore_systemd_files
+  failed_when: false
+  changed_when: false
+
+- name: "Copy systemd unit files"
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: "/etc/systemd/system/{{ item.path | basename }}"
+    owner: "root"
+    group: "root"
+    mode: "0644"
+    remote_src: true
+  loop: "{{ fastdeploy_restore_systemd_files.files }}"
+  when: fastdeploy_restore_systemd_files.matched | default(0) | int > 0
+
+- name: "Stat snapshot Traefik config"
+  ansible.builtin.stat:
+    path: "{{ fastdeploy_restore_snapshot_dir }}/traefik/{{ fastdeploy_restore_traefik_config_path | basename }}"
+  register: fastdeploy_restore_traefik_stat
+  when: fastdeploy_restore_traefik_config_path | length > 0
+
+- name: "Restore Traefik config"
+  ansible.builtin.copy:
+    src: "{{ fastdeploy_restore_snapshot_dir }}/traefik/{{ fastdeploy_restore_traefik_config_path | basename }}"
+    dest: "{{ fastdeploy_restore_traefik_config_path }}"
+    owner: "root"
+    group: "root"
+    mode: "0644"
+    remote_src: true
+  when:
+    - fastdeploy_restore_traefik_config_path | length > 0
+    - fastdeploy_restore_traefik_stat.stat.exists
+
+- name: "Restore sudoers files"
+  ansible.builtin.find:
+    paths: "{{ fastdeploy_restore_snapshot_dir }}/sudoers"
+    file_type: file
+    recurse: false
+  register: fastdeploy_restore_sudoers_files
+  failed_when: false
+  changed_when: false
+
+- name: "Copy sudoers files"
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: "/etc/sudoers.d/{{ item.path | basename }}"
+    owner: "root"
+    group: "root"
+    mode: "0440"
+    remote_src: true
+  loop: "{{ fastdeploy_restore_sudoers_files.files }}"
+  when: fastdeploy_restore_sudoers_files.matched | default(0) | int > 0
+
+- name: "Reload systemd daemon"
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: "Start FastDeploy service"
+  ansible.builtin.systemd:
+    name: "{{ fastdeploy_restore_systemd_service }}"
+    state: started
+    enabled: true

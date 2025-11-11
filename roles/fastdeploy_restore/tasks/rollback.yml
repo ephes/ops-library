@@ -1,0 +1,49 @@
+---
+- name: "Evaluate rollback prerequisites"
+  ansible.builtin.set_fact:
+    fastdeploy_restore_can_rollback: "{{ (fastdeploy_restore_create_safety_backup | bool) and (fastdeploy_restore_safety_snapshot_dir | default('')) | length > 0 and (not fastdeploy_restore_dry_run) }}"
+
+- block:
+    - name: "Log rollback attempt"
+      ansible.builtin.debug:
+        msg: "Restore failed. Attempting rollback using safety snapshot at {{ fastdeploy_restore_safety_snapshot_dir }}"
+
+    - name: "Store original snapshot directory"
+      ansible.builtin.set_fact:
+        fastdeploy_restore_primary_snapshot_dir: "{{ fastdeploy_restore_snapshot_dir }}"
+
+    - name: "Switch to safety snapshot directory"
+      ansible.builtin.set_fact:
+        fastdeploy_restore_snapshot_dir: "{{ fastdeploy_restore_safety_snapshot_dir }}"
+
+    - name: "Load safety snapshot metadata"
+      ansible.builtin.slurp:
+        src: "{{ fastdeploy_restore_snapshot_dir }}/metadata.yml"
+      register: fastdeploy_restore_safety_metadata
+
+    - name: "Update metadata-derived facts for rollback"
+      ansible.builtin.set_fact:
+        fastdeploy_restore_safety_metadata_decoded: "{{ fastdeploy_restore_safety_metadata.content | b64decode | from_yaml }}"
+        fastdeploy_restore_snapshot_services_expected: "{{ fastdeploy_restore_safety_metadata_decoded.services.count | default(0) }}"
+        fastdeploy_restore_snapshot_includes_database: "{{ (fastdeploy_restore_safety_metadata_decoded.components.database | default(true)) | bool }}"
+        fastdeploy_restore_snapshot_includes_workspace: "{{ (fastdeploy_restore_safety_metadata_decoded.components.deploy_workspace | default(false)) | bool }}"
+
+    - ansible.builtin.include_tasks: restore.yml
+    - ansible.builtin.include_tasks: verify.yml
+
+    - name: "Mark rollback executed"
+      ansible.builtin.set_fact:
+        fastdeploy_restore_rollback_executed: true
+        fastdeploy_restore_operation_successful: false
+  when: fastdeploy_restore_can_rollback
+
+- name: "Restore primary snapshot fact for cleanup"
+  ansible.builtin.set_fact:
+    fastdeploy_restore_snapshot_dir: "{{ fastdeploy_restore_primary_snapshot_dir | default(fastdeploy_restore_snapshot_dir) }}"
+  when: fastdeploy_restore_can_rollback
+
+- name: "Fail restore process"
+  ansible.builtin.fail:
+    msg: >-
+      FastDeploy restore failed{{ fastdeploy_restore_can_rollback | ternary(' (rollback attempted)', '') }}.
+      Check prior log output for details.
