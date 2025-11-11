@@ -27,10 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Faster dependency resolution and installation
   - Simplified justfile commands using `uv run`
   - Removed manual venv activation requirements
+- `homeassistant_deploy`, `homeassistant_backup`, and `homeassistant_remove` roles to cover the full lifecycle alongside the existing restore workflow
 - `homeassistant_restore` role to validate archives, create safety snapshots, restore files, and roll back on failure
+- Paperless-ngx suite: `paperless_deploy`, `paperless_backup`, `paperless_restore`, `paperless_postgres`, and `paperless_remove` roles for deployment, disaster recovery, and safe removal
 - `redis_install` role to provision standalone Redis instances with optional authentication, persistence, and memory tuning
 - `postgres_install` role to install PostgreSQL with manageable config, databases, users, and extensions
-- `paperless_remove` role to destructively remove Paperless-ngx (services, configs, optional data/DB cleanup)
+- `minio_deploy` role to provision MinIO with dual-router Traefik exposure, security hardening, and optional client bootstrapping
+- `minio_remove` role to destructively remove MinIO with confirmation, optional data preservation, and Traefik cleanup
+- Dynamic DNS support in `dns_deploy`, adding an opt-in LiveDNS updater with dedicated service accounts, timers, and IPv4/IPv6 support
 
 ### Changed
 - Updated README.md with prominent link to ReadTheDocs
@@ -38,6 +42,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Modernized Python tooling: uv replaces traditional pip/venv workflow
 - Removed `docs-setup` command (auto-handled by uv)
 - `fastdeploy_deploy` now depends on `postgres_install` for database provisioning (removing the legacy inline PostgreSQL tasks)
+- `uv_install` detects alternate uv installations, relinks to newer binaries automatically, and enables `uv_update_existing` by default to keep hosts current
+- `fastdeploy_deploy` implements Traefik's dual-router pattern with IP-based allow lists, bcrypt-hashed basic auth, security headers, and compression middleware
+- Paperless roles now support Python 3.14 and include an optional ocrmypdf patch to keep OCR workflows unblocked
+- `redis_install` enables config validation by default to catch syntax and runtime issues before service restarts
+- `nyxmon_deploy` and `homelab_deploy` switch from Granian to Gunicorn and gained configurable Python version management (defaulting to 3.13)
+- `nyxmon_deploy` now enforces the same dual-router authentication policy as other public services, including validation and hashed credentials
+- DNS deployment/removal flows hardened with improved resolver management, legacy `unbound_only` port detection, and safer variable validation
+
+### Fixed
+- Home Assistant presence automations now include the default file to prevent missing automation imports after deployment
+- `dns_remove` cleans up DDNS units reliably and no longer crashes on undefined variables during selective removal
 
 ## [2.0.0] - 2025-10-09
 
@@ -48,6 +63,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `homelab_deploy` role - Django/Granian deployment with dual router Traefik authentication
 - `homelab_remove` role - Safe removal with data preservation options
+- `traefik_deploy` role - Install and harden Traefik with Let's Encrypt automation, architecture auto-detection, and smoke tests
+- `traefik_remove` role - Safe Traefik uninstallation with confirmation gates and preservation toggles
+- `dns_deploy` and `dns_remove` roles - Manage Pi-hole/Unbound (later Unbound-only) DNS stacks with split-DNS views and clean removal
 - Dual router authentication pattern for Traefik (internal: no auth, external: basic auth)
 - Comprehensive Traefik security documentation
 - Broken venv detection and auto-removal in Python deployment tasks
@@ -64,6 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated role index to reflect removal
 - Added migration guidance for users of removed roles
 - Updated uv_install examples to use modern deployment pattern
+- `nyxmon_deploy` gained rsync support for additional source directories and smarter uv-based dependency management (pyproject validation, lock cleanup, mode-aware sync commands)
 
 ### Fixed
 - Template evaluation crashes in homelab_remove when home directory doesn't exist
