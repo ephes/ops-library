@@ -132,15 +132,6 @@ Documented expectations:
 
 ## Testing
 
-### Automated Molecule scenario
-
-```bash
-cd roles/postgres_install
-molecule test
-```
-
-The scenario provisions PostgreSQL 17 on Ubuntu 24.04, creates a `molecule` database/user, enables the `pg_trgm` extension, and reruns the role to assert idempotency. Verification checks the service status, schema ownership, and password authentication.
-
 ### Manual smoke test
 
 ```bash

@@ -97,15 +97,6 @@ The role leaves existing data untouched, so this workflow is safe for single-nod
 
 ## Testing
 
-### Automated Molecule scenario
-
-```bash
-cd roles/redis_install
-molecule test
-```
-
-This scenario boots both an Ubuntu 24.04 and Debian 12 container, applies the role once with authentication and once without, and reruns the play to ensure idempotency. The verification step pings Redis using `redis-cli` in both modes.
-
 ### Manual smoke test
 
 ```bash
