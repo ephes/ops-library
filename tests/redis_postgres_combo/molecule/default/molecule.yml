@@ -1,0 +1,42 @@
+---
+dependency:
+  name: galaxy
+
+driver:
+  name: docker
+
+lint: |
+  yamllint .
+
+platforms:
+  - name: combo-ubuntu
+    image: geerlingguy/docker-ubuntu2404-ansible:latest
+    pre_build_image: true
+    privileged: true
+    command: /sbin/init
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+    environment:
+      container: docker
+
+provisioner:
+  name: ansible
+  playbooks:
+    converge: converge.yml
+  inventory:
+    host_vars:
+      combo-ubuntu:
+        combo_redis_password: "ComboRedisPass!123"
+        combo_postgres_password: "ComboPostgresPass!123"
+        combo_postgres_db: combo
+  config_options:
+    defaults:
+      roles_path: ../../../../roles
+
+verifier:
+  name: ansible
+  playbooks:
+    - verify.yml
+
+scenario:
+  name: default

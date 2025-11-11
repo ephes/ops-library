@@ -80,6 +80,22 @@ services/<service_name>/
         └── verify.yml      # Verification tests
 ```
 
+### Role Scenario Quick Start
+
+```bash
+# Redis infrastructure role (password + passwordless coverage)
+cd roles/redis_install
+molecule test
+
+# PostgreSQL infrastructure role (database/user/privileges)
+cd roles/postgres_install
+molecule test
+
+# Combined smoke test that installs both roles on the same host
+cd tests/redis_postgres_combo
+molecule test
+```
+
 ### molecule.yml
 Defines:
 - Test platforms (Docker containers)

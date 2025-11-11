@@ -1,0 +1,60 @@
+---
+- name: Verify postgres_install role
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check PostgreSQL service status
+      ansible.builtin.systemd:
+        name: postgresql
+        state: started
+      register: postgres_service
+      changed_when: false
+
+    - name: Assert PostgreSQL is active
+      ansible.builtin.assert:
+        that:
+          - postgres_service.status.ActiveState == "active"
+        fail_msg: "postgresql service is not active"
+
+    - name: Run simple query as postgres user
+      ansible.builtin.command: psql -d molecule -c "SELECT 1;"
+      become_user: postgres
+      register: postgres_query
+      changed_when: false
+
+    - name: Assert query succeeded
+      ansible.builtin.assert:
+        that:
+          - postgres_query.rc == 0
+          - "'1' in postgres_query.stdout"
+        fail_msg: "Failed to query molecule database as postgres user"
+
+    - name: Verify schema ownership moved to database owner
+      ansible.builtin.command: >
+        psql -d molecule -c
+        "SELECT schema_owner FROM information_schema.schemata WHERE schema_name = 'public';"
+      become_user: postgres
+      register: schema_owner
+      changed_when: false
+
+    - name: Assert schema owner is molecule
+      ansible.builtin.assert:
+        that:
+          - "'molecule' in schema_owner.stdout"
+        fail_msg: "public schema owner was not updated to molecule"
+
+    - name: Verify application user can connect with password
+      ansible.builtin.shell: >
+        PGPASSWORD={{ hostvars[inventory_hostname].postgres_install_users[0].password }}
+        psql -h 127.0.0.1 -U molecule molecule -c "SELECT current_user;"
+      register: app_user_query
+      environment:
+        PGPASSWORD: "{{ hostvars[inventory_hostname].postgres_install_users[0].password }}"
+      changed_when: false
+
+    - name: Assert password auth output is correct
+      ansible.builtin.assert:
+        that:
+          - "'molecule' in app_user_query.stdout"
+        fail_msg: "Unable to connect as molecule user with password"

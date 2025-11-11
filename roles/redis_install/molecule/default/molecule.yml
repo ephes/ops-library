@@ -1,0 +1,50 @@
+---
+dependency:
+  name: galaxy
+
+driver:
+  name: docker
+
+lint: |
+  yamllint .
+
+platforms:
+  - name: redis-auth-ubuntu
+    image: geerlingguy/docker-ubuntu2404-ansible:latest
+    pre_build_image: true
+    privileged: true
+    command: /sbin/init
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+    environment:
+      container: docker
+  - name: redis-open-debian
+    image: geerlingguy/docker-debian12-ansible:latest
+    pre_build_image: true
+    privileged: true
+    command: /sbin/init
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+    environment:
+      container: docker
+
+provisioner:
+  name: ansible
+  playbooks:
+    converge: converge.yml
+  inventory:
+    host_vars:
+      redis-auth-ubuntu:
+        redis_install_requirepass_enabled: true
+        redis_install_password: "moleculePASS123!"
+      redis-open-debian:
+        redis_install_requirepass_enabled: false
+        redis_install_password: ""
+
+verifier:
+  name: ansible
+  playbooks:
+    - verify.yml
+
+scenario:
+  name: default

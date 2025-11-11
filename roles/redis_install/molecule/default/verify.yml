@@ -1,0 +1,36 @@
+---
+- name: Verify redis_install role
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Ensure redis-cli is present for verification
+      ansible.builtin.package:
+        name: redis-tools
+        state: present
+
+    - name: Ping Redis without authentication
+      ansible.builtin.command: redis-cli ping
+      register: redis_ping_noauth
+      changed_when: false
+      when: not hostvars[inventory_hostname].redis_install_requirepass_enabled
+
+    - name: Assert Redis responded without auth
+      ansible.builtin.assert:
+        that:
+          - "'PONG' in redis_ping_noauth.stdout"
+        fail_msg: "redis-cli ping failed on passwordless instance"
+      when: not hostvars[inventory_hostname].redis_install_requirepass_enabled
+
+    - name: Ping Redis with authentication
+      ansible.builtin.command: "redis-cli -a {{ hostvars[inventory_hostname].redis_install_password }} ping"
+      register: redis_ping_auth
+      changed_when: false
+      when: hostvars[inventory_hostname].redis_install_requirepass_enabled
+
+    - name: Assert Redis responded with auth
+      ansible.builtin.assert:
+        that:
+          - "'PONG' in redis_ping_auth.stdout"
+        fail_msg: "redis-cli ping failed on password-protected instance"
+      when: hostvars[inventory_hostname].redis_install_requirepass_enabled

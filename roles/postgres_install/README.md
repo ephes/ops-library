@@ -120,14 +120,32 @@ postgres_install_config_overrides:
 2. `systemctl status {{ postgres_install_service_name }}`
 3. `ss -lntp | grep {{ postgres_install_port }}` to confirm the port is listening
 
+## Security & Privileges
+
+- The role updates `pg_hba.conf` from `postgres_install_pg_hba_rules`. Be explicit about every access path (local, loopback, Tailscale, etc.) to avoid silently inheriting distro defaults.
+- When you define a database `owner`, the role automatically alters the `public` schema owner to match. This mirrors the upstream recommendation to prevent unprivileged accounts from creating objects in `public`.
+- Passwords passed via `postgres_install_users` are treated as plaintext (SCRAM hashed server-side) unless you set `encrypted: true`, which allows supplying pre-hashed strings for advanced setups.
+
+Documented expectations:
+1. After convergence, `public` belongs to the same owner as the database.
+2. Application users can authenticate over `localhost` using SCRAM (the default `postgres_install_pg_hba_rules` grant loopback access with `scram-sha-256`).
+
 ## Testing
 
-```bash
-# Syntax + structure checks
-./test_roles.py postgres_install
+### Automated Molecule scenario
 
-# Optional manual converge (localhost)
+```bash
+cd roles/postgres_install
+molecule test
+```
+
+The scenario provisions PostgreSQL 17 on Ubuntu 24.04, creates a `molecule` database/user, enables the `pg_trgm` extension, and reruns the role to assert idempotency. Verification checks the service status, schema ownership, and password authentication.
+
+### Manual smoke test
+
+```bash
 ansible-playbook -i localhost, tests/postgres.yml --connection=local
+psql -U postgres -c "SELECT version();"
 ```
 
 ## Troubleshooting

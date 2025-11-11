@@ -79,19 +79,37 @@ See `defaults/main.yml` for the full list. Key options:
 2. `redis-cli -a "$REDIS_PASSWORD" ping` when auth enabled
 3. `systemctl status {{ redis_install_service_name }}` to confirm the service is `active (running)`
 
+## Operational Notes
+
+### Lessons learned – Paperless outage
+
+Paperless briefly went offline in November 2025 because `PAPERLESS_REDIS` referenced a password while the host Redis instance still allowed unauthenticated connections. The `redis_install` role now validates this situation explicitly: when `redis_install_requirepass_enabled` is `true`, you **must** provide a non-empty password (ideally sourced from SOPS) and the role writes `requirepass` accordingly. The Paperless migration spec (`ops-control/specs/2025-11-08_paperless_ops_library_migration.md`) documents the incident for future reference.
+
+### Migrating an existing passwordless instance
+
+1. Capture a backup (`just backup-paperless ...` or your service-specific procedure).
+2. Populate `secrets/prod/redis.yml` (or similar) with the new password.
+3. Run the role: `just deploy-one redis macmini` (ops-control) or include `local.ops_library.redis_install` in your playbook with the new variables.
+4. Redeploy dependent services so their `.env` files pick up the updated `redis://:password@localhost:6379/0` URLs.
+5. Verify via `redis-cli -a "$password" ping` plus application health checks.
+
+The role leaves existing data untouched, so this workflow is safe for single-node upgrades.
+
 ## Testing
 
-```bash
-# Dry run
-ansible-playbook -i localhost, tests/redis.yml --connection=local --check --diff
+### Automated Molecule scenario
 
-# Real run
-ansible-playbook -i localhost, tests/redis.yml --connection=local
+```bash
+cd roles/redis_install
+molecule test
 ```
 
-After deployment:
+This scenario boots both an Ubuntu 24.04 and Debian 12 container, applies the role once with authentication and once without, and reruns the play to ensure idempotency. The verification step pings Redis using `redis-cli` in both modes.
+
+### Manual smoke test
 
 ```bash
+ansible-playbook -i localhost, tests/redis.yml --connection=local
 redis-cli ping
 systemctl status redis-server
 ss -lntp | grep 6379

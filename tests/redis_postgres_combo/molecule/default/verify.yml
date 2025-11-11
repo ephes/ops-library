@@ -1,0 +1,54 @@
+---
+- name: Verify Redis + PostgreSQL combo
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    combo_redis_password: "{{ hostvars[inventory_hostname].combo_redis_password }}"
+    combo_db_name: "{{ hostvars[inventory_hostname].combo_postgres_db }}"
+    combo_db_password: "{{ hostvars[inventory_hostname].combo_postgres_password }}"
+  tasks:
+    - name: Ensure redis-cli is installed
+      ansible.builtin.package:
+        name: redis-tools
+        state: present
+
+    - name: Verify Redis responds with password
+      ansible.builtin.command: "redis-cli -a {{ combo_redis_password }} ping"
+      register: combo_redis_ping
+      changed_when: false
+
+    - name: Assert Redis ping succeeded
+      ansible.builtin.assert:
+        that:
+          - "'PONG' in combo_redis_ping.stdout"
+        fail_msg: "Redis combo ping failed"
+
+    - name: Verify PostgreSQL service is running
+      ansible.builtin.systemd:
+        name: postgresql
+        state: started
+      register: combo_pg_service
+      changed_when: false
+
+    - name: Assert PostgreSQL active
+      ansible.builtin.assert:
+        that:
+          - combo_pg_service.status.ActiveState == "active"
+        fail_msg: "PostgreSQL combo service inactive"
+
+    - name: Verify application user can connect
+      ansible.builtin.shell: >
+        PGPASSWORD={{ combo_db_password }}
+        psql -h 127.0.0.1 -U combo {{ combo_db_name }} -c "SELECT current_database(), current_user;"
+      register: combo_pg_result
+      changed_when: false
+      environment:
+        PGPASSWORD: "{{ combo_db_password }}"
+
+    - name: Assert combo database query succeeded
+      ansible.builtin.assert:
+        that:
+          - combo_db_name in combo_pg_result.stdout
+          - "'combo' in combo_pg_result.stdout"
+        fail_msg: "Combo database verification failed"
