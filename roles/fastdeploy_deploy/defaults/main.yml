@@ -29,13 +29,27 @@ fastdeploy_app_port: 9999
 fastdeploy_app_host: "127.0.0.1"
 fastdeploy_environment: production
 
-# PostgreSQL settings
+# PostgreSQL settings (forwarded to postgres_install dependency)
+fastdeploy_postgres_version: "17"
 fastdeploy_postgres_database: fastdeploy
 fastdeploy_postgres_user: fastdeploy
 # REQUIRED - Must be provided, no default for security
 # fastdeploy_postgres_password: ""
 fastdeploy_postgres_host: localhost
 fastdeploy_postgres_port: 5432
+fastdeploy_postgres_become_user: postgres
+fastdeploy_postgres_packages:
+  - "postgresql-{{ fastdeploy_postgres_version }}"
+  - "postgresql-client-{{ fastdeploy_postgres_version }}"
+  - "postgresql-contrib-{{ fastdeploy_postgres_version }}"
+  - libpq-dev
+fastdeploy_postgres_repo_enabled: true
+fastdeploy_postgres_repo_url: https://apt.postgresql.org/pub/repos/apt
+fastdeploy_postgres_repo_codename: "{{ ansible_distribution_release | default('jammy') }}"
+fastdeploy_postgres_repo_components:
+  - main
+fastdeploy_postgres_repo_keyring: /etc/apt/keyrings/postgresql.asc
+fastdeploy_postgres_repo_key_url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
 
 # API and frontend URLs
 fastdeploy_api_url: "https://deploy.example.com"  # Override with real URL

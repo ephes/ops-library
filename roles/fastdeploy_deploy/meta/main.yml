@@ -1,0 +1,39 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Deploy FastDeploy platform with systemd and Traefik
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - fastdeploy
+    - django
+    - deployment
+    - web
+
+dependencies:
+  - role: local.ops_library.postgres_install
+    vars:
+      postgres_install_version: "{{ fastdeploy_postgres_version }}"
+      postgres_install_use_pgdg_repo: "{{ fastdeploy_postgres_repo_enabled }}"
+      postgres_install_repo_url: "{{ fastdeploy_postgres_repo_url }}"
+      postgres_install_repo_codename: "{{ fastdeploy_postgres_repo_codename }}"
+      postgres_install_repo_components: "{{ fastdeploy_postgres_repo_components }}"
+      postgres_install_repo_keyring: "{{ fastdeploy_postgres_repo_keyring }}"
+      postgres_install_repo_key_url: "{{ fastdeploy_postgres_repo_key_url }}"
+      postgres_install_packages: "{{ fastdeploy_postgres_packages }}"
+      postgres_install_admin_user: "{{ fastdeploy_postgres_become_user }}"
+      postgres_install_databases:
+        - name: "{{ fastdeploy_postgres_database }}"
+          owner: "{{ fastdeploy_postgres_user }}"
+      postgres_install_users:
+        - name: "{{ fastdeploy_postgres_user }}"
+          password: "{{ fastdeploy_postgres_password }}"

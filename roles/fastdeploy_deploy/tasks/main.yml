@@ -49,9 +49,6 @@
 - name: Setup user and directories
   include_tasks: user.yml
 
-- name: Setup PostgreSQL database
-  include_tasks: database.yml
-
 - name: Sync source code (rsync method)
   include_tasks: source_rsync.yml
   when: fastdeploy_deploy_method == 'rsync'

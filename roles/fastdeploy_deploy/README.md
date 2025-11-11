@@ -5,7 +5,7 @@ Deploy the FastDeploy web-based deployment platform with full database, frontend
 ## Description
 
 This role deploys FastDeploy, a web-based platform for managing service deployments. It handles the complete deployment lifecycle including:
-- PostgreSQL database setup and migrations
+- PostgreSQL provisioning via the shared `postgres_install` role and application migrations
 - Python environment management with uv
 - Frontend application building
 - Systemd service configuration
@@ -16,7 +16,7 @@ This role deploys FastDeploy, a web-based platform for managing service deployme
 ## Requirements
 
 - Ubuntu/Debian-based target system
-- PostgreSQL installed and running
+- Ability to install PostgreSQL (handled automatically via dependency)
 - Node.js 16+ (for frontend build)
 - Python 3.11+
 - ansible-core 2.15+
@@ -78,6 +78,28 @@ fastdeploy_sync_services: true
 
 For a complete list of variables, see `defaults/main.yml`.
 
+### PostgreSQL Provisioning
+
+The role automatically pulls in `local.ops_library.postgres_install` to install and configure PostgreSQL. Customize the forwarded settings via:
+
+```yaml
+fastdeploy_postgres_version: "17"
+fastdeploy_postgres_packages:
+  - "postgresql-{{ fastdeploy_postgres_version }}"
+  - "postgresql-client-{{ fastdeploy_postgres_version }}"
+  - "postgresql-contrib-{{ fastdeploy_postgres_version }}"
+  - libpq-dev
+fastdeploy_postgres_repo_enabled: true
+fastdeploy_postgres_repo_url: https://apt.postgresql.org/pub/repos/apt
+fastdeploy_postgres_repo_codename: "{{ ansible_distribution_release | default('jammy') }}"
+fastdeploy_postgres_repo_components:
+  - main
+fastdeploy_postgres_repo_keyring: /etc/apt/keyrings/postgresql.asc
+fastdeploy_postgres_repo_key_url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+```
+
+The dependency ensures the `fastdeploy_postgres_database` and `fastdeploy_postgres_user` are created before the application runs migrations.
+
 ### Traefik Dual Router Authentication
 
 The role implements a dual router pattern for security:
@@ -110,7 +132,7 @@ fastdeploy_internal_ip_ranges:  # Customize for your network
 
 ## Dependencies
 
-None.
+This role automatically depends on `local.ops_library.postgres_install` to install PostgreSQL and provision the FastDeploy database/user.
 
 ## Example Playbook
 
@@ -168,7 +190,6 @@ This role provides the following handlers:
 
 Available tags for selective execution:
 
-- `fastdeploy_database` - Database setup tasks
 - `fastdeploy_frontend` - Frontend build tasks
 - `fastdeploy_service` - Systemd service configuration
 - `fastdeploy_traefik` - Traefik reverse proxy configuration

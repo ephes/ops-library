@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated repository URLs to https://github.com/ephes/ops-library
 - Modernized Python tooling: uv replaces traditional pip/venv workflow
 - Removed `docs-setup` command (auto-handled by uv)
+- `fastdeploy_deploy` now depends on `postgres_install` for database provisioning (removing the legacy inline PostgreSQL tasks)
 
 ## [2.0.0] - 2025-10-09
 
