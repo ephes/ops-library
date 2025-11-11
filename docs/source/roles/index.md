@@ -18,58 +18,27 @@ testing/index
 
 ### Deployment Roles
 
-Deploy and configure services for your homelab infrastructure.
-
-- {doc}`deployment/fastdeploy_deploy` - FastDeploy web deployment platform
-- {doc}`deployment/nyxmon_deploy` - Nyxmon monitoring service
-- {doc}`deployment/traefik_deploy` - Traefik reverse proxy
-- {doc}`deployment/dns_deploy` - DNS service deployment
-- {doc}`deployment/homelab_deploy` - Homelab infrastructure
-- {doc}`deployment/fastdeploy_self_deploy` - FastDeploy self-deployment
-- {doc}`deployment/homeassistant_deploy` - Home Assistant Core deployment
-- {doc}`deployment/paperless_deploy` - Paperless-ngx document management
+Deploy and configure services for your homelab infrastructure. See the {doc}`deployment role index <deployment/index>` for all roles (FastDeploy, Nyxmon, Traefik, DNS, Homelab, Home Assistant, Paperless, etc.).
 
 ### Removal Roles
 
-Safely remove services and clean up resources.
-
-- {doc}`removal/fastdeploy_remove` - Remove FastDeploy
-- {doc}`removal/nyxmon_remove` - Remove Nyxmon
-- {doc}`removal/traefik_remove` - Remove Traefik
-- {doc}`removal/dns_remove` - Remove DNS service
-- {doc}`removal/homeassistant_remove` - Remove Home Assistant
-- {doc}`removal/paperless_remove` - Remove Paperless-ngx
+Safely remove services and clean up resources. Refer to the {doc}`removal role index <removal/index>` for FastDeploy, Nyxmon, Traefik, DNS, Home Assistant, Paperless, and friends.
 
 ### Operations Roles
 
-Disaster-recovery workflows for long-lived services.
-
-- {doc}`operations/homeassistant_backup` - Snapshot config/data/logs + manifests
-- {doc}`operations/homeassistant_restore` - Restore archives with validation
-- {doc}`operations/paperless_backup` - Paperless database/media/exporter backups
-- {doc}`operations/paperless_restore` - Paperless importer + pg_dump/media restore
+Disaster-recovery workflows for long-lived services. See the {doc}`operations role index <operations/index>` for Home Assistant and Paperless backup/restore tooling.
 
 ### Registration Roles
 
-Register services with FastDeploy for remote execution.
-
-- {doc}`registration/apt_upgrade_register` - Register apt upgrade tasks
-- {doc}`registration/fastdeploy_register_service` - Generic service registration
+Register services with FastDeploy for remote execution. Details live in the {doc}`registration role index <registration/index>`.
 
 ### Bootstrap Roles
 
-Install required tools and dependencies.
-
-- {doc}`bootstrap/ansible_install` - Install Ansible on controller
-- {doc}`bootstrap/uv_install` - Install uv for Python
-- {doc}`bootstrap/sops_dependencies` - Install age/SOPS
-- {doc}`bootstrap/postgres_install` - Install PostgreSQL with managed databases
+Install required tools and dependencies. Consult the {doc}`bootstrap role index <bootstrap/index>` for Ansible, uv, SOPS, PostgreSQL, Redis, etc.
 
 ### Testing Roles
 
-Development and testing utilities.
-
-- {doc}`testing/test_dummy` - Demonstration service for testing
+Development and testing utilities live in the {doc}`testing role index <testing/index>`.
 
 ## Removed in v2.0.0
 
