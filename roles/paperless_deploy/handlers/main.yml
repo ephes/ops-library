@@ -37,3 +37,8 @@
   ansible.builtin.debug:
     msg: "Traefik watches dynamic configs; no explicit reload required."
   when: paperless_traefik_enabled
+
+- name: reload apparmor gs
+  ansible.builtin.command:
+    cmd: apparmor_parser -r /etc/apparmor.d/gs
+  become: true

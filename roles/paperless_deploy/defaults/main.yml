@@ -20,11 +20,14 @@ paperless_release_url: "https://github.com/paperless-ngx/paperless-ngx/releases/
 paperless_release_archive: "{{ paperless_site_root }}/paperless-ngx-v{{ paperless_version }}.tar.xz"
 paperless_release_dir: "{{ paperless_site_root }}/paperless-ngx-v{{ paperless_version }}"
 paperless_manage_dir: "{{ paperless_current_symlink }}/src"
-paperless_python_version: "3.13"
+paperless_python_version: "3.14"
+paperless_python_major_minor: "{{ paperless_python_version | regex_search('^(\\d+\\.\\d+)') | default(paperless_python_version, true) }}"
 paperless_uv_install_dir: /usr/local/bin
 paperless_uv_binary: "{{ paperless_uv_install_dir }}/uv"
 paperless_create_venv_symlink: true
 paperless_venv_symlink_name: venv
+paperless_ocrmypdf_helpers_path: "{{ paperless_virtualenv }}/lib/python{{ paperless_python_major_minor }}/site-packages/ocrmypdf/helpers.py"
+paperless_patch_ocrmypdf_missing_check: true
 
 # External storage
 paperless_external_storage_root: /mnt/cryptdata/paperless

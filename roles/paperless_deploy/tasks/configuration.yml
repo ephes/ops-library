@@ -107,3 +107,17 @@
     remote_src: true
   become: true
   when: paperless_frontend_source | length > 0
+
+- name: Allow Ghostscript AppArmor profile to read Paperless storage
+  ansible.builtin.blockinfile:
+    path: /etc/apparmor.d/local/gs
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+    marker: "# {mark} ANSIBLE MANAGED PAPERLESS STORAGE"
+    block: |
+      # Permit Ghostscript (used by Paperless OCR) to read files on encrypted storage
+      owner {{ paperless_external_storage_root }}/** rwlk,
+  become: true
+  notify: reload apparmor gs

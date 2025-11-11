@@ -104,6 +104,17 @@
   become: true
   when: paperless_install_nltk_data
 
+- name: Work around missing pikepdf Pdf.check support in ocrmypdf
+  ansible.builtin.replace:
+    path: "{{ paperless_ocrmypdf_helpers_path }}"
+    regexp: "                warnings\\.filterwarnings\\('ignore', message=r'pikepdf\\.\\*JBIG2\\.\\*'\\)\\n                messages = pdf\\.check\\(\\)\\n"
+    replace: "                warnings.filterwarnings('ignore', message=r'pikepdf.*JBIG2.*')\n                check_fn = getattr(pdf, 'check', None)\n                if check_fn is None:\n                    log.warning('pikepdf %s lacks Pdf.check(); skipping validation step', pikepdf.__version__)\n                    return True\n                messages = check_fn()\n"
+  when: paperless_patch_ocrmypdf_missing_check | bool
+  become: true
+  notify:
+    - restart paperless-worker
+    - restart paperless-consumer
+
 - name: Download NLTK datasets
   ansible.builtin.command:
     cmd: >-
