@@ -1,0 +1,6 @@
+---
+- name: "prerequisites | Install packages"
+  ansible.builtin.apt:
+    name: "{{ unifi_base_packages }}"
+    state: present
+    update_cache: true

@@ -1,0 +1,38 @@
+---
+- name: Estimate UniFi data size (bytes)
+  ansible.builtin.command:
+    cmd: du -sb "{{ unifi_data_path }}"
+  register: unifi_backup_du
+  changed_when: false
+
+- name: Gather available disk space on backup root
+  ansible.builtin.command:
+    cmd: df --output=avail -B1 "{{ unifi_backup_root }}"
+  register: unifi_backup_df
+  changed_when: false
+
+- name: Compute disk space facts
+  ansible.builtin.set_fact:
+    unifi_backup_data_bytes: "{{ unifi_backup_du.stdout.split()[0] }}"
+    unifi_backup_available_bytes: "{{ unifi_backup_df.stdout_lines | last | trim }}"
+
+- name: Compute required disk space bytes
+  ansible.builtin.set_fact:
+    unifi_backup_required_bytes_float: >-
+      {{ (unifi_backup_data_bytes | int) * (unifi_backup_disk_overhead_ratio | float) }}
+
+- name: Finalize required disk space bytes (ceiling)
+  ansible.builtin.set_fact:
+    unifi_backup_required_bytes: >-
+      {{
+        (unifi_backup_required_bytes_float | float | int)
+        + (1 if (unifi_backup_required_bytes_float | float) > (unifi_backup_required_bytes_float | float | int) else 0)
+      }}
+
+- name: Validate disk space availability
+  ansible.builtin.assert:
+    that:
+      - (unifi_backup_available_bytes | int) >= (unifi_backup_required_bytes | int)
+    fail_msg: >-
+      Not enough space under {{ unifi_backup_root }}. Available={{ unifi_backup_available_bytes | int }} bytes,
+      required={{ unifi_backup_required_bytes | int }} bytes (data size {{ unifi_backup_data_bytes | int }} bytes with {{ unifi_backup_disk_overhead_ratio }}x overhead).

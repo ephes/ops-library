@@ -1,0 +1,23 @@
+---
+- name: "validate | Ensure Debian family"
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] == "Debian"
+    fail_msg: "The unifi_deploy role currently supports Debian/Ubuntu hosts only."
+
+- name: "validate | Ensure MongoDB password provided"
+  ansible.builtin.assert:
+    that:
+      - unifi_mongodb_password | string | length > 0
+    fail_msg: "Set unifi_mongodb_password to a non-empty value (store via SOPS or Ansible Vault)."
+    quiet: true
+
+- name: "validate | Ensure download URL defined"
+  ansible.builtin.assert:
+    that:
+      - unifi_deb_url | string | length > 0
+    fail_msg: "Set unifi_deb_url to point at a UniFi .deb artifact."
+
+- name: "validate | Cache derived facts"
+  ansible.builtin.set_fact:
+    unifi_mongodb_bind_ip_line: "{{ unifi_mongodb_bind_addresses | join(',') }}"

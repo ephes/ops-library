@@ -1,0 +1,28 @@
+---
+- name: "download | Compute UniFi package path"
+  ansible.builtin.set_fact:
+    unifi_deb_local_path: "{{ unifi_cache_dir }}/{{ (unifi_deb_filename | default(unifi_deb_url | basename)) }}"
+
+- name: "download | Download UniFi package"
+  ansible.builtin.get_url:
+    url: "{{ unifi_deb_url }}"
+    dest: "{{ unifi_deb_local_path }}"
+    mode: "0644"
+    owner: "{{ unifi_user }}"
+    group: "{{ unifi_group }}"
+    timeout: "{{ unifi_download_timeout }}"
+    checksum: "{{ unifi_deb_checksum if unifi_deb_checksum | length > 0 else omit }}"
+  when: not unifi_skip_download | bool
+
+- name: "download | Install UniFi package"
+  ansible.builtin.apt:
+    deb: "{{ unifi_deb_local_path }}"
+    state: present
+
+- name: "download | Disable vendor UniFi service unit"
+  ansible.builtin.systemd:
+    name: unifi
+    enabled: false
+    state: stopped
+  failed_when: false
+  when: unifi_disable_default_unit | bool

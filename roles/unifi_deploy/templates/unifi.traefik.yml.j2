@@ -1,0 +1,22 @@
+http:
+  routers:
+    unifi:
+      rule: "Host(`{{ unifi_external_hostname }}`)"
+      entryPoints:
+{% for entrypoint in unifi_traefik_entrypoints %}
+        - "{{ entrypoint }}"
+{% endfor %}
+      service: unifi
+      tls:
+        certResolver: "{{ unifi_traefik_certresolver }}"
+
+  services:
+    unifi:
+      loadBalancer:
+        servers:
+          - url: "https://{{ unifi_controller_bind_address }}:{{ unifi_port_https }}"
+        serversTransport: unifi-transport
+
+  serversTransports:
+    unifi-transport:
+      insecureSkipVerify: true

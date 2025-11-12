@@ -1,0 +1,108 @@
+---
+- name: Create pre-restore safety backup
+  ansible.builtin.include_role:
+    name: local.ops_library.unifi_backup
+  vars:
+    unifi_backup_root: "{{ unifi_restore_archive_search_root }}"
+    unifi_backup_prefix: "{{ unifi_restore_safety_backup_prefix }}"
+    unifi_backup_fetch_local: false
+    unifi_backup_create_archive: false
+    unifi_mongodb_host: "{{ unifi_restore_mongodb_host }}"
+    unifi_mongodb_port: "{{ unifi_restore_mongodb_port }}"
+    unifi_mongodb_database: "{{ unifi_restore_mongodb_database }}"
+    unifi_mongodb_username: "{{ unifi_restore_mongodb_username }}"
+    unifi_mongodb_password: "{{ unifi_restore_mongodb_password }}"
+    unifi_mongodb_auth_db: "{{ unifi_restore_mongodb_auth_db }}"
+  when: unifi_restore_create_safety_backup | bool
+
+- name: Locate safety backup directory
+  ansible.builtin.find:
+    paths: "{{ unifi_restore_archive_search_root }}"
+    patterns: "{{ unifi_restore_safety_backup_prefix }}-*"
+    file_type: directory
+  register: unifi_restore_safety_find
+  when: unifi_restore_create_safety_backup | bool
+
+- name: Set safety backup path fact
+  ansible.builtin.set_fact:
+    unifi_safety_backup_path: "{{ (unifi_restore_safety_find.files | sort(attribute='mtime') | last).path }}"
+  when:
+    - unifi_restore_create_safety_backup | bool
+    - (unifi_restore_safety_find.matched | default(0) | int) > 0
+
+- name: Fail if safety backup could not be created
+  ansible.builtin.assert:
+    that:
+      - unifi_safety_backup_path is defined
+    fail_msg: "Safety backup with prefix {{ unifi_restore_safety_backup_prefix }} was not created."
+  when: unifi_restore_create_safety_backup | bool
+
+- name: Clean staging directory
+  ansible.builtin.file:
+    path: "{{ unifi_restore_staging_dir }}"
+    state: absent
+
+- name: Ensure staging directory exists
+  ansible.builtin.file:
+    path: "{{ unifi_restore_staging_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Extract backup archive
+  ansible.builtin.unarchive:
+    src: "{{ unifi_restore_archive_path }}"
+    dest: "{{ unifi_restore_staging_dir }}"
+    remote_src: true
+
+- name: Find extracted directory
+  ansible.builtin.find:
+    paths: "{{ unifi_restore_staging_dir }}"
+    file_type: directory
+    recurse: false
+  register: unifi_restore_extracted_find
+
+- name: Ensure extracted data is present
+  ansible.builtin.assert:
+    that:
+      - (unifi_restore_extracted_find.matched | default(0) | int) > 0
+    fail_msg: "No directories were extracted from {{ unifi_restore_archive_path }}"
+
+- name: Set extracted directory path
+  ansible.builtin.set_fact:
+    unifi_restore_extracted_dir: "{{ (unifi_restore_extracted_find.files | sort(attribute='mtime') | last).path }}"
+
+- name: Load backup metadata
+  ansible.builtin.slurp:
+    src: "{{ unifi_restore_extracted_dir }}/metadata.yml"
+  register: unifi_restore_metadata_file
+
+- name: Parse backup metadata
+  ansible.builtin.set_fact:
+    unifi_restore_metadata: "{{ unifi_restore_metadata_file.content | b64decode | from_yaml }}"
+
+- name: Validate checksum manifest
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cd "{{ unifi_restore_extracted_dir }}"
+    sha256sum -c manifest.sha256
+  args:
+    executable: /bin/bash
+  when: unifi_restore_validate_checksums | bool
+  changed_when: false
+
+- name: Evaluate version compatibility
+  ansible.builtin.set_fact:
+    unifi_restore_backup_version: "{{ unifi_restore_metadata.unifi_version | default('unknown') }}"
+    unifi_restore_installed_version: "{{ unifi_restore_installed_version_cmd.stdout | default('unknown') | trim }}"
+    unifi_restore_backup_major: "{{ (unifi_restore_metadata.unifi_version | default('') ) | regex_search('^([0-9]+)') | default('') }}"
+    unifi_restore_installed_major: "{{ (unifi_restore_installed_version_cmd.stdout | default('') | trim) | regex_search('^([0-9]+)') | default('') }}"
+
+- name: Assert UniFi major versions are compatible
+  ansible.builtin.assert:
+    that:
+      - unifi_restore_backup_major == '' or unifi_restore_installed_major == '' or unifi_restore_backup_major == unifi_restore_installed_major
+    fail_msg: >-
+      Backup version {{ unifi_restore_backup_version }} (major {{ unifi_restore_backup_major }})
+      does not match installed version {{ unifi_restore_installed_version }} (major {{ unifi_restore_installed_major }}).
+      Install a compatible UniFi release before restoring.
+  when: unifi_restore_check_version_compatibility | bool

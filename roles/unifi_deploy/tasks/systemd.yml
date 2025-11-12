@@ -1,0 +1,11 @@
+---
+- name: "systemd | Deploy service"
+  ansible.builtin.template:
+    src: unifi.service.j2
+    dest: "{{ unifi_systemd_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart UniFi

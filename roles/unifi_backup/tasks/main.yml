@@ -1,0 +1,82 @@
+---
+- name: Validate UniFi installation and prerequisites
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Ensure backup root exists
+  ansible.builtin.file:
+    path: "{{ unifi_backup_root }}"
+    state: directory
+    owner: "{{ unifi_backup_owner }}"
+    group: "{{ unifi_backup_group }}"
+    mode: "{{ unifi_backup_dir_mode }}"
+
+- name: Check disk space for backup
+  ansible.builtin.import_tasks: disk_check.yml
+  when: unifi_backup_disk_check_enabled | bool
+
+- name: Detect UniFi package version
+  ansible.builtin.command: dpkg-query -W -f='${Version}' unifi
+  register: unifi_backup_version_cmd
+  changed_when: false
+  failed_when: false
+
+- name: Set backup metadata facts
+  ansible.builtin.set_fact:
+    unifi_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+    unifi_backup_version: "{{ unifi_backup_version_cmd.stdout | default('unknown') | trim }}"
+    unifi_backup_dir: "{{ unifi_backup_root }}/{{ unifi_backup_prefix }}-{{ ansible_date_time.iso8601_basic_short }}"
+
+- name: Ensure backup directory structure exists
+  ansible.builtin.file:
+    path: "{{ unifi_backup_dir }}/{{ item }}"
+    state: directory
+    owner: "{{ unifi_backup_owner }}"
+    group: "{{ unifi_backup_group }}"
+    mode: "{{ unifi_backup_dir_mode }}"
+  loop:
+    - database
+    - data
+    - autobackups
+    - logs
+    - config
+    - systemd
+    - traefik
+
+# CRITICAL: MongoDB dump must be performed before stopping the UniFi service
+- name: Backup MongoDB database (service running)
+  ansible.builtin.import_tasks: mongodb.yml
+  when:
+    - unifi_backup_mongodb_backup | bool
+    - unifi_mongodb_accessible | default(true)
+
+- name: Warn when MongoDB dump is skipped
+  ansible.builtin.debug:
+    msg: "Skipping mongodump because {{ unifi_mongodb_host }}:{{ unifi_mongodb_port }} is not reachable. Data directory backup still proceeds."
+  when:
+    - unifi_backup_mongodb_backup | bool
+    - not (unifi_mongodb_accessible | default(true))
+
+- block:
+    - name: Stop UniFi service for consistent file copy
+      ansible.builtin.import_tasks: services.yml
+      vars:
+        service_action: stop
+
+    - name: Backup UniFi data files
+      ansible.builtin.import_tasks: data.yml
+
+    - name: Backup system integration files
+      ansible.builtin.import_tasks: system.yml
+
+  always:
+    - name: Ensure UniFi service is running after backup
+      ansible.builtin.import_tasks: services.yml
+      vars:
+        service_action: start
+
+- name: Generate metadata and checksums
+  ansible.builtin.import_tasks: metadata.yml
+
+- name: Create archive and fetch backup
+  ansible.builtin.import_tasks: archive.yml
+  when: unifi_backup_create_archive | bool

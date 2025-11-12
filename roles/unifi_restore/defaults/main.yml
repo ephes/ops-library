@@ -1,0 +1,57 @@
+---
+# Archive selection
+unifi_restore_archive: latest
+unifi_restore_archive_search_root: /opt/backups/unifi
+
+# Validation behaviour
+unifi_restore_validate_checksums: true
+unifi_restore_check_version_compatibility: true
+unifi_restore_dry_run: false
+
+# Safety backup
+unifi_restore_create_safety_backup: true
+unifi_restore_safety_backup_prefix: pre-restore
+unifi_restore_cleanup_safety_backup: true
+
+# Restore method: automated (MongoDB + rsync) or manual-unf-prep
+unifi_restore_method: automated
+
+# MongoDB restore behaviour
+unifi_restore_mongodb_host: 127.0.0.1
+unifi_restore_mongodb_port: 27017
+unifi_restore_mongodb_database: ace
+unifi_restore_mongodb_username: ""
+unifi_restore_mongodb_password: ""
+unifi_restore_mongodb_auth_db: admin
+unifi_restore_mongodb_drop_database: true
+unifi_restore_use_mongorestore_drop_flag: true
+unifi_mongodb_dump_binary: mongodump
+
+# Service / verification
+unifi_service_name: unifi.service
+unifi_restore_service_stop_pause: 10
+unifi_restore_service_start_timeout: 120
+unifi_restore_verify_http: true
+unifi_restore_health_url: https://localhost:8443/
+unifi_restore_verify_mongodb: true
+
+# Rollback strategy
+unifi_restore_rollback_on_failure: true
+
+# Staging paths
+unifi_restore_staging_dir: /tmp/unifi-restore
+
+# UniFi filesystem paths (should match backup role)
+unifi_install_root: /usr/lib/unifi
+unifi_data_path: "{{ unifi_install_root }}/data"
+unifi_systemd_unit_path: /etc/systemd/system/unifi.service
+unifi_traefik_config_path: /etc/traefik/dynamic/unifi.yml
+
+# Required packages to manipulate archives/database
+unifi_restore_required_packages:
+  - mongodb-org-tools
+  - rsync
+  - tar
+  - gzip
+  - findutils
+unifi_restore_rsync_binary: rsync

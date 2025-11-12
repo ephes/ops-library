@@ -1,0 +1,12 @@
+---
+- name: "java | Install runtime"
+  ansible.builtin.apt:
+    name: "{{ unifi_java_package }}"
+    state: present
+    update_cache: true
+
+- name: "java | Verify installation"
+  ansible.builtin.command: java -version
+  register: unifi_java_version_cmd
+  changed_when: false
+  failed_when: unifi_java_version_cmd.rc != 0

@@ -1,0 +1,53 @@
+---
+- block:
+    - name: "mongodb | Build mongodump command arguments"
+      ansible.builtin.set_fact:
+        unifi_backup_mongodump_args: >-
+          {{
+            [
+              unifi_mongodb_dump_binary,
+              '--host=' ~ unifi_mongodb_host,
+              '--port=' ~ (unifi_mongodb_port | string),
+              '--db=' ~ unifi_mongodb_database,
+              '--out=' ~ (unifi_backup_dir ~ '/database')
+            ]
+            + (((unifi_mongodb_username | default('', true) | length) > 0)
+                | ternary(['--username=' ~ unifi_mongodb_username], []))
+            + (((unifi_mongodb_password | default('', true) | length) > 0)
+                | ternary(['--password=' ~ unifi_mongodb_password], []))
+            + (((unifi_mongodb_auth_db | default('', true) | length) > 0)
+                | ternary(['--authenticationDatabase=' ~ unifi_mongodb_auth_db], []))
+          }}
+    - name: "mongodb | Dump UniFi MongoDB database"
+      ansible.builtin.command:
+        argv: "{{ unifi_backup_mongodump_args }}"
+      register: unifi_mongodump_result
+      changed_when: true
+      no_log: "{{ unifi_mongodb_password | default('', true) | length > 0 }}"
+
+    - name: "mongodb | Verify MongoDB dump exists"
+      ansible.builtin.stat:
+        path: "{{ unifi_backup_dir }}/database/{{ unifi_mongodb_database }}"
+      register: unifi_mongodump_stat
+      failed_when: not unifi_mongodump_stat.stat.exists
+
+    - name: "mongodb | Ensure MongoDB dump permissions"
+      ansible.builtin.file:
+        path: "{{ unifi_backup_dir }}/database"
+        owner: "{{ unifi_backup_owner }}"
+        group: "{{ unifi_backup_group }}"
+        mode: "{{ unifi_backup_dir_mode }}"
+        recurse: true
+
+  rescue:
+    - name: "mongodb | Warn about MongoDB dump failure"
+      ansible.builtin.debug:
+        msg: >-
+          mongodump failed ({{ unifi_mongodump_result.msg | default('see stderr for details') }}).
+          Proceeding with file-based backup only.
+
+    - name: "mongodb | Remove incomplete MongoDB dump directory"
+      ansible.builtin.file:
+        path: "{{ unifi_backup_dir }}/database"
+        state: absent
+      ignore_errors: true

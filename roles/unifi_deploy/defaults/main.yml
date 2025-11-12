@@ -1,0 +1,144 @@
+---
+# General identity
+unifi_user: "unifi"
+unifi_group: "{{ unifi_user }}"
+unifi_service_name: "unifi"
+
+# Version + download configuration
+unifi_version: "9.3.45"
+unifi_deb_url: "https://dl.ui.com/unifi/9.3.45-9iw96x349g/unifi_sysvinit_all.deb"
+unifi_deb_filename: "unifi_{{ unifi_version }}_all.deb"
+unifi_deb_checksum: ""
+unifi_download_timeout: 120
+
+# Filesystem layout
+unifi_home_dir: "/home/{{ unifi_user }}"
+unifi_cache_dir: "{{ unifi_home_dir }}/cache"
+unifi_install_dir: "/usr/lib/unifi"
+unifi_data_dir: "{{ unifi_install_dir }}/data"
+unifi_logs_dir: "{{ unifi_install_dir }}/logs"
+unifi_run_dir: "{{ unifi_install_dir }}/run"
+unifi_systemd_unit_path: "/etc/systemd/system/{{ unifi_service_name }}.service"
+unifi_backup_dir: "{{ unifi_data_dir }}/backup"
+
+# Java configuration
+unifi_java_package: "openjdk-17-jre-headless"
+unifi_java_home: "/usr/lib/jvm/java-17-openjdk-amd64"
+unifi_jvm_min_heap_mb: 1024
+unifi_jvm_max_heap_mb: 2048
+unifi_java_opts: "-Djava.awt.headless=true -Dfile.encoding=UTF-8 -Dunifi.core.enabled=false -Dunifi.mongodb.service.enabled=false -Dlog4j2.formatMsgNoLookups=true"
+
+# MongoDB configuration
+unifi_mongodb_version: "8.0"
+unifi_mongodb_supported_distributions:
+  - "noble"
+  - "jammy"
+  - "focal"
+  - "bookworm"
+  - "bullseye"
+unifi_mongodb_repo_distribution_fallback: "noble"
+unifi_mongodb_repo_distribution_override: ""
+unifi_mongodb_repo_distribution: >-
+  {{
+    unifi_mongodb_repo_distribution_override
+    if unifi_mongodb_repo_distribution_override | default('') | length > 0
+    else (
+      ansible_distribution_release | default('')
+      if ansible_distribution_release | default('') in unifi_mongodb_supported_distributions
+      else unifi_mongodb_repo_distribution_fallback
+    )
+  }}
+unifi_mongodb_packages:
+  - mongodb-org
+  - mongodb-org-server
+  - mongodb-org-shell
+  - mongodb-org-mongos
+  - mongodb-org-tools
+unifi_mongodb_bind_addresses:
+  - "127.0.0.1"
+unifi_mongodb_host: "127.0.0.1"
+unifi_mongodb_port: 27017
+unifi_mongodb_database: "unifi"
+unifi_mongodb_user: "unifi"
+unifi_mongodb_password: ""
+unifi_mongodb_logrotate_enabled: true
+unifi_mongodb_logrotate_path: "/etc/logrotate.d/mongodb"
+unifi_mongodb_monitor_script_enabled: true
+unifi_mongodb_monitor_script_path: "/etc/cron.daily/mongodb-log-check"
+unifi_mongodb_log_max_size_mb: 500
+unifi_mongodb_wait_timeout: 30
+unifi_mongodb_enable_auth: true
+
+# Base packages
+unifi_base_packages:
+  - ca-certificates
+  - apt-transport-https
+  - gnupg
+  - lsb-release
+  - curl
+  - wget
+  - software-properties-common
+
+# Network and service ports
+unifi_controller_bind_address: "{{ ansible_default_ipv4.address | default('127.0.0.1') }}"
+unifi_port_device: 8080
+unifi_port_https: 8443
+unifi_port_http: 8880
+unifi_port_portal_https: 8843
+unifi_port_stun: 3478
+unifi_port_discovery: 10001
+unifi_port_speedtest: 6789
+
+unifi_trusted_proxies:
+  - "127.0.0.1"
+  - "::1"
+
+unifi_external_domain: "home.xn--wersdrfer-47a.de"
+unifi_external_hostname: "unifi.{{ unifi_external_domain }}"
+unifi_external_url: "https://{{ unifi_external_hostname }}"
+unifi_inform_url: "http://{{ unifi_controller_bind_address }}:{{ unifi_port_device }}/inform"
+
+# Traefik integration
+unifi_traefik_enabled: true
+unifi_traefik_dynamic_dir: "/etc/traefik/dynamic"
+unifi_traefik_config_path: "{{ unifi_traefik_dynamic_dir }}/unifi.yml"
+unifi_traefik_entrypoints:
+  - "web-secure"
+unifi_traefik_certresolver: "letsencrypt"
+unifi_traefik_manage_api_entrypoint: false
+unifi_traefik_api_entrypoint: "traefik"
+unifi_traefik_api_port: 9090
+unifi_traefik_static_config: "/etc/traefik/traefik.toml"
+
+# Firewall
+unifi_manage_firewall: true
+unifi_firewall_rules:
+  - { port: "{{ unifi_port_device }}", proto: "tcp", comment: "UniFi device communication" }
+  - { port: "{{ unifi_port_https }}", proto: "tcp", comment: "UniFi web admin" }
+  - { port: "{{ unifi_port_stun }}", proto: "udp", comment: "UniFi STUN" }
+  - { port: "{{ unifi_port_discovery }}", proto: "udp", comment: "UniFi discovery" }
+  - { port: "{{ unifi_port_speedtest }}", proto: "tcp", comment: "UniFi speed test" }
+
+# Home Assistant integration
+unifi_create_homeassistant_user: false
+unifi_homeassistant_username: "homeassistant"
+unifi_homeassistant_password: ""
+unifi_homeassistant_password_store: "{{ unifi_home_dir }}/.homeassistant_unifi_password"
+unifi_homeassistant_password_length: 24
+unifi_homeassistant_password_chars: "ascii_letters,digits"
+unifi_homeassistant_wait_retries: 30
+unifi_homeassistant_wait_delay: 10
+
+# Service behavior
+unifi_service_wait_after_start: 30
+unifi_controller_status_url: "https://127.0.0.1:{{ unifi_port_https }}/status"
+unifi_systemd_extra_env: []
+
+# Log + monitoring
+unifi_logrotate_owner: "root"
+unifi_logrotate_group: "root"
+
+# Feature toggles
+unifi_skip_download: false
+unifi_validate_deb_checksum: false
+unifi_disable_default_unit: true

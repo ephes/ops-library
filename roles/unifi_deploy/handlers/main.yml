@@ -1,0 +1,25 @@
+---
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Restart MongoDB
+  ansible.builtin.systemd:
+    name: mongod
+    state: restarted
+    enabled: true
+
+- name: Restart UniFi
+  ansible.builtin.systemd:
+    name: "{{ unifi_service_name }}"
+    state: restarted
+    enabled: true
+
+- name: Restart Traefik
+  ansible.builtin.systemd:
+    name: traefik
+    state: restarted
+
+- name: Reload Traefik config
+  ansible.builtin.debug:
+    msg: "Traefik will reload dynamic configuration automatically."

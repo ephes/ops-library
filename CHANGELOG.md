@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `minio_deploy` role to provision MinIO with dual-router Traefik exposure, security hardening, and optional client bootstrapping
 - `minio_remove` role to destructively remove MinIO with confirmation, optional data preservation, and Traefik cleanup
 - Dynamic DNS support in `dns_deploy`, adding an opt-in LiveDNS updater with dedicated service accounts, timers, and IPv4/IPv6 support
+- UniFi lifecycle roles: `unifi_deploy`, `unifi_backup`, `unifi_restore`, and `unifi_remove` (Mongo-auth aware, Traefik/HA integration, Justfile wiring, docs)
 
 ### Changed
 - `nyxmon_restore` now mirrors the Home Assistant structure (validate/prepare/restore/verify/cleanup), adds block/rescue rollback, conditional restores, handler flush, and health checks

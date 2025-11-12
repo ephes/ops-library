@@ -1,0 +1,38 @@
+---
+- name: "traefik | Ensure dynamic directory"
+  ansible.builtin.file:
+    path: "{{ unifi_traefik_dynamic_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: "traefik | Check static config presence"
+  ansible.builtin.stat:
+    path: "{{ unifi_traefik_static_config }}"
+  register: unifi_traefik_static_cfg_stat
+  when: unifi_traefik_manage_api_entrypoint | bool
+
+- name: "traefik | Ensure API entrypoint"
+  ansible.builtin.blockinfile:
+    path: "{{ unifi_traefik_static_config }}"
+    block: |
+      [entryPoints.{{ unifi_traefik_api_entrypoint }}]
+        address = ":{{ unifi_traefik_api_port }}"
+    marker: "# {mark} ANSIBLE MANAGED - UNIFI TRAEFIK API"
+    insertafter: EOF
+    backup: true
+    create: false
+  when:
+    - unifi_traefik_manage_api_entrypoint | bool
+    - unifi_traefik_static_cfg_stat.stat.exists
+  notify: restart traefik
+
+- name: "traefik | Deploy UniFi config"
+  ansible.builtin.template:
+    src: unifi.traefik.yml.j2
+    dest: "{{ unifi_traefik_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload Traefik config

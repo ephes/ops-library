@@ -1,0 +1,93 @@
+---
+- name: Stop UniFi service
+  ansible.builtin.systemd:
+    name: "{{ unifi_service_name }}"
+    state: stopped
+
+- name: Wait for clean shutdown
+  ansible.builtin.pause:
+    seconds: "{{ unifi_restore_service_stop_pause | int }}"
+
+# Automated restore path: rsync data directory
+- block:
+    - name: Rsync UniFi data directory
+      ansible.builtin.command:
+        cmd: >
+          {{ unifi_restore_rsync_binary }} -a --delete
+          "{{ unifi_restore_extracted_dir }}/data/"
+          "{{ unifi_data_path }}/"
+      changed_when: true
+
+    - name: Ensure data directory ownership
+      ansible.builtin.command: |
+        find "{{ unifi_data_path }}" -exec chown unifi:unifi {} +
+      changed_when: true
+  when: unifi_restore_method == 'automated'
+
+# Manual .unf preparation path
+- block:
+    - name: Find latest .unf file in backup
+      ansible.builtin.find:
+        paths: "{{ unifi_restore_extracted_dir }}/autobackups"
+        patterns: "*.unf"
+      register: unifi_restore_unf_files
+
+    - name: Ensure a .unf file exists for manual restore
+      ansible.builtin.fail:
+        msg: "No .unf backups were found inside the selected archive."
+      when: unifi_restore_unf_files.matched | default(0) | int == 0
+
+    - name: Copy latest .unf to /tmp/unifi-restore.unf
+      ansible.builtin.copy:
+        src: "{{ (unifi_restore_unf_files.files | sort(attribute='mtime') | last).path }}"
+        dest: "/tmp/unifi-restore.unf"
+        mode: "0644"
+        remote_src: true
+
+    - name: Display manual restore instructions
+      ansible.builtin.debug:
+        msg: |
+          .unf file extracted to /tmp/unifi-restore.unf
+
+          To complete restore:
+          1. Start UniFi service
+          2. Open web UI: {{ unifi_restore_health_url }}
+          3. Navigate to Settings > System > Backup
+          4. Click "Restore from Backup"
+          5. Upload /tmp/unifi-restore.unf
+          6. Follow the web UI prompts
+          (File is removed automatically during cleanup; download it now if you need a local copy.)
+  when: unifi_restore_method == 'manual-unf-prep'
+
+- name: Stat extracted systemd unit
+  ansible.builtin.stat:
+    path: "{{ unifi_restore_extracted_dir }}/systemd/unifi.service"
+  register: unifi_restore_systemd_stat
+
+- name: Restore systemd unit file
+  ansible.builtin.copy:
+    src: "{{ unifi_restore_extracted_dir }}/systemd/unifi.service"
+    dest: /etc/systemd/system/unifi.service
+    remote_src: true
+  when: unifi_restore_systemd_stat.stat.exists
+
+- name: Stat extracted Traefik config
+  ansible.builtin.stat:
+    path: "{{ unifi_restore_extracted_dir }}/traefik/unifi.yml"
+  register: unifi_restore_traefik_stat
+
+- name: Restore Traefik dynamic config
+  ansible.builtin.copy:
+    src: "{{ unifi_restore_extracted_dir }}/traefik/unifi.yml"
+    dest: /etc/traefik/dynamic/unifi.yml
+    remote_src: true
+  when: unifi_restore_traefik_stat.stat.exists
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Start UniFi service
+  ansible.builtin.systemd:
+    name: "{{ unifi_service_name }}"
+    state: started

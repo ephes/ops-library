@@ -1,0 +1,29 @@
+---
+- name: Initialize restore context
+  ansible.builtin.set_fact:
+    unifi_restore_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+    unifi_restore_operation_successful: false
+
+- block:
+    - ansible.builtin.import_tasks: validate.yml
+    - ansible.builtin.import_tasks: prepare.yml
+    - ansible.builtin.import_tasks: restore.yml
+    - ansible.builtin.import_tasks: verify.yml
+
+    - name: Mark restore successful
+      ansible.builtin.set_fact:
+        unifi_restore_operation_successful: true
+
+  rescue:
+    - name: Rollback UniFi restore on failure
+      ansible.builtin.import_tasks: rollback.yml
+      when:
+        - unifi_restore_rollback_on_failure | bool
+        - unifi_restore_create_safety_backup | bool
+
+    - name: Re-raise restore failure
+      ansible.builtin.fail:
+        msg: "UniFi restore failed. See above for rollback details."
+
+  always:
+    - ansible.builtin.import_tasks: cleanup.yml

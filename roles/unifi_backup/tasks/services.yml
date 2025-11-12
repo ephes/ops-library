@@ -1,0 +1,30 @@
+---
+- name: Stop UniFi service
+  ansible.builtin.systemd:
+    name: "{{ unifi_service_name }}"
+    state: stopped
+  when:
+    - service_action == 'stop'
+    - unifi_backup_stop_services
+
+- name: Wait for clean shutdown
+  ansible.builtin.pause:
+    seconds: "{{ unifi_backup_service_stop_timeout | int }}"
+  when:
+    - service_action == 'stop'
+    - unifi_backup_stop_services
+
+- name: Start UniFi service
+  ansible.builtin.systemd:
+    name: "{{ unifi_service_name }}"
+    state: started
+  when: service_action == 'start'
+
+- name: Verify UniFi service is active
+  ansible.builtin.systemd:
+    name: "{{ unifi_service_name }}"
+  register: unifi_backup_service_check
+  retries: 12
+  delay: 5
+  until: unifi_backup_service_check.status.ActiveState == 'active'
+  when: service_action == 'start'

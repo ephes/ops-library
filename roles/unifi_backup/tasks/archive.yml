@@ -1,0 +1,50 @@
+---
+- name: Compute archive path
+  ansible.builtin.set_fact:
+    unifi_backup_archive: "{{ unifi_backup_dir }}.{{ unifi_backup_archive_format }}"
+
+- name: Create tar.gz archive
+  ansible.builtin.command:
+    cmd: >
+      tar -C "{{ unifi_backup_root }}"
+      -czf "{{ unifi_backup_archive | basename }}"
+      "{{ unifi_backup_dir | basename }}"
+  args:
+    chdir: "{{ unifi_backup_root }}"
+  when: unifi_backup_archive_format == 'tar.gz'
+  changed_when: true
+
+- name: Create tar.zst archive
+  ansible.builtin.command:
+    cmd: >
+      tar -C "{{ unifi_backup_root }}"
+      --zstd -cf "{{ unifi_backup_archive | basename }}"
+      "{{ unifi_backup_dir | basename }}"
+  args:
+    chdir: "{{ unifi_backup_root }}"
+  when: unifi_backup_archive_format == 'tar.zst'
+  changed_when: true
+
+- name: Ensure local archive directory exists
+  ansible.builtin.file:
+    path: "{{ unifi_backup_local_dir }}"
+    state: directory
+    mode: "{{ unifi_backup_local_dir_mode }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: unifi_backup_fetch_local | bool
+
+- name: Fetch backup archive
+  ansible.builtin.fetch:
+    src: "{{ unifi_backup_archive }}"
+    dest: "{{ unifi_backup_local_dir }}/"
+    flat: true
+  run_once: true
+  when: unifi_backup_fetch_local | bool
+
+- name: Report backup completion
+  ansible.builtin.debug:
+    msg: |
+      UniFi backup complete: {{ unifi_backup_archive }}
+      Local copy: {{ unifi_backup_fetch_local | ternary(unifi_backup_local_dir ~ '/' ~ (unifi_backup_archive | basename), 'not fetched') }}

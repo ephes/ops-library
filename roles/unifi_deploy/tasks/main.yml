@@ -1,0 +1,39 @@
+---
+- name: Validate prerequisites
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Install prerequisite packages
+  ansible.builtin.import_tasks: prerequisites.yml
+
+- name: Provision MongoDB
+  ansible.builtin.import_tasks: mongodb.yml
+
+- name: Install Java runtime
+  ansible.builtin.import_tasks: java.yml
+
+- name: Ensure UniFi service user exists
+  ansible.builtin.import_tasks: user.yml
+
+- name: Prepare filesystem layout
+  ansible.builtin.import_tasks: directories.yml
+
+- name: Download and install UniFi application
+  ansible.builtin.import_tasks: download.yml
+
+- name: Configure systemd unit
+  ansible.builtin.import_tasks: systemd.yml
+
+- name: Configure Traefik integration
+  ansible.builtin.import_tasks: traefik.yml
+  when: unifi_traefik_enabled | bool
+
+- name: Configure firewall
+  ansible.builtin.import_tasks: firewall.yml
+  when: unifi_manage_firewall | bool
+
+- name: Provision Home Assistant integration user
+  ansible.builtin.import_tasks: homeassistant.yml
+  when: unifi_create_homeassistant_user | bool
+
+- name: Ensure UniFi service state
+  ansible.builtin.import_tasks: service.yml

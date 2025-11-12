@@ -1,0 +1,14 @@
+---
+- name: "user | Ensure group exists"
+  ansible.builtin.group:
+    name: "{{ unifi_group }}"
+    system: true
+
+- name: "user | Ensure service user exists"
+  ansible.builtin.user:
+    name: "{{ unifi_user }}"
+    group: "{{ unifi_group }}"
+    shell: /usr/sbin/nologin
+    home: "{{ unifi_home_dir }}"
+    create_home: true
+    system: true

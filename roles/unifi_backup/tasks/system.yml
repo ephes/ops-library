@@ -1,0 +1,58 @@
+---
+- name: Copy system.properties
+  ansible.builtin.copy:
+    src: "{{ unifi_system_properties_path }}"
+    dest: "{{ unifi_backup_dir }}/config/system.properties"
+    owner: "{{ unifi_backup_owner }}"
+    group: "{{ unifi_backup_group }}"
+    mode: "{{ unifi_backup_file_mode }}"
+    remote_src: true
+  when:
+    - unifi_backup_include_system_properties | bool
+    - (unifi_backup_path_map.system_properties.exists | default(false))
+
+- name: Copy UniFi keystore
+  ansible.builtin.copy:
+    src: "{{ unifi_keystore_path }}"
+    dest: "{{ unifi_backup_dir }}/config/keystore"
+    owner: "{{ unifi_backup_owner }}"
+    group: "{{ unifi_backup_group }}"
+    mode: "{{ unifi_backup_file_mode }}"
+    remote_src: true
+  when:
+    - unifi_backup_include_keystore | bool
+    - (unifi_backup_path_map.keystore.exists | default(false))
+
+- name: Copy UniFi environment file
+  ansible.builtin.copy:
+    src: "{{ unifi_env_file }}"
+    dest: "{{ unifi_backup_dir }}/config/unifi.env"
+    owner: "{{ unifi_backup_owner }}"
+    group: "{{ unifi_backup_group }}"
+    mode: "{{ unifi_backup_file_mode }}"
+    remote_src: true
+  when:
+    - unifi_backup_include_env | bool
+    - (unifi_backup_path_map.env_file.exists | default(false))
+
+- name: Copy systemd unit file
+  ansible.builtin.copy:
+    src: "{{ unifi_systemd_unit_path }}"
+    dest: "{{ unifi_backup_dir }}/systemd/unifi.service"
+    owner: "{{ unifi_backup_owner }}"
+    group: "{{ unifi_backup_group }}"
+    mode: "{{ unifi_backup_file_mode }}"
+    remote_src: true
+  when: unifi_backup_path_map.systemd_unit.exists | default(false)
+
+- name: Copy Traefik dynamic config
+  ansible.builtin.copy:
+    src: "{{ unifi_traefik_config_path }}"
+    dest: "{{ unifi_backup_dir }}/traefik/unifi.yml"
+    owner: "{{ unifi_backup_owner }}"
+    group: "{{ unifi_backup_group }}"
+    mode: "{{ unifi_backup_file_mode }}"
+    remote_src: true
+  when:
+    - unifi_backup_include_traefik | bool
+    - (unifi_backup_path_map.traefik_config.exists | default(false))

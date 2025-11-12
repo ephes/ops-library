@@ -1,0 +1,22 @@
+use admin;
+db.createUser({
+  user: "{{ unifi_mongodb_user }}",
+  pwd: "{{ unifi_mongodb_password }}",
+  roles: [
+    { role: "readWrite", db: "{{ unifi_mongodb_database }}" },
+    { role: "dbOwner", db: "{{ unifi_mongodb_database }}" },
+    { role: "readWrite", db: "{{ unifi_mongodb_database }}_stat" },
+    { role: "dbOwner", db: "{{ unifi_mongodb_database }}_stat" },
+    { role: "clusterMonitor", db: "admin" }
+  ]
+});
+
+use {{ unifi_mongodb_database }};
+db.createUser({
+  user: "{{ unifi_mongodb_user }}",
+  pwd: "{{ unifi_mongodb_password }}",
+  roles: [
+    { role: "readWrite", db: "{{ unifi_mongodb_database }}" },
+    { role: "readWrite", db: "{{ unifi_mongodb_database }}_stat" }
+  ]
+});

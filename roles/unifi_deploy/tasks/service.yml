@@ -1,0 +1,29 @@
+---
+- name: "service | Ensure systemd state"
+  ansible.builtin.systemd:
+    name: "{{ unifi_service_name }}"
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: "service | Wait for warm-up"
+  ansible.builtin.pause:
+    seconds: "{{ unifi_service_wait_after_start }}"
+
+- name: "service | Probe status endpoint"
+  ansible.builtin.uri:
+    url: "{{ unifi_controller_status_url }}"
+    method: GET
+    validate_certs: false
+    status_code: 200
+  register: unifi_status_check
+  failed_when: false
+
+- name: "service | Display access information"
+  ansible.builtin.debug:
+    msg:
+      - "UniFi controller deploy complete."
+      - "External URL: {{ unifi_external_url }}"
+      - "Local URL: https://{{ unifi_controller_bind_address }}:{{ unifi_port_https }}"
+      - "Device inform URL: {{ unifi_inform_url }}"
+      - "Status endpoint reachable: {{ (unifi_status_check.status | default(0)) == 200 }}"

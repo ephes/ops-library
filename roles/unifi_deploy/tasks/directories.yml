@@ -1,0 +1,15 @@
+---
+- name: "directories | Ensure UniFi directories exist"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ unifi_user }}"
+    group: "{{ unifi_group }}"
+    mode: "0755"
+  loop:
+    - "{{ unifi_cache_dir }}"
+    - "{{ unifi_install_dir }}"
+    - "{{ unifi_data_dir }}"
+    - "{{ unifi_logs_dir }}"
+    - "{{ unifi_run_dir }}"
+    - "{{ unifi_backup_dir }}"

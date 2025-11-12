@@ -1,0 +1,38 @@
+---
+- name: Rsync UniFi data directory (excluding MongoDB db files)
+  ansible.builtin.command:
+    cmd: >
+      {{ unifi_backup_rsync_binary }}
+      -a{{ ' --delete' if unifi_backup_use_delete else '' }}
+      --exclude='db/*'
+      "{{ unifi_data_path }}/"
+      "{{ unifi_backup_dir }}/data/"
+  changed_when: true
+
+- name: Copy latest autobackup .unf files
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if [ -d "{{ unifi_autobackup_path }}" ]; then
+      find "{{ unifi_autobackup_path }}" -type f -name '*.unf' -mtime -7 -print0 \
+        | xargs -0 -r -I{} cp "{}" "{{ unifi_backup_dir }}/autobackups/"
+    fi
+  args:
+    executable: /bin/bash
+  when:
+    - unifi_backup_include_autobackups | bool
+    - (unifi_backup_path_map.autobackup_path.exists | default(false))
+  changed_when: true
+  failed_when: false
+
+- name: Rsync UniFi logs directory
+  ansible.builtin.command:
+    cmd: >
+      {{ unifi_backup_rsync_binary }}
+      -a{{ ' --delete' if unifi_backup_use_delete else '' }}
+      "{{ unifi_logs_path }}/"
+      "{{ unifi_backup_dir }}/logs/"
+  when:
+    - unifi_backup_include_logs | bool
+    - (unifi_backup_path_map.logs_path.exists | default(false))
+  changed_when: true
+  failed_when: false

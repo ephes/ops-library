@@ -1,0 +1,74 @@
+---
+# Default variables for unifi_backup role
+
+# Backup destination
+unifi_backup_root: /opt/backups/unifi
+unifi_backup_prefix: manual
+unifi_backup_owner: root
+unifi_backup_group: root
+unifi_backup_dir_mode: "0700"
+unifi_backup_file_mode: "0600"
+
+# UniFi installation paths
+unifi_install_root: /usr/lib/unifi
+unifi_data_path: "{{ unifi_install_root }}/data"
+unifi_db_path: "{{ unifi_data_path }}/db"
+unifi_backup_path: "{{ unifi_data_path }}/backup"
+unifi_autobackup_path: "{{ unifi_backup_path }}/autobackup"
+unifi_logs_path: "{{ unifi_install_root }}/logs"
+unifi_system_properties_path: "{{ unifi_data_path }}/system.properties"
+unifi_keystore_path: "{{ unifi_data_path }}/keystore"
+unifi_env_file: /etc/default/unifi
+
+# MongoDB / UniFi database settings
+unifi_mongodb_host: 127.0.0.1
+unifi_mongodb_port: 27017
+unifi_mongodb_database: ace
+unifi_mongodb_username: ""
+unifi_mongodb_password: ""
+unifi_mongodb_auth_db: admin
+unifi_mongodb_dump_binary: mongodump
+
+# Package dependencies to ensure required binaries exist
+unifi_backup_required_packages:
+  - mongodb-org-tools
+  - rsync
+  - tar
+  - gzip
+  - findutils
+
+# Service management
+unifi_service_name: unifi.service
+unifi_backup_stop_services: true
+unifi_backup_service_stop_timeout: 10
+
+# Inclusion flags
+unifi_backup_include_logs: false
+unifi_backup_include_autobackups: true
+unifi_backup_include_traefik: true
+unifi_backup_include_system_properties: true
+unifi_backup_include_keystore: true
+unifi_backup_include_env: false
+unifi_backup_mongodb_backup: true
+
+# System integration paths
+unifi_systemd_unit_path: /etc/systemd/system/unifi.service
+unifi_traefik_config_path: /etc/traefik/dynamic/unifi.yml
+
+# Disk validation
+unifi_backup_disk_check_enabled: true
+unifi_backup_disk_overhead_ratio: 1.5
+
+# Rsync settings
+unifi_backup_rsync_binary: rsync
+unifi_backup_use_delete: true
+
+# Archive + checksum behaviour
+unifi_backup_create_archive: true
+unifi_backup_archive_format: tar.gz # tar.gz | tar.zst
+unifi_backup_generate_checksums: true
+
+# Fetch archive back to control node
+unifi_backup_fetch_local: true
+unifi_backup_local_dir: "{{ lookup('env', 'HOME') }}/backups/unifi"
+unifi_backup_local_dir_mode: "0700"

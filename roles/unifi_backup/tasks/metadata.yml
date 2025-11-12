@@ -1,0 +1,34 @@
+---
+- name: Build backup metadata
+  ansible.builtin.set_fact:
+    unifi_backup_metadata:
+      timestamp: "{{ unifi_backup_timestamp }}"
+      host: "{{ inventory_hostname }}"
+      unifi_version: "{{ unifi_backup_version }}"
+      data_path: "{{ unifi_data_path }}"
+      mongodb_port: "{{ unifi_mongodb_port }}"
+      mongodb_database: "{{ unifi_mongodb_database }}"
+      service_stopped: "{{ unifi_backup_stop_services | bool }}"
+      include_logs: "{{ unifi_backup_include_logs | bool }}"
+      include_autobackups: "{{ unifi_backup_include_autobackups | bool }}"
+      restore_methods:
+        automated: "MongoDB import + data directory rsync"
+        semi_manual: "Extract .unf from autobackups/, upload via web UI"
+
+- name: Write metadata file
+  ansible.builtin.copy:
+    dest: "{{ unifi_backup_dir }}/metadata.yml"
+    owner: "{{ unifi_backup_owner }}"
+    group: "{{ unifi_backup_group }}"
+    mode: "{{ unifi_backup_file_mode }}"
+    content: "{{ unifi_backup_metadata | to_nice_yaml }}"
+
+- name: Generate checksum manifest
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cd "{{ unifi_backup_dir }}"
+    find . -type f ! -name manifest.sha256 -print0 | sort -z | xargs -0 sha256sum > manifest.sha256
+  args:
+    executable: /bin/bash
+  when: unifi_backup_generate_checksums | bool
+  changed_when: true

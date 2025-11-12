@@ -1,0 +1,147 @@
+---
+- name: "mongodb | Ensure keyring directory"
+  ansible.builtin.file:
+    path: /usr/share/keyrings
+    state: directory
+    mode: "0755"
+
+- name: "mongodb | Download repository key"
+  ansible.builtin.get_url:
+    url: "https://www.mongodb.org/static/pgp/server-{{ unifi_mongodb_version }}.asc"
+    dest: "/usr/share/keyrings/mongodb-server-{{ unifi_mongodb_version }}.asc"
+    mode: "0644"
+
+- name: "mongodb | Configure apt repository"
+  ansible.builtin.apt_repository:
+    repo: "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-{{ unifi_mongodb_version }}.asc ] https://repo.mongodb.org/apt/ubuntu {{ unifi_mongodb_repo_distribution }}/mongodb-org/{{ unifi_mongodb_version }} multiverse"
+    state: present
+    filename: mongodb-org
+    update_cache: true
+
+- name: "mongodb | Install packages"
+  ansible.builtin.apt:
+    name: "{{ unifi_mongodb_packages }}"
+    state: present
+    update_cache: true
+
+- name: "mongodb | Configure bind IPs"
+  ansible.builtin.lineinfile:
+    path: /etc/mongod.conf
+    regexp: '^  bindIp:'
+    line: "  bindIp: {{ unifi_mongodb_bind_ip_line }}"
+    backup: true
+  notify: Restart MongoDB
+
+- name: "mongodb | Ensure security block"
+  ansible.builtin.lineinfile:
+    path: /etc/mongod.conf
+    regexp: '^#?security:'
+    line: "security:"
+    backup: true
+  notify: Restart MongoDB
+
+- name: "mongodb | Enable authorization"
+  ansible.builtin.lineinfile:
+    path: /etc/mongod.conf
+    regexp: '^  authorization:'
+    line: "  authorization: {{ 'enabled' if unifi_mongodb_enable_auth else 'disabled' }}"
+    insertafter: '^security:'
+    backup: true
+  notify: Restart MongoDB
+
+- name: "mongodb | Ensure quiet logging"
+  ansible.builtin.lineinfile:
+    path: /etc/mongod.conf
+    regexp: '^  quiet:'
+    line: "  quiet: true"
+    insertafter: '^  path: /var/log/mongodb/mongod.log'
+    backup: true
+  notify: Restart MongoDB
+
+- name: "mongodb | Ensure verbosity level"
+  ansible.builtin.lineinfile:
+    path: /etc/mongod.conf
+    regexp: '^  verbosity:'
+    line: "  verbosity: 0"
+    insertafter: '^  quiet: true'
+    backup: true
+  notify: Restart MongoDB
+
+- name: "mongodb | Configure setParameter block"
+  ansible.builtin.blockinfile:
+    path: /etc/mongod.conf
+    block: |
+      # Reduce chattiness for UniFi operation
+      setParameter:
+        suppressNoTLSPeerCertificateWarning: true
+        diagnosticDataCollectionEnabled: false
+    marker: "# {mark} ANSIBLE MANAGED - UNIFI"
+    insertafter: EOF
+    backup: true
+  notify: Restart MongoDB
+
+- name: "mongodb | Install logrotate config"
+  ansible.builtin.template:
+    src: mongodb-logrotate.j2
+    dest: "{{ unifi_mongodb_logrotate_path }}"
+    owner: "{{ unifi_logrotate_owner }}"
+    group: "{{ unifi_logrotate_group }}"
+    mode: "0644"
+  when: unifi_mongodb_logrotate_enabled | bool
+
+- name: "mongodb | Install log monitor script"
+  ansible.builtin.template:
+    src: mongodb-log-check.sh.j2
+    dest: "{{ unifi_mongodb_monitor_script_path }}"
+    mode: "0755"
+    owner: "root"
+    group: "root"
+  when: unifi_mongodb_monitor_script_enabled | bool
+
+- name: "mongodb | Ensure service state"
+  ansible.builtin.systemd:
+    name: mongod
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: "mongodb | Wait for port readiness"
+  ansible.builtin.wait_for:
+    host: "{{ unifi_mongodb_host }}"
+    port: "{{ unifi_mongodb_port }}"
+    timeout: "{{ unifi_mongodb_wait_timeout }}"
+    delay: 5
+
+- name: "mongodb | Check UniFi user"
+  ansible.builtin.shell: |
+    mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} \
+      --authenticationDatabase admin -u "{{ unifi_mongodb_user }}" -p "{{ unifi_mongodb_password }}" \
+      --eval "db.runCommand({connectionStatus: 1})" >/dev/null 2>&1
+  register: unifi_mongodb_user_check
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: "mongodb | Render init script"
+  ansible.builtin.template:
+    src: mongo-init.js.j2
+    dest: /tmp/unifi-mongo-init.js
+    owner: root
+    group: root
+    mode: "0600"
+  when: unifi_mongodb_user_check.rc != 0
+  no_log: true
+
+- name: "mongodb | Initialize users"
+  ansible.builtin.shell: |
+    mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} < /tmp/unifi-mongo-init.js
+  when: unifi_mongodb_user_check.rc != 0
+  register: unifi_mongodb_init
+  changed_when: true
+  no_log: true
+
+- name: "mongodb | Remove init script"
+  ansible.builtin.file:
+    path: /tmp/unifi-mongo-init.js
+    state: absent
+  when: unifi_mongodb_user_check.rc != 0

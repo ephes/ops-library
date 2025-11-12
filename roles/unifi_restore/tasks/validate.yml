@@ -1,0 +1,49 @@
+---
+- name: Ensure required packages are installed
+  ansible.builtin.package:
+    name: "{{ unifi_restore_required_packages }}"
+    state: present
+
+- name: Find backup archives
+  ansible.builtin.find:
+    paths: "{{ unifi_restore_archive_search_root }}"
+    patterns:
+      - "*.tar.gz"
+      - "*.tar.zst"
+    recurse: false
+  register: unifi_restore_archives
+  when: unifi_restore_archive == 'latest'
+
+- name: Fail when no archives are available
+  ansible.builtin.fail:
+    msg: "No UniFi backup archives found in {{ unifi_restore_archive_search_root }}"
+  when:
+    - unifi_restore_archive == 'latest'
+    - (unifi_restore_archives.matched | default(0) | int) == 0
+
+- name: Select latest archive
+  ansible.builtin.set_fact:
+    unifi_restore_archive_path: "{{ (unifi_restore_archives.files | sort(attribute='mtime') | last).path }}"
+  when: unifi_restore_archive == 'latest'
+
+- name: Use specified archive
+  ansible.builtin.set_fact:
+    unifi_restore_archive_path: "{{ unifi_restore_archive_search_root }}/{{ unifi_restore_archive }}"
+  when: unifi_restore_archive != 'latest'
+
+- name: Verify archive exists
+  ansible.builtin.stat:
+    path: "{{ unifi_restore_archive_path }}"
+  register: unifi_restore_archive_stat
+
+- name: Fail if archive is missing
+  ansible.builtin.assert:
+    that:
+      - unifi_restore_archive_stat.stat.exists
+    fail_msg: "Archive {{ unifi_restore_archive_path }} not found"
+
+- name: Detect installed UniFi version
+  ansible.builtin.command: dpkg-query -W -f='${Version}' unifi
+  register: unifi_restore_installed_version_cmd
+  changed_when: false
+  failed_when: false

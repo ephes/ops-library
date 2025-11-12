@@ -10,6 +10,7 @@ nyxmon_remove
 traefik_remove
 dns_remove
 homeassistant_remove
+unifi_remove
 paperless_remove
 ```
 

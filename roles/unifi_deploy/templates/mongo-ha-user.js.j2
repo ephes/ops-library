@@ -1,0 +1,29 @@
+use('{{ unifi_mongodb_database }}');
+var existing = db.admin.findOne({name: "{{ unifi_homeassistant_username }}"});
+if (!existing) {
+  var now = Date.now();
+  db.admin.insertOne({
+    "email": "{{ unifi_homeassistant_username }}@local",
+    "name": "{{ unifi_homeassistant_username }}",
+    "last_site_name": "default",
+    "time_created": NumberLong(now.toString()),
+    "x_shadow": "{{ unifi_homeassistant_password_hash.stdout | trim }}"
+  });
+
+  var haUser = db.admin.findOne({name: "{{ unifi_homeassistant_username }}"});
+  var defaultSite = db.site.findOne({name: "default"});
+
+  if (haUser && defaultSite) {
+    db.privilege.insertOne({
+      "admin_id": haUser._id,
+      "site_id": defaultSite._id,
+      "role": "readonly",
+      "permissions": []
+    });
+    print("Home Assistant user created successfully");
+  } else {
+    print("Error: Could not find UniFi user or site");
+  }
+} else {
+  print("Home Assistant user already exists");
+}

@@ -1,0 +1,51 @@
+---
+- name: Ensure safety backup path is known
+  ansible.builtin.fail:
+    msg: "Safety backup path is not available; cannot rollback."
+  when: unifi_safety_backup_path is not defined
+
+- name: Stop UniFi service for rollback
+  ansible.builtin.systemd:
+    name: "{{ unifi_service_name }}"
+    state: stopped
+
+- name: Restore UniFi data directory from safety backup
+  ansible.builtin.command:
+    cmd: >
+      {{ unifi_restore_rsync_binary }} -a --delete
+      "{{ unifi_safety_backup_path }}/data/"
+      "{{ unifi_data_path }}/"
+  changed_when: true
+
+- name: Stat safety systemd unit
+  ansible.builtin.stat:
+    path: "{{ unifi_safety_backup_path }}/systemd/unifi.service"
+  register: unifi_rollback_systemd_stat
+
+- name: Restore systemd unit from safety backup
+  ansible.builtin.copy:
+    src: "{{ unifi_safety_backup_path }}/systemd/unifi.service"
+    dest: /etc/systemd/system/unifi.service
+    remote_src: true
+  when: unifi_rollback_systemd_stat.stat.exists
+
+- name: Stat safety Traefik config
+  ansible.builtin.stat:
+    path: "{{ unifi_safety_backup_path }}/traefik/unifi.yml"
+  register: unifi_rollback_traefik_stat
+
+- name: Restore Traefik config from safety backup
+  ansible.builtin.copy:
+    src: "{{ unifi_safety_backup_path }}/traefik/unifi.yml"
+    dest: /etc/traefik/dynamic/unifi.yml
+    remote_src: true
+  when: unifi_rollback_traefik_stat.stat.exists
+
+- name: Reload systemd after rollback
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Start UniFi service after rollback
+  ansible.builtin.systemd:
+    name: "{{ unifi_service_name }}"
+    state: started

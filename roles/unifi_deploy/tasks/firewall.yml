@@ -1,0 +1,10 @@
+---
+- name: "firewall | Open UniFi firewall ports"
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+    comment: "{{ item.comment }}"
+  loop: "{{ unifi_firewall_rules }}"
+  when: ansible_facts['os_family'] == "Debian"
+  failed_when: false

@@ -1,0 +1,66 @@
+---
+- name: Ensure required packages are installed
+  ansible.builtin.package:
+    name: "{{ unifi_backup_required_packages }}"
+    state: present
+
+- name: Gather UniFi path facts
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  register: unifi_backup_path_stats
+  loop:
+    - { name: "data_path", path: "{{ unifi_data_path }}", optional: false, description: "UniFi data directory" }
+    - { name: "db_path", path: "{{ unifi_db_path }}", optional: false, description: "UniFi MongoDB directory" }
+    - { name: "backup_path", path: "{{ unifi_backup_path }}", optional: true, description: "UniFi backup directory" }
+    - { name: "autobackup_path", path: "{{ unifi_autobackup_path }}", optional: true, description: "UniFi .unf autobackup directory" }
+    - { name: "logs_path", path: "{{ unifi_logs_path }}", optional: "{{ not unifi_backup_include_logs }}", description: "UniFi logs directory" }
+    - { name: "system_properties", path: "{{ unifi_system_properties_path }}", optional: "{{ not unifi_backup_include_system_properties }}", description: "system.properties" }
+    - { name: "keystore", path: "{{ unifi_keystore_path }}", optional: "{{ not unifi_backup_include_keystore }}", description: "UniFi keystore" }
+    - { name: "env_file", path: "{{ unifi_env_file }}", optional: "{{ not unifi_backup_include_env }}", description: ".env file" }
+    - { name: "systemd_unit", path: "{{ unifi_systemd_unit_path }}", optional: true, description: "systemd unit file" }
+    - { name: "traefik_config", path: "{{ unifi_traefik_config_path }}", optional: "{{ not unifi_backup_include_traefik }}", description: "Traefik dynamic config" }
+  loop_control:
+    label: "{{ item.description }}"
+  failed_when: false
+
+- name: Assert required UniFi paths exist
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+    fail_msg: "{{ item.item.description }} ({{ item.item.path }}) is missing"
+  loop: "{{ unifi_backup_path_stats.results }}"
+  when: not (item.item.optional | bool)
+
+- name: Build UniFi path map
+  ansible.builtin.set_fact:
+    unifi_backup_path_map: "{{ unifi_backup_path_map | default({}) | combine({ item.item.name: item.stat }) }}"
+  loop: "{{ unifi_backup_path_stats.results }}"
+
+- name: Check UniFi service status (required for mongodump)
+  ansible.builtin.systemd:
+    name: "{{ unifi_service_name }}"
+  register: unifi_backup_service_status
+  failed_when: unifi_backup_service_status.status.ActiveState != 'active'
+  changed_when: false
+  when: unifi_backup_mongodb_backup | bool
+
+- name: Check MongoDB port availability
+  ansible.builtin.wait_for:
+    host: "{{ unifi_mongodb_host }}"
+    port: "{{ unifi_mongodb_port }}"
+    timeout: 1
+    state: started
+  register: unifi_mongodb_port_check
+  failed_when: false
+  changed_when: false
+  when: unifi_backup_mongodb_backup | bool
+
+- name: Set MongoDB accessibility fact
+  ansible.builtin.set_fact:
+    unifi_mongodb_accessible: "{{ not unifi_mongodb_port_check.failed }}"
+  when: unifi_backup_mongodb_backup | bool
+
+- name: Default MongoDB accessibility flag when check not run
+  ansible.builtin.set_fact:
+    unifi_mongodb_accessible: true
+  when: unifi_mongodb_accessible is not defined

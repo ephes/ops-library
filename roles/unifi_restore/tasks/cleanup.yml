@@ -1,0 +1,26 @@
+---
+- name: Remove staging directory
+  ansible.builtin.file:
+    path: "{{ unifi_restore_staging_dir }}"
+    state: absent
+
+- name: Remove manual .unf export
+  ansible.builtin.file:
+    path: /tmp/unifi-restore.unf
+    state: absent
+
+- name: Remove safety backup after successful restore
+  ansible.builtin.file:
+    path: "{{ unifi_safety_backup_path }}"
+    state: absent
+  when:
+    - unifi_restore_cleanup_safety_backup | bool
+    - unifi_restore_operation_successful | bool
+    - unifi_safety_backup_path is defined
+
+- name: Keep safety backup on failure
+  ansible.builtin.debug:
+    msg: "Safety backup retained at {{ unifi_safety_backup_path }} due to restore failure."
+  when:
+    - not unifi_restore_operation_successful | bool
+    - unifi_safety_backup_path is defined

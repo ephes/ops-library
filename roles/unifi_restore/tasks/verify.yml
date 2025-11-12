@@ -1,0 +1,85 @@
+---
+- name: Wait for UniFi service to be active
+  ansible.builtin.systemd:
+    name: "{{ unifi_service_name }}"
+  register: unifi_restore_service_status
+  retries: 12
+  delay: 10
+  until: unifi_restore_service_status.status.ActiveState == 'active'
+
+- name: Check MongoDB port for verification
+  ansible.builtin.wait_for:
+    host: "{{ unifi_restore_mongodb_host }}"
+    port: "{{ unifi_restore_mongodb_port }}"
+    timeout: 1
+    state: started
+  register: unifi_restore_mongodb_port_check
+  failed_when: false
+  changed_when: false
+  when: unifi_restore_verify_mongodb | bool
+
+- name: "verify | Build MongoDB verification command"
+  ansible.builtin.set_fact:
+    unifi_restore_mongodump_args: >-
+      {{
+        [
+          unifi_mongodb_dump_binary | default('mongodump'),
+          '--host=' ~ unifi_restore_mongodb_host,
+          '--port=' ~ (unifi_restore_mongodb_port | string),
+          '--db=' ~ unifi_restore_mongodb_database,
+          '--archive=/tmp/unifi-verify-mongo.archive',
+          '--gzip'
+        ]
+        + (((unifi_restore_mongodb_username | default('', true) | length) > 0)
+            | ternary(['--username=' ~ unifi_restore_mongodb_username], []))
+        + (((unifi_restore_mongodb_password | default('', true) | length) > 0)
+            | ternary(['--password=' ~ unifi_restore_mongodb_password], []))
+        + (((unifi_restore_mongodb_auth_db | default('', true) | length) > 0)
+            | ternary(['--authenticationDatabase=' ~ unifi_restore_mongodb_auth_db], []))
+      }}
+  no_log: "{{ unifi_restore_mongodb_password | default('', true) | length > 0 }}"
+  when:
+    - unifi_restore_verify_mongodb | bool
+    - unifi_restore_mongodb_port_check is defined
+    - not unifi_restore_mongodb_port_check.failed
+
+- name: "verify | Verify MongoDB is accessible"
+  ansible.builtin.command:
+    argv: "{{ unifi_restore_mongodump_args }}"
+  register: unifi_restore_mongodb_check
+  retries: 6
+  delay: 5
+  until: unifi_restore_mongodb_check.rc == 0
+  changed_when: false
+  when:
+    - unifi_restore_verify_mongodb | bool
+    - unifi_restore_mongodb_port_check is defined
+    - not unifi_restore_mongodb_port_check.failed
+
+- name: Remove MongoDB verification archive
+  ansible.builtin.file:
+    path: /tmp/unifi-verify-mongo.archive
+    state: absent
+  when:
+    - unifi_restore_verify_mongodb | bool
+    - unifi_restore_mongodb_port_check is defined
+    - not unifi_restore_mongodb_port_check.failed
+
+- name: Warn when MongoDB verification is skipped
+  ansible.builtin.debug:
+    msg: "Skipping MongoDB verification because {{ unifi_restore_mongodb_host }}:{{ unifi_restore_mongodb_port }} is unreachable."
+  when:
+    - unifi_restore_verify_mongodb | bool
+    - unifi_restore_mongodb_port_check is defined
+    - unifi_restore_mongodb_port_check.failed
+
+- name: Check UniFi web interface
+  ansible.builtin.uri:
+    url: "{{ unifi_restore_health_url }}"
+    validate_certs: false
+    status_code: [200, 302, 303]
+  register: unifi_restore_http
+  retries: 6
+  delay: 10
+  until: unifi_restore_http.status in [200, 302, 303]
+  when: unifi_restore_verify_http | bool
