@@ -1,0 +1,145 @@
+---
+- block:
+    - name: Stop Nyxmon services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        daemon_reload: true
+      loop: "{{ nyxmon_restore_service_stop_order }}"
+
+    - name: Restore SQLite database
+      ansible.builtin.copy:
+        src: "{{ nyxmon_restore_content_path }}/database/{{ nyxmon_backup_sqlite_path | basename }}"
+        dest: "{{ nyxmon_backup_sqlite_path }}"
+        owner: "{{ nyxmon_restore_site_owner }}"
+        group: "{{ nyxmon_restore_site_group }}"
+        mode: "0600"
+        remote_src: true
+
+    - name: Verify SQLite integrity before starting services
+      ansible.builtin.command: "sqlite3 {{ nyxmon_backup_sqlite_path }} 'PRAGMA integrity_check'"
+      register: nyxmon_restore_sqlite_precheck
+      changed_when: false
+      when: nyxmon_restore_verify_sqlite
+
+    - name: Check directory presence in archive
+      ansible.builtin.stat:
+        path: "{{ nyxmon_restore_content_path }}/{{ item.src }}"
+      register: nyxmon_restore_dir_stats
+      loop: "{{ nyxmon_restore_dirs }}"
+
+    - name: Ensure destination directories exist
+      ansible.builtin.file:
+        path: "{{ item.dest }}"
+        state: directory
+        owner: "{{ nyxmon_restore_site_owner }}"
+        group: "{{ nyxmon_restore_site_group }}"
+        mode: "0755"
+      loop: "{{ nyxmon_restore_dirs }}"
+
+    - name: Restore Nyxmon directories
+      ansible.builtin.command:
+        cmd: >
+          rsync -a --delete
+          "{{ nyxmon_restore_content_path }}/{{ item.item.src }}/"
+          "{{ item.item.dest }}/"
+      loop: "{{ nyxmon_restore_dir_stats.results }}"
+      when:
+        - item.stat.exists
+        - item.stat.isdir
+      loop_control:
+        label: "{{ item.item.dest }}"
+      changed_when: true
+
+    - name: Check config file presence
+      ansible.builtin.stat:
+        path: "{{ nyxmon_restore_content_path }}/config/{{ item.name }}"
+      register: nyxmon_restore_config_stats
+      loop:
+        - { name: ".env", dest: "{{ nyxmon_env_file }}", mode: "0600" }
+        - { name: "pyproject.toml", dest: "{{ nyxmon_site_path }}/pyproject.toml", mode: "0644" }
+        - { name: "uv.lock", dest: "{{ nyxmon_site_path }}/uv.lock", mode: "0644" }
+
+    - name: Restore config files
+      ansible.builtin.copy:
+        src: "{{ nyxmon_restore_content_path }}/config/{{ item.item.name }}"
+        dest: "{{ item.item.dest }}"
+        owner: "{{ nyxmon_restore_site_owner }}"
+        group: "{{ nyxmon_restore_site_group }}"
+        mode: "{{ item.item.mode }}"
+        remote_src: true
+      loop: "{{ nyxmon_restore_config_stats.results }}"
+      when: item.stat.exists
+
+    - name: Check systemd unit presence
+      ansible.builtin.stat:
+        path: "{{ nyxmon_restore_content_path }}/systemd/{{ item | basename }}"
+      register: nyxmon_restore_systemd_stats
+      loop: "{{ nyxmon_systemd_unit_paths }}"
+
+    - name: Restore systemd units
+      ansible.builtin.copy:
+        src: "{{ nyxmon_restore_content_path }}/systemd/{{ item.item | basename }}"
+        dest: "{{ item.item }}"
+        owner: root
+        group: root
+        mode: "0644"
+        remote_src: true
+      loop: "{{ nyxmon_restore_systemd_stats.results }}"
+      when:
+        - nyxmon_restore_system_files
+        - item.stat.exists
+      notify: reload systemd
+
+    - name: Restore Traefik config
+      ansible.builtin.copy:
+        src: "{{ nyxmon_restore_content_path }}/traefik/nyxmon.yml"
+        dest: "{{ nyxmon_traefik_config_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+        remote_src: true
+      when:
+        - nyxmon_restore_restore_traefik
+        - (nyxmon_restore_content_path + '/traefik/nyxmon.yml') is exists
+
+    - name: Fix ownership on site tree
+      ansible.builtin.file:
+        path: "{{ item }}"
+        owner: "{{ nyxmon_restore_site_owner }}"
+        group: "{{ nyxmon_restore_site_group }}"
+        recurse: true
+      loop:
+        - "{{ nyxmon_site_path }}"
+        - "{{ nyxmon_logs_path }}"
+      when: nyxmon_restore_fix_ownership
+
+    - name: Flush handlers before starting services
+      ansible.builtin.meta: flush_handlers
+
+    - name: Start Nyxmon services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+        daemon_reload: true
+      loop: "{{ nyxmon_restore_service_start_order }}"
+
+  rescue:
+    - name: Rollback to safety snapshot (if available)
+      ansible.builtin.command:
+        cmd: >
+          rsync -a --delete
+          "{{ nyxmon_restore_safety_path }}/"
+          "{{ nyxmon_site_path }}/"
+      when: nyxmon_restore_create_safety_backup
+
+    - name: Start Nyxmon services after rollback
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+        daemon_reload: true
+      loop: "{{ nyxmon_restore_service_start_order }}"
+
+    - name: Fail restore with rollback notice
+      ansible.builtin.fail:
+        msg: "Nyxmon restore failed; safety snapshot reapplied."

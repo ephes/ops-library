@@ -1,0 +1,13 @@
+---
+- name: Cleanup staging directory
+  ansible.builtin.file:
+    path: "{{ nyxmon_restore_staging_path }}"
+    state: absent
+
+- name: Cleanup safety snapshot
+  ansible.builtin.file:
+    path: "{{ nyxmon_restore_safety_path }}"
+    state: absent
+  when:
+    - nyxmon_restore_create_safety_backup
+    - nyxmon_restore_cleanup_safety_backup

@@ -1,0 +1,56 @@
+---
+# Default variables for nyxmon_backup role
+
+# Core paths
+nyxmon_backup_root: /opt/backups/nyxmon
+nyxmon_backup_prefix: manual
+nyxmon_site_path: /home/nyxmon/site
+nyxmon_logs_path: /home/nyxmon/logs
+nyxmon_media_path: "{{ nyxmon_site_path }}/media"
+nyxmon_static_path: "{{ nyxmon_site_path }}/staticfiles"
+nyxmon_cache_path: "{{ nyxmon_site_path }}/cache"
+nyxmon_env_file: "{{ nyxmon_site_path }}/.env"
+nyxmon_pyproject_path: "{{ nyxmon_site_path }}/pyproject.toml"
+nyxmon_uv_lock_path: "{{ nyxmon_site_path }}/uv.lock"
+nyxmon_backup_sqlite_path: "{{ nyxmon_site_path }}/db.sqlite3"
+nyxmon_systemd_unit_paths:
+  - src: /etc/systemd/system/nyxmon.service
+    dest: systemd/nyxmon.service
+  - src: /etc/systemd/system/nyxmon-monitor.service
+    dest: systemd/nyxmon-monitor.service
+nyxmon_traefik_config_path: /etc/traefik/dynamic/nyxmon.yml
+
+# Service orchestration
+nyxmon_backup_service_stop_order:
+  - nyxmon-monitor.service
+  - nyxmon.service
+nyxmon_backup_service_start_order:
+  - nyxmon.service
+  - nyxmon-monitor.service
+nyxmon_backup_stop_services: true
+nyxmon_backup_use_sqlite_backup: false
+
+# Inclusion flags
+nyxmon_backup_include_logs: true
+nyxmon_backup_include_cache: false
+nyxmon_backup_include_static: true
+
+# Archive + manifest behaviour
+nyxmon_backup_use_delete: true
+nyxmon_backup_generate_checksums: true
+nyxmon_backup_create_archive: true
+nyxmon_backup_archive_format: tar.gz
+
+# Local fetch defaults
+nyxmon_backup_fetch_local: true
+nyxmon_backup_local_dir: "{{ lookup('env', 'HOME') }}/backups/nyxmon"
+nyxmon_backup_local_dir_mode: "0700"
+
+# Ownership and permissions (remote)
+nyxmon_backup_owner: root
+nyxmon_backup_group: root
+nyxmon_backup_dir_mode: "0700"
+nyxmon_backup_file_mode: "0600"
+
+# Executables
+nyxmon_python_bin: "{{ nyxmon_site_path }}/.venv/bin/python"

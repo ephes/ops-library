@@ -1,0 +1,79 @@
+---
+# Archive selection
+nyxmon_restore_archive: latest
+nyxmon_restore_archive_search_root: /opt/backups/nyxmon
+nyxmon_restore_local_cache: "{{ lookup('env','HOME') }}/backups/nyxmon"
+nyxmon_restore_upload_target: "{{ nyxmon_restore_archive_search_root }}"
+nyxmon_restore_staging_dir: /tmp/nyxmon-restore
+nyxmon_restore_staging_mode: "0700"
+nyxmon_restore_validate_checksums: true
+nyxmon_restore_dry_run: false
+nyxmon_restore_check_disk_space: true
+nyxmon_restore_disk_space_multiplier: 2.0
+
+# Nyxmon paths/services
+nyxmon_site_path: /home/nyxmon/site
+nyxmon_logs_path: /home/nyxmon/logs
+nyxmon_media_path: "{{ nyxmon_site_path }}/media"
+nyxmon_static_path: "{{ nyxmon_site_path }}/staticfiles"
+nyxmon_cache_path: "{{ nyxmon_site_path }}/cache"
+nyxmon_env_file: "{{ nyxmon_site_path }}/.env"
+nyxmon_backup_sqlite_path: "{{ nyxmon_site_path }}/db.sqlite3"
+nyxmon_systemd_unit_paths:
+  - /etc/systemd/system/nyxmon.service
+  - /etc/systemd/system/nyxmon-monitor.service
+nyxmon_traefik_config_path: /etc/traefik/dynamic/nyxmon.yml
+nyxmon_restore_service_stop_order:
+  - nyxmon-monitor.service
+  - nyxmon.service
+nyxmon_restore_service_start_order:
+  - nyxmon.service
+  - nyxmon-monitor.service
+nyxmon_restore_fix_ownership: true
+nyxmon_restore_site_owner: nyxmon
+nyxmon_restore_site_group: nyxmon
+nyxmon_restore_manage_path: "{{ nyxmon_site_path }}/src/django/manage.py"
+
+# Restore behaviour
+nyxmon_restore_system_files: true
+nyxmon_restore_restore_traefik: true
+nyxmon_restore_stop_timeout: 30
+nyxmon_restore_start_timeout: 60
+nyxmon_restore_start_poll_interval: 3
+nyxmon_restore_verify_http: true
+nyxmon_restore_health_url: http://127.0.0.1:10017/admin/login/
+nyxmon_restore_health_retries: 5
+nyxmon_restore_health_delay: 5
+nyxmon_restore_health_expected_status: 200
+nyxmon_restore_health_headers: {}
+nyxmon_restore_verify_sqlite: true
+
+nyxmon_restore_dirs:
+  - name: media
+    src: media
+    dest: "{{ nyxmon_media_path }}"
+    optional: false
+  - name: static
+    src: static
+    dest: "{{ nyxmon_static_path }}"
+    optional: true
+  - name: cache
+    src: cache
+    dest: "{{ nyxmon_cache_path }}"
+    optional: true
+  - name: logs
+    src: logs
+    dest: "{{ nyxmon_logs_path }}"
+    optional: true
+
+# Safety snapshot
+nyxmon_restore_create_safety_backup: true
+nyxmon_restore_safety_backup_prefix: pre-restore
+nyxmon_restore_safety_rsync_delete: true
+nyxmon_restore_cleanup_safety_backup: true
+
+# Metadata requirements
+nyxmon_restore_metadata_required_fields:
+  - timestamp
+  - host
+  - site_path

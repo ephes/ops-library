@@ -1,0 +1,46 @@
+---
+- name: Collect staging usage
+  ansible.builtin.shell: |
+    du -sb "{{ nyxmon_restore_content_path }}" | awk '{print $1}'
+  register: nyxmon_restore_staging_size
+  changed_when: false
+
+- name: Ensure sufficient disk space
+  ansible.builtin.shell: |
+    set -euo pipefail
+    df -B1 --output=avail "{{ nyxmon_site_path }}" | tail -1
+  register: nyxmon_restore_free_space
+  changed_when: false
+  when: nyxmon_restore_check_disk_space
+
+- name: Assert disk space
+  ansible.builtin.assert:
+    that:
+      - (nyxmon_restore_free_space.stdout | trim | int) > (nyxmon_restore_staging_size.stdout | trim | int * nyxmon_restore_disk_space_multiplier)
+    fail_msg: "Insufficient disk space for restore."
+  when: nyxmon_restore_check_disk_space
+
+- block:
+    - name: Dry-run note
+      ansible.builtin.debug:
+        msg: "Dry run enabled, stopping before changes."
+    - name: Cleanup staging directory (dry run)
+      ansible.builtin.file:
+        path: "{{ nyxmon_restore_staging_path }}"
+        state: absent
+    - ansible.builtin.meta: end_play
+  when: nyxmon_restore_dry_run
+
+- name: Create safety snapshot path
+  ansible.builtin.set_fact:
+    nyxmon_restore_safety_path: "{{ nyxmon_site_path }}.{{ nyxmon_restore_safety_backup_prefix }}-{{ nyxmon_restore_timestamp }}"
+  when: nyxmon_restore_create_safety_backup
+
+- name: Create safety snapshot with rsync
+  ansible.builtin.command:
+    cmd: >
+      rsync -a{{ ' --delete' if nyxmon_restore_safety_rsync_delete else '' }}
+      "{{ nyxmon_site_path }}/"
+      "{{ nyxmon_restore_safety_path }}/"
+  when: nyxmon_restore_create_safety_backup
+  changed_when: true

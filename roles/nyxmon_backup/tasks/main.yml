@@ -1,0 +1,269 @@
+---
+- name: Ensure sqlite3 is installed
+  ansible.builtin.package:
+    name: sqlite3
+    state: present
+
+- name: Gather Nyxmon path facts
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  register: nyxmon_backup_path_stats
+  failed_when: not item.optional and not nyxmon_backup_path_stats.stat.exists
+  loop:
+    - { path: "{{ nyxmon_site_path }}", optional: false, description: "Nyxmon site directory" }
+    - { path: "{{ nyxmon_media_path }}", optional: true, description: "Nyxmon media" }
+    - { path: "{{ nyxmon_static_path }}", optional: "{{ not nyxmon_backup_include_static }}", description: "Nyxmon static files" }
+    - { path: "{{ nyxmon_cache_path }}", optional: true, description: "Nyxmon cache" }
+    - { path: "{{ nyxmon_logs_path }}", optional: "{{ not nyxmon_backup_include_logs }}", description: "Nyxmon logs" }
+    - { path: "{{ nyxmon_env_file }}", optional: false, description: "Nyxmon .env" }
+    - { path: "{{ nyxmon_pyproject_path }}", optional: true, description: "pyproject.toml" }
+    - { path: "{{ nyxmon_uv_lock_path }}", optional: true, description: "uv.lock" }
+    - { path: "{{ nyxmon_backup_sqlite_path }}", optional: false, description: "Nyxmon SQLite database" }
+    - { path: "{{ nyxmon_python_bin }}", optional: true, description: "Nyxmon virtualenv python" }
+    - { path: "{{ nyxmon_traefik_config_path }}", optional: true, description: "Traefik dynamic config" }
+  loop_control:
+    label: "{{ item.description }}"
+
+- name: Gather Nyxmon systemd unit facts
+  ansible.builtin.stat:
+    path: "{{ item.src }}"
+  register: nyxmon_backup_unit_stats
+  failed_when: false
+  loop: "{{ nyxmon_systemd_unit_paths }}"
+  loop_control:
+    label: "{{ item.src }}"
+
+- name: Merge systemd unit facts
+  ansible.builtin.set_fact:
+    nyxmon_backup_exists: "{{ nyxmon_backup_exists | default({}) | combine({ item.item.src: item.stat.exists }) }}"
+  loop: "{{ nyxmon_backup_unit_stats.results | default([]) }}"
+  when: nyxmon_backup_unit_stats is defined
+
+- name: Build Nyxmon path existence map
+  ansible.builtin.set_fact:
+    nyxmon_backup_exists: "{{ nyxmon_backup_exists | default({}) | combine({ item.item.path: item.stat.exists }) }}"
+  loop: "{{ nyxmon_backup_path_stats.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: Detect Nyxmon version
+  ansible.builtin.command: "{{ nyxmon_python_bin }} -c \"import nyxmon, sys; sys.stdout.write(getattr(nyxmon, '__version__', 'unknown'))\""
+  register: nyxmon_version_cmd
+  failed_when: false
+  changed_when: false
+  when:
+    - nyxmon_python_bin is defined
+    - nyxmon_python_bin | length > 0
+    - nyxmon_backup_exists.get(nyxmon_python_bin, false)
+
+- name: Set Nyxmon version fact
+  ansible.builtin.set_fact:
+    nyxmon_backup_version: "{{ (nyxmon_version_cmd is defined) | ternary(nyxmon_version_cmd.stdout | default('unknown') | trim, 'unknown') }}"
+
+- name: Set backup timestamp
+  ansible.builtin.set_fact:
+    nyxmon_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+- name: Compute backup directory path
+  ansible.builtin.set_fact:
+    nyxmon_backup_dir: "{{ nyxmon_backup_root }}/{{ nyxmon_backup_prefix }}-{{ nyxmon_backup_timestamp }}"
+
+- name: Compute archive path
+  ansible.builtin.set_fact:
+    nyxmon_backup_archive: "{{ nyxmon_backup_dir }}.{{ nyxmon_backup_archive_format }}"
+  when: nyxmon_backup_create_archive
+
+- name: Ensure backup root exists
+  ansible.builtin.file:
+    path: "{{ nyxmon_backup_root }}"
+    state: directory
+    owner: "{{ nyxmon_backup_owner }}"
+    group: "{{ nyxmon_backup_group }}"
+    mode: "{{ nyxmon_backup_dir_mode }}"
+
+- name: Ensure backup directory exists
+  ansible.builtin.file:
+    path: "{{ nyxmon_backup_dir }}"
+    state: directory
+    owner: "{{ nyxmon_backup_owner }}"
+    group: "{{ nyxmon_backup_group }}"
+    mode: "{{ nyxmon_backup_dir_mode }}"
+
+- name: Ensure backup subdirectories exist
+  ansible.builtin.file:
+    path: "{{ nyxmon_backup_dir }}/{{ item }}"
+    state: directory
+    owner: "{{ nyxmon_backup_owner }}"
+    group: "{{ nyxmon_backup_group }}"
+    mode: "{{ nyxmon_backup_dir_mode }}"
+  loop:
+    - database
+    - media
+    - static
+    - cache
+    - logs
+    - config
+    - systemd
+    - traefik
+
+- block:
+    - name: Stop Nyxmon services (monitor first)
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        daemon_reload: true
+      loop: "{{ nyxmon_backup_service_stop_order }}"
+      when: nyxmon_backup_stop_services
+
+    - name: Create SQLite backup with .backup
+      ansible.builtin.command:
+        cmd: >
+          sqlite3 "{{ nyxmon_backup_sqlite_path }}"
+          ".backup '{{ nyxmon_backup_dir }}/database/{{ nyxmon_backup_sqlite_path | basename }}'"
+      when: nyxmon_backup_use_sqlite_backup
+      register: nyxmon_sqlite_backup_cmd
+      changed_when: true
+
+    - name: Copy SQLite database file directly (fallback)
+      ansible.builtin.copy:
+        src: "{{ nyxmon_backup_sqlite_path }}"
+        dest: "{{ nyxmon_backup_dir }}/database/{{ nyxmon_backup_sqlite_path | basename }}"
+        owner: "{{ nyxmon_backup_owner }}"
+        group: "{{ nyxmon_backup_group }}"
+        mode: "{{ nyxmon_backup_file_mode }}"
+        remote_src: true
+      when: not nyxmon_backup_use_sqlite_backup
+
+    - name: Rsync Nyxmon data directories
+      ansible.builtin.command:
+        cmd: >
+          rsync -a{{ ' --delete' if nyxmon_backup_use_delete else '' }}
+          "{{ item.src }}/"
+          "{{ item.dest }}/"
+      loop:
+        - { src: "{{ nyxmon_media_path }}", dest: "{{ nyxmon_backup_dir }}/media", include: true }
+        - { src: "{{ nyxmon_static_path }}", dest: "{{ nyxmon_backup_dir }}/static", include: "{{ nyxmon_backup_include_static }}" }
+        - { src: "{{ nyxmon_cache_path }}", dest: "{{ nyxmon_backup_dir }}/cache", include: "{{ nyxmon_backup_include_cache }}" }
+        - { src: "{{ nyxmon_logs_path }}", dest: "{{ nyxmon_backup_dir }}/logs", include: "{{ nyxmon_backup_include_logs }}" }
+      loop_control:
+        label: "{{ item.src }}"
+      when:
+        - item.include | bool
+        - nyxmon_backup_exists.get(item.src, false)
+      changed_when: true
+
+    - name: Copy Nyxmon config files
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "{{ nyxmon_backup_dir }}/config/{{ item.dest }}"
+        owner: "{{ nyxmon_backup_owner }}"
+        group: "{{ nyxmon_backup_group }}"
+        mode: "{{ item.mode | default(nyxmon_backup_file_mode) }}"
+        remote_src: true
+      loop:
+        - { src: "{{ nyxmon_env_file }}", dest: ".env", mode: "0600" }
+        - { src: "{{ nyxmon_pyproject_path }}", dest: "pyproject.toml" }
+        - { src: "{{ nyxmon_uv_lock_path }}", dest: "uv.lock" }
+      when:
+        - nyxmon_backup_exists.get(item.src, false)
+
+    - name: Copy systemd unit files
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "{{ nyxmon_backup_dir }}/{{ item.dest }}"
+        owner: "{{ nyxmon_backup_owner }}"
+        group: "{{ nyxmon_backup_group }}"
+        mode: "{{ nyxmon_backup_file_mode }}"
+        remote_src: true
+      loop: "{{ nyxmon_systemd_unit_paths }}"
+      when:
+        - nyxmon_backup_exists.get(item.src, false)
+
+    - name: Copy Traefik configuration
+      ansible.builtin.copy:
+        src: "{{ nyxmon_traefik_config_path }}"
+        dest: "{{ nyxmon_backup_dir }}/traefik/nyxmon.yml"
+        owner: "{{ nyxmon_backup_owner }}"
+        group: "{{ nyxmon_backup_group }}"
+        mode: "{{ nyxmon_backup_file_mode }}"
+        remote_src: true
+      when: nyxmon_backup_exists.get(nyxmon_traefik_config_path, false)
+
+  always:
+    - name: Start Nyxmon services (main first)
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+        daemon_reload: true
+      loop: "{{ nyxmon_backup_service_start_order }}"
+      when: nyxmon_backup_stop_services
+
+- name: Build Nyxmon metadata structure
+  ansible.builtin.set_fact:
+    nyxmon_backup_metadata: "{{ {
+      'timestamp': nyxmon_backup_timestamp,
+      'host': inventory_hostname,
+      'site_path': nyxmon_site_path,
+      'database': nyxmon_backup_sqlite_path,
+      'version': nyxmon_backup_version | default('unknown'),
+      'stop_services': nyxmon_backup_stop_services | bool,
+      'include_logs': nyxmon_backup_include_logs | bool,
+      'include_cache': nyxmon_backup_include_cache | bool,
+      'include_static': nyxmon_backup_include_static | bool,
+      'services': nyxmon_backup_service_stop_order
+    } }}"
+
+- name: Write Nyxmon metadata file
+  ansible.builtin.copy:
+    dest: "{{ nyxmon_backup_dir }}/metadata.yml"
+    owner: "{{ nyxmon_backup_owner }}"
+    group: "{{ nyxmon_backup_group }}"
+    mode: "{{ nyxmon_backup_file_mode }}"
+    content: "{{ nyxmon_backup_metadata | to_nice_yaml }}"
+
+- name: Generate checksum manifest
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cd "{{ nyxmon_backup_dir }}"
+    # Exclude manifest itself to avoid circular checksum dependency
+    find . -type f ! -name manifest.sha256 -print0 | sort -z | xargs -0 sha256sum > manifest.sha256
+  args:
+    executable: /bin/bash
+  when: nyxmon_backup_generate_checksums
+  changed_when: true
+
+- name: Create compressed archive
+  ansible.builtin.command:
+    cmd: >
+      tar -C "{{ nyxmon_backup_root }}"
+      -czf "{{ nyxmon_backup_archive | basename }}"
+      "{{ nyxmon_backup_dir | basename }}"
+  args:
+    chdir: "{{ nyxmon_backup_root }}"
+  when:
+    - nyxmon_backup_create_archive
+    - nyxmon_backup_archive_format == 'tar.gz'
+  changed_when: true
+
+- name: Ensure local archive directory exists
+  ansible.builtin.file:
+    path: "{{ nyxmon_backup_local_dir }}"
+    state: directory
+    mode: "{{ nyxmon_backup_local_dir_mode }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - nyxmon_backup_fetch_local
+    - nyxmon_backup_create_archive
+
+- name: Fetch Nyxmon backup archive
+  ansible.builtin.fetch:
+    src: "{{ nyxmon_backup_archive }}"
+    dest: "{{ nyxmon_backup_local_dir }}/"
+    flat: true
+  run_once: true
+  become: false
+  when:
+    - nyxmon_backup_fetch_local
+    - nyxmon_backup_create_archive

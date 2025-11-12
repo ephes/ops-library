@@ -1,0 +1,74 @@
+---
+- name: Ensure staging base exists
+  ansible.builtin.file:
+    path: "{{ nyxmon_restore_staging_dir }}"
+    state: directory
+    mode: "{{ nyxmon_restore_staging_mode }}"
+
+- name: Determine archive when set to latest
+  ansible.builtin.shell: |
+    set -euo pipefail
+    ls -1t "{{ nyxmon_restore_archive_search_root }}"/*.tar.gz | head -n 1
+  args:
+    executable: /bin/bash
+  register: nyxmon_restore_latest
+  changed_when: false
+  when: nyxmon_restore_archive == "latest"
+
+- name: Set archive path fact
+  ansible.builtin.set_fact:
+    nyxmon_restore_archive_path: >-
+      {{ (nyxmon_restore_archive == 'latest')
+          | ternary(nyxmon_restore_latest.stdout | trim, nyxmon_restore_archive_search_root ~ '/' ~ nyxmon_restore_archive) }}
+
+- name: Fail if archive missing on target
+  ansible.builtin.stat:
+    path: "{{ nyxmon_restore_archive_path }}"
+  register: nyxmon_restore_archive_stat
+
+- name: Abort when archive not found
+  ansible.builtin.fail:
+    msg: "Backup archive {{ nyxmon_restore_archive_path }} not found on {{ inventory_hostname }}."
+  when: not nyxmon_restore_archive_stat.stat.exists
+
+- name: Prepare staging directory
+  ansible.builtin.file:
+    path: "{{ nyxmon_restore_staging_path }}"
+    state: directory
+    mode: "{{ nyxmon_restore_staging_mode }}"
+
+- name: Extract Nyxmon archive
+  ansible.builtin.unarchive:
+    src: "{{ nyxmon_restore_archive_path }}"
+    dest: "{{ nyxmon_restore_staging_path }}"
+    remote_src: true
+
+- name: Set restore content path
+  ansible.builtin.set_fact:
+    nyxmon_restore_content_path: "{{ nyxmon_restore_staging_path }}/{{ nyxmon_restore_archive_path | basename | regex_replace('\\.tar\\.gz$', '') }}"
+
+- name: Load Nyxmon metadata
+  ansible.builtin.slurp:
+    src: "{{ nyxmon_restore_content_path }}/metadata.yml"
+  register: nyxmon_restore_metadata_raw
+
+- name: Parse metadata
+  ansible.builtin.set_fact:
+    nyxmon_restore_metadata: "{{ nyxmon_restore_metadata_raw.content | b64decode | from_yaml }}"
+
+- name: Validate metadata fields
+  ansible.builtin.assert:
+    that:
+      - nyxmon_restore_metadata[item] is defined
+    fail_msg: "Metadata missing required field {{ item }}"
+  loop: "{{ nyxmon_restore_metadata_required_fields }}"
+
+- name: Validate checksum manifest
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cd "{{ nyxmon_restore_content_path }}"
+    sha256sum -c manifest.sha256
+  args:
+    executable: /bin/bash
+  when: nyxmon_restore_validate_checksums
+  changed_when: false

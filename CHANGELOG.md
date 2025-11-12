@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Update your Ansible installation before upgrading
 
 ### Added
+- `nyxmon_backup` role for SQLite-safe snapshots with metadata, manifests, and automatic archive fetches
+- `nyxmon_restore` role with staging validation, safety snapshots, rollback support, and service verification
 - ReadTheDocs integration with Sphinx and MyST parser
   - Browsable documentation at https://ops-library.readthedocs.io/
   - Furo theme for modern, clean appearance
@@ -40,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dynamic DNS support in `dns_deploy`, adding an opt-in LiveDNS updater with dedicated service accounts, timers, and IPv4/IPv6 support
 
 ### Changed
+- `nyxmon_restore` now mirrors the Home Assistant structure (validate/prepare/restore/verify/cleanup), adds block/rescue rollback, conditional restores, handler flush, and health checks
+- `nyxmon_deploy` systemd service now launches Granian instead of Gunicorn to match the upstream project
 - Updated README.md with prominent link to ReadTheDocs
 - Updated repository URLs to https://github.com/ephes/ops-library
 - Modernized Python tooling: uv replaces traditional pip/venv workflow

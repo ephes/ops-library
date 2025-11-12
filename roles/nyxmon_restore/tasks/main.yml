@@ -1,0 +1,15 @@
+---
+- name: Set up restore context
+  ansible.builtin.set_fact:
+    nyxmon_restore_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+    nyxmon_restore_staging_path: "{{ nyxmon_restore_staging_dir }}/{{ ansible_date_time.iso8601_basic_short }}"
+    nyxmon_restore_safety_path: ""
+    nyxmon_restore_archive_path: ""
+
+- block:
+    - ansible.builtin.include_tasks: validate.yml
+    - ansible.builtin.include_tasks: prepare.yml
+    - ansible.builtin.include_tasks: restore.yml
+    - ansible.builtin.include_tasks: verify.yml
+  always:
+    - ansible.builtin.include_tasks: cleanup.yml

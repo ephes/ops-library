@@ -1,0 +1,45 @@
+---
+- name: Wait for primary service
+  ansible.builtin.systemd:
+    name: nyxmon.service
+    state: started
+    enabled: true
+  register: nyxmon_restore_service_status
+  until: nyxmon_restore_service_status is succeeded
+  retries: 5
+  delay: 3
+
+- name: Check for Django manage.py path
+  ansible.builtin.stat:
+    path: "{{ nyxmon_restore_manage_path }}"
+  register: nyxmon_restore_manage_stat
+
+- name: Run Django system check
+  ansible.builtin.command:
+    cmd: "{{ nyxmon_site_path }}/.venv/bin/python {{ nyxmon_restore_manage_path }} check --deploy"
+    chdir: "{{ nyxmon_site_path }}"
+  register: nyxmon_restore_django_check
+  changed_when: false
+  failed_when: nyxmon_restore_django_check.rc != 0
+  when: nyxmon_restore_manage_stat.stat.exists
+
+- name: Show migrations state
+  ansible.builtin.command:
+    cmd: "{{ nyxmon_site_path }}/.venv/bin/python {{ nyxmon_restore_manage_path }} showmigrations"
+    chdir: "{{ nyxmon_site_path }}"
+  register: nyxmon_restore_migrations
+  changed_when: false
+  when: nyxmon_restore_manage_stat.stat.exists
+
+- name: HTTP health probe
+  ansible.builtin.uri:
+    url: "{{ nyxmon_restore_health_url }}"
+    method: GET
+    status_code: "{{ nyxmon_restore_health_expected_status }}"
+    headers: "{{ nyxmon_restore_health_headers }}"
+    return_content: false
+  register: nyxmon_restore_http
+  retries: "{{ nyxmon_restore_health_retries }}"
+  delay: "{{ nyxmon_restore_health_delay }}"
+  until: nyxmon_restore_http.status == nyxmon_restore_health_expected_status
+  when: nyxmon_restore_verify_http

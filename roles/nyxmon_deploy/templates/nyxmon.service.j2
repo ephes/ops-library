@@ -10,10 +10,12 @@ Group={{ nyxmon_group }}
 WorkingDirectory={{ nyxmon_site_path }}
 EnvironmentFile={{ nyxmon_site_path }}/.env
 
-ExecStart={{ nyxmon_venv_bin }}/gunicorn \
+ExecStart={{ nyxmon_venv_bin }}/granian \
     --workers {{ nyxmon_workers }} \
-    --bind {{ nyxmon_app_host }}:{{ nyxmon_app_port }} \
-    --access-logfile - \
+    --interface wsgi \
+    --host {{ nyxmon_app_host }} \
+    --port {{ nyxmon_app_port }} \
+    --access-log \
     config.wsgi_proxy:application
 
 Restart=always
