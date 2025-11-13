@@ -1,0 +1,49 @@
+---
+- name: Assert MinIO root credentials are provided
+  ansible.builtin.assert:
+    that:
+      - minio_root_user | length > 0
+      - minio_root_password | length > 0
+    fail_msg: "minio_root_user and minio_root_password must be provided for metadata export."
+
+- name: Verify MinIO binary exists
+  ansible.builtin.stat:
+    path: "{{ minio_bin_path }}"
+  register: minio_backup_bin_stat
+
+- name: Fail if MinIO binary is missing
+  ansible.builtin.fail:
+    msg: "MinIO binary not found at {{ minio_bin_path }}"
+  when: not minio_backup_bin_stat.stat.exists | default(false)
+
+- name: Check MinIO service state
+  ansible.builtin.command:
+    cmd: systemctl is-active "{{ minio_service_name }}"
+  register: minio_backup_service_check
+  changed_when: false
+
+- name: Fail if MinIO service is not running
+  ansible.builtin.fail:
+    msg: "MinIO service {{ minio_service_name }} must be running to export metadata."
+  when: minio_backup_service_check.rc != 0
+
+- name: Verify MinIO data directories exist
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ minio_data_dirs }}"
+  register: minio_backup_data_dir_stats
+
+- name: Ensure all data directories are present
+  ansible.builtin.assert:
+    that:
+      - (minio_backup_data_dir_stats.results | selectattr('stat.exists') | list | length) == (minio_data_dirs | length)
+    fail_msg: "One or more entries in minio_data_dirs are missing on the host."
+
+- name: Check for existing mc binary
+  ansible.builtin.stat:
+    path: "{{ minio_mc_bin_path }}"
+  register: minio_backup_mc_stat
+
+- name: Install mc client when missing
+  ansible.builtin.import_tasks: mc_install.yml
+  when: not minio_backup_mc_stat.stat.exists | default(false)

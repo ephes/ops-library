@@ -1,0 +1,118 @@
+---
+- name: Ensure target data directories exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ minio_user }}"
+    group: "{{ minio_group }}"
+    mode: "0750"
+  loop: "{{ minio_restore_target_data_dirs_helper }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Check snapshot data directory exists
+  ansible.builtin.stat:
+    path: "{{ minio_restore_content_path }}/data"
+  register: minio_restore_data_stat
+
+- name: Fail if snapshot data directory is missing
+  ansible.builtin.fail:
+    msg: "Snapshot {{ minio_restore_content_path }} is missing the data/ directory."
+  when: not minio_restore_data_stat.stat.isdir | default(false)
+
+- name: Gather snapshot size
+  ansible.builtin.command:
+    cmd: du -sb "{{ minio_restore_content_path }}/data"
+  register: minio_restore_snapshot_size_cmd
+  changed_when: false
+  when: minio_restore_check_disk_space | bool
+
+- name: Gather available disk space for target data directories
+  ansible.builtin.command:
+    cmd: df --output=avail -B1 "{{ item.path }}"
+  register: minio_restore_df_results
+  loop: "{{ minio_restore_target_data_dirs_helper }}"
+  changed_when: false
+  when: minio_restore_check_disk_space | bool
+
+- name: Compute disk space facts
+  ansible.builtin.set_fact:
+    minio_restore_snapshot_bytes: "{{ minio_restore_snapshot_size_cmd.stdout.split()[0] | int }}"
+    minio_restore_total_available_bytes: >-
+      {{
+        minio_restore_df_results.results
+        | map(attribute='stdout_lines')
+        | map('last')
+        | map('trim')
+        | map('int')
+        | sum(start=0)
+      }}
+  when: minio_restore_check_disk_space | bool
+
+- name: Validate disk space
+  ansible.builtin.assert:
+    that:
+      - (minio_restore_total_available_bytes | int) >=
+        ((minio_restore_snapshot_bytes | int) * (minio_restore_disk_space_multiplier | float))
+    fail_msg: >-
+      Not enough disk space across MinIO data directories.
+      Available total={{ minio_restore_total_available_bytes }} bytes,
+      required={{ ((minio_restore_snapshot_bytes | int) * (minio_restore_disk_space_multiplier | float)) | round(0, 'ceil') }} bytes.
+  when: minio_restore_check_disk_space | bool
+
+- name: Configure safety backup path
+  when: minio_restore_create_safety_backup | bool
+  ansible.builtin.set_fact:
+    minio_restore_safety_path: "{{ minio_restore_staging_dir.rstrip('/') }}/{{ minio_restore_safety_backup_prefix }}-{{ minio_restore_timestamp }}"
+
+- name: Ensure safety backup directories exist
+  ansible.builtin.file:
+    path: "{{ minio_restore_safety_path }}"
+    state: directory
+    mode: "{{ minio_restore_staging_mode }}"
+  when: minio_restore_create_safety_backup | bool
+
+- name: Ensure safety data directories exist
+  ansible.builtin.file:
+    path: "{{ minio_restore_safety_path }}/data/{{ item.relative }}"
+    state: directory
+    mode: "{{ minio_restore_staging_mode }}"
+  loop: "{{ minio_restore_target_data_dirs_helper }}"
+  when: minio_restore_create_safety_backup | bool
+
+- name: Snapshot current data directories for rollback
+  ansible.builtin.command: >-
+    rsync -a{{ ' --delete' if minio_restore_safety_rsync_delete else '' }}
+    "{{ item.path }}/"
+    "{{ minio_restore_safety_path }}/data/{{ item.relative }}/"
+  loop: "{{ minio_restore_target_data_dirs_helper }}"
+  when: minio_restore_create_safety_backup | bool
+  changed_when: true
+
+- name: Backup current config files for rollback
+  when: minio_restore_create_safety_backup | bool
+  block:
+    - name: Ensure safety config directories exist
+      ansible.builtin.file:
+        path: "{{ minio_restore_safety_path }}/config"
+        state: directory
+        mode: "{{ minio_restore_staging_mode }}"
+
+    - name: Copy MinIO environment file to safety backup
+      ansible.builtin.copy:
+        src: "{{ minio_env_file }}"
+        dest: "{{ minio_restore_safety_path }}/config/minio.env"
+        remote_src: true
+        mode: "0600"
+
+    - name: Copy systemd unit to safety backup
+      ansible.builtin.copy:
+        src: "{{ minio_service_unit }}"
+        dest: "{{ minio_restore_safety_path }}/config/minio.service"
+        remote_src: true
+        mode: "0644"
+
+- name: Honor dry-run flag
+  ansible.builtin.debug:
+    msg: "MinIO restore is in dry-run mode; snapshot validated and safety backup created."
+  when: minio_restore_dry_run | bool

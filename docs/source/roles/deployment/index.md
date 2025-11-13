@@ -14,6 +14,7 @@ homelab_deploy
 homeassistant_deploy
 unifi_deploy
 paperless_deploy
+minio_deploy
 ```
 
 These roles handle the complete deployment lifecycle including:

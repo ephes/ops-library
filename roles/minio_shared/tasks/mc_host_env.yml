@@ -1,0 +1,59 @@
+---
+# Helper task file to build MC_HOST_* environment facts for MinIO roles.
+# Usage example:
+#   - include_tasks:
+#       file: "{{ role_path }}/../minio_shared/tasks/mc_host_env.yml"
+#     vars:
+#       mc_helper_register_var: my_helper_fact
+#       mc_helper_alias: "{{ minio_mc_host_alias }}"
+#       mc_helper_username: "{{ minio_root_user }}"
+#       mc_helper_password: "{{ minio_root_password }}"
+#       mc_helper_host: "{{ minio_api_bind_host }}"
+#       mc_helper_port: "{{ minio_api_port }}"
+#       mc_helper_no_tls: "{{ minio_restore_mc_no_tls }}"
+#       mc_helper_insecure: "{{ minio_restore_mc_insecure }}"
+#       mc_helper_ca_cert_path: "{{ minio_restore_mc_ca_cert_path }}"
+
+- name: Assert mc helper register var is provided
+  ansible.builtin.assert:
+    that:
+      - mc_helper_register_var is defined
+      - mc_helper_register_var | length > 0
+    fail_msg: "mc_helper_register_var must be provided when including mc_host_env.yml"
+
+- name: Build mc alias helpers
+  ansible.builtin.set_fact:
+    mc_helper_alias_safe: "{{ (mc_helper_alias | default('minio')) | regex_replace('[^A-Za-z0-9_]', '_') }}"
+    mc_helper_host_formatted: >-
+      {{ '[' + (mc_helper_host | default('127.0.0.1')) + ']'
+         if ':' in (mc_helper_host | default('127.0.0.1'))
+         else (mc_helper_host | default('127.0.0.1')) }}
+  no_log: "{{ mc_helper_no_log | default(true) }}"
+
+- name: Compose mc helper connection details
+  vars:
+    _mc_helper_scheme: "{{ 'http' if (mc_helper_no_tls | default(true)) | bool else 'https' }}"
+    _mc_helper_user_enc: "{{ (mc_helper_username | default('')) | urlencode }}"
+    _mc_helper_pass_enc: "{{ (mc_helper_password | default('')) | urlencode }}"
+    _mc_helper_extra_args_list: >-
+      {{
+        [
+          ((mc_helper_insecure | default(false)) | bool) | ternary('--insecure', ''),
+          ((mc_helper_ca_cert_path | default('')) | length > 0) | ternary('--cacert ' ~ mc_helper_ca_cert_path, '')
+        ]
+      }}
+    _mc_helper_extra_args: "{{ _mc_helper_extra_args_list | reject('equalto', '') | join(' ') }}"
+    _mc_helper_env_key: "MC_HOST_{{ mc_helper_alias_safe }}"
+    _mc_helper_host_url: >-
+      {{ _mc_helper_scheme }}://{{ _mc_helper_user_enc }}:{{ _mc_helper_pass_enc }}@{{
+      mc_helper_host_formatted }}:{{ mc_helper_port | default(9000) }}
+  ansible.builtin.set_fact:
+    "{{ mc_helper_register_var }}":
+      alias: "{{ mc_helper_alias | default('minio') }}"
+      alias_safe: "{{ mc_helper_alias_safe }}"
+      host_formatted: "{{ mc_helper_host_formatted }}"
+      env_key: "{{ _mc_helper_env_key }}"
+      host_url: "{{ _mc_helper_host_url }}"
+      env_map: "{{ { _mc_helper_env_key: _mc_helper_host_url } }}"
+      extra_args: "{{ _mc_helper_extra_args }}"
+  no_log: "{{ mc_helper_no_log | default(true) }}"

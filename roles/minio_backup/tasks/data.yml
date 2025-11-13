@@ -1,0 +1,22 @@
+---
+- name: Ensure backup directories for MinIO data exist
+  ansible.builtin.file:
+    path: "{{ minio_backup_dir }}/data{{ item }}"
+    state: directory
+    owner: "{{ minio_backup_owner }}"
+    group: "{{ minio_backup_group }}"
+    mode: "{{ minio_backup_dir_mode }}"
+  loop: "{{ minio_data_dirs }}"
+
+- name: Rsync MinIO data directories
+  ansible.builtin.command: >-
+    {{ minio_backup_rsync_binary }}
+    -a{{ ' --delete' if minio_backup_use_delete else '' }}
+    "{{ item }}/"
+    "{{ minio_backup_dir }}/data{{ item }}/"
+  loop: "{{ minio_data_dirs }}"
+  changed_when: true
+
+- name: Record backed up data directories
+  ansible.builtin.set_fact:
+    minio_backup_data_dirs_backed_up: "{{ minio_data_dirs }}"

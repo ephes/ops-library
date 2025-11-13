@@ -1,0 +1,24 @@
+---
+- name: Set restore context facts
+  ansible.builtin.set_fact:
+    minio_restore_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+    minio_restore_staging_path: "{{ minio_restore_staging_dir.rstrip('/') }}/{{ ansible_date_time.iso8601_basic_short }}"
+    minio_restore_safety_path: ""
+    minio_restore_content_path: ""
+
+- name: Validate restore inputs and snapshot
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Prepare host for MinIO restore
+  ansible.builtin.import_tasks: prepare.yml
+
+- block:
+    - name: Restore MinIO snapshot
+      ansible.builtin.import_tasks: restore.yml
+
+    - name: Verify restored MinIO instance
+      ansible.builtin.import_tasks: verify.yml
+  when: not minio_restore_dry_run | bool
+
+- name: Cleanup restore artifacts
+  ansible.builtin.import_tasks: cleanup.yml

@@ -1,0 +1,75 @@
+---
+# MinIO restore role defaults
+
+# MinIO installation paths (must mirror minio_deploy)
+minio_user: minio
+minio_group: minio
+minio_bin_path: /usr/local/bin/minio
+minio_env_file: /etc/default/minio
+minio_service_unit: /etc/systemd/system/minio.service
+minio_service_name: minio.service
+minio_config_dir: /etc/minio
+minio_certs_dir: "{{ minio_config_dir }}/certs"
+minio_data_dirs:
+  - /var/lib/minio/data
+minio_tls_enable: false
+minio_traefik_config_path: /etc/traefik/dynamic/minio.yml
+
+# Networking / credentials (provided via ops-control secrets)
+minio_api_bind_host: 127.0.0.1
+minio_api_port: 9001
+minio_console_port: 9002
+minio_root_user: ""
+minio_root_password: ""
+
+# MinIO Client (mc)
+minio_mc_bin_path: /usr/local/bin/mc
+minio_mc_version: "RELEASE.2025-08-13T08-35-41Z"
+minio_mc_checksum: "sha256:01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891"
+minio_mc_download_url: "https://dl.min.io/client/mc/release/linux-amd64/archive/mc.{{ minio_mc_version }}"
+minio_mc_host_alias: minio_backup
+minio_restore_mc_no_tls: true
+minio_restore_mc_insecure: false
+minio_restore_mc_ca_cert_path: ""
+
+# Archive selection / staging
+minio_restore_archive: latest
+minio_restore_archive_search_root: /opt/backups/minio
+minio_restore_local_cache: "{{ lookup('env', 'HOME') }}/backups/minio"
+minio_restore_upload_target: "{{ minio_restore_archive_search_root }}"
+minio_restore_staging_dir: /tmp/minio-restore
+minio_restore_staging_mode: "0700"
+minio_restore_prefer_latest_directory: false
+minio_restore_validate_checksums: true
+minio_restore_manifest_file: manifest.sha256
+minio_restore_dry_run: false
+
+# Disk space & safety backup
+minio_restore_check_disk_space: true
+minio_restore_disk_space_multiplier: 2.0
+minio_restore_create_safety_backup: true
+minio_restore_safety_backup_prefix: pre-restore
+minio_restore_safety_rsync_delete: true
+minio_restore_cleanup_safety_backup: true
+
+# Restore behaviour
+minio_restore_stop_timeout: 30
+minio_restore_start_timeout: 60
+minio_restore_restore_system_files: true
+minio_restore_restore_traefik: true
+minio_restore_restore_iam: true
+minio_restore_restore_bucket_metadata: true
+
+# Verification / health
+minio_restore_verify_http: true
+minio_restore_health_path: "/minio/health/live"
+minio_restore_health_retries: 5
+minio_restore_health_delay: 5
+minio_restore_health_expected_status: 200
+
+# Metadata requirements
+minio_restore_metadata_required_fields:
+  - timestamp
+  - host
+  - minio_version
+  - data_dirs

@@ -1,0 +1,40 @@
+---
+- name: Confirm MinIO service is active
+  ansible.builtin.command:
+    cmd: systemctl is-active "{{ minio_service_name }}"
+  register: minio_restore_post_service_check
+  changed_when: false
+
+- name: Build mc helper facts for verification
+  ansible.builtin.include_tasks:
+    file: "{{ role_path }}/../minio_shared/tasks/mc_host_env.yml"
+  vars:
+    mc_helper_register_var: minio_restore_verify_helper
+    mc_helper_alias: "{{ minio_mc_host_alias }}"
+    mc_helper_username: "{{ minio_root_user }}"
+    mc_helper_password: "{{ minio_root_password }}"
+    mc_helper_host: "{{ minio_api_bind_host }}"
+    mc_helper_port: "{{ minio_api_port }}"
+    mc_helper_no_tls: "{{ minio_restore_mc_no_tls }}"
+    mc_helper_insecure: "{{ minio_restore_mc_insecure }}"
+    mc_helper_ca_cert_path: "{{ minio_restore_mc_ca_cert_path }}"
+
+- name: Run mc admin info after restore
+  ansible.builtin.command: >-
+    {{ minio_mc_bin_path }}
+    {{ minio_restore_verify_helper.extra_args }}
+    admin info {{ minio_mc_host_alias }}
+  environment: "{{ minio_restore_verify_helper.env_map }}"
+  changed_when: false
+  no_log: true
+
+- name: List buckets as a sanity check
+  ansible.builtin.command: >-
+    {{ minio_mc_bin_path }}
+    {{ minio_restore_verify_helper.extra_args }}
+    ls {{ minio_mc_host_alias }}
+  environment: "{{ minio_restore_verify_helper.env_map }}"
+  register: minio_restore_bucket_list
+  changed_when: false
+  failed_when: minio_restore_bucket_list.rc not in [0, 1]
+  no_log: true

@@ -1,0 +1,54 @@
+---
+- name: Ensure backup root exists for disk check
+  ansible.builtin.file:
+    path: "{{ minio_backup_root }}"
+    state: directory
+    owner: "{{ minio_backup_owner }}"
+    group: "{{ minio_backup_group }}"
+    mode: "{{ minio_backup_dir_mode }}"
+
+- name: Measure MinIO data directories
+  ansible.builtin.command:
+    cmd: du -sb "{{ item }}"
+  register: minio_backup_du_results
+  loop: "{{ minio_data_dirs }}"
+  changed_when: false
+
+- name: Calculate total data size
+  ansible.builtin.set_fact:
+    minio_backup_data_bytes: >-
+      {{ minio_backup_du_results.results
+         | map(attribute='stdout')
+         | map('split')
+         | map('first')
+         | map('int')
+         | sum(start=0) }}
+
+- name: Gather available disk space on backup root
+  ansible.builtin.command:
+    cmd: df --output=avail -B1 "{{ minio_backup_root }}"
+  register: minio_backup_df
+  changed_when: false
+
+- name: Compute disk space requirements
+  ansible.builtin.set_fact:
+    minio_backup_available_bytes: "{{ minio_backup_df.stdout_lines | last | trim }}"
+    minio_backup_required_bytes: >-
+      {{
+        (
+          (minio_backup_data_bytes | int) *
+          (minio_backup_disk_overhead_ratio | float)
+        )
+        | round(0, 'ceil')
+        | int
+      }}
+
+- name: Validate available disk space
+  ansible.builtin.assert:
+    that:
+      - (minio_backup_available_bytes | int) >= (minio_backup_required_bytes | int)
+    fail_msg: >-
+      Not enough free space under {{ minio_backup_root }}.
+      Available={{ minio_backup_available_bytes }} bytes,
+      required={{ minio_backup_required_bytes }} bytes
+      (data size {{ minio_backup_data_bytes }} bytes with {{ minio_backup_disk_overhead_ratio }}x overhead).

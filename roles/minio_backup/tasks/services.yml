@@ -1,0 +1,7 @@
+---
+- name: "{{ minio_backup_service_action | capitalize }} MinIO service"
+  ansible.builtin.systemd:
+    name: "{{ minio_service_name }}"
+    state: "{{ minio_backup_service_action }}"
+    daemon_reload: true
+  when: minio_backup_service_action in ['started', 'stopped', 'restarted']

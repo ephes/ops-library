@@ -1,0 +1,101 @@
+---
+- name: Stop MinIO service
+  ansible.builtin.systemd:
+    name: "{{ minio_service_name }}"
+    state: stopped
+    daemon_reload: true
+
+- name: Restore MinIO environment file
+  ansible.builtin.copy:
+    src: "{{ minio_restore_content_path }}/config/minio.env"
+    dest: "{{ minio_env_file }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Restore systemd service unit
+  ansible.builtin.copy:
+    src: "{{ minio_restore_content_path }}/systemd/minio.service"
+    dest: "{{ minio_service_unit }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  when: minio_restore_restore_system_files | bool
+  notify: restart minio
+
+- name: Restore TLS certificates
+  when:
+    - minio_restore_restore_system_files | bool
+    - minio_restore_tls_snapshot_stat.stat.isdir | default(false)
+  block:
+    - name: Ensure TLS directory exists
+      ansible.builtin.file:
+        path: "{{ minio_certs_dir }}"
+        state: directory
+        owner: "{{ minio_user }}"
+        group: "{{ minio_group }}"
+        mode: "0750"
+
+    - name: Copy snapshot TLS directory
+      ansible.builtin.copy:
+        src: "{{ minio_restore_content_path }}/certs/"
+        dest: "{{ minio_certs_dir }}/"
+        remote_src: true
+        owner: "{{ minio_user }}"
+        group: "{{ minio_group }}"
+        mode: preserve
+
+- name: Restore Traefik configuration
+  ansible.builtin.copy:
+    src: "{{ minio_restore_content_path }}/traefik/minio.yml"
+    dest: "{{ minio_traefik_config_path }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - minio_restore_restore_traefik | bool
+    - minio_restore_traefik_snapshot_stat.stat.exists | default(false)
+
+- name: Rsync data directories from snapshot
+  ansible.builtin.command: >-
+    rsync -a --delete
+    "{{ minio_restore_content_path }}/data{{ item.path }}/"
+    "{{ item.path }}/"
+  loop: "{{ minio_restore_target_data_dirs_helper }}"
+  loop_control:
+    label: "{{ item.path }}"
+  changed_when: true
+
+- name: Ensure ownership on restored data
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: "{{ minio_user }}"
+    group: "{{ minio_group }}"
+    recurse: true
+  loop: "{{ minio_restore_target_data_dirs_helper }}"
+
+- name: Start MinIO service
+  ansible.builtin.systemd:
+    name: "{{ minio_service_name }}"
+    state: started
+    daemon_reload: true
+
+- name: Build health check URL
+  ansible.builtin.set_fact:
+    minio_restore_health_url: >-
+      {{ 'http' if minio_restore_mc_no_tls else 'https' }}://{{
+      minio_restore_host_formatted }}:{{ minio_api_port }}{{ minio_restore_health_path }}
+
+- name: Wait for MinIO API to respond
+  ansible.builtin.uri:
+    url: "{{ minio_restore_health_url }}"
+    method: GET
+    status_code: "{{ minio_restore_health_expected_status }}"
+  register: minio_restore_health_check
+  retries: "{{ minio_restore_health_retries }}"
+  delay: "{{ minio_restore_health_delay }}"
+  until: minio_restore_health_check is succeeded
+  when: minio_restore_verify_http | bool

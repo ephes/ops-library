@@ -1,0 +1,40 @@
+---
+- name: Build mc helper facts for restore run
+  ansible.builtin.include_tasks:
+    file: "{{ role_path }}/../minio_shared/tasks/mc_host_env.yml"
+  vars:
+    mc_helper_register_var: minio_restore_mc_helper
+    mc_helper_alias: "{{ minio_mc_host_alias }}"
+    mc_helper_username: "{{ minio_root_user }}"
+    mc_helper_password: "{{ minio_root_password }}"
+    mc_helper_host: "{{ minio_api_bind_host }}"
+    mc_helper_port: "{{ minio_api_port }}"
+    mc_helper_no_tls: "{{ minio_restore_mc_no_tls }}"
+    mc_helper_insecure: "{{ minio_restore_mc_insecure }}"
+    mc_helper_ca_cert_path: "{{ minio_restore_mc_ca_cert_path }}"
+  no_log: true
+
+- name: Record host formatting fact
+  ansible.builtin.set_fact:
+    minio_restore_host_formatted: "{{ minio_restore_mc_helper.host_formatted }}"
+  no_log: true
+
+- name: Stat snapshot TLS directory
+  ansible.builtin.stat:
+    path: "{{ minio_restore_content_path }}/certs"
+  register: minio_restore_tls_snapshot_stat
+
+- name: Stat snapshot Traefik config
+  ansible.builtin.stat:
+    path: "{{ minio_restore_content_path }}/traefik/minio.yml"
+  register: minio_restore_traefik_snapshot_stat
+
+- name: Stat snapshot bucket metadata
+  ansible.builtin.stat:
+    path: "{{ minio_restore_content_path }}/metadata/bucket-metadata.zip"
+  register: minio_restore_bucket_metadata_stat
+
+- name: Stat snapshot IAM metadata
+  ansible.builtin.stat:
+    path: "{{ minio_restore_content_path }}/metadata/iam-metadata.zip"
+  register: minio_restore_iam_metadata_stat

@@ -1,0 +1,48 @@
+---
+- name: Compute archive path
+  ansible.builtin.set_fact:
+    minio_backup_archive: "{{ minio_backup_dir }}.{{ minio_backup_archive_format }}"
+
+- name: Create tar.gz archive
+  ansible.builtin.command: >-
+    tar -C "{{ minio_backup_root }}"
+    -czf "{{ minio_backup_archive | basename }}"
+    "{{ minio_backup_dir | basename }}"
+  args:
+    chdir: "{{ minio_backup_root }}"
+  when: minio_backup_archive_format == 'tar.gz'
+  changed_when: true
+
+- name: Create tar.zst archive
+  ansible.builtin.command: >-
+    tar -C "{{ minio_backup_root }}"
+    --zstd -cf "{{ minio_backup_archive | basename }}"
+    "{{ minio_backup_dir | basename }}"
+  args:
+    chdir: "{{ minio_backup_root }}"
+  when: minio_backup_archive_format == 'tar.zst'
+  changed_when: true
+
+- name: Ensure local archive directory exists
+  ansible.builtin.file:
+    path: "{{ minio_backup_local_dir }}"
+    state: directory
+    mode: "{{ minio_backup_local_dir_mode }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: minio_backup_fetch_local | bool
+
+- name: Fetch backup archive
+  ansible.builtin.fetch:
+    src: "{{ minio_backup_archive }}"
+    dest: "{{ minio_backup_local_dir }}/"
+    flat: true
+  run_once: true
+  when: minio_backup_fetch_local | bool
+
+- name: Report archive location
+  ansible.builtin.debug:
+    msg: >-
+      MinIO backup archived at {{ minio_backup_archive }}.
+      Local copy: {{ minio_backup_fetch_local | ternary(minio_backup_local_dir ~ '/' ~ (minio_backup_archive | basename), 'not fetched') }}

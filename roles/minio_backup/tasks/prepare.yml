@@ -1,0 +1,35 @@
+---
+- name: Validate MinIO backup prerequisites
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Ensure backup root has enough free space
+  ansible.builtin.import_tasks: disk_check.yml
+  when: minio_backup_disk_check_enabled | bool
+
+- name: Detect installed MinIO version
+  ansible.builtin.command: "{{ minio_bin_path }} --version"
+  register: minio_backup_minio_version_cmd
+  changed_when: false
+
+- name: Detect installed mc version
+  ansible.builtin.command: "{{ minio_mc_bin_path }} --version"
+  register: minio_backup_mc_version_cmd
+  changed_when: false
+
+- name: Set backup timestamp and base directory
+  ansible.builtin.set_fact:
+    minio_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+    minio_backup_dir: "{{ minio_backup_root.rstrip('/') }}/{{ minio_backup_prefix }}-{{ ansible_date_time.iso8601_basic_short }}"
+    minio_backup_archive: ""
+
+- name: Set backup subdirectory paths
+  ansible.builtin.set_fact:
+    minio_backup_metadata_dir: "{{ minio_backup_dir }}/metadata"
+    minio_backup_data_root: "{{ minio_backup_dir }}/data"
+    minio_backup_config_dir: "{{ minio_backup_dir }}/config"
+    minio_backup_systemd_dir: "{{ minio_backup_dir }}/systemd"
+    minio_backup_certs_dir: "{{ minio_backup_dir }}/certs"
+    minio_backup_traefik_dir: "{{ minio_backup_dir }}/traefik"
+
+- name: Ensure backup directory structure exists
+  ansible.builtin.import_tasks: directories.yml

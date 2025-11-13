@@ -1,0 +1,50 @@
+---
+- name: Stat safety config files
+  when: minio_restore_create_safety_backup | bool
+  block:
+    - name: Stat safety environment file
+      ansible.builtin.stat:
+        path: "{{ minio_restore_safety_path }}/config/minio.env"
+      register: minio_restore_safety_env_stat
+
+    - name: Stat safety unit file
+      ansible.builtin.stat:
+        path: "{{ minio_restore_safety_path }}/config/minio.service"
+      register: minio_restore_safety_unit_stat
+
+- name: Roll back MinIO data directories
+  ansible.builtin.command: >-
+    rsync -a --delete
+    "{{ minio_restore_safety_path }}/data/{{ item.relative }}/"
+    "{{ item.path }}/"
+  loop: "{{ minio_restore_target_data_dirs_helper }}"
+  when: minio_restore_create_safety_backup | bool
+
+- name: Restore config files from safety snapshot
+  when: minio_restore_create_safety_backup | bool
+  block:
+    - name: Restore environment file
+      ansible.builtin.copy:
+        src: "{{ minio_restore_safety_path }}/config/minio.env"
+        dest: "{{ minio_env_file }}"
+        remote_src: true
+        mode: "0600"
+      when: minio_restore_safety_env_stat.stat.exists | default(false)
+
+    - name: Restore systemd unit file
+      ansible.builtin.copy:
+        src: "{{ minio_restore_safety_path }}/config/minio.service"
+        dest: "{{ minio_service_unit }}"
+        remote_src: true
+        mode: "0644"
+      when: minio_restore_safety_unit_stat.stat.exists | default(false)
+
+- name: Restart MinIO service after rollback
+  ansible.builtin.systemd:
+    name: "{{ minio_service_name }}"
+    state: started
+    daemon_reload: true
+
+- name: Abort restore with rollback notice
+  ansible.builtin.fail:
+    msg: "MinIO restore failed; safety snapshot was restored."

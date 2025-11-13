@@ -14,6 +14,8 @@ Available runbooks:
 - [Nyxmon Restore](https://github.com/ephes/ops-library/blob/main/roles/nyxmon_restore/README.md)
 - [UniFi Backup](https://github.com/ephes/ops-library/blob/main/roles/unifi_backup/README.md)
 - [UniFi Restore](https://github.com/ephes/ops-library/blob/main/roles/unifi_restore/README.md)
+- [MinIO Backup](https://github.com/ephes/ops-library/blob/main/roles/minio_backup/README.md)
+- [MinIO Restore](https://github.com/ephes/ops-library/blob/main/roles/minio_restore/README.md)
 
 ```{toctree}
 :maxdepth: 1
@@ -28,6 +30,8 @@ nyxmon_backup
 nyxmon_restore
 unifi_backup
 unifi_restore
+minio_backup
+minio_restore
 ```
 
 Operations roles provide consistent snapshot/restore tooling that can be composed with deployment/removal roles to rehearse disaster-recovery scenarios. See `specs/2025-11-11_nyxmon_backup_restore.md` for the Nyxmon design notes.

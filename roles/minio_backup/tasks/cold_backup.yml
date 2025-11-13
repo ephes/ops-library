@@ -1,0 +1,18 @@
+---
+- block:
+    - name: Stop MinIO service before filesystem backup
+      ansible.builtin.import_tasks: services.yml
+      vars:
+        minio_backup_service_action: stopped
+
+    - name: Copy MinIO data directories
+      ansible.builtin.import_tasks: data.yml
+
+    - name: Copy MinIO configuration files
+      ansible.builtin.import_tasks: config.yml
+
+  always:
+    - name: Ensure MinIO service is running after backup
+      ansible.builtin.import_tasks: services.yml
+      vars:
+        minio_backup_service_action: started

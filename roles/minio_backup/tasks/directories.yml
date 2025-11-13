@@ -1,0 +1,24 @@
+---
+- name: Ensure backup root directory exists
+  ansible.builtin.file:
+    path: "{{ minio_backup_root }}"
+    state: directory
+    owner: "{{ minio_backup_owner }}"
+    group: "{{ minio_backup_group }}"
+    mode: "{{ minio_backup_dir_mode }}"
+
+- name: Ensure backup subdirectories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ minio_backup_owner }}"
+    group: "{{ minio_backup_group }}"
+    mode: "{{ minio_backup_dir_mode }}"
+  loop:
+    - "{{ minio_backup_dir }}"
+    - "{{ minio_backup_metadata_dir }}"
+    - "{{ minio_backup_data_root }}"
+    - "{{ minio_backup_config_dir }}"
+    - "{{ minio_backup_systemd_dir }}"
+    - "{{ minio_backup_certs_dir }}"
+    - "{{ minio_backup_traefik_dir }}"

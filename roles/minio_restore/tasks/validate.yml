@@ -1,0 +1,253 @@
+---
+- name: Assert MinIO root credentials are provided
+  ansible.builtin.assert:
+    that:
+      - minio_root_user | length > 0
+      - minio_root_password | length > 0
+    fail_msg: "minio_root_user and minio_root_password must be provided for restore operations."
+
+- name: Check for existing mc binary
+  ansible.builtin.stat:
+    path: "{{ minio_mc_bin_path }}"
+  register: minio_restore_mc_stat
+
+- name: Install mc client when missing
+  ansible.builtin.import_tasks: mc_install.yml
+  when: not minio_restore_mc_stat.stat.exists | default(false)
+
+- name: Resolve archive input
+  ansible.builtin.set_fact:
+    _minio_restore_archive_input: "{{ minio_restore_archive | default('latest') }}"
+
+- name: Initialize archive resolution facts
+  ansible.builtin.set_fact:
+    minio_restore_archive_path: ""
+    minio_restore_source_is_directory: false
+
+- name: Discover latest extracted snapshot directory
+  when:
+    - _minio_restore_archive_input == 'latest'
+    - minio_restore_prefer_latest_directory | bool
+  block:
+    - name: Find MinIO snapshot directories
+      ansible.builtin.find:
+        paths: "{{ minio_restore_archive_search_root }}"
+        file_type: directory
+        recurse: false
+        hidden: false
+      register: minio_restore_found_directories
+
+    - name: Select newest snapshot directory
+      when: minio_restore_found_directories.matched | default(0) | int > 0
+      ansible.builtin.set_fact:
+        minio_restore_archive_path: "{{ (minio_restore_found_directories.files | sort(attribute='mtime', reverse=true))[0].path }}"
+
+- name: Discover latest backup archive on host
+  when:
+    - _minio_restore_archive_input == 'latest'
+    - minio_restore_archive_path | length == 0
+  block:
+    - name: Find MinIO backup archives
+      ansible.builtin.find:
+        paths: "{{ minio_restore_archive_search_root }}"
+        patterns:
+          - "*.tar.gz"
+          - "*.tar.zst"
+        file_type: file
+        recurse: false
+      register: minio_restore_found_archives
+
+    - name: Fail when no archives exist
+      ansible.builtin.fail:
+        msg: "No MinIO backup archives found under {{ minio_restore_archive_search_root }}."
+      when: minio_restore_found_archives.matched | default(0) | int == 0
+
+    - name: Select newest archive
+      ansible.builtin.set_fact:
+        minio_restore_archive_path: "{{ (minio_restore_found_archives.files | sort(attribute='mtime', reverse=true))[0].path }}"
+
+- name: Resolve archive path for explicit input
+  when:
+    - _minio_restore_archive_input != 'latest'
+    - minio_restore_archive_path | length == 0
+  ansible.builtin.set_fact:
+    minio_restore_archive_path: >-
+      {{ _minio_restore_archive_input if _minio_restore_archive_input.startswith('/') else
+         (minio_restore_archive_search_root.rstrip('/') ~ '/' ~ _minio_restore_archive_input) }}
+
+- name: Determine archive basename
+  ansible.builtin.set_fact:
+    minio_restore_archive_basename: "{{ minio_restore_archive_path | basename }}"
+
+- name: Stat archive path
+  ansible.builtin.stat:
+    path: "{{ minio_restore_archive_path }}"
+  register: minio_restore_archive_stat
+
+- name: Record archive existence flag
+  ansible.builtin.set_fact:
+    minio_restore_archive_exists: "{{ minio_restore_archive_stat.stat.exists | default(false) }}"
+
+- name: Upload archive from control node when missing
+  when:
+    - not minio_restore_archive_exists
+    - not minio_restore_archive_stat.stat.isdir | default(false)
+  block:
+    - name: Ensure upload target exists
+      ansible.builtin.file:
+        path: "{{ minio_restore_upload_target }}"
+        state: directory
+        mode: "0750"
+
+    - name: Locate archive in controller cache
+      ansible.builtin.stat:
+        path: "{{ minio_restore_local_cache.rstrip('/') }}/{{ minio_restore_archive_basename }}"
+      register: minio_restore_local_archive
+      delegate_to: localhost
+      become: false
+
+    - name: Fail if archive is not available locally
+      ansible.builtin.fail:
+        msg: >-
+          Backup archive {{ minio_restore_archive_basename }} is missing on the host
+          and was not found under {{ minio_restore_local_cache }}.
+      when: not minio_restore_local_archive.stat.exists | default(false)
+
+    - name: Upload archive from controller
+      ansible.builtin.copy:
+        src: "{{ minio_restore_local_archive.stat.path }}"
+        dest: "{{ minio_restore_upload_target.rstrip('/') }}/{{ minio_restore_archive_basename }}"
+        mode: "0600"
+      register: minio_restore_uploaded_archive
+
+    - name: Update archive path after upload
+      ansible.builtin.set_fact:
+        minio_restore_archive_path: "{{ minio_restore_uploaded_archive.dest }}"
+
+    - name: Re-stat archive
+      ansible.builtin.stat:
+        path: "{{ minio_restore_archive_path }}"
+      register: minio_restore_archive_stat
+
+    - name: Update archive existence flag
+      ansible.builtin.set_fact:
+        minio_restore_archive_exists: "{{ minio_restore_archive_stat.stat.exists | default(false) }}"
+
+- name: Fail if archive path still missing
+  ansible.builtin.fail:
+    msg: "Backup archive or directory {{ minio_restore_archive_path }} does not exist on the host."
+  when:
+    - not minio_restore_archive_exists | bool
+
+- name: Decide restore source type
+  ansible.builtin.set_fact:
+    minio_restore_source_is_directory: "{{ minio_restore_archive_stat.stat.isdir | default(false) }}"
+
+- name: Use existing snapshot directory
+  when: minio_restore_source_is_directory | bool
+  ansible.builtin.set_fact:
+    minio_restore_content_path: "{{ minio_restore_archive_path }}"
+
+- block:
+    - name: Ensure staging directory exists
+      ansible.builtin.file:
+        path: "{{ minio_restore_staging_path }}"
+        state: directory
+        mode: "{{ minio_restore_staging_mode }}"
+
+    - name: Extract tar.gz archive
+      ansible.builtin.command: >-
+        tar -C "{{ minio_restore_staging_path }}"
+        -xzf "{{ minio_restore_archive_path }}"
+      when: minio_restore_archive_basename.endswith('.tar.gz')
+      changed_when: true
+
+    - name: Extract tar.zst archive
+      ansible.builtin.command: >-
+        tar -C "{{ minio_restore_staging_path }}"
+        --zstd -xf "{{ minio_restore_archive_path }}"
+      when: minio_restore_archive_basename.endswith('.tar.zst')
+      changed_when: true
+
+    - name: Locate extracted snapshot directory
+      ansible.builtin.find:
+        paths: "{{ minio_restore_staging_path }}"
+        file_type: directory
+        recurse: false
+      register: minio_restore_stage_dirs
+
+    - name: Fail if snapshot directory is not unique
+      ansible.builtin.fail:
+        msg: "Unable to determine snapshot directory inside {{ minio_restore_staging_path }}"
+      when: minio_restore_stage_dirs.matched | default(0) | int != 1
+
+    - name: Select extracted snapshot directory
+      ansible.builtin.set_fact:
+        minio_restore_content_path: "{{ minio_restore_stage_dirs.files | map(attribute='path') | list | first }}"
+
+  when: not minio_restore_source_is_directory | bool
+
+- name: Ensure metadata file exists
+  ansible.builtin.stat:
+    path: "{{ minio_restore_content_path }}/metadata.yml"
+  register: minio_restore_metadata_stat
+
+- name: Fail when metadata is missing
+  ansible.builtin.fail:
+    msg: "metadata.yml is missing from snapshot {{ minio_restore_content_path }}"
+  when: not minio_restore_metadata_stat.stat.exists | default(false)
+
+- name: Load metadata
+  ansible.builtin.slurp:
+    path: "{{ minio_restore_content_path }}/metadata.yml"
+  register: minio_restore_metadata_file
+
+- name: Parse metadata
+  ansible.builtin.set_fact:
+    minio_restore_metadata: "{{ minio_restore_metadata_file.content | b64decode | from_yaml }}"
+
+- name: Validate required metadata fields
+  ansible.builtin.assert:
+    that:
+      - item in minio_restore_metadata
+    fail_msg: "Metadata field '{{ item }}' is missing in metadata.yml"
+  loop: "{{ minio_restore_metadata_required_fields }}"
+
+- name: Validate checksum manifest
+  when: minio_restore_validate_checksums | bool
+  block:
+    - name: Ensure manifest exists
+      ansible.builtin.stat:
+        path: "{{ minio_restore_content_path }}/{{ minio_restore_manifest_file }}"
+      register: minio_restore_manifest_stat
+
+    - name: Fail when manifest is missing
+      ansible.builtin.fail:
+        msg: "{{ minio_restore_manifest_file }} is missing from snapshot {{ minio_restore_content_path }}"
+      when: not minio_restore_manifest_stat.stat.exists | default(false)
+
+    - name: Verify manifest checksums
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd "{{ minio_restore_content_path }}"
+        manifest_file="{{ minio_restore_manifest_file }}"
+        sha256sum -c "$manifest_file"
+      args:
+        executable: /bin/bash
+
+- name: Record data directories from metadata
+  ansible.builtin.set_fact:
+    minio_restore_metadata_data_dirs: "{{ minio_restore_metadata.data_dirs | default([]) }}"
+
+- name: Determine target data directories for restore
+  ansible.builtin.set_fact:
+    minio_restore_target_data_dirs: >-
+      {{
+        (minio_restore_metadata_data_dirs | length > 0)
+        | ternary(minio_restore_metadata_data_dirs, minio_data_dirs)
+      }}
+
+- name: Build helper metadata for data directories
+  ansible.builtin.set_fact:
+    minio_restore_target_data_dirs_helper: "{{ (minio_restore_target_data_dirs_helper | default([])) + [ { 'path': item, 'relative': (item | regex_replace('^/', '')) } ] }}"
+  loop: "{{ minio_restore_target_data_dirs }}"

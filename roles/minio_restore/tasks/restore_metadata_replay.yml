@@ -1,0 +1,26 @@
+---
+- name: Restore bucket metadata
+  when:
+    - minio_restore_restore_bucket_metadata | bool
+    - minio_restore_bucket_metadata_stat.stat.exists | default(false)
+  ansible.builtin.command: >-
+    {{ minio_mc_bin_path }}
+    {{ minio_restore_mc_helper.extra_args }}
+    admin cluster bucket import {{ minio_mc_host_alias }}
+    {{ minio_restore_content_path }}/metadata/bucket-metadata.zip
+  environment: "{{ minio_restore_mc_helper.env_map }}"
+  changed_when: true
+  no_log: true
+
+- name: Restore IAM metadata
+  when:
+    - minio_restore_restore_iam | bool
+    - minio_restore_iam_metadata_stat.stat.exists | default(false)
+  ansible.builtin.command: >-
+    {{ minio_mc_bin_path }}
+    {{ minio_restore_mc_helper.extra_args }}
+    admin cluster iam import {{ minio_mc_host_alias }}
+    {{ minio_restore_content_path }}/metadata/iam-metadata.zip
+  environment: "{{ minio_restore_mc_helper.env_map }}"
+  changed_when: true
+  no_log: true

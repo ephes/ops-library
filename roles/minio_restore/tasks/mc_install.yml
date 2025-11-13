@@ -1,0 +1,21 @@
+---
+- name: Ensure directory for mc binary exists
+  ansible.builtin.file:
+    path: "{{ minio_mc_bin_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download mc client {{ minio_mc_version }}
+  ansible.builtin.get_url:
+    url: "{{ minio_mc_download_url }}"
+    dest: "{{ minio_mc_bin_path }}"
+    mode: "0755"
+    owner: root
+    group: root
+    checksum: "{{ minio_mc_checksum }}"
+
+- name: Report mc installation status
+  ansible.builtin.debug:
+    msg: "mc client installed at {{ minio_mc_bin_path }}"

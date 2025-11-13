@@ -1,0 +1,16 @@
+---
+- name: Prepare backup host and directory structure
+  ansible.builtin.import_tasks: prepare.yml
+
+- name: Export MinIO metadata (IAM + buckets)
+  ansible.builtin.import_tasks: metadata_export.yml
+
+- name: Perform cold backup of data and configuration
+  ansible.builtin.import_tasks: cold_backup.yml
+
+- name: Generate backup metadata, manifests, and report
+  ansible.builtin.import_tasks: finalize.yml
+
+- name: Create archive and optionally fetch locally
+  ansible.builtin.import_tasks: archive.yml
+  when: minio_backup_create_archive | bool

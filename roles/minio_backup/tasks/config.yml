@@ -1,0 +1,52 @@
+---
+- name: Copy MinIO environment file
+  ansible.builtin.copy:
+    src: "{{ minio_env_file }}"
+    dest: "{{ minio_backup_config_dir }}/minio.env"
+    remote_src: true
+    owner: "{{ minio_backup_owner }}"
+    group: "{{ minio_backup_group }}"
+    mode: "{{ minio_backup_file_mode }}"
+
+- name: Copy MinIO systemd unit
+  ansible.builtin.copy:
+    src: "{{ minio_service_unit }}"
+    dest: "{{ minio_backup_systemd_dir }}/minio.service"
+    remote_src: true
+    owner: "{{ minio_backup_owner }}"
+    group: "{{ minio_backup_group }}"
+    mode: "{{ minio_backup_file_mode }}"
+
+- name: Stat TLS certificates directory
+  ansible.builtin.stat:
+    path: "{{ minio_certs_dir }}"
+  register: minio_backup_tls_stat
+
+- name: Copy TLS certificates
+  ansible.builtin.copy:
+    src: "{{ minio_certs_dir }}/"
+    dest: "{{ minio_backup_certs_dir }}/"
+    remote_src: true
+    owner: "{{ minio_backup_owner }}"
+    group: "{{ minio_backup_group }}"
+    mode: preserve
+  when:
+    - minio_backup_include_tls_certs | bool
+    - minio_backup_tls_stat.stat.isdir | default(false)
+
+- name: Stat Traefik config
+  ansible.builtin.stat:
+    path: "{{ minio_traefik_config_path }}"
+  register: minio_backup_traefik_stat
+
+- name: Copy Traefik configuration
+  ansible.builtin.copy:
+    src: "{{ minio_traefik_config_path }}"
+    dest: "{{ minio_backup_traefik_dir }}/minio.yml"
+    remote_src: true
+    owner: "{{ minio_backup_owner }}"
+    group: "{{ minio_backup_group }}"
+    mode: "{{ minio_backup_file_mode }}"
+  when:
+    - minio_backup_include_traefik | bool
+    - minio_backup_traefik_stat.stat.exists | default(false)

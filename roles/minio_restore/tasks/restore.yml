@@ -1,0 +1,14 @@
+---
+- block:
+    - name: Gather restore context
+      ansible.builtin.import_tasks: restore_context.yml
+
+    - name: Restore MinIO service and data
+      ansible.builtin.import_tasks: restore_system.yml
+
+    - name: Replay MinIO metadata exports
+      ansible.builtin.import_tasks: restore_metadata_replay.yml
+
+  rescue:
+    - name: Roll back MinIO restore
+      ansible.builtin.import_tasks: restore_rollback.yml

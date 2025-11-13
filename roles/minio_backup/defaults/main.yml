@@ -1,0 +1,74 @@
+---
+# MinIO backup role defaults
+
+# Backup destination
+minio_backup_root: /opt/backups/minio
+minio_backup_prefix: manual
+minio_backup_owner: root
+minio_backup_group: root
+minio_backup_dir_mode: "0700"
+minio_backup_file_mode: "0600"
+
+# MinIO installation paths (must mirror minio_deploy)
+minio_user: minio
+minio_group: minio
+minio_bin_path: /usr/local/bin/minio
+minio_env_file: /etc/default/minio
+minio_service_unit: /etc/systemd/system/minio.service
+minio_service_name: minio.service
+minio_config_dir: /etc/minio
+minio_certs_dir: "{{ minio_config_dir }}/certs"
+minio_data_dirs:
+  - /var/lib/minio/data
+minio_tls_enable: false
+minio_traefik_config_path: /etc/traefik/dynamic/minio.yml
+
+# MinIO networking
+minio_api_bind_host: 127.0.0.1
+minio_api_port: 9001
+minio_console_port: 9002
+
+# Credentials (must be provided via ops-control secrets)
+minio_root_user: ""
+minio_root_password: ""
+
+# MinIO Client (mc)
+minio_mc_bin_path: /usr/local/bin/mc
+minio_mc_version: "RELEASE.2025-08-13T08-35-41Z"
+minio_mc_checksum: "sha256:01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891"
+minio_mc_download_url: "https://dl.min.io/client/mc/release/linux-amd64/archive/mc.{{ minio_mc_version }}"
+minio_mc_host_alias: minio_backup
+minio_backup_mc_no_tls: true
+minio_backup_mc_insecure: false
+minio_backup_mc_ca_cert_path: ""
+
+# Metadata export settings
+minio_backup_export_iam: true
+minio_backup_export_bucket_metadata: true
+minio_backup_metadata_temp_dir: /tmp/minio-backup-metadata
+
+# Inclusion flags
+minio_backup_include_tls_certs: "{{ minio_tls_enable }}"
+minio_backup_include_traefik: true
+
+# Service handling
+minio_backup_stop_timeout: 30
+
+# Disk space validation
+minio_backup_disk_check_enabled: true
+minio_backup_disk_overhead_ratio: 1.5
+
+# Rsync / archive behaviour
+minio_backup_rsync_binary: rsync
+minio_backup_use_delete: true
+minio_backup_create_archive: true
+minio_backup_archive_format: tar.gz  # tar.gz | tar.zst
+minio_backup_generate_checksums: true
+
+# Fetch archive back to controller
+minio_backup_fetch_local: true
+minio_backup_local_dir: "{{ lookup('env', 'HOME') }}/backups/minio"
+minio_backup_local_dir_mode: "0700"
+
+# Reporting
+minio_backup_report_size: true

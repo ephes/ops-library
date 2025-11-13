@@ -1,0 +1,19 @@
+---
+- name: Remove staging directory
+  ansible.builtin.file:
+    path: "{{ minio_restore_staging_path }}"
+    state: absent
+  ignore_errors: true
+
+- name: Remove safety backup directory
+  ansible.builtin.file:
+    path: "{{ minio_restore_safety_path }}"
+    state: absent
+  when:
+    - minio_restore_cleanup_safety_backup | bool
+    - minio_restore_safety_path | length > 0
+  ignore_errors: true
+
+- name: Report restore completion
+  ansible.builtin.debug:
+    msg: "MinIO restore completed using snapshot {{ minio_restore_content_path }}"
