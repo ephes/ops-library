@@ -24,10 +24,15 @@
         with tarfile.open(archive_path, 'r:*') as tar:
             total_size = sum(member.size for member in tar.getmembers())
 
-        if not os.path.exists(target_path):
-            target_path = os.path.dirname(target_path) or '/'
+        candidate = target_path
+        while not os.path.exists(candidate):
+            parent = os.path.dirname(candidate)
+            if not parent or parent == candidate:
+                candidate = '/'
+                break
+            candidate = parent or '/'
 
-        stat = os.statvfs(target_path)
+        stat = os.statvfs(candidate)
         free_bytes = stat.f_bavail * stat.f_frsize
         required = int(total_size * multiplier)
 
@@ -46,32 +51,83 @@
     homeassistant_restore_safety_backup_path: >-
       {{ homeassistant_site_root }}.{{ homeassistant_restore_safety_backup_prefix }}-{{ homeassistant_restore_timestamp }}
 
+- name: Ensure Home Assistant group exists for restore
+  ansible.builtin.group:
+    name: "{{ homeassistant_restore_site_group }}"
+    state: present
+    system: true
+
+- name: Ensure Home Assistant user exists for restore
+  ansible.builtin.user:
+    name: "{{ homeassistant_restore_site_owner }}"
+    state: present
+    system: true
+    group: "{{ homeassistant_restore_site_group }}"
+    home: "{{ homeassistant_site_root | dirname }}"
+    create_home: true
+    shell: /usr/sbin/nologin
+
+- name: Check if site owner exists
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ homeassistant_restore_site_owner }}"
+  register: _ha_restore_site_owner_lookup
+  failed_when: false
+  changed_when: false
+
+- name: Check if site group exists
+  ansible.builtin.getent:
+    database: group
+    key: "{{ homeassistant_restore_site_group }}"
+  register: _ha_restore_site_group_lookup
+  failed_when: false
+  changed_when: false
+
+- name: Determine snapshot ownership fallback
+  ansible.builtin.set_fact:
+    homeassistant_restore_snapshot_owner: >-
+      {{ homeassistant_restore_site_owner if (homeassistant_restore_site_owner in (_ha_restore_site_owner_lookup.ansible_facts.get('getent_passwd') | default({}))) else 'root' }}
+    homeassistant_restore_snapshot_group: >-
+      {{ homeassistant_restore_site_group if (homeassistant_restore_site_group in (_ha_restore_site_group_lookup.ansible_facts.get('getent_group') | default({}))) else 'root' }}
+
 - name: Create pre-restore safety backup
   when:
     - homeassistant_restore_create_safety_backup | bool
     - not homeassistant_restore_dry_run | bool
   block:
-    - name: Prepare pre-restore directory
-      ansible.builtin.file:
-        path: "{{ homeassistant_restore_safety_backup_path }}"
-        state: directory
-        owner: "{{ homeassistant_restore_site_owner }}"
-        group: "{{ homeassistant_restore_site_group }}"
-        mode: '0750'
+    - name: Check if site directory exists
+      ansible.builtin.stat:
+        path: "{{ homeassistant_site_root }}"
+      register: _ha_restore_site_stat
 
-    - name: Snapshot current Home Assistant site directory
-      ansible.builtin.command:
-        cmd: >-
-          rsync -a{{ ' --delete' if homeassistant_restore_safety_rsync_delete else '' }}
-          "{{ homeassistant_site_root }}/"
-          "{{ homeassistant_restore_safety_backup_path }}/"
-      register: _ha_restore_prebackup
-      changed_when: true
-
-    - name: Record rollback source path
-      ansible.builtin.set_fact:
-        homeassistant_restore_rollback_source: "{{ homeassistant_restore_safety_backup_path }}"
-
-    - name: Report safety snapshot location
+    - name: Skip safety snapshot when site directory is missing
       ansible.builtin.debug:
-        msg: "Created safety snapshot at {{ homeassistant_restore_safety_backup_path }}"
+        msg: "Skipping safety backup; {{ homeassistant_site_root }} does not exist."
+      when: not _ha_restore_site_stat.stat.exists
+
+    - block:
+        - name: Prepare pre-restore directory
+          ansible.builtin.file:
+            path: "{{ homeassistant_restore_safety_backup_path }}"
+            state: directory
+            owner: "{{ homeassistant_restore_snapshot_owner }}"
+            group: "{{ homeassistant_restore_snapshot_group }}"
+            mode: '0750'
+
+        - name: Snapshot current Home Assistant site directory
+          ansible.builtin.command:
+            cmd: >-
+              rsync -a{{ ' --delete' if homeassistant_restore_safety_rsync_delete else '' }}
+              "{{ homeassistant_site_root }}/"
+              "{{ homeassistant_restore_safety_backup_path }}/"
+          register: _ha_restore_prebackup
+          changed_when: true
+
+        - name: Record rollback source path
+          ansible.builtin.set_fact:
+            homeassistant_restore_rollback_source: "{{ homeassistant_restore_safety_backup_path }}"
+
+        - name: Report safety snapshot location
+          ansible.builtin.debug:
+            msg: "Created safety snapshot at {{ homeassistant_restore_safety_backup_path }}"
+      when: _ha_restore_site_stat.stat.exists

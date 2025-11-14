@@ -8,8 +8,17 @@
     msg: "Dry run enabled - skipping service start and health checks"
   when: homeassistant_restore_dry_run | bool
 
+- name: Service unit missing notice
+  ansible.builtin.debug:
+    msg: "Home Assistant systemd unit not found; skipping service start and health verification."
+  when:
+    - not homeassistant_restore_dry_run | bool
+    - not (homeassistant_restore_service_available | default(false))
+
 - name: Start service and run verification
-  when: not homeassistant_restore_dry_run | bool
+  when:
+    - not homeassistant_restore_dry_run | bool
+    - homeassistant_restore_service_available | default(false)
   block:
     - name: Start Home Assistant service
       ansible.builtin.systemd:

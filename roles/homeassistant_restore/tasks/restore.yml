@@ -4,6 +4,15 @@
     msg: "homeassistant_restore_dry_run=true - skipping service stop and file sync"
   when: homeassistant_restore_dry_run | bool
 
+- name: Detect existing Home Assistant service unit
+  ansible.builtin.stat:
+    path: "{{ homeassistant_service_unit_path }}"
+  register: _ha_restore_service_unit_initial
+
+- name: Record service availability before restore
+  ansible.builtin.set_fact:
+    homeassistant_restore_service_available: "{{ _ha_restore_service_unit_initial.stat.exists | default(false) }}"
+
 - name: Apply backup to target host
   when: not homeassistant_restore_dry_run | bool
   block:
@@ -13,6 +22,7 @@
         state: stopped
         daemon_reload: false
       register: _ha_restore_service_stop
+      when: homeassistant_restore_service_available | bool
 
     - name: Ensure destination directories exist
       ansible.builtin.file:
@@ -90,6 +100,15 @@
     - name: Ensure systemd reloaded before service start
       ansible.builtin.meta: flush_handlers
       when: homeassistant_restore_system_files | bool
+
+    - name: Refresh service availability after system file restoration
+      ansible.builtin.stat:
+        path: "{{ homeassistant_service_unit_path }}"
+      register: _ha_restore_service_unit_after
+
+    - name: Update service availability flag
+      ansible.builtin.set_fact:
+        homeassistant_restore_service_available: "{{ _ha_restore_service_unit_after.stat.exists | default(false) }}"
 
     - name: Fix ownership on site root when requested
       ansible.builtin.file:
