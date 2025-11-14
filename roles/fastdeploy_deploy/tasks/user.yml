@@ -11,6 +11,9 @@
   user:
     name: deploy
     group: deploy
+    groups:
+      - "{{ fastdeploy_group }}"
+    append: true
     shell: /bin/bash
     home: /home/deploy
     create_home: yes
@@ -32,6 +35,14 @@
     create_home: yes
     comment: "FastDeploy Service Account"
     system: no
+
+- name: Ensure FastDeploy home directory permissions
+  file:
+    path: "{{ fastdeploy_home }}"
+    state: directory
+    owner: "{{ fastdeploy_user }}"
+    group: "{{ fastdeploy_group }}"
+    mode: "0755"
 
 - name: Create directory structure
   file:
