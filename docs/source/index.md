@@ -9,6 +9,7 @@ A collection of reusable Ansible roles for homelab automation and service deploy
 architecture
 testing
 roles/index
+howto/service_lifecycle
 howto/paperless_scanner
 changelog
 ```

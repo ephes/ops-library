@@ -10,6 +10,9 @@
 - **[README.md](./README.md)** - Quick start guide and role overview table
 - **[ARCHITECTURE.md](./ARCHITECTURE.md)** - Detailed system design, principles, and patterns
 
+### How-To Guides
+- **[Service Lifecycle Guide](./docs/source/howto/service_lifecycle.md)** - Step-by-step checklist for creating deploy/backup/restore/remove roles plus ops-control integration.
+
 ### Role Documentation
 Each role has comprehensive documentation in its README:
 - Service deployment roles: `roles/*_deploy/README.md`
