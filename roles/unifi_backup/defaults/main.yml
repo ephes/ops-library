@@ -23,7 +23,7 @@ unifi_env_file: /etc/default/unifi
 # MongoDB / UniFi database settings
 unifi_mongodb_host: 127.0.0.1
 unifi_mongodb_port: 27017
-unifi_mongodb_database: ace
+unifi_mongodb_database: unifi
 unifi_mongodb_username: ""
 unifi_mongodb_password: ""
 unifi_mongodb_auth_db: admin

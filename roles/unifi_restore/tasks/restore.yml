@@ -8,6 +8,88 @@
   ansible.builtin.pause:
     seconds: "{{ unifi_restore_service_stop_pause | int }}"
 
+- block:
+    - name: "mongodb | Determine backup dump directory"
+      ansible.builtin.set_fact:
+        unifi_restore_mongodb_dump_dir: "{{ unifi_restore_extracted_dir }}/database/{{ unifi_restore_mongodb_database }}"
+
+    - name: "mongodb | Check for MongoDB dump directory"
+      ansible.builtin.stat:
+        path: "{{ unifi_restore_mongodb_dump_dir }}"
+      register: unifi_restore_mongodb_dump_stat
+
+    - name: "mongodb | Fail if MongoDB dump is missing"
+      ansible.builtin.assert:
+        that:
+          - unifi_restore_mongodb_dump_stat.stat.exists
+          - unifi_restore_mongodb_dump_stat.stat.isdir
+        fail_msg: >-
+          MongoDB dump not found at {{ unifi_restore_mongodb_dump_dir }}.
+          Ensure the selected backup contains a database export.
+
+    - name: "mongodb | Build drop database command"
+      ansible.builtin.set_fact:
+        unifi_restore_mongodb_drop_args: >-
+          {{
+            [
+              unifi_mongodb_shell_binary,
+              '--host=' ~ unifi_restore_mongodb_host,
+              '--port=' ~ (unifi_restore_mongodb_port | string),
+              '--quiet',
+              '--eval=db.getSiblingDB("' ~ unifi_restore_mongodb_database ~ '").dropDatabase()'
+            ]
+            + (((unifi_restore_mongodb_username | default('', true) | length) > 0)
+                | ternary(['--username=' ~ unifi_restore_mongodb_username], []))
+            + (((unifi_restore_mongodb_password | default('', true) | length) > 0)
+                | ternary(['--password=' ~ unifi_restore_mongodb_password], []))
+            + (((unifi_restore_mongodb_auth_db | default('', true) | length) > 0)
+                | ternary(['--authenticationDatabase=' ~ unifi_restore_mongodb_auth_db], []))
+          }}
+      when: unifi_restore_mongodb_drop_database | bool
+      no_log: "{{ unifi_restore_mongodb_password | default('', true) | length > 0 }}"
+
+    - name: "mongodb | Drop existing MongoDB database"
+      ansible.builtin.command:
+        argv: "{{ unifi_restore_mongodb_drop_args }}"
+      register: unifi_restore_mongodb_drop_result
+      changed_when: true
+      when: unifi_restore_mongodb_drop_database | bool
+      no_log: "{{ unifi_restore_mongodb_password | default('', true) | length > 0 }}"
+
+    - name: "mongodb | Build mongorestore command arguments"
+      ansible.builtin.set_fact:
+        unifi_restore_mongorestore_args: >-
+          {{
+            [
+              unifi_mongodb_restore_binary,
+              '--host=' ~ unifi_restore_mongodb_host,
+              '--port=' ~ (unifi_restore_mongodb_port | string),
+              '--db=' ~ unifi_restore_mongodb_database,
+              '--dir=' ~ unifi_restore_mongodb_dump_dir
+            ]
+            + (((unifi_restore_mongodb_username | default('', true) | length) > 0)
+                | ternary(['--username=' ~ unifi_restore_mongodb_username], []))
+            + (((unifi_restore_mongodb_password | default('', true) | length) > 0)
+                | ternary(['--password=' ~ unifi_restore_mongodb_password], []))
+            + (((unifi_restore_mongodb_auth_db | default('', true) | length) > 0)
+                | ternary(['--authenticationDatabase=' ~ unifi_restore_mongodb_auth_db], []))
+            + ((unifi_restore_use_mongorestore_drop_flag | bool)
+                | ternary(['--drop'], []))
+          }}
+      no_log: "{{ unifi_restore_mongodb_password | default('', true) | length > 0 }}"
+
+    - name: "mongodb | Restore MongoDB database"
+      ansible.builtin.command:
+        argv: "{{ unifi_restore_mongorestore_args }}"
+      register: unifi_restore_mongorestore_result
+      changed_when: true
+      retries: 3
+      delay: 5
+      until: unifi_restore_mongorestore_result.rc == 0
+      no_log: "{{ unifi_restore_mongodb_password | default('', true) | length > 0 }}"
+
+  when: unifi_restore_include_mongodb | bool
+
 # Automated restore path: rsync data directory
 - block:
     - name: Rsync UniFi data directory

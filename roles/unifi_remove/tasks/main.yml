@@ -78,6 +78,7 @@
     - unifi_mongodb_password | length > 0
   register: unifi_remove_drop_db
   changed_when: true
+  failed_when: false
   no_log: true
 
 - name: Drop UniFi MongoDB user
@@ -91,6 +92,7 @@
     - unifi_mongodb_password | length > 0
   register: unifi_remove_drop_user
   changed_when: true
+  failed_when: false
   no_log: true
 
 - name: Stop MongoDB service post-cleanup

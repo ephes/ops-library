@@ -15,17 +15,20 @@ unifi_restore_cleanup_safety_backup: true
 
 # Restore method: automated (MongoDB + rsync) or manual-unf-prep
 unifi_restore_method: automated
+unifi_restore_include_mongodb: true
 
 # MongoDB restore behaviour
 unifi_restore_mongodb_host: 127.0.0.1
 unifi_restore_mongodb_port: 27017
-unifi_restore_mongodb_database: ace
+unifi_restore_mongodb_database: unifi
 unifi_restore_mongodb_username: ""
 unifi_restore_mongodb_password: ""
 unifi_restore_mongodb_auth_db: admin
 unifi_restore_mongodb_drop_database: true
-unifi_restore_use_mongorestore_drop_flag: true
+unifi_restore_use_mongorestore_drop_flag: false
 unifi_mongodb_dump_binary: mongodump
+unifi_mongodb_restore_binary: mongorestore
+unifi_mongodb_shell_binary: mongosh
 
 # Service / verification
 unifi_service_name: unifi.service

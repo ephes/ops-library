@@ -61,6 +61,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Home Assistant presence automations now include the default file to prevent missing automation imports after deployment
 - `dns_remove` cleans up DDNS units reliably and no longer crashes on undefined variables during selective removal
+- `unifi_restore` now re-imports MongoDB dumps, honors host/port overrides, and ships with sane defaults so UniFi logins and controller state survive a remove/deploy/restore cycle
+- `unifi_deploy` gracefully skips the Home Assistant integration on the very first bootstrap when the UniFi “default” site does not exist yet, avoiding infinite waits on greenfield installs
 
 ## [2.0.0] - 2025-10-09
 

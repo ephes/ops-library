@@ -28,47 +28,70 @@
   changed_when: false
   no_log: true
 
-- name: "homeassistant | Wait for default site"
+- name: "homeassistant | Probe for default site"
   ansible.builtin.shell: |
     mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} \
       -u "{{ unifi_mongodb_user }}" -p "{{ unifi_mongodb_password }}" --authenticationDatabase admin \
       {{ unifi_mongodb_database }} --eval "quit(db.site.findOne({name: 'default'}) ? 0 : 1)"
-  register: unifi_homeassistant_site_check
-  until: unifi_homeassistant_site_check.rc == 0
-  retries: "{{ unifi_homeassistant_wait_retries }}"
-  delay: "{{ unifi_homeassistant_wait_delay }}"
+  register: unifi_homeassistant_site_probe
   changed_when: false
+  failed_when: false
   no_log: true
 
-- name: "homeassistant | Render MongoDB script"
-  ansible.builtin.template:
-    src: mongo-ha-user.js.j2
-    dest: /tmp/unifi-mongo-ha-user.js
-    owner: root
-    group: root
-    mode: "0600"
-  no_log: true
+- name: "homeassistant | Record default site presence"
+  ansible.builtin.set_fact:
+    unifi_homeassistant_default_site_present: "{{ unifi_homeassistant_site_probe.rc == 0 }}"
 
-- name: "homeassistant | Apply MongoDB script"
-  ansible.builtin.shell: |
-    mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} \
-      -u "{{ unifi_mongodb_user }}" -p "{{ unifi_mongodb_password }}" --authenticationDatabase admin \
-      < /tmp/unifi-mongo-ha-user.js
-  register: unifi_homeassistant_user
-  changed_when: "'successfully' in unifi_homeassistant_user.stdout.lower()"
-  failed_when: "'Error' in unifi_homeassistant_user.stdout"
-  no_log: true
+- name: "homeassistant | Warn when default site missing"
+  ansible.builtin.debug:
+    msg: >-
+      UniFi default site was not detected; skipping Home Assistant user creation.
+      Complete the UniFi setup wizard once, then rerun deploy-one unifi to finish the integration.
+  when: not unifi_homeassistant_default_site_present | bool
 
-- name: "homeassistant | Remove Mongo script"
-  ansible.builtin.file:
-    path: /tmp/unifi-mongo-ha-user.js
-    state: absent
+- block:
+    - name: "homeassistant | Wait for default site"
+      ansible.builtin.shell: |
+        mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} \
+          -u "{{ unifi_mongodb_user }}" -p "{{ unifi_mongodb_password }}" --authenticationDatabase admin \
+          {{ unifi_mongodb_database }} --eval "quit(db.site.findOne({name: 'default'}) ? 0 : 1)"
+      register: unifi_homeassistant_site_check
+      until: unifi_homeassistant_site_check.rc == 0
+      retries: "{{ unifi_homeassistant_wait_retries }}"
+      delay: "{{ unifi_homeassistant_wait_delay }}"
+      changed_when: false
+      no_log: true
 
-- name: "homeassistant | Persist password locally"
-  ansible.builtin.copy:
-    dest: "{{ unifi_homeassistant_password_store }}"
-    content: "{{ unifi_homeassistant_password_effective }}"
-    owner: "{{ unifi_user }}"
-    group: "{{ unifi_group }}"
-    mode: "0600"
-  no_log: true
+    - name: "homeassistant | Render MongoDB script"
+      ansible.builtin.template:
+        src: mongo-ha-user.js.j2
+        dest: /tmp/unifi-mongo-ha-user.js
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: "homeassistant | Apply MongoDB script"
+      ansible.builtin.shell: |
+        mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} \
+          -u "{{ unifi_mongodb_user }}" -p "{{ unifi_mongodb_password }}" --authenticationDatabase admin \
+          < /tmp/unifi-mongo-ha-user.js
+      register: unifi_homeassistant_user
+      changed_when: "'successfully' in unifi_homeassistant_user.stdout.lower()"
+      failed_when: "'Error' in unifi_homeassistant_user.stdout"
+      no_log: true
+
+    - name: "homeassistant | Remove Mongo script"
+      ansible.builtin.file:
+        path: /tmp/unifi-mongo-ha-user.js
+        state: absent
+
+    - name: "homeassistant | Persist password locally"
+      ansible.builtin.copy:
+        dest: "{{ unifi_homeassistant_password_store }}"
+        content: "{{ unifi_homeassistant_password_effective }}"
+        owner: "{{ unifi_user }}"
+        group: "{{ unifi_group }}"
+        mode: "0600"
+      no_log: true
+  when: unifi_homeassistant_default_site_present | bool
