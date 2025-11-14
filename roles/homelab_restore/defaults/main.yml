@@ -1,0 +1,8 @@
+---
+homelab_restore_archive_pattern: "*.tar.gz"
+homelab_restore_use_rsync_delete: true
+homelab_restore_metadata_required_fields:
+  - slug
+  - timestamp
+  - host
+homelab_restore_disk_space_multiplier: 2.0

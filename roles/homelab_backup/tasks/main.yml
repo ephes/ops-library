@@ -1,0 +1,294 @@
+---
+- name: "Validate backup root"
+  ansible.builtin.assert:
+    that:
+      - homelab_backup_root | length > 0
+    fail_msg: "homelab_backup_root must be configured (typically derived from backup_root_prefix)"
+
+- name: "Collect homelab backup targets"
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  register: _homelab_backup_stats
+  loop:
+    - { name: "site", path: "{{ homelab_site_path }}", optional: false }
+    - { name: "database", path: "{{ homelab_database_path }}", optional: true }
+    - { name: "static", path: "{{ homelab_static_root }}", optional: true }
+    - { name: "media", path: "{{ homelab_media_root }}", optional: true }
+    - { name: "cache", path: "{{ homelab_cache_dir }}", optional: true }
+    - { name: "env", path: "{{ homelab_env_file }}", optional: true }
+    - { name: "systemd", path: "{{ homelab_systemd_unit_path }}", optional: true }
+    - { name: "traefik", path: "{{ homelab_traefik_config_path }}", optional: true }
+    - { name: "git", path: "{{ homelab_site_path }}/.git", optional: true }
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: "Build existence lookup"
+  ansible.builtin.set_fact:
+    homelab_backup_exists: "{{ homelab_backup_exists | default({}) | combine({ item.item.name: item.stat.exists }) }}"
+  loop: "{{ _homelab_backup_stats.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+
+- name: "Ensure required paths exist"
+  ansible.builtin.assert:
+    that:
+      - (homelab_backup_exists.site | default(false)) | bool
+    fail_msg: "homelab_site_path ({{ homelab_site_path }}) must exist on the target host"
+
+- name: "Set backup timestamp"
+  ansible.builtin.set_fact:
+    homelab_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+- name: "Compute backup directory and archive"
+  ansible.builtin.set_fact:
+    homelab_backup_dir: "{{ homelab_backup_root }}/{{ homelab_backup_prefix }}-{{ homelab_backup_timestamp }}"
+    homelab_backup_archive: "{{ homelab_backup_root }}/{{ homelab_backup_prefix }}-{{ homelab_backup_timestamp }}.{{ homelab_backup_archive_format }}"
+
+- name: "Compute SQLite backup target"
+  ansible.builtin.set_fact:
+    homelab_backup_sqlite_target: "{{ homelab_backup_dir }}/database/{{ homelab_database_path | basename }}"
+
+- name: "Ensure backup root exists"
+  ansible.builtin.file:
+    path: "{{ homelab_backup_root }}"
+    state: directory
+    owner: "{{ homelab_backup_owner }}"
+    group: "{{ homelab_backup_group }}"
+    mode: "{{ homelab_backup_dir_mode }}"
+
+- name: "Ensure backup directory exists"
+  ansible.builtin.file:
+    path: "{{ homelab_backup_dir }}"
+    state: directory
+    owner: "{{ homelab_backup_owner }}"
+    group: "{{ homelab_backup_group }}"
+    mode: "{{ homelab_backup_dir_mode }}"
+
+- name: "Ensure subdirectories exist"
+  ansible.builtin.file:
+    path: "{{ homelab_backup_dir }}/{{ item }}"
+    state: directory
+    owner: "{{ homelab_backup_owner }}"
+    group: "{{ homelab_backup_group }}"
+    mode: "{{ homelab_backup_dir_mode }}"
+  loop:
+    - database
+    - static
+    - media
+    - cache
+    - configs
+    - env
+
+- name: "Detect ops-library galaxy file"
+  ansible.builtin.stat:
+    path: "{{ role_path | dirname | dirname }}/galaxy.yml"
+  register: homelab_ops_library_galaxy
+
+- name: "Determine ops-library version"
+  ansible.builtin.set_fact:
+    homelab_ops_library_version: "{{ (lookup('file', homelab_ops_library_galaxy.stat.path) | from_yaml).version }}"
+  when:
+    - homelab_ops_library_version is not defined
+    - homelab_ops_library_galaxy.stat.exists
+
+- name: "Default ops-library version when galaxy metadata missing"
+  ansible.builtin.set_fact:
+    homelab_ops_library_version: "{{ homelab_ops_library_version | default('unknown') }}"
+
+- name: "Capture deployed git commit (if repository present)"
+  ansible.builtin.command:
+    cmd: git -C "{{ homelab_site_path }}" rev-parse HEAD
+  register: homelab_backup_git
+  changed_when: false
+  failed_when: false
+  when:
+    - homelab_backup_git_check_enabled
+    - homelab_backup_exists.git | default(false)
+
+- name: "Set source commit fact"
+  ansible.builtin.set_fact:
+    homelab_backup_source_commit: >-
+      {{ homelab_backup_git.stdout | default('unknown') if (homelab_backup_git.rc | default(1)) == 0 else 'unknown' }}
+  when: homelab_backup_git is defined
+
+- name: "Default source commit when git absent"
+  ansible.builtin.set_fact:
+    homelab_backup_source_commit: "unknown"
+  when: homelab_backup_source_commit is not defined
+
+- name: "Initialise SQLite backup mode"
+  ansible.builtin.set_fact:
+    homelab_backup_offline_required: "{{ homelab_backup_force_stop | bool }}"
+    homelab_backup_sqlite_mode: "{{ 'offline' if homelab_backup_force_stop else 'hot' }}"
+
+- block:
+    - name: "Perform SQLite hot backup"
+      ansible.builtin.command:
+        cmd: >
+          {{ homelab_backup_sqlite_command }} "{{ homelab_database_path }}"
+          ".backup '{{ homelab_backup_sqlite_target }}'"
+      register: homelab_backup_sqlite_result
+      retries: "{{ homelab_backup_sqlite_retries }}"
+      delay: 2
+      until: homelab_backup_sqlite_result.rc == 0
+      changed_when: true
+  rescue:
+    - name: "Fallback to offline backup mode"
+      ansible.builtin.set_fact:
+        homelab_backup_offline_required: true
+        homelab_backup_sqlite_mode: offline
+  when:
+    - not homelab_backup_offline_required
+    - homelab_backup_exists.database | default(false)
+
+- block:
+    - name: "Stop Homelab service for offline SQLite snapshot"
+      ansible.builtin.systemd:
+        name: "{{ homelab_service_name }}"
+        state: stopped
+      register: homelab_backup_systemd_stop
+      failed_when: false
+
+    - name: "Copy SQLite database file (offline)"
+      ansible.builtin.command:
+        cmd: >
+          cp "{{ homelab_database_path }}" "{{ homelab_backup_sqlite_target }}"
+      register: homelab_backup_sqlite_offline
+      changed_when: true
+
+  always:
+    - name: "Ensure Homelab service is running"
+      ansible.builtin.systemd:
+        name: "{{ homelab_service_name }}"
+        state: started
+      failed_when: false
+  when:
+    - homelab_backup_offline_required
+    - homelab_backup_exists.database | default(false)
+
+- name: "Rsync Homelab directories"
+  ansible.builtin.command:
+    cmd: >
+      rsync -a{{ ' --delete' if homelab_backup_rsync_use_delete else '' }}
+      "{{ item.src }}/"
+      "{{ item.dest }}/"
+  loop:
+    - { src: "{{ homelab_static_root }}", dest: "{{ homelab_backup_dir }}/static", enabled: "{{ homelab_backup_include_static }}", key: "static" }
+    - { src: "{{ homelab_media_root }}", dest: "{{ homelab_backup_dir }}/media", enabled: "{{ homelab_backup_include_media }}", key: "media" }
+    - { src: "{{ homelab_cache_dir }}", dest: "{{ homelab_backup_dir }}/cache", enabled: "{{ homelab_backup_include_cache }}", key: "cache" }
+  loop_control:
+    label: "{{ item.src }}"
+  when:
+    - item.enabled | bool
+    - homelab_backup_exists[item.key] | default(false)
+  changed_when: true
+
+- name: "Copy .env file"
+  ansible.builtin.copy:
+    src: "{{ homelab_env_file }}"
+    dest: "{{ homelab_backup_dir }}/env/.env"
+    owner: "{{ homelab_backup_owner }}"
+    group: "{{ homelab_backup_group }}"
+    mode: "{{ homelab_backup_file_mode }}"
+    remote_src: true
+  when:
+    - homelab_backup_include_env | bool
+    - homelab_backup_exists.env | default(false)
+
+- name: "Copy systemd unit file"
+  ansible.builtin.copy:
+    src: "{{ homelab_systemd_unit_path }}"
+    dest: "{{ homelab_backup_dir }}/configs/homelab.service"
+    owner: "{{ homelab_backup_owner }}"
+    group: "{{ homelab_backup_group }}"
+    mode: "{{ homelab_backup_file_mode }}"
+    remote_src: true
+  when:
+    - homelab_backup_include_systemd | bool
+    - homelab_backup_exists.systemd | default(false)
+
+- name: "Copy Traefik config"
+  ansible.builtin.copy:
+    src: "{{ homelab_traefik_config_path }}"
+    dest: "{{ homelab_backup_dir }}/configs/traefik.yml"
+    owner: "{{ homelab_backup_owner }}"
+    group: "{{ homelab_backup_group }}"
+    mode: "{{ homelab_backup_file_mode }}"
+    remote_src: true
+  when:
+    - homelab_backup_include_traefik | bool
+    - homelab_backup_exists.traefik | default(false)
+
+- name: "Write backup metadata"
+  ansible.builtin.copy:
+    dest: "{{ homelab_backup_dir }}/metadata.yml"
+    owner: "{{ homelab_backup_owner }}"
+    group: "{{ homelab_backup_group }}"
+    mode: "{{ homelab_backup_file_mode }}"
+    content: |
+      slug: "{{ homelab_slug }}"
+      timestamp: "{{ homelab_backup_timestamp }}"
+      host: "{{ inventory_hostname }}"
+      ops_library_version: "{{ homelab_ops_library_version | default('unknown') }}"
+      source_commit: "{{ homelab_backup_source_commit | default('unknown') }}"
+      sqlite_mode: "{{ homelab_backup_sqlite_mode if homelab_backup_exists.database | default(false) else 'missing' }}"
+      include_static: {{ homelab_backup_include_static | bool }}
+      include_media: {{ homelab_backup_include_media | bool }}
+      include_cache: {{ homelab_backup_include_cache | bool }}
+      include_env: {{ homelab_backup_include_env | bool }}
+      include_systemd: {{ homelab_backup_include_systemd | bool }}
+      include_traefik: {{ homelab_backup_include_traefik | bool }}
+      site_path: "{{ homelab_site_path }}"
+      database_path: "{{ homelab_database_path }}"
+      static_root: "{{ homelab_static_root }}"
+      media_root: "{{ homelab_media_root }}"
+      cache_dir: "{{ homelab_cache_dir }}"
+      env_file: "{{ homelab_env_file }}"
+
+- name: "Generate checksum manifest"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cd "{{ homelab_backup_dir }}"
+    find . -type f ! -name manifest.sha256 -print0 | sort -z | xargs -0 sha256sum > manifest.sha256
+  args:
+    executable: /bin/bash
+  when: homelab_backup_manifest_enabled | bool
+  changed_when: true
+
+- name: "Create archive"
+  ansible.builtin.command:
+    cmd: >
+      tar -C "{{ homelab_backup_root }}"
+      -czf "{{ homelab_backup_archive | basename }}"
+      "{{ homelab_backup_dir | basename }}"
+  when:
+    - homelab_backup_create_archive | bool
+    - homelab_backup_archive_format == 'tar.gz'
+  args:
+    chdir: "{{ homelab_backup_root }}"
+  changed_when: true
+
+- name: "Ensure local backup directory exists"
+  ansible.builtin.file:
+    path: "{{ homelab_backup_local_dir }}"
+    state: directory
+    mode: "{{ homelab_backup_local_dir_mode }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - homelab_backup_fetch_local | bool
+    - homelab_backup_create_archive | bool
+    - homelab_backup_archive_format == 'tar.gz'
+
+- name: "Fetch archive to control machine"
+  ansible.builtin.fetch:
+    src: "{{ homelab_backup_archive }}"
+    dest: "{{ homelab_backup_local_dir }}/"
+    flat: true
+  run_once: true
+  become: false
+  when:
+    - homelab_backup_fetch_local | bool
+    - homelab_backup_create_archive | bool
+    - homelab_backup_archive_format == 'tar.gz'

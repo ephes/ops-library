@@ -24,4 +24,5 @@ galaxy_info:
     - traefik
     - authentication
 
-dependencies: []
+dependencies:
+  - role: local.ops_library.homelab_shared

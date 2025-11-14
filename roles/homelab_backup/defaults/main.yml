@@ -1,0 +1,7 @@
+---
+# Role-specific defaults (shared ones located in homelab_shared)
+homelab_backup_include_systemd: true
+homelab_backup_include_traefik: true
+homelab_backup_rsync_use_delete: true
+homelab_backup_sqlite_command: sqlite3
+homelab_backup_git_check_enabled: true

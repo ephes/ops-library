@@ -1,0 +1,17 @@
+---
+- name: "Expose homelab shared paths"
+  ansible.builtin.set_fact:
+    homelab_paths:
+      home: "{{ homelab_home }}"
+      site: "{{ homelab_site_path }}"
+      venv: "{{ homelab_venv_path }}"
+      cache: "{{ homelab_cache_dir }}"
+      database: "{{ homelab_database_path }}"
+      static: "{{ homelab_static_root }}"
+      media: "{{ homelab_media_root }}"
+      media_subdirs: "{{ homelab_media_subdirs }}"
+      systemd_unit: "{{ homelab_systemd_unit_path }}"
+      traefik_config: "{{ homelab_traefik_config_path }}"
+      backup_root: "{{ homelab_backup_root }}"
+      backup_local_dir: "{{ homelab_backup_local_dir }}"
+  when: homelab_paths is not defined

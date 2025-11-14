@@ -1,0 +1,449 @@
+---
+- name: "Initialise homelab restore context"
+  ansible.builtin.set_fact:
+    homelab_restore_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+    homelab_restore_success: false
+    homelab_restore_safety_dir: ""
+
+- name: "Detect ops-library galaxy file"
+  ansible.builtin.stat:
+    path: "{{ role_path | dirname | dirname }}/galaxy.yml"
+  register: homelab_restore_galaxy_file
+
+- name: "Determine ops-library version"
+  ansible.builtin.set_fact:
+    homelab_ops_library_version: "{{ (lookup('file', homelab_restore_galaxy_file.stat.path) | from_yaml).version }}"
+  when:
+    - homelab_ops_library_version is not defined
+    - homelab_restore_galaxy_file.stat.exists
+
+- name: "Default ops-library version when metadata missing"
+  ansible.builtin.set_fact:
+    homelab_ops_library_version: "{{ homelab_ops_library_version | default('unknown') }}"
+
+- block:
+    - name: "Reset staging directory"
+      ansible.builtin.file:
+        path: "{{ homelab_restore_staging_dir }}"
+        state: absent
+
+    - ansible.builtin.file:
+        path: "{{ homelab_restore_staging_dir }}"
+        state: directory
+        mode: "{{ homelab_restore_staging_mode }}"
+
+    - name: "Locate latest archive"
+      when: homelab_restore_archive == 'latest'
+      block:
+        - ansible.builtin.find:
+            paths: "{{ homelab_restore_root }}"
+            patterns: "{{ homelab_restore_archive_pattern }}"
+            file_type: file
+          register: homelab_restore_found_archives
+
+        - ansible.builtin.assert:
+            that:
+              - (homelab_restore_found_archives.files | length) > 0
+            fail_msg: "No homelab backup archives found under {{ homelab_restore_root }}"
+
+        - ansible.builtin.set_fact:
+            homelab_restore_archive_path: "{{ ((homelab_restore_found_archives.files | sort(attribute='mtime')) | last).path }}"
+
+    - name: "Use explicit archive path"
+      ansible.builtin.set_fact:
+        homelab_restore_archive_path: >-
+          {{
+            homelab_restore_archive
+            if homelab_restore_archive | regex_search('^/')
+            else homelab_restore_root ~ '/' ~ homelab_restore_archive
+          }}
+      when: homelab_restore_archive != 'latest'
+
+    - name: "Validate archive path"
+      ansible.builtin.stat:
+        path: "{{ homelab_restore_archive_path }}"
+      register: homelab_restore_archive_stat
+
+    - ansible.builtin.assert:
+        that:
+          - homelab_restore_archive_stat.stat.exists
+          - homelab_restore_archive_stat.stat.isreg
+        fail_msg: "Restore archive {{ homelab_restore_archive_path }} does not exist"
+
+    - name: "Set archive basename"
+      ansible.builtin.set_fact:
+        homelab_restore_archive_basename: "{{ homelab_restore_archive_path | basename }}"
+
+    - name: "Set payload directory path"
+      ansible.builtin.set_fact:
+        homelab_restore_payload_dir: "{{ homelab_restore_staging_dir }}/{{ homelab_restore_archive_basename | regex_replace('\\\\.tar\\\\.gz$', '') }}"
+
+    - name: "Extract archive into staging directory"
+      ansible.builtin.unarchive:
+        src: "{{ homelab_restore_archive_path }}"
+        dest: "{{ homelab_restore_staging_dir }}"
+        remote_src: true
+
+    - name: "Discover extracted payload directories"
+      ansible.builtin.find:
+        paths: "{{ homelab_restore_staging_dir }}"
+        file_type: directory
+        depth: 1
+      register: homelab_restore_stage_dirs
+
+    - name: "Ensure payload directory exists"
+      ansible.builtin.stat:
+        path: "{{ homelab_restore_payload_dir }}"
+      register: homelab_restore_payload_dir_stat
+
+    - name: "Fallback to discovered payload directory"
+      when: not (homelab_restore_payload_dir_stat.stat.exists | default(false))
+      block:
+        - name: "Use first extracted directory as payload"
+          ansible.builtin.set_fact:
+            homelab_restore_payload_dir: "{{ (homelab_restore_stage_dirs.files | map(attribute='path') | list | first) | default(homelab_restore_payload_dir) }}"
+
+        - name: "Re-stat payload directory"
+          ansible.builtin.stat:
+            path: "{{ homelab_restore_payload_dir }}"
+          register: homelab_restore_payload_dir_stat
+
+    - ansible.builtin.assert:
+        that:
+          - homelab_restore_payload_dir_stat.stat.exists | default(false)
+          - homelab_restore_payload_dir_stat.stat.isdir | default(false)
+        fail_msg: "Archive {{ homelab_restore_archive_basename }} did not contain the expected payload directory"
+
+    - name: "Inspect payload contents"
+      ansible.builtin.stat:
+        path: "{{ homelab_restore_payload_dir }}/{{ item.path }}"
+      register: homelab_restore_payload_stats
+      loop:
+        - { key: "database", path: "database/{{ homelab_database_path | basename }}" }
+        - { key: "static", path: "static" }
+        - { key: "media", path: "media" }
+        - { key: "cache", path: "cache" }
+        - { key: "env", path: "env/.env" }
+        - { key: "systemd", path: "configs/homelab.service" }
+        - { key: "traefik", path: "configs/traefik.yml" }
+        - { key: "manifest", path: "manifest.sha256" }
+        - { key: "metadata", path: "metadata.yml" }
+
+    - name: "Build payload existence map"
+      ansible.builtin.set_fact:
+        homelab_restore_payload_exists: "{{ homelab_restore_payload_exists | default({}) | combine({ item.item.key: item.stat.exists }) }}"
+      loop: "{{ homelab_restore_payload_stats.results }}"
+      loop_control:
+        label: "{{ item.item.key }}"
+
+    - name: "Load backup metadata"
+      ansible.builtin.slurp:
+        src: "{{ homelab_restore_payload_dir }}/metadata.yml"
+      register: homelab_restore_metadata_raw
+
+    - name: "Parse backup metadata"
+      ansible.builtin.set_fact:
+        homelab_restore_metadata: "{{ homelab_restore_metadata_raw.content | b64decode | from_yaml }}"
+
+    - ansible.builtin.assert:
+        that:
+          - homelab_restore_metadata.slug == homelab_slug
+        fail_msg: "Archive slug ({{ homelab_restore_metadata.slug }}) does not match expected homelab slug ({{ homelab_slug }})"
+
+    - name: "Validate metadata fields"
+      ansible.builtin.assert:
+        that:
+          - homelab_restore_metadata[ item ] is defined
+        fail_msg: "metadata.yml missing required field '{{ item }}'"
+      loop: "{{ homelab_restore_metadata_required_fields }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: "Check ops-library version compatibility"
+      ansible.builtin.set_fact:
+        homelab_restore_version_mismatch: "{{ (homelab_restore_metadata.ops_library_version | default('unknown')) != (homelab_ops_library_version | default('unknown')) }}"
+
+    - name: "Fail on version mismatch"
+      ansible.builtin.fail:
+        msg: >-
+          Archive was produced with ops-library {{ homelab_restore_metadata.ops_library_version | default('unknown') }},
+          but current control host is running {{ homelab_ops_library_version }}. Override with homelab_restore_allow_version_mismatch=true to continue.
+      when:
+        - homelab_restore_version_mismatch
+        - not homelab_restore_allow_version_mismatch
+
+    - name: "Warn on version mismatch"
+      ansible.builtin.debug:
+        msg: >-
+          Version mismatch detected (archive={{ homelab_restore_metadata.ops_library_version | default('unknown') }},
+          current={{ homelab_ops_library_version | default('unknown') }}) - continuing due to homelab_restore_allow_version_mismatch=true.
+      when:
+        - homelab_restore_version_mismatch
+        - homelab_restore_allow_version_mismatch
+
+    - name: "Validate checksum manifest"
+      ansible.builtin.command:
+        cmd: sha256sum -c manifest.sha256
+      args:
+        chdir: "{{ homelab_restore_payload_dir }}"
+      register: homelab_restore_manifest_check
+      changed_when: false
+      when:
+        - homelab_restore_validate_checksums
+        - homelab_restore_payload_exists.manifest | default(false)
+
+    - name: "Summarise restore plan"
+      ansible.builtin.set_fact:
+        homelab_restore_plan_summary:
+          archive: "{{ homelab_restore_archive_basename }}"
+          database: "{{ homelab_restore_payload_exists.database | default(false) }}"
+          static: "{{ homelab_restore_payload_exists.static | default(false) }}"
+          media: "{{ homelab_restore_payload_exists.media | default(false) }}"
+          env: "{{ homelab_restore_payload_exists.env | default(false) and homelab_restore_restore_env }}"
+          systemd: "{{ homelab_restore_payload_exists.systemd | default(false) }}"
+          traefik: "{{ homelab_restore_payload_exists.traefik | default(false) }}"
+          dry_run: "{{ homelab_restore_dry_run }}"
+
+    - name: "Display restore plan"
+      ansible.builtin.debug:
+        msg:
+          - "Archive: {{ homelab_restore_plan_summary.archive }}"
+          - "Components -> database={{ homelab_restore_plan_summary.database }}, static={{ homelab_restore_plan_summary.static }}, media={{ homelab_restore_plan_summary.media }}, env={{ homelab_restore_plan_summary.env }}"
+          - "Dry-run: {{ homelab_restore_plan_summary.dry_run }}"
+          - "Expected downtime: {{ 'Short (service restart only)' if homelab_restore_plan_summary.database else 'Moderate (full rsync + DB replace)' }}"
+
+    - block:
+        - name: "Set safety snapshot directory"
+          ansible.builtin.set_fact:
+            homelab_restore_safety_dir: "{{ homelab_site_path }}.{{ homelab_restore_safe_snapshot_prefix }}-{{ homelab_restore_timestamp }}"
+
+        - name: "Create safety snapshot"
+          when:
+            - homelab_restore_create_safe_snapshot
+          block:
+            - ansible.builtin.file:
+                path: "{{ homelab_restore_safety_dir }}"
+                state: directory
+                owner: "{{ homelab_user }}"
+                group: "{{ homelab_group }}"
+                mode: "{{ homelab_restore_media_mode }}"
+
+            - ansible.builtin.command:
+                cmd: >
+                  rsync -a
+                  "{{ homelab_site_path }}/"
+                  "{{ homelab_restore_safety_dir }}/"
+              changed_when: true
+
+        - name: "Stop Homelab service prior to restore"
+          ansible.builtin.systemd:
+            name: "{{ homelab_service_name }}"
+            state: stopped
+          register: homelab_restore_systemd_stop
+          failed_when: false
+
+        - name: "Ensure destination directories exist"
+          ansible.builtin.file:
+            path: "{{ item.path }}"
+            state: directory
+            owner: "{{ homelab_user }}"
+            group: "{{ homelab_group }}"
+            mode: "{{ item.mode }}"
+          loop:
+            - { path: "{{ homelab_static_root }}", mode: "0755" }
+            - { path: "{{ homelab_media_root }}", mode: "{{ homelab_restore_media_mode }}" }
+            - { path: "{{ homelab_cache_dir }}", mode: "0755" }
+
+        - name: "Restore directories from payload"
+          ansible.builtin.command:
+            cmd: >
+              rsync -a{{ ' --delete' if homelab_restore_use_rsync_delete else '' }}
+              "{{ homelab_restore_payload_dir }}/{{ item.src }}/"
+              "{{ item.dest }}/"
+          loop:
+            - { src: "static", dest: "{{ homelab_static_root }}", key: "static", condition: "{{ not homelab_restore_rebuild_static }}" }
+            - { src: "media", dest: "{{ homelab_media_root }}", key: "media", condition: "true" }
+            - { src: "cache", dest: "{{ homelab_cache_dir }}", key: "cache", condition: "true" }
+          when:
+            - (item.condition | bool)
+            - homelab_restore_payload_exists[item.key] | default(false)
+          changed_when: true
+
+        - name: "Restore SQLite database"
+          ansible.builtin.copy:
+            src: "{{ homelab_restore_payload_dir }}/database/{{ homelab_database_path | basename }}"
+            dest: "{{ homelab_database_path }}"
+            owner: "{{ homelab_user }}"
+            group: "{{ homelab_group }}"
+            mode: "0644"
+            remote_src: true
+          when: homelab_restore_payload_exists.database | default(false)
+
+        - name: "Restore .env file"
+          ansible.builtin.copy:
+            src: "{{ homelab_restore_payload_dir }}/env/.env"
+            dest: "{{ homelab_env_file }}"
+            owner: "{{ homelab_user }}"
+            group: "{{ homelab_group }}"
+            mode: "{{ homelab_restore_env_mode }}"
+            remote_src: true
+          when:
+            - homelab_restore_restore_env | bool
+            - homelab_restore_payload_exists.env | default(false)
+
+        - name: "Check .env availability"
+          ansible.builtin.stat:
+            path: "{{ homelab_env_file }}"
+          register: homelab_restore_env_stat
+
+        - name: "Warn when .env is missing for Django commands"
+          ansible.builtin.debug:
+            msg: >
+              homelab restore: {{ homelab_env_file }} not found, skipping Django management commands.
+              Set homelab_restore_restore_env=true or ensure the file exists before running verification.
+          when: not (homelab_restore_env_stat.stat.exists | default(false))
+
+        - name: "Restore systemd unit file"
+          ansible.builtin.copy:
+            src: "{{ homelab_restore_payload_dir }}/configs/homelab.service"
+            dest: "{{ homelab_systemd_unit_path }}"
+            owner: root
+            group: root
+            mode: "0644"
+            remote_src: true
+          register: homelab_restore_systemd_copy
+          when: homelab_restore_payload_exists.systemd | default(false)
+
+        - name: "Restore Traefik config"
+          ansible.builtin.copy:
+            src: "{{ homelab_restore_payload_dir }}/configs/traefik.yml"
+            dest: "{{ homelab_traefik_config_path }}"
+            owner: root
+            group: root
+            mode: "0644"
+            remote_src: true
+          register: homelab_restore_traefik_copy
+          when: homelab_restore_payload_exists.traefik | default(false)
+
+        - name: "Rebuild static files via manage.py"
+          shell: |
+            set -a
+            . {{ homelab_env_file }}
+            set +a
+            {{ homelab_venv_bin }}/python manage.py collectstatic --noinput
+          args:
+            chdir: "{{ homelab_site_path }}"
+            executable: /bin/bash
+          environment:
+            DJANGO_SETTINGS_MODULE: "{{ homelab_django_settings_module }}"
+          become_user: "{{ homelab_user }}"
+          when:
+            - homelab_restore_rebuild_static | bool
+            - homelab_restore_env_stat.stat.exists | default(false)
+
+        - name: "Fix ownership recursively"
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            owner: "{{ homelab_user }}"
+            group: "{{ homelab_group }}"
+            recurse: true
+          loop:
+            - "{{ homelab_static_root }}"
+            - "{{ homelab_media_root }}"
+            - "{{ homelab_cache_dir }}"
+          when: homelab_restore_fix_permissions | bool
+
+        - name: "Reload systemd daemon if unit changed"
+          ansible.builtin.systemd:
+            daemon_reload: true
+          when:
+            - homelab_restore_reload_systemd | bool
+            - homelab_restore_systemd_copy is defined
+            - homelab_restore_systemd_copy.changed
+
+        - name: "Reload Traefik when config changed"
+          ansible.builtin.systemd:
+            name: "{{ homelab_traefik_service_name }}"
+            state: reloaded
+          failed_when: false
+          when:
+            - homelab_restore_reload_traefik | bool
+            - homelab_restore_traefik_copy is defined
+            - homelab_restore_traefik_copy.changed
+
+        - name: "Run Django system checks"
+          shell: |
+            set -a
+            . {{ homelab_env_file }}
+            set +a
+            {{ homelab_venv_bin }}/python manage.py check --deploy
+          args:
+            chdir: "{{ homelab_site_path }}"
+            executable: /bin/bash
+          environment:
+            DJANGO_SETTINGS_MODULE: "{{ homelab_django_settings_module }}"
+          become_user: "{{ homelab_user }}"
+          when: homelab_restore_env_stat.stat.exists | default(false)
+
+        - name: "Show migrations for audit"
+          shell: |
+            set -a
+            . {{ homelab_env_file }}
+            set +a
+            {{ homelab_venv_bin }}/python manage.py showmigrations
+          args:
+            chdir: "{{ homelab_site_path }}"
+            executable: /bin/bash
+          environment:
+            DJANGO_SETTINGS_MODULE: "{{ homelab_django_settings_module }}"
+          become_user: "{{ homelab_user }}"
+          when: homelab_restore_env_stat.stat.exists | default(false)
+
+        - name: "Verify SQLite integrity"
+          ansible.builtin.command:
+            cmd: >
+              sqlite3 "{{ homelab_database_path }}" "PRAGMA integrity_check"
+          register: homelab_restore_sqlite_check
+          changed_when: false
+
+        - name: "Start Homelab service"
+          ansible.builtin.systemd:
+            name: "{{ homelab_service_name }}"
+            state: restarted
+
+        - name: "HTTP health check"
+          ansible.builtin.uri:
+            url: "{{ homelab_restore_healthcheck_url }}"
+            return_content: true
+            status_code: 200
+            validate_certs: false
+          register: homelab_restore_http_check
+          retries: "{{ homelab_restore_healthcheck_retries }}"
+          delay: "{{ homelab_restore_healthcheck_delay }}"
+          until:
+            - homelab_restore_http_check.status == 200
+            - (homelab_restore_expected_content | length == 0) or
+              (homelab_restore_expected_content in (homelab_restore_http_check.content | default('')))
+          when: homelab_restore_verify_http | bool
+
+        - ansible.builtin.set_fact:
+            homelab_restore_success: true
+      when: not homelab_restore_dry_run
+
+  always:
+    - name: "Cleanup staging directory"
+      ansible.builtin.file:
+        path: "{{ homelab_restore_staging_dir }}"
+        state: absent
+      when: homelab_restore_cleanup | bool
+
+    - name: "Cleanup safety snapshot"
+      ansible.builtin.file:
+        path: "{{ homelab_restore_safety_dir }}"
+        state: absent
+      when:
+        - homelab_restore_create_safe_snapshot | bool
+        - homelab_restore_safe_snapshot_delete | bool
+        - homelab_restore_safety_dir | length > 0
+        - homelab_restore_success | bool

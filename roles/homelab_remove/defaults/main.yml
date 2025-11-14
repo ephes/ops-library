@@ -5,17 +5,6 @@
 # All removal flags default to true for complete service removal
 # Override with false to preserve specific components
 
-# Service identification
-homelab_user: homelab
-homelab_home: "/home/{{ homelab_user }}"
-homelab_site_path: "{{ homelab_home }}/site"
-
-# Systemd service
-homelab_systemd_unit_path: "/etc/systemd/system/homelab.service"
-
-# Traefik configuration
-homelab_traefik_config_path: "/etc/traefik/dynamic/homelab.yml"
-
 # Removal behavior (default: complete removal)
 # WARNING: These defaults are DESTRUCTIVE - override to preserve data
 homelab_remove_user: true              # Remove user account by default
@@ -25,4 +14,6 @@ homelab_remove_media: true             # Remove media files by default (IRREVERS
 homelab_remove_traefik_config: true    # Remove Traefik config
 
 # Safety options
+# Safety options
 homelab_remove_confirm: false          # REQUIRED: Must be true for any removal
+homelab_remove_auto_confirm: false     # Skip pause when deleting DB/media (non-interactive mode)

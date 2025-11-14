@@ -87,7 +87,7 @@
 
       ⚠️  WARNING: DATABASE AND MEDIA WILL BE PERMANENTLY DELETED ⚠️
 
-      This operation is IRREVERSIBLE. Consider backing up data first.
+      This operation is IRREVERSIBLE. Run `just backup homelab` (or your preferred backup command) before continuing if you have not already captured a snapshot.
 
       To preserve data, set:
         homelab_remove_database: false
@@ -102,5 +102,7 @@
 
       Press ENTER to continue with removal, or Ctrl+C to abort.
   when: >
-    (homelab_remove_database and homelab_db_check is defined and homelab_db_check.stat.exists) or
-    (homelab_remove_media and homelab_media_check is defined and homelab_media_check.stat.exists)
+    not homelab_remove_auto_confirm and (
+      (homelab_remove_database and homelab_db_check is defined and homelab_db_check.stat.exists) or
+      (homelab_remove_media and homelab_media_check is defined and homelab_media_check.stat.exists)
+    )
