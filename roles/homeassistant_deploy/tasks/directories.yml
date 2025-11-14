@@ -7,6 +7,10 @@
     group: "{{ homeassistant_group }}"
     mode: "0755"
   loop:
+    - "{{ homeassistant_home }}"
+    - "{{ homeassistant_home }}/.local"
+    - "{{ homeassistant_home }}/.local/share"
+    - "{{ homeassistant_home }}/.local/share/uv"
     - "{{ homeassistant_site_path }}"
     - "{{ homeassistant_config_path }}"
     - "{{ homeassistant_data_path }}"
