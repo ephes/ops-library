@@ -7,6 +7,12 @@
     state: present
     system: no
 
+- name: Create FastDeploy group
+  group:
+    name: "{{ fastdeploy_group }}"
+    state: present
+    system: no
+
 - name: Create deploy user
   user:
     name: deploy
@@ -18,12 +24,6 @@
     home: /home/deploy
     create_home: yes
     comment: "Deployment Service Account"
-    system: no
-
-- name: Create FastDeploy group
-  group:
-    name: "{{ fastdeploy_group }}"
-    state: present
     system: no
 
 - name: Create FastDeploy user

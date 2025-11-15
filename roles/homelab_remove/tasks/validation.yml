@@ -48,7 +48,7 @@
       ═══════════════════════════════════════════════════════════════
 
       WILL BE REMOVED:
-      {% if homelab_service_file.stat.exists %}
+      {% if homelab_service_file.stat is defined and homelab_service_file.stat.exists %}
       ✓ Systemd service: {{ homelab_systemd_unit_path }}
       {% else %}
       ✗ Systemd service: Not found (already removed)
@@ -58,19 +58,19 @@
       {% else %}
       ✗ Traefik config: Will be preserved
       {% endif %}
-      {% if homelab_remove_database and homelab_db_check is defined and homelab_db_check.stat.exists %}
+      {% if homelab_remove_database and homelab_db_check is defined and homelab_db_check.stat is defined and homelab_db_check.stat.exists %}
       ✓ Database: {{ homelab_site_path }}/db.sqlite3 ⚠️  IRREVERSIBLE!
-      {% elif homelab_db_check is defined and homelab_db_check.stat.exists %}
+      {% elif homelab_db_check is defined and homelab_db_check.stat is defined and homelab_db_check.stat.exists %}
       ✗ Database: Will be preserved
       {% endif %}
-      {% if homelab_remove_media and homelab_media_check is defined and homelab_media_check.stat.exists %}
+      {% if homelab_remove_media and homelab_media_check is defined and homelab_media_check.stat is defined and homelab_media_check.stat.exists %}
       ✓ Media files: {{ homelab_site_path }}/media/ ⚠️  IRREVERSIBLE!
-      {% elif homelab_media_check is defined and homelab_media_check.stat.exists %}
+      {% elif homelab_media_check is defined and homelab_media_check.stat is defined and homelab_media_check.stat.exists %}
       ✗ Media files: Will be preserved
       {% endif %}
-      {% if homelab_remove_home and homelab_home_check.stat.exists %}
+      {% if homelab_remove_home and homelab_home_check.stat is defined and homelab_home_check.stat.exists %}
       ✓ Home directory: {{ homelab_home }}
-      {% elif homelab_home_check.stat.exists %}
+      {% elif homelab_home_check.stat is defined and homelab_home_check.stat.exists %}
       ✗ Home directory: Will be preserved
       {% endif %}
       {% if homelab_remove_user and homelab_user_check.ansible_facts.getent_passwd is defined %}
@@ -93,8 +93,8 @@
         homelab_remove_database: false
         homelab_remove_media: false
   when: >
-    (homelab_remove_database and homelab_db_check is defined and homelab_db_check.stat.exists) or
-    (homelab_remove_media and homelab_media_check is defined and homelab_media_check.stat.exists)
+    (homelab_remove_database and homelab_db_check is defined and homelab_db_check.stat is defined and homelab_db_check.stat.exists) or
+    (homelab_remove_media and homelab_media_check is defined and homelab_media_check.stat is defined and homelab_media_check.stat.exists)
 
 - name: Pause for confirmation (if data will be deleted)
   ansible.builtin.pause:
@@ -103,6 +103,6 @@
       Press ENTER to continue with removal, or Ctrl+C to abort.
   when: >
     not homelab_remove_auto_confirm and (
-      (homelab_remove_database and homelab_db_check is defined and homelab_db_check.stat.exists) or
-      (homelab_remove_media and homelab_media_check is defined and homelab_media_check.stat.exists)
+      (homelab_remove_database and homelab_db_check is defined and homelab_db_check.stat is defined and homelab_db_check.stat.exists) or
+      (homelab_remove_media and homelab_media_check is defined and homelab_media_check.stat is defined and homelab_media_check.stat.exists)
     )
