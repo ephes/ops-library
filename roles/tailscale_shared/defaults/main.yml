@@ -28,6 +28,8 @@ tailscale_exit_node: ""
 tailscale_advertise_exit_node: false
 tailscale_args_extra: ""
 tailscale_bin: /usr/bin/tailscale
+tailscale_status_command: "{{ tailscale_bin }} status --json"
+tailscale_enable_service: true
 
 # Paths
 tailscale_state_dir: /var/lib/tailscale
