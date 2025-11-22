@@ -1,0 +1,40 @@
+---
+- name: Check current Tailscale backend state
+  ansible.builtin.command:
+    cmd: "{{ tailscale_status_command }}"
+  register: tailscale_status
+  changed_when: false
+  failed_when: tailscale_status.rc not in [0, 1]
+
+- name: Parse backend state
+  ansible.builtin.set_fact:
+    tailscale_backend_state: "{{ (tailscale_status.stdout | default('{}') | from_json).BackendState | default('unknown') }}"
+  when: tailscale_status.stdout | length > 0
+
+- name: Default backend state when parsing not possible
+  ansible.builtin.set_fact:
+    tailscale_backend_state: "{{ tailscale_backend_state | default('unknown') }}"
+
+- name: Build tailscale up command arguments
+  ansible.builtin.set_fact:
+    tailscale_up_command: >-
+      {{ tailscale_bin }} up
+      --hostname={{ tailscale_hostname }}
+      --accept-routes={{ tailscale_accept_routes | ternary('true', 'false') }}
+      --accept-dns={{ tailscale_accept_dns | ternary('true', 'false') }}
+      {% if tailscale_exit_node | length > 0 %}--exit-node={{ tailscale_exit_node }}{% endif %}
+      {% if tailscale_advertise_exit_node | bool %}--advertise-exit-node{% endif %}
+      {{ tailscale_args_extra }}
+
+- name: Join tailnet when not already running
+  ansible.builtin.command:
+    cmd: "{{ tailscale_up_command }} --authkey={{ tailscale_auth_key }}"
+  register: tailscale_up
+  when:
+    - not tailscale_manual_up | bool
+    - tailscale_backend_state != "Running"
+  changed_when: true
+
+- name: Display backend state
+  ansible.builtin.debug:
+    msg: "Tailscale backend state: {{ tailscale_backend_state }}"

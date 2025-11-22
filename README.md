@@ -23,10 +23,13 @@ The table below links each published role to its dedicated documentation. Refer 
 | Category | Role | Summary |
 |----------|------|---------|
 | Infrastructure | [`traefik_deploy`](roles/traefik_deploy/README.md) | Deploy Traefik reverse proxy with Let's Encrypt (auto-detects platform, version upgrades). |
+| Infrastructure | [`tailscale_deploy`](roles/tailscale_deploy/README.md) | Install Tailscale from the official repo and join tailnet with auth key or manual mode (accept-dns defaults to false). |
 | Service deployment | [`fastdeploy_deploy`](roles/fastdeploy_deploy/README.md) | Deploy the FastDeploy platform (database, uv, frontend build, systemd, Traefik). |
 | Service deployment | [`nyxmon_deploy`](roles/nyxmon_deploy/README.md) | Deploy Nyxmon (Django app, monitoring agent, Telegram integration). |
 | Service deployment | [`homeassistant_deploy`](roles/homeassistant_deploy/README.md) | Deploy Home Assistant Core with uv-managed Python env, Traefik, and systemd. |
 | Service deployment | [`unifi_deploy`](roles/unifi_deploy/README.md) | Install UniFi Network Application with MongoDB 8.0, Java 17, Traefik + UFW wiring, and optional HA integration. |
+| Service operations | [`tailscale_backup`](roles/tailscale_backup/README.md) | Backup `/var/lib/tailscale`, sysconfig, and systemd drop-ins to preserve node identity. |
+| Service operations | [`tailscale_restore`](roles/tailscale_restore/README.md) | Restore Tailscale state from archive and optionally rerun `tailscale up`. |
 | Service operations | [`homeassistant_backup`](roles/homeassistant_backup/README.md) | Take on-host + off-host backups (rsync + manifest + optional archives). |
 | Service operations | [`homeassistant_restore`](roles/homeassistant_restore/README.md) | Restore Home Assistant from validated snippets with rollback safety. |
 | Service operations | [`unifi_backup`](roles/unifi_backup/README.md) | Snapshot UniFi (mongodump + rsync + manifests + optional archive fetch). |
@@ -35,6 +38,7 @@ The table below links each published role to its dedicated documentation. Refer 
 | Service removal | [`nyxmon_remove`](roles/nyxmon_remove/README.md) | Remove Nyxmon while preserving data as needed. |
 | Service removal | [`homeassistant_remove`](roles/homeassistant_remove/README.md) | Tear down Home Assistant (service, config, user) with confirmation guards. |
 | Service removal | [`unifi_remove`](roles/unifi_remove/README.md) | Destructively remove UniFi, MongoDB packages/users, Traefik + firewall artifacts with confirmation. |
+| Service removal | [`tailscale_remove`](roles/tailscale_remove/README.md) | Remove Tailscale packages/repo, optionally logout and purge `/var/lib/tailscale`. |
 | Service registration | [`apt_upgrade_register`](roles/apt_upgrade_register/README.md) | Register apt-upgrade maintenance runners with FastDeploy. |
 | Service registration | [`fastdeploy_register_service`](roles/fastdeploy_register_service/README.md) | Generic FastDeploy service registration helper. |
 | Bootstrap | [`ansible_install`](roles/ansible_install/README.md) | Ensure controller has Ansible and required plugins. |

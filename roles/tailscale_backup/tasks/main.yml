@@ -1,0 +1,108 @@
+---
+- name: Validate backup root
+  ansible.builtin.assert:
+    that:
+      - tailscale_backup_root | length > 0
+    fail_msg: "tailscale_backup_root must be configured (typically derived from backup_root_prefix)"
+
+- name: Validate supported archive format
+  ansible.builtin.assert:
+    that:
+      - tailscale_backup_archive_format == "gztar"
+    fail_msg: "tailscale_backup_archive_format currently supports only 'gztar' (tar.gz)"
+
+- name: Gather timestamp
+  ansible.builtin.set_fact:
+    tailscale_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+- name: Compute backup paths
+  ansible.builtin.set_fact:
+    tailscale_backup_dir: "{{ tailscale_backup_root }}/{{ tailscale_backup_prefix }}-{{ tailscale_backup_timestamp }}"
+    tailscale_backup_archive: "{{ tailscale_backup_root }}/{{ tailscale_backup_prefix }}-{{ tailscale_backup_timestamp }}.{{ tailscale_backup_archive_extension }}"
+
+- name: Ensure backup directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ tailscale_backup_owner }}"
+    group: "{{ tailscale_backup_group }}"
+    mode: "{{ tailscale_backup_dir_mode }}"
+  loop:
+    - "{{ tailscale_backup_root }}"
+    - "{{ tailscale_backup_dir }}"
+    - "{{ tailscale_backup_dir }}/state"
+    - "{{ tailscale_backup_dir }}/config"
+    - "{{ tailscale_backup_dir }}/systemd"
+
+- name: Collect path existence
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: tailscale_backup_stats
+  loop:
+    - "{{ tailscale_state_dir }}"
+    - "{{ tailscale_sysconfig_path }}"
+    - "{{ tailscale_systemd_dropin_dir }}"
+
+- name: Assert state directory exists
+  ansible.builtin.assert:
+    that:
+      - (tailscale_backup_stats.results[0].stat.exists | default(false)) | bool
+    fail_msg: "tailscale_state_dir ({{ tailscale_state_dir }}) must exist before backup"
+
+- name: Copy Tailscale state directory
+  ansible.builtin.command:
+    cmd: >
+      rsync -a "{{ tailscale_state_dir }}/" "{{ tailscale_backup_dir }}/state/"
+  changed_when: true
+
+- name: Copy sysconfig file when present
+  ansible.builtin.copy:
+    src: "{{ tailscale_sysconfig_path }}"
+    dest: "{{ tailscale_backup_dir }}/config/{{ tailscale_sysconfig_path | basename }}"
+    owner: "{{ tailscale_backup_owner }}"
+    group: "{{ tailscale_backup_group }}"
+    mode: "{{ tailscale_backup_file_mode }}"
+    remote_src: true
+  when:
+    - tailscale_backup_include_sysconfig | bool
+    - tailscale_backup_stats.results[1].stat.exists | default(false)
+
+- name: Copy systemd drop-ins when present
+  ansible.builtin.command:
+    cmd: >
+      rsync -a "{{ tailscale_systemd_dropin_dir }}/" "{{ tailscale_backup_dir }}/systemd/"
+  when:
+    - tailscale_backup_include_dropins | bool
+    - tailscale_backup_stats.results[2].stat.exists | default(false)
+  changed_when: true
+
+- name: Create backup archive
+  ansible.builtin.archive:
+    path: "{{ tailscale_backup_dir }}"
+    dest: "{{ tailscale_backup_archive }}"
+    format: "{{ tailscale_backup_archive_format }}"
+  when: tailscale_backup_create_archive | bool
+
+- name: Ensure local archive directory exists
+  ansible.builtin.file:
+    path: "{{ tailscale_backup_local_dir }}"
+    state: directory
+    mode: "{{ tailscale_backup_local_dir_mode }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: tailscale_backup_fetch_local | bool
+
+- name: Fetch backup archive
+  ansible.builtin.fetch:
+    src: "{{ tailscale_backup_archive }}"
+    dest: "{{ tailscale_backup_local_dir }}/"
+    flat: true
+  run_once: true
+  when: tailscale_backup_fetch_local | bool
+
+- name: Report backup completion
+  ansible.builtin.debug:
+    msg: |
+      Tailscale backup complete: {{ tailscale_backup_archive }}
+      Local copy: {{ tailscale_backup_fetch_local | ternary(tailscale_backup_local_dir ~ '/' ~ (tailscale_backup_archive | basename), 'not fetched') }}

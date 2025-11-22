@@ -1,0 +1,21 @@
+---
+- name: Compute repository settings
+  ansible.builtin.set_fact:
+    tailscale_repo_url: "{{ tailscale_repo_base }}/{{ tailscale_channel }}/{{ tailscale_repo_distro }}"
+    tailscale_repo_key_url: "{{ tailscale_repo_base }}/{{ tailscale_channel }}/{{ tailscale_repo_distro }}/{{ tailscale_repo_release }}.noarmor.gpg"
+
+- name: Ensure Tailscale repository key is installed
+  ansible.builtin.get_url:
+    url: "{{ tailscale_repo_key_url }}"
+    dest: "{{ tailscale_repo_keyring }}"
+    mode: "0644"
+    force: true
+  register: tailscale_repo_key
+
+- name: Configure Tailscale apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by={{ tailscale_repo_keyring }}] {{ tailscale_repo_url }} {{ tailscale_repo_release }} {{ tailscale_repo_component }}"
+    filename: "{{ tailscale_repo_list_file | basename | regex_replace('\\.list$', '') }}"
+    state: present
+    update_cache: true
+  register: tailscale_repo_config

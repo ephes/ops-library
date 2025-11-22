@@ -18,6 +18,8 @@ Available runbooks:
 - [UniFi Restore](https://github.com/ephes/ops-library/blob/main/roles/unifi_restore/README.md)
 - [MinIO Backup](https://github.com/ephes/ops-library/blob/main/roles/minio_backup/README.md)
 - [MinIO Restore](https://github.com/ephes/ops-library/blob/main/roles/minio_restore/README.md)
+- [Tailscale Backup](https://github.com/ephes/ops-library/blob/main/roles/tailscale_backup/README.md)
+- [Tailscale Restore](https://github.com/ephes/ops-library/blob/main/roles/tailscale_restore/README.md)
 
 ```{toctree}
 :maxdepth: 1
@@ -36,6 +38,8 @@ unifi_backup
 unifi_restore
 minio_backup
 minio_restore
+tailscale_backup
+tailscale_restore
 ```
 
 Operations roles provide consistent snapshot/restore tooling that can be composed with deployment/removal roles to rehearse disaster-recovery scenarios. See `specs/2025-11-11_nyxmon_backup_restore.md` for the Nyxmon design notes.

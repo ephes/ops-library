@@ -1,0 +1,20 @@
+---
+- name: Gather IPv4 address
+  ansible.builtin.command:
+    cmd: "{{ tailscale_bin }} ip -4"
+  register: tailscale_ipv4
+  changed_when: false
+  failed_when: false
+
+- name: Gather IPv6 address
+  ansible.builtin.command:
+    cmd: "{{ tailscale_bin }} ip -6"
+  register: tailscale_ipv6
+  changed_when: false
+  failed_when: false
+
+- name: Report Tailscale addresses
+  ansible.builtin.debug:
+    msg: >-
+      Tailscale IPs -> IPv4: {{ (tailscale_ipv4.stdout_lines | default([])) | join(',') | default('unknown') }},
+      IPv6: {{ (tailscale_ipv6.stdout_lines | default([])) | join(',') | default('unknown') }}

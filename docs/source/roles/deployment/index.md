@@ -10,6 +10,7 @@ fastdeploy_self_deploy
 nyxmon_deploy
 traefik_deploy
 dns_deploy
+tailscale_deploy
 homelab_deploy
 homeassistant_deploy
 unifi_deploy

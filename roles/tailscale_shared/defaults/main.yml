@@ -1,0 +1,63 @@
+---
+# Shared defaults for Tailscale lifecycle roles
+
+# Service identity
+tailscale_slug: tailscale
+tailscale_service_name: tailscaled
+tailscale_package_name: tailscale
+
+# Repository configuration
+tailscale_channel: stable
+tailscale_repo_base: https://pkgs.tailscale.com
+tailscale_repo_distro: "{{ ansible_distribution | lower }}"
+tailscale_repo_release: "{{ ansible_distribution_release }}"
+tailscale_repo_component: main
+tailscale_repo_keyring: /usr/share/keyrings/tailscale-archive-keyring.gpg
+tailscale_repo_list_file: /etc/apt/sources.list.d/tailscale.list
+
+# Package configuration
+tailscale_package_version: latest
+
+# Runtime configuration
+tailscale_hostname: "{{ inventory_hostname }}"
+tailscale_manual_up: false
+tailscale_auth_key: ""
+tailscale_accept_routes: false
+tailscale_accept_dns: false
+tailscale_exit_node: ""
+tailscale_advertise_exit_node: false
+tailscale_args_extra: ""
+tailscale_bin: /usr/bin/tailscale
+
+# Paths
+tailscale_state_dir: /var/lib/tailscale
+tailscale_sysconfig_path: /etc/default/tailscaled
+tailscale_systemd_dropin_dir: /etc/systemd/system/tailscaled.service.d
+
+# Backup settings
+tailscale_backup_prefix: manual
+tailscale_backup_root: "{{ backup_root_prefix | default('/opt/backups') }}/{{ tailscale_slug }}"
+tailscale_backup_dir_mode: "0700"
+tailscale_backup_file_mode: "0600"
+tailscale_backup_owner: root
+tailscale_backup_group: root
+tailscale_backup_archive_format: gztar
+tailscale_backup_archive_extension: tar.gz
+tailscale_backup_create_archive: true
+tailscale_backup_fetch_local: true
+tailscale_backup_local_dir: "{{ lookup('env', 'HOME') }}/backups/{{ tailscale_slug }}"
+tailscale_backup_local_dir_mode: "0700"
+tailscale_backup_include_sysconfig: true
+tailscale_backup_include_dropins: true
+
+# Restore settings
+tailscale_restore_archive: latest
+tailscale_restore_root: "{{ tailscale_backup_root }}"
+tailscale_restore_cleanup: true
+tailscale_restore_restart_service: true
+tailscale_restore_staging_dir: /tmp/tailscale-restore
+
+# Removal settings
+tailscale_confirm_removal: false
+tailscale_skip_logout: false
+tailscale_purge_state: false

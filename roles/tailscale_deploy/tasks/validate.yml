@@ -1,0 +1,30 @@
+---
+- name: Ensure supported platform
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family | lower == "debian"
+    fail_msg: "tailscale_deploy currently supports Debian/Ubuntu platforms only (ansible_os_family={{ ansible_os_family }})"
+
+- name: Validate required auth key when not using manual up
+  ansible.builtin.assert:
+    that:
+      - tailscale_manual_up | bool or (tailscale_auth_key | length > 0)
+    fail_msg: "tailscale_auth_key must be provided unless tailscale_manual_up=true"
+
+- name: Validate auth key placeholder avoidance
+  ansible.builtin.assert:
+    that:
+      - tailscale_manual_up | bool or (tailscale_auth_key | lower not in ["changeme", "placeholder", "example"])
+    fail_msg: "tailscale_auth_key must not use placeholder values"
+
+- name: Validate hostname
+  ansible.builtin.assert:
+    that:
+      - tailscale_hostname | length > 0
+    fail_msg: "tailscale_hostname must be set"
+
+- name: Validate package version when provided
+  ansible.builtin.assert:
+    that:
+      - tailscale_package_version == "latest" or (tailscale_package_version is match('^[0-9]+\\.[0-9]+\\.[0-9]+.*$'))
+    fail_msg: "tailscale_package_version must be 'latest' or a semantic version string"

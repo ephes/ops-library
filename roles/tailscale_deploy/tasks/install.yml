@@ -1,0 +1,12 @@
+---
+- name: Install Tailscale package
+  ansible.builtin.apt:
+    name: "{{ tailscale_package_name }}{{ '' if tailscale_package_version == 'latest' else '=' ~ tailscale_package_version }}"
+    state: present
+    update_cache: "{{ tailscale_repo_config is changed }}"
+
+- name: Ensure tailscaled service is enabled and started
+  ansible.builtin.systemd:
+    name: "{{ tailscale_service_name }}"
+    enabled: "{{ tailscale_enable_service | bool }}"
+    state: started

@@ -1,0 +1,15 @@
+---
+- name: Validate inputs
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Configure Tailscale repository
+  ansible.builtin.import_tasks: repo.yml
+
+- name: Install Tailscale package
+  ansible.builtin.import_tasks: install.yml
+
+- name: Ensure node joins tailnet
+  ansible.builtin.import_tasks: up.yml
+
+- name: Collect Tailscale facts
+  ansible.builtin.import_tasks: facts.yml

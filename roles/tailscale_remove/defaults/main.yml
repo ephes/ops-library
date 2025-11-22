@@ -1,0 +1,4 @@
+---
+tailscale_confirm_removal: false
+tailscale_skip_logout: false
+tailscale_purge_state: false

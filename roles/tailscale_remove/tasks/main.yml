@@ -1,0 +1,63 @@
+---
+- name: Confirm removal intent
+  ansible.builtin.assert:
+    that:
+      - tailscale_confirm_removal | bool
+    fail_msg: "Set tailscale_confirm_removal=true to proceed with removal"
+
+- name: Stop and disable tailscaled service
+  ansible.builtin.systemd:
+    name: "{{ tailscale_service_name }}"
+    state: stopped
+    enabled: false
+  failed_when: false
+
+- name: Logout from tailnet
+  ansible.builtin.command:
+    cmd: "{{ tailscale_bin }} logout"
+  register: tailscale_logout
+  changed_when: true
+  failed_when: false
+  when: not tailscale_skip_logout | bool
+
+- name: Remove Tailscale package
+  ansible.builtin.apt:
+    name: "{{ tailscale_package_name }}"
+    state: absent
+    purge: true
+
+- name: Remove Tailscale repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by={{ tailscale_repo_keyring }}] {{ tailscale_repo_base }}/{{ tailscale_channel }}/{{ tailscale_repo_distro }} {{ tailscale_repo_release }} {{ tailscale_repo_component }}"
+    filename: "{{ tailscale_repo_list_file | basename | regex_replace('\\.list$', '') }}"
+    state: absent
+    update_cache: true
+
+- name: Remove repository key
+  ansible.builtin.file:
+    path: "{{ tailscale_repo_keyring }}"
+    state: absent
+
+- name: Remove sysconfig file
+  ansible.builtin.file:
+    path: "{{ tailscale_sysconfig_path }}"
+    state: absent
+  when: tailscale_purge_state | bool
+
+- name: Remove systemd drop-ins
+  ansible.builtin.file:
+    path: "{{ tailscale_systemd_dropin_dir }}"
+    state: absent
+  when: tailscale_purge_state | bool
+
+- name: Purge Tailscale state directory
+  ansible.builtin.file:
+    path: "{{ tailscale_state_dir }}"
+    state: absent
+  when: tailscale_purge_state | bool
+
+- name: Report removal completion
+  ansible.builtin.debug:
+    msg: >-
+      Tailscale removal complete (state purged={{ tailscale_purge_state | bool }},
+      logout={{ (not tailscale_skip_logout) | bool }})

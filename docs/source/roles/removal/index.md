@@ -14,6 +14,7 @@ homelab_remove
 unifi_remove
 paperless_remove
 minio_remove
+tailscale_remove
 ```
 
 These roles handle:
