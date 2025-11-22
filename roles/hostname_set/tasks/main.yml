@@ -1,0 +1,12 @@
+---
+- name: Validate hostname input
+  ansible.builtin.assert:
+    that:
+      - system_hostname is defined
+      - system_hostname | length > 0
+      - system_hostname is regex('^[A-Za-z0-9][A-Za-z0-9._-]*$')
+    fail_msg: "system_hostname must be non-empty and contain only letters, numbers, dots, underscores, or dashes."
+
+- name: Set system hostname
+  ansible.builtin.hostname:
+    name: "{{ system_hostname }}"
