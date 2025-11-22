@@ -1,0 +1,39 @@
+---
+# Preferred block device path (use /dev/disk/by-id/* for stability)
+encrypted_volume_device_by_id: ""
+
+# Fallback device path when by-id is unavailable
+encrypted_volume_device: ""
+
+# Expected LUKS header UUID (from `cryptsetup luksUUID`)
+encrypted_volume_expected_luks_uuid: ""
+
+# Mapper name and mount settings
+encrypted_volume_mapper_name: "cryptdata"
+encrypted_volume_mount_point: "/mnt/cryptdata"
+encrypted_volume_fs_type: "ext4"
+encrypted_volume_fs_label: ""
+encrypted_volume_mount_opts: "defaults,noatime"
+
+# Secrets and unlock method
+encrypted_volume_passphrase: ""
+# Default to keyfile for unattended boot (stores passphrase on disk with 0400 perms)
+encrypted_volume_use_keyfile: true
+encrypted_volume_keyfile_path: "/root/.luks-key-{{ encrypted_volume_mapper_name }}"
+encrypted_volume_keyfile_owner: "root"
+encrypted_volume_keyfile_group: "root"
+encrypted_volume_keyfile_mode: "0400"
+
+# Safety toggles
+encrypted_volume_allow_format: false
+encrypted_volume_validate_only: false
+encrypted_volume_no_log: true
+
+# System configuration
+encrypted_volume_packages:
+  - cryptsetup
+  - cryptsetup-initramfs
+encrypted_volume_crypttab_options: "luks"
+encrypted_volume_mount_owner: "root"
+encrypted_volume_mount_group: "root"
+encrypted_volume_mount_mode: "0755"

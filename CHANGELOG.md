@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Update your Ansible installation before upgrading
 
 ### Added
+- `encrypted_volume_prepare` role to verify, unlock, and mount LUKS data volumes with keyfile support, UUID validation, crypttab/fstab wiring, and a validate-only dry run
 - `nyxmon_backup` role for SQLite-safe snapshots with metadata, manifests, and automatic archive fetches
 - `nyxmon_restore` role with staging validation, safety snapshots, rollback support, and service verification
 - ReadTheDocs integration with Sphinx and MyST parser

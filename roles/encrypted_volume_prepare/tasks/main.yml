@@ -1,0 +1,339 @@
+---
+- name: Derive device paths
+  set_fact:
+    encrypted_volume_target_device: "{{ (encrypted_volume_device_by_id | default('') | trim | length > 0) | ternary(encrypted_volume_device_by_id, encrypted_volume_device) }}"
+    encrypted_volume_mapper_path: "/dev/mapper/{{ encrypted_volume_mapper_name }}"
+    encrypted_volume_crypttab_device: "{{ (encrypted_volume_device_by_id | default('') | trim | length > 0) | ternary(encrypted_volume_device_by_id, encrypted_volume_device) }}"
+
+- name: Validate required variables
+  assert:
+    that:
+      - encrypted_volume_target_device | length > 0
+      - encrypted_volume_expected_luks_uuid | length > 0
+      - encrypted_volume_mapper_name | length > 0
+      - encrypted_volume_mount_point | length > 0
+      - encrypted_volume_fs_type | length > 0
+      - encrypted_volume_passphrase | length > 0
+    fail_msg: "Set encrypted_volume_device(_by_id), encrypted_volume_expected_luks_uuid, encrypted_volume_mapper_name, encrypted_volume_mount_point, encrypted_volume_fs_type, and encrypted_volume_passphrase."
+  no_log: "{{ encrypted_volume_no_log }}"
+
+- name: Validate keyfile configuration
+  assert:
+    that:
+      - encrypted_volume_keyfile_path | length > 0
+    fail_msg: "encrypted_volume_keyfile_path must be defined when encrypted_volume_use_keyfile is true."
+  when: encrypted_volume_use_keyfile | bool
+
+- name: Check target device exists
+  stat:
+    path: "{{ encrypted_volume_target_device }}"
+    follow: true
+  register: encrypted_volume_device_stat
+  become: true
+
+- name: Assert target device is a block device
+  assert:
+    that:
+      - encrypted_volume_device_stat.stat.exists
+      - encrypted_volume_device_stat.stat.isblk
+    fail_msg: "Target device {{ encrypted_volume_target_device }} is missing or not a block device."
+
+- name: Resolve real device path
+  command: readlink -f "{{ encrypted_volume_target_device }}"
+  register: encrypted_volume_realpath
+  changed_when: false
+  become: true
+
+- name: Store resolved device facts
+  set_fact:
+    encrypted_volume_resolved_device: "{{ encrypted_volume_realpath.stdout }}"
+    encrypted_volume_device_pkname: "{{ encrypted_volume_realpath.stdout | basename }}"
+
+- name: Normalize crypttab device path
+  set_fact:
+    encrypted_volume_crypttab_device: "{{ (encrypted_volume_device_by_id | default('') | trim | length > 0) | ternary(encrypted_volume_device_by_id, encrypted_volume_resolved_device) }}"
+
+- name: Check for cryptsetup
+  command: which cryptsetup
+  register: encrypted_volume_cryptsetup_check
+  changed_when: false
+  failed_when: false
+
+- name: Fail fast when cryptsetup is missing in validate-only mode
+  assert:
+    that:
+      - encrypted_volume_cryptsetup_check.rc == 0
+    fail_msg: "cryptsetup is required to validate the encrypted volume but is not installed."
+  when: encrypted_volume_validate_only
+
+- name: Install cryptsetup dependencies
+  package:
+    name: "{{ encrypted_volume_packages }}"
+    state: present
+  become: true
+  when:
+    - not encrypted_volume_validate_only
+    - encrypted_volume_cryptsetup_check.rc != 0
+
+- name: Confirm device is a LUKS container
+  command: cryptsetup isLuks "{{ encrypted_volume_resolved_device }}"
+  register: encrypted_volume_is_luks
+  changed_when: false
+  failed_when: encrypted_volume_is_luks.rc != 0
+  become: true
+
+- name: Assert device is LUKS
+  assert:
+    that:
+      - encrypted_volume_is_luks.rc == 0
+    fail_msg: "Device {{ encrypted_volume_resolved_device }} is not a LUKS container."
+
+- name: Read LUKS header UUID
+  command: cryptsetup luksUUID "{{ encrypted_volume_resolved_device }}"
+  register: encrypted_volume_uuid
+  changed_when: false
+  become: true
+
+- name: Assert expected LUKS UUID matches
+  assert:
+    that:
+      - encrypted_volume_uuid.stdout.strip() == encrypted_volume_expected_luks_uuid
+    fail_msg: "LUKS UUID mismatch: expected {{ encrypted_volume_expected_luks_uuid }}, found {{ encrypted_volume_uuid.stdout.strip() }}."
+
+- name: List crypt mappings
+  command: lsblk -nr -p -o NAME,TYPE,PKNAME
+  register: encrypted_volume_lsblk
+  changed_when: false
+  become: true
+
+- name: Normalize block mapping information
+  set_fact:
+    encrypted_volume_mapper_entries: "{{ encrypted_volume_mapper_entries | default([]) + [ {'name': entry_parts[0], 'type': entry_parts[1] | default(''), 'pkname': (entry_parts | length > 2) | ternary(entry_parts[2], '') } ] }}"
+  vars:
+    entry_parts: "{{ (item.split() + ['','',''])[:3] }}"
+  loop: "{{ encrypted_volume_lsblk.stdout_lines }}"
+  when: item | length > 0
+
+- name: Detect current mapper state
+  set_fact:
+    encrypted_volume_expected_mapper_active: "{{ (encrypted_volume_mapper_entries | default([]) | selectattr('name', 'equalto', encrypted_volume_mapper_path) | list | length) > 0 }}"
+    encrypted_volume_conflicting_mappers: "{{ (encrypted_volume_mapper_entries | default([]) | selectattr('type', 'equalto', 'crypt') | selectattr('pkname', 'equalto', encrypted_volume_device_pkname) | rejectattr('name', 'equalto', encrypted_volume_mapper_path) | list) }}"
+
+- name: Fail if device is mapped under a different name
+  fail:
+    msg: "Device {{ encrypted_volume_resolved_device }} is already mapped as {{ encrypted_volume_conflicting_mappers | map(attribute='name') | join(', ') }}. Close the existing mapping or use mapper name {{ encrypted_volume_mapper_path }}."
+  when: encrypted_volume_conflicting_mappers | length > 0
+
+- name: Build expected configuration lines
+  set_fact:
+    encrypted_volume_crypttab_line: "{{ encrypted_volume_mapper_name }} {{ encrypted_volume_crypttab_device }} {{ (encrypted_volume_use_keyfile | bool) | ternary(encrypted_volume_keyfile_path, 'none') }} {{ encrypted_volume_crypttab_options }}"
+    encrypted_volume_fstab_src: "{{ encrypted_volume_mapper_path }}"
+    encrypted_volume_fstab_line: "{{ encrypted_volume_mapper_path }} {{ encrypted_volume_mount_point }} {{ encrypted_volume_fs_type }} {{ encrypted_volume_mount_opts }} 0 2"
+
+- name: Validate configuration without changes
+  when: encrypted_volume_validate_only
+  become: true
+  tags: [encrypted_volume]
+  block:
+    - name: Check /etc/crypttab presence
+      stat:
+        path: /etc/crypttab
+      register: encrypted_volume_crypttab_stat
+
+    - name: Read /etc/crypttab
+      when: encrypted_volume_crypttab_stat.stat.exists
+      slurp:
+        src: /etc/crypttab
+      register: encrypted_volume_crypttab_file
+
+    - name: Assert crypttab entry exists
+      assert:
+        that:
+          - encrypted_volume_crypttab_stat.stat.exists
+          - (encrypted_volume_crypttab_file.content | b64decode | regex_search('^' ~ (encrypted_volume_crypttab_line | regex_escape) ~ '$', multiline=True))
+        fail_msg: "/etc/crypttab is missing the expected entry: {{ encrypted_volume_crypttab_line }}"
+
+    - name: Check /etc/fstab presence
+      stat:
+        path: /etc/fstab
+      register: encrypted_volume_fstab_stat
+
+    - name: Read /etc/fstab
+      when: encrypted_volume_fstab_stat.stat.exists
+      slurp:
+        src: /etc/fstab
+      register: encrypted_volume_fstab_file
+
+    - name: Assert fstab entry exists
+      assert:
+        that:
+          - encrypted_volume_fstab_stat.stat.exists
+          - (encrypted_volume_fstab_file.content | b64decode | regex_search('^' ~ (encrypted_volume_fstab_line | regex_escape) ~ '$', multiline=True))
+        fail_msg: "/etc/fstab is missing the expected entry: {{ encrypted_volume_fstab_line }}"
+
+    - name: Assert mountpoint directory exists
+      stat:
+        path: "{{ encrypted_volume_mount_point }}"
+      register: encrypted_volume_mount_stat
+
+    - name: Validate mountpoint state
+      assert:
+        that:
+          - encrypted_volume_mount_stat.stat.exists
+          - encrypted_volume_mount_stat.stat.isdir
+        fail_msg: "Mountpoint {{ encrypted_volume_mount_point }} is missing."
+
+    - name: Report validate-only result
+      debug:
+        msg: "Validated device {{ encrypted_volume_resolved_device }} (UUID {{ encrypted_volume_expected_luks_uuid }}) with expected crypttab and fstab entries."
+
+- name: Configure encrypted volume
+  when: not encrypted_volume_validate_only
+  become: true
+  tags: [encrypted_volume]
+  block:
+    - name: Ensure keyfile directory exists
+      file:
+        path: "{{ encrypted_volume_keyfile_path | dirname }}"
+        state: directory
+        mode: '0700'
+        owner: root
+        group: root
+      when: encrypted_volume_use_keyfile | bool
+
+    - name: Write keyfile from passphrase
+      copy:
+        dest: "{{ encrypted_volume_keyfile_path }}"
+        content: "{{ encrypted_volume_passphrase }}"
+        owner: "{{ encrypted_volume_keyfile_owner }}"
+        group: "{{ encrypted_volume_keyfile_group }}"
+        mode: "{{ encrypted_volume_keyfile_mode }}"
+      no_log: "{{ encrypted_volume_no_log }}"
+      when: encrypted_volume_use_keyfile | bool
+
+    - name: Note mapper already active
+      debug:
+        msg: "Mapper {{ encrypted_volume_mapper_path }} already active; skipping open."
+      when: encrypted_volume_expected_mapper_active
+
+    - name: Open LUKS mapper with keyfile
+      command: cryptsetup open "{{ encrypted_volume_resolved_device }}" "{{ encrypted_volume_mapper_name }}" --key-file "{{ encrypted_volume_keyfile_path }}"
+      register: encrypted_volume_open_result
+      changed_when: true
+      no_log: "{{ encrypted_volume_no_log }}"
+      when:
+        - not encrypted_volume_expected_mapper_active
+        - encrypted_volume_use_keyfile | bool
+
+    - name: Open LUKS mapper with passphrase
+      command: cryptsetup open "{{ encrypted_volume_resolved_device }}" "{{ encrypted_volume_mapper_name }}" --key-file -
+      args:
+        stdin: "{{ encrypted_volume_passphrase }}"
+      register: encrypted_volume_open_passphrase
+      changed_when: true
+      no_log: "{{ encrypted_volume_no_log }}"
+      when:
+        - not encrypted_volume_expected_mapper_active
+        - not encrypted_volume_use_keyfile | bool
+
+    - name: Gather mapper filesystem info
+      command: lsblk -J -n -o NAME,FSTYPE,UUID,LABEL "{{ encrypted_volume_mapper_path }}"
+      register: encrypted_volume_mapper_info
+      changed_when: false
+
+    - name: Parse mapper filesystem info
+      set_fact:
+        encrypted_volume_mapper_details: "{{ (encrypted_volume_mapper_info.stdout | from_json).blockdevices[0] | default({}) }}"
+
+    - name: Extract filesystem details
+      set_fact:
+        encrypted_volume_mapper_fstype: "{{ encrypted_volume_mapper_details.fstype | default('') }}"
+        encrypted_volume_mapper_uuid: "{{ encrypted_volume_mapper_details.uuid | default('') }}"
+        encrypted_volume_mapper_label: "{{ encrypted_volume_mapper_details.label | default('') }}"
+
+    - name: Fail when filesystem is missing and formatting is disallowed
+      fail:
+        msg: "Mapper {{ encrypted_volume_mapper_path }} has no filesystem. Set encrypted_volume_allow_format: true to format as {{ encrypted_volume_fs_type }}."
+      when:
+        - encrypted_volume_mapper_fstype | default('') | length == 0
+        - not encrypted_volume_allow_format | bool
+
+    - name: Format mapper when allowed and empty
+      filesystem:
+        fstype: "{{ encrypted_volume_fs_type }}"
+        dev: "{{ encrypted_volume_mapper_path }}"
+        fslabel: "{{ (encrypted_volume_fs_label | default('') | length > 0) | ternary(encrypted_volume_fs_label, omit) }}"
+      when:
+        - encrypted_volume_allow_format | bool
+        - encrypted_volume_mapper_fstype | default('') | length == 0
+
+    - name: Refresh filesystem facts after formatting
+      command: lsblk -J -n -o NAME,FSTYPE,UUID,LABEL "{{ encrypted_volume_mapper_path }}"
+      register: encrypted_volume_mapper_info_after_format
+      changed_when: false
+      when:
+        - encrypted_volume_allow_format | bool
+        - encrypted_volume_mapper_fstype | default('') | length == 0
+
+    - name: Update filesystem facts
+      set_fact:
+        encrypted_volume_mapper_details: "{{ (encrypted_volume_mapper_info_after_format.stdout | from_json).blockdevices[0] | default({}) }}"
+        encrypted_volume_mapper_fstype: "{{ (encrypted_volume_mapper_info_after_format.stdout | from_json).blockdevices[0].fstype | default('') }}"
+        encrypted_volume_mapper_uuid: "{{ (encrypted_volume_mapper_info_after_format.stdout | from_json).blockdevices[0].uuid | default('') }}"
+        encrypted_volume_mapper_label: "{{ (encrypted_volume_mapper_info_after_format.stdout | from_json).blockdevices[0].label | default('') }}"
+      when:
+        - encrypted_volume_allow_format | bool
+        - encrypted_volume_mapper_fstype | default('') | length == 0
+
+    - name: Choose fstab source
+      set_fact:
+        encrypted_volume_fstab_src: "{{ (encrypted_volume_mapper_uuid | default('') | length > 0) | ternary('UUID=' ~ encrypted_volume_mapper_uuid, encrypted_volume_mapper_path) }}"
+        encrypted_volume_fstab_line: "{{ ((encrypted_volume_mapper_uuid | default('') | length > 0) | ternary('UUID=' ~ encrypted_volume_mapper_uuid, encrypted_volume_mapper_path)) }} {{ encrypted_volume_mount_point }} {{ encrypted_volume_fs_type }} {{ encrypted_volume_mount_opts }} 0 2"
+
+    - name: Ensure mountpoint exists
+      file:
+        path: "{{ encrypted_volume_mount_point }}"
+        state: directory
+        owner: "{{ encrypted_volume_mount_owner }}"
+        group: "{{ encrypted_volume_mount_group }}"
+        mode: "{{ encrypted_volume_mount_mode }}"
+
+    - name: Ensure crypttab entry is present
+      lineinfile:
+        path: /etc/crypttab
+        create: true
+        owner: root
+        group: root
+        mode: '0640'
+        regexp: "^{{ encrypted_volume_mapper_name | regex_escape }}\\s"
+        line: "{{ encrypted_volume_crypttab_line }}"
+
+    - name: Ensure fstab entry is present
+      lineinfile:
+        path: /etc/fstab
+        create: true
+        owner: root
+        group: root
+        mode: '0644'
+        regexp: "^\\S+\\s+{{ encrypted_volume_mount_point | regex_escape }}\\s"
+        line: "{{ encrypted_volume_fstab_line }}"
+
+    - name: Mount encrypted filesystem
+      ansible.posix.mount:
+        path: "{{ encrypted_volume_mount_point }}"
+        src: "{{ encrypted_volume_fstab_src }}"
+        fstype: "{{ encrypted_volume_fs_type }}"
+        opts: "{{ encrypted_volume_mount_opts }}"
+        state: mounted
+
+    - name: Verify mount is active
+      command: mountpoint -q "{{ encrypted_volume_mount_point }}"
+      changed_when: false
+
+    - name: Verify mount is writable
+      command: test -w "{{ encrypted_volume_mount_point }}"
+      changed_when: false
+
+    - name: Report final mapping
+      debug:
+        msg: "Encrypted volume {{ encrypted_volume_resolved_device }} -> {{ encrypted_volume_mapper_path }} mounted at {{ encrypted_volume_mount_point }} (fstype={{ encrypted_volume_fs_type }}, opts={{ encrypted_volume_mount_opts }})"
