@@ -11,55 +11,50 @@ setup:
     @./setup-pre-commit.sh
 
 # Run ALL tests (roles, lint)
-test: test-roles lint
+test: venv test-roles lint
     @echo ""
     @echo "✅ All tests completed!"
 
 # Test all roles
-test-roles:
+test-roles: venv
     @echo "Testing all roles..."
-    @./test_roles.py --all
+    @UV_PROJECT_ENVIRONMENT=.venv uv run ./test_roles.py --all
 
 # Test a specific role
-test-role ROLE:
+test-role ROLE: venv
     @echo "Testing role: {{ROLE}}"
-    @./test_roles.py {{ROLE}}
+    @UV_PROJECT_ENVIRONMENT=.venv uv run ./test_roles.py {{ROLE}}
 
 # Quick syntax check for everything
-syntax-check:
+syntax-check: venv
     @echo "Running quick syntax check..."
-    @./test_roles.py --all | grep -E "(Testing role:|YAML Syntax|✓ PASSED|✗ FAILED)" || true
+    @UV_PROJECT_ENVIRONMENT=.venv uv run ./test_roles.py --all | grep -E "(Testing role:|YAML Syntax|✓ PASSED|✗ FAILED)" || true
 
 # Run ansible-lint on everything (non-failing for CI)
-lint:
+lint: venv
     @echo "Running ansible-lint..."
-    @if [ -d .venv ]; then \
-        source .venv/bin/activate && \
-        echo "Linting roles..." && \
-        ansible-lint roles/ 2>&1 | tail -3 || true; \
-    else \
-        echo "Virtual environment not found. Run 'just setup' first."; \
-    fi
+    @echo "Linting roles..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-lint roles/ 2>&1 | tail -3 || true
 
 # Run strict ansible-lint (will fail on errors)
-lint-strict:
+lint-strict: venv
     @echo "Running ansible-lint (strict mode)..."
-    @source .venv/bin/activate && ansible-lint roles/
+    @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-lint roles/
 
 # Run ansible-lint on a specific role
-lint-role ROLE:
+lint-role ROLE: venv
     @echo "Linting role: {{ROLE}}"
-    @source .venv/bin/activate && ansible-lint roles/{{ROLE}}
+    @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-lint roles/{{ROLE}}
 
 # Run pre-commit on all files
-pre-commit:
+pre-commit: venv
     @echo "Running pre-commit on all files..."
-    @source .venv/bin/activate && pre-commit run --all-files
+    @UV_PROJECT_ENVIRONMENT=.venv uv run pre-commit run --all-files
 
 # Update pre-commit hooks to latest versions
-pre-commit-update:
+pre-commit-update: venv
     @echo "Updating pre-commit hooks..."
-    @source .venv/bin/activate && pre-commit autoupdate
+    @UV_PROJECT_ENVIRONMENT=.venv uv run pre-commit autoupdate
 
 # Create virtual environment if it doesn't exist
 venv:
