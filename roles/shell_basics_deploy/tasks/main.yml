@@ -1,0 +1,233 @@
+---
+- name: Validate target user exists
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ shell_basics_user }}"
+  register: shell_basics_user_entry
+
+- name: Assert user lookup succeeded
+  ansible.builtin.assert:
+    that:
+      - shell_basics_user_entry.ansible_facts.getent_passwd[shell_basics_user] is defined
+    fail_msg: "User {{ shell_basics_user }} must exist before running shell_basics_deploy."
+
+- name: Determine user home directory
+  ansible.builtin.set_fact:
+    shell_basics_user_home_dir: >-
+      {{
+        (shell_basics_user_home | length > 0)
+          | ternary(
+              shell_basics_user_home,
+              shell_basics_user_entry.ansible_facts.getent_passwd[shell_basics_user][-2]
+            )
+      }}
+
+- name: Validate resolved home directory
+  ansible.builtin.assert:
+    that:
+      - shell_basics_user_home_dir | length > 0
+      - shell_basics_user_home_dir is regex('^/.+')
+    fail_msg: "Failed to resolve a home directory for {{ shell_basics_user }}."
+
+- name: Compute local bin path
+  ansible.builtin.set_fact:
+    shell_basics_local_bin_dir: "{{ shell_basics_user_home_dir }}/.local/bin"
+
+- name: Refresh apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: "{{ shell_basics_apt_cache_valid_time }}"
+    force_apt_get: true
+
+- name: Install shell basics packages
+  ansible.builtin.apt:
+    name: "{{ (shell_basics_packages + shell_basics_extra_packages) | unique }}"
+    state: present
+    force_apt_get: true
+
+- name: Manage chezmoi installation
+  when: shell_basics_manage_chezmoi | bool
+  block:
+    - name: Check current chezmoi version
+      ansible.builtin.command: "{{ shell_basics_chezmoi_bin_path }} --version"
+      register: shell_basics_current_chezmoi
+      changed_when: false
+      failed_when: false
+
+    - name: Parse current chezmoi version
+      ansible.builtin.set_fact:
+        shell_basics_current_chezmoi_version: "{{ shell_basics_current_chezmoi.stdout | regex_replace('^chezmoi version v?([0-9.]+).*', '\\1') }}"
+      when:
+        - shell_basics_current_chezmoi.rc == 0
+        - "'chezmoi version' in (shell_basics_current_chezmoi.stdout | default(''))"
+
+    - name: Look up latest chezmoi release
+      ansible.builtin.uri:
+        url: https://api.github.com/repos/twpayne/chezmoi/releases/latest
+        return_content: true
+        status_code: 200
+        headers:
+          User-Agent: ansible-shell-basics
+      register: shell_basics_chezmoi_release
+      when: shell_basics_chezmoi_version == 'latest'
+      changed_when: false
+
+    - name: Set desired chezmoi version (latest)
+      ansible.builtin.set_fact:
+        shell_basics_desired_chezmoi_version: "{{ shell_basics_chezmoi_release.json.tag_name | regex_replace('^v', '') }}"
+      when: shell_basics_chezmoi_version == 'latest'
+
+    - name: Set desired chezmoi version (pinned)
+      ansible.builtin.set_fact:
+        shell_basics_desired_chezmoi_version: "{{ shell_basics_chezmoi_version }}"
+      when: shell_basics_chezmoi_version != 'latest'
+
+    - name: Ensure desired chezmoi version is known
+      ansible.builtin.assert:
+        that:
+          - shell_basics_desired_chezmoi_version is defined
+          - shell_basics_desired_chezmoi_version | length > 0
+        fail_msg: "Could not determine chezmoi version to install."
+
+    - name: Set desired chezmoi tag (with leading v)
+      ansible.builtin.set_fact:
+        shell_basics_desired_chezmoi_tag: "v{{ shell_basics_desired_chezmoi_version | regex_replace('^v', '') }}"
+
+    - name: Determine if chezmoi install is needed
+      ansible.builtin.set_fact:
+        shell_basics_install_chezmoi: >-
+          {{
+            shell_basics_current_chezmoi_version is not defined
+            or (shell_basics_current_chezmoi_version | default('')) != shell_basics_desired_chezmoi_version
+          }}
+
+    - name: Ensure chezmoi install directory exists
+      ansible.builtin.file:
+        path: "{{ shell_basics_chezmoi_install_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Install chezmoi from upstream
+      when: shell_basics_install_chezmoi | bool
+      block:
+        - name: Create temporary directory for chezmoi installer
+          ansible.builtin.tempfile:
+            state: directory
+            suffix: chezmoi_install
+          register: shell_basics_chezmoi_tmp
+
+        - name: Download chezmoi installer
+          ansible.builtin.get_url:
+            url: https://get.chezmoi.io
+            dest: "{{ shell_basics_chezmoi_tmp.path }}/install.sh"
+            mode: "0755"
+
+        - name: Build chezmoi installer arguments
+          ansible.builtin.set_fact:
+            shell_basics_chezmoi_installer_argv: >-
+              {{
+                [shell_basics_chezmoi_tmp.path ~ '/install.sh', '-b', shell_basics_chezmoi_install_dir]
+                + (['-t', shell_basics_desired_chezmoi_tag] if shell_basics_chezmoi_version != 'latest' else [])
+              }}
+
+    - name: Run chezmoi installer
+      when: shell_basics_install_chezmoi | bool
+      ansible.builtin.command:
+        argv: "{{ shell_basics_chezmoi_installer_argv }}"
+      register: shell_basics_chezmoi_install
+      changed_when: shell_basics_install_chezmoi | bool
+
+    - name: Remove temporary installer directory
+      when: shell_basics_install_chezmoi | bool
+      ansible.builtin.file:
+        path: "{{ shell_basics_chezmoi_tmp.path }}"
+        state: absent
+
+    - name: Validate installed chezmoi version
+      ansible.builtin.command: "{{ shell_basics_chezmoi_bin_path }} --version"
+      register: shell_basics_chezmoi_verify
+      changed_when: false
+      failed_when: shell_basics_chezmoi_verify.rc != 0
+
+- name: Ensure local bin directory exists
+  ansible.builtin.file:
+    path: "{{ shell_basics_local_bin_dir }}"
+    state: directory
+    owner: "{{ shell_basics_user }}"
+    group: "{{ shell_basics_user }}"
+    mode: "0755"
+
+- name: Check for batcat binary
+  ansible.builtin.stat:
+    path: /usr/bin/batcat
+  register: shell_basics_batcat_stat
+
+- name: Link bat to batcat
+  ansible.builtin.file:
+    src: /usr/bin/batcat
+    dest: "{{ shell_basics_local_bin_dir }}/bat"
+    state: link
+    force: true
+  when: shell_basics_batcat_stat.stat.exists
+
+- name: Check for fdfind binary
+  ansible.builtin.stat:
+    path: /usr/bin/fdfind
+  register: shell_basics_fdfind_stat
+
+- name: Link fd to fdfind
+  ansible.builtin.file:
+    src: /usr/bin/fdfind
+    dest: "{{ shell_basics_local_bin_dir }}/fd"
+    state: link
+    force: true
+  when: shell_basics_fdfind_stat.stat.exists
+
+- name: Ensure fish config directory exists
+  ansible.builtin.file:
+    path: "{{ shell_basics_user_home_dir }}/.config/fish"
+    state: directory
+    owner: "{{ shell_basics_user }}"
+    group: "{{ shell_basics_user }}"
+    mode: "0755"
+  when: shell_basics_manage_fish_config | bool
+
+- name: Ensure fish config contains shell_basics block
+  ansible.builtin.blockinfile:
+    path: "{{ shell_basics_user_home_dir }}/.config/fish/config.fish"
+    marker: "# {mark} ANSIBLE SHELL BASICS"
+    create: true
+    owner: "{{ shell_basics_user }}"
+    group: "{{ shell_basics_user }}"
+    mode: "0644"
+    block: |-
+      fish_add_path -g {{ shell_basics_local_bin_dir }}
+      {% for line in shell_basics_fish_extra_config %}
+      {{ line }}
+      {% endfor %}
+  when: shell_basics_manage_fish_config | bool
+
+- name: Verify requested shell exists
+  ansible.builtin.stat:
+    path: "{{ shell_basics_shell_path }}"
+  register: shell_basics_shell_stat
+  when: shell_basics_switch_shell | bool
+
+- name: Assert shell binary is present
+  ansible.builtin.assert:
+    that:
+      - shell_basics_shell_stat.stat.exists
+    fail_msg: "Shell binary {{ shell_basics_shell_path }} not found."
+  when: shell_basics_switch_shell | bool
+
+- name: Switch default shell to fish
+  ansible.builtin.user:
+    name: "{{ shell_basics_user }}"
+    shell: "{{ shell_basics_shell_path }}"
+  when: shell_basics_switch_shell | bool
+
+- name: Set default editor
+  ansible.builtin.alternatives:
+    name: editor
+    path: "{{ shell_basics_default_editor_path }}"
+  when: shell_basics_set_default_editor | bool

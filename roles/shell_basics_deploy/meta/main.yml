@@ -1,0 +1,21 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Install shell essentials (fish, modern CLI tools) and keep chezmoi current
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - all
+    - name: Debian
+      versions:
+        - all
+  galaxy_tags:
+    - shell
+    - fish
+    - cli
+    - tooling
+    - chezmoi
+
+dependencies: []

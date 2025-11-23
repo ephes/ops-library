@@ -1,0 +1,56 @@
+---
+# Target user to own shell configuration and local bin directory
+shell_basics_user: root
+
+# Optional override for the user's home directory (auto-detected when empty)
+shell_basics_user_home: ""
+
+# Path to the fish shell binary
+shell_basics_shell_path: /usr/bin/fish
+
+# Core packages to install for everyday CLI work
+shell_basics_packages:
+  - fish
+  - bat
+  - fzf
+  - ripgrep
+  - fd-find
+  - eza
+  - tmux
+  - tree
+  - tig
+  - lsof
+  - sudo
+  - file
+  - git
+  - strace
+  - psmisc
+  - vim
+  - btop
+  - bmon
+  - sysstat
+  - iotop
+  - tealdeer
+
+# Optional extra packages to include
+shell_basics_extra_packages: []
+
+# Whether to switch the user's login shell to fish
+shell_basics_switch_shell: true
+
+# Manage fish configuration (~/.config/fish/config.fish)
+shell_basics_manage_fish_config: true
+shell_basics_fish_extra_config: []
+
+# Manage chezmoi installation via upstream installer
+shell_basics_manage_chezmoi: true
+shell_basics_chezmoi_version: latest
+shell_basics_chezmoi_install_dir: /usr/local/bin
+shell_basics_chezmoi_bin_path: "{{ shell_basics_chezmoi_install_dir }}/chezmoi"
+
+# Update apt cache before installing packages
+shell_basics_apt_cache_valid_time: 3600
+
+# Set default editor via update-alternatives
+shell_basics_set_default_editor: true
+shell_basics_default_editor_path: /usr/bin/vim.basic
