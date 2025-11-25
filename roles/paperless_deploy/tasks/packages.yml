@@ -1,7 +1,13 @@
 ---
+# libleptonica6 exists in Ubuntu 25.04+, but not in 24.04 (which has libleptonica5)
+# libleptonica-dev pulls in the correct runtime library as a dependency
+- name: Set version-specific packages
+  ansible.builtin.set_fact:
+    _paperless_version_packages: "{{ ['libleptonica6'] if ansible_distribution_version is version('25.04', '>=') else [] }}"
+
 - name: Install prerequisite and system packages
   ansible.builtin.apt:
-    name: "{{ paperless_install_prereq_packages + paperless_system_packages }}"
+    name: "{{ paperless_install_prereq_packages + paperless_system_packages + _paperless_version_packages }}"
     state: present
     update_cache: true
   become: true

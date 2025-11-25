@@ -145,7 +145,6 @@ paperless_system_packages:
   - ghostscript
   - icc-profiles-free
   - qpdf
-  - libleptonica6
   - libleptonica-dev
   - libmagic-dev
   - libpoppler-cpp-dev

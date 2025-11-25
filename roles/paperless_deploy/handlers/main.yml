@@ -39,6 +39,6 @@
   when: paperless_traefik_enabled
 
 - name: reload apparmor gs
-  ansible.builtin.command:
-    cmd: apparmor_parser -r /etc/apparmor.d/gs
+  ansible.builtin.shell:
+    cmd: test -f /etc/apparmor.d/gs && apparmor_parser -r /etc/apparmor.d/gs || true
   become: true
