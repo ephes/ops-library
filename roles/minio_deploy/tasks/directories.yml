@@ -25,6 +25,7 @@
     owner: "{{ minio_user }}"
     group: "{{ minio_group }}"
     mode: '0750'
+    recurse: true
   loop: "{{ minio_data_dirs }}"
 
 - name: Create MinIO backup config directory
