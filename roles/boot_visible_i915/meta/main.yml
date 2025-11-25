@@ -1,0 +1,28 @@
+---
+galaxy_info:
+  role_name: boot_visible_i915
+  author: Jochen Wersdörfer
+  description: Ensures visible boot output (GRUB, kernel, LUKS prompt) on Ubuntu with Intel i915 graphics
+
+  license: MIT
+
+  min_ansible_version: "2.12"
+
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy  # 22.04 LTS
+        - noble  # 24.04 LTS
+
+  galaxy_tags:
+    - boot
+    - grub
+    - luks
+    - encryption
+    - i915
+    - intel
+    - graphics
+    - t2mac
+    - initramfs
+
+dependencies: []

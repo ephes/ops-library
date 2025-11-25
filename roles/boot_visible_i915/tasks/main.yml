@@ -1,0 +1,10 @@
+---
+# Main tasks for boot_visible_i915 role
+
+- name: Include i915 initramfs configuration
+  ansible.builtin.import_tasks: initramfs.yml
+  when: boot_visible_enable_i915 | bool
+
+- name: Include GRUB configuration
+  ansible.builtin.import_tasks: grub.yml
+  when: boot_visible_modify_grub_cmdline | bool

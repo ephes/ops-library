@@ -1,0 +1,12 @@
+---
+# Configure GRUB using template-based management
+
+- name: Deploy managed /etc/default/grub
+  ansible.builtin.template:
+    src: grub.j2
+    dest: /etc/default/grub
+    owner: root
+    group: root
+    mode: '0644'
+    backup: "{{ boot_visible_grub_backup }}"
+  notify: update grub

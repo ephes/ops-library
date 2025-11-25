@@ -1,0 +1,33 @@
+# /etc/default/grub - managed by boot_visible_i915 role
+# WARNING: This file is managed by Ansible. Local edits will be overwritten.
+# To customize, set variables in your playbook or host_vars.
+
+{% set boot_visible_grub_tokens_to_remove = (
+  (boot_visible_grub_remove_splash | ternary(['splash'], [])) +
+  (boot_visible_grub_remove_quiet | ternary(['quiet'], [])) +
+  (boot_visible_grub_remove_nomodeset | ternary(['nomodeset'], []))
+) -%}
+
+GRUB_DEFAULT=0
+GRUB_TIMEOUT_STYLE={{ boot_visible_grub_timeout_style if boot_visible_show_grub_menu else boot_visible_grub_timeout_style_hidden }}
+GRUB_TIMEOUT={{ boot_visible_grub_timeout if boot_visible_show_grub_menu else 0 }}
+GRUB_DISTRIBUTOR=`lsb_release -i -s 2>/dev/null || echo Debian`
+GRUB_CMDLINE_LINUX_DEFAULT="{{ ((boot_visible_grub_base_cmdline |
+  split |
+  reject('in', boot_visible_grub_tokens_to_remove) |
+  list) +
+  (boot_visible_grub_extra_params.split() if boot_visible_grub_extra_params else [])) |
+  unique |
+  join(' ')
+}}"
+GRUB_CMDLINE_LINUX=""
+
+{% if boot_visible_grub_terminal | length > 0 -%}
+GRUB_TERMINAL={{ boot_visible_grub_terminal }}
+{% endif -%}
+{% if boot_visible_grub_gfxpayload | length > 0 -%}
+GRUB_GFXPAYLOAD_LINUX={{ boot_visible_grub_gfxpayload }}
+{% endif -%}
+
+# Uncomment to disable generation of recovery mode menu entries
+#GRUB_DISABLE_RECOVERY="true"

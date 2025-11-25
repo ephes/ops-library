@@ -1,0 +1,74 @@
+---
+# ============================================
+# boot_visible_i915 role default variables
+# ============================================
+# This role ensures visible boot output (GRUB menu, kernel messages, LUKS prompt)
+# on Ubuntu systems with Intel i915 graphics and full disk encryption.
+
+# ============================================
+# i915 Initramfs Configuration
+# ============================================
+
+# Enable/disable i915 in initramfs
+boot_visible_enable_i915: true
+
+# Remove i915 blacklist entries from /etc/modprobe.d/
+boot_visible_remove_i915_blacklist: true
+
+# ============================================
+# GRUB Display Settings (Conservative Defaults)
+# ============================================
+
+# Force GRUB to use text console (safe for all systems)
+# Set to "" to use default (auto-detect graphics)
+boot_visible_grub_terminal: "console"
+
+# Graphics payload handoff from GRUB to kernel
+# Options: "text" (safe), "keep" (keep GRUB mode), "WIDTHxHEIGHT" (specific mode)
+boot_visible_grub_gfxpayload: "text"
+
+# ============================================
+# GRUB Kernel Command Line
+# ============================================
+
+# Whether to modify GRUB command line
+boot_visible_modify_grub_cmdline: true
+
+# Base kernel command line (Ubuntu defaults)
+# Start with typical Ubuntu defaults; removal flags below will strip unwanted tokens
+boot_visible_grub_base_cmdline: "quiet splash"
+
+# Remove splash screen (recommended for visibility)
+boot_visible_grub_remove_splash: true
+
+# Remove quiet mode (recommended for troubleshooting)
+boot_visible_grub_remove_quiet: true
+
+# Remove nomodeset (prevents i915 from loading)
+boot_visible_grub_remove_nomodeset: true
+
+# Additional kernel parameters (used by other roles like remote-unlock)
+boot_visible_grub_extra_params: ""
+
+# ============================================
+# GRUB Menu Visibility
+# ============================================
+
+# Show GRUB menu
+boot_visible_show_grub_menu: true
+
+# GRUB menu timeout (seconds)
+boot_visible_grub_timeout: 5
+
+# GRUB timeout style when menu is shown
+boot_visible_grub_timeout_style: "menu"
+
+# GRUB timeout style when menu is hidden
+boot_visible_grub_timeout_style_hidden: "hidden"
+
+# ============================================
+# GRUB Template Management
+# ============================================
+
+# Backup existing /etc/default/grub before overwriting
+boot_visible_grub_backup: true

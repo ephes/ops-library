@@ -6,6 +6,7 @@ Roles for installing required tools and dependencies.
 :maxdepth: 1
 
 ansible_install
+boot_visible_i915
 uv_install
 sops_dependencies
 postgres_install

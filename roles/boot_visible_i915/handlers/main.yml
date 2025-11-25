@@ -1,0 +1,12 @@
+---
+# Handlers for boot_visible_i915 role
+
+- name: update initramfs
+  ansible.builtin.command:
+    cmd: update-initramfs -u -k all
+  listen: update initramfs
+
+- name: update grub
+  ansible.builtin.command:
+    cmd: update-grub
+  listen: update grub

@@ -1,0 +1,60 @@
+---
+# Configure i915 module in initramfs
+
+# ============================================
+# Check for and remove i915 blacklist
+# ============================================
+
+- name: Find files that blacklist i915
+  ansible.builtin.find:
+    paths: /etc/modprobe.d
+    patterns: "*.conf"
+    contains: '^\s*blacklist\s+i915'
+    use_regex: yes
+  register: i915_blacklist_files
+  when: boot_visible_remove_i915_blacklist | bool
+
+- name: Remove i915 blacklist entries
+  ansible.builtin.lineinfile:
+    path: "{{ item.path }}"
+    regexp: '^\s*blacklist\s+i915'
+    state: absent
+  loop: "{{ i915_blacklist_files.files }}"
+  notify: update initramfs
+  when:
+    - boot_visible_remove_i915_blacklist | bool
+    - i915_blacklist_files.matched > 0
+
+- name: Report removed blacklist entries
+  ansible.builtin.debug:
+    msg: "Removed i915 blacklist from {{ i915_blacklist_files.matched }} file(s)"
+  when:
+    - boot_visible_remove_i915_blacklist | bool
+    - i915_blacklist_files.matched > 0
+
+# ============================================
+# Configure i915 in initramfs
+# ============================================
+
+- name: Ensure /etc/initramfs-tools/modules exists
+  ansible.builtin.file:
+    path: /etc/initramfs-tools/modules
+    state: touch
+    mode: '0644'
+    modification_time: preserve
+    access_time: preserve
+
+- name: Remove common i915 typos (1915)
+  ansible.builtin.lineinfile:
+    path: /etc/initramfs-tools/modules
+    regexp: '^1915$'
+    state: absent
+  notify: update initramfs
+
+- name: Ensure i915 is loaded in initramfs
+  ansible.builtin.lineinfile:
+    path: /etc/initramfs-tools/modules
+    line: 'i915'
+    state: present
+    create: yes
+  notify: update initramfs
