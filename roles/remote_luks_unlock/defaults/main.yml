@@ -1,0 +1,91 @@
+---
+# ============================================
+# Master Enable/Disable Switch
+# ============================================
+
+# Enable remote LUKS unlock feature
+remote_luks_unlock_enable: false
+
+# Remove configuration when disabled (cleanup)
+# If true, when remote_luks_unlock_enable is false, the role will:
+# - Remove dropbear-initramfs package (optional)
+# - Remove authorized_keys and dropbear.conf
+# - Remove ip= parameters from GRUB (see force_remove_all_network_config)
+# - Remove DEVICE=/IP= from initramfs.conf (see force_remove_all_network_config)
+# - Set DROPBEAR=n in initramfs.conf
+# - Rebuild initramfs and GRUB
+remote_luks_unlock_cleanup_when_disabled: false
+
+# Force removal of ALL network config (not just ours)
+# DANGER: Only enable if you're CERTAIN the system has no other network config needs!
+#
+# When false (SAFE, default):
+#   - Only removes ip= parameters that reference our interface
+#   - Only removes DEVICE=/IP= if DEVICE matches our interface
+#   - Preserves configurations for NFS root, iSCSI, PXE, other interfaces
+#
+# When true (AGGRESSIVE):
+#   - Removes ALL ip= parameters from GRUB cmdline
+#   - Removes ALL DEVICE=/IP= from initramfs.conf
+#   - May break: NFS root, iSCSI boot, PXE, multi-interface setups
+#
+# Use cases for true:
+#   - Single-purpose system dedicated to this role
+#   - You manually verified no other network configs exist
+#   - Testing/development VMs
+remote_luks_unlock_force_remove_all_network_config: false
+
+# ============================================
+# Network Configuration
+# ============================================
+
+# Network interface to use in initramfs
+remote_luks_unlock_interface: "enp4s0"
+
+# IP configuration mode: "dhcp" or "static"
+remote_luks_unlock_ip_mode: "dhcp"
+
+# Static IP configuration (only used if ip_mode is "static")
+remote_luks_unlock_static_ip: ""
+remote_luks_unlock_static_gateway: ""
+remote_luks_unlock_static_netmask: "255.255.255.0"
+remote_luks_unlock_static_hostname: "{{ ansible_hostname }}"
+
+# Network configuration method: "grub_ip_param" or "initramfs_conf"
+# "grub_ip_param": Configure networking via GRUB kernel parameter (recommended)
+# "initramfs_conf": Configure networking via /etc/initramfs-tools/initramfs.conf
+remote_luks_unlock_network_method: "grub_ip_param"
+
+# ============================================
+# Dropbear SSH Server Configuration
+# ============================================
+
+# TCP port for Dropbear SSH server in initramfs
+remote_luks_unlock_port: 2222
+
+# Idle timeout in seconds (disconnect inactive connections)
+remote_luks_unlock_idle_timeout: 600
+
+# Enforce key-only authentication (no password login)
+remote_luks_unlock_no_password_auth: true
+
+# Disable port forwarding (security hardening)
+remote_luks_unlock_disable_forwarding: true
+
+# ============================================
+# SSH Key Management
+# ============================================
+
+# List of SSH public keys authorized to unlock
+# Example:
+#   - "ssh-ed25519 AAAAC3... user@host"
+#   - "ssh-rsa AAAAB3... admin@workstation"
+remote_luks_unlock_authorized_keys: []
+
+# ============================================
+# Advanced Options
+# ============================================
+
+# Additional Dropbear options (expert use only)
+# These are appended to the generated options
+remote_luks_unlock_extra_dropbear_options: ""

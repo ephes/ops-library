@@ -1,0 +1,10 @@
+---
+- name: rebuild initramfs
+  ansible.builtin.command:
+    cmd: update-initramfs -u -k all
+  listen: rebuild initramfs
+
+- name: update grub
+  ansible.builtin.command:
+    cmd: update-grub
+  listen: update grub

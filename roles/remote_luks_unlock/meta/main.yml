@@ -1,0 +1,28 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Enable remote unlocking of LUKS-encrypted root filesystems via SSH during early boot
+  license: MIT
+  min_ansible_version: "2.10"
+
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+
+  galaxy_tags:
+    - security
+    - encryption
+    - luks
+    - dropbear
+    - ssh
+    - initramfs
+    - boot
+
+dependencies: []

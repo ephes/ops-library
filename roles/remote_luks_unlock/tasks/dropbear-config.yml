@@ -1,0 +1,24 @@
+---
+- name: Build Dropbear options string
+  ansible.builtin.set_fact:
+    _dropbear_options_list:
+      - "-p {{ remote_luks_unlock_port }}"
+      - "-I {{ remote_luks_unlock_idle_timeout }}"
+      - "{{ '-s' if remote_luks_unlock_no_password_auth | bool else '' }}"
+      - "{{ '-j -k' if remote_luks_unlock_disable_forwarding | bool else '' }}"
+      - "{{ remote_luks_unlock_extra_dropbear_options }}"
+
+- name: Clean and join Dropbear options
+  ansible.builtin.set_fact:
+    _dropbear_options: "{{ _dropbear_options_list | select('string') | select() | join(' ') }}"
+
+- name: Configure Dropbear options
+  ansible.builtin.lineinfile:
+    path: /etc/dropbear/initramfs/dropbear.conf
+    regexp: '^DROPBEAR_OPTIONS='
+    line: 'DROPBEAR_OPTIONS="{{ _dropbear_options }}"'
+    create: yes
+    owner: root
+    group: root
+    mode: '0644'
+  notify: rebuild initramfs

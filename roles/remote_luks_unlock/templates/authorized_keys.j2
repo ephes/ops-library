@@ -1,0 +1,5 @@
+# Authorized SSH keys for remote LUKS unlock
+# Managed by Ansible - DO NOT EDIT MANUALLY
+{% for key in remote_luks_unlock_authorized_keys %}
+{{ key }}
+{% endfor %}

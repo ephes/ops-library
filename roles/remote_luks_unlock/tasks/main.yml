@@ -1,0 +1,43 @@
+---
+# Main entry point - handles enable/disable logic
+
+- name: Include cleanup tasks if disabled and cleanup requested
+  ansible.builtin.include_tasks: cleanup.yml
+  when:
+    - not (remote_luks_unlock_enable | bool)
+    - remote_luks_unlock_cleanup_when_disabled | bool
+
+- name: Warn if disabled without cleanup
+  ansible.builtin.debug:
+    msg: "Remote LUKS unlock is disabled. Existing configuration remains in place. Set remote_luks_unlock_cleanup_when_disabled: true to remove."
+  when:
+    - not (remote_luks_unlock_enable | bool)
+    - not (remote_luks_unlock_cleanup_when_disabled | bool)
+
+- name: Include installation tasks
+  ansible.builtin.include_tasks: install.yml
+  when: remote_luks_unlock_enable | bool
+
+- name: Include authorized keys configuration
+  ansible.builtin.include_tasks: authorized-keys.yml
+  when: remote_luks_unlock_enable | bool
+
+- name: Include Dropbear configuration
+  ansible.builtin.include_tasks: dropbear-config.yml
+  when: remote_luks_unlock_enable | bool
+
+- name: Include network configuration (GRUB method)
+  ansible.builtin.include_tasks: network-grub.yml
+  when:
+    - remote_luks_unlock_enable | bool
+    - remote_luks_unlock_network_method == "grub_ip_param"
+
+- name: Include network configuration (initramfs method)
+  ansible.builtin.include_tasks: network-initramfs.yml
+  when:
+    - remote_luks_unlock_enable | bool
+    - remote_luks_unlock_network_method == "initramfs_conf"
+
+- name: Include rebuild tasks
+  ansible.builtin.include_tasks: rebuild.yml
+  when: remote_luks_unlock_enable | bool

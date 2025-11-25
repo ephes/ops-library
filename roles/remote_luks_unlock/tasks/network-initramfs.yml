@@ -1,0 +1,77 @@
+---
+- name: Validate static IP configuration
+  ansible.builtin.assert:
+    that:
+      - remote_luks_unlock_static_ip | length > 0
+      - remote_luks_unlock_static_gateway | length > 0
+      - remote_luks_unlock_static_netmask | length > 0
+    fail_msg: |
+      Static IP mode requires:
+      - remote_luks_unlock_static_ip (currently: "{{ remote_luks_unlock_static_ip }}")
+      - remote_luks_unlock_static_gateway (currently: "{{ remote_luks_unlock_static_gateway }}")
+      - remote_luks_unlock_static_netmask (currently: "{{ remote_luks_unlock_static_netmask }}")
+    quiet: false
+  when: remote_luks_unlock_ip_mode == "static"
+
+- name: Build IP parameter for DHCP
+  ansible.builtin.set_fact:
+    _ip_value: ":::::{{ remote_luks_unlock_interface }}:dhcp"
+  when: remote_luks_unlock_ip_mode == "dhcp"
+
+- name: Build IP parameter for static
+  ansible.builtin.set_fact:
+    _ip_value: "{{ remote_luks_unlock_static_ip }}::{{ remote_luks_unlock_static_gateway }}:{{ remote_luks_unlock_static_netmask }}:{{ remote_luks_unlock_static_hostname }}:{{ remote_luks_unlock_interface }}:none"
+  when: remote_luks_unlock_ip_mode == "static"
+
+- name: Set DEVICE in initramfs.conf
+  ansible.builtin.lineinfile:
+    path: /etc/initramfs-tools/initramfs.conf
+    regexp: '^DEVICE='
+    line: "DEVICE={{ remote_luks_unlock_interface }}"
+    create: yes
+  notify: rebuild initramfs
+
+- name: Set IP in initramfs.conf
+  ansible.builtin.lineinfile:
+    path: /etc/initramfs-tools/initramfs.conf
+    regexp: '^IP='
+    line: "IP={{ _ip_value }}"
+    create: yes
+  notify: rebuild initramfs
+
+- name: Read current GRUB_CMDLINE_LINUX_DEFAULT for cleanup
+  ansible.builtin.shell: |
+    grep '^GRUB_CMDLINE_LINUX_DEFAULT=' /etc/default/grub | \
+    awk -F= '{print $2}' | \
+    sed 's/^["'\'']\(.*\)["'\'']$/\1/' || echo ""
+  register: _current_grub_cmdline_initramfs
+  changed_when: false
+  failed_when: false
+
+- name: Clean up GRUB ip= parameter (scoped to our interface)
+  ansible.builtin.set_fact:
+    _grub_cleaned_tokens: >-
+      {{
+        _current_grub_cmdline_initramfs.stdout.split() |
+        reject('search', 'ip=.*:' + remote_luks_unlock_interface + ':') |
+        list
+      }}
+  when: not (remote_luks_unlock_force_remove_all_network_config | bool)
+
+- name: Clean up GRUB ip= parameter (force - removes all)
+  ansible.builtin.set_fact:
+    _grub_cleaned_tokens: "{{ _current_grub_cmdline_initramfs.stdout.split() | reject('match', '^ip=') | list }}"
+  when: remote_luks_unlock_force_remove_all_network_config | bool
+
+- name: Build cleaned GRUB cmdline
+  ansible.builtin.set_fact:
+    _grub_cleaned_cmdline: "{{ _grub_cleaned_tokens | join(' ') }}"
+
+- name: Update GRUB to remove ip= parameter
+  ansible.builtin.lineinfile:
+    path: /etc/default/grub
+    regexp: '^GRUB_CMDLINE_LINUX_DEFAULT='
+    line: 'GRUB_CMDLINE_LINUX_DEFAULT="{{ _grub_cleaned_cmdline }}"'
+    backup: yes
+  notify: update grub
+  when: _current_grub_cmdline_initramfs.stdout != _grub_cleaned_cmdline

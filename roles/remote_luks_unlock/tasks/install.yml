@@ -1,0 +1,24 @@
+---
+- name: Install dropbear-initramfs package
+  ansible.builtin.apt:
+    name: dropbear-initramfs
+    state: present
+    update_cache: yes
+    cache_valid_time: 3600
+  notify: rebuild initramfs
+
+- name: Ensure dropbear initramfs directory exists
+  ansible.builtin.file:
+    path: /etc/dropbear/initramfs
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Enable Dropbear in initramfs
+  ansible.builtin.lineinfile:
+    path: /etc/initramfs-tools/initramfs.conf
+    regexp: '^DROPBEAR='
+    line: 'DROPBEAR=y'
+    create: yes
+  notify: rebuild initramfs

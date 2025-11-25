@@ -1,0 +1,16 @@
+---
+- name: Validate that authorized_keys list is not empty
+  ansible.builtin.assert:
+    that:
+      - remote_luks_unlock_authorized_keys | length > 0
+    fail_msg: "remote_luks_unlock_authorized_keys cannot be empty when remote unlock is enabled"
+    quiet: true
+
+- name: Configure Dropbear authorized_keys
+  ansible.builtin.template:
+    src: authorized_keys.j2
+    dest: /etc/dropbear/initramfs/authorized_keys
+    owner: root
+    group: root
+    mode: '0600'
+  notify: rebuild initramfs

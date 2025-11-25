@@ -1,0 +1,100 @@
+---
+- name: Remove Dropbear authorized_keys
+  ansible.builtin.file:
+    path: /etc/dropbear/initramfs/authorized_keys
+    state: absent
+  notify: rebuild initramfs
+
+- name: Remove Dropbear configuration
+  ansible.builtin.file:
+    path: /etc/dropbear/initramfs/dropbear.conf
+    state: absent
+  notify: rebuild initramfs
+
+- name: Disable Dropbear in initramfs
+  ansible.builtin.lineinfile:
+    path: /etc/initramfs-tools/initramfs.conf
+    regexp: '^DROPBEAR='
+    line: 'DROPBEAR=n'
+    create: yes
+  notify: rebuild initramfs
+
+- name: Read current GRUB_CMDLINE_LINUX_DEFAULT for cleanup
+  ansible.builtin.shell: |
+    grep '^GRUB_CMDLINE_LINUX_DEFAULT=' /etc/default/grub | \
+    awk -F= '{print $2}' | \
+    sed 's/^["'\'']\(.*\)["'\'']$/\1/' || echo ""
+  register: _current_grub_cmdline_cleanup
+  changed_when: false
+  failed_when: false
+
+- name: Remove ip= parameter from GRUB cmdline (scoped to our interface)
+  ansible.builtin.set_fact:
+    _cleaned_tokens: >-
+      {{
+        _current_grub_cmdline_cleanup.stdout.split() |
+        reject('search', 'ip=.*:' + remote_luks_unlock_interface + ':') |
+        list
+      }}
+  when: not (remote_luks_unlock_force_remove_all_network_config | bool)
+
+- name: Remove ALL ip= parameters from GRUB cmdline (force mode)
+  ansible.builtin.set_fact:
+    _cleaned_tokens: "{{ _current_grub_cmdline_cleanup.stdout.split() | reject('match', '^ip=') | list }}"
+  when: remote_luks_unlock_force_remove_all_network_config | bool
+
+- name: Build cleaned GRUB cmdline
+  ansible.builtin.set_fact:
+    _cleaned_grub_cmdline: "{{ _cleaned_tokens | join(' ') }}"
+
+- name: Update GRUB to remove ip= parameter
+  ansible.builtin.lineinfile:
+    path: /etc/default/grub
+    regexp: '^GRUB_CMDLINE_LINUX_DEFAULT='
+    line: 'GRUB_CMDLINE_LINUX_DEFAULT="{{ _cleaned_grub_cmdline }}"'
+    backup: yes
+  notify: update grub
+  when: _current_grub_cmdline_cleanup.stdout != _cleaned_grub_cmdline
+
+- name: Read current DEVICE from initramfs.conf for cleanup
+  ansible.builtin.shell: |
+    grep '^DEVICE=' /etc/initramfs-tools/initramfs.conf 2>/dev/null | cut -d= -f2 || echo ""
+  register: _cleanup_initramfs_device
+  changed_when: false
+  failed_when: false
+  when: not (remote_luks_unlock_force_remove_all_network_config | bool)
+
+- name: Remove IP configuration from initramfs.conf (scoped to our interface)
+  ansible.builtin.lineinfile:
+    path: /etc/initramfs-tools/initramfs.conf
+    regexp: '^{{ item }}='
+    state: absent
+  loop:
+    - 'DEVICE'
+    - 'IP'
+  notify: rebuild initramfs
+  when:
+    - not (remote_luks_unlock_force_remove_all_network_config | bool)
+    - _cleanup_initramfs_device.stdout == remote_luks_unlock_interface
+
+- name: Remove IP configuration from initramfs.conf (force - removes all)
+  ansible.builtin.lineinfile:
+    path: /etc/initramfs-tools/initramfs.conf
+    regexp: '^{{ item }}='
+    state: absent
+  loop:
+    - 'DEVICE'
+    - 'IP'
+  notify: rebuild initramfs
+  when: remote_luks_unlock_force_remove_all_network_config | bool
+
+- name: Optionally remove dropbear-initramfs package
+  ansible.builtin.apt:
+    name: dropbear-initramfs
+    state: absent
+  notify: rebuild initramfs
+  when: remote_luks_unlock_cleanup_when_disabled | bool
+
+- name: Info message about cleanup
+  ansible.builtin.debug:
+    msg: "Remote LUKS unlock has been disabled and configuration removed. System will require physical access to unlock after reboot."
