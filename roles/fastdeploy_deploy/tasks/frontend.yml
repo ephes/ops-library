@@ -1,25 +1,56 @@
 ---
 # Frontend build tasks for FastDeploy
 
-- name: Check if Node.js is installed
-  command: which node
-  register: node_check
+- name: Check current Node.js version
+  command: node --version
+  register: node_version_check
   failed_when: false
   changed_when: false
 
-- name: Check if npm is installed
-  command: which npm
-  register: npm_check
-  failed_when: false
-  changed_when: false
+- name: Parse Node.js major version
+  set_fact:
+    node_current_major: "{{ node_version_check.stdout | default('v0') | regex_replace('^v([0-9]+).*', '\\1') | int }}"
+  when: node_version_check.rc == 0
 
-- name: Install Node.js and npm if not present
-  package:
-    name:
-      - nodejs
-      - npm
-    state: present
-  when: node_check.rc != 0 or npm_check.rc != 0
+- name: Determine if Node.js upgrade is needed
+  set_fact:
+    node_needs_install: "{{ node_version_check.rc != 0 or (node_current_major | int) < (fastdeploy_nodejs_version | int) }}"
+
+- name: Install Node.js from NodeSource repository
+  when: node_needs_install | bool
+  block:
+    - name: Install required packages for NodeSource setup
+      apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+        state: present
+        update_cache: yes
+
+    - name: Create keyrings directory
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Download NodeSource GPG key
+      shell: |
+        curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+      args:
+        creates: /etc/apt/keyrings/nodesource.gpg
+
+    - name: Add NodeSource repository
+      apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_{{ fastdeploy_nodejs_version }}.x nodistro main"
+        filename: nodesource
+        state: present
+
+    - name: Install Node.js from NodeSource
+      apt:
+        name: nodejs
+        state: latest
+        update_cache: yes
 
 - name: Check if package-lock.json exists
   stat:

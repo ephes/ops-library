@@ -1,5 +1,5 @@
 ---
-# Install uv package manager with improved safety and flexibility
+# Install uv package manager to a system-wide location
 
 - name: Validate installation directory
   assert:
@@ -14,7 +14,6 @@
     path: "{{ uv_install_dir }}"
     state: directory
     mode: '0755'
-    owner: "{{ uv_install_user }}"
   become: yes
 
 - name: Check if uv is already installed
@@ -22,81 +21,51 @@
     path: "{{ uv_install_dir }}/uv"
   register: uv_installed
 
-- name: Check for alternative uv installations
-  stat:
-    path: "{{ item }}"
-  loop:
-    - "/root/.local/bin/uv"
-    - "{{ ansible_env.HOME | default('/root') }}/.local/bin/uv"
-  register: alternative_uv_paths
-  when: item != uv_install_dir + "/uv"
+- name: Check if existing uv is a symlink (needs replacement)
+  set_fact:
+    uv_is_symlink: "{{ uv_installed.stat.islnk | default(false) }}"
+  when: uv_installed.stat.exists
 
 - name: Get current uv version if installed
   command: "{{ uv_install_dir }}/uv --version"
   register: current_uv_version
   changed_when: false
   failed_when: false
-  when: uv_installed.stat.exists
-
-- name: Get alternative uv versions
-  command: "{{ item.item }} --version"
-  loop: "{{ alternative_uv_paths.results | default([]) }}"
   when:
-    - item.stat is defined
-    - item.stat.exists
-  register: alternative_uv_versions
-  changed_when: false
-  failed_when: false
+    - uv_installed.stat.exists
+    - not (uv_is_symlink | default(false))
 
 - name: Parse current version
   set_fact:
     current_version: "{{ current_uv_version.stdout | regex_replace('^uv ([0-9.]+).*', '\\1') }}"
   when:
     - uv_installed.stat.exists
+    - not (uv_is_symlink | default(false))
     - current_uv_version.rc == 0
-
-- name: Find newest alternative version
-  set_fact:
-    newest_alternative: "{{ alternative_uv_versions.results | selectattr('rc', 'equalto', 0) | map(attribute='stdout') | map('regex_replace', '^uv ([0-9.]+).*', '\\1') | sort | last | default(None) }}"
-    newest_alternative_path: "{{ (alternative_uv_versions.results | selectattr('rc', 'equalto', 0) | first).item | default(None) }}"
-  when:
-    - alternative_uv_versions.results is defined
-    - alternative_uv_versions.results | selectattr('rc', 'equalto', 0) | list | length > 0
-
-- name: Determine if we can use alternative installation
-  set_fact:
-    use_alternative: >-
-      {{
-        newest_alternative is defined and
-        newest_alternative and
-        newest_alternative_path is defined and
-        newest_alternative_path and
-        (not uv_installed.stat.exists or (current_version is defined and newest_alternative is version(current_version, '>')))
-      }}
-
-- name: Link to newer alternative uv if available
-  file:
-    src: "{{ newest_alternative_path }}"
-    dest: "{{ uv_install_dir }}/uv"
-    state: link
-    force: yes
-  become: yes
-  when:
-    - use_alternative | bool
-    - not uv_force_reinstall
 
 - name: Determine if installation is needed
   set_fact:
     needs_install: >-
       {{
-        (not uv_installed.stat.exists and not (use_alternative | bool)) or
+        not uv_installed.stat.exists or
+        (uv_is_symlink | default(false)) or
         uv_force_reinstall or
-        (uv_update_existing and uv_version != "latest" and current_version is defined and current_version != uv_version and not (use_alternative | bool))
+        (uv_update_existing and uv_version != "latest" and current_version is defined and current_version != uv_version)
       }}
 
 - name: Install or update uv
   when: needs_install | bool
   block:
+    - name: Remove existing symlink if present
+      file:
+        path: "{{ uv_install_dir }}/{{ item }}"
+        state: absent
+      loop:
+        - uv
+        - uvx
+      when: uv_is_symlink | default(false)
+      become: yes
+
     - name: Create temporary directory for installation
       tempfile:
         state: directory
@@ -123,9 +92,19 @@
       environment:
         HOME: "{{ ansible_env.HOME | default('/root') }}"
       become: yes
-      become_user: "{{ uv_install_user }}"
       register: install_result
       notify: uv installed
+
+    - name: Ensure uv binaries are owned by root and world-executable
+      file:
+        path: "{{ uv_install_dir }}/{{ item }}"
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - uv
+        - uvx
+      become: yes
 
     - name: Clean up temporary directory
       file:

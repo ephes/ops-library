@@ -1,20 +1,15 @@
 ---
 # Python environment setup for FastDeploy
 
-- name: Check if uv is installed
-  stat:
-    path: "/usr/local/bin/uv"
-  register: uv_installed
-
-- name: Install uv if not present
-  shell: |
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-  when: 
-    - fastdeploy_install_uv
-    - not uv_installed.stat.exists
+- name: Ensure uv binary is installed
+  ansible.builtin.import_role:
+    name: uv_install
+  vars:
+    uv_install_dir: "{{ fastdeploy_uv_install_dir }}"
+  when: fastdeploy_install_uv | bool
 
 - name: Create Python virtual environment with uv
-  shell: "/usr/local/bin/uv venv"
+  shell: "{{ fastdeploy_uv_binary }} venv"
   args:
     chdir: "{{ fastdeploy_site_path }}"
     creates: "{{ fastdeploy_venv_path }}"
@@ -22,7 +17,7 @@
   become_user: "{{ fastdeploy_user }}"
 
 - name: Install Python dependencies with uv
-  shell: "/usr/local/bin/uv sync --frozen"
+  shell: "{{ fastdeploy_uv_binary }} sync --frozen"
   args:
     chdir: "{{ fastdeploy_site_path }}"
   become: true

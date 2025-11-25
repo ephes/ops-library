@@ -65,7 +65,7 @@ fastdeploy_initial_user: "admin"
 # fastdeploy_secret_key: ""
 
 # Node.js and npm
-fastdeploy_nodejs_version: 20  # Major version for Node.js
+fastdeploy_nodejs_version: 24  # Major version for Node.js (LTS)
 fastdeploy_build_frontend: true
 
 # Systemd service
@@ -118,3 +118,7 @@ fastdeploy_rsync_excludes:
 fastdeploy_create_initial_user: true
 fastdeploy_sync_services: true
 fastdeploy_install_uv: true
+
+# uv installation settings (used when fastdeploy_install_uv is true)
+fastdeploy_uv_install_dir: /usr/local/bin
+fastdeploy_uv_binary: "{{ fastdeploy_uv_install_dir }}/uv"
