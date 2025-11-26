@@ -36,7 +36,7 @@ fastdeploy_backup_postgres_password: ""  # REQUIRED when peer auth is unavailabl
 fastdeploy_backup_postgres_host: ""      # Empty = unix socket (peer auth)
 fastdeploy_backup_create_archive: true
 fastdeploy_backup_archive_format: tar.gz
-fastdeploy_backup_fetch_local: false
+fastdeploy_backup_fetch_local: true
 ```
 
 See `defaults/main.yml` for the full reference.
@@ -51,7 +51,6 @@ See `defaults/main.yml` for the full reference.
       vars:
         fastdeploy_backup_prefix: "pre-upgrade"
         fastdeploy_backup_postgres_password: "{{ vault_fastdeploy_db_password }}"
-        fastdeploy_backup_fetch_local: true
         fastdeploy_backup_include_logs: true
 ```
 

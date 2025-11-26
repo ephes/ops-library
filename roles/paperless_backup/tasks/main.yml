@@ -99,6 +99,8 @@
   ansible.builtin.shell: |
     set -euo pipefail
     du -sb {{ paperless_backup_disk_usage_paths | map('quote') | join(' ') }} | awk '{sum+=$1} END {print sum}'
+  args:
+    executable: /bin/bash
   register: paperless_backup_disk_required
   changed_when: false
   when:

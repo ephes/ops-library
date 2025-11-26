@@ -16,7 +16,7 @@ paperless_backup_database_dir_group: "{{ paperless_backup_group }}"
 
 paperless_backup_create_archive: true
 paperless_backup_archive_format: tar.gz  # tar.gz | tar.zst
-paperless_backup_fetch_local: false
+paperless_backup_fetch_local: true
 paperless_backup_local_dir: "{{ lookup('env', 'HOME') | default('/tmp', true) }}/backups/paperless"
 paperless_backup_fetch_method: synchronize  # synchronize | fetch
 paperless_backup_generate_checksums: true

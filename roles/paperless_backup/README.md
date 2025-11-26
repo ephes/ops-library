@@ -46,7 +46,7 @@ paperless_backup_postgres_become_user: postgres
 paperless_backup_postgres_dump_options: "--clean --if-exists --no-owner"
 paperless_backup_create_archive: true
 paperless_backup_archive_format: tar.gz   # or tar.zst
-paperless_backup_fetch_local: false
+paperless_backup_fetch_local: true
 paperless_backup_fetch_method: synchronize
 paperless_backup_disk_check_enabled: true
 paperless_backup_disk_overhead_ratio: 1.15   # require 15% headroom relative to estimated snapshot size
@@ -80,7 +80,6 @@ See `defaults/main.yml` for the full list.
         paperless_backup_include_logs: true
         paperless_backup_postgres_password: "{{ vault_paperless_db_password }}"
         paperless_backup_exporter_passphrase: "{{ vault_paperless_export_passphrase }}"
-        paperless_backup_fetch_local: true
         paperless_backup_local_dir: "{{ lookup('env', 'HOME') }}/backups/paperless"
 ```
 

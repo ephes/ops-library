@@ -87,6 +87,8 @@
   ansible.builtin.shell: |
     set -euo pipefail
     du -sb {{ fastdeploy_backup_disk_usage_paths | map('quote') | join(' ') }} | awk '{sum+=$1} END {print sum}'
+  args:
+    executable: /bin/bash
   register: fastdeploy_backup_disk_required
   changed_when: false
   when:

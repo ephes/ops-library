@@ -9,6 +9,8 @@
   ansible.builtin.shell: |
     set -euo pipefail
     df -B1 --output=avail "{{ nyxmon_site_path }}" | tail -1
+  args:
+    executable: /bin/bash
   register: nyxmon_restore_free_space
   changed_when: false
   when: nyxmon_restore_check_disk_space

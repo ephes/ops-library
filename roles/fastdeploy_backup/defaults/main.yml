@@ -64,7 +64,7 @@ fastdeploy_backup_sudoers_glob: "/etc/sudoers.d/fastdeploy_*"
 # Archive + fetch options
 fastdeploy_backup_create_archive: true
 fastdeploy_backup_archive_format: "tar.gz"  # or tar.zst
-fastdeploy_backup_fetch_local: false
+fastdeploy_backup_fetch_local: true
 fastdeploy_backup_fetch_method: "synchronize"  # synchronize|fetch
 fastdeploy_backup_local_dir: "{{ lookup('env', 'HOME') | default('~', true) }}/backups/fastdeploy"
 fastdeploy_backup_local_dir_mode: "0700"
