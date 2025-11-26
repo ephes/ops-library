@@ -400,12 +400,20 @@
           become_user: "{{ homelab_user }}"
           when: homelab_restore_env_stat.stat.exists | default(false)
 
+        - name: "Check if sqlite3 is available"
+          ansible.builtin.command:
+            cmd: which sqlite3
+          register: homelab_restore_sqlite3_check
+          changed_when: false
+          failed_when: false
+
         - name: "Verify SQLite integrity"
           ansible.builtin.command:
             cmd: >
               sqlite3 "{{ homelab_database_path }}" "PRAGMA integrity_check"
           register: homelab_restore_sqlite_check
           changed_when: false
+          when: homelab_restore_sqlite3_check.rc == 0
 
         - name: "Start Homelab service"
           ansible.builtin.systemd:

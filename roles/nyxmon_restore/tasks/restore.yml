@@ -16,11 +16,20 @@
         mode: "0600"
         remote_src: true
 
+    - name: Check if sqlite3 is available
+      ansible.builtin.command:
+        cmd: which sqlite3
+      register: nyxmon_restore_sqlite3_check
+      changed_when: false
+      failed_when: false
+
     - name: Verify SQLite integrity before starting services
       ansible.builtin.command: "sqlite3 {{ nyxmon_backup_sqlite_path }} 'PRAGMA integrity_check'"
       register: nyxmon_restore_sqlite_precheck
       changed_when: false
-      when: nyxmon_restore_verify_sqlite
+      when:
+        - nyxmon_restore_verify_sqlite
+        - nyxmon_restore_sqlite3_check.rc == 0
 
     - name: Check directory presence in archive
       ansible.builtin.stat:
