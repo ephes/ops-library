@@ -61,10 +61,15 @@
         paperless_backup_fetch_local: false
         paperless_backup_generate_checksums: true
         paperless_backup_exporter_enabled: false
-        paperless_backup_postgres_user: "{{ paperless_restore_postgres_admin_user }}"
-        paperless_backup_postgres_password: "{{ paperless_restore_postgres_admin_password }}"
-        paperless_backup_postgres_host: "{{ paperless_restore_postgres_admin_host }}"
-        paperless_backup_postgres_port: "{{ paperless_restore_postgres_admin_port }}"
+        # Safety backup uses peer auth (postgres user = become_user)
+        paperless_backup_postgres_user: "{{ paperless_restore_safety_backup_postgres_user }}"
+        paperless_backup_postgres_password: ""
+        paperless_backup_postgres_host: ""
+        paperless_backup_postgres_port: ""
+        paperless_backup_postgres_become_user: "{{ paperless_restore_safety_backup_postgres_become_user }}"
+        # Ensure database dir is writable by become_user (for peer auth)
+        paperless_backup_database_dir_owner: "{{ paperless_restore_safety_backup_postgres_become_user }}"
+        paperless_backup_database_dir_group: "{{ paperless_restore_safety_backup_postgres_become_user }}"
 
     - name: Apply safety backup overrides (non-metadata)
       ansible.builtin.set_fact:

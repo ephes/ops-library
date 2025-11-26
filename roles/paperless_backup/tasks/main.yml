@@ -63,6 +63,13 @@
   ansible.builtin.set_fact:
     paperless_backup_effective_exporter_target: "{{ paperless_backup_exporter_target if (paperless_backup_exporter_target | default('', true) | string | length) > 0 else paperless_backup_dir ~ '/exporter' }}"
 
+- name: "Ensure backup parent directory is traversable"
+  ansible.builtin.file:
+    path: "{{ paperless_backup_root | dirname }}"
+    state: directory
+    mode: "0755"
+  when: paperless_backup_root | dirname != '/'
+
 - name: "Ensure backup root directory exists"
   ansible.builtin.file:
     path: "{{ paperless_backup_root }}"
@@ -194,8 +201,8 @@
   ansible.builtin.shell: |
     set -euo pipefail
     {{ paperless_backup_postgres_dump_binary }} \
-      --host={{ paperless_backup_postgres_host }} \
-      --port={{ paperless_backup_postgres_port }} \
+      {{ ('--host=' + paperless_backup_postgres_host) if paperless_backup_postgres_host else '' }} \
+      {{ ('--port=' + (paperless_backup_postgres_port | string)) if paperless_backup_postgres_host else '' }} \
       --username={{ paperless_backup_postgres_user }} \
       {{ paperless_backup_postgres_dump_options }} \
       {{ paperless_backup_postgres_database }} > "{{ paperless_backup_dir }}/database/{{ paperless_backup_postgres_database }}.sql"

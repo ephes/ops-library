@@ -122,10 +122,17 @@ paperless_restore_postgres_user: paperless
 paperless_restore_postgres_password: ""
 paperless_restore_postgres_database: paperless
 paperless_restore_postgres_become_user: postgres
+# PostgreSQL admin settings - for DROP/CREATE database (needs superuser)
 paperless_restore_postgres_admin_user: postgres
 paperless_restore_postgres_admin_password: ""
 paperless_restore_postgres_admin_host: ""
 paperless_restore_postgres_admin_port: ""
+
+# Safety backup postgres settings (passed to paperless_backup role)
+# Default: peer auth via unix socket (user matches become_user)
+# These are separate from admin settings because backup only needs read access
+paperless_restore_safety_backup_postgres_user: paperless
+paperless_restore_safety_backup_postgres_become_user: paperless
 paperless_restore_postgres_owner: paperless
 paperless_restore_psql_binary: psql
 paperless_restore_drop_database: true

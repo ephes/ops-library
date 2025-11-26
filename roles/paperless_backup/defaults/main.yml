@@ -11,8 +11,9 @@ paperless_backup_local_dir_mode: "0700"
 paperless_backup_root_mode: "0755"
 paperless_backup_dir_owner: "{{ paperless_backup_owner }}"
 paperless_backup_dir_group: "{{ paperless_backup_group }}"
-paperless_backup_database_dir_owner: "{{ paperless_backup_owner }}"
-paperless_backup_database_dir_group: "{{ paperless_backup_group }}"
+# Database dir ownership - matches become_user for pg_dump (peer auth)
+paperless_backup_database_dir_owner: "{{ paperless_backup_postgres_become_user }}"
+paperless_backup_database_dir_group: "{{ paperless_backup_postgres_become_user }}"
 
 paperless_backup_create_archive: true
 paperless_backup_archive_format: tar.gz  # tar.gz | tar.zst
@@ -51,11 +52,15 @@ paperless_backup_exporter_flags: "-z --delete"
 paperless_backup_exporter_passphrase: ""
 paperless_backup_exporter_clean_target: true
 
-paperless_backup_postgres_host: localhost
+# PostgreSQL backup settings
+# Default: Use peer auth via Unix socket (become_user matches postgres_user)
+# This matches postgres_install defaults where local connections use peer auth.
+# Set paperless_backup_postgres_host to use TCP/password auth instead.
+paperless_backup_postgres_host: ""
 paperless_backup_postgres_port: 5432
 paperless_backup_postgres_user: paperless
 paperless_backup_postgres_password: ""
-paperless_backup_postgres_become_user: postgres
+paperless_backup_postgres_become_user: paperless
 paperless_backup_postgres_database: paperless
 paperless_backup_postgres_dump_binary: pg_dump
 paperless_backup_postgres_dump_options: "--clean --if-exists --no-owner"
