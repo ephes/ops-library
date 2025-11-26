@@ -1,0 +1,122 @@
+---
+# Restore Tailscale state from local backup during deploy
+# This preserves node identity (and IP) across reinstalls
+
+- name: Find local backup archive
+  ansible.builtin.find:
+    paths: "{{ tailscale_backup_local_dir }}"
+    patterns: "*.{{ tailscale_backup_archive_extension }}"
+    file_type: file
+  register: tailscale_deploy_restore_archives
+  delegate_to: localhost
+  become: false
+  when: tailscale_deploy_restore_local_archive | length == 0
+
+- name: Select latest local archive
+  ansible.builtin.set_fact:
+    tailscale_deploy_restore_selected: "{{ (tailscale_deploy_restore_archives.files | sort(attribute='mtime', reverse=true) | first).path | default('') }}"
+  when:
+    - tailscale_deploy_restore_local_archive | length == 0
+    - tailscale_deploy_restore_archives.files | length > 0
+
+- name: Use explicit archive path
+  ansible.builtin.set_fact:
+    tailscale_deploy_restore_selected: "{{ tailscale_deploy_restore_local_archive }}"
+  when: tailscale_deploy_restore_local_archive | length > 0
+
+- name: Check if selected archive exists locally
+  ansible.builtin.stat:
+    path: "{{ tailscale_deploy_restore_selected | default('') }}"
+  register: tailscale_deploy_restore_stat
+  delegate_to: localhost
+  become: false
+  when: tailscale_deploy_restore_selected | default('') | length > 0
+
+- name: Skip restore if no archive found
+  ansible.builtin.debug:
+    msg: "No Tailscale backup archive found in {{ tailscale_backup_local_dir }} - skipping state restore"
+  when: >-
+    (tailscale_deploy_restore_selected | default('') | length == 0) or
+    (not tailscale_deploy_restore_stat.stat.exists | default(false))
+
+- name: Restore Tailscale state from backup
+  when:
+    - tailscale_deploy_restore_selected | default('') | length > 0
+    - tailscale_deploy_restore_stat.stat.exists | default(false)
+  block:
+    - name: Stop tailscaled before restore
+      ansible.builtin.systemd:
+        name: "{{ tailscale_service_name }}"
+        state: stopped
+      failed_when: false  # Service might not be running yet
+
+    - name: Ensure remote backup directory exists
+      ansible.builtin.file:
+        path: "{{ tailscale_backup_root }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Upload backup archive to remote
+      ansible.builtin.copy:
+        src: "{{ tailscale_deploy_restore_selected }}"
+        dest: "{{ tailscale_backup_root }}/{{ tailscale_deploy_restore_selected | basename }}"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Reset staging directory
+      ansible.builtin.file:
+        path: "{{ tailscale_restore_staging_dir }}"
+        state: absent
+
+    - name: Create staging directory
+      ansible.builtin.file:
+        path: "{{ tailscale_restore_staging_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Unpack archive into staging
+      ansible.builtin.unarchive:
+        src: "{{ tailscale_backup_root }}/{{ tailscale_deploy_restore_selected | basename }}"
+        dest: "{{ tailscale_restore_staging_dir }}"
+        remote_src: true
+
+    - name: Locate extracted payload directory
+      ansible.builtin.find:
+        paths: "{{ tailscale_restore_staging_dir }}"
+        file_type: directory
+        depth: 1
+      register: tailscale_deploy_restore_payload_dirs
+
+    - name: Set payload path
+      ansible.builtin.set_fact:
+        tailscale_deploy_restore_payload_dir: "{{ (tailscale_deploy_restore_payload_dirs.files | map(attribute='path') | list | first) | default('') }}"
+
+    - name: Restore state directory
+      ansible.builtin.command:
+        cmd: rsync -a "{{ tailscale_deploy_restore_payload_dir }}/state/" "{{ tailscale_state_dir }}/"
+      changed_when: true
+      when: tailscale_deploy_restore_payload_dir | length > 0
+
+    - name: Cleanup staging directory
+      ansible.builtin.file:
+        path: "{{ tailscale_restore_staging_dir }}"
+        state: absent
+
+    - name: Report state restored
+      ansible.builtin.debug:
+        msg: "Tailscale state restored from {{ tailscale_deploy_restore_selected | basename }} - node identity preserved"
+
+  rescue:
+    - name: Report restore failure
+      ansible.builtin.debug:
+        msg: "WARNING: Tailscale state restore failed. Will start tailscaled with existing/new state."
+
+  always:
+    - name: Ensure tailscaled is started after restore attempt
+      ansible.builtin.systemd:
+        name: "{{ tailscale_service_name }}"
+        state: started
+        enabled: true

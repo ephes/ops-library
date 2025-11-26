@@ -8,6 +8,10 @@
 - name: Install Tailscale package
   ansible.builtin.import_tasks: install.yml
 
+- name: Restore state from backup (preserves node identity)
+  ansible.builtin.include_tasks: restore_state.yml
+  when: tailscale_deploy_restore_enabled | bool
+
 - name: Ensure node joins tailnet
   ansible.builtin.import_tasks: up.yml
 

@@ -8,8 +8,8 @@
 - name: Validate supported archive format
   ansible.builtin.assert:
     that:
-      - tailscale_backup_archive_format == "gztar"
-    fail_msg: "tailscale_backup_archive_format currently supports only 'gztar' (tar.gz)"
+      - tailscale_backup_archive_format == "gz"
+    fail_msg: "tailscale_backup_archive_format currently supports only 'gz' (tar.gz)"
 
 - name: Gather timestamp
   ansible.builtin.set_fact:

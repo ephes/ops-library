@@ -5,7 +5,7 @@
       - tailscale_restore_root | length > 0
       - tailscale_restore_archive | length > 0
       - tailscale_manual_up | bool or (tailscale_auth_key | length > 0)
-      - tailscale_backup_archive_format == "gztar"
+      - tailscale_backup_archive_format == "gz"
     fail_msg: "tailscale_restore_* variables invalid or missing auth key (required unless manual_up=true)"
 
 - name: Determine archive to restore (latest shortcut)

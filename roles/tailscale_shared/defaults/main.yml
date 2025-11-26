@@ -43,7 +43,7 @@ tailscale_backup_dir_mode: "0700"
 tailscale_backup_file_mode: "0600"
 tailscale_backup_owner: root
 tailscale_backup_group: root
-tailscale_backup_archive_format: gztar
+tailscale_backup_archive_format: gz  # ansible.builtin.archive format (creates .tar.gz)
 tailscale_backup_archive_extension: tar.gz
 tailscale_backup_create_archive: true
 tailscale_backup_fetch_local: true
@@ -58,6 +58,11 @@ tailscale_restore_root: "{{ tailscale_backup_root }}"
 tailscale_restore_cleanup: true
 tailscale_restore_restart_service: true
 tailscale_restore_staging_dir: /tmp/tailscale-restore
+
+# Deploy-time restore: restore state from local backup before tailscale up
+# This preserves the node identity (and thus IP) across reinstalls
+tailscale_deploy_restore_enabled: false
+tailscale_deploy_restore_local_archive: ""  # Path to local archive, or empty to use latest from tailscale_backup_local_dir
 
 # Removal settings
 tailscale_confirm_removal: false
