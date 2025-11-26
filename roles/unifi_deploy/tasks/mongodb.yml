@@ -122,6 +122,15 @@
   failed_when: false
   no_log: true
 
+- name: "mongodb | Check if any users exist (localhost exception available)"
+  ansible.builtin.shell: |
+    mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} admin \
+      --eval "db.getUsers().users.length" 2>/dev/null || echo "0"
+  register: unifi_mongodb_user_count
+  changed_when: false
+  failed_when: false
+  when: unifi_mongodb_user_check.rc != 0
+
 - name: "mongodb | Render init script"
   ansible.builtin.template:
     src: mongo-init.js.j2
@@ -132,16 +141,39 @@
   when: unifi_mongodb_user_check.rc != 0
   no_log: true
 
-- name: "mongodb | Initialize users"
+- name: "mongodb | Initialize users (localhost exception)"
   ansible.builtin.shell: |
     mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} < /tmp/unifi-mongo-init.js
-  when: unifi_mongodb_user_check.rc != 0
+  when:
+    - unifi_mongodb_user_check.rc != 0
+    - unifi_mongodb_user_count.stdout | default('0') | trim == '0'
   register: unifi_mongodb_init
   changed_when: true
   no_log: true
+
+- name: "mongodb | Fail if users exist but authentication failed"
+  ansible.builtin.fail:
+    msg: >-
+      MongoDB has existing users but authentication as '{{ unifi_mongodb_user }}' failed.
+      This may indicate a password mismatch. Check the stored password in secrets matches
+      what was used when the database was initially created.
+  when:
+    - unifi_mongodb_user_check.rc != 0
+    - unifi_mongodb_user_count.stdout | default('0') | trim != '0'
 
 - name: "mongodb | Remove init script"
   ansible.builtin.file:
     path: /tmp/unifi-mongo-init.js
     state: absent
   when: unifi_mongodb_user_check.rc != 0
+
+- name: "mongodb | Verify user was created successfully"
+  ansible.builtin.shell: |
+    mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} \
+      --authenticationDatabase admin -u "{{ unifi_mongodb_user }}" -p "{{ unifi_mongodb_password }}" \
+      --eval "db.runCommand({connectionStatus: 1})" >/dev/null 2>&1
+  register: unifi_mongodb_user_verify
+  changed_when: false
+  failed_when: unifi_mongodb_user_verify.rc != 0
+  when: unifi_mongodb_init is changed
+  no_log: true
