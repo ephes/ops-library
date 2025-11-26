@@ -112,7 +112,8 @@
     timeout: "{{ unifi_mongodb_wait_timeout }}"
     delay: 5
 
-- name: "mongodb | Check UniFi user"
+# Skip user management entirely if auth is disabled
+- name: "mongodb | Check UniFi user authentication"
   ansible.builtin.shell: |
     mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} \
       --authenticationDatabase admin -u "{{ unifi_mongodb_user }}" -p "{{ unifi_mongodb_password }}" \
@@ -121,51 +122,142 @@
   changed_when: false
   failed_when: false
   no_log: true
+  when: unifi_mongodb_enable_auth | bool
 
-- name: "mongodb | Check if any users exist (localhost exception available)"
-  ansible.builtin.shell: |
-    mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} admin \
-      --eval "db.getUsers().users.length" 2>/dev/null || echo "0"
-  register: unifi_mongodb_user_count
-  changed_when: false
-  failed_when: false
-  when: unifi_mongodb_user_check.rc != 0
-
-- name: "mongodb | Render init script"
-  ansible.builtin.template:
-    src: mongo-init.js.j2
-    dest: /tmp/unifi-mongo-init.js
-    owner: root
-    group: root
-    mode: "0600"
-  when: unifi_mongodb_user_check.rc != 0
-  no_log: true
-
-- name: "mongodb | Initialize users (localhost exception)"
-  ansible.builtin.shell: |
-    mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} < /tmp/unifi-mongo-init.js
+# MongoDB 8.0+ localhost exception doesn't work reliably. Instead, we temporarily
+# disable auth, create the user, then re-enable auth.
+# This block handles both fresh installs (no users) and password mismatches (user exists).
+- name: "mongodb | Create user (auth disabled workflow)"
   when:
+    - unifi_mongodb_enable_auth | bool
+    - unifi_mongodb_user_check.rc is defined
     - unifi_mongodb_user_check.rc != 0
-    - unifi_mongodb_user_count.stdout | default('0') | trim == '0'
-  register: unifi_mongodb_init
-  changed_when: true
-  no_log: true
+  block:
+    - name: "mongodb | Temporarily disable authorization"
+      ansible.builtin.lineinfile:
+        path: /etc/mongod.conf
+        regexp: '^  authorization:'
+        line: "  authorization: disabled"
+        backup: true
 
-- name: "mongodb | Fail if users exist but authentication failed"
+    - name: "mongodb | Restart MongoDB with auth disabled"
+      ansible.builtin.systemd:
+        name: mongod
+        state: restarted
+
+    - name: "mongodb | Wait for MongoDB to be ready"
+      ansible.builtin.wait_for:
+        host: "{{ unifi_mongodb_host }}"
+        port: "{{ unifi_mongodb_port }}"
+        timeout: "{{ unifi_mongodb_wait_timeout }}"
+        delay: 2
+
+    - name: "mongodb | Check if user already exists"
+      ansible.builtin.shell: |
+        mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} admin \
+          --eval "db.system.users.countDocuments({user: '{{ unifi_mongodb_user }}'})"
+      register: unifi_mongodb_user_exists
+      changed_when: false
+
+    - name: "mongodb | Handle user exists (password mismatch)"
+      when: (unifi_mongodb_user_exists.stdout | trim | int) > 0
+      block:
+        - name: "mongodb | Store failure reason"
+          ansible.builtin.set_fact:
+            unifi_mongodb_failure_reason: "password_mismatch"
+            unifi_mongodb_failure_details: >-
+              MongoDB user '{{ unifi_mongodb_user }}' exists (count: {{ unifi_mongodb_user_exists.stdout | trim }})
+              but authentication with the password from secrets failed.
+
+        - name: "mongodb | Fail with password mismatch"
+          ansible.builtin.fail:
+            msg: "Password mismatch detected - see final error message after auth is restored."
+
+    - name: "mongodb | Render init script"
+      ansible.builtin.template:
+        src: mongo-init.js.j2
+        dest: /tmp/unifi-mongo-init.js
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: "mongodb | Create user"
+      ansible.builtin.shell: |
+        mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} < /tmp/unifi-mongo-init.js
+      register: unifi_mongodb_init
+      no_log: true
+
+    - name: "mongodb | Remove init script"
+      ansible.builtin.file:
+        path: /tmp/unifi-mongo-init.js
+        state: absent
+
+  rescue:
+    - name: "mongodb | Capture failure context"
+      ansible.builtin.set_fact:
+        unifi_mongodb_user_creation_failed: true
+        unifi_mongodb_failure_reason: "{{ unifi_mongodb_failure_reason | default('user_creation_error') }}"
+        unifi_mongodb_failure_details: >-
+          {{ unifi_mongodb_failure_details | default(
+            'User creation failed. ' ~
+            'user_exists check: ' ~ (unifi_mongodb_user_exists.stdout | default('n/a')) ~ ', ' ~
+            'init result rc: ' ~ (unifi_mongodb_init.rc | default('n/a')) ~ ', ' ~
+            'init stderr: ' ~ (unifi_mongodb_init.stderr | default('n/a'))
+          ) }}
+
+    - name: "mongodb | Remove init script on failure"
+      ansible.builtin.file:
+        path: /tmp/unifi-mongo-init.js
+        state: absent
+      failed_when: false
+
+  always:
+    - name: "mongodb | Restore authorization setting"
+      ansible.builtin.lineinfile:
+        path: /etc/mongod.conf
+        regexp: '^  authorization:'
+        line: "  authorization: {{ 'enabled' if unifi_mongodb_enable_auth else 'disabled' }}"
+        backup: true
+
+    - name: "mongodb | Restart MongoDB with correct auth setting"
+      ansible.builtin.systemd:
+        name: mongod
+        state: restarted
+
+    - name: "mongodb | Wait for MongoDB to be ready after restoring auth"
+      ansible.builtin.wait_for:
+        host: "{{ unifi_mongodb_host }}"
+        port: "{{ unifi_mongodb_port }}"
+        timeout: "{{ unifi_mongodb_wait_timeout }}"
+        delay: 2
+
+- name: "mongodb | Fail with detailed error message"
   ansible.builtin.fail:
-    msg: >-
-      MongoDB has existing users but authentication as '{{ unifi_mongodb_user }}' failed.
-      This may indicate a password mismatch. Check the stored password in secrets matches
-      what was used when the database was initially created.
-  when:
-    - unifi_mongodb_user_check.rc != 0
-    - unifi_mongodb_user_count.stdout | default('0') | trim != '0'
+    msg: |
+      MongoDB user management failed. Authorization has been restored to '{{ 'enabled' if unifi_mongodb_enable_auth else 'disabled' }}'.
 
-- name: "mongodb | Remove init script"
-  ansible.builtin.file:
-    path: /tmp/unifi-mongo-init.js
-    state: absent
-  when: unifi_mongodb_user_check.rc != 0
+      Failure reason: {{ unifi_mongodb_failure_reason | default('unknown') }}
+      Details: {{ unifi_mongodb_failure_details | default('No additional details available.') }}
+
+      {% if unifi_mongodb_failure_reason | default('') == 'password_mismatch' %}
+      To fix this, choose one of these options:
+
+      Option 1: Update the secret to match the existing database password
+        - Find the original password that was used when the user was created
+        - Update secrets/prod/unifi.yml with that password
+        - Re-run the deployment
+
+      Option 2: Drop the existing user and let the role recreate it
+        - SSH to the server: ssh root@macmini.tailde2ec.ts.net
+        - Disable auth: sudo sed -i 's/authorization: enabled/authorization: disabled/' /etc/mongod.conf
+        - Restart MongoDB: sudo systemctl restart mongod
+        - Drop the user: mongosh admin --eval "db.dropUser('{{ unifi_mongodb_user }}')"
+        - Re-enable auth: sudo sed -i 's/authorization: disabled/authorization: enabled/' /etc/mongod.conf
+        - Restart MongoDB: sudo systemctl restart mongod
+        - Re-run the deployment: just deploy-one unifi
+      {% endif %}
+  when: unifi_mongodb_user_creation_failed | default(false)
 
 - name: "mongodb | Verify user was created successfully"
   ansible.builtin.shell: |
@@ -175,5 +267,9 @@
   register: unifi_mongodb_user_verify
   changed_when: false
   failed_when: unifi_mongodb_user_verify.rc != 0
-  when: unifi_mongodb_init is changed
   no_log: true
+  when:
+    - unifi_mongodb_enable_auth | bool
+    - unifi_mongodb_user_check.rc is defined
+    - unifi_mongodb_user_check.rc != 0
+    - not (unifi_mongodb_user_creation_failed | default(false))

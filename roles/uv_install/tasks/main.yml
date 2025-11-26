@@ -93,7 +93,6 @@
         HOME: "{{ ansible_env.HOME | default('/root') }}"
       become: yes
       register: install_result
-      notify: uv installed
 
     - name: Ensure uv binaries are owned by root and world-executable
       file:

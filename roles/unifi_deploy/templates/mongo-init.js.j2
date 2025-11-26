@@ -1,3 +1,6 @@
+// Create UniFi user in admin database with all required roles
+// The localhost exception allows this unauthenticated connection only when no users exist
+// After this user is created, the localhost exception closes and auth is required
 use admin;
 db.createUser({
   user: "{{ unifi_mongodb_user }}",
@@ -8,15 +11,5 @@ db.createUser({
     { role: "readWrite", db: "{{ unifi_mongodb_database }}_stat" },
     { role: "dbOwner", db: "{{ unifi_mongodb_database }}_stat" },
     { role: "clusterMonitor", db: "admin" }
-  ]
-});
-
-use {{ unifi_mongodb_database }};
-db.createUser({
-  user: "{{ unifi_mongodb_user }}",
-  pwd: "{{ unifi_mongodb_password }}",
-  roles: [
-    { role: "readWrite", db: "{{ unifi_mongodb_database }}" },
-    { role: "readWrite", db: "{{ unifi_mongodb_database }}_stat" }
   ]
 });
