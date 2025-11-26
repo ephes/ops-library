@@ -18,14 +18,16 @@
         path: "{{ unifi_restore_mongodb_dump_dir }}"
       register: unifi_restore_mongodb_dump_stat
 
-    - name: "mongodb | Fail if MongoDB dump is missing"
-      ansible.builtin.assert:
-        that:
-          - unifi_restore_mongodb_dump_stat.stat.exists
-          - unifi_restore_mongodb_dump_stat.stat.isdir
-        fail_msg: >-
+    - name: "mongodb | Set MongoDB dump availability fact"
+      ansible.builtin.set_fact:
+        unifi_restore_mongodb_dump_available: "{{ unifi_restore_mongodb_dump_stat.stat.exists | default(false) and unifi_restore_mongodb_dump_stat.stat.isdir | default(false) }}"
+
+    - name: "mongodb | Warn if MongoDB dump is missing"
+      ansible.builtin.debug:
+        msg: >-
           MongoDB dump not found at {{ unifi_restore_mongodb_dump_dir }}.
-          Ensure the selected backup contains a database export.
+          Backup was likely created without MongoDB dump. Skipping MongoDB restore.
+      when: not unifi_restore_mongodb_dump_available
 
     - name: "mongodb | Build drop database command"
       ansible.builtin.set_fact:
@@ -45,7 +47,9 @@
             + (((unifi_restore_mongodb_auth_db | default('', true) | length) > 0)
                 | ternary(['--authenticationDatabase=' ~ unifi_restore_mongodb_auth_db], []))
           }}
-      when: unifi_restore_mongodb_drop_database | bool
+      when:
+        - unifi_restore_mongodb_dump_available
+        - unifi_restore_mongodb_drop_database | bool
       no_log: "{{ unifi_restore_mongodb_password | default('', true) | length > 0 }}"
 
     - name: "mongodb | Drop existing MongoDB database"
@@ -53,7 +57,9 @@
         argv: "{{ unifi_restore_mongodb_drop_args }}"
       register: unifi_restore_mongodb_drop_result
       changed_when: true
-      when: unifi_restore_mongodb_drop_database | bool
+      when:
+        - unifi_restore_mongodb_dump_available
+        - unifi_restore_mongodb_drop_database | bool
       no_log: "{{ unifi_restore_mongodb_password | default('', true) | length > 0 }}"
 
     - name: "mongodb | Build mongorestore command arguments"
@@ -76,6 +82,7 @@
             + ((unifi_restore_use_mongorestore_drop_flag | bool)
                 | ternary(['--drop'], []))
           }}
+      when: unifi_restore_mongodb_dump_available
       no_log: "{{ unifi_restore_mongodb_password | default('', true) | length > 0 }}"
 
     - name: "mongodb | Restore MongoDB database"
@@ -86,6 +93,7 @@
       retries: 3
       delay: 5
       until: unifi_restore_mongorestore_result.rc == 0
+      when: unifi_restore_mongodb_dump_available
       no_log: "{{ unifi_restore_mongodb_password | default('', true) | length > 0 }}"
 
   when: unifi_restore_include_mongodb | bool

@@ -18,6 +18,14 @@
   changed_when: false
   when: unifi_restore_verify_mongodb | bool
 
+- name: "verify | Check if mongodump is available"
+  ansible.builtin.command:
+    cmd: which mongodump
+  register: unifi_restore_mongodump_check
+  changed_when: false
+  failed_when: false
+  when: unifi_restore_verify_mongodb | bool
+
 - name: "verify | Build MongoDB verification command"
   ansible.builtin.set_fact:
     unifi_restore_mongodump_args: >-
@@ -42,6 +50,7 @@
     - unifi_restore_verify_mongodb | bool
     - unifi_restore_mongodb_port_check is defined
     - not unifi_restore_mongodb_port_check.failed
+    - unifi_restore_mongodump_check.rc == 0
 
 - name: "verify | Verify MongoDB is accessible"
   ansible.builtin.command:
@@ -55,6 +64,7 @@
     - unifi_restore_verify_mongodb | bool
     - unifi_restore_mongodb_port_check is defined
     - not unifi_restore_mongodb_port_check.failed
+    - unifi_restore_mongodump_check.rc == 0
 
 - name: Remove MongoDB verification archive
   ansible.builtin.file:
@@ -64,14 +74,23 @@
     - unifi_restore_verify_mongodb | bool
     - unifi_restore_mongodb_port_check is defined
     - not unifi_restore_mongodb_port_check.failed
+    - unifi_restore_mongodump_check.rc == 0
 
-- name: Warn when MongoDB verification is skipped
+- name: Warn when MongoDB verification is skipped (port unreachable)
   ansible.builtin.debug:
     msg: "Skipping MongoDB verification because {{ unifi_restore_mongodb_host }}:{{ unifi_restore_mongodb_port }} is unreachable."
   when:
     - unifi_restore_verify_mongodb | bool
     - unifi_restore_mongodb_port_check is defined
     - unifi_restore_mongodb_port_check.failed
+
+- name: Warn when MongoDB verification is skipped (mongodump unavailable)
+  ansible.builtin.debug:
+    msg: "Skipping MongoDB verification because mongodump command is not available."
+  when:
+    - unifi_restore_verify_mongodb | bool
+    - unifi_restore_mongodump_check is defined
+    - unifi_restore_mongodump_check.rc != 0
 
 - name: Check UniFi web interface
   ansible.builtin.uri:

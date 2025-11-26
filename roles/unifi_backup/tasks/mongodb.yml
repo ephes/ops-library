@@ -1,5 +1,17 @@
 ---
 - block:
+    - name: "mongodb | Check if mongodump is available"
+      ansible.builtin.command:
+        cmd: which mongodump
+      register: unifi_backup_mongodump_check
+      changed_when: false
+      failed_when: false
+
+    - name: "mongodb | Skip MongoDB backup if mongodump unavailable"
+      ansible.builtin.debug:
+        msg: "mongodump command not found. Skipping MongoDB backup."
+      when: unifi_backup_mongodump_check.rc != 0
+
     - name: "mongodb | Build mongodump command arguments"
       ansible.builtin.set_fact:
         unifi_backup_mongodump_args: >-
@@ -18,18 +30,22 @@
             + (((unifi_mongodb_auth_db | default('', true) | length) > 0)
                 | ternary(['--authenticationDatabase=' ~ unifi_mongodb_auth_db], []))
           }}
+      when: unifi_backup_mongodump_check.rc == 0
+
     - name: "mongodb | Dump UniFi MongoDB database"
       ansible.builtin.command:
         argv: "{{ unifi_backup_mongodump_args }}"
       register: unifi_mongodump_result
       changed_when: true
       no_log: "{{ unifi_mongodb_password | default('', true) | length > 0 }}"
+      when: unifi_backup_mongodump_check.rc == 0
 
     - name: "mongodb | Verify MongoDB dump exists"
       ansible.builtin.stat:
         path: "{{ unifi_backup_dir }}/database/{{ unifi_mongodb_database }}"
       register: unifi_mongodump_stat
       failed_when: not unifi_mongodump_stat.stat.exists
+      when: unifi_backup_mongodump_check.rc == 0
 
     - name: "mongodb | Ensure MongoDB dump permissions"
       ansible.builtin.file:
@@ -38,6 +54,7 @@
         group: "{{ unifi_backup_group }}"
         mode: "{{ unifi_backup_dir_mode }}"
         recurse: true
+      when: unifi_backup_mongodump_check.rc == 0
 
   rescue:
     - name: "mongodb | Warn about MongoDB dump failure"

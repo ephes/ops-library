@@ -40,9 +40,19 @@
   ansible.builtin.systemd:
     name: "{{ unifi_service_name }}"
   register: unifi_backup_service_status
-  failed_when: unifi_backup_service_status.status.ActiveState != 'active'
   changed_when: false
-  when: unifi_backup_mongodb_backup | bool
+  failed_when: false
+
+- name: Set service running fact
+  ansible.builtin.set_fact:
+    unifi_backup_service_was_running: "{{ unifi_backup_service_status.status.ActiveState | default('inactive') == 'active' }}"
+
+- name: Warn if UniFi service is not running
+  ansible.builtin.debug:
+    msg: "UniFi service is not running ({{ unifi_backup_service_status.status.ActiveState | default('unknown') }}). MongoDB backup will be skipped."
+  when:
+    - unifi_backup_mongodb_backup | bool
+    - not unifi_backup_service_was_running
 
 - name: Check MongoDB port availability
   ansible.builtin.wait_for:

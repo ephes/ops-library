@@ -48,6 +48,7 @@
   when:
     - unifi_backup_mongodb_backup | bool
     - unifi_mongodb_accessible | default(true)
+    - unifi_backup_service_was_running | default(true)
 
 - name: Warn when MongoDB dump is skipped
   ansible.builtin.debug:

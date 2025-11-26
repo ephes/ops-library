@@ -6,6 +6,7 @@
   when:
     - service_action == 'stop'
     - unifi_backup_stop_services
+    - unifi_backup_service_was_running | default(true)
 
 - name: Wait for clean shutdown
   ansible.builtin.pause:
@@ -13,12 +14,15 @@
   when:
     - service_action == 'stop'
     - unifi_backup_stop_services
+    - unifi_backup_service_was_running | default(true)
 
 - name: Start UniFi service
   ansible.builtin.systemd:
     name: "{{ unifi_service_name }}"
     state: started
-  when: service_action == 'start'
+  when:
+    - service_action == 'start'
+    - unifi_backup_service_was_running | default(true)
 
 - name: Verify UniFi service is active
   ansible.builtin.systemd:
@@ -27,4 +31,13 @@
   retries: 12
   delay: 5
   until: unifi_backup_service_check.status.ActiveState == 'active'
-  when: service_action == 'start'
+  when:
+    - service_action == 'start'
+    - unifi_backup_service_was_running | default(true)
+
+- name: Note when service restart is skipped
+  ansible.builtin.debug:
+    msg: "UniFi service was not running before backup; skipping service restart."
+  when:
+    - service_action == 'start'
+    - not (unifi_backup_service_was_running | default(true))
