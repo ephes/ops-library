@@ -1,6 +1,51 @@
 ---
+# Flush handlers before starting the service to ensure any pending
+# configuration changes (e.g., requirepass) are applied first.
+# Without this, Redis starts with the old config from apt install,
+# and the restart handler only runs at the end of the play - too late
+# for dependent services like Paperless that connect immediately.
+- name: Flush handlers to apply configuration before starting
+  ansible.builtin.meta: flush_handlers
+
 - name: Ensure Redis service is enabled and running
   ansible.builtin.service:
     name: "{{ redis_install_service_name }}"
     state: started
     enabled: true
+
+# Verify Redis is running with the correct authentication config.
+# This handles the case where apt started Redis with default config
+# before our config was written, and the template didn't change
+# (e.g., on re-deploy), so no restart was triggered.
+- name: Check if Redis requires password authentication
+  ansible.builtin.command:
+    cmd: redis-cli -p {{ redis_install_port }} PING
+  register: redis_ping_no_auth
+  changed_when: false
+  failed_when: false
+
+- name: Check if Redis accepts configured password
+  ansible.builtin.command:
+    cmd: redis-cli -p {{ redis_install_port }} -a "{{ redis_install_password }}" PING
+  register: redis_ping_with_auth
+  changed_when: false
+  failed_when: false
+  when:
+    - redis_install_requirepass_enabled | bool
+    - redis_install_password | length > 0
+  no_log: true
+
+- name: Restart Redis if authentication config mismatch detected
+  ansible.builtin.service:
+    name: "{{ redis_install_service_name }}"
+    state: restarted
+  when: >-
+    (redis_install_requirepass_enabled | bool and
+     redis_install_password | length > 0 and
+     redis_ping_no_auth.rc == 0 and
+     'PONG' in redis_ping_no_auth.stdout | default(''))
+    or
+    (redis_install_requirepass_enabled | bool and
+     redis_install_password | length > 0 and
+     redis_ping_with_auth is defined and
+     redis_ping_with_auth.rc != 0)
