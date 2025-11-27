@@ -1,0 +1,12 @@
+---
+traefik_restore_archive: latest
+traefik_restore_root: "{{ backup_root_prefix | default('/opt/backups') }}/traefik"
+traefik_restore_staging_dir: /tmp/traefik-restore
+traefik_restore_staging_mode: "0700"
+traefik_restore_archive_extension: tar.gz
+traefik_restore_acme_path: /etc/traefik/acme/acme.json
+traefik_restore_acme_dir: "{{ traefik_restore_acme_path | dirname }}"
+traefik_restore_acme_dir_mode: "0700"
+traefik_restore_acme_owner: root
+traefik_restore_acme_group: root
+traefik_restore_acme_mode: "0600"

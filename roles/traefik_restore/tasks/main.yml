@@ -1,0 +1,110 @@
+---
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - traefik_restore_root | length > 0
+      - traefik_restore_archive | length > 0
+      - traefik_restore_acme_path | length > 0
+    fail_msg: "traefik_restore_* variables must be set"
+
+- name: Find archive when using latest
+  ansible.builtin.find:
+    paths: "{{ traefik_restore_root }}"
+    patterns: "*.{{ traefik_restore_archive_extension }}"
+    file_type: file
+  register: traefik_restore_candidates
+  when: traefik_restore_archive == 'latest'
+
+- name: Select latest archive
+  ansible.builtin.set_fact:
+    traefik_restore_selected_archive: "{{ (traefik_restore_candidates.files | sort(attribute='mtime', reverse=true) | first).path | default('') }}"
+  when: traefik_restore_archive == 'latest'
+
+- name: Use explicit archive path
+  ansible.builtin.set_fact:
+    traefik_restore_selected_archive: "{{ traefik_restore_archive if traefik_restore_archive.startswith('/') else traefik_restore_root ~ '/' ~ traefik_restore_archive }}"
+  when: traefik_restore_archive != 'latest'
+
+- name: Fail when no archive found
+  ansible.builtin.fail:
+    msg: "No Traefik backup archives found in {{ traefik_restore_root }}"
+  when: (traefik_restore_selected_archive | default('')) | length == 0
+
+- name: Ensure selected archive exists
+  ansible.builtin.stat:
+    path: "{{ traefik_restore_selected_archive }}"
+  register: traefik_restore_selected_stat
+
+- name: Abort if selected archive is missing
+  ansible.builtin.fail:
+    msg: "Traefik restore archive not found: {{ traefik_restore_selected_archive }}"
+  when: not traefik_restore_selected_stat.stat.exists
+
+- name: Reset staging directory
+  ansible.builtin.file:
+    path: "{{ traefik_restore_staging_dir }}"
+    state: absent
+
+- name: Create staging directory
+  ansible.builtin.file:
+    path: "{{ traefik_restore_staging_dir }}"
+    state: directory
+    mode: "{{ traefik_restore_staging_mode }}"
+
+- name: Unpack archive into staging
+  ansible.builtin.unarchive:
+    src: "{{ traefik_restore_selected_archive }}"
+    dest: "{{ traefik_restore_staging_dir }}"
+    remote_src: true
+
+- name: Locate payload directory
+  ansible.builtin.find:
+    paths: "{{ traefik_restore_staging_dir }}"
+    file_type: directory
+    depth: 1
+  register: traefik_restore_payload_dirs
+
+- name: Set payload path
+  ansible.builtin.set_fact:
+    traefik_restore_payload_dir: "{{ (traefik_restore_payload_dirs.files | map(attribute='path') | list | first) | default('') }}"
+
+- name: Fail when payload directory missing
+  ansible.builtin.fail:
+    msg: "Unable to determine payload directory inside restore archive"
+  when: traefik_restore_payload_dir | length == 0
+
+- name: Verify ACME file exists in payload
+  ansible.builtin.stat:
+    path: "{{ traefik_restore_payload_dir }}/acme/{{ traefik_restore_acme_path | basename }}"
+  register: traefik_restore_acme_stat
+
+- name: Fail when ACME file missing in payload
+  ansible.builtin.fail:
+    msg: "ACME state file not found in archive payload"
+  when: not traefik_restore_acme_stat.stat.exists | default(false)
+
+- name: Ensure ACME directory exists
+  ansible.builtin.file:
+    path: "{{ traefik_restore_acme_dir }}"
+    state: directory
+    owner: "{{ traefik_restore_acme_owner }}"
+    group: "{{ traefik_restore_acme_group }}"
+    mode: "{{ traefik_restore_acme_dir_mode }}"
+
+- name: Restore ACME state file
+  ansible.builtin.copy:
+    src: "{{ traefik_restore_payload_dir }}/acme/{{ traefik_restore_acme_path | basename }}"
+    dest: "{{ traefik_restore_acme_path }}"
+    owner: "{{ traefik_restore_acme_owner }}"
+    group: "{{ traefik_restore_acme_group }}"
+    mode: "{{ traefik_restore_acme_mode }}"
+    remote_src: true
+
+- name: Cleanup staging directory
+  ansible.builtin.file:
+    path: "{{ traefik_restore_staging_dir }}"
+    state: absent
+
+- name: Report restore completion
+  ansible.builtin.debug:
+    msg: "Traefik ACME restore complete from {{ traefik_restore_selected_archive }}"

@@ -1,0 +1,90 @@
+---
+- name: Validate required paths
+  ansible.builtin.assert:
+    that:
+      - traefik_backup_acme_path | length > 0
+      - traefik_backup_root | length > 0
+    fail_msg: "traefik_backup_acme_path and traefik_backup_root must be set"
+
+- name: Check ACME state file exists
+  ansible.builtin.stat:
+    path: "{{ traefik_backup_acme_path }}"
+  register: traefik_backup_acme_stat
+
+- name: Fail when ACME state file is missing
+  ansible.builtin.fail:
+    msg: "Traefik ACME state file not found: {{ traefik_backup_acme_path }}"
+  when: not traefik_backup_acme_stat.stat.exists | default(false)
+
+- name: Set backup timestamp
+  ansible.builtin.set_fact:
+    traefik_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+- name: Compute backup paths
+  ansible.builtin.set_fact:
+    traefik_backup_dir: "{{ traefik_backup_root }}/{{ traefik_backup_prefix }}-{{ traefik_backup_timestamp }}"
+    traefik_backup_archive: "{{ traefik_backup_root }}/{{ traefik_backup_prefix }}-{{ traefik_backup_timestamp }}.{{ traefik_backup_archive_extension }}"
+
+- name: Ensure backup directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ traefik_backup_owner }}"
+    group: "{{ traefik_backup_group }}"
+    mode: "{{ traefik_backup_dir_mode }}"
+  loop:
+    - "{{ traefik_backup_root }}"
+    - "{{ traefik_backup_dir }}"
+    - "{{ traefik_backup_dir }}/acme"
+
+- name: Copy ACME state file
+  ansible.builtin.copy:
+    src: "{{ traefik_backup_acme_path }}"
+    dest: "{{ traefik_backup_dir }}/acme/{{ traefik_backup_acme_path | basename }}"
+    owner: "{{ traefik_backup_owner }}"
+    group: "{{ traefik_backup_group }}"
+    mode: "{{ traefik_backup_file_mode }}"
+    remote_src: true
+
+- name: Write backup metadata
+  ansible.builtin.copy:
+    dest: "{{ traefik_backup_dir }}/metadata.yml"
+    owner: "{{ traefik_backup_owner }}"
+    group: "{{ traefik_backup_group }}"
+    mode: "{{ traefik_backup_file_mode }}"
+    content: |
+      timestamp: {{ traefik_backup_timestamp }}
+      acme_path: {{ traefik_backup_acme_path }}
+
+- name: Create backup archive
+  ansible.builtin.archive:
+    path: "{{ traefik_backup_dir }}"
+    dest: "{{ traefik_backup_archive }}"
+    format: "{{ traefik_backup_archive_format }}"
+  when: traefik_backup_create_archive | bool
+
+- name: Ensure local backup directory exists
+  ansible.builtin.file:
+    path: "{{ traefik_backup_local_dir }}"
+    state: directory
+    mode: "{{ traefik_backup_local_dir_mode }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: traefik_backup_fetch_local | bool
+
+- name: Fetch backup archive
+  ansible.builtin.fetch:
+    src: "{{ traefik_backup_archive }}"
+    dest: "{{ traefik_backup_local_dir }}/"
+    flat: true
+  run_once: true
+  when:
+    - traefik_backup_fetch_local | bool
+    - traefik_backup_create_archive | bool
+
+- name: Report backup completion
+  ansible.builtin.debug:
+    msg: |
+      Traefik ACME backup complete: {{ traefik_backup_archive }}
+      Local copy: {{ traefik_backup_fetch_local | ternary(traefik_backup_local_dir ~ '/' ~ (traefik_backup_archive | basename), 'not fetched') }}

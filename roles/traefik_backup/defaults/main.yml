@@ -1,0 +1,14 @@
+---
+traefik_backup_root: "{{ backup_root_prefix | default('/opt/backups') }}/traefik"
+traefik_backup_prefix: manual
+traefik_backup_acme_path: /etc/traefik/acme/acme.json
+traefik_backup_owner: root
+traefik_backup_group: root
+traefik_backup_file_mode: "0600"
+traefik_backup_dir_mode: "0700"
+traefik_backup_archive_format: gz  # produces .tar.gz
+traefik_backup_archive_extension: tar.gz
+traefik_backup_create_archive: true
+traefik_backup_fetch_local: true
+traefik_backup_local_dir: "{{ lookup('env', 'HOME') }}/backups/traefik"
+traefik_backup_local_dir_mode: "0700"
