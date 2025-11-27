@@ -16,7 +16,7 @@ http:
 
     # Local access without HTTPS
     homeassistant-local:
-      rule: "Host(`{{ homeassistant_traefik_local_hostname }}`, `{{ ansible_default_ipv4.address | default('192.168.178.50') }}`)"
+      rule: "Host(`{{ homeassistant_traefik_local_hostname }}`) || Host(`{{ ansible_default_ipv4.address | default('192.168.178.50') }}`)"
       service: homeassistant
       middlewares:
 {% for middleware in homeassistant_traefik_local_middlewares %}
