@@ -83,7 +83,7 @@ See `defaults/main.yml` for the full list. Key options:
 
 ### Lessons learned – Paperless outage
 
-Paperless briefly went offline in November 2025 because `PAPERLESS_REDIS` referenced a password while the host Redis instance still allowed unauthenticated connections. The `redis_install` role now validates this situation explicitly: when `redis_install_requirepass_enabled` is `true`, you **must** provide a non-empty password (ideally sourced from SOPS) and the role writes `requirepass` accordingly. The Paperless migration spec (`ops-control/specs/2025-11-08_paperless_ops_library_migration.md`) documents the incident for future reference.
+Paperless briefly went offline in November 2025 because `PAPERLESS_REDIS` referenced a password while the host Redis instance still allowed unauthenticated connections. The `redis_install` role now validates this situation explicitly: when `redis_install_requirepass_enabled` is `true`, you **must** provide a non-empty password (ideally sourced from SOPS) and the role writes `requirepass` accordingly.
 
 ### Migrating an existing passwordless instance
 

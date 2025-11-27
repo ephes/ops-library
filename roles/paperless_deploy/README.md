@@ -1,6 +1,6 @@
 # Paperless Deploy Role
 
-Deploy [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) on bare metal hosts using uv-managed Python, encrypted storage, Redis, and systemd units. The role replaces the legacy monolithic playbook under `infrastructure/services/paperless/deploy` and mirrors the structure described in `ops-control/specs/2025-11-08_paperless_ops_library_migration.md`.
+Deploy [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) on bare metal hosts using uv-managed Python, encrypted storage, Redis, and systemd units.
 
 ## Features
 

@@ -42,4 +42,4 @@ tailscale_backup
 tailscale_restore
 ```
 
-Operations roles provide consistent snapshot/restore tooling that can be composed with deployment/removal roles to rehearse disaster-recovery scenarios. See `specs/2025-11-11_nyxmon_backup_restore.md` for the Nyxmon design notes.
+Operations roles provide consistent snapshot/restore tooling that can be composed with deployment/removal roles to rehearse disaster-recovery scenarios.

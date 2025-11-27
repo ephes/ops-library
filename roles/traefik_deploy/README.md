@@ -201,9 +201,7 @@ Traefik automatically watches this directory and reloads configurations.
 
 ## Dual Router Authentication Pattern
 
-For implementing the dual router pattern (internal vs external authentication), see:
-- `ops-control/specs/2025-10-06_traefik_authentication.md`
-- Example in homelab service configuration
+For implementing the dual router pattern (internal vs external authentication), see the example in homelab service configuration.
 
 ## Architecture Support
 
