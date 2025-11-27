@@ -1,0 +1,13 @@
+# traefik_restore
+
+Restores Traefik ACME state from a backup archive produced by `traefik_backup`.
+
+- Input: latest or specified archive under `/opt/backups/traefik` (or custom root)
+- Restores: `acme.json` to `/etc/traefik/acme/acme.json`
+- Perms: root:root, `0600`; directory created with `0700`
+- Staging: `/tmp/traefik-restore` (cleared after restore)
+
+Key vars:
+- `traefik_restore_archive` (default: `latest`)
+- `traefik_restore_root` (default: `/opt/backups/traefik`)
+- `traefik_restore_acme_path` (default: `/etc/traefik/acme/acme.json`)
