@@ -75,6 +75,15 @@
   when:
     - dns_mode_normalized == 'advanced'
     - dns_split_tailscale_ip | default('') | length > 0
+    - dns_split_tailscale_ip != dns_split_lan_ip
+
+- name: Warn when LAN and Tailscale IPs match (split-DNS skipped)
+  debug:
+    msg: "LAN and Tailscale IPs are identical ({{ dns_split_lan_ip }}). Split-DNS verification skipped."
+  when:
+    - dns_mode_normalized == 'advanced'
+    - dns_split_tailscale_ip | default('') | length > 0
+    - dns_split_tailscale_ip == dns_split_lan_ip
 
 # Test direct Unbound resolution in Advanced Mode
 - name: Test direct Unbound split-DNS (Advanced Mode)

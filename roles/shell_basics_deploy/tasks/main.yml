@@ -33,6 +33,27 @@
   ansible.builtin.set_fact:
     shell_basics_local_bin_dir: "{{ shell_basics_user_home_dir }}/.local/bin"
 
+- name: Check current resolv.conf nameservers
+  ansible.builtin.command: "awk '/^nameserver/ {print $2}' /etc/resolv.conf"
+  register: shell_basics_resolv_conf
+  changed_when: false
+  failed_when: false
+  when: shell_basics_fix_resolv_conf | bool
+
+- name: Ensure fallback resolv.conf when only loopback nameservers present
+  ansible.builtin.copy:
+    dest: /etc/resolv.conf
+    mode: "0644"
+    content: |
+      # Managed by shell_basics_deploy (fallback)
+      {% for ns in shell_basics_resolv_fallback_nameservers %}
+      nameserver {{ ns }}
+      {% endfor %}
+  when:
+    - shell_basics_fix_resolv_conf | bool
+    - shell_basics_resolv_conf is defined
+    - (shell_basics_resolv_conf.stdout_lines | select('match', '^(127\\.|::1)') | list | length) == (shell_basics_resolv_conf.stdout_lines | length)
+
 - name: Refresh apt cache
   ansible.builtin.apt:
     update_cache: true

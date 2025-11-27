@@ -50,6 +50,11 @@ shell_basics_chezmoi_bin_path: "{{ shell_basics_chezmoi_install_dir }}/chezmoi"
 
 # Update apt cache before installing packages
 shell_basics_apt_cache_valid_time: 3600
+shell_basics_fix_resolv_conf: true
+shell_basics_resolv_fallback_nameservers:
+  - 192.168.178.1
+  - 1.1.1.1
+  - 9.9.9.9
 
 # Set default editor via update-alternatives
 shell_basics_set_default_editor: true
