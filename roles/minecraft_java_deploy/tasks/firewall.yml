@@ -1,0 +1,29 @@
+---
+# minecraft_java_deploy - Configure firewall
+
+# Allow game port from allowed networks
+- name: Allow Minecraft game port from allowed networks
+  community.general.ufw:
+    rule: allow
+    port: "{{ minecraft_java_port }}"
+    proto: tcp
+    from_ip: "{{ item }}"
+    comment: "Minecraft Java game port"
+  loop: "{{ minecraft_java_firewall_allowed_networks }}"
+
+# CRITICAL: Block RCON port from ALL external access
+# RCON binds to 0.0.0.0 by default in vanilla Minecraft (no bind config option)
+# We must explicitly deny external access - only localhost can use it
+- name: Block RCON port from external access
+  community.general.ufw:
+    rule: deny
+    port: "{{ minecraft_java_rcon_port }}"
+    proto: tcp
+    comment: "Minecraft RCON - blocked externally, localhost only"
+
+- name: Display firewall configuration
+  ansible.builtin.debug:
+    msg: |
+      Firewall configured:
+      - Game port {{ minecraft_java_port }}/tcp: ALLOWED from {{ minecraft_java_firewall_allowed_networks | join(', ') }}
+      - RCON port {{ minecraft_java_rcon_port }}/tcp: DENIED (localhost only for backups)

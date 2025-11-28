@@ -1,0 +1,96 @@
+---
+# minecraft_java_restore - Restore data from archive
+
+- name: Create temporary extraction directory
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: minecraft_restore_
+  register: temp_dir
+
+- name: Extract archive to temporary directory
+  ansible.builtin.unarchive:
+    src: "{{ minecraft_restore_archive_path }}"
+    dest: "{{ temp_dir.path }}"
+    remote_src: true
+
+- name: Find extracted world directory
+  ansible.builtin.find:
+    paths: "{{ temp_dir.path }}"
+    patterns: "{{ minecraft_java_world_name }}"
+    file_type: directory
+    recurse: true
+  register: extracted_world
+
+- name: Fail if world not found in archive
+  ansible.builtin.fail:
+    msg: "World directory '{{ minecraft_java_world_name }}' not found in archive"
+  when: extracted_world.files | length == 0
+
+- name: Set extracted paths
+  ansible.builtin.set_fact:
+    extracted_base: "{{ extracted_world.files[0].path | dirname }}"
+
+- name: Remove existing world directory
+  ansible.builtin.file:
+    path: "{{ minecraft_java_server_dir }}/{{ minecraft_java_world_name }}"
+    state: absent
+
+- name: Restore world directory
+  ansible.builtin.copy:
+    src: "{{ extracted_base }}/{{ minecraft_java_world_name }}/"
+    dest: "{{ minecraft_java_server_dir }}/{{ minecraft_java_world_name }}/"
+    owner: "{{ minecraft_java_user }}"
+    group: "{{ minecraft_java_group }}"
+    mode: preserve
+    remote_src: true
+
+- name: Check for server.properties in archive
+  ansible.builtin.stat:
+    path: "{{ extracted_base }}/server.properties"
+  register: extracted_properties
+
+- name: Restore server.properties (if present and different)
+  ansible.builtin.copy:
+    src: "{{ extracted_base }}/server.properties"
+    dest: "{{ minecraft_java_server_dir }}/server.properties"
+    owner: "{{ minecraft_java_user }}"
+    group: "{{ minecraft_java_group }}"
+    mode: "0644"
+    remote_src: true
+    backup: true
+  when: extracted_properties.stat.exists
+
+- name: Restore additional files if present
+  ansible.builtin.copy:
+    src: "{{ extracted_base }}/{{ item }}"
+    dest: "{{ minecraft_java_server_dir }}/{{ item }}"
+    owner: "{{ minecraft_java_user }}"
+    group: "{{ minecraft_java_group }}"
+    mode: "0644"
+    remote_src: true
+  loop:
+    - ops.json
+    - whitelist.json
+    - banned-ips.json
+    - banned-players.json
+  ignore_errors: true
+
+- name: Fix ownership recursively
+  ansible.builtin.file:
+    path: "{{ minecraft_java_server_dir }}"
+    owner: "{{ minecraft_java_user }}"
+    group: "{{ minecraft_java_group }}"
+    recurse: true
+
+- name: Clean up temporary directory
+  ansible.builtin.file:
+    path: "{{ temp_dir.path }}"
+    state: absent
+
+- name: Display restore summary
+  ansible.builtin.debug:
+    msg: |
+      Restore complete!
+      Archive: {{ minecraft_restore_archive_path | basename }}
+      World: {{ minecraft_java_world_name }}
+      Target: {{ minecraft_java_server_dir }}

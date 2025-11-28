@@ -1,0 +1,31 @@
+---
+# minecraft_java_deploy - Main task orchestration
+
+- name: Validate required configuration
+  ansible.builtin.include_tasks: validate.yml
+
+- name: Setup user and directories
+  ansible.builtin.include_tasks: user.yml
+
+- name: Install Java and mcrcon
+  ansible.builtin.include_tasks: install.yml
+
+- name: Download Minecraft server
+  ansible.builtin.include_tasks: download.yml
+
+- name: Configure server
+  ansible.builtin.include_tasks: configure.yml
+
+- name: Setup cron backup
+  ansible.builtin.include_tasks: cron_backup.yml
+  when: minecraft_java_cron_backup_enabled
+
+- name: Setup systemd service
+  ansible.builtin.include_tasks: service.yml
+
+- name: Configure firewall
+  ansible.builtin.include_tasks: firewall.yml
+  when: minecraft_java_firewall_enabled
+
+- name: Verify deployment
+  ansible.builtin.include_tasks: verify.yml

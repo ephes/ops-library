@@ -1,0 +1,34 @@
+---
+# minecraft_java_restore - Start service after restore
+
+- name: Check if service exists
+  ansible.builtin.stat:
+    path: /etc/systemd/system/{{ minecraft_java_service_name }}.service
+  register: service_file
+
+- name: Start minecraft service
+  ansible.builtin.systemd:
+    name: "{{ minecraft_java_service_name }}"
+    state: started
+    enabled: true
+  when: service_file.stat.exists
+
+- name: Wait for server to start
+  ansible.builtin.wait_for:
+    port: "{{ minecraft_java_port }}"
+    host: 127.0.0.1
+    state: started
+    timeout: 60
+    delay: 5
+  when: service_file.stat.exists
+
+- name: Display start status
+  ansible.builtin.debug:
+    msg: |
+      Service {{ 'started successfully' if service_file.stat.exists else 'not found (run deploy first)' }}
+
+      {% if service_file.stat.exists %}
+      The Minecraft server should now be accessible.
+      Check status: systemctl status {{ minecraft_java_service_name }}
+      Check logs: journalctl -u {{ minecraft_java_service_name }} -f
+      {% endif %}

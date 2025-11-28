@@ -1,0 +1,39 @@
+---
+# minecraft_java_restore - Restore from backup
+
+- name: Resolve archive path
+  ansible.builtin.include_tasks: resolve_archive.yml
+
+- name: Display restore plan
+  ansible.builtin.debug:
+    msg: |
+      ================================================
+      Minecraft Restore Plan
+      ================================================
+      Archive: {{ minecraft_restore_archive_path }}
+      Dry run: {{ minecraft_java_restore_dry_run }}
+      Target: {{ minecraft_java_server_dir }}
+      ================================================
+
+- name: Stop service
+  ansible.builtin.include_tasks: stop_service.yml
+  when: not minecraft_java_restore_dry_run
+
+- name: Restore data
+  ansible.builtin.include_tasks: restore_data.yml
+  when: not minecraft_java_restore_dry_run
+
+- name: Start service
+  ansible.builtin.include_tasks: start_service.yml
+  when: not minecraft_java_restore_dry_run
+
+- name: Dry run summary
+  ansible.builtin.debug:
+    msg: |
+      DRY RUN COMPLETE - No changes made
+
+      Would restore from: {{ minecraft_restore_archive_path }}
+      To: {{ minecraft_java_server_dir }}
+
+      Run without dry_run=true to perform actual restore.
+  when: minecraft_java_restore_dry_run

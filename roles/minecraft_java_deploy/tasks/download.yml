@@ -1,0 +1,17 @@
+---
+# minecraft_java_deploy - Download Minecraft server JAR
+
+- name: Download Minecraft server JAR with checksum verification
+  ansible.builtin.get_url:
+    url: "{{ minecraft_java_server_jar_url }}"
+    dest: "{{ minecraft_java_server_dir }}/server.jar"
+    checksum: "sha256:{{ minecraft_java_server_jar_sha256 }}"
+    owner: "{{ minecraft_java_user }}"
+    group: "{{ minecraft_java_group }}"
+    mode: "0644"
+    timeout: 120
+  register: jar_download
+
+- name: Display download result
+  ansible.builtin.debug:
+    msg: "Server JAR {{ 'downloaded' if jar_download.changed else 'already present and verified' }}"

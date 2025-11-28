@@ -1,0 +1,42 @@
+---
+# minecraft_java_deploy - Setup user and directories
+
+- name: Create minecraft group
+  ansible.builtin.group:
+    name: "{{ minecraft_java_group }}"
+    state: present
+    system: false
+
+- name: Create minecraft user
+  ansible.builtin.user:
+    name: "{{ minecraft_java_user }}"
+    group: "{{ minecraft_java_group }}"
+    home: "{{ minecraft_java_home }}"
+    shell: /bin/bash
+    create_home: true
+    system: false
+    state: present
+
+- name: Create server directory
+  ansible.builtin.file:
+    path: "{{ minecraft_java_server_dir }}"
+    state: directory
+    owner: "{{ minecraft_java_user }}"
+    group: "{{ minecraft_java_group }}"
+    mode: "0755"
+
+- name: Create backup directory
+  ansible.builtin.file:
+    path: "{{ minecraft_java_backup_dir }}"
+    state: directory
+    owner: "{{ minecraft_java_user }}"
+    group: "{{ minecraft_java_group }}"
+    mode: "0755"
+
+- name: Create logs directory
+  ansible.builtin.file:
+    path: "{{ minecraft_java_server_dir }}/logs"
+    state: directory
+    owner: "{{ minecraft_java_user }}"
+    group: "{{ minecraft_java_group }}"
+    mode: "0755"

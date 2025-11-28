@@ -1,0 +1,23 @@
+---
+# minecraft_java_deploy - Setup systemd service
+
+- name: Create systemd service file
+  ansible.builtin.template:
+    src: minecraft-java.service.j2
+    dest: /etc/systemd/system/{{ minecraft_java_service_name }}.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart minecraft-java
+
+- name: Ensure systemd is reloaded
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start minecraft-java service
+  ansible.builtin.systemd:
+    name: "{{ minecraft_java_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true

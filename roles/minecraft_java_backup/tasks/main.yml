@@ -1,0 +1,169 @@
+---
+# minecraft_java_backup - Tier 2 disaster recovery backup
+
+- name: Set backup timestamp
+  ansible.builtin.set_fact:
+    minecraft_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+- name: Set backup filename
+  ansible.builtin.set_fact:
+    minecraft_backup_filename: "{{ minecraft_java_backup_prefix }}-{{ minecraft_backup_timestamp }}.tar.gz"
+    minecraft_backup_fullpath: "{{ minecraft_java_backup_root }}/{{ minecraft_java_backup_prefix }}-{{ minecraft_backup_timestamp }}.tar.gz"
+
+- name: Create backup directory
+  ansible.builtin.file:
+    path: "{{ minecraft_java_backup_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Check if server is running
+  ansible.builtin.shell: pgrep -f "server.jar" || true
+  register: server_running
+  changed_when: false
+
+- name: Set server running fact
+  ansible.builtin.set_fact:
+    minecraft_server_is_running: "{{ server_running.stdout | length > 0 }}"
+
+# Initialize saves_disabled tracking
+- name: Initialize saves disabled flag
+  ansible.builtin.set_fact:
+    minecraft_saves_disabled: false
+
+# Main backup block with always to ensure save-on is called
+- name: Perform backup with save coordination
+  block:
+    # Save coordination - only if server is running
+    - name: Disable auto-save
+      ansible.builtin.shell: |
+        /usr/local/bin/mcrcon -H 127.0.0.1 -P {{ minecraft_java_rcon_port }} -p "{{ minecraft_java_rcon_password }}" "save-off"
+      register: save_off_result
+      changed_when: true
+      when: minecraft_server_is_running
+
+    - name: Mark saves as disabled
+      ansible.builtin.set_fact:
+        minecraft_saves_disabled: true
+      when: minecraft_server_is_running
+
+    - name: Flush world to disk
+      ansible.builtin.shell: |
+        timeout 30 /usr/local/bin/mcrcon -H 127.0.0.1 -P {{ minecraft_java_rcon_port }} -p "{{ minecraft_java_rcon_password }}" "save-all"
+      register: save_all_result
+      changed_when: true
+      when: minecraft_server_is_running
+
+    - name: Verify save completed
+      ansible.builtin.assert:
+        that:
+          - "'saved' in save_all_result.stdout | lower or 'save' in save_all_result.stdout | lower"
+        fail_msg: "save-all did not confirm completion. Output: {{ save_all_result.stdout }}"
+      when: minecraft_server_is_running
+
+    - name: Wait for disk writes
+      ansible.builtin.pause:
+        seconds: 2
+      when: minecraft_server_is_running
+
+    # Archive creation
+    - name: Check source paths exist
+      ansible.builtin.stat:
+        path: "{{ minecraft_java_server_dir }}/{{ minecraft_java_world_name }}"
+      register: world_dir
+
+    - name: Fail if world directory doesn't exist
+      ansible.builtin.fail:
+        msg: "World directory not found: {{ minecraft_java_server_dir }}/{{ minecraft_java_world_name }}"
+      when: not world_dir.stat.exists
+
+    - name: Check optional files exist
+      ansible.builtin.stat:
+        path: "{{ minecraft_java_server_dir }}/{{ item }}"
+      loop:
+        - ops.json
+        - whitelist.json
+        - banned-ips.json
+        - banned-players.json
+      register: optional_files_stat
+
+    - name: Build list of files to backup
+      ansible.builtin.set_fact:
+        minecraft_backup_paths: >-
+          {{
+            [
+              minecraft_java_server_dir + '/' + minecraft_java_world_name,
+              minecraft_java_server_dir + '/server.properties'
+            ]
+            + (optional_files_stat.results | selectattr('stat.exists', 'equalto', true) | map(attribute='item') | map('regex_replace', '^', minecraft_java_server_dir + '/') | list)
+          }}
+
+    - name: Create backup archive
+      ansible.builtin.archive:
+        path: "{{ minecraft_backup_paths }}"
+        dest: "{{ minecraft_backup_fullpath }}"
+        format: gz
+        owner: root
+        group: root
+        mode: "0644"
+      register: archive_result
+
+  always:
+    # CRITICAL: Always re-enable saves if they were disabled
+    - name: Re-enable auto-save
+      ansible.builtin.shell: |
+        /usr/local/bin/mcrcon -H 127.0.0.1 -P {{ minecraft_java_rcon_port }} -p "{{ minecraft_java_rcon_password }}" "save-on"
+      when: minecraft_saves_disabled | default(false)
+      changed_when: true
+      ignore_errors: true
+      register: save_on_result
+
+    - name: Warn if save-on failed
+      ansible.builtin.debug:
+        msg: "WARNING: Failed to re-enable auto-save! Manual intervention may be required."
+      when: save_on_result is defined and save_on_result.failed | default(false)
+
+- name: Get backup file size
+  ansible.builtin.stat:
+    path: "{{ minecraft_backup_fullpath }}"
+  register: backup_stat
+
+- name: Display backup info
+  ansible.builtin.debug:
+    msg: |
+      Backup created: {{ minecraft_backup_fullpath }}
+      Size: {{ (backup_stat.stat.size / 1048576) | round(2) }} MB
+      Server was running: {{ minecraft_server_is_running }}
+
+- name: List existing backups
+  ansible.builtin.find:
+    paths: "{{ minecraft_java_backup_root }}"
+    patterns: "*.tar.gz"
+    file_type: file
+  register: existing_backups
+
+- name: Sort backups by modification time
+  ansible.builtin.set_fact:
+    sorted_backups: "{{ existing_backups.files | sort(attribute='mtime', reverse=true) }}"
+
+- name: Identify backups to remove (keep {{ minecraft_java_backup_retention_count }} most recent)
+  ansible.builtin.set_fact:
+    backups_to_remove: "{{ sorted_backups[minecraft_java_backup_retention_count:] }}"
+  when: sorted_backups | length > minecraft_java_backup_retention_count
+
+- name: Remove old backups
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ backups_to_remove | default([]) }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when: backups_to_remove is defined and backups_to_remove | length > 0
+
+- name: Display retention info
+  ansible.builtin.debug:
+    msg: |
+      Retention: keeping {{ minecraft_java_backup_retention_count }} most recent backups
+      Current backup count: {{ sorted_backups | length }}
+      Removed: {{ backups_to_remove | default([]) | length }} old backup(s)

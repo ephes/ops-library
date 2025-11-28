@@ -20,6 +20,8 @@ Available runbooks:
 - [MinIO Restore](https://github.com/ephes/ops-library/blob/main/roles/minio_restore/README.md)
 - [Tailscale Backup](https://github.com/ephes/ops-library/blob/main/roles/tailscale_backup/README.md)
 - [Tailscale Restore](https://github.com/ephes/ops-library/blob/main/roles/tailscale_restore/README.md)
+- [Minecraft Java Backup](https://github.com/ephes/ops-library/blob/main/roles/minecraft_java_backup/README.md)
+- [Minecraft Java Restore](https://github.com/ephes/ops-library/blob/main/roles/minecraft_java_restore/README.md)
 
 ```{toctree}
 :maxdepth: 1
@@ -40,6 +42,8 @@ minio_backup
 minio_restore
 tailscale_backup
 tailscale_restore
+minecraft_java_backup
+minecraft_java_restore
 ```
 
 Operations roles provide consistent snapshot/restore tooling that can be composed with deployment/removal roles to rehearse disaster-recovery scenarios.

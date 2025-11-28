@@ -1,0 +1,68 @@
+---
+# minecraft_java_deploy - Install Java and mcrcon
+
+- name: Install OpenJDK and build dependencies
+  ansible.builtin.apt:
+    name:
+      - "openjdk-{{ minecraft_java_version }}-jre-headless"
+      - build-essential
+      - git
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Check if mcrcon is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/mcrcon
+  register: mcrcon_installed
+
+- name: Clone mcrcon repository
+  ansible.builtin.git:
+    repo: https://github.com/Tiiffi/mcrcon.git
+    dest: /tmp/mcrcon
+    version: v0.7.2
+    force: true
+  when: not mcrcon_installed.stat.exists
+
+- name: Build mcrcon
+  ansible.builtin.shell: |
+    cd /tmp/mcrcon
+    make clean || true
+    make
+  changed_when: true
+  when: not mcrcon_installed.stat.exists
+
+- name: Install mcrcon
+  ansible.builtin.copy:
+    src: /tmp/mcrcon/mcrcon
+    dest: /usr/local/bin/mcrcon
+    owner: root
+    group: root
+    mode: "0755"
+    remote_src: true
+  when: not mcrcon_installed.stat.exists
+
+- name: Clean up mcrcon build directory
+  ansible.builtin.file:
+    path: /tmp/mcrcon
+    state: absent
+  when: not mcrcon_installed.stat.exists
+
+- name: Verify Java installation
+  ansible.builtin.command: java -version
+  register: java_version_check
+  changed_when: false
+
+- name: Display Java version
+  ansible.builtin.debug:
+    msg: "Java installed: {{ java_version_check.stderr_lines[0] | default('unknown') }}"
+
+- name: Verify mcrcon installation
+  ansible.builtin.command: mcrcon -v
+  register: mcrcon_version_check
+  changed_when: false
+  failed_when: false
+
+- name: Display mcrcon version
+  ansible.builtin.debug:
+    msg: "mcrcon installed: {{ mcrcon_version_check.stdout | default(mcrcon_version_check.stderr) | default('unknown') }}"

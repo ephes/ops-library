@@ -1,0 +1,20 @@
+---
+# minecraft_java_backup defaults
+# Tier 2 backup - disaster recovery (stored in /opt/backups)
+
+# Backup settings
+minecraft_java_backup_prefix: "manual"
+minecraft_java_backup_root: /opt/backups/minecraft-java
+minecraft_java_backup_retention_count: 10
+
+# Server settings (should match deploy role)
+minecraft_java_user: minecraft
+minecraft_java_group: minecraft
+minecraft_java_home: /home/minecraft
+minecraft_java_server_dir: "{{ minecraft_java_home }}/server"
+minecraft_java_world_name: world
+minecraft_java_service_name: minecraft-java
+
+# RCON settings for save coordination
+minecraft_java_rcon_port: 25575
+minecraft_java_rcon_password: "CHANGEME"

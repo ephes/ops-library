@@ -1,0 +1,92 @@
+---
+# minecraft_java_deploy defaults
+# All variables with safe defaults or CHANGEME placeholders for required secrets
+
+# =============================================================================
+# User & Paths
+# =============================================================================
+minecraft_java_user: minecraft
+minecraft_java_group: minecraft
+minecraft_java_home: /home/minecraft
+minecraft_java_server_dir: "{{ minecraft_java_home }}/server"
+minecraft_java_backup_dir: "{{ minecraft_java_home }}/backups"
+
+# =============================================================================
+# Java Runtime
+# =============================================================================
+minecraft_java_version: "21"
+minecraft_java_memory_min: 2G
+minecraft_java_memory_max: 4G
+minecraft_java_extra_args: "-XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions -XX:+DisableExplicitGC -XX:+AlwaysPreTouch -XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 -XX:G1HeapRegionSize=8M -XX:G1ReservePercent=20 -XX:G1HeapWastePercent=5 -XX:G1MixedGCCountTarget=4 -XX:InitiatingHeapOccupancyPercent=15 -XX:G1MixedGCLiveThresholdPercent=90 -XX:G1RSetUpdatingPauseTimePercent=5 -XX:SurvivorRatio=32 -XX:+PerfDisableSharedMem -XX:MaxTenuringThreshold=1"
+
+# =============================================================================
+# Server Download (REQUIRED - must be set in ops-control)
+# =============================================================================
+# Get URL and SHA256 from https://mcversions.net or https://minecraft.net/en-us/download/server
+minecraft_java_server_jar_url: "CHANGEME"
+minecraft_java_server_jar_sha256: "CHANGEME"
+
+# =============================================================================
+# Server Configuration
+# =============================================================================
+minecraft_java_port: 25565
+minecraft_java_difficulty: normal
+minecraft_java_gamemode: survival
+minecraft_java_max_players: 20
+minecraft_java_pvp: true
+minecraft_java_world_name: world
+minecraft_java_seed: ""
+minecraft_java_motd: "A Minecraft Server"
+minecraft_java_online_mode: true
+minecraft_java_view_distance: 10
+minecraft_java_simulation_distance: 10
+minecraft_java_spawn_protection: 16
+minecraft_java_allow_flight: false
+minecraft_java_allow_nether: true
+minecraft_java_generate_structures: true
+minecraft_java_max_world_size: 29999984
+minecraft_java_level_type: "minecraft:normal"
+
+# =============================================================================
+# Whitelist & Operators
+# =============================================================================
+minecraft_java_whitelist_enabled: false
+minecraft_java_whitelist_players: []
+minecraft_java_ops: []
+
+# =============================================================================
+# EULA (REQUIRED - must be "true" to accept Minecraft EULA)
+# =============================================================================
+minecraft_java_eula_agreed: "CHANGEME"
+
+# =============================================================================
+# RCON (for backup coordination)
+# =============================================================================
+minecraft_java_rcon_enabled: true
+minecraft_java_rcon_port: 25575
+minecraft_java_rcon_password: "CHANGEME"
+
+# =============================================================================
+# Tier 1 Backup (on-server cron)
+# =============================================================================
+minecraft_java_cron_backup_enabled: true
+minecraft_java_cron_backup_retention_minutes: 1440  # 24 hours
+
+# =============================================================================
+# Tier 2 Backup (ops-library backup role)
+# =============================================================================
+minecraft_java_backup_retention_count: 10
+
+# =============================================================================
+# Firewall
+# =============================================================================
+minecraft_java_firewall_enabled: true
+minecraft_java_firewall_allowed_networks:
+  - "192.168.0.0/16"
+  - "10.0.0.0/8"
+  - "100.64.0.0/10"  # Tailscale
+
+# =============================================================================
+# Service
+# =============================================================================
+minecraft_java_service_name: minecraft-java

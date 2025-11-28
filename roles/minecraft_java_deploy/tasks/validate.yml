@@ -1,0 +1,63 @@
+---
+# minecraft_java_deploy - Validate required configuration
+
+- name: Validate EULA agreement
+  ansible.builtin.assert:
+    that:
+      - minecraft_java_eula_agreed is defined
+      - minecraft_java_eula_agreed | string | lower == 'true'
+    fail_msg: |
+      EULA NOT ACCEPTED!
+
+      To deploy Minecraft Java Edition, you must accept the Minecraft EULA.
+      Read the EULA at: https://aka.ms/MinecraftEULA
+
+      Set minecraft_java_eula_agreed: "true" in your playbook variables.
+
+- name: Validate server JAR URL
+  ansible.builtin.assert:
+    that:
+      - minecraft_java_server_jar_url is defined
+      - minecraft_java_server_jar_url != 'CHANGEME'
+      - minecraft_java_server_jar_url | length > 0
+    fail_msg: |
+      Server JAR URL not configured!
+
+      Set minecraft_java_server_jar_url to the download URL for server.jar
+      Get it from: https://www.minecraft.net/en-us/download/server
+      Or: https://mcversions.net
+
+- name: Validate server JAR SHA256 checksum
+  ansible.builtin.assert:
+    that:
+      - minecraft_java_server_jar_sha256 is defined
+      - minecraft_java_server_jar_sha256 != 'CHANGEME'
+      - minecraft_java_server_jar_sha256 | length >= 64
+    fail_msg: |
+      Server JAR SHA256 checksum not configured!
+
+      Set minecraft_java_server_jar_sha256 to the SHA256 hash of server.jar
+      Get it from: https://mcversions.net (shows checksums for each version)
+
+      This is REQUIRED to verify download integrity and prevent corrupted/poisoned downloads.
+
+- name: Validate RCON password
+  ansible.builtin.assert:
+    that:
+      - minecraft_java_rcon_password is defined
+      - minecraft_java_rcon_password != 'CHANGEME'
+      - minecraft_java_rcon_password | length >= 8
+    fail_msg: |
+      RCON password not configured!
+
+      Set minecraft_java_rcon_password to a random password (at least 8 characters).
+      RCON is used for backup coordination (save-off/save-all/save-on).
+
+      Generate one with: openssl rand -base64 24
+
+- name: Validate memory settings
+  ansible.builtin.assert:
+    that:
+      - minecraft_java_memory_min is defined
+      - minecraft_java_memory_max is defined
+    fail_msg: "Memory settings (minecraft_java_memory_min, minecraft_java_memory_max) must be defined"

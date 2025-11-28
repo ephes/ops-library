@@ -1,0 +1,26 @@
+---
+# minecraft_java_restore - Stop service before restore
+
+- name: Check if service exists
+  ansible.builtin.systemd:
+    name: "{{ minecraft_java_service_name }}"
+  register: service_status
+  ignore_errors: true
+
+- name: Stop minecraft service
+  ansible.builtin.systemd:
+    name: "{{ minecraft_java_service_name }}"
+    state: stopped
+  when: service_status.status is defined and service_status.status.ActiveState == 'active'
+
+- name: Wait for service to stop
+  ansible.builtin.wait_for:
+    path: /proc/{{ item }}
+    state: absent
+    timeout: 30
+  loop: "{{ ansible_facts['pids'] | default([]) }}"
+  when: false  # Skip this, systemd handles it
+
+- name: Display stop status
+  ansible.builtin.debug:
+    msg: "Service {{ 'stopped' if service_status.status is defined else 'not running' }}"

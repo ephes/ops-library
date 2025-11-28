@@ -1,0 +1,51 @@
+---
+# minecraft_java_deploy - Configure server
+
+- name: Create server.properties
+  ansible.builtin.template:
+    src: server.properties.j2
+    dest: "{{ minecraft_java_server_dir }}/server.properties"
+    owner: "{{ minecraft_java_user }}"
+    group: "{{ minecraft_java_group }}"
+    mode: "0644"
+  notify: restart minecraft-java
+
+- name: Accept EULA
+  ansible.builtin.copy:
+    content: |
+      # By setting eula=true you are accepting the Minecraft EULA
+      # https://aka.ms/MinecraftEULA
+      eula=true
+    dest: "{{ minecraft_java_server_dir }}/eula.txt"
+    owner: "{{ minecraft_java_user }}"
+    group: "{{ minecraft_java_group }}"
+    mode: "0644"
+
+- name: Create ops.json if operators defined
+  ansible.builtin.template:
+    src: ops.json.j2
+    dest: "{{ minecraft_java_server_dir }}/ops.json"
+    owner: "{{ minecraft_java_user }}"
+    group: "{{ minecraft_java_group }}"
+    mode: "0644"
+  when: minecraft_java_ops | length > 0
+  notify: restart minecraft-java
+
+- name: Create whitelist.json if whitelist enabled
+  ansible.builtin.template:
+    src: whitelist.json.j2
+    dest: "{{ minecraft_java_server_dir }}/whitelist.json"
+    owner: "{{ minecraft_java_user }}"
+    group: "{{ minecraft_java_group }}"
+    mode: "0644"
+  when: minecraft_java_whitelist_enabled
+  notify: restart minecraft-java
+
+- name: Create environment file
+  ansible.builtin.template:
+    src: minecraft-java.env.j2
+    dest: "{{ minecraft_java_home }}/.env"
+    owner: "{{ minecraft_java_user }}"
+    group: "{{ minecraft_java_group }}"
+    mode: "0600"
+  notify: restart minecraft-java

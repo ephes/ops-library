@@ -1,0 +1,70 @@
+---
+# minecraft_java_deploy - Verify deployment
+
+- name: Check service is running
+  ansible.builtin.systemd:
+    name: "{{ minecraft_java_service_name }}"
+  register: service_status
+
+- name: Verify service is active
+  ansible.builtin.assert:
+    that:
+      - service_status.status.ActiveState == 'active'
+    fail_msg: "Minecraft Java service is not running. Check logs with: journalctl -u {{ minecraft_java_service_name }}"
+
+- name: Wait for server to start (up to 60 seconds)
+  ansible.builtin.wait_for:
+    port: "{{ minecraft_java_port }}"
+    host: 127.0.0.1
+    state: started
+    timeout: 60
+    delay: 5
+
+- name: Wait for RCON to be available
+  ansible.builtin.wait_for:
+    port: "{{ minecraft_java_rcon_port }}"
+    host: 127.0.0.1
+    state: started
+    timeout: 60
+    delay: 5
+  when: minecraft_java_rcon_enabled
+
+- name: Test RCON connection
+  ansible.builtin.shell: |
+    mcrcon -H 127.0.0.1 -P {{ minecraft_java_rcon_port }} -p "{{ minecraft_java_rcon_password }}" "list"
+  register: rcon_test
+  changed_when: false
+  failed_when: false
+  when: minecraft_java_rcon_enabled
+
+- name: Display RCON test result
+  ansible.builtin.debug:
+    msg: "RCON test: {{ rcon_test.stdout | default('failed to connect') }}"
+  when: minecraft_java_rcon_enabled
+
+- name: Display deployment summary
+  ansible.builtin.debug:
+    msg: |
+      ================================================
+      Minecraft Java Edition Server Deployed!
+      ================================================
+
+      Server: {{ minecraft_java_motd }}
+      Address: {{ ansible_hostname }}:{{ minecraft_java_port }}
+      Memory: {{ minecraft_java_memory_min }} - {{ minecraft_java_memory_max }}
+      Difficulty: {{ minecraft_java_difficulty }}
+      Game mode: {{ minecraft_java_gamemode }}
+      Max players: {{ minecraft_java_max_players }}
+
+      Service: {{ minecraft_java_service_name }}
+      Status: {{ service_status.status.ActiveState }}
+
+      Backup schedule: Hourly ({{ minecraft_java_backup_dir }})
+      Retention: {{ minecraft_java_cron_backup_retention_minutes }} minutes
+
+      Commands:
+      - Status: systemctl status {{ minecraft_java_service_name }}
+      - Logs: journalctl -u {{ minecraft_java_service_name }} -f
+      - Console: mcrcon -H 127.0.0.1 -P {{ minecraft_java_rcon_port }} -p "PASSWORD" -t
+
+      ================================================

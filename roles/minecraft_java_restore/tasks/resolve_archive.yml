@@ -1,0 +1,57 @@
+---
+# minecraft_java_restore - Resolve archive path
+
+- name: Check if specific archive path provided
+  ansible.builtin.set_fact:
+    minecraft_restore_is_path: "{{ minecraft_java_restore_archive | regex_search('^/') is not none or minecraft_java_restore_archive | regex_search('\\.tar\\.gz$') is not none }}"
+
+- name: Use specific archive path
+  ansible.builtin.set_fact:
+    minecraft_restore_archive_path: "{{ minecraft_java_restore_archive }}"
+  when: minecraft_restore_is_path
+
+- name: Find latest backup
+  when: not minecraft_restore_is_path and minecraft_java_restore_archive == 'latest'
+  block:
+    - name: List available backups
+      ansible.builtin.find:
+        paths: "{{ minecraft_java_backup_root }}"
+        patterns: "*.tar.gz"
+        file_type: file
+      register: available_backups
+
+    - name: Fail if no backups found
+      ansible.builtin.fail:
+        msg: "No backups found in {{ minecraft_java_backup_root }}"
+      when: available_backups.files | length == 0
+
+    - name: Sort backups by modification time
+      ansible.builtin.set_fact:
+        sorted_backups: "{{ available_backups.files | sort(attribute='mtime', reverse=true) }}"
+
+    - name: Select latest backup
+      ansible.builtin.set_fact:
+        minecraft_restore_archive_path: "{{ sorted_backups[0].path }}"
+
+    - name: Display available backups
+      ansible.builtin.debug:
+        msg: |
+          Available backups (newest first):
+          {% for backup in sorted_backups[:5] %}
+          - {{ backup.path | basename }} ({{ (backup.size / 1048576) | round(2) }} MB)
+          {% endfor %}
+          {% if sorted_backups | length > 5 %}
+          ... and {{ sorted_backups | length - 5 }} more
+          {% endif %}
+
+          Selected: {{ minecraft_restore_archive_path | basename }}
+
+- name: Verify archive exists
+  ansible.builtin.stat:
+    path: "{{ minecraft_restore_archive_path }}"
+  register: archive_stat
+
+- name: Fail if archive doesn't exist
+  ansible.builtin.fail:
+    msg: "Archive not found: {{ minecraft_restore_archive_path }}"
+  when: not archive_stat.stat.exists

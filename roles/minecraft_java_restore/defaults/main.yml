@@ -1,0 +1,16 @@
+---
+# minecraft_java_restore defaults
+
+# Restore settings
+minecraft_java_restore_archive: "latest"
+minecraft_java_restore_dry_run: false
+minecraft_java_backup_root: /opt/backups/minecraft-java
+
+# Server settings (should match deploy role)
+minecraft_java_user: minecraft
+minecraft_java_group: minecraft
+minecraft_java_home: /home/minecraft
+minecraft_java_server_dir: "{{ minecraft_java_home }}/server"
+minecraft_java_world_name: world
+minecraft_java_service_name: minecraft-java
+minecraft_java_port: 25565

@@ -15,6 +15,7 @@ unifi_remove
 paperless_remove
 minio_remove
 tailscale_remove
+minecraft_java_remove
 ```
 
 These roles handle:

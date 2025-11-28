@@ -1,0 +1,29 @@
+---
+# minecraft_java_deploy - Setup cron backup (Tier 1 operational backups)
+
+- name: Create backup script
+  ansible.builtin.template:
+    src: backup-world.sh.j2
+    dest: "{{ minecraft_java_home }}/backup-world.sh"
+    owner: "{{ minecraft_java_user }}"
+    group: "{{ minecraft_java_group }}"
+    mode: "0755"
+
+- name: Setup hourly backup cron job
+  ansible.builtin.cron:
+    name: "Minecraft world backup"
+    minute: "0"
+    hour: "*"
+    job: "{{ minecraft_java_home }}/backup-world.sh >> {{ minecraft_java_home }}/backup.log 2>&1"
+    user: "{{ minecraft_java_user }}"
+    state: present
+
+- name: Create empty backup log file
+  ansible.builtin.file:
+    path: "{{ minecraft_java_home }}/backup.log"
+    state: touch
+    owner: "{{ minecraft_java_user }}"
+    group: "{{ minecraft_java_group }}"
+    mode: "0644"
+    modification_time: preserve
+    access_time: preserve

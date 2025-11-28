@@ -1,0 +1,17 @@
+---
+# minecraft_java_deploy handlers
+
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart minecraft-java
+  ansible.builtin.systemd:
+    name: "{{ minecraft_java_service_name }}"
+    state: restarted
+    enabled: true
+
+- name: stop minecraft-java
+  ansible.builtin.systemd:
+    name: "{{ minecraft_java_service_name }}"
+    state: stopped
