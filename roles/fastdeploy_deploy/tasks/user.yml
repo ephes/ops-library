@@ -56,3 +56,10 @@
     - "{{ fastdeploy_site_path }}/bin"
     - "{{ fastdeploy_site_path }}/logs"
     - "{{ fastdeploy_services_path }}"
+
+- name: Create sudoers file for fastdeploy to run as deploy
+  template:
+    src: sudoers.j2
+    dest: /etc/sudoers.d/fastdeploy
+    mode: "0440"
+    validate: "visudo -cf %s"

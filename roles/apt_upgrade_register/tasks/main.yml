@@ -13,6 +13,14 @@
   debug:
     msg: "Registering apt upgrade service '{{ apt_upgrade_service_name }}' with FastDeploy"
 
+- name: Ensure ansible is installed (required for apt_upgrade execution)
+  when: apt_upgrade_install_ansible
+  apt:
+    name: ansible
+    state: present
+    update_cache: yes
+    cache_valid_time: 3600
+
 - name: Ensure FastDeploy user exists
   user:
     name: "{{ apt_upgrade_fastdeploy_user }}"

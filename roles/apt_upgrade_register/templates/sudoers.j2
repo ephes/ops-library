@@ -2,7 +2,8 @@
 # Allows deploy user to run ansible-playbook with elevated privileges
 
 # Allow deploy user to run ansible-playbook for apt upgrades
-{{ apt_upgrade_deploy_user }} ALL=(ALL) NOPASSWD: {{ apt_upgrade_ansible_path }} {{ apt_upgrade_service_path }}/playbook.yml *
+# Uses env to set ANSIBLE_HOST_KEY_CHECKING=False for remote targets
+{{ apt_upgrade_deploy_user }} ALL=(ALL) NOPASSWD: /usr/bin/env ANSIBLE_HOST_KEY_CHECKING=False {{ apt_upgrade_ansible_path }} {{ apt_upgrade_service_path }}/playbook.yml *
 
 # Allow deploy user to run apt commands (needed by ansible)
 {{ apt_upgrade_deploy_user }} ALL=(ALL) NOPASSWD: /usr/bin/apt-get update

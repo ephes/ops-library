@@ -33,7 +33,12 @@ def run_ansible_playbook():
     output_step("bootstrap", "running", "Starting apt upgrade playbook")
 
     # Build ansible command using configured ansible path
+    # Use sudo to run ansible-playbook as root (sudoers allows this)
+    # Use /usr/bin/env to set ANSIBLE_HOST_KEY_CHECKING=False (sudo resets environment)
     cmd = [
+        "sudo",
+        "/usr/bin/env",
+        "ANSIBLE_HOST_KEY_CHECKING=False",
         "{{ apt_upgrade_ansible_path }}",
         str(playbook_path)
     ]
@@ -45,11 +50,8 @@ def run_ansible_playbook():
         # For remote targets, use proper inventory
         cmd.extend(["-i", "{{ apt_upgrade_target }},"])
 
-    cmd.extend(["--become"])
-
-    # Set environment for ansible
+    # Set environment for ansible (note: sudo resets env, so we pass it as command prefix above)
     env = os.environ.copy()
-    env["ANSIBLE_HOST_KEY_CHECKING"] = "False"
 
     try:
         # Start the ansible process

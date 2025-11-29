@@ -176,6 +176,79 @@ curl -X POST https://deploy.example.com/api/services/apt_upgrade_staging/deploy 
 - The deploy user has minimal privileges
 - All operations are logged for audit purposes
 
+## Troubleshooting
+
+### Common Issues
+
+#### "Permission denied" when deploying
+
+The execution chain requires multiple sudoers rules:
+
+```
+fastdeploy → sudo -u deploy → deploy.sh → sudo ansible-playbook
+```
+
+Check both sudoers files exist and are valid:
+```bash
+# Check fastdeploy can become deploy
+sudo -l -U fastdeploy
+# Should show: (deploy) NOPASSWD: /home/fastdeploy/site/services/*/deploy.sh *
+
+# Check deploy can run ansible
+sudo -l -U deploy
+# Should show: (ALL) NOPASSWD: /usr/bin/env ANSIBLE_HOST_KEY_CHECKING=False /usr/bin/ansible-playbook ...
+
+# Validate sudoers syntax
+visudo -cf /etc/sudoers.d/fastdeploy
+visudo -cf /etc/sudoers.d/apt_upgrade_<service_name>
+```
+
+#### "Host key verification failed" for remote targets
+
+The `ANSIBLE_HOST_KEY_CHECKING=False` is passed via `env` command. If this fails:
+```bash
+# Test manually
+sudo -u deploy sudo /usr/bin/env ANSIBLE_HOST_KEY_CHECKING=False \
+  /usr/bin/ansible-playbook /home/fastdeploy/site/services/<service>/playbook.yml \
+  -i <target>, -v
+```
+
+#### "Permission denied (publickey)" for remote targets
+
+For remote targets, ensure:
+1. SSH key exists: `ls -la /home/deploy/.ssh/id_ed25519`
+2. Public key is authorized on target: Check `/root/.ssh/authorized_keys` on target
+3. Playbook uses the key: Check `ansible_ssh_private_key_file` in the generated playbook
+
+The registration playbook for remote targets should:
+- Deploy the SSH key pair to the deploy user on FastDeploy server
+- Authorize the public key on the target server (separate play)
+- Add target to known_hosts on FastDeploy server
+
+Example registration playbook structure for remote targets:
+```yaml
+# Play 1: Authorize key on target
+- hosts: target_server
+  tasks:
+    - authorized_key:
+        user: root
+        key: "{{ deploy_ssh_public_key }}"
+
+# Play 2: Register service on FastDeploy server
+- hosts: fastdeploy_server
+  tasks:
+    - known_hosts:
+        name: target.example.com
+        key: "{{ lookup('pipe', 'ssh-keyscan -t ed25519 target.example.com') }}"
+    - include_role:
+        name: local.ops_library.apt_upgrade_register
+```
+
+#### Ansible not found
+
+This role installs ansible via apt by default (`apt_upgrade_install_ansible: true`).
+If ansible is in a venv, set `apt_upgrade_ansible_venv` to the venv path.
+
 ## Changelog
 
 - **1.0.0** (2024-09-22): Initial release with SSH key management

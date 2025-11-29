@@ -41,3 +41,7 @@ apt_upgrade_reboot_if_required: false
 # FastDeploy integration
 apt_upgrade_fastdeploy_enabled: true
 apt_upgrade_dynamic_steps: true
+
+# Ansible installation
+# Set to true to install ansible via apt (required if not already installed)
+apt_upgrade_install_ansible: true

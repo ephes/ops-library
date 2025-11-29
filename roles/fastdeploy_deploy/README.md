@@ -179,6 +179,44 @@ This role automatically depends on `local.ops_library.postgres_install` to insta
         fastdeploy_traefik_cert_resolver: "internal-ca"
 ```
 
+## Deployment Execution Architecture
+
+When FastDeploy triggers a service deployment, the following execution chain occurs:
+
+```
+FastDeploy Service (runs as: fastdeploy)
+    │
+    ├── sudo -u deploy  (via /etc/sudoers.d/fastdeploy)
+    │       │
+    │       └── /home/fastdeploy/site/services/<service>/deploy.sh
+    │               │
+    │               └── sudo /usr/bin/env ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook ...
+    │                       (via /etc/sudoers.d/apt_upgrade_<service>)
+```
+
+### Key Components
+
+1. **fastdeploy user**: Runs the FastDeploy web service
+2. **deploy user**: Executes deployment scripts with elevated privileges
+3. **Sudoers rules**:
+   - `/etc/sudoers.d/fastdeploy`: Allows `fastdeploy` to run deploy.sh scripts as `deploy`
+   - `/etc/sudoers.d/apt_upgrade_*`: Allows `deploy` to run ansible-playbook as root
+
+### For Remote Targets
+
+When deploying to remote servers (e.g., apt_upgrade_staging):
+- SSH keys are stored in `/home/deploy/.ssh/`
+- The playbook specifies `ansible_ssh_private_key_file` to use these keys
+- The deploy key's public key must be authorized on the target server
+
+### Troubleshooting
+
+If deployments fail, check:
+1. **Sudoers**: `sudo -l -U fastdeploy` and `sudo -l -U deploy`
+2. **SSH keys**: `ls -la /home/deploy/.ssh/`
+3. **SSH connectivity**: `sudo -u deploy ssh -i /home/deploy/.ssh/id_ed25519 root@<target> echo OK`
+4. **Ansible manually**: `sudo -u deploy sudo /usr/bin/env ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook <playbook> -i <host>, -v`
+
 ## Handlers
 
 This role provides the following handlers:
