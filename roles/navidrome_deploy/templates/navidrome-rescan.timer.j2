@@ -1,0 +1,11 @@
+# Managed by Ansible - Navidrome rescan schedule
+[Unit]
+Description=Periodic Navidrome library rescan
+
+[Timer]
+OnCalendar={{ navidrome_rescan_timer_on_calendar }}
+AccuracySec=5m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

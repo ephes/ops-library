@@ -1,0 +1,9 @@
+---
+- name: Render Navidrome configuration
+  ansible.builtin.template:
+    src: navidrome.toml.j2
+    dest: "{{ navidrome_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart navidrome

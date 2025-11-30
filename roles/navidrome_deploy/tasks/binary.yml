@@ -1,0 +1,39 @@
+---
+- name: Define Navidrome download path
+  ansible.builtin.set_fact:
+    navidrome_download_path: "/tmp/navidrome_{{ navidrome_version }}_{{ navidrome_download_arch }}.tar.gz"
+
+- name: Download Navidrome release
+  ansible.builtin.get_url:
+    url: "{{ navidrome_download_url }}"
+    dest: "{{ navidrome_download_path }}"
+    mode: "0644"
+    checksum: "{{ navidrome_download_checksum }}"
+
+- name: Unarchive Navidrome binary
+  ansible.builtin.unarchive:
+    src: "{{ navidrome_download_path }}"
+    dest: "{{ navidrome_install_dir }}"
+    remote_src: true
+    mode: "0755"
+    owner: root
+    group: root
+    extra_opts:
+      - --no-same-owner
+  notify: restart navidrome
+
+- name: Ensure Navidrome binary permissions
+  ansible.builtin.file:
+    path: "{{ navidrome_bin_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Create Navidrome binary symlink
+  ansible.builtin.file:
+    src: "{{ navidrome_bin_path }}"
+    dest: "{{ navidrome_bin_link_path }}"
+    state: link
+    owner: root
+    group: root
+  when: navidrome_create_symlink | bool

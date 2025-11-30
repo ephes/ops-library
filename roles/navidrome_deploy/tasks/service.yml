@@ -1,0 +1,7 @@
+---
+- name: Ensure Navidrome service is enabled and running
+  ansible.builtin.systemd:
+    name: "{{ navidrome_service_name }}"
+    enabled: "{{ navidrome_service_enabled }}"
+    state: "{{ navidrome_service_state }}"
+    daemon_reload: true

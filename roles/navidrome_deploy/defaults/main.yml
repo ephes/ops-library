@@ -1,0 +1,16 @@
+---
+# Navidrome deployment defaults (public safe)
+
+navidrome_deploy_packages:
+  - ca-certificates
+  - curl
+  - tar
+  - apache2-utils  # for htpasswd hashing
+
+navidrome_create_music_dir: true
+navidrome_service_enabled: true
+navidrome_service_state: started
+
+# Optional periodic rescan timer (uses systemd timer to trigger --scan)
+navidrome_rescan_timer_enabled: false
+navidrome_rescan_timer_on_calendar: "hourly"

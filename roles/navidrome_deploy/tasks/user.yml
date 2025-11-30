@@ -1,0 +1,16 @@
+---
+- name: Ensure Navidrome group exists
+  ansible.builtin.group:
+    name: "{{ navidrome_group }}"
+    system: true
+
+- name: Ensure Navidrome user exists
+  ansible.builtin.user:
+    name: "{{ navidrome_user }}"
+    group: "{{ navidrome_group }}"
+    groups: "{{ navidrome_extra_groups }}"
+    append: true
+    home: "{{ navidrome_home }}"
+    create_home: false
+    shell: "{{ navidrome_shell }}"
+    system: true

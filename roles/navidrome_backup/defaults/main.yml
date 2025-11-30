@@ -1,0 +1,7 @@
+---
+# Navidrome backup defaults
+
+navidrome_backup_create_archive: true
+navidrome_backup_include_systemd: true
+navidrome_backup_include_config: true
+navidrome_backup_include_data: true

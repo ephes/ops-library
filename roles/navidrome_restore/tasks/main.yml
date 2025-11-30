@@ -1,0 +1,199 @@
+---
+- name: Validate restore inputs
+  ansible.builtin.assert:
+    that:
+      - navidrome_restore_root | length > 0
+      - navidrome_restore_archive | length > 0
+    fail_msg: "navidrome_restore_root and navidrome_restore_archive are required"
+
+- name: Determine Navidrome archive when set to latest
+  ansible.builtin.find:
+    paths: "{{ navidrome_restore_root }}"
+    patterns: "*.{{ navidrome_backup_archive_extension }}"
+    file_type: file
+  register: navidrome_restore_candidates
+  when: navidrome_restore_archive == "latest"
+
+- name: Select Navidrome archive
+  ansible.builtin.set_fact:
+    navidrome_restore_selected_archive: >-
+      {{ (navidrome_restore_candidates.files | sort(attribute='mtime', reverse=true) | first).path
+         if navidrome_restore_archive == "latest"
+         else (navidrome_restore_archive if navidrome_restore_archive.startswith('/') else navidrome_restore_root ~ '/' ~ navidrome_restore_archive) }}
+
+- name: Fail when no archive is available
+  ansible.builtin.fail:
+    msg: "No Navidrome backup archives found in {{ navidrome_restore_root }}"
+  when:
+    - (navidrome_restore_selected_archive | default('')) | length == 0
+
+- name: Ensure archive exists
+  ansible.builtin.stat:
+    path: "{{ navidrome_restore_selected_archive }}"
+  register: navidrome_restore_selected_stat
+
+- name: Abort on missing archive
+  ansible.builtin.fail:
+    msg: "Navidrome restore archive not found: {{ navidrome_restore_selected_archive }}"
+  when: not navidrome_restore_selected_stat.stat.exists
+
+- name: Reset staging directory
+  ansible.builtin.file:
+    path: "{{ navidrome_restore_staging_dir }}"
+    state: absent
+
+- name: Create staging directory
+  ansible.builtin.file:
+    path: "{{ navidrome_restore_staging_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Unpack Navidrome archive into staging
+  ansible.builtin.unarchive:
+    src: "{{ navidrome_restore_selected_archive }}"
+    dest: "{{ navidrome_restore_staging_dir }}"
+    remote_src: true
+
+- name: Locate extracted payload directory
+  ansible.builtin.find:
+    paths: "{{ navidrome_restore_staging_dir }}"
+    file_type: directory
+    depth: 1
+  register: navidrome_restore_payload_dirs
+
+- name: Set Navidrome payload path
+  ansible.builtin.set_fact:
+    navidrome_restore_payload_dir: "{{ (navidrome_restore_payload_dirs.files | map(attribute='path') | list | first) | default('') }}"
+
+- name: Abort when payload directory missing
+  ansible.builtin.fail:
+    msg: "Unable to locate payload directory inside restore archive"
+  when: navidrome_restore_payload_dir | length == 0
+
+- name: Gather payload content facts
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  register: navidrome_restore_payload_stats
+  loop:
+    - { path: "{{ navidrome_restore_payload_dir }}/data", label: "data" }
+    - { path: "{{ navidrome_restore_payload_dir }}/config/{{ navidrome_config_path | basename }}", label: "config" }
+    - { path: "{{ navidrome_restore_payload_dir }}/systemd/{{ navidrome_service_unit | basename }}", label: "systemd unit" }
+    - { path: "{{ navidrome_restore_payload_dir }}/traefik/{{ navidrome_traefik_config_path | basename }}", label: "traefik config" }
+    - { path: "{{ navidrome_restore_payload_dir }}/logs", label: "logs" }
+  loop_control:
+    label: "{{ item.label }}"
+
+- name: Abort when Navidrome data payload is missing
+  ansible.builtin.fail:
+    msg: "Navidrome data directory missing inside archive: {{ navidrome_restore_payload_dir }}/data"
+  when: not navidrome_restore_payload_stats.results[0].stat.exists
+
+- name: Ensure Navidrome directories exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ navidrome_data_dir }}", owner: "{{ navidrome_user }}", group: "{{ navidrome_group }}", mode: "0750" }
+    - { path: "{{ navidrome_cache_dir }}", owner: "{{ navidrome_user }}", group: "{{ navidrome_group }}", mode: "0750" }
+    - { path: "{{ navidrome_log_dir }}", owner: "{{ navidrome_user }}", group: "{{ navidrome_group }}", mode: "0750" }
+    - { path: "{{ navidrome_config_path | dirname }}", owner: "root", group: "root", mode: "0755" }
+    - { path: "{{ navidrome_traefik_config_path | dirname }}", owner: "root", group: "root", mode: "0755" }
+
+- name: Stop Navidrome before restore
+  ansible.builtin.systemd:
+    name: "{{ navidrome_service_name }}"
+    state: stopped
+  failed_when: false
+
+- name: Restore Navidrome data directory
+  ansible.builtin.command:
+    cmd: >
+      rsync -a --delete "{{ navidrome_restore_payload_dir }}/data/" "{{ navidrome_data_dir }}/"
+  changed_when: true
+
+- name: Restore Navidrome config file
+  ansible.builtin.copy:
+    src: "{{ navidrome_restore_payload_dir }}/config/{{ navidrome_config_path | basename }}"
+    dest: "{{ navidrome_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    remote_src: true
+  when:
+    - navidrome_restore_payload_dir | length > 0
+    - navidrome_restore_payload_stats.results[1].stat.exists
+
+- name: Restore Navidrome systemd unit when present
+  ansible.builtin.copy:
+    src: "{{ navidrome_restore_payload_dir }}/systemd/{{ navidrome_service_unit | basename }}"
+    dest: "{{ navidrome_service_unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+    remote_src: true
+  register: navidrome_restore_unit_copy
+  when: navidrome_restore_payload_stats.results[2].stat.exists
+
+- name: Restore Traefik configuration when present
+  ansible.builtin.copy:
+    src: "{{ navidrome_restore_payload_dir }}/traefik/{{ navidrome_traefik_config_path | basename }}"
+    dest: "{{ navidrome_traefik_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    remote_src: true
+  register: navidrome_restore_traefik_copy
+  when: navidrome_restore_payload_stats.results[3].stat.exists
+
+- name: Restore Navidrome logs when present
+  ansible.builtin.command:
+    cmd: >
+      rsync -a "{{ navidrome_restore_payload_dir }}/logs/" "{{ navidrome_log_dir }}/"
+  changed_when: true
+  when: navidrome_restore_payload_stats.results[4].stat.exists
+
+- name: Reload systemd if unit changed
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: navidrome_restore_unit_copy is defined and navidrome_restore_unit_copy.changed
+
+- name: Ensure Navidrome permissions on data directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ navidrome_user }}"
+    group: "{{ navidrome_group }}"
+    recurse: true
+  loop:
+    - "{{ navidrome_data_dir }}"
+    - "{{ navidrome_cache_dir }}"
+    - "{{ navidrome_log_dir }}"
+
+- name: Start Navidrome service after restore
+  ansible.builtin.systemd:
+    name: "{{ navidrome_service_name }}"
+    enabled: true
+    state: "{{ navidrome_restore_restart | bool | ternary('restarted', 'started') }}"
+    daemon_reload: true
+
+- name: Run full rescan after restore (optional)
+  ansible.builtin.command:
+    argv:
+      - "{{ navidrome_bin_path }}"
+      - --configfile
+      - "{{ navidrome_config_path }}"
+      - scan
+      - --full
+  register: navidrome_restore_rescan_cmd
+  changed_when: navidrome_restore_rescan_cmd.rc == 0
+  when: navidrome_restore_force_full_rescan | bool
+  become_user: "{{ navidrome_user }}"
+
+- name: Cleanup Navidrome restore staging directory
+  ansible.builtin.file:
+    path: "{{ navidrome_restore_staging_dir }}"
+    state: absent
+  when: navidrome_restore_cleanup | bool

@@ -1,0 +1,196 @@
+---
+- name: Capture Navidrome version
+  ansible.builtin.command:
+    argv:
+      - "{{ navidrome_bin_path }}"
+      - --version
+  register: navidrome_version_cmd
+  failed_when: false
+  changed_when: false
+
+- name: Set backup timestamp
+  ansible.builtin.set_fact:
+    navidrome_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+- name: Set backup paths
+  ansible.builtin.set_fact:
+    navidrome_backup_dir: "{{ navidrome_backup_root }}/{{ navidrome_backup_prefix }}-{{ navidrome_backup_timestamp }}"
+    navidrome_backup_archive: "{{ navidrome_backup_root }}/{{ navidrome_backup_prefix }}-{{ navidrome_backup_timestamp }}.{{ navidrome_backup_archive_extension }}"
+
+- name: Ensure backup directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ navidrome_backup_owner }}"
+    group: "{{ navidrome_backup_group }}"
+    mode: "{{ navidrome_backup_dir_mode }}"
+  loop:
+    - "{{ navidrome_backup_root }}"
+    - "{{ navidrome_backup_dir }}"
+    - "{{ navidrome_backup_dir }}/data"
+    - "{{ navidrome_backup_dir }}/config"
+    - "{{ navidrome_backup_dir }}/systemd"
+    - "{{ navidrome_backup_dir }}/traefik"
+    - "{{ navidrome_backup_dir }}/logs"
+
+- name: Verify Navidrome paths
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  register: navidrome_backup_stats
+  loop:
+    - { path: "{{ navidrome_data_dir }}", mandatory: true, label: "Data directory" }
+    - { path: "{{ navidrome_config_path }}", mandatory: true, label: "Config file" }
+    - { path: "{{ navidrome_service_unit }}", mandatory: false, label: "Service unit" }
+    - { path: "{{ navidrome_traefik_config_path }}", mandatory: false, label: "Traefik config" }
+    - { path: "{{ navidrome_log_dir }}", mandatory: false, label: "Log directory" }
+  loop_control:
+    label: "{{ item.label }}"
+
+- name: Abort when required Navidrome paths are missing
+  ansible.builtin.fail:
+    msg: "Required Navidrome path missing: {{ item.item.path }}"
+  when:
+    - item.item.mandatory | bool
+    - not item.stat.exists
+  loop: "{{ navidrome_backup_stats.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: Stop Navidrome service for consistent backup
+  ansible.builtin.systemd:
+    name: "{{ navidrome_service_name }}"
+    state: stopped
+  when: navidrome_backup_stop_service | bool
+
+- name: Sync Navidrome data directory
+  ansible.builtin.command:
+    cmd: >
+      rsync -a{{ ' --delete' if navidrome_backup_use_delete else '' }}
+      "{{ navidrome_data_dir }}/" "{{ navidrome_backup_dir }}/data/"
+  changed_when: true
+  when:
+    - navidrome_backup_include_data | bool
+    - navidrome_backup_stats.results[0].stat.exists
+
+- name: Copy Navidrome config file
+  ansible.builtin.copy:
+    src: "{{ navidrome_config_path }}"
+    dest: "{{ navidrome_backup_dir }}/config/{{ navidrome_config_path | basename }}"
+    owner: "{{ navidrome_backup_owner }}"
+    group: "{{ navidrome_backup_group }}"
+    mode: "{{ navidrome_backup_file_mode }}"
+    remote_src: true
+  when:
+    - navidrome_backup_include_config | bool
+    - navidrome_backup_stats.results[1].stat.exists
+
+- name: Copy Navidrome systemd unit
+  ansible.builtin.copy:
+    src: "{{ navidrome_service_unit }}"
+    dest: "{{ navidrome_backup_dir }}/systemd/{{ navidrome_service_unit | basename }}"
+    owner: "{{ navidrome_backup_owner }}"
+    group: "{{ navidrome_backup_group }}"
+    mode: "{{ navidrome_backup_file_mode }}"
+    remote_src: true
+  when:
+    - navidrome_backup_include_systemd | bool
+    - navidrome_backup_stats.results[2].stat.exists
+
+- name: Copy Traefik dynamic config
+  ansible.builtin.copy:
+    src: "{{ navidrome_traefik_config_path }}"
+    dest: "{{ navidrome_backup_dir }}/traefik/{{ navidrome_traefik_config_path | basename }}"
+    owner: "{{ navidrome_backup_owner }}"
+    group: "{{ navidrome_backup_group }}"
+    mode: "{{ navidrome_backup_file_mode }}"
+    remote_src: true
+  when:
+    - navidrome_backup_include_traefik | bool
+    - navidrome_backup_stats.results[3].stat.exists
+
+- name: Copy Navidrome logs
+  ansible.builtin.command:
+    cmd: >
+      rsync -a "{{ navidrome_log_dir }}/" "{{ navidrome_backup_dir }}/logs/"
+  changed_when: true
+  when:
+    - navidrome_backup_include_logs | bool
+    - navidrome_backup_stats.results[4].stat.exists
+
+- name: Start Navidrome service after backup
+  ansible.builtin.systemd:
+    name: "{{ navidrome_service_name }}"
+    state: started
+    daemon_reload: true
+  when: navidrome_backup_stop_service | bool
+
+- name: Build Navidrome backup manifest
+  ansible.builtin.copy:
+    dest: "{{ navidrome_backup_dir }}/manifest.yml"
+    owner: "{{ navidrome_backup_owner }}"
+    group: "{{ navidrome_backup_group }}"
+    mode: "{{ navidrome_backup_file_mode }}"
+    content: |
+      version: "{{ navidrome_version_cmd.stdout | default('unknown') | trim }}"
+      timestamp: "{{ navidrome_backup_timestamp }}"
+      archive: "{{ navidrome_backup_archive | basename }}"
+      data_dir: "{{ navidrome_data_dir }}"
+      config: "{{ navidrome_config_path }}"
+      service_unit: "{{ navidrome_service_unit }}"
+      traefik_config: "{{ navidrome_traefik_config_path }}"
+      log_dir: "{{ navidrome_log_dir }}"
+
+- name: Create Navidrome backup archive
+  ansible.builtin.archive:
+    path: "{{ navidrome_backup_dir }}"
+    dest: "{{ navidrome_backup_archive }}"
+    format: "{{ navidrome_backup_archive_format }}"
+  when: navidrome_backup_create_archive | bool
+
+- name: Ensure local backup directory exists
+  ansible.builtin.file:
+    path: "{{ navidrome_backup_local_dir }}"
+    state: directory
+    mode: "{{ navidrome_backup_dir_mode }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - navidrome_backup_fetch_local | bool
+    - navidrome_backup_create_archive | bool
+
+- name: Fetch Navidrome backup archive
+  ansible.builtin.fetch:
+    src: "{{ navidrome_backup_archive }}"
+    dest: "{{ navidrome_backup_local_dir }}/"
+    flat: true
+  run_once: true
+  when:
+    - navidrome_backup_fetch_local | bool
+    - navidrome_backup_create_archive | bool
+
+- name: Find existing Navidrome backup archives
+  ansible.builtin.find:
+    paths: "{{ navidrome_backup_root }}"
+    patterns: "{{ navidrome_backup_prefix }}-*.{{ navidrome_backup_archive_extension }}"
+    file_type: file
+  register: navidrome_backup_existing_archives
+  when:
+    - navidrome_backup_retain | int > 0
+    - navidrome_backup_create_archive | bool
+
+- name: Prune old Navidrome backup archives
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ (navidrome_backup_existing_archives.files | sort(attribute='mtime', reverse=true))[navidrome_backup_retain:] }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when:
+    - navidrome_backup_retain | int > 0
+    - navidrome_backup_create_archive | bool
+
+- name: Report backup completion
+  ansible.builtin.debug:
+    msg: >
+      Navidrome backup stored at {{ navidrome_backup_archive }}

@@ -1,0 +1,16 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart navidrome
+  ansible.builtin.systemd:
+    name: "{{ navidrome_service_name }}"
+    state: restarted
+    enabled: "{{ navidrome_service_enabled }}"
+
+- name: reload traefik
+  ansible.builtin.service:
+    name: traefik
+    state: reloaded
+  failed_when: false

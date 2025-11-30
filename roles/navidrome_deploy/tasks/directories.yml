@@ -1,0 +1,37 @@
+---
+- name: Ensure Navidrome install directory exists
+  ansible.builtin.file:
+    path: "{{ navidrome_install_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure Navidrome data directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ navidrome_user }}"
+    group: "{{ navidrome_group }}"
+    mode: "0750"
+  loop:
+    - "{{ navidrome_data_dir }}"
+    - "{{ navidrome_cache_dir }}"
+    - "{{ navidrome_log_dir }}"
+
+- name: Ensure Navidrome config directory exists
+  ansible.builtin.file:
+    path: "{{ navidrome_config_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure music folder exists
+  ansible.builtin.file:
+    path: "{{ navidrome_music_folder }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ navidrome_music_folder_mode }}"
+  when: navidrome_create_music_dir | bool

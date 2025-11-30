@@ -1,0 +1,5 @@
+---
+- name: Install Navidrome dependencies
+  ansible.builtin.package:
+    name: "{{ navidrome_deploy_packages }}"
+    state: present

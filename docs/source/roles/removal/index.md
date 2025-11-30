@@ -16,6 +16,7 @@ paperless_remove
 minio_remove
 tailscale_remove
 minecraft_java_remove
+navidrome_remove
 ```
 
 These roles handle:

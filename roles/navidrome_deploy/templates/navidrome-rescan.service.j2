@@ -1,0 +1,19 @@
+# Managed by Ansible - Navidrome rescan trigger
+[Unit]
+Description=Navidrome library rescan
+After={{ navidrome_service_name }}.service
+
+[Service]
+Type=oneshot
+User={{ navidrome_user }}
+Group={{ navidrome_group }}
+WorkingDirectory={{ navidrome_install_dir }}
+ExecStart={{ navidrome_bin_path }} --configfile {{ navidrome_config_path }} scan{% if navidrome_rescan_full | bool %} --full{% endif %}
+Environment=HOME={{ navidrome_home }}
+Environment=ND_CONFIGFILE={{ navidrome_config_path }}
+Nice=5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+[Install]
+WantedBy=multi-user.target

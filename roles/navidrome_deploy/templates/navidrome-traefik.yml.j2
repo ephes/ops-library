@@ -1,0 +1,100 @@
+# Managed by Ansible - Traefik configuration for Navidrome
+
+http:
+  routers:
+{% if navidrome_basic_auth_enabled %}
+    navidrome-int:
+      rule: "Host(`{{ navidrome_traefik_host }}`) && ({% for range in navidrome_internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+{% for ep in navidrome_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      priority: 120
+      middlewares:
+        - navidrome-headers
+        - navidrome-gzip
+{% for middleware in navidrome_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: navidrome
+      tls:
+        certResolver: {{ navidrome_traefik_cert_resolver }}
+
+    navidrome-ext:
+      rule: "Host(`{{ navidrome_traefik_host }}`)"
+      entryPoints:
+{% for ep in navidrome_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      priority: 100
+      middlewares:
+        - navidrome-auth
+        - navidrome-headers
+        - navidrome-gzip
+{% for middleware in navidrome_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: navidrome
+      tls:
+        certResolver: {{ navidrome_traefik_cert_resolver }}
+{% else %}
+    navidrome-secure:
+      rule: "Host(`{{ navidrome_traefik_host }}`)"
+      entryPoints:
+{% for ep in navidrome_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      middlewares:
+        - navidrome-headers
+        - navidrome-gzip
+{% for middleware in navidrome_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: navidrome
+      tls:
+        certResolver: {{ navidrome_traefik_cert_resolver }}
+{% endif %}
+
+    navidrome-http:
+      rule: "Host(`{{ navidrome_traefik_host }}`)"
+      entryPoints:
+        - web
+      middlewares:
+        - navidrome-redirect
+      service: navidrome
+
+  middlewares:
+{% if navidrome_basic_auth_enabled %}
+    navidrome-auth:
+      basicAuth:
+        users:
+          - "{{ navidrome_basic_auth_user }}:{{ navidrome_basic_auth_password_hash }}"
+        removeHeader: {{ navidrome_basic_auth_remove_header | bool }}
+{% endif %}
+
+    navidrome-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: SAMEORIGIN
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "{{ navidrome_traefik_host }}"
+
+    navidrome-gzip:
+      compress: {}
+
+    navidrome-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    navidrome:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:{{ navidrome_port }}"

@@ -17,6 +17,7 @@ unifi_deploy
 paperless_deploy
 minio_deploy
 minecraft_java_deploy
+navidrome_deploy
 ```
 
 These roles handle the complete deployment lifecycle including:

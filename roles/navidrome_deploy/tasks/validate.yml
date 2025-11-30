@@ -1,0 +1,40 @@
+- name: Set effective architecture fact
+  ansible.builtin.set_fact:
+    navidrome_effective_arch: "{{ ansible_facts.architecture | default(ansible_architecture | default('')) }}"
+
+- name: Validate Navidrome download parameters
+  ansible.builtin.assert:
+    that:
+      - navidrome_version | length > 0
+      - navidrome_download_url | length > 0
+      - navidrome_download_checksum is match("^sha256:[a-fA-F0-9]{64}$")
+      - navidrome_effective_arch | length > 0
+      - navidrome_arch_map[navidrome_effective_arch] is defined
+    fail_msg: >
+      navidrome_version, navidrome_download_url, and navidrome_download_checksum must be set.
+      Override navidrome_download_checksum when changing architecture or version.
+
+- name: Validate Navidrome configuration inputs
+  ansible.builtin.assert:
+    that:
+      - navidrome_external_url | length > 0
+      - navidrome_music_folder | length > 0
+      - navidrome_config_path | length > 0
+      - navidrome_data_dir | length > 0
+    fail_msg: "Navidrome external URL, music folder, config path, and data directory must be set"
+
+- name: Validate Traefik configuration when enabled
+  ansible.builtin.assert:
+    that:
+      - navidrome_traefik_host | length > 0
+    fail_msg: "navidrome_traefik_host is required when Traefik exposure is enabled"
+  when: navidrome_traefik_enabled | bool
+
+- name: Validate basic auth configuration
+  ansible.builtin.assert:
+    that:
+      - navidrome_basic_auth_user | length > 0
+      - (navidrome_basic_auth_password | length > 0) or (navidrome_basic_auth_password_hash | length > 0)
+    fail_msg: "Provide navidrome_basic_auth_password or navidrome_basic_auth_password_hash when basic auth is enabled"
+  when: navidrome_traefik_enabled | bool and navidrome_basic_auth_enabled | bool
+  no_log: true

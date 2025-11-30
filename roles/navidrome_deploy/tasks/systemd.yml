@@ -1,0 +1,54 @@
+---
+- name: Install Navidrome systemd unit
+  ansible.builtin.template:
+    src: navidrome.service.j2
+    dest: "{{ navidrome_service_unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart navidrome
+
+- name: Manage Navidrome rescan timer units
+  when: navidrome_rescan_timer_enabled | bool
+  block:
+    - name: Install Navidrome rescan service
+      ansible.builtin.template:
+        src: navidrome-rescan.service.j2
+        dest: "{{ navidrome_rescan_service_unit }}"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: reload systemd
+
+    - name: Install Navidrome rescan timer
+      ansible.builtin.template:
+        src: navidrome-rescan.timer.j2
+        dest: "{{ navidrome_rescan_timer_unit }}"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: reload systemd
+
+    - name: Enable and start Navidrome rescan timer
+      ansible.builtin.systemd:
+        name: "{{ navidrome_rescan_timer_unit | basename }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+
+- name: Remove Navidrome rescan units when disabled
+  when: not navidrome_rescan_timer_enabled | bool
+  block:
+    - name: Remove Navidrome rescan service unit
+      ansible.builtin.file:
+        path: "{{ navidrome_rescan_service_unit }}"
+        state: absent
+      notify: reload systemd
+
+    - name: Remove Navidrome rescan timer unit
+      ansible.builtin.file:
+        path: "{{ navidrome_rescan_timer_unit }}"
+        state: absent
+      notify: reload systemd

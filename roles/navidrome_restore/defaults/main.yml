@@ -1,0 +1,5 @@
+---
+# Navidrome restore defaults
+
+navidrome_restore_staging_dir: /tmp/navidrome-restore
+navidrome_restore_force_full_rescan: false

@@ -1,0 +1,32 @@
+---
+- name: Validate Navidrome inputs
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Install Navidrome dependencies
+  ansible.builtin.import_tasks: packages.yml
+
+- name: Ensure Navidrome user and group exist
+  ansible.builtin.import_tasks: user.yml
+
+- name: Create Navidrome directories
+  ansible.builtin.import_tasks: directories.yml
+
+- name: Install Navidrome binary
+  ansible.builtin.import_tasks: binary.yml
+
+- name: Render Navidrome configuration
+  ansible.builtin.import_tasks: config.yml
+
+- name: Install Navidrome systemd unit
+  ansible.builtin.import_tasks: systemd.yml
+
+- name: Configure Traefik exposure
+  ansible.builtin.import_tasks: traefik.yml
+  when: navidrome_traefik_enabled | bool
+
+- name: Ensure Navidrome service state
+  ansible.builtin.import_tasks: service.yml
+
+- name: Run Navidrome health check
+  ansible.builtin.import_tasks: health.yml
+  when: navidrome_healthcheck_enabled | bool

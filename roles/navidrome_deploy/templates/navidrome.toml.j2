@@ -1,0 +1,19 @@
+# Managed by Ansible - Navidrome configuration
+
+Address = "{{ navidrome_listen_address }}"
+Port = {{ navidrome_port }}
+BaseURL = "{{ navidrome_external_url }}"
+MusicFolder = "{{ navidrome_music_folder }}"
+DataFolder = "{{ navidrome_data_dir }}"
+CacheFolder = "{{ navidrome_cache_dir }}"
+LogLevel = "{{ navidrome_log_level | upper }}"
+LogFile = "{{ navidrome_log_dir }}/navidrome.log"
+EnableInsightsCollector = {{ navidrome_enable_insights_collector | bool | ternary('true', 'false') }}
+EnableTranscodingConfig = {{ navidrome_enable_transcoding_config | bool | ternary('true', 'false') }}
+ReverseProxyWhitelist = "{{ navidrome_reverse_proxy_whitelist | join(',') }}"
+
+[Scanner]
+  Schedule = "{{ navidrome_scan_schedule }}"
+  ScanOnStartup = {{ navidrome_scan_on_startup | bool | ternary('true', 'false') }}
+  WatcherWait = "{{ navidrome_scan_watcher_wait }}"
+  FollowSymlinks = {{ navidrome_scanner_follow_symlinks | bool | ternary('true', 'false') }}

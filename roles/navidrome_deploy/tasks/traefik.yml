@@ -1,0 +1,37 @@
+---
+- name: Ensure Traefik dynamic config directory exists
+  ansible.builtin.file:
+    path: "{{ navidrome_traefik_config_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Build basic auth hash from password
+  ansible.builtin.command:
+    argv:
+      - htpasswd
+      - -nbB
+      - "{{ navidrome_basic_auth_user }}"
+      - "{{ navidrome_basic_auth_password }}"
+  register: navidrome_basic_auth_htpasswd
+  changed_when: false
+  no_log: true
+  when:
+    - navidrome_basic_auth_enabled | bool
+    - navidrome_basic_auth_password_hash | length == 0
+
+- name: Set Navidrome basic auth hash fact
+  ansible.builtin.set_fact:
+    navidrome_basic_auth_password_hash: "{{ navidrome_basic_auth_htpasswd.stdout.split(':', 1)[1] if navidrome_basic_auth_htpasswd.stdout is defined else navidrome_basic_auth_password_hash }}"
+  no_log: true
+  when: navidrome_basic_auth_enabled | bool
+
+- name: Render Traefik configuration for Navidrome
+  ansible.builtin.template:
+    src: navidrome-traefik.yml.j2
+    dest: "{{ navidrome_traefik_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload traefik
