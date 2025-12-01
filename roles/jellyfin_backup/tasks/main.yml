@@ -1,0 +1,218 @@
+---
+- name: Capture Jellyfin package version
+  ansible.builtin.command:
+    argv:
+      - dpkg-query
+      - "-W"
+      - "-f=${Version}"
+      - jellyfin
+  register: jellyfin_version_cmd
+  failed_when: false
+  changed_when: false
+
+- name: Set backup timestamp
+  ansible.builtin.set_fact:
+    jellyfin_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+- name: Set backup paths
+  ansible.builtin.set_fact:
+    jellyfin_backup_dir: "{{ jellyfin_backup_root }}/{{ jellyfin_backup_prefix }}-{{ jellyfin_backup_timestamp }}"
+    jellyfin_backup_archive: "{{ jellyfin_backup_root }}/{{ jellyfin_backup_prefix }}-{{ jellyfin_backup_timestamp }}.{{ jellyfin_backup_archive_extension }}"
+
+- name: Ensure backup directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ jellyfin_backup_owner }}"
+    group: "{{ jellyfin_backup_group }}"
+    mode: "{{ jellyfin_backup_dir_mode }}"
+  loop:
+    - "{{ jellyfin_backup_root }}"
+    - "{{ jellyfin_backup_dir }}"
+    - "{{ jellyfin_backup_dir }}/data"
+    - "{{ jellyfin_backup_dir }}/config"
+    - "{{ jellyfin_backup_dir }}/systemd"
+    - "{{ jellyfin_backup_dir }}/traefik"
+    - "{{ jellyfin_backup_dir }}/logs"
+
+- name: Verify Jellyfin paths
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  register: jellyfin_backup_stats
+  loop:
+    - { path: "{{ jellyfin_data_dir }}", mandatory: true, label: "Data directory" }
+    - { path: "{{ jellyfin_config_dir }}", mandatory: true, label: "Config directory" }
+    - { path: "{{ jellyfin_service_unit }}", mandatory: false, label: "Service unit" }
+    - { path: "{{ jellyfin_traefik_config_path }}", mandatory: false, label: "Traefik config" }
+    - { path: "{{ jellyfin_log_dir }}", mandatory: false, label: "Log directory" }
+  loop_control:
+    label: "{{ item.label }}"
+
+- name: Abort when required Jellyfin paths are missing
+  ansible.builtin.fail:
+    msg: "Required Jellyfin path missing: {{ item.item.path }}"
+  when:
+    - item.item.mandatory | bool
+    - not item.stat.exists
+  loop: "{{ jellyfin_backup_stats.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: Stop Jellyfin service for consistent backup
+  ansible.builtin.systemd:
+    name: "{{ jellyfin_service_name }}"
+    state: stopped
+  when: jellyfin_backup_stop_service | bool
+
+- name: Sync Jellyfin data directory
+  ansible.builtin.command:
+    cmd: >
+      rsync -a{{ ' --delete' if jellyfin_backup_use_delete else '' }}
+      "{{ jellyfin_data_dir }}/" "{{ jellyfin_backup_dir }}/data/"
+  changed_when: true
+  when:
+    - jellyfin_backup_include_data | bool
+    - jellyfin_backup_stats.results[0].stat.exists
+
+- name: Sync Jellyfin config directory
+  ansible.builtin.command:
+    cmd: >
+      rsync -a{{ ' --delete' if jellyfin_backup_use_delete else '' }}
+      "{{ jellyfin_config_dir }}/" "{{ jellyfin_backup_dir }}/config/"
+  changed_when: true
+  when:
+    - jellyfin_backup_include_config | bool
+    - jellyfin_backup_stats.results[1].stat.exists
+
+- name: Copy Jellyfin systemd unit
+  ansible.builtin.copy:
+    src: "{{ jellyfin_service_unit }}"
+    dest: "{{ jellyfin_backup_dir }}/systemd/{{ jellyfin_service_unit | basename }}"
+    owner: "{{ jellyfin_backup_owner }}"
+    group: "{{ jellyfin_backup_group }}"
+    mode: "{{ jellyfin_backup_file_mode }}"
+    remote_src: true
+  when:
+    - jellyfin_backup_include_systemd | bool
+    - jellyfin_backup_stats.results[2].stat.exists
+
+- name: Copy Traefik dynamic config
+  ansible.builtin.copy:
+    src: "{{ jellyfin_traefik_config_path }}"
+    dest: "{{ jellyfin_backup_dir }}/traefik/{{ jellyfin_traefik_config_path | basename }}"
+    owner: "{{ jellyfin_backup_owner }}"
+    group: "{{ jellyfin_backup_group }}"
+    mode: "{{ jellyfin_backup_file_mode }}"
+    remote_src: true
+  when:
+    - jellyfin_backup_include_traefik | bool
+    - jellyfin_backup_stats.results[3].stat.exists
+
+- name: Copy Jellyfin logs
+  ansible.builtin.command:
+    cmd: >
+      rsync -a "{{ jellyfin_log_dir }}/" "{{ jellyfin_backup_dir }}/logs/"
+  changed_when: true
+  when:
+    - jellyfin_backup_include_logs | bool
+    - jellyfin_backup_stats.results[4].stat.exists
+
+- name: Start Jellyfin service after backup
+  ansible.builtin.systemd:
+    name: "{{ jellyfin_service_name }}"
+    state: started
+    daemon_reload: true
+  when: jellyfin_backup_stop_service | bool
+
+- name: Build Jellyfin backup manifest
+  ansible.builtin.copy:
+    dest: "{{ jellyfin_backup_dir }}/manifest.yml"
+    owner: "{{ jellyfin_backup_owner }}"
+    group: "{{ jellyfin_backup_group }}"
+    mode: "{{ jellyfin_backup_file_mode }}"
+    content: |
+      version: "{{ jellyfin_version_cmd.stdout | default('unknown') | trim }}"
+      timestamp: "{{ jellyfin_backup_timestamp }}"
+      archive: "{{ jellyfin_backup_archive | basename }}"
+      data_dir: "{{ jellyfin_data_dir }}"
+      config_dir: "{{ jellyfin_config_dir }}"
+      service_unit: "{{ jellyfin_service_unit }}"
+      traefik_config: "{{ jellyfin_traefik_config_path }}"
+      log_dir: "{{ jellyfin_log_dir }}"
+  when: jellyfin_backup_generate_manifest | bool
+
+- name: Create Jellyfin backup archive
+  ansible.builtin.archive:
+    path: "{{ jellyfin_backup_dir }}"
+    dest: "{{ jellyfin_backup_archive }}"
+    format: "{{ jellyfin_backup_archive_format }}"
+  when: jellyfin_backup_create_archive | bool
+
+- name: Ensure local backup directory exists
+  ansible.builtin.file:
+    path: "{{ jellyfin_backup_local_dir }}"
+    state: directory
+    mode: "{{ jellyfin_backup_dir_mode }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - jellyfin_backup_fetch_local | bool
+    - jellyfin_backup_create_archive | bool
+
+- name: Fetch Jellyfin backup archive
+  ansible.builtin.fetch:
+    src: "{{ jellyfin_backup_archive }}"
+    dest: "{{ jellyfin_backup_local_dir }}/"
+    flat: true
+  run_once: true
+  when:
+    - jellyfin_backup_fetch_local | bool
+    - jellyfin_backup_create_archive | bool
+
+- name: Find existing Jellyfin backup archives
+  ansible.builtin.find:
+    paths: "{{ jellyfin_backup_root }}"
+    patterns: "{{ jellyfin_backup_prefix }}-*.{{ jellyfin_backup_archive_extension }}"
+    file_type: file
+  register: jellyfin_backup_existing_archives
+  when:
+    - jellyfin_backup_retain | int > 0
+    - jellyfin_backup_create_archive | bool
+
+- name: Prune old Jellyfin backup archives
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ (jellyfin_backup_existing_archives.files | sort(attribute='mtime', reverse=true))[jellyfin_backup_retain:] }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when:
+    - jellyfin_backup_retain | int > 0
+    - jellyfin_backup_create_archive | bool
+
+- name: Find existing Jellyfin backup directories (no archive mode)
+  ansible.builtin.find:
+    paths: "{{ jellyfin_backup_root }}"
+    patterns: "{{ jellyfin_backup_prefix }}-*"
+    file_type: directory
+    depth: 1
+  register: jellyfin_backup_existing_dirs
+  when:
+    - jellyfin_backup_retain | int > 0
+    - not jellyfin_backup_create_archive | bool
+
+- name: Prune old Jellyfin backup directories (no archive mode)
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ (jellyfin_backup_existing_dirs.files | sort(attribute='mtime', reverse=true))[jellyfin_backup_retain:] }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when:
+    - jellyfin_backup_retain | int > 0
+    - not jellyfin_backup_create_archive | bool
+
+- name: Report Jellyfin backup completion
+  ansible.builtin.debug:
+    msg: "Jellyfin backup stored at {{ jellyfin_backup_archive }}"

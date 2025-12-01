@@ -1,0 +1,10 @@
+---
+# Jellyfin deployment defaults (public safe)
+
+jellyfin_configure_repo: true
+jellyfin_healthcheck_expected_statuses:
+  - 200
+  - 301
+  - 302
+  - 307
+  - 308

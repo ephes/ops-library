@@ -1,0 +1,4 @@
+---
+# Jellyfin restore defaults
+
+jellyfin_restore_staging_dir: /tmp/jellyfin-restore

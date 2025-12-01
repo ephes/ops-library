@@ -1,0 +1,45 @@
+---
+- name: Discover available Jellyfin ffmpeg package
+  ansible.builtin.command:
+    argv:
+      - apt-cache
+      - policy
+      - "{{ item }}"
+  register: jellyfin_ffmpeg_checks
+  changed_when: false
+  failed_when: false
+  loop: "{{ jellyfin_ffmpeg_candidates }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Select first available Jellyfin ffmpeg package
+  ansible.builtin.set_fact:
+    jellyfin_ffmpeg_package: >-
+      {{
+        (jellyfin_ffmpeg_checks.results
+          | selectattr('stdout', 'defined')
+          | selectattr('stdout', 'search', 'Candidate:\\s+(?!\\(none\\))')
+          | map(attribute='item')
+          | list
+          | first)
+        | default('')
+      }}
+
+- name: Build Jellyfin package list
+  ansible.builtin.set_fact:
+    jellyfin_packages_resolved: >-
+      {{
+        jellyfin_packages_base
+        + ([jellyfin_ffmpeg_package] if jellyfin_ffmpeg_package | length > 0 else [])
+      }}
+
+- name: Warn when no Jellyfin ffmpeg package found
+  ansible.builtin.debug:
+    msg: "No jellyfin-ffmpeg package available for this distro/arch; continuing without bundled ffmpeg."
+  when: jellyfin_ffmpeg_package | length == 0
+
+- name: Install Jellyfin packages
+  ansible.builtin.apt:
+    name: "{{ jellyfin_packages_resolved }}"
+    state: present
+    update_cache: true

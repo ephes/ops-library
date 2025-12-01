@@ -1,0 +1,32 @@
+---
+- name: Validate Jellyfin repository parameters
+  ansible.builtin.assert:
+    that:
+      - jellyfin_repo_distro | length > 0
+      - jellyfin_repo_release | length > 0
+      - jellyfin_repo_component | length > 0
+      - jellyfin_repo_arch | length > 0
+      - jellyfin_repo_base | length > 0
+    fail_msg: "jellyfin_repo_* variables must be set to configure the package repository"
+
+- name: Validate Jellyfin media directories list
+  ansible.builtin.assert:
+    that:
+      - jellyfin_media_directories | length > 0
+    fail_msg: "jellyfin_media_directories must include at least one path"
+
+- name: Validate Traefik configuration when enabled
+  ansible.builtin.assert:
+    that:
+      - jellyfin_traefik_host | length > 0
+    fail_msg: "jellyfin_traefik_host is required when Traefik exposure is enabled"
+  when: jellyfin_traefik_enabled | bool
+
+- name: Validate basic auth configuration
+  ansible.builtin.assert:
+    that:
+      - jellyfin_basic_auth_user | length > 0
+      - (jellyfin_basic_auth_password | length > 0) or (jellyfin_basic_auth_password_hash | length > 0)
+    fail_msg: "Provide jellyfin_basic_auth_password or jellyfin_basic_auth_password_hash when basic auth is enabled"
+  when: jellyfin_traefik_enabled | bool and jellyfin_basic_auth_enabled | bool
+  no_log: true

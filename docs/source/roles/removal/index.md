@@ -17,6 +17,7 @@ minio_remove
 tailscale_remove
 minecraft_java_remove
 navidrome_remove
+jellyfin_remove
 ```
 
 These roles handle:

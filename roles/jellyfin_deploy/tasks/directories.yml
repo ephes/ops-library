@@ -1,0 +1,34 @@
+---
+- name: Ensure Jellyfin data directory exists
+  ansible.builtin.file:
+    path: "{{ jellyfin_data_dir }}"
+    state: directory
+    owner: "{{ jellyfin_user }}"
+    group: "{{ jellyfin_group }}"
+    mode: "0750"
+
+- name: Ensure Jellyfin config directory exists
+  ansible.builtin.file:
+    path: "{{ jellyfin_config_dir }}"
+    state: directory
+    owner: "{{ jellyfin_user }}"
+    group: "{{ jellyfin_group }}"
+    mode: "0750"
+
+- name: Ensure Jellyfin log directory exists
+  ansible.builtin.file:
+    path: "{{ jellyfin_log_dir }}"
+    state: directory
+    owner: "{{ jellyfin_user }}"
+    group: "{{ jellyfin_group }}"
+    mode: "0750"
+
+- name: Ensure media directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ jellyfin_media_dir_owner }}"
+    group: "{{ jellyfin_media_dir_group }}"
+    mode: "{{ jellyfin_media_dir_mode }}"
+  loop: "{{ jellyfin_media_directories }}"
+  when: jellyfin_create_media_dirs | bool

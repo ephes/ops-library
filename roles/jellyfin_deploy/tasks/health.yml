@@ -1,0 +1,18 @@
+---
+- name: Wait for Jellyfin port to be open
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: "{{ jellyfin_http_port }}"
+    timeout: "{{ jellyfin_healthcheck_timeout }}"
+    state: started
+
+- name: Perform Jellyfin HTTP health check
+  ansible.builtin.uri:
+    url: "{{ jellyfin_healthcheck_url }}"
+    status_code: "{{ jellyfin_healthcheck_expected_statuses }}"
+    return_content: false
+    timeout: "{{ jellyfin_healthcheck_timeout }}"
+  register: jellyfin_healthcheck_result
+  retries: "{{ jellyfin_healthcheck_retries }}"
+  delay: 3
+  until: jellyfin_healthcheck_result.status in jellyfin_healthcheck_expected_statuses

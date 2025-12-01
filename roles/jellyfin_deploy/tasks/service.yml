@@ -1,0 +1,7 @@
+---
+- name: Enable and start Jellyfin service
+  ansible.builtin.systemd:
+    name: "{{ jellyfin_service_name }}"
+    state: "{{ jellyfin_service_state }}"
+    enabled: "{{ jellyfin_service_enabled }}"
+    daemon_reload: true

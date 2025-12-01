@@ -1,0 +1,24 @@
+---
+- name: Validate Jellyfin inputs
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Configure Jellyfin apt repository
+  ansible.builtin.import_tasks: repo.yml
+  when: jellyfin_configure_repo | bool
+
+- name: Install Jellyfin packages
+  ansible.builtin.import_tasks: packages.yml
+
+- name: Prepare Jellyfin directories
+  ansible.builtin.import_tasks: directories.yml
+
+- name: Configure Traefik for Jellyfin
+  ansible.builtin.import_tasks: traefik.yml
+  when: jellyfin_traefik_enabled | bool
+
+- name: Ensure Jellyfin service is running
+  ansible.builtin.import_tasks: service.yml
+
+- name: Run Jellyfin health checks
+  ansible.builtin.import_tasks: health.yml
+  when: jellyfin_healthcheck_enabled | bool

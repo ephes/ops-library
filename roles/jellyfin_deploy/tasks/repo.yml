@@ -1,0 +1,41 @@
+---
+- name: Set Jellyfin key download path
+  ansible.builtin.set_fact:
+    jellyfin_repo_key_tmp: "/tmp/jellyfin-archive-keyring.gpg.key"
+
+- name: Download Jellyfin repository key (ASCII)
+  ansible.builtin.get_url:
+    url: "{{ jellyfin_repo_key_url }}"
+    dest: "{{ jellyfin_repo_key_tmp }}"
+    mode: "0644"
+    force: true
+  register: jellyfin_repo_key_download
+
+- name: Convert Jellyfin repository key to keyring
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --batch
+      - --yes
+      - --dearmor
+      - -o
+      - "{{ jellyfin_repo_keyring }}"
+      - "{{ jellyfin_repo_key_tmp }}"
+  register: jellyfin_repo_key
+  changed_when: jellyfin_repo_key_download.changed
+  failed_when: jellyfin_repo_key.rc != 0
+
+- name: Set Jellyfin keyring permissions
+  ansible.builtin.file:
+    path: "{{ jellyfin_repo_keyring }}"
+    mode: "0644"
+    owner: root
+    group: root
+
+- name: Configure Jellyfin apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by={{ jellyfin_repo_keyring }} arch={{ jellyfin_repo_arch }}] {{ jellyfin_repo_base }}/{{ jellyfin_repo_distro }} {{ jellyfin_repo_release }} {{ jellyfin_repo_component }}"
+    filename: "{{ jellyfin_repo_list_file | basename | regex_replace('\\.list$', '') }}"
+    state: present
+    update_cache: true
+  register: jellyfin_repo_config

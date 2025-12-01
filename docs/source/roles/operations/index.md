@@ -20,6 +20,8 @@ Available runbooks:
 - [MinIO Restore](https://github.com/ephes/ops-library/blob/main/roles/minio_restore/README.md)
 - [Navidrome Backup](https://github.com/ephes/ops-library/blob/main/roles/navidrome_backup/README.md)
 - [Navidrome Restore](https://github.com/ephes/ops-library/blob/main/roles/navidrome_restore/README.md)
+- [Jellyfin Backup](https://github.com/ephes/ops-library/blob/main/roles/jellyfin_backup/README.md)
+- [Jellyfin Restore](https://github.com/ephes/ops-library/blob/main/roles/jellyfin_restore/README.md)
 - [Tailscale Backup](https://github.com/ephes/ops-library/blob/main/roles/tailscale_backup/README.md)
 - [Tailscale Restore](https://github.com/ephes/ops-library/blob/main/roles/tailscale_restore/README.md)
 - [Minecraft Java Backup](https://github.com/ephes/ops-library/blob/main/roles/minecraft_java_backup/README.md)
@@ -44,6 +46,8 @@ minio_backup
 minio_restore
 navidrome_backup
 navidrome_restore
+jellyfin_backup
+jellyfin_restore
 tailscale_backup
 tailscale_restore
 minecraft_java_backup
