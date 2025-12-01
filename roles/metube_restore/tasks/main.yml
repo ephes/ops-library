@@ -1,0 +1,164 @@
+---
+- name: Validate restore inputs
+  ansible.builtin.assert:
+    that:
+      - metube_restore_root | length > 0
+      - metube_restore_archive | length > 0
+    fail_msg: "metube_restore_root and metube_restore_archive are required"
+
+- name: Discover latest archive when requested
+  ansible.builtin.find:
+    paths: "{{ metube_restore_root }}"
+    patterns: "*.{{ metube_backup_archive_extension }}"
+    recurse: false
+  register: metube_restore_candidates
+  when: metube_restore_archive == "latest"
+
+- name: Choose restore archive
+  ansible.builtin.set_fact:
+    metube_restore_selected_archive: >-
+      {{ (metube_restore_candidates.files | sort(attribute='mtime', reverse=true) | first).path
+         if metube_restore_archive == "latest"
+         else (metube_restore_archive if metube_restore_archive.startswith('/') else metube_restore_root ~ '/' ~ metube_restore_archive) }}
+
+- name: Fail if no archive found
+  ansible.builtin.fail:
+    msg: "No MeTube backup archives found in {{ metube_restore_root }}"
+  when: metube_restore_archive == "latest" and (metube_restore_candidates.files | default([]) | length) == 0
+
+- name: Check selected archive exists
+  ansible.builtin.stat:
+    path: "{{ metube_restore_selected_archive }}"
+  register: metube_restore_selected_stat
+
+- name: Fail when archive missing
+  ansible.builtin.fail:
+    msg: "MeTube restore archive not found: {{ metube_restore_selected_archive }}"
+  when: not metube_restore_selected_stat.stat.exists
+
+- name: Prepare staging directory
+  ansible.builtin.file:
+    path: "{{ metube_restore_staging_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Unpack archive into staging
+  ansible.builtin.unarchive:
+    src: "{{ metube_restore_selected_archive }}"
+    dest: "{{ metube_restore_staging_dir }}"
+    remote_src: true
+    extra_opts: []
+
+- name: Locate payload directory
+  ansible.builtin.find:
+    paths: "{{ metube_restore_staging_dir }}"
+    file_type: directory
+    depth: 1
+  register: metube_restore_payload_dirs
+
+- name: Set payload directory fact
+  ansible.builtin.set_fact:
+    metube_restore_payload_dir: "{{ (metube_restore_payload_dirs.files | map(attribute='path') | list | first) | default('') }}"
+
+- name: Fail when payload directory missing
+  ansible.builtin.fail:
+    msg: "Could not locate payload directory under {{ metube_restore_staging_dir }}"
+  when: metube_restore_payload_dir | length == 0
+
+- name: Stat payload contents
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  register: metube_restore_payload_stats
+  loop:
+    - { path: "{{ metube_restore_payload_dir }}/state", label: "state" }
+    - { path: "{{ metube_restore_payload_dir }}/config/{{ metube_env_file | basename }}", label: "config" }
+    - { path: "{{ metube_restore_payload_dir }}/systemd/{{ metube_service_unit | basename }}", label: "systemd unit" }
+    - { path: "{{ metube_restore_payload_dir }}/traefik/{{ metube_traefik_config_path | basename }}", label: "traefik config" }
+
+- name: Ensure required payload pieces exist
+  ansible.builtin.assert:
+    that:
+      - metube_restore_payload_stats.results[0].stat.exists
+    fail_msg: "MeTube state directory missing inside archive: {{ metube_restore_payload_dir }}/state"
+
+- name: Ensure target directories exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner | default(metube_user) }}"
+    group: "{{ item.group | default(metube_group) }}"
+    mode: "{{ item.mode | default('0755') }}"
+  loop:
+    - { path: "{{ metube_state_dir }}", owner: "{{ metube_user }}", group: "{{ metube_group }}", mode: "0755" }
+    - { path: "{{ metube_env_dir }}", owner: "root", group: "root", mode: "0755" }
+    - { path: "{{ metube_traefik_config_path | dirname }}", owner: "root", group: "root", mode: "0755" }
+
+- name: Stop metube service before restore
+  ansible.builtin.systemd:
+    name: "{{ metube_service_name }}"
+    state: stopped
+  when: metube_restore_stop_service | bool
+
+- name: Restore state directory
+  ansible.builtin.command:
+    cmd: >
+      rsync -a --delete "{{ metube_restore_payload_dir }}/state/" "{{ metube_state_dir }}/"
+  changed_when: true
+
+- name: Restore environment file
+  ansible.builtin.copy:
+    src: "{{ metube_restore_payload_dir }}/config/{{ metube_env_file | basename }}"
+    dest: "{{ metube_env_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+    remote_src: true
+  when: metube_restore_payload_stats.results[1].stat.exists
+
+- name: Restore systemd unit
+  ansible.builtin.copy:
+    src: "{{ metube_restore_payload_dir }}/systemd/{{ metube_service_unit | basename }}"
+    dest: "{{ metube_service_unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+    remote_src: true
+  register: metube_restore_unit_copy
+  when: metube_restore_payload_stats.results[2].stat.exists
+
+- name: Restore Traefik config
+  ansible.builtin.copy:
+    src: "{{ metube_restore_payload_dir }}/traefik/{{ metube_traefik_config_path | basename }}"
+    dest: "{{ metube_traefik_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    remote_src: true
+  register: metube_restore_traefik_copy
+  when: metube_restore_payload_stats.results[3].stat.exists
+
+- name: Reload systemd if unit changed
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: metube_restore_unit_copy is defined and metube_restore_unit_copy.changed
+
+- name: Reload traefik if config changed
+  ansible.builtin.service:
+    name: traefik
+    state: reloaded
+  failed_when: false
+  when: metube_restore_traefik_copy is defined and metube_restore_traefik_copy.changed
+
+- name: Start/restart metube service
+  ansible.builtin.systemd:
+    name: "{{ metube_service_name }}"
+    state: "{{ 'restarted' if metube_restore_restart else 'started' }}"
+    enabled: "{{ metube_service_enabled }}"
+
+- name: Cleanup staging directory
+  ansible.builtin.file:
+    path: "{{ metube_restore_staging_dir }}"
+    state: absent
+  when: metube_restore_cleanup | bool

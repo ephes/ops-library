@@ -1,0 +1,26 @@
+---
+- name: "Validate core settings"
+  ansible.builtin.assert:
+    that:
+      - metube_download_dir | length > 0
+      - metube_state_dir | length > 0
+      - metube_temp_dir | length > 0
+      - metube_traefik_host | length > 0
+      - metube_port | int > 0
+      - metube_service_unit | length > 0
+    fail_msg: "Missing required metube settings (download_dir/state_dir/temp_dir/traefik_host/port/service unit)."
+
+- name: "Validate basic auth settings when enabled"
+  ansible.builtin.assert:
+    that:
+      - metube_basic_auth_user | length > 0
+      - (metube_basic_auth_password | length > 0) or (metube_basic_auth_password_hash | length > 0)
+    fail_msg: "Provide metube_basic_auth_password or metube_basic_auth_password_hash when basic auth is enabled."
+  when: metube_traefik_enabled | bool and metube_basic_auth_enabled | bool
+
+- name: "Validate uv presence when not managed"
+  ansible.builtin.command: "{{ metube_uv_path }} --version"
+  changed_when: false
+  failed_when: metube_uv_check.rc != 0
+  register: metube_uv_check
+  when: not metube_install_uv | bool

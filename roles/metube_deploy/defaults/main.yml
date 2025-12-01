@@ -1,0 +1,22 @@
+---
+# Whether to install uv automatically
+metube_install_uv: "{{ metube_manage_uv }}"
+
+# Whether to rebuild the UI (Angular) on each run
+metube_ui_build: true
+metube_ui_build_configuration: production
+metube_ui_node_env: production
+
+# Whether to run uv sync on each deploy
+metube_sync_dependencies: true
+
+# Marker file to skip rebuild/sync when unchanged
+metube_install_marker: "{{ metube_install_dir }}/.metube-installed"
+
+# Systemd resource knobs
+metube_systemd_after: "network.target"
+metube_systemd_restart: on-failure
+metube_systemd_restart_sec: 5s
+metube_systemd_nofile: 65535
+metube_systemd_tasks_max: ""
+metube_systemd_memory_max: ""

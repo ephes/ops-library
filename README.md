@@ -31,6 +31,7 @@ The table below links each published role to its dedicated documentation. Refer 
 | Service deployment | [`unifi_deploy`](roles/unifi_deploy/README.md) | Install UniFi Network Application with MongoDB 8.0, Java 17, Traefik + UFW wiring, and optional HA integration. |
 | Service deployment | [`navidrome_deploy`](roles/navidrome_deploy/README.md) | Deploy Navidrome music server (binary/systemd, Traefik, optional rescan timer). |
 | Service deployment | [`jellyfin_deploy`](roles/jellyfin_deploy/README.md) | Deploy Jellyfin media server (apt packages, systemd, Traefik with basic auth). |
+| Service deployment | [`metube_deploy`](roles/metube_deploy/README.md) | Deploy MeTube (yt-dlp web UI) from source with uv, Angular build, systemd, and Traefik internal-bypass/basic-auth. |
 | Service operations | [`tailscale_backup`](roles/tailscale_backup/README.md) | Backup `/var/lib/tailscale`, sysconfig, and systemd drop-ins to preserve node identity. |
 | Service operations | [`tailscale_restore`](roles/tailscale_restore/README.md) | Restore Tailscale state from archive and optionally rerun `tailscale up`. |
 | Service operations | [`homeassistant_backup`](roles/homeassistant_backup/README.md) | Take on-host + off-host backups (rsync + manifest + optional archives). |
@@ -41,6 +42,8 @@ The table below links each published role to its dedicated documentation. Refer 
 | Service operations | [`navidrome_restore`](roles/navidrome_restore/README.md) | Restore Navidrome archives and optionally trigger a full rescan. |
 | Service operations | [`jellyfin_backup`](roles/jellyfin_backup/README.md) | Backup Jellyfin data/config/systemd/Traefik with optional archive fetch. |
 | Service operations | [`jellyfin_restore`](roles/jellyfin_restore/README.md) | Restore Jellyfin archives back into place and restart the service. |
+| Service operations | [`metube_backup`](roles/metube_backup/README.md) | Backup MeTube state/env/systemd/Traefik with optional archive fetch. |
+| Service operations | [`metube_restore`](roles/metube_restore/README.md) | Restore MeTube from archives produced by `metube_backup`. |
 | Service removal | [`fastdeploy_remove`](roles/fastdeploy_remove/README.md) | Remove FastDeploy and related resources safely. |
 | Service removal | [`nyxmon_remove`](roles/nyxmon_remove/README.md) | Remove Nyxmon while preserving data as needed. |
 | Service removal | [`homeassistant_remove`](roles/homeassistant_remove/README.md) | Tear down Home Assistant (service, config, user) with confirmation guards. |
@@ -48,6 +51,7 @@ The table below links each published role to its dedicated documentation. Refer 
 | Service removal | [`navidrome_remove`](roles/navidrome_remove/README.md) | Remove Navidrome binaries, config, data, Traefik wiring, and user with confirmation toggles. |
 | Service removal | [`tailscale_remove`](roles/tailscale_remove/README.md) | Remove Tailscale packages/repo, optionally logout and purge `/var/lib/tailscale`. |
 | Service removal | [`jellyfin_remove`](roles/jellyfin_remove/README.md) | Remove Jellyfin packages, config/data/logs, Traefik wiring, and user with confirmation toggles. |
+| Service removal | [`metube_remove`](roles/metube_remove/README.md) | Remove MeTube service, env/state/Traefik wiring, optional downloads, with confirmation guard. |
 | Service registration | [`apt_upgrade_register`](roles/apt_upgrade_register/README.md) | Register apt-upgrade maintenance runners with FastDeploy. |
 | Service registration | [`fastdeploy_register_service`](roles/fastdeploy_register_service/README.md) | Generic FastDeploy service registration helper. |
 | Bootstrap | [`ansible_install`](roles/ansible_install/README.md) | Ensure controller has Ansible and required plugins. |

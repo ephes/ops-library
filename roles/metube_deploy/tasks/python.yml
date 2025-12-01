@@ -1,0 +1,23 @@
+---
+- name: "Create uv virtualenv for MeTube"
+  ansible.builtin.command:
+    cmd: "{{ metube_uv_path }} venv --python {{ metube_python_version }} {{ metube_venv_path }}"
+    creates: "{{ metube_venv_path }}/pyvenv.cfg"
+  environment:
+    UV_NO_PROGRESS: "1"
+  notify: restart metube
+  become: true
+  become_user: "{{ metube_user }}"
+
+- name: "Install MeTube Python dependencies via uv"
+  ansible.builtin.command:
+    cmd: "{{ metube_uv_path }} sync --frozen --no-dev"
+    chdir: "{{ metube_install_dir }}"
+  environment:
+    UV_PROJECT_ENVIRONMENT: "{{ metube_venv_path }}"
+    UV_NO_PROGRESS: "1"
+  register: metube_uv_sync
+  changed_when: "'resolved' in metube_uv_sync.stdout | lower or 'installed' in metube_uv_sync.stdout | lower or metube_uv_sync.rc == 0"
+  notify: restart metube
+  become: true
+  become_user: "{{ metube_user }}"

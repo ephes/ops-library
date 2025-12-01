@@ -1,0 +1,12 @@
+---
+- name: "Wait for metube to respond"
+  ansible.builtin.uri:
+    url: "{{ metube_healthcheck_url }}"
+    method: GET
+    status_code: [200, 302]
+    return_content: false
+    timeout: "{{ metube_healthcheck_timeout }}"
+  register: metube_healthcheck_result
+  retries: "{{ metube_healthcheck_retries }}"
+  delay: 3
+  until: metube_healthcheck_result.status in [200, 302]

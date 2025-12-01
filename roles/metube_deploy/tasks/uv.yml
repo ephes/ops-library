@@ -1,0 +1,8 @@
+---
+- name: "Install uv (metube)"
+  ansible.builtin.include_role:
+    name: local.ops_library.uv_install
+  vars:
+    uv_version: "{{ metube_uv_version }}"
+    uv_install_dir: "{{ metube_uv_path | dirname }}"
+    uv_force_reinstall: false

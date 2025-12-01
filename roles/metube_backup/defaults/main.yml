@@ -1,0 +1,11 @@
+---
+# Override-friendly defaults for backup behavior
+metube_backup_create_archive: true
+metube_backup_fetch_local: true
+metube_backup_stop_service: true
+metube_backup_include_state: true
+metube_backup_include_config: true
+metube_backup_include_systemd: true
+metube_backup_include_traefik: true
+metube_backup_use_delete: true
+metube_backup_retain: 7

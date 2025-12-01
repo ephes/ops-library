@@ -1,0 +1,44 @@
+---
+- name: "Validate required variables"
+  ansible.builtin.include_tasks: validate.yml
+
+- name: "Ensure uv is installed"
+  ansible.builtin.include_tasks: uv.yml
+  when: metube_install_uv | bool
+
+- name: "Ensure Node.js is installed"
+  ansible.builtin.include_tasks: nodejs.yml
+
+- name: "Install required packages"
+  ansible.builtin.include_tasks: packages.yml
+
+- name: "Ensure metube user and group exist"
+  ansible.builtin.include_tasks: user.yml
+
+- name: "Create directories"
+  ansible.builtin.include_tasks: directories.yml
+
+- name: "Fetch MeTube sources"
+  ansible.builtin.include_tasks: source.yml
+
+- name: "Build frontend assets"
+  ansible.builtin.include_tasks: ui.yml
+  when: metube_ui_build | bool
+
+- name: "Create Python environment and install dependencies"
+  ansible.builtin.include_tasks: python.yml
+  when: metube_sync_dependencies | bool
+
+- name: "Render environment file"
+  ansible.builtin.include_tasks: env.yml
+
+- name: "Configure systemd service"
+  ansible.builtin.include_tasks: systemd.yml
+
+- name: "Configure Traefik exposure"
+  ansible.builtin.include_tasks: traefik.yml
+  when: metube_traefik_enabled | bool
+
+- name: "Run health check"
+  ansible.builtin.include_tasks: health.yml
+  when: metube_healthcheck_enabled | bool

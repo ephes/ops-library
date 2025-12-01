@@ -1,0 +1,17 @@
+---
+- name: "Render metube systemd service"
+  ansible.builtin.template:
+    src: metube.service.j2
+    dest: "{{ metube_service_unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart metube
+
+- name: "Ensure metube service state"
+  ansible.builtin.systemd:
+    name: "{{ metube_service_name }}"
+    enabled: "{{ metube_service_enabled }}"
+    state: "{{ metube_service_state }}"

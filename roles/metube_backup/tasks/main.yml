@@ -1,0 +1,194 @@
+---
+- name: Assert required metube paths
+  ansible.builtin.assert:
+    that:
+      - metube_backup_root | length > 0
+      - metube_backup_prefix | length > 0
+      - metube_state_dir | length > 0
+      - metube_env_file | length > 0
+      - metube_service_unit | length > 0
+    fail_msg: "metube_backup_root/prefix/state_dir/env_file/service_unit must be set."
+
+- name: Collect metube version (best effort)
+  ansible.builtin.command: >
+    {{ metube_venv_path }}/bin/python3 -c "import yt_dlp, sys; print(getattr(yt_dlp,'__version__','unknown'))"
+  register: metube_version_cmd
+  changed_when: false
+  failed_when: false
+
+- name: Set backup timestamp
+  ansible.builtin.set_fact:
+    metube_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+- name: Set backup paths
+  ansible.builtin.set_fact:
+    metube_backup_dir: "{{ metube_backup_root }}/{{ metube_backup_prefix }}-{{ metube_backup_timestamp }}"
+    metube_backup_archive: "{{ metube_backup_root }}/{{ metube_backup_prefix }}-{{ metube_backup_timestamp }}.{{ metube_backup_archive_extension }}"
+
+- name: Create backup directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ metube_backup_owner }}"
+    group: "{{ metube_backup_group }}"
+    mode: "{{ metube_backup_dir_mode }}"
+  loop:
+    - "{{ metube_backup_root }}"
+    - "{{ metube_backup_dir }}"
+    - "{{ metube_backup_dir }}/state"
+    - "{{ metube_backup_dir }}/config"
+    - "{{ metube_backup_dir }}/systemd"
+    - "{{ metube_backup_dir }}/traefik"
+
+- name: Stat metube paths
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  register: metube_backup_stats
+  loop:
+    - { path: "{{ metube_state_dir }}", mandatory: true, label: "State directory" }
+    - { path: "{{ metube_env_file }}", mandatory: true, label: "Env file" }
+    - { path: "{{ metube_service_unit }}", mandatory: false, label: "Service unit" }
+    - { path: "{{ metube_traefik_config_path }}", mandatory: false, label: "Traefik config" }
+
+- name: Ensure mandatory paths exist
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+    fail_msg: "Required path missing for backup: {{ item.item.label }} ({{ item.stat.path }})"
+  loop: "{{ metube_backup_stats.results }}"
+  when: item.item.mandatory | default(false)
+
+- name: Stop metube service for consistent backup
+  ansible.builtin.systemd:
+    name: "{{ metube_service_name }}"
+    state: stopped
+  when: metube_backup_stop_service | bool
+
+- name: Sync metube state directory
+  ansible.builtin.command:
+    cmd: >
+      rsync -a{{ ' --delete' if metube_backup_use_delete else '' }}
+      "{{ metube_state_dir }}/" "{{ metube_backup_dir }}/state/"
+  changed_when: true
+  when:
+    - metube_backup_include_state | bool
+    - metube_backup_stats.results[0].stat.exists
+
+- name: Copy metube env file
+  ansible.builtin.copy:
+    src: "{{ metube_env_file }}"
+    dest: "{{ metube_backup_dir }}/config/{{ metube_env_file | basename }}"
+    owner: "{{ metube_backup_owner }}"
+    group: "{{ metube_backup_group }}"
+    mode: "{{ metube_backup_file_mode }}"
+    remote_src: true
+  when:
+    - metube_backup_include_config | bool
+    - metube_backup_stats.results[1].stat.exists
+
+- name: Copy metube systemd unit
+  ansible.builtin.copy:
+    src: "{{ metube_service_unit }}"
+    dest: "{{ metube_backup_dir }}/systemd/{{ metube_service_unit | basename }}"
+    owner: "{{ metube_backup_owner }}"
+    group: "{{ metube_backup_group }}"
+    mode: "{{ metube_backup_file_mode }}"
+    remote_src: true
+  when:
+    - metube_backup_include_systemd | bool
+    - metube_backup_stats.results[2].stat.exists
+
+- name: Copy Traefik dynamic config
+  ansible.builtin.copy:
+    src: "{{ metube_traefik_config_path }}"
+    dest: "{{ metube_backup_dir }}/traefik/{{ metube_traefik_config_path | basename }}"
+    owner: "{{ metube_backup_owner }}"
+    group: "{{ metube_backup_group }}"
+    mode: "{{ metube_backup_file_mode }}"
+    remote_src: true
+  when:
+    - metube_backup_include_traefik | bool
+    - metube_backup_stats.results[3].stat.exists
+
+- name: Start metube service after backup
+  ansible.builtin.systemd:
+    name: "{{ metube_service_name }}"
+    state: started
+    daemon_reload: true
+  when: metube_backup_stop_service | bool
+
+- name: Build metube backup manifest
+  ansible.builtin.copy:
+    dest: "{{ metube_backup_dir }}/manifest.yml"
+    owner: "{{ metube_backup_owner }}"
+    group: "{{ metube_backup_group }}"
+    mode: "{{ metube_backup_file_mode }}"
+    content: |
+      version: "{{ metube_version_cmd.stdout | default('unknown') | trim }}"
+      timestamp: "{{ metube_backup_timestamp }}"
+      archive: "{{ metube_backup_archive | basename }}"
+      state_dir: "{{ metube_state_dir }}"
+      env_file: "{{ metube_env_file }}"
+      service_unit: "{{ metube_service_unit }}"
+      traefik_config: "{{ metube_traefik_config_path }}"
+
+- name: Create backup archive
+  community.general.archive:
+    path: "{{ metube_backup_dir }}"
+    dest: "{{ metube_backup_archive }}"
+    format: "{{ metube_backup_archive_format }}"
+  when: metube_backup_create_archive | bool
+
+- name: Ensure local backup directory exists
+  ansible.builtin.file:
+    path: "{{ metube_backup_local_dir }}"
+    state: directory
+    mode: "{{ metube_backup_dir_mode }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: metube_backup_fetch_local | bool and metube_backup_create_archive | bool
+
+- name: Fetch backup archive locally
+  ansible.builtin.fetch:
+    src: "{{ metube_backup_archive }}"
+    dest: "{{ metube_backup_local_dir }}/"
+    flat: true
+  become: false
+  run_once: true
+  when: metube_backup_fetch_local | bool and metube_backup_create_archive | bool
+
+- name: Prune old archives
+  ansible.builtin.find:
+    paths: "{{ metube_backup_root }}"
+    patterns: "{{ metube_backup_prefix }}-*.{{ metube_backup_archive_extension }}"
+    age: 0
+    age_stamp: mtime
+  register: metube_backup_existing_archives
+  when: metube_backup_retain | int > 0 and metube_backup_create_archive | bool
+
+- name: Remove excess archives
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ (metube_backup_existing_archives.files | sort(attribute='mtime', reverse=true))[metube_backup_retain:] }}"
+  when: metube_backup_retain | int > 0 and metube_backup_create_archive | bool
+
+- name: Prune unarchived backups (dir mode)
+  ansible.builtin.find:
+    paths: "{{ metube_backup_root }}"
+    patterns: "{{ metube_backup_prefix }}-*"
+    file_type: directory
+  register: metube_backup_existing_dirs
+  when: metube_backup_retain | int > 0 and not metube_backup_create_archive | bool
+
+- name: Remove excess backup directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ (metube_backup_existing_dirs.files | sort(attribute='mtime', reverse=true))[metube_backup_retain:] }}"
+  when: metube_backup_retain | int > 0 and not metube_backup_create_archive | bool
+
+- name: "Backup complete"
+  ansible.builtin.debug:
+    msg: "MeTube backup stored at {{ metube_backup_archive if metube_backup_create_archive else metube_backup_dir }}"

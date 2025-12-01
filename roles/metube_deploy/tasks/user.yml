@@ -1,0 +1,18 @@
+---
+- name: "Ensure metube group exists"
+  ansible.builtin.group:
+    name: "{{ metube_group }}"
+    state: present
+  when: metube_manage_user | bool
+
+- name: "Ensure metube user exists"
+  ansible.builtin.user:
+    name: "{{ metube_user }}"
+    group: "{{ metube_group }}"
+    groups: "{{ metube_extra_groups }}"
+    append: true
+    home: "{{ metube_home }}"
+    shell: "{{ metube_shell }}"
+    state: present
+    create_home: false
+  when: metube_manage_user | bool

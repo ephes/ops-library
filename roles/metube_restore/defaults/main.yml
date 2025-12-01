@@ -1,0 +1,5 @@
+---
+metube_restore_staging_dir: /tmp/metube-restore
+metube_restore_cleanup: true
+metube_restore_restart: true
+metube_restore_stop_service: true

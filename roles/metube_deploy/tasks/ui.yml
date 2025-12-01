@@ -1,0 +1,37 @@
+---
+- name: "Check install marker for UI"
+  ansible.builtin.stat:
+    path: "{{ metube_install_marker }}"
+  register: metube_install_marker_stat
+
+- name: "Check built UI assets"
+  ansible.builtin.stat:
+    path: "{{ metube_install_dir }}/ui/dist/metube/browser"
+  register: metube_ui_dist_stat
+
+- name: "Install frontend dependencies (npm ci)"
+  ansible.builtin.command:
+    cmd: npm ci
+    chdir: "{{ metube_install_dir }}/ui"
+  environment:
+    NODE_ENV: ""
+    npm_config_production: "false"
+    HOME: "{{ metube_home }}"
+  become: true
+  become_user: "{{ metube_user }}"
+  register: metube_npm_ci
+  changed_when: "'added' in metube_npm_ci.stderr or 'added' in metube_npm_ci.stdout or metube_git_checkout.changed"
+  when: metube_git_checkout.changed or not metube_install_marker_stat.stat.exists or not metube_ui_dist_stat.stat.exists
+
+- name: "Build frontend assets"
+  ansible.builtin.command:
+    cmd: npm run build -- --configuration {{ metube_ui_build_configuration }}
+    chdir: "{{ metube_install_dir }}/ui"
+  environment:
+    NODE_ENV: "{{ metube_ui_node_env }}"
+    HOME: "{{ metube_home }}"
+  become: true
+  become_user: "{{ metube_user }}"
+  register: metube_npm_build
+  changed_when: true
+  when: metube_git_checkout.changed or not metube_install_marker_stat.stat.exists or not metube_ui_dist_stat.stat.exists

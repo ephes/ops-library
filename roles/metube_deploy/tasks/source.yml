@@ -1,0 +1,20 @@
+---
+- name: "Checkout MeTube sources"
+  ansible.builtin.git:
+    repo: "{{ metube_repo_url }}"
+    dest: "{{ metube_install_dir }}"
+    version: "{{ metube_repo_version }}"
+    update: true
+    force: true
+  register: metube_git_checkout
+  become: true
+  become_user: "{{ metube_user }}"
+
+- name: "Set install marker when sources change"
+  ansible.builtin.file:
+    path: "{{ metube_install_marker }}"
+    state: touch
+    owner: "{{ metube_user }}"
+    group: "{{ metube_group }}"
+    mode: "0644"
+  when: metube_git_checkout.after is defined and metube_git_checkout.after != metube_git_checkout.before

@@ -19,6 +19,7 @@ minio_deploy
 minecraft_java_deploy
 navidrome_deploy
 jellyfin_deploy
+metube_deploy
 ```
 
 These roles handle the complete deployment lifecycle including:
