@@ -1,0 +1,158 @@
+---
+# Set up PostgreSQL database and schema for mail
+
+- name: Install psycopg2 for Ansible PostgreSQL modules
+  ansible.builtin.apt:
+    name: python3-psycopg2
+    state: present
+
+# Database tasks that don't work in check mode (database must exist)
+# These are skipped in --check mode since the database won't actually be created
+- name: Database setup (skipped in check mode)
+  when: not ansible_check_mode
+  block:
+    - name: Create mail database
+      community.postgresql.postgresql_db:
+        name: "{{ mail_backend_postgres_database }}"
+        state: present
+      become: true
+      become_user: postgres
+
+    - name: Create mail database user
+      community.postgresql.postgresql_user:
+        name: "{{ mail_backend_postgres_user }}"
+        password: "{{ mail_backend_postgres_password }}"
+        state: present
+      become: true
+      become_user: postgres
+      no_log: true
+
+    - name: Grant privileges to mail user
+      community.postgresql.postgresql_privs:
+        db: "{{ mail_backend_postgres_database }}"
+        privs: ALL
+        type: database
+        role: "{{ mail_backend_postgres_user }}"
+      become: true
+      become_user: postgres
+
+    - name: Copy schema SQL file
+      ansible.builtin.template:
+        src: schema.sql.j2
+        dest: /tmp/mail_schema.sql
+        mode: "0644"
+
+    - name: Apply database schema
+      community.postgresql.postgresql_script:
+        db: "{{ mail_backend_postgres_database }}"
+        path: /tmp/mail_schema.sql
+      become: true
+      become_user: postgres
+      register: schema_result
+      changed_when: "'CREATE' in (schema_result.statusmessage | default('')) or 'ALTER' in (schema_result.statusmessage | default(''))"
+
+    - name: Remove temporary schema file
+      ansible.builtin.file:
+        path: /tmp/mail_schema.sql
+        state: absent
+
+    - name: Grant table privileges to mail user
+      community.postgresql.postgresql_privs:
+        db: "{{ mail_backend_postgres_database }}"
+        privs: SELECT
+        type: table
+        objs: ALL_IN_SCHEMA
+        role: "{{ mail_backend_postgres_user }}"
+        schema: public
+      become: true
+      become_user: postgres
+
+    - name: Grant view privileges to mail user
+      community.postgresql.postgresql_query:
+        db: "{{ mail_backend_postgres_database }}"
+        query: |
+          GRANT SELECT ON mail_users_view TO {{ mail_backend_postgres_user }};
+          GRANT SELECT ON mail_aliases_view TO {{ mail_backend_postgres_user }};
+          GRANT SELECT ON mail_catchall_view TO {{ mail_backend_postgres_user }};
+          GRANT SELECT ON mail_domain_aliases_list TO {{ mail_backend_postgres_user }};
+          GRANT SELECT ON mail_domain_aliases_expanded TO {{ mail_backend_postgres_user }};
+          GRANT SELECT ON mail_sender_login_view TO {{ mail_backend_postgres_user }};
+      become: true
+      become_user: postgres
+
+    - name: Insert initial domains
+      community.postgresql.postgresql_query:
+        db: "{{ mail_backend_postgres_database }}"
+        query: |
+          INSERT INTO mail_domains (name)
+          VALUES (%(domain)s)
+          ON CONFLICT (LOWER(name)) DO NOTHING
+        named_args:
+          domain: "{{ item }}"
+      become: true
+      become_user: postgres
+      loop: "{{ mail_backend_domains }}"
+
+    # =========================================================================
+    # Initial User Creation
+    # =========================================================================
+
+    - name: Generate password hash for initial user
+      ansible.builtin.command:
+        cmd: doveadm pw -s SHA512-CRYPT -p "{{ mail_backend_initial_user_password }}"
+      register: doveadm_pw_result
+      changed_when: false
+      no_log: true
+      when:
+        - mail_backend_initial_user is defined
+        - mail_backend_initial_user_domain is defined
+        - mail_backend_initial_user_password is defined
+        - mail_backend_initial_user_password | length > 0
+
+    - name: Create initial mail user
+      community.postgresql.postgresql_query:
+        db: "{{ mail_backend_postgres_database }}"
+        query: |
+          INSERT INTO mail_users (domain_id, localpart, password)
+          SELECT d.id, %(localpart)s, %(password)s
+          FROM mail_domains d
+          WHERE LOWER(d.name) = LOWER(%(domain)s)
+          ON CONFLICT (domain_id, LOWER(localpart)) DO UPDATE
+          SET password = EXCLUDED.password
+        named_args:
+          localpart: "{{ mail_backend_initial_user }}"
+          domain: "{{ mail_backend_initial_user_domain }}"
+          password: "{{ doveadm_pw_result.stdout }}"
+      become: true
+      become_user: postgres
+      no_log: true
+      when:
+        - mail_backend_initial_user is defined
+        - mail_backend_initial_user_domain is defined
+        - mail_backend_initial_user_password is defined
+        - mail_backend_initial_user_password | length > 0
+
+    - name: Create required aliases (postmaster, abuse) for each domain
+      community.postgresql.postgresql_query:
+        db: "{{ mail_backend_postgres_database }}"
+        query: |
+          INSERT INTO mail_aliases (source_domain_id, source_localpart, destination)
+          SELECT d.id, %(source_localpart)s, %(destination)s
+          FROM mail_domains d
+          WHERE LOWER(d.name) = LOWER(%(domain)s)
+          ON CONFLICT (source_domain_id, LOWER(source_localpart), LOWER(destination)) DO NOTHING
+        named_args:
+          source_localpart: "{{ item.0.localpart }}"
+          destination: "{{ item.0.destination_localpart }}@{{ item.1 }}"
+          domain: "{{ item.1 }}"
+      become: true
+      become_user: postgres
+      loop: "{{ mail_backend_required_aliases | product(mail_backend_domains) | list }}"
+      when:
+        - mail_backend_initial_user is defined
+        - mail_backend_required_aliases is defined
+
+- name: Check mode notice for database tasks
+  ansible.builtin.debug:
+    msg: "Database tasks skipped in check mode - run without --check to set up database"
+  when: ansible_check_mode

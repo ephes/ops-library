@@ -1,0 +1,37 @@
+---
+# Configure SASL authentication for submission
+
+- name: Create SASL password database for relay user
+  ansible.builtin.template:
+    src: sasl_passwd.j2
+    dest: /etc/postfix/sasl_passwd
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Postmap sasl_passwd
+  no_log: true
+
+- name: Create Postfix SASL configuration
+  ansible.builtin.template:
+    src: smtpd.conf.j2
+    dest: /etc/postfix/sasl/smtpd.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart postfix
+
+- name: Ensure sasldb2 exists for relay user
+  ansible.builtin.shell: |
+    echo "{{ mail_relay_sasl_password }}" | saslpasswd2 -c -u {{ mail_relay_hostname }} -p {{ mail_relay_sasl_user }}
+  args:
+    creates: /etc/sasldb2
+  no_log: true
+  notify: Restart postfix
+
+- name: Set sasldb2 permissions
+  ansible.builtin.file:
+    path: /etc/sasldb2
+    owner: root
+    group: postfix
+    mode: "0640"
+  when: not ansible_check_mode

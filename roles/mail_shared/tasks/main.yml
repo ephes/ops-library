@@ -1,0 +1,5 @@
+---
+# mail_shared - placeholder tasks
+
+- name: mail_shared noop
+  ansible.builtin.meta: noop

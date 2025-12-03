@@ -1,0 +1,71 @@
+---
+# mail_spam_deploy - rspamd spam filter defaults
+#
+# This role deploys rspamd for spam filtering on the mail backend.
+# Integrates with Postfix via milter protocol.
+
+# =============================================================================
+# Redis Configuration
+# =============================================================================
+
+mail_spam_redis_enabled: true
+mail_spam_redis_host: "localhost"
+mail_spam_redis_port: 6379
+# mail_spam_redis_password: ""  # Set via SOPS if Redis requires auth
+
+# =============================================================================
+# rspamd Web Interface
+# =============================================================================
+
+mail_spam_web_enabled: true
+mail_spam_web_bind: "127.0.0.1"
+mail_spam_web_port: 11334
+# mail_spam_web_password: ""  # Set via SOPS for web UI access
+
+# =============================================================================
+# Postfix Integration
+# =============================================================================
+
+mail_spam_milter_socket: "/var/lib/rspamd/milter.sock"
+mail_spam_milter_mode: "0660"
+
+# =============================================================================
+# Spam Actions
+# =============================================================================
+
+# Score thresholds
+mail_spam_reject_score: 15
+mail_spam_add_header_score: 6
+mail_spam_greylist_score: 4
+mail_spam_rewrite_subject_score: 8
+
+# Subject rewrite prefix
+mail_spam_subject_prefix: "[SPAM]"
+
+# =============================================================================
+# DKIM Integration
+# =============================================================================
+
+# rspamd can also do DKIM signing (alternative to OpenDKIM)
+mail_spam_dkim_signing_enabled: false
+
+# =============================================================================
+# Learning
+# =============================================================================
+
+mail_spam_learn_spam_header: "X-Spam-Learn: spam"
+mail_spam_learn_ham_header: "X-Spam-Learn: ham"
+
+# =============================================================================
+# Local Configuration
+# =============================================================================
+
+mail_spam_local_config_path: "/etc/rspamd/local.d"
+mail_spam_override_config_path: "/etc/rspamd/override.d"
+
+# =============================================================================
+# Package Management
+# =============================================================================
+
+mail_spam_packages:
+  - rspamd

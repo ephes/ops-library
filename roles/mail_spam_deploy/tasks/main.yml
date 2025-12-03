@@ -1,0 +1,14 @@
+---
+# mail_spam_deploy - Main task orchestration
+
+- name: Install rspamd packages
+  ansible.builtin.import_tasks: packages.yml
+
+- name: Configure rspamd
+  ansible.builtin.import_tasks: config.yml
+
+- name: Configure Postfix integration
+  ansible.builtin.import_tasks: postfix.yml
+
+- name: Enable and start services
+  ansible.builtin.import_tasks: services.yml

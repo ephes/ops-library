@@ -1,0 +1,26 @@
+---
+# Create vmail user and directories for virtual mailboxes
+
+- name: Create vmail group
+  ansible.builtin.group:
+    name: "{{ mail_backend_vmail_group }}"
+    gid: "{{ mail_backend_vmail_gid }}"
+    state: present
+
+- name: Create vmail user
+  ansible.builtin.user:
+    name: "{{ mail_backend_vmail_user }}"
+    uid: "{{ mail_backend_vmail_uid }}"
+    group: "{{ mail_backend_vmail_group }}"
+    home: "{{ mail_backend_vmail_path }}"
+    shell: /usr/sbin/nologin
+    create_home: false
+    state: present
+
+- name: Create vmail directory
+  ansible.builtin.file:
+    path: "{{ mail_backend_vmail_path }}"
+    state: directory
+    owner: "{{ mail_backend_vmail_user }}"
+    group: "{{ mail_backend_vmail_group }}"
+    mode: "0750"

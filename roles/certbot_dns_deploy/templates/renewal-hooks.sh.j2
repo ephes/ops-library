@@ -1,0 +1,12 @@
+#!/bin/bash
+set -euo pipefail
+
+# Managed by Ansible - commands run after certificate renewal
+
+{% if certbot_dns_renewal_hooks | length == 0 %}
+exit 0
+{% else %}
+{% for hook in certbot_dns_renewal_hooks %}
+{{ hook }}
+{% endfor %}
+{% endif %}

@@ -1,0 +1,19 @@
+---
+# Install rspamd packages
+
+- name: Add rspamd repository key
+  ansible.builtin.apt_key:
+    url: https://rspamd.com/apt-stable/gpg.key
+    state: present
+
+- name: Add rspamd repository
+  ansible.builtin.apt_repository:
+    repo: "deb http://rspamd.com/apt-stable/ {{ ansible_distribution_release }} main"
+    state: present
+    filename: rspamd
+
+- name: Install rspamd packages
+  ansible.builtin.apt:
+    name: "{{ mail_spam_packages }}"
+    state: present
+    update_cache: true

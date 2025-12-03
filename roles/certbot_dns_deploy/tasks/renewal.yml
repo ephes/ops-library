@@ -1,0 +1,27 @@
+---
+# Configure renewal hooks and ensure timer is active
+
+- name: Ensure renewal-hook directory exists
+  ansible.builtin.file:
+    path: "{{ certbot_dns_renewal_hook_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: yes
+
+- name: Render renewal deploy hook
+  ansible.builtin.template:
+    src: renewal-hooks.sh.j2
+    dest: "{{ certbot_dns_renewal_hook_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: yes
+
+- name: Ensure certbot systemd timer is enabled
+  ansible.builtin.systemd:
+    name: certbot.timer
+    state: started
+    enabled: true
+  become: yes

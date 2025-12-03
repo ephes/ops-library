@@ -1,0 +1,38 @@
+---
+# mail_backup - Mail server backup defaults
+
+# =============================================================================
+# Backup Paths
+# =============================================================================
+
+mail_backup_vmail_path: "/mnt/cryptdata/vmail"
+mail_backup_destination: "/mnt/cryptdata/backups/mail"
+mail_backup_retention_days: 14
+
+# =============================================================================
+# PostgreSQL Configuration
+# =============================================================================
+
+mail_backup_postgres_database: "mail"
+mail_backup_postgres_user: "mail"
+
+# =============================================================================
+# Backup Components
+# =============================================================================
+
+mail_backup_maildir: true
+mail_backup_database: true
+mail_backup_config: true
+
+# Configuration paths to backup
+mail_backup_config_paths:
+  - /etc/postfix
+  - /etc/dovecot
+  - /etc/opendkim
+  - /etc/rspamd
+
+# =============================================================================
+# Timestamp Format
+# =============================================================================
+
+mail_backup_timestamp_format: "%Y%m%d_%H%M%S"

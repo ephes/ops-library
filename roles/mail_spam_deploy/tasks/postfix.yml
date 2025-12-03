@@ -1,0 +1,42 @@
+---
+# Configure Postfix to use rspamd milter (chained with existing milters like OpenDKIM)
+
+- name: Get current smtpd_milters value
+  ansible.builtin.command:
+    cmd: postconf -h smtpd_milters
+  register: current_smtpd_milters
+  changed_when: false
+  failed_when: false
+
+- name: Add rspamd milter to Postfix (append to existing milters)
+  ansible.builtin.lineinfile:
+    path: /etc/postfix/main.cf
+    regexp: "^smtpd_milters\\s*="
+    line: "smtpd_milters = {{ current_smtpd_milters.stdout | default('') }}{% if current_smtpd_milters.stdout | default('') | length > 0 %}, {% endif %}unix:{{ mail_spam_milter_socket }}"
+    backup: true
+  notify: Reload postfix
+  when: "('unix:' ~ mail_spam_milter_socket) not in (current_smtpd_milters.stdout | default(''))"
+
+- name: Set non_smtpd_milters to match smtpd_milters
+  ansible.builtin.lineinfile:
+    path: /etc/postfix/main.cf
+    regexp: "^non_smtpd_milters\\s*="
+    line: "non_smtpd_milters = $smtpd_milters"
+    backup: true
+  notify: Reload postfix
+
+- name: Set milter default action
+  ansible.builtin.lineinfile:
+    path: /etc/postfix/main.cf
+    regexp: "^milter_default_action\\s*="
+    line: "milter_default_action = accept"
+    backup: true
+  notify: Reload postfix
+
+- name: Set milter protocol
+  ansible.builtin.lineinfile:
+    path: /etc/postfix/main.cf
+    regexp: "^milter_protocol\\s*="
+    line: "milter_protocol = 6"
+    backup: true
+  notify: Reload postfix

@@ -1,0 +1,5 @@
+---
+# metube_shared - placeholder tasks
+
+- name: metube_shared noop
+  ansible.builtin.meta: noop

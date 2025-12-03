@@ -1,0 +1,30 @@
+---
+# Enable and start mail services
+# Skipped in check mode since packages won't actually be installed
+
+- name: Enable and start services (skipped in check mode)
+  when: not ansible_check_mode
+  block:
+    - name: Enable and start OpenDKIM
+      ansible.builtin.systemd:
+        name: opendkim
+        enabled: true
+        state: started
+      when: mail_backend_dkim_enabled
+
+    - name: Enable and start Dovecot
+      ansible.builtin.systemd:
+        name: dovecot
+        enabled: true
+        state: started
+
+    - name: Enable and start Postfix
+      ansible.builtin.systemd:
+        name: postfix
+        enabled: true
+        state: started
+
+- name: Check mode notice for service tasks
+  ansible.builtin.debug:
+    msg: "Service start tasks skipped in check mode"
+  when: ansible_check_mode
