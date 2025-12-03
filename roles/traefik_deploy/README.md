@@ -199,6 +199,19 @@ http:
 
 Traefik automatically watches this directory and reloads configurations.
 
+### Use certbot-managed certificates (file provider)
+
+```yaml
+- role: local.ops_library.traefik_deploy
+  vars:
+    traefik_letsencrypt_email: "admin@example.com"
+    traefik_file_certificates:
+      - cert_file: "/etc/letsencrypt/live/home.xn--wersdrfer-47a.de/fullchain.pem"
+        key_file: "/etc/letsencrypt/live/home.xn--wersdrfer-47a.de/privkey.pem"
+```
+
+Place this under `/etc/traefik/dynamic/certificates.yml`; Traefik reloads it automatically when the cert is renewed.
+
 ## Dual Router Authentication Pattern
 
 For implementing the dual router pattern (internal vs external authentication), see the example in homelab service configuration.

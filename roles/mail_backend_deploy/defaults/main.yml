@@ -1,0 +1,164 @@
+---
+# mail_backend_deploy - Backend mail server defaults
+#
+# This role deploys the full mail stack on the backend server:
+# - Postfix for local delivery and submission
+# - Dovecot for IMAP access
+# - PostgreSQL integration for virtual users/domains/aliases
+
+# =============================================================================
+# Required Variables (must be set by consumer)
+# =============================================================================
+
+# mail_backend_domains: []  # List of hosted domains
+# mail_backend_postgres_password: ""  # PostgreSQL password for mail user
+# mail_backend_relay_host: ""  # Edge relay for outbound mail
+# mail_backend_relay_password: ""  # Password for SMTP AUTH to edge
+
+# =============================================================================
+# Server Configuration
+# =============================================================================
+
+# Internal hostname (not public-facing)
+mail_backend_hostname: "macmini.home.wersdoerfer.de"
+mail_backend_mydomain: "wersdoerfer.de"
+
+# Client-facing hostnames
+mail_backend_imap_hostname: "imap.home.wersdoerfer.de"
+mail_backend_smtp_hostname: "smtp.home.wersdoerfer.de"
+
+# =============================================================================
+# Network Configuration
+# =============================================================================
+
+mail_backend_inet_interfaces: "all"
+mail_backend_inet_protocols: "all"
+
+# Networks trusted for relay (edge server IPs + localhost)
+mail_backend_mynetworks:
+  - "127.0.0.0/8"
+  - "[::1]/128"
+  - "213.239.212.206/32"
+  - "[2a01:4f8:a0:82dc::2]/128"
+
+# Edge relay for outbound mail
+mail_backend_relay_host: "mail.wersdoerfer.de"
+mail_backend_relay_port: 587
+
+# =============================================================================
+# Virtual Mail Storage
+# =============================================================================
+
+mail_backend_vmail_path: "/mnt/cryptdata/vmail"
+mail_backend_vmail_user: "vmail"
+mail_backend_vmail_group: "vmail"
+mail_backend_vmail_uid: 5000
+mail_backend_vmail_gid: 5000
+
+# Maildir format: domain/localpart/
+mail_backend_maildir_format: "%d/%n/"
+
+# =============================================================================
+# PostgreSQL Configuration
+# =============================================================================
+
+mail_backend_postgres_host: "localhost"
+mail_backend_postgres_port: 5432
+mail_backend_postgres_database: "mail"
+mail_backend_postgres_user: "mail"
+# mail_backend_postgres_password: ""  # Set via SOPS secrets
+
+# =============================================================================
+# TLS Configuration
+# =============================================================================
+
+mail_backend_tls_enabled: true
+
+# Certificate paths (Let's Encrypt via DNS-01 wildcard)
+mail_backend_tls_cert: "/etc/letsencrypt/live/home.xn--wersdrfer-47a.de/fullchain.pem"
+mail_backend_tls_key: "/etc/letsencrypt/live/home.xn--wersdrfer-47a.de/privkey.pem"
+
+# TLS security levels
+mail_backend_smtp_tls_security_level: "encrypt"  # outbound to edge
+mail_backend_smtpd_tls_security_level: "encrypt"  # inbound from edge (require TLS)
+
+# Minimum TLS version
+mail_backend_tls_protocols: ">=TLSv1.2"
+
+# =============================================================================
+# Dovecot Configuration
+# =============================================================================
+
+# IMAP settings
+mail_backend_dovecot_protocols: "imap lmtp sieve"
+mail_backend_dovecot_mail_location: "maildir:{{ mail_backend_vmail_path }}/%d/%n"
+
+# Auth settings
+mail_backend_dovecot_auth_mechanisms: "plain login"
+mail_backend_dovecot_disable_plaintext_auth: "yes"
+
+# Sieve settings
+mail_backend_sieve_enabled: true
+mail_backend_sieve_dir: "{{ mail_backend_vmail_path }}/%d/%n/sieve"
+mail_backend_sieve_active: "{{ mail_backend_vmail_path }}/%d/%n/.dovecot.sieve"
+
+# =============================================================================
+# DKIM Configuration
+# =============================================================================
+
+mail_backend_dkim_enabled: true
+mail_backend_dkim_selector: "mail"
+mail_backend_dkim_key_path: "/etc/opendkim/keys"
+mail_backend_dkim_key_bits: 2048
+
+# =============================================================================
+# Security Settings
+# =============================================================================
+
+# Password hashing scheme
+mail_backend_password_scheme: "SHA512-CRYPT"
+
+# Plus addressing
+mail_backend_recipient_delimiter: "+"
+
+# Rate limiting (submission)
+mail_backend_submission_rate_limit: 100
+
+# =============================================================================
+# Logging
+# =============================================================================
+
+mail_backend_maillog_file: "/var/log/mail.log"
+
+# =============================================================================
+# Initial User Configuration (set in ops-control playbook)
+# =============================================================================
+
+# Initial admin user to create (optional, set via playbook vars)
+# mail_backend_initial_user: ""
+# mail_backend_initial_user_domain: ""
+# mail_backend_initial_user_password: ""  # SHA512-CRYPT hash from secrets
+
+# Aliases to create for each domain (postmaster, abuse are required by RFC)
+# Set mail_backend_initial_user in playbook to point these to a real mailbox
+mail_backend_required_aliases:
+  - { localpart: "postmaster", destination_localpart: "{{ mail_backend_initial_user | default('') }}" }
+  - { localpart: "abuse", destination_localpart: "{{ mail_backend_initial_user | default('') }}" }
+
+# =============================================================================
+# Package Management
+# =============================================================================
+
+mail_backend_packages:
+  - postfix
+  - postfix-pgsql
+  - dovecot-core
+  - dovecot-imapd
+  - dovecot-lmtpd
+  - dovecot-pgsql
+  - dovecot-sieve
+  - dovecot-managesieved
+  - opendkim
+  - opendkim-tools
+  - libsasl2-modules
+  - ca-certificates

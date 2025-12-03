@@ -20,6 +20,9 @@ minecraft_java_deploy
 navidrome_deploy
 jellyfin_deploy
 metube_deploy
+mail_backend_deploy
+mail_relay_deploy
+certbot_dns_deploy
 ```
 
 These roles handle the complete deployment lifecycle including:
