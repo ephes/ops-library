@@ -16,7 +16,7 @@ This role cleanly uninstalls Traefik while providing options to preserve Let's E
 
 ## Requirements
 
-- ansible-core 2.15+
+- ansible-core 2.20+
 - Target system with Traefik installed (via `traefik_deploy` role)
 - `community.general` collection (for UFW management)
 

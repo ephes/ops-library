@@ -19,7 +19,7 @@ The backup process coordinates with the running server via RCON to ensure data c
 
 - Minecraft Java server deployed via `minecraft_java_deploy` role
 - RCON enabled and accessible
-- ansible-core 2.15+
+- ansible-core 2.20+
 
 ## Role Variables
 

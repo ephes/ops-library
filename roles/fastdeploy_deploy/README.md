@@ -18,8 +18,8 @@ This role deploys FastDeploy, a web-based platform for managing service deployme
 - Ubuntu/Debian-based target system
 - Ability to install PostgreSQL (handled automatically via dependency)
 - Node.js 16+ (for frontend build)
-- Python 3.11+
-- ansible-core 2.15+
+- Python 3.14+
+- ansible-core 2.20+
 - Required collections:
   - `ansible.posix` (for synchronize module)
   - `community.general` (for PostgreSQL modules)
