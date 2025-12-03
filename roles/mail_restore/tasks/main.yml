@@ -1,0 +1,138 @@
+---
+# mail_restore - Restore mail server from backup
+
+- name: Resolve backup timestamp (supports 'latest')
+  block:
+    - name: Assert backup path is set
+      ansible.builtin.assert:
+        that:
+          - mail_restore_backup_path is defined
+          - mail_restore_backup_path | length > 0
+        fail_msg: "mail_restore_backup_path must be set"
+
+    - name: Find latest backup directory when requested
+      ansible.builtin.find:
+        paths: "{{ mail_restore_backup_path }}"
+        file_type: directory
+        depth: 1
+      register: mail_restore_backup_dirs
+      when: mail_restore_timestamp is not defined or mail_restore_timestamp == 'latest' or (mail_restore_timestamp | length == 0)
+
+    - name: Set effective restore timestamp
+      ansible.builtin.set_fact:
+        mail_restore_timestamp_effective: >-
+          {{
+            (mail_restore_backup_dirs.files | sort(attribute='mtime', reverse=true) | map(attribute='path') | list | first | basename)
+            if (mail_restore_timestamp is not defined or mail_restore_timestamp == 'latest' or (mail_restore_timestamp | length == 0))
+            else mail_restore_timestamp
+          }}
+
+    - name: Validate resolved timestamp
+      ansible.builtin.assert:
+        that:
+          - mail_restore_timestamp_effective is defined
+          - mail_restore_timestamp_effective | length > 0
+        fail_msg: "No backups found under {{ mail_restore_backup_path }}"
+
+  rescue:
+    - ansible.builtin.fail:
+        msg: "Unable to resolve backup timestamp under {{ mail_restore_backup_path }}"
+
+- name: Set backup source path
+  ansible.builtin.set_fact:
+    mail_restore_source: "{{ mail_restore_backup_path }}/{{ mail_restore_timestamp_effective }}"
+
+- name: Check backup exists
+  ansible.builtin.stat:
+    path: "{{ mail_restore_source }}/manifest.yml"
+  register: backup_manifest
+
+- name: Fail if backup not found
+  ansible.builtin.fail:
+    msg: "Backup not found at {{ mail_restore_source }}"
+  when: not backup_manifest.stat.exists
+
+- name: Read backup manifest
+  ansible.builtin.slurp:
+    src: "{{ mail_restore_source }}/manifest.yml"
+  register: manifest_content
+
+- name: Display backup info
+  ansible.builtin.debug:
+    msg: |
+      Restoring backup from: {{ mail_restore_source }}
+      {{ manifest_content.content | b64decode }}
+
+- name: Stop mail services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+  loop:
+    - postfix
+    - dovecot
+  ignore_errors: true
+
+- name: Restore PostgreSQL database
+  block:
+    - name: Drop existing database
+      community.postgresql.postgresql_db:
+        name: "{{ mail_restore_postgres_database }}"
+        state: absent
+      become: true
+      become_user: postgres
+
+    - name: Create fresh database
+      community.postgresql.postgresql_db:
+        name: "{{ mail_restore_postgres_database }}"
+        state: present
+      become: true
+      become_user: postgres
+
+    - name: Restore database from backup
+      ansible.builtin.shell: |
+        gunzip -c "{{ mail_restore_source }}/database.sql.gz" | \
+          psql -U postgres {{ mail_restore_postgres_database }}
+      become: true
+      become_user: postgres
+      changed_when: true
+  when: mail_restore_database
+
+- name: Restore maildir
+  block:
+    - name: Remove existing maildir
+      ansible.builtin.file:
+        path: "{{ mail_restore_vmail_path }}"
+        state: absent
+
+    - name: Extract maildir from backup
+      ansible.builtin.unarchive:
+        src: "{{ mail_restore_source }}/maildir.tar.gz"
+        dest: "{{ mail_restore_vmail_path | dirname }}"
+        remote_src: true
+  when: mail_restore_maildir
+
+- name: Restore configuration
+  block:
+    - name: Extract config from backup
+      ansible.builtin.unarchive:
+        src: "{{ mail_restore_source }}/config.tar.gz"
+        dest: /
+        remote_src: true
+  when: mail_restore_config
+
+- name: Start mail services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+  loop:
+    - postfix
+    - dovecot
+
+- name: Display restore complete message
+  ansible.builtin.debug:
+    msg: |
+      Restore complete from {{ mail_restore_source }}
+      Services restarted: postfix, dovecot
+      {% if not mail_restore_config %}
+      Note: Configuration was NOT restored. Review and apply config changes manually if needed.
+      {% endif %}
