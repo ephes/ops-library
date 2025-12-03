@@ -41,7 +41,7 @@ homelab_systemd_unit_path: "/etc/systemd/system/{{ homelab_service_name }}.servi
 homelab_service_restart_on_change: true
 homelab_traefik_enabled: true
 homelab_traefik_host: "home.example.com"
-homelab_traefik_cert_resolver: letsencrypt
+homelab_traefik_cert_resolver: ""  # empty -> use file-provider certs
 homelab_traefik_config_path: "/etc/traefik/dynamic/homelab.yml"
 homelab_traefik_service_name: traefik
 homelab_basic_auth_enabled: true

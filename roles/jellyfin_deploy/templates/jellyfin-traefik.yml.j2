@@ -18,7 +18,9 @@ http:
 {% endfor %}
       service: jellyfin
       tls:
+{% if jellyfin_traefik_cert_resolver | default('') | length > 0 %}
         certResolver: {{ jellyfin_traefik_cert_resolver }}
+{% endif %}
 
     jellyfin-ext:
       rule: "Host(`{{ jellyfin_traefik_host }}`)"
@@ -36,7 +38,9 @@ http:
 {% endfor %}
       service: jellyfin
       tls:
+{% if jellyfin_traefik_cert_resolver | default('') | length > 0 %}
         certResolver: {{ jellyfin_traefik_cert_resolver }}
+{% endif %}
 {% else %}
     jellyfin-secure:
       rule: "Host(`{{ jellyfin_traefik_host }}`)"
@@ -52,7 +56,9 @@ http:
 {% endfor %}
       service: jellyfin
       tls:
+{% if jellyfin_traefik_cert_resolver | default('') | length > 0 %}
         certResolver: {{ jellyfin_traefik_cert_resolver }}
+{% endif %}
 {% endif %}
 
     jellyfin-http:

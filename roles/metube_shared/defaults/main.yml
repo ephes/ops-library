@@ -45,7 +45,7 @@ metube_ytdl_options:
 # Traefik exposure
 metube_traefik_enabled: true
 metube_traefik_host: "metube.example.com"
-metube_traefik_cert_resolver: letsencrypt
+metube_traefik_cert_resolver: ""  # empty -> use file-provider certs
 metube_traefik_entrypoints:
   - web-secure
 metube_traefik_config_path: /etc/traefik/dynamic/metube.yml

@@ -34,7 +34,7 @@ minio_console_port: 9002
 # Traefik exposure configuration
 minio_expose_via_traefik: false
 minio_traefik_host: "minio.home.example.com"  # Override in ops-control as needed
-minio_traefik_cert_resolver: letsencrypt
+minio_traefik_cert_resolver: ""  # empty -> use file-provider certs
 minio_traefik_config_path: "/etc/traefik/dynamic/minio.yml"
 
 # Traefik dual router authentication (Console Web UI only)

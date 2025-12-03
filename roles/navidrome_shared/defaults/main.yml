@@ -68,7 +68,7 @@ navidrome_systemd_after: "network.target"
 # Traefik exposure
 navidrome_traefik_enabled: true
 navidrome_traefik_host: "music.example.com"
-navidrome_traefik_cert_resolver: letsencrypt
+navidrome_traefik_cert_resolver: ""  # empty -> use file-provider certs
 navidrome_traefik_entrypoints:
   - web-secure
 navidrome_traefik_config_path: /etc/traefik/dynamic/navidrome.yml

@@ -16,7 +16,9 @@ http:
         - homelab-gzip
       service: homelab
       tls:
+{% if homelab_traefik_cert_resolver | default('') | length > 0 %}
         certResolver: {{ homelab_traefik_cert_resolver }}
+{% endif %}
 
     # EXTERNAL router (Public) - WITH auth, lower priority
     homelab-ext:
@@ -30,7 +32,9 @@ http:
         - homelab-gzip
       service: homelab
       tls:
+{% if homelab_traefik_cert_resolver | default('') | length > 0 %}
         certResolver: {{ homelab_traefik_cert_resolver }}
+{% endif %}
 {% else %}
     # Single router without authentication
     homelab-secure:
@@ -42,7 +46,9 @@ http:
         - homelab-gzip
       service: homelab
       tls:
+{% if homelab_traefik_cert_resolver | default('') | length > 0 %}
         certResolver: {{ homelab_traefik_cert_resolver }}
+{% endif %}
 {% endif %}
 
     # HTTP redirect

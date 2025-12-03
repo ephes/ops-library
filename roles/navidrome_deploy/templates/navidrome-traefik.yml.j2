@@ -18,7 +18,9 @@ http:
 {% endfor %}
       service: navidrome
       tls:
+{% if navidrome_traefik_cert_resolver | default('') | length > 0 %}
         certResolver: {{ navidrome_traefik_cert_resolver }}
+{% endif %}
 
     navidrome-ext:
       rule: "Host(`{{ navidrome_traefik_host }}`)"
@@ -36,7 +38,9 @@ http:
 {% endfor %}
       service: navidrome
       tls:
+{% if navidrome_traefik_cert_resolver | default('') | length > 0 %}
         certResolver: {{ navidrome_traefik_cert_resolver }}
+{% endif %}
 {% else %}
     navidrome-secure:
       rule: "Host(`{{ navidrome_traefik_host }}`)"
@@ -52,7 +56,9 @@ http:
 {% endfor %}
       service: navidrome
       tls:
+{% if navidrome_traefik_cert_resolver | default('') | length > 0 %}
         certResolver: {{ navidrome_traefik_cert_resolver }}
+{% endif %}
 {% endif %}
 
     navidrome-http:

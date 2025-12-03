@@ -76,7 +76,7 @@ fastdeploy_service_restart_sec: 5
 # Traefik integration
 fastdeploy_traefik_enabled: true
 fastdeploy_traefik_host: "{{ fastdeploy_api_url | regex_replace('^https?://', '') }}"
-fastdeploy_traefik_cert_resolver: letsencrypt
+fastdeploy_traefik_cert_resolver: ""  # empty -> use file-provider certs
 fastdeploy_traefik_middlewares: []  # Custom middlewares to add
 
 # Traefik dual router authentication (SECURITY: mandatory for public-facing services)

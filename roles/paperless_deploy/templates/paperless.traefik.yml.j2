@@ -6,7 +6,9 @@ http:
       entryPoints:
         - "{{ paperless_traefik_entrypoint }}"
       tls:
+{% if paperless_traefik_cert_resolver | default('') | length > 0 %}
         certResolver: "{{ paperless_traefik_cert_resolver }}"
+{% endif %}
       middlewares:
         - paperless-headers
 

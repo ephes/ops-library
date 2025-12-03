@@ -56,7 +56,7 @@ jellyfin_traefik_enabled: true
 jellyfin_traefik_host: media.example.com
 jellyfin_traefik_entrypoints:
   - web-secure
-jellyfin_traefik_cert_resolver: letsencrypt
+jellyfin_traefik_cert_resolver: ""  # empty -> use file-provider certs
 jellyfin_traefik_config_path: /etc/traefik/dynamic/jellyfin.yml
 jellyfin_traefik_middlewares: []
 jellyfin_internal_ip_ranges:

@@ -20,7 +20,9 @@ http:
 {% endfor %}
       service: {{ fastdeploy_service_name }}
       tls:
+{% if fastdeploy_traefik_cert_resolver | default('') | length > 0 %}
         certResolver: {{ fastdeploy_traefik_cert_resolver }}
+{% endif %}
 
     # EXTERNAL router (Public) - WITH auth, lower priority
     {{ fastdeploy_service_name }}-ext:
@@ -38,7 +40,9 @@ http:
 {% endfor %}
       service: {{ fastdeploy_service_name }}
       tls:
+{% if fastdeploy_traefik_cert_resolver | default('') | length > 0 %}
         certResolver: {{ fastdeploy_traefik_cert_resolver }}
+{% endif %}
 {% else %}
     # Single router without authentication (legacy mode)
     {{ fastdeploy_service_name }}-secure:
