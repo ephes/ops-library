@@ -2,19 +2,21 @@
 - name: Validate required paths
   ansible.builtin.assert:
     that:
-      - traefik_backup_acme_path | length > 0
       - traefik_backup_root | length > 0
-    fail_msg: "traefik_backup_acme_path and traefik_backup_root must be set"
+    fail_msg: "traefik_backup_root must be set"
 
-- name: Check ACME state file exists
+- name: Check ACME state file exists (optional)
   ansible.builtin.stat:
     path: "{{ traefik_backup_acme_path }}"
   register: traefik_backup_acme_stat
+  when: traefik_backup_include_acme | bool
 
 - name: Fail when ACME state file is missing
   ansible.builtin.fail:
     msg: "Traefik ACME state file not found: {{ traefik_backup_acme_path }}"
-  when: not traefik_backup_acme_stat.stat.exists | default(false)
+  when:
+    - traefik_backup_include_acme | bool
+    - not traefik_backup_acme_stat.stat.exists | default(false)
 
 - name: Set backup timestamp
   ansible.builtin.set_fact:
@@ -45,6 +47,12 @@
     group: "{{ traefik_backup_group }}"
     mode: "{{ traefik_backup_file_mode }}"
     remote_src: true
+  when: traefik_backup_include_acme | bool
+
+- name: Skip ACME backup (disabled)
+  ansible.builtin.debug:
+    msg: "traefik_backup_include_acme is false; skipping acme.json backup"
+  when: not traefik_backup_include_acme | bool
 
 - name: Write backup metadata
   ansible.builtin.copy:

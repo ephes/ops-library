@@ -14,9 +14,11 @@ http:
       middlewares:
         - minio-api-headers
       service: minio-api
-      tls:
 {% if minio_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
         certResolver: {{ minio_traefik_cert_resolver }}
+{% else %}
+      tls: {}
 {% endif %}
 
     # HTTP redirect for API
@@ -39,9 +41,11 @@ http:
       middlewares:
         - minio-console-headers
       service: minio-console
-      tls:
 {% if minio_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
         certResolver: {{ minio_traefik_cert_resolver }}
+{% else %}
+      tls: {}
 {% endif %}
 
     # EXTERNAL router (Public) - WITH auth, lower priority
@@ -54,9 +58,11 @@ http:
         - minio-console-auth
         - minio-console-headers
       service: minio-console
-      tls:
 {% if minio_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
         certResolver: {{ minio_traefik_cert_resolver }}
+{% else %}
+      tls: {}
 {% endif %}
 {% else %}
     # Single router without authentication
@@ -67,9 +73,11 @@ http:
       middlewares:
         - minio-console-headers
       service: minio-console
-      tls:
 {% if minio_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
         certResolver: {{ minio_traefik_cert_resolver }}
+{% else %}
+      tls: {}
 {% endif %}
 {% endif %}
 

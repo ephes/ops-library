@@ -4,8 +4,7 @@
     that:
       - traefik_restore_root | length > 0
       - traefik_restore_archive | length > 0
-      - traefik_restore_acme_path | length > 0
-    fail_msg: "traefik_restore_* variables must be set"
+    fail_msg: "traefik_restore_root and traefik_restore_archive must be set"
 
 - name: Find archive when using latest
   ansible.builtin.find:
@@ -77,11 +76,14 @@
   ansible.builtin.stat:
     path: "{{ traefik_restore_payload_dir }}/acme/{{ traefik_restore_acme_path | basename }}"
   register: traefik_restore_acme_stat
+  when: traefik_restore_include_acme | bool
 
 - name: Fail when ACME file missing in payload
   ansible.builtin.fail:
     msg: "ACME state file not found in archive payload"
-  when: not traefik_restore_acme_stat.stat.exists | default(false)
+  when:
+    - traefik_restore_include_acme | bool
+    - not traefik_restore_acme_stat.stat.exists | default(false)
 
 - name: Ensure ACME directory exists
   ansible.builtin.file:
@@ -90,6 +92,7 @@
     owner: "{{ traefik_restore_acme_owner }}"
     group: "{{ traefik_restore_acme_group }}"
     mode: "{{ traefik_restore_acme_dir_mode }}"
+  when: traefik_restore_include_acme | bool
 
 - name: Restore ACME state file
   ansible.builtin.copy:
@@ -99,6 +102,12 @@
     group: "{{ traefik_restore_acme_group }}"
     mode: "{{ traefik_restore_acme_mode }}"
     remote_src: true
+  when: traefik_restore_include_acme | bool
+
+- name: Skip ACME restore (disabled)
+  ansible.builtin.debug:
+    msg: "traefik_restore_include_acme is false; skipping acme.json restore"
+  when: not traefik_restore_include_acme | bool
 
 - name: Cleanup staging directory
   ansible.builtin.file:

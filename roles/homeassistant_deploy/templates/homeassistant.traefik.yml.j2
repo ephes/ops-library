@@ -3,9 +3,11 @@ http:
     homeassistant:
       rule: "Host(`homeassistant.{{ homeassistant_traefik_domain }}`)"
       service: homeassistant
-      tls:
 {% if homeassistant_traefik_certresolver | default('') | length > 0 %}
+      tls:
         certResolver: {{ homeassistant_traefik_certresolver }}
+{% else %}
+      tls: {}
 {% endif %}
       middlewares:
 {% for middleware in homeassistant_traefik_middlewares %}

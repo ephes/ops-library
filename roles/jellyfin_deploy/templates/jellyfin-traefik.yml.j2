@@ -17,9 +17,11 @@ http:
         - {{ middleware }}
 {% endfor %}
       service: jellyfin
-      tls:
 {% if jellyfin_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
         certResolver: {{ jellyfin_traefik_cert_resolver }}
+{% else %}
+      tls: {}
 {% endif %}
 
     jellyfin-ext:
@@ -37,9 +39,11 @@ http:
         - {{ middleware }}
 {% endfor %}
       service: jellyfin
-      tls:
 {% if jellyfin_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
         certResolver: {{ jellyfin_traefik_cert_resolver }}
+{% else %}
+      tls: {}
 {% endif %}
 {% else %}
     jellyfin-secure:
@@ -55,9 +59,11 @@ http:
         - {{ middleware }}
 {% endfor %}
       service: jellyfin
-      tls:
 {% if jellyfin_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
         certResolver: {{ jellyfin_traefik_cert_resolver }}
+{% else %}
+      tls: {}
 {% endif %}
 {% endif %}
 

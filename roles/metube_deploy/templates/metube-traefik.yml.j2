@@ -17,9 +17,11 @@ http:
         - {{ middleware }}
 {% endfor %}
       service: metube
-      tls:
 {% if metube_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
         certResolver: {{ metube_traefik_cert_resolver }}
+{% else %}
+      tls: {}
 {% endif %}
 
     metube-ext:
@@ -37,9 +39,11 @@ http:
         - {{ middleware }}
 {% endfor %}
       service: metube
-      tls:
 {% if metube_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
         certResolver: {{ metube_traefik_cert_resolver }}
+{% else %}
+      tls: {}
 {% endif %}
 {% else %}
     metube-secure:
@@ -55,9 +59,11 @@ http:
         - {{ middleware }}
 {% endfor %}
       service: metube
-      tls:
 {% if metube_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
         certResolver: {{ metube_traefik_cert_resolver }}
+{% else %}
+      tls: {}
 {% endif %}
 {% endif %}
 

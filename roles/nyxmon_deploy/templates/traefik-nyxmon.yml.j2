@@ -18,9 +18,11 @@ http:
         - {{ middleware }}
 {% endfor %}
       service: nyxmon
-      tls:
 {% if nyxmon_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
         certResolver: {{ nyxmon_traefik_cert_resolver }}
+{% else %}
+      tls: {}
 {% endif %}
 
     # EXTERNAL router (Public) - WITH auth, lower priority
@@ -37,9 +39,11 @@ http:
         - {{ middleware }}
 {% endfor %}
       service: nyxmon
-      tls:
 {% if nyxmon_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
         certResolver: {{ nyxmon_traefik_cert_resolver }}
+{% else %}
+      tls: {}
 {% endif %}
 {% else %}
     # Single router without authentication (legacy mode)
@@ -54,9 +58,11 @@ http:
         - {{ middleware }}
 {% endfor %}
       service: nyxmon
-      tls:
 {% if nyxmon_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
         certResolver: {{ nyxmon_traefik_cert_resolver }}
+{% else %}
+      tls: {}
 {% endif %}
 {% endif %}
 

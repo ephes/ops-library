@@ -10,3 +10,4 @@ traefik_restore_acme_dir_mode: "0700"
 traefik_restore_acme_owner: root
 traefik_restore_acme_group: root
 traefik_restore_acme_mode: "0600"
+traefik_restore_include_acme: false
