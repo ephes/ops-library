@@ -11,6 +11,7 @@ testing
 roles/index
 howto/service_lifecycle
 howto/paperless_scanner
+howto/traefik_wildcard
 changelog
 ```
 
