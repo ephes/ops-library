@@ -17,7 +17,7 @@ password_query = \
 user_query = \
   SELECT \
     '{{ mail_backend_vmail_path }}/' || maildir AS home, \
-    '{{ mail_backend_vmail_path }}/' || maildir AS mail, \
+    'maildir:{{ mail_backend_vmail_path }}/' || maildir AS mail, \
     {{ mail_backend_vmail_uid }} AS uid, \
     {{ mail_backend_vmail_gid }} AS gid \
   FROM mail_users_view \
