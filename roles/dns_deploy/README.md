@@ -84,6 +84,42 @@ Unbound handles everything:
 | `dns_blocklists` | See defaults | List of blocklist URLs |
 | `dns_allowlist` | `["github.com", ...]` | Domains never to block |
 
+### Forward Zones Configuration
+
+Forward zones allow specific domains to be resolved by designated upstream DNS servers. This is useful for local domains (e.g., `fritz.box`) that need resolution by a local router or appliance.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `dns_forward_zones` | `[]` | List of forward zone configurations |
+
+Each forward zone entry supports:
+
+| Key | Required | Description |
+|-----|----------|-------------|
+| `name` | Yes | Domain to forward (e.g., `"fritz.box"`) |
+| `forward_addrs` | Yes | List of upstream DNS server IPs |
+| `forward_first` | No | Try forward first, fall back to local resolution on failure (default: `false`) |
+
+**Example - Forward fritz.box to local router:**
+
+```yaml
+dns_forward_zones:
+  - name: "fritz.box"
+    forward_addrs:
+      - "192.168.178.1"
+```
+
+**Example - Multiple forwarders for redundancy:**
+
+```yaml
+dns_forward_zones:
+  - name: "corp.example.com"
+    forward_addrs:
+      - "10.0.0.53"
+      - "10.0.0.54"
+    forward_first: true
+```
+
 ### Local Resolver Management
 
 | Variable | Default | Description |
@@ -238,6 +274,9 @@ For Tailscale clients to use this DNS:
 
 ### DNS (Unbound)
 - `/etc/unbound/unbound.conf.d/` - Unbound configuration
+  - `00-base.conf` - Base Unbound settings
+  - `05-forward-zones.conf` - Forward zone configuration (when `dns_forward_zones` is set)
+  - `10-split-dns.conf` - Split-horizon views
 - `/var/lib/unbound/` - Blocklists and data
 - `/usr/local/bin/update-blocklists.sh` - Blocklist update script
 - `/etc/systemd/system/unbound-blocklist.*` - Update timer and service

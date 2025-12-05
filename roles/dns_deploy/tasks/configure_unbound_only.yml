@@ -85,6 +85,47 @@
   register: unbound_split_config
   notify: restart unbound
 
+- name: Validate forward zones variable type
+  assert:
+    that:
+      - dns_forward_zones is defined
+      - dns_forward_zones is iterable
+      - dns_forward_zones is sequence
+      - dns_forward_zones is not string
+      - dns_forward_zones is not mapping
+    fail_msg: "dns_forward_zones must be a list, got {{ dns_forward_zones | type_debug }}"
+    quiet: true
+
+- name: Validate forward zones entries
+  assert:
+    that:
+      - item is mapping
+      - item.name is defined and item.name | length > 0
+      - item.forward_addrs is defined and item.forward_addrs is sequence and item.forward_addrs | length > 0
+    fail_msg: "Forward zone entry must be a dict with 'name' (string) and 'forward_addrs' (non-empty list)"
+    quiet: true
+  loop: "{{ dns_forward_zones }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"
+  when: dns_forward_zones | length > 0
+
+- name: Configure Unbound forward zones
+  template:
+    src: unbound-forward-zones.conf.j2
+    dest: "{{ dns_unbound_config_dir }}/05-forward-zones.conf"
+    owner: root
+    group: root
+    mode: '0644'
+  when: dns_forward_zones | length > 0
+  notify: restart unbound
+
+- name: Remove forward zones config when not needed
+  file:
+    path: "{{ dns_unbound_config_dir }}/05-forward-zones.conf"
+    state: absent
+  when: dns_forward_zones | length == 0
+  notify: restart unbound
+
 - name: Create allowlist configuration
   template:
     src: unbound-allowlist.conf.j2
