@@ -38,6 +38,26 @@ This role deploys the complete mail backend on macmini:
 - Let's Encrypt certificates via DNS-01 challenge
 - Network access from edge relay
 
+## ⚠️ Network Prerequisites (IMPORTANT)
+
+If the backend is behind NAT (e.g., home network), you **must** configure port forwarding on your router **before** mail will flow:
+
+| External Port | Forward To | Purpose |
+|---------------|------------|---------|
+| **25** | macmini:25 | Inbound mail from edge relay |
+| **587** | macmini:587 | Client submission (STARTTLS) |
+| **465** | macmini:465 | Client submission (implicit TLS) |
+| **993** | macmini:993 | IMAP access |
+| **4190** | macmini:4190 | ManageSieve (optional) |
+
+**Without port 25 forwarding, mail from the edge relay cannot reach the backend!**
+
+The edge relay connects to the backend via the public hostname (e.g., `smtp.home.xn--wersdrfer-47a.de`) which resolves to your home IP via DDNS. If port 25 isn't forwarded, you'll see errors like:
+```
+connect to smtp.home.xn--wersdrfer-47a.de[...]:25: No route to host
+status=deferred
+```
+
 ## Required Variables
 
 ```yaml
@@ -132,13 +152,30 @@ And these views for Postfix/Dovecot lookups:
 - `mail_domain_aliases_expanded` - Expanded domain aliases
 - `mail_sender_login_view` - Sender/login binding
 
+## Client Configuration
+
+Mail clients must use the **full email address** (including domain) as the username:
+
+| Setting | Value |
+|---------|-------|
+| Username | `jochen@xn--wersdrfer-47a.de` (full email, punycode for IDN) |
+| Password | (from secrets) |
+| IMAP Server | `imap.home.xn--wersdrfer-47a.de` |
+| IMAP Port | 993 (SSL/TLS) |
+| SMTP Server | `smtp.home.xn--wersdrfer-47a.de` |
+| SMTP Port | 587 (STARTTLS) or 465 (SSL/TLS) |
+
+**Notes:**
+- For IDN domains like `wersdörfer.de`, use the punycode form (`xn--wersdrfer-47a.de`) in usernames. Some mail clients may send Unicode, which won't match the database.
+- **Apple Mail:** Adding the account via Mail.app's account setup does not work reliably. Instead, add the account via **System Settings → Internet Accounts → Add Other Account → Mail Account** and use the punycode domain in the username.
+
 ## Managing Users
 
 ```sql
--- Add a new user
+-- Add a new user (use punycode for IDN domains)
 INSERT INTO mail_users (domain_id, localpart, password)
 SELECT id, 'jochen', '{SHA512-CRYPT}$6$...'
-FROM mail_domains WHERE name = 'wersdoerfer.de';
+FROM mail_domains WHERE name = 'xn--wersdrfer-47a.de';
 
 -- Generate password hash
 doveadm pw -s SHA512-CRYPT
