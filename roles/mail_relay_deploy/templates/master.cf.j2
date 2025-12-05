@@ -16,7 +16,8 @@ smtp      inet  n       -       y       -       -       smtpd
 # =============================================================================
 # Note: sender_login binding is done on the backend, not here.
 # Edge just relays authenticated mail from the backend.
-submission inet n       -       y       -       -       smtpd
+# Note: chroot=n required for SASL auxprop to access /etc/sasldb2
+submission inet n       -       n       -       -       smtpd
   -o syslog_name=postfix/submission
   -o smtpd_tls_security_level=encrypt
   -o smtpd_sasl_auth_enable=yes
@@ -28,7 +29,8 @@ submission inet n       -       y       -       -       smtpd
 # =============================================================================
 # SMTPS - Port 465 (implicit TLS submission)
 # =============================================================================
-smtps     inet  n       -       y       -       -       smtpd
+# Note: chroot=n required for SASL auxprop to access /etc/sasldb2
+smtps     inet  n       -       n       -       -       smtpd
   -o syslog_name=postfix/smtps
   -o smtpd_tls_wrappermode=yes
   -o smtpd_sasl_auth_enable=yes
