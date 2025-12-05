@@ -27,7 +27,9 @@ mail_relay_hostname: "mail.wersdoerfer.de"
 mail_relay_mydomain: "wersdoerfer.de"
 
 # Backend relay destination
-mail_relay_backend_host: "smtp.home.wersdoerfer.de"
+# IMPORTANT: Use the IDN domain (xn--wersdrfer-47a.de), NOT wersdoerfer.de
+# The *.wersdoerfer.de wildcard resolves to the edge server, causing mail loops!
+mail_relay_backend_host: "smtp.home.xn--wersdrfer-47a.de"
 mail_relay_backend_port: 25
 
 # =============================================================================
