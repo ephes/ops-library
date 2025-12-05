@@ -68,6 +68,7 @@ mail_relay_tls_protocols: ">=TLSv1.2"
 # =============================================================================
 
 mail_relay_greylisting_enabled: true
+mail_relay_greylisting_port: 10024  # Port for postgrey (10023 often used by other services)
 mail_relay_greylisting_delay: 300  # seconds
 mail_relay_greylisting_max_age: 35  # days
 mail_relay_greylisting_retry_window: 48  # hours
