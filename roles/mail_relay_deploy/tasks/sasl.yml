@@ -20,13 +20,31 @@
     mode: "0644"
   notify: Restart postfix
 
-- name: Ensure sasldb2 exists for relay user
+- name: Check if relay user exists in sasldb2
+  ansible.builtin.command: sasldblistusers2
+  register: sasldb_users
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: Create relay user in sasldb2
   ansible.builtin.shell: |
     echo "{{ mail_relay_sasl_password }}" | saslpasswd2 -c -u {{ mail_relay_hostname }} -p {{ mail_relay_sasl_user }}
-  args:
-    creates: /etc/sasldb2
   no_log: true
+  when:
+    - not ansible_check_mode
+    - (sasldb_users.stdout is not defined) or (mail_relay_sasl_user ~ '@' ~ mail_relay_hostname not in sasldb_users.stdout)
   notify: Restart postfix
+
+- name: Update relay user password in sasldb2
+  ansible.builtin.shell: |
+    echo "{{ mail_relay_sasl_password }}" | saslpasswd2 -u {{ mail_relay_hostname }} -p {{ mail_relay_sasl_user }}
+  no_log: true
+  changed_when: false
+  when:
+    - not ansible_check_mode
+    - sasldb_users.stdout is defined
+    - mail_relay_sasl_user ~ '@' ~ mail_relay_hostname in sasldb_users.stdout
 
 - name: Set sasldb2 permissions
   ansible.builtin.file:
