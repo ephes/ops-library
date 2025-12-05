@@ -56,3 +56,9 @@
     mode: "0600"
   notify: Postmap relay_password
   no_log: true
+
+- name: Ensure relay password database exists
+  ansible.builtin.command:
+    cmd: postmap /etc/postfix/relay_password
+    creates: /etc/postfix/relay_password.db
+  when: not ansible_check_mode
