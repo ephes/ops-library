@@ -1,0 +1,10 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Verify | Test dummy role completed successfully
+      ansible.builtin.debug:
+        msg: "test_dummy role verification passed"

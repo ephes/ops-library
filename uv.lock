@@ -683,6 +683,7 @@ dependencies = [
 
 [package.optional-dependencies]
 docker = [
+    { name = "docker" },
     { name = "molecule-docker" },
 ]
 docs = [
@@ -702,6 +703,7 @@ vagrant = [
 requires-dist = [
     { name = "ansible-core", specifier = ">=2.20" },
     { name = "ansible-lint", specifier = ">=6.0" },
+    { name = "docker", marker = "extra == 'docker'", specifier = ">=6.0" },
     { name = "furo", marker = "extra == 'docs'", specifier = ">=2024.0" },
     { name = "jinja2", specifier = ">=3.0" },
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0" },

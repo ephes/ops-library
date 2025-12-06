@@ -128,6 +128,116 @@ docs-lint:
     @echo "Validating documentation integrity..."
     @uv run python validate_docs.py
 
+# ------------------------------------------
+# Container runtime detection (Colima/Podman/Docker)
+# ------------------------------------------
+
+# Internal: Detect Docker host socket
+# Priority: 1) Existing DOCKER_HOST env, 2) Colima socket, 3) Podman socket, 4) Default Docker socket
+_detect-docker-host:
+    #!/usr/bin/env bash
+    if [[ -n "${DOCKER_HOST:-}" ]]; then
+        echo "$DOCKER_HOST"
+    elif [[ -S "$HOME/.colima/default/docker.sock" ]]; then
+        echo "unix://$HOME/.colima/default/docker.sock"
+    elif command -v podman &>/dev/null && podman machine inspect &>/dev/null 2>&1; then
+        # Escape Go template braces to avoid just interpolation
+        socket_path=$(podman machine inspect --format '{{"{{"}}.ConnectionInfo.PodmanSocket.Path{{"}}"}}' 2>/dev/null)
+        if [[ -n "$socket_path" ]]; then
+            echo "unix://$socket_path"
+        else
+            echo ""
+        fi
+    elif [[ -S /var/run/docker.sock ]]; then
+        echo "unix:///var/run/docker.sock"
+    else
+        echo ""
+    fi
+
+# Helper: export DOCKER_HOST only if detection returns non-empty
+_export-docker-host:
+    #!/usr/bin/env bash
+    detected=$(just _detect-docker-host)
+    if [[ -n "$detected" ]]; then
+        echo "export DOCKER_HOST='$detected'"
+    else
+        echo "# DOCKER_HOST: using system default"
+    fi
+
+# ------------------------------------------
+# Molecule helpers
+# ------------------------------------------
+
+# Run molecule test for a specific role
+molecule-test role:
+    #!/usr/bin/env bash
+    eval "$(just _export-docker-host)"
+    export ANSIBLE_ALLOW_BROKEN_CONDITIONALS=1
+    cd roles/{{role}} && uv run molecule test
+
+# Run molecule converge (apply without destroy) for debugging
+molecule-converge role:
+    #!/usr/bin/env bash
+    eval "$(just _export-docker-host)"
+    export ANSIBLE_ALLOW_BROKEN_CONDITIONALS=1
+    cd roles/{{role}} && uv run molecule converge
+
+# Run molecule verify (run verification tests only)
+molecule-verify role:
+    #!/usr/bin/env bash
+    eval "$(just _export-docker-host)"
+    export ANSIBLE_ALLOW_BROKEN_CONDITIONALS=1
+    cd roles/{{role}} && uv run molecule verify
+
+# Destroy molecule test containers
+molecule-destroy role:
+    #!/usr/bin/env bash
+    eval "$(just _export-docker-host)"
+    export ANSIBLE_ALLOW_BROKEN_CONDITIONALS=1
+    cd roles/{{role}} && uv run molecule destroy
+
+# SSH into running molecule container
+molecule-login role:
+    #!/usr/bin/env bash
+    eval "$(just _export-docker-host)"
+    export ANSIBLE_ALLOW_BROKEN_CONDITIONALS=1
+    cd roles/{{role}} && uv run molecule login
+
+# Run molecule tests for all roles that have molecule configs
+molecule-test-all:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    eval "$(just _export-docker-host)"
+    export ANSIBLE_ALLOW_BROKEN_CONDITIONALS=1
+
+    shopt -s nullglob
+    molecule_dirs=(roles/*/molecule)
+
+    if [[ ${#molecule_dirs[@]} -eq 0 ]]; then
+        echo "No roles with molecule tests found"
+        exit 0
+    fi
+
+    failed_roles=()
+    for molecule_dir in "${molecule_dirs[@]}"; do
+        role_name=$(basename "$(dirname "$molecule_dir")")
+        echo "========================================"
+        echo "Testing role: $role_name"
+        echo "========================================"
+        if ! (cd "roles/$role_name" && uv run molecule test); then
+            failed_roles+=("$role_name")
+        fi
+    done
+
+    if [[ ${#failed_roles[@]} -gt 0 ]]; then
+        echo "========================================"
+        echo "FAILED ROLES: ${failed_roles[*]}"
+        echo "========================================"
+        exit 1
+    fi
+
+    echo "All molecule tests passed!"
+
 # Help
 help:
     @echo "ops-library Testing Commands"

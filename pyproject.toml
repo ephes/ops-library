@@ -19,6 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 docker = [
     "molecule-docker>=2.0",
+    "docker>=6.0",
 ]
 vagrant = [
     "molecule-vagrant>=2.0",

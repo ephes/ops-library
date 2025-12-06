@@ -14,8 +14,10 @@
 
 - name: Create step marker file
   file:
-    path: "{{ test_dummy_output_dir }}/step_{{ step_number }}_{{ ansible_date_time.epoch }}"
+    path: "{{ test_dummy_output_dir }}/step_{{ step_number }}"
     state: touch
+    modification_time: preserve
+    access_time: preserve
     mode: '0644'
 
 - name: Simulate processing delay

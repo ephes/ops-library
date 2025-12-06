@@ -19,8 +19,10 @@
 
 - name: Step 4 - Create completion marker
   file:
-    path: "{{ test_dummy_output_dir }}/deployment_complete_{{ ansible_date_time.epoch }}"
+    path: "{{ test_dummy_output_dir }}/deployment_complete"
     state: touch
+    modification_time: preserve
+    access_time: preserve
     mode: '0644'
 
 - name: Step 5 - Verify deployment
@@ -34,7 +36,7 @@
       Deployment completed successfully!
       Test directory: {{ test_dummy_output_dir }}
       Directory exists: {{ test_dir_stat.stat.exists }}
-      Deployment timestamp: {{ ansible_date_time.epoch }}
+      Deployment timestamp: {{ ansible_facts["date_time"]["epoch"] }}
 
 - name: Step 7 - Clean up old test files
   find:
