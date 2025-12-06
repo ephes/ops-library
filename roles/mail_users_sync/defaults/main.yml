@@ -1,0 +1,9 @@
+---
+# List of mail users to sync. Each item:
+# - email: user@example.com (required)
+# - password: plaintext password (required; hashed on sync)
+# - active: true/false (optional, default true)
+mail_users_list: []
+
+# Optional: when true, disables users present in DB but not in mail_users_list.
+mail_users_disable_unlisted: false
