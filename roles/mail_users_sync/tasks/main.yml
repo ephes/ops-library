@@ -1,0 +1,36 @@
+---
+- name: Get existing mail users from database
+  community.postgresql.postgresql_query:
+    db: mail
+    query: |
+      SELECT u.localpart || '@' || d.name AS email, u.active
+      FROM mail_users u
+      JOIN mail_domains d ON u.domain_id = d.id
+  register: existing_users
+  become_user: postgres
+
+- name: Build list of existing emails
+  ansible.builtin.set_fact:
+    existing_emails: "{{ existing_users.query_result | map(attribute='email') | map('lower') | list }}"
+
+- name: Create or update mail users
+  ansible.builtin.include_tasks: sync_user.yml
+  loop: "{{ mail_users_list }}"
+  loop_control:
+    loop_var: user
+
+- name: Disable users not in secrets (optional - if desired)
+  community.postgresql.postgresql_query:
+    db: mail
+    query: |
+      UPDATE mail_users u
+      SET active = false
+      FROM mail_domains d
+      WHERE u.domain_id = d.id
+        AND LOWER(u.localpart || '@' || d.name) = LOWER(%(email)s)
+        AND u.active = true
+    named_args:
+      email: "{{ item }}"
+  loop: "{{ existing_emails | difference(mail_users_list | map(attribute='email') | map('lower') | list) }}"
+  become_user: postgres
+  when: mail_users_disable_unlisted | default(false)

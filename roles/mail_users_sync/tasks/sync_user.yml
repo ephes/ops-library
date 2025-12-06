@@ -1,0 +1,93 @@
+---
+- name: Validate email format for {{ user.email }}
+  ansible.builtin.fail:
+    msg: "Invalid email format: '{{ user.email }}' - must contain exactly one @"
+  when: user.email.split('@') | length != 2 or user.email.split('@')[0] == '' or user.email.split('@')[1] == ''
+
+- name: Validate password is present for {{ user.email }}
+  ansible.builtin.fail:
+    msg: "Password is required for user '{{ user.email }}'"
+  when: user.password is not defined or user.password == ''
+
+- name: Parse email components for {{ user.email }}
+  ansible.builtin.set_fact:
+    user_localpart: "{{ user.email.split('@')[0] | lower }}"
+    user_domain: "{{ user.email.split('@')[1] | lower }}"
+    user_active: "{{ user.active | default(true) }}"
+
+- name: Get domain ID for {{ user_domain }}
+  community.postgresql.postgresql_query:
+    db: mail
+    query: "SELECT id FROM mail_domains WHERE LOWER(name) = LOWER(%(domain)s)"
+    named_args:
+      domain: "{{ user_domain }}"
+  register: domain_result
+  become_user: postgres
+
+- name: Fail if domain does not exist
+  ansible.builtin.fail:
+    msg: "Domain '{{ user_domain }}' not found in mail_domains table"
+  when: domain_result.query_result | length == 0
+
+- name: Generate password hash for {{ user.email }}
+  ansible.builtin.command: doveadm pw -s SHA512-CRYPT -p "{{ user.password }}"
+  register: password_hash
+  changed_when: false
+  no_log: true
+
+- name: Check if user exists {{ user.email }}
+  community.postgresql.postgresql_query:
+    db: mail
+    query: |
+      SELECT id, password, active FROM mail_users
+      WHERE domain_id = %(domain_id)s
+        AND LOWER(localpart) = LOWER(%(localpart)s)
+    named_args:
+      domain_id: "{{ domain_result.query_result[0].id }}"
+      localpart: "{{ user_localpart }}"
+  register: user_exists
+  become_user: postgres
+
+- name: Create mail user {{ user.email }}
+  community.postgresql.postgresql_query:
+    db: mail
+    query: |
+      INSERT INTO mail_users (domain_id, localpart, password, active)
+      VALUES (%(domain_id)s, %(localpart)s, %(password)s, %(active)s)
+    named_args:
+      domain_id: "{{ domain_result.query_result[0].id }}"
+      localpart: "{{ user_localpart }}"
+      password: "{{ password_hash.stdout }}"
+      active: "{{ user_active }}"
+  become_user: postgres
+  when: user_exists.query_result | length == 0
+
+- name: Verify existing password for {{ user.email }}
+  ansible.builtin.command: doveadm pw -t "{{ user_exists.query_result[0].password }}" -p "{{ user.password }}"
+  register: password_verify
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: user_exists.query_result | length > 0
+
+- name: Set password_changed fact for {{ user.email }}
+  ansible.builtin.set_fact:
+    password_changed: "{{ password_verify.rc != 0 }}"
+    active_changed: "{{ user_exists.query_result[0].active != user_active }}"
+  when: user_exists.query_result | length > 0
+
+- name: Update mail user {{ user.email }}
+  community.postgresql.postgresql_query:
+    db: mail
+    query: |
+      UPDATE mail_users
+      SET password = %(password)s, active = %(active)s
+      WHERE domain_id = %(domain_id)s
+        AND LOWER(localpart) = LOWER(%(localpart)s)
+    named_args:
+      domain_id: "{{ domain_result.query_result[0].id }}"
+      localpart: "{{ user_localpart }}"
+      password: "{{ password_hash.stdout }}"
+      active: "{{ user_active }}"
+  become_user: postgres
+  when: user_exists.query_result | length > 0 and (password_changed | bool or active_changed | bool)
