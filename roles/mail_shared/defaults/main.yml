@@ -95,8 +95,8 @@ mail_backend_tls_key: "/etc/letsencrypt/live/{{ mail_backend_smtp_hostname }}/pr
 # Password hashing scheme for virtual users
 mail_password_scheme: "SHA512-CRYPT"
 
-# Enable plus addressing (user+tag@domain)
-mail_recipient_delimiter: "+"
+# Tag addressing delimiter (user-tag@domain delivers to user)
+mail_recipient_delimiter: "-"
 
 # Rate limiting
 mail_client_connection_rate_limit: 10

@@ -118,8 +118,8 @@ mail_backend_dkim_key_bits: 2048
 # Password hashing scheme
 mail_backend_password_scheme: "SHA512-CRYPT"
 
-# Plus addressing
-mail_backend_recipient_delimiter: "+"
+# Tag addressing delimiter (user-tag@domain delivers to user)
+mail_backend_recipient_delimiter: "-"
 
 # Rate limiting (submission)
 mail_backend_submission_rate_limit: 100

@@ -76,7 +76,7 @@ vars_files:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `mail_password_scheme` | `SHA512-CRYPT` | Password hash scheme |
-| `mail_recipient_delimiter` | `+` | Plus addressing delimiter |
+| `mail_recipient_delimiter` | `-` | Tag addressing delimiter (user-tag@domain) |
 | `mail_tls_min_version` | `TLSv1.2` | Minimum TLS version |
 
 ## Architecture
