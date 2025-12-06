@@ -5,8 +5,12 @@ http:
       service: paperless
       entryPoints:
         - "{{ paperless_traefik_entrypoint }}"
+{% if paperless_traefik_cert_resolver | default('') | length > 0 %}
       tls:
         certResolver: "{{ paperless_traefik_cert_resolver }}"
+{% else %}
+      tls: {}
+{% endif %}
       middlewares:
         - paperless-headers
 

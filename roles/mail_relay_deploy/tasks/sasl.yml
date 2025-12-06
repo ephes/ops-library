@@ -1,0 +1,55 @@
+---
+# Configure SASL authentication for submission
+
+- name: Create SASL password database for relay user
+  ansible.builtin.template:
+    src: sasl_passwd.j2
+    dest: /etc/postfix/sasl_passwd
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Postmap sasl_passwd
+  no_log: true
+
+- name: Create Postfix SASL configuration
+  ansible.builtin.template:
+    src: smtpd.conf.j2
+    dest: /etc/postfix/sasl/smtpd.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart postfix
+
+- name: Check if relay user exists in sasldb2
+  ansible.builtin.command: sasldblistusers2
+  register: sasldb_users
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: Create relay user in sasldb2
+  ansible.builtin.shell: |
+    echo "{{ mail_relay_sasl_password }}" | saslpasswd2 -c -u {{ mail_relay_hostname }} -p {{ mail_relay_sasl_user }}
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - (sasldb_users.stdout is not defined) or (mail_relay_sasl_user ~ '@' ~ mail_relay_hostname not in sasldb_users.stdout)
+  notify: Restart postfix
+
+- name: Update relay user password in sasldb2
+  ansible.builtin.shell: |
+    echo "{{ mail_relay_sasl_password }}" | saslpasswd2 -u {{ mail_relay_hostname }} -p {{ mail_relay_sasl_user }}
+  no_log: true
+  changed_when: false
+  when:
+    - not ansible_check_mode
+    - sasldb_users.stdout is defined
+    - mail_relay_sasl_user ~ '@' ~ mail_relay_hostname in sasldb_users.stdout
+
+- name: Set sasldb2 permissions
+  ansible.builtin.file:
+    path: /etc/sasldb2
+    owner: root
+    group: postfix
+    mode: "0640"
+  when: not ansible_check_mode

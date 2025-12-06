@@ -1,0 +1,24 @@
+---
+# Enable and start services
+# Skipped in check mode since packages won't actually be installed
+
+- name: Enable and start services (skipped in check mode)
+  when: not ansible_check_mode
+  block:
+    - name: Enable and start postgrey
+      ansible.builtin.systemd:
+        name: postgrey
+        enabled: true
+        state: started
+      when: mail_relay_greylisting_enabled
+
+    - name: Enable and start postfix
+      ansible.builtin.systemd:
+        name: postfix
+        enabled: true
+        state: started
+
+- name: Check mode notice for service tasks
+  ansible.builtin.debug:
+    msg: "Service start tasks skipped in check mode"
+  when: ansible_check_mode

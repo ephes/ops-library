@@ -1,0 +1,29 @@
+---
+# Configure transport maps for domain routing
+
+- name: Create transport map for backend relay
+  ansible.builtin.template:
+    src: transport.j2
+    dest: /etc/postfix/transport
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Postmap transport
+
+- name: Create relay domains file
+  ansible.builtin.template:
+    src: relay_domains.j2
+    dest: /etc/postfix/relay_domains
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Postmap relay_domains
+
+- name: Create TLS policy map for backend
+  ansible.builtin.template:
+    src: tls_policy.j2
+    dest: /etc/postfix/tls_policy
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Postmap tls_policy

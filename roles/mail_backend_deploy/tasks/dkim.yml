@@ -1,0 +1,90 @@
+---
+# Configure OpenDKIM for DKIM signing
+
+- name: Ensure OpenDKIM directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: opendkim
+    group: opendkim
+    mode: "0750"
+  loop:
+    - /etc/opendkim
+    - "{{ mail_backend_dkim_key_path }}"
+
+- name: Create OpenDKIM configuration
+  ansible.builtin.template:
+    src: opendkim/opendkim.conf.j2
+    dest: /etc/opendkim.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart opendkim
+
+- name: Create OpenDKIM signing table
+  ansible.builtin.template:
+    src: opendkim/signing.table.j2
+    dest: /etc/opendkim/signing.table
+    owner: opendkim
+    group: opendkim
+    mode: "0640"
+  notify: Restart opendkim
+
+- name: Create OpenDKIM key table
+  ansible.builtin.template:
+    src: opendkim/key.table.j2
+    dest: /etc/opendkim/key.table
+    owner: opendkim
+    group: opendkim
+    mode: "0640"
+  notify: Restart opendkim
+
+- name: Create OpenDKIM trusted hosts
+  ansible.builtin.template:
+    src: opendkim/trusted.hosts.j2
+    dest: /etc/opendkim/trusted.hosts
+    owner: opendkim
+    group: opendkim
+    mode: "0640"
+  notify: Restart opendkim
+
+- name: Generate DKIM keys for each domain
+  ansible.builtin.shell: |
+    if [ ! -f "{{ mail_backend_dkim_key_path }}/{{ item }}/{{ mail_backend_dkim_selector }}.private" ]; then
+      mkdir -p "{{ mail_backend_dkim_key_path }}/{{ item }}"
+      opendkim-genkey -b {{ mail_backend_dkim_key_bits }} -d {{ item }} -D "{{ mail_backend_dkim_key_path }}/{{ item }}" -s {{ mail_backend_dkim_selector }} -v
+      chown -R opendkim:opendkim "{{ mail_backend_dkim_key_path }}/{{ item }}"
+      chmod 600 "{{ mail_backend_dkim_key_path }}/{{ item }}/{{ mail_backend_dkim_selector }}.private"
+      echo "CREATED"
+    else
+      echo "EXISTS"
+    fi
+  args:
+    executable: /bin/bash
+  register: dkim_key_result
+  changed_when: "'CREATED' in dkim_key_result.stdout"
+  loop: "{{ mail_backend_domains }}"
+
+- name: Display DKIM public keys for DNS
+  ansible.builtin.debug:
+    msg: |
+      DKIM public key for {{ item }}:
+      Add this TXT record to DNS: {{ mail_backend_dkim_selector }}._domainkey.{{ item }}
+      {{ lookup('file', mail_backend_dkim_key_path + '/' + item + '/' + mail_backend_dkim_selector + '.txt', errors='ignore') | default('Key file not found - check ' + mail_backend_dkim_key_path + '/' + item) }}
+  loop: "{{ mail_backend_domains }}"
+  when: dkim_key_result is changed
+
+- name: Add postfix to opendkim group
+  ansible.builtin.user:
+    name: postfix
+    groups: opendkim
+    append: true
+  notify: Restart postfix
+
+- name: Create OpenDKIM socket directory
+  ansible.builtin.file:
+    path: /var/spool/postfix/opendkim
+    state: directory
+    owner: opendkim
+    group: postfix
+    mode: "0750"

@@ -12,3 +12,4 @@ traefik_backup_create_archive: true
 traefik_backup_fetch_local: true
 traefik_backup_local_dir: "{{ lookup('env', 'HOME') }}/backups/traefik"
 traefik_backup_local_dir_mode: "0700"
+traefik_backup_include_acme: false

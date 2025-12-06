@@ -19,8 +19,12 @@ http:
         - {{ middleware }}
 {% endfor %}
       service: {{ fastdeploy_service_name }}
+{% if fastdeploy_traefik_cert_resolver | default('') | length > 0 %}
       tls:
         certResolver: {{ fastdeploy_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
 
     # EXTERNAL router (Public) - WITH auth, lower priority
     {{ fastdeploy_service_name }}-ext:
@@ -37,8 +41,12 @@ http:
         - {{ middleware }}
 {% endfor %}
       service: {{ fastdeploy_service_name }}
+{% if fastdeploy_traefik_cert_resolver | default('') | length > 0 %}
       tls:
         certResolver: {{ fastdeploy_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
 {% else %}
     # Single router without authentication (legacy mode)
     {{ fastdeploy_service_name }}-secure:
@@ -53,8 +61,12 @@ http:
         - {{ middleware }}
 {% endfor %}
       service: {{ fastdeploy_service_name }}
+{% if fastdeploy_traefik_cert_resolver | default('') | length > 0 %}
       tls:
         certResolver: {{ fastdeploy_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
 {% endif %}
 
     # HTTP to HTTPS redirect (handled by static config entrypoint redirect)

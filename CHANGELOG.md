@@ -8,12 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Breaking Changes
-- **Python 3.11+ required** - Dropped support for Python 3.8, 3.9, and 3.10
-  - Supports Python 3.11, 3.12, 3.13 (following N-2 version support policy)
-  - All roles and testing infrastructure now require Python 3.11+
+- **Python 3.14+ required** - Dropped support for Python 3.8–3.13
+  - Supports Python 3.14 (N-2 policy currently aligns with the latest stable release)
+  - All roles and testing infrastructure now require Python 3.14+
   - Update your systems before upgrading to this version
-- **ansible-core 2.15+ required** - Dropped support for Ansible 2.9-2.14
-  - ansible-core 2.15 is the minimum version compatible with Python 3.11+
+- **ansible-core 2.20+ required** - Dropped support for Ansible 2.9-2.14
+  - ansible-core 2.20 is the minimum version compatible with Python 3.14+
   - Update your Ansible installation before upgrading
 
 ### Added

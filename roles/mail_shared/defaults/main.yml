@@ -1,0 +1,129 @@
+---
+# mail_shared - Shared variables for mail infrastructure
+#
+# This role provides common variables used by:
+# - mail_relay_deploy (edge Postfix relay)
+# - mail_backend_deploy (macmini Postfix + Dovecot)
+# - mail_spam_deploy (rspamd)
+# - mail_backup / mail_restore
+
+# =============================================================================
+# Domain Configuration
+# =============================================================================
+
+# List of hosted domains (use punycode/ASCII for IDN domains)
+# Example: ["xn--wersdrfer-47a.de", "wersdoerfer.de"]
+mail_domains: []
+
+# Primary domain used for system mail and DKIM signing
+# Should be the ASCII version of your main domain
+mail_primary_domain: "wersdoerfer.de"
+
+# =============================================================================
+# Server Hostnames
+# =============================================================================
+
+# Edge relay server (public-facing MX)
+# Must match PTR record for HELO alignment
+mail_relay_hostname: "mail.wersdoerfer.de"
+
+# Backend server hostnames (for client connections)
+mail_backend_imap_hostname: "imap.home.wersdoerfer.de"
+mail_backend_smtp_hostname: "smtp.home.wersdoerfer.de"
+
+# Internal backend hostname (not public-facing)
+mail_backend_internal_hostname: "macmini.home.wersdoerfer.de"
+
+# =============================================================================
+# Network Configuration
+# =============================================================================
+
+# Edge server IPs (for firewall rules on backend)
+mail_edge_ipv4: "213.239.212.206"
+mail_edge_ipv6: "2a01:4f8:a0:82dc::2"
+
+# Backend server address (for edge to relay to)
+mail_backend_address: "smtp.home.wersdoerfer.de"
+mail_backend_port: 25
+
+# =============================================================================
+# Storage Paths (macmini)
+# =============================================================================
+
+# Virtual mailbox base directory (on encrypted volume)
+mail_vmail_path: "/mnt/cryptdata/vmail"
+
+# Virtual mail user/group
+mail_vmail_user: "vmail"
+mail_vmail_group: "vmail"
+mail_vmail_uid: 5000
+mail_vmail_gid: 5000
+
+# Backup storage
+mail_backup_path: "/mnt/cryptdata/backups/mail"
+mail_backup_retention_days: 14
+
+# =============================================================================
+# PostgreSQL Configuration
+# =============================================================================
+
+mail_postgres_host: "localhost"
+mail_postgres_port: 5432
+mail_postgres_database: "mail"
+mail_postgres_user: "mail"
+# mail_postgres_password: Set via SOPS secrets
+
+# =============================================================================
+# TLS Configuration
+# =============================================================================
+
+# Minimum TLS version for client connections
+mail_tls_min_version: "TLSv1.2"
+
+# Edge TLS certificates (Let's Encrypt)
+mail_relay_tls_cert: "/etc/letsencrypt/live/{{ mail_relay_hostname }}/fullchain.pem"
+mail_relay_tls_key: "/etc/letsencrypt/live/{{ mail_relay_hostname }}/privkey.pem"
+
+# Backend TLS certificates (DNS-01 challenge)
+mail_backend_tls_cert: "/etc/letsencrypt/live/{{ mail_backend_smtp_hostname }}/fullchain.pem"
+mail_backend_tls_key: "/etc/letsencrypt/live/{{ mail_backend_smtp_hostname }}/privkey.pem"
+
+# =============================================================================
+# Security Settings
+# =============================================================================
+
+# Password hashing scheme for virtual users
+mail_password_scheme: "SHA512-CRYPT"
+
+# Tag addressing delimiter (user-tag@domain delivers to user)
+mail_recipient_delimiter: "-"
+
+# Rate limiting
+mail_client_connection_rate_limit: 10
+mail_client_recipient_rate_limit: 100
+
+# =============================================================================
+# DKIM Configuration
+# =============================================================================
+
+# DKIM selector (used in DNS: selector._domainkey.domain)
+mail_dkim_selector: "mail"
+
+# DKIM key paths
+mail_dkim_key_path: "/etc/opendkim/keys"
+mail_dkim_key_bits: 2048
+
+# =============================================================================
+# Greylisting (edge only)
+# =============================================================================
+
+mail_greylisting_enabled: true
+mail_greylisting_delay: 300  # seconds
+
+# =============================================================================
+# rspamd Configuration (backend only)
+# =============================================================================
+
+mail_rspamd_enabled: true
+mail_rspamd_redis_host: "localhost"
+mail_rspamd_redis_port: 6379

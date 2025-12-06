@@ -1,0 +1,36 @@
+---
+# mail_relay_deploy - Main task orchestration
+
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - mail_relay_domains is defined
+      - mail_relay_domains | length > 0
+      - mail_relay_backend_host is defined
+      - mail_relay_backend_host | length > 0
+      - mail_relay_sasl_password is defined
+      - mail_relay_sasl_password | length > 0
+    fail_msg: |
+      Required variables not set:
+      - mail_relay_domains: List of domains to accept mail for
+      - mail_relay_backend_host: Backend server to relay inbound mail to
+      - mail_relay_sasl_password: Password for backend SMTP AUTH
+
+- name: Install mail relay packages
+  ansible.builtin.import_tasks: packages.yml
+
+- name: Configure Postfix
+  ansible.builtin.import_tasks: postfix.yml
+
+- name: Configure greylisting
+  ansible.builtin.import_tasks: greylisting.yml
+  when: mail_relay_greylisting_enabled
+
+- name: Configure SASL authentication
+  ansible.builtin.import_tasks: sasl.yml
+
+- name: Configure transport maps
+  ansible.builtin.import_tasks: transport.yml
+
+- name: Configure services
+  ansible.builtin.import_tasks: services.yml

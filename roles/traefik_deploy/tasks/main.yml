@@ -119,6 +119,16 @@
     mode: '0644'
   notify: restart traefik
 
+- name: Deploy file-provider certificates (optional)
+  ansible.builtin.template:
+    src: dynamic/certificates.yml.j2
+    dest: "{{ traefik_dynamic_dir }}/certificates.yml"
+    owner: root
+    group: root
+    mode: '0644'
+  when: traefik_file_certificates | length > 0
+  notify: restart traefik
+
 - name: Deploy Traefik systemd service
   ansible.builtin.template:
     src: traefik.service.j2

@@ -1,0 +1,40 @@
+---
+# Default variables for certbot_dns_deploy role
+
+# DNS provider (currently only gandi is supported)
+certbot_dns_provider: "gandi"
+
+# Certificate identity (punycode-safe)
+certbot_dns_domain: "home.xn--wersdrfer-47a.de"
+
+# Let's Encrypt account email
+certbot_dns_email: "admin@wersdoerfer.de"
+
+# Provider credentials (must be overridden)
+certbot_dns_gandi_api_token: "CHANGEME"
+
+# Domain set to request
+certbot_dns_wildcard: true                # Request *.domain
+certbot_dns_include_base: true            # Also include base domain
+certbot_dns_additional_domains: []        # Extra SANs to include
+
+# Certificate options
+certbot_dns_key_type: "ecdsa"             # rsa or ecdsa
+certbot_dns_staging: false                # Use Let's Encrypt staging
+certbot_dns_propagation_seconds: 120      # Wait time for DNS propagation
+
+# Paths
+certbot_dns_config_dir: "/etc/letsencrypt"
+certbot_dns_credentials_file: "/etc/letsencrypt/dns-credentials.ini"
+certbot_dns_renewal_hook_path: "/etc/letsencrypt/renewal-hooks/deploy/reload-services.sh"
+
+# Renewal hooks (commands run after renewal)
+certbot_dns_renewal_hooks: []
+# Example:
+# certbot_dns_renewal_hooks:
+#   - "systemctl reload postfix || true"
+#   - "systemctl reload dovecot || true"
+#   - "systemctl reload traefik || true"
+
+# Package management
+certbot_dns_package_state: present

@@ -1,0 +1,64 @@
+---
+# mail_backup - Mail server backup defaults
+
+# =============================================================================
+# Backup Paths
+# =============================================================================
+
+mail_backup_vmail_path: "/mnt/cryptdata/vmail"
+mail_backup_destination: "/mnt/cryptdata/backups/mail"
+mail_backup_retention_days: 14
+
+# =============================================================================
+# PostgreSQL Configuration
+# =============================================================================
+
+mail_backup_postgres_database: "mail"
+mail_backup_postgres_user: "mail"
+
+# =============================================================================
+# Backup Components
+# =============================================================================
+
+mail_backup_maildir: true
+mail_backup_database: true
+mail_backup_config: true
+
+# Configuration paths to backup
+mail_backup_config_paths:
+  - /etc/postfix
+  - /etc/dovecot
+  - /etc/opendkim
+  - /etc/rspamd
+
+# =============================================================================
+# Archive and Fetch Settings
+# =============================================================================
+
+# Create tar archive of backup (required for fetch)
+mail_backup_create_archive: true
+mail_backup_archive_format: tar.gz  # tar.gz | tar.zst
+
+# Fetch archive to controller machine
+mail_backup_fetch_local: true
+mail_backup_local_dir: "{{ lookup('env', 'HOME') | default('/tmp', true) }}/backups/mail_backend"
+mail_backup_fetch_method: synchronize  # synchronize | fetch
+mail_backup_local_dir_mode: "0700"
+
+# Report backup size on completion
+mail_backup_report_size: true
+
+# =============================================================================
+# Prefix for backup naming
+# =============================================================================
+
+mail_backup_prefix: "manual"
+
+# =============================================================================
+# Permissions
+# =============================================================================
+
+mail_backup_owner: root
+mail_backup_group: postgres
+mail_backup_dir_mode: "0770"
+mail_backup_file_mode: "0640"

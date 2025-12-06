@@ -1,0 +1,93 @@
+---
+# Configure Dovecot for IMAP and LMTP
+
+- name: Ensure Dovecot configuration directory exists
+  ansible.builtin.file:
+    path: /etc/dovecot/conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Create main Dovecot configuration
+  ansible.builtin.template:
+    src: dovecot/dovecot.conf.j2
+    dest: /etc/dovecot/dovecot.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart dovecot
+
+- name: Create Dovecot SQL configuration
+  ansible.builtin.template:
+    src: dovecot/dovecot-sql.conf.ext.j2
+    dest: /etc/dovecot/dovecot-sql.conf.ext
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart dovecot
+  no_log: true
+
+- name: Create Dovecot auth configuration
+  ansible.builtin.template:
+    src: dovecot/conf.d/10-auth.conf.j2
+    dest: /etc/dovecot/conf.d/10-auth.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart dovecot
+
+- name: Create Dovecot mail configuration
+  ansible.builtin.template:
+    src: dovecot/conf.d/10-mail.conf.j2
+    dest: /etc/dovecot/conf.d/10-mail.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart dovecot
+
+- name: Create Dovecot master configuration
+  ansible.builtin.template:
+    src: dovecot/conf.d/10-master.conf.j2
+    dest: /etc/dovecot/conf.d/10-master.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart dovecot
+
+- name: Create Dovecot SSL configuration
+  ansible.builtin.template:
+    src: dovecot/conf.d/10-ssl.conf.j2
+    dest: /etc/dovecot/conf.d/10-ssl.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart dovecot
+
+- name: Create Dovecot SQL auth configuration
+  ansible.builtin.template:
+    src: dovecot/conf.d/auth-sql.conf.ext.j2
+    dest: /etc/dovecot/conf.d/auth-sql.conf.ext
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart dovecot
+
+- name: Create Dovecot LMTP configuration
+  ansible.builtin.template:
+    src: dovecot/conf.d/20-lmtp.conf.j2
+    dest: /etc/dovecot/conf.d/20-lmtp.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart dovecot
+
+- name: Create Dovecot Sieve configuration
+  ansible.builtin.template:
+    src: dovecot/conf.d/90-sieve.conf.j2
+    dest: /etc/dovecot/conf.d/90-sieve.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart dovecot
+  when: mail_backend_sieve_enabled

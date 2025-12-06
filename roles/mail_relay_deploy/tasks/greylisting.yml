@@ -1,0 +1,28 @@
+---
+# Configure postgrey for greylisting
+
+- name: Create postgrey defaults
+  ansible.builtin.template:
+    src: postgrey.default.j2
+    dest: /etc/default/postgrey
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart postgrey
+
+- name: Ensure postgrey whitelist directory exists
+  ansible.builtin.file:
+    path: /etc/postgrey
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Create postgrey whitelist clients
+  ansible.builtin.template:
+    src: postgrey_whitelist_clients.j2
+    dest: /etc/postgrey/whitelist_clients
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart postgrey

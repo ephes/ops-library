@@ -33,6 +33,13 @@ traefik_static_config: "{{ traefik_config_dir }}/traefik.toml"
 # ACME storage
 traefik_acme_storage: "{{ traefik_acme_dir }}/acme.json"
 
+# Optional: file provider certificates (e.g., certbot-managed wildcard)
+traefik_file_certificates: []
+# Example:
+# traefik_file_certificates:
+#   - cert_file: "/etc/letsencrypt/live/home.xn--wersdrfer-47a.de/fullchain.pem"
+#     key_file: "/etc/letsencrypt/live/home.xn--wersdrfer-47a.de/privkey.pem"
+
 # Log configuration
 traefik_log_level: "INFO"
 traefik_log_format: "json"

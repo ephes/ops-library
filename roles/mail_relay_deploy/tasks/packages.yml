@@ -1,0 +1,9 @@
+---
+# Install required packages for mail relay
+
+- name: Install mail relay packages
+  ansible.builtin.apt:
+    name: "{{ mail_relay_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600

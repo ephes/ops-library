@@ -15,7 +15,7 @@ This role deploys a vanilla Minecraft Java Edition server with:
 ## Requirements
 
 - Ubuntu/Debian-based target system
-- ansible-core 2.15+
+- ansible-core 2.20+
 - Required collections:
   - `community.general` (for UFW module)
 

@@ -6,7 +6,7 @@ This guide explains how to test services and roles in the ops-library using Mole
 ## Setup
 
 ### Prerequisites
-- **Python 3.11+** (3.8-3.10 no longer supported)
+- **Python 3.14+** (3.8-3.13 no longer supported)
 - uv (for virtual environment management)
 - Docker (optional, only if using Docker-based tests)
 

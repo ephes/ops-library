@@ -18,8 +18,12 @@ http:
         - {{ middleware }}
 {% endfor %}
       service: nyxmon
+{% if nyxmon_traefik_cert_resolver | default('') | length > 0 %}
       tls:
         certResolver: {{ nyxmon_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
 
     # EXTERNAL router (Public) - WITH auth, lower priority
     nyxmon-ext:
@@ -35,8 +39,12 @@ http:
         - {{ middleware }}
 {% endfor %}
       service: nyxmon
+{% if nyxmon_traefik_cert_resolver | default('') | length > 0 %}
       tls:
         certResolver: {{ nyxmon_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
 {% else %}
     # Single router without authentication (legacy mode)
     nyxmon-secure:
@@ -50,8 +58,12 @@ http:
         - {{ middleware }}
 {% endfor %}
       service: nyxmon
+{% if nyxmon_traefik_cert_resolver | default('') | length > 0 %}
       tls:
         certResolver: {{ nyxmon_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
 {% endif %}
 
     # HTTP to HTTPS redirect (handled by static config entrypoint redirect)

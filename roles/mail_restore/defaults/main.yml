@@ -1,0 +1,46 @@
+---
+# mail_restore - Mail server restore defaults
+
+# =============================================================================
+# Backup Source
+# =============================================================================
+
+mail_restore_backup_path: "/mnt/cryptdata/backups/mail"
+# mail_restore_timestamp: ""  # Timestamp or archive name to restore (or 'latest')
+
+# =============================================================================
+# Restore Paths
+# =============================================================================
+
+mail_restore_vmail_path: "/mnt/cryptdata/vmail"
+
+# =============================================================================
+# Maildir Ownership
+# =============================================================================
+
+mail_restore_vmail_owner: "vmail"
+mail_restore_vmail_group: "vmail"
+
+# =============================================================================
+# PostgreSQL Configuration
+# =============================================================================
+
+mail_restore_postgres_database: "mail"
+mail_restore_postgres_user: "mail"
+
+# =============================================================================
+# Restore Components
+# =============================================================================
+
+mail_restore_maildir: true
+mail_restore_database: true
+mail_restore_config: false  # Disabled by default - config changes need review
+
+# =============================================================================
+# Services to stop/start during restore
+# =============================================================================
+
+mail_restore_services:
+  - rspamd
+  - postfix
+  - dovecot

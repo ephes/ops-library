@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  author: Jochen Wersdoerfer
+  description: Shared variables for mail infrastructure roles
+  license: MIT
+  min_ansible_version: "2.12"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+
+dependencies: []

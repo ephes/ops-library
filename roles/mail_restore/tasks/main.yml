@@ -1,0 +1,270 @@
+---
+# mail_restore - Restore mail server from backup
+
+# =============================================================================
+# Resolve backup source (supports directories and archives)
+# =============================================================================
+
+- name: Resolve backup timestamp (supports 'latest')
+  block:
+    - name: Assert backup path is set
+      ansible.builtin.assert:
+        that:
+          - mail_restore_backup_path is defined
+          - mail_restore_backup_path | length > 0
+        fail_msg: "mail_restore_backup_path must be set"
+
+    # Check if timestamp points to an archive file (explicit archive name given)
+    - name: Check if restore target is an archive
+      ansible.builtin.stat:
+        path: "{{ mail_restore_backup_path }}/{{ mail_restore_timestamp }}"
+      register: mail_restore_archive_stat
+      when:
+        - mail_restore_timestamp is defined
+        - mail_restore_timestamp | length > 0
+        - mail_restore_timestamp != 'latest'
+        - mail_restore_timestamp is search('\\.tar\\.(gz|zst)$')
+
+    # Extract explicit archive if it exists
+    - name: Extract explicit archive to backup directory
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd "{{ mail_restore_backup_path }}"
+        archive="{{ mail_restore_timestamp }}"
+        if [[ "$archive" == *.tar.gz ]]; then
+          tar -xzf "$archive"
+        elif [[ "$archive" == *.tar.zst ]]; then
+          tar --zstd -xf "$archive"
+        fi
+        # Return the directory name (archive name without extension)
+        basename "$archive" | sed 's/\.tar\.\(gz\|zst\)$//'
+      args:
+        executable: /bin/bash
+      register: mail_restore_extracted_dir
+      when:
+        - mail_restore_archive_stat is defined
+        - mail_restore_archive_stat.stat is defined
+        - mail_restore_archive_stat.stat.exists | default(false)
+      changed_when: true
+
+    - name: Set timestamp from extracted archive
+      ansible.builtin.set_fact:
+        mail_restore_timestamp_from_archive: "{{ mail_restore_extracted_dir.stdout | trim }}"
+      when: mail_restore_extracted_dir is changed
+
+    # For 'latest' or undefined: first try directories
+    - name: Find backup directories
+      ansible.builtin.find:
+        paths: "{{ mail_restore_backup_path }}"
+        file_type: directory
+        depth: 1
+      register: mail_restore_backup_dirs
+      when: >-
+        mail_restore_timestamp_from_archive is not defined
+        and (mail_restore_timestamp is not defined
+             or mail_restore_timestamp == 'latest'
+             or (mail_restore_timestamp | length == 0))
+
+    # If no directories found, look for archives and extract the latest
+    - name: Find backup archives (fallback if no directories)
+      ansible.builtin.find:
+        paths: "{{ mail_restore_backup_path }}"
+        file_type: file
+        patterns:
+          - "*.tar.gz"
+          - "*.tar.zst"
+        depth: 1
+      register: mail_restore_backup_archives
+      when:
+        - mail_restore_timestamp_from_archive is not defined
+        - mail_restore_backup_dirs is defined
+        - (mail_restore_backup_dirs.files | default([]) | length) == 0
+        - mail_restore_timestamp is not defined or mail_restore_timestamp == 'latest' or (mail_restore_timestamp | length == 0)
+
+    - name: Extract latest archive (fallback)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cd "{{ mail_restore_backup_path }}"
+        archive="{{ (mail_restore_backup_archives.files | sort(attribute='mtime', reverse=true) | first).path | basename }}"
+        if [[ "$archive" == *.tar.gz ]]; then
+          tar -xzf "$archive"
+        elif [[ "$archive" == *.tar.zst ]]; then
+          tar --zstd -xf "$archive"
+        fi
+        # Return the directory name (archive name without extension)
+        basename "$archive" | sed 's/\.tar\.\(gz\|zst\)$//'
+      args:
+        executable: /bin/bash
+      register: mail_restore_extracted_latest
+      when:
+        - mail_restore_backup_archives is defined
+        - (mail_restore_backup_archives.files | default([]) | length) > 0
+      changed_when: true
+
+    - name: Set timestamp from latest extracted archive
+      ansible.builtin.set_fact:
+        mail_restore_timestamp_from_archive: "{{ mail_restore_extracted_latest.stdout | trim }}"
+      when: mail_restore_extracted_latest is changed
+
+    - name: Set effective restore timestamp
+      ansible.builtin.set_fact:
+        mail_restore_timestamp_effective: >-
+          {{
+            mail_restore_timestamp_from_archive
+            if (mail_restore_timestamp_from_archive is defined)
+            else (
+              (mail_restore_backup_dirs.files | sort(attribute='mtime', reverse=true) | map(attribute='path') | list | first | basename)
+              if (mail_restore_backup_dirs is defined and (mail_restore_backup_dirs.files | default([]) | length) > 0)
+              else mail_restore_timestamp
+            )
+          }}
+
+    - name: Validate resolved timestamp
+      ansible.builtin.assert:
+        that:
+          - mail_restore_timestamp_effective is defined
+          - mail_restore_timestamp_effective | length > 0
+          - mail_restore_timestamp_effective != 'latest'
+        fail_msg: "No backups found under {{ mail_restore_backup_path }}"
+
+  rescue:
+    - ansible.builtin.fail:
+        msg: "Unable to resolve backup timestamp under {{ mail_restore_backup_path }}"
+
+- name: Set backup source path
+  ansible.builtin.set_fact:
+    mail_restore_source: "{{ mail_restore_backup_path }}/{{ mail_restore_timestamp_effective }}"
+
+- name: Check backup exists
+  ansible.builtin.stat:
+    path: "{{ mail_restore_source }}/manifest.yml"
+  register: backup_manifest
+
+- name: Fail if backup not found
+  ansible.builtin.fail:
+    msg: "Backup not found at {{ mail_restore_source }}"
+  when: not backup_manifest.stat.exists
+
+- name: Read backup manifest
+  ansible.builtin.slurp:
+    src: "{{ mail_restore_source }}/manifest.yml"
+  register: manifest_content
+
+- name: Display backup info
+  ansible.builtin.debug:
+    msg: |
+      Restoring backup from: {{ mail_restore_source }}
+      {{ manifest_content.content | b64decode }}
+
+# =============================================================================
+# Gather service facts and stop services
+# =============================================================================
+
+- name: Gather service facts
+  ansible.builtin.service_facts:
+
+    - name: Determine which services exist
+      ansible.builtin.set_fact:
+        mail_restore_existing_services: >-
+          {{
+            mail_restore_services | select('in',
+              ansible_facts.services.keys()
+                | map('regex_replace', '\\.service$', '')
+                | map('regex_replace', '@.*$', '') | list
+            ) | list
+          }}
+
+- name: Stop mail services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+  loop: "{{ mail_restore_existing_services }}"
+  ignore_errors: true
+
+# =============================================================================
+# Restore data
+# =============================================================================
+
+- name: Restore PostgreSQL database
+  block:
+    - name: Drop existing database
+      community.postgresql.postgresql_db:
+        name: "{{ mail_restore_postgres_database }}"
+        state: absent
+      become: true
+      become_user: postgres
+
+    - name: Create fresh database
+      community.postgresql.postgresql_db:
+        name: "{{ mail_restore_postgres_database }}"
+        state: present
+      become: true
+      become_user: postgres
+
+    - name: Restore database from backup
+      ansible.builtin.shell: |
+        gunzip -c "{{ mail_restore_source }}/database.sql.gz" | \
+          psql -U postgres {{ mail_restore_postgres_database }}
+      become: true
+      become_user: postgres
+      changed_when: true
+  when: mail_restore_database
+
+- name: Restore maildir
+  block:
+    - name: Remove existing maildir
+      ansible.builtin.file:
+        path: "{{ mail_restore_vmail_path }}"
+        state: absent
+
+    - name: Ensure maildir parent exists
+      ansible.builtin.file:
+        path: "{{ mail_restore_vmail_path | dirname }}"
+        state: directory
+        mode: "0755"
+
+    - name: Extract maildir from backup
+      ansible.builtin.unarchive:
+        src: "{{ mail_restore_source }}/maildir.tar.gz"
+        dest: "{{ mail_restore_vmail_path | dirname }}"
+        remote_src: true
+
+    - name: Set maildir ownership recursively
+      ansible.builtin.file:
+        path: "{{ mail_restore_vmail_path }}"
+        state: directory
+        owner: "{{ mail_restore_vmail_owner }}"
+        group: "{{ mail_restore_vmail_group }}"
+        recurse: true
+  when: mail_restore_maildir
+
+- name: Restore configuration
+  block:
+    - name: Extract config from backup
+      ansible.builtin.unarchive:
+        src: "{{ mail_restore_source }}/config.tar.gz"
+        dest: /
+        remote_src: true
+  when: mail_restore_config
+
+# =============================================================================
+# Start services after restore
+# =============================================================================
+
+- name: Start mail services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+  loop: "{{ mail_restore_existing_services | reverse | list }}"
+
+- name: Display restore complete message
+  ansible.builtin.debug:
+    msg: |
+      Restore complete from {{ mail_restore_source }}
+      Services managed: {{ mail_restore_existing_services | join(', ') }}
+      {% if mail_restore_services | difference(mail_restore_existing_services) | length > 0 %}
+      Services not found (skipped): {{ mail_restore_services | difference(mail_restore_existing_services) | join(', ') }}
+      {% endif %}
+      {% if not mail_restore_config %}
+      Note: Configuration was NOT restored. Review and apply config changes manually if needed.
+      {% endif %}

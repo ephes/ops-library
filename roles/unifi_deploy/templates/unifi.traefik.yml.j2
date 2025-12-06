@@ -7,8 +7,12 @@ http:
         - "{{ entrypoint }}"
 {% endfor %}
       service: unifi
+{% if unifi_traefik_certresolver | default('') | length > 0 %}
       tls:
         certResolver: "{{ unifi_traefik_certresolver }}"
+{% else %}
+      tls: {}
+{% endif %}
 
   services:
     unifi:

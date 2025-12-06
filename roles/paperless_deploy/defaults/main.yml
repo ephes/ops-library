@@ -117,7 +117,7 @@ paperless_traefik_enabled: true
 paperless_traefik_domain: ""  # REQUIRED - your domain (e.g., home.example.com)
 paperless_traefik_host: "paperless.{{ paperless_traefik_domain }}"
 paperless_traefik_entrypoint: web-secure
-paperless_traefik_cert_resolver: letsencrypt
+paperless_traefik_cert_resolver: ""  # empty -> use file-provider certs
 paperless_traefik_config_path: /etc/traefik/dynamic/paperless.yml
 paperless_traefik_service_name: traefik
 

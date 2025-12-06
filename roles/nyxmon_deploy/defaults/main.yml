@@ -53,7 +53,7 @@ nyxmon_django_debug: false
 # Traefik configuration
 nyxmon_traefik_enabled: true
 nyxmon_traefik_host: "nyxmon.example.com"  # Override in ops-control
-nyxmon_traefik_cert_resolver: letsencrypt
+nyxmon_traefik_cert_resolver: ""  # empty -> use file-provider certs
 nyxmon_traefik_middlewares: []
 
 # Traefik dual router authentication (SECURITY: mandatory for public-facing services)

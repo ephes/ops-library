@@ -32,6 +32,8 @@ The table below links each published role to its dedicated documentation. Refer 
 | Service deployment | [`navidrome_deploy`](roles/navidrome_deploy/README.md) | Deploy Navidrome music server (binary/systemd, Traefik, optional rescan timer). |
 | Service deployment | [`jellyfin_deploy`](roles/jellyfin_deploy/README.md) | Deploy Jellyfin media server (apt packages, systemd, Traefik with basic auth). |
 | Service deployment | [`metube_deploy`](roles/metube_deploy/README.md) | Deploy MeTube (yt-dlp web UI) from source with uv, Angular build, systemd, and Traefik internal-bypass/basic-auth. |
+| Service deployment | [`mail_backend_deploy`](roles/mail_backend_deploy/README.md) | Deploy mail backend with Postfix, Dovecot, OpenDKIM, and PostgreSQL virtual users/domains. |
+| Service deployment | [`mail_relay_deploy`](roles/mail_relay_deploy/README.md) | Deploy Postfix edge relay with greylisting, TLS termination, and backend routing. |
 | Service operations | [`tailscale_backup`](roles/tailscale_backup/README.md) | Backup `/var/lib/tailscale`, sysconfig, and systemd drop-ins to preserve node identity. |
 | Service operations | [`tailscale_restore`](roles/tailscale_restore/README.md) | Restore Tailscale state from archive and optionally rerun `tailscale up`. |
 | Service operations | [`homeassistant_backup`](roles/homeassistant_backup/README.md) | Take on-host + off-host backups (rsync + manifest + optional archives). |
@@ -91,11 +93,11 @@ just install-hooks
 
 ## Requirements
 
-- **ansible-core 2.15+** (Ansible 2.9 no longer supported)
-- **Python 3.11+** (3.8-3.10 no longer supported as of v3.0.0)
+- **ansible-core 2.20+** (Ansible 2.9 no longer supported)
+- **Python 3.14+** (3.8-3.13 no longer supported as of v3.0.0)
 - Collections: `community.general`, `ansible.posix`
 
-> **Note:** This collection follows an N-2 Python version support policy, supporting the current release and two prior minor versions (currently 3.11, 3.12, 3.13).
+> **Note:** This collection follows an N-2 Python version support policy, supporting the current release and two prior minor versions (currently 3.14).
 
 ## License
 

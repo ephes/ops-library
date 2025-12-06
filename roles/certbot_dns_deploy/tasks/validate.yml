@@ -1,0 +1,39 @@
+---
+# Validate required variables
+
+- name: Ensure required variables are defined
+  ansible.builtin.assert:
+    that:
+      - certbot_dns_domain is defined
+      - certbot_dns_domain | length > 0
+      - certbot_dns_email is defined
+      - certbot_dns_email | length > 0
+      - certbot_dns_provider in ["gandi"]
+    fail_msg: "certbot_dns_domain, certbot_dns_email must be set and provider must be supported"
+
+- name: Validate provider credentials
+  ansible.builtin.assert:
+    that:
+      - certbot_dns_gandi_api_token is defined
+      - certbot_dns_gandi_api_token | length > 0
+      - certbot_dns_gandi_api_token != "CHANGEME"
+    fail_msg: "Set certbot_dns_gandi_api_token to a real API token (not CHANGEME)"
+  when: certbot_dns_provider == "gandi"
+
+- name: Validate certificate options
+  ansible.builtin.assert:
+    that:
+      - certbot_dns_key_type in ["rsa", "ecdsa"]
+      - certbot_dns_propagation_seconds | int >= 0
+    fail_msg: "certbot_dns_key_type must be rsa|ecdsa and propagation seconds must be >= 0"
+
+- name: Display certificate configuration
+  ansible.builtin.debug:
+    msg: |
+      Certbot DNS configuration:
+      - Provider: {{ certbot_dns_provider }}
+      - Domain: {{ certbot_dns_domain }}
+      - Wildcard: {{ certbot_dns_wildcard }}
+      - Include base: {{ certbot_dns_include_base }}
+      - Additional domains: {{ certbot_dns_additional_domains | join(', ') if certbot_dns_additional_domains | length > 0 else 'None' }}
+      - Staging: {{ certbot_dns_staging }}

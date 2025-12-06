@@ -1,0 +1,9 @@
+---
+# Install required packages for mail backend
+
+- name: Install mail backend packages
+  ansible.builtin.apt:
+    name: "{{ mail_backend_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600

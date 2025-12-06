@@ -1,0 +1,64 @@
+---
+# Configure Postfix for local delivery
+
+- name: Ensure Postfix directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /etc/postfix
+    - /etc/postfix/sql
+    - /etc/postfix/sasl
+
+- name: Create Postfix main.cf
+  ansible.builtin.template:
+    src: postfix/main.cf.j2
+    dest: /etc/postfix/main.cf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart postfix
+
+- name: Create Postfix master.cf
+  ansible.builtin.template:
+    src: postfix/master.cf.j2
+    dest: /etc/postfix/master.cf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart postfix
+
+- name: Create PostgreSQL lookup files
+  ansible.builtin.template:
+    src: "postfix/sql/{{ item }}.cf.j2"
+    dest: "/etc/postfix/sql/{{ item }}.cf"
+    owner: root
+    group: postfix
+    mode: "0640"
+  loop:
+    - virtual_domains
+    - virtual_mailboxes
+    - virtual_aliases
+    - virtual_catchall
+    - virtual_domain_aliases
+    - sender_login
+  notify: Restart postfix
+
+- name: Create relay password file
+  ansible.builtin.template:
+    src: postfix/relay_password.j2
+    dest: /etc/postfix/relay_password
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Postmap relay_password
+  no_log: true
+
+- name: Ensure relay password database exists
+  ansible.builtin.command:
+    cmd: postmap /etc/postfix/relay_password
+    creates: /etc/postfix/relay_password.db
+  when: not ansible_check_mode

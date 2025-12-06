@@ -1,0 +1,8 @@
+---
+# Enable and start rspamd
+
+- name: Enable and start rspamd
+  ansible.builtin.systemd:
+    name: rspamd
+    enabled: true
+    state: started

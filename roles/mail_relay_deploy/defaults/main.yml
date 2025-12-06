@@ -1,0 +1,114 @@
+---
+# mail_relay_deploy - Edge Postfix relay defaults
+#
+# This role deploys a thin Postfix relay on the edge server.
+# It handles:
+# - Inbound mail reception (port 25)
+# - Greylisting via postgrey
+# - Relay to backend (macmini)
+# - Outbound relay for backend (port 587 with SMTP AUTH)
+
+# =============================================================================
+# Required Variables (must be set by consumer)
+# =============================================================================
+
+# mail_relay_domains: []  # List of domains to accept mail for
+# mail_relay_backend_host: ""  # Backend server to relay to
+# mail_relay_sasl_password: ""  # Password for outbound auth from backend
+
+# =============================================================================
+# Server Configuration
+# =============================================================================
+
+# Postfix hostname (must match PTR record)
+mail_relay_hostname: "mail.wersdoerfer.de"
+
+# Postfix mydomain
+mail_relay_mydomain: "wersdoerfer.de"
+
+# Backend relay destination
+# IMPORTANT: Use the IDN domain (xn--wersdrfer-47a.de), NOT wersdoerfer.de
+# The *.wersdoerfer.de wildcard resolves to the edge server, causing mail loops!
+mail_relay_backend_host: "smtp.home.xn--wersdrfer-47a.de"
+mail_relay_backend_port: 25
+
+# =============================================================================
+# Network Configuration
+# =============================================================================
+
+# Interfaces to listen on
+mail_relay_inet_interfaces: "all"
+mail_relay_inet_protocols: "all"
+
+# Networks trusted for relay (localhost only - backend uses SMTP AUTH)
+mail_relay_mynetworks:
+  - "127.0.0.0/8"
+  - "[::1]/128"
+
+# =============================================================================
+# TLS Configuration
+# =============================================================================
+
+mail_relay_tls_enabled: true
+
+# Certificate paths (Let's Encrypt)
+mail_relay_tls_cert: "/etc/letsencrypt/live/{{ mail_relay_hostname }}/fullchain.pem"
+mail_relay_tls_key: "/etc/letsencrypt/live/{{ mail_relay_hostname }}/privkey.pem"
+
+# TLS security levels
+mail_relay_smtp_tls_security_level: "may"  # outbound to internet
+mail_relay_smtpd_tls_security_level: "may"  # inbound from internet
+
+# TLS to backend (mandatory)
+mail_relay_backend_tls_security_level: "encrypt"
+
+# Minimum TLS version
+mail_relay_tls_protocols: ">=TLSv1.2"
+
+# =============================================================================
+# Greylisting (postgrey)
+# =============================================================================
+
+mail_relay_greylisting_enabled: true
+mail_relay_greylisting_port: 10024  # Port for postgrey (10023 often used by other services)
+mail_relay_greylisting_delay: 300  # seconds
+mail_relay_greylisting_max_age: 35  # days
+mail_relay_greylisting_retry_window: 48  # hours
+
+# =============================================================================
+# SMTP Submission (port 587) for backend outbound
+# =============================================================================
+
+mail_relay_submission_enabled: true
+
+# SASL authentication for backend
+mail_relay_sasl_user: "relay"
+# mail_relay_sasl_password: ""  # Set via SOPS secrets
+
+# Allowed sender networks for submission (backend IPs)
+# mail_relay_submission_networks: []  # Set to backend public IPs
+
+# =============================================================================
+# Rate Limiting
+# =============================================================================
+
+mail_relay_client_connection_rate_limit: 10
+mail_relay_client_recipient_rate_limit: 100
+mail_relay_smtpd_recipient_limit: 100
+
+# =============================================================================
+# Logging
+# =============================================================================
+
+mail_relay_maillog_file: "/var/log/mail.log"
+
+# =============================================================================
+# Package Management
+# =============================================================================
+
+mail_relay_packages:
+  - postfix
+  - postgrey
+  - libsasl2-modules
+  - sasl2-bin
+  - ca-certificates
