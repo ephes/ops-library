@@ -32,7 +32,33 @@ mail_backup_config_paths:
   - /etc/rspamd
 
 # =============================================================================
-# Timestamp Format
+# Archive and Fetch Settings
 # =============================================================================
 
-mail_backup_timestamp_format: "%Y%m%d_%H%M%S"
+# Create tar archive of backup (required for fetch)
+mail_backup_create_archive: true
+mail_backup_archive_format: tar.gz  # tar.gz | tar.zst
+
+# Fetch archive to controller machine
+mail_backup_fetch_local: true
+mail_backup_local_dir: "{{ lookup('env', 'HOME') | default('/tmp', true) }}/backups/mail_backend"
+mail_backup_fetch_method: synchronize  # synchronize | fetch
+mail_backup_local_dir_mode: "0700"
+
+# Report backup size on completion
+mail_backup_report_size: true
+
+# =============================================================================
+# Prefix for backup naming
+# =============================================================================
+
+mail_backup_prefix: "manual"
+
+# =============================================================================
+# Permissions
+# =============================================================================
+
+mail_backup_owner: root
+mail_backup_group: postgres
+mail_backup_dir_mode: "0770"
+mail_backup_file_mode: "0640"
