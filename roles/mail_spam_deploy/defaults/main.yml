@@ -26,7 +26,13 @@ mail_spam_web_port: 11334
 # Postfix Integration
 # =============================================================================
 
-mail_spam_milter_socket: "/var/lib/rspamd/milter.sock"
+# Socket path - must be inside Postfix chroot for chrooted smtpd to access
+# Absolute path for rspamd config, relative path derived for Postfix
+mail_spam_milter_socket_dir: "/var/spool/postfix/rspamd"
+mail_spam_milter_socket_name: "milter.sock"
+mail_spam_milter_socket: "{{ mail_spam_milter_socket_dir }}/{{ mail_spam_milter_socket_name }}"
+# Relative path for Postfix (inside chroot)
+mail_spam_milter_socket_postfix: "rspamd/{{ mail_spam_milter_socket_name }}"
 mail_spam_milter_mode: "0660"
 
 # =============================================================================

@@ -1,5 +1,6 @@
 ---
 # Configure Postfix to use rspamd milter (chained with existing milters like OpenDKIM)
+# Uses relative path for chrooted Postfix compatibility
 
 - name: Get current smtpd_milters value
   ansible.builtin.command:
@@ -8,14 +9,30 @@
   changed_when: false
   failed_when: false
 
-- name: Add rspamd milter to Postfix (append to existing milters)
+# Build clean milter list: remove old absolute path, add new relative path
+- name: Build cleaned milter list
+  ansible.builtin.set_fact:
+    # Split by comma, trim whitespace, filter out old absolute path and empty strings
+    _milters_cleaned: >-
+      {{ (current_smtpd_milters.stdout | default(''))
+         | split(',')
+         | map('trim')
+         | reject('equalto', '')
+         | reject('equalto', 'unix:/var/lib/rspamd/milter.sock')
+         | reject('equalto', 'unix:' ~ mail_spam_milter_socket_postfix)
+         | list }}
+
+- name: Build final milter list with rspamd
+  ansible.builtin.set_fact:
+    _milters_final: "{{ _milters_cleaned + ['unix:' ~ mail_spam_milter_socket_postfix] }}"
+
+- name: Set smtpd_milters in Postfix
   ansible.builtin.lineinfile:
     path: /etc/postfix/main.cf
     regexp: "^smtpd_milters\\s*="
-    line: "smtpd_milters = {{ current_smtpd_milters.stdout | default('') }}{% if current_smtpd_milters.stdout | default('') | length > 0 %}, {% endif %}unix:{{ mail_spam_milter_socket }}"
+    line: "smtpd_milters = {{ _milters_final | join(', ') }}"
     backup: true
   notify: Reload postfix
-  when: "('unix:' ~ mail_spam_milter_socket) not in (current_smtpd_milters.stdout | default(''))"
 
 - name: Set non_smtpd_milters to match smtpd_milters
   ansible.builtin.lineinfile:

@@ -1,5 +1,24 @@
 ---
 # Configure rspamd
+#
+# ASSUMPTION: Postfix smtpd is chrooted (default on Debian/Ubuntu).
+# The milter socket is placed inside /var/spool/postfix/ for chroot compatibility.
+# If chroot is disabled, this still works but adds an unnecessary path hop.
+
+# Group membership must be set up BEFORE socket directory is used
+- name: Add postfix to rspamd group (required for socket access)
+  ansible.builtin.user:
+    name: postfix
+    groups: _rspamd
+    append: true
+  notify: Restart postfix
+
+- name: Verify postfix is in _rspamd group
+  ansible.builtin.command:
+    cmd: id -nG postfix
+  register: postfix_groups
+  changed_when: false
+  failed_when: "'_rspamd' not in (postfix_groups.stdout | split())"
 
 - name: Ensure rspamd config directories exist
   ansible.builtin.file:
@@ -11,6 +30,14 @@
   loop:
     - "{{ mail_spam_local_config_path }}"
     - "{{ mail_spam_override_config_path }}"
+
+- name: Create rspamd milter socket directory inside Postfix chroot
+  ansible.builtin.file:
+    path: "{{ mail_spam_milter_socket_dir }}"
+    state: directory
+    owner: _rspamd
+    group: postfix
+    mode: "0750"
 
 - name: Configure Redis
   ansible.builtin.template:
@@ -96,10 +123,3 @@
     mode: "0644"
   notify: Restart rspamd
   when: mail_spam_redis_enabled
-
-- name: Add postfix to rspamd group
-  ansible.builtin.user:
-    name: postfix
-    groups: _rspamd
-    append: true
-  notify: Restart postfix
