@@ -1,0 +1,37 @@
+---
+# Configure Vaultwarden apt repository
+
+- name: Install apt prerequisites
+  ansible.builtin.apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+    state: present
+    update_cache: true
+
+- name: Create keyrings directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Download Vaultwarden repository GPG key
+  ansible.builtin.get_url:
+    url: "{{ vaultwarden_apt_repo_url }}/vaultwarden-deb-repo-keyring.gpg"
+    dest: /etc/apt/keyrings/vaultwarden-deb-repo-keyring.gpg
+    mode: "0644"
+  register: vaultwarden_gpg_key
+
+- name: Add Vaultwarden apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/vaultwarden-deb-repo-keyring.gpg] {{ vaultwarden_apt_repo_url }} {{ vaultwarden_debian_codename }} main"
+    filename: vaultwarden
+    state: present
+  register: vaultwarden_apt_repo
+
+- name: Update apt cache after adding repository
+  ansible.builtin.apt:
+    update_cache: true
+  when: vaultwarden_apt_repo.changed or vaultwarden_gpg_key.changed
