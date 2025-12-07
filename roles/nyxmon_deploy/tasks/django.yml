@@ -24,6 +24,7 @@
     TELEGRAM_BOT_TOKEN: "{{ nyxmon_telegram_bot_token }}"
     TELEGRAM_CHAT_ID: "{{ nyxmon_telegram_chat_id }}"
   become_user: "{{ nyxmon_user }}"
+  when: not nyxmon_skip_django_manage | default(false)
 
 - name: Collect static files
   django_manage:
@@ -39,3 +40,4 @@
     TELEGRAM_BOT_TOKEN: "{{ nyxmon_telegram_bot_token }}"
     TELEGRAM_CHAT_ID: "{{ nyxmon_telegram_chat_id }}"
   become_user: "{{ nyxmon_user }}"
+  when: not nyxmon_skip_django_manage | default(false)

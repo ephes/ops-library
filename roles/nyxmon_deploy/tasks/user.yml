@@ -43,3 +43,6 @@
     - "{{ nyxmon_site_path }}"
     - "{{ nyxmon_cache_dir }}"
     - "{{ nyxmon_home }}/logs"
+  when: not (nyxmon_deploy_method == "git" and item in [nyxmon_site_path, nyxmon_cache_dir])
+  loop_control:
+    label: "{{ item }}"
