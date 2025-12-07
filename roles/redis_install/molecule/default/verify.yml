@@ -1,0 +1,59 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    redis_service_name: redis-server
+    redis_config_path: /etc/redis/redis.conf
+    redis_port: 6379
+
+  tasks:
+    - name: Verify | Redis service is active
+      ansible.builtin.command: systemctl is-active {{ redis_service_name }}
+      register: redis_service_status
+      changed_when: false
+
+    - name: Verify | Assert Redis service active
+      ansible.builtin.assert:
+        that:
+          - redis_service_status.rc == 0
+          - redis_service_status.stdout | trim == "active"
+        fail_msg: "Redis service not active"
+
+    - name: Verify | redis.conf exists
+      ansible.builtin.stat:
+        path: "{{ redis_config_path }}"
+      register: redis_conf_stat
+
+    - name: Verify | Assert redis.conf present
+      ansible.builtin.assert:
+        that:
+          - redis_conf_stat.stat.exists
+          - redis_conf_stat.stat.size | int > 0
+        fail_msg: "redis.conf missing at {{ redis_config_path }}"
+
+    - name: Verify | redis-cli responds without auth
+      ansible.builtin.command: "redis-cli -p {{ redis_port }} PING"
+      register: redis_ping
+      changed_when: false
+
+    - name: Verify | Assert redis-cli response
+      ansible.builtin.assert:
+        that:
+          - redis_ping.rc == 0
+          - "'PONG' in (redis_ping.stdout | default(''))"
+        fail_msg: "redis-cli PING did not return PONG"
+
+    - name: Verify | Check bind and port settings from config
+      ansible.builtin.command: "redis-cli -p {{ redis_port }} CONFIG GET bind"
+      register: redis_bind_config
+      changed_when: false
+
+    - name: Verify | Assert bind includes loopback
+      ansible.builtin.assert:
+        that:
+          - redis_bind_config.rc == 0
+          - redis_bind_config.stdout is search('127.0.0.1')
+        fail_msg: "Redis bind setting does not include 127.0.0.1"

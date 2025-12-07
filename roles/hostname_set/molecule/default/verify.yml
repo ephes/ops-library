@@ -1,0 +1,31 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    expected_hostname: molecule-host
+
+  tasks:
+    - name: Verify | /etc/hostname exists
+      ansible.builtin.stat:
+        path: /etc/hostname
+      register: hostname_stat
+
+    - name: Verify | Assert /etc/hostname present
+      ansible.builtin.assert:
+        that:
+          - hostname_stat.stat.exists
+        fail_msg: "/etc/hostname missing"
+
+    - name: Verify | /etc/hostname contains expected hostname
+      ansible.builtin.slurp:
+        src: /etc/hostname
+      register: hostname_file
+
+    - name: Verify | Assert /etc/hostname content matches
+      ansible.builtin.assert:
+        that:
+          - (hostname_file.content | b64decode | trim) == expected_hostname
+        fail_msg: "/etc/hostname did not contain expected hostname"

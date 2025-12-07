@@ -1,0 +1,27 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Download sops binary appropriate for architecture
+      ansible.builtin.get_url:
+        url: >-
+          https://github.com/getsops/sops/releases/download/v{{ sops_deps_sops_version }}/sops-v{{ sops_deps_sops_version }}.linux.{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}
+        dest: /usr/local/bin/sops
+        mode: "0755"
+        timeout: 60
+      register: sops_download
+      retries: 3
+      delay: 2
+      until: sops_download is succeeded
+
+  vars:
+    sops_deps_user: sopsuser
+    sops_deps_group: users
+    sops_deps_home: /home/sopsuser
+    sops_deps_install_method: apt
+    sops_deps_install_ansible_collection: false
+
+  roles:
+    - role: sops_dependencies

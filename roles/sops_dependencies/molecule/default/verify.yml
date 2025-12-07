@@ -1,0 +1,60 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    sops_user: sopsuser
+    age_key_path: "/home/sopsuser/.config/sops/age/keys.txt"
+    age_bin: /usr/bin/age
+    sops_bin: /usr/local/bin/sops
+
+  tasks:
+    - name: Verify | age binary present
+      ansible.builtin.stat:
+        path: "{{ age_bin }}"
+      register: age_stat
+
+    - name: Verify | sops binary present
+      ansible.builtin.stat:
+        path: "{{ sops_bin }}"
+      register: sops_stat
+
+    - name: Verify | Assert binaries exist with execute bit
+      ansible.builtin.assert:
+        that:
+          - age_stat.stat.exists
+          - age_stat.stat.mode is search("0755")
+          - sops_stat.stat.exists
+          - sops_stat.stat.mode is search("0755")
+        fail_msg: "age/sops binaries missing or not executable"
+
+    - name: Verify | age key exists
+      ansible.builtin.stat:
+        path: "{{ age_key_path }}"
+      register: age_key_stat
+
+    - name: Verify | Assert age key generated
+      ansible.builtin.assert:
+        that:
+          - age_key_stat.stat.exists
+          - age_key_stat.stat.size | int > 0
+        fail_msg: "Age key not created at {{ age_key_path }}"
+
+    - name: Verify | age --version
+      ansible.builtin.command: "{{ age_bin }} --version"
+      register: age_version
+      changed_when: false
+
+    - name: Verify | sops --version
+      ansible.builtin.command: "{{ sops_bin }} --version"
+      register: sops_version
+      changed_when: false
+
+    - name: Verify | Assert age/sops versions succeed
+      ansible.builtin.assert:
+        that:
+          - age_version.rc == 0
+          - sops_version.rc == 0
+        fail_msg: "age or sops version command failed"

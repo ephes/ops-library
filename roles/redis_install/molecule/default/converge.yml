@@ -1,0 +1,13 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+
+  vars:
+    redis_install_bind_addresses:
+      - 127.0.0.1
+    redis_install_requirepass_enabled: false
+    redis_install_validate_config: false
+
+  roles:
+    - role: redis_install

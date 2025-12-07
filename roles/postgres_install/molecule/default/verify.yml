@@ -1,0 +1,90 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    postgres_install_version: "16"
+    postgres_install_cluster_name: main
+    postgres_install_conf_d_filename: 20-ops-library.conf
+    postgres_service: postgresql
+    postgres_cluster_service: "postgresql@{{ postgres_install_version }}-{{ postgres_install_cluster_name }}"
+    postgres_conf_d_file: "/etc/postgresql/{{ postgres_install_version }}/{{ postgres_install_cluster_name }}/conf.d/{{ postgres_install_conf_d_filename }}"
+    verify_db: molecule_db
+    verify_role: molecule
+
+  tasks:
+    - name: Verify | PostgreSQL service is active
+      ansible.builtin.command: systemctl is-active {{ postgres_service }}
+      register: pg_service_status
+      changed_when: false
+
+    - name: Verify | Assert service active
+      ansible.builtin.assert:
+        that:
+          - pg_service_status.rc == 0
+          - pg_service_status.stdout | trim == "active"
+        fail_msg: "PostgreSQL service not active"
+
+    - name: Verify | Cluster service is active
+      ansible.builtin.command: systemctl is-active {{ postgres_cluster_service }}
+      register: pg_cluster_status
+      changed_when: false
+      failed_when: false
+
+    - name: Verify | Assert cluster service active (if present)
+      ansible.builtin.assert:
+        that:
+          - pg_cluster_status.rc == 0
+          - pg_cluster_status.stdout | trim == "active"
+        fail_msg: "PostgreSQL cluster service not active"
+      when: pg_cluster_status.rc == 0
+
+    - name: Verify | ops-library drop-in config exists
+      ansible.builtin.stat:
+        path: "{{ postgres_conf_d_file }}"
+      register: pg_conf_stat
+
+    - name: Verify | Assert drop-in config present
+      ansible.builtin.assert:
+        that:
+          - pg_conf_stat.stat.exists
+          - pg_conf_stat.stat.size | int > 0
+        fail_msg: "Drop-in config missing at {{ postgres_conf_d_file }}"
+
+    - name: Verify | Database exists
+      ansible.builtin.command: sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='{{ verify_db }}';"
+      register: pg_db_check
+      changed_when: false
+
+    - name: Verify | Assert database present
+      ansible.builtin.assert:
+        that:
+          - pg_db_check.rc == 0
+          - pg_db_check.stdout | trim == "1"
+        fail_msg: "Database {{ verify_db }} not found"
+
+    - name: Verify | Role exists
+      ansible.builtin.command: sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ verify_role }}';"
+      register: pg_role_check
+      changed_when: false
+
+    - name: Verify | Assert role present
+      ansible.builtin.assert:
+        that:
+          - pg_role_check.rc == 0
+          - pg_role_check.stdout | trim == "1"
+        fail_msg: "Role {{ verify_role }} not found"
+
+    - name: Verify | Can connect to database
+      ansible.builtin.command: sudo -u postgres psql -d {{ verify_db }} -tAc "SELECT version();"
+      register: pg_connect
+      changed_when: false
+
+    - name: Verify | Assert connection succeeds
+      ansible.builtin.assert:
+        that:
+          - pg_connect.rc == 0
+          - pg_connect.stdout | length > 0
+        fail_msg: "Connection to {{ verify_db }} failed"
