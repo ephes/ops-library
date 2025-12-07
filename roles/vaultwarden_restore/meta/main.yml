@@ -1,0 +1,25 @@
+---
+galaxy_info:
+  role_name: vaultwarden_restore
+  author: ops-library
+  description: Restore Vaultwarden password manager from backup
+  license: MIT
+  min_ansible_version: "2.14"
+
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+        - trixie
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+
+  galaxy_tags:
+    - vaultwarden
+    - restore
+
+dependencies:
+  - role: local.ops_library.vaultwarden_shared
