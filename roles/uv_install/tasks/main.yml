@@ -86,7 +86,7 @@
         {% if uv_version != "latest" %}
         export UV_VERSION="{{ uv_version }}"
         {% endif %}
-        "{{ temp_dir.path }}/install.sh"
+        bash "{{ temp_dir.path }}/install.sh"
       args:
         executable: /bin/bash
       environment:
