@@ -1,0 +1,58 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    shell_basics_home: "/root"
+    shell_basics_local_bin: "{{ shell_basics_home }}/.local/bin"
+    shell_basics_shell_path: "/usr/bin/fish"
+
+  tasks:
+    - name: Verify | fish binary present
+      ansible.builtin.stat:
+        path: "{{ shell_basics_shell_path }}"
+      register: fish_bin
+
+    - name: Verify | local bin directory exists
+      ansible.builtin.stat:
+        path: "{{ shell_basics_local_bin }}"
+      register: local_bin_stat
+
+    - name: Verify | Assert local bin directory exists
+      ansible.builtin.assert:
+        that:
+          - local_bin_stat.stat.exists
+          - local_bin_stat.stat.isdir
+        fail_msg: "Local bin directory missing at {{ shell_basics_local_bin }}"
+
+    - name: Verify | Assert fish binary exists
+      ansible.builtin.assert:
+        that:
+          - fish_bin.stat.exists
+          - fish_bin.stat.mode is search("075")
+        fail_msg: "fish binary missing at {{ shell_basics_shell_path }}"
+
+    - name: Verify | fish config exists with marker
+      ansible.builtin.slurp:
+        src: "{{ shell_basics_home }}/.config/fish/config.fish"
+      register: fish_config
+
+    - name: Verify | Assert fish config contains managed block
+      ansible.builtin.assert:
+        that:
+          - fish_config is defined
+          - "'ANSIBLE SHELL BASICS' in (fish_config.content | b64decode)"
+        fail_msg: "Managed fish config block not found"
+
+    - name: Verify | fd symlink created
+      ansible.builtin.stat:
+        path: "{{ shell_basics_local_bin }}/fd"
+      register: fd_link
+
+    - name: Verify | Assert fd symlink exists
+      ansible.builtin.assert:
+        that:
+          - fd_link.stat.exists
+        fail_msg: "fd link missing in {{ shell_basics_local_bin }}"

@@ -1,0 +1,24 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Ensure remote temp directory exists
+      ansible.builtin.file:
+        path: /root/.ansible/tmp
+        state: directory
+        mode: "0700"
+        owner: root
+        group: root
+
+    - name: Install curl for uv installer
+      ansible.builtin.apt:
+        name:
+          - curl
+          - ca-certificates
+        state: present
+        update_cache: true
+
+  roles:
+    - role: uv_install

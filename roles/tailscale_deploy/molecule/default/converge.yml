@@ -1,0 +1,14 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+
+  vars:
+    tailscale_hostname: "molecule-tailscale"
+    tailscale_manual_up: true
+    tailscale_auth_key: "tskey-molecule-placeholder"
+    tailscale_enable_service: true
+    tailscale_configure_firewall: false
+
+  roles:
+    - role: tailscale_deploy

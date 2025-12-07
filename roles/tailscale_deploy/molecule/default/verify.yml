@@ -1,0 +1,53 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    tailscale_sysconfig_path: /etc/default/tailscaled
+
+  tasks:
+    - name: Verify | tailscale binary exists
+      ansible.builtin.stat:
+        path: /usr/bin/tailscale
+      register: tailscale_bin
+
+    - name: Verify | Assert tailscale binary present
+      ansible.builtin.assert:
+        that:
+          - tailscale_bin.stat.exists
+        fail_msg: "tailscale binary missing at /usr/bin/tailscale"
+
+    - name: Verify | tailscaled systemd unit present
+      ansible.builtin.stat:
+        path: /usr/lib/systemd/system/tailscaled.service
+      register: tailscaled_unit
+
+    - name: Verify | Assert systemd unit exists
+      ansible.builtin.assert:
+        that:
+          - tailscaled_unit.stat.exists
+        fail_msg: "tailscaled.service unit not found"
+
+    - name: Verify | Sysconfig file exists
+      ansible.builtin.stat:
+        path: "{{ tailscale_sysconfig_path }}"
+      register: tailscale_sysconfig
+
+    - name: Verify | Assert sysconfig present
+      ansible.builtin.assert:
+        that:
+          - tailscale_sysconfig.stat.exists
+        fail_msg: "tailscale sysconfig missing at {{ tailscale_sysconfig_path }}"
+
+    - name: Verify | Service is active
+      ansible.builtin.command: systemctl is-active tailscaled
+      register: tailscaled_status
+      changed_when: false
+
+    - name: Verify | Assert service active or running
+      ansible.builtin.assert:
+        that:
+          - tailscaled_status.rc == 0
+        fail_msg: "tailscaled service is not active"

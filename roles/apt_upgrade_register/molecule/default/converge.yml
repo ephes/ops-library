@@ -1,0 +1,22 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+
+  vars:
+    apt_upgrade_service_name: "molecule_apt_upgrade"
+    apt_upgrade_target_type: "local"
+
+  pre_tasks:
+    - name: Ensure FastDeploy group exists
+      ansible.builtin.group:
+        name: "{{ apt_upgrade_fastdeploy_user }}"
+        state: present
+
+    - name: Ensure deploy group exists
+      ansible.builtin.group:
+        name: "{{ apt_upgrade_deploy_group }}"
+        state: present
+
+  roles:
+    - role: apt_upgrade_register

@@ -1,0 +1,77 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    apt_upgrade_service_name: "molecule_apt_upgrade"
+    apt_upgrade_fastdeploy_home: "/home/fastdeploy"
+    apt_upgrade_service_path: "{{ apt_upgrade_fastdeploy_home }}/site/services/{{ apt_upgrade_service_name }}"
+    apt_upgrade_sudoers_path: "/etc/sudoers.d/apt_upgrade_{{ apt_upgrade_service_name }}"
+
+  tasks:
+    - name: Verify | FastDeploy user exists
+      ansible.builtin.getent:
+        database: passwd
+        key: fastdeploy
+      register: fastdeploy_user
+
+    - name: Verify | Assert FastDeploy user present
+      ansible.builtin.assert:
+        that:
+          - fastdeploy_user is defined
+          - fastdeploy_user.ansible_facts.getent_passwd.fastdeploy is defined
+        fail_msg: "FastDeploy user missing"
+
+    - name: Verify | Deploy user exists
+      ansible.builtin.getent:
+        database: passwd
+        key: deploy
+      register: deploy_user
+
+    - name: Verify | Assert deploy user present
+      ansible.builtin.assert:
+        that:
+          - deploy_user.ansible_facts.getent_passwd.deploy is defined
+        fail_msg: "Deploy user missing"
+
+    - name: Verify | Service directory exists
+      ansible.builtin.stat:
+        path: "{{ apt_upgrade_service_path }}"
+      register: service_dir
+
+    - name: Verify | Assert service directory
+      ansible.builtin.assert:
+        that:
+          - service_dir.stat.exists
+          - service_dir.stat.isdir
+        fail_msg: "Service path missing at {{ apt_upgrade_service_path }}"
+
+    - name: Verify | Check expected files
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: service_files
+      loop:
+        - "{{ apt_upgrade_service_path }}/config.json"
+        - "{{ apt_upgrade_service_path }}/deploy.py"
+        - "{{ apt_upgrade_service_path }}/deploy.sh"
+        - "{{ apt_upgrade_service_path }}/playbook.yml"
+
+    - name: Verify | Assert expected files exist
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+        fail_msg: "Missing file {{ item.item }}"
+      loop: "{{ service_files.results }}"
+
+    - name: Verify | Sudoers file present
+      ansible.builtin.stat:
+        path: "{{ apt_upgrade_sudoers_path }}"
+      register: sudoers_stat
+
+    - name: Verify | Assert sudoers file exists
+      ansible.builtin.assert:
+        that:
+          - sudoers_stat.stat.exists
+        fail_msg: "Sudoers file missing at {{ apt_upgrade_sudoers_path }}"

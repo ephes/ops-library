@@ -1,0 +1,57 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    nyxmon_site_path: /home/nyxmon/site
+    nyxmon_env_path: "{{ nyxmon_site_path }}/.env"
+    nyxmon_service_unit: /etc/systemd/system/nyxmon.service
+    nyxmon_venv_python: "{{ nyxmon_site_path }}/.venv/bin/python"
+
+  tasks:
+    - name: Verify | Site directory exists
+      ansible.builtin.stat:
+        path: "{{ nyxmon_site_path }}"
+      register: nyxmon_site
+
+    - name: Verify | Assert site directory present
+      ansible.builtin.assert:
+        that:
+          - nyxmon_site.stat.exists
+          - nyxmon_site.stat.isdir
+        fail_msg: "Nyxmon site directory missing at {{ nyxmon_site_path }}"
+
+    - name: Verify | .env exists
+      ansible.builtin.stat:
+        path: "{{ nyxmon_env_path }}"
+      register: nyxmon_env
+
+    - name: Verify | Assert .env present
+      ansible.builtin.assert:
+        that:
+          - nyxmon_env.stat.exists
+        fail_msg: "Nyxmon .env missing at {{ nyxmon_env_path }}"
+
+    - name: Verify | Service unit exists
+      ansible.builtin.stat:
+        path: "{{ nyxmon_service_unit }}"
+      register: nyxmon_unit
+
+    - name: Verify | Assert service unit exists
+      ansible.builtin.assert:
+        that:
+          - nyxmon_unit.stat.exists
+        fail_msg: "nyxmon.service not found at {{ nyxmon_service_unit }}"
+
+    - name: Verify | Virtualenv python exists
+      ansible.builtin.stat:
+        path: "{{ nyxmon_venv_python }}"
+      register: nyxmon_venv
+
+    - name: Verify | Assert venv python present
+      ansible.builtin.assert:
+        that:
+          - nyxmon_venv.stat.exists
+        fail_msg: "Nyxmon venv python missing at {{ nyxmon_venv_python }}"

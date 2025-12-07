@@ -1,0 +1,12 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+
+  vars:
+    # Avoid GitHub API dependency during tests
+    shell_basics_manage_chezmoi: false
+    shell_basics_user: root
+
+  roles:
+    - role: shell_basics_deploy

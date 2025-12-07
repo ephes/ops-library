@@ -1,0 +1,39 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    ansible_candidate_paths:
+      - /usr/local/bin/ansible
+      - /usr/bin/ansible
+
+  tasks:
+    - name: Verify | Check candidate ansible paths
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: ansible_path_stats
+      loop: "{{ ansible_candidate_paths }}"
+
+    - name: Verify | Pick ansible binary path
+      ansible.builtin.set_fact:
+        ansible_bin: "{{ (ansible_path_stats.results | selectattr('stat.exists','equalto',true) | map(attribute='stat.path') | list | first) | default('') }}"
+
+    - name: Verify | Assert ansible binary found
+      ansible.builtin.assert:
+        that:
+          - ansible_bin | length > 0
+        fail_msg: "Ansible binary not found in expected paths"
+
+    - name: Verify | ansible --version succeeds
+      ansible.builtin.command: "{{ ansible_bin }} --version"
+      register: ansible_version_cmd
+      changed_when: false
+
+    - name: Verify | Assert ansible version output
+      ansible.builtin.assert:
+        that:
+          - (ansible_version_cmd.rc | default(1)) == 0
+          - (ansible_version_cmd.stdout_lines | default([])) | length > 0
+        fail_msg: "Ansible version command failed"

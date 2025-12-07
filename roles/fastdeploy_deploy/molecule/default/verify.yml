@@ -1,0 +1,57 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    fastdeploy_site_path: /home/fastdeploy/site
+    fastdeploy_env_path: "{{ fastdeploy_site_path }}/.env"
+    fastdeploy_service_unit: /etc/systemd/system/fastdeploy.service
+    fastdeploy_venv_python: "{{ fastdeploy_site_path }}/.venv/bin/python"
+
+  tasks:
+    - name: Verify | Site directory exists
+      ansible.builtin.stat:
+        path: "{{ fastdeploy_site_path }}"
+      register: site_dir
+
+    - name: Verify | Assert site directory present
+      ansible.builtin.assert:
+        that:
+          - site_dir.stat.exists
+          - site_dir.stat.isdir
+        fail_msg: "FastDeploy site directory missing at {{ fastdeploy_site_path }}"
+
+    - name: Verify | .env file exists
+      ansible.builtin.stat:
+        path: "{{ fastdeploy_env_path }}"
+      register: env_file
+
+    - name: Verify | Assert .env exists
+      ansible.builtin.assert:
+        that:
+          - env_file.stat.exists
+        fail_msg: "FastDeploy .env missing at {{ fastdeploy_env_path }}"
+
+    - name: Verify | Service unit exists
+      ansible.builtin.stat:
+        path: "{{ fastdeploy_service_unit }}"
+      register: service_unit
+
+    - name: Verify | Assert service unit exists
+      ansible.builtin.assert:
+        that:
+          - service_unit.stat.exists
+        fail_msg: "fastdeploy.service unit not found at {{ fastdeploy_service_unit }}"
+
+    - name: Verify | Virtualenv python exists
+      ansible.builtin.stat:
+        path: "{{ fastdeploy_venv_python }}"
+      register: venv_python
+
+    - name: Verify | Assert venv python present
+      ansible.builtin.assert:
+        that:
+          - venv_python.stat.exists
+        fail_msg: "FastDeploy venv python missing at {{ fastdeploy_venv_python }}"

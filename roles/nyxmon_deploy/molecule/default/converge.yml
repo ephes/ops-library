@@ -1,0 +1,47 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Ensure apt helpers and curl are present
+      ansible.builtin.apt:
+        name:
+          - python3-apt
+          - python3-debian
+          - curl
+          - ca-certificates
+          - git
+        state: present
+        update_cache: true
+
+    - name: Remove existing site path for clean git clone
+      ansible.builtin.file:
+        path: "{{ nyxmon_site_path }}"
+        state: absent
+      when: nyxmon_deploy_method == "git"
+
+    - name: Install uv for Nyxmon
+      ansible.builtin.import_role:
+        name: uv_install
+      vars:
+        uv_install_dir: /usr/local/bin
+
+  vars:
+    nyxmon_deploy_method: git
+    nyxmon_git_repo: "https://github.com/ephes/nyxmon.git"
+    nyxmon_git_version: main
+    nyxmon_use_source_pyproject: false
+    nyxmon_use_uv: true
+    nyxmon_python_version: "3.12"
+    nyxmon_django_path: "{{ nyxmon_site_path }}/src/django"
+    nyxmon_skip_django_manage: true
+    nyxmon_django_secret_key: "molecule-nyxmon-secret-key"
+    nyxmon_telegram_bot_token: "molecule-telegram-token"
+    nyxmon_telegram_chat_id: "123456"
+    nyxmon_basic_auth_enabled: false
+    nyxmon_traefik_enabled: false
+    nyxmon_monitoring_enabled: false
+
+  roles:
+    - role: nyxmon_deploy

@@ -1,0 +1,67 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    traefik_binary_path: /usr/local/bin/traefik
+    traefik_static_config: /etc/traefik/traefik.toml
+    traefik_unit_path: /etc/systemd/system/traefik.service
+    traefik_acme_storage: /etc/traefik/acme/acme.json
+
+  tasks:
+    - name: Verify | Traefik binary present
+      ansible.builtin.stat:
+        path: "{{ traefik_binary_path }}"
+      register: traefik_bin
+
+    - name: Verify | Assert binary exists
+      ansible.builtin.assert:
+        that:
+          - traefik_bin.stat.exists
+        fail_msg: "Traefik binary missing at {{ traefik_binary_path }}"
+
+    - name: Verify | Static config present
+      ansible.builtin.stat:
+        path: "{{ traefik_static_config }}"
+      register: traefik_config
+
+    - name: Verify | Assert config exists
+      ansible.builtin.assert:
+        that:
+          - traefik_config.stat.exists
+        fail_msg: "Traefik config missing at {{ traefik_static_config }}"
+
+    - name: Verify | Unit file present
+      ansible.builtin.stat:
+        path: "{{ traefik_unit_path }}"
+      register: traefik_unit
+
+    - name: Verify | Assert unit exists
+      ansible.builtin.assert:
+        that:
+          - traefik_unit.stat.exists
+        fail_msg: "Traefik unit missing at {{ traefik_unit_path }}"
+
+    - name: Verify | ACME storage present
+      ansible.builtin.stat:
+        path: "{{ traefik_acme_storage }}"
+      register: traefik_acme
+
+    - name: Verify | Assert acme storage exists
+      ansible.builtin.assert:
+        that:
+          - traefik_acme.stat.exists
+        fail_msg: "ACME storage missing at {{ traefik_acme_storage }}"
+
+    - name: Verify | Service is active
+      ansible.builtin.command: systemctl is-active traefik
+      register: traefik_status
+      changed_when: false
+
+    - name: Verify | Assert service active
+      ansible.builtin.assert:
+        that:
+          - traefik_status.rc == 0
+        fail_msg: "Traefik service is not active"

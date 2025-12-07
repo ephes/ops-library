@@ -86,3 +86,17 @@ For testing without any real infrastructure:
 cd services/apt_upgrade
 molecule test -s delegated
 ```
+
+## Molecule (container-based) quick start
+
+Tier 1 roles with Molecule scenarios: `test_dummy`, `shell_basics_deploy`, `uv_install`, `ansible_install`, `apt_upgrade_register`.
+
+```bash
+# From repo root, auto-detect Colima/Docker and run a role's scenario
+just molecule-test test_dummy
+just molecule-test shell_basics_deploy
+```
+
+Notes:
+- Colima, Docker Desktop, or native Docker are supported via `just` detection helpers.
+- Dependency step warnings are silenced with empty `requirements.yml` / `collections.yml` in each scenario.

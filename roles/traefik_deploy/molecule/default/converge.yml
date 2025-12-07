@@ -1,0 +1,13 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+
+  vars:
+    traefik_letsencrypt_email: "molecule@example.invalid"
+    traefik_force_update: false
+    traefik_configure_firewall: false
+    traefik_dashboard_firewall_open: false
+
+  roles:
+    - role: traefik_deploy

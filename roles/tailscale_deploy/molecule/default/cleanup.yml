@@ -1,0 +1,9 @@
+---
+- name: Cleanup
+  hosts: all
+  gather_facts: false
+
+  tasks:
+    - name: Cleanup placeholder
+      ansible.builtin.debug:
+        msg: "No cleanup required for tailscale_deploy"

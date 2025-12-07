@@ -1,0 +1,29 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Ensure apt helpers and curl are present
+      ansible.builtin.apt:
+        name:
+          - python3-apt
+          - python3-debian
+          - curl
+          - ca-certificates
+        state: present
+        update_cache: true
+
+  vars:
+    fastdeploy_deploy_method: git
+    fastdeploy_git_repo: "https://github.com/ephes/fastdeploy.git"
+    fastdeploy_git_version: main
+    fastdeploy_secret_key: "molecule-fastdeploy-secret-key"
+    fastdeploy_initial_password_hash: "$2b$12$C/.9mKCNt2uQ6Xo8XOSYpOZ.7YT1Do1B4ezgmO6ijLJrVN6a8GNm6"
+    fastdeploy_postgres_password: "molecule-postgres-password"
+    fastdeploy_basic_auth_enabled: false
+    fastdeploy_traefik_enabled: false
+    fastdeploy_build_frontend: false
+
+  roles:
+    - role: fastdeploy_deploy

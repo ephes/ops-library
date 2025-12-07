@@ -1,0 +1,33 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    uv_bin: "/usr/local/bin/uv"
+
+  tasks:
+    - name: Verify | uv binary exists
+      ansible.builtin.stat:
+        path: "{{ uv_bin }}"
+      register: uv_stat
+
+    - name: Verify | Assert uv binary present
+      ansible.builtin.assert:
+        that:
+          - uv_stat.stat.exists
+          - uv_stat.stat.mode is search("0755")
+        fail_msg: "uv binary missing at {{ uv_bin }}"
+
+    - name: Verify | uv --version works
+      ansible.builtin.command: "{{ uv_bin }} --version"
+      register: uv_version
+      changed_when: false
+
+    - name: Verify | Assert uv reports version
+      ansible.builtin.assert:
+        that:
+          - uv_version.rc == 0
+          - uv_version.stdout is search('uv ')
+        fail_msg: "uv version check failed"
