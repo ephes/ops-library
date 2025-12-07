@@ -17,3 +17,9 @@
     name: "{{ mail_spam_packages }}"
     state: present
     update_cache: true
+
+- name: Ensure Redis is installed for rspamd
+  ansible.builtin.apt:
+    name: redis-server
+    state: present
+  when: mail_spam_install_redis | bool

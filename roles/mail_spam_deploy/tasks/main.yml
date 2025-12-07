@@ -1,6 +1,12 @@
 ---
 # mail_spam_deploy - Main task orchestration
 
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - (not mail_spam_web_enabled | bool) or (mail_spam_web_password is defined and (mail_spam_web_password | length > 0))
+    fail_msg: "mail_spam_web_password must be set when mail_spam_web_enabled=true"
+
 - name: Install rspamd packages
   ansible.builtin.import_tasks: packages.yml
 

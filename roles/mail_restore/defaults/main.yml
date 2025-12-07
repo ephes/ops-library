@@ -27,6 +27,7 @@ mail_restore_vmail_group: "vmail"
 
 mail_restore_postgres_database: "mail"
 mail_restore_postgres_user: "mail"
+mail_restore_db_force_disconnect: false
 
 # =============================================================================
 # Restore Components

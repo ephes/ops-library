@@ -7,6 +7,7 @@
       FROM mail_users u
       JOIN mail_domains d ON u.domain_id = d.id
   register: existing_users
+  become: true
   become_user: postgres
 
 - name: Build list of existing emails
@@ -32,5 +33,6 @@
     named_args:
       email: "{{ item }}"
   loop: "{{ existing_emails | difference(mail_users_list | map(attribute='email') | map('lower') | list) }}"
+  become: true
   become_user: postgres
   when: mail_users_disable_unlisted | default(false)

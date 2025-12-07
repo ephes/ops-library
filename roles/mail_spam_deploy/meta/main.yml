@@ -1,16 +1,2 @@
 ---
-galaxy_info:
-  author: Jochen Wersdoerfer
-  description: Deploy rspamd spam filter for mail backend
-  license: MIT
-  min_ansible_version: "2.12"
-  platforms:
-    - name: Debian
-      versions:
-        - bookworm
-    - name: Ubuntu
-      versions:
-        - jammy
-        - noble
-
-dependencies: []
+# No external collection dependencies; placeholder to align with other mail roles

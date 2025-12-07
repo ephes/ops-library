@@ -99,7 +99,8 @@
 
     - name: Generate password hash for initial user
       ansible.builtin.command:
-        cmd: doveadm pw -s SHA512-CRYPT -p "{{ mail_backend_initial_user_password }}"
+        cmd: doveadm pw -s SHA512-CRYPT
+        stdin: "{{ mail_backend_initial_user_password }}\n{{ mail_backend_initial_user_password }}"
       register: doveadm_pw_result
       changed_when: false
       no_log: true

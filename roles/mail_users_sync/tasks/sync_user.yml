@@ -22,6 +22,7 @@
     named_args:
       domain: "{{ user_domain }}"
   register: domain_result
+  become: true
   become_user: postgres
 
 - name: Fail if domain does not exist
@@ -30,7 +31,9 @@
   when: domain_result.query_result | length == 0
 
 - name: Generate password hash for {{ user.email }}
-  ansible.builtin.command: doveadm pw -s SHA512-CRYPT -p "{{ user.password }}"
+  ansible.builtin.command: doveadm pw -s SHA512-CRYPT
+  args:
+    stdin: "{{ user.password }}\n{{ user.password }}"
   register: password_hash
   changed_when: false
   no_log: true
@@ -59,11 +62,14 @@
       localpart: "{{ user_localpart }}"
       password: "{{ password_hash.stdout }}"
       active: "{{ user_active }}"
+  become: true
   become_user: postgres
   when: user_exists.query_result | length == 0
 
 - name: Verify existing password for {{ user.email }}
-  ansible.builtin.command: doveadm pw -t "{{ user_exists.query_result[0].password }}" -p "{{ user.password }}"
+  ansible.builtin.command: doveadm pw -t "{{ user_exists.query_result[0].password }}"
+  args:
+    stdin: "{{ user.password }}\n{{ user.password }}"
   register: password_verify
   changed_when: false
   failed_when: false
@@ -89,5 +95,6 @@
       localpart: "{{ user_localpart }}"
       password: "{{ password_hash.stdout }}"
       active: "{{ user_active }}"
+  become: true
   become_user: postgres
   when: user_exists.query_result | length > 0 and (password_changed | bool or active_changed | bool)

@@ -36,7 +36,7 @@
 
 - name: Backup PostgreSQL database
   ansible.builtin.shell: |
-    pg_dump -U postgres {{ mail_backup_postgres_database }} | gzip > \
+    pg_dump -U postgres "{{ mail_backup_postgres_database }}" | gzip > \
       "{{ mail_backup_dir }}/database.sql.gz"
   become: true
   become_user: postgres

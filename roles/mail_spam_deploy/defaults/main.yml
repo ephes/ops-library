@@ -9,6 +9,7 @@
 # =============================================================================
 
 mail_spam_redis_enabled: true
+mail_spam_install_redis: false
 mail_spam_redis_host: "localhost"
 mail_spam_redis_port: 6379
 # mail_spam_redis_password: ""  # Set via SOPS if Redis requires auth

@@ -163,23 +163,23 @@
 - name: Gather service facts
   ansible.builtin.service_facts:
 
-    - name: Determine which services exist
-      ansible.builtin.set_fact:
-        mail_restore_existing_services: >-
-          {{
-            mail_restore_services | select('in',
-              ansible_facts.services.keys()
-                | map('regex_replace', '\\.service$', '')
-                | map('regex_replace', '@.*$', '') | list
-            ) | list
-          }}
+- name: Determine which services exist
+  ansible.builtin.set_fact:
+    mail_restore_existing_services: >-
+      {{
+        mail_restore_services | select('in',
+          ansible_facts.services.keys()
+            | map('regex_replace', '\\.service$', '')
+            | map('regex_replace', '@.*$', '') | list
+        ) | list
+      }}
 
 - name: Stop mail services
   ansible.builtin.systemd:
     name: "{{ item }}"
     state: stopped
   loop: "{{ mail_restore_existing_services }}"
-  ignore_errors: true
+  failed_when: false
 
 # =============================================================================
 # Restore data
@@ -191,6 +191,7 @@
       community.postgresql.postgresql_db:
         name: "{{ mail_restore_postgres_database }}"
         state: absent
+        force: "{{ mail_restore_db_force_disconnect | default(false) | bool }}"
       become: true
       become_user: postgres
 
@@ -204,7 +205,7 @@
     - name: Restore database from backup
       ansible.builtin.shell: |
         gunzip -c "{{ mail_restore_source }}/database.sql.gz" | \
-          psql -U postgres {{ mail_restore_postgres_database }}
+          psql -U postgres "{{ mail_restore_postgres_database }}"
       become: true
       become_user: postgres
       changed_when: true

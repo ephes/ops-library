@@ -1,16 +1,4 @@
 ---
-galaxy_info:
-  author: Jochen Wersdoerfer
-  description: Restore mail server from backup
-  license: MIT
-  min_ansible_version: "2.12"
-  platforms:
-    - name: Debian
-      versions:
-        - bookworm
-    - name: Ubuntu
-      versions:
-        - jammy
-        - noble
-
-dependencies: []
+collections:
+  - community.postgresql
+  - ansible.posix
