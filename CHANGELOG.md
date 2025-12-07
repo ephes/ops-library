@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `nyxmon_backup` role for SQLite-safe snapshots with metadata, manifests, and automatic archive fetches
 - `nyxmon_restore` role with staging validation, safety snapshots, rollback support, and service verification
 - `shell_basics_deploy` role to install fish, modern CLI tools (btop, bmon, sysstat/iotop, tealdeer, eza), set shell/editor defaults, and keep chezmoi current via upstream installer
+- `snappymail_deploy` role to install SnappyMail from upstream archives (PHP-FPM + nginx), wire IMAP/SMTP defaults, persist data under `/mnt/cryptdata/snappymail`, and expose via Traefik
 - ReadTheDocs integration with Sphinx and MyST parser
   - Browsable documentation at https://ops-library.readthedocs.io/
   - Furo theme for modern, clean appearance

@@ -1,0 +1,23 @@
+---
+# SnappyMail deployment defaults (public-safe)
+
+snappymail_deploy_packages:
+  - nginx
+  - curl
+  - tar
+  - php-fpm
+  - php-cli
+  - php-curl
+  - php-mbstring
+  - php-intl
+  - php-gd
+  - php-xml
+  - php-zip
+  - php-imap
+
+snappymail_disable_default_nginx_site: true
+snappymail_nginx_site_path: /etc/nginx/sites-available/snappymail
+snappymail_nginx_enabled_path: /etc/nginx/sites-enabled/snappymail
+
+snappymail_service_enabled: true
+snappymail_service_state: started

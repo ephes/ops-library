@@ -1,0 +1,5 @@
+---
+- name: Install SnappyMail packages
+  ansible.builtin.package:
+    name: "{{ snappymail_deploy_packages }}"
+    state: present

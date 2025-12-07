@@ -34,6 +34,7 @@ The table below links each published role to its dedicated documentation. Refer 
 | Service deployment | [`metube_deploy`](roles/metube_deploy/README.md) | Deploy MeTube (yt-dlp web UI) from source with uv, Angular build, systemd, and Traefik internal-bypass/basic-auth. |
 | Service deployment | [`mail_backend_deploy`](roles/mail_backend_deploy/README.md) | Deploy mail backend with Postfix, Dovecot, OpenDKIM, and PostgreSQL virtual users/domains. |
 | Service deployment | [`mail_relay_deploy`](roles/mail_relay_deploy/README.md) | Deploy Postfix edge relay with greylisting, TLS termination, and backend routing. |
+| Service deployment | [`snappymail_deploy`](roles/snappymail_deploy/README.md) | Deploy SnappyMail webmail via PHP-FPM + nginx with Traefik exposure and IMAP/SMTP defaults. |
 | Service operations | [`tailscale_backup`](roles/tailscale_backup/README.md) | Backup `/var/lib/tailscale`, sysconfig, and systemd drop-ins to preserve node identity. |
 | Service operations | [`tailscale_restore`](roles/tailscale_restore/README.md) | Restore Tailscale state from archive and optionally rerun `tailscale up`. |
 | Service operations | [`homeassistant_backup`](roles/homeassistant_backup/README.md) | Take on-host + off-host backups (rsync + manifest + optional archives). |

@@ -1,0 +1,19 @@
+---
+- name: Ensure php-fpm service state
+  ansible.builtin.service:
+    name: "{{ snappymail_php_fpm_service }}"
+    state: "{{ snappymail_service_state }}"
+    enabled: "{{ snappymail_service_enabled }}"
+
+- name: Ensure nginx service state
+  ansible.builtin.service:
+    name: nginx
+    state: "{{ snappymail_service_state }}"
+    enabled: "{{ snappymail_service_enabled }}"
+
+- name: Ensure Traefik is running
+  ansible.builtin.service:
+    name: traefik
+    state: started
+    enabled: true
+  when: snappymail_traefik_enabled | bool

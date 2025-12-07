@@ -1,0 +1,15 @@
+---
+- name: Check SnappyMail HTTP endpoint
+  ansible.builtin.uri:
+    url: "{{ snappymail_healthcheck_url }}"
+    status_code:
+      - 200
+      - 302
+    return_content: false
+    validate_certs: false
+    timeout: "{{ snappymail_healthcheck_timeout }}"
+    follow_redirects: none
+  register: snappymail_healthcheck_result
+  retries: "{{ snappymail_healthcheck_retries }}"
+  delay: 2
+  until: snappymail_healthcheck_result is succeeded

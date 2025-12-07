@@ -1,0 +1,28 @@
+---
+- name: Disable default nginx site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  when: snappymail_disable_default_nginx_site | bool
+  notify: reload nginx
+
+- name: Deploy nginx site for SnappyMail
+  ansible.builtin.template:
+    src: nginx-snappymail.conf.j2
+    dest: "{{ snappymail_nginx_site_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload nginx
+
+- name: Enable SnappyMail nginx site
+  ansible.builtin.file:
+    src: "{{ snappymail_nginx_site_path }}"
+    dest: "{{ snappymail_nginx_enabled_path }}"
+    state: link
+  notify: reload nginx
+
+- name: Validate nginx configuration
+  ansible.builtin.command: nginx -t
+  changed_when: false
+  notify: reload nginx

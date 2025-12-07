@@ -1,0 +1,11 @@
+---
+- name: Validate SnappyMail variables
+  ansible.builtin.assert:
+    that:
+      - snappymail_version is defined
+      - snappymail_data_dir | length > 0
+      - snappymail_data_dir.startswith('/')
+      - snappymail_admin_password_hash | length > 0 or (snappymail_admin_password is defined and snappymail_admin_password not in ['CHANGEME', ''])
+      - (not snappymail_traefik_enabled | bool) or (snappymail_traefik_host | length > 0)
+    quiet: false
+    fail_msg: "SnappyMail validation failed - check required variables (version, data dir, admin password, traefik host)."

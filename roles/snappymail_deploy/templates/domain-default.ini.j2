@@ -1,0 +1,23 @@
+; Managed by Ansible - default domain settings (applies to all domains)
+
+imap_host = "{{ snappymail_imap_host }}"
+imap_port = {{ snappymail_imap_port }}
+imap_secure = {{ snappymail_imap_security | upper }}
+imap_short_login = {{ snappymail_imap_short_login | ternary('On', 'Off') }}
+
+smtp_host = "{{ snappymail_smtp_host }}"
+smtp_port = {{ snappymail_smtp_port }}
+smtp_secure = {{ snappymail_smtp_security | upper }}
+smtp_auth = {{ snappymail_smtp_auth | ternary('On', 'Off') }}
+smtp_short_login = {{ snappymail_smtp_short_login | ternary('On', 'Off') }}
+smtp_set_sender = {{ snappymail_smtp_set_sender | ternary('On', 'Off') }}
+smtp_auth_plain_line = {{ snappymail_smtp_auth_plain_line | ternary('On', 'Off') }}
+smtp_php_mail = Off
+
+sieve_use = {{ snappymail_sieve_enabled | ternary('On', 'Off') }}
+sieve_host = "{{ snappymail_sieve_host }}"
+sieve_port = {{ snappymail_sieve_port }}
+sieve_secure = {{ snappymail_sieve_security | upper }}
+sieve_short_login = {{ snappymail_sieve_short_login | ternary('On', 'Off') }}
+
+whiteList = ""

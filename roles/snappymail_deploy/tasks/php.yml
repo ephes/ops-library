@@ -1,0 +1,30 @@
+---
+- name: Detect installed PHP version
+  ansible.builtin.command: php -r 'printf("%s.%s", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);'
+  register: snappymail_php_version_detect
+  changed_when: false
+  when: snappymail_php_version | length == 0
+
+- name: Set PHP version facts
+  ansible.builtin.set_fact:
+    snappymail_php_version_effective: >-
+      {{ snappymail_php_version if snappymail_php_version | length > 0 else snappymail_php_version_detect.stdout }}
+    snappymail_php_fpm_service: "php{{ snappymail_php_version if snappymail_php_version | length > 0 else snappymail_php_version_detect.stdout }}-fpm"
+    snappymail_php_fpm_pool_path: "/etc/php/{{ snappymail_php_version if snappymail_php_version | length > 0 else snappymail_php_version_detect.stdout }}/fpm/pool.d/snappymail.conf"
+    snappymail_php_fpm_socket: "/run/php/php{{ snappymail_php_version if snappymail_php_version | length > 0 else snappymail_php_version_detect.stdout }}-fpm-snappymail.sock"
+
+- name: Fail if PHP version could not be determined
+  ansible.builtin.assert:
+    that:
+      - snappymail_php_version_effective is defined
+      - snappymail_php_version_effective | length > 0
+    fail_msg: "Unable to determine PHP version for SnappyMail (php-cli not installed?)."
+
+- name: Render php-fpm pool for SnappyMail
+  ansible.builtin.template:
+    src: php-fpm.conf.j2
+    dest: "{{ snappymail_php_fpm_pool_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart php-fpm

@@ -1,0 +1,22 @@
+---
+- name: Ensure SnappyMail installation directory exists
+  ansible.builtin.file:
+    path: "{{ snappymail_install_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure SnappyMail data directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ snappymail_user }}"
+    group: "{{ snappymail_group }}"
+    mode: "0750"
+  loop:
+    - "{{ snappymail_data_dir }}"
+    - "{{ snappymail_private_data_dir }}"
+    - "{{ snappymail_configs_dir }}"
+    - "{{ snappymail_domains_dir }}"
+    - "{{ snappymail_logs_dir }}"

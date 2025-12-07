@@ -1,0 +1,14 @@
+---
+- name: Ensure SnappyMail group exists
+  ansible.builtin.group:
+    name: "{{ snappymail_group }}"
+    system: true
+
+- name: Ensure SnappyMail user exists
+  ansible.builtin.user:
+    name: "{{ snappymail_user }}"
+    group: "{{ snappymail_group }}"
+    home: "{{ snappymail_home }}"
+    shell: "{{ snappymail_shell }}"
+    create_home: false
+    system: true

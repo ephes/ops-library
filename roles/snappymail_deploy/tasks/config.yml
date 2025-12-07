@@ -1,0 +1,88 @@
+---
+- name: Check for existing SnappyMail config
+  ansible.builtin.stat:
+    path: "{{ snappymail_configs_dir }}/application.ini"
+  register: snappymail_application_ini
+
+- name: Read existing admin password hash
+  ansible.builtin.command: >
+    awk -F= 'tolower($1)=="admin_password" {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); gsub(/^"|\"$/, "", $2); print $2}' {{ snappymail_configs_dir }}/application.ini
+  register: snappymail_existing_admin_hash
+  when:
+    - snappymail_application_ini.stat.exists
+    - snappymail_admin_password_hash | length == 0
+  changed_when: false
+  failed_when: false
+
+- name: Verify provided admin password against existing hash
+  ansible.builtin.command: >
+    php -r 'echo password_verify(getenv("SNAPPYMAIL_ADMIN_PASSWORD"), getenv("SNAPPYMAIL_ADMIN_HASH")) ? "ok" : "fail";'
+  register: snappymail_admin_hash_verify
+  environment:
+    SNAPPYMAIL_ADMIN_PASSWORD: "{{ snappymail_admin_password }}"
+    SNAPPYMAIL_ADMIN_HASH: "{{ snappymail_existing_admin_hash.stdout | default('') }}"
+  changed_when: false
+  no_log: true
+  when:
+    - snappymail_admin_password_hash | length == 0
+    - snappymail_existing_admin_hash.stdout is defined
+    - snappymail_existing_admin_hash.stdout | length > 0
+
+- name: Generate admin password hash when needed
+  ansible.builtin.command: php -r 'echo password_hash(getenv("SNAPPYMAIL_ADMIN_PASSWORD"), PASSWORD_DEFAULT);'
+  register: snappymail_admin_hash_generate
+  environment:
+    SNAPPYMAIL_ADMIN_PASSWORD: "{{ snappymail_admin_password }}"
+  changed_when: false
+  no_log: true
+  when:
+    - snappymail_admin_password_hash | length == 0
+    - snappymail_admin_hash_verify.stdout | default('fail') != 'ok'
+
+- name: Set effective admin password hash
+  ansible.builtin.set_fact:
+    snappymail_admin_password_hash_effective: >-
+      {{ snappymail_admin_password_hash if snappymail_admin_password_hash | length > 0 else
+         (snappymail_existing_admin_hash.stdout
+           if (snappymail_admin_hash_verify.stdout | default('fail')) == 'ok'
+           and snappymail_existing_admin_hash.stdout | default('') | length > 0
+           else snappymail_admin_hash_generate.stdout) }}
+  no_log: true
+
+- name: Deploy SnappyMail include.php
+  ansible.builtin.template:
+    src: include.php.j2
+    dest: "{{ snappymail_install_dir }}/include.php"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Render SnappyMail application.ini
+  ansible.builtin.template:
+    src: application.ini.j2
+    dest: "{{ snappymail_configs_dir }}/application.ini"
+    owner: "{{ snappymail_user }}"
+    group: "{{ snappymail_group }}"
+    mode: "0640"
+  notify: restart php-fpm
+  no_log: true
+
+- name: Configure default domain settings
+  ansible.builtin.template:
+    src: domain-default.ini.j2
+    dest: "{{ snappymail_domains_dir }}/default.ini"
+    owner: "{{ snappymail_user }}"
+    group: "{{ snappymail_group }}"
+    mode: "0640"
+  notify: restart php-fpm
+
+- name: Configure per-domain settings
+  ansible.builtin.template:
+    src: domain.ini.j2
+    dest: "{{ snappymail_domains_dir }}/{{ item }}.ini"
+    owner: "{{ snappymail_user }}"
+    group: "{{ snappymail_group }}"
+    mode: "0640"
+  loop: "{{ snappymail_domains }}"
+  when: snappymail_domains | length > 0
+  notify: restart php-fpm

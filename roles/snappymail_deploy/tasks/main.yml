@@ -1,0 +1,38 @@
+---
+- name: Validate SnappyMail inputs
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Install SnappyMail dependencies
+  ansible.builtin.import_tasks: packages.yml
+
+- name: Ensure SnappyMail user exists
+  ansible.builtin.import_tasks: user.yml
+
+- name: Prepare SnappyMail directories
+  ansible.builtin.import_tasks: directories.yml
+
+- name: Install SnappyMail application
+  ansible.builtin.import_tasks: install.yml
+
+- name: Configure SnappyMail data path
+  ansible.builtin.import_tasks: data.yml
+
+- name: Configure PHP version and pool
+  ansible.builtin.import_tasks: php.yml
+
+- name: Render SnappyMail configuration
+  ansible.builtin.import_tasks: config.yml
+
+- name: Configure nginx for SnappyMail
+  ansible.builtin.import_tasks: nginx.yml
+
+- name: Configure Traefik exposure
+  ansible.builtin.import_tasks: traefik.yml
+  when: snappymail_traefik_enabled | bool
+
+- name: Ensure services are running
+  ansible.builtin.import_tasks: service.yml
+
+- name: Run SnappyMail health check
+  ansible.builtin.import_tasks: health.yml
+  when: snappymail_healthcheck_enabled | bool

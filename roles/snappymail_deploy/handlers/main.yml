@@ -1,0 +1,25 @@
+---
+- name: reload php-fpm
+  ansible.builtin.service:
+    name: "{{ snappymail_php_fpm_service }}"
+    state: reloaded
+    enabled: "{{ snappymail_service_enabled }}"
+  listen: reload php-fpm
+
+- name: restart php-fpm
+  ansible.builtin.service:
+    name: "{{ snappymail_php_fpm_service }}"
+    state: restarted
+    enabled: "{{ snappymail_service_enabled }}"
+
+- name: reload nginx
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
+    enabled: "{{ snappymail_service_enabled }}"
+
+- name: reload traefik
+  ansible.builtin.service:
+    name: traefik
+    state: reloaded
+  failed_when: false

@@ -1,0 +1,35 @@
+---
+- name: Check if SnappyMail data directory is initialized
+  ansible.builtin.stat:
+    path: "{{ snappymail_data_dir }}/VERSION"
+  register: snappymail_data_version
+
+- name: Seed SnappyMail data directory on first run
+  ansible.builtin.copy:
+    src: "{{ snappymail_install_dir }}/data/"
+    dest: "{{ snappymail_data_dir }}/"
+    owner: "{{ snappymail_user }}"
+    group: "{{ snappymail_group }}"
+    mode: preserve
+    remote_src: true
+  when: not snappymail_data_version.stat.exists
+
+- name: Ensure SnappyMail data permissions
+  ansible.builtin.file:
+    path: "{{ snappymail_data_dir }}"
+    state: directory
+    owner: "{{ snappymail_user }}"
+    group: "{{ snappymail_group }}"
+    mode: "0750"
+    recurse: true
+
+- name: Replace bundled data directory with symlink
+  ansible.builtin.file:
+    path: "{{ snappymail_install_dir }}/data"
+    state: absent
+
+- name: Symlink SnappyMail data directory
+  ansible.builtin.file:
+    src: "{{ snappymail_data_dir }}"
+    dest: "{{ snappymail_install_dir }}/data"
+    state: link
