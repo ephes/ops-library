@@ -1,0 +1,295 @@
+---
+# Vaultwarden backup tasks
+
+- name: Ensure backup dependencies are installed
+  ansible.builtin.apt:
+    name:
+      - sqlite3
+      - rsync
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Capture Vaultwarden version
+  ansible.builtin.command:
+    argv:
+      - "{{ vaultwarden_bin_path }}"
+      - --version
+  register: vaultwarden_version_cmd
+  failed_when: false
+  changed_when: false
+
+- name: Set backup timestamp
+  ansible.builtin.set_fact:
+    vaultwarden_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+- name: Set backup paths
+  ansible.builtin.set_fact:
+    vaultwarden_backup_dir: "{{ vaultwarden_backup_root }}/{{ vaultwarden_backup_prefix }}-{{ vaultwarden_backup_timestamp }}"
+    vaultwarden_backup_archive: "{{ vaultwarden_backup_root }}/{{ vaultwarden_backup_prefix }}-{{ vaultwarden_backup_timestamp }}.{{ vaultwarden_backup_archive_extension }}"
+
+- name: Ensure backup directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ vaultwarden_backup_owner }}"
+    group: "{{ vaultwarden_backup_group }}"
+    mode: "{{ vaultwarden_backup_dir_mode }}"
+  loop:
+    - "{{ vaultwarden_backup_root }}"
+    - "{{ vaultwarden_backup_dir }}"
+    - "{{ vaultwarden_backup_dir }}/data"
+    - "{{ vaultwarden_backup_dir }}/config"
+    - "{{ vaultwarden_backup_dir }}/systemd"
+    - "{{ vaultwarden_backup_dir }}/traefik"
+
+- name: Verify Vaultwarden paths
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  register: vaultwarden_backup_stats
+  loop:
+    - { path: "{{ vaultwarden_data_dir }}", mandatory: true, label: "Data directory" }
+    - { path: "{{ vaultwarden_config_file }}", mandatory: true, label: "Config file" }
+    - { path: "{{ vaultwarden_service_unit }}", mandatory: false, label: "Service unit" }
+    - { path: "{{ vaultwarden_traefik_config_path }}", mandatory: false, label: "Traefik config" }
+  loop_control:
+    label: "{{ item.label }}"
+
+- name: Abort when required Vaultwarden paths are missing
+  ansible.builtin.fail:
+    msg: "Required Vaultwarden path missing: {{ item.item.path }}"
+  when:
+    - item.item.mandatory | bool
+    - not item.stat.exists
+  loop: "{{ vaultwarden_backup_stats.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: Stop Vaultwarden service for consistent backup
+  ansible.builtin.systemd:
+    name: "{{ vaultwarden_service_name }}"
+    state: stopped
+  when: vaultwarden_backup_stop_service | bool
+
+- name: Backup SQLite database using sqlite3 .backup command
+  ansible.builtin.command:
+    cmd: sqlite3 "{{ vaultwarden_data_dir }}/db.sqlite3" ".backup '{{ vaultwarden_backup_dir }}/data/db.sqlite3'"
+  changed_when: true
+  when:
+    - vaultwarden_backup_include_data | bool
+    - vaultwarden_backup_stats.results[0].stat.exists
+
+- name: Sync Vaultwarden attachments directory
+  ansible.builtin.command:
+    cmd: >
+      rsync -a
+      "{{ vaultwarden_data_dir }}/attachments/" "{{ vaultwarden_backup_dir }}/data/attachments/"
+  changed_when: true
+  failed_when: false
+  when:
+    - vaultwarden_backup_include_data | bool
+    - vaultwarden_backup_stats.results[0].stat.exists
+
+- name: Sync Vaultwarden sends directory
+  ansible.builtin.command:
+    cmd: >
+      rsync -a
+      "{{ vaultwarden_data_dir }}/sends/" "{{ vaultwarden_backup_dir }}/data/sends/"
+  changed_when: true
+  failed_when: false
+  when:
+    - vaultwarden_backup_include_data | bool
+    - vaultwarden_backup_stats.results[0].stat.exists
+
+- name: Copy RSA key files
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ vaultwarden_backup_dir }}/data/"
+    owner: "{{ vaultwarden_backup_owner }}"
+    group: "{{ vaultwarden_backup_group }}"
+    mode: "{{ vaultwarden_backup_file_mode }}"
+    remote_src: true
+  loop:
+    - "{{ vaultwarden_data_dir }}/rsa_key.pem"
+    - "{{ vaultwarden_data_dir }}/rsa_key.pub.pem"
+  failed_when: false
+  when:
+    - vaultwarden_backup_include_data | bool
+    - vaultwarden_backup_stats.results[0].stat.exists
+
+- name: Copy Vaultwarden config file
+  ansible.builtin.copy:
+    src: "{{ vaultwarden_config_file }}"
+    dest: "{{ vaultwarden_backup_dir }}/config/{{ vaultwarden_config_file | basename }}"
+    owner: "{{ vaultwarden_backup_owner }}"
+    group: "{{ vaultwarden_backup_group }}"
+    mode: "{{ vaultwarden_backup_file_mode }}"
+    remote_src: true
+  when:
+    - vaultwarden_backup_include_config | bool
+    - vaultwarden_backup_stats.results[1].stat.exists
+
+- name: Copy systemd override if exists
+  ansible.builtin.copy:
+    src: "{{ vaultwarden_service_override_dir }}/override.conf"
+    dest: "{{ vaultwarden_backup_dir }}/systemd/override.conf"
+    owner: "{{ vaultwarden_backup_owner }}"
+    group: "{{ vaultwarden_backup_group }}"
+    mode: "{{ vaultwarden_backup_file_mode }}"
+    remote_src: true
+  failed_when: false
+  when: vaultwarden_backup_include_systemd | bool
+
+- name: Copy Traefik dynamic config
+  ansible.builtin.copy:
+    src: "{{ vaultwarden_traefik_config_path }}"
+    dest: "{{ vaultwarden_backup_dir }}/traefik/{{ vaultwarden_traefik_config_path | basename }}"
+    owner: "{{ vaultwarden_backup_owner }}"
+    group: "{{ vaultwarden_backup_group }}"
+    mode: "{{ vaultwarden_backup_file_mode }}"
+    remote_src: true
+  when:
+    - vaultwarden_backup_include_traefik | bool
+    - vaultwarden_backup_stats.results[3].stat.exists
+
+- name: Start Vaultwarden service after backup
+  ansible.builtin.systemd:
+    name: "{{ vaultwarden_service_name }}"
+    state: started
+    daemon_reload: true
+  when: vaultwarden_backup_stop_service | bool
+
+- name: Build Vaultwarden backup manifest
+  ansible.builtin.copy:
+    dest: "{{ vaultwarden_backup_dir }}/manifest.yml"
+    owner: "{{ vaultwarden_backup_owner }}"
+    group: "{{ vaultwarden_backup_group }}"
+    mode: "{{ vaultwarden_backup_file_mode }}"
+    content: |
+      version: "{{ vaultwarden_version_cmd.stdout | default('unknown') | trim }}"
+      timestamp: "{{ vaultwarden_backup_timestamp }}"
+      archive: "{{ vaultwarden_backup_archive | basename }}"
+      data_dir: "{{ vaultwarden_data_dir }}"
+      config: "{{ vaultwarden_config_file }}"
+      service_unit: "{{ vaultwarden_service_unit }}"
+      traefik_config: "{{ vaultwarden_traefik_config_path }}"
+
+- name: Create Vaultwarden backup archive
+  ansible.builtin.archive:
+    path: "{{ vaultwarden_backup_dir }}"
+    dest: "{{ vaultwarden_backup_archive }}"
+    format: "{{ vaultwarden_backup_archive_format }}"
+  when: vaultwarden_backup_create_archive | bool
+
+- name: Remove staging directory after archive creation
+  ansible.builtin.file:
+    path: "{{ vaultwarden_backup_dir }}"
+    state: absent
+  when: vaultwarden_backup_create_archive | bool
+
+# Encryption with age (optional)
+- name: Validate age recipient is set when encryption is enabled
+  ansible.builtin.assert:
+    that:
+      - vaultwarden_backup_age_recipient | length > 0
+    fail_msg: "vaultwarden_backup_age_recipient must be set when vaultwarden_backup_encrypt is true"
+  when:
+    - vaultwarden_backup_encrypt | bool
+    - vaultwarden_backup_create_archive | bool
+
+- name: Ensure age is installed for backup encryption
+  ansible.builtin.apt:
+    name: age
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when:
+    - vaultwarden_backup_encrypt | bool
+    - vaultwarden_backup_create_archive | bool
+
+- name: Encrypt backup archive with age
+  ansible.builtin.command:
+    cmd: age -r "{{ vaultwarden_backup_age_recipient }}" -o "{{ vaultwarden_backup_archive }}.age" "{{ vaultwarden_backup_archive }}"
+  when:
+    - vaultwarden_backup_encrypt | bool
+    - vaultwarden_backup_create_archive | bool
+  changed_when: true
+
+- name: Remove unencrypted archive after encryption
+  ansible.builtin.file:
+    path: "{{ vaultwarden_backup_archive }}"
+    state: absent
+  when:
+    - vaultwarden_backup_encrypt | bool
+    - vaultwarden_backup_create_archive | bool
+
+- name: Set final archive path (encrypted or plain)
+  ansible.builtin.set_fact:
+    vaultwarden_backup_final_archive: "{{ vaultwarden_backup_archive }}{{ '.age' if (vaultwarden_backup_encrypt | bool) else '' }}"
+
+- name: Ensure local backup directory exists
+  ansible.builtin.file:
+    path: "{{ vaultwarden_backup_local_dir }}"
+    state: directory
+    mode: "{{ vaultwarden_backup_dir_mode }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - vaultwarden_backup_fetch_local | bool
+    - vaultwarden_backup_create_archive | bool
+
+- name: Fetch Vaultwarden backup archive
+  ansible.builtin.fetch:
+    src: "{{ vaultwarden_backup_final_archive }}"
+    dest: "{{ vaultwarden_backup_local_dir }}/"
+    flat: true
+  run_once: true
+  when:
+    - vaultwarden_backup_fetch_local | bool
+    - vaultwarden_backup_create_archive | bool
+
+- name: Find existing Vaultwarden backup archives (plain)
+  ansible.builtin.find:
+    paths: "{{ vaultwarden_backup_root }}"
+    patterns: "{{ vaultwarden_backup_prefix }}-*.{{ vaultwarden_backup_archive_extension }}"
+    file_type: file
+  register: vaultwarden_backup_existing_plain
+  when:
+    - vaultwarden_backup_retain | int > 0
+    - vaultwarden_backup_create_archive | bool
+
+- name: Find existing Vaultwarden backup archives (encrypted)
+  ansible.builtin.find:
+    paths: "{{ vaultwarden_backup_root }}"
+    patterns: "{{ vaultwarden_backup_prefix }}-*.{{ vaultwarden_backup_archive_extension }}.age"
+    file_type: file
+  register: vaultwarden_backup_existing_encrypted
+  when:
+    - vaultwarden_backup_retain | int > 0
+    - vaultwarden_backup_create_archive | bool
+
+- name: Combine and prune old Vaultwarden backup archives
+  vars:
+    _all_backups: >-
+      {{
+        ((vaultwarden_backup_existing_plain.files | default([])) +
+         (vaultwarden_backup_existing_encrypted.files | default([])))
+        | sort(attribute='mtime', reverse=true)
+      }}
+    _backups_to_delete: "{{ _all_backups[vaultwarden_backup_retain | int:] }}"
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ _backups_to_delete }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when:
+    - vaultwarden_backup_retain | int > 0
+    - vaultwarden_backup_create_archive | bool
+
+- name: Report backup completion
+  ansible.builtin.debug:
+    msg: >
+      Vaultwarden backup stored at {{ vaultwarden_backup_final_archive }}
+      {% if vaultwarden_backup_encrypt | bool %}(encrypted with age){% endif %}

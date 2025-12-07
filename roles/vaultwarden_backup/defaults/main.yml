@@ -1,0 +1,14 @@
+---
+# Vaultwarden backup defaults
+
+vaultwarden_backup_create_archive: true
+vaultwarden_backup_include_systemd: true
+vaultwarden_backup_include_config: true
+vaultwarden_backup_include_data: true
+
+# Encryption settings
+# Set vaultwarden_backup_encrypt: true and provide an age public key to encrypt backups
+# Generate a key pair with: age-keygen
+# The encrypted archive will have .age extension appended
+vaultwarden_backup_encrypt: false
+vaultwarden_backup_age_recipient: ""  # age public key (e.g., age1...)
