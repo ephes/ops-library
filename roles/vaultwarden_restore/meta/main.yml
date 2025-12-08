@@ -22,4 +22,4 @@ galaxy_info:
     - restore
 
 dependencies:
-  - role: local.ops_library.vaultwarden_shared
+  - role: vaultwarden_shared

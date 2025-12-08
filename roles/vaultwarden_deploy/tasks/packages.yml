@@ -8,6 +8,7 @@
       - vaultwarden-web-vault
     state: present
   notify: restart vaultwarden
+  when: not vaultwarden_skip_install | default(false)
 
 - name: Ensure Vaultwarden data directory exists
   ansible.builtin.file:

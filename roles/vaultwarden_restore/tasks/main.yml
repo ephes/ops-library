@@ -9,6 +9,13 @@
       - vaultwarden_restore_archive | length > 0
     fail_msg: "vaultwarden_restore_local_dir and vaultwarden_restore_archive are required"
 
+- name: Ensure restore dependencies are installed
+  ansible.builtin.apt:
+    name: rsync
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
 # --- Find and select archive on localhost (controller) ---
 
 - name: Find backup archives on controller
@@ -180,6 +187,8 @@
     mode: "{{ item.mode }}"
   loop:
     - { path: "{{ vaultwarden_data_dir }}", owner: "{{ vaultwarden_user }}", group: "{{ vaultwarden_group }}", mode: "0750" }
+    - { path: "{{ vaultwarden_data_dir }}/attachments", owner: "{{ vaultwarden_user }}", group: "{{ vaultwarden_group }}", mode: "0750" }
+    - { path: "{{ vaultwarden_data_dir }}/sends", owner: "{{ vaultwarden_user }}", group: "{{ vaultwarden_group }}", mode: "0750" }
     - { path: "{{ vaultwarden_log_dir }}", owner: "{{ vaultwarden_user }}", group: "{{ vaultwarden_group }}", mode: "0750" }
     - { path: "{{ vaultwarden_service_override_dir }}", owner: "root", group: "root", mode: "0755" }
     - { path: "{{ vaultwarden_traefik_config_path | dirname }}", owner: "root", group: "root", mode: "0755" }

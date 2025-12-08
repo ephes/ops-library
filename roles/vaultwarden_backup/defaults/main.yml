@@ -5,6 +5,7 @@ vaultwarden_backup_create_archive: true
 vaultwarden_backup_include_systemd: true
 vaultwarden_backup_include_config: true
 vaultwarden_backup_include_data: true
+vaultwarden_backup_skip_dependencies: false
 
 # Encryption settings
 # Set vaultwarden_backup_encrypt: true and provide an age public key to encrypt backups

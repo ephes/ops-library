@@ -9,6 +9,7 @@
     state: present
     update_cache: true
     cache_valid_time: 3600
+  when: not vaultwarden_backup_skip_dependencies | default(false)
 
 - name: Capture Vaultwarden version
   ansible.builtin.command:

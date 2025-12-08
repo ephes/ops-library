@@ -84,3 +84,8 @@ vaultwarden_service_state: started
 # Health check
 vaultwarden_healthcheck_enabled: true
 vaultwarden_healthcheck_timeout: 30
+
+# Testing helpers
+vaultwarden_skip_install: false
+vaultwarden_skip_repo: false
+vaultwarden_skip_handlers: false

@@ -10,12 +10,14 @@
       - gnupg
     state: present
     update_cache: true
+  when: not vaultwarden_skip_repo | default(false)
 
 - name: Create keyrings directory
   ansible.builtin.file:
     path: /etc/apt/keyrings
     state: directory
     mode: "0755"
+  when: not vaultwarden_skip_repo | default(false)
 
 - name: Download Vaultwarden repository GPG key
   ansible.builtin.get_url:
@@ -23,6 +25,7 @@
     dest: /etc/apt/keyrings/vaultwarden-deb-repo-keyring.gpg
     mode: "0644"
   register: vaultwarden_gpg_key
+  when: not vaultwarden_skip_repo | default(false)
 
 - name: Add Vaultwarden apt repository
   ansible.builtin.apt_repository:
@@ -30,8 +33,11 @@
     filename: vaultwarden
     state: present
   register: vaultwarden_apt_repo
+  when: not vaultwarden_skip_repo | default(false)
 
 - name: Update apt cache after adding repository
   ansible.builtin.apt:
     update_cache: true
-  when: vaultwarden_apt_repo.changed or vaultwarden_gpg_key.changed
+  when:
+    - not vaultwarden_skip_repo | default(false)
+    - vaultwarden_apt_repo.changed or vaultwarden_gpg_key.changed
