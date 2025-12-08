@@ -1,0 +1,131 @@
+---
+- name: Verify backup/restore/remove flow
+  hosts: all
+  become: true
+  vars:
+    snappymail_admin_password: "molecule-pass"
+    snappymail_data_dir: "/opt/snappymail-data"
+    snappymail_traefik_enabled: false
+    snappymail_healthcheck_enabled: false
+    snappymail_listen_port: 8088
+    snappymail_domains:
+      - "example.test"
+    snappymail_backup_root: "/tmp/snappymail-backups"
+  tasks:
+    - name: Run snappymail_backup
+      ansible.builtin.include_role:
+        name: snappymail_backup
+
+    - name: Find backup archive
+      ansible.builtin.find:
+        paths: "{{ snappymail_backup_root }}"
+        patterns: "snappymail-*.tar.*"
+        file_type: file
+      register: snappymail_backup_find
+
+    - name: Assert backup archive exists
+      ansible.builtin.assert:
+        that:
+          - snappymail_backup_find.matched > 0
+        fail_msg: "No SnappyMail backup archive found in {{ snappymail_backup_root }}"
+
+    - name: Select latest backup archive
+      ansible.builtin.set_fact:
+        snappymail_backup_latest: "{{ (snappymail_backup_find.files | sort(attribute='mtime'))[-1].path }}"
+
+    - name: Remove SnappyMail deployment
+      ansible.builtin.include_role:
+        name: snappymail_remove
+      vars:
+        snappymail_confirm_removal: true
+        snappymail_remove_install_dir: "/opt/snappymail"
+        snappymail_remove_data_dir: "{{ snappymail_data_dir }}"
+        snappymail_remove_nginx_site_path: "/etc/nginx/sites-available/snappymail"
+        snappymail_remove_nginx_enabled_path: "/etc/nginx/sites-enabled/snappymail"
+        snappymail_remove_traefik_config: ""
+
+    - name: Assert SnappyMail paths removed
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: snappymail_remove_stats
+      loop:
+        - "/opt/snappymail"
+        - "{{ snappymail_data_dir }}"
+        - "/etc/nginx/sites-available/snappymail"
+        - "/etc/nginx/sites-enabled/snappymail"
+
+    - name: Check removed paths are absent
+      ansible.builtin.assert:
+        that:
+          - not item.stat.exists
+        fail_msg: "{{ item.stat.path }} still exists after removal"
+      loop: "{{ snappymail_remove_stats.results }}"
+
+    - name: Re-deploy SnappyMail
+      ansible.builtin.include_role:
+        name: snappymail_deploy
+      vars:
+        snappymail_admin_password: "{{ snappymail_admin_password }}"
+        snappymail_data_dir: "{{ snappymail_data_dir }}"
+        snappymail_traefik_enabled: false
+        snappymail_healthcheck_enabled: false
+        snappymail_listen_port: 8088
+        snappymail_domains: "{{ snappymail_domains }}"
+
+    - name: Restore SnappyMail data
+      ansible.builtin.include_role:
+        name: snappymail_restore
+      vars:
+        snappymail_restore_source: "{{ snappymail_backup_latest }}"
+        snappymail_restore_clean: true
+        snappymail_data_dir: "{{ snappymail_data_dir }}"
+
+    - name: Verify application.ini exists
+      ansible.builtin.stat:
+        path: "{{ snappymail_data_dir }}/_data_/_default_/configs/application.ini"
+      register: snappymail_app_ini
+
+    - name: Assert application.ini exists
+      ansible.builtin.assert:
+        that:
+          - snappymail_app_ini.stat.exists
+        fail_msg: "SnappyMail application.ini missing after restore"
+
+    - name: Verify nginx site exists
+      ansible.builtin.stat:
+        path: "/etc/nginx/sites-available/snappymail"
+      register: snappymail_nginx_site
+
+    - name: Assert nginx site exists
+      ansible.builtin.assert:
+        that:
+          - snappymail_nginx_site.stat.exists
+        fail_msg: "nginx site for SnappyMail missing after redeploy"
+
+    - name: Find PHP-FPM pool file
+      ansible.builtin.find:
+        paths: "/etc/php"
+        patterns: "snappymail.conf"
+        recurse: true
+        file_type: file
+      register: snappymail_php_pool_find
+
+    - name: Assert PHP-FPM pool exists
+      ansible.builtin.assert:
+        that:
+          - snappymail_php_pool_find.matched > 0
+        fail_msg: "PHP-FPM pool for SnappyMail not found after redeploy"
+
+    - name: Check SnappyMail HTTP endpoint
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ snappymail_listen_port }}/"
+        status_code:
+          - 200
+          - 302
+        return_content: false
+        follow_redirects: none
+        validate_certs: false
+      register: snappymail_http
+      retries: 5
+      delay: 2
+      until: snappymail_http is succeeded

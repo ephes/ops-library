@@ -1,0 +1,132 @@
+---
+- name: Validate backup inputs
+  ansible.builtin.assert:
+    that:
+      - snappymail_data_dir | length > 0
+      - snappymail_backup_root | length > 0
+    fail_msg: "snappymail_data_dir and snappymail_backup_root must be set"
+
+- name: Find PHP-FPM service for SnappyMail
+  ansible.builtin.find:
+    paths: "/etc/php"
+    patterns: "snappymail.conf"
+    recurse: true
+    file_type: file
+  register: snappymail_backup_php_pool
+  when: snappymail_backup_stop_services | bool
+
+- name: Derive PHP-FPM service name
+  ansible.builtin.set_fact:
+    snappymail_backup_php_service: >-
+      {{
+        snappymail_backup_php_pool.files
+        | map(attribute='path')
+        | map('regex_replace', '^/etc/php/([^/]+)/fpm/.*$', 'php\g<1>-fpm')
+        | list
+        | first
+        | default('php-fpm')
+      }}
+  when: snappymail_backup_stop_services | bool
+
+- name: Optionally stop services before backup
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+  loop:
+    - nginx
+    - "{{ snappymail_backup_php_service | default('php-fpm') }}"
+  ignore_errors: true
+  when: snappymail_backup_stop_services | bool
+
+- name: Stat SnappyMail data directory
+  ansible.builtin.stat:
+    path: "{{ snappymail_data_dir }}"
+  register: snappymail_backup_data_stat
+
+- name: Fail if data directory is missing
+  ansible.builtin.fail:
+    msg: "SnappyMail data directory not found at {{ snappymail_data_dir }}"
+  when: not snappymail_backup_data_stat.stat.exists
+
+- name: Capture backup timestamp
+  ansible.builtin.set_fact:
+    snappymail_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+- name: Compute backup paths
+  ansible.builtin.set_fact:
+    snappymail_backup_archive: "{{ snappymail_backup_root }}/{{ snappymail_backup_prefix }}-{{ snappymail_backup_timestamp }}.{{ snappymail_backup_archive_format }}"
+    snappymail_backup_parent: "{{ snappymail_data_dir | dirname }}"
+    snappymail_backup_basename: "{{ snappymail_data_dir | basename }}"
+
+- name: Ensure backup root exists
+  ansible.builtin.file:
+    path: "{{ snappymail_backup_root }}"
+    state: directory
+    owner: "{{ snappymail_backup_owner }}"
+    group: "{{ snappymail_backup_group }}"
+    mode: "{{ snappymail_backup_mode | default('0750') }}"
+
+- name: Create SnappyMail backup archive
+  ansible.builtin.command:
+    cmd: >
+      tar -C {{ snappymail_backup_parent | quote }}
+      {{ '--zstd' if snappymail_backup_archive_format == 'tar.zst' else '-z' }}
+      -cf {{ snappymail_backup_archive | quote }}
+      {{ snappymail_backup_basename | quote }}
+  register: snappymail_backup_tar
+  changed_when: true
+
+- name: Set backup permissions
+  ansible.builtin.file:
+    path: "{{ snappymail_backup_archive }}"
+    owner: "{{ snappymail_backup_owner }}"
+    group: "{{ snappymail_backup_group }}"
+    mode: "{{ snappymail_backup_mode }}"
+
+- name: Restart services after backup
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+  loop:
+    - "{{ snappymail_backup_php_service | default('php-fpm') }}"
+    - nginx
+  ignore_errors: true
+  when: snappymail_backup_stop_services | bool
+
+- name: Write backup manifest
+  ansible.builtin.copy:
+    dest: "{{ snappymail_backup_archive }}.yml"
+    owner: "{{ snappymail_backup_owner }}"
+    group: "{{ snappymail_backup_group }}"
+    mode: "{{ snappymail_backup_mode }}"
+    content: |
+      timestamp: "{{ snappymail_backup_timestamp }}"
+      host: "{{ inventory_hostname }}"
+      data_dir: "{{ snappymail_data_dir }}"
+      archive: "{{ snappymail_backup_archive }}"
+      format: "{{ snappymail_backup_archive_format }}"
+      version: 1
+  when: snappymail_backup_manifest | bool
+
+- name: Prune old backups
+  ansible.builtin.shell: |
+    set -euo pipefail
+    # Remove old archives (keep newest N)
+    ls -1t {{ snappymail_backup_root | quote }}/{{ snappymail_backup_prefix }}-*.tar.* 2>/dev/null | tail -n +{{ snappymail_backup_retain + 1 }} | while read archive; do
+      rm -f "$archive" "${archive}.yml"
+    done
+  args:
+    executable: /bin/bash
+  changed_when: false
+  when: snappymail_backup_retain | int > 0
+
+- name: Fetch archive locally
+  ansible.builtin.fetch:
+    src: "{{ snappymail_backup_archive }}"
+    dest: "{{ snappymail_backup_fetch_dir }}/"
+    flat: true
+  when: snappymail_backup_fetch_local | bool
+
+- name: Report backup completion
+  ansible.builtin.debug:
+    msg: "SnappyMail backup created: {{ snappymail_backup_archive }}"

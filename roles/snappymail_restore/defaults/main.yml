@@ -1,0 +1,9 @@
+---
+# Restore SnappyMail data from a backup archive
+
+snappymail_restore_source: ""      # Path to backup archive (tar.gz or tar.zst) or extracted directory
+snappymail_restore_clean: true     # Remove existing data before restore
+snappymail_restore_owner: "{{ snappymail_user }}"
+snappymail_restore_group: "{{ snappymail_group }}"
+snappymail_restore_mode: "0750"
+snappymail_restore_root: "{{ snappymail_backup_root | default('/mnt/cryptdata/backups/snappymail') }}"

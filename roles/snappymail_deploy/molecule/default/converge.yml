@@ -1,0 +1,16 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+
+  vars:
+    snappymail_admin_password: "molecule-pass"
+    snappymail_data_dir: "/opt/snappymail-data"
+    snappymail_traefik_enabled: false
+    snappymail_healthcheck_enabled: false
+    snappymail_listen_port: 8088
+    snappymail_domains:
+      - "example.test"
+
+  roles:
+    - role: snappymail_deploy

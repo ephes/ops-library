@@ -33,6 +33,9 @@
 - name: Ensure services are running
   ansible.builtin.import_tasks: service.yml
 
+- name: Flush handlers before health check
+  ansible.builtin.meta: flush_handlers
+
 - name: Run SnappyMail health check
   ansible.builtin.import_tasks: health.yml
   when: snappymail_healthcheck_enabled | bool

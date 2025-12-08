@@ -50,4 +50,23 @@ Deploys [SnappyMail](https://snappymail.eu/) as a PHP-FPM application behind ngi
 
 See `defaults/main.yml` and `snappymail_shared/defaults/main.yml` for the full variable reference.
 
-> Backup/restore/remove roles are not yet provided. The data directory only holds SnappyMail configuration and optional address book data; mail content stays in IMAP.
+## Known Issues
+
+### "Edit Identity" popup on first login
+
+When a user logs in for the first time, SnappyMail displays an "Edit Identity" popup asking for their display name. In version 2.38.2, the Save button in this popup may not respond (JavaScript issue).
+
+**Workaround:** Close the popup with the X button, then configure the identity via Settings (gear icon) → Accounts → Identities.
+
+**Alternative:** Pre-create the identity file on the server. The file must use PascalCase keys:
+
+```bash
+# Create identity for user 'alice' on domain 'example.com'
+cat > /mnt/cryptdata/snappymail/_data_/_default_/storage/example.com/alice/identities << 'EOF'
+[{"Id":"","Email":"alice@example.com","Name":"Alice Smith","ReplyTo":"","Bcc":"","Signature":"","SignatureInsertBefore":false}]
+EOF
+chown snappymail:snappymail /mnt/cryptdata/snappymail/_data_/_default_/storage/example.com/alice/identities
+chmod 600 /mnt/cryptdata/snappymail/_data_/_default_/storage/example.com/alice/identities
+```
+
+The identity file is stored in the data directory and survives redeploys and backup/restore cycles.

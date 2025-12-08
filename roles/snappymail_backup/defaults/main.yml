@@ -1,0 +1,17 @@
+---
+# Lightweight snapshot of SnappyMail config/address book data
+
+snappymail_backup_root: "/mnt/cryptdata/backups/snappymail"
+snappymail_backup_prefix: "snappymail"
+snappymail_backup_archive_format: "tar.gz"  # tar.gz | tar.zst
+snappymail_backup_owner: "root"
+snappymail_backup_group: "root"
+snappymail_backup_mode: "0640"
+snappymail_backup_preserve_permissions: true
+snappymail_backup_stop_services: false
+snappymail_backup_retain: 0          # keep 0 = no pruning; otherwise keep N newest archives
+snappymail_backup_manifest: true
+snappymail_backup_fetch_local: false
+snappymail_backup_fetch_dir: "{{ lookup('env', 'HOME') }}/backups/snappymail"
+
+# Optional local fetch settings can be added later if needed
