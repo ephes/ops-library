@@ -1,0 +1,66 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Ensure Ansible remote tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+
+    - name: Ensure snappymail group exists
+      ansible.builtin.group:
+        name: snappymail
+        state: present
+
+    - name: Ensure snappymail user exists
+      ansible.builtin.user:
+        name: snappymail
+        group: snappymail
+        shell: /usr/sbin/nologin
+        home: /opt/snappymail
+        state: present
+
+    - name: Prepare backup root
+      ansible.builtin.file:
+        path: /tmp/snappymail-backups
+        state: directory
+        mode: "0755"
+
+    - name: Create seed data directory
+      ansible.builtin.file:
+        path: "/tmp/{{ snappymail_data_dir | basename }}"
+        state: directory
+        mode: "0750"
+
+    - name: Add marker file to seed data
+      ansible.builtin.copy:
+        dest: "/tmp/{{ snappymail_data_dir | basename }}/marker.txt"
+        content: "snappymail-restore-marker"
+        mode: "0640"
+
+    - name: Build seed backup archive
+      ansible.builtin.command: >
+        tar -czf /tmp/snappymail-backups/snappymail-seed.tar.gz
+        -C /tmp {{ snappymail_data_dir | basename }}
+      args:
+        creates: /tmp/snappymail-backups/snappymail-seed.tar.gz
+
+    - name: Ensure target data directory is absent before restore
+      ansible.builtin.file:
+        path: /opt/snappymail-data
+        state: absent
+
+  vars:
+    snappymail_data_dir: "/opt/snappymail-data"
+    snappymail_restore_root: "/tmp/snappymail-backups"
+    snappymail_restore_source: "latest"
+    snappymail_restore_owner: "snappymail"
+    snappymail_restore_group: "snappymail"
+    snappymail_restore_mode: "0750"
+    snappymail_restore_restart_services: false
+
+  roles:
+    - role: snappymail_restore

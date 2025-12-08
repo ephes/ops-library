@@ -1,0 +1,52 @@
+---
+- name: Verify rspamd deployment
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    rspamd_local_files:
+      - /etc/rspamd/local.d/redis.conf
+      - /etc/rspamd/local.d/worker-normal.inc
+      - /etc/rspamd/local.d/worker-proxy.inc
+      - /etc/rspamd/local.d/actions.conf
+      - /etc/rspamd/local.d/milter_headers.conf
+      - /etc/rspamd/local.d/classifier-bayes.conf
+
+  tasks:
+    - name: Verify | rspamd config files exist
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: rspamd_stats
+      loop: "{{ rspamd_local_files }}"
+
+    - name: Verify | Assert rspamd configs present
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.size | int > 0
+        fail_msg: "{{ item.stat.path }} missing or empty"
+      loop: "{{ rspamd_stats.results }}"
+
+    - name: Verify | Postfix milter configured
+      ansible.builtin.command: postconf -h smtpd_milters
+      register: smtpd_milters
+      changed_when: false
+
+    - name: Verify | Assert rspamd milter present in Postfix
+      ansible.builtin.assert:
+        that:
+          - "'unix:rspamd/milter.sock' in (smtpd_milters.stdout | default(''))"
+        fail_msg: "rspamd milter socket not configured in Postfix"
+
+    - name: Verify | rspamd service is active
+      ansible.builtin.command: systemctl is-active rspamd
+      register: rspamd_status
+      changed_when: false
+
+    - name: Verify | Assert rspamd running
+      ansible.builtin.assert:
+        that:
+          - rspamd_status.rc == 0
+          - rspamd_status.stdout | trim == "active"
+        fail_msg: "rspamd service is not active"

@@ -1,0 +1,36 @@
+---
+- name: Verify SnappyMail restore
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    snappymail_data_dir: "/opt/snappymail-data"
+    snappymail_restore_owner: "snappymail"
+    snappymail_restore_group: "snappymail"
+
+  tasks:
+    - name: Verify | Data directory recreated
+      ansible.builtin.stat:
+        path: "{{ snappymail_data_dir }}"
+      register: data_dir_stat
+
+    - name: Verify | Assert data directory exists
+      ansible.builtin.assert:
+        that:
+          - data_dir_stat.stat.exists
+          - data_dir_stat.stat.isdir
+        fail_msg: "Data directory missing at {{ snappymail_data_dir }}"
+
+    - name: Verify | Marker file restored
+      ansible.builtin.stat:
+        path: "{{ snappymail_data_dir }}/marker.txt"
+      register: marker_stat
+
+    - name: Verify | Assert marker file present with ownership
+      ansible.builtin.assert:
+        that:
+          - marker_stat.stat.exists
+          - marker_stat.stat.pw_name == snappymail_restore_owner
+          - marker_stat.stat.gr_name == snappymail_restore_group
+        fail_msg: "Marker file missing or ownership incorrect at {{ snappymail_data_dir }}/marker.txt"

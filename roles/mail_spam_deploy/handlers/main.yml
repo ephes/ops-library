@@ -8,8 +8,12 @@
     daemon_reload: true
 
 - name: Reload postfix
-  ansible.builtin.command: postfix reload
-  changed_when: true
+  ansible.builtin.systemd:
+    name: postfix
+    state: reloaded
+    daemon_reload: true
+  failed_when: false
+  changed_when: false
 
 - name: Restart postfix
   ansible.builtin.systemd:

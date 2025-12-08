@@ -1,0 +1,89 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Ensure Ansible remote tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+
+    - name: Ensure nginx site directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /etc/nginx/sites-available
+        - /etc/nginx/sites-enabled
+
+    - name: Ensure SnappyMail group exists
+      ansible.builtin.group:
+        name: snappymail
+        state: present
+
+    - name: Ensure SnappyMail user exists
+      ansible.builtin.user:
+        name: snappymail
+        group: snappymail
+        shell: /usr/sbin/nologin
+        home: /opt/snappymail
+        state: present
+
+    - name: Create fake install and data directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: snappymail
+        group: snappymail
+        mode: "0750"
+      loop:
+        - /opt/snappymail
+        - /opt/snappymail-data
+
+    - name: Create nginx site placeholders
+      ansible.builtin.copy:
+        dest: "{{ item }}"
+        content: "# snappymail placeholder"
+        mode: "0644"
+      loop:
+        - /etc/nginx/sites-available/snappymail
+        - /etc/nginx/sites-enabled/snappymail
+
+    - name: Create PHP-FPM pool placeholder
+      ansible.builtin.file:
+        path: /etc/php/8.3/fpm/pool.d
+        state: directory
+        mode: "0755"
+
+    - name: Write PHP-FPM pool config
+      ansible.builtin.copy:
+        dest: /etc/php/8.3/fpm/pool.d/snappymail.conf
+        content: "; snappymail pool placeholder"
+        mode: "0644"
+
+    - name: Create PHP socket placeholder
+      ansible.builtin.file:
+        path: /run/php
+        state: directory
+        mode: "0755"
+
+    - name: Touch PHP socket file
+      ansible.builtin.copy:
+        dest: /run/php/php8.3-snappymail.sock
+        content: ""
+        mode: "0644"
+
+  vars:
+    snappymail_install_dir: "/opt/snappymail"
+    snappymail_data_dir: "/opt/snappymail-data"
+    snappymail_remove_nginx_site_path: "/etc/nginx/sites-available/snappymail"
+    snappymail_remove_nginx_enabled_path: "/etc/nginx/sites-enabled/snappymail"
+    snappymail_remove_php_pools_glob: "/etc/php/*/fpm/pool.d/snappymail.conf"
+    snappymail_remove_php_socket_glob: "/run/php/*snappymail*.sock"
+    snappymail_confirm_removal: true
+
+  roles:
+    - role: snappymail_remove

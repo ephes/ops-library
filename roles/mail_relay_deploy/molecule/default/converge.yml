@@ -1,0 +1,26 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Install Postfix dependencies
+      ansible.builtin.apt:
+        name: postfix
+        state: present
+        update_cache: true
+
+  vars:
+    mail_relay_domains:
+      - "example.test"
+    mail_relay_backend_host: "smtp.example.test"
+    mail_relay_sasl_password: "relay-password"
+    mail_relay_greylisting_enabled: false
+    mail_relay_tls_enabled: false
+    mail_relay_smtpd_tls_security_level: "none"
+    mail_relay_mynetworks:
+      - "127.0.0.0/8"
+      - "[::1]/128"
+
+  roles:
+    - role: mail_relay_deploy

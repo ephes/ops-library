@@ -1,0 +1,103 @@
+---
+- name: Verify mail backend deployment
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    mail_backend_domains:
+      - "example.test"
+    mail_backend_vmail_path: "/var/lib/vmail"
+    postfix_config_files:
+      - /etc/postfix/main.cf
+      - /etc/postfix/master.cf
+      - /etc/postfix/sql/virtual_domains.cf
+      - /etc/postfix/sql/virtual_mailboxes.cf
+      - /etc/postfix/sql/virtual_aliases.cf
+      - /etc/postfix/sql/virtual_catchall.cf
+      - /etc/postfix/sql/virtual_domain_aliases.cf
+      - /etc/postfix/sql/sender_login.cf
+    dovecot_config_files:
+      - /etc/dovecot/dovecot.conf
+      - /etc/dovecot/dovecot-sql.conf.ext
+      - /etc/dovecot/conf.d/10-auth.conf
+      - /etc/dovecot/conf.d/10-mail.conf
+      - /etc/dovecot/conf.d/10-master.conf
+      - /etc/dovecot/conf.d/10-ssl.conf
+      - /etc/dovecot/conf.d/auth-sql.conf.ext
+      - /etc/dovecot/conf.d/20-lmtp.conf
+      - /etc/dovecot/conf.d/90-sieve.conf
+
+  tasks:
+    - name: Verify | Postfix config files exist
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: postfix_stats
+      loop: "{{ postfix_config_files }}"
+
+    - name: Verify | Assert Postfix config files present
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.size | int > 0
+        fail_msg: "{{ item.stat.path }} missing or empty"
+      loop: "{{ postfix_stats.results }}"
+
+    - name: Verify | Dovecot config files exist
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: dovecot_stats
+      loop: "{{ dovecot_config_files }}"
+
+    - name: Verify | Assert Dovecot config files present
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.size | int > 0
+        fail_msg: "{{ item.stat.path }} missing or empty"
+      loop: "{{ dovecot_stats.results }}"
+
+    - name: Verify | vmail directory created
+      ansible.builtin.stat:
+        path: "{{ mail_backend_vmail_path }}"
+      register: vmail_stat
+
+    - name: Verify | Assert vmail directory exists
+      ansible.builtin.assert:
+        that:
+          - vmail_stat.stat.exists
+          - vmail_stat.stat.isdir
+        fail_msg: "vmail directory missing at {{ mail_backend_vmail_path }}"
+
+    - name: Verify | Postfix is active
+      ansible.builtin.command: systemctl is-active postfix
+      register: postfix_status
+      changed_when: false
+
+    - name: Verify | Dovecot is active
+      ansible.builtin.command: systemctl is-active dovecot
+      register: dovecot_status
+      changed_when: false
+
+    - name: Verify | Assert services running
+      ansible.builtin.assert:
+        that:
+          - postfix_status.rc == 0
+          - postfix_status.stdout | trim == "active"
+          - dovecot_status.rc == 0
+          - dovecot_status.stdout | trim == "active"
+        fail_msg: "Mail services are not running"
+
+    - name: Verify | Check domains exist in database
+      ansible.builtin.command: sudo -u postgres psql -d {{ mail_backend_postgres_database | default('mail') }} -tAc "SELECT name FROM mail_domains WHERE name = '{{ item }}';"
+      register: domain_query
+      changed_when: false
+      loop: "{{ mail_backend_domains }}"
+
+    - name: Verify | Assert domains present in database
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+          - item.stdout | trim == item.item
+        fail_msg: "Domain {{ item.item }} missing from mail_domains"
+      loop: "{{ domain_query.results }}"

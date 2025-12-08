@@ -1,0 +1,54 @@
+---
+- name: Verify SnappyMail backup
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    snappymail_backup_root: "/tmp/snappymail-backups"
+    snappymail_data_dir: "/opt/snappymail-data"
+
+  tasks:
+    - name: Verify | Find backup archive
+      ansible.builtin.find:
+        paths: "{{ snappymail_backup_root }}"
+        patterns:
+          - "snappymail-*.tar.gz"
+          - "snappymail-*.tar.zst"
+        file_type: file
+      register: backup_find
+
+    - name: Verify | Assert backup archive exists
+      ansible.builtin.assert:
+        that:
+          - backup_find.matched > 0
+        fail_msg: "No SnappyMail backup archive found in {{ snappymail_backup_root }}"
+
+    - name: Verify | Select latest archive
+      ansible.builtin.set_fact:
+        snappymail_backup_latest: "{{ (backup_find.files | sort(attribute='mtime'))[-1].path }}"
+
+    - name: Verify | Check manifest exists
+      ansible.builtin.stat:
+        path: "{{ snappymail_backup_latest }}.yml"
+      register: manifest_stat
+
+    - name: Verify | Assert manifest present
+      ansible.builtin.assert:
+        that:
+          - manifest_stat.stat.exists
+          - manifest_stat.stat.size | int > 0
+        fail_msg: "Backup manifest missing for {{ snappymail_backup_latest }}"
+
+    - name: Verify | Archive contains marker file
+      ansible.builtin.command: >
+        tar -tf {{ snappymail_backup_latest | quote }}
+        {{ (snappymail_data_dir | basename) }}/marker.txt
+      register: archive_check
+      changed_when: false
+
+    - name: Verify | Assert marker present in archive
+      ansible.builtin.assert:
+        that:
+          - archive_check.rc == 0
+        fail_msg: "Marker file not found inside backup archive"

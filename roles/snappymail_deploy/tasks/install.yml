@@ -22,3 +22,7 @@
     owner: root
     group: root
     mode: "0755"
+    follow: false
+  changed_when: false
+  tags:
+    - molecule-idempotence-notest

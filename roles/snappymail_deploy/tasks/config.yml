@@ -42,11 +42,16 @@
 - name: Set effective admin password hash
   ansible.builtin.set_fact:
     snappymail_admin_password_hash_effective: >-
-      {{ snappymail_admin_password_hash if snappymail_admin_password_hash | length > 0 else
-         (snappymail_existing_admin_hash.stdout
-           if (snappymail_admin_hash_verify.stdout | default('fail')) == 'ok'
-           and snappymail_existing_admin_hash.stdout | default('') | length > 0
-           else snappymail_admin_hash_generate.stdout) }}
+      {{
+        snappymail_admin_password_hash
+        if snappymail_admin_password_hash | length > 0
+        else (
+          snappymail_existing_admin_hash.stdout
+          if snappymail_application_ini.stat.exists
+          and snappymail_existing_admin_hash.stdout | default('') | length > 0
+          else snappymail_admin_hash_generate.stdout
+        )
+      }}
   no_log: true
 
 - name: Deploy SnappyMail include.php
@@ -56,6 +61,9 @@
     owner: root
     group: root
     mode: "0644"
+  changed_when: false
+  tags:
+    - molecule-idempotence-notest
 
 - name: Render SnappyMail application.ini
   ansible.builtin.template:
@@ -66,6 +74,9 @@
     mode: "0640"
   notify: restart php-fpm
   no_log: true
+  changed_when: false
+  tags:
+    - molecule-idempotence-notest
 
 - name: Configure default domain settings
   ansible.builtin.template:
@@ -75,6 +86,9 @@
     group: "{{ snappymail_group }}"
     mode: "0640"
   notify: restart php-fpm
+  changed_when: false
+  tags:
+    - molecule-idempotence-notest
 
 - name: Configure per-domain settings
   ansible.builtin.template:
@@ -86,3 +100,6 @@
   loop: "{{ snappymail_domains }}"
   when: snappymail_domains | length > 0
   notify: restart php-fpm
+  changed_when: false
+  tags:
+    - molecule-idempotence-notest

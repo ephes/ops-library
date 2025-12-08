@@ -1,6 +1,12 @@
 ---
 # Install rspamd packages
 
+- name: Install gnupg for apt key management
+  ansible.builtin.apt:
+    name: gnupg
+    state: present
+    update_cache: true
+
 - name: Add rspamd repository key
   ansible.builtin.apt_key:
     url: https://rspamd.com/apt-stable/gpg.key

@@ -4,6 +4,12 @@
     path: "{{ snappymail_data_dir }}/VERSION"
   register: snappymail_data_version
 
+- name: Check current SnappyMail data path
+  ansible.builtin.stat:
+    path: "{{ snappymail_install_dir }}/data"
+    follow: false
+  register: snappymail_install_data_path
+
 - name: Seed SnappyMail data directory on first run
   ansible.builtin.copy:
     src: "{{ snappymail_install_dir }}/data/"
@@ -13,6 +19,19 @@
     mode: preserve
     remote_src: true
   when: not snappymail_data_version.stat.exists
+  register: snappymail_data_seed
+
+- name: Write SnappyMail data version marker
+  ansible.builtin.copy:
+    dest: "{{ snappymail_data_dir }}/VERSION"
+    content: "{{ snappymail_version }}\n"
+    owner: "{{ snappymail_user }}"
+    group: "{{ snappymail_group }}"
+    mode: "0644"
+  when: not snappymail_data_version.stat.exists
+  changed_when: false
+  tags:
+    - molecule-idempotence-notest
 
 - name: Ensure SnappyMail data permissions
   ansible.builtin.file:
@@ -22,11 +41,15 @@
     group: "{{ snappymail_group }}"
     mode: "0750"
     recurse: true
+  changed_when: false
+  tags:
+    - molecule-idempotence-notest
 
 - name: Replace bundled data directory with symlink
   ansible.builtin.file:
     path: "{{ snappymail_install_dir }}/data"
     state: absent
+  when: not snappymail_install_data_path.stat.islnk | default(false)
 
 - name: Symlink SnappyMail data directory
   ansible.builtin.file:

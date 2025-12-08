@@ -1,0 +1,32 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Ensure Ansible remote tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+
+    - name: Create fake SnappyMail data directory
+      ansible.builtin.file:
+        path: /opt/snappymail-data
+        state: directory
+        mode: "0750"
+
+    - name: Create marker file in data directory
+      ansible.builtin.copy:
+        dest: /opt/snappymail-data/marker.txt
+        content: "snappymail-backup-marker"
+        mode: "0640"
+
+  vars:
+    snappymail_data_dir: "/opt/snappymail-data"
+    snappymail_backup_root: "/tmp/snappymail-backups"
+    snappymail_backup_fetch_local: false
+    snappymail_backup_retain: 0
+
+  roles:
+    - role: snappymail_backup

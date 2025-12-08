@@ -1,0 +1,60 @@
+---
+- name: Verify mail relay deployment
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    mail_relay_domains:
+      - "example.test"
+    mail_relay_backend_host: "smtp.example.test"
+    postfix_files:
+      - /etc/postfix/main.cf
+      - /etc/postfix/master.cf
+      - /etc/postfix/transport
+      - /etc/postfix/relay_domains
+      - /etc/postfix/tls_policy
+
+  tasks:
+    - name: Verify | Postfix config files exist
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: postfix_stats
+      loop: "{{ postfix_files }}"
+
+    - name: Verify | Assert Postfix config files present
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.size | int > 0
+        fail_msg: "{{ item.stat.path }} missing or empty"
+      loop: "{{ postfix_stats.results }}"
+
+    - name: Verify | Transport map contains backend mapping
+      ansible.builtin.command: grep "{{ mail_relay_backend_host }}" /etc/postfix/transport
+      register: transport_grep
+      changed_when: false
+
+    - name: Verify | Assert transport mapping exists
+      ansible.builtin.assert:
+        that:
+          - transport_grep.rc == 0
+        fail_msg: "Backend mapping for {{ mail_relay_backend_host }} missing in /etc/postfix/transport"
+
+    - name: Verify | smtpd_milters is defined
+      ansible.builtin.command: postconf -h smtpd_milters
+      register: smtpd_milters
+      changed_when: false
+      failed_when: smtpd_milters.rc != 0
+
+    - name: Verify | Postfix is active
+      ansible.builtin.command: systemctl is-active postfix
+      register: postfix_status
+      changed_when: false
+
+    - name: Verify | Assert Postfix running
+      ansible.builtin.assert:
+        that:
+          - postfix_status.rc == 0
+          - postfix_status.stdout | trim == "active"
+        fail_msg: "Postfix is not active"

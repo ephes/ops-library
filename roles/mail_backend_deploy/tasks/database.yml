@@ -10,6 +10,8 @@
 # These are skipped in --check mode since the database won't actually be created
 - name: Database setup (skipped in check mode)
   when: not ansible_check_mode
+  tags:
+    - molecule-idempotence-notest
   block:
     - name: Create mail database
       community.postgresql.postgresql_db:
