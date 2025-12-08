@@ -1,0 +1,91 @@
+---
+# Vaultwarden deployment defaults
+#
+# This role installs Vaultwarden using pre-built .deb packages from
+# https://vaultwarden-deb.pages.dev/
+#
+# Package paths (set by deb packages, not configurable):
+#   - Binary: /usr/bin/vaultwarden
+#   - Config: /etc/vaultwarden.env
+#   - Data: /var/lib/vaultwarden/data
+#   - Web vault: /var/lib/vaultwarden/web-vault
+#   - Logs: /var/log/vaultwarden
+#   - Systemd: vaultwarden.service (provided by package)
+
+# Debian codename for apt repo (auto-detected)
+vaultwarden_debian_codename: "{{ ansible_distribution_release }}"
+
+# Apt repository URL
+vaultwarden_apt_repo_url: "https://vaultwarden-deb.pages.dev"
+
+# Domain (REQUIRED - must be set)
+vaultwarden_domain: "CHANGEME"  # e.g., https://vault.home.wersdörfer.de
+
+# Network binding
+vaultwarden_rocket_address: "127.0.0.1"
+vaultwarden_rocket_port: 8000
+
+# WebSocket support (required for live sync)
+vaultwarden_websocket_enabled: true
+vaultwarden_websocket_port: 3012
+
+# Registration and invitations
+vaultwarden_signups_allowed: false
+vaultwarden_invitations_allowed: true
+vaultwarden_show_password_hint: false
+
+# Organization features
+vaultwarden_org_creation_users: "all"  # all, none, or comma-separated emails
+
+# Admin panel
+# Set vaultwarden_admin_enabled: false after initial setup to disable the admin panel
+# This removes the /admin endpoint entirely for security hardening
+vaultwarden_admin_enabled: true
+vaultwarden_admin_token: "CHANGEME"  # pragma: allowlist secret (generate with: openssl rand -base64 48)
+
+# SMTP configuration (for invitations, 2FA recovery, emergency access)
+vaultwarden_smtp_host: ""
+vaultwarden_smtp_port: 587
+vaultwarden_smtp_security: "starttls"  # starttls, force_tls, or off
+vaultwarden_smtp_from: ""
+vaultwarden_smtp_from_name: "Vaultwarden"
+vaultwarden_smtp_username: ""
+vaultwarden_smtp_password: ""  # pragma: allowlist secret
+
+# For local mail server (postfix on localhost)
+# vaultwarden_smtp_host: "localhost"
+# vaultwarden_smtp_port: 25
+# vaultwarden_smtp_security: "off"
+
+# SSH key support (experimental feature flags)
+vaultwarden_experimental_client_feature_flags: "ssh-key-vault-item,ssh-agent"
+
+# Sends feature (secure file/text sharing)
+vaultwarden_sends_allowed: true
+
+# Emergency access
+vaultwarden_emergency_access_allowed: true
+
+# Icon service for website favicons
+vaultwarden_icon_service: "internal"  # internal, bitwarden, duckduckgo, google, or disabled
+
+# Log level
+vaultwarden_log_level: "info"  # trace, debug, info, warn, error, off
+
+# Traefik integration
+vaultwarden_traefik_enabled: true
+vaultwarden_traefik_entrypoint: "websecure"
+vaultwarden_traefik_certresolver: ""  # leave empty if using certbot_dns
+
+# Service management
+vaultwarden_service_enabled: true
+vaultwarden_service_state: started
+
+# Health check
+vaultwarden_healthcheck_enabled: true
+vaultwarden_healthcheck_timeout: 30
+
+# Testing helpers
+vaultwarden_skip_install: false
+vaultwarden_skip_repo: false
+vaultwarden_skip_handlers: false

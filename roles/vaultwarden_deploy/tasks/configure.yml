@@ -1,0 +1,69 @@
+---
+# Configure Vaultwarden
+
+- name: Deploy Vaultwarden environment configuration
+  ansible.builtin.template:
+    src: vaultwarden.env.j2
+    dest: /etc/vaultwarden.env
+    owner: root
+    group: vaultwarden
+    mode: "0640"
+  notify: restart vaultwarden
+
+# Vaultwarden's config.json (created via admin panel) overrides env vars.
+# We must sync SMTP settings to config.json to ensure consistent behavior.
+- name: Check if config.json exists (admin panel was used)
+  ansible.builtin.stat:
+    path: /var/lib/vaultwarden/data/config.json
+  register: vaultwarden_config_json
+
+- name: Sync SMTP settings to config.json if it exists
+  when:
+    - vaultwarden_config_json.stat.exists
+    - vaultwarden_smtp_host is defined
+    - vaultwarden_smtp_host | length > 0
+  block:
+    - name: Read current config.json
+      ansible.builtin.slurp:
+        src: /var/lib/vaultwarden/data/config.json
+      register: vaultwarden_config_json_content
+
+    - name: Update SMTP settings in config.json
+      vars:
+        current_config: "{{ vaultwarden_config_json_content.content | b64decode | from_json }}"
+        # Base SMTP settings (always synced)
+        smtp_base:
+          smtp_host: "{{ vaultwarden_smtp_host }}"
+          smtp_port: "{{ vaultwarden_smtp_port | int }}"
+          smtp_security: "{{ vaultwarden_smtp_security }}"
+          smtp_from: "{{ vaultwarden_smtp_from }}"
+          smtp_from_name: "{{ vaultwarden_smtp_from_name }}"
+          smtp_accept_invalid_certs: "{{ vaultwarden_smtp_accept_invalid_certs | default(false) | bool }}"
+          smtp_accept_invalid_hostnames: "{{ vaultwarden_smtp_accept_invalid_hostnames | default(false) | bool }}"
+        # Optional SMTP settings (only set if defined, remove from config.json if not)
+        # Note: smtp_username/password/auth_mechanism are NOT stored in config.json by Vaultwarden
+        # They are always read from env vars. Only sync settings that config.json actually uses.
+        smtp_optional: "{{ {'smtp_debug': (vaultwarden_smtp_debug | default(false) | bool)} if vaultwarden_smtp_debug is defined else {} }}"
+        updated_config: "{{ current_config | combine(smtp_base) | combine(smtp_optional) }}"
+      ansible.builtin.copy:
+        content: "{{ updated_config | to_nice_json }}"
+        dest: /var/lib/vaultwarden/data/config.json
+        owner: vaultwarden
+        group: vaultwarden
+        mode: "0600"
+      notify: restart vaultwarden
+
+- name: Ensure systemd override directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/vaultwarden.service.d
+    state: directory
+    mode: "0755"
+
+- name: Deploy systemd override for security hardening
+  ansible.builtin.template:
+    src: vaultwarden-override.conf.j2
+    dest: /etc/systemd/system/vaultwarden.service.d/override.conf
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart vaultwarden

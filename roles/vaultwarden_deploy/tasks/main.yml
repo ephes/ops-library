@@ -1,0 +1,25 @@
+---
+# Vaultwarden deployment main tasks
+
+- name: Validate Vaultwarden configuration
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Configure Vaultwarden apt repository
+  ansible.builtin.import_tasks: repository.yml
+
+- name: Install Vaultwarden packages
+  ansible.builtin.import_tasks: packages.yml
+
+- name: Configure Vaultwarden
+  ansible.builtin.import_tasks: configure.yml
+
+- name: Configure Traefik for Vaultwarden
+  ansible.builtin.import_tasks: traefik.yml
+  when: vaultwarden_traefik_enabled | bool
+
+- name: Ensure Vaultwarden service state
+  ansible.builtin.import_tasks: service.yml
+
+- name: Run Vaultwarden health check
+  ansible.builtin.import_tasks: health.yml
+  when: vaultwarden_healthcheck_enabled | bool

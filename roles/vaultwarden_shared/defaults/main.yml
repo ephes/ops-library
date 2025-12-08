@@ -1,0 +1,45 @@
+---
+# Shared defaults for Vaultwarden roles (deploy, backup, restore, remove)
+
+# User/group (created by deb package)
+vaultwarden_user: vaultwarden
+vaultwarden_group: vaultwarden
+
+# Paths (set by deb packages)
+vaultwarden_bin_path: /usr/bin/vaultwarden
+vaultwarden_config_file: /etc/vaultwarden.env
+vaultwarden_data_dir: /var/lib/vaultwarden/data
+vaultwarden_web_vault_dir: /usr/share/vaultwarden/web-vault
+vaultwarden_log_dir: /var/log/vaultwarden
+
+# Service
+vaultwarden_service_name: vaultwarden
+vaultwarden_service_unit: /lib/systemd/system/vaultwarden.service
+vaultwarden_service_override_dir: /etc/systemd/system/vaultwarden.service.d
+
+# Traefik
+vaultwarden_traefik_config_path: /etc/traefik/dynamic/vaultwarden.yml
+
+# Backup/restore defaults
+vaultwarden_backup_root: /opt/backups/vaultwarden
+vaultwarden_backup_prefix: manual
+vaultwarden_backup_archive_format: gz
+vaultwarden_backup_archive_extension: tar.gz
+vaultwarden_backup_fetch_local: true
+vaultwarden_backup_local_dir: "{{ lookup('env', 'HOME') }}/backups/vaultwarden"
+vaultwarden_backup_dir_mode: "0700"
+vaultwarden_backup_file_mode: "0600"
+vaultwarden_backup_owner: root
+vaultwarden_backup_group: root
+vaultwarden_backup_stop_service: true
+vaultwarden_backup_include_logs: false
+vaultwarden_backup_include_traefik: true
+vaultwarden_backup_include_config: true
+vaultwarden_backup_include_data: true
+vaultwarden_backup_generate_manifest: true
+vaultwarden_backup_retain: 7
+
+vaultwarden_restore_cleanup: true
+vaultwarden_restore_archive: latest
+vaultwarden_restore_restart: true
+vaultwarden_restore_root: "{{ vaultwarden_backup_root }}"

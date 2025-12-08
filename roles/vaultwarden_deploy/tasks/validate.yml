@@ -1,0 +1,51 @@
+---
+# Validate Vaultwarden configuration
+
+- name: Validate required variables are set
+  ansible.builtin.assert:
+    that:
+      - vaultwarden_domain != "CHANGEME"
+      - vaultwarden_domain is defined
+      - vaultwarden_domain | length > 0
+    fail_msg: "vaultwarden_domain must be set to a valid URL (e.g., https://vault.example.com)"
+    success_msg: "Domain configured: {{ vaultwarden_domain }}"
+
+- name: Validate admin token is set when admin panel is enabled
+  ansible.builtin.assert:
+    that:
+      - vaultwarden_admin_token is defined
+      - vaultwarden_admin_token != "CHANGEME"
+      - vaultwarden_admin_token | length > 0
+    fail_msg: >-
+      vaultwarden_admin_token must be set when admin panel is enabled.
+      Generate one with: openssl rand -base64 48
+      Or set vaultwarden_admin_enabled=false to disable admin panel entirely.
+    success_msg: "Admin token configured"
+  when: vaultwarden_admin_enabled | bool
+
+- name: Note admin panel status
+  ansible.builtin.debug:
+    msg: "Admin panel is DISABLED (vaultwarden_admin_enabled=false)"
+  when: not (vaultwarden_admin_enabled | bool)
+
+- name: Validate SMTP configuration if host is set
+  ansible.builtin.assert:
+    that:
+      - vaultwarden_smtp_from | length > 0
+    fail_msg: "vaultwarden_smtp_from must be set when vaultwarden_smtp_host is configured"
+  when: vaultwarden_smtp_host | length > 0
+
+- name: Validate Debian codename is supported
+  ansible.builtin.assert:
+    that:
+      - vaultwarden_debian_codename in ['bullseye', 'bookworm', 'trixie', 'jammy', 'noble']
+    fail_msg: >-
+      Unsupported Debian/Ubuntu version: {{ vaultwarden_debian_codename }}.
+      Supported: bullseye, bookworm, trixie (Debian) or jammy, noble (Ubuntu).
+    success_msg: "Debian codename: {{ vaultwarden_debian_codename }}"
+
+- name: Check if this is Ubuntu and map to Debian codename
+  ansible.builtin.set_fact:
+    vaultwarden_debian_codename: >-
+      {{ 'bookworm' if ansible_distribution_release in ['jammy', 'noble'] else vaultwarden_debian_codename }}
+  when: ansible_distribution == 'Ubuntu'

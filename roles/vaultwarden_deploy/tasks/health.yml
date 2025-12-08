@@ -1,0 +1,16 @@
+---
+# Vaultwarden health check
+
+- name: Wait for Vaultwarden to be ready
+  ansible.builtin.uri:
+    url: "http://{{ vaultwarden_rocket_address }}:{{ vaultwarden_rocket_port }}/alive"
+    method: GET
+    status_code: 200
+  register: vaultwarden_health
+  until: vaultwarden_health.status == 200
+  retries: "{{ (vaultwarden_healthcheck_timeout / 5) | int }}"
+  delay: 5
+
+- name: Display Vaultwarden status
+  ansible.builtin.debug:
+    msg: "Vaultwarden is running at {{ vaultwarden_domain }}"

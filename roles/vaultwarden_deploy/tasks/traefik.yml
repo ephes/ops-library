@@ -1,0 +1,13 @@
+---
+# Configure Traefik reverse proxy for Vaultwarden
+
+- name: Extract domain from vaultwarden_domain URL
+  ansible.builtin.set_fact:
+    vaultwarden_hostname: "{{ vaultwarden_domain | regex_replace('^https?://', '') | regex_replace('/.*$', '') }}"
+
+- name: Deploy Traefik dynamic configuration for Vaultwarden
+  ansible.builtin.template:
+    src: traefik-vaultwarden.yml.j2
+    dest: /etc/traefik/dynamic/vaultwarden.yml
+    mode: "0644"
+  notify: reload traefik

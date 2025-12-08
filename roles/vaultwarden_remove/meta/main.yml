@@ -1,0 +1,24 @@
+---
+galaxy_info:
+  role_name: vaultwarden_remove
+  author: ops-library
+  description: Remove Vaultwarden password manager
+  license: MIT
+  min_ansible_version: "2.14"
+
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+        - trixie
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+
+  galaxy_tags:
+    - vaultwarden
+    - removal
+
+dependencies: []

@@ -1,0 +1,91 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Verify | Data file contains restored content
+      ansible.builtin.slurp:
+        path: /var/lib/vaultwarden/data/db.sqlite3
+      register: vaultwarden_db
+
+    - name: Verify | Assert db content
+      ansible.builtin.assert:
+        that:
+          - "'restored-db' in (vaultwarden_db.content | b64decode)"
+        fail_msg: "Database file not restored"
+
+    - name: Verify | Attachments and sends restored
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: vaultwarden_payload_files
+      loop:
+        - /var/lib/vaultwarden/data/attachments/restored.txt
+        - /var/lib/vaultwarden/data/sends/restored.txt
+        - /var/lib/vaultwarden/data/rsa_key.pem
+        - /var/lib/vaultwarden/data/rsa_key.pub.pem
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Verify | Assert payload files exist
+      ansible.builtin.assert:
+        that:
+          - vaultwarden_payload_files.results | map(attribute='stat.exists') | min
+        fail_msg: "One or more payload files missing after restore"
+
+    - name: Verify | Config restored
+      ansible.builtin.slurp:
+        path: /etc/vaultwarden.env
+      register: vaultwarden_env
+
+    - name: Verify | Assert config content
+      ansible.builtin.assert:
+        that:
+          - "'restored.example' in (vaultwarden_env.content | b64decode)"
+        fail_msg: "Config file not restored"
+
+    - name: Verify | Systemd override restored
+      ansible.builtin.slurp:
+        path: /etc/systemd/system/vaultwarden.service.d/override.conf
+      register: vaultwarden_override
+
+    - name: Verify | Assert override content
+      ansible.builtin.assert:
+        that:
+          - "'AmbientCapabilities=CAP_NET_BIND_SERVICE' in (vaultwarden_override.content | b64decode)"
+        fail_msg: "Systemd override not restored"
+
+    - name: Verify | Traefik config restored
+      ansible.builtin.slurp:
+        path: /etc/traefik/dynamic/vaultwarden.yml
+      register: vaultwarden_traefik
+
+    - name: Verify | Assert Traefik content
+      ansible.builtin.assert:
+        that:
+          - "'restored.example' in (vaultwarden_traefik.content | b64decode)"
+        fail_msg: "Traefik config not restored"
+
+    - name: Verify | Staging directory removed
+      ansible.builtin.stat:
+        path: /tmp/vaultwarden-restore
+      register: vaultwarden_staging
+
+    - name: Verify | Assert staging cleanup
+      ansible.builtin.assert:
+        that:
+          - not vaultwarden_staging.stat.exists
+        fail_msg: "Staging directory not cleaned up"
+
+    - name: Verify | Service is active
+      ansible.builtin.command: systemctl is-active vaultwarden
+      register: vaultwarden_service
+      changed_when: false
+
+    - name: Verify | Assert service running
+      ansible.builtin.assert:
+        that:
+          - vaultwarden_service.rc == 0
+          - vaultwarden_service.stdout == "active"
+        fail_msg: "vaultwarden service not active after restore"

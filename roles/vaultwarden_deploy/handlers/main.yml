@@ -1,0 +1,21 @@
+---
+# Vaultwarden handlers
+
+- name: restart vaultwarden
+  ansible.builtin.systemd:
+    name: vaultwarden
+    state: restarted
+    daemon_reload: true
+  when: not vaultwarden_skip_handlers | default(false)
+
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: not vaultwarden_skip_handlers | default(false)
+
+- name: reload traefik
+  listen: reload traefik
+  ansible.builtin.systemd:
+    name: traefik
+    state: restarted
+  when: not vaultwarden_skip_handlers | default(false)

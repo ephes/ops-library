@@ -1,0 +1,105 @@
+---
+- name: Prepare
+  hosts: all
+  become: true
+
+  vars:
+    vw_build_root: /tmp/vaultwarden-build
+    vw_pkg_dir: "{{ vw_build_root }}/pkgs"
+    vw_control_template: |
+      Package: __PKG__
+      Version: 0.0.0-molecule
+      Section: misc
+      Priority: optional
+      Architecture: all
+      Maintainer: molecule <molecule@example.invalid>
+      Description: Molecule stub package for vaultwarden testing
+
+  tasks:
+    - name: Build and install stub packages (shared)
+      ansible.builtin.import_tasks: "{{ playbook_dir }}/../../../vaultwarden_shared/molecule/shared/prepare-stub-packages.yml"
+
+    - name: Seed configuration file
+      ansible.builtin.copy:
+        dest: /etc/vaultwarden.env
+        owner: root
+        group: vaultwarden
+        mode: "0640"
+        content: |
+          DOMAIN=https://vault.molecule.test
+          ROCKET_PORT=8000
+          ROCKET_ADDRESS=127.0.0.1
+          WEBSOCKET_ENABLED=true
+          WEBSOCKET_PORT=3012
+          ADMIN_TOKEN=molecule-admin-token
+
+    - name: Ensure Vaultwarden data layout
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: /var/lib/vaultwarden/data, owner: vaultwarden, group: vaultwarden, mode: "0750" }
+        - { path: /var/lib/vaultwarden/data/attachments, owner: vaultwarden, group: vaultwarden, mode: "0750" }
+        - { path: /var/lib/vaultwarden/data/sends, owner: vaultwarden, group: vaultwarden, mode: "0750" }
+        - { path: /var/log/vaultwarden, owner: vaultwarden, group: vaultwarden, mode: "0750" }
+        - { path: /etc/systemd/system/vaultwarden.service.d, owner: root, group: root, mode: "0755" }
+        - { path: /etc/traefik/dynamic, owner: root, group: root, mode: "0755" }
+
+    - name: Seed sqlite database
+      ansible.builtin.command:
+        cmd: sqlite3 /var/lib/vaultwarden/data/db.sqlite3 "create table if not exists items(id int); delete from items; insert into items values (99);"
+      failed_when: false
+      changed_when: false
+
+    - name: Seed attachments and sends
+      ansible.builtin.copy:
+        dest: "{{ item.dest }}"
+        owner: vaultwarden
+        group: vaultwarden
+        mode: "0640"
+        content: "{{ item.content }}"
+      loop:
+        - { dest: /var/lib/vaultwarden/data/attachments/existing.txt, content: "existing-attachment" }
+        - { dest: /var/lib/vaultwarden/data/sends/existing.txt, content: "existing-send" }
+
+    - name: Seed RSA key placeholders
+      ansible.builtin.copy:
+        dest: "{{ item }}"
+        owner: vaultwarden
+        group: vaultwarden
+        mode: "0600"
+        content: "existing-key"
+      loop:
+        - /var/lib/vaultwarden/data/rsa_key.pem
+        - /var/lib/vaultwarden/data/rsa_key.pub.pem
+
+    - name: Seed systemd override
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/vaultwarden.service.d/override.conf
+        mode: "0644"
+        content: |
+          [Service]
+          AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+    - name: Seed Traefik config
+      ansible.builtin.copy:
+        dest: /etc/traefik/dynamic/vaultwarden.yml
+        mode: "0644"
+        content: |
+          http:
+            routers:
+              vaultwarden:
+                rule: Host(`vault.molecule.test`)
+
+    - name: Enable and start stub service
+      ansible.builtin.systemd:
+        name: vaultwarden
+        state: started
+        enabled: true
+      register: vw_stub_service
+      retries: 5
+      delay: 2
+      until: vw_stub_service is succeeded
