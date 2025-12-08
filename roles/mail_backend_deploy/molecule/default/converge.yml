@@ -1,0 +1,46 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Ensure Ansible remote tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+
+    - name: Install database and TLS dependencies
+      ansible.builtin.apt:
+        name:
+          - postgresql
+          - ssl-cert
+        state: present
+        update_cache: true
+
+    - name: Ensure PostgreSQL is running
+      ansible.builtin.systemd:
+        name: postgresql
+        enabled: true
+        state: started
+
+  vars:
+    mail_backend_domains:
+      - "example.test"
+    mail_backend_postgres_password: "molecule-mail-db"
+    mail_backend_relay_host: "smtp.example.test"
+    mail_backend_relay_password: "relay-password"
+    mail_backend_hostname: "mail-backend.test"
+    mail_backend_mydomain: "example.test"
+    mail_backend_imap_hostname: "localhost"
+    mail_backend_smtp_hostname: "localhost"
+    mail_backend_vmail_path: "/var/lib/vmail"
+    mail_backend_mynetworks:
+      - "127.0.0.0/8"
+      - "[::1]/128"
+    mail_backend_tls_cert: "/etc/ssl/certs/ssl-cert-snakeoil.pem"
+    mail_backend_tls_key: "/etc/ssl/private/ssl-cert-snakeoil.key"
+    mail_backend_dkim_enabled: false
+
+  roles:
+    - role: mail_backend_deploy

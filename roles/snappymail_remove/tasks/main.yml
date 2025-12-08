@@ -15,8 +15,9 @@
 
 - name: Find SnappyMail PHP-FPM pool configs
   ansible.builtin.find:
-    paths: "{{ snappymail_remove_php_pools_glob | dirname }}"
+    paths: "/etc/php"
     patterns: "{{ snappymail_remove_php_pools_glob | basename }}"
+    recurse: true
     file_type: file
   register: snappymail_remove_php_pools
 

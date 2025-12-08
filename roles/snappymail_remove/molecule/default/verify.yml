@@ -1,0 +1,62 @@
+---
+- name: Verify SnappyMail removal
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    removed_paths:
+      - /opt/snappymail
+      - /opt/snappymail-data
+      - /etc/nginx/sites-available/snappymail
+      - /etc/nginx/sites-enabled/snappymail
+      - /etc/php/8.3/fpm/pool.d/snappymail.conf
+      - /run/php/php8.3-snappymail.sock
+
+  tasks:
+    - name: Verify | Paths removed
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: removed_stats
+      loop: "{{ removed_paths }}"
+
+    - name: Verify | Assert paths are absent
+      ansible.builtin.assert:
+        that:
+          - not item.stat.exists
+        fail_msg: "{{ item.item }} still exists after removal"
+      loop: "{{ removed_stats.results }}"
+
+    - name: Verify | SnappyMail user removed
+      ansible.builtin.command: getent passwd snappymail
+      register: user_getent
+      changed_when: false
+      failed_when: false
+
+    - name: Verify | SnappyMail group removed
+      ansible.builtin.command: getent group snappymail
+      register: group_getent
+      changed_when: false
+      failed_when: false
+
+    - name: Verify | Assert user and group absent
+      ansible.builtin.assert:
+        that:
+          - user_getent.rc != 0
+          - group_getent.rc != 0
+        fail_msg: "SnappyMail user/group still present"
+
+    - name: Verify | Ensure no lingering PHP sockets
+      ansible.builtin.find:
+        paths: /run/php
+        patterns: "*snappymail*.sock"
+        recurse: true
+        file_type: any
+      register: socket_find
+      failed_when: false
+
+    - name: Verify | Assert sockets cleaned
+      ansible.builtin.assert:
+        that:
+          - socket_find.matched == 0
+        fail_msg: "Found leftover SnappyMail sockets under /run/php"

@@ -11,6 +11,13 @@
     snappymail_domains:
       - "example.test"
     snappymail_backup_root: "/tmp/snappymail-backups"
+  pre_tasks:
+    - name: Ensure Ansible remote tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+
   tasks:
     - name: Run snappymail_backup
       ansible.builtin.include_role:
@@ -19,7 +26,9 @@
     - name: Find backup archive
       ansible.builtin.find:
         paths: "{{ snappymail_backup_root }}"
-        patterns: "snappymail-*.tar.*"
+        patterns:
+          - "snappymail-*.tar.gz"
+          - "snappymail-*.tar.zst"
         file_type: file
       register: snappymail_backup_find
 
@@ -58,19 +67,12 @@
       ansible.builtin.assert:
         that:
           - not item.stat.exists
-        fail_msg: "{{ item.stat.path }} still exists after removal"
+        fail_msg: "{{ item.item }} still exists after removal"
       loop: "{{ snappymail_remove_stats.results }}"
 
     - name: Re-deploy SnappyMail
       ansible.builtin.include_role:
         name: snappymail_deploy
-      vars:
-        snappymail_admin_password: "{{ snappymail_admin_password }}"
-        snappymail_data_dir: "{{ snappymail_data_dir }}"
-        snappymail_traefik_enabled: false
-        snappymail_healthcheck_enabled: false
-        snappymail_listen_port: 8088
-        snappymail_domains: "{{ snappymail_domains }}"
 
     - name: Restore SnappyMail data
       ansible.builtin.include_role:
@@ -78,7 +80,6 @@
       vars:
         snappymail_restore_source: "{{ snappymail_backup_latest }}"
         snappymail_restore_clean: true
-        snappymail_data_dir: "{{ snappymail_data_dir }}"
 
     - name: Verify application.ini exists
       ansible.builtin.stat:

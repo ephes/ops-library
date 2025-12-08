@@ -7,3 +7,6 @@ snappymail_restore_owner: "{{ snappymail_user }}"
 snappymail_restore_group: "{{ snappymail_group }}"
 snappymail_restore_mode: "0750"
 snappymail_restore_root: "{{ snappymail_backup_root | default('/mnt/cryptdata/backups/snappymail') }}"
+snappymail_restore_restart_services: true
+snappymail_restore_packages:
+  - rsync

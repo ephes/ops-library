@@ -82,6 +82,16 @@
   ansible.builtin.set_fact:
     snappymail_restore_is_archive: "{{ snappymail_restore_source_effective | regex_search('\\.tar\\.(gz|zst)$') is not none }}"
 
+- name: Ensure restore dependencies are installed
+  ansible.builtin.apt:
+    name: "{{ snappymail_restore_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when:
+    - snappymail_restore_packages | length > 0
+    - not snappymail_restore_is_archive
+
 - name: Restore from archive
   ansible.builtin.unarchive:
     src: "{{ snappymail_restore_source_effective }}"
@@ -139,6 +149,7 @@
     - nginx
     - "{{ snappymail_restore_php_service }}"
   ignore_errors: true
+  when: snappymail_restore_restart_services | bool
 
 - name: Report restore completion
   ansible.builtin.debug:
