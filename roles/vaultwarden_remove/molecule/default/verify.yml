@@ -1,0 +1,62 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Verify | Package facts
+      ansible.builtin.package_facts:
+        manager: auto
+
+    - name: Verify | Assert packages removed
+      ansible.builtin.assert:
+        that:
+          - "'vaultwarden' not in ansible_facts.packages"
+          - "'vaultwarden-web-vault' not in ansible_facts.packages"
+        fail_msg: "Vaultwarden packages still present"
+
+    - name: Verify | Config file absent
+      ansible.builtin.stat:
+        path: /etc/vaultwarden.env
+      register: vaultwarden_config
+
+    - name: Verify | Assert config removed
+      ansible.builtin.assert:
+        that:
+          - not vaultwarden_config.stat.exists
+        fail_msg: "Config file still exists"
+
+    - name: Verify | Data directory absent
+      ansible.builtin.stat:
+        path: /var/lib/vaultwarden
+      register: vaultwarden_data_dir
+
+    - name: Verify | Assert data removed
+      ansible.builtin.assert:
+        that:
+          - not vaultwarden_data_dir.stat.exists
+        fail_msg: "Data directory still present"
+
+    - name: Verify | Log directory absent
+      ansible.builtin.stat:
+        path: /var/log/vaultwarden
+      register: vaultwarden_log_dir
+
+    - name: Verify | Assert log dir removed
+      ansible.builtin.assert:
+        that:
+          - not vaultwarden_log_dir.stat.exists
+        fail_msg: "Log directory still present"
+
+    - name: Verify | Service inactive
+      ansible.builtin.command: systemctl is-active vaultwarden
+      register: vaultwarden_service
+      changed_when: false
+      failed_when: false
+
+    - name: Verify | Assert service stopped
+      ansible.builtin.assert:
+        that:
+          - vaultwarden_service.stdout != "active"
+        fail_msg: "Service still active"

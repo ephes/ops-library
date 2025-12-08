@@ -1,0 +1,27 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  gather_facts: false
+
+  pre_tasks:
+    - name: Ensure remote ansible tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+        owner: root
+        group: root
+
+    - name: Gather facts
+      ansible.builtin.setup:
+
+  vars:
+    vaultwarden_backup_fetch_local: false
+    vaultwarden_backup_retain: 0
+    vaultwarden_backup_stop_service: true
+    vaultwarden_backup_encrypt: false
+    vaultwarden_backup_skip_dependencies: true
+
+  roles:
+    - role: vaultwarden_backup

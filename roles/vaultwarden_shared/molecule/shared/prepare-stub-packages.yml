@@ -1,0 +1,151 @@
+---
+# Shared Molecule tasks for building and installing stub vaultwarden packages
+
+- name: Install stub dependencies when requested
+  ansible.builtin.apt:
+    name: "{{ vw_prepare_extra_packages | default([]) }}"
+    state: present
+    update_cache: true
+  when: (vw_prepare_extra_packages | default([])) | length > 0
+
+- name: Ensure vaultwarden user/group exists
+  ansible.builtin.user:
+    name: vaultwarden
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Provide stub sqlite3 binary for molecule
+  ansible.builtin.copy:
+    dest: /usr/bin/sqlite3
+    mode: "0755"
+    content: |
+      #!/bin/sh
+      # Minimal sqlite3 stub that supports `.backup <dest>`
+      src="$1"
+      cmd="$2"
+      if echo "$cmd" | grep -q "^\\.backup "; then
+        dest="${cmd#*.backup }"
+        dest="${dest%\"}"
+        dest="${dest#\"}"
+        dest="${dest%\'}"
+        dest="${dest#\'}"
+        mkdir -p "$(dirname "$dest")"
+        if [ -f "$src" ]; then
+          cp -f "$src" "$dest"
+        else
+          echo "stub-db" >"$dest"
+        fi
+        exit 0
+      fi
+      mkdir -p "$(dirname "$src")"
+      echo "stub-db" >"$src"
+
+- name: Provide stub rsync binary for molecule
+  ansible.builtin.copy:
+    dest: /usr/bin/rsync
+    mode: "0755"
+    content: |
+      #!/bin/sh
+      # Minimal rsync stub that copies files recursively
+      while [ "$#" -gt 0 ]; do
+        case "$1" in
+          -a|-r) shift ;;
+          --delete) shift ;;
+          *) break ;;
+        esac
+      done
+      src="$1"
+      dest="$2"
+      mkdir -p "$dest"
+      cp -a "$src"/. "$dest"/
+
+- name: Create build directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+    unsafe_writes: true
+  loop:
+    - "{{ vw_build_root }}/vaultwarden/DEBIAN"
+    - "{{ vw_build_root }}/vaultwarden/usr/bin"
+    - "{{ vw_build_root }}/vaultwarden/lib/systemd/system"
+    - "{{ vw_build_root }}/vaultwarden-web-vault/DEBIAN"
+    - "{{ vw_build_root }}/vaultwarden-web-vault/usr/share/vaultwarden/web-vault"
+    - "{{ vw_pkg_dir }}"
+
+- name: Write control files
+  ansible.builtin.copy:
+    dest: "{{ vw_build_root }}/{{ item }}/DEBIAN/control"
+    mode: "0644"
+    content: "{{ vw_control_template | replace('__PKG__', item) }}"
+  loop:
+    - vaultwarden
+    - vaultwarden-web-vault
+
+- name: Write stub vaultwarden binary
+  ansible.builtin.copy:
+    dest: "{{ vw_build_root }}/vaultwarden/usr/bin/vaultwarden"
+    mode: "0755"
+    content: |
+      #!/bin/sh
+      if [ "$1" = "--version" ]; then
+        echo "vaultwarden {{ vw_stub_version | default('0.0.0-molecule') }}"
+        exit 0
+      fi
+      exec sleep infinity
+
+- name: Write stub systemd unit
+  ansible.builtin.copy:
+    dest: "{{ vw_build_root }}/vaultwarden/lib/systemd/system/vaultwarden.service"
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Vaultwarden (Molecule stub)
+      After=network.target
+
+      [Service]
+      Type=simple
+      User=vaultwarden
+      Group=vaultwarden
+      EnvironmentFile=/etc/vaultwarden.env
+      ExecStart=/usr/bin/vaultwarden
+      Restart=on-failure
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: Write stub web vault placeholder
+  ansible.builtin.copy:
+    dest: "{{ vw_build_root }}/vaultwarden-web-vault/usr/share/vaultwarden/web-vault/index.html"
+    mode: "0644"
+    content: "<html><body>Molecule stub web-vault</body></html>"
+
+- name: Build stub packages
+  ansible.builtin.command:
+    cmd: dpkg-deb --build "{{ vw_build_root }}/{{ item }}" "{{ vw_pkg_dir }}/{{ item }}_0.0.0_all.deb"
+    creates: "{{ vw_pkg_dir }}/{{ item }}_0.0.0_all.deb"
+  loop:
+    - vaultwarden
+    - vaultwarden-web-vault
+
+- name: Wait for dpkg frontend lock
+  ansible.builtin.command: bash -c 'while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 1; done'
+  changed_when: false
+
+- name: Install stub packages
+  ansible.builtin.command:
+    cmd: dpkg -i "{{ vw_pkg_dir }}/{{ item }}_0.0.0_all.deb"
+  args:
+    creates: "/var/lib/dpkg/info/{{ item }}.list"
+  register: vw_stub_install
+  retries: 5
+  delay: 2
+  until: vw_stub_install.rc == 0
+  loop:
+    - vaultwarden
+    - vaultwarden-web-vault
+
+- name: Reload systemd after stub install
+  ansible.builtin.systemd:
+    daemon_reload: true

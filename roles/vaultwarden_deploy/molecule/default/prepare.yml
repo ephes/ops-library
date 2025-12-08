@@ -1,0 +1,20 @@
+---
+- name: Prepare
+  hosts: all
+  become: true
+
+  vars:
+    vw_build_root: /tmp/vaultwarden-build
+    vw_pkg_dir: "{{ vw_build_root }}/pkgs"
+    vw_control_template: |
+      Package: __PKG__
+      Version: 0.0.0-molecule
+      Section: misc
+      Priority: optional
+      Architecture: all
+      Maintainer: molecule <molecule@example.invalid>
+      Description: Molecule stub package for vaultwarden testing
+
+  tasks:
+    - name: Build and install stub packages (shared)
+      ansible.builtin.import_tasks: "{{ playbook_dir }}/../../../vaultwarden_shared/molecule/shared/prepare-stub-packages.yml"

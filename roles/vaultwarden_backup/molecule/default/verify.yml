@@ -1,0 +1,54 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    vaultwarden_backup_root: /opt/backups/vaultwarden
+    vaultwarden_backup_prefix: manual
+
+  tasks:
+    - name: Verify | Find backup archives
+      ansible.builtin.find:
+        paths: "{{ vaultwarden_backup_root }}"
+        patterns: "{{ vaultwarden_backup_prefix }}-*.tar.gz"
+        file_type: file
+      register: vaultwarden_backups
+
+    - name: Verify | Assert archive exists
+      ansible.builtin.assert:
+        that:
+          - vaultwarden_backups.files | length > 0
+        fail_msg: "No backup archives found under {{ vaultwarden_backup_root }}"
+
+    - name: Verify | Select newest archive
+      ansible.builtin.set_fact:
+        vaultwarden_latest_archive: "{{ (vaultwarden_backups.files | sort(attribute='mtime', reverse=true) | first).path }}"
+
+    - name: Verify | List archive contents
+      ansible.builtin.command: "tar -tzf {{ vaultwarden_latest_archive }}"
+      register: vaultwarden_archive_list
+      changed_when: false
+
+    - name: Verify | Assert expected payload
+      ansible.builtin.assert:
+        that:
+          - "'data/db.sqlite3' in vaultwarden_archive_list.stdout"
+          - "'config/vaultwarden.env' in vaultwarden_archive_list.stdout"
+          - "'systemd/override.conf' in vaultwarden_archive_list.stdout"
+          - "'traefik/vaultwarden.yml' in vaultwarden_archive_list.stdout"
+          - "'manifest.yml' in vaultwarden_archive_list.stdout"
+        fail_msg: "Backup archive missing expected entries"
+
+    - name: Verify | Ensure service is active after backup
+      ansible.builtin.command: systemctl is-active vaultwarden
+      register: vaultwarden_service
+      changed_when: false
+
+    - name: Verify | Assert service running
+      ansible.builtin.assert:
+        that:
+          - vaultwarden_service.rc == 0
+          - vaultwarden_service.stdout == "active"
+        fail_msg: "vaultwarden service not active post-backup"

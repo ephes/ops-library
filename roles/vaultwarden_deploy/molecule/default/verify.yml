@@ -1,0 +1,113 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    vaultwarden_env_path: /etc/vaultwarden.env
+    vaultwarden_override_path: /etc/systemd/system/vaultwarden.service.d/override.conf
+
+  tasks:
+    - name: Verify | vaultwarden package installed
+      ansible.builtin.package_facts:
+        manager: auto
+
+    - name: Verify | Assert package present
+      ansible.builtin.assert:
+        that:
+          - "'vaultwarden' in ansible_facts.packages"
+        fail_msg: "vaultwarden package not installed"
+
+    - name: Verify | Environment file exists
+      ansible.builtin.stat:
+        path: "{{ vaultwarden_env_path }}"
+      register: vaultwarden_env
+
+    - name: Verify | Assert environment file present
+      ansible.builtin.assert:
+        that:
+          - vaultwarden_env.stat.exists
+        fail_msg: "Missing {{ vaultwarden_env_path }}"
+
+    - name: Verify | Assert environment file ownership and mode
+      ansible.builtin.assert:
+        that:
+          - vaultwarden_env.stat.pw_name == "root"
+          - vaultwarden_env.stat.gr_name == "vaultwarden"
+          - vaultwarden_env.stat.mode == "0640"
+        fail_msg: "vaultwarden.env has wrong owner/group/mode"
+
+    - name: Verify | Environment contains configured domain
+      ansible.builtin.slurp:
+        path: "{{ vaultwarden_env_path }}"
+      register: vaultwarden_env_content
+
+    - name: Verify | Assert DOMAIN and ports rendered
+      vars:
+        env_text: "{{ vaultwarden_env_content.content | b64decode }}"
+      ansible.builtin.assert:
+        that:
+          - "'DOMAIN=https://vault.molecule.test' in env_text"
+          - "'ROCKET_PORT=8000' in env_text"
+          - "'WEBSOCKET_PORT=3012' in env_text"
+          - "'ADMIN_TOKEN=molecule-admin-token' in env_text"
+        fail_msg: "vaultwarden.env missing expected values"
+
+    - name: Verify | Data directory exists
+      ansible.builtin.stat:
+        path: /var/lib/vaultwarden/data
+      register: vaultwarden_data
+
+    - name: Verify | Assert data dir present
+      ansible.builtin.assert:
+        that:
+          - vaultwarden_data.stat.exists
+          - vaultwarden_data.stat.isdir
+        fail_msg: "Data dir missing at /var/lib/vaultwarden/data"
+
+    - name: Verify | Assert data dir ownership and mode
+      ansible.builtin.assert:
+        that:
+          - vaultwarden_data.stat.pw_name == "vaultwarden"
+          - vaultwarden_data.stat.gr_name == "vaultwarden"
+          - vaultwarden_data.stat.mode == "0750"
+        fail_msg: "Data dir permissions incorrect for /var/lib/vaultwarden/data"
+
+    - name: Verify | Override file exists
+      ansible.builtin.stat:
+        path: "{{ vaultwarden_override_path }}"
+      register: vaultwarden_override
+
+    - name: Verify | Assert override present
+      ansible.builtin.assert:
+        that:
+          - vaultwarden_override.stat.exists
+        fail_msg: "Systemd override missing at {{ vaultwarden_override_path }}"
+
+    - name: Verify | Log directory exists
+      ansible.builtin.stat:
+        path: /var/log/vaultwarden
+      register: vaultwarden_log_dir
+
+    - name: Verify | Assert log dir ownership and mode
+      ansible.builtin.assert:
+        that:
+          - vaultwarden_log_dir.stat.exists
+          - vaultwarden_log_dir.stat.isdir
+          - vaultwarden_log_dir.stat.pw_name == "vaultwarden"
+          - vaultwarden_log_dir.stat.gr_name == "vaultwarden"
+          - vaultwarden_log_dir.stat.mode == "0750"
+        fail_msg: "Log dir permissions incorrect for /var/log/vaultwarden"
+
+    - name: Verify | Service is active
+      ansible.builtin.command: systemctl is-active vaultwarden
+      register: vaultwarden_service
+      changed_when: false
+
+    - name: Verify | Assert service running
+      ansible.builtin.assert:
+        that:
+          - vaultwarden_service.rc == 0
+          - vaultwarden_service.stdout == "active"
+        fail_msg: "vaultwarden service not active: rc={{ vaultwarden_service.rc }} state={{ vaultwarden_service.stdout | default('') }}"

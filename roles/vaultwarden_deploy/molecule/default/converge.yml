@@ -1,0 +1,30 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  gather_facts: false
+
+  pre_tasks:
+    - name: Ensure remote ansible tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+        owner: root
+        group: root
+
+    - name: Gather facts
+      ansible.builtin.setup:
+
+  vars:
+    vaultwarden_domain: "https://vault.molecule.test"
+    vaultwarden_admin_token: "molecule-admin-token"
+    vaultwarden_traefik_enabled: false
+    vaultwarden_healthcheck_enabled: false
+    vaultwarden_healthcheck_timeout: 60
+    vaultwarden_skip_install: true
+    vaultwarden_skip_repo: true
+    vaultwarden_skip_handlers: true
+
+  roles:
+    - role: vaultwarden_deploy

@@ -1,0 +1,89 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    vaultwarden_restore_local_dir: "{{ lookup('env', 'HOME') }}/backups/vaultwarden"
+    vaultwarden_restore_archive: "manual-restore-test.tar.gz"
+    vaultwarden_restore_restart: true
+    vaultwarden_restore_cleanup: true
+
+  pre_tasks:
+    - name: Ensure remote ansible tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+        owner: root
+        group: root
+
+    - name: Gather facts
+      ansible.builtin.setup:
+
+    - name: Ensure local restore directory exists
+      delegate_to: localhost
+      become: false
+      ansible.builtin.file:
+        path: "{{ vaultwarden_restore_local_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Create local payload root
+      delegate_to: localhost
+      become: false
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: vw-restore-payload-
+      register: vaultwarden_restore_payload_src
+
+    - name: Build payload structure locally
+      delegate_to: localhost
+      become: false
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ vaultwarden_restore_payload_src.path }}/data", mode: "0755" }
+        - { path: "{{ vaultwarden_restore_payload_src.path }}/data/attachments", mode: "0755" }
+        - { path: "{{ vaultwarden_restore_payload_src.path }}/data/sends", mode: "0755" }
+        - { path: "{{ vaultwarden_restore_payload_src.path }}/config", mode: "0755" }
+        - { path: "{{ vaultwarden_restore_payload_src.path }}/systemd", mode: "0755" }
+        - { path: "{{ vaultwarden_restore_payload_src.path }}/traefik", mode: "0755" }
+
+    - name: Seed payload files locally
+      delegate_to: localhost
+      become: false
+      ansible.builtin.copy:
+        dest: "{{ item.dest }}"
+        mode: "{{ item.mode }}"
+        content: "{{ item.content }}"
+      loop:
+        - { dest: "{{ vaultwarden_restore_payload_src.path }}/data/db.sqlite3", mode: "0640", content: "restored-db" }
+        - { dest: "{{ vaultwarden_restore_payload_src.path }}/data/attachments/restored.txt", mode: "0640", content: "restored-attachment" }
+        - { dest: "{{ vaultwarden_restore_payload_src.path }}/data/sends/restored.txt", mode: "0640", content: "restored-send" }
+        - { dest: "{{ vaultwarden_restore_payload_src.path }}/data/rsa_key.pem", mode: "0600", content: "restored-key" }
+        - { dest: "{{ vaultwarden_restore_payload_src.path }}/data/rsa_key.pub.pem", mode: "0600", content: "restored-key-pub" }
+        - { dest: "{{ vaultwarden_restore_payload_src.path }}/config/vaultwarden.env", mode: "0640", content: "DOMAIN=https://restored.example" }
+        - { dest: "{{ vaultwarden_restore_payload_src.path }}/systemd/override.conf", mode: "0644", content: "[Service]\nAmbientCapabilities=CAP_NET_BIND_SERVICE" }
+        - { dest: "{{ vaultwarden_restore_payload_src.path }}/traefik/vaultwarden.yml", mode: "0644", content: "http:\n  routers:\n    vaultwarden:\n      rule: Host(`restored.example`)" }
+
+    - name: Create restore archive locally
+      delegate_to: localhost
+      become: false
+      ansible.builtin.archive:
+        path: "{{ vaultwarden_restore_payload_src.path }}"
+        dest: "{{ vaultwarden_restore_local_dir }}/{{ vaultwarden_restore_archive }}"
+        format: gz
+
+    - name: Cleanup local payload source
+      delegate_to: localhost
+      become: false
+      ansible.builtin.file:
+        path: "{{ vaultwarden_restore_payload_src.path }}"
+        state: absent
+
+  roles:
+    - role: vaultwarden_restore
