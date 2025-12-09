@@ -1,0 +1,39 @@
+#!/bin/bash
+# Lightweight mail metrics exporter for nyxmon health endpoint.
+set -euo pipefail
+
+queue_path="{{ metrics_endpoint_queue_path }}"
+vmail_path="{{ metrics_endpoint_vmail_path }}"
+
+queue_active=$({ find "${queue_path}/active" -type f 2>/dev/null || true; } | wc -l)
+queue_deferred=$({ find "${queue_path}/deferred" -type f 2>/dev/null || true; } | wc -l)
+queue_total=$((queue_active + queue_deferred))
+
+vmail_pct=$(df "${vmail_path}" --output=pcent 2>/dev/null | tail -1 | tr -d ' %' || echo -1)
+root_pct=$(df / --output=pcent | tail -1 | tr -d ' %')
+
+services_json=""
+{% for svc in metrics_endpoint_services %}
+{% if not loop.first %}services_json="${services_json}, "
+{% endif %}
+services_json="${services_json}\"{{ svc }}\": \"$(systemctl is-active {{ svc }} 2>/dev/null || echo unknown)\""
+{% endfor %}
+
+cat <<EOF
+{
+  "hostname": "$(hostname)",
+  "timestamp": "$(date -Iseconds)",
+  "mail": {
+    "queue_active": ${queue_active},
+    "queue_deferred": ${queue_deferred},
+    "queue_total": ${queue_total}
+  },
+  "disk": {
+    "vmail_percent": ${vmail_pct},
+    "root_percent": ${root_pct}
+  },
+  "services": {
+    ${services_json}
+  }
+}
+EOF

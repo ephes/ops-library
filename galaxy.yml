@@ -20,6 +20,7 @@ build_ignore:
   - .git
   - .venv
   - .ansible
+  - .beads
   - "*.pyc"
   - __pycache__
   - .DS_Store

@@ -1,0 +1,117 @@
+---
+- name: Skip metrics_endpoint when disabled
+  ansible.builtin.debug:
+    msg: "metrics_endpoint role skipped (metrics_endpoint_enabled=false)."
+  when: not metrics_endpoint_enabled | bool
+
+- name: Deploy metrics endpoint
+  when: metrics_endpoint_enabled | bool
+  block:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - metrics_endpoint_auth_user is defined
+          - metrics_endpoint_auth_user != "CHANGE_ME"
+          - metrics_endpoint_auth_user | length > 0
+          - metrics_endpoint_auth_password is defined
+          - metrics_endpoint_auth_password != "CHANGE_ME"
+          - metrics_endpoint_auth_password | length > 0
+        fail_msg: |
+          metrics_endpoint auth values are missing or still set to CHANGEME.
+          Set metrics_endpoint_auth_user/password via ops-control vault before enabling.
+
+    - name: Install dependencies for metrics endpoint
+      ansible.builtin.package:
+        name:
+          - python3
+          - apache2-utils
+          - acl
+        state: present
+
+    - name: Create metrics system group
+      ansible.builtin.group:
+        name: "{{ metrics_endpoint_group }}"
+        system: true
+        state: present
+
+    - name: Create metrics system user
+      ansible.builtin.user:
+        name: "{{ metrics_endpoint_user }}"
+        group: "{{ metrics_endpoint_group }}"
+        shell: /usr/sbin/nologin
+        create_home: false
+        system: true
+        state: present
+
+    - name: Allow metrics user to read postfix queues (ACL)
+      ansible.posix.acl:
+        path: "{{ item }}"
+        entity: "{{ metrics_endpoint_user }}"
+        etype: user
+        permissions: rX
+        state: present
+        recursive: true
+      loop:
+        - "{{ metrics_endpoint_queue_path }}"
+        - "{{ metrics_endpoint_queue_path }}/active"
+        - "{{ metrics_endpoint_queue_path }}/deferred"
+
+    - name: Ensure htpasswd directory exists
+      ansible.builtin.file:
+        path: "{{ metrics_endpoint_htpasswd_dir }}"
+        state: directory
+        owner: root
+        group: "{{ metrics_endpoint_group }}"
+        mode: "0750"
+
+    - name: Deploy mail metrics script
+      ansible.builtin.template:
+        src: mail-metrics.sh.j2
+        dest: "{{ metrics_endpoint_script_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+      notify: restart metrics-endpoint
+
+    - name: Deploy Python HTTP wrapper
+      ansible.builtin.template:
+        src: metrics_httpd.py.j2
+        dest: "{{ metrics_endpoint_server_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+      notify: restart metrics-endpoint
+
+    - name: Generate htpasswd entry
+      ansible.builtin.command: "htpasswd -niB {{ metrics_endpoint_auth_user }}"
+      args:
+        stdin: "{{ metrics_endpoint_auth_password }}"
+      register: metrics_endpoint_htpasswd_entry
+      changed_when: false
+
+    - name: Write htpasswd file
+      ansible.builtin.copy:
+        dest: "{{ metrics_endpoint_htpasswd_path }}"
+        content: "{{ metrics_endpoint_htpasswd_entry.stdout }}\n"
+        owner: root
+        group: "{{ metrics_endpoint_group }}"
+        mode: "0640"
+      notify: restart metrics-endpoint
+
+    - name: Create systemd service unit
+      ansible.builtin.template:
+        src: metrics-endpoint.service.j2
+        dest: "/etc/systemd/system/{{ metrics_endpoint_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart metrics-endpoint
+
+    - name: Ensure metrics endpoint service is enabled and running
+      ansible.builtin.systemd:
+        name: "{{ metrics_endpoint_service_name }}"
+        enabled: true
+        state: started
+        daemon_reload: true
