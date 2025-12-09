@@ -1,0 +1,25 @@
+---
+# Lock down setup.php after initial configuration
+# This prevents unauthorized access to the setup page
+
+- name: Check if setup.php exists
+  ansible.builtin.stat:
+    path: "{{ postfixadmin_public_path }}/setup.php"
+  register: setup_php_stat
+
+- name: Remove setup.php for security
+  ansible.builtin.file:
+    path: "{{ postfixadmin_public_path }}/setup.php"
+    state: absent
+  when: setup_php_stat.stat.exists
+
+- name: Create marker file indicating setup is complete
+  ansible.builtin.copy:
+    content: |
+      PostfixAdmin setup completed.
+      setup.php has been removed for security.
+      To re-run setup, download PostfixAdmin again or restore setup.php from the release archive.
+    dest: "{{ postfixadmin_install_path }}/.setup_complete"
+    owner: root
+    group: root
+    mode: "0644"

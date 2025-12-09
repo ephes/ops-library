@@ -1,0 +1,20 @@
+---
+- name: Deploy nginx configuration for PostfixAdmin
+  ansible.builtin.template:
+    src: nginx-postfixadmin.conf.j2
+    dest: /etc/nginx/sites-available/postfixadmin
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload nginx
+
+- name: Enable nginx site for PostfixAdmin
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/postfixadmin
+    dest: /etc/nginx/sites-enabled/postfixadmin
+    state: link
+  notify: reload nginx
+
+- name: Test nginx configuration
+  ansible.builtin.command: nginx -t
+  changed_when: false

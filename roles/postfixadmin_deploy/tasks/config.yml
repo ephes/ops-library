@@ -1,0 +1,9 @@
+---
+- name: Deploy PostfixAdmin configuration
+  ansible.builtin.template:
+    src: config.local.php.j2
+    dest: "{{ postfixadmin_install_path }}/config.local.php"
+    owner: root
+    group: "{{ postfixadmin_web_group }}"
+    mode: "0640"
+  notify: restart php-fpm

@@ -1,0 +1,48 @@
+---
+- name: Install nginx (if not present)
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Detect installed PHP version
+  ansible.builtin.command: php -r 'printf("%s.%s", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);'
+  register: postfixadmin_php_version_detect
+  changed_when: false
+  failed_when: false
+
+- name: Fail if PHP is not installed
+  ansible.builtin.assert:
+    that:
+      - postfixadmin_php_version_detect.rc == 0
+      - postfixadmin_php_version_detect.stdout | length > 0
+    fail_msg: "PHP CLI is not installed. Install php-cli first."
+    quiet: true
+
+- name: Set PHP version fact
+  ansible.builtin.set_fact:
+    postfixadmin_php_version_effective: >-
+      {{ postfixadmin_php_version if postfixadmin_php_version | length > 0 else postfixadmin_php_version_detect.stdout }}
+
+- name: Build list of PHP packages to install
+  ansible.builtin.set_fact:
+    postfixadmin_php_packages:
+      - "php{{ postfixadmin_php_version_effective }}-fpm"
+      - "php{{ postfixadmin_php_version_effective }}-pgsql"
+      - "php{{ postfixadmin_php_version_effective }}-mbstring"
+      - "php{{ postfixadmin_php_version_effective }}-intl"
+      - "php{{ postfixadmin_php_version_effective }}-gd"
+      - "php{{ postfixadmin_php_version_effective }}-imap"
+
+- name: Install PHP extensions for PostfixAdmin
+  ansible.builtin.apt:
+    name: "{{ postfixadmin_php_packages }}"
+    state: present
+
+- name: Add www-data to dovecot group for doveadm access
+  ansible.builtin.user:
+    name: www-data
+    groups: dovecot
+    append: true
+  notify: restart php-fpm

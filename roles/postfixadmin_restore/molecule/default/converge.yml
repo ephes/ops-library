@@ -1,0 +1,28 @@
+---
+- name: Converge - Run restore
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Ensure Ansible remote tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+
+    - name: Find backup timestamp
+      ansible.builtin.find:
+        paths: "/tmp/postfixadmin-backups"
+        file_type: directory
+      register: backup_dirs
+
+    - name: Set backup timestamp fact
+      ansible.builtin.set_fact:
+        postfixadmin_restore_timestamp: "{{ (backup_dirs.files | sort(attribute='mtime'))[-1].path | basename }}"
+
+  vars:
+    postfixadmin_db_password: "molecule-test-password"
+    postfixadmin_backup_path: "/tmp/postfixadmin-backups"
+
+  roles:
+    - role: postfixadmin_restore

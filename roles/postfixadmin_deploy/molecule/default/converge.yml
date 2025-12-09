@@ -1,0 +1,28 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Ensure Ansible remote tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+
+  vars:
+    postfixadmin_db_password: "molecule-test-password"
+    # Static hash for 'molecule-setup' using PHP password_hash
+    postfixadmin_setup_password_hash: "$2y$10$abcdefghijklmnopqrstuuVWXYZ0123456789ABCDEFGHIJKLMNOPQx"
+    # Static hash for 'molecule-admin' - pre-generated with doveadm pw -s SHA512-CRYPT
+    # Using a fixed salt to ensure idempotency in tests
+    postfixadmin_admin_password_hash: "{SHA512-CRYPT}$6$rounds=5000$moleculetestsalt$Y8qJk9vN5tL2mH3wX7yR4pC6oA1iB8eD0fG2jK5lM9nO3qS6uV7wZ0xC1dE4fG7hJ0kL2mN5oP8qR1sT4uV7wX"
+    postfixadmin_admin_email: "admin@example.test"
+    postfixadmin_traefik_enabled: false
+    postfixadmin_healthcheck_enabled: false
+    postfixadmin_listen_port: 8082
+    postfixadmin_backup_path: "/tmp/postfixadmin-backups"
+    postfixadmin_totp_enabled: false
+
+  roles:
+    - role: postfixadmin_deploy

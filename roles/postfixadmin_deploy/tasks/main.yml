@@ -1,0 +1,49 @@
+---
+- name: Validate PostfixAdmin inputs
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Install PostfixAdmin dependencies
+  ansible.builtin.import_tasks: packages.yml
+
+- name: Prepare PostfixAdmin directories
+  ansible.builtin.import_tasks: directories.yml
+
+- name: Install PostfixAdmin application
+  ansible.builtin.import_tasks: install.yml
+
+- name: Configure PHP version and pool
+  ansible.builtin.import_tasks: php.yml
+
+- name: Configure PostfixAdmin
+  ansible.builtin.import_tasks: config.yml
+
+- name: Set up PostfixAdmin database schema
+  ansible.builtin.import_tasks: schema.yml
+
+- name: Migrate from old schema (if enabled)
+  ansible.builtin.import_tasks: migrate.yml
+  when: postfixadmin_migrate_schema | bool
+
+- name: Create superadmin account
+  ansible.builtin.import_tasks: admin.yml
+
+- name: Configure nginx for PostfixAdmin
+  ansible.builtin.import_tasks: nginx.yml
+
+- name: Configure Traefik exposure
+  ansible.builtin.import_tasks: traefik.yml
+  when: postfixadmin_traefik_enabled | bool
+
+- name: Ensure services are running
+  ansible.builtin.import_tasks: service.yml
+
+- name: Lock down setup.php
+  ansible.builtin.import_tasks: lockdown.yml
+  when: postfixadmin_remove_setup_php | bool
+
+- name: Flush handlers before health check
+  ansible.builtin.meta: flush_handlers
+
+- name: Run PostfixAdmin health check
+  ansible.builtin.import_tasks: health.yml
+  when: postfixadmin_healthcheck_enabled | bool

@@ -1,0 +1,12 @@
+---
+- name: Ensure PHP-FPM service is enabled and running
+  ansible.builtin.service:
+    name: "{{ postfixadmin_php_fpm_service }}"
+    state: started
+    enabled: true
+
+- name: Ensure nginx service is enabled and running
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true

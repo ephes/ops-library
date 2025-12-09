@@ -1,0 +1,230 @@
+---
+# Migrate data from old mail_* tables to PostfixAdmin schema
+# This task file is only included when postfixadmin_migrate_schema is true
+
+- name: Check if old mail_domains table exists
+  community.postgresql.postgresql_query:
+    db: "{{ postfixadmin_db_name }}"
+    login_host: "{{ postfixadmin_db_host }}"
+    login_user: "{{ postfixadmin_db_user }}"
+    login_password: "{{ postfixadmin_db_password }}"
+    query: |
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables
+        WHERE table_name = 'mail_domains'
+      ) AS exists
+  register: old_schema_check
+
+- name: Set migration needed fact
+  ansible.builtin.set_fact:
+    postfixadmin_migration_needed: "{{ old_schema_check.query_result[0].exists | bool }}"
+
+- name: Check if domain table already has real data (excluding ALL pseudo-domain)
+  community.postgresql.postgresql_query:
+    db: "{{ postfixadmin_db_name }}"
+    login_host: "{{ postfixadmin_db_host }}"
+    login_user: "{{ postfixadmin_db_user }}"
+    login_password: "{{ postfixadmin_db_password }}"
+    query: SELECT COUNT(*) AS count FROM domain WHERE domain != 'ALL'
+  register: domain_count_check
+  when: postfixadmin_migration_needed
+
+- name: Skip migration if PostfixAdmin tables already have real data
+  ansible.builtin.set_fact:
+    postfixadmin_migration_needed: false
+  when:
+    - postfixadmin_migration_needed
+    - domain_count_check.query_result[0].count | int > 0
+
+- name: Migration block
+  when: postfixadmin_migration_needed
+  block:
+    - name: Create backup before migration
+      ansible.builtin.include_tasks: migrate_backup.yml
+      when: postfixadmin_migration_backup | bool
+
+    - name: Migrate domains from mail_domains to domain
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: |
+          INSERT INTO domain (domain, description, aliases, mailboxes, maxquota, quota, transport, backupmx, active, created, modified)
+          SELECT
+              name AS domain,
+              '' AS description,
+              0 AS aliases,
+              0 AS mailboxes,
+              0 AS maxquota,
+              0 AS quota,
+              'virtual' AS transport,
+              0 AS backupmx,
+              CASE WHEN active THEN '1' ELSE '0' END AS active,
+              created_at AS created,
+              created_at AS modified
+          FROM mail_domains
+          ON CONFLICT (domain) DO NOTHING
+
+    - name: Migrate mailboxes from mail_users to mailbox
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: |
+          INSERT INTO mailbox (username, password, name, maildir, quota, local_part, domain, active, created, modified)
+          SELECT
+              u.localpart || '@' || d.name AS username,
+              u.password,
+              '' AS name,
+              d.name || '/' || u.localpart || '/' AS maildir,
+              0 AS quota,
+              u.localpart AS local_part,
+              d.name AS domain,
+              CASE WHEN u.active THEN '1' ELSE '0' END AS active,
+              u.created_at AS created,
+              u.created_at AS modified
+          FROM mail_users u
+          JOIN mail_domains d ON u.domain_id = d.id
+          ON CONFLICT (username) DO NOTHING
+
+    - name: Migrate aliases from mail_aliases to alias
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: |
+          INSERT INTO alias (address, goto, domain, active, created, modified)
+          SELECT
+              CASE
+                  WHEN a.source_localpart = '*' THEN '@' || d.name
+                  ELSE a.source_localpart || '@' || d.name
+              END AS address,
+              a.destination AS goto,
+              d.name AS domain,
+              CASE WHEN a.active THEN '1' ELSE '0' END AS active,
+              a.created_at AS created,
+              a.created_at AS modified
+          FROM mail_aliases a
+          JOIN mail_domains d ON a.source_domain_id = d.id
+          ON CONFLICT (address) DO NOTHING
+
+    - name: Migrate domain aliases from mail_domain_aliases to alias_domain
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: |
+          INSERT INTO alias_domain (alias_domain, target_domain, active, created, modified)
+          SELECT
+              sd.name AS alias_domain,
+              dd.name AS target_domain,
+              CASE WHEN da.active THEN '1' ELSE '0' END AS active,
+              da.created_at AS created,
+              da.created_at AS modified
+          FROM mail_domain_aliases da
+          JOIN mail_domains sd ON da.source_domain_id = sd.id
+          JOIN mail_domains dd ON da.dest_domain_id = dd.id
+          ON CONFLICT (alias_domain) DO NOTHING
+
+    - name: Create default mailbox aliases in alias table
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: |
+          INSERT INTO alias (address, goto, domain, active, created, modified)
+          SELECT
+              username AS address,
+              username AS goto,
+              domain,
+              active,
+              created,
+              modified
+          FROM mailbox
+          WHERE NOT EXISTS (
+              SELECT 1 FROM alias WHERE alias.address = mailbox.username
+          )
+          ON CONFLICT (address) DO NOTHING
+
+    - name: Display migration summary
+      ansible.builtin.debug:
+        msg: |
+          ========================================================================
+          SCHEMA MIGRATION COMPLETED
+          ========================================================================
+          Data has been migrated from mail_* tables to PostfixAdmin schema.
+
+          IMPORTANT: You must update mail_backend_deploy configuration:
+            mail_backend_schema_mode: "postfixadmin"
+
+          Without this change, Postfix and Dovecot will continue querying the
+          old mail_* tables and mail delivery/authentication will fail!
+
+          Next steps:
+          1. Verify data in PostfixAdmin UI
+          2. Update mail_backend_schema_mode to "postfixadmin"
+          3. Re-run mail_backend_deploy
+          4. Test mail flow (send/receive)
+          5. Only then consider dropping old tables
+          ========================================================================
+
+- name: Drop old tables block
+  when:
+    - postfixadmin_migration_drop_old_tables | bool
+    - postfixadmin_migration_needed | default(false)
+  block:
+    - name: Require schema mode confirmation before dropping tables
+      ansible.builtin.assert:
+        that:
+          - mail_backend_schema_mode is defined
+          - mail_backend_schema_mode == 'postfixadmin'
+        fail_msg: |
+          REFUSING TO DROP OLD TABLES: mail_backend_schema_mode must be defined and set to 'postfixadmin'.
+          Dropping the old mail_* tables while Postfix/Dovecot still query them will break mail!
+          First: set mail_backend_schema_mode: "postfixadmin" and re-run mail_backend_deploy.
+
+    - name: Drop old mail_domain_aliases table
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: "DROP TABLE IF EXISTS mail_domain_aliases CASCADE"
+
+    - name: Drop old mail_aliases table
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: "DROP TABLE IF EXISTS mail_aliases CASCADE"
+
+    - name: Drop old mail_users table
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: "DROP TABLE IF EXISTS mail_users CASCADE"
+
+    - name: Drop old mail_domains table
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: "DROP TABLE IF EXISTS mail_domains CASCADE"
+
+    - name: Confirm old tables dropped
+      ansible.builtin.debug:
+        msg: "Old mail_* tables have been dropped. Ensure mail_backend is configured for postfixadmin schema mode."
+
+- name: Skip migration message
+  ansible.builtin.debug:
+    msg: "Migration skipped - old schema not found or PostfixAdmin tables already contain data"
+  when: not postfixadmin_migration_needed

@@ -1,0 +1,21 @@
+---
+dependencies:
+  - role: local.ops_library.postfixadmin_shared
+
+galaxy_info:
+  author: Jochen Wersdoerfer
+  description: Backup PostfixAdmin configuration and admin tables
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+  galaxy_tags:
+    - mail
+    - postfixadmin
+    - backup
+
+collections:
+  - community.postgresql

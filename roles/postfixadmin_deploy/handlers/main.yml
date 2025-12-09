@@ -1,0 +1,18 @@
+---
+- name: restart php-fpm
+  ansible.builtin.service:
+    name: "{{ postfixadmin_php_fpm_service }}"
+    state: restarted
+  when: not ansible_check_mode
+
+- name: reload nginx
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
+  when: not ansible_check_mode
+
+- name: reload traefik
+  ansible.builtin.service:
+    name: traefik
+    state: restarted
+  when: not ansible_check_mode

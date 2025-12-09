@@ -1,0 +1,6 @@
+---
+- name: restart php-fpm
+  ansible.builtin.service:
+    name: "{{ postfixadmin_php_fpm_service }}"
+    state: restarted
+  when: not ansible_check_mode

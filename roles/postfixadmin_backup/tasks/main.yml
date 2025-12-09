@@ -1,0 +1,121 @@
+---
+# postfixadmin_backup - Backup PostfixAdmin configuration and admin tables
+#
+# Note: Core mail tables (domain, mailbox, alias, alias_domain) are backed up
+# by mail_backup role. This role only backs up PostfixAdmin-specific data.
+
+- name: Set backup timestamp
+  ansible.builtin.set_fact:
+    postfixadmin_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+- name: Create backup directory
+  ansible.builtin.file:
+    path: "{{ postfixadmin_backup_path }}/{{ postfixadmin_backup_timestamp }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Backup PostfixAdmin config.local.php
+  ansible.builtin.copy:
+    src: "{{ postfixadmin_install_path }}/config.local.php"
+    dest: "{{ postfixadmin_backup_path }}/{{ postfixadmin_backup_timestamp }}/config.local.php"
+    remote_src: true
+    mode: "0600"
+  failed_when: false
+
+- name: Backup templates_c directory
+  ansible.builtin.command:
+    cmd: >
+      tar -czf "{{ postfixadmin_backup_path }}/{{ postfixadmin_backup_timestamp }}/templates_c.tar.gz"
+      -C "{{ postfixadmin_install_path }}" templates_c
+  when: postfixadmin_backup_include_templates_c | bool
+  failed_when: false
+  changed_when: true
+
+- name: Backup PostfixAdmin admin table
+  community.postgresql.postgresql_query:
+    db: "{{ postfixadmin_db_name }}"
+    login_host: "{{ postfixadmin_db_host }}"
+    login_user: "{{ postfixadmin_db_user }}"
+    login_password: "{{ postfixadmin_db_password }}"
+    query: "SELECT * FROM admin"
+  register: admin_backup
+
+- name: Write admin table backup
+  ansible.builtin.copy:
+    content: "{{ admin_backup.query_result | to_nice_json }}"
+    dest: "{{ postfixadmin_backup_path }}/{{ postfixadmin_backup_timestamp }}/admin.json"
+    mode: "0600"
+
+- name: Backup PostfixAdmin domain_admins table
+  community.postgresql.postgresql_query:
+    db: "{{ postfixadmin_db_name }}"
+    login_host: "{{ postfixadmin_db_host }}"
+    login_user: "{{ postfixadmin_db_user }}"
+    login_password: "{{ postfixadmin_db_password }}"
+    query: "SELECT * FROM domain_admins"
+  register: domain_admins_backup
+  failed_when: false
+
+- name: Write domain_admins table backup
+  ansible.builtin.copy:
+    content: "{{ domain_admins_backup.query_result | default([]) | to_nice_json }}"
+    dest: "{{ postfixadmin_backup_path }}/{{ postfixadmin_backup_timestamp }}/domain_admins.json"
+    mode: "0600"
+  when: domain_admins_backup.query_result is defined
+
+- name: Backup PostfixAdmin log table
+  community.postgresql.postgresql_query:
+    db: "{{ postfixadmin_db_name }}"
+    login_host: "{{ postfixadmin_db_host }}"
+    login_user: "{{ postfixadmin_db_user }}"
+    login_password: "{{ postfixadmin_db_password }}"
+    query: "SELECT * FROM log ORDER BY timestamp DESC LIMIT 10000"
+  register: log_backup
+  failed_when: false
+
+- name: Write log table backup
+  ansible.builtin.copy:
+    content: "{{ log_backup.query_result | default([]) | to_nice_json }}"
+    dest: "{{ postfixadmin_backup_path }}/{{ postfixadmin_backup_timestamp }}/log.json"
+    mode: "0600"
+  when: log_backup.query_result is defined
+
+- name: Create backup manifest
+  ansible.builtin.copy:
+    content: |
+      ---
+      backup_type: postfixadmin
+      timestamp: {{ postfixadmin_backup_timestamp }}
+      created_at: {{ ansible_date_time.iso8601 }}
+      hostname: {{ inventory_hostname }}
+      postfixadmin_version: {{ postfixadmin_version }}
+      contents:
+        - config.local.php
+        - admin.json
+        - domain_admins.json
+        - log.json
+      {% if postfixadmin_backup_include_templates_c %}
+        - templates_c.tar.gz
+      {% endif %}
+    dest: "{{ postfixadmin_backup_path }}/{{ postfixadmin_backup_timestamp }}/manifest.yml"
+    mode: "0644"
+
+- name: Clean up old backups
+  ansible.builtin.find:
+    paths: "{{ postfixadmin_backup_path }}"
+    file_type: directory
+    age: "{{ postfixadmin_backup_retention_days }}d"
+  register: old_backups
+
+- name: Remove old backup directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ old_backups.files }}"
+  when: old_backups.files | length > 0
+
+- name: Report backup location
+  ansible.builtin.debug:
+    msg: "PostfixAdmin backup created at {{ postfixadmin_backup_path }}/{{ postfixadmin_backup_timestamp }}"

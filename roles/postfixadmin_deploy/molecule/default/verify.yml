@@ -1,0 +1,185 @@
+---
+- name: Verify PostfixAdmin deployment
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Ensure Ansible remote tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+
+  vars:
+    postfixadmin_listen_port: 8082
+
+  tasks:
+    - name: Verify PostfixAdmin installation directory exists
+      ansible.builtin.stat:
+        path: /opt/postfixadmin
+      register: postfixadmin_install_dir
+
+    - name: Assert installation directory exists
+      ansible.builtin.assert:
+        that:
+          - postfixadmin_install_dir.stat.exists
+          - postfixadmin_install_dir.stat.isdir
+        fail_msg: "PostfixAdmin installation directory missing"
+
+    - name: Verify public directory exists
+      ansible.builtin.stat:
+        path: /opt/postfixadmin/public/index.php
+      register: postfixadmin_index
+
+    - name: Assert public index.php exists
+      ansible.builtin.assert:
+        that:
+          - postfixadmin_index.stat.exists
+        fail_msg: "PostfixAdmin public/index.php missing"
+
+    - name: Verify config.local.php exists
+      ansible.builtin.stat:
+        path: /opt/postfixadmin/config.local.php
+      register: postfixadmin_config
+
+    - name: Assert config.local.php exists
+      ansible.builtin.assert:
+        that:
+          - postfixadmin_config.stat.exists
+        fail_msg: "PostfixAdmin config.local.php missing"
+
+    - name: Verify templates_c directory is writable
+      ansible.builtin.stat:
+        path: /opt/postfixadmin/templates_c
+      register: postfixadmin_templates_c
+
+    - name: Assert templates_c exists and has correct owner
+      ansible.builtin.assert:
+        that:
+          - postfixadmin_templates_c.stat.exists
+          - postfixadmin_templates_c.stat.isdir
+        fail_msg: "PostfixAdmin templates_c directory missing or not a directory"
+
+    - name: Verify nginx site configuration exists
+      ansible.builtin.stat:
+        path: /etc/nginx/sites-available/postfixadmin
+      register: postfixadmin_nginx_site
+
+    - name: Assert nginx site exists
+      ansible.builtin.assert:
+        that:
+          - postfixadmin_nginx_site.stat.exists
+        fail_msg: "nginx site for PostfixAdmin missing"
+
+    - name: Verify nginx site is enabled
+      ansible.builtin.stat:
+        path: /etc/nginx/sites-enabled/postfixadmin
+      register: postfixadmin_nginx_enabled
+
+    - name: Assert nginx site is enabled
+      ansible.builtin.assert:
+        that:
+          - postfixadmin_nginx_enabled.stat.exists
+          - postfixadmin_nginx_enabled.stat.islnk
+        fail_msg: "nginx site for PostfixAdmin not enabled"
+
+    - name: Find PHP-FPM pool file
+      ansible.builtin.find:
+        paths: "/etc/php"
+        patterns: "postfixadmin.conf"
+        recurse: true
+        file_type: file
+      register: postfixadmin_php_pool_find
+
+    - name: Assert PHP-FPM pool exists
+      ansible.builtin.assert:
+        that:
+          - postfixadmin_php_pool_find.matched > 0
+        fail_msg: "PHP-FPM pool for PostfixAdmin not found"
+
+    - name: Check PostfixAdmin HTTP endpoint
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ postfixadmin_listen_port }}/"
+        status_code:
+          - 200
+          - 302
+          - 303
+        return_content: false
+        follow_redirects: none
+        validate_certs: false
+      register: postfixadmin_http
+      retries: 5
+      delay: 2
+      until: postfixadmin_http is succeeded
+
+    - name: Assert HTTP endpoint is accessible
+      ansible.builtin.assert:
+        that:
+          - postfixadmin_http.status in [200, 302, 303]
+        fail_msg: "PostfixAdmin HTTP endpoint not accessible"
+
+    - name: Verify setup.php is removed
+      ansible.builtin.stat:
+        path: /opt/postfixadmin/public/setup.php
+      register: postfixadmin_setup_php
+
+    - name: Assert setup.php is removed
+      ansible.builtin.assert:
+        that:
+          - not postfixadmin_setup_php.stat.exists
+        fail_msg: "setup.php should be removed after deployment"
+
+    - name: Verify setup complete marker exists
+      ansible.builtin.stat:
+        path: /opt/postfixadmin/.setup_complete
+      register: postfixadmin_setup_marker
+
+    - name: Assert setup complete marker exists
+      ansible.builtin.assert:
+        that:
+          - postfixadmin_setup_marker.stat.exists
+        fail_msg: "Setup complete marker missing"
+
+    - name: Check PostfixAdmin database tables exist
+      become: true
+      become_user: postgres
+      community.postgresql.postgresql_query:
+        db: mail
+        query: |
+          SELECT table_name FROM information_schema.tables
+          WHERE table_schema = 'public'
+          AND table_name IN ('admin', 'domain', 'mailbox', 'alias')
+      register: postfixadmin_tables
+
+    - name: Assert core tables exist
+      ansible.builtin.assert:
+        that:
+          - postfixadmin_tables.query_result | length >= 4
+        fail_msg: "PostfixAdmin database tables missing"
+
+    - name: Verify admin account was created
+      become: true
+      become_user: postgres
+      community.postgresql.postgresql_query:
+        db: mail
+        query: "SELECT username FROM admin WHERE username = 'admin@example.test'"
+      register: admin_check
+
+    - name: Assert admin account exists
+      ansible.builtin.assert:
+        that:
+          - admin_check.query_result | length == 1
+        fail_msg: "Admin account was not created"
+
+    - name: Display verification summary
+      ansible.builtin.debug:
+        msg: |
+          PostfixAdmin verification completed successfully:
+          - Installation directory: OK
+          - Configuration file: OK
+          - nginx site: OK
+          - PHP-FPM pool: OK
+          - HTTP endpoint: OK
+          - Database tables: OK
+          - Admin account: OK
+          - setup.php removed: OK

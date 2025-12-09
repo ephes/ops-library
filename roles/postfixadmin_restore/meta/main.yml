@@ -1,0 +1,21 @@
+---
+dependencies:
+  - role: local.ops_library.postfixadmin_shared
+
+galaxy_info:
+  author: Jochen Wersdoerfer
+  description: Restore PostfixAdmin configuration and admin tables from backup
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+  galaxy_tags:
+    - mail
+    - postfixadmin
+    - restore
+
+collections:
+  - community.postgresql

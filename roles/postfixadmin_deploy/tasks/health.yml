@@ -1,0 +1,17 @@
+---
+- name: Wait for PostfixAdmin to respond
+  ansible.builtin.uri:
+    url: "{{ postfixadmin_healthcheck_url }}"
+    method: GET
+    status_code: [200, 302, 303]
+    timeout: "{{ postfixadmin_healthcheck_timeout }}"
+  register: health_result
+  retries: "{{ postfixadmin_healthcheck_retries }}"
+  delay: 2
+  until: health_result.status in [200, 302, 303]
+  when: not ansible_check_mode
+
+- name: Report PostfixAdmin health status
+  ansible.builtin.debug:
+    msg: "PostfixAdmin is responding at {{ postfixadmin_healthcheck_url }}"
+  when: not ansible_check_mode

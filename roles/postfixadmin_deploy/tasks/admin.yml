@@ -1,0 +1,79 @@
+---
+# Create or update the PostfixAdmin superadmin account
+#
+# PostfixAdmin requires superadmins to have an entry in domain_admins with
+# domain='ALL'. This pseudo-domain must exist in the domain table first
+# (as a foreign key target).
+
+- name: Ensure ALL pseudo-domain exists for superadmin mapping
+  community.postgresql.postgresql_query:
+    db: "{{ postfixadmin_db_name }}"
+    login_host: "{{ postfixadmin_db_host }}"
+    login_user: "{{ postfixadmin_db_user }}"
+    login_password: "{{ postfixadmin_db_password }}"
+    query: |
+      INSERT INTO domain (domain, description, aliases, mailboxes, transport, backupmx, active)
+      VALUES ('ALL', 'Superadmin pseudo-domain', 0, 0, '', '0', '1')
+      ON CONFLICT (domain) DO NOTHING
+  register: all_domain_insert
+  changed_when: all_domain_insert.rowcount | default(0) > 0
+
+- name: Check if superadmin exists
+  community.postgresql.postgresql_query:
+    db: "{{ postfixadmin_db_name }}"
+    login_host: "{{ postfixadmin_db_host }}"
+    login_user: "{{ postfixadmin_db_user }}"
+    login_password: "{{ postfixadmin_db_password }}"
+    query: "SELECT username FROM admin WHERE username = %(username)s"
+    named_args:
+      username: "{{ postfixadmin_admin_email }}"
+  register: admin_check
+
+- name: Create superadmin account
+  community.postgresql.postgresql_query:
+    db: "{{ postfixadmin_db_name }}"
+    login_host: "{{ postfixadmin_db_host }}"
+    login_user: "{{ postfixadmin_db_user }}"
+    login_password: "{{ postfixadmin_db_password }}"
+    query: |
+      INSERT INTO admin (username, password, superadmin, active, created, modified)
+      VALUES (%(username)s, %(password)s, '1', '1', NOW(), NOW())
+    named_args:
+      username: "{{ postfixadmin_admin_email }}"
+      password: "{{ postfixadmin_admin_password_hash }}"
+  when: admin_check.query_result | length == 0
+
+- name: Update superadmin password if changed
+  community.postgresql.postgresql_query:
+    db: "{{ postfixadmin_db_name }}"
+    login_host: "{{ postfixadmin_db_host }}"
+    login_user: "{{ postfixadmin_db_user }}"
+    login_password: "{{ postfixadmin_db_password }}"
+    query: |
+      UPDATE admin
+      SET password = %(password)s, superadmin = '1', active = '1', modified = NOW()
+      WHERE username = %(username)s AND password != %(password)s
+    named_args:
+      username: "{{ postfixadmin_admin_email }}"
+      password: "{{ postfixadmin_admin_password_hash }}"
+  when: admin_check.query_result | length > 0
+  register: admin_update
+  changed_when: admin_update.rowcount | default(0) > 0
+
+- name: Ensure superadmin has ALL domain mapping
+  community.postgresql.postgresql_query:
+    db: "{{ postfixadmin_db_name }}"
+    login_host: "{{ postfixadmin_db_host }}"
+    login_user: "{{ postfixadmin_db_user }}"
+    login_password: "{{ postfixadmin_db_password }}"
+    query: |
+      INSERT INTO domain_admins (username, domain, active)
+      SELECT %(username)s, 'ALL', '1'
+      WHERE NOT EXISTS (
+        SELECT 1 FROM domain_admins
+        WHERE username = %(username)s AND domain = 'ALL'
+      )
+    named_args:
+      username: "{{ postfixadmin_admin_email }}"
+  register: domain_admin_insert
+  changed_when: domain_admin_insert.rowcount | default(0) > 0

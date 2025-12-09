@@ -1,0 +1,8 @@
+---
+# postfixadmin_shared - Placeholder main task file
+# This role only provides defaults; no tasks executed
+- name: PostfixAdmin shared role loaded
+  ansible.builtin.debug:
+    msg: "PostfixAdmin shared defaults loaded"
+  tags:
+    - always

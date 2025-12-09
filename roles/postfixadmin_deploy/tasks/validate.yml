@@ -1,0 +1,39 @@
+---
+- name: Validate required secrets are set
+  ansible.builtin.assert:
+    that:
+      - postfixadmin_db_password != "CHANGEME"
+      - postfixadmin_db_password | length > 0
+    fail_msg: "postfixadmin_db_password must be set (from secrets)"
+    quiet: true
+
+- name: Validate setup password hash is set
+  ansible.builtin.assert:
+    that:
+      - postfixadmin_setup_password_hash != "CHANGEME"
+      - postfixadmin_setup_password_hash | length > 0
+    fail_msg: "postfixadmin_setup_password_hash must be set (generate with: php -r \"echo password_hash('...', PASSWORD_DEFAULT);\")"
+    quiet: true
+
+- name: Validate admin password hash is set
+  ansible.builtin.assert:
+    that:
+      - postfixadmin_admin_password_hash != "CHANGEME"
+      - postfixadmin_admin_password_hash | length > 0
+    fail_msg: "postfixadmin_admin_password_hash must be set (generate with: doveadm pw -s SHA512-CRYPT)"
+    quiet: true
+
+- name: Validate admin email format
+  ansible.builtin.assert:
+    that:
+      - "'@' in postfixadmin_admin_email"
+    fail_msg: "postfixadmin_admin_email must be a valid email address"
+    quiet: true
+
+- name: Validate listen port is valid
+  ansible.builtin.assert:
+    that:
+      - postfixadmin_listen_port | int > 0
+      - postfixadmin_listen_port | int < 65536
+    fail_msg: "postfixadmin_listen_port must be a valid port number"
+    quiet: true

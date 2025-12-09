@@ -1,0 +1,85 @@
+---
+- name: Verify PostfixAdmin removal
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Ensure Ansible remote tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+
+  tasks:
+    - name: Check application directory is removed
+      ansible.builtin.stat:
+        path: /opt/postfixadmin
+      register: app_dir
+
+    - name: Assert application directory is removed
+      ansible.builtin.assert:
+        that:
+          - not app_dir.stat.exists
+        fail_msg: "PostfixAdmin application directory still exists"
+
+    - name: Check nginx site is removed
+      ansible.builtin.stat:
+        path: /etc/nginx/sites-available/postfixadmin
+      register: nginx_site
+
+    - name: Assert nginx site is removed
+      ansible.builtin.assert:
+        that:
+          - not nginx_site.stat.exists
+        fail_msg: "nginx site configuration still exists"
+
+    - name: Check nginx enabled link is removed
+      ansible.builtin.stat:
+        path: /etc/nginx/sites-enabled/postfixadmin
+      register: nginx_enabled
+
+    - name: Assert nginx enabled link is removed
+      ansible.builtin.assert:
+        that:
+          - not nginx_enabled.stat.exists
+        fail_msg: "nginx enabled symlink still exists"
+
+    - name: Find PHP-FPM pool file
+      ansible.builtin.find:
+        paths: "/etc/php"
+        patterns: "postfixadmin.conf"
+        recurse: true
+        file_type: file
+      register: php_pool_find
+
+    - name: Assert PHP-FPM pool is removed
+      ansible.builtin.assert:
+        that:
+          - php_pool_find.matched == 0
+        fail_msg: "PHP-FPM pool still exists"
+
+    - name: Verify mail tables still exist (safe removal keeps them)
+      become: true
+      become_user: postgres
+      community.postgresql.postgresql_query:
+        db: mail
+        query: |
+          SELECT table_name FROM information_schema.tables
+          WHERE table_schema = 'public'
+          AND table_name IN ('domain', 'mailbox', 'alias')
+      register: mail_tables
+
+    - name: Assert mail tables still exist
+      ansible.builtin.assert:
+        that:
+          - mail_tables.query_result | length >= 3
+        fail_msg: "Mail tables should still exist after safe removal"
+
+    - name: Display verification summary
+      ansible.builtin.debug:
+        msg: |
+          PostfixAdmin removal verification completed successfully:
+          - Application directory removed: OK
+          - nginx site removed: OK
+          - PHP-FPM pool removed: OK
+          - Mail tables preserved: OK ({{ mail_tables.query_result | length }} tables)

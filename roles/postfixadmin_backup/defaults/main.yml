@@ -1,0 +1,7 @@
+---
+# postfixadmin_backup - Role-specific defaults
+#
+# Most defaults are inherited from postfixadmin_shared
+
+# Backup settings
+postfixadmin_backup_include_templates_c: false  # Usually regenerated, not needed

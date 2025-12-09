@@ -1,0 +1,11 @@
+---
+# Run PostfixAdmin's upgrade.php to create/update the database schema
+# This is idempotent - it checks existing tables/columns before making changes
+
+- name: Run PostfixAdmin schema setup (upgrade.php)
+  ansible.builtin.command:
+    cmd: php public/upgrade.php
+    chdir: "{{ postfixadmin_install_path }}"
+  register: postfixadmin_schema_result
+  changed_when: "'Database is up to date' not in postfixadmin_schema_result.stdout"
+  failed_when: postfixadmin_schema_result.rc != 0

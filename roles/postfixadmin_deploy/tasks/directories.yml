@@ -1,0 +1,16 @@
+---
+- name: Ensure PostfixAdmin install directory exists
+  ansible.builtin.file:
+    path: "{{ postfixadmin_install_path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure templates_c directory exists with www-data ownership
+  ansible.builtin.file:
+    path: "{{ postfixadmin_templates_c_path }}"
+    state: directory
+    owner: "{{ postfixadmin_web_user }}"
+    group: "{{ postfixadmin_web_group }}"
+    mode: "0755"

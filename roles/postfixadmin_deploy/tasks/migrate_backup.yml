@@ -1,0 +1,80 @@
+---
+# Backup old schema tables before migration
+
+- name: Create migration backup directory
+  ansible.builtin.file:
+    path: "{{ postfixadmin_backup_path }}/migration"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Set migration backup timestamp
+  ansible.builtin.set_fact:
+    postfixadmin_migration_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+- name: Backup old mail_domains table
+  community.postgresql.postgresql_query:
+    db: "{{ postfixadmin_db_name }}"
+    login_host: "{{ postfixadmin_db_host }}"
+    login_user: "{{ postfixadmin_db_user }}"
+    login_password: "{{ postfixadmin_db_password }}"
+    query: "SELECT * FROM mail_domains"
+  register: mail_domains_backup
+
+- name: Write mail_domains backup
+  ansible.builtin.copy:
+    content: "{{ mail_domains_backup.query_result | default([]) | to_nice_json }}"
+    dest: "{{ postfixadmin_backup_path }}/migration/mail_domains_{{ postfixadmin_migration_timestamp }}.json"
+    mode: "0600"
+
+- name: Backup old mail_users table
+  community.postgresql.postgresql_query:
+    db: "{{ postfixadmin_db_name }}"
+    login_host: "{{ postfixadmin_db_host }}"
+    login_user: "{{ postfixadmin_db_user }}"
+    login_password: "{{ postfixadmin_db_password }}"
+    query: "SELECT * FROM mail_users"
+  register: mail_users_backup
+
+- name: Write mail_users backup
+  ansible.builtin.copy:
+    content: "{{ mail_users_backup.query_result | default([]) | to_nice_json }}"
+    dest: "{{ postfixadmin_backup_path }}/migration/mail_users_{{ postfixadmin_migration_timestamp }}.json"
+    mode: "0600"
+
+- name: Backup old mail_aliases table
+  community.postgresql.postgresql_query:
+    db: "{{ postfixadmin_db_name }}"
+    login_host: "{{ postfixadmin_db_host }}"
+    login_user: "{{ postfixadmin_db_user }}"
+    login_password: "{{ postfixadmin_db_password }}"
+    query: "SELECT * FROM mail_aliases"
+  register: mail_aliases_backup
+
+- name: Write mail_aliases backup
+  ansible.builtin.copy:
+    content: "{{ mail_aliases_backup.query_result | default([]) | to_nice_json }}"
+    dest: "{{ postfixadmin_backup_path }}/migration/mail_aliases_{{ postfixadmin_migration_timestamp }}.json"
+    mode: "0600"
+
+- name: Backup old mail_domain_aliases table
+  community.postgresql.postgresql_query:
+    db: "{{ postfixadmin_db_name }}"
+    login_host: "{{ postfixadmin_db_host }}"
+    login_user: "{{ postfixadmin_db_user }}"
+    login_password: "{{ postfixadmin_db_password }}"
+    query: "SELECT * FROM mail_domain_aliases"
+  register: mail_domain_aliases_backup
+  failed_when: false
+
+- name: Write mail_domain_aliases backup
+  ansible.builtin.copy:
+    content: "{{ mail_domain_aliases_backup.query_result | default([]) | to_nice_json }}"
+    dest: "{{ postfixadmin_backup_path }}/migration/mail_domain_aliases_{{ postfixadmin_migration_timestamp }}.json"
+    mode: "0600"
+  when: mail_domain_aliases_backup.query_result is defined
+
+- name: Log migration backup location
+  ansible.builtin.debug:
+    msg: "Migration backup created at {{ postfixadmin_backup_path }}/migration/*_{{ postfixadmin_migration_timestamp }}.json"

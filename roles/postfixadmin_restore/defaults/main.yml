@@ -1,0 +1,12 @@
+---
+# postfixadmin_restore - Role-specific defaults
+#
+# Most defaults are inherited from postfixadmin_shared
+
+# Required: Backup timestamp to restore from (e.g., "20251208T120000")
+# postfixadmin_restore_timestamp: ""
+
+# What to restore
+postfixadmin_restore_config: true
+postfixadmin_restore_admin_tables: true
+postfixadmin_restore_templates_c: false

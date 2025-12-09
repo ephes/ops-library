@@ -1,0 +1,103 @@
+---
+- name: Verify PostfixAdmin backup
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Ensure Ansible remote tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+
+  vars:
+    postfixadmin_backup_path: "/tmp/postfixadmin-backups"
+
+  tasks:
+    - name: Find backup directories
+      ansible.builtin.find:
+        paths: "{{ postfixadmin_backup_path }}"
+        file_type: directory
+      register: backup_dirs
+
+    - name: Assert backup directory was created
+      ansible.builtin.assert:
+        that:
+          - backup_dirs.matched > 0
+        fail_msg: "No backup directory found in {{ postfixadmin_backup_path }}"
+
+    - name: Get latest backup directory
+      ansible.builtin.set_fact:
+        latest_backup: "{{ (backup_dirs.files | sort(attribute='mtime'))[-1].path }}"
+
+    - name: Verify manifest exists
+      ansible.builtin.stat:
+        path: "{{ latest_backup }}/manifest.yml"
+      register: manifest_stat
+
+    - name: Assert manifest exists
+      ansible.builtin.assert:
+        that:
+          - manifest_stat.stat.exists
+        fail_msg: "Backup manifest missing"
+
+    - name: Verify config backup exists
+      ansible.builtin.stat:
+        path: "{{ latest_backup }}/config.local.php"
+      register: config_backup_stat
+
+    - name: Assert config backup exists
+      ansible.builtin.assert:
+        that:
+          - config_backup_stat.stat.exists
+        fail_msg: "Config backup missing"
+
+    - name: Verify admin table backup exists
+      ansible.builtin.stat:
+        path: "{{ latest_backup }}/admin.json"
+      register: admin_backup_stat
+
+    - name: Assert admin backup exists
+      ansible.builtin.assert:
+        that:
+          - admin_backup_stat.stat.exists
+        fail_msg: "Admin table backup missing"
+
+    - name: Read admin backup content
+      ansible.builtin.slurp:
+        src: "{{ latest_backup }}/admin.json"
+      register: admin_content
+
+    - name: Parse admin backup
+      ansible.builtin.set_fact:
+        admin_data: "{{ admin_content.content | b64decode | from_json }}"
+
+    - name: Assert admin backup has data
+      ansible.builtin.assert:
+        that:
+          - admin_data | length > 0
+        fail_msg: "Admin backup is empty"
+
+    - name: Read manifest content
+      ansible.builtin.slurp:
+        src: "{{ latest_backup }}/manifest.yml"
+      register: manifest_content
+
+    - name: Parse manifest
+      ansible.builtin.set_fact:
+        manifest: "{{ manifest_content.content | b64decode | from_yaml }}"
+
+    - name: Assert manifest has correct type
+      ansible.builtin.assert:
+        that:
+          - manifest.backup_type == 'postfixadmin'
+        fail_msg: "Manifest has incorrect backup type"
+
+    - name: Display verification summary
+      ansible.builtin.debug:
+        msg: |
+          PostfixAdmin backup verification completed successfully:
+          - Backup directory: {{ latest_backup }}
+          - Manifest: OK
+          - Config backup: OK
+          - Admin table backup: OK ({{ admin_data | length }} entries)

@@ -1,0 +1,76 @@
+---
+- name: Check if PostfixAdmin is already installed
+  ansible.builtin.stat:
+    path: "{{ postfixadmin_install_path }}/public/index.php"
+  register: postfixadmin_installed
+
+- name: Check installed PostfixAdmin version
+  ansible.builtin.slurp:
+    src: "{{ postfixadmin_install_path }}/.installed_version"
+  register: postfixadmin_version_file
+  when: postfixadmin_installed.stat.exists
+  failed_when: false
+
+- name: Set installed version fact
+  ansible.builtin.set_fact:
+    postfixadmin_installed_version: >-
+      {{ (postfixadmin_version_file.content | default('') | b64decode | trim)
+         if postfixadmin_version_file is defined and postfixadmin_version_file.content is defined
+         else 'none' }}
+
+- name: Download PostfixAdmin
+  ansible.builtin.get_url:
+    url: "{{ postfixadmin_download_url }}"
+    dest: "/tmp/postfixadmin-{{ postfixadmin_version }}.tar.gz"
+    timeout: "{{ postfixadmin_download_timeout }}"
+    mode: "0644"
+  when: >
+    not postfixadmin_installed.stat.exists or
+    postfixadmin_installed_version != postfixadmin_version
+
+- name: Extract PostfixAdmin archive
+  ansible.builtin.unarchive:
+    src: "/tmp/postfixadmin-{{ postfixadmin_version }}.tar.gz"
+    dest: "{{ postfixadmin_install_path }}"
+    remote_src: true
+    extra_opts:
+      - --strip-components=1
+    owner: root
+    group: root
+  when: >
+    not postfixadmin_installed.stat.exists or
+    postfixadmin_installed_version != postfixadmin_version
+
+- name: Set ownership on PostfixAdmin files
+  ansible.builtin.file:
+    path: "{{ postfixadmin_install_path }}"
+    owner: root
+    group: root
+    recurse: true
+  when: >
+    not postfixadmin_installed.stat.exists or
+    postfixadmin_installed_version != postfixadmin_version
+
+- name: Create version marker file
+  ansible.builtin.copy:
+    content: "{{ postfixadmin_version }}"
+    dest: "{{ postfixadmin_install_path }}/.installed_version"
+    owner: root
+    group: root
+    mode: "0644"
+  when: >
+    not postfixadmin_installed.stat.exists or
+    postfixadmin_installed_version != postfixadmin_version
+
+- name: Ensure templates_c is writable by web server
+  ansible.builtin.file:
+    path: "{{ postfixadmin_templates_c_path }}"
+    owner: "{{ postfixadmin_web_user }}"
+    group: "{{ postfixadmin_web_group }}"
+    mode: "0755"
+    state: directory
+
+- name: Clean up downloaded archive
+  ansible.builtin.file:
+    path: "/tmp/postfixadmin-{{ postfixadmin_version }}.tar.gz"
+    state: absent

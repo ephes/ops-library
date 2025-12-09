@@ -1,0 +1,17 @@
+---
+- name: Ensure Traefik dynamic config directory exists
+  ansible.builtin.file:
+    path: "{{ postfixadmin_traefik_config_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy Traefik configuration for PostfixAdmin
+  ansible.builtin.template:
+    src: traefik-postfixadmin.yml.j2
+    dest: "{{ postfixadmin_traefik_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload traefik

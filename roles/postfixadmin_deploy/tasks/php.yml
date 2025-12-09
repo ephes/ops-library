@@ -1,0 +1,15 @@
+---
+- name: Set PHP FPM service and socket facts
+  ansible.builtin.set_fact:
+    postfixadmin_php_fpm_service: "php{{ postfixadmin_php_version_effective }}-fpm"
+    postfixadmin_php_fpm_pool_path: "/etc/php/{{ postfixadmin_php_version_effective }}/fpm/pool.d/postfixadmin.conf"
+    postfixadmin_php_fpm_socket: "/run/php/php{{ postfixadmin_php_version_effective }}-fpm-postfixadmin.sock"
+
+- name: Render PHP-FPM pool for PostfixAdmin
+  ansible.builtin.template:
+    src: php-fpm.conf.j2
+    dest: "{{ postfixadmin_php_fpm_pool_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart php-fpm

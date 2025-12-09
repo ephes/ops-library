@@ -1,0 +1,44 @@
+---
+- name: Verify PostfixAdmin restore
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Ensure Ansible remote tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+
+  tasks:
+    - name: Verify admin account was restored
+      become: true
+      become_user: postgres
+      community.postgresql.postgresql_query:
+        db: mail
+        query: "SELECT username FROM admin WHERE username = 'admin@example.test'"
+      register: admin_check
+
+    - name: Assert admin account was restored
+      ansible.builtin.assert:
+        that:
+          - admin_check.query_result | length == 1
+        fail_msg: "Admin account was not restored"
+
+    - name: Verify config file exists
+      ansible.builtin.stat:
+        path: /opt/postfixadmin/config.local.php
+      register: config_stat
+
+    - name: Assert config file exists
+      ansible.builtin.assert:
+        that:
+          - config_stat.stat.exists
+        fail_msg: "Config file missing after restore"
+
+    - name: Display verification summary
+      ansible.builtin.debug:
+        msg: |
+          PostfixAdmin restore verification completed successfully:
+          - Admin account restored: OK
+          - Config file: OK

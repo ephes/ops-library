@@ -1,0 +1,18 @@
+---
+# postfixadmin_deploy - Role-specific defaults
+#
+# Most defaults are inherited from postfixadmin_shared
+# This file contains deploy-specific settings
+
+# Whether to run the schema migration from old mail_* tables
+postfixadmin_migrate_schema: false
+
+# Backup existing data before migration (recommended)
+postfixadmin_migration_backup: true
+
+# Whether to drop old tables after successful migration
+# Set to true only after verifying mail flow works with new schema
+postfixadmin_migration_drop_old_tables: false
+
+# Whether to remove setup.php after initial configuration
+postfixadmin_remove_setup_php: true

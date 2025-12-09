@@ -1,0 +1,22 @@
+---
+dependencies:
+  - role: local.ops_library.postfixadmin_shared
+
+galaxy_info:
+  author: Jochen Wersdoerfer
+  description: Deploy PostfixAdmin web UI for mail server administration
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+  galaxy_tags:
+    - mail
+    - postfixadmin
+    - webui
+    - php
+
+collections:
+  - community.postgresql

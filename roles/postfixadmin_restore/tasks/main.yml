@@ -1,0 +1,184 @@
+---
+# postfixadmin_restore - Restore PostfixAdmin configuration and admin tables
+
+- name: Detect installed PHP version
+  ansible.builtin.command: php -r 'printf("%s.%s", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);'
+  register: postfixadmin_php_version_detect
+  changed_when: false
+  failed_when: false
+
+- name: Validate PHP version detection
+  ansible.builtin.assert:
+    that:
+      - postfixadmin_php_version | length > 0 or (postfixadmin_php_version_detect.rc == 0 and postfixadmin_php_version_detect.stdout | length > 0)
+    fail_msg: |
+      PHP version detection failed and postfixadmin_php_version is not set.
+      Either install PHP or set postfixadmin_php_version explicitly (e.g., "8.2").
+    quiet: true
+
+- name: Set PHP-FPM service name
+  ansible.builtin.set_fact:
+    postfixadmin_php_version_effective: >-
+      {{ postfixadmin_php_version if postfixadmin_php_version | length > 0 else postfixadmin_php_version_detect.stdout }}
+    postfixadmin_php_fpm_service: "php{{ postfixadmin_php_version if postfixadmin_php_version | length > 0 else postfixadmin_php_version_detect.stdout }}-fpm"
+
+- name: Validate restore timestamp is provided
+  ansible.builtin.assert:
+    that:
+      - postfixadmin_restore_timestamp is defined
+      - postfixadmin_restore_timestamp | length > 0
+    fail_msg: "postfixadmin_restore_timestamp must be set to a valid backup timestamp"
+    quiet: true
+
+- name: Set backup directory path
+  ansible.builtin.set_fact:
+    postfixadmin_restore_dir: "{{ postfixadmin_backup_path }}/{{ postfixadmin_restore_timestamp }}"
+
+- name: Check backup directory exists
+  ansible.builtin.stat:
+    path: "{{ postfixadmin_restore_dir }}"
+  register: backup_dir_stat
+
+- name: Fail if backup directory does not exist
+  ansible.builtin.fail:
+    msg: "Backup directory {{ postfixadmin_restore_dir }} does not exist"
+  when: not backup_dir_stat.stat.exists
+
+- name: Read backup manifest
+  ansible.builtin.slurp:
+    src: "{{ postfixadmin_restore_dir }}/manifest.yml"
+  register: manifest_content
+
+- name: Parse manifest
+  ansible.builtin.set_fact:
+    restore_manifest: "{{ manifest_content.content | b64decode | from_yaml }}"
+
+- name: Display restore information
+  ansible.builtin.debug:
+    msg: |
+      Restoring PostfixAdmin backup:
+        Timestamp: {{ restore_manifest.timestamp }}
+        Created: {{ restore_manifest.created_at }}
+        Contents: {{ restore_manifest.contents | join(', ') }}
+
+- name: Restore configuration block
+  when: postfixadmin_restore_config | bool
+  block:
+    - name: Check if config backup exists
+      ansible.builtin.stat:
+        path: "{{ postfixadmin_restore_dir }}/config.local.php"
+      register: config_backup_stat
+
+    - name: Restore config.local.php
+      ansible.builtin.copy:
+        src: "{{ postfixadmin_restore_dir }}/config.local.php"
+        dest: "{{ postfixadmin_install_path }}/config.local.php"
+        remote_src: true
+        owner: root
+        group: "{{ postfixadmin_web_group }}"
+        mode: "0640"
+      when: config_backup_stat.stat.exists
+      notify: restart php-fpm
+
+- name: Restore templates_c block
+  when:
+    - postfixadmin_restore_templates_c | bool
+    - "'templates_c.tar.gz' in restore_manifest.contents"
+  block:
+    - name: Check if templates_c backup exists
+      ansible.builtin.stat:
+        path: "{{ postfixadmin_restore_dir }}/templates_c.tar.gz"
+      register: templates_backup_stat
+
+    - name: Extract templates_c archive
+      ansible.builtin.command:
+        cmd: >
+          tar -xzf "{{ postfixadmin_restore_dir }}/templates_c.tar.gz"
+          -C "{{ postfixadmin_install_path }}"
+      when: templates_backup_stat.stat.exists
+      changed_when: true
+
+    - name: Fix templates_c ownership
+      ansible.builtin.file:
+        path: "{{ postfixadmin_templates_c_path }}"
+        owner: "{{ postfixadmin_web_user }}"
+        group: "{{ postfixadmin_web_group }}"
+        recurse: true
+      when: templates_backup_stat.stat.exists
+
+- name: Restore admin tables block
+  when: postfixadmin_restore_admin_tables | bool
+  block:
+    - name: Read admin table backup
+      ansible.builtin.slurp:
+        src: "{{ postfixadmin_restore_dir }}/admin.json"
+      register: admin_backup_content
+      failed_when: false
+
+    - name: Parse admin backup data
+      ansible.builtin.set_fact:
+        admin_backup_data: "{{ admin_backup_content.content | b64decode | from_json }}"
+      when: admin_backup_content.content is defined
+
+    - name: Restore admin accounts
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: |
+          INSERT INTO admin (username, password, superadmin, active, created, modified)
+          VALUES (%(username)s, %(password)s, %(superadmin)s, %(active)s, NOW(), NOW())
+          ON CONFLICT (username) DO UPDATE SET
+            password = EXCLUDED.password,
+            superadmin = EXCLUDED.superadmin,
+            active = EXCLUDED.active,
+            modified = NOW()
+        named_args:
+          username: "{{ item.username }}"
+          password: "{{ item.password }}"
+          superadmin: "{{ item.superadmin }}"
+          active: "{{ item.active }}"
+      loop: "{{ admin_backup_data }}"
+      when:
+        - admin_backup_data is defined
+        - admin_backup_data | length > 0
+
+    - name: Read domain_admins table backup
+      ansible.builtin.slurp:
+        src: "{{ postfixadmin_restore_dir }}/domain_admins.json"
+      register: domain_admins_content
+      failed_when: false
+
+    - name: Parse domain_admins backup data
+      ansible.builtin.set_fact:
+        domain_admins_data_raw: "{{ domain_admins_content.content | b64decode | from_json }}"
+      when: domain_admins_content.content is defined
+
+    - name: Convert domain_admins data to list
+      ansible.builtin.set_fact:
+        domain_admins_data: "{{ domain_admins_data_raw if domain_admins_data_raw is sequence and domain_admins_data_raw is not mapping else [] }}"
+      when: domain_admins_data_raw is defined
+
+    - name: Restore domain_admins entries
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: |
+          INSERT INTO domain_admins (username, domain, active, created)
+          VALUES (%(username)s, %(domain)s, %(active)s, NOW())
+          ON CONFLICT (username, domain) DO NOTHING
+        named_args:
+          username: "{{ item.username }}"
+          domain: "{{ item.domain }}"
+          active: "{{ item.active }}"
+      loop: "{{ domain_admins_data | default([]) }}"
+      when:
+        - domain_admins_data is defined
+        - domain_admins_data | length > 0
+
+- name: Report restore completion
+  ansible.builtin.debug:
+    msg: "PostfixAdmin restore completed from {{ postfixadmin_restore_dir }}"
