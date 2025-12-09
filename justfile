@@ -238,6 +238,43 @@ molecule-test-all:
 
     echo "All molecule tests passed!"
 
+# Run molecule tests for all PostfixAdmin roles
+molecule-test-postfixadmin:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    eval "$(just _export-docker-host)"
+    export ANSIBLE_ALLOW_BROKEN_CONDITIONALS=1
+
+    postfixadmin_roles=(
+        "postfixadmin_deploy"
+        "postfixadmin_backup"
+        "postfixadmin_restore"
+        "postfixadmin_remove"
+    )
+
+    failed_roles=()
+    for role in "${postfixadmin_roles[@]}"; do
+        if [[ -d "roles/$role/molecule" ]]; then
+            echo "========================================"
+            echo "Testing role: $role"
+            echo "========================================"
+            if ! (cd "roles/$role" && uv run molecule test); then
+                failed_roles+=("$role")
+            fi
+        else
+            echo "Skipping $role (no molecule tests)"
+        fi
+    done
+
+    if [[ ${#failed_roles[@]} -gt 0 ]]; then
+        echo "========================================"
+        echo "FAILED ROLES: ${failed_roles[*]}"
+        echo "========================================"
+        exit 1
+    fi
+
+    echo "All PostfixAdmin molecule tests passed!"
+
 # Help
 help:
     @echo "ops-library Testing Commands"
@@ -251,6 +288,15 @@ help:
     @echo "Specific testing:"
     @echo "  just test-role fastdeploy_register_service"
     @echo "  just lint-role test_dummy"
+    @echo ""
+    @echo "Molecule (Docker-based integration tests):"
+    @echo "  just molecule-test <role>         # Full test cycle for a role"
+    @echo "  just molecule-converge <role>     # Apply without destroy (debugging)"
+    @echo "  just molecule-verify <role>       # Run verification tests only"
+    @echo "  just molecule-destroy <role>      # Destroy test containers"
+    @echo "  just molecule-login <role>        # SSH into running container"
+    @echo "  just molecule-test-all            # Test all roles with molecule"
+    @echo "  just molecule-test-postfixadmin   # Test all PostfixAdmin roles"
     @echo ""
     @echo "Documentation:"
     @echo "  just docs-build     # Build documentation"
