@@ -14,10 +14,28 @@
   when: remote_luks_unlock_ip_mode == "static"
 
 - name: Read current GRUB_CMDLINE_LINUX_DEFAULT
-  ansible.builtin.shell: |
-    grep '^GRUB_CMDLINE_LINUX_DEFAULT=' /etc/default/grub | \
-    awk -F= '{print $2}' | \
-    sed 's/^["'\'']\(.*\)["'\'']$/\1/' || echo ""
+  ansible.builtin.command: |
+    python3 - <<'PY'
+    import shlex
+    value = ""
+    try:
+        with open("/etc/default/grub", "r", encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith("GRUB_CMDLINE_LINUX_DEFAULT="):
+                    raw = line.split("=", 1)[1].strip()
+                    try:
+                        value = " ".join(shlex.split(raw, posix=True))
+                    except ValueError:
+                        # Fall back to minimal stripping if the line is malformed
+                        value = raw.strip()
+                        if value and value[0] in ("'", '"') and value[-1] == value[0]:
+                            value = value[1:-1]
+                    break
+    except FileNotFoundError:
+        pass
+
+    print(value)
+    PY
   register: _current_grub_cmdline
   changed_when: false
   failed_when: false
@@ -34,7 +52,11 @@
 
 - name: Parse current cmdline and remove existing ip= parameter
   ansible.builtin.set_fact:
-    _current_tokens: "{{ _current_grub_cmdline.stdout.split() }}"
+    _current_tokens: "{{ (_current_grub_cmdline.stdout | default('')).split() }}"
+
+- name: Normalize current GRUB cmdline
+  ansible.builtin.set_fact:
+    _normalized_current_grub_cmdline: "{{ _current_tokens | join(' ') }}"
 
 - name: Remove existing ip= parameter from tokens (scoped to our interface)
   ansible.builtin.set_fact:
@@ -83,7 +105,7 @@
     line: 'GRUB_CMDLINE_LINUX_DEFAULT="{{ _new_grub_cmdline }}"'
     backup: yes
   notify: update grub
-  when: _current_grub_cmdline.stdout != _new_grub_cmdline
+  when: _normalized_current_grub_cmdline != _new_grub_cmdline
 
 - name: Read current DEVICE from initramfs.conf
   ansible.builtin.shell: |
