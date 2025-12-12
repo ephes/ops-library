@@ -1,0 +1,10 @@
+---
+- name: Reload systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Restart sanoid timer
+  ansible.builtin.systemd_service:
+    name: "{{ sanoid_timer_name }}"
+    state: restarted
+  when: sanoid_manage_systemd

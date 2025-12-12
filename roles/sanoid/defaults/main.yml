@@ -1,0 +1,49 @@
+---
+# sanoid - Default Variables
+#
+# This role installs and configures sanoid for ZFS snapshot management.
+
+# Enable/disable all changes (useful for dry runs)
+sanoid_enabled: true
+
+# Packages
+sanoid_packages:
+  - sanoid
+
+# Configuration
+sanoid_config_path: "/etc/sanoid/sanoid.conf"
+sanoid_config_owner: "root"
+sanoid_config_group: "root"
+sanoid_config_mode: "0644"
+
+# Sanoid templates (REQUIRED)
+# Example:
+# sanoid_templates:
+#   precious:
+#     autosnap: "yes"
+#     autoprune: "yes"
+#     hourly: 24
+#     daily: 30
+#     weekly: 8
+#     monthly: 12
+sanoid_templates: {}
+
+# Dataset policies (REQUIRED)
+# Example:
+# sanoid_datasets:
+#   - name: tank/photos
+#     template: precious
+sanoid_datasets: []
+
+# Systemd
+sanoid_manage_systemd: true
+sanoid_service_name: "sanoid-ops-library.service"
+sanoid_timer_name: "sanoid-ops-library.timer"
+
+# Default schedule: hourly (with jitter)
+sanoid_on_calendar: "hourly"
+sanoid_randomized_delay_sec: "15m"
+
+# Sanoid command
+sanoid_executable: "/usr/sbin/sanoid"
+sanoid_cron_args: "--cron"

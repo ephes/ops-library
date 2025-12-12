@@ -1,0 +1,21 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    sanoid_templates:
+      precious:
+        autosnap: "yes"
+        autoprune: "yes"
+        hourly: 24
+        daily: 30
+        weekly: 8
+        monthly: 12
+    sanoid_datasets:
+      - name: tank/photos
+        template: precious
+
+  roles:
+    - role: sanoid

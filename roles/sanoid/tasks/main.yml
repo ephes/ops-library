@@ -1,0 +1,19 @@
+---
+# sanoid - Main Task Orchestration
+
+- name: Validate required variables
+  ansible.builtin.include_tasks: validate.yml
+
+- name: Install sanoid packages
+  ansible.builtin.include_tasks: packages.yml
+  when: sanoid_enabled
+
+- name: Configure sanoid
+  ansible.builtin.include_tasks: config.yml
+  when: sanoid_enabled
+
+- name: Configure sanoid systemd timer
+  ansible.builtin.include_tasks: systemd.yml
+  when:
+    - sanoid_enabled
+    - sanoid_manage_systemd

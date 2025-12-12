@@ -1,0 +1,24 @@
+---
+# Validate sanoid configuration.
+
+- name: Assert sane configuration
+  ansible.builtin.assert:
+    that:
+      - sanoid_templates is mapping
+      - sanoid_templates | length > 0
+      - sanoid_datasets is iterable
+      - sanoid_datasets | length > 0
+    fail_msg: >-
+      sanoid configuration missing. Define sanoid_templates and sanoid_datasets.
+
+- name: Assert datasets reference existing templates
+  ansible.builtin.assert:
+    that:
+      - item.template is defined
+      - item.template in (sanoid_templates.keys() | list)
+      - item.name is defined
+      - item.name | length > 0
+    fail_msg: "Invalid sanoid_datasets entry: {{ item }}"
+  loop: "{{ sanoid_datasets }}"
+  loop_control:
+    label: "{{ item.name | default('UNSET') }}"

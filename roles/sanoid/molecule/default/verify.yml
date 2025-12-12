@@ -1,0 +1,33 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Verify | sanoid.conf exists
+      ansible.builtin.stat:
+        path: /etc/sanoid/sanoid.conf
+      register: sanoid_conf
+
+    - name: Verify | assert sanoid.conf present
+      ansible.builtin.assert:
+        that:
+          - sanoid_conf.stat.exists
+          - sanoid_conf.stat.size > 0
+
+    - name: Verify | timer is enabled
+      ansible.builtin.command: systemctl is-enabled sanoid-ops-library.timer
+      register: timer_enabled
+      changed_when: false
+
+    - name: Verify | timer is active
+      ansible.builtin.command: systemctl is-active sanoid-ops-library.timer
+      register: timer_active
+      changed_when: false
+
+    - name: Verify | assert timer enabled and active
+      ansible.builtin.assert:
+        that:
+          - timer_enabled.stdout | trim == "enabled"
+          - timer_active.stdout | trim == "active"
