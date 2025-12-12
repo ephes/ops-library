@@ -1,12 +1,297 @@
 ---
-- name: Guard until mail_monitoring implementation is ready
-  ansible.builtin.fail:
-    msg: >
-      mail_monitoring role is scaffold-only. Enable after implementation:
-      add tasks to provision monitor mailbox + Sieve cleanup per PRD (ws-mail-meta-e15).
-  when: mail_monitoring_enabled | bool
-
-- name: Note skipped execution
+- name: Skip mail_monitoring when disabled
   ansible.builtin.debug:
     msg: "mail_monitoring role skipped (mail_monitoring_enabled=false)."
   when: not mail_monitoring_enabled | bool
+
+- name: Setup monitor mailbox and cleanup
+  when: mail_monitoring_enabled | bool
+  block:
+    - name: Validate mail_monitoring_password
+      ansible.builtin.assert:
+        that:
+          - mail_monitoring_password is defined
+          - mail_monitoring_password != "CHANGE_ME"
+          - (mail_monitoring_password | trim) | length > 0
+        fail_msg: |
+          mail_monitoring_password is missing or still set to CHANGE_ME.
+          Set it via ops-control vault before enabling the role.
+      no_log: true
+
+    - name: Validate mail_monitoring_address format
+      ansible.builtin.assert:
+        that:
+          - mail_monitoring_address is defined
+          - mail_monitoring_address | length > 0
+          - mail_monitoring_address.split('@') | length == 2
+          - mail_monitoring_address.split('@')[0] | length > 0
+          - mail_monitoring_address.split('@')[1] | length > 0
+        fail_msg: "Invalid mail_monitoring_address: {{ mail_monitoring_address | default('UNSET') }}"
+
+    - name: Set parsed mailbox facts
+      ansible.builtin.set_fact:
+        _mail_monitoring_localpart: "{{ mail_monitoring_address.split('@')[0] | lower }}"
+        _mail_monitoring_domain: "{{ mail_monitoring_address.split('@')[1] | lower }}"
+        _mail_monitoring_maildir_rel: "{{ (mail_monitoring_address.split('@')[1] | lower) ~ '/' ~ (mail_monitoring_address.split('@')[0] | lower) ~ '/' }}"
+        _mail_monitoring_maildir_path: "{{ mail_monitoring_vmail_path ~ '/' ~ (mail_monitoring_address.split('@')[1] | lower) ~ '/' ~ (mail_monitoring_address.split('@')[0] | lower) }}"
+
+    - name: Validate required commands exist (doveadm)
+      ansible.builtin.command:
+        argv:
+          - which
+          - doveadm
+      register: _mail_monitoring_doveadm_check
+      changed_when: false
+
+    - name: Validate domain exists (postfixadmin)
+      community.postgresql.postgresql_query:
+        db: "{{ mail_monitoring_postgres_database }}"
+        query: "SELECT domain FROM domain WHERE LOWER(domain) = LOWER(%(domain)s)"
+        named_args:
+          domain: "{{ _mail_monitoring_domain }}"
+      register: _mail_monitoring_domain_row
+      become: true
+      become_user: postgres
+      when: mail_monitoring_schema_mode == "postfixadmin"
+
+    - name: Fail if domain is missing (postfixadmin)
+      ansible.builtin.fail:
+        msg: "Domain '{{ _mail_monitoring_domain }}' not found in PostfixAdmin domain table"
+      when:
+        - mail_monitoring_schema_mode == "postfixadmin"
+        - _mail_monitoring_domain_row.query_result | length == 0
+
+    - name: Validate domain exists (legacy)
+      community.postgresql.postgresql_query:
+        db: "{{ mail_monitoring_postgres_database }}"
+        query: "SELECT id FROM mail_domains WHERE LOWER(name) = LOWER(%(domain)s)"
+        named_args:
+          domain: "{{ _mail_monitoring_domain }}"
+      register: _mail_monitoring_legacy_domain_row
+      become: true
+      become_user: postgres
+      when: mail_monitoring_schema_mode == "legacy"
+
+    - name: Fail if domain is missing (legacy)
+      ansible.builtin.fail:
+        msg: "Domain '{{ _mail_monitoring_domain }}' not found in legacy mail_domains table"
+      when:
+        - mail_monitoring_schema_mode == "legacy"
+        - _mail_monitoring_legacy_domain_row.query_result | length == 0
+
+    - name: Generate password hash for monitor mailbox
+      ansible.builtin.command:
+        argv:
+          - doveadm
+          - pw
+          - -s
+          - SHA512-CRYPT
+          - -p
+          - "{{ mail_monitoring_password }}"
+      register: _mail_monitoring_password_hash
+      changed_when: false
+      no_log: true
+
+    - name: Query existing mailbox (postfixadmin)
+      community.postgresql.postgresql_query:
+        db: "{{ mail_monitoring_postgres_database }}"
+        query: |
+          SELECT username, password, active, maildir
+          FROM mailbox
+          WHERE LOWER(username) = LOWER(%(username)s)
+        named_args:
+          username: "{{ mail_monitoring_address }}"
+      register: _mail_monitoring_existing_postfixadmin
+      become: true
+      become_user: postgres
+      when: mail_monitoring_schema_mode == "postfixadmin"
+
+    - name: Query existing mailbox (legacy)
+      community.postgresql.postgresql_query:
+        db: "{{ mail_monitoring_postgres_database }}"
+        query: |
+          SELECT id, password, active
+          FROM mail_users
+          WHERE domain_id = %(domain_id)s
+            AND LOWER(localpart) = LOWER(%(localpart)s)
+        named_args:
+          domain_id: "{{ _mail_monitoring_legacy_domain_row.query_result[0].id }}"
+          localpart: "{{ _mail_monitoring_localpart }}"
+      register: _mail_monitoring_existing_legacy
+      become: true
+      become_user: postgres
+      when: mail_monitoring_schema_mode == "legacy"
+
+    - name: Verify existing password (postfixadmin)
+      ansible.builtin.command:
+        argv:
+          - doveadm
+          - pw
+          - -t
+          - "{{ _mail_monitoring_existing_postfixadmin.query_result[0].password }}"
+          - -p
+          - "{{ mail_monitoring_password }}"
+      register: _mail_monitoring_password_verify_postfixadmin
+      changed_when: false
+      failed_when: false
+      no_log: true
+      when:
+        - mail_monitoring_schema_mode == "postfixadmin"
+        - _mail_monitoring_existing_postfixadmin.query_result | length > 0
+
+    - name: Verify existing password (legacy)
+      ansible.builtin.command:
+        argv:
+          - doveadm
+          - pw
+          - -t
+          - "{{ _mail_monitoring_existing_legacy.query_result[0].password }}"
+          - -p
+          - "{{ mail_monitoring_password }}"
+      register: _mail_monitoring_password_verify_legacy
+      changed_when: false
+      failed_when: false
+      no_log: true
+      when:
+        - mail_monitoring_schema_mode == "legacy"
+        - _mail_monitoring_existing_legacy.query_result | length > 0
+
+    - name: Create mailbox row (postfixadmin)
+      community.postgresql.postgresql_query:
+        db: "{{ mail_monitoring_postgres_database }}"
+        query: |
+          INSERT INTO mailbox (username, password, name, maildir, quota, local_part, domain, active, created, modified)
+          VALUES (
+            %(username)s,
+            %(password)s,
+            '',
+            %(maildir)s,
+            0,
+            %(local_part)s,
+            %(domain)s,
+            %(active)s,
+            NOW(),
+            NOW()
+          )
+        named_args:
+          username: "{{ mail_monitoring_address }}"
+          password: "{{ _mail_monitoring_password_hash.stdout }}"
+          maildir: "{{ _mail_monitoring_maildir_rel }}"
+          local_part: "{{ _mail_monitoring_localpart }}"
+          domain: "{{ _mail_monitoring_domain }}"
+          active: "{{ mail_monitoring_active | bool }}"
+      become: true
+      become_user: postgres
+      no_log: true
+      when:
+        - mail_monitoring_schema_mode == "postfixadmin"
+        - _mail_monitoring_existing_postfixadmin.query_result | length == 0
+
+    - name: Update mailbox row if password/active changed (postfixadmin)
+      community.postgresql.postgresql_query:
+        db: "{{ mail_monitoring_postgres_database }}"
+        query: |
+          UPDATE mailbox
+          SET password = %(password)s,
+              active = %(active)s,
+              modified = NOW()
+          WHERE LOWER(username) = LOWER(%(username)s)
+        named_args:
+          username: "{{ mail_monitoring_address }}"
+          password: "{{ _mail_monitoring_password_hash.stdout }}"
+          active: "{{ mail_monitoring_active | bool }}"
+      become: true
+      become_user: postgres
+      no_log: true
+      when:
+        - mail_monitoring_schema_mode == "postfixadmin"
+        - _mail_monitoring_existing_postfixadmin.query_result | length > 0
+        - (_mail_monitoring_password_verify_postfixadmin.rc != 0) or
+          ((_mail_monitoring_existing_postfixadmin.query_result[0].active | bool) != (mail_monitoring_active | bool))
+
+    - name: Create mailbox row (legacy)
+      community.postgresql.postgresql_query:
+        db: "{{ mail_monitoring_postgres_database }}"
+        query: |
+          INSERT INTO mail_users (domain_id, localpart, password, active)
+          VALUES (%(domain_id)s, %(localpart)s, %(password)s, %(active)s)
+        named_args:
+          domain_id: "{{ _mail_monitoring_legacy_domain_row.query_result[0].id }}"
+          localpart: "{{ _mail_monitoring_localpart }}"
+          password: "{{ _mail_monitoring_password_hash.stdout }}"
+          active: "{{ mail_monitoring_active | bool }}"
+      become: true
+      become_user: postgres
+      no_log: true
+      when:
+        - mail_monitoring_schema_mode == "legacy"
+        - _mail_monitoring_existing_legacy.query_result | length == 0
+
+    - name: Update mailbox row if password/active changed (legacy)
+      community.postgresql.postgresql_query:
+        db: "{{ mail_monitoring_postgres_database }}"
+        query: |
+          UPDATE mail_users
+          SET password = %(password)s,
+              active = %(active)s
+          WHERE domain_id = %(domain_id)s
+            AND LOWER(localpart) = LOWER(%(localpart)s)
+        named_args:
+          domain_id: "{{ _mail_monitoring_legacy_domain_row.query_result[0].id }}"
+          localpart: "{{ _mail_monitoring_localpart }}"
+          password: "{{ _mail_monitoring_password_hash.stdout }}"
+          active: "{{ mail_monitoring_active | bool }}"
+      become: true
+      become_user: postgres
+      no_log: true
+      when:
+        - mail_monitoring_schema_mode == "legacy"
+        - _mail_monitoring_existing_legacy.query_result | length > 0
+        - (_mail_monitoring_password_verify_legacy.rc != 0) or
+          (_mail_monitoring_existing_legacy.query_result[0].active != (mail_monitoring_active | bool))
+
+    - name: Create monitor mailbox Maildir structure
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ mail_monitoring_vmail_user }}"
+        group: "{{ mail_monitoring_vmail_group }}"
+        mode: "0700"
+      loop:
+        - "{{ mail_monitoring_vmail_path }}/{{ _mail_monitoring_domain }}"
+        - "{{ _mail_monitoring_maildir_path }}"
+        - "{{ _mail_monitoring_maildir_path }}/cur"
+        - "{{ _mail_monitoring_maildir_path }}/new"
+        - "{{ _mail_monitoring_maildir_path }}/tmp"
+
+    - name: Install cleanup script
+      ansible.builtin.template:
+        src: mail-monitoring-cleanup.sh.j2
+        dest: "{{ mail_monitoring_cleanup_script_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+      when: mail_monitoring_cleanup_enabled | bool
+
+    - name: Install systemd unit files
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "/etc/systemd/system/{{ item.dest }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - { src: "mail-monitoring-cleanup.service.j2", dest: "{{ mail_monitoring_cleanup_service_name }}.service" }
+        - { src: "mail-monitoring-cleanup.timer.j2", dest: "{{ mail_monitoring_cleanup_service_name }}.timer" }
+      when: mail_monitoring_cleanup_enabled | bool
+      notify:
+        - reload systemd
+        - restart mail-monitoring-cleanup timer
+
+    - name: Enable and start cleanup timer
+      ansible.builtin.systemd:
+        name: "{{ mail_monitoring_cleanup_service_name }}.timer"
+        enabled: true
+        state: started
+        daemon_reload: true
+      when: mail_monitoring_cleanup_enabled | bool

@@ -1,8 +1,28 @@
 ---
-# Disable until implementation is completed
 mail_monitoring_enabled: false
 
 # Monitor mailbox settings
 mail_monitoring_address: "monitor@xn--wersdrfer-47a.de"
 mail_monitoring_password: "CHANGE_ME"
-mail_monitoring_sieve_ttl_days: 1
+mail_monitoring_active: true
+
+# How the mail system stores users:
+# - "postfixadmin": PostfixAdmin `mailbox` table (prod default for this workspace)
+# - "legacy": `mail_*` tables (mail_backend_deploy schema.sql)
+mail_monitoring_schema_mode: "{{ mail_backend_schema_mode | default('legacy') }}"
+
+# PostgreSQL database name (local, accessed as system postgres user)
+mail_monitoring_postgres_database: "{{ mail_backend_postgres_database | default('mail') }}"
+
+# vmail storage settings (for creating the mailbox directories)
+mail_monitoring_vmail_path: "{{ mail_backend_vmail_path | default('/mnt/cryptdata/vmail') }}"
+mail_monitoring_vmail_user: "{{ mail_backend_vmail_user | default('vmail') }}"
+mail_monitoring_vmail_group: "{{ mail_backend_vmail_group | default(mail_monitoring_vmail_user) }}"
+
+# Cleanup: expunge old monitoring mail via doveadm to prevent buildup if nyxmon fails
+mail_monitoring_cleanup_enabled: true
+mail_monitoring_cleanup_ttl_days: 1
+mail_monitoring_cleanup_timer_on_calendar: "daily"
+
+mail_monitoring_cleanup_script_path: "/usr/local/bin/mail-monitoring-cleanup.sh"
+mail_monitoring_cleanup_service_name: "mail-monitoring-cleanup"

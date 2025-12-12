@@ -1,0 +1,106 @@
+---
+- name: Prepare test environment (legacy schema)
+  hosts: all
+  become: true
+  gather_facts: false
+
+  pre_tasks:
+    - name: Wait for systemd to be ready
+      ansible.builtin.raw: systemctl is-system-running --wait || true
+      changed_when: false
+
+    - name: Ensure Ansible remote tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+
+    - name: Gather facts
+      ansible.builtin.setup:
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+  tasks:
+    - name: Install PostgreSQL and dependencies
+      ansible.builtin.apt:
+        name:
+          - postgresql
+          - postgresql-contrib
+          - python3-psycopg2
+        state: present
+
+    - name: Start PostgreSQL service
+      ansible.builtin.service:
+        name: postgresql
+        state: started
+        enabled: true
+
+    - name: Create mail database
+      become: true
+      become_user: postgres
+      community.postgresql.postgresql_db:
+        name: mail
+        state: present
+
+    - name: Install Dovecot (for doveadm pw/expunge)
+      ansible.builtin.apt:
+        name: dovecot-core
+        state: present
+
+    - name: Create vmail user and group
+      ansible.builtin.group:
+        name: vmail
+        system: true
+
+    - name: Create vmail user
+      ansible.builtin.user:
+        name: vmail
+        group: vmail
+        system: true
+        create_home: false
+        shell: /usr/sbin/nologin
+
+    - name: Create vmail base directory
+      ansible.builtin.file:
+        path: /tmp/vmail
+        state: directory
+        owner: vmail
+        group: vmail
+        mode: "0755"
+
+    - name: Create legacy schema tables
+      become: true
+      become_user: postgres
+      community.postgresql.postgresql_query:
+        db: mail
+        query: |
+          CREATE TABLE IF NOT EXISTS mail_domains (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS mail_domains_name_ci ON mail_domains (LOWER(name));
+
+          CREATE TABLE IF NOT EXISTS mail_users (
+            id SERIAL PRIMARY KEY,
+            domain_id INTEGER NOT NULL REFERENCES mail_domains(id),
+            localpart TEXT NOT NULL,
+            password TEXT NOT NULL,
+            active BOOLEAN NOT NULL DEFAULT true
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS mail_users_domain_localpart_ci ON mail_users (domain_id, LOWER(localpart));
+
+    - name: Insert legacy domain row
+      become: true
+      become_user: postgres
+      community.postgresql.postgresql_query:
+        db: mail
+        query: |
+          INSERT INTO mail_domains (name)
+          VALUES (%(domain)s)
+          ON CONFLICT (LOWER(name)) DO NOTHING
+        named_args:
+          domain: "example.test"
+

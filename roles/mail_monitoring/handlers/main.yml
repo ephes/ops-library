@@ -1,2 +1,10 @@
 ---
-# Handlers will be added once mailbox provisioning/Sieve deployment are implemented.
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart mail-monitoring-cleanup timer
+  ansible.builtin.systemd:
+    name: "{{ mail_monitoring_cleanup_service_name }}.timer"
+    state: restarted
+  when: mail_monitoring_cleanup_enabled | bool

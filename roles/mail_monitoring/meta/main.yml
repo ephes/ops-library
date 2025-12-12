@@ -1,0 +1,17 @@
+---
+galaxy_info:
+  author: Jochen Wersdoerfer
+  description: Provision monitor mailbox + cleanup for nyxmon mail flow checks
+  license: MIT
+  min_ansible_version: "2.12"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+
+dependencies: []
+

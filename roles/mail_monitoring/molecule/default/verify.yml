@@ -1,0 +1,49 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+
+  vars:
+    _db: mail
+    _user: "monitor@example.test"
+
+  tasks:
+    - name: Verify mailbox row exists (postfixadmin)
+      become_user: postgres
+      community.postgresql.postgresql_query:
+        db: "{{ _db }}"
+        query: |
+          SELECT username, active, maildir
+          FROM mailbox
+          WHERE LOWER(username) = LOWER(%(username)s)
+        named_args:
+          username: "{{ _user }}"
+      register: mailbox_row
+
+    - name: Assert mailbox is present
+      ansible.builtin.assert:
+        that:
+          - mailbox_row.query_result | length == 1
+          - mailbox_row.query_result[0].active | bool
+          - mailbox_row.query_result[0].maildir == 'example.test/monitor/'
+
+    - name: Verify Maildir exists
+      ansible.builtin.stat:
+        path: "/tmp/vmail/example.test/monitor"
+      register: maildir_stat
+
+    - name: Assert Maildir exists
+      ansible.builtin.assert:
+        that:
+          - maildir_stat.stat.exists
+          - maildir_stat.stat.isdir
+
+    - name: Verify cleanup timer is active
+      ansible.builtin.command: systemctl is-active mail-monitoring-cleanup.timer
+      register: cleanup_timer_active
+      changed_when: false
+
+    - name: Assert cleanup timer is active
+      ansible.builtin.assert:
+        that:
+          - cleanup_timer_active.stdout | trim == 'active'

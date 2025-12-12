@@ -1,0 +1,25 @@
+---
+- name: Converge (legacy schema)
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Ensure Ansible remote tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+
+  roles:
+    - role: mail_monitoring
+      vars:
+        mail_monitoring_enabled: true
+        mail_monitoring_schema_mode: "legacy"
+        mail_monitoring_postgres_database: "mail"
+        mail_monitoring_address: "monitor@example.test"
+        mail_monitoring_password: "molecule-monitor-password"
+        mail_monitoring_vmail_path: "/tmp/vmail"
+        mail_monitoring_vmail_user: "vmail"
+        mail_monitoring_vmail_group: "vmail"
+        mail_monitoring_cleanup_ttl_days: 1
+

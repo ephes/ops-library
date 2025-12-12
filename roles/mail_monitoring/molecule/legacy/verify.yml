@@ -1,0 +1,52 @@
+---
+- name: Verify (legacy schema)
+  hosts: all
+  become: true
+
+  vars:
+    _db: mail
+
+  tasks:
+    - name: Query legacy mail user row
+      become_user: postgres
+      community.postgresql.postgresql_query:
+        db: "{{ _db }}"
+        query: |
+          SELECT u.localpart, u.active, d.name AS domain
+          FROM mail_users u
+          JOIN mail_domains d ON d.id = u.domain_id
+          WHERE LOWER(d.name) = LOWER(%(domain)s)
+            AND LOWER(u.localpart) = LOWER(%(localpart)s)
+        named_args:
+          domain: "example.test"
+          localpart: "monitor"
+      register: legacy_user_row
+
+    - name: Assert legacy mail user is present
+      ansible.builtin.assert:
+        that:
+          - legacy_user_row.query_result | length == 1
+          - legacy_user_row.query_result[0].active | bool
+          - legacy_user_row.query_result[0].domain == "example.test"
+
+    - name: Verify Maildir exists
+      ansible.builtin.stat:
+        path: "/tmp/vmail/example.test/monitor"
+      register: maildir_stat
+
+    - name: Assert Maildir exists
+      ansible.builtin.assert:
+        that:
+          - maildir_stat.stat.exists
+          - maildir_stat.stat.isdir
+
+    - name: Verify cleanup timer is active
+      ansible.builtin.command: systemctl is-active mail-monitoring-cleanup.timer
+      register: cleanup_timer_active
+      changed_when: false
+
+    - name: Assert cleanup timer is active
+      ansible.builtin.assert:
+        that:
+          - cleanup_timer_active.stdout | trim == 'active'
+
