@@ -83,6 +83,14 @@
     format: "{{ tailscale_backup_archive_format }}"
   when: tailscale_backup_create_archive | bool
 
+- name: Update latest symlink (remote)
+  ansible.builtin.file:
+    src: "{{ tailscale_backup_archive }}"
+    dest: "{{ tailscale_backup_root }}/{{ tailscale_backup_prefix }}-latest.{{ tailscale_backup_archive_extension }}"
+    state: link
+    force: true
+  when: tailscale_backup_create_archive | bool
+
 - name: Ensure local archive directory exists
   ansible.builtin.file:
     path: "{{ tailscale_backup_local_dir }}"
@@ -98,6 +106,17 @@
     src: "{{ tailscale_backup_archive }}"
     dest: "{{ tailscale_backup_local_dir }}/"
     flat: true
+  run_once: true
+  when: tailscale_backup_fetch_local | bool
+
+- name: Update latest symlink (local)
+  ansible.builtin.file:
+    src: "{{ tailscale_backup_local_dir }}/{{ tailscale_backup_archive | basename }}"
+    dest: "{{ tailscale_backup_local_dir }}/{{ tailscale_backup_prefix }}-latest.{{ tailscale_backup_archive_extension }}"
+    state: link
+    force: true
+  delegate_to: localhost
+  become: false
   run_once: true
   when: tailscale_backup_fetch_local | bool
 

@@ -41,6 +41,21 @@
     msg: "Tailscale restore archive not found: {{ tailscale_restore_selected_archive }}"
   when: not tailscale_restore_selected_stat.stat.exists
 
+- name: Record archive basename
+  ansible.builtin.set_fact:
+    tailscale_restore_selected_basename: "{{ tailscale_restore_selected_archive | basename }}"
+
+- name: Guard against restoring the wrong host's archive
+  ansible.builtin.assert:
+    that:
+      - tailscale_restore_selected_basename.startswith(inventory_hostname ~ '-')
+    fail_msg: "Archive {{ tailscale_restore_selected_basename }} does not match host {{ inventory_hostname }} (prefix check failed)"
+
+- name: Verify archive integrity before extraction
+  ansible.builtin.command:
+    cmd: tar -tzf "{{ tailscale_restore_selected_archive }}"
+  changed_when: false
+
 - name: Reset staging directory
   ansible.builtin.file:
     path: "{{ tailscale_restore_staging_dir }}"
