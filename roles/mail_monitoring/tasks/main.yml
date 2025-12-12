@@ -1,0 +1,12 @@
+---
+- name: Guard until mail_monitoring implementation is ready
+  ansible.builtin.fail:
+    msg: >
+      mail_monitoring role is scaffold-only. Enable after implementation:
+      add tasks to provision monitor mailbox + Sieve cleanup per PRD (ws-mail-meta-e15).
+  when: mail_monitoring_enabled | bool
+
+- name: Note skipped execution
+  ansible.builtin.debug:
+    msg: "mail_monitoring role skipped (mail_monitoring_enabled=false)."
+  when: not mail_monitoring_enabled | bool

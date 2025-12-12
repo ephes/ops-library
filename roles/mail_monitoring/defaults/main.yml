@@ -1,0 +1,8 @@
+---
+# Disable until implementation is completed
+mail_monitoring_enabled: false
+
+# Monitor mailbox settings
+mail_monitoring_address: "monitor@xn--wersdrfer-47a.de"
+mail_monitoring_password: "CHANGE_ME"
+mail_monitoring_sieve_ttl_days: 1
