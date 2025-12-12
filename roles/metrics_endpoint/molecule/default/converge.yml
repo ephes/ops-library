@@ -1,0 +1,28 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Ensure Ansible remote tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+
+    - name: Install test dependencies
+      ansible.builtin.apt:
+        name:
+          - curl
+        state: present
+        update_cache: true
+
+  vars:
+    metrics_endpoint_enabled: true
+    metrics_endpoint_auth_user: nyxmon
+    metrics_endpoint_auth_password: molecule-metrics-password
+    metrics_endpoint_bind: "127.0.0.1"
+    metrics_endpoint_vmail_path: "/"
+
+  roles:
+    - role: metrics_endpoint

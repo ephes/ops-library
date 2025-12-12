@@ -43,18 +43,24 @@
         system: true
         state: present
 
+    - name: Check postfix queue directories exist
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: metrics_endpoint_queue_dirs
+      loop:
+        - "{{ metrics_endpoint_queue_path }}/active"
+        - "{{ metrics_endpoint_queue_path }}/deferred"
+
     - name: Allow metrics user to read postfix queues (ACL)
       ansible.posix.acl:
-        path: "{{ item }}"
+        path: "{{ item.stat.path }}"
         entity: "{{ metrics_endpoint_user }}"
         etype: user
         permissions: rX
         state: present
         recursive: true
-      loop:
-        - "{{ metrics_endpoint_queue_path }}"
-        - "{{ metrics_endpoint_queue_path }}/active"
-        - "{{ metrics_endpoint_queue_path }}/deferred"
+      loop: "{{ metrics_endpoint_queue_dirs.results }}"
+      when: item.stat.exists
 
     - name: Ensure htpasswd directory exists
       ansible.builtin.file:
@@ -82,12 +88,21 @@
         mode: "0755"
       notify: restart metrics-endpoint
 
+    - name: Verify existing htpasswd credentials
+      ansible.builtin.command: "htpasswd -viB {{ metrics_endpoint_htpasswd_path }} {{ metrics_endpoint_auth_user }}"
+      args:
+        stdin: "{{ metrics_endpoint_auth_password }}"
+      register: metrics_endpoint_htpasswd_verify
+      changed_when: false
+      failed_when: false
+
     - name: Generate htpasswd entry
       ansible.builtin.command: "htpasswd -niB {{ metrics_endpoint_auth_user }}"
       args:
         stdin: "{{ metrics_endpoint_auth_password }}"
       register: metrics_endpoint_htpasswd_entry
       changed_when: false
+      when: metrics_endpoint_htpasswd_verify.rc != 0
 
     - name: Write htpasswd file
       ansible.builtin.copy:
@@ -97,6 +112,7 @@
         group: "{{ metrics_endpoint_group }}"
         mode: "0640"
       notify: restart metrics-endpoint
+      when: metrics_endpoint_htpasswd_verify.rc != 0
 
     - name: Create systemd service unit
       ansible.builtin.template:

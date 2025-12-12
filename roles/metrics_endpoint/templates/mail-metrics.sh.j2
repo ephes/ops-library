@@ -14,9 +14,13 @@ root_pct=$(df / --output=pcent | tail -1 | tr -d ' %')
 
 services_json=""
 {% for svc in metrics_endpoint_services %}
+svc_status="$(systemctl is-active {{ svc }} 2>/dev/null || true)"
+if [[ -z "${svc_status}" ]]; then
+  svc_status="unknown"
+fi
 {% if not loop.first %}services_json="${services_json}, "
 {% endif %}
-services_json="${services_json}\"{{ svc }}\": \"$(systemctl is-active {{ svc }} 2>/dev/null || echo unknown)\""
+services_json="${services_json}\"{{ svc }}\": \"${svc_status}\""
 {% endfor %}
 
 cat <<EOF

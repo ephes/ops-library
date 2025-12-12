@@ -1,0 +1,57 @@
+---
+- name: Verify metrics endpoint deployment
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    metrics_endpoint_port: 9100
+    metrics_endpoint_path: "/.well-known/health"
+    metrics_endpoint_auth_user: nyxmon
+    metrics_endpoint_auth_password: molecule-metrics-password
+
+  tasks:
+    - name: Verify | Service is active
+      ansible.builtin.command: systemctl is-active metrics-endpoint
+      register: metrics_endpoint_service_status
+      changed_when: false
+
+    - name: Verify | Assert service running
+      ansible.builtin.assert:
+        that:
+          - metrics_endpoint_service_status.rc == 0
+          - metrics_endpoint_service_status.stdout | trim == "active"
+        fail_msg: "metrics-endpoint service is not running"
+
+    - name: Verify | Endpoint requires auth
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ metrics_endpoint_port }}{{ metrics_endpoint_path }}"
+        method: GET
+        status_code: 401
+
+    - name: Verify | Endpoint returns JSON with valid auth
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ metrics_endpoint_port }}{{ metrics_endpoint_path }}"
+        method: GET
+        url_username: "{{ metrics_endpoint_auth_user }}"
+        url_password: "{{ metrics_endpoint_auth_password }}"
+        force_basic_auth: true
+        return_content: true
+        status_code: 200
+      register: metrics_endpoint_response
+
+    - name: Verify | Parse response as JSON
+      ansible.builtin.set_fact:
+        metrics_endpoint_json: "{{ metrics_endpoint_response.content | from_json }}"
+
+    - name: Verify | Assert response schema
+      ansible.builtin.assert:
+        that:
+          - metrics_endpoint_json.hostname is defined
+          - metrics_endpoint_json.timestamp is defined
+          - metrics_endpoint_json.mail is mapping
+          - metrics_endpoint_json.mail.queue_total is number
+          - metrics_endpoint_json.disk is mapping
+          - metrics_endpoint_json.disk.root_percent is number
+          - metrics_endpoint_json.services is mapping
+        fail_msg: "metrics endpoint JSON response missing expected keys"
