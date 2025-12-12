@@ -25,6 +25,10 @@ samba_share_valid_users: []  # list of usernames allowed
 # Each item: {name, password}. Only missing users are added.
 samba_share_users: []
 
+# Optional: ensure Unix users exist for Samba users we create
+samba_share_manage_system_users: true
+samba_share_system_group: "sambashare"
+
 # Permissions
 samba_share_create_mask: "0660"
 samba_share_directory_mask: "0770"

@@ -1,6 +1,18 @@
 ---
 # Configure Samba users for general shares (idempotent).
-# Does not manage Unix accounts; assumes they exist already.
+
+- name: Ensure Unix users exist for Samba users
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    groups: "{{ samba_share_system_group }}"
+    append: true
+    create_home: false
+    shell: /usr/sbin/nologin
+    state: present
+  loop: "{{ samba_share_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: samba_share_manage_system_users
 
 - name: Check existing Samba users
   ansible.builtin.command:
