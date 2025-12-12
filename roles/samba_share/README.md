@@ -20,6 +20,9 @@ Common options:
 - `samba_share_guest_ok` (bool, default `false`)
 - `samba_share_valid_users` (list, default `[]`)
 - `samba_share_extra_options` (dict, default `{}`)
+- `samba_share_users` (list, default `[]`): Samba users to create (each item: `{name, password}`).
+- `samba_share_manage_system_users` (bool, default `true`): Ensure matching Unix users exist for `samba_share_users`.
+- `samba_share_system_group` (string, default `sambashare`): Unix group for the created users.
 
 ## Example
 

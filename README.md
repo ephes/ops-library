@@ -22,6 +22,15 @@ The table below links each published role to its dedicated documentation. Refer 
 
 | Category | Role | Summary |
 |----------|------|---------|
+| Storage | [`zfs_pool_deploy`](roles/zfs_pool_deploy/README.md) | Create/manage encrypted ZFS pools with safety toggles and boot-time unlock wiring. |
+| Storage | [`zfs_dataset`](roles/zfs_dataset/README.md) | Create/manage ZFS datasets with property support and optional macOS SMB compatibility defaults. |
+| Storage | [`sanoid`](roles/sanoid/README.md) | Configure sanoid snapshot policies and a dedicated systemd timer. |
+| Monitoring | [`smartd`](roles/smartd/README.md) | Configure smartmontools smartd for HDD/NVMe monitoring and scheduled tests. |
+| Monitoring | [`zed`](roles/zed/README.md) | Configure ZFS Event Daemon notifications and optional zpool scrub timers. |
+| Monitoring | [`nyxmon_storage_exporter`](roles/nyxmon_storage_exporter/README.md) | Install `nyxmon-storage-metrics` JSON exporter on hosts (for Nyxmon SSH custom checks). |
+| Infrastructure | [`mail_relay_client`](roles/mail_relay_client/README.md) | Configure a minimal Postfix setup for relaying outbound alert mail via a smarthost. |
+| File sharing | [`samba_timemachine`](roles/samba_timemachine/README.md) | Configure Samba Time Machine share with vfs_fruit and conf.d snippet wiring. |
+| File sharing | [`samba_share`](roles/samba_share/README.md) | Configure generic Samba shares via conf.d snippets and user provisioning. |
 | Infrastructure | [`encrypted_volume_prepare`](roles/encrypted_volume_prepare/README.md) | Prepare and mount a LUKS data volume with UUID checks, keyfile unlock, and boot-time wiring (crypttab/fstab). |
 | Infrastructure | [`traefik_deploy`](roles/traefik_deploy/README.md) | Deploy Traefik reverse proxy with Let's Encrypt (auto-detects platform, version upgrades). |
 | Infrastructure | [`tailscale_deploy`](roles/tailscale_deploy/README.md) | Install Tailscale from the official repo and join tailnet with auth key or manual mode (accept-dns defaults to false). |
