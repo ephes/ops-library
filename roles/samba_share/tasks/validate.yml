@@ -1,0 +1,10 @@
+---
+- name: Validate share name and path
+  ansible.builtin.assert:
+    that:
+      - samba_share_name is defined
+      - samba_share_name | length > 0
+      - samba_share_path is defined
+      - samba_share_path | length > 0
+    fail_msg: "samba_share_name and samba_share_path are required"
+

@@ -1,0 +1,45 @@
+---
+# ZFS Dataset - Default Variables
+#
+# This role creates and manages ZFS datasets with configurable properties.
+# Designed to work with encrypted ZFS pools from zfs_pool_deploy.
+
+# Dataset definition (REQUIRED)
+zfs_dataset_name: ""  # Full dataset path, e.g., "tank/photos"
+
+# Dataset properties
+zfs_dataset_properties: {}
+# Example properties:
+#   recordsize: 1M        # Block size (128K default, 1M for large files)
+#   compression: zstd-3   # Compression algorithm
+#   refquota: 6T          # Reference quota
+#   atime: "off"          # Access time updates
+
+# macOS SMB compatibility mode
+# When enabled, sets properties for proper macOS SMB access:
+#   xattr=sa              - Store extended attributes in system area
+#   acltype=nfsv4         - NFSv4 ACLs for proper macOS permissions (note: lowercase)
+#   casesensitivity=mixed - Case-insensitive but preserving (mount-time only)
+#   atime=off             - Disable access time updates
+zfs_dataset_macos_compat: false
+
+# Standard macOS compatibility properties (applied when macos_compat is true)
+_zfs_dataset_macos_properties:
+  xattr: sa
+  acltype: nfsv4
+  atime: "off"
+
+# Mount options
+zfs_dataset_mountpoint: ""  # Empty = inherit from parent or use default
+zfs_dataset_mounted: true   # Ensure dataset is mounted
+
+# Safety toggles
+zfs_dataset_validate_only: false  # Only validate, don't make changes
+
+# Encryption inheritance
+# Datasets inherit encryption from parent pool by default
+# Set to false to create an unencrypted dataset on an encrypted pool
+zfs_dataset_inherit_encryption: true
+
+# Logging
+zfs_dataset_no_log: false  # Hide sensitive values in Ansible output

@@ -1,0 +1,73 @@
+---
+# Samba Share - Default Variables
+#
+# Generic Samba share role using a snippet in /etc/samba/smb.conf.d.
+
+# =============================================================================
+# Share Configuration (REQUIRED)
+# =============================================================================
+
+# Share name as it appears in Finder/Windows
+samba_share_name: ""
+
+# Filesystem path to export
+samba_share_path: ""
+
+# Share visibility
+samba_share_browseable: true
+
+# Access control
+samba_share_read_only: false
+samba_share_guest_ok: false
+samba_share_valid_users: []  # list of usernames allowed
+
+# Samba users to ensure exist in passdb (optional)
+# Each item: {name, password}. Only missing users are added.
+samba_share_users: []
+
+# Permissions
+samba_share_create_mask: "0660"
+samba_share_directory_mask: "0770"
+samba_share_force_user: ""
+samba_share_force_group: ""
+
+# Optional extra share options (dict of smb.conf keys/values)
+samba_share_extra_options: {}
+
+# =============================================================================
+# Global Samba Settings (only used if smb.conf missing)
+# =============================================================================
+
+samba_share_workgroup: "WORKGROUP"
+samba_share_server_string: "Fractal File Server"
+samba_share_min_protocol: "SMB3"
+samba_share_disable_printing: true
+
+# =============================================================================
+# Packages
+# =============================================================================
+
+samba_share_packages:
+  - samba
+  - samba-vfs-modules
+
+# =============================================================================
+# Service Configuration
+# =============================================================================
+
+samba_share_service_enabled: true
+samba_share_service_state: "started"
+
+# =============================================================================
+# File Paths
+# =============================================================================
+
+samba_share_config_file: "/etc/samba/smb.conf"
+samba_share_snippet_dir: "/etc/samba/smb.conf.d"
+samba_share_snippet_path: "{{ samba_share_snippet_dir }}/{{ samba_share_name }}.conf"
+
+# =============================================================================
+# Logging
+# =============================================================================
+
+samba_share_no_log: false

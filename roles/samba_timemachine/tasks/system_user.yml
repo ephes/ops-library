@@ -1,0 +1,28 @@
+---
+# Create system user and group for Time Machine files
+
+- name: Create Time Machine system group
+  ansible.builtin.group:
+    name: "{{ samba_tm_system_group }}"
+    gid: "{{ samba_tm_system_gid }}"
+    state: present
+    system: true
+
+- name: Create Time Machine system user
+  ansible.builtin.user:
+    name: "{{ samba_tm_system_user }}"
+    uid: "{{ samba_tm_system_uid }}"
+    group: "{{ samba_tm_system_group }}"
+    home: "{{ samba_tm_path }}"
+    shell: /usr/sbin/nologin
+    create_home: false
+    system: true
+    state: present
+
+- name: Set ownership on Time Machine directory
+  ansible.builtin.file:
+    path: "{{ samba_tm_path }}"
+    owner: "{{ samba_tm_system_user }}"
+    group: "{{ samba_tm_system_group }}"
+    mode: "0770"
+    state: directory

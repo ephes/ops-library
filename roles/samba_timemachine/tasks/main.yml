@@ -1,0 +1,22 @@
+---
+# Samba Time Machine - Main Task Orchestration
+#
+# Configures Samba with vfs_fruit for macOS Time Machine backups.
+
+- name: Validate required variables
+  ansible.builtin.include_tasks: validate.yml
+
+- name: Install Samba packages
+  ansible.builtin.include_tasks: packages.yml
+
+- name: Configure system user and group
+  ansible.builtin.include_tasks: system_user.yml
+
+- name: Configure Samba users
+  ansible.builtin.include_tasks: users.yml
+
+- name: Configure Samba
+  ansible.builtin.include_tasks: config.yml
+
+- name: Ensure service is running
+  ansible.builtin.include_tasks: service.yml

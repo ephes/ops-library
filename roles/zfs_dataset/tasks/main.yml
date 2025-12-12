@@ -1,0 +1,15 @@
+---
+# ZFS Dataset - Main Task Orchestration
+#
+# Creates and configures ZFS datasets with proper properties.
+
+- name: Validate required variables
+  ansible.builtin.include_tasks: validate.yml
+
+- name: Create ZFS dataset
+  ansible.builtin.include_tasks: create_dataset.yml
+  when: not zfs_dataset_validate_only
+
+- name: Configure dataset properties
+  ansible.builtin.include_tasks: configure_dataset.yml
+  when: not zfs_dataset_validate_only

@@ -1,0 +1,49 @@
+---
+# ZFS Pool Deploy - Default Variables
+#
+# This role creates and manages ZFS pools with native encryption support.
+# Designed for boot-time auto-unlock via key files on the (LUKS-encrypted) root drive.
+
+# Pool definition (REQUIRED)
+zfs_pool_name: ""
+zfs_pool_vdevs: []
+# Example vdevs:
+#   Single disk: ["/dev/disk/by-id/nvme-..."]
+#   Mirror: ["mirror", "/dev/disk/by-id/ata-...", "/dev/disk/by-id/ata-..."]
+#   RAIDZ1: ["raidz1", "/dev/disk/by-id/...", "/dev/disk/by-id/...", "/dev/disk/by-id/..."]
+
+# Pool properties
+zfs_pool_ashift: 12  # 4K sectors (standard for modern drives)
+zfs_pool_autotrim: false  # Enable for NVMe/SSD, not recommended for HDD
+zfs_pool_properties: {}  # Additional pool properties (key: value)
+zfs_pool_filesystem_properties: {}  # Root filesystem properties
+
+# Encryption configuration (native ZFS encryption)
+zfs_pool_encryption_enabled: true
+zfs_pool_encryption_algorithm: "aes-256-gcm"
+zfs_pool_keyformat: "passphrase"  # passphrase or raw
+zfs_pool_passphrase: ""  # REQUIRED if encryption enabled - from SOPS
+zfs_pool_keylocation_type: "file"  # file or prompt
+zfs_pool_keyfile_path: "/root/.zfs-key-{{ zfs_pool_name }}"
+zfs_pool_keyfile_mode: "0400"
+zfs_pool_keyfile_owner: "root"
+zfs_pool_keyfile_group: "root"
+
+# Boot unlock configuration
+zfs_pool_configure_boot_unlock: true  # Create systemd service for auto-unlock
+zfs_pool_unlock_service_name: "zfs-unlock-{{ zfs_pool_name }}"
+
+# Mount options
+zfs_pool_mountpoint: "/{{ zfs_pool_name }}"  # Root dataset mountpoint
+
+# Safety toggles (CRITICAL - prevent accidental data loss)
+zfs_pool_allow_create: false  # Must be explicitly set to true to create pools
+zfs_pool_validate_only: false  # Only validate, don't make changes
+zfs_pool_force_create: false  # Use -f flag (DANGEROUS - can overwrite existing data)
+
+# Logging
+zfs_pool_no_log: true  # Hide sensitive values in Ansible output
+
+# Packages
+zfs_pool_packages:
+  - zfsutils-linux

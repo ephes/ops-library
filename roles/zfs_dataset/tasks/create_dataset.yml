@@ -1,0 +1,67 @@
+---
+# Create ZFS dataset
+
+- name: Check if dataset already exists
+  ansible.builtin.command:
+    cmd: zfs list {{ zfs_dataset_name }}
+  register: _zfs_dataset_exists
+  changed_when: false
+  failed_when: false
+
+- name: Display dataset status if exists
+  ansible.builtin.debug:
+    msg: "Dataset '{{ zfs_dataset_name }}' already exists, will configure properties"
+  when: _zfs_dataset_exists.rc == 0
+
+# Build properties for dataset creation
+# Note: Some properties can only be set at creation time (e.g., casesensitivity)
+# Strip casesensitivity from user properties - it's handled separately by macos_compat
+- name: Build effective properties
+  ansible.builtin.set_fact:
+    _zfs_dataset_effective_props: >-
+      {{
+        (zfs_dataset_macos_compat | bool | ternary(_zfs_dataset_macos_properties, {}))
+        | combine(zfs_dataset_properties | default({}) | dict2items | rejectattr('key', 'eq', 'casesensitivity') | items2dict)
+      }}
+  when: _zfs_dataset_exists.rc != 0
+
+- name: Build zfs create command
+  ansible.builtin.set_fact:
+    _zfs_dataset_create_cmd: >-
+      zfs create
+      {% if zfs_dataset_mountpoint | length > 0 %}
+      -o mountpoint={{ zfs_dataset_mountpoint }}
+      {% endif %}
+      {% if zfs_dataset_macos_compat %}
+      -o casesensitivity=mixed
+      {% endif %}
+      {% for key, value in _zfs_dataset_effective_props.items() %}
+      -o {{ key }}={{ value }}
+      {% endfor %}
+      {{ zfs_dataset_name }}
+  when: _zfs_dataset_exists.rc != 0
+
+- name: Display zfs create command (for verification)
+  ansible.builtin.debug:
+    msg: "{{ _zfs_dataset_create_cmd }}"
+  when: _zfs_dataset_exists.rc != 0
+
+- name: Create ZFS dataset
+  ansible.builtin.command:
+    cmd: "{{ _zfs_dataset_create_cmd }}"
+  register: _zfs_dataset_create_result
+  when: _zfs_dataset_exists.rc != 0
+
+- name: Verify dataset was created
+  ansible.builtin.command:
+    cmd: zfs list {{ zfs_dataset_name }} -o name,used,avail,refer,mountpoint
+  register: _zfs_dataset_info
+  changed_when: false
+  when: _zfs_dataset_exists.rc != 0
+
+- name: Display new dataset info
+  ansible.builtin.debug:
+    msg: "{{ _zfs_dataset_info.stdout_lines }}"
+  when:
+    - _zfs_dataset_exists.rc != 0
+    - _zfs_dataset_info is defined

@@ -1,0 +1,69 @@
+---
+# Validate required variables before proceeding
+
+- name: Validate pool name is provided
+  ansible.builtin.assert:
+    that:
+      - zfs_pool_name is defined
+      - zfs_pool_name | length > 0
+    fail_msg: "zfs_pool_name is required"
+
+- name: Validate vdevs are provided
+  ansible.builtin.assert:
+    that:
+      - zfs_pool_vdevs is defined
+      - zfs_pool_vdevs | length > 0
+    fail_msg: "zfs_pool_vdevs must contain at least one device specification"
+
+- name: Validate encryption passphrase when encryption enabled
+  ansible.builtin.assert:
+    that:
+      - zfs_pool_passphrase is defined
+      - zfs_pool_passphrase | length > 0
+      - zfs_pool_passphrase != "CHANGEME"
+    fail_msg: |
+      SECURITY ERROR: ZFS encryption passphrase is missing or contains placeholder!
+
+      Set zfs_pool_passphrase via SOPS-encrypted secrets.
+      Never use placeholder values in production.
+  no_log: "{{ zfs_pool_no_log }}"
+  when: zfs_pool_encryption_enabled
+
+- name: Validate allow_create is explicitly set
+  ansible.builtin.assert:
+    that:
+      - zfs_pool_allow_create | bool
+    fail_msg: |
+      SAFETY CHECK: Pool creation not authorized!
+
+      To create pool '{{ zfs_pool_name }}', set:
+        zfs_pool_allow_create: true
+
+      This safeguard prevents accidental pool creation.
+  when: not zfs_pool_validate_only
+
+- name: Check if devices exist
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: _zfs_pool_device_stats
+  loop: "{{ zfs_pool_vdevs | reject('match', '^(mirror|raidz[123]?|spare|log|cache)$') | list }}"
+  failed_when: false
+
+- name: Validate all devices exist
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+    fail_msg: "Device not found: {{ item.item }}"
+  loop: "{{ _zfs_pool_device_stats.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Display validation summary
+  ansible.builtin.debug:
+    msg: |
+      ZFS Pool Configuration:
+        Pool name: {{ zfs_pool_name }}
+        Vdevs: {{ zfs_pool_vdevs | join(', ') }}
+        Encryption: {{ zfs_pool_encryption_enabled }}
+        Autotrim: {{ zfs_pool_autotrim }}
+        Validate only: {{ zfs_pool_validate_only }}

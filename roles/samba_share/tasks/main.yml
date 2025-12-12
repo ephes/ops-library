@@ -1,0 +1,21 @@
+---
+# Samba Share - Main Task Orchestration
+#
+# Installs Samba (if needed) and exposes a generic share via conf.d snippet.
+
+- name: Validate required variables
+  ansible.builtin.include_tasks: validate.yml
+
+- name: Install Samba packages
+  ansible.builtin.include_tasks: packages.yml
+
+- name: Configure Samba users
+  ansible.builtin.include_tasks: users.yml
+  when: samba_share_users | length > 0
+
+- name: Configure Samba share
+  ansible.builtin.include_tasks: config.yml
+
+- name: Ensure services are running
+  ansible.builtin.include_tasks: service.yml
+

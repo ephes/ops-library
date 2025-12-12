@@ -1,0 +1,105 @@
+---
+# Samba Time Machine - Default Variables
+#
+# This role configures Samba with vfs_fruit for macOS Time Machine backups.
+
+# =============================================================================
+# Share Configuration
+# =============================================================================
+
+# Path to the Time Machine backup location (ZFS dataset mountpoint)
+samba_tm_path: "/fast/timemachine"
+
+# Share name as it appears in Finder
+samba_tm_share_name: "timemachine"
+
+# Time Machine quota (fruit:time machine max size)
+# This is enforced at the Samba level, separate from ZFS refquota
+samba_tm_max_size: "6T"
+
+# Share visibility
+samba_tm_browseable: true
+
+# =============================================================================
+# User Configuration
+# =============================================================================
+
+# Samba users for Time Machine access
+# Each user needs: name, password
+# Password should come from SOPS secrets
+samba_tm_users: []
+# Example:
+#   - name: timemachine
+#     password: "{{ sops_secrets.samba_tm_password }}"
+
+# System user/group for Time Machine files
+samba_tm_system_user: "timemachine"
+samba_tm_system_group: "timemachine"
+samba_tm_system_uid: 2000
+samba_tm_system_gid: 2000
+
+# =============================================================================
+# vfs_fruit Configuration (for macOS compatibility)
+# =============================================================================
+
+# Fruit metadata storage mode
+# stream: Store as streams (recommended)
+# netatalk: Compatibility with netatalk
+samba_tm_fruit_metadata: "stream"
+
+# Model name shown in Finder
+samba_tm_fruit_model: "MacSamba"
+
+# Enable POSIX rename support (recommended)
+samba_tm_fruit_posix_rename: true
+
+# Enable Time Machine mode
+samba_tm_fruit_timemachine: true
+
+# =============================================================================
+# Global Samba Settings
+# =============================================================================
+
+# Workgroup name
+samba_tm_workgroup: "WORKGROUP"
+
+# Server description (shown in Finder)
+samba_tm_server_string: "Time Machine Backup Server"
+
+# Minimum SMB protocol version (SMB3 recommended for security)
+samba_tm_min_protocol: "SMB3"
+
+# Disable printer sharing (not needed for Time Machine)
+samba_tm_disable_printing: true
+
+# =============================================================================
+# Packages
+# =============================================================================
+
+samba_tm_packages:
+  - samba
+  - samba-vfs-modules
+
+# =============================================================================
+# Service Configuration
+# =============================================================================
+
+samba_tm_service_name: "smbd"
+samba_tm_service_enabled: true
+samba_tm_service_state: "started"
+
+# =============================================================================
+# File Paths
+# =============================================================================
+
+samba_tm_config_file: "/etc/samba/smb.conf"
+samba_tm_config_dir: "/etc/samba"
+samba_tm_snippet_dir: "/etc/samba/smb.conf.d"
+samba_tm_snippet_path: "{{ samba_tm_snippet_dir }}/timemachine.conf"
+
+# =============================================================================
+# Security
+# =============================================================================
+
+# Hide sensitive values in Ansible output
+samba_tm_no_log: true

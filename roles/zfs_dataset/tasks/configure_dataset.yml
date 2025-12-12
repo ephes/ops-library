@@ -1,0 +1,113 @@
+---
+# Configure ZFS dataset properties (for existing datasets)
+
+# =============================================================================
+# Get Current Properties
+# =============================================================================
+
+- name: Get current dataset properties
+  ansible.builtin.command:
+    cmd: zfs get all {{ zfs_dataset_name }} -H -o property,value
+  register: _zfs_dataset_current_props
+  changed_when: false
+
+- name: Parse current dataset properties
+  ansible.builtin.set_fact:
+    _zfs_dataset_props_dict: "{{ dict(_zfs_dataset_current_props.stdout_lines | map('split', '\t') | list) }}"
+
+# =============================================================================
+# macOS Compatibility Check (casesensitivity)
+# =============================================================================
+
+# casesensitivity cannot be changed after creation - warn if mismatch
+- name: Check casesensitivity for macOS compatibility
+  ansible.builtin.debug:
+    msg: |
+      WARNING: Dataset '{{ zfs_dataset_name }}' has casesensitivity={{ _zfs_dataset_props_dict.casesensitivity }}
+      but macos_compat=true requires casesensitivity=mixed.
+      This property can only be set at creation time.
+      To fix: backup data, destroy dataset, recreate with macos_compat=true, restore data.
+  when:
+    - zfs_dataset_macos_compat | bool
+    - _zfs_dataset_props_dict.casesensitivity | default('sensitive') != 'mixed'
+
+# =============================================================================
+# Build Desired Properties
+# =============================================================================
+
+- name: Build effective properties for configuration
+  ansible.builtin.set_fact:
+    _zfs_dataset_desired_props: >-
+      {{
+        (zfs_dataset_macos_compat | bool | ternary(_zfs_dataset_macos_properties, {}))
+        | combine(zfs_dataset_properties | default({}))
+      }}
+
+# =============================================================================
+# Apply Properties (excluding read-only and create-time-only properties)
+# =============================================================================
+
+# Properties that cannot be changed after creation
+# casesensitivity: must be set at creation time only
+
+- name: Define properties that can be modified
+  ansible.builtin.set_fact:
+    _zfs_dataset_modifiable_props: "{{ _zfs_dataset_desired_props | dict2items | rejectattr('key', 'in', ['casesensitivity']) | list }}"
+
+- name: Configure dataset properties
+  ansible.builtin.command:
+    cmd: zfs set {{ item.key }}={{ item.value }} {{ zfs_dataset_name }}
+  loop: "{{ _zfs_dataset_modifiable_props }}"
+  loop_control:
+    label: "{{ item.key }}={{ item.value }}"
+  when: _zfs_dataset_props_dict[item.key] | default('') != item.value | string
+  register: _zfs_dataset_property_results
+  changed_when: _zfs_dataset_property_results.rc == 0
+
+# =============================================================================
+# Mountpoint Configuration
+# =============================================================================
+
+- name: Configure mountpoint if specified
+  ansible.builtin.command:
+    cmd: zfs set mountpoint={{ zfs_dataset_mountpoint }} {{ zfs_dataset_name }}
+  when:
+    - zfs_dataset_mountpoint | length > 0
+    - _zfs_dataset_props_dict.mountpoint | default('') != zfs_dataset_mountpoint
+  register: _zfs_dataset_mountpoint_result
+  changed_when: _zfs_dataset_mountpoint_result.rc == 0
+
+# =============================================================================
+# Ensure Mounted
+# =============================================================================
+
+- name: Check if dataset is mounted
+  ansible.builtin.command:
+    cmd: zfs get mounted {{ zfs_dataset_name }} -H -o value
+  register: _zfs_dataset_mounted_status
+  changed_when: false
+
+- name: Mount dataset if needed
+  ansible.builtin.command:
+    cmd: zfs mount {{ zfs_dataset_name }}
+  when:
+    - zfs_dataset_mounted
+    - _zfs_dataset_mounted_status.stdout == 'no'
+  register: _zfs_dataset_mount_result
+  changed_when: _zfs_dataset_mount_result.rc == 0
+
+# =============================================================================
+# Summary
+# =============================================================================
+
+- name: Get final dataset info
+  ansible.builtin.command:
+    cmd: zfs list {{ zfs_dataset_name }} -o name,used,avail,refer,mountpoint,compression,recordsize
+  register: _zfs_dataset_summary
+  changed_when: false
+
+- name: Display dataset summary
+  ansible.builtin.debug:
+    msg: |
+      Dataset Summary:
+        {{ _zfs_dataset_summary.stdout }}

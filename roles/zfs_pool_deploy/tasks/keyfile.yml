@@ -1,0 +1,31 @@
+---
+# Deploy encryption key file for ZFS pool
+
+- name: Ensure key file directory exists
+  ansible.builtin.file:
+    path: "{{ zfs_pool_keyfile_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Deploy pool encryption key file
+  ansible.builtin.copy:
+    content: "{{ zfs_pool_passphrase }}"
+    dest: "{{ zfs_pool_keyfile_path }}"
+    owner: "{{ zfs_pool_keyfile_owner }}"
+    group: "{{ zfs_pool_keyfile_group }}"
+    mode: "{{ zfs_pool_keyfile_mode }}"
+  no_log: "{{ zfs_pool_no_log }}"
+
+- name: Verify key file permissions
+  ansible.builtin.stat:
+    path: "{{ zfs_pool_keyfile_path }}"
+  register: _zfs_pool_keyfile_stat
+
+- name: Validate key file security
+  ansible.builtin.assert:
+    that:
+      - (_zfs_pool_keyfile_stat.stat.mode | int(base=8)) == 0o400
+      - _zfs_pool_keyfile_stat.stat.pw_name == 'root'
+    fail_msg: "Key file has insecure permissions: {{ _zfs_pool_keyfile_stat.stat.mode }}"

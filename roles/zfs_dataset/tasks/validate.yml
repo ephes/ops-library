@@ -1,0 +1,39 @@
+---
+# Validate required variables for ZFS dataset creation
+
+- name: Validate dataset name is provided
+  ansible.builtin.assert:
+    that:
+      - zfs_dataset_name | length > 0
+    fail_msg: "zfs_dataset_name is required (e.g., 'tank/photos')"
+
+- name: Validate dataset name contains pool reference
+  ansible.builtin.assert:
+    that:
+      - "'/' in zfs_dataset_name"
+    fail_msg: "zfs_dataset_name must include pool name (e.g., 'tank/photos', not just 'photos')"
+
+- name: Extract pool name from dataset path
+  ansible.builtin.set_fact:
+    _zfs_dataset_pool: "{{ zfs_dataset_name.split('/')[0] }}"
+
+- name: Check if parent pool exists
+  ansible.builtin.command:
+    cmd: zpool list {{ _zfs_dataset_pool }}
+  register: _zfs_pool_check
+  changed_when: false
+  failed_when: false
+
+- name: Fail if parent pool does not exist
+  ansible.builtin.fail:
+    msg: "Parent pool '{{ _zfs_dataset_pool }}' does not exist. Create it first with zfs_pool_deploy role."
+  when: _zfs_pool_check.rc != 0
+
+- name: Display validation summary
+  ansible.builtin.debug:
+    msg: |
+      Dataset validation passed:
+        Name: {{ zfs_dataset_name }}
+        Pool: {{ _zfs_dataset_pool }}
+        macOS compat: {{ zfs_dataset_macos_compat }}
+        Properties: {{ zfs_dataset_properties | default({}) | to_nice_yaml | indent(4) }}

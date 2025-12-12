@@ -1,0 +1,68 @@
+---
+# Configure Samba for a generic share using a conf.d snippet.
+# Avoids clobbering existing smb.conf.
+
+- name: Ensure smb.conf.d directory exists
+  ansible.builtin.file:
+    path: "{{ samba_share_snippet_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Check if smb.conf exists
+  ansible.builtin.stat:
+    path: "{{ samba_share_config_file }}"
+  register: _smb_conf_stat
+
+- name: Create minimal smb.conf if missing
+  ansible.builtin.template:
+    src: smb.conf.j2
+    dest: "{{ samba_share_config_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: not _smb_conf_stat.stat.exists
+  notify:
+    - Restart smbd
+    - Restart nmbd
+
+- name: Check if smb.conf includes share snippet
+  ansible.builtin.command:
+    cmd: grep -q 'include.*smb.conf.d/{{ samba_share_name }}.conf' {{ samba_share_config_file }}
+  register: _smb_conf_includes_share
+  changed_when: false
+  failed_when: false
+
+- name: Add share snippet include to smb.conf
+  ansible.builtin.lineinfile:
+    path: "{{ samba_share_config_file }}"
+    line: "   include = {{ samba_share_snippet_path }}"
+    insertafter: '^\[global\]'
+    state: present
+  when: _smb_conf_includes_share.rc != 0
+  notify:
+    - Restart smbd
+    - Restart nmbd
+
+- name: Deploy share snippet
+  ansible.builtin.template:
+    src: smb-share.conf.j2
+    dest: "{{ samba_share_snippet_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Restart smbd
+    - Restart nmbd
+
+- name: Validate Samba configuration
+  ansible.builtin.command:
+    cmd: testparm -s
+  register: _samba_testparm
+  changed_when: false
+
+- name: Display Samba configuration validation
+  ansible.builtin.debug:
+    msg: "{{ _samba_testparm.stdout_lines[-10:] }}"
+

@@ -1,0 +1,45 @@
+---
+# Configure Samba users for general shares (idempotent).
+# Does not manage Unix accounts; assumes they exist already.
+
+- name: Check existing Samba users
+  ansible.builtin.command:
+    cmd: pdbedit -L -u {{ item.name }}
+  loop: "{{ samba_share_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: _samba_user_check
+  changed_when: false
+  failed_when: false
+
+- name: Identify users to create
+  ansible.builtin.set_fact:
+    _samba_users_to_create: >-
+      {{
+        samba_share_users | zip(_samba_user_check.results)
+        | selectattr('1.rc', 'ne', 0)
+        | map(attribute='0')
+        | list
+      }}
+
+- name: Create new Samba users
+  ansible.builtin.shell:
+    cmd: |
+      (echo '{{ item.password }}'; echo '{{ item.password }}') | smbpasswd -a -s {{ item.name }}
+  loop: "{{ _samba_users_to_create }}"
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: "{{ samba_share_no_log }}"
+  when: _samba_users_to_create | length > 0
+  register: _samba_users_create_result
+  changed_when: _samba_users_create_result.rc == 0
+
+- name: Enable Samba users
+  ansible.builtin.command:
+    cmd: smbpasswd -e {{ item.name }}
+  loop: "{{ _samba_users_to_create }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: _samba_users_to_create | length > 0
+  register: _samba_users_enable_result
+  changed_when: _samba_users_enable_result.rc == 0

@@ -1,0 +1,11 @@
+---
+- name: Restart smbd
+  ansible.builtin.service:
+    name: smbd
+    state: restarted
+
+- name: Restart nmbd
+  ansible.builtin.service:
+    name: nmbd
+    state: restarted
+

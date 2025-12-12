@@ -1,0 +1,62 @@
+---
+# Create ZFS pool with encryption
+
+- name: Check if pool already exists
+  ansible.builtin.command:
+    cmd: zpool list {{ zfs_pool_name }}
+  register: _zfs_pool_exists
+  changed_when: false
+  failed_when: false
+
+- name: Display pool status if exists
+  ansible.builtin.debug:
+    msg: "Pool '{{ zfs_pool_name }}' already exists, skipping creation"
+  when: _zfs_pool_exists.rc == 0
+
+- name: Build zpool create command
+  ansible.builtin.set_fact:
+    _zfs_pool_create_cmd: >-
+      zpool create
+      {{ '-f' if zfs_pool_force_create else '' }}
+      -o ashift={{ zfs_pool_ashift }}
+      -o autotrim={{ 'on' if zfs_pool_autotrim else 'off' }}
+      {% for key, value in zfs_pool_properties.items() %}
+      -o {{ key }}={{ value }}
+      {% endfor %}
+      -O mountpoint={{ zfs_pool_mountpoint }}
+      {% if zfs_pool_encryption_enabled %}
+      -O encryption={{ zfs_pool_encryption_algorithm }}
+      -O keyformat={{ zfs_pool_keyformat }}
+      -O keylocation={{ 'file://' ~ zfs_pool_keyfile_path if zfs_pool_keylocation_type == 'file' else 'prompt' }}
+      {% endif %}
+      {% for key, value in zfs_pool_filesystem_properties.items() %}
+      -O {{ key }}={{ value }}
+      {% endfor %}
+      {{ zfs_pool_name }}
+      {{ zfs_pool_vdevs | join(' ') }}
+  when: _zfs_pool_exists.rc != 0
+
+- name: Display zpool create command (for verification)
+  ansible.builtin.debug:
+    msg: "{{ _zfs_pool_create_cmd }}"
+  when: _zfs_pool_exists.rc != 0
+
+- name: Create ZFS pool
+  ansible.builtin.command:
+    cmd: "{{ _zfs_pool_create_cmd }}"
+  register: _zfs_pool_create_result
+  when: _zfs_pool_exists.rc != 0
+
+- name: Verify pool was created
+  ansible.builtin.command:
+    cmd: zpool status {{ zfs_pool_name }}
+  register: _zfs_pool_status
+  changed_when: false
+  when: _zfs_pool_exists.rc != 0
+
+- name: Display new pool status
+  ansible.builtin.debug:
+    msg: "{{ _zfs_pool_status.stdout_lines }}"
+  when:
+    - _zfs_pool_exists.rc != 0
+    - _zfs_pool_status is defined

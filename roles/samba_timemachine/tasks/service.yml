@@ -1,0 +1,37 @@
+---
+# Ensure Samba services are running
+
+- name: Enable and start smbd service
+  ansible.builtin.systemd:
+    name: smbd
+    enabled: "{{ samba_tm_service_enabled }}"
+    state: "{{ samba_tm_service_state }}"
+    daemon_reload: true
+
+- name: Enable and start nmbd service
+  ansible.builtin.systemd:
+    name: nmbd
+    enabled: "{{ samba_tm_service_enabled }}"
+    state: "{{ samba_tm_service_state }}"
+    daemon_reload: true
+
+- name: Verify Samba is listening
+  ansible.builtin.wait_for:
+    port: 445
+    timeout: 30
+    state: started
+
+- name: Display Time Machine share info
+  ansible.builtin.debug:
+    msg: |
+      Time Machine share configured:
+        Share: \\{{ ansible_hostname }}\{{ samba_tm_share_name }}
+        Path: {{ samba_tm_path }}
+        Max size: {{ samba_tm_max_size }}
+        Users: {{ samba_tm_users | map(attribute='name') | list | join(', ') }}
+
+      On macOS:
+        1. Open Finder → Go → Connect to Server (Cmd+K)
+        2. Enter: smb://{{ ansible_default_ipv4.address | default(ansible_hostname) }}/{{ samba_tm_share_name }}
+        3. Authenticate with configured user
+        4. Open System Preferences → Time Machine → Select Disk

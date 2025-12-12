@@ -1,0 +1,12 @@
+---
+# Install Samba packages
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install Samba packages
+  ansible.builtin.apt:
+    name: "{{ samba_tm_packages }}"
+    state: present

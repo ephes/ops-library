@@ -1,0 +1,86 @@
+---
+# Configure Samba for Time Machine using conf.d approach
+# This preserves existing smb.conf and adds Time Machine share as a snippet
+
+- name: Ensure smb.conf.d directory exists
+  ansible.builtin.file:
+    path: "{{ samba_tm_snippet_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Check if smb.conf exists
+  ansible.builtin.stat:
+    path: "{{ samba_tm_config_file }}"
+  register: _smb_conf_stat
+
+- name: Create minimal smb.conf if missing
+  ansible.builtin.template:
+    src: smb.conf.j2
+    dest: "{{ samba_tm_config_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: not _smb_conf_stat.stat.exists
+  notify:
+    - Restart smbd
+    - Restart nmbd
+
+- name: Check if smb.conf includes Time Machine snippet
+  ansible.builtin.command:
+    cmd: grep -q 'include.*{{ samba_tm_snippet_path | regex_escape() }}' {{ samba_tm_config_file }}
+  register: _smb_conf_includes_tm
+  changed_when: false
+  failed_when: false
+
+- name: Add Time Machine snippet include to existing smb.conf
+  ansible.builtin.lineinfile:
+    path: "{{ samba_tm_config_file }}"
+    line: "   include = {{ samba_tm_snippet_path }}"
+    insertafter: '^\[global\]'
+    state: present
+  when: _smb_conf_includes_tm.rc != 0
+  notify:
+    - Restart smbd
+    - Restart nmbd
+
+- name: Ensure global vfs_fruit settings in smb.conf
+  ansible.builtin.blockinfile:
+    path: "{{ samba_tm_config_file }}"
+    marker: "# {mark} ANSIBLE MANAGED - vfs_fruit global settings"
+    insertafter: '^\[global\]'
+    block: |
+      # macOS/Time Machine compatibility (vfs_fruit)
+         vfs objects = fruit streams_xattr
+         fruit:metadata = {{ samba_tm_fruit_metadata }}
+         fruit:model = {{ samba_tm_fruit_model }}
+         fruit:posix_rename = {{ 'yes' if samba_tm_fruit_posix_rename else 'no' }}
+         fruit:veto_appledouble = no
+         fruit:nfs_aces = no
+         fruit:wipe_intentionally_left_blank_rfork = yes
+         fruit:delete_empty_adfiles = yes
+  notify:
+    - Restart smbd
+    - Restart nmbd
+
+- name: Deploy Time Machine share configuration
+  ansible.builtin.template:
+    src: smb-timemachine.conf.j2
+    dest: "{{ samba_tm_snippet_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Restart smbd
+    - Restart nmbd
+
+- name: Validate Samba configuration
+  ansible.builtin.command:
+    cmd: testparm -s
+  register: _samba_testparm
+  changed_when: false
+
+- name: Display Samba configuration validation
+  ansible.builtin.debug:
+    msg: "{{ _samba_testparm.stdout_lines[-10:] }}"

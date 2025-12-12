@@ -1,0 +1,33 @@
+---
+# ZFS Pool Deploy - Main Task Orchestration
+#
+# Creates encrypted ZFS pools with boot-time auto-unlock capability.
+
+- name: Validate required variables
+  ansible.builtin.include_tasks: validate.yml
+
+- name: Install ZFS packages
+  ansible.builtin.include_tasks: packages.yml
+
+- name: Deploy encryption key file
+  ansible.builtin.include_tasks: keyfile.yml
+  when:
+    - zfs_pool_encryption_enabled
+    - zfs_pool_keylocation_type == 'file'
+    - not zfs_pool_validate_only
+
+- name: Create ZFS pool
+  ansible.builtin.include_tasks: create_pool.yml
+  when: not zfs_pool_validate_only
+
+- name: Configure pool properties
+  ansible.builtin.include_tasks: configure.yml
+  when: not zfs_pool_validate_only
+
+- name: Configure boot unlock service
+  ansible.builtin.include_tasks: unlock_service.yml
+  when:
+    - zfs_pool_encryption_enabled
+    - zfs_pool_configure_boot_unlock
+    - zfs_pool_keylocation_type == 'file'
+    - not zfs_pool_validate_only

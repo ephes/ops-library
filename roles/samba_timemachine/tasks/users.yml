@@ -1,0 +1,65 @@
+---
+# Configure Samba users for Time Machine access (idempotent)
+
+- name: Add system users to timemachine group
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    groups: "{{ samba_tm_system_group }}"
+    append: true
+    create_home: false
+    shell: /usr/sbin/nologin
+    state: present
+  loop: "{{ samba_tm_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# Check which users already exist in Samba database
+- name: Check existing Samba users
+  ansible.builtin.command:
+    cmd: pdbedit -L -u {{ item.name }}
+  loop: "{{ samba_tm_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: _samba_user_check
+  changed_when: false
+  failed_when: false
+
+# Build list of users that need to be created
+- name: Identify users to create
+  ansible.builtin.set_fact:
+    _samba_users_to_create: >-
+      {{
+        samba_tm_users | zip(_samba_user_check.results)
+        | selectattr('1.rc', 'ne', 0)
+        | map(attribute='0')
+        | list
+      }}
+
+- name: Create new Samba users
+  ansible.builtin.shell:
+    cmd: |
+      (echo '{{ item.password }}'; echo '{{ item.password }}') | smbpasswd -a -s {{ item.name }}
+  loop: "{{ _samba_users_to_create }}"
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: "{{ samba_tm_no_log }}"
+  when: _samba_users_to_create | length > 0
+  register: _samba_users_create_result
+  changed_when: _samba_users_create_result.rc == 0
+
+- name: Enable Samba users
+  ansible.builtin.command:
+    cmd: smbpasswd -e {{ item.name }}
+  loop: "{{ _samba_users_to_create }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: _samba_users_to_create | length > 0
+  register: _samba_users_enable_result
+  changed_when: _samba_users_enable_result.rc == 0
+
+- name: Display Samba user status
+  ansible.builtin.debug:
+    msg: |
+      Samba users configured:
+        Existing: {{ samba_tm_users | length - _samba_users_to_create | length }}
+        Created: {{ _samba_users_to_create | length }}

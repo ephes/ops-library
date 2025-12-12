@@ -1,0 +1,49 @@
+---
+# Validate required variables for Samba Time Machine configuration
+
+- name: Validate Time Machine path is set
+  ansible.builtin.assert:
+    that:
+      - samba_tm_path | length > 0
+    fail_msg: "samba_tm_path is required (path to Time Machine backup location)"
+
+- name: Validate Time Machine path exists
+  ansible.builtin.stat:
+    path: "{{ samba_tm_path }}"
+  register: _samba_tm_path_stat
+
+- name: Fail if Time Machine path does not exist
+  ansible.builtin.fail:
+    msg: |
+      Time Machine path does not exist: {{ samba_tm_path }}
+      Create the ZFS dataset first with zfs_dataset role.
+  when: not _samba_tm_path_stat.stat.exists
+
+- name: Validate users are defined
+  ansible.builtin.assert:
+    that:
+      - samba_tm_users | length > 0
+    fail_msg: "samba_tm_users must contain at least one user for Time Machine access"
+
+- name: Validate each user has required fields
+  ansible.builtin.assert:
+    that:
+      - item.name is defined
+      - item.name | length > 0
+      - item.password is defined
+      - item.password | length > 0
+      - item.password != 'CHANGEME'
+    fail_msg: "Each user must have 'name' and 'password' fields (password must not be 'CHANGEME')"
+  loop: "{{ samba_tm_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: "{{ samba_tm_no_log }}"
+
+- name: Display validation summary
+  ansible.builtin.debug:
+    msg: |
+      Time Machine share validation passed:
+        Path: {{ samba_tm_path }}
+        Share name: {{ samba_tm_share_name }}
+        Max size: {{ samba_tm_max_size }}
+        Users: {{ samba_tm_users | map(attribute='name') | list | join(', ') }}
