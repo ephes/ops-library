@@ -1,0 +1,7 @@
+---
+- name: Install postfix + mailx
+  ansible.builtin.apt:
+    name: "{{ mail_relay_client_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600

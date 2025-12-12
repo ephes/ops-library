@@ -1,0 +1,41 @@
+---
+# smartd - Default Variables
+#
+# Installs and configures smartmontools smartd for disk monitoring.
+
+smartd_enabled: true
+
+# Devices to monitor (REQUIRED)
+# Example:
+# smartd_devices:
+#   - device: /dev/disk/by-id/ata-...
+#     type: ata
+#     name: tank-hdd-1
+smartd_devices: []
+
+# Email notifications (REQUIRED when enabled)
+smartd_mail_to: ""
+smartd_mail_from: "root"
+
+# Service management
+smartd_manage_service: true
+
+# Temperature warning/critical (smartd -W DIFF,INFO,CRIT)
+smartd_temp_diff: 4
+smartd_temp_info: 40
+smartd_temp_crit: 45
+
+# Self-test schedules
+smartd_short_test_schedule: "S/../.././02"
+smartd_long_test_schedule: "L/../../6/03"
+
+# smartd.conf location
+smartd_config_path: "/etc/smartd.conf"
+
+# Packages
+smartd_packages:
+  - smartmontools
+  - nvme-cli
+
+# Service
+smartd_service_name: "smartmontools"

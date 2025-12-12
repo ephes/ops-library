@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any
+
+
+def _run(argv: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(argv, check=False, capture_output=True, text=True)
+
+
+def _now_ts() -> int:
+    return int(datetime.now(tz=timezone.utc).timestamp())
+
+
+def _parse_zpool_scan_ts(zpool_status_output: str) -> int | None:
+    for line in zpool_status_output.splitlines():
+        line = line.strip()
+        if not line.startswith("scan:"):
+            continue
+        match = re.search(r"on (.*)$", line)
+        if not match:
+            continue
+        raw = match.group(1).strip()
+        try:
+            dt = datetime.strptime(raw, "%a %b %d %H:%M:%S %Y").replace(
+                tzinfo=timezone.utc
+            )
+            return int(dt.timestamp())
+        except ValueError:
+            return None
+    return None
+
+
+def _zpool_list() -> dict[str, dict[str, Any]]:
+    result = _run(["zpool", "list", "-H", "-o", "name,health,size,alloc,free,cap"])
+    if result.returncode != 0:
+        return {"_error": {"error": result.stderr.strip() or "zpool list failed"}}
+
+    pools: dict[str, dict[str, Any]] = {}
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) != 6:
+            continue
+        name, health, size, alloc, free, cap = parts
+        pools[name] = {
+            "health": health,
+            "size": size,
+            "alloc": alloc,
+            "free": free,
+            "cap": cap,
+        }
+
+        status = _run(["zpool", "status", name])
+        if status.returncode == 0:
+            scrub_ts = _parse_zpool_scan_ts(status.stdout)
+            pools[name]["last_scrub_ts"] = scrub_ts
+            pools[name]["last_scrub_age_days"] = (
+                None
+                if scrub_ts is None
+                else round((_now_ts() - scrub_ts) / 86400, 2)
+            )
+        else:
+            pools[name]["status_error"] = status.stderr.strip()
+
+    return pools
+
+
+def _smartctl_health(device: str) -> dict[str, Any]:
+    out = _run(["smartctl", "-H", "-A", device])
+    payload: dict[str, Any] = {"device": device, "ok": False}
+    if out.returncode != 0:
+        payload["error"] = out.stderr.strip() or out.stdout.strip() or "smartctl failed"
+        return payload
+
+    payload["ok"] = "PASSED" in out.stdout
+    temp_match = re.search(
+        r"Temperature_Celsius\s+\S+\s+\S+\s+\S+\s+(\d+)", out.stdout
+    )
+    if temp_match:
+        payload["temp_c"] = int(temp_match.group(1))
+    return payload
+
+
+def _nvme_smart(device: str) -> dict[str, Any]:
+    out = _run(["nvme", "smart-log", "-o", "json", device])
+    payload: dict[str, Any] = {"device": device, "ok": False}
+    if out.returncode != 0:
+        payload["error"] = out.stderr.strip() or out.stdout.strip() or "nvme smart-log failed"
+        return payload
+    try:
+        data = json.loads(out.stdout)
+    except json.JSONDecodeError:
+        payload["error"] = "nvme smart-log returned non-JSON output"
+        return payload
+
+    crit = int(data.get("critical_warning", 0))
+    payload["ok"] = crit == 0
+    temp_k = data.get("temperature")
+    if isinstance(temp_k, (int, float)):
+        payload["temp_c"] = round(float(temp_k) - 273.15, 1)
+    payload["critical_warning"] = crit
+    return payload
+
+
+def _edac_status() -> dict[str, Any]:
+    modules = ""
+    try:
+        with open("/proc/modules", "r", encoding="utf-8") as f:
+            modules = f.read()
+    except OSError:
+        modules = ""
+
+    edac_loaded = "amd64_edac" in modules or "edac_mce_amd" in modules
+    status: dict[str, Any] = {"loaded": edac_loaded, "ce": None, "ue": None}
+
+    base = "/sys/devices/system/edac/mc"
+    if not os.path.isdir(base):
+        return status
+
+    ce = 0
+    ue = 0
+    found = False
+    for entry in os.listdir(base):
+        if not entry.startswith("mc"):
+            continue
+        found = True
+        for counter, total in (("ce_count", "ce"), ("ue_count", "ue")):
+            path = os.path.join(base, entry, counter)
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    val = int(f.read().strip() or "0")
+                if total == "ce":
+                    ce += val
+                else:
+                    ue += val
+            except OSError:
+                continue
+
+    if found:
+        status["ce"] = ce
+        status["ue"] = ue
+    return status
+
+
+def main() -> int:
+    pools = {{ nyxmon_storage_exporter_pools | to_json }}
+    disks = {{ nyxmon_storage_exporter_disks | to_json }}
+
+    payload: dict[str, Any] = {"ts": _now_ts()}
+    pool_data = _zpool_list()
+    if isinstance(pool_data, dict) and pools:
+        pool_data = {k: v for k, v in pool_data.items() if k in pools or k == "_error"}
+    payload["pools"] = pool_data
+
+    disk_results: list[dict[str, Any]] = []
+    for disk in disks:
+        device = disk.get("device")
+        dtype = disk.get("type")
+        if not device:
+            continue
+        if dtype == "nvme":
+            res = _nvme_smart(device)
+        else:
+            res = _smartctl_health(device)
+        res["name"] = disk.get("name")
+        res["pool"] = disk.get("pool")
+        res["type"] = dtype
+        disk_results.append(res)
+    payload["disks"] = disk_results
+
+    payload["ecc"] = _edac_status()
+
+    print(json.dumps(payload, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

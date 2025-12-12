@@ -1,0 +1,28 @@
+---
+# mail_relay_client - Default Variables
+#
+# Configures a minimal Postfix setup to relay outbound mail via a smarthost.
+# Intended for system alerting (smartd, ZED, etc.) on servers that are not mail servers.
+
+mail_relay_client_enabled: true
+
+# Relay settings (REQUIRED when enabled)
+mail_relay_client_relayhost: ""
+mail_relay_client_port: 25
+mail_relay_client_use_tls: false
+
+# Recipients / identity
+mail_relay_client_myhostname: "{{ ansible_fqdn | default(inventory_hostname) }}"
+mail_relay_client_myorigin: "{{ ansible_fqdn | default(inventory_hostname) }}"
+
+# Packages
+mail_relay_client_packages:
+  - postfix
+  - bsd-mailx
+
+# Postfix main.cf settings (applied via postconf)
+mail_relay_client_postfix_settings:
+  inet_interfaces: "loopback-only"
+  mydestination: ""
+  mynetworks: "127.0.0.0/8 [::1]/128"
+  compatibility_level: "3.6"

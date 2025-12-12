@@ -1,0 +1,35 @@
+---
+- name: Build desired postfix settings
+  ansible.builtin.set_fact:
+    _mail_relay_client_desired_postfix_settings: >-
+      {{
+        mail_relay_client_postfix_settings
+        | combine({
+            'relayhost': '[' ~ mail_relay_client_relayhost ~ ']:' ~ (mail_relay_client_port | string),
+            'myhostname': mail_relay_client_myhostname,
+            'myorigin': mail_relay_client_myorigin
+          })
+        | combine(
+            (mail_relay_client_use_tls | bool) | ternary({'smtp_tls_security_level': 'may'}, {})
+          )
+      }}
+
+- name: Read current postfix settings
+  ansible.builtin.command:
+    cmd: "postconf -h {{ item.key }}"
+  loop: "{{ _mail_relay_client_desired_postfix_settings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: _mail_relay_client_current_postfix_settings
+  changed_when: false
+
+- name: Apply postfix settings when different
+  ansible.builtin.command:
+    cmd: "postconf -e {{ item.0.key }}='{{ item.0.value }}'"
+  loop: "{{ (_mail_relay_client_desired_postfix_settings | dict2items) | zip(_mail_relay_client_current_postfix_settings.results) | list }}"
+  loop_control:
+    label: "{{ item.0.key }}"
+  when: (item.1.stdout | trim) != (item.0.value | string)
+  register: _mail_relay_client_postconf_updates
+  changed_when: _mail_relay_client_postconf_updates.rc == 0
+  notify: Restart postfix

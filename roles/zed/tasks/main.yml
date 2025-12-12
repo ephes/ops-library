@@ -1,0 +1,24 @@
+---
+# zed - Main Task Orchestration
+
+- name: Validate required variables
+  ansible.builtin.include_tasks: validate.yml
+
+- name: Install zed packages
+  ansible.builtin.include_tasks: packages.yml
+  when: zed_enabled
+
+- name: Configure ZED
+  ansible.builtin.include_tasks: config.yml
+  when: zed_enabled
+
+- name: Configure scrub timers
+  ansible.builtin.include_tasks: scrub.yml
+  when:
+    - zed_enabled
+    - zed_manage_scrub_timer
+    - zed_scrub_pools | length > 0
+
+- name: Ensure ZED service is running
+  ansible.builtin.include_tasks: service.yml
+  when: zed_enabled

@@ -1,0 +1,6 @@
+---
+- name: Enable and start smartd (smartmontools)
+  ansible.builtin.systemd_service:
+    name: "{{ smartd_service_name }}"
+    enabled: true
+    state: started

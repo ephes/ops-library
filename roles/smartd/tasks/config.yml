@@ -1,0 +1,9 @@
+---
+- name: Deploy smartd.conf
+  ansible.builtin.template:
+    src: smartd.conf.j2
+    dest: "{{ smartd_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart smartd

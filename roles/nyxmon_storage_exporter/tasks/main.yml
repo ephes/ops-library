@@ -1,0 +1,7 @@
+---
+- name: Validate required variables
+  ansible.builtin.include_tasks: validate.yml
+
+- name: Install exporter
+  ansible.builtin.include_tasks: install.yml
+  when: nyxmon_storage_exporter_enabled

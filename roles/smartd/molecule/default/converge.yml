@@ -1,0 +1,16 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    smartd_devices:
+      - device: /dev/disk/by-id/does-not-exist
+        type: nvme
+        name: dummy
+    smartd_mail_to: "root"
+    smartd_manage_service: false
+
+  roles:
+    - role: smartd

@@ -1,0 +1,6 @@
+---
+- name: Enable and start postfix
+  ansible.builtin.systemd_service:
+    name: postfix
+    enabled: true
+    state: started

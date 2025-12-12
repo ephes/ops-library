@@ -1,0 +1,17 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Verify | smartd.conf exists
+      ansible.builtin.stat:
+        path: /etc/smartd.conf
+      register: smartd_conf
+
+    - name: Verify | assert smartd.conf present
+      ansible.builtin.assert:
+        that:
+          - smartd_conf.stat.exists
+          - smartd_conf.stat.size > 0

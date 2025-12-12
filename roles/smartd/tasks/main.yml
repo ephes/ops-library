@@ -1,0 +1,19 @@
+---
+# smartd - Main Task Orchestration
+
+- name: Validate required variables
+  ansible.builtin.include_tasks: validate.yml
+
+- name: Install smartd packages
+  ansible.builtin.include_tasks: packages.yml
+  when: smartd_enabled
+
+- name: Configure smartd
+  ansible.builtin.include_tasks: config.yml
+  when: smartd_enabled
+
+- name: Ensure smartd service is running
+  ansible.builtin.include_tasks: service.yml
+  when:
+    - smartd_enabled
+    - smartd_manage_service

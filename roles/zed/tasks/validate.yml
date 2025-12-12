@@ -1,0 +1,6 @@
+---
+- name: Assert ZED email recipient is configured
+  ansible.builtin.assert:
+    that:
+      - zed_email_to | length > 0
+    fail_msg: "zed_email_to must be set"

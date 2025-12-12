@@ -1,0 +1,15 @@
+---
+- name: Validate required variables
+  ansible.builtin.include_tasks: validate.yml
+
+- name: Install packages
+  ansible.builtin.include_tasks: packages.yml
+  when: mail_relay_client_enabled
+
+- name: Configure postfix relay
+  ansible.builtin.include_tasks: config.yml
+  when: mail_relay_client_enabled
+
+- name: Ensure postfix is running
+  ansible.builtin.include_tasks: service.yml
+  when: mail_relay_client_enabled

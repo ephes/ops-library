@@ -1,0 +1,24 @@
+---
+- name: Ensure ZED config directory exists
+  ansible.builtin.file:
+    path: "{{ zed_rc_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Configure ZED email recipient
+  ansible.builtin.lineinfile:
+    path: "{{ zed_rc_path }}"
+    regexp: "^ZED_EMAIL_ADDR="
+    line: "ZED_EMAIL_ADDR=\"{{ zed_email_to }}\""
+    create: true
+  notify: Restart ZED
+
+- name: Configure ZED mailer
+  ansible.builtin.lineinfile:
+    path: "{{ zed_rc_path }}"
+    regexp: "^ZED_EMAIL_PROG="
+    line: "ZED_EMAIL_PROG=\"{{ zed_email_prog }}\""
+    create: true
+  notify: Restart ZED
