@@ -1,0 +1,12 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  roles:
+    - role: docker_install
+      vars:
+        # Docker-in-Docker is flaky across kernels; for Molecule we only validate
+        # repo wiring + CLI presence and skip daemon startup.
+        docker_install_enable_service: false
+        docker_install_start_service: false
+        docker_install_verify_docker_info: false

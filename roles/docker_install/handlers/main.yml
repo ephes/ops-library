@@ -1,0 +1,8 @@
+---
+- name: Restart docker
+  ansible.builtin.systemd:
+    name: "{{ docker_install_service_name }}"
+    state: restarted
+    daemon_reload: true
+  become: true
+  when: docker_install_start_service | bool

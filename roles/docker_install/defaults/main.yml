@@ -1,0 +1,53 @@
+---
+# Default variables for docker_install role
+
+# Repository configuration (Ubuntu)
+docker_install_repo_url: "https://download.docker.com/linux/ubuntu"
+docker_install_repo_suite: "{{ ansible_distribution_release }}"
+docker_install_repo_components:
+  - stable
+docker_install_repo_key_url: "https://download.docker.com/linux/ubuntu/gpg"
+docker_install_repo_keyring_path: /etc/apt/keyrings/docker.asc
+
+# Packages
+docker_install_prerequisite_packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  # Needed by the Ansible deb822_repository module on some minimal installs
+  - python3-debian
+
+docker_install_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin
+
+# Remove distro-provided Docker packages that conflict with docker-ce
+docker_install_remove_conflicting_packages: true
+docker_install_conflicting_packages:
+  - docker.io
+  - docker-compose
+  - docker-compose-v2
+  - docker-doc
+  - podman-docker
+  - containerd
+  - runc
+
+# Service management
+docker_install_service_name: docker
+docker_install_enable_service: true
+docker_install_start_service: true
+
+# Optional: users to add to the `docker` group (requires re-login)
+docker_install_users: []
+
+# Optional daemon configuration
+docker_install_configure_daemon: false
+docker_install_daemon_config_path: /etc/docker/daemon.json
+docker_install_daemon_config: {}
+
+# Verification
+docker_install_verify: true
+docker_install_verify_docker_info: true

@@ -1,0 +1,23 @@
+---
+- name: service | Ensure docker group exists
+  ansible.builtin.group:
+    name: docker
+    state: present
+  become: true
+
+- name: service | Add users to docker group
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups: docker
+    append: true
+  become: true
+  loop: "{{ docker_install_users }}"
+  when: docker_install_users | length > 0
+
+- name: service | Docker systemd unit
+  ansible.builtin.systemd:
+    name: "{{ docker_install_service_name }}"
+    enabled: "{{ docker_install_enable_service }}"
+    state: "{{ 'started' if docker_install_start_service else 'stopped' }}"
+    daemon_reload: true
+  become: true

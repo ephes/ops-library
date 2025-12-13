@@ -1,0 +1,18 @@
+---
+- name: configure | Ensure /etc/docker exists
+  ansible.builtin.file:
+    path: "{{ docker_install_daemon_config_path | dirname }}"
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: configure | Write daemon.json
+  ansible.builtin.copy:
+    dest: "{{ docker_install_daemon_config_path }}"
+    content: "{{ docker_install_daemon_config | to_nice_json }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: docker_install_configure_daemon | bool
+  notify: Restart docker

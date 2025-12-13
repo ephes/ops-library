@@ -70,6 +70,7 @@ The table below links each published role to its dedicated documentation. Refer 
 | Service registration | [`fastdeploy_register_service`](roles/fastdeploy_register_service/README.md) | Generic FastDeploy service registration helper. |
 | Bootstrap | [`ansible_install`](roles/ansible_install/README.md) | Ensure controller has Ansible and required plugins. |
 | Bootstrap | [`shell_basics_deploy`](roles/shell_basics_deploy/README.md) | Install fish, modern CLI tools (btop, bmon, sysstat/iotop, tealdeer, eza), set shell/editor defaults, and keep chezmoi current from upstream. |
+| Bootstrap | [`docker_install`](roles/docker_install/README.md) | Install Docker Engine + Docker Compose v2 (plugin) from the official Docker apt repository. |
 | Bootstrap | [`uv_install`](roles/uv_install/README.md) | Install uv for Python environment management. |
 | Bootstrap | [`sops_dependencies`](roles/sops_dependencies/README.md) | Install age/SOPS prerequisites. |
 | Testing/demo | [`test_dummy`](roles/test_dummy/README.md) | Demonstration service for developing and testing runners. |

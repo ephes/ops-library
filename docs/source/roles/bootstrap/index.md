@@ -7,6 +7,7 @@ Roles for installing required tools and dependencies.
 
 ansible_install
 boot_visible_i915
+docker_install
 uv_install
 sops_dependencies
 postgres_install

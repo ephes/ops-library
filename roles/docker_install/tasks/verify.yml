@@ -1,0 +1,33 @@
+---
+- name: verify | Docker CLI is available
+  ansible.builtin.command: docker --version
+  register: docker_install_docker_version
+  changed_when: false
+
+- name: verify | Docker Compose v2 is available
+  ansible.builtin.command: docker compose version
+  register: docker_install_compose_version
+  changed_when: false
+
+- name: verify | Gather service facts
+  ansible.builtin.service_facts:
+  when:
+    - docker_install_start_service | bool
+    - ansible_service_mgr | default('') == "systemd"
+
+- name: verify | Docker systemd unit is running
+  ansible.builtin.assert:
+    that:
+      - (docker_install_service_name ~ ".service") in ansible_facts.services
+      - ansible_facts.services[docker_install_service_name ~ ".service"].state == "running"
+  when:
+    - docker_install_start_service | bool
+    - ansible_service_mgr | default('') == "systemd"
+
+- name: verify | Docker daemon connectivity
+  ansible.builtin.command: docker info
+  register: docker_install_docker_info
+  changed_when: false
+  when:
+    - docker_install_start_service | bool
+    - docker_install_verify_docker_info | bool

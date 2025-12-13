@@ -1,0 +1,14 @@
+---
+- name: Verify
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: docker --version works
+      ansible.builtin.command: docker --version
+      register: docker_version
+      changed_when: false
+
+    - name: docker compose version works
+      ansible.builtin.command: docker compose version
+      register: compose_version
+      changed_when: false

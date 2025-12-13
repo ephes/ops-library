@@ -1,0 +1,52 @@
+---
+- name: install | Ensure apt keyring directory exists
+  ansible.builtin.file:
+    path: "{{ docker_install_repo_keyring_path | dirname }}"
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: install | Prerequisite packages
+  ansible.builtin.apt:
+    name: "{{ docker_install_prerequisite_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  become: true
+
+- name: install | Remove conflicting packages
+  ansible.builtin.apt:
+    name: "{{ docker_install_conflicting_packages }}"
+    state: absent
+    purge: true
+  become: true
+  when: docker_install_remove_conflicting_packages | bool
+
+- name: install | Docker apt key
+  ansible.builtin.get_url:
+    url: "{{ docker_install_repo_key_url }}"
+    dest: "{{ docker_install_repo_keyring_path }}"
+    mode: "0644"
+  become: true
+
+- name: install | Docker apt repository (deb822)
+  ansible.builtin.deb822_repository:
+    name: docker
+    types: deb
+    uris: "{{ docker_install_repo_url }}"
+    suites:
+      - "{{ docker_install_repo_suite }}"
+    components: "{{ docker_install_repo_components }}"
+    architectures:
+      - "{{ 'amd64' if ansible_architecture in ['x86_64', 'amd64'] else ('arm64' if ansible_architecture in ['aarch64', 'arm64'] else ansible_architecture) }}"
+    signed_by: "{{ docker_install_repo_keyring_path }}"
+    state: present
+    enabled: true
+  become: true
+
+- name: install | Docker Engine and Compose packages
+  ansible.builtin.apt:
+    name: "{{ docker_install_packages }}"
+    state: present
+    update_cache: true
+  become: true

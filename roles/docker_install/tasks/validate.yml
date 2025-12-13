@@ -1,0 +1,14 @@
+---
+- name: validate | Supported OS
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family == "Debian"
+      - ansible_distribution == "Ubuntu"
+    fail_msg: "docker_install currently supports Ubuntu only (got {{ ansible_distribution }} / {{ ansible_os_family }})"
+
+- name: validate | docker_install_users type
+  ansible.builtin.assert:
+    that:
+      - docker_install_users is sequence
+      - docker_install_users is not string
+    fail_msg: "docker_install_users must be a list (got {{ docker_install_users | type_debug }})"
