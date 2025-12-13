@@ -95,6 +95,15 @@ ansible-playbook tests/test_traefik_deploy.yml -i tests/inventory/test.yml
 just install-hooks
 ```
 
+### Statistics
+```bash
+# Show YAML lines of code (requires cloc)
+just stats
+
+# Show YAML lines per role (top 20)
+just stats-roles
+```
+
 ## Documentation
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) - System design and patterns

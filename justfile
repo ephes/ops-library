@@ -92,6 +92,21 @@ status:
     @echo ""
     @echo "Run 'just test' to test everything"
 
+# Show YAML lines of code statistics
+stats:
+    @cloc --include-lang=YAML --exclude-dir=.venv .
+
+# Show YAML lines of code per role (top 20)
+stats-roles:
+    #!/usr/bin/env bash
+    printf "%-35s %6s\n" "ROLE" "LINES"
+    printf "%-35s %6s\n" "-----------------------------------" "------"
+    for dir in roles/*/; do
+        role=$(basename "$dir")
+        count=$(cloc --include-lang=YAML --csv --quiet "$dir" 2>/dev/null | tail -1 | cut -d',' -f5)
+        printf "%-35s %6s\n" "$role" "${count:-0}"
+    done | sort -t' ' -k2 -rn | head -20
+
 # Quick test - just syntax and structure
 quick: syntax-check
     @echo "Quick test completed!"
@@ -310,5 +325,10 @@ help:
     @echo "  just setup          # Setup dev environment"
     @echo "  just venv           # Create virtual environment"
     @echo "  just deps           # Install dependencies"
+    @echo ""
+    @echo "Info:"
+    @echo "  just status         # Show component overview"
+    @echo "  just stats          # Show YAML lines of code (requires cloc)"
+    @echo "  just stats-roles    # Show YAML lines per role (top 20)"
     @echo ""
     @echo "Run 'just' to see all available commands"
