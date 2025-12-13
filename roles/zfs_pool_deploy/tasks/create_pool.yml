@@ -44,7 +44,10 @@
 - name: Create ZFS pool
   ansible.builtin.command:
     cmd: "{{ _zfs_pool_create_cmd }}"
+    stdin: "{{ zfs_pool_passphrase if (zfs_pool_encryption_enabled and zfs_pool_keyformat == 'passphrase') else omit }}"
+    stdin_add_newline: "{{ true if (zfs_pool_encryption_enabled and zfs_pool_keyformat == 'passphrase') else omit }}"
   register: _zfs_pool_create_result
+  no_log: "{{ zfs_pool_no_log }}"
   when: _zfs_pool_exists.rc != 0
 
 - name: Verify pool was created

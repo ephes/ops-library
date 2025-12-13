@@ -15,8 +15,8 @@ ConditionPathExists={{ zfs_pool_keyfile_path }}
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-# Load key if not already loaded (keystatus returns 'available' when loaded)
-ExecStart=/bin/sh -c '/sbin/zfs get -H -o value keystatus {{ zfs_pool_name }} | grep -q available || /sbin/zfs load-key {{ zfs_pool_name }}'
+# Load key if not already loaded (keystatus returns exactly 'available' when loaded)
+ExecStart=/bin/sh -c 'test "$(/sbin/zfs get -H -o value keystatus {{ zfs_pool_name }})" = "available" || /sbin/zfs load-key {{ zfs_pool_name }}'
 ExecStop=/sbin/zfs unload-key {{ zfs_pool_name }}
 
 [Install]
