@@ -2,7 +2,7 @@
 
 Lightweight JSON health endpoint (e.g., `/.well-known/health`) to expose mail metrics (queue counts, disk usage, service status) for nyxmon. Uses a Python stdlib HTTP server with htpasswd-based basic auth and a shell script for metrics.
 
-Tracks PRD: `../ws-mail-meta/specs/mail-nyxmon-prd.md` (issue `ws-mail-meta-e15`).
+Tracks PRD: `specs/mail-nyxmon-prd.md` (issue `ops-meta-e15`).
 
 ## Variables (defaults)
 

@@ -6,7 +6,7 @@ Provisioning helpers for nyxmon end-to-end mail flow checks:
 - Creates the mailbox Maildir directory.
 - Installs a systemd timer to expunge old messages (mailbox hygiene fallback).
 
-Tracks PRD: `../ws-mail-meta/specs/mail-nyxmon-prd.md` (issue `ws-mail-meta-e15`).
+Tracks PRD: `specs/mail-nyxmon-prd.md` (issue `ops-meta-e15`).
 
 ## Intended Scope
 
