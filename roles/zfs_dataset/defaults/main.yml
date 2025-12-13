@@ -19,7 +19,7 @@ zfs_dataset_properties: {}
 # When enabled, sets properties for proper macOS SMB access:
 #   xattr=sa              - Store extended attributes in system area
 #   acltype=nfsv4         - NFSv4 ACLs for proper macOS permissions (note: lowercase)
-#   casesensitivity=mixed - Case-insensitive but preserving (mount-time only)
+#   casesensitivity=mixed - Case-insensitive but preserving (creation-time only)
 #   atime=off             - Disable access time updates
 zfs_dataset_macos_compat: false
 

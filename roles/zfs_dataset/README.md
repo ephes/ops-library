@@ -30,7 +30,7 @@ Ansible role to create and manage ZFS datasets with configurable properties.
 When `zfs_dataset_macos_compat: true`, the following properties are set:
 
 - `xattr=sa` - Store extended attributes in system area
-- `acltype=nfsv4` - NFSv4 ACLs for proper macOS permissions
+- `acltype=nfsv4` - NFSv4 ACLs for proper macOS permissions (alias `nfs4` is accepted)
 - `casesensitivity=mixed` - Case-insensitive but preserving (create-time only)
 - `atime=off` - Disable access time updates
 

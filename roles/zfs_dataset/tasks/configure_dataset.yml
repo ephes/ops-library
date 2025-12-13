@@ -43,6 +43,11 @@
         | combine(zfs_dataset_properties | default({}))
       }}
 
+- name: Normalize known property aliases (runtime)
+  ansible.builtin.set_fact:
+    _zfs_dataset_desired_props: "{{ _zfs_dataset_desired_props | combine({'acltype': 'nfsv4'}) }}"
+  when: _zfs_dataset_desired_props.acltype | default('') == 'nfs4'
+
 # =============================================================================
 # Apply Properties (excluding read-only and create-time-only properties)
 # =============================================================================
@@ -61,8 +66,6 @@
   loop_control:
     label: "{{ item.key }}={{ item.value }}"
   when: _zfs_dataset_props_dict[item.key] | default('') != item.value | string
-  register: _zfs_dataset_property_results
-  changed_when: _zfs_dataset_property_results.rc == 0
 
 # =============================================================================
 # Mountpoint Configuration

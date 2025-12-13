@@ -25,6 +25,13 @@
       }}
   when: _zfs_dataset_exists.rc != 0
 
+- name: Normalize known property aliases (create-time)
+  ansible.builtin.set_fact:
+    _zfs_dataset_effective_props: "{{ _zfs_dataset_effective_props | combine({'acltype': 'nfsv4'}) }}"
+  when:
+    - _zfs_dataset_exists.rc != 0
+    - _zfs_dataset_effective_props.acltype | default('') == 'nfs4'
+
 - name: Build zfs create command
   ansible.builtin.set_fact:
     _zfs_dataset_create_cmd: >-
