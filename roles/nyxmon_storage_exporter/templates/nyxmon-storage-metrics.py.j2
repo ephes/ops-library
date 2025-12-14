@@ -81,7 +81,9 @@ def _smartctl_health(device: str) -> dict[str, Any]:
 
     payload["ok"] = "PASSED" in out.stdout
     temp_match = re.search(
-        r"Temperature_Celsius\s+\S+\s+\S+\s+\S+\s+(\d+)", out.stdout
+        r"^194\s+Temperature_Celsius\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(\d+)",
+        out.stdout,
+        re.MULTILINE,
     )
     if temp_match:
         payload["temp_c"] = int(temp_match.group(1))
