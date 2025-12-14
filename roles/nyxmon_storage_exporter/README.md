@@ -26,12 +26,14 @@ The following packages should be installed depending on your monitoring needs:
 
 ## Role Variables
 
-### Required Variables
+### Inventory Variables
 
-| Variable | Type | Description |
-|----------|------|-------------|
-| `nyxmon_storage_exporter_disks` | list | List of disks to monitor (see structure below) |
-| `nyxmon_storage_exporter_pools` | list | List of ZFS pool names to monitor |
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `nyxmon_storage_exporter_disks` | list | `[]` | List of disks to monitor (see structure below) |
+| `nyxmon_storage_exporter_pools` | list | `[]` | List of ZFS pool names to monitor |
+
+**Note:** Both lists default to empty. If empty, the exporter will still run but report no disk/pool data. Configure at least one of these to get meaningful metrics.
 
 #### Disk Entry Structure
 
