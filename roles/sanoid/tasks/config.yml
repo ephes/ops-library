@@ -1,5 +1,5 @@
 ---
-- name: Ensure /etc/sanoid exists
+- name: config | Ensure /etc/sanoid exists
   ansible.builtin.file:
     path: "{{ sanoid_config_path | dirname }}"
     state: directory
@@ -7,7 +7,7 @@
     group: root
     mode: "0755"
 
-- name: Deploy sanoid.conf
+- name: config | Deploy sanoid.conf
   ansible.builtin.template:
     src: sanoid.conf.j2
     dest: "{{ sanoid_config_path }}"

@@ -1,7 +1,7 @@
 ---
 # Validate sanoid configuration.
 
-- name: Assert sane configuration
+- name: validate | Assert sane configuration
   ansible.builtin.assert:
     that:
       - sanoid_templates is mapping
@@ -11,7 +11,7 @@
     fail_msg: >-
       sanoid configuration missing. Define sanoid_templates and sanoid_datasets.
 
-- name: Assert datasets reference existing templates
+- name: validate | Assert datasets reference existing templates
   ansible.builtin.assert:
     that:
       - item.template is defined

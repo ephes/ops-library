@@ -1,6 +1,6 @@
 ---
 # Disable the package-provided sanoid timers since we manage our own
-- name: Disable package-provided sanoid.timer
+- name: systemd | Disable package-provided sanoid.timer
   ansible.builtin.systemd_service:
     name: sanoid.timer
     enabled: false
@@ -8,7 +8,7 @@
   failed_when: false  # Timer may not exist on all systems
   when: sanoid_disable_package_timers
 
-- name: Disable package-provided sanoid-prune.timer
+- name: systemd | Disable package-provided sanoid-prune.timer
   ansible.builtin.systemd_service:
     name: sanoid-prune.timer
     enabled: false
@@ -16,7 +16,7 @@
   failed_when: false  # Timer may not exist on all systems
   when: sanoid_disable_package_timers
 
-- name: Install sanoid systemd service
+- name: systemd | Install sanoid systemd service
   ansible.builtin.template:
     src: sanoid-ops-library.service.j2
     dest: "/etc/systemd/system/{{ sanoid_service_name }}"
@@ -25,7 +25,7 @@
     mode: "0644"
   notify: Reload systemd
 
-- name: Install sanoid systemd timer
+- name: systemd | Install sanoid systemd timer
   ansible.builtin.template:
     src: sanoid-ops-library.timer.j2
     dest: "/etc/systemd/system/{{ sanoid_timer_name }}"
@@ -34,10 +34,10 @@
     mode: "0644"
   notify: Reload systemd
 
-- name: Flush handlers (systemd reload before enabling)
+- name: systemd | Flush handlers (systemd reload before enabling)
   ansible.builtin.meta: flush_handlers
 
-- name: Enable and start sanoid timer
+- name: systemd | Enable and start sanoid timer
   ansible.builtin.systemd_service:
     name: "{{ sanoid_timer_name }}"
     enabled: true

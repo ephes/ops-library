@@ -1,5 +1,5 @@
 ---
-- name: Install sanoid package(s)
+- name: packages | Install sanoid package(s)
   ansible.builtin.apt:
     name: "{{ sanoid_packages }}"
     state: present
