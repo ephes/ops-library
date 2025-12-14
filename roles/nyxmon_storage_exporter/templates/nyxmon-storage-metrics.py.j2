@@ -28,6 +28,13 @@ def _now_ts() -> int:
 
 
 def _parse_zpool_scan_ts(zpool_status_output: str) -> int | None:
+    """Parse scrub timestamp from zpool status output.
+
+    zpool outputs timestamps in local time (e.g., 'Sun Dec 14 07:24:50 2025'),
+    so we parse without timezone and let mktime() interpret as local time.
+    """
+    import time
+
     for line in zpool_status_output.splitlines():
         line = line.strip()
         if not line.startswith("scan:"):
@@ -37,10 +44,10 @@ def _parse_zpool_scan_ts(zpool_status_output: str) -> int | None:
             continue
         raw = match.group(1).strip()
         try:
-            dt = datetime.strptime(raw, "%a %b %d %H:%M:%S %Y").replace(
-                tzinfo=timezone.utc
-            )
-            return int(dt.timestamp())
+            # Parse as naive datetime, then convert to timestamp using local timezone
+            dt = datetime.strptime(raw, "%a %b %d %H:%M:%S %Y")
+            # Use time.mktime to interpret as local time
+            return int(time.mktime(dt.timetuple()))
         except ValueError:
             return None
     return None
@@ -160,13 +167,16 @@ def _edac_status() -> dict[str, Any]:
 
 
 def main() -> int:
-    pools = {{ nyxmon_storage_exporter_pools | to_json }}
-    disks = {{ nyxmon_storage_exporter_disks | to_json }}
+    pools: list[str] = json.loads('{{ nyxmon_storage_exporter_pools | to_json }}')
+    disks: list[dict[str, Any]] = json.loads('{{ nyxmon_storage_exporter_disks | to_json }}')
 
     payload: dict[str, Any] = {"ts": _now_ts()}
     pool_data = _zpool_list()
-    if isinstance(pool_data, dict) and pools:
+    # When pools list is empty, report no pool data; otherwise filter to requested pools
+    if pools:
         pool_data = {k: v for k, v in pool_data.items() if k in pools or k == "_error"}
+    else:
+        pool_data = {}
     payload["pools"] = pool_data
 
     disk_results: list[dict[str, Any]] = []

@@ -31,5 +31,4 @@
     label: "{{ item.0.key }}"
   when: (item.1.stdout | trim) != (item.0.value | string)
   register: _mail_relay_client_postconf_updates
-  changed_when: _mail_relay_client_postconf_updates.rc == 0
   notify: Restart postfix
