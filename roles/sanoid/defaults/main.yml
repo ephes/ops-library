@@ -40,6 +40,10 @@ sanoid_manage_systemd: true
 sanoid_service_name: "sanoid-ops-library.service"
 sanoid_timer_name: "sanoid-ops-library.timer"
 
+# Disable package-provided timers (sanoid.timer, sanoid-prune.timer)
+# to prevent duplicate snapshots when using our own timer
+sanoid_disable_package_timers: true
+
 # Default schedule: hourly (with jitter)
 sanoid_on_calendar: "hourly"
 sanoid_randomized_delay_sec: "15m"
