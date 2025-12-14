@@ -1,6 +1,9 @@
 # Managed by Ansible (ops-library smartd role)
 #
 # See `man smartd.conf` for details.
+#
+# Device type handling: If type is set (e.g., ata, nvme, scsi, sat, auto),
+# "-d <type>" is rendered. If type is omitted or "auto", smartd auto-detects.
 
 {% for dev in smartd_devices %}
 {% set dev_type = dev.type | default('auto') %}
