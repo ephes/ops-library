@@ -1,10 +1,28 @@
 ---
-- name: validate | Assert devices are configured
+- name: validate | Assert devices is a list (not string)
   ansible.builtin.assert:
     that:
-      - smartd_devices is iterable
+      - smartd_devices is sequence
+      - smartd_devices is not string
+      - smartd_devices is not mapping
       - smartd_devices | length > 0
-    fail_msg: "smartd_devices must be a non-empty list"
+    fail_msg: "smartd_devices must be a non-empty list, got: {{ smartd_devices | type_debug }}"
+
+- name: validate | Assert each device has required keys
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - item.device is defined
+      - item.type is defined
+      - item.name is defined
+      - item.device | length > 0
+      - item.type | length > 0
+      - item.name | length > 0
+    fail_msg: "smartd_devices[{{ idx }}] must be a dict with 'device', 'type', and 'name' keys"
+  loop: "{{ smartd_devices }}"
+  loop_control:
+    index_var: idx
+    label: "{{ item.name | default('device ' ~ idx) }}"
 
 - name: validate | Assert mail recipient is configured
   ansible.builtin.assert:

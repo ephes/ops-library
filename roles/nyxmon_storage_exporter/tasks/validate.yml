@@ -1,6 +1,45 @@
 ---
-- name: validate | Assert pools/disks are lists
+- name: validate | Assert pools is a list (not string)
   ansible.builtin.assert:
     that:
-      - nyxmon_storage_exporter_pools is iterable
-      - nyxmon_storage_exporter_disks is iterable
+      - nyxmon_storage_exporter_pools is sequence
+      - nyxmon_storage_exporter_pools is not string
+      - nyxmon_storage_exporter_pools is not mapping
+    fail_msg: "nyxmon_storage_exporter_pools must be a list, got: {{ nyxmon_storage_exporter_pools | type_debug }}"
+
+- name: validate | Assert each pool is a string
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item | length > 0
+    fail_msg: "nyxmon_storage_exporter_pools[{{ idx }}] must be a non-empty string"
+  loop: "{{ nyxmon_storage_exporter_pools }}"
+  loop_control:
+    index_var: idx
+    label: "pool {{ idx }}"
+  when: nyxmon_storage_exporter_pools | length > 0
+
+- name: validate | Assert disks is a list (not string)
+  ansible.builtin.assert:
+    that:
+      - nyxmon_storage_exporter_disks is sequence
+      - nyxmon_storage_exporter_disks is not string
+      - nyxmon_storage_exporter_disks is not mapping
+    fail_msg: "nyxmon_storage_exporter_disks must be a list, got: {{ nyxmon_storage_exporter_disks | type_debug }}"
+
+- name: validate | Assert each disk has required keys
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - item.device is defined
+      - item.type is defined
+      - item.name is defined
+      - item.device | length > 0
+      - item.type in ['nvme', 'ata', 'scsi', 'sat']
+      - item.name | length > 0
+    fail_msg: "nyxmon_storage_exporter_disks[{{ idx }}] must have 'device', 'type' (nvme/ata/scsi/sat), and 'name'"
+  loop: "{{ nyxmon_storage_exporter_disks }}"
+  loop_control:
+    index_var: idx
+    label: "{{ item.name | default('disk ' ~ idx) }}"
+  when: nyxmon_storage_exporter_disks | length > 0
