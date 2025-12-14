@@ -32,6 +32,10 @@ def _parse_zpool_scan_ts(zpool_status_output: str) -> int | None:
 
     zpool outputs timestamps in local time (e.g., 'Sun Dec 14 07:24:50 2025'),
     so we parse without timezone and let mktime() interpret as local time.
+
+    Handles both:
+    - Completed scrubs: "scan: scrub repaired 0B in 00:00:01 ... on Sun Dec 14 07:24:50 2025"
+    - In-progress scrubs: "scan: scrub in progress since Sun Dec 14 07:24:50 2025"
     """
     import time
 
@@ -39,7 +43,8 @@ def _parse_zpool_scan_ts(zpool_status_output: str) -> int | None:
         line = line.strip()
         if not line.startswith("scan:"):
             continue
-        match = re.search(r"on (.*)$", line)
+        # Try "on <date>" first (completed scrub), then "since <date>" (in progress)
+        match = re.search(r"on (.*)$", line) or re.search(r"since (.*)$", line)
         if not match:
             continue
         raw = match.group(1).strip()
@@ -167,8 +172,8 @@ def _edac_status() -> dict[str, Any]:
 
 
 def main() -> int:
-    pools: list[str] = json.loads('{{ nyxmon_storage_exporter_pools | to_json }}')
-    disks: list[dict[str, Any]] = json.loads('{{ nyxmon_storage_exporter_disks | to_json }}')
+    pools: list[str] = json.loads(r'''{{ nyxmon_storage_exporter_pools | to_json }}''')
+    disks: list[dict[str, Any]] = json.loads(r'''{{ nyxmon_storage_exporter_disks | to_json }}''')
 
     payload: dict[str, Any] = {"ts": _now_ts()}
     pool_data = _zpool_list()
