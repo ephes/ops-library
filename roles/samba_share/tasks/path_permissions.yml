@@ -1,0 +1,15 @@
+---
+# Set filesystem ownership/permissions on the share path.
+# Only runs when owner/group/mode is explicitly specified.
+
+- name: Set share path ownership/permissions
+  ansible.builtin.file:
+    path: "{{ samba_share_path }}"
+    state: directory
+    owner: "{{ samba_share_path_owner | default(omit, true) }}"
+    group: "{{ samba_share_path_group | default(omit, true) }}"
+    mode: "{{ samba_share_path_mode | default(omit, true) }}"
+  when: >-
+    (samba_share_path_owner | length > 0) or
+    (samba_share_path_group | length > 0) or
+    (samba_share_path_mode | length > 0)

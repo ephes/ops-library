@@ -29,11 +29,17 @@ samba_share_users: []
 samba_share_manage_system_users: true
 samba_share_system_group: "sambashare"
 
-# Permissions
+# Samba-level permissions (applied to new files/directories)
 samba_share_create_mask: "0660"
 samba_share_directory_mask: "0770"
 samba_share_force_user: ""
 samba_share_force_group: ""
+
+# Filesystem permissions on the share path (optional, only applied if set)
+# These set ownership on the share directory itself.
+samba_share_path_owner: ""
+samba_share_path_group: ""
+samba_share_path_mode: ""
 
 # Optional extra share options (dict of smb.conf keys/values)
 samba_share_extra_options: {}

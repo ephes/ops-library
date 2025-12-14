@@ -13,6 +13,9 @@
   ansible.builtin.include_tasks: users.yml
   when: samba_share_users | length > 0
 
+- name: Set share path permissions
+  ansible.builtin.include_tasks: path_permissions.yml
+
 - name: Configure Samba share
   ansible.builtin.include_tasks: config.yml
 

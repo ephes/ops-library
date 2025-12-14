@@ -24,6 +24,12 @@ Common options:
 - `samba_share_manage_system_users` (bool, default `true`): Ensure matching Unix users exist for `samba_share_users`.
 - `samba_share_system_group` (string, default `sambashare`): Unix group for the created users.
 
+Filesystem permissions (optional, only applied if set):
+
+- `samba_share_path_owner` (string, default `""`): Owner of the share directory.
+- `samba_share_path_group` (string, default `""`): Group of the share directory.
+- `samba_share_path_mode` (string, default `""`): Mode of the share directory (e.g., `"0770"`).
+
 ## Example
 
 ```yaml
