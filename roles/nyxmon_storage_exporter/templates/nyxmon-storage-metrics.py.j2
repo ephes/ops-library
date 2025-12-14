@@ -12,7 +12,16 @@ from typing import Any
 
 
 def _run(argv: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(argv, check=False, capture_output=True, text=True)
+    try:
+        return subprocess.run(argv, check=False, capture_output=True, text=True)
+    except FileNotFoundError as err:
+        # Return a fake CompletedProcess with an error message
+        return subprocess.CompletedProcess(
+            args=argv,
+            returncode=127,
+            stdout="",
+            stderr=f"command not found: {argv[0] if argv else 'unknown'}",
+        )
 
 
 def _now_ts() -> int:
