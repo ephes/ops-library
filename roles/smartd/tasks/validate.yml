@@ -1,12 +1,12 @@
 ---
-- name: Assert devices are configured
+- name: validate | Assert devices are configured
   ansible.builtin.assert:
     that:
       - smartd_devices is iterable
       - smartd_devices | length > 0
     fail_msg: "smartd_devices must be a non-empty list"
 
-- name: Assert mail recipient is configured
+- name: validate | Assert mail recipient is configured
   ansible.builtin.assert:
     that:
       - smartd_mail_to | length > 0

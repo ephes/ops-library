@@ -1,5 +1,5 @@
 ---
-- name: Enable and start ZED service
+- name: service | Enable and start ZED service
   ansible.builtin.systemd_service:
     name: "{{ zed_service_name }}"
     enabled: true

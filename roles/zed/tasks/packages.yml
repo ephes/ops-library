@@ -1,5 +1,5 @@
 ---
-- name: Install ZED package(s)
+- name: packages | Install ZED package(s)
   ansible.builtin.apt:
     name: "{{ zed_packages }}"
     state: present

@@ -1,5 +1,5 @@
 ---
-- name: Assert relayhost is configured
+- name: validate | Assert relayhost is configured
   ansible.builtin.assert:
     that:
       - not mail_relay_client_enabled or (mail_relay_client_relayhost | length > 0)

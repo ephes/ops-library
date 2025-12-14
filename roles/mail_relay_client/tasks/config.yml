@@ -1,5 +1,5 @@
 ---
-- name: Build desired postfix settings
+- name: config | Build desired postfix settings
   ansible.builtin.set_fact:
     _mail_relay_client_desired_postfix_settings: >-
       {{
@@ -14,7 +14,7 @@
           )
       }}
 
-- name: Read current postfix settings
+- name: config | Read current postfix settings
   ansible.builtin.command:
     cmd: "postconf -h {{ item.key }}"
   loop: "{{ _mail_relay_client_desired_postfix_settings | dict2items }}"
@@ -23,7 +23,7 @@
   register: _mail_relay_client_current_postfix_settings
   changed_when: false
 
-- name: Apply postfix settings when different
+- name: config | Apply postfix settings when different
   ansible.builtin.command:
     cmd: "postconf -e {{ item.0.key }}='{{ item.0.value }}'"
   loop: "{{ (_mail_relay_client_desired_postfix_settings | dict2items) | zip(_mail_relay_client_current_postfix_settings.results) | list }}"

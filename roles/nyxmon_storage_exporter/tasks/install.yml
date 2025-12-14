@@ -1,5 +1,5 @@
 ---
-- name: Install nyxmon storage metrics exporter script
+- name: install | Install nyxmon storage metrics exporter script
   ansible.builtin.template:
     src: nyxmon-storage-metrics.py.j2
     dest: "{{ nyxmon_storage_exporter_bin_path }}"

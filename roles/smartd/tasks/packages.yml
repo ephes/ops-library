@@ -1,5 +1,5 @@
 ---
-- name: Install smartmontools and nvme-cli
+- name: packages | Install smartmontools and nvme-cli
   ansible.builtin.apt:
     name: "{{ smartd_packages }}"
     state: present

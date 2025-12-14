@@ -1,5 +1,5 @@
 ---
-- name: Assert pools/disks are lists
+- name: validate | Assert pools/disks are lists
   ansible.builtin.assert:
     that:
       - nyxmon_storage_exporter_pools is iterable

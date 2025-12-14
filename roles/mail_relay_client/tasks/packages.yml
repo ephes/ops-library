@@ -1,5 +1,5 @@
 ---
-- name: Install postfix + mailx
+- name: packages | Install postfix + mailx
   ansible.builtin.apt:
     name: "{{ mail_relay_client_packages }}"
     state: present
