@@ -4,5 +4,5 @@
 
 {% for dev in smartd_devices %}
 {% set dev_type = dev.type | default('auto') %}
-{{ dev.device }}{% if dev_type == 'nvme' %} -d nvme{% endif %} -a -o on -S on -s ({{ smartd_short_test_schedule }}|{{ smartd_long_test_schedule }}) -W {{ smartd_temp_diff }},{{ smartd_temp_info }},{{ smartd_temp_crit }} -m {{ smartd_mail_to }}
+{{ dev.device }}{% if dev_type != 'auto' %} -d {{ dev_type }}{% endif %} -a -o on -S on -s ({{ smartd_short_test_schedule }}|{{ smartd_long_test_schedule }}) -W {{ smartd_temp_diff }},{{ smartd_temp_info }},{{ smartd_temp_crit }} -m {{ smartd_mail_to }}
 {% endfor %}

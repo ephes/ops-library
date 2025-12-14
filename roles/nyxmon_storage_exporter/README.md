@@ -82,9 +82,24 @@ nyxmon_storage_exporter_disks:
 
 ## Nyxmon Threshold Configuration
 
-When configuring thresholds in Nyxmon, disk checks use array indices (e.g., `$.disks.0.ok`, `$.disks.1.ok`). **The order of disks in the output matches the order in `nyxmon_storage_exporter_disks`.**
+### Recommended: Use `disks_by_name` for Stable JSONPaths
 
-Example threshold configuration for the disks above:
+The output includes a `disks_by_name` object keyed by disk name, which provides stable JSONPaths that don't change when inventory order changes:
+
+| JSONPath | Operator | Value | Severity | Description |
+|----------|----------|-------|----------|-------------|
+| `$.disks_by_name.boot-nvme.ok` | `==` | `true` | critical | boot-nvme health |
+| `$.disks_by_name.fast-nvme.ok` | `==` | `true` | critical | fast-nvme health |
+| `$.disks_by_name.tank-hdd-1.ok` | `==` | `true` | critical | tank-hdd-1 health |
+| `$.disks_by_name.tank-hdd-2.ok` | `==` | `true` | critical | tank-hdd-2 health |
+| `$.pools.fast.health` | `==` | `ONLINE` | critical | fast pool status |
+| `$.pools.tank.health` | `==` | `ONLINE` | critical | tank pool status |
+| `$.pools.fast.last_scrub_age_days` | `<` | `14` | warning | scrub recency |
+| `$.ecc.loaded` | `==` | `true` | warning | ECC module loaded |
+
+### Alternative: Index-Based JSONPaths
+
+You can also use array indices (e.g., `$.disks.0.ok`), but **the order matches `nyxmon_storage_exporter_disks`** and thresholds must be updated if you reorder disks.
 
 | JSONPath | Operator | Value | Severity | Description |
 |----------|----------|-------|----------|-------------|
@@ -92,12 +107,6 @@ Example threshold configuration for the disks above:
 | `$.disks.1.ok` | `==` | `true` | critical | fast-nvme health |
 | `$.disks.2.ok` | `==` | `true` | critical | tank-hdd-1 health |
 | `$.disks.3.ok` | `==` | `true` | critical | tank-hdd-2 health |
-| `$.pools.fast.health` | `==` | `ONLINE` | critical | fast pool status |
-| `$.pools.tank.health` | `==` | `ONLINE` | critical | tank pool status |
-| `$.pools.fast.last_scrub_age_days` | `<` | `14` | warning | scrub recency |
-| `$.ecc.loaded` | `==` | `true` | warning | ECC module loaded |
-
-**Important:** If you reorder disks in the Ansible configuration, you must update the corresponding Nyxmon threshold indices.
 
 ## Output Format
 
@@ -109,6 +118,10 @@ The script outputs JSON with disk temperatures, health status, pool information,
     {"name": "tank-hdd-1", "device": "/dev/...", "type": "sat", "pool": "tank", "temp_c": 40, "ok": true},
     {"name": "boot-nvme", "device": "/dev/...", "type": "nvme", "pool": "none", "temp_c": 25, "ok": true}
   ],
+  "disks_by_name": {
+    "tank-hdd-1": {"name": "tank-hdd-1", "device": "/dev/...", "type": "sat", "pool": "tank", "temp_c": 40, "ok": true},
+    "boot-nvme": {"name": "boot-nvme", "device": "/dev/...", "type": "nvme", "pool": "none", "temp_c": 25, "ok": true}
+  },
   "pools": {
     "tank": {"health": "ONLINE", "size": "10.9T", "alloc": "7.54M", "free": "10.9T", "cap": "0%", "last_scrub_age_days": 0.5}
   },

@@ -3,6 +3,7 @@
 
 - name: Validate required variables
   ansible.builtin.include_tasks: validate.yml
+  when: smartd_enabled
 
 - name: Install smartd packages
   ansible.builtin.include_tasks: packages.yml

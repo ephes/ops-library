@@ -171,20 +171,25 @@ def main() -> int:
     payload["pools"] = pool_data
 
     disk_results: list[dict[str, Any]] = []
+    disks_by_name: dict[str, dict[str, Any]] = {}
     for disk in disks:
         device = disk.get("device")
         dtype = disk.get("type")
+        name = disk.get("name")
         if not device:
             continue
         if dtype == "nvme":
             res = _nvme_smart(device)
         else:
             res = _smartctl_health(device)
-        res["name"] = disk.get("name")
+        res["name"] = name
         res["pool"] = disk.get("pool")
         res["type"] = dtype
         disk_results.append(res)
+        if name:
+            disks_by_name[name] = res
     payload["disks"] = disk_results
+    payload["disks_by_name"] = disks_by_name
 
     payload["ecc"] = _edac_status()
 

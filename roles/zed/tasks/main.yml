@@ -3,6 +3,7 @@
 
 - name: Validate required variables
   ansible.builtin.include_tasks: validate.yml
+  when: zed_enabled
 
 - name: Install zed packages
   ansible.builtin.include_tasks: packages.yml
