@@ -1,5 +1,5 @@
 ---
-- name: Install Samba packages
+- name: packages | Install Samba packages
   ansible.builtin.apt:
     name: "{{ samba_share_packages }}"
     state: present

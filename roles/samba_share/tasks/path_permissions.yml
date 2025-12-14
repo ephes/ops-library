@@ -2,7 +2,7 @@
 # Set filesystem ownership/permissions on the share path.
 # Only runs when owner/group/mode is explicitly specified.
 
-- name: Set share path ownership/permissions
+- name: path_permissions | Set share path ownership/permissions
   ansible.builtin.file:
     path: "{{ samba_share_path }}"
     state: directory

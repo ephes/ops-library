@@ -1,7 +1,7 @@
 ---
 # Configure Samba users for general shares (idempotent).
 
-- name: Ensure Unix users exist for Samba users
+- name: users | Ensure Unix users exist for Samba users
   ansible.builtin.user:
     name: "{{ item.name }}"
     groups: "{{ samba_share_system_group }}"
@@ -14,7 +14,7 @@
     label: "{{ item.name }}"
   when: samba_share_manage_system_users
 
-- name: Check existing Samba users
+- name: users | Check existing Samba users
   ansible.builtin.command:
     cmd: pdbedit -L -u {{ item.name }}
   loop: "{{ samba_share_users }}"
@@ -24,7 +24,7 @@
   changed_when: false
   failed_when: false
 
-- name: Identify users to create
+- name: users | Identify users to create
   ansible.builtin.set_fact:
     _samba_users_to_create: >-
       {{
@@ -34,7 +34,7 @@
         | list
       }}
 
-- name: Create new Samba users
+- name: users | Create new Samba users
   ansible.builtin.shell:
     cmd: |
       (echo '{{ item.password }}'; echo '{{ item.password }}') | smbpasswd -a -s {{ item.name }}
@@ -46,7 +46,7 @@
   register: _samba_users_create_result
   changed_when: _samba_users_create_result.rc == 0
 
-- name: Enable Samba users
+- name: users | Enable Samba users
   ansible.builtin.command:
     cmd: smbpasswd -e {{ item.name }}
   loop: "{{ _samba_users_to_create }}"

@@ -21,4 +21,3 @@
 
 - name: Ensure services are running
   ansible.builtin.include_tasks: service.yml
-

@@ -1,5 +1,5 @@
 ---
-- name: Enable and start Samba services
+- name: service | Enable and start Samba services
   ansible.builtin.service:
     name: "{{ item }}"
     enabled: "{{ samba_share_service_enabled }}"
@@ -7,4 +7,3 @@
   loop:
     - smbd
     - nmbd
-
