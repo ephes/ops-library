@@ -1,0 +1,161 @@
+---
+- name: Skip storage_metrics_endpoint when disabled
+  ansible.builtin.debug:
+    msg: "storage_metrics_endpoint role skipped (storage_metrics_endpoint_enabled=false)."
+  when: not storage_metrics_endpoint_enabled | bool
+
+- name: Deploy storage metrics endpoint
+  when: storage_metrics_endpoint_enabled | bool
+  block:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - storage_metrics_endpoint_auth_user is defined
+          - storage_metrics_endpoint_auth_user != "CHANGE_ME"
+          - storage_metrics_endpoint_auth_user | length > 0
+          - storage_metrics_endpoint_auth_password is defined
+          - storage_metrics_endpoint_auth_password != "CHANGE_ME"
+          - storage_metrics_endpoint_auth_password | length > 0
+        fail_msg: |
+          storage_metrics_endpoint auth values are missing or still set to CHANGE_ME.
+          Set storage_metrics_endpoint_auth_user/password via ops-control vault before enabling.
+
+    - name: Validate exporter script exists
+      ansible.builtin.stat:
+        path: "{{ storage_metrics_endpoint_exporter_path }}"
+      register: _storage_exporter_stat
+
+    - name: Fail if exporter script not found
+      ansible.builtin.fail:
+        msg: |
+          Storage metrics exporter script not found at {{ storage_metrics_endpoint_exporter_path }}.
+          Ensure the nyxmon_storage_exporter role has been deployed first.
+      when: not _storage_exporter_stat.stat.exists
+
+    - name: Install dependencies for storage metrics endpoint
+      ansible.builtin.package:
+        name:
+          - python3
+          - apache2-utils
+        state: present
+
+    - name: Create metrics system group
+      ansible.builtin.group:
+        name: "{{ storage_metrics_endpoint_group }}"
+        system: true
+        state: present
+
+    - name: Create metrics system user
+      ansible.builtin.user:
+        name: "{{ storage_metrics_endpoint_user }}"
+        group: "{{ storage_metrics_endpoint_group }}"
+        shell: /usr/sbin/nologin
+        create_home: false
+        system: true
+        state: present
+
+    - name: Ensure data directory exists
+      ansible.builtin.file:
+        path: "{{ storage_metrics_endpoint_data_dir }}"
+        state: directory
+        owner: root
+        group: "{{ storage_metrics_endpoint_group }}"
+        mode: "0750"
+
+    - name: Ensure htpasswd directory exists
+      ansible.builtin.file:
+        path: "{{ storage_metrics_endpoint_htpasswd_dir }}"
+        state: directory
+        owner: root
+        group: "{{ storage_metrics_endpoint_group }}"
+        mode: "0750"
+
+    - name: Deploy HTTP server script
+      ansible.builtin.template:
+        src: storage_metrics_httpd.py.j2
+        dest: "{{ storage_metrics_endpoint_server_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+      notify: restart storage-metrics-endpoint
+
+    - name: Verify existing htpasswd credentials
+      ansible.builtin.command: "htpasswd -viB {{ storage_metrics_endpoint_htpasswd_path }} {{ storage_metrics_endpoint_auth_user }}"
+      args:
+        stdin: "{{ storage_metrics_endpoint_auth_password }}"
+      register: _storage_htpasswd_verify
+      changed_when: false
+      failed_when: false
+
+    - name: Generate htpasswd entry
+      ansible.builtin.command: "htpasswd -niB {{ storage_metrics_endpoint_auth_user }}"
+      args:
+        stdin: "{{ storage_metrics_endpoint_auth_password }}"
+      register: _storage_htpasswd_entry
+      changed_when: false
+      when: _storage_htpasswd_verify.rc != 0
+
+    - name: Write htpasswd file
+      ansible.builtin.copy:
+        dest: "{{ storage_metrics_endpoint_htpasswd_path }}"
+        content: "{{ _storage_htpasswd_entry.stdout }}\n"
+        owner: root
+        group: "{{ storage_metrics_endpoint_group }}"
+        mode: "0640"
+      notify: restart storage-metrics-endpoint
+      when: _storage_htpasswd_verify.rc != 0
+
+    - name: Create collector service unit
+      ansible.builtin.template:
+        src: storage-metrics-collector.service.j2
+        dest: "/etc/systemd/system/{{ storage_metrics_endpoint_timer_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+
+    - name: Create collector timer unit
+      ansible.builtin.template:
+        src: storage-metrics-collector.timer.j2
+        dest: "/etc/systemd/system/{{ storage_metrics_endpoint_timer_name }}.timer"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart storage-metrics-collector-timer
+
+    - name: Create HTTP server service unit
+      ansible.builtin.template:
+        src: storage-metrics-endpoint.service.j2
+        dest: "/etc/systemd/system/{{ storage_metrics_endpoint_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart storage-metrics-endpoint
+
+    - name: Flush handlers to ensure units are registered
+      ansible.builtin.meta: flush_handlers
+
+    - name: Run collector once to create initial metrics file
+      ansible.builtin.systemd:
+        name: "{{ storage_metrics_endpoint_timer_name }}.service"
+        state: started
+      changed_when: false
+
+    - name: Ensure collector timer is enabled and started
+      ansible.builtin.systemd:
+        name: "{{ storage_metrics_endpoint_timer_name }}.timer"
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Ensure HTTP server is enabled and running
+      ansible.builtin.systemd:
+        name: "{{ storage_metrics_endpoint_service_name }}"
+        enabled: true
+        state: started
+        daemon_reload: true

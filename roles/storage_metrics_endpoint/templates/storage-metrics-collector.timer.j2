@@ -1,0 +1,11 @@
+[Unit]
+Description=Collect storage metrics every {{ storage_metrics_endpoint_timer_interval }} seconds
+
+[Timer]
+OnBootSec=30
+OnUnitActiveSec={{ storage_metrics_endpoint_timer_interval }}
+AccuracySec=10
+Persistent=true
+
+[Install]
+WantedBy=timers.target
