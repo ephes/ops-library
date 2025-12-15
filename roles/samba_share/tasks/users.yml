@@ -16,7 +16,7 @@
 
 - name: users | Check existing Samba users
   ansible.builtin.command:
-    cmd: pdbedit -L -u {{ item.name }}
+    cmd: pdbedit -L -u {{ item.name | quote }}
   loop: "{{ samba_share_users }}"
   loop_control:
     label: "{{ item.name }}"
@@ -37,18 +37,18 @@
 - name: users | Create new Samba users
   ansible.builtin.shell:
     cmd: |
-      (echo '{{ item.password }}'; echo '{{ item.password }}') | smbpasswd -a -s {{ item.name }}
+      printf '%s\n' {{ item.password | quote }} {{ item.password | quote }} | smbpasswd -a -s {{ item.name | quote }}
   loop: "{{ _samba_users_to_create }}"
   loop_control:
     label: "{{ item.name }}"
-  no_log: "{{ samba_share_no_log }}"
+  no_log: true
   when: _samba_users_to_create | length > 0
   register: _samba_users_create_result
   changed_when: _samba_users_create_result.rc == 0
 
 - name: users | Enable Samba users
   ansible.builtin.command:
-    cmd: smbpasswd -e {{ item.name }}
+    cmd: smbpasswd -e {{ item.name | quote }}
   loop: "{{ _samba_users_to_create }}"
   loop_control:
     label: "{{ item.name }}"

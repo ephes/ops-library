@@ -49,7 +49,7 @@ samba_share_extra_options: {}
 # =============================================================================
 
 samba_share_workgroup: "WORKGROUP"
-samba_share_server_string: "Fractal File Server"
+samba_share_server_string: "Samba %h"
 samba_share_min_protocol: "SMB3"
 samba_share_disable_printing: true
 
@@ -80,4 +80,4 @@ samba_share_snippet_path: "{{ samba_share_snippet_dir }}/{{ samba_share_name }}.
 # Logging
 # =============================================================================
 
-samba_share_no_log: false
+samba_share_no_log: true
