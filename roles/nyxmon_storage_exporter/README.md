@@ -42,7 +42,7 @@ Each disk in `nyxmon_storage_exporter_disks` must have:
 | Key | Type | Description |
 |-----|------|-------------|
 | `device` | string | Path to disk device (use `/dev/disk/by-id/` for stability) |
-| `type` | string | Either `nvme` or `sat` (SATA/SAS) |
+| `type` | string | One of `nvme`, `ata`, `scsi`, or `sat` |
 | `name` | string | Human-readable name for the disk |
 | `pool` | string | ZFS pool name this disk belongs to (or `none`) |
 
