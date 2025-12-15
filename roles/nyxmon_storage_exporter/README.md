@@ -4,7 +4,7 @@ Storage health metrics exporter for Nyxmon integration.
 
 ## Description
 
-This role installs a Python script that collects and outputs storage health metrics as JSON. It gathers SMART data from disks (temperature, health status) and ZFS pool information (health, capacity, last scrub). The script is designed to be executed via SSH from Nyxmon for custom health checks.
+This role installs a Python script that collects and outputs storage health metrics as JSON. It gathers SMART data from disks (temperature, health status) and ZFS pool information (health, capacity, last scrub). The JSON output is designed to be served over HTTP and monitored using Nyxmon's `json-metrics` check type.
 
 ## Requirements
 
