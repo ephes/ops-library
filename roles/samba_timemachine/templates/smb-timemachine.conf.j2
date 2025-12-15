@@ -7,7 +7,7 @@
     path = {{ samba_tm_path }}
 
     # Access control
-    valid users = {{ samba_tm_users | map(attribute='name') | join(', ') }}
+    valid users = {{ samba_tm_users | map(attribute='name') | join(' ') }}
     read only = no
     browseable = {{ 'yes' if samba_tm_browseable else 'no' }}
 

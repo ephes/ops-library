@@ -52,6 +52,9 @@ samba_tm_users:
 | `samba_tm_system_group` | `timemachine` | System group |
 | `samba_tm_system_uid` | `2000` | UID for system user |
 | `samba_tm_system_gid` | `2000` | GID for system group |
+| `samba_tm_manage_system_users` | `true` | Create/manage Unix users for Samba users |
+
+Set `samba_tm_manage_system_users: false` when Unix users already exist and you don't want to modify their shell/home settings.
 
 ## Example Playbook
 

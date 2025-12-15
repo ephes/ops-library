@@ -38,6 +38,11 @@ samba_tm_system_group: "timemachine"
 samba_tm_system_uid: 2000
 samba_tm_system_gid: 2000
 
+# Whether to create/manage system users for Samba users
+# When true, creates Unix users with nologin shell and adds them to the system group
+# When false, assumes Unix users already exist (avoids clobbering existing accounts)
+samba_tm_manage_system_users: true
+
 # =============================================================================
 # vfs_fruit Configuration (for macOS compatibility)
 # =============================================================================
