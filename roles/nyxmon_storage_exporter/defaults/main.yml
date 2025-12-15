@@ -2,7 +2,7 @@
 # nyxmon_storage_exporter - Default Variables
 #
 # Installs a small local exporter script that prints storage health as JSON.
-# Designed to be executed via SSH from Nyxmon (custom checks).
+# Served via HTTP and monitored using Nyxmon's `json-metrics` check type.
 
 nyxmon_storage_exporter_enabled: true
 
