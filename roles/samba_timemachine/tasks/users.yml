@@ -3,24 +3,20 @@
 
 - name: Ensure Unix users exist for Samba users
   ansible.builtin.user:
-    name: "{{ item.name }}"
+    name: "{{ item }}"
     groups: "{{ samba_tm_system_group }}"
     append: true
     create_home: false
     shell: /usr/sbin/nologin
     state: present
-  loop: "{{ samba_tm_users }}"
-  loop_control:
-    label: "{{ item.name }}"
+  loop: "{{ samba_tm_users | map(attribute='name') | list }}"
   when: samba_tm_manage_system_users
 
 # Check which users already exist in Samba database
 - name: Check existing Samba users
   ansible.builtin.command:
-    cmd: pdbedit -L -u {{ item.name | quote }}
-  loop: "{{ samba_tm_users }}"
-  loop_control:
-    label: "{{ item.name }}"
+    cmd: pdbedit -L -u {{ item | quote }}
+  loop: "{{ samba_tm_users | map(attribute='name') | list }}"
   register: _samba_user_check
   changed_when: false
   failed_when: false
@@ -51,10 +47,8 @@
 
 - name: Enable Samba users
   ansible.builtin.command:
-    cmd: smbpasswd -e {{ item.name | quote }}
-  loop: "{{ _samba_users_to_create }}"
-  loop_control:
-    label: "{{ item.name }}"
+    cmd: smbpasswd -e {{ item | quote }}
+  loop: "{{ _samba_users_to_create | map(attribute='name') | list }}"
   when: _samba_users_to_create | length > 0
   register: _samba_users_enable_result
   changed_when: _samba_users_enable_result.rc == 0
