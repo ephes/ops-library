@@ -168,6 +168,9 @@ None.
 4. Service loads encryption key: `zfs load-key <pool>`
 5. ZFS mounts datasets automatically
 
+Note: The unlock service is ordered after `systemd-remount-fs.service` (not
+`local-fs.target`) to avoid an ordering cycle with `zfs-mount.service`.
+
 ## Security Considerations
 
 - Key files stored with mode 0400, owned by root
