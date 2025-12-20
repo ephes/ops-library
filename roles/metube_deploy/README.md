@@ -15,7 +15,7 @@ Key defaults:
 | `metube_basic_auth_user` | `metube` | Basic auth user (hash or password required). |
 | `metube_manage_uv` | `true` | Install uv automatically via `uv_install`. |
 | `metube_python_version` | `3.14` | Python version requested from uv. |
-| `metube_nodejs_version` | `20` | Node.js major version installed from NodeSource for Angular build. |
+| `metube_nodejs_version` | `24` | Node.js major version installed from NodeSource for Angular build. |
 
 Outputs:
 - Systemd unit `metube.service` bound to `{{ metube_host }}:{{ metube_port }}` (default 127.0.0.1:8081)

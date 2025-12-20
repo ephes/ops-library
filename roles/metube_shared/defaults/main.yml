@@ -71,7 +71,7 @@ metube_manage_uv: true
 metube_uv_version: latest
 metube_uv_path: /usr/local/bin/uv
 metube_python_version: "3.14"
-metube_nodejs_version: 20
+metube_nodejs_version: 24
 
 # Packages
 metube_system_packages:
