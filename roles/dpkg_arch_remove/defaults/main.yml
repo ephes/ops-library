@@ -1,0 +1,13 @@
+---
+# Foreign architectures to remove (dpkg --remove-architecture)
+dpkg_arch_remove_targets:
+  - i386
+
+# Remove installed packages for target architectures before removing them.
+dpkg_arch_remove_purge_packages: false
+
+# Run apt autoremove when purging foreign-arch packages.
+dpkg_arch_remove_autoremove: false
+
+# Refresh apt cache after removing architectures.
+dpkg_arch_remove_update_cache: true

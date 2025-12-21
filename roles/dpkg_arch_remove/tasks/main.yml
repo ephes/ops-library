@@ -1,0 +1,100 @@
+---
+# Remove foreign dpkg architectures (defaults to i386).
+
+- name: Ensure host uses dpkg (Debian/Ubuntu only)
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family == "Debian"
+    fail_msg: "dpkg_arch_remove only supports Debian/Ubuntu hosts."
+
+- name: Normalize target architecture list
+  ansible.builtin.set_fact:
+    dpkg_arch_remove_target_list: >-
+      {{
+        (dpkg_arch_remove_targets
+          if (dpkg_arch_remove_targets is iterable and dpkg_arch_remove_targets is not string)
+          else [dpkg_arch_remove_targets])
+        | map('trim')
+        | reject('equalto', '')
+        | unique
+        | list
+      }}
+  changed_when: false
+
+- name: Read configured foreign architectures
+  ansible.builtin.command: dpkg --print-foreign-architectures
+  register: dpkg_arch_remove_foreign
+  changed_when: false
+
+- name: Determine which architectures to remove
+  ansible.builtin.set_fact:
+    dpkg_arch_remove_present: >-
+      {{
+        dpkg_arch_remove_target_list
+        | intersect(dpkg_arch_remove_foreign.stdout_lines | map('trim') | list)
+      }}
+  changed_when: false
+
+- name: List installed packages with architectures
+  ansible.builtin.command:
+    argv:
+      - dpkg-query
+      - -W
+      - -f=${Package} ${Architecture}\n
+  register: dpkg_arch_remove_installed
+  changed_when: false
+  when: dpkg_arch_remove_present | length > 0
+
+- name: Build foreign-arch package list
+  ansible.builtin.set_fact:
+    dpkg_arch_remove_packages: >-
+      {{
+        (dpkg_arch_remove_packages | default({}))
+        | combine({
+            item: (
+              dpkg_arch_remove_installed.stdout_lines
+              | select('search', ' ' ~ item ~ '$')
+              | map('regex_replace', ' ' ~ item ~ '$', ':' ~ item)
+              | list
+            )
+          })
+      }}
+  loop: "{{ dpkg_arch_remove_present }}"
+  when: dpkg_arch_remove_present | length > 0
+  changed_when: false
+
+- name: Fail if foreign-arch packages are installed
+  ansible.builtin.fail:
+    msg: >-
+      Found packages for architecture '{{ item.key }}': {{ item.value | join(', ') }}.
+      Set dpkg_arch_remove_purge_packages=true to remove them before dropping the architecture.
+  loop: "{{ dpkg_arch_remove_packages | dict2items }}"
+  when:
+    - dpkg_arch_remove_present | length > 0
+    - item.value | length > 0
+    - not dpkg_arch_remove_purge_packages
+
+- name: Remove foreign-arch packages
+  ansible.builtin.apt:
+    name: "{{ item.value }}"
+    state: absent
+    purge: "{{ dpkg_arch_remove_purge_packages }}"
+    autoremove: "{{ dpkg_arch_remove_autoremove }}"
+  loop: "{{ dpkg_arch_remove_packages | dict2items }}"
+  when:
+    - dpkg_arch_remove_present | length > 0
+    - dpkg_arch_remove_purge_packages | bool
+    - item.value | length > 0
+
+- name: Remove foreign architectures
+  ansible.builtin.command: "dpkg --remove-architecture {{ item }}"
+  changed_when: true
+  loop: "{{ dpkg_arch_remove_present }}"
+  when: dpkg_arch_remove_present | length > 0
+
+- name: Update apt cache after architecture removal
+  ansible.builtin.apt:
+    update_cache: true
+  when:
+    - dpkg_arch_remove_update_cache | bool
+    - dpkg_arch_remove_present | length > 0
