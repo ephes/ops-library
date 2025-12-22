@@ -22,3 +22,29 @@
   when:
     - (homeassistant_internal_url | default('')) | length == 0
     - ansible_default_ipv4.address is defined
+
+- name: "Validate Matter server configuration"
+  ansible.builtin.assert:
+    that:
+      - homeassistant_matter_server_storage_path | length > 0
+      - homeassistant_matter_server_chip_factory_dir | length > 0
+      - homeassistant_matter_server_port | int > 0
+      - homeassistant_python_version is version('3.12', '>=')
+      - "'python-matter-server' in homeassistant_matter_server_package_spec"
+      - "'[server]' in homeassistant_matter_server_package_spec"
+    quiet: true
+  when: homeassistant_manage_matter_server | bool
+
+- name: "Validate Matter integration provisioning"
+  ansible.builtin.assert:
+    that:
+      - homeassistant_api_url | length > 0
+      - homeassistant_api_token | length > 0
+      - homeassistant_api_token | length >= 32
+      - (homeassistant_api_token | lower) not in ['change_me', 'changeme', 'replace_me', 'replace-me']
+      - homeassistant_matter_integration_url | length > 0
+    quiet: true
+    msg: >-
+      homeassistant_api_token must be a real Home Assistant long-lived access token
+      (not CHANGE_ME) and at least 32 characters long.
+  when: homeassistant_manage_matter_integration | bool

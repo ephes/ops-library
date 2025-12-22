@@ -21,6 +21,10 @@
 - name: "Provision Python environment"
   ansible.builtin.import_tasks: python.yml
 
+- name: "Manage Matter server"
+  ansible.builtin.import_tasks: matter_server.yml
+  when: homeassistant_manage_matter_server
+
 - name: "Resolve UniFi integration secrets"
   ansible.builtin.import_tasks: unifi.yml
 
@@ -36,3 +40,7 @@
 
 - name: "Ensure Home Assistant service state"
   ansible.builtin.import_tasks: service.yml
+
+- name: "Provision Matter integration"
+  ansible.builtin.import_tasks: matter_integration.yml
+  when: homeassistant_manage_matter_integration

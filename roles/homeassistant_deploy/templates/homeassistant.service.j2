@@ -2,6 +2,10 @@
 Description=Home Assistant
 After=network-online.target
 Wants=network-online.target
+{% if homeassistant_manage_matter_server %}
+After={{ homeassistant_matter_server_service_name }}.service
+Wants={{ homeassistant_matter_server_service_name }}.service
+{% endif %}
 
 [Service]
 Type=simple

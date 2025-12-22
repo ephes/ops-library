@@ -33,6 +33,36 @@ homeassistant_systemd_unit_path: "/etc/systemd/system/{{ homeassistant_service_n
 homeassistant_app_port: 10020
 homeassistant_host: "0.0.0.0"
 
+# Matter server (optional)
+homeassistant_manage_matter_server: false
+homeassistant_matter_server_package_spec: "python-matter-server[server]"
+homeassistant_matter_server_service_name: matter-server
+homeassistant_matter_server_service_enabled: true
+homeassistant_matter_server_service_state: started
+homeassistant_matter_server_systemd_unit_path: "/etc/systemd/system/{{ homeassistant_matter_server_service_name }}.service"
+homeassistant_matter_server_storage_path: "{{ homeassistant_data_path }}/matter-server"
+homeassistant_matter_server_port: 5580
+homeassistant_matter_server_vendor_id: 0xFFF1
+homeassistant_matter_server_fabric_id: 1
+homeassistant_matter_server_log_level: info
+homeassistant_matter_server_log_file: "{{ homeassistant_logs_path }}/matter-server.log"
+homeassistant_matter_server_restart_on_change: true
+homeassistant_matter_server_chip_factory_dir: /data
+
+# Home Assistant API (integration provisioning)
+homeassistant_api_url: "http://localhost:{{ homeassistant_app_port }}"
+homeassistant_api_token: ""
+homeassistant_api_timeout: 30
+homeassistant_api_validate_certs: true
+homeassistant_api_retries: 30
+homeassistant_api_retry_delay: 5
+homeassistant_api_forwarded_for: ""
+homeassistant_api_forwarded_proto: "http"
+
+# Matter integration (HA config entry)
+homeassistant_manage_matter_integration: false
+homeassistant_matter_integration_url: "ws://localhost:{{ homeassistant_matter_server_port }}/ws"
+
 # Configuration management toggles
 homeassistant_manage_configuration: false
 homeassistant_manage_secrets: false

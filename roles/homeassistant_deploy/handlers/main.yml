@@ -10,6 +10,13 @@
     enabled: true
   when: homeassistant_restart_on_change
 
+- name: restart matter server
+  ansible.builtin.systemd:
+    name: "{{ homeassistant_matter_server_service_name }}"
+    state: restarted
+    enabled: true
+  when: homeassistant_matter_server_restart_on_change | bool
+
 - name: reload udev rules
   ansible.builtin.command: udevadm control --reload-rules
   when: homeassistant_enable_udev_rule
