@@ -13,6 +13,7 @@ dns_deploy
 tailscale_deploy
 homelab_deploy
 homeassistant_deploy
+otbr_deploy
 unifi_deploy
 paperless_deploy
 minio_deploy

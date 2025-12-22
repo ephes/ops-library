@@ -12,6 +12,7 @@ roles/index
 howto/service_lifecycle
 howto/paperless_scanner
 howto/traefik_wildcard
+howto/otbr_zbt2
 changelog
 ```
 
