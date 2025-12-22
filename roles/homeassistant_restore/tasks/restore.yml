@@ -13,6 +13,18 @@
   ansible.builtin.set_fact:
     homeassistant_restore_service_available: "{{ _ha_restore_service_unit_initial.stat.exists | default(false) }}"
 
+- name: Gather systemd service facts
+  ansible.builtin.service_facts:
+
+- name: Record optional service availability
+  ansible.builtin.set_fact:
+    homeassistant_restore_otbr_service_available: >-
+      {{ homeassistant_restore_manage_otbr_state | bool and
+         (homeassistant_restore_otbr_service_name ~ '.service') in ansible_facts.services }}
+    homeassistant_restore_matter_service_available: >-
+      {{ homeassistant_restore_manage_matter_server | bool and
+         (homeassistant_restore_matter_service_name ~ '.service') in ansible_facts.services }}
+
 - name: Apply backup to target host
   when: not homeassistant_restore_dry_run | bool
   block:
@@ -24,6 +36,20 @@
       register: _ha_restore_service_stop
       when: homeassistant_restore_service_available | bool
 
+    - name: Stop Matter server service
+      ansible.builtin.systemd:
+        name: "{{ homeassistant_restore_matter_service_name }}"
+        state: stopped
+        daemon_reload: false
+      when: homeassistant_restore_matter_service_available | bool
+
+    - name: Stop OTBR service
+      ansible.builtin.systemd:
+        name: "{{ homeassistant_restore_otbr_service_name }}"
+        state: stopped
+        daemon_reload: false
+      when: homeassistant_restore_otbr_service_available | bool
+
     - name: Ensure destination directories exist
       ansible.builtin.file:
         path: "{{ item.dest }}"
@@ -32,6 +58,16 @@
         group: "{{ homeassistant_restore_site_group }}"
         mode: '0750'
       loop: "{{ homeassistant_restore_dirs }}"
+
+    - name: Ensure extra destination directories exist
+      ansible.builtin.file:
+        path: "{{ item.dest }}"
+        state: directory
+        owner: "{{ item.owner | default('root') }}"
+        group: "{{ item.group | default('root') }}"
+        mode: "{{ item.mode | default('0750') }}"
+      loop: "{{ homeassistant_restore_extra_dirs | default([]) }}"
+      when: item.include | default(true) | bool
 
     - name: Check snapshot content availability
       ansible.builtin.stat:
@@ -58,6 +94,34 @@
       loop_control:
         label: "restore {{ item.item.name }}"
       register: _ha_restore_rsync
+      changed_when: true
+
+    - name: Check extra snapshot content availability
+      ansible.builtin.stat:
+        path: "{{ homeassistant_restore_snapshot_path }}/{{ item.name }}"
+      loop: "{{ homeassistant_restore_extra_dirs | default([]) }}"
+      when: item.include | default(true) | bool
+      register: _ha_restore_extra_snapshot_stats
+
+    - name: Validate required extra snapshot directories exist
+      ansible.builtin.fail:
+        msg: "Required directory '{{ item.item.name }}' is missing from the backup snapshot"
+      when:
+        - not item.stat.exists | default(false)
+        - not item.item.optional | default(false)
+      loop: "{{ _ha_restore_extra_snapshot_stats.results | default([]) }}"
+
+    - name: Rsync extra snapshot directories onto target
+      ansible.builtin.command:
+        cmd: >-
+          rsync -a --delete
+          "{{ homeassistant_restore_snapshot_path }}/{{ item.item.name }}/"
+          "{{ item.item.dest }}/"
+      loop: "{{ _ha_restore_extra_snapshot_stats.results | default([]) }}"
+      when: item.stat.exists | default(false)
+      loop_control:
+        label: "restore {{ item.item.name }}"
+      register: _ha_restore_extra_rsync
       changed_when: true
 
     - name: Restore system files from snapshot

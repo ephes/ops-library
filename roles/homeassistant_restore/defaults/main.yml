@@ -21,6 +21,17 @@ homeassistant_service_name: homeassistant
 homeassistant_service_unit_path: /etc/systemd/system/homeassistant.service
 homeassistant_traefik_config_path: /etc/traefik/dynamic/homeassistant.yml
 
+# Matter/Thread state paths (optional restore)
+homeassistant_matter_server_storage_path: "{{ homeassistant_data_path }}/matter-server"
+homeassistant_matter_server_chip_factory_dir: /data
+homeassistant_restore_otbr_state_path: /var/lib/thread
+
+# Optional service orchestration
+homeassistant_restore_manage_matter_server: "{{ homeassistant_manage_matter_server | default(false) }}"
+homeassistant_restore_matter_service_name: matter-server
+homeassistant_restore_manage_otbr_state: true
+homeassistant_restore_otbr_service_name: otbr-agent
+
 # Restore behaviour
 homeassistant_restore_stop_timeout: 30
 homeassistant_restore_start_timeout: 60
@@ -45,6 +56,35 @@ homeassistant_restore_dirs:
   - name: logs
     dest: "{{ homeassistant_logs_path }}"
     optional: true
+homeassistant_restore_extra_dirs:
+  - name: thread
+    dest: "{{ homeassistant_restore_otbr_state_path }}"
+    owner: root
+    group: root
+    mode: '0750'
+    optional: true
+    include: "{{ homeassistant_restore_manage_otbr_state | bool }}"
+  - name: matter-server
+    dest: "{{ homeassistant_matter_server_storage_path }}"
+    owner: "{{ homeassistant_restore_site_owner }}"
+    group: "{{ homeassistant_restore_site_group }}"
+    mode: '0750'
+    optional: true
+    include: >-
+      {{ homeassistant_restore_manage_matter_server | bool and
+         not (homeassistant_matter_server_storage_path == homeassistant_data_path or
+              homeassistant_matter_server_storage_path.startswith(homeassistant_data_path ~ '/')) }}
+  - name: matter-chip-factory
+    dest: "{{ homeassistant_matter_server_chip_factory_dir }}"
+    owner: "{{ homeassistant_restore_site_owner }}"
+    group: "{{ homeassistant_restore_site_group }}"
+    mode: '0750'
+    optional: true
+    include: >-
+      {{ homeassistant_restore_manage_matter_server | bool
+         and (homeassistant_matter_server_chip_factory_dir | length > 0)
+         and (homeassistant_matter_server_chip_factory_dir != '/data')
+         and (not homeassistant_matter_server_chip_factory_dir.startswith(homeassistant_data_path ~ '/')) }}
 
 # Safety backup / rollback
 homeassistant_restore_create_safety_backup: true

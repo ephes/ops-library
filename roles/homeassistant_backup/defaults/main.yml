@@ -14,6 +14,31 @@ homeassistant_logs_path: /home/homeassistant/site/logs
 homeassistant_backup_sqlite_path: "{{ homeassistant_config_path }}/home-assistant_v2.db"
 homeassistant_backup_use_sqlite_backup: true
 
+# Matter/Thread state paths (used for optional backups)
+homeassistant_matter_server_storage_path: "{{ homeassistant_data_path }}/matter-server"
+homeassistant_matter_server_chip_factory_dir: /data
+homeassistant_backup_otbr_state_path: /var/lib/thread
+
+# Optional extra directories to snapshot (skipped when include=false)
+homeassistant_backup_extra_dirs:
+  - name: thread
+    src: "{{ homeassistant_backup_otbr_state_path }}"
+    optional: true
+    include: true
+  - name: matter-server
+    src: "{{ homeassistant_matter_server_storage_path }}"
+    optional: true
+    include: >-
+      {{ not (homeassistant_matter_server_storage_path == homeassistant_data_path or
+              homeassistant_matter_server_storage_path.startswith(homeassistant_data_path ~ '/')) }}
+  - name: matter-chip-factory
+    src: "{{ homeassistant_matter_server_chip_factory_dir }}"
+    optional: true
+    include: >-
+      {{ (homeassistant_matter_server_chip_factory_dir | length > 0)
+         and (homeassistant_matter_server_chip_factory_dir != '/data')
+         and (not homeassistant_matter_server_chip_factory_dir.startswith(homeassistant_data_path ~ '/')) }}
+
 # Additional files to capture
 homeassistant_service_unit_path: /etc/systemd/system/homeassistant.service
 homeassistant_traefik_config_path: /etc/traefik/dynamic/homeassistant.yml

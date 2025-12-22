@@ -7,6 +7,7 @@ Creates on-host and off-host snapshots of Home Assistant configuration, data, lo
 - Validates required paths before running.
 - Uses `sqlite3 ".backup"` to capture a consistent `home-assistant_v2.db` without stopping the service.
 - Rsyncs `config/`, `data/`, `logs/` (optional) to `/opt/backups/homeassistant/<prefix>-<timestamp>/`.
+- Captures Thread + Matter state (`/var/lib/thread` and any Matter Server storage/chip factory dirs outside `data/`).
 - Copies rendered Traefik file and systemd unit, then writes `metadata.yml` + `manifest.sha256`.
 - Optionally creates a `tar.gz` archive and fetches it to the control machine (`~/backups/homeassistant/` by default).
 
@@ -16,6 +17,7 @@ Creates on-host and off-host snapshots of Home Assistant configuration, data, lo
 - `homeassistant_backup_include_logs` – include/exclude logs.
 - `homeassistant_backup_create_archive` / `homeassistant_backup_fetch_local` – enable tarball generation + download.
 - `homeassistant_backup_sqlite_path` / `homeassistant_backup_use_sqlite_backup` – database snapshot behaviour.
+- `homeassistant_backup_extra_dirs` – additional directories to include in the snapshot.
 
 Usage example:
 

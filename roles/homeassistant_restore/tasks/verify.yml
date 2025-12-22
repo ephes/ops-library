@@ -8,23 +8,54 @@
     msg: "Dry run enabled - skipping service start and health checks"
   when: homeassistant_restore_dry_run | bool
 
-- name: Service unit missing notice
-  ansible.builtin.debug:
-    msg: "Home Assistant systemd unit not found; skipping service start and health verification."
-  when:
-    - not homeassistant_restore_dry_run | bool
-    - not (homeassistant_restore_service_available | default(false))
-
-- name: Start service and run verification
-  when:
-    - not homeassistant_restore_dry_run | bool
-    - homeassistant_restore_service_available | default(false)
+- name: Start services and run verification
+  when: not homeassistant_restore_dry_run | bool
   block:
+    - name: Start OTBR service
+      ansible.builtin.systemd:
+        name: "{{ homeassistant_restore_otbr_service_name }}"
+        state: started
+        daemon_reload: false
+      when: homeassistant_restore_otbr_service_available | default(false)
+
+    - name: Wait for OTBR service to become active
+      ansible.builtin.command: "systemctl is-active {{ homeassistant_restore_otbr_service_name }}"
+      register: _ha_restore_otbr_active_check
+      retries: "{{ _ha_restore_start_retries | int }}"
+      delay: "{{ homeassistant_restore_start_poll_interval | int }}"
+      until: _ha_restore_otbr_active_check.stdout.strip() == 'active'
+      failed_when: _ha_restore_otbr_active_check.rc != 0 and _ha_restore_otbr_active_check.stdout.strip() != 'active'
+      changed_when: false
+      when: homeassistant_restore_otbr_service_available | default(false)
+
+    - name: Start Matter server service
+      ansible.builtin.systemd:
+        name: "{{ homeassistant_restore_matter_service_name }}"
+        state: started
+        daemon_reload: true
+      when: homeassistant_restore_matter_service_available | default(false)
+
+    - name: Wait for Matter server service to become active
+      ansible.builtin.command: "systemctl is-active {{ homeassistant_restore_matter_service_name }}"
+      register: _ha_restore_matter_active_check
+      retries: "{{ _ha_restore_start_retries | int }}"
+      delay: "{{ homeassistant_restore_start_poll_interval | int }}"
+      until: _ha_restore_matter_active_check.stdout.strip() == 'active'
+      failed_when: _ha_restore_matter_active_check.rc != 0 and _ha_restore_matter_active_check.stdout.strip() != 'active'
+      changed_when: false
+      when: homeassistant_restore_matter_service_available | default(false)
+
+    - name: Service unit missing notice
+      ansible.builtin.debug:
+        msg: "Home Assistant systemd unit not found; skipping service start and health verification."
+      when: not (homeassistant_restore_service_available | default(false))
+
     - name: Start Home Assistant service
       ansible.builtin.systemd:
         name: "{{ homeassistant_service_name }}"
         state: started
         daemon_reload: true
+      when: homeassistant_restore_service_available | default(false)
 
     - name: Wait for Home Assistant service to become active
       ansible.builtin.command: "systemctl is-active {{ homeassistant_service_name }}"
@@ -34,9 +65,12 @@
       until: _ha_restore_active_check.stdout.strip() == 'active'
       failed_when: _ha_restore_active_check.rc != 0 and _ha_restore_active_check.stdout.strip() != 'active'
       changed_when: false
+      when: homeassistant_restore_service_available | default(false)
 
     - name: Perform HTTP health check
-      when: homeassistant_restore_verify_http | bool
+      when:
+        - homeassistant_restore_service_available | default(false)
+        - homeassistant_restore_verify_http | bool
       ansible.builtin.uri:
         url: "{{ homeassistant_restore_health_url }}"
         method: GET
@@ -52,6 +86,7 @@
     - name: Mark restore operation successful
       ansible.builtin.set_fact:
         homeassistant_restore_operation_successful: true
+      when: homeassistant_restore_service_available | default(false)
   rescue:
     - name: Flag verification failure
       ansible.builtin.set_fact:

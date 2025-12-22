@@ -6,7 +6,8 @@ Restores a backup created by `homeassistant_backup`, verifying manifests and opt
 
 - Accepts either `latest` or a specific archive/directory via `homeassistant_restore_archive`.
 - Validates SHA256 manifest before copying files back into place.
-- Stops Home Assistant, syncs `config/`, `data/`, `logs/`, Traefik/systemd definitions, and restarts the service.
+- Stops Home Assistant, syncs `config/`, `data/`, `logs/`, Traefik/systemd definitions, and restores Thread/Matter state.
+- Restarts OTBR (if present), Matter server (if managed), then Home Assistant.
 - Supports `homeassistant_restore_dry_run: true` for rehearsal without modifying the filesystem.
 - Optional HTTP health check (`homeassistant_restore_health_url`) after restart.
 
@@ -15,6 +16,7 @@ Restores a backup created by `homeassistant_backup`, verifying manifests and opt
 - `homeassistant_restore_archive` – tarball name or directory (relative to `/opt/backups/homeassistant`).
 - `homeassistant_restore_manifest_required` – enforce manifest presence.
 - `homeassistant_restore_health_url` / `homeassistant_restore_health_headers` – post-restore verification.
+- `homeassistant_restore_extra_dirs` – additional directories to restore outside the site root.
 
 Example:
 

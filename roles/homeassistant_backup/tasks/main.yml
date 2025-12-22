@@ -21,6 +21,28 @@
   loop_control:
     label: "{{ item.item.path }}"
 
+- name: "Check extra backup paths"
+  ansible.builtin.stat:
+    path: "{{ item.src }}"
+  register: _ha_backup_extra_stats
+  loop: "{{ homeassistant_backup_extra_dirs | default([]) }}"
+  loop_control:
+    label: "{{ item.src }}"
+  when: item.include | default(true) | bool
+
+- name: "Fail when required extra backup paths are missing"
+  ansible.builtin.fail:
+    msg: "Required backup path {{ item.item.src }} is missing."
+  loop: "{{ _ha_backup_extra_stats.results | default([]) }}"
+  when:
+    - not item.item.optional | default(true) | bool
+    - not item.stat.exists | default(false)
+
+- name: "Update path existence map with extra paths"
+  ansible.builtin.set_fact:
+    _ha_backup_exists: "{{ _ha_backup_exists | combine({ item.item.src: item.stat.exists | default(false) }) }}"
+  loop: "{{ _ha_backup_extra_stats.results | default([]) }}"
+
 - name: "Set backup timestamp"
   ansible.builtin.set_fact:
     homeassistant_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
@@ -55,6 +77,16 @@
     - logs
   when: not (item == 'logs' and not homeassistant_backup_include_logs)
 
+- name: "Ensure extra backup directories exist"
+  ansible.builtin.file:
+    path: "{{ homeassistant_backup_dir }}/{{ item.name }}"
+    state: directory
+    owner: "{{ homeassistant_backup_owner }}"
+    group: "{{ homeassistant_backup_group }}"
+    mode: "{{ homeassistant_backup_dir_mode }}"
+  loop: "{{ homeassistant_backup_extra_dirs | default([]) }}"
+  when: item.include | default(true) | bool
+
 - name: "Create SQLite backup using .backup"
   ansible.builtin.command:
     cmd: >
@@ -85,6 +117,30 @@
   register: _ha_backup_rsync
   changed_when: true
 
+- name: "Rsync extra directories"
+  ansible.builtin.command:
+    cmd: >
+      rsync -a{{ ' --delete' if homeassistant_backup_use_delete else '' }}
+      "{{ item.src }}/"
+      "{{ homeassistant_backup_dir }}/{{ item.name }}/"
+  loop: "{{ homeassistant_backup_extra_dirs | default([]) }}"
+  loop_control:
+    label: "{{ item.src }}"
+  when:
+    - item.include | default(true) | bool
+    - item.src | length > 0
+    - _ha_backup_exists[item.src] | default(false)
+  register: _ha_backup_extra_rsync
+  changed_when: true
+
+- name: "Build included extra path list"
+  ansible.builtin.set_fact:
+    _ha_backup_extra_dirs_included: >-
+      {{
+        (homeassistant_backup_extra_dirs | default([]) | selectattr('include', 'defined') | selectattr('include') | list)
+        + (homeassistant_backup_extra_dirs | default([]) | rejectattr('include', 'defined') | list)
+      }}
+
 - name: "Copy supporting files"
   ansible.builtin.copy:
     src: "{{ item.src }}"
@@ -114,6 +170,11 @@
       logs_included: {{ homeassistant_backup_include_logs | bool }}
       traefik_config: "{{ homeassistant_traefik_config_path }}"
       service_unit: "{{ homeassistant_service_unit_path }}"
+      extra_paths:{% if (_ha_backup_extra_dirs_included | default([]) | length) == 0 %} []{% else %}
+      {% for item in _ha_backup_extra_dirs_included | default([]) %}
+        - name: "{{ item.name }}"
+          path: "{{ item.src }}"
+      {% endfor %}{% endif %}
       ansible_user: "{{ ansible_user | default('') }}"
 
 - name: "Generate checksum manifest"

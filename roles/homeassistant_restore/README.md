@@ -9,8 +9,12 @@ Role that restores a Home Assistant Core deployment from backups produced by `ho
 - Extracts the archive into a timestamped staging directory and validates `metadata.yml` plus `manifest.sha256`.
 - Creates a safety snapshot of the current site directory before applying changes for easy rollback.
 - Stops Home Assistant, syncs configuration/data/logs via `rsync --delete`, and optionally restores systemd/Traefik files.
+- Restores OTBR Thread state and Matter Server storage when present in the backup.
 - Restarts the service, performs optional HTTP health checks, and triggers rollback automatically if verification fails.
 - Cleans up staging and (optionally) the safety snapshot after a successful restore.
+
+Service restart order is OTBR (if present), Matter server (if managed), then
+Home Assistant to ensure Thread/Matter state is loaded before HA starts.
 
 ## Requirements
 
@@ -37,7 +41,14 @@ homeassistant_restore_dirs:
   - { name: config, dest: /home/homeassistant/site/config, optional: false }
   - { name: data,   dest: /home/homeassistant/site/data,   optional: false }
   - { name: logs,   dest: /home/homeassistant/site/logs,   optional: true }
+homeassistant_restore_otbr_state_path: /var/lib/thread
+homeassistant_matter_server_storage_path: "{{ homeassistant_data_path }}/matter-server"
+homeassistant_restore_manage_matter_server: true
+homeassistant_restore_manage_otbr_state: true
 ```
+
+Use `homeassistant_restore_extra_dirs` to override or extend the default
+Thread/Matter directories restored outside the site root.
 
 ## Example
 
