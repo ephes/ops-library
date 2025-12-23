@@ -51,6 +51,13 @@ takahe_traefik_enabled: true
 takahe_traefik_host: "{{ takahe_domain }}"
 ```
 
+Resolver configuration (optional):
+
+```yaml
+takahe_nginx_resolver: ""  # auto-detect from resolv.conf
+takahe_nginx_resolver_fallback: "1.1.1.1 1.0.0.1"
+```
+
 Note: Takahe only accepts `debug`, `development`, `production`, or `test` as its runtime environment. The role maps `takahe_environment: staging` to `production` in the generated `.env`.
 
 See `defaults/main.yml` and `roles/takahe_shared/defaults/main.yml` for the full variable reference.

@@ -111,7 +111,7 @@ takahe_nginx_client_body_buffer_size: "128k"
 takahe_nginx_worker_connections: 4096
 takahe_nginx_server_name: "_"
 takahe_nginx_resolver: ""
-takahe_nginx_resolver_fallback: "127.0.0.53"
+takahe_nginx_resolver_fallback: "1.1.1.1 1.0.0.1"
 
 # Systemd
 takahe_systemd_unit_dir: /etc/systemd/system

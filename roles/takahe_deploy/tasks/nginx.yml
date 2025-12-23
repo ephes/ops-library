@@ -5,15 +5,54 @@
   register: takahe_resolv_conf
   when: takahe_nginx_resolver | length == 0
 
+- name: Extract resolvers from /etc/resolv.conf
+  ansible.builtin.set_fact:
+    takahe_nginx_resolver_candidates: >-
+      {{ (takahe_resolv_conf.content | b64decode).splitlines()
+         | select('match', '^\\s*nameserver\\s+')
+         | map('regex_replace', '^\\s*nameserver\\s+([^\\s]+).*', '\\1')
+         | reject('equalto', '127.0.0.53')
+         | list }}
+  when: takahe_nginx_resolver | length == 0
+
+- name: Check systemd-resolved resolver file
+  ansible.builtin.stat:
+    path: /run/systemd/resolve/resolv.conf
+  register: takahe_systemd_resolv_conf_stat
+  when:
+    - takahe_nginx_resolver | length == 0
+    - takahe_nginx_resolver_candidates | default([]) | length == 0
+
+- name: Read systemd-resolved resolver file
+  ansible.builtin.slurp:
+    src: /run/systemd/resolve/resolv.conf
+  register: takahe_systemd_resolv_conf
+  when:
+    - takahe_nginx_resolver | length == 0
+    - takahe_nginx_resolver_candidates | default([]) | length == 0
+    - takahe_systemd_resolv_conf_stat is defined
+    - takahe_systemd_resolv_conf_stat.stat.exists
+
+- name: Extract resolvers from systemd-resolved file
+  ansible.builtin.set_fact:
+    takahe_nginx_resolver_candidates: >-
+      {{ (takahe_systemd_resolv_conf.content | b64decode).splitlines()
+         | select('match', '^\\s*nameserver\\s+')
+         | map('regex_replace', '^\\s*nameserver\\s+([^\\s]+).*', '\\1')
+         | reject('equalto', '127.0.0.53')
+         | list }}
+  when:
+    - takahe_nginx_resolver | length == 0
+    - takahe_nginx_resolver_candidates | default([]) | length == 0
+    - takahe_systemd_resolv_conf is defined
+    - takahe_systemd_resolv_conf.content is defined
+
 - name: Set nginx resolver from resolv.conf
   ansible.builtin.set_fact:
     takahe_nginx_resolver: >-
-      {{ (takahe_resolv_conf.content | b64decode).splitlines()
-         | select('match', '^nameserver\\s+')
-         | map('regex_replace', '^nameserver\\s+', '')
-         | list
-         | first
-         | default(takahe_nginx_resolver_fallback) }}
+      {{ takahe_nginx_resolver_candidates
+         | join(' ')
+         | default(takahe_nginx_resolver_fallback, true) }}
   when: takahe_nginx_resolver | length == 0
 
 - name: Render Takahe nginx config
