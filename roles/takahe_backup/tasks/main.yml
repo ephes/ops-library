@@ -1,0 +1,236 @@
+---
+- name: Capture Takahe version
+  ansible.builtin.command:
+    argv:
+      - "{{ takahe_python_bin }}"
+      - -c
+      - "import takahe; print(takahe.__version__)"
+  args:
+    chdir: "{{ takahe_site_path }}"
+  become: true
+  become_user: "{{ takahe_user }}"
+  register: takahe_backup_version_cmd
+  changed_when: false
+  failed_when: false
+
+- name: Set backup timestamp
+  ansible.builtin.set_fact:
+    takahe_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+    takahe_backup_version: "{{ takahe_backup_version_cmd.stdout | default('unknown') | trim }}"
+
+- name: Set backup paths
+  ansible.builtin.set_fact:
+    takahe_backup_dir: "{{ takahe_backup_root }}/{{ takahe_backup_prefix }}-{{ takahe_backup_timestamp }}"
+    takahe_backup_archive: "{{ takahe_backup_root }}/{{ takahe_backup_prefix }}-{{ takahe_backup_timestamp }}.{{ takahe_backup_archive_extension }}"
+    takahe_backup_db_dump: "{{ takahe_backup_root }}/{{ takahe_backup_prefix }}-{{ takahe_backup_timestamp }}/database/{{ takahe_backup_postgres_database }}.dump"
+
+- name: Ensure backup directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ takahe_backup_owner }}"
+    group: "{{ takahe_backup_group }}"
+    mode: "{{ takahe_backup_dir_mode }}"
+  loop:
+    - "{{ takahe_backup_root }}"
+    - "{{ takahe_backup_dir }}"
+    - "{{ takahe_backup_dir }}/database"
+    - "{{ takahe_backup_dir }}/media"
+    - "{{ takahe_backup_dir }}/config"
+    - "{{ takahe_backup_dir }}/systemd"
+    - "{{ takahe_backup_dir }}/traefik"
+    - "{{ takahe_backup_dir }}/nginx"
+
+- name: Check media directory
+  ansible.builtin.stat:
+    path: "{{ takahe_media_root }}"
+  register: takahe_backup_media_stat
+
+- name: Stop Takahe services for backup
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+  loop: "{{ takahe_systemd_services }}"
+  failed_when: false
+  when: takahe_backup_stop_services | bool
+
+- name: Build pg_dump connection flags
+  ansible.builtin.set_fact:
+    takahe_backup_pg_dump_host_flag: "{{ (takahe_backup_postgres_host | default('') | string | length > 0) | ternary('--host=' ~ takahe_backup_postgres_host, '') }}"
+    takahe_backup_pg_dump_port_flag: "{{ (takahe_backup_postgres_port | default('') | string | length > 0) | ternary('--port=' ~ takahe_backup_postgres_port, '') }}"
+
+- name: Dump PostgreSQL database
+  ansible.builtin.shell: |
+    set -euo pipefail
+    {{ takahe_backup_postgres_dump_binary }} \
+      {{ takahe_backup_pg_dump_host_flag }} \
+      {{ takahe_backup_pg_dump_port_flag }} \
+      --username={{ takahe_backup_postgres_user }} \
+      --format={{ takahe_backup_postgres_format }} \
+      --compress={{ takahe_backup_postgres_compress }} \
+      --file "{{ takahe_backup_db_dump }}" \
+      {{ takahe_backup_postgres_database }}
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ takahe_backup_postgres_become_user }}"
+  environment:
+    PGPASSWORD: "{{ takahe_backup_postgres_password }}"
+  no_log: "{{ (takahe_backup_postgres_password | default('') | length > 0) }}"
+
+- name: Sync Takahe media directory
+  ansible.builtin.command:
+    cmd: >
+      rsync -a{{ ' --delete' if takahe_backup_use_delete else '' }}
+      "{{ takahe_media_root }}/" "{{ takahe_backup_dir }}/media/"
+  changed_when: true
+  when:
+    - takahe_backup_include_media | bool
+    - takahe_backup_media_stat.stat.exists
+    - takahe_media_backend | default('') | length == 0 or takahe_media_backend.startswith('local')
+
+- name: Copy Takahe environment file
+  ansible.builtin.copy:
+    src: "{{ takahe_env_file }}"
+    dest: "{{ takahe_backup_dir }}/config/takahe.env"
+    owner: "{{ takahe_backup_owner }}"
+    group: "{{ takahe_backup_group }}"
+    mode: "{{ takahe_backup_file_mode }}"
+    remote_src: true
+  when: takahe_backup_include_config | bool
+
+- name: Gather systemd unit stats
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: takahe_backup_systemd_stats
+  loop: "{{ takahe_systemd_units }}"
+  when: takahe_backup_include_systemd | bool
+
+- name: Copy systemd units
+  ansible.builtin.copy:
+    src: "{{ item.item }}"
+    dest: "{{ takahe_backup_dir }}/systemd/{{ item.item | basename }}"
+    owner: "{{ takahe_backup_owner }}"
+    group: "{{ takahe_backup_group }}"
+    mode: "{{ takahe_backup_file_mode }}"
+    remote_src: true
+  loop: "{{ takahe_backup_systemd_stats.results | default([]) }}"
+  when:
+    - takahe_backup_include_systemd | bool
+    - item.stat.exists
+
+- name: Gather Traefik config stat
+  ansible.builtin.stat:
+    path: "{{ takahe_traefik_config_path }}"
+  register: takahe_backup_traefik_stat
+  when: takahe_backup_include_traefik | bool
+
+- name: Copy Traefik configuration
+  ansible.builtin.copy:
+    src: "{{ takahe_traefik_config_path }}"
+    dest: "{{ takahe_backup_dir }}/traefik/{{ takahe_traefik_config_path | basename }}"
+    owner: "{{ takahe_backup_owner }}"
+    group: "{{ takahe_backup_group }}"
+    mode: "{{ takahe_backup_file_mode }}"
+    remote_src: true
+  when:
+    - takahe_backup_include_traefik | bool
+    - takahe_backup_traefik_stat.stat.exists
+
+- name: Gather nginx config stat
+  ansible.builtin.stat:
+    path: "{{ takahe_nginx_config_path }}"
+  register: takahe_backup_nginx_stat
+  when: takahe_backup_include_nginx | bool
+
+- name: Copy nginx configuration
+  ansible.builtin.copy:
+    src: "{{ takahe_nginx_config_path }}"
+    dest: "{{ takahe_backup_dir }}/nginx/{{ takahe_nginx_config_path | basename }}"
+    owner: "{{ takahe_backup_owner }}"
+    group: "{{ takahe_backup_group }}"
+    mode: "{{ takahe_backup_file_mode }}"
+    remote_src: true
+  when:
+    - takahe_backup_include_nginx | bool
+    - takahe_backup_nginx_stat.stat.exists
+
+- name: Start Takahe services after backup
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+    daemon_reload: true
+  loop: "{{ takahe_systemd_services }}"
+  failed_when: false
+  when: takahe_backup_stop_services | bool
+
+- name: Write backup manifest
+  ansible.builtin.copy:
+    dest: "{{ takahe_backup_dir }}/manifest.yml"
+    owner: "{{ takahe_backup_owner }}"
+    group: "{{ takahe_backup_group }}"
+    mode: "{{ takahe_backup_file_mode }}"
+    content: |
+      version: "{{ takahe_backup_version }}"
+      timestamp: "{{ takahe_backup_timestamp }}"
+      archive: "{{ takahe_backup_archive | basename }}"
+      database_dump: "{{ takahe_backup_db_dump | basename }}"
+      media_root: "{{ takahe_media_root }}"
+      env_file: "{{ takahe_env_file }}"
+      traefik_config: "{{ takahe_traefik_config_path }}"
+      nginx_config: "{{ takahe_nginx_config_path }}"
+  when: takahe_backup_generate_manifest | bool
+
+- name: Create backup archive
+  ansible.builtin.archive:
+    path: "{{ takahe_backup_dir }}"
+    dest: "{{ takahe_backup_archive }}"
+    format: "{{ takahe_backup_archive_format }}"
+  when: takahe_backup_create_archive | bool
+
+- name: Ensure local backup directory exists
+  ansible.builtin.file:
+    path: "{{ takahe_backup_local_dir }}"
+    state: directory
+    mode: "{{ takahe_backup_dir_mode }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - takahe_backup_fetch_local | bool
+    - takahe_backup_create_archive | bool
+
+- name: Fetch backup archive
+  ansible.builtin.fetch:
+    src: "{{ takahe_backup_archive }}"
+    dest: "{{ takahe_backup_local_dir }}/"
+    flat: true
+  run_once: true
+  when:
+    - takahe_backup_fetch_local | bool
+    - takahe_backup_create_archive | bool
+
+- name: Find existing backup archives
+  ansible.builtin.find:
+    paths: "{{ takahe_backup_root }}"
+    patterns: "{{ takahe_backup_prefix }}-*.{{ takahe_backup_archive_extension }}"
+    file_type: file
+  register: takahe_backup_existing_archives
+  when:
+    - takahe_backup_retain | int > 0
+    - takahe_backup_create_archive | bool
+
+- name: Prune old backup archives
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ (takahe_backup_existing_archives.files | sort(attribute='mtime', reverse=true))[takahe_backup_retain:] }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when:
+    - takahe_backup_retain | int > 0
+    - takahe_backup_create_archive | bool
+
+- name: Report backup completion
+  ansible.builtin.debug:
+    msg: "Takahe backup stored at {{ takahe_backup_archive }}"

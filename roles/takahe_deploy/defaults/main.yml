@@ -1,0 +1,8 @@
+---
+# Takahe deployment defaults (role-specific)
+
+takahe_run_migrations: true
+takahe_collectstatic: true
+takahe_service_enabled: true
+takahe_service_state: started
+takahe_nginx_enabled: true

@@ -1,0 +1,36 @@
+---
+- name: Render Takahe gunicorn systemd unit
+  ansible.builtin.template:
+    src: gunicorn.service.j2
+    dest: "{{ takahe_gunicorn_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart takahe-gunicorn
+
+- name: Render Takahe stator systemd unit
+  ansible.builtin.template:
+    src: stator.service.j2
+    dest: "{{ takahe_stator_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart takahe-stator
+
+- name: Enable and start Takahe gunicorn
+  ansible.builtin.systemd:
+    name: "{{ takahe_gunicorn_service_name }}"
+    enabled: "{{ takahe_service_enabled }}"
+    state: "{{ takahe_service_state }}"
+    daemon_reload: true
+
+- name: Enable and start Takahe stator
+  ansible.builtin.systemd:
+    name: "{{ takahe_stator_service_name }}"
+    enabled: "{{ takahe_service_enabled }}"
+    state: "{{ takahe_service_state }}"
+    daemon_reload: true

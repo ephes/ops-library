@@ -1,0 +1,28 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart takahe-gunicorn
+  ansible.builtin.systemd:
+    name: "{{ takahe_gunicorn_service_name }}"
+    state: restarted
+    enabled: "{{ takahe_service_enabled }}"
+
+- name: restart takahe-stator
+  ansible.builtin.systemd:
+    name: "{{ takahe_stator_service_name }}"
+    state: restarted
+    enabled: "{{ takahe_service_enabled }}"
+
+- name: restart takahe-nginx
+  ansible.builtin.systemd:
+    name: "{{ takahe_nginx_service_name }}"
+    state: restarted
+    enabled: true
+
+- name: reload traefik
+  ansible.builtin.service:
+    name: traefik
+    state: reloaded
+  failed_when: false

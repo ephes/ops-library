@@ -1,0 +1,41 @@
+---
+- name: Validate Takahe inputs
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Install Takahe dependencies
+  ansible.builtin.import_tasks: packages.yml
+
+- name: Ensure Takahe user exists
+  ansible.builtin.import_tasks: user.yml
+
+- name: Prepare Takahe directories
+  ansible.builtin.import_tasks: directories.yml
+
+- name: Sync Takahe source (rsync)
+  ansible.builtin.import_tasks: source_rsync.yml
+  when: takahe_source_mode == 'rsync'
+
+- name: Sync Takahe source (git)
+  ansible.builtin.import_tasks: source_git.yml
+  when: takahe_source_mode == 'git'
+
+- name: Configure Python environment
+  ansible.builtin.import_tasks: python.yml
+
+- name: Render Takahe environment file
+  ansible.builtin.import_tasks: env.yml
+
+- name: Run Takahe migrations and collectstatic
+  ansible.builtin.import_tasks: django.yml
+  when: takahe_run_migrations | bool or takahe_collectstatic | bool
+
+- name: Configure systemd services
+  ansible.builtin.import_tasks: systemd.yml
+
+- name: Configure Takahe nginx cache proxy
+  ansible.builtin.import_tasks: nginx.yml
+  when: takahe_nginx_enabled | bool
+
+- name: Configure Traefik exposure
+  ansible.builtin.import_tasks: traefik.yml
+  when: takahe_traefik_enabled | bool

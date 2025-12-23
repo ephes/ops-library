@@ -20,6 +20,8 @@ Available runbooks:
 - [MinIO Restore](https://github.com/ephes/ops-library/blob/main/roles/minio_restore/README.md)
 - [Navidrome Backup](https://github.com/ephes/ops-library/blob/main/roles/navidrome_backup/README.md)
 - [Navidrome Restore](https://github.com/ephes/ops-library/blob/main/roles/navidrome_restore/README.md)
+- [Takahe Backup](https://github.com/ephes/ops-library/blob/main/roles/takahe_backup/README.md)
+- [Takahe Restore](https://github.com/ephes/ops-library/blob/main/roles/takahe_restore/README.md)
 - [Jellyfin Backup](https://github.com/ephes/ops-library/blob/main/roles/jellyfin_backup/README.md)
 - [Jellyfin Restore](https://github.com/ephes/ops-library/blob/main/roles/jellyfin_restore/README.md)
 - [MeTube Backup](https://github.com/ephes/ops-library/blob/main/roles/metube_backup/README.md)
@@ -48,6 +50,8 @@ minio_backup
 minio_restore
 navidrome_backup
 navidrome_restore
+takahe_backup
+takahe_restore
 jellyfin_backup
 jellyfin_restore
 metube_backup

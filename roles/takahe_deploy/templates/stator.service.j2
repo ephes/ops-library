@@ -1,0 +1,18 @@
+# Managed by Ansible - Takahe stator
+
+[Unit]
+Description=Takahe stator worker
+After=network.target
+
+[Service]
+Type=simple
+User={{ takahe_user }}
+Group={{ takahe_group }}
+WorkingDirectory={{ takahe_site_path }}
+EnvironmentFile={{ takahe_env_file }}
+ExecStart={{ takahe_python_bin }} {{ takahe_manage_py }} runstator{{ (' ' + takahe_stator_extra_args) if takahe_stator_extra_args | length > 0 else '' }}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

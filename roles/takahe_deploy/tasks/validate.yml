@@ -1,0 +1,42 @@
+---
+- name: Validate required Takahe settings
+  ansible.builtin.assert:
+    that:
+      - takahe_source_mode in ['rsync', 'git']
+      - takahe_source_mode != 'rsync' or (takahe_source_path | default('') | length > 0)
+      - takahe_domain is defined
+      - takahe_domain | length > 0
+      - takahe_secret_key is defined
+      - takahe_secret_key | length > 0
+      - takahe_secret_key != 'CHANGEME'
+      - takahe_postgres_password is defined
+      - takahe_postgres_password | length > 0
+      - takahe_postgres_password != 'CHANGEME'
+      - takahe_email_server is defined
+      - takahe_email_server | length > 0
+      - takahe_email_server != 'CHANGEME'
+      - takahe_email_from is defined
+      - takahe_email_from | length > 0
+      - takahe_email_from != 'CHANGEME'
+      - takahe_error_emails is defined
+      - takahe_error_emails | length > 0
+      - takahe_error_emails != 'CHANGEME'
+    fail_msg: |
+      SECURITY ERROR: Required Takahe settings are missing or contain placeholder values.
+
+      Required values:
+      - takahe_domain
+      - takahe_secret_key
+      - takahe_postgres_password
+      - takahe_email_server
+      - takahe_email_from
+      - takahe_error_emails (JSON list of alert recipients)
+
+      Update the appropriate secrets file in ops-control before deploying.
+
+- name: Validate Takahe Git settings
+  ansible.builtin.assert:
+    that:
+      - takahe_git_repo | default('') | length > 0
+    fail_msg: "takahe_git_repo must be set when takahe_source_mode is git"
+  when: takahe_source_mode == 'git'

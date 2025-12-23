@@ -1,0 +1,55 @@
+# Managed by Ansible - Traefik configuration for Takahe
+
+http:
+  routers:
+    takahe-secure:
+      rule: "Host(`{{ takahe_traefik_host }}`)"
+      entryPoints:
+{% for ep in takahe_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      middlewares:
+        - takahe-headers
+{% for middleware in takahe_traefik_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: takahe
+{% if takahe_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ takahe_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    takahe-http:
+      rule: "Host(`{{ takahe_traefik_host }}`)"
+      entryPoints:
+        - web
+      middlewares:
+        - takahe-redirect
+      service: takahe
+
+  middlewares:
+    takahe-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: SAMEORIGIN
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "{{ takahe_traefik_host }}"
+
+    takahe-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    takahe:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:{{ takahe_nginx_port }}"

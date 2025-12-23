@@ -1,0 +1,20 @@
+---
+dependencies:
+  - role: local.ops_library.takahe_shared
+  - role: local.ops_library.postgres_install
+    vars:
+      postgres_install_version: "{{ takahe_postgres_version }}"
+      postgres_install_use_pgdg_repo: "{{ takahe_postgres_repo_enabled }}"
+      postgres_install_repo_url: "{{ takahe_postgres_repo_url }}"
+      postgres_install_repo_codename: "{{ takahe_postgres_repo_codename }}"
+      postgres_install_repo_components: "{{ takahe_postgres_repo_components }}"
+      postgres_install_repo_keyring: "{{ takahe_postgres_repo_keyring }}"
+      postgres_install_repo_key_url: "{{ takahe_postgres_repo_key_url }}"
+      postgres_install_packages: "{{ takahe_postgres_packages }}"
+      postgres_install_admin_user: "{{ takahe_postgres_become_user }}"
+      postgres_install_databases:
+        - name: "{{ takahe_postgres_database }}"
+          owner: "{{ takahe_postgres_user }}"
+      postgres_install_users:
+        - name: "{{ takahe_postgres_user }}"
+          password: "{{ takahe_postgres_password }}"

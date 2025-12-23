@@ -22,6 +22,8 @@ navidrome_deploy
 jellyfin_deploy
 metube_deploy
 snappymail_deploy
+takahe_deploy
+takahe_shared
 mail_backend_deploy
 mail_relay_deploy
 certbot_dns_deploy

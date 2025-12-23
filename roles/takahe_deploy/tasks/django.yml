@@ -1,0 +1,29 @@
+---
+- name: Run Takahe migrations
+  ansible.builtin.command:
+    argv:
+      - "{{ takahe_python_bin }}"
+      - "{{ takahe_manage_py }}"
+      - migrate
+  args:
+    chdir: "{{ takahe_site_path }}"
+  become: true
+  become_user: "{{ takahe_user }}"
+  register: takahe_migrate_result
+  changed_when: "'No migrations to apply' not in takahe_migrate_result.stdout"
+  when: takahe_run_migrations | bool
+
+- name: Collect Takahe static files
+  ansible.builtin.command:
+    argv:
+      - "{{ takahe_python_bin }}"
+      - "{{ takahe_manage_py }}"
+      - collectstatic
+      - --noinput
+  args:
+    chdir: "{{ takahe_site_path }}"
+  become: true
+  become_user: "{{ takahe_user }}"
+  register: takahe_collectstatic_result
+  changed_when: "'0 static files copied' not in takahe_collectstatic_result.stdout"
+  when: takahe_collectstatic | bool

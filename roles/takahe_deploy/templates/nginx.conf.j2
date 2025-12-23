@@ -1,0 +1,157 @@
+# Managed by Ansible - Takahe nginx cache proxy
+
+worker_processes auto;
+pid {{ takahe_nginx_pid_file }};
+error_log {{ takahe_nginx_error_log }} warn;
+
+events {
+    worker_connections {{ takahe_nginx_worker_connections }};
+}
+
+http {
+    sendfile on;
+    tcp_nopush on;
+    types_hash_max_size 2048;
+
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    gzip on;
+
+    map $http_x_forwarded_proto $takahe_forwarded_proto {
+        default $http_x_forwarded_proto;
+        '' $scheme;
+    }
+
+    map $http_x_forwarded_host $takahe_forwarded_host {
+        default $http_x_forwarded_host;
+        '' $host;
+    }
+
+    log_format takahe '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent '
+                     '"$http_referer" "$http_user_agent" host=$host http_host=$http_host upstream=$upstream_status';
+
+    proxy_cache_path {{ takahe_nginx_cache_path }} levels=1:2 keys_zone={{ takahe_nginx_cache_zone }}:{{ takahe_nginx_cache_zone_size }} inactive={{ takahe_nginx_cache_inactive }} max_size={{ takahe_nginx_cache_size }};
+    proxy_temp_path {{ takahe_nginx_temp_path }};
+
+    upstream takahe {
+        server "127.0.0.1:{{ takahe_app_port }}";
+    }
+
+    server {
+        listen 127.0.0.1:{{ takahe_nginx_port }};
+        listen [::1]:{{ takahe_nginx_port }};
+        server_name {{ takahe_nginx_server_name }};
+
+        root {{ takahe_static_root }};
+        index index.html;
+
+        access_log {{ takahe_nginx_access_log }} takahe;
+        error_log {{ takahe_nginx_error_log }};
+
+        ignore_invalid_headers on;
+        proxy_connect_timeout 900;
+
+        client_max_body_size {{ takahe_nginx_client_max_body_size }};
+        client_body_buffer_size {{ takahe_nginx_client_body_buffer_size }};
+        charset utf-8;
+
+        proxy_set_header Host $takahe_forwarded_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $takahe_forwarded_proto;
+        proxy_set_header X-Forwarded-Host $takahe_forwarded_host;
+        proxy_http_version 1.1;
+
+        proxy_hide_header X-Takahe-User;
+        proxy_hide_header X-Takahe-Identity;
+
+        location /static/ {
+            add_header Cache-Control "public, max-age=604800, immutable";
+
+            alias {{ takahe_static_collected_path }}/;
+            try_files $uri /static//static-real$uri;
+        }
+
+        location /static-real/ {
+            internal;
+            proxy_pass http://takahe/;
+        }
+
+        location /media/ {
+            proxy_cache {{ takahe_nginx_cache_zone }};
+            proxy_cache_key $host$uri;
+            proxy_cache_valid 200 304 4h;
+            proxy_cache_valid 301 307 4h;
+            proxy_cache_valid 500 502 503 504 0s;
+            proxy_cache_valid any 1h;
+            add_header X-Cache $upstream_cache_status;
+
+            proxy_set_header Host $takahe_forwarded_host;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $takahe_forwarded_proto;
+            proxy_set_header X-Forwarded-Host $takahe_forwarded_host;
+            proxy_set_header X-Takahe-Accel true;
+
+            proxy_pass http://takahe;
+        }
+
+        location /proxy/ {
+            proxy_cache {{ takahe_nginx_cache_zone }};
+            proxy_cache_key $host$uri;
+            proxy_cache_valid 200 304 4h;
+            proxy_cache_valid 301 307 4h;
+            proxy_cache_valid 500 502 503 504 0s;
+            proxy_cache_valid any 1h;
+            add_header X-Cache $upstream_cache_status;
+
+            proxy_set_header Host $takahe_forwarded_host;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $takahe_forwarded_proto;
+            proxy_set_header X-Forwarded-Host $takahe_forwarded_host;
+            proxy_set_header X-Takahe-Accel true;
+
+            proxy_pass http://takahe;
+        }
+
+        location /__takahe_accel__/ {
+            internal;
+            set $takahe_realuri $upstream_http_x_takahe_realuri;
+            rewrite ^/(.+) /__takahe_accel__/real/;
+        }
+
+        location /__takahe_accel__/real/ {
+            internal;
+
+            resolver {{ takahe_nginx_resolver }} valid=10s;
+
+            proxy_set_header Authorization '';
+            proxy_set_header Cookie '';
+            proxy_set_header User-Agent 'takahe/nginx';
+            proxy_set_header Host $proxy_host;
+            proxy_set_header X-Forwarded-For '';
+            proxy_set_header X-Forwarded-Host '';
+            proxy_set_header X-Forwarded-Server '';
+            proxy_set_header X-Real-Ip '';
+
+            proxy_max_temp_file_size 0;
+
+            proxy_pass $takahe_realuri;
+            proxy_ssl_server_name on;
+            add_header X-Takahe-Accel "HIT";
+
+            proxy_cache {{ takahe_nginx_cache_zone }};
+            proxy_cache_min_uses 1;
+            proxy_cache_key $takahe_realuri;
+            proxy_cache_valid 200 304 720h;
+            proxy_cache_valid 301 307 12h;
+            proxy_cache_valid 500 502 503 504 0s;
+            proxy_cache_valid any 72h;
+            add_header X-Cache $upstream_cache_status;
+        }
+
+        location / {
+            proxy_redirect off;
+            proxy_buffering off;
+            proxy_pass http://takahe;
+        }
+    }
+}

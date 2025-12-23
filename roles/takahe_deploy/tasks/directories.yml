@@ -1,0 +1,35 @@
+---
+- name: Ensure Takahe application directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ takahe_user }}"
+    group: "{{ takahe_group }}"
+    mode: "0750"
+  loop:
+    - "{{ takahe_site_path }}"
+    - "{{ takahe_media_root }}"
+    - "{{ takahe_static_root }}"
+    - "{{ takahe_static_collected_path }}"
+    - "{{ takahe_cache_root }}"
+    - "{{ takahe_nginx_cache_path }}"
+    - "{{ takahe_nginx_temp_path }}"
+    - "{{ takahe_nginx_log_dir }}"
+    - "{{ takahe_nginx_run_dir }}"
+
+- name: Ensure nginx config directory exists
+  ansible.builtin.file:
+    path: "{{ takahe_nginx_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure Traefik dynamic config directory exists
+  ansible.builtin.file:
+    path: "{{ takahe_traefik_config_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: takahe_traefik_enabled | bool

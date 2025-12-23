@@ -1,0 +1,45 @@
+---
+- name: Read resolver from /etc/resolv.conf
+  ansible.builtin.slurp:
+    src: /etc/resolv.conf
+  register: takahe_resolv_conf
+  when: takahe_nginx_resolver | length == 0
+
+- name: Set nginx resolver from resolv.conf
+  ansible.builtin.set_fact:
+    takahe_nginx_resolver: >-
+      {{ (takahe_resolv_conf.content | b64decode).splitlines()
+         | select('match', '^nameserver\\s+')
+         | map('regex_replace', '^nameserver\\s+', '')
+         | list
+         | first
+         | default(takahe_nginx_resolver_fallback) }}
+  when: takahe_nginx_resolver | length == 0
+
+- name: Render Takahe nginx config
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: "{{ takahe_nginx_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - restart takahe-nginx
+
+- name: Render Takahe nginx systemd unit
+  ansible.builtin.template:
+    src: nginx.service.j2
+    dest: "{{ takahe_nginx_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart takahe-nginx
+
+- name: Enable and start Takahe nginx
+  ansible.builtin.systemd:
+    name: "{{ takahe_nginx_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true

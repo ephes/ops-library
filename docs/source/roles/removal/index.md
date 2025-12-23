@@ -19,6 +19,7 @@ minecraft_java_remove
 navidrome_remove
 jellyfin_remove
 metube_remove
+takahe_remove
 ```
 
 These roles handle:

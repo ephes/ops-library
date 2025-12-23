@@ -1,0 +1,31 @@
+---
+- name: Validate local source path exists
+  ansible.builtin.stat:
+    path: "{{ takahe_source_path }}"
+  delegate_to: localhost
+  become: false
+  register: takahe_source_check
+
+- name: Fail when source path is missing
+  ansible.builtin.fail:
+    msg: "Source path {{ takahe_source_path }} does not exist on the controller"
+  when: not takahe_source_check.stat.exists
+
+- name: Build rsync exclude options
+  ansible.builtin.set_fact:
+    takahe_rsync_exclude_opts: "{{ takahe_rsync_excludes | map('regex_replace', '^', '--exclude=') | list }}"
+
+- name: Sync Takahe source code
+  ansible.posix.synchronize:
+    src: "{{ takahe_source_path }}/"
+    dest: "{{ takahe_site_path }}/"
+    rsync_opts: "{{ takahe_rsync_exclude_opts }}"
+  delegate_to: localhost
+  become: false
+
+- name: Ensure correct ownership of synced files
+  ansible.builtin.file:
+    path: "{{ takahe_site_path }}"
+    owner: "{{ takahe_user }}"
+    group: "{{ takahe_group }}"
+    recurse: true

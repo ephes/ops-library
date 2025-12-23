@@ -1,0 +1,94 @@
+---
+- name: Validate removal confirmation
+  ansible.builtin.assert:
+    that:
+      - takahe_confirm_removal | bool
+    fail_msg: |
+      Takahe removal not confirmed.
+      Set takahe_confirm_removal: true to proceed.
+
+- name: Stop and disable Takahe services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop: "{{ takahe_systemd_services }}"
+  failed_when: false
+
+- name: Remove systemd units
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ takahe_systemd_units }}"
+  when: takahe_remove_systemd_units | bool
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Remove Takahe environment file
+  ansible.builtin.file:
+    path: "{{ takahe_env_file }}"
+    state: absent
+  when: takahe_remove_env_file | bool
+
+- name: Remove Traefik configuration
+  ansible.builtin.file:
+    path: "{{ takahe_traefik_config_path }}"
+    state: absent
+  when: takahe_remove_traefik_config | bool
+
+- name: Remove nginx configuration
+  ansible.builtin.file:
+    path: "{{ takahe_nginx_config_path }}"
+    state: absent
+  when: takahe_remove_nginx_config | bool
+
+- name: Remove Takahe site directory
+  ansible.builtin.file:
+    path: "{{ takahe_site_path }}"
+    state: absent
+  when: takahe_remove_site | bool
+
+- name: Remove Takahe media directory
+  ansible.builtin.file:
+    path: "{{ takahe_media_root }}"
+    state: absent
+  when: takahe_remove_media | bool
+
+- name: Remove Takahe cache directory
+  ansible.builtin.file:
+    path: "{{ takahe_cache_root }}"
+    state: absent
+  when: takahe_remove_cache | bool
+
+- name: Remove nginx log directory
+  ansible.builtin.file:
+    path: "{{ takahe_nginx_log_dir }}"
+    state: absent
+  when: takahe_remove_logs | bool
+
+- name: Remove Takahe user
+  ansible.builtin.user:
+    name: "{{ takahe_user }}"
+    state: absent
+    remove: true
+  when: takahe_remove_user | bool
+
+- name: Remove Takahe group
+  ansible.builtin.group:
+    name: "{{ takahe_group }}"
+    state: absent
+  when: takahe_remove_user | bool
+
+- name: Display removal summary
+  ansible.builtin.debug:
+    msg: |
+      Takahe removal completed.
+      Site: {{ 'removed' if takahe_remove_site else 'preserved' }}
+      Media: {{ 'removed' if takahe_remove_media else 'preserved' }}
+      Cache: {{ 'removed' if takahe_remove_cache else 'preserved' }}
+      Logs: {{ 'removed' if takahe_remove_logs else 'preserved' }}
+      Traefik config: {{ 'removed' if takahe_remove_traefik_config else 'preserved' }}
+      nginx config: {{ 'removed' if takahe_remove_nginx_config else 'preserved' }}
+      User: {{ 'removed' if takahe_remove_user else 'preserved' }}

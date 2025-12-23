@@ -1,0 +1,5 @@
+---
+# Shared defaults for Takahe lifecycle roles
+
+- name: takahe_shared noop
+  ansible.builtin.meta: noop

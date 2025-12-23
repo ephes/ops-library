@@ -1,0 +1,275 @@
+---
+- name: Validate restore inputs
+  ansible.builtin.assert:
+    that:
+      - takahe_restore_root | length > 0
+      - takahe_restore_archive | length > 0
+    fail_msg: "takahe_restore_root and takahe_restore_archive are required"
+
+- name: Determine archive when set to latest
+  ansible.builtin.find:
+    paths: "{{ takahe_restore_root }}"
+    patterns: "*.{{ takahe_backup_archive_extension }}"
+    file_type: file
+  register: takahe_restore_candidates
+  when: takahe_restore_archive == "latest"
+
+- name: Select restore archive
+  ansible.builtin.set_fact:
+    takahe_restore_selected_archive: >-
+      {{ (takahe_restore_candidates.files | sort(attribute='mtime', reverse=true) | first).path
+         if takahe_restore_archive == 'latest'
+         else (takahe_restore_archive if takahe_restore_archive.startswith('/') else takahe_restore_root ~ '/' ~ takahe_restore_archive) }}
+
+- name: Fail when no archive is available
+  ansible.builtin.fail:
+    msg: "No Takahe backup archives found in {{ takahe_restore_root }}"
+  when:
+    - (takahe_restore_selected_archive | default('')) | length == 0
+
+- name: Ensure selected archive exists
+  ansible.builtin.stat:
+    path: "{{ takahe_restore_selected_archive }}"
+  register: takahe_restore_archive_stat
+
+- name: Abort on missing archive
+  ansible.builtin.fail:
+    msg: "Takahe restore archive not found: {{ takahe_restore_selected_archive }}"
+  when: not takahe_restore_archive_stat.stat.exists
+
+- name: Reset staging directory
+  ansible.builtin.file:
+    path: "{{ takahe_restore_staging_dir }}"
+    state: absent
+
+- name: Create staging directory
+  ansible.builtin.file:
+    path: "{{ takahe_restore_staging_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Unpack restore archive
+  ansible.builtin.unarchive:
+    src: "{{ takahe_restore_selected_archive }}"
+    dest: "{{ takahe_restore_staging_dir }}"
+    remote_src: true
+
+- name: Locate extracted payload directory
+  ansible.builtin.find:
+    paths: "{{ takahe_restore_staging_dir }}"
+    file_type: directory
+    depth: 1
+  register: takahe_restore_payload_dirs
+
+- name: Set payload path
+  ansible.builtin.set_fact:
+    takahe_restore_payload_dir: "{{ (takahe_restore_payload_dirs.files | map(attribute='path') | list | first) | default('') }}"
+
+- name: Abort when payload directory missing
+  ansible.builtin.fail:
+    msg: "Unable to locate payload directory inside restore archive"
+  when: takahe_restore_payload_dir | length == 0
+
+- name: Gather payload content stats
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  register: takahe_restore_payload_stats
+  loop:
+    - { path: "{{ takahe_restore_payload_dir }}/database/{{ takahe_restore_postgres_database }}.dump", label: "database dump" }
+    - { path: "{{ takahe_restore_payload_dir }}/media", label: "media" }
+    - { path: "{{ takahe_restore_payload_dir }}/config/takahe.env", label: "env" }
+    - { path: "{{ takahe_restore_payload_dir }}/systemd", label: "systemd" }
+    - { path: "{{ takahe_restore_payload_dir }}/traefik/{{ takahe_traefik_config_path | basename }}", label: "traefik" }
+    - { path: "{{ takahe_restore_payload_dir }}/nginx/{{ takahe_nginx_config_path | basename }}", label: "nginx" }
+  loop_control:
+    label: "{{ item.label }}"
+
+- name: Abort when database dump is missing
+  ansible.builtin.fail:
+    msg: "Database dump missing inside archive"
+  when: not takahe_restore_payload_stats.results[0].stat.exists
+
+- name: Stop Takahe services before restore
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+  loop: "{{ takahe_systemd_services }}"
+  failed_when: false
+  when: takahe_restore_stop_services | bool
+
+- name: Ensure media directory exists
+  ansible.builtin.file:
+    path: "{{ takahe_media_root }}"
+    state: directory
+    owner: "{{ takahe_user }}"
+    group: "{{ takahe_group }}"
+    mode: "0750"
+
+- name: Ensure site directory exists
+  ansible.builtin.file:
+    path: "{{ takahe_site_path }}"
+    state: directory
+    owner: "{{ takahe_user }}"
+    group: "{{ takahe_group }}"
+    mode: "0750"
+
+- name: Build restore connection flags
+  ansible.builtin.set_fact:
+    takahe_restore_pg_host_flag: "{{ (takahe_restore_postgres_host | default('') | string | length > 0) | ternary('--host=' ~ takahe_restore_postgres_host, '') }}"
+    takahe_restore_pg_port_flag: "{{ (takahe_restore_postgres_port | default('') | string | length > 0) | ternary('--port=' ~ takahe_restore_postgres_port, '') }}"
+
+- name: Drop Takahe database
+  ansible.builtin.shell: |
+    set -euo pipefail
+    {{ takahe_restore_postgres_dropdb_binary }} \
+      --if-exists \
+      {{ takahe_restore_postgres_database }}
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ takahe_restore_postgres_become_user }}"
+  environment:
+    PGPASSWORD: "{{ takahe_restore_postgres_password }}"
+  no_log: "{{ (takahe_restore_postgres_password | default('') | length > 0) }}"
+
+- name: Recreate Takahe database
+  ansible.builtin.shell: |
+    set -euo pipefail
+    {{ takahe_restore_postgres_createdb_binary }} \
+      --owner={{ takahe_restore_postgres_user }} \
+      {{ takahe_restore_postgres_database }}
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ takahe_restore_postgres_become_user }}"
+  environment:
+    PGPASSWORD: "{{ takahe_restore_postgres_password }}"
+  no_log: "{{ (takahe_restore_postgres_password | default('') | length > 0) }}"
+
+- name: Ensure database dump readable by Postgres user
+  ansible.builtin.file:
+    path: "{{ takahe_restore_payload_dir }}/database/{{ takahe_restore_postgres_database }}.dump"
+    owner: "{{ takahe_restore_postgres_become_user }}"
+    group: "{{ takahe_restore_postgres_become_user }}"
+    mode: "0640"
+
+- name: Restore PostgreSQL dump
+  ansible.builtin.shell: |
+    set -euo pipefail
+    {{ takahe_restore_postgres_restore_binary }} \
+      {{ takahe_restore_pg_host_flag }} \
+      {{ takahe_restore_pg_port_flag }} \
+      --username={{ takahe_restore_postgres_user }} \
+      --dbname={{ takahe_restore_postgres_database }} \
+      --clean --if-exists --no-owner \
+      "{{ takahe_restore_payload_dir }}/database/{{ takahe_restore_postgres_database }}.dump"
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ takahe_restore_postgres_become_user }}"
+  environment:
+    PGPASSWORD: "{{ takahe_restore_postgres_password }}"
+  no_log: "{{ (takahe_restore_postgres_password | default('') | length > 0) }}"
+
+- name: Restore media directory
+  ansible.builtin.command:
+    cmd: >
+      rsync -a --delete "{{ takahe_restore_payload_dir }}/media/" "{{ takahe_media_root }}/"
+  changed_when: true
+  when: takahe_restore_payload_stats.results[1].stat.exists
+
+- name: Restore environment file
+  ansible.builtin.copy:
+    src: "{{ takahe_restore_payload_dir }}/config/takahe.env"
+    dest: "{{ takahe_env_file }}"
+    owner: "{{ takahe_user }}"
+    group: "{{ takahe_group }}"
+    mode: "0600"
+    remote_src: true
+  when: takahe_restore_payload_stats.results[2].stat.exists
+
+- name: Restore systemd units when present
+  ansible.builtin.find:
+    paths: "{{ takahe_restore_payload_dir }}/systemd"
+    file_type: file
+    recurse: false
+  register: takahe_restore_systemd_files
+  failed_when: false
+  when: takahe_restore_payload_stats.results[3].stat.exists
+
+- name: Copy systemd unit files
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: "{{ takahe_systemd_unit_dir }}/{{ item.path | basename }}"
+    owner: root
+    group: root
+    mode: "0644"
+    remote_src: true
+  loop: "{{ takahe_restore_systemd_files.files | default([]) }}"
+  register: takahe_restore_unit_copy
+  when: takahe_restore_payload_stats.results[3].stat.exists
+
+- name: Restore Traefik configuration when present
+  ansible.builtin.copy:
+    src: "{{ takahe_restore_payload_dir }}/traefik/{{ takahe_traefik_config_path | basename }}"
+    dest: "{{ takahe_traefik_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    remote_src: true
+  when: takahe_restore_payload_stats.results[4].stat.exists
+
+- name: Restore nginx configuration when present
+  ansible.builtin.copy:
+    src: "{{ takahe_restore_payload_dir }}/nginx/{{ takahe_nginx_config_path | basename }}"
+    dest: "{{ takahe_nginx_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    remote_src: true
+  when: takahe_restore_payload_stats.results[5].stat.exists
+
+- name: Reload systemd when unit files changed
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: takahe_restore_unit_copy is defined and takahe_restore_unit_copy.changed
+
+- name: Run migrations after restore
+  ansible.builtin.command:
+    argv:
+      - "{{ takahe_python_bin }}"
+      - "{{ takahe_manage_py }}"
+      - migrate
+  args:
+    chdir: "{{ takahe_site_path }}"
+  become: true
+  become_user: "{{ takahe_user }}"
+  when: takahe_restore_run_migrations | bool
+
+- name: Collect static files after restore
+  ansible.builtin.command:
+    argv:
+      - "{{ takahe_python_bin }}"
+      - "{{ takahe_manage_py }}"
+      - collectstatic
+      - --noinput
+  args:
+    chdir: "{{ takahe_site_path }}"
+  become: true
+  become_user: "{{ takahe_user }}"
+  when: takahe_restore_collectstatic | bool
+
+- name: Start Takahe services after restore
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: "{{ takahe_restore_restart | bool | ternary('restarted', 'started') }}"
+    daemon_reload: true
+  loop: "{{ takahe_systemd_services }}"
+  failed_when: false
+
+- name: Cleanup restore staging directory
+  ansible.builtin.file:
+    path: "{{ takahe_restore_staging_dir }}"
+    state: absent
+  when: takahe_restore_cleanup | bool

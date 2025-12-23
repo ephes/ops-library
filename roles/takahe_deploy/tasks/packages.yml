@@ -1,0 +1,5 @@
+---
+- name: Install system packages for Takahe
+  ansible.builtin.package:
+    name: "{{ takahe_system_packages }}"
+    state: present

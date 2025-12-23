@@ -44,6 +44,7 @@ The table below links each published role to its dedicated documentation. Refer 
 | Service deployment | [`mail_backend_deploy`](roles/mail_backend_deploy/README.md) | Deploy mail backend with Postfix, Dovecot, OpenDKIM, and PostgreSQL virtual users/domains. |
 | Service deployment | [`mail_relay_deploy`](roles/mail_relay_deploy/README.md) | Deploy Postfix edge relay with greylisting, TLS termination, and backend routing. |
 | Service deployment | [`snappymail_deploy`](roles/snappymail_deploy/README.md) | Deploy SnappyMail webmail via PHP-FPM + nginx with Traefik exposure and IMAP/SMTP defaults. |
+| Service deployment | [`takahe_deploy`](roles/takahe_deploy/README.md) | Deploy Takahe with systemd, nginx cache/accel proxying, and Traefik exposure. |
 | Monitoring | [`metrics_endpoint`](roles/metrics_endpoint/README.md) | Expose an authenticated JSON health endpoint (e.g. `/.well-known/health`) for nyxmon checks. |
 | Monitoring | [`mail_monitoring`](roles/mail_monitoring/README.md) | Provision monitor mailbox + cleanup timer to support nyxmon end-to-end mail flow checks. |
 | Service operations | [`tailscale_backup`](roles/tailscale_backup/README.md) | Backup `/var/lib/tailscale`, sysconfig, and systemd drop-ins to preserve node identity. |
@@ -54,6 +55,8 @@ The table below links each published role to its dedicated documentation. Refer 
 | Service operations | [`unifi_restore`](roles/unifi_restore/README.md) | Restore UniFi with safety backups, version checks, rollback, and health verification. |
 | Service operations | [`navidrome_backup`](roles/navidrome_backup/README.md) | Backup Navidrome data/config/systemd/Traefik with optional archive fetch. |
 | Service operations | [`navidrome_restore`](roles/navidrome_restore/README.md) | Restore Navidrome archives and optionally trigger a full rescan. |
+| Service operations | [`takahe_backup`](roles/takahe_backup/README.md) | Backup Takahe database, media, and configuration with manifests and archive fetch. |
+| Service operations | [`takahe_restore`](roles/takahe_restore/README.md) | Restore Takahe from archives, replaying the database and media content. |
 | Service operations | [`jellyfin_backup`](roles/jellyfin_backup/README.md) | Backup Jellyfin data/config/systemd/Traefik with optional archive fetch. |
 | Service operations | [`jellyfin_restore`](roles/jellyfin_restore/README.md) | Restore Jellyfin archives back into place and restart the service. |
 | Service operations | [`metube_backup`](roles/metube_backup/README.md) | Backup MeTube state/env/systemd/Traefik with optional archive fetch. |
@@ -63,6 +66,7 @@ The table below links each published role to its dedicated documentation. Refer 
 | Service removal | [`homeassistant_remove`](roles/homeassistant_remove/README.md) | Tear down Home Assistant (service, config, user) with confirmation guards. |
 | Service removal | [`unifi_remove`](roles/unifi_remove/README.md) | Destructively remove UniFi, MongoDB packages/users, Traefik + firewall artifacts with confirmation. |
 | Service removal | [`navidrome_remove`](roles/navidrome_remove/README.md) | Remove Navidrome binaries, config, data, Traefik wiring, and user with confirmation toggles. |
+| Service removal | [`takahe_remove`](roles/takahe_remove/README.md) | Remove Takahe services, configs, and user with confirmation guards. |
 | Service removal | [`tailscale_remove`](roles/tailscale_remove/README.md) | Remove Tailscale packages/repo, optionally logout and purge `/var/lib/tailscale`. |
 | Service removal | [`jellyfin_remove`](roles/jellyfin_remove/README.md) | Remove Jellyfin packages, config/data/logs, Traefik wiring, and user with confirmation toggles. |
 | Service removal | [`metube_remove`](roles/metube_remove/README.md) | Remove MeTube service, env/state/Traefik wiring, optional downloads, with confirmation guard. |

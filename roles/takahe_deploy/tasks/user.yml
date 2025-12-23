@@ -1,0 +1,14 @@
+---
+- name: Ensure Takahe group exists
+  ansible.builtin.group:
+    name: "{{ takahe_group }}"
+    state: present
+
+- name: Ensure Takahe user exists
+  ansible.builtin.user:
+    name: "{{ takahe_user }}"
+    group: "{{ takahe_group }}"
+    home: "{{ takahe_home_path }}"
+    create_home: true
+    shell: "{{ takahe_shell }}"
+    state: present

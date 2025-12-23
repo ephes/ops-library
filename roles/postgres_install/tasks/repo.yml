@@ -15,6 +15,14 @@
   become: true
   when: postgres_install_use_pgdg_repo | bool
 
+- name: Install python3-debian for deb822_repository
+  ansible.builtin.apt:
+    name: python3-debian
+    state: present
+    update_cache: true
+  become: true
+  when: postgres_install_use_pgdg_repo | bool
+
 - name: Configure PostgreSQL apt repository
   ansible.builtin.deb822_repository:
     name: "{{ postgres_install_repo_name }}"

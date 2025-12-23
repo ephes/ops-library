@@ -1,0 +1,220 @@
+---
+# Shared defaults for Takahe roles
+
+# Identity / paths
+takahe_user: takahe
+takahe_group: takahe
+takahe_shell: /bin/bash
+takahe_home_path: "/home/{{ takahe_user }}"
+takahe_site_path: "{{ takahe_home_path }}/site"
+takahe_env_file: "{{ takahe_site_path }}/.env"
+
+# Source
+takahe_source_mode: rsync
+takahe_source_path: ""
+takahe_git_repo: ""
+takahe_git_ref: main
+takahe_git_dest: "{{ takahe_site_path }}"
+takahe_rsync_excludes:
+  - ".git"
+  - ".venv"
+  - "__pycache__"
+  - "*.pyc"
+
+# Python
+takahe_venv_path: "{{ takahe_site_path }}/venv"
+takahe_python_bin: "{{ takahe_venv_path }}/bin/python"
+takahe_pip_bin: "{{ takahe_venv_path }}/bin/pip"
+takahe_manage_py: "{{ takahe_site_path }}/manage.py"
+takahe_pip_upgrade: true
+
+# Domain / runtime
+takahe_domain: ""
+takahe_environment: staging
+takahe_main_domain: "{{ takahe_domain }}"
+takahe_debug: false
+takahe_allowed_hosts:
+  - "{{ takahe_domain }}"
+takahe_cors_hosts: []
+takahe_csrf_hosts:
+  - "https://{{ takahe_domain }}"
+takahe_use_proxy_headers: true
+
+# Secrets / email
+takahe_secret_key: "CHANGEME"
+takahe_email_server: "CHANGEME"
+takahe_email_from: "CHANGEME"
+takahe_error_emails: []
+takahe_auto_admin_email: ""
+takahe_stator_token: ""
+takahe_vapid_public_key: ""
+takahe_vapid_private_key: ""
+
+# Database (postgres_install)
+takahe_postgres_version: "17"
+takahe_postgres_host: localhost
+takahe_postgres_port: 5432
+takahe_postgres_database: takahe
+takahe_postgres_user: takahe
+takahe_postgres_password: "CHANGEME"
+takahe_postgres_become_user: postgres
+takahe_postgres_packages:
+  - "postgresql-{{ takahe_postgres_version }}"
+  - "postgresql-client-{{ takahe_postgres_version }}"
+  - "postgresql-contrib-{{ takahe_postgres_version }}"
+  - libpq-dev
+takahe_postgres_repo_enabled: true
+takahe_postgres_repo_url: https://apt.postgresql.org/pub/repos/apt
+takahe_postgres_repo_codename: "{{ ansible_distribution_release | default('jammy') }}"
+takahe_postgres_repo_components:
+  - main
+takahe_postgres_repo_keyring: /etc/apt/keyrings/postgresql.asc
+takahe_postgres_repo_key_url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+
+# Networking / app
+takahe_app_port: 10023
+takahe_nginx_port: 10024
+takahe_gunicorn_workers: 3
+takahe_gunicorn_threads: 1
+takahe_gunicorn_timeout: 120
+takahe_gunicorn_extra_args: ""
+takahe_stator_extra_args: ""
+
+# Media / static
+takahe_static_root: "{{ takahe_site_path }}/static"
+takahe_static_collected_path: "{{ takahe_site_path }}/static-collected"
+takahe_media_root: "{{ takahe_site_path }}/media"
+takahe_media_url: "https://{{ takahe_domain }}/media/"
+takahe_media_backend: "local://"
+takahe_media_backend_s3_acl: "public-read"
+takahe_caches_default: ""
+
+# Cache
+takahe_cache_root: /var/cache/takahe
+
+# Nginx
+takahe_nginx_config_path: /etc/takahe/nginx.conf
+takahe_nginx_conf_dir: /etc/takahe
+takahe_nginx_cache_path: "{{ takahe_cache_root }}/nginx"
+takahe_nginx_cache_size: "1g"
+takahe_nginx_cache_zone: takahe
+takahe_nginx_cache_zone_size: "20m"
+takahe_nginx_cache_inactive: "14d"
+takahe_nginx_temp_path: "{{ takahe_nginx_cache_path }}/temp"
+takahe_nginx_log_dir: /var/log/takahe-nginx
+takahe_nginx_run_dir: /run/takahe-nginx
+takahe_nginx_pid_file: "{{ takahe_nginx_run_dir }}/nginx.pid"
+takahe_nginx_access_log: "{{ takahe_nginx_log_dir }}/access.log"
+takahe_nginx_error_log: "{{ takahe_nginx_log_dir }}/error.log"
+takahe_nginx_client_max_body_size: "100M"
+takahe_nginx_client_body_buffer_size: "128k"
+takahe_nginx_worker_connections: 4096
+takahe_nginx_server_name: "_"
+takahe_nginx_resolver: ""
+takahe_nginx_resolver_fallback: "127.0.0.53"
+
+# Systemd
+takahe_systemd_unit_dir: /etc/systemd/system
+takahe_gunicorn_service_name: takahe-gunicorn
+takahe_stator_service_name: takahe-stator
+takahe_nginx_service_name: takahe-nginx
+takahe_gunicorn_unit_path: "{{ takahe_systemd_unit_dir }}/{{ takahe_gunicorn_service_name }}.service"
+takahe_stator_unit_path: "{{ takahe_systemd_unit_dir }}/{{ takahe_stator_service_name }}.service"
+takahe_nginx_unit_path: "{{ takahe_systemd_unit_dir }}/{{ takahe_nginx_service_name }}.service"
+takahe_systemd_services:
+  - "{{ takahe_gunicorn_service_name }}"
+  - "{{ takahe_stator_service_name }}"
+  - "{{ takahe_nginx_service_name }}"
+takahe_systemd_units:
+  - "{{ takahe_gunicorn_unit_path }}"
+  - "{{ takahe_stator_unit_path }}"
+  - "{{ takahe_nginx_unit_path }}"
+
+# Traefik
+takahe_traefik_enabled: true
+takahe_traefik_host: "{{ takahe_domain }}"
+takahe_traefik_entrypoints:
+  - web-secure
+takahe_traefik_cert_resolver: ""
+takahe_traefik_middlewares: []
+takahe_traefik_config_path: /etc/traefik/dynamic/takahe.yml
+takahe_traefik_service_name: takahe
+
+# APT packages
+takahe_system_packages:
+  - python3
+  - python3-venv
+  - python3-pip
+  - python3-dev
+  - build-essential
+  - libpq-dev
+  - libssl-dev
+  - libffi-dev
+  - libjpeg-dev
+  - zlib1g-dev
+  - libmemcached-dev
+  - nginx
+  - git
+  - rsync
+
+# Backup defaults
+takahe_backup_root: /opt/backups/takahe
+takahe_backup_prefix: manual
+takahe_backup_archive_format: gz
+takahe_backup_archive_extension: tar.gz
+takahe_backup_create_archive: true
+takahe_backup_fetch_local: true
+takahe_backup_local_dir: "{{ lookup('env', 'HOME') }}/backups/takahe"
+takahe_backup_dir_mode: "0700"
+takahe_backup_file_mode: "0600"
+takahe_backup_owner: root
+takahe_backup_group: root
+takahe_backup_stop_services: true
+takahe_backup_include_media: true
+takahe_backup_include_config: true
+takahe_backup_include_systemd: true
+takahe_backup_include_traefik: true
+takahe_backup_include_nginx: true
+takahe_backup_generate_manifest: true
+takahe_backup_use_delete: true
+takahe_backup_retain: 7
+takahe_backup_postgres_dump_binary: pg_dump
+takahe_backup_postgres_format: custom
+takahe_backup_postgres_compress: 9
+takahe_backup_postgres_become_user: "{{ takahe_postgres_become_user }}"
+takahe_backup_postgres_host: "{{ takahe_postgres_host }}"
+takahe_backup_postgres_port: "{{ takahe_postgres_port }}"
+takahe_backup_postgres_database: "{{ takahe_postgres_database }}"
+takahe_backup_postgres_user: "{{ takahe_postgres_user }}"
+takahe_backup_postgres_password: "{{ takahe_postgres_password }}"
+
+# Restore defaults
+takahe_restore_root: "{{ takahe_backup_root }}"
+takahe_restore_archive: latest
+takahe_restore_cleanup: true
+takahe_restore_restart: true
+takahe_restore_stop_services: true
+takahe_restore_run_migrations: true
+takahe_restore_collectstatic: false
+takahe_restore_staging_dir: /var/tmp/takahe-restore
+takahe_restore_postgres_restore_binary: pg_restore
+takahe_restore_postgres_dropdb_binary: dropdb
+takahe_restore_postgres_createdb_binary: createdb
+takahe_restore_postgres_become_user: "{{ takahe_postgres_become_user }}"
+takahe_restore_postgres_host: "{{ takahe_postgres_host }}"
+takahe_restore_postgres_port: "{{ takahe_postgres_port }}"
+takahe_restore_postgres_database: "{{ takahe_postgres_database }}"
+takahe_restore_postgres_user: "{{ takahe_postgres_user }}"
+takahe_restore_postgres_password: "{{ takahe_postgres_password }}"
+
+# Removal defaults
+takahe_confirm_removal: false
+takahe_remove_site: true
+takahe_remove_media: false
+takahe_remove_cache: true
+takahe_remove_logs: true
+takahe_remove_env_file: true
+takahe_remove_traefik_config: true
+takahe_remove_nginx_config: true
+takahe_remove_systemd_units: true
+takahe_remove_user: true
