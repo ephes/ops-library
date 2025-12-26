@@ -1,0 +1,36 @@
+---
+- name: Run Mastodon database migrations
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export RBENV_ROOT="{{ mastodon_rbenv_root }}"
+    export RBENV_VERSION="{{ mastodon_ruby_version_effective }}"
+    export NVM_DIR="{{ mastodon_nvm_dir }}"
+    export PATH="{{ mastodon_runtime_path }}"
+    set -a
+    . "{{ mastodon_env_file }}"
+    set +a
+    cd "{{ mastodon_site_path }}"
+    bundle exec rails db:migrate
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ mastodon_user }}"
+  when: mastodon_run_migrations | bool
+
+- name: Precompile Mastodon assets
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export RBENV_ROOT="{{ mastodon_rbenv_root }}"
+    export RBENV_VERSION="{{ mastodon_ruby_version_effective }}"
+    export NVM_DIR="{{ mastodon_nvm_dir }}"
+    export PATH="{{ mastodon_runtime_path }}"
+    set -a
+    . "{{ mastodon_env_file }}"
+    set +a
+    cd "{{ mastodon_site_path }}"
+    bundle exec rails assets:precompile
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ mastodon_user }}"
+  when: mastodon_precompile_assets | bool

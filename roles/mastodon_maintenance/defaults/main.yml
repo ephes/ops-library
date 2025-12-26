@@ -1,0 +1,28 @@
+---
+# Role-specific defaults for mastodon_maintenance (shared defaults in mastodon_shared)
+
+mastodon_maintenance_on_calendar: "*-*-* 03:00:00"
+mastodon_maintenance_randomized_delay_sec: ""
+mastodon_maintenance_persistent: true
+mastodon_maintenance_timer_enabled: true
+mastodon_maintenance_unit_dir: /etc/systemd/system
+mastodon_maintenance_service_name: mastodon-maintenance
+mastodon_maintenance_timer_name: mastodon-maintenance
+mastodon_maintenance_service_unit: "{{ mastodon_maintenance_unit_dir }}/{{ mastodon_maintenance_service_name }}.service"
+mastodon_maintenance_timer_unit: "{{ mastodon_maintenance_unit_dir }}/{{ mastodon_maintenance_timer_name }}.timer"
+mastodon_maintenance_script_path: /usr/local/bin/mastodon-maintenance
+mastodon_maintenance_script_mode: "0755"
+
+mastodon_maintenance_media_days: 4
+mastodon_maintenance_preview_days: 4
+mastodon_maintenance_status_days: 4
+
+mastodon_maintenance_tootctl_commands:
+  - "media remove --days {{ mastodon_maintenance_media_days }}"
+  - "media remove-orphans"
+  - "preview-cards remove --days {{ mastodon_maintenance_preview_days }}"
+  - "accounts prune"
+  - "statuses remove --days {{ mastodon_maintenance_status_days }}"
+mastodon_maintenance_extra_commands: []
+mastodon_maintenance_ignore_errors: false
+mastodon_maintenance_run_now: false

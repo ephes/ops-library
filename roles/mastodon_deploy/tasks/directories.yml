@@ -1,0 +1,56 @@
+---
+- name: Ensure Mastodon directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ mastodon_user }}"
+    group: "{{ mastodon_group }}"
+    mode: "0750"
+  loop:
+    - "{{ mastodon_site_path }}"
+    - "{{ mastodon_media_path }}"
+    - "{{ mastodon_tmp_path }}"
+    - "{{ mastodon_log_path }}"
+    - "{{ mastodon_bundle_path }}"
+
+- name: Ensure Mastodon runtime directories are owned by the service user
+  ansible.builtin.file:
+    path: "{{ mastodon_site_path }}"
+    owner: "{{ mastodon_user }}"
+    group: "{{ mastodon_group }}"
+    recurse: true
+
+- name: Ensure Mastodon nginx directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ mastodon_nginx_user }}"
+    group: "{{ mastodon_nginx_group }}"
+    mode: "0750"
+  loop:
+    - "{{ mastodon_nginx_log_dir }}"
+    - "{{ mastodon_nginx_run_dir }}"
+  when: mastodon_nginx_enabled | bool
+
+- name: Ensure Mastodon nginx cache directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ mastodon_nginx_user }}"
+    group: "{{ mastodon_nginx_group }}"
+    mode: "0750"
+  loop:
+    - "{{ mastodon_nginx_cache_path }}"
+    - "{{ mastodon_nginx_temp_path }}"
+  when:
+    - mastodon_nginx_enabled | bool
+    - mastodon_nginx_cache_enabled | bool
+
+- name: Ensure Mastodon nginx config directory exists
+  ansible.builtin.file:
+    path: "{{ mastodon_nginx_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: mastodon_nginx_enabled | bool

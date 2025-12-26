@@ -1,0 +1,14 @@
+---
+- name: Ensure Mastodon group exists
+  ansible.builtin.group:
+    name: "{{ mastodon_group }}"
+    state: present
+
+- name: Ensure Mastodon user exists
+  ansible.builtin.user:
+    name: "{{ mastodon_user }}"
+    group: "{{ mastodon_group }}"
+    shell: "{{ mastodon_shell }}"
+    home: "{{ mastodon_home_path }}"
+    create_home: true
+    state: present

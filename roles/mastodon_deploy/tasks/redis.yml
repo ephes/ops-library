@@ -1,0 +1,9 @@
+---
+- name: Install Redis for Mastodon
+  ansible.builtin.include_role:
+    name: local.ops_library.redis_install
+  vars:
+    redis_install_bind_addresses: "{{ mastodon_redis_bind_addresses }}"
+    redis_install_port: "{{ mastodon_redis_port }}"
+    redis_install_requirepass_enabled: "{{ mastodon_redis_requirepass_enabled | bool }}"
+    redis_install_password: "{{ mastodon_redis_password }}"

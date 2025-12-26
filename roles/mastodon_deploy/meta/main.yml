@@ -1,0 +1,41 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Deploy Mastodon from source with rbenv, nvm, systemd, nginx, and Traefik
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - mastodon
+    - ruby
+    - deployment
+    - web
+
+dependencies:
+  - role: local.ops_library.mastodon_shared
+  - role: local.ops_library.postgres_install
+    vars:
+      postgres_install_version: "{{ mastodon_postgres_version }}"
+      postgres_install_use_pgdg_repo: "{{ mastodon_postgres_repo_enabled }}"
+      postgres_install_repo_url: "{{ mastodon_postgres_repo_url }}"
+      postgres_install_repo_codename: "{{ mastodon_postgres_repo_codename }}"
+      postgres_install_repo_components: "{{ mastodon_postgres_repo_components }}"
+      postgres_install_repo_keyring: "{{ mastodon_postgres_repo_keyring }}"
+      postgres_install_repo_key_url: "{{ mastodon_postgres_repo_key_url }}"
+      postgres_install_packages: "{{ mastodon_postgres_packages }}"
+      postgres_install_admin_user: "{{ mastodon_postgres_become_user }}"
+      postgres_install_databases:
+        - name: "{{ mastodon_postgres_database }}"
+          owner: "{{ mastodon_postgres_user }}"
+      postgres_install_users:
+        - name: "{{ mastodon_postgres_user }}"
+          password: "{{ mastodon_postgres_password }}"
+      postgres_install_extensions: "{{ mastodon_postgres_extensions }}"

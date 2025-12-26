@@ -1,0 +1,49 @@
+---
+# Role-specific defaults for mastodon_deploy
+
+mastodon_run_migrations: true
+mastodon_precompile_assets: true
+mastodon_bundle_install: true
+mastodon_yarn_install: true
+mastodon_yarn_use_corepack: true
+mastodon_yarn_global_install: false
+
+mastodon_bundle_deployment: false
+
+mastodon_service_enabled: true
+mastodon_service_state: started
+
+mastodon_maintenance_enabled: true
+
+mastodon_healthcheck_enabled: true
+mastodon_healthcheck_url: "http://{{ mastodon_bind_host }}:{{ mastodon_nginx_port if (mastodon_nginx_enabled | bool) else mastodon_web_port }}/api/v1/instance"
+mastodon_healthcheck_host: "{{ (mastodon_web_domain | length > 0) | ternary(mastodon_web_domain, mastodon_local_domain) }}"
+mastodon_healthcheck_headers: "{{ (mastodon_healthcheck_host | length > 0) | ternary({'Host': mastodon_healthcheck_host}, {}) }}"
+mastodon_healthcheck_retries: 6
+mastodon_healthcheck_delay: 5
+
+mastodon_require_smtp: true
+
+mastodon_system_packages:
+  - git
+  - rsync
+  - curl
+  - nginx
+  - build-essential
+  - libssl-dev
+  - libyaml-dev
+  - libreadline-dev
+  - zlib1g-dev
+  - libncurses5-dev
+  - libffi-dev
+  - libgdbm-dev
+  - libjemalloc-dev
+  - libpq-dev
+  - libxml2-dev
+  - libxslt1-dev
+  - libidn11-dev
+  - libicu-dev
+  - libjpeg-dev
+  - imagemagick
+  - ffmpeg
+  - pkg-config

@@ -1,0 +1,5 @@
+---
+- name: Install Mastodon system packages
+  ansible.builtin.package:
+    name: "{{ mastodon_system_packages }}"
+    state: present

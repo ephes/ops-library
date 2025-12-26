@@ -1,0 +1,253 @@
+---
+- name: Capture Mastodon version
+  ansible.builtin.command:
+    argv:
+      - cat
+      - "{{ mastodon_site_path }}/VERSION"
+  args:
+    chdir: "{{ mastodon_site_path }}"
+  become: true
+  become_user: "{{ mastodon_user }}"
+  register: mastodon_backup_version_cmd
+  changed_when: false
+  failed_when: false
+
+- name: Set backup timestamp
+  ansible.builtin.set_fact:
+    mastodon_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+    mastodon_backup_version: "{{ mastodon_backup_version_cmd.stdout | default('unknown') | trim }}"
+
+- name: Set backup paths
+  ansible.builtin.set_fact:
+    mastodon_backup_dir: "{{ mastodon_backup_root }}/{{ mastodon_backup_prefix }}-{{ mastodon_backup_timestamp }}"
+    mastodon_backup_archive: "{{ mastodon_backup_root }}/{{ mastodon_backup_prefix }}-{{ mastodon_backup_timestamp }}.{{ mastodon_backup_archive_extension }}"
+    mastodon_backup_db_dump: "{{ mastodon_backup_root }}/{{ mastodon_backup_prefix }}-{{ mastodon_backup_timestamp }}/database/{{ mastodon_backup_postgres_database }}.dump"
+
+- name: Ensure backup directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ mastodon_backup_owner }}"
+    group: "{{ mastodon_backup_group }}"
+    mode: "{{ mastodon_backup_dir_mode }}"
+  loop:
+    - "{{ mastodon_backup_root }}"
+    - "{{ mastodon_backup_dir }}"
+    - "{{ mastodon_backup_dir }}/database"
+    - "{{ mastodon_backup_dir }}/media"
+    - "{{ mastodon_backup_dir }}/config"
+    - "{{ mastodon_backup_dir }}/systemd"
+    - "{{ mastodon_backup_dir }}/traefik"
+    - "{{ mastodon_backup_dir }}/nginx"
+
+- name: Check media directory
+  ansible.builtin.stat:
+    path: "{{ mastodon_media_path }}"
+  register: mastodon_backup_media_stat
+
+- name: Stop Mastodon services for backup
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+  loop: "{{ mastodon_systemd_services }}"
+  failed_when: false
+  when: mastodon_backup_stop_services | bool
+
+- name: Build pg_dump connection flags
+  ansible.builtin.set_fact:
+    mastodon_backup_pg_dump_host_flag: "{{ (mastodon_backup_postgres_host | default('') | string | length > 0) | ternary('--host=' ~ mastodon_backup_postgres_host, '') }}"
+    mastodon_backup_pg_dump_port_flag: "{{ (mastodon_backup_postgres_port | default('') | string | length > 0) | ternary('--port=' ~ mastodon_backup_postgres_port, '') }}"
+
+- name: Dump PostgreSQL database
+  ansible.builtin.shell: |
+    set -euo pipefail
+    {{ mastodon_backup_postgres_dump_binary }} \
+      {{ mastodon_backup_pg_dump_host_flag }} \
+      {{ mastodon_backup_pg_dump_port_flag }} \
+      --username={{ mastodon_backup_postgres_user }} \
+      --format={{ mastodon_backup_postgres_format }} \
+      --compress={{ mastodon_backup_postgres_compress }} \
+      --file "{{ mastodon_backup_db_dump }}" \
+      {{ mastodon_backup_postgres_database }}
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ mastodon_backup_postgres_become_user }}"
+  environment:
+    PGPASSWORD: "{{ mastodon_backup_postgres_password }}"
+  no_log: "{{ (mastodon_backup_postgres_password | default('') | length > 0) }}"
+
+- name: Sync Mastodon media directory
+  ansible.builtin.command:
+    cmd: >
+      rsync -a{{ ' --delete' if mastodon_backup_use_delete else '' }}
+      "{{ mastodon_media_path }}/" "{{ mastodon_backup_dir }}/media/"
+  changed_when: true
+  when:
+    - mastodon_backup_include_media | bool
+    - mastodon_backup_media_stat.stat.exists
+    - mastodon_storage_driver == 'local'
+
+- name: Copy Mastodon environment file
+  ansible.builtin.copy:
+    src: "{{ mastodon_env_file }}"
+    dest: "{{ mastodon_backup_dir }}/config/mastodon.env"
+    owner: "{{ mastodon_backup_owner }}"
+    group: "{{ mastodon_backup_group }}"
+    mode: "{{ mastodon_backup_file_mode }}"
+    remote_src: true
+  when: mastodon_backup_include_env | bool
+
+- name: Gather systemd unit stats
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: mastodon_backup_systemd_stats
+  loop: "{{ mastodon_systemd_units }}"
+  when: mastodon_backup_include_systemd | bool
+
+- name: Copy systemd units
+  ansible.builtin.copy:
+    src: "{{ item.item }}"
+    dest: "{{ mastodon_backup_dir }}/systemd/{{ item.item | basename }}"
+    owner: "{{ mastodon_backup_owner }}"
+    group: "{{ mastodon_backup_group }}"
+    mode: "{{ mastodon_backup_file_mode }}"
+    remote_src: true
+  loop: "{{ mastodon_backup_systemd_stats.results | default([]) }}"
+  when:
+    - mastodon_backup_include_systemd | bool
+    - item.stat.exists
+
+- name: Gather Traefik config stat
+  ansible.builtin.stat:
+    path: "{{ mastodon_traefik_config_path }}"
+  register: mastodon_backup_traefik_stat
+  when: mastodon_backup_include_traefik | bool
+
+- name: Copy Traefik configuration
+  ansible.builtin.copy:
+    src: "{{ mastodon_traefik_config_path }}"
+    dest: "{{ mastodon_backup_dir }}/traefik/{{ mastodon_traefik_config_path | basename }}"
+    owner: "{{ mastodon_backup_owner }}"
+    group: "{{ mastodon_backup_group }}"
+    mode: "{{ mastodon_backup_file_mode }}"
+    remote_src: true
+  when:
+    - mastodon_backup_include_traefik | bool
+    - mastodon_backup_traefik_stat.stat.exists
+
+- name: Gather nginx config stat
+  ansible.builtin.stat:
+    path: "{{ mastodon_nginx_config_path }}"
+  register: mastodon_backup_nginx_stat
+  when: mastodon_backup_include_nginx | bool
+
+- name: Copy nginx configuration
+  ansible.builtin.copy:
+    src: "{{ mastodon_nginx_config_path }}"
+    dest: "{{ mastodon_backup_dir }}/nginx/{{ mastodon_nginx_config_path | basename }}"
+    owner: "{{ mastodon_backup_owner }}"
+    group: "{{ mastodon_backup_group }}"
+    mode: "{{ mastodon_backup_file_mode }}"
+    remote_src: true
+  when:
+    - mastodon_backup_include_nginx | bool
+    - mastodon_backup_nginx_stat.stat.exists
+
+- name: Start Mastodon services after backup
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+    daemon_reload: true
+  loop: "{{ mastodon_systemd_services }}"
+  failed_when: false
+  when: mastodon_backup_stop_services | bool
+
+- name: Write backup manifest
+  ansible.builtin.copy:
+    dest: "{{ mastodon_backup_dir }}/manifest.yml"
+    owner: "{{ mastodon_backup_owner }}"
+    group: "{{ mastodon_backup_group }}"
+    mode: "{{ mastodon_backup_file_mode }}"
+    content: |
+      version: "{{ mastodon_backup_version }}"
+      timestamp: "{{ mastodon_backup_timestamp }}"
+      archive: "{{ mastodon_backup_archive | basename }}"
+      database_dump: "{{ mastodon_backup_db_dump | basename }}"
+      media_root: "{{ mastodon_media_path }}"
+      env_file: "{{ mastodon_env_file }}"
+      traefik_config: "{{ mastodon_traefik_config_path }}"
+      nginx_config: "{{ mastodon_nginx_config_path }}"
+  when: mastodon_backup_generate_manifest | bool
+
+- name: Create backup archive
+  ansible.builtin.archive:
+    path: "{{ mastodon_backup_dir }}"
+    dest: "{{ mastodon_backup_archive }}"
+    format: "{{ mastodon_backup_archive_format }}"
+  when: mastodon_backup_create_archive | bool
+
+- name: Ensure local backup directory exists
+  ansible.builtin.file:
+    path: "{{ mastodon_backup_local_dir }}"
+    state: directory
+    mode: "{{ mastodon_backup_dir_mode }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - mastodon_backup_fetch_local | bool
+    - mastodon_backup_create_archive | bool
+
+- name: Fetch backup archive
+  ansible.builtin.fetch:
+    src: "{{ mastodon_backup_archive }}"
+    dest: "{{ mastodon_backup_local_dir }}/"
+    flat: true
+  run_once: true
+  when:
+    - mastodon_backup_fetch_local | bool
+    - mastodon_backup_create_archive | bool
+
+- name: Find existing backup archives
+  ansible.builtin.find:
+    paths: "{{ mastodon_backup_root }}"
+    patterns: "{{ mastodon_backup_prefix }}-*.{{ mastodon_backup_archive_extension }}"
+    file_type: file
+  register: mastodon_backup_existing_archives
+  when:
+    - mastodon_backup_retain | int > 0
+    - mastodon_backup_create_archive | bool
+
+- name: Prune old backup archives
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ (mastodon_backup_existing_archives.files | sort(attribute='mtime', reverse=true))[mastodon_backup_retain:] }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when:
+    - mastodon_backup_retain | int > 0
+    - mastodon_backup_create_archive | bool
+
+- name: Find existing backup directories
+  ansible.builtin.find:
+    paths: "{{ mastodon_backup_root }}"
+    patterns: "{{ mastodon_backup_prefix }}-*"
+    file_type: directory
+    recurse: false
+  register: mastodon_backup_existing_dirs
+  when: mastodon_backup_retain | int > 0
+
+- name: Prune old backup directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ (mastodon_backup_existing_dirs.files | sort(attribute='mtime', reverse=true))[mastodon_backup_retain:] }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when: mastodon_backup_retain | int > 0
+
+- name: Report backup completion
+  ansible.builtin.debug:
+    msg: "Mastodon backup stored at {{ mastodon_backup_archive }}"

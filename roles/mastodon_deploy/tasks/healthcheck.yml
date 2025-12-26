@@ -1,0 +1,10 @@
+---
+- name: Wait for Mastodon instance endpoint
+  ansible.builtin.uri:
+    url: "{{ mastodon_healthcheck_url }}"
+    status_code: 200
+    headers: "{{ mastodon_healthcheck_headers }}"
+  register: mastodon_healthcheck_result
+  retries: "{{ mastodon_healthcheck_retries }}"
+  delay: "{{ mastodon_healthcheck_delay }}"
+  until: mastodon_healthcheck_result.status == 200

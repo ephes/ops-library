@@ -45,6 +45,7 @@ The table below links each published role to its dedicated documentation. Refer 
 | Service deployment | [`mail_relay_deploy`](roles/mail_relay_deploy/README.md) | Deploy Postfix edge relay with greylisting, TLS termination, and backend routing. |
 | Service deployment | [`snappymail_deploy`](roles/snappymail_deploy/README.md) | Deploy SnappyMail webmail via PHP-FPM + nginx with Traefik exposure and IMAP/SMTP defaults. |
 | Service deployment | [`takahe_deploy`](roles/takahe_deploy/README.md) | Deploy Takahe with systemd, nginx cache/accel proxying, and Traefik exposure. |
+| Service deployment | [`mastodon_deploy`](roles/mastodon_deploy/README.md) | Deploy Mastodon from source with rbenv+nvm, systemd services, and Traefik routing. |
 | Monitoring | [`metrics_endpoint`](roles/metrics_endpoint/README.md) | Expose an authenticated JSON health endpoint (e.g. `/.well-known/health`) for nyxmon checks. |
 | Monitoring | [`mail_monitoring`](roles/mail_monitoring/README.md) | Provision monitor mailbox + cleanup timer to support nyxmon end-to-end mail flow checks. |
 | Service operations | [`tailscale_backup`](roles/tailscale_backup/README.md) | Backup `/var/lib/tailscale`, sysconfig, and systemd drop-ins to preserve node identity. |
@@ -61,6 +62,9 @@ The table below links each published role to its dedicated documentation. Refer 
 | Service operations | [`jellyfin_restore`](roles/jellyfin_restore/README.md) | Restore Jellyfin archives back into place and restart the service. |
 | Service operations | [`metube_backup`](roles/metube_backup/README.md) | Backup MeTube state/env/systemd/Traefik with optional archive fetch. |
 | Service operations | [`metube_restore`](roles/metube_restore/README.md) | Restore MeTube from archives produced by `metube_backup`. |
+| Service operations | [`mastodon_backup`](roles/mastodon_backup/README.md) | Backup Mastodon database, media, and configuration with optional archive fetch. |
+| Service operations | [`mastodon_restore`](roles/mastodon_restore/README.md) | Restore Mastodon from archives produced by `mastodon_backup`. |
+| Service operations | [`mastodon_maintenance`](roles/mastodon_maintenance/README.md) | Run Mastodon tootctl maintenance commands (media cleanup, cache pruning). |
 | Service removal | [`fastdeploy_remove`](roles/fastdeploy_remove/README.md) | Remove FastDeploy and related resources safely. |
 | Service removal | [`nyxmon_remove`](roles/nyxmon_remove/README.md) | Remove Nyxmon while preserving data as needed. |
 | Service removal | [`homeassistant_remove`](roles/homeassistant_remove/README.md) | Tear down Home Assistant (service, config, user) with confirmation guards. |
@@ -70,6 +74,7 @@ The table below links each published role to its dedicated documentation. Refer 
 | Service removal | [`tailscale_remove`](roles/tailscale_remove/README.md) | Remove Tailscale packages/repo, optionally logout and purge `/var/lib/tailscale`. |
 | Service removal | [`jellyfin_remove`](roles/jellyfin_remove/README.md) | Remove Jellyfin packages, config/data/logs, Traefik wiring, and user with confirmation toggles. |
 | Service removal | [`metube_remove`](roles/metube_remove/README.md) | Remove MeTube service, env/state/Traefik wiring, optional downloads, with confirmation guard. |
+| Service removal | [`mastodon_remove`](roles/mastodon_remove/README.md) | Remove Mastodon services, config, and user with confirmation gates. |
 | Service registration | [`apt_upgrade_register`](roles/apt_upgrade_register/README.md) | Register apt-upgrade maintenance runners with FastDeploy. |
 | Service registration | [`fastdeploy_register_service`](roles/fastdeploy_register_service/README.md) | Generic FastDeploy service registration helper. |
 | Bootstrap | [`ansible_install`](roles/ansible_install/README.md) | Ensure controller has Ansible and required plugins. |

@@ -1,0 +1,60 @@
+---
+- name: Render Mastodon nginx config
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: "{{ mastodon_nginx_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - restart mastodon-nginx
+
+- name: Render Mastodon nginx systemd unit
+  ansible.builtin.template:
+    src: nginx.service.j2
+    dest: "{{ mastodon_nginx_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart mastodon-nginx
+
+- name: Ensure Mastodon nginx log files exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: touch
+    owner: "{{ mastodon_nginx_user }}"
+    group: "{{ mastodon_nginx_group }}"
+    mode: "0644"
+  loop:
+    - "{{ mastodon_nginx_access_log }}"
+    - "{{ mastodon_nginx_error_log }}"
+
+- name: Configure log rotation for Mastodon nginx
+  ansible.builtin.copy:
+    content: |
+      {{ mastodon_nginx_log_dir }}/*.log {
+          daily
+          rotate {{ mastodon_nginx_logrotate_days }}
+          compress
+          delaycompress
+          missingok
+          notifempty
+          create 0644 {{ mastodon_nginx_user }} {{ mastodon_nginx_group }}
+          postrotate
+              systemctl reload {{ mastodon_nginx_service_name }} > /dev/null 2>&1 || true
+          endscript
+      }
+    dest: "{{ mastodon_nginx_logrotate_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: mastodon_nginx_logrotate_enabled | bool
+
+- name: Enable and start Mastodon nginx
+  ansible.builtin.systemd:
+    name: "{{ mastodon_nginx_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true

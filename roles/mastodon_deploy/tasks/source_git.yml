@@ -1,0 +1,50 @@
+---
+- name: Install git when missing
+  ansible.builtin.package:
+    name: git
+    state: present
+
+- name: Check for existing git repository
+  ansible.builtin.stat:
+    path: "{{ mastodon_git_dest }}/.git"
+  register: mastodon_git_dir
+
+- name: Check destination directory
+  ansible.builtin.stat:
+    path: "{{ mastodon_git_dest }}"
+  register: mastodon_git_dest_dir
+
+- name: Handle existing non-git directory
+  block:
+    - name: Backup existing directory
+      ansible.builtin.command:
+        cmd: "mv {{ mastodon_git_dest }} {{ mastodon_git_dest }}.backup.{{ ansible_date_time.epoch }}"
+      when: mastodon_git_dest_dir.stat.exists
+
+    - name: Ensure parent directory exists
+      ansible.builtin.file:
+        path: "{{ mastodon_git_dest | dirname }}"
+        state: directory
+        owner: "{{ mastodon_user }}"
+        group: "{{ mastodon_group }}"
+        mode: "0755"
+  when: not mastodon_git_dir.stat.exists
+
+- name: Clone or update Mastodon repository
+  ansible.builtin.git:
+    repo: "{{ mastodon_git_repo }}"
+    dest: "{{ mastodon_git_dest }}"
+    version: "{{ mastodon_git_ref }}"
+    force: true
+    accept_hostkey: true
+  become: true
+  become_user: "{{ mastodon_user }}"
+  register: mastodon_git_result
+
+- name: Ensure correct ownership of repository
+  ansible.builtin.file:
+    path: "{{ mastodon_git_dest }}"
+    owner: "{{ mastodon_user }}"
+    group: "{{ mastodon_group }}"
+    recurse: true
+  when: mastodon_git_result.changed

@@ -1,0 +1,30 @@
+---
+- name: Configure bundler settings
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export RBENV_ROOT="{{ mastodon_rbenv_root }}"
+    export RBENV_VERSION="{{ mastodon_ruby_version_effective }}"
+    export PATH="{{ mastodon_rbenv_root }}/bin:{{ mastodon_rbenv_root }}/shims:$PATH"
+    cd "{{ mastodon_site_path }}"
+    bundle config set --local path "{{ mastodon_bundle_path }}"
+    bundle config set --local without "{{ mastodon_bundle_without }}"
+    {% if mastodon_bundle_deployment | bool %}
+    bundle config set --local deployment true
+    {% endif %}
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ mastodon_user }}"
+
+- name: Install Ruby gems via bundler
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export RBENV_ROOT="{{ mastodon_rbenv_root }}"
+    export RBENV_VERSION="{{ mastodon_ruby_version_effective }}"
+    export PATH="{{ mastodon_rbenv_root }}/bin:{{ mastodon_rbenv_root }}/shims:$PATH"
+    cd "{{ mastodon_site_path }}"
+    bundle install --jobs {{ mastodon_bundle_jobs }} --retry {{ mastodon_bundle_retry }}
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ mastodon_user }}"

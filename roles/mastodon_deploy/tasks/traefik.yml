@@ -1,0 +1,24 @@
+---
+- name: Ensure Traefik dynamic config directory exists
+  ansible.builtin.file:
+    path: "{{ mastodon_traefik_config_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Remove legacy Traefik config when present
+  ansible.builtin.file:
+    path: "{{ mastodon_traefik_legacy_config_path }}"
+    state: absent
+  when: mastodon_remove_legacy_traefik_config | bool
+  notify: reload traefik
+
+- name: Render Traefik configuration
+  ansible.builtin.template:
+    src: traefik.yml.j2
+    dest: "{{ mastodon_traefik_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload traefik

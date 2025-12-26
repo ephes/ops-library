@@ -1,0 +1,5 @@
+---
+# Shared defaults for Mastodon lifecycle roles
+
+- name: mastodon_shared noop
+  ansible.builtin.meta: noop

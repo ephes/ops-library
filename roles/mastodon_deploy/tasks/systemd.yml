@@ -1,0 +1,72 @@
+---
+- name: Render Mastodon web systemd unit
+  ansible.builtin.template:
+    src: web.service.j2
+    dest: "{{ mastodon_web_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart mastodon-web
+
+- name: Render Mastodon Sidekiq systemd unit
+  ansible.builtin.template:
+    src: sidekiq.service.j2
+    dest: "{{ mastodon_sidekiq_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart mastodon-sidekiq
+
+- name: Render Mastodon streaming systemd unit
+  ansible.builtin.template:
+    src: streaming.service.j2
+    dest: "{{ mastodon_streaming_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart mastodon-streaming
+
+- name: List systemd service unit files
+  ansible.builtin.command:
+    cmd: systemctl list-unit-files --type=service --all --no-legend
+  register: mastodon_unit_files
+  changed_when: false
+  when: mastodon_disable_legacy_services | bool
+
+- name: Disable legacy Mastodon services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  loop: "{{ mastodon_legacy_service_names }}"
+  when:
+    - mastodon_disable_legacy_services | bool
+    - mastodon_unit_files.stdout | regex_search('^' ~ item ~ '\\.service\\s', multiline=True)
+
+- name: Enable and start Mastodon web
+  ansible.builtin.systemd:
+    name: "{{ mastodon_web_service_name }}"
+    enabled: "{{ mastodon_service_enabled }}"
+    state: "{{ mastodon_service_state }}"
+    daemon_reload: true
+
+- name: Enable and start Mastodon Sidekiq
+  ansible.builtin.systemd:
+    name: "{{ mastodon_sidekiq_service_name }}"
+    enabled: "{{ mastodon_service_enabled }}"
+    state: "{{ mastodon_service_state }}"
+    daemon_reload: true
+
+- name: Enable and start Mastodon streaming
+  ansible.builtin.systemd:
+    name: "{{ mastodon_streaming_service_name }}"
+    enabled: "{{ mastodon_service_enabled }}"
+    state: "{{ mastodon_service_state }}"
+    daemon_reload: true

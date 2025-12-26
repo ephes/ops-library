@@ -1,0 +1,105 @@
+---
+- name: Validate required Mastodon settings
+  ansible.builtin.assert:
+    that:
+      - mastodon_source_mode in ['rsync', 'git']
+      - mastodon_source_mode != 'rsync' or (mastodon_source_path | default('') | length > 0)
+      - mastodon_local_domain is defined
+      - mastodon_local_domain | length > 0
+      - mastodon_web_domain is defined
+      - mastodon_secret_key_base is defined
+      - mastodon_secret_key_base | length > 0
+      - mastodon_secret_key_base != 'CHANGEME'
+      - mastodon_otp_secret is defined
+      - mastodon_otp_secret | length > 0
+      - mastodon_otp_secret != 'CHANGEME'
+      - mastodon_vapid_public_key is defined
+      - mastodon_vapid_public_key | length > 0
+      - mastodon_vapid_public_key != 'CHANGEME'
+      - mastodon_vapid_private_key is defined
+      - mastodon_vapid_private_key | length > 0
+      - mastodon_vapid_private_key != 'CHANGEME'
+      - mastodon_active_record_encryption_primary_key is defined
+      - mastodon_active_record_encryption_primary_key | length > 0
+      - mastodon_active_record_encryption_primary_key != 'CHANGEME'
+      - mastodon_active_record_encryption_deterministic_key is defined
+      - mastodon_active_record_encryption_deterministic_key | length > 0
+      - mastodon_active_record_encryption_deterministic_key != 'CHANGEME'
+      - mastodon_active_record_encryption_key_derivation_salt is defined
+      - mastodon_active_record_encryption_key_derivation_salt | length > 0
+      - mastodon_active_record_encryption_key_derivation_salt != 'CHANGEME'
+      - mastodon_postgres_password is defined
+      - mastodon_postgres_password | length > 0
+      - mastodon_postgres_password != 'CHANGEME'
+    fail_msg: |
+      SECURITY ERROR: Required Mastodon settings are missing or contain placeholder values.
+
+      Required values:
+      - mastodon_local_domain
+      - mastodon_secret_key_base
+      - mastodon_otp_secret
+      - mastodon_vapid_public_key
+      - mastodon_vapid_private_key
+      - mastodon_active_record_encryption_primary_key
+      - mastodon_active_record_encryption_deterministic_key
+      - mastodon_active_record_encryption_key_derivation_salt
+      - mastodon_postgres_password
+
+      Generate secrets from the Mastodon source directory (as the mastodon user):
+      - bundle exec rake secret  # SECRET_KEY_BASE
+      - bundle exec rake secret  # OTP_SECRET
+      - bundle exec rake mastodon:webpush:generate_vapid_key
+
+      Update the appropriate secrets file in ops-control before deploying.
+
+- name: Validate SMTP settings when required
+  ansible.builtin.assert:
+    that:
+      - mastodon_smtp_server is defined
+      - mastodon_smtp_server | length > 0
+      - mastodon_smtp_port is defined
+      - mastodon_smtp_port | int > 0
+      - mastodon_smtp_login is defined
+      - mastodon_smtp_login | length > 0
+      - mastodon_smtp_password is defined
+      - mastodon_smtp_password | length > 0
+      - mastodon_smtp_from_address is defined
+      - mastodon_smtp_from_address | length > 0
+      - mastodon_smtp_domain is defined
+      - mastodon_smtp_domain | length > 0
+    fail_msg: |
+      Mastodon SMTP settings are required.
+      Set mastodon_require_smtp: false to skip SMTP validation.
+  when: mastodon_require_smtp | bool
+
+- name: Warn when using a split-domain configuration
+  ansible.builtin.debug:
+    msg: |
+      Split-domain configuration detected (LOCAL_DOMAIN={{ mastodon_local_domain }}, WEB_DOMAIN={{ mastodon_web_domain }}).
+      LOCAL_DOMAIN is the canonical federation domain for user handles and must not change after federation begins.
+  when:
+    - mastodon_web_domain | length > 0
+    - mastodon_web_domain != mastodon_local_domain
+
+- name: Validate Mastodon git settings
+  ansible.builtin.assert:
+    that:
+      - mastodon_git_repo | default('') | length > 0
+    fail_msg: "mastodon_git_repo must be set when mastodon_source_mode is git"
+  when: mastodon_source_mode == 'git'
+
+- name: Validate Mastodon storage settings
+  ansible.builtin.assert:
+    that:
+      - mastodon_storage_driver in ['local', 's3']
+      - mastodon_storage_driver != 's3' or (mastodon_s3_bucket | length > 0)
+      - mastodon_storage_driver != 's3' or (mastodon_s3_region | length > 0)
+      - mastodon_storage_driver != 's3' or (mastodon_s3_access_key | length > 0)
+      - mastodon_storage_driver != 's3' or (mastodon_s3_secret_key | length > 0)
+    fail_msg: "Mastodon S3 settings must be provided when mastodon_storage_driver is s3."
+
+- name: Validate Redis password
+  ansible.builtin.assert:
+    that:
+      - mastodon_redis_requirepass_enabled | bool == false or mastodon_redis_password | length > 0
+    fail_msg: "mastodon_redis_password must be provided when redis requirepass is enabled."

@@ -1,0 +1,68 @@
+---
+- name: Validate Mastodon inputs
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Install Mastodon system packages
+  ansible.builtin.import_tasks: packages.yml
+
+- name: Ensure Redis is installed when requested
+  ansible.builtin.import_tasks: redis.yml
+  when: mastodon_redis_manage | bool
+
+- name: Ensure Mastodon user exists
+  ansible.builtin.import_tasks: user.yml
+
+- name: Prepare Mastodon directories
+  ansible.builtin.import_tasks: directories.yml
+
+- name: Sync Mastodon source (rsync)
+  ansible.builtin.import_tasks: source_rsync.yml
+  when: mastodon_source_mode == 'rsync'
+
+- name: Sync Mastodon source (git)
+  ansible.builtin.import_tasks: source_git.yml
+  when: mastodon_source_mode == 'git'
+
+- name: Configure rbenv runtime
+  ansible.builtin.import_tasks: rbenv.yml
+
+- name: Configure nvm runtime
+  ansible.builtin.import_tasks: nvm.yml
+
+- name: Install Ruby gems
+  ansible.builtin.import_tasks: bundler.yml
+  when: mastodon_bundle_install | bool
+
+- name: Install Node dependencies
+  ansible.builtin.import_tasks: yarn.yml
+  when: mastodon_yarn_install | bool
+
+- name: Render Mastodon environment file
+  ansible.builtin.import_tasks: env.yml
+
+- name: Run Mastodon migrations and assets build
+  ansible.builtin.import_tasks: rails.yml
+  when: mastodon_run_migrations | bool or mastodon_precompile_assets | bool
+
+- name: Configure systemd services
+  ansible.builtin.import_tasks: systemd.yml
+
+- name: Configure Mastodon nginx proxy
+  ansible.builtin.import_tasks: nginx.yml
+  when: mastodon_nginx_enabled | bool
+
+- name: Configure Traefik exposure
+  ansible.builtin.import_tasks: traefik.yml
+  when: mastodon_traefik_enabled | bool
+
+- name: Configure Mastodon maintenance timer
+  ansible.builtin.include_role:
+    name: local.ops_library.mastodon_maintenance
+  when: mastodon_maintenance_enabled | bool
+
+- name: Flush handlers before health check
+  ansible.builtin.meta: flush_handlers
+
+- name: Run Mastodon health check
+  ansible.builtin.import_tasks: healthcheck.yml
+  when: mastodon_healthcheck_enabled | bool

@@ -1,0 +1,89 @@
+---
+- name: Ensure rbenv root exists
+  ansible.builtin.file:
+    path: "{{ mastodon_rbenv_root }}"
+    state: directory
+    owner: "{{ mastodon_user }}"
+    group: "{{ mastodon_group }}"
+    mode: "0755"
+
+- name: Clone rbenv
+  ansible.builtin.git:
+    repo: "{{ mastodon_rbenv_repo }}"
+    dest: "{{ mastodon_rbenv_root }}"
+    version: "master"
+    update: false
+  become: true
+  become_user: "{{ mastodon_user }}"
+
+- name: Clone ruby-build plugin
+  ansible.builtin.git:
+    repo: "{{ mastodon_ruby_build_repo }}"
+    dest: "{{ mastodon_rbenv_root }}/plugins/ruby-build"
+    version: "master"
+    update: "{{ mastodon_ruby_build_update | bool }}"
+  become: true
+  become_user: "{{ mastodon_user }}"
+
+- name: Check for .ruby-version
+  ansible.builtin.stat:
+    path: "{{ mastodon_site_path }}/.ruby-version"
+  register: mastodon_ruby_version_file
+  when: mastodon_ruby_version | length == 0
+
+- name: Read .ruby-version
+  ansible.builtin.slurp:
+    src: "{{ mastodon_site_path }}/.ruby-version"
+  register: mastodon_ruby_version_slurp
+  when:
+    - mastodon_ruby_version | length == 0
+    - mastodon_ruby_version_file.stat.exists
+
+- name: Fail when Ruby version is not provided
+  ansible.builtin.fail:
+    msg: "mastodon_ruby_version must be set or .ruby-version must exist in {{ mastodon_site_path }}"
+  when:
+    - mastodon_ruby_version | length == 0
+    - not mastodon_ruby_version_file.stat.exists
+
+- name: Set effective Ruby version
+  ansible.builtin.set_fact:
+    mastodon_ruby_version_effective: >-
+      {{
+        (mastodon_ruby_version | length > 0)
+        | ternary(mastodon_ruby_version, (mastodon_ruby_version_slurp.content | default('') | b64decode | trim))
+      }}
+
+- name: Install Ruby via rbenv
+  ansible.builtin.command:
+    argv:
+      - "{{ mastodon_rbenv_root }}/bin/rbenv"
+      - install
+      - -s
+      - "{{ mastodon_ruby_version_effective }}"
+  become: true
+  become_user: "{{ mastodon_user }}"
+  environment:
+    RBENV_ROOT: "{{ mastodon_rbenv_root }}"
+    RUBY_CONFIGURE_OPTS: "{{ mastodon_ruby_configure_opts }}"
+
+- name: Set rbenv global version
+  ansible.builtin.command:
+    argv:
+      - "{{ mastodon_rbenv_root }}/bin/rbenv"
+      - global
+      - "{{ mastodon_ruby_version_effective }}"
+  become: true
+  become_user: "{{ mastodon_user }}"
+  environment:
+    RBENV_ROOT: "{{ mastodon_rbenv_root }}"
+
+- name: Rehash rbenv shims
+  ansible.builtin.command:
+    argv:
+      - "{{ mastodon_rbenv_root }}/bin/rbenv"
+      - rehash
+  become: true
+  become_user: "{{ mastodon_user }}"
+  environment:
+    RBENV_ROOT: "{{ mastodon_rbenv_root }}"

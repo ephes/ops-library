@@ -1,0 +1,63 @@
+---
+- name: Validate tootctl command list
+  ansible.builtin.assert:
+    that:
+      - mastodon_maintenance_tootctl_commands is iterable
+      - mastodon_maintenance_extra_commands is iterable
+    fail_msg: "mastodon_maintenance_tootctl_commands and mastodon_maintenance_extra_commands must be lists of tootctl subcommands"
+
+- name: Set maintenance command list
+  ansible.builtin.set_fact:
+    mastodon_maintenance_commands: "{{ mastodon_maintenance_tootctl_commands + mastodon_maintenance_extra_commands }}"
+
+- name: Set maintenance runtime path fallback
+  ansible.builtin.set_fact:
+    mastodon_maintenance_runtime_path: "{{ mastodon_runtime_path | default(mastodon_rbenv_root ~ '/bin:' ~ mastodon_rbenv_root ~ '/shims:/usr/local/bin:/usr/bin:/bin') }}"
+
+- name: Render Mastodon maintenance script
+  ansible.builtin.template:
+    src: mastodon-maintenance.sh.j2
+    dest: "{{ mastodon_maintenance_script_path }}"
+    owner: root
+    group: root
+    mode: "{{ mastodon_maintenance_script_mode }}"
+
+- name: Render Mastodon maintenance systemd unit
+  ansible.builtin.template:
+    src: mastodon-maintenance.service.j2
+    dest: "{{ mastodon_maintenance_service_unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: mastodon_maintenance_service_unit_result
+
+- name: Render Mastodon maintenance timer unit
+  ansible.builtin.template:
+    src: mastodon-maintenance.timer.j2
+    dest: "{{ mastodon_maintenance_timer_unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: mastodon_maintenance_timer_unit_result
+
+- name: Reload systemd when maintenance units change
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when:
+    - mastodon_maintenance_service_unit_result is defined
+    - mastodon_maintenance_timer_unit_result is defined
+    - mastodon_maintenance_service_unit_result.changed or mastodon_maintenance_timer_unit_result.changed
+
+- name: Enable Mastodon maintenance timer
+  ansible.builtin.systemd:
+    name: "{{ mastodon_maintenance_timer_name }}.timer"
+    enabled: "{{ mastodon_maintenance_timer_enabled | bool }}"
+    state: "{{ mastodon_maintenance_timer_enabled | bool | ternary('started', 'stopped') }}"
+    daemon_reload: true
+
+- name: Run Mastodon maintenance immediately
+  ansible.builtin.command:
+    cmd: "{{ mastodon_maintenance_script_path }}"
+  become: true
+  become_user: "{{ mastodon_user }}"
+  when: mastodon_maintenance_run_now | bool

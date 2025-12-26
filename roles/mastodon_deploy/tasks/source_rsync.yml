@@ -1,0 +1,31 @@
+---
+- name: Validate local source path exists
+  ansible.builtin.stat:
+    path: "{{ mastodon_source_path }}"
+  delegate_to: localhost
+  become: false
+  register: mastodon_source_check
+
+- name: Fail when source path is missing
+  ansible.builtin.fail:
+    msg: "Source path {{ mastodon_source_path }} does not exist on the controller"
+  when: not mastodon_source_check.stat.exists
+
+- name: Build rsync exclude options
+  ansible.builtin.set_fact:
+    mastodon_rsync_exclude_opts: "{{ mastodon_rsync_excludes | map('regex_replace', '^', '--exclude=') | list }}"
+
+- name: Sync Mastodon source code
+  ansible.posix.synchronize:
+    src: "{{ mastodon_source_path }}/"
+    dest: "{{ mastodon_site_path }}/"
+    rsync_opts: "{{ mastodon_rsync_exclude_opts }}"
+  delegate_to: localhost
+  become: false
+
+- name: Ensure correct ownership of synced files
+  ansible.builtin.file:
+    path: "{{ mastodon_site_path }}"
+    owner: "{{ mastodon_user }}"
+    group: "{{ mastodon_group }}"
+    recurse: true

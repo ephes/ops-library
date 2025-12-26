@@ -1,0 +1,34 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart mastodon-web
+  ansible.builtin.systemd:
+    name: "{{ mastodon_web_service_name }}"
+    state: restarted
+    enabled: "{{ mastodon_service_enabled }}"
+
+- name: restart mastodon-sidekiq
+  ansible.builtin.systemd:
+    name: "{{ mastodon_sidekiq_service_name }}"
+    state: restarted
+    enabled: "{{ mastodon_service_enabled }}"
+
+- name: restart mastodon-streaming
+  ansible.builtin.systemd:
+    name: "{{ mastodon_streaming_service_name }}"
+    state: restarted
+    enabled: "{{ mastodon_service_enabled }}"
+
+- name: restart mastodon-nginx
+  ansible.builtin.systemd:
+    name: "{{ mastodon_nginx_service_name }}"
+    state: restarted
+    enabled: "{{ mastodon_service_enabled }}"
+
+- name: reload traefik
+  ansible.builtin.service:
+    name: traefik
+    state: reloaded
+  failed_when: false

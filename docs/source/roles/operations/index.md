@@ -1,6 +1,6 @@
 # Operations Roles
 
-Backup and restore workflows for long-lived services.
+Backup, restore, and maintenance workflows for long-lived services.
 
 Available runbooks:
 
@@ -26,6 +26,9 @@ Available runbooks:
 - [Jellyfin Restore](https://github.com/ephes/ops-library/blob/main/roles/jellyfin_restore/README.md)
 - [MeTube Backup](https://github.com/ephes/ops-library/blob/main/roles/metube_backup/README.md)
 - [MeTube Restore](https://github.com/ephes/ops-library/blob/main/roles/metube_restore/README.md)
+- [Mastodon Backup](https://github.com/ephes/ops-library/blob/main/roles/mastodon_backup/README.md)
+- [Mastodon Restore](https://github.com/ephes/ops-library/blob/main/roles/mastodon_restore/README.md)
+- [Mastodon Maintenance](https://github.com/ephes/ops-library/blob/main/roles/mastodon_maintenance/README.md)
 - [Tailscale Backup](https://github.com/ephes/ops-library/blob/main/roles/tailscale_backup/README.md)
 - [Tailscale Restore](https://github.com/ephes/ops-library/blob/main/roles/tailscale_restore/README.md)
 - [Minecraft Java Backup](https://github.com/ephes/ops-library/blob/main/roles/minecraft_java_backup/README.md)
@@ -56,10 +59,13 @@ jellyfin_backup
 jellyfin_restore
 metube_backup
 metube_restore
+mastodon_backup
+mastodon_restore
+mastodon_maintenance
 tailscale_backup
 tailscale_restore
 minecraft_java_backup
 minecraft_java_restore
 ```
 
-Operations roles provide consistent snapshot/restore tooling that can be composed with deployment/removal roles to rehearse disaster-recovery scenarios.
+Operations roles provide consistent snapshot, restore, and maintenance tooling that can be composed with deployment/removal roles to rehearse disaster-recovery scenarios.

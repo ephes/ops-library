@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Takahe lifecycle roles: `takahe_shared`, `takahe_deploy`, `takahe_backup`, `takahe_restore`, and `takahe_remove` with systemd services, nginx caching/accel proxy, Traefik routing, and PostgreSQL provisioning
+- Mastodon lifecycle roles: `mastodon_shared`, `mastodon_deploy`, `mastodon_backup`, `mastodon_restore`, `mastodon_maintenance`, and `mastodon_remove` with rbenv+nvm runtimes, systemd services, Traefik routing, and backup/restore tooling
 - `encrypted_volume_prepare` role to verify, unlock, and mount LUKS data volumes with keyfile support, UUID validation, crypttab/fstab wiring, and a validate-only dry run
 - `nyxmon_backup` role for SQLite-safe snapshots with metadata, manifests, and automatic archive fetches
 - `nyxmon_restore` role with staging validation, safety snapshots, rollback support, and service verification

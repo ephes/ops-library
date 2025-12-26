@@ -1,0 +1,39 @@
+---
+- name: Enable corepack for Yarn
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export NVM_DIR="{{ mastodon_nvm_dir }}"
+    . "{{ mastodon_nvm_dir }}/nvm.sh"
+    corepack enable
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ mastodon_user }}"
+  changed_when: false
+  when: mastodon_yarn_use_corepack | bool
+
+- name: Ensure yarn is installed via npm
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export NVM_DIR="{{ mastodon_nvm_dir }}"
+    . "{{ mastodon_nvm_dir }}/nvm.sh"
+    npm install -g yarn
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ mastodon_user }}"
+  when:
+    - not mastodon_yarn_use_corepack | bool
+    - mastodon_yarn_global_install | bool
+
+- name: Install Node dependencies via yarn
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export NVM_DIR="{{ mastodon_nvm_dir }}"
+    . "{{ mastodon_nvm_dir }}/nvm.sh"
+    cd "{{ mastodon_site_path }}"
+    yarn install {{ mastodon_yarn_flags }}
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ mastodon_user }}"

@@ -1,0 +1,134 @@
+# Managed by Ansible - Mastodon nginx proxy
+
+worker_processes auto;
+pid {{ mastodon_nginx_pid_file }};
+error_log {{ mastodon_nginx_error_log }} warn;
+
+events {
+    worker_connections {{ mastodon_nginx_worker_connections }};
+}
+
+http {
+    sendfile on;
+    tcp_nopush on;
+    types_hash_max_size 2048;
+
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types
+        text/plain
+        text/css
+        text/javascript
+        application/javascript
+        application/json
+        application/xml
+        application/rss+xml
+        image/svg+xml;
+
+    map $http_x_forwarded_proto $mastodon_forwarded_proto {
+        default $http_x_forwarded_proto;
+        '' $scheme;
+    }
+
+    map $http_x_forwarded_host $mastodon_forwarded_host {
+        default $http_x_forwarded_host;
+        '' $host;
+    }
+
+    map $http_upgrade $mastodon_connection_upgrade {
+        default upgrade;
+        '' close;
+    }
+
+    upstream mastodon-web {
+        server "127.0.0.1:{{ mastodon_web_port }}";
+    }
+
+    upstream mastodon-streaming {
+        server "127.0.0.1:{{ mastodon_streaming_port }}";
+    }
+
+{% if mastodon_nginx_cache_enabled | bool %}
+    proxy_cache_path {{ mastodon_nginx_cache_path }} levels=1:2 keys_zone={{ mastodon_nginx_cache_zone }}:{{ mastodon_nginx_cache_zone_size }} inactive={{ mastodon_nginx_cache_inactive }} max_size={{ mastodon_nginx_cache_size }};
+    proxy_temp_path {{ mastodon_nginx_temp_path }};
+{% endif %}
+
+    server {
+        listen 127.0.0.1:{{ mastodon_nginx_port }};
+        listen [::1]:{{ mastodon_nginx_port }};
+        server_name {{ mastodon_nginx_server_name }};
+
+        root {{ mastodon_public_path }};
+        index index.html;
+
+        access_log {{ mastodon_nginx_access_log }};
+        error_log {{ mastodon_nginx_error_log }};
+
+        client_max_body_size {{ mastodon_nginx_client_max_body_size }};
+        charset utf-8;
+
+        proxy_set_header Host $mastodon_forwarded_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $mastodon_forwarded_proto;
+        proxy_set_header X-Forwarded-Host $mastodon_forwarded_host;
+        proxy_set_header X-Forwarded-Server $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_http_version 1.1;
+        proxy_redirect off;
+
+        location /api/v1/streaming {
+            proxy_set_header Connection $mastodon_connection_upgrade;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_read_timeout 90s;
+            proxy_buffering off;
+            proxy_pass http://mastodon-streaming;
+        }
+
+        location ~ ^/(assets|packs|emoji)/ {
+            try_files $uri @proxy;
+            access_log off;
+            add_header Cache-Control "public, max-age=31536000, immutable";
+        }
+
+{% if mastodon_nginx_cache_enabled | bool %}
+        location /system/ {
+            try_files $uri @system_proxy;
+            access_log off;
+            add_header Cache-Control "public, max-age=604800";
+        }
+{% else %}
+        location /system/ {
+            try_files $uri @proxy;
+            access_log off;
+            add_header Cache-Control "public, max-age=604800";
+        }
+{% endif %}
+
+        location / {
+            try_files $uri @proxy;
+        }
+
+        location @proxy {
+            proxy_buffering off;
+            proxy_pass http://mastodon-web;
+        }
+
+{% if mastodon_nginx_cache_enabled | bool %}
+        location @system_proxy {
+            proxy_cache {{ mastodon_nginx_cache_zone }};
+            proxy_cache_key $host$uri;
+            proxy_cache_valid 200 304 4h;
+            proxy_cache_valid 301 307 4h;
+            proxy_cache_valid 500 502 503 504 0s;
+            proxy_cache_valid any 1h;
+            add_header X-Cache $upstream_cache_status;
+
+            proxy_pass http://mastodon-web;
+        }
+{% endif %}
+    }
+}
