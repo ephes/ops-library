@@ -1,0 +1,44 @@
+---
+- name: Verify authoritative responses for zones
+  ansible.builtin.command: >-
+    dig @{{ bind_verify_server }} {{ item.name }} SOA +comments
+  register: bind_verify_results
+  changed_when: false
+  failed_when: "'status: NOERROR' not in bind_verify_results.stdout"
+  loop: "{{ bind_zones }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: bind_verify_enabled
+
+- name: Check if UFW is installed
+  ansible.builtin.command: which ufw
+  register: bind_ufw_check
+  changed_when: false
+  failed_when: false
+  when: bind_firewall_check_enabled
+
+- name: Inspect UFW status
+  ansible.builtin.command: ufw status verbose
+  register: bind_ufw_status
+  changed_when: false
+  failed_when: false
+  when:
+    - bind_firewall_check_enabled
+    - bind_ufw_check.rc == 0
+
+- name: Warn when UFW is inactive
+  ansible.builtin.debug:
+    msg: "WARNING: UFW is inactive; ensure TCP/UDP 53 is allowed by other firewalls."
+  when:
+    - bind_firewall_check_enabled
+    - bind_ufw_check.rc == 0
+    - bind_ufw_status.stdout is search('Status: inactive')
+
+- name: Warn when UFW is active but port 53 is not explicitly allowed
+  ansible.builtin.debug:
+    msg: "WARNING: UFW is active but no explicit TCP/UDP 53 rule was found."
+  when:
+    - bind_firewall_check_enabled
+    - bind_ufw_check.rc == 0
+    - bind_ufw_status.stdout is search('Status: active')
+    - bind_ufw_status.stdout is not search('53/(tcp|udp)')

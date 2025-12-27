@@ -1,0 +1,49 @@
+---
+- name: Ensure BIND config directory exists
+  ansible.builtin.file:
+    path: "{{ bind_config_dir }}"
+    state: directory
+    owner: "{{ bind_config_owner }}"
+    group: "{{ bind_config_group }}"
+    mode: '0755'
+
+- name: Render named.conf.options
+  ansible.builtin.template:
+    src: named.conf.options.j2
+    dest: "{{ bind_config_dir }}/named.conf.options"
+    owner: "{{ bind_config_owner }}"
+    group: "{{ bind_config_group }}"
+    mode: "{{ bind_config_mode }}"
+  notify: reload bind
+
+- name: Render named.conf.local
+  ansible.builtin.template:
+    src: named.conf.local.j2
+    dest: "{{ bind_config_dir }}/named.conf.local"
+    owner: "{{ bind_config_owner }}"
+    group: "{{ bind_config_group }}"
+    mode: "{{ bind_config_mode }}"
+  notify: reload bind
+
+- name: Install zone files
+  ansible.builtin.copy:
+    src: "{{ bind_zone_files_dir }}/{{ item.file }}"
+    dest: "{{ bind_config_dir }}/{{ item.file }}"
+    owner: "{{ bind_config_owner }}"
+    group: "{{ bind_config_group }}"
+    mode: "{{ bind_config_mode }}"
+    validate: "named-checkzone {{ item.name }} %s"
+  loop: "{{ bind_zones }}"
+  loop_control:
+    label: "{{ item.name }}"
+  notify: reload bind
+
+- name: Render named.conf
+  ansible.builtin.template:
+    src: named.conf.j2
+    dest: "{{ bind_config_dir }}/named.conf"
+    owner: "{{ bind_config_owner }}"
+    group: "{{ bind_config_group }}"
+    mode: "{{ bind_config_mode }}"
+    validate: "named-checkconf %s"
+  notify: reload bind

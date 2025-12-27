@@ -1,0 +1,7 @@
+---
+- name: Install BIND packages
+  ansible.builtin.apt:
+    name: "{{ bind_packages }}"
+    state: present
+    update_cache: true
+  when: bind_packages | length > 0

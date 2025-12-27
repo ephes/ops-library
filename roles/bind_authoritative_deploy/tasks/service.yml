@@ -1,0 +1,6 @@
+---
+- name: Ensure BIND service is enabled and running
+  ansible.builtin.systemd:
+    name: "{{ bind_service_name }}"
+    enabled: true
+    state: started

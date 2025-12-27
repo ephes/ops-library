@@ -1,0 +1,22 @@
+---
+- name: Validate configuration
+  ansible.builtin.import_tasks: validate.yml
+  when: bind_enabled
+
+- name: Install packages
+  ansible.builtin.import_tasks: packages.yml
+  when: bind_enabled
+
+- name: Configure BIND
+  ansible.builtin.import_tasks: config.yml
+  when: bind_enabled
+
+- name: Ensure service running
+  ansible.builtin.import_tasks: service.yml
+  when: bind_enabled
+
+- name: Verify service and firewall
+  ansible.builtin.import_tasks: verify.yml
+  when:
+    - bind_enabled
+    - bind_verify_enabled or bind_firewall_check_enabled

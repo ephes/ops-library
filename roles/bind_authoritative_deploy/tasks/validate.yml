@@ -1,0 +1,55 @@
+---
+- name: Validate zone definitions
+  ansible.builtin.assert:
+    that:
+      - bind_zones is iterable
+      - bind_zones | length > 0
+    fail_msg: "bind_zones must contain at least one zone definition."
+
+- name: Validate zone fields
+  ansible.builtin.assert:
+    that:
+      - item.name is defined
+      - item.file is defined
+    fail_msg: "Each bind_zones entry must include name and file."
+  loop: "{{ bind_zones }}"
+  loop_control:
+    label: "{{ item.name | default(item.file | default('unknown')) }}"
+
+- name: Check zone files directory exists on controller
+  ansible.builtin.stat:
+    path: "{{ bind_zone_files_dir }}"
+  delegate_to: localhost
+  become: false
+  register: bind_zone_dir_stat
+  changed_when: false
+
+- name: Fail when zone files directory is missing
+  ansible.builtin.assert:
+    that:
+      - bind_zone_dir_stat.stat.exists
+    fail_msg: "bind_zone_files_dir not found: {{ bind_zone_files_dir }}"
+
+- name: Check zone files exist on controller
+  ansible.builtin.stat:
+    path: "{{ bind_zone_files_dir }}/{{ item.file }}"
+  delegate_to: localhost
+  become: false
+  register: bind_zone_files_stat
+  loop: "{{ bind_zones }}"
+  loop_control:
+    label: "{{ item.file }}"
+  changed_when: false
+
+- name: Fail when zone files are missing
+  ansible.builtin.assert:
+    that:
+      - bind_zone_files_stat.results | selectattr('stat.exists', 'equalto', false) | list | length == 0
+    fail_msg: >-
+      Missing zone files: {{ bind_zone_files_stat.results | selectattr('stat.exists', 'equalto', false) | map(attribute='item.file') | list | join(', ') }}
+
+- name: Validate allow-transfer ACL list
+  ansible.builtin.assert:
+    that:
+      - bind_allow_transfer | length > 0
+    fail_msg: "bind_allow_transfer must include at least one ACL entry (use 'none' to disable transfers)."

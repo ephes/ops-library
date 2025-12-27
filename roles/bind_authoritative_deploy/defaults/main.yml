@@ -1,0 +1,40 @@
+---
+bind_enabled: true
+
+bind_packages:
+  - bind9
+  - bind9-utils
+  - dnsutils
+
+bind_service_name: named
+bind_config_dir: /etc/bind
+bind_working_dir: /var/cache/bind
+bind_zone_files_dir: "{{ (playbook_dir | realpath) | regex_replace('/playbooks.*$', '/files/bind') }}"
+
+bind_config_owner: root
+bind_config_group: bind
+bind_config_mode: "0644"
+
+bind_zone_default_type: master
+bind_zones: []
+
+bind_recursion: true
+bind_recursion_acl:
+  - localhost
+  - localnets
+bind_allow_query:
+  - any
+bind_allow_query_cache: "{{ bind_recursion_acl }}"
+bind_allow_transfer:
+  - none
+bind_dnssec_validation: auto
+
+bind_verify_enabled: true
+bind_verify_server: 127.0.0.1
+bind_firewall_check_enabled: true
+
+bind_listen_on: []
+bind_listen_on_v6:
+  - any
+
+bind_extra_options: []
