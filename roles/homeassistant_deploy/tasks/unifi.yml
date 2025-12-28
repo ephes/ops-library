@@ -20,13 +20,6 @@
     - _ha_unifi_password_file.content is defined
     - _ha_unifi_password_file.content | length > 0
 
-- name: "Generate UniFi password fallback"
-  ansible.builtin.set_fact:
-    homeassistant_unifi_password_effective: "{{ lookup('password', '/tmp/homeassistant_unifi_password length=' ~ homeassistant_unifi_password_length ~ ' chars=' ~ homeassistant_unifi_password_charset) }}"
-  when:
-    - homeassistant_unifi_password_effective | length == 0
-    - homeassistant_manage_unifi_password | bool
-
 - name: "Use variable-supplied UniFi password"
   ansible.builtin.set_fact:
     homeassistant_unifi_password_effective: "{{ homeassistant_unifi_password_variable }}"
@@ -35,9 +28,17 @@
     - homeassistant_unifi_password_source == 'variable'
     - homeassistant_unifi_password_variable | length > 0
 
+- name: "Generate UniFi password fallback"
+  ansible.builtin.set_fact:
+    homeassistant_unifi_password_effective: "{{ lookup('password', '/tmp/homeassistant_unifi_password length=' ~ homeassistant_unifi_password_length ~ ' chars=' ~ homeassistant_unifi_password_charset) }}"
+  when:
+    - homeassistant_unifi_password_effective | length == 0
+    - homeassistant_unifi_password_source == 'generate'
+    - homeassistant_manage_unifi_password | bool
+
 - name: "Fail if UniFi password is still undefined"
   ansible.builtin.fail:
-    msg: "UniFi password not provided. Set homeassistant_unifi_password or enable file/generate sources."
+    msg: "UniFi password not provided. Set homeassistant_unifi_password or configure homeassistant_unifi_password_source (file|variable|generate) with the matching vars."
   when:
     - homeassistant_unifi_password_effective | default('', true) | length == 0
     - homeassistant_manage_secrets | bool
