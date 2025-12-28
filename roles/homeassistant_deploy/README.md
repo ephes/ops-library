@@ -9,6 +9,7 @@ Ansible role that installs and configures a Home Assistant Core instance on bare
 - Templated systemd service and Traefik dynamic configuration (single-router layout matching production).
 - Optional Matter server install + systemd unit for the Home Assistant Matter integration (`ws://localhost:5580/ws`).
 - Optional Matter integration provisioning via the Home Assistant config entry API.
+- Optional OpenThread Border Router (OTBR) integration provisioning via the Home Assistant config entry API.
 - Optional management of `configuration.yaml`, `secrets.yaml`, and include files with overwrite guards.
 - Supports UniFi presence integration credentials sourced from file, generated fallback, or provided variables.
 
@@ -45,6 +46,8 @@ All tunables live in `defaults/main.yml`; the most important ones are listed bel
 | `homeassistant_matter_server_chip_factory_dir` | `/data` | Directory for Matter SDK factory data (`chip_factory.ini`) |
 | `homeassistant_manage_matter_integration` | `false` | Provision the Matter config entry via the Home Assistant API |
 | `homeassistant_matter_integration_url` | `ws://localhost:5580/ws` | WebSocket URL used for the Matter integration |
+| `homeassistant_manage_otbr_integration` | `false` | Provision the OTBR config entry via the Home Assistant API |
+| `homeassistant_otbr_integration_url` | `http://127.0.0.1:8081` | REST URL used for the OpenThread Border Router integration |
 | `homeassistant_api_url` | `http://localhost:10020` | Base URL for Home Assistant API calls |
 | `homeassistant_api_token` | `""` | Long-lived access token used for Home Assistant API calls |
 | `homeassistant_api_forwarded_for` | **(auto)** | X-Forwarded-For header value for Home Assistant API requests (defaults to host IPv4 or `127.0.0.1`) |
@@ -81,6 +84,8 @@ See the defaults file for recorder, logger, timezone, and UniFi integration sett
 - The Matter server path is best-effort only: upstream supports HAOS add-ons, and non-HAOS installs are explicitly unsupported.
 - Matter/Thread traffic depends on IPv6 link-local multicast and correct Router Advertisement handling on the host network.
 - When `homeassistant_manage_matter_integration: true`, the role provisions the Matter config entry via the Home Assistant API using `homeassistant_matter_integration_url`. Otherwise, configure the integration via the UI.
+- When `homeassistant_manage_otbr_integration: true`, the role provisions the OTBR config entry via the Home Assistant API using `homeassistant_otbr_integration_url`. Otherwise, configure the integration via the UI.
+- OTBR provisioning assumes the OTBR REST API is already reachable; the role does not manage OTBR itself.
 - The API token must be a long-lived Home Assistant access token with admin permissions; validation fails if it is missing, too short, or a placeholder like `CHANGE_ME`.
 - The server does not require a Bluetooth adapter by default because HA uses the Companion app for commissioning.
 - When enabling the Matter server, keep Python >= 3.12 and use `python-matter-server[server]` so native dependencies are installed.

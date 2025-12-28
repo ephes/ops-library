@@ -44,3 +44,7 @@
 - name: "Provision Matter integration"
   ansible.builtin.import_tasks: matter_integration.yml
   when: homeassistant_manage_matter_integration
+
+- name: "Provision OTBR integration"
+  ansible.builtin.import_tasks: otbr_integration.yml
+  when: homeassistant_manage_otbr_integration

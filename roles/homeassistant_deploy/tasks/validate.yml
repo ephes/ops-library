@@ -48,3 +48,17 @@
       homeassistant_api_token must be a real Home Assistant long-lived access token
       (not CHANGE_ME) and at least 32 characters long.
   when: homeassistant_manage_matter_integration | bool
+
+- name: "Validate OTBR integration provisioning"
+  ansible.builtin.assert:
+    that:
+      - homeassistant_api_url | length > 0
+      - homeassistant_api_token | length > 0
+      - homeassistant_api_token | length >= 32
+      - (homeassistant_api_token | lower) not in ['change_me', 'changeme', 'replace_me', 'replace-me']
+      - homeassistant_otbr_integration_url | length > 0
+    quiet: true
+    msg: >-
+      homeassistant_api_token must be a real Home Assistant long-lived access token
+      (not CHANGE_ME) and at least 32 characters long.
+  when: homeassistant_manage_otbr_integration | bool

@@ -1,7 +1,7 @@
 ---
-- name: "Initialize Matter integration state"
+- name: "Initialize OTBR integration state"
   ansible.builtin.set_fact:
-    _ha_matter_entry_url: ""
+    _ha_otbr_entry_url: ""
 
 - name: "Check Home Assistant config entries storage"
   ansible.builtin.stat:
@@ -14,16 +14,16 @@
   register: _ha_config_entries_raw
   when: _ha_config_entries_stat.stat.exists
 
-- name: "Extract existing Matter integration URL"
+- name: "Extract existing OTBR integration URL"
   ansible.builtin.set_fact:
-    _ha_matter_entry_url: >-
+    _ha_otbr_entry_url: >-
       {{
         (
           (
             ((_ha_config_entries_raw.content | b64decode | from_json).data | default({}, true)).entries
             | default([], true)
           )
-          | selectattr('domain', 'equalto', 'matter')
+          | selectattr('domain', 'equalto', 'otbr')
           | selectattr('data.url', 'defined')
           | map(attribute='data.url')
           | list
@@ -32,26 +32,19 @@
       }}
   when: _ha_config_entries_stat.stat.exists
 
-- name: "Determine if Matter integration provisioning is needed"
+- name: "Determine if OTBR integration provisioning is needed"
   ansible.builtin.set_fact:
-    _ha_matter_integration_needs_config: "{{ _ha_matter_entry_url != homeassistant_matter_integration_url }}"
+    _ha_otbr_integration_needs_config: "{{ _ha_otbr_entry_url != homeassistant_otbr_integration_url }}"
 
-- name: "Provision Matter integration via Home Assistant API"
+- name: "Provision OTBR integration via Home Assistant API"
   when:
-    - _ha_matter_integration_needs_config | bool
+    - _ha_otbr_integration_needs_config | bool
     - not ansible_check_mode
   block:
     - name: "Ensure Home Assistant API is ready"
       ansible.builtin.include_tasks: integration_api_ready.yml
 
-    - name: "Wait for Matter server port"
-      ansible.builtin.wait_for:
-        host: "127.0.0.1"
-        port: "{{ homeassistant_matter_server_port }}"
-        timeout: "{{ homeassistant_api_timeout }}"
-      when: homeassistant_manage_matter_server | bool
-
-    - name: "Start Matter config flow"
+    - name: "Start OTBR config flow"
       ansible.builtin.uri:
         url: "{{ homeassistant_api_url }}/api/config/config_entries/flow"
         method: POST
@@ -62,30 +55,30 @@
           X-Forwarded-Proto: "{{ homeassistant_api_forwarded_proto }}"
         body_format: json
         body:
-          handler: matter
+          handler: otbr
         return_content: true
         status_code: 200
         validate_certs: "{{ homeassistant_api_validate_certs | bool }}"
         timeout: "{{ homeassistant_api_timeout }}"
-      register: _ha_matter_flow
+      register: _ha_otbr_flow
       no_log: true
 
-    - name: "Handle Matter config flow aborts"
+    - name: "Handle OTBR config flow aborts"
       block:
-        - name: "Skip Matter config flow when already configured"
+        - name: "Skip OTBR config flow when already configured"
           ansible.builtin.debug:
-            msg: "Matter integration already configured; skipping."
-          when: (_ha_matter_flow.json.reason | default('')) == 'already_configured'
+            msg: "OTBR integration already configured; skipping."
+          when: (_ha_otbr_flow.json.reason | default('')) == 'already_configured'
 
-        - name: "Fail when Matter config flow aborts unexpectedly"
+        - name: "Fail when OTBR config flow aborts unexpectedly"
           ansible.builtin.fail:
-            msg: "Matter config flow aborted: {{ _ha_matter_flow.json.reason | default('unknown') }}."
-          when: (_ha_matter_flow.json.reason | default('')) != 'already_configured'
-      when: (_ha_matter_flow.json.type | default('')) == 'abort'
+            msg: "OTBR config flow aborted: {{ _ha_otbr_flow.json.reason | default('unknown') }}."
+          when: (_ha_otbr_flow.json.reason | default('')) != 'already_configured'
+      when: (_ha_otbr_flow.json.type | default('')) == 'abort'
 
-    - name: "Submit Matter config flow"
+    - name: "Submit OTBR config flow"
       ansible.builtin.uri:
-        url: "{{ homeassistant_api_url }}/api/config/config_entries/flow/{{ _ha_matter_flow.json.flow_id }}"
+        url: "{{ homeassistant_api_url }}/api/config/config_entries/flow/{{ _ha_otbr_flow.json.flow_id }}"
         method: POST
         headers:
           Authorization: "Bearer {{ homeassistant_api_token }}"
@@ -94,24 +87,24 @@
           X-Forwarded-Proto: "{{ homeassistant_api_forwarded_proto }}"
         body_format: json
         body:
-          url: "{{ homeassistant_matter_integration_url }}"
+          url: "{{ homeassistant_otbr_integration_url }}"
         return_content: true
         status_code: 200
         validate_certs: "{{ homeassistant_api_validate_certs | bool }}"
         timeout: "{{ homeassistant_api_timeout }}"
-      register: _ha_matter_flow_result
+      register: _ha_otbr_flow_result
       no_log: true
-      when: _ha_matter_flow.json.flow_id is defined
+      when: _ha_otbr_flow.json.flow_id is defined
 
-    - name: "Fail when Matter config flow does not complete"
+    - name: "Fail when OTBR config flow does not complete"
       ansible.builtin.fail:
         msg: >-
-          Matter config flow did not complete; verify the Matter server is reachable and the API token is valid.
-          Result: {{ _ha_matter_flow_result.json | to_json }}
+          OTBR config flow did not complete; verify the OTBR REST API is reachable and the API token is valid.
+          Result: {{ _ha_otbr_flow_result.json | to_json }}
       when:
-        - _ha_matter_flow_result is defined
-        - (_ha_matter_flow_result.json.type | default('')) not in ['create_entry']
+        - _ha_otbr_flow_result is defined
+        - (_ha_otbr_flow_result.json.type | default('')) not in ['create_entry']
         - not (
-            (_ha_matter_flow_result.json.type | default('')) == 'abort'
-            and (_ha_matter_flow_result.json.reason | default('')) == 'already_configured'
+            (_ha_otbr_flow_result.json.type | default('')) == 'abort'
+            and (_ha_otbr_flow_result.json.reason | default('')) == 'already_configured'
           )

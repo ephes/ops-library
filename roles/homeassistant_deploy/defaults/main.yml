@@ -63,6 +63,10 @@ homeassistant_api_forwarded_proto: "http"
 homeassistant_manage_matter_integration: false
 homeassistant_matter_integration_url: "ws://localhost:{{ homeassistant_matter_server_port }}/ws"
 
+# OTBR integration (HA config entry)
+homeassistant_manage_otbr_integration: false
+homeassistant_otbr_integration_url: "http://127.0.0.1:8081"
+
 # Configuration management toggles
 homeassistant_manage_configuration: false
 homeassistant_manage_secrets: false
