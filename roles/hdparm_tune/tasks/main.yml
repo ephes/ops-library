@@ -1,0 +1,91 @@
+---
+# Configure persistent hdparm settings for block devices.
+
+- name: Ensure host uses hdparm (Debian/Ubuntu only)
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family == "Debian"
+    fail_msg: "hdparm_tune only supports Debian/Ubuntu hosts."
+
+- name: Ensure hdparm is installed
+  ansible.builtin.apt:
+    name: hdparm
+    state: present
+
+- name: Validate hdparm device list
+  ansible.builtin.assert:
+    that:
+      - hdparm_tune_devices is iterable
+    fail_msg: "hdparm_tune_devices must be a list."
+
+- name: Validate hdparm device entries
+  ansible.builtin.assert:
+    that:
+      - item.device is defined
+      - item.device | length > 0
+      - item.apm is defined or item.spindown_time is defined or item.acoustic_management is defined
+      - item.spindown_time is not defined or (item.spindown_time | string is match('^[0-9]+$'))
+      - item.spindown_time is not defined or (item.spindown_time | int >= 0 and item.spindown_time | int <= 253)
+    fail_msg: "Each hdparm_tune_devices entry needs device and at least one setting."
+  loop: "{{ hdparm_tune_devices }}"
+  when: hdparm_tune_devices | length > 0
+
+- name: Configure hdparm settings
+  ansible.builtin.blockinfile:
+    path: /etc/hdparm.conf
+    create: true
+    marker: "# {mark} ANSIBLE MANAGED BLOCK: hdparm_tune"
+    block: |
+      {% for device in hdparm_tune_devices %}
+      {{ device.device }} {
+      {% if device.apm is defined %}
+        apm = {{ device.apm }}
+      {% endif %}
+      {% if device.acoustic_management is defined %}
+        acoustic_management = {{ device.acoustic_management }}
+      {% endif %}
+      {% if device.spindown_time is defined %}
+        spindown_time = {{ device.spindown_time }}
+      {% endif %}
+      }
+      {% endfor %}
+  when: hdparm_tune_devices | length > 0
+
+- name: Apply hdparm APM settings now
+  ansible.builtin.command:
+    argv:
+      - hdparm
+      - -B
+      - "{{ item.apm }}"
+      - "{{ item.device }}"
+  loop: "{{ hdparm_tune_devices }}"
+  when:
+    - hdparm_tune_apply_now | bool
+    - item.apm is defined
+  changed_when: true
+
+- name: Apply hdparm acoustic management settings now
+  ansible.builtin.command:
+    argv:
+      - hdparm
+      - -M
+      - "{{ item.acoustic_management }}"
+      - "{{ item.device }}"
+  loop: "{{ hdparm_tune_devices }}"
+  when:
+    - hdparm_tune_apply_now | bool
+    - item.acoustic_management is defined
+  changed_when: true
+
+- name: Apply hdparm spindown settings now
+  ansible.builtin.command:
+    argv:
+      - hdparm
+      - -S
+      - "{{ item.spindown_time }}"
+      - "{{ item.device }}"
+  loop: "{{ hdparm_tune_devices }}"
+  when:
+    - hdparm_tune_apply_now | bool
+    - item.spindown_time is defined
+  changed_when: true

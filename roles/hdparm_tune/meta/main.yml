@@ -1,0 +1,23 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Configure persistent hdparm settings for disks
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - disk
+    - hdparm
+    - power
+    - storage
+
+dependencies: []

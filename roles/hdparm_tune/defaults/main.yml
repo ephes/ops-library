@@ -1,0 +1,8 @@
+---
+# List of devices to tune via hdparm.conf.
+# Each item requires "device" and at least one setting.
+hdparm_tune_devices: []
+
+# Apply settings immediately via hdparm after updating /etc/hdparm.conf.
+# Note: this can spin up standby disks.
+hdparm_tune_apply_now: false
