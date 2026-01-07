@@ -1,0 +1,16 @@
+---
+# netplan_config - Default Variables
+#
+# Configure netplan interface definitions.
+
+netplan_config_renderer: "networkd"
+
+# List of interface definitions.
+# Each item requires "name" and at least one of: dhcp4, dhcp6, addresses.
+netplan_config_interfaces: []
+
+# Remove existing netplan files before applying (full paths).
+netplan_config_cleanup_files: []
+
+# Apply netplan immediately after writing config.
+netplan_config_apply: true

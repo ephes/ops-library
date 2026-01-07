@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Configure persistent netplan networking
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - netplan
+    - network
+    - system
+
+dependencies: []

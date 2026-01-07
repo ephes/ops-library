@@ -1,0 +1,10 @@
+---
+- name: Apply netplan
+  ansible.builtin.command: netplan generate
+  changed_when: false
+  listen: "Apply netplan"
+
+- name: Apply netplan
+  ansible.builtin.command: netplan apply
+  listen: "Apply netplan"
+  when: netplan_config_apply | bool

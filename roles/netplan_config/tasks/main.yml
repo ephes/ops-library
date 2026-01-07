@@ -1,0 +1,48 @@
+---
+# Configure persistent netplan networking.
+
+- name: Ensure host uses netplan (Debian/Ubuntu only)
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family == "Debian"
+    fail_msg: "netplan_config only supports Debian/Ubuntu hosts."
+
+- name: Validate netplan interface list
+  ansible.builtin.assert:
+    that:
+      - netplan_config_interfaces is iterable
+      - netplan_config_interfaces | length > 0
+    fail_msg: "netplan_config_interfaces must be a non-empty list."
+
+- name: Validate netplan interface entries
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - item.name is defined
+      - item.name | length > 0
+      - item.dhcp4 is defined or item.dhcp6 is defined or (item.addresses is defined and item.addresses | length > 0)
+    fail_msg: "Each netplan_config_interfaces entry needs name and dhcp4/dhcp6/addresses."
+  loop: "{{ netplan_config_interfaces }}"
+
+- name: Ensure netplan config directory exists
+  ansible.builtin.file:
+    path: /etc/netplan
+    state: directory
+    mode: "0755"
+
+- name: Remove conflicting netplan files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ netplan_config_cleanup_files }}"
+  when: netplan_config_cleanup_files | length > 0
+  notify: "Apply netplan"
+
+- name: Deploy netplan configuration
+  ansible.builtin.template:
+    src: netplan.yaml.j2
+    dest: /etc/netplan/99-ops-library.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  notify: "Apply netplan"
