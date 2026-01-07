@@ -9,6 +9,9 @@ nyxmon_storage_exporter_enabled: true
 nyxmon_storage_exporter_bin_path: "/usr/local/bin/nyxmon-storage-metrics"
 nyxmon_storage_exporter_mode: "0755"
 
+# If true, add "smartctl -n standby" to avoid waking sleeping disks.
+nyxmon_storage_exporter_smartctl_no_spinup: false
+
 # Input inventory
 nyxmon_storage_exporter_pools: []
 nyxmon_storage_exporter_disks: []

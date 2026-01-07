@@ -9,6 +9,11 @@ import sys
 from datetime import datetime, timezone
 from typing import Any
 
+SMARTCTL_ARGS = ["smartctl", "-H", "-A"]
+{% if nyxmon_storage_exporter_smartctl_no_spinup | default(false) | bool %}
+SMARTCTL_ARGS += ["-n", "standby"]
+{% endif %}
+
 
 def _run(argv: list[str]) -> subprocess.CompletedProcess[str]:
     try:
@@ -93,7 +98,7 @@ def _zpool_list() -> dict[str, dict[str, Any]]:
 
 
 def _smartctl_health(device: str) -> dict[str, Any]:
-    out = _run(["smartctl", "-H", "-A", device])
+    out = _run(SMARTCTL_ARGS + [device])
     payload: dict[str, Any] = {"device": device, "ok": False}
     if out.returncode != 0:
         payload["error"] = out.stderr.strip() or out.stdout.strip() or "smartctl failed"

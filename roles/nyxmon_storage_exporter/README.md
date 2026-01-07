@@ -53,6 +53,7 @@ Each disk in `nyxmon_storage_exporter_disks` must have:
 | `nyxmon_storage_exporter_enabled` | `true` | Enable/disable the exporter installation |
 | `nyxmon_storage_exporter_bin_path` | `/usr/local/bin/nyxmon-storage-metrics` | Path to install the script |
 | `nyxmon_storage_exporter_mode` | `0755` | File permissions for the script |
+| `nyxmon_storage_exporter_smartctl_no_spinup` | `false` | Add `smartctl -n standby` to avoid waking sleeping disks |
 
 See `defaults/main.yml` for the full list.
 

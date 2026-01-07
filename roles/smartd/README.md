@@ -21,6 +21,7 @@ smartd_devices:
   - device: /dev/disk/by-id/ata-WDC_WD120EFGX-68CPHN0_WD-B00MJ7WD
     type: ata
     name: tank-hdd-1
+    smartd_no_spinup: true
   - device: /dev/disk/by-id/nvme-Samsung_SSD_980_PRO_1TB_S5GXNX0T308527F
     type: nvme
     name: boot-nvme
@@ -49,6 +50,15 @@ smartd_packages:
   - smartmontools
   - nvme-cli
 smartd_service_name: "smartmontools"
+```
+
+Per-device optional fields:
+```yaml
+smartd_devices:
+  - device: /dev/disk/by-id/ata-WDC_WD120EFGX-68CPHN0_WD-B00MJ7WD
+    type: sat
+    name: tank-hdd-1
+    smartd_no_spinup: true  # Adds "-n standby" to avoid waking sleeping disks
 ```
 
 See `defaults/main.yml` for the full list.
