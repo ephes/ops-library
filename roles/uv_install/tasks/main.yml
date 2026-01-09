@@ -70,6 +70,7 @@
     needs_install: true
   when:
     - uv_self_update is defined
+    - uv_self_update.rc is defined
     - uv_self_update.rc != 0
 
 - name: Install or update uv
