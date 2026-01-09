@@ -1,0 +1,18 @@
+---
+# Configure Traefik for Wagtail
+
+- name: Ensure Traefik dynamic config directory exists
+  ansible.builtin.file:
+    path: /etc/traefik/dynamic
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Create Traefik configuration
+  ansible.builtin.template:
+    src: wagtail.traefik.yml.j2
+    dest: "{{ wagtail_traefik_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"

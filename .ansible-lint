@@ -26,6 +26,7 @@ enable_list:
 skip_list:
   - yaml[line-length]  # Handled by yamllint
   - name[missing]  # Allow tasks without names during development
+  - name[casing]  # Allow lower-case task name prefixes
   - var-naming[no-role-prefix]  # Allow variables without role prefix for existing roles
   - yaml[new-line-at-end-of-file]  # Minor formatting issue
   - var-naming[read-only]  # Allow using ansible_version etc as variable names

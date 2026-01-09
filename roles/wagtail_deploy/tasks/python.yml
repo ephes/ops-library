@@ -1,0 +1,48 @@
+---
+# Setup Python environment for Wagtail
+
+- name: Ensure Python runtime is installed
+  ansible.builtin.package:
+    name:
+      - python3
+      - python3-venv
+      - python3-pip
+    state: present
+
+- name: Check uv binary path
+  ansible.builtin.stat:
+    path: "{{ wagtail_uv_path }}"
+  register: wagtail_uv_stat
+
+- name: Fail if uv is not installed
+  ansible.builtin.fail:
+    msg: "uv is required but not installed at {{ wagtail_uv_path }}"
+  when: not wagtail_uv_stat.stat.exists
+
+- name: Create virtual environment using uv
+  ansible.builtin.command: "{{ wagtail_uv_path }} venv --python {{ wagtail_global_python }} {{ wagtail_venv_path }}"
+  args:
+    creates: "{{ wagtail_venv_path }}/bin/python"
+  become: true
+  become_user: "{{ wagtail_user }}"
+
+- name: Create venv symlink
+  ansible.builtin.file:
+    src: "{{ wagtail_venv_path }}"
+    dest: "{{ wagtail_site_path }}/venv"
+    state: link
+    owner: "{{ wagtail_user }}"
+    group: "{{ wagtail_group }}"
+    force: true
+
+- name: Install dependencies with uv
+  ansible.builtin.command: "{{ wagtail_uv_path }} sync --frozen"
+  args:
+    chdir: "{{ wagtail_site_path }}"
+  environment:
+    VIRTUAL_ENV: "{{ wagtail_venv_path }}"
+    UV_PROJECT_ENVIRONMENT: "{{ wagtail_venv_path }}"
+  become: true
+  become_user: "{{ wagtail_user }}"
+  register: wagtail_uv_sync
+  changed_when: "'Installed' in wagtail_uv_sync.stdout or 'Updated' in wagtail_uv_sync.stdout"

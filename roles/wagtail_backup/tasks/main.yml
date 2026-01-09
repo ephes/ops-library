@@ -1,0 +1,152 @@
+---
+# Wagtail backup tasks
+
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - wagtail_service_name | length > 0
+      - wagtail_backup_postgres_database | length > 0
+      - wagtail_backup_postgres_user | length > 0
+      - wagtail_backup_postgres_password is defined
+      - wagtail_backup_postgres_password | length > 0
+      - wagtail_backup_postgres_password != "CHANGEME"
+    fail_msg: "Missing required Wagtail backup variables or secrets."
+
+- name: Set backup timestamp
+  ansible.builtin.set_fact:
+    wagtail_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+- name: Set backup paths
+  ansible.builtin.set_fact:
+    wagtail_backup_dir: "{{ wagtail_backup_root }}/{{ wagtail_backup_prefix }}-{{ wagtail_backup_timestamp }}"
+    wagtail_backup_archive: "{{ wagtail_backup_root }}/{{ wagtail_backup_prefix }}-{{ wagtail_backup_timestamp }}.{{ wagtail_backup_archive_extension }}"
+    wagtail_backup_db_dump: "{{ wagtail_backup_root }}/{{ wagtail_backup_prefix }}-{{ wagtail_backup_timestamp }}/database/{{ wagtail_backup_postgres_database }}.sql.gz"
+
+- name: Ensure backup directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ wagtail_backup_owner }}"
+    group: "{{ wagtail_backup_group }}"
+    mode: "{{ wagtail_backup_dir_mode }}"
+  loop:
+    - "{{ wagtail_backup_root }}"
+    - "{{ wagtail_backup_dir }}"
+    - "{{ wagtail_backup_dir }}/database"
+
+- name: Stop Wagtail service for backup
+  ansible.builtin.systemd:
+    name: "{{ wagtail_backup_systemd_unit_name }}"
+    state: stopped
+  when: wagtail_backup_stop_service | bool
+
+- name: Dump PostgreSQL database
+  community.postgresql.postgresql_db:
+    name: "{{ wagtail_backup_postgres_database }}"
+    state: dump
+    target: "{{ wagtail_backup_db_dump }}"
+    target_opts: "{{ wagtail_backup_postgres_target_opts if (wagtail_backup_postgres_target_opts | default('') | length > 0) else omit }}"
+    login_host: "{{ wagtail_backup_postgres_host if (wagtail_backup_postgres_host | default('') | length > 0) else omit }}"
+    login_port: "{{ wagtail_backup_postgres_port if (wagtail_backup_postgres_port | default('') | length > 0) else omit }}"
+    login_user: "{{ wagtail_backup_postgres_user }}"
+    login_password: "{{ wagtail_backup_postgres_password if (wagtail_backup_postgres_password | default('') | length > 0) else omit }}"
+  become: true
+  become_user: "{{ wagtail_backup_postgres_become_user }}"
+  no_log: "{{ (wagtail_backup_postgres_password | default('') | length > 0) }}"
+
+- name: Start Wagtail service after backup
+  ansible.builtin.systemd:
+    name: "{{ wagtail_backup_systemd_unit_name }}"
+    state: started
+    daemon_reload: true
+  when: wagtail_backup_stop_service | bool
+
+- name: Write backup manifest
+  ansible.builtin.copy:
+    dest: "{{ wagtail_backup_dir }}/manifest.yml"
+    owner: "{{ wagtail_backup_owner }}"
+    group: "{{ wagtail_backup_group }}"
+    mode: "{{ wagtail_backup_file_mode }}"
+    content: |
+      service: "{{ wagtail_service_name }}"
+      timestamp: "{{ wagtail_backup_timestamp }}"
+      archive: "{{ wagtail_backup_archive | basename }}"
+      database_dump: "{{ wagtail_backup_db_dump | basename }}"
+      postgres:
+        database: "{{ wagtail_backup_postgres_database }}"
+        host: "{{ wagtail_backup_postgres_host }}"
+        port: {{ wagtail_backup_postgres_port }}
+        user: "{{ wagtail_backup_postgres_user }}"
+  when: wagtail_backup_generate_manifest | bool
+
+- name: Create backup archive
+  ansible.builtin.archive:
+    path: "{{ wagtail_backup_dir }}"
+    dest: "{{ wagtail_backup_archive }}"
+    format: "{{ wagtail_backup_archive_format }}"
+  when: wagtail_backup_create_archive | bool
+
+- name: Ensure local backup directory exists
+  ansible.builtin.file:
+    path: "{{ wagtail_backup_local_dir }}"
+    state: directory
+    mode: "{{ wagtail_backup_local_dir_mode }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - wagtail_backup_fetch_local | bool
+    - wagtail_backup_create_archive | bool
+
+- name: Fetch backup archive
+  ansible.builtin.fetch:
+    src: "{{ wagtail_backup_archive }}"
+    dest: "{{ wagtail_backup_local_dir }}/"
+    flat: true
+  run_once: true
+  when:
+    - wagtail_backup_fetch_local | bool
+    - wagtail_backup_create_archive | bool
+
+- name: Find existing backup archives
+  ansible.builtin.find:
+    paths: "{{ wagtail_backup_root }}"
+    patterns: "{{ wagtail_backup_prefix }}-*.{{ wagtail_backup_archive_extension }}"
+    file_type: file
+  register: wagtail_backup_existing_archives
+  when:
+    - wagtail_backup_retain | int > 0
+    - wagtail_backup_create_archive | bool
+
+- name: Prune old backup archives
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ (wagtail_backup_existing_archives.files | sort(attribute='mtime', reverse=true))[wagtail_backup_retain:] }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when:
+    - wagtail_backup_retain | int > 0
+    - wagtail_backup_create_archive | bool
+
+- name: Find existing backup directories
+  ansible.builtin.find:
+    paths: "{{ wagtail_backup_root }}"
+    patterns: "{{ wagtail_backup_prefix }}-*"
+    file_type: directory
+    recurse: false
+  register: wagtail_backup_existing_dirs
+  when: wagtail_backup_retain | int > 0
+
+- name: Prune old backup directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ (wagtail_backup_existing_dirs.files | sort(attribute='mtime', reverse=true))[wagtail_backup_retain:] }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when: wagtail_backup_retain | int > 0
+
+- name: Report backup completion
+  ansible.builtin.debug:
+    msg: "Wagtail backup stored at {{ wagtail_backup_archive if wagtail_backup_create_archive else wagtail_backup_dir }}"

@@ -1,0 +1,237 @@
+---
+# Wagtail restore tasks
+
+- name: Validate restore inputs
+  ansible.builtin.assert:
+    that:
+      - wagtail_service_name | length > 0
+      - wagtail_restore_root | length > 0
+      - wagtail_restore_archive | length > 0
+      - wagtail_restore_postgres_database | length > 0
+      - wagtail_restore_postgres_user | length > 0
+      - wagtail_restore_postgres_password is defined
+      - wagtail_restore_postgres_password | length > 0
+      - wagtail_restore_postgres_password != "CHANGEME"
+    fail_msg: "Missing required Wagtail restore variables or secrets."
+
+- name: Determine archive when set to latest
+  ansible.builtin.find:
+    paths: "{{ wagtail_restore_root }}"
+    patterns: "*.{{ wagtail_restore_archive_extension }}"
+    file_type: file
+  register: wagtail_restore_candidates
+  when: wagtail_restore_archive == "latest"
+
+- name: Select restore archive
+  ansible.builtin.set_fact:
+    wagtail_restore_selected_archive: >-
+      {{ (wagtail_restore_candidates.files | sort(attribute='mtime', reverse=true) | first).path
+         if wagtail_restore_archive == 'latest' and (wagtail_restore_candidates.files | length > 0)
+         else (wagtail_restore_archive if wagtail_restore_archive.startswith('/') else wagtail_restore_root ~ '/' ~ wagtail_restore_archive) }}
+
+- name: Fail when no archive is available
+  ansible.builtin.fail:
+    msg: "No Wagtail backup archives found in {{ wagtail_restore_root }}"
+  when:
+    - wagtail_restore_archive == "latest"
+    - (wagtail_restore_selected_archive | default('')) | length == 0
+
+- name: Check selected archive or directory
+  ansible.builtin.stat:
+    path: "{{ wagtail_restore_selected_archive }}"
+  register: wagtail_restore_archive_stat
+
+- name: Abort on missing archive
+  ansible.builtin.fail:
+    msg: "Wagtail restore archive not found: {{ wagtail_restore_selected_archive }}"
+  when: not wagtail_restore_archive_stat.stat.exists
+
+- name: Reset staging directory
+  ansible.builtin.file:
+    path: "{{ wagtail_restore_staging_dir }}"
+    state: absent
+  when: wagtail_restore_archive_stat.stat.isreg
+
+- name: Create staging directory
+  ansible.builtin.file:
+    path: "{{ wagtail_restore_staging_dir }}"
+    state: directory
+    mode: "0700"
+  when: wagtail_restore_archive_stat.stat.isreg
+
+- name: Unpack restore archive
+  ansible.builtin.unarchive:
+    src: "{{ wagtail_restore_selected_archive }}"
+    dest: "{{ wagtail_restore_staging_dir }}"
+    remote_src: true
+  when: wagtail_restore_archive_stat.stat.isreg
+
+- name: Locate extracted payload directory
+  ansible.builtin.find:
+    paths: "{{ wagtail_restore_staging_dir }}"
+    file_type: directory
+    depth: 1
+  register: wagtail_restore_payload_dirs
+  when: wagtail_restore_archive_stat.stat.isreg
+
+- name: Set payload path
+  ansible.builtin.set_fact:
+    wagtail_restore_payload_dir: >-
+      {{ (wagtail_restore_payload_dirs.files | map(attribute='path') | list | first)
+         if wagtail_restore_archive_stat.stat.isreg
+         else wagtail_restore_selected_archive }}
+
+- name: Abort when payload directory missing
+  ansible.builtin.fail:
+    msg: "Unable to locate payload directory inside restore archive"
+  when:
+    - wagtail_restore_archive_stat.stat.isreg
+    - wagtail_restore_payload_dir | length == 0
+
+- name: Validate database dump exists
+  ansible.builtin.stat:
+    path: "{{ wagtail_restore_payload_dir }}/database/{{ wagtail_restore_postgres_database }}.sql.gz"
+  register: wagtail_restore_dump_stat
+
+- name: Abort when database dump is missing
+  ansible.builtin.fail:
+    msg: "Database dump missing inside archive"
+  when: not wagtail_restore_dump_stat.stat.exists
+
+- name: Skip destructive restore steps during dry run
+  ansible.builtin.debug:
+    msg: "wagtail_restore_dry_run=true - skipping service stop and database restore"
+  when: wagtail_restore_dry_run | bool
+
+- block:
+    - name: Stop Wagtail service before restore
+      ansible.builtin.systemd:
+        name: "{{ wagtail_restore_systemd_unit_name }}"
+        state: stopped
+      failed_when: false
+      when: wagtail_restore_stop_service | bool
+
+    - name: Drop Wagtail database
+      community.postgresql.postgresql_db:
+        name: "{{ wagtail_restore_postgres_database }}"
+        state: absent
+        force: true
+        login_host: "{{ wagtail_restore_postgres_host if (wagtail_restore_postgres_host | default('') | length > 0) else omit }}"
+        login_port: "{{ wagtail_restore_postgres_port if (wagtail_restore_postgres_port | default('') | length > 0) else omit }}"
+        login_user: "{{ wagtail_restore_postgres_admin_user }}"
+        login_password: "{{ wagtail_restore_postgres_admin_password if (wagtail_restore_postgres_admin_password | default('') | length > 0) else omit }}"
+      become: true
+      become_user: "{{ wagtail_restore_postgres_become_user }}"
+      no_log: "{{ (wagtail_restore_postgres_admin_password | default('') | length > 0) }}"
+
+    - name: Recreate Wagtail database
+      community.postgresql.postgresql_db:
+        name: "{{ wagtail_restore_postgres_database }}"
+        owner: "{{ wagtail_restore_postgres_user }}"
+        state: present
+        login_host: "{{ wagtail_restore_postgres_host if (wagtail_restore_postgres_host | default('') | length > 0) else omit }}"
+        login_port: "{{ wagtail_restore_postgres_port if (wagtail_restore_postgres_port | default('') | length > 0) else omit }}"
+        login_user: "{{ wagtail_restore_postgres_admin_user }}"
+        login_password: "{{ wagtail_restore_postgres_admin_password if (wagtail_restore_postgres_admin_password | default('') | length > 0) else omit }}"
+      become: true
+      become_user: "{{ wagtail_restore_postgres_become_user }}"
+      no_log: "{{ (wagtail_restore_postgres_admin_password | default('') | length > 0) }}"
+
+    - name: Ensure database dump is readable by Postgres user
+      ansible.builtin.file:
+        path: "{{ wagtail_restore_payload_dir }}/database/{{ wagtail_restore_postgres_database }}.sql.gz"
+        owner: "{{ wagtail_restore_postgres_become_user }}"
+        group: "{{ wagtail_restore_postgres_become_user }}"
+        mode: "0640"
+
+    - name: Restore PostgreSQL dump
+      community.postgresql.postgresql_db:
+        name: "{{ wagtail_restore_postgres_database }}"
+        state: restore
+        target: "{{ wagtail_restore_payload_dir }}/database/{{ wagtail_restore_postgres_database }}.sql.gz"
+        target_opts: "{{ wagtail_restore_postgres_target_opts if (wagtail_restore_postgres_target_opts | default('') | length > 0) else omit }}"
+        login_host: "{{ wagtail_restore_postgres_host if (wagtail_restore_postgres_host | default('') | length > 0) else omit }}"
+        login_port: "{{ wagtail_restore_postgres_port if (wagtail_restore_postgres_port | default('') | length > 0) else omit }}"
+        login_user: "{{ wagtail_restore_postgres_user }}"
+        login_password: "{{ wagtail_restore_postgres_password if (wagtail_restore_postgres_password | default('') | length > 0) else omit }}"
+      become: true
+      become_user: "{{ wagtail_restore_postgres_become_user }}"
+      no_log: "{{ (wagtail_restore_postgres_password | default('') | length > 0) }}"
+
+    - name: Ensure database privileges
+      community.postgresql.postgresql_privs:
+        db: "{{ wagtail_restore_postgres_database }}"
+        type: database
+        privs: ALL
+        roles: "{{ wagtail_restore_postgres_user }}"
+        state: present
+        login_host: "{{ wagtail_restore_postgres_host if (wagtail_restore_postgres_host | default('') | length > 0) else omit }}"
+        login_port: "{{ wagtail_restore_postgres_port if (wagtail_restore_postgres_port | default('') | length > 0) else omit }}"
+        login_user: "{{ wagtail_restore_postgres_admin_user }}"
+        login_password: "{{ wagtail_restore_postgres_admin_password if (wagtail_restore_postgres_admin_password | default('') | length > 0) else omit }}"
+      become: true
+      become_user: "{{ wagtail_restore_postgres_become_user }}"
+      no_log: "{{ (wagtail_restore_postgres_admin_password | default('') | length > 0) }}"
+
+    - name: Run migrations after restore
+      ansible.builtin.shell: |
+        set -a
+        . "{{ wagtail_env_path }}"
+        set +a
+        "{{ wagtail_python }}" "{{ wagtail_manage_py }}" migrate
+      args:
+        chdir: "{{ wagtail_site_path }}"
+        executable: /bin/bash
+      environment:
+        DJANGO_SETTINGS_MODULE: "{{ wagtail_django_settings_module }}"
+      become: true
+      become_user: "{{ wagtail_user }}"
+      when: wagtail_restore_run_migrations | bool
+
+    - name: Collect static files after restore
+      ansible.builtin.shell: |
+        set -a
+        . "{{ wagtail_env_path }}"
+        set +a
+        "{{ wagtail_python }}" "{{ wagtail_manage_py }}" collectstatic --noinput
+      args:
+        chdir: "{{ wagtail_site_path }}"
+        executable: /bin/bash
+      environment:
+        DJANGO_SETTINGS_MODULE: "{{ wagtail_django_settings_module }}"
+      become: true
+      become_user: "{{ wagtail_user }}"
+      when: wagtail_restore_collectstatic | bool
+
+    - name: Update Wagtail search index after restore
+      ansible.builtin.shell: |
+        set -a
+        . "{{ wagtail_env_path }}"
+        set +a
+        "{{ wagtail_python }}" "{{ wagtail_manage_py }}" update_index
+      args:
+        chdir: "{{ wagtail_site_path }}"
+        executable: /bin/bash
+      environment:
+        DJANGO_SETTINGS_MODULE: "{{ wagtail_django_settings_module }}"
+      become: true
+      become_user: "{{ wagtail_user }}"
+      changed_when: false
+      when: wagtail_restore_update_index | bool
+
+    - name: Start Wagtail service after restore
+      ansible.builtin.systemd:
+        name: "{{ wagtail_restore_systemd_unit_name }}"
+        enabled: true
+        state: "{{ wagtail_restore_restart | bool | ternary('restarted', 'started') }}"
+        daemon_reload: true
+      failed_when: false
+  when: not wagtail_restore_dry_run | bool
+
+- name: Cleanup restore staging directory
+  ansible.builtin.file:
+    path: "{{ wagtail_restore_staging_dir }}"
+    state: absent
+  when:
+    - wagtail_restore_cleanup | bool
+    - wagtail_restore_archive_stat.stat.isreg

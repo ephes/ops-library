@@ -1,7 +1,7 @@
 ---
 # Configure systemd service for boot-time ZFS pool unlock
 
-- name: Create systemd service for pool unlock
+- name: unlock_service | Create systemd service for pool unlock
   ansible.builtin.template:
     src: zfs-unlock-pool.service.j2
     dest: "/etc/systemd/system/{{ zfs_pool_unlock_service_name }}.service"
@@ -10,12 +10,12 @@
     mode: "0644"
   register: _zfs_pool_unlock_service
 
-- name: Reload systemd daemon
+- name: unlock_service | Reload systemd daemon
   ansible.builtin.systemd:
     daemon_reload: true
   when: _zfs_pool_unlock_service.changed
 
-- name: Enable and start unlock service
+- name: unlock_service | Enable and start unlock service
   ansible.builtin.systemd:
     name: "{{ zfs_pool_unlock_service_name }}"
     enabled: true

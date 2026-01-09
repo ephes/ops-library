@@ -1,0 +1,91 @@
+---
+# Wagtail deployment main tasks
+
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - wagtail_service_name | length > 0
+      - wagtail_deploy_method in ['rsync', 'git']
+      - wagtail_app_port | int > 0
+      - wagtail_fqdn | length > 0
+      - wagtail_traefik_host_rule | length > 0
+      - wagtail_django_secret_key is defined
+      - wagtail_django_secret_key | length > 0
+      - wagtail_django_secret_key != "CHANGEME"
+      - wagtail_postgres_password is defined
+      - wagtail_postgres_password | length > 0
+      - wagtail_postgres_password != "CHANGEME"
+      - wagtail_django_aws_access_key_id is defined
+      - wagtail_django_aws_access_key_id | length > 0
+      - wagtail_django_aws_access_key_id != "CHANGEME"
+      - wagtail_django_aws_secret_access_key is defined
+      - wagtail_django_aws_secret_access_key | length > 0
+      - wagtail_django_aws_secret_access_key != "CHANGEME"
+      - wagtail_django_aws_storage_bucket_name is defined
+      - wagtail_django_aws_storage_bucket_name | length > 0
+      - wagtail_django_aws_storage_bucket_name != "CHANGEME"
+      - wagtail_cloudfront_domain is defined
+      - wagtail_cloudfront_domain | length > 0
+      - wagtail_cloudfront_domain != "CHANGEME"
+      - wagtail_django_sentry_dsn is defined
+      - wagtail_django_sentry_dsn | length > 0
+      - wagtail_django_sentry_dsn != "CHANGEME"
+      - wagtail_django_mailgun_api_key is defined
+      - wagtail_django_mailgun_api_key | length > 0
+      - wagtail_django_mailgun_api_key != "CHANGEME"
+      - wagtail_mailgun_sender_domain is defined
+      - wagtail_mailgun_sender_domain | length > 0
+      - wagtail_mailgun_sender_domain != "CHANGEME"
+      - wagtail_django_server_email is defined
+      - wagtail_django_server_email | length > 0
+      - wagtail_django_server_email != "CHANGEME"
+    fail_msg: |
+      SECURITY ERROR: Required secrets or settings are missing.
+
+      Ensure all required Wagtail secrets are defined and not set to placeholder values:
+      - wagtail_django_secret_key
+      - wagtail_postgres_password
+      - wagtail_django_aws_access_key_id
+      - wagtail_django_aws_secret_access_key
+      - wagtail_django_aws_storage_bucket_name
+      - wagtail_cloudfront_domain
+      - wagtail_django_sentry_dsn
+      - wagtail_django_mailgun_api_key
+      - wagtail_mailgun_sender_domain
+      - wagtail_django_server_email
+
+- name: Validate rsync-specific requirements
+  ansible.builtin.assert:
+    that:
+      - wagtail_source_path is defined
+      - wagtail_source_path | length > 0
+      - wagtail_source_path != "/"
+    fail_msg: "wagtail_source_path must be set when using rsync deployment"
+  when: wagtail_deploy_method == "rsync"
+
+- name: Validate git-specific requirements
+  ansible.builtin.assert:
+    that:
+      - wagtail_git_repo is defined
+      - wagtail_git_repo | length > 0
+    fail_msg: "wagtail_git_repo must be set when using git deployment"
+  when: wagtail_deploy_method == "git"
+
+- name: Setup user and directories
+  ansible.builtin.include_tasks: user.yml
+
+- name: Deploy source code
+  ansible.builtin.include_tasks: "source_{{ wagtail_deploy_method }}.yml"
+
+- name: Setup Python environment
+  ansible.builtin.include_tasks: python.yml
+
+- name: Configure Django application
+  ansible.builtin.include_tasks: django.yml
+
+- name: Setup systemd service
+  ansible.builtin.include_tasks: service.yml
+
+- name: Configure Traefik
+  ansible.builtin.include_tasks: traefik.yml
+  when: wagtail_traefik_enabled | bool

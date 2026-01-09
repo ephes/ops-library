@@ -1,0 +1,61 @@
+---
+# Configure Django application
+
+- name: Render Wagtail environment file
+  ansible.builtin.template:
+    src: wagtail.env.j2
+    dest: "{{ wagtail_env_path }}"
+    owner: "{{ wagtail_user }}"
+    group: "{{ wagtail_group }}"
+    mode: "0600"
+  notify: restart wagtail
+
+- name: Run Django migrations
+  ansible.builtin.shell: |
+    set -a
+    . "{{ wagtail_env_path }}"
+    set +a
+    "{{ wagtail_python }}" "{{ wagtail_manage_py }}" migrate
+  args:
+    chdir: "{{ wagtail_site_path }}"
+    executable: /bin/bash
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ wagtail_django_settings_module }}"
+  become: true
+  become_user: "{{ wagtail_user }}"
+  register: wagtail_migrate_result
+  changed_when: "'No migrations to apply' not in wagtail_migrate_result.stdout"
+  when: wagtail_run_migrations | bool
+
+- name: Collect static files
+  ansible.builtin.shell: |
+    set -a
+    . "{{ wagtail_env_path }}"
+    set +a
+    "{{ wagtail_python }}" "{{ wagtail_manage_py }}" collectstatic --noinput
+  args:
+    chdir: "{{ wagtail_site_path }}"
+    executable: /bin/bash
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ wagtail_django_settings_module }}"
+  become: true
+  become_user: "{{ wagtail_user }}"
+  register: wagtail_collectstatic_result
+  changed_when: "'0 static files copied' not in wagtail_collectstatic_result.stdout"
+  when: wagtail_collectstatic | bool
+
+- name: Update Wagtail search index
+  ansible.builtin.shell: |
+    set -a
+    . "{{ wagtail_env_path }}"
+    set +a
+    "{{ wagtail_python }}" "{{ wagtail_manage_py }}" update_index
+  args:
+    chdir: "{{ wagtail_site_path }}"
+    executable: /bin/bash
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ wagtail_django_settings_module }}"
+  become: true
+  become_user: "{{ wagtail_user }}"
+  changed_when: false
+  when: wagtail_update_index | bool

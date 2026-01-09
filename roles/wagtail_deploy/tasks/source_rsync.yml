@@ -1,0 +1,59 @@
+---
+# Deploy Wagtail source code using rsync
+
+- name: Ensure source directory exists
+  ansible.builtin.stat:
+    path: "{{ wagtail_source_path }}"
+  register: wagtail_source_dir
+  delegate_to: localhost
+  become: false
+
+- name: Fail if source directory doesn't exist
+  ansible.builtin.fail:
+    msg: "Source directory {{ wagtail_source_path }} does not exist"
+  when: not wagtail_source_dir.stat.exists or not wagtail_source_dir.stat.isdir
+
+- name: Validate required source paths exist
+  ansible.builtin.stat:
+    path: "{{ wagtail_source_path }}/{{ item }}"
+  register: wagtail_source_path_stats
+  delegate_to: localhost
+  become: false
+  loop:
+    - manage.py
+    - pyproject.toml
+    - uv.lock
+  loop_control:
+    label: "{{ item }}"
+
+- name: Fail if required source paths are missing
+  ansible.builtin.assert:
+    that: item.stat.exists
+    fail_msg: "Missing required path for rsync deployment: {{ item.invocation.module_args.path }}"
+  loop: "{{ wagtail_source_path_stats.results }}"
+  loop_control:
+    label: "{{ item.invocation.module_args.path }}"
+
+- name: Build rsync exclude list
+  ansible.builtin.set_fact:
+    wagtail_rsync_excludes_all: "{{ wagtail_rsync_excludes + wagtail_rsync_excludes_extra }}"
+
+- name: Build rsync exclude args
+  ansible.builtin.set_fact:
+    wagtail_rsync_exclude_args: "{{ wagtail_rsync_excludes_all | map('regex_replace', '^', '--exclude=') | list }}"
+
+- name: Sync Wagtail source code to target
+  ansible.posix.synchronize:
+    src: "{{ wagtail_source_path }}/"
+    dest: "{{ wagtail_site_path }}/"
+    delete: "{{ wagtail_rsync_delete }}"
+    rsync_opts: "{{ wagtail_rsync_exclude_args }}"
+  delegate_to: localhost
+  become: false
+
+- name: Set ownership for synced files
+  ansible.builtin.file:
+    path: "{{ wagtail_site_path }}"
+    owner: "{{ wagtail_user }}"
+    group: "{{ wagtail_group }}"
+    recurse: true

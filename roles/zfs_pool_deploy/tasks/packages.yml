@@ -1,24 +1,24 @@
 ---
 # Install ZFS packages
 
-- name: Install ZFS packages
+- name: packages | Install ZFS packages
   ansible.builtin.apt:
     name: "{{ zfs_pool_packages }}"
     state: present
     update_cache: true
     cache_valid_time: 3600
 
-- name: Ensure ZFS kernel module is loaded
+- name: packages | Ensure ZFS kernel module is loaded
   community.general.modprobe:
     name: zfs
     state: present
 
-- name: Verify ZFS is functional
+- name: packages | Verify ZFS is functional
   ansible.builtin.command:
     cmd: zpool version
   register: _zfs_pool_version
   changed_when: false
 
-- name: Display ZFS version
+- name: packages | Display ZFS version
   ansible.builtin.debug:
     msg: "ZFS version: {{ _zfs_pool_version.stdout_lines[0] | default('unknown') }}"

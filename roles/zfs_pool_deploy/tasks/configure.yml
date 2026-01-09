@@ -5,24 +5,24 @@
 # Pool Properties (zpool set)
 # =============================================================================
 
-- name: Get current pool properties
+- name: configure | Get current pool properties
   ansible.builtin.command:
     cmd: zpool get all {{ zfs_pool_name }} -H -o property,value
   register: _zfs_pool_current_props
   changed_when: false
 
-- name: Parse current pool properties
+- name: configure | Parse current pool properties
   ansible.builtin.set_fact:
     _zfs_pool_props_dict: "{{ dict(_zfs_pool_current_props.stdout_lines | map('split', '\t') | list) }}"
 
-- name: Configure autotrim
+- name: configure | Configure autotrim
   ansible.builtin.command:
     cmd: zpool set autotrim={{ 'on' if zfs_pool_autotrim else 'off' }} {{ zfs_pool_name }}
   when: _zfs_pool_props_dict.autotrim | default('off') != ('on' if zfs_pool_autotrim else 'off')
   register: _zfs_pool_autotrim_result
   changed_when: _zfs_pool_autotrim_result.rc == 0
 
-- name: Configure additional pool properties
+- name: configure | Configure additional pool properties
   ansible.builtin.command:
     cmd: zpool set {{ item.key }}={{ item.value }} {{ zfs_pool_name }}
   loop: "{{ zfs_pool_properties | dict2items }}"
@@ -36,17 +36,17 @@
 # Root Filesystem Properties (zfs set on pool root dataset)
 # =============================================================================
 
-- name: Get current root filesystem properties
+- name: configure | Get current root filesystem properties
   ansible.builtin.command:
     cmd: zfs get all {{ zfs_pool_name }} -H -o property,value
   register: _zfs_root_fs_current_props
   changed_when: false
 
-- name: Parse current root filesystem properties
+- name: configure | Parse current root filesystem properties
   ansible.builtin.set_fact:
     _zfs_root_fs_props_dict: "{{ dict(_zfs_root_fs_current_props.stdout_lines | map('split', '\t') | list) }}"
 
-- name: Configure root filesystem properties
+- name: configure | Configure root filesystem properties
   ansible.builtin.command:
     cmd: zfs set {{ item.key }}={{ item.value }} {{ zfs_pool_name }}
   loop: "{{ zfs_pool_filesystem_properties | dict2items }}"
@@ -60,13 +60,13 @@
 # Summary
 # =============================================================================
 
-- name: Get pool status summary
+- name: configure | Get pool status summary
   ansible.builtin.command:
     cmd: zpool list {{ zfs_pool_name }} -H -o name,size,alloc,free,health
   register: _zfs_pool_summary
   changed_when: false
 
-- name: Display pool summary
+- name: configure | Display pool summary
   ansible.builtin.debug:
     msg: |
       Pool Summary:

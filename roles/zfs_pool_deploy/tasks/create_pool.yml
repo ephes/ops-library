@@ -1,19 +1,19 @@
 ---
 # Create ZFS pool with encryption
 
-- name: Check if pool already exists
+- name: create_pool | Check if pool already exists
   ansible.builtin.command:
     cmd: zpool list {{ zfs_pool_name }}
   register: _zfs_pool_exists
   changed_when: false
   failed_when: false
 
-- name: Display pool status if exists
+- name: create_pool | Display pool status if exists
   ansible.builtin.debug:
     msg: "Pool '{{ zfs_pool_name }}' already exists, skipping creation"
   when: _zfs_pool_exists.rc == 0
 
-- name: Build zpool create command
+- name: create_pool | Build zpool create command
   ansible.builtin.set_fact:
     _zfs_pool_create_cmd: >-
       zpool create
@@ -36,12 +36,12 @@
       {{ zfs_pool_vdevs | join(' ') }}
   when: _zfs_pool_exists.rc != 0
 
-- name: Display zpool create command (for verification)
+- name: create_pool | Display zpool create command (for verification)
   ansible.builtin.debug:
     msg: "{{ _zfs_pool_create_cmd }}"
   when: _zfs_pool_exists.rc != 0
 
-- name: Create ZFS pool
+- name: create_pool | Create ZFS pool
   ansible.builtin.command:
     cmd: "{{ _zfs_pool_create_cmd }}"
     stdin: "{{ zfs_pool_passphrase if (zfs_pool_encryption_enabled and zfs_pool_keyformat == 'passphrase') else omit }}"
@@ -50,14 +50,14 @@
   no_log: "{{ zfs_pool_no_log }}"
   when: _zfs_pool_exists.rc != 0
 
-- name: Verify pool was created
+- name: create_pool | Verify pool was created
   ansible.builtin.command:
     cmd: zpool status {{ zfs_pool_name }}
   register: _zfs_pool_status
   changed_when: false
   when: _zfs_pool_exists.rc != 0
 
-- name: Display new pool status
+- name: create_pool | Display new pool status
   ansible.builtin.debug:
     msg: "{{ _zfs_pool_status.stdout_lines }}"
   when:

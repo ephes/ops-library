@@ -1,0 +1,47 @@
+---
+# Setup user and directories for Wagtail
+
+- name: Ensure Wagtail group exists
+  ansible.builtin.group:
+    name: "{{ wagtail_group }}"
+    state: present
+
+- name: Check if Wagtail user exists
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ wagtail_user }}"
+  register: wagtail_user_check
+  failed_when: false
+
+- name: Ensure Wagtail user exists
+  ansible.builtin.user:
+    name: "{{ wagtail_user }}"
+    group: "{{ wagtail_group }}"
+    home: "{{ wagtail_home }}"
+    system: true
+    shell: /bin/bash
+    state: present
+    move_home: false
+  when: wagtail_user_check.failed
+
+- name: Ensure Wagtail user is in correct group
+  ansible.builtin.user:
+    name: "{{ wagtail_user }}"
+    groups: "{{ wagtail_group }}"
+    append: true
+  when: not wagtail_user_check.failed
+
+- name: Create application directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ wagtail_user }}"
+    group: "{{ wagtail_group }}"
+    mode: "0755"
+  loop:
+    - "{{ wagtail_home }}"
+    - "{{ wagtail_site_path }}"
+    - "{{ wagtail_cache_dir }}"
+    - "{{ wagtail_home }}/logs"
+  loop_control:
+    label: "{{ item }}"

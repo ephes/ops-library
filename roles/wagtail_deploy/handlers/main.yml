@@ -1,0 +1,12 @@
+---
+# wagtail_deploy/handlers/main.yml
+# Handlers for the wagtail_deploy role.
+
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart wagtail
+  ansible.builtin.systemd:
+    name: "{{ wagtail_service_name }}"
+    state: restarted

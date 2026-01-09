@@ -1,7 +1,7 @@
 ---
 # Deploy encryption key file for ZFS pool
 
-- name: Ensure key file directory exists
+- name: keyfile | Ensure key file directory exists
   ansible.builtin.file:
     path: "{{ zfs_pool_keyfile_path | dirname }}"
     state: directory
@@ -9,7 +9,7 @@
     group: root
     mode: "0700"
 
-- name: Deploy pool encryption key file
+- name: keyfile | Deploy pool encryption key file
   ansible.builtin.copy:
     content: "{{ zfs_pool_passphrase }}"
     dest: "{{ zfs_pool_keyfile_path }}"
@@ -18,12 +18,12 @@
     mode: "{{ zfs_pool_keyfile_mode }}"
   no_log: "{{ zfs_pool_no_log }}"
 
-- name: Verify key file permissions
+- name: keyfile | Verify key file permissions
   ansible.builtin.stat:
     path: "{{ zfs_pool_keyfile_path }}"
   register: _zfs_pool_keyfile_stat
 
-- name: Validate key file security
+- name: keyfile | Validate key file security
   ansible.builtin.assert:
     that:
       - (_zfs_pool_keyfile_stat.stat.mode | int(base=8)) == 0o400

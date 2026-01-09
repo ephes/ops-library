@@ -1,0 +1,41 @@
+---
+# Wagtail backup role defaults
+
+wagtail_service_name: ""
+
+# Backup destination
+wagtail_backup_root: "/opt/backups/{{ wagtail_service_name }}"
+wagtail_backup_prefix: "manual"
+wagtail_backup_dir_mode: "0750"
+wagtail_backup_file_mode: "0600"
+wagtail_backup_owner: root
+wagtail_backup_group: root
+
+# Archive options
+wagtail_backup_create_archive: true
+wagtail_backup_archive_format: "gz"
+wagtail_backup_archive_extension: "tar.gz"
+
+# Fetch options
+wagtail_backup_fetch_local: true
+wagtail_backup_local_dir: "{{ lookup('env', 'HOME') | default('~', true) }}/backups/{{ wagtail_service_name }}"
+wagtail_backup_local_dir_mode: "0700"
+
+# Retention
+wagtail_backup_retain: 7
+
+# Service control
+wagtail_backup_stop_service: false
+wagtail_backup_systemd_unit_name: "{{ wagtail_service_name }}"
+
+# PostgreSQL configuration
+wagtail_backup_postgres_database: "{{ wagtail_service_name }}"
+wagtail_backup_postgres_user: "{{ wagtail_service_name }}"
+wagtail_backup_postgres_password: ""
+wagtail_backup_postgres_host: "localhost"
+wagtail_backup_postgres_port: 5432
+wagtail_backup_postgres_become_user: "postgres"
+wagtail_backup_postgres_target_opts: ""
+
+# Manifest
+wagtail_backup_generate_manifest: true

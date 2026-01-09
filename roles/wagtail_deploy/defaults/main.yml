@@ -1,0 +1,98 @@
+---
+# Wagtail deployment role defaults
+
+# Required identifiers
+wagtail_service_name: ""
+wagtail_project_slug: "{{ wagtail_service_name }}"
+
+# Deployment method: rsync or git
+wagtail_deploy_method: rsync
+
+# User and paths
+wagtail_user: "{{ wagtail_service_name }}"
+wagtail_group: "{{ wagtail_user }}"
+wagtail_home: "/home/{{ wagtail_user }}"
+wagtail_site_path: "{{ wagtail_home }}/site"
+wagtail_env_path: "{{ wagtail_site_path }}/.env"
+wagtail_cache_dir: "{{ wagtail_site_path }}/cache"
+wagtail_manage_py: "{{ wagtail_site_path }}/manage.py"
+
+# Rsync source (required for rsync deploy)
+wagtail_source_path: ""
+wagtail_rsync_delete: true
+wagtail_rsync_excludes_extra: []
+wagtail_rsync_excludes:
+  - "{{ wagtail_project_slug }}/media"
+  - "backups"
+  - "databases"
+  - ".venv"
+  - ".git"
+  - "__pycache__"
+  - "*.pyc"
+  - ".pytest_cache"
+  - ".coverage"
+  - ".mypy_cache"
+
+# Git source (required for git deploy)
+wagtail_git_repo: ""
+wagtail_git_version: "main"
+
+# Python/uv configuration
+wagtail_global_python: "python3.14"
+wagtail_uv_path: "/usr/local/bin/uv"
+wagtail_venv_path: "{{ wagtail_site_path }}/.venv"
+wagtail_venv_bin: "{{ wagtail_venv_path }}/bin"
+wagtail_python: "{{ wagtail_venv_bin }}/python"
+
+# Application settings
+wagtail_app_host: "127.0.0.1"
+wagtail_app_port: 8000
+wagtail_gunicorn_workers: 4
+wagtail_gunicorn_timeout: 600
+wagtail_gunicorn_extra_args: ""
+wagtail_wsgi_module: "config.wsgi"
+wagtail_django_settings_module: "config.settings.production"
+wagtail_admin_url: "hidden_admin/"
+wagtail_django_allowed_hosts: "{{ wagtail_fqdn }},localhost"
+wagtail_django_cache_location: "{{ wagtail_cache_dir }}"
+
+# PostgreSQL connection
+wagtail_postgres_host: "localhost"
+wagtail_postgres_port: 5432
+wagtail_postgres_database: "{{ wagtail_service_name }}"
+wagtail_postgres_user: "{{ wagtail_service_name }}"
+# wagtail_postgres_password: ""
+
+# Traefik configuration
+wagtail_fqdn: ""
+wagtail_traefik_host_rule: ""
+wagtail_traefik_enabled: true
+wagtail_traefik_entrypoints:
+  - web-secure
+wagtail_traefik_middlewares: []
+wagtail_traefik_cert_resolver: ""
+wagtail_traefik_config_path: "/etc/traefik/dynamic/{{ wagtail_service_name }}.traefik.yml"
+
+# Systemd
+wagtail_systemd_unit_path: "/etc/systemd/system/{{ wagtail_service_name }}.service"
+wagtail_systemd_unit_name: "{{ wagtail_service_name }}"
+wagtail_service_restart_on_change: true
+
+# Deploy steps
+wagtail_run_migrations: true
+wagtail_collectstatic: true
+wagtail_update_index: true
+
+# Environment values (required secrets)
+# wagtail_django_secret_key: ""
+# wagtail_django_aws_access_key_id: ""
+# wagtail_django_aws_secret_access_key: ""
+# wagtail_django_aws_storage_bucket_name: ""
+# wagtail_cloudfront_domain: ""
+# wagtail_django_sentry_dsn: ""
+# wagtail_django_mailgun_api_key: ""
+# wagtail_mailgun_sender_domain: ""
+# wagtail_django_server_email: ""
+
+# Additional env values
+wagtail_env_extra: {}

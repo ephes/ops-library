@@ -48,6 +48,7 @@ The table below links each published role to its dedicated documentation. Refer 
 | Service deployment | [`mail_relay_deploy`](roles/mail_relay_deploy/README.md) | Deploy Postfix edge relay with greylisting, TLS termination, and backend routing. |
 | Service deployment | [`snappymail_deploy`](roles/snappymail_deploy/README.md) | Deploy SnappyMail webmail via PHP-FPM + nginx with Traefik exposure and IMAP/SMTP defaults. |
 | Service deployment | [`takahe_deploy`](roles/takahe_deploy/README.md) | Deploy Takahe with systemd, nginx cache/accel proxying, and Traefik exposure. |
+| Service deployment | [`wagtail_deploy`](roles/wagtail_deploy/README.md) | Deploy Wagtail Django sites with uv, systemd, and Traefik routing. |
 | Service deployment | [`mastodon_deploy`](roles/mastodon_deploy/README.md) | Deploy Mastodon from source with rbenv+nvm, systemd services, and Traefik routing. |
 | Monitoring | [`metrics_endpoint`](roles/metrics_endpoint/README.md) | Expose an authenticated JSON health endpoint (e.g. `/.well-known/health`) for nyxmon checks. |
 | Monitoring | [`mail_monitoring`](roles/mail_monitoring/README.md) | Provision monitor mailbox + cleanup timer to support nyxmon end-to-end mail flow checks. |
@@ -61,6 +62,8 @@ The table below links each published role to its dedicated documentation. Refer 
 | Service operations | [`navidrome_restore`](roles/navidrome_restore/README.md) | Restore Navidrome archives and optionally trigger a full rescan. |
 | Service operations | [`takahe_backup`](roles/takahe_backup/README.md) | Backup Takahe database, media, and configuration with manifests and archive fetch. |
 | Service operations | [`takahe_restore`](roles/takahe_restore/README.md) | Restore Takahe from archives, replaying the database and media content. |
+| Service operations | [`wagtail_backup`](roles/wagtail_backup/README.md) | Backup Wagtail PostgreSQL databases with manifest + optional archive fetch. |
+| Service operations | [`wagtail_restore`](roles/wagtail_restore/README.md) | Restore Wagtail databases from archives and restart the service. |
 | Service operations | [`jellyfin_backup`](roles/jellyfin_backup/README.md) | Backup Jellyfin data/config/systemd/Traefik with optional archive fetch. |
 | Service operations | [`jellyfin_restore`](roles/jellyfin_restore/README.md) | Restore Jellyfin archives back into place and restart the service. |
 | Service operations | [`metube_backup`](roles/metube_backup/README.md) | Backup MeTube state/env/systemd/Traefik with optional archive fetch. |

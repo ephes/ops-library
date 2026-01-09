@@ -1,0 +1,44 @@
+---
+# Wagtail restore role defaults
+
+wagtail_service_name: ""
+
+# Restore source
+wagtail_restore_root: "/opt/backups/{{ wagtail_service_name }}"
+wagtail_restore_archive: "latest"
+wagtail_restore_archive_extension: "tar.gz"
+wagtail_restore_cleanup: true
+wagtail_restore_restart: true
+wagtail_restore_stop_service: true
+wagtail_restore_dry_run: false
+wagtail_restore_staging_dir: "/tmp/wagtail-restore-{{ wagtail_service_name }}"
+
+# Service paths (for optional migrations)
+wagtail_user: "{{ wagtail_service_name }}"
+wagtail_group: "{{ wagtail_user }}"
+wagtail_home: "/home/{{ wagtail_service_name }}"
+wagtail_site_path: "{{ wagtail_home }}/site"
+wagtail_env_path: "{{ wagtail_site_path }}/.env"
+wagtail_manage_py: "{{ wagtail_site_path }}/manage.py"
+wagtail_venv_bin: "{{ wagtail_site_path }}/.venv/bin"
+wagtail_python: "{{ wagtail_venv_bin }}/python"
+wagtail_django_settings_module: "config.settings.production"
+
+# Post-restore actions
+wagtail_restore_run_migrations: true
+wagtail_restore_collectstatic: true
+wagtail_restore_update_index: false
+
+# Systemd
+wagtail_restore_systemd_unit_name: "{{ wagtail_service_name }}"
+
+# PostgreSQL configuration
+wagtail_restore_postgres_database: "{{ wagtail_service_name }}"
+wagtail_restore_postgres_user: "{{ wagtail_service_name }}"
+wagtail_restore_postgres_password: ""
+wagtail_restore_postgres_host: "localhost"
+wagtail_restore_postgres_port: 5432
+wagtail_restore_postgres_admin_user: "{{ wagtail_restore_postgres_user }}"
+wagtail_restore_postgres_admin_password: "{{ wagtail_restore_postgres_password }}"
+wagtail_restore_postgres_become_user: "postgres"
+wagtail_restore_postgres_target_opts: ""
