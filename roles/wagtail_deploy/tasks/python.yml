@@ -54,6 +54,45 @@
     _wagtail_python_executable: "{{ wagtail_global_python }}"
   when: wagtail_python_version | length == 0
 
+- name: Check existing virtualenv Python binary
+  ansible.builtin.stat:
+    path: "{{ wagtail_venv_path }}/bin/python"
+  register: _wagtail_venv_python_stat
+
+- name: Detect current virtualenv Python version
+  ansible.builtin.command:
+    cmd: "{{ wagtail_venv_path }}/bin/python --version"
+  register: _wagtail_current_python_version
+  changed_when: false
+  failed_when: false
+  when: _wagtail_venv_python_stat.stat.exists
+
+- name: Set Python version mismatch fact
+  ansible.builtin.set_fact:
+    _wagtail_python_mismatch: >-
+      {{ (_wagtail_current_python_version.stdout | default('')).split()[1] != wagtail_python_version }}
+  when:
+    - _wagtail_venv_python_stat.stat.exists
+    - _wagtail_current_python_version.stdout is defined
+    - wagtail_python_version | length > 0
+
+- name: Remove broken virtualenv if Python is not usable
+  ansible.builtin.file:
+    path: "{{ wagtail_venv_path }}"
+    state: absent
+  when:
+    - _wagtail_venv_python_stat.stat.exists
+    - _wagtail_current_python_version.rc is defined
+    - _wagtail_current_python_version.rc != 0
+
+- name: Remove virtualenv if Python version changed
+  ansible.builtin.file:
+    path: "{{ wagtail_venv_path }}"
+    state: absent
+  when:
+    - _wagtail_venv_python_stat.stat.exists
+    - _wagtail_python_mismatch | default(false)
+
 - name: Create virtual environment using uv
   ansible.builtin.command: "{{ wagtail_uv_path }} venv --python {{ _wagtail_python_executable }} {{ wagtail_venv_path }}"
   args:
