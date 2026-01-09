@@ -19,8 +19,43 @@
     msg: "uv is required but not installed at {{ wagtail_uv_path }}"
   when: not wagtail_uv_stat.stat.exists
 
+- name: Check for requested Python version
+  ansible.builtin.command:
+    cmd: "{{ wagtail_uv_path }} python find {{ wagtail_python_version }}"
+  register: _wagtail_uv_python_find
+  become_user: "{{ wagtail_user }}"
+  changed_when: false
+  failed_when: false
+  when: wagtail_python_version | length > 0
+
+- name: Install requested Python version via uv
+  ansible.builtin.command:
+    cmd: "{{ wagtail_uv_path }} python install {{ wagtail_python_version }}"
+  become_user: "{{ wagtail_user }}"
+  when:
+    - wagtail_python_version | length > 0
+    - _wagtail_uv_python_find.rc != 0
+
+- name: Determine Python executable path
+  ansible.builtin.command:
+    cmd: "{{ wagtail_uv_path }} python find {{ wagtail_python_version }}"
+  register: _wagtail_python_exec_path
+  become_user: "{{ wagtail_user }}"
+  changed_when: false
+  when: wagtail_python_version | length > 0
+
+- name: Set Python executable fact
+  ansible.builtin.set_fact:
+    _wagtail_python_executable: "{{ _wagtail_python_exec_path.stdout | trim }}"
+  when: wagtail_python_version | length > 0
+
+- name: Set Python executable fact (fallback)
+  ansible.builtin.set_fact:
+    _wagtail_python_executable: "{{ wagtail_global_python }}"
+  when: wagtail_python_version | length == 0
+
 - name: Create virtual environment using uv
-  ansible.builtin.command: "{{ wagtail_uv_path }} venv --python {{ wagtail_global_python }} {{ wagtail_venv_path }}"
+  ansible.builtin.command: "{{ wagtail_uv_path }} venv --python {{ _wagtail_python_executable }} {{ wagtail_venv_path }}"
   args:
     creates: "{{ wagtail_venv_path }}/bin/python"
   become: true

@@ -38,6 +38,7 @@ wagtail_git_repo: ""
 wagtail_git_version: "main"
 
 # Python/uv configuration
+wagtail_python_version: "3.14.2"
 wagtail_global_python: "python3.14"
 wagtail_uv_path: "/usr/local/bin/uv"
 wagtail_venv_path: "{{ wagtail_site_path }}/.venv"

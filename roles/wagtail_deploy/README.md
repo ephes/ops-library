@@ -57,7 +57,8 @@ wagtail_git_version: "main"
 ### Common Configuration
 
 ```yaml
-wagtail_global_python: "/opt/python/python"  # or python3.14
+wagtail_python_version: "3.14.2"  # uv-managed; set empty to use wagtail_global_python
+wagtail_global_python: "/opt/python/python"
 wagtail_uv_path: "/usr/local/bin/uv"
 wagtail_gunicorn_workers: 4
 wagtail_gunicorn_timeout: 600
@@ -115,7 +116,7 @@ For a complete list of variables, see `roles/wagtail_deploy/defaults/main.yml`.
     wagtail_fqdn: "example.com"
     wagtail_traefik_host_rule: "Host(`example.com`) || Host(`www.example.com`)"
     wagtail_app_port: 10013
-    wagtail_global_python: "/opt/python/python"
+    wagtail_python_version: "3.14.2"
     wagtail_django_secret_key: "{{ service_secrets.django_secret_key }}"
     wagtail_postgres_password: "{{ service_secrets.postgres_password }}"
     wagtail_django_aws_access_key_id: "{{ service_secrets.django_aws_access_key_id }}"
