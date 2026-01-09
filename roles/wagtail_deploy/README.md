@@ -67,6 +67,23 @@ wagtail_env_extra:
   INDIEWEB_ME_URL: "https://example.com/user/"
 ```
 
+### Static Assets
+
+```yaml
+# Optional asset build commands (run before collectstatic)
+wagtail_asset_build_commands:
+  - "npm ci"
+  - "npm run build"
+wagtail_asset_build_workdir: "{{ wagtail_site_path }}"
+wagtail_asset_build_env: {}
+
+# Fail the deploy when these staticfiles are missing after collectstatic
+wagtail_staticfiles_required_paths:
+  - "staticfiles/staticfiles.json"
+  - "staticfiles/cast_vue/manifest.json"
+  - "staticfiles/cast_vue/manifest.json.gz"
+```
+
 ### PostgreSQL Provisioning
 
 ```yaml

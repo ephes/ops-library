@@ -99,6 +99,12 @@ wagtail_run_migrations: true
 wagtail_collectstatic: true
 wagtail_update_index: true
 
+# Optional asset build steps (run before collectstatic)
+wagtail_asset_build_commands: []
+wagtail_asset_build_workdir: "{{ wagtail_site_path }}"
+wagtail_asset_build_env: {}
+wagtail_staticfiles_required_paths: []
+
 # Environment values (required secrets)
 # wagtail_django_secret_key: ""
 # wagtail_django_aws_access_key_id: ""

@@ -27,6 +27,26 @@
   changed_when: "'No migrations to apply' not in wagtail_migrate_result.stdout"
   when: wagtail_run_migrations | bool
 
+- name: Build frontend assets
+  ansible.builtin.shell: |
+    set -a
+    . "{{ wagtail_env_path }}"
+    set +a
+    . "{{ wagtail_venv_bin }}/activate"
+    {{ item }}
+  args:
+    chdir: "{{ wagtail_asset_build_workdir }}"
+    executable: /bin/bash
+  environment: "{{ wagtail_asset_build_env }}"
+  become: true
+  become_user: "{{ wagtail_user }}"
+  loop: "{{ wagtail_asset_build_commands }}"
+  loop_control:
+    label: "{{ item }}"
+  register: wagtail_asset_build_result
+  changed_when: true
+  when: wagtail_asset_build_commands | length > 0
+
 - name: Collect static files
   ansible.builtin.shell: |
     set -a
@@ -43,6 +63,25 @@
   register: wagtail_collectstatic_result
   changed_when: "'0 static files copied' not in wagtail_collectstatic_result.stdout"
   when: wagtail_collectstatic | bool
+
+- name: Check required staticfiles paths
+  ansible.builtin.stat:
+    path: "{{ wagtail_site_path }}/{{ item }}"
+  loop: "{{ wagtail_staticfiles_required_paths }}"
+  loop_control:
+    label: "{{ item }}"
+  register: wagtail_staticfiles_required_stats
+  when: wagtail_staticfiles_required_paths | length > 0
+
+- name: Assert required staticfiles paths exist
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+    fail_msg: "Required staticfile missing: {{ item.invocation.module_args.path }}"
+  loop: "{{ wagtail_staticfiles_required_stats.results | default([]) }}"
+  loop_control:
+    label: "{{ item.invocation.module_args.path }}"
+  when: wagtail_staticfiles_required_paths | length > 0
 
 - name: Update Wagtail search index
   ansible.builtin.shell: |
