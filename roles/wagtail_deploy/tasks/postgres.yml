@@ -1,0 +1,28 @@
+---
+- name: Validate PostgreSQL provisioning inputs
+  ansible.builtin.include_role:
+    name: local.ops_library.postgres_install
+    tasks_from: validate.yml
+  vars:
+    postgres_install_version: "{{ wagtail_postgres_version }}"
+    postgres_install_admin_user: "{{ wagtail_postgres_become_user }}"
+    postgres_install_databases:
+      - name: "{{ wagtail_postgres_database }}"
+        owner: "{{ wagtail_postgres_user }}"
+    postgres_install_users:
+      - name: "{{ wagtail_postgres_user }}"
+        password: "{{ wagtail_postgres_password }}"
+
+- name: Ensure PostgreSQL database and user exist
+  ansible.builtin.include_role:
+    name: local.ops_library.postgres_install
+    tasks_from: databases.yml
+  vars:
+    postgres_install_version: "{{ wagtail_postgres_version }}"
+    postgres_install_admin_user: "{{ wagtail_postgres_become_user }}"
+    postgres_install_databases:
+      - name: "{{ wagtail_postgres_database }}"
+        owner: "{{ wagtail_postgres_user }}"
+    postgres_install_users:
+      - name: "{{ wagtail_postgres_user }}"
+        password: "{{ wagtail_postgres_password }}"

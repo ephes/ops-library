@@ -1,0 +1,33 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Deploy Wagtail sites with uv, systemd, and Traefik
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - wagtail
+    - django
+    - deployment
+    - web
+
+dependencies:
+  - role: local.ops_library.postgres_install
+    vars:
+      postgres_install_version: "{{ wagtail_postgres_version }}"
+      postgres_install_use_pgdg_repo: "{{ wagtail_postgres_repo_enabled }}"
+      postgres_install_repo_url: "{{ wagtail_postgres_repo_url }}"
+      postgres_install_repo_codename: "{{ wagtail_postgres_repo_codename }}"
+      postgres_install_repo_components: "{{ wagtail_postgres_repo_components }}"
+      postgres_install_repo_keyring: "{{ wagtail_postgres_repo_keyring }}"
+      postgres_install_repo_key_url: "{{ wagtail_postgres_repo_key_url }}"
+      postgres_install_packages: "{{ wagtail_postgres_packages }}"
+      postgres_install_admin_user: "{{ wagtail_postgres_become_user }}"

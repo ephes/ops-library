@@ -71,6 +71,9 @@
     fail_msg: "wagtail_git_repo must be set when using git deployment"
   when: wagtail_deploy_method == "git"
 
+- name: Provision PostgreSQL database and user
+  ansible.builtin.include_tasks: postgres.yml
+
 - name: Setup user and directories
   ansible.builtin.include_tasks: user.yml
 

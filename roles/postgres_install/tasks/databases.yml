@@ -47,7 +47,8 @@
 - name: Ensure public schema owners match database owners
   community.postgresql.postgresql_query:
     db: "{{ item.name }}"
-    query: "ALTER SCHEMA public OWNER TO {{ item.owner }}"
+    query: >-
+      ALTER SCHEMA public OWNER TO "{{ item.owner | replace('"', '""') }}"
   when:
     - item.owner is defined
     - item.state | default('present') == 'present'

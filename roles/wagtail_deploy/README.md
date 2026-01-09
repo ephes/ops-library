@@ -4,7 +4,7 @@ Deploy Wagtail Django sites with uv-managed Python, systemd, and optional Traefi
 
 ## Description
 
-This role deploys Wagtail applications (e.g. homepage, python-podcast) using either rsync from a local checkout or a git repository. It provisions the service user, installs the Python environment via uv, renders a `.env` file, runs migrations/collectstatic/update_index, configures systemd, and optionally writes Traefik dynamic config.
+This role deploys Wagtail applications (e.g. homepage, python-podcast) using either rsync from a local checkout or a git repository. It provisions the PostgreSQL database/user via `postgres_install`, creates the service user, installs the Python environment via uv, renders a `.env` file, runs migrations/collectstatic/update_index, configures systemd, and optionally writes Traefik dynamic config.
 
 ## Requirements
 
@@ -67,11 +67,21 @@ wagtail_env_extra:
   INDIEWEB_ME_URL: "https://example.com/user/"
 ```
 
+### PostgreSQL Provisioning
+
+```yaml
+wagtail_postgres_version: "17"
+wagtail_postgres_database: "homepage"
+wagtail_postgres_user: "homepage"
+wagtail_postgres_password: "{{ service_secrets.postgres_password }}"
+wagtail_postgres_repo_enabled: true
+```
+
 For a complete list of variables, see `roles/wagtail_deploy/defaults/main.yml`.
 
 ## Dependencies
 
-None.
+- `local.ops_library.postgres_install`
 
 ## Example Playbook
 

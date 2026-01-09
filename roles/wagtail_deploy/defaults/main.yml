@@ -63,6 +63,22 @@ wagtail_postgres_database: "{{ wagtail_service_name }}"
 wagtail_postgres_user: "{{ wagtail_service_name }}"
 # wagtail_postgres_password: ""
 
+# PostgreSQL provisioning (postgres_install)
+wagtail_postgres_version: "17"
+wagtail_postgres_become_user: postgres
+wagtail_postgres_packages:
+  - "postgresql-{{ wagtail_postgres_version }}"
+  - "postgresql-client-{{ wagtail_postgres_version }}"
+  - "postgresql-contrib-{{ wagtail_postgres_version }}"
+  - libpq-dev
+wagtail_postgres_repo_enabled: true
+wagtail_postgres_repo_url: https://apt.postgresql.org/pub/repos/apt
+wagtail_postgres_repo_codename: "{{ ansible_distribution_release | default('jammy') }}"
+wagtail_postgres_repo_components:
+  - main
+wagtail_postgres_repo_keyring: /etc/apt/keyrings/postgresql.asc
+wagtail_postgres_repo_key_url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+
 # Traefik configuration
 wagtail_fqdn: ""
 wagtail_traefik_host_rule: ""
