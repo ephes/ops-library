@@ -34,7 +34,45 @@
   notify: restart redis
 
 - name: Validate Redis configuration syntax
-  ansible.builtin.command: "redis-server {{ redis_install_config_path }} --test-memory 2"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    validate_dir="{{ redis_install_validate_dir }}"
+    pidfile="${validate_dir}/redis-config-test.pid"
+    logfile="${validate_dir}/redis-config-test.log"
+
+    cleanup() {
+      rm -f "${pidfile}" "${logfile}"
+      rmdir "${validate_dir}" 2>/dev/null || true
+    }
+
+    trap cleanup EXIT
+
+    mkdir -p "${validate_dir}"
+
+    redis-server {{ redis_install_config_path }} \
+      --port 0 \
+      --pidfile "${pidfile}" \
+      --logfile "${logfile}" \
+      --dir "${validate_dir}" \
+      --save "" \
+      --appendonly no \
+      --daemonize yes
+
+    for _ in {1..50}; do
+      if [[ -s "${pidfile}" ]]; then
+        break
+      fi
+      sleep 0.1
+    done
+
+    if [[ ! -s "${pidfile}" ]]; then
+      echo "Redis validation failed to start test instance." >&2
+      exit 1
+    fi
+
+    kill "$(cat "${pidfile}")"
+  args:
+    executable: /bin/bash
   when:
     - redis_install_validate_config | bool
     - not ansible_check_mode

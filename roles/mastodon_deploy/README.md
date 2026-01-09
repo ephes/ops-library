@@ -80,7 +80,13 @@ mastodon_traefik_host: "{{ mastodon_web_domain }}"
 mastodon_nginx_enabled: true
 mastodon_nginx_port: 10044
 mastodon_nginx_cache_enabled: false
+mastodon_runtime_chown_recursive: false
 ```
+
+The role keeps ownership in sync for runtime directories listed in
+`mastodon_runtime_chown_paths`. Set `mastodon_runtime_chown_recursive: true`
+if you need to repair ownership on existing content (for example after a
+root-owned rsync), but note this can be slow on large media trees.
 
 Split-domain deployments are supported and intentional: `LOCAL_DOMAIN` (handles) can differ from `WEB_DOMAIN` (UI). Do not change `LOCAL_DOMAIN` after federation begins.
 

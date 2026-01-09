@@ -12,5 +12,5 @@ set +a
 
 cd "{{ mastodon_site_path }}"
 {% for cmd in mastodon_maintenance_commands %}
-bundle exec tootctl {{ cmd }}{% if mastodon_maintenance_ignore_errors %} || true{% endif %}
+bin/tootctl {{ cmd }}{{ ' || true' if mastodon_maintenance_ignore_errors else '' }}
 {% endfor %}

@@ -15,6 +15,13 @@ mastodon_service_state: started
 
 mastodon_maintenance_enabled: true
 
+mastodon_runtime_chown_paths:
+  - "{{ mastodon_media_path }}"
+  - "{{ mastodon_tmp_path }}"
+  - "{{ mastodon_log_path }}"
+  - "{{ mastodon_bundle_path }}"
+mastodon_runtime_chown_recursive: false
+
 mastodon_healthcheck_enabled: true
 mastodon_healthcheck_url: "http://{{ mastodon_bind_host }}:{{ mastodon_nginx_port if (mastodon_nginx_enabled | bool) else mastodon_web_port }}/api/v1/instance"
 mastodon_healthcheck_host: "{{ (mastodon_web_domain | length > 0) | ternary(mastodon_web_domain, mastodon_local_domain) }}"

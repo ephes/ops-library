@@ -48,7 +48,7 @@
   loop: "{{ mastodon_legacy_service_names }}"
   when:
     - mastodon_disable_legacy_services | bool
-    - mastodon_unit_files.stdout | regex_search('^' ~ item ~ '\\.service\\s', multiline=True)
+    - (mastodon_unit_files.stdout | regex_search('^' ~ item ~ '\\.service\\s', multiline=True)) is not none
 
 - name: Enable and start Mastodon web
   ansible.builtin.systemd:

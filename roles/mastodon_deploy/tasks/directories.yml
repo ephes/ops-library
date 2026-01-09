@@ -15,10 +15,12 @@
 
 - name: Ensure Mastodon runtime directories are owned by the service user
   ansible.builtin.file:
-    path: "{{ mastodon_site_path }}"
+    path: "{{ item }}"
     owner: "{{ mastodon_user }}"
     group: "{{ mastodon_group }}"
-    recurse: true
+    recurse: "{{ mastodon_runtime_chown_recursive | bool }}"
+  loop: "{{ mastodon_runtime_chown_paths }}"
+  when: mastodon_runtime_chown_paths | length > 0
 
 - name: Ensure Mastodon nginx directories exist
   ansible.builtin.file:
