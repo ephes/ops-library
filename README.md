@@ -16,6 +16,12 @@ cd ../ops-control
 just install-local-library
 ```
 
+## Python Runtimes
+
+Service roles that need specific Python versions rely on `uv` to install and manage interpreters
+(for example `wagtail_deploy`, `homeassistant_deploy`, `fastdeploy_deploy`). Prefer `uv` instead of
+system Python builds; set `uv_version` and the role-specific `*_python_version` variables as needed.
+
 ## Available Roles
 
 The table below links each published role to its dedicated documentation. Refer to the role README for full variable reference, workflows, and examples.
