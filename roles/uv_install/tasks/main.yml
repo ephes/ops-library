@@ -53,6 +53,25 @@
         (uv_update_existing and uv_version != "latest" and current_version is defined and current_version != uv_version)
       }}
 
+- name: Update uv when tracking latest
+  ansible.builtin.command: "{{ uv_install_dir }}/uv self update"
+  register: uv_self_update
+  changed_when: "'Updated' in uv_self_update.stdout"
+  failed_when: false
+  when:
+    - uv_installed.stat.exists
+    - not (uv_is_symlink | default(false))
+    - uv_update_existing
+    - uv_version == "latest"
+  become: yes
+
+- name: Reinstall uv when self update fails
+  ansible.builtin.set_fact:
+    needs_install: true
+  when:
+    - uv_self_update is defined
+    - uv_self_update.rc != 0
+
 - name: Install or update uv
   when: needs_install | bool
   block:
