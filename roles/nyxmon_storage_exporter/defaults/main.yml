@@ -6,6 +6,9 @@
 
 nyxmon_storage_exporter_enabled: true
 
+nyxmon_storage_exporter_packages:
+  - python3
+
 nyxmon_storage_exporter_bin_path: "/usr/local/bin/nyxmon-storage-metrics"
 nyxmon_storage_exporter_mode: "0755"
 

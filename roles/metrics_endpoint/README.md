@@ -1,6 +1,6 @@
 # metrics_endpoint
 
-Lightweight JSON health endpoint (e.g., `/.well-known/health`) to expose mail metrics (queue counts, disk usage, service status) for nyxmon. Uses a Python stdlib HTTP server with htpasswd-based basic auth and a shell script for metrics.
+Lightweight JSON health endpoint (e.g., `/.well-known/health`) to expose mail metrics (queue counts, disk usage, service status) for nyxmon. Uses a Python stdlib HTTP server with htpasswd-based basic auth and a shell script for metrics, running on system Python 3 (no venv/uv).
 
 Tracks PRD: `specs/mail-nyxmon-prd.md` (issue `ops-meta-e15`).
 
@@ -18,6 +18,11 @@ metrics_endpoint_path: "/.well-known/health"
 metrics_endpoint_script_timeout: 10
 metrics_endpoint_auth_user: "CHANGE_ME"
 metrics_endpoint_auth_password: "CHANGE_ME"
+
+metrics_endpoint_packages:
+  - python3
+  - apache2-utils
+  - acl
 
 metrics_endpoint_script_path: "/usr/local/bin/mail-metrics.sh"
 metrics_endpoint_server_path: "/usr/local/bin/metrics_httpd.py"
@@ -48,7 +53,7 @@ metrics_endpoint_extra_metrics: []        # list of extra commands to emit into 
 
 ## What it does
 
-- Installs `python3` + `apache2-utils` (for `htpasswd` verification).
+- Installs `metrics_endpoint_packages` (defaults: `python3`, `apache2-utils`, `acl`).
 - Creates `metrics` system user/group.
 - Deploys `mail-metrics.sh` (queue counts, disk usage, service status).
 - Deploys `metrics_httpd.py` (Python HTTP server, basic auth via htpasswd, runs metrics script).
@@ -60,5 +65,6 @@ metrics_endpoint_extra_metrics: []        # list of extra commands to emit into 
 
 - Auth placeholders must be overridden; role asserts on `CHANGE_ME`.
 - The Python server calls `htpasswd -vb` for auth checks; keep `apache2-utils` installed.
+- The systemd unit runs `/usr/bin/python3` directly; ensure the system package is present.
 - Adjust `metrics_endpoint_services`/paths per host (edge vs backend).
 - ACLs are set on queue paths; ensure filesystem supports ACLs (`acl` package installed).

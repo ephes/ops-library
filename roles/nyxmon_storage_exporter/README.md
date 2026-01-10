@@ -4,23 +4,23 @@ Storage health metrics exporter for Nyxmon integration.
 
 ## Description
 
-This role installs a Python script that collects and outputs storage health metrics as JSON. It gathers SMART data from disks (temperature, health status) and ZFS pool information (health, capacity, last scrub). The JSON output is designed to be served over HTTP and monitored using Nyxmon's `json-metrics` check type.
+This role installs a Python script that collects and outputs storage health metrics as JSON. It gathers SMART data from disks (temperature, health status) and ZFS pool information (health, capacity, last scrub). The JSON output is designed to be served over HTTP and monitored using Nyxmon's `json-metrics` check type, using system Python 3 (no venv/uv).
 
 ## Requirements
 
 ### System Requirements
-- Debian/Ubuntu with Python 3
+- Debian/Ubuntu with system Python 3 (installed via `nyxmon_storage_exporter_packages`)
 - Root privileges (for smartctl and nvme access)
 
 ### Runtime Dependencies
-The following packages should be installed depending on your monitoring needs:
+The role installs `nyxmon_storage_exporter_packages` (defaults to `python3`). Add optional packages to that list depending on your monitoring needs:
 
-| Package | Required For | Install Command |
+| Package | Required For | Suggested Usage |
 |---------|--------------|-----------------|
-| `python3` | Always required | `apt install python3` |
-| `zfsutils-linux` | ZFS pool monitoring | `apt install zfsutils-linux` |
-| `smartmontools` | SATA/SAS disk health | `apt install smartmontools` |
-| `nvme-cli` | NVMe disk health | `apt install nvme-cli` |
+| `python3` | Always required | Default in `nyxmon_storage_exporter_packages` |
+| `zfsutils-linux` | ZFS pool monitoring | Add to `nyxmon_storage_exporter_packages` |
+| `smartmontools` | SATA/SAS disk health | Add to `nyxmon_storage_exporter_packages` |
+| `nvme-cli` | NVMe disk health | Add to `nyxmon_storage_exporter_packages` |
 
 **Note:** If a command is missing (e.g., `zpool` on a non-ZFS system), the script will return a JSON error for that subsystem instead of crashing. This allows partial monitoring when not all tools are installed.
 
@@ -51,6 +51,7 @@ Each disk in `nyxmon_storage_exporter_disks` must have:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `nyxmon_storage_exporter_enabled` | `true` | Enable/disable the exporter installation |
+| `nyxmon_storage_exporter_packages` | `["python3"]` | System packages to install for the exporter |
 | `nyxmon_storage_exporter_bin_path` | `/usr/local/bin/nyxmon-storage-metrics` | Path to install the script |
 | `nyxmon_storage_exporter_mode` | `0755` | File permissions for the script |
 | `nyxmon_storage_exporter_smartctl_no_spinup` | `false` | Add `smartctl -n standby` to avoid waking sleeping disks |

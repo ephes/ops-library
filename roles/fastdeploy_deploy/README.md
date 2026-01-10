@@ -18,7 +18,7 @@ This role deploys FastDeploy, a web-based platform for managing service deployme
 - Ubuntu/Debian-based target system
 - Ability to install PostgreSQL (handled automatically via dependency)
 - Node.js 16+ (for frontend build)
-- Python 3.14+
+- Python 3.14+ (managed via uv; set `fastdeploy_python_version` if needed)
 - ansible-core 2.20+
 - Required collections:
   - `ansible.posix` (for synchronize module)
@@ -56,6 +56,9 @@ fastdeploy_traefik_host: "deploy.example.com"
 # Application settings
 fastdeploy_app_port: 9999
 fastdeploy_workers: 4
+
+# Python / uv
+fastdeploy_python_version: "3.14"
 ```
 
 ### Advanced Configuration

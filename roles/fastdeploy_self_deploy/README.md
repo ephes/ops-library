@@ -13,6 +13,14 @@ The `fastdeploy_self_deploy` role implements an in-place deployment strategy for
 - **In-place updates** - Simplified approach (no complex blue-green swapping)
 - **SOPS integration** - Ready for encrypted secrets (currently using placeholders)
 - **Self-contained runner** - Python script with graceful httpx fallback
+- **UV bootstrapping** - Uses the `uv_install` role for uv provisioning
+
+## Configuration
+
+Key variables for uv provisioning:
+
+- `fd_self_uv_install_dir` (default: `/usr/local/bin`)
+- `fd_self_uv_binary` (default: `{{ fd_self_uv_install_dir }}/uv`)
 
 ## Architecture
 

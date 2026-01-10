@@ -22,10 +22,7 @@
 
     - name: Install dependencies for metrics endpoint
       ansible.builtin.package:
-        name:
-          - python3
-          - apache2-utils
-          - acl
+        name: "{{ metrics_endpoint_packages }}"
         state: present
 
     - name: Create metrics system group

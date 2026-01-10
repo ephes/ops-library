@@ -1,23 +1,17 @@
 ---
 # Setup Python environment for Homelab
 
-- name: Ensure Python and pip are installed
-  package:
-    name:
-      - python3
-      - python3-pip
-      - python3-venv
-    state: present
+- name: Ensure uv usage is enabled
+  ansible.builtin.assert:
+    that:
+      - homelab_use_uv | bool
+    fail_msg: "homelab_use_uv must be true; homelab_deploy requires uv for venv management."
 
-- name: Check if uv is installed
-  stat:
-    path: "{{ homelab_uv_path }}"
-  register: uv_check
-
-- name: Fail if uv is not installed
-  fail:
-    msg: "uv is required but not installed at {{ homelab_uv_path }}. Please install it globally first."
-  when: not uv_check.stat.exists
+- name: Ensure uv binary is installed
+  ansible.builtin.import_role:
+    name: uv_install
+  vars:
+    uv_install_dir: "{{ homelab_uv_path | dirname }}"
 
 - name: Test if venv Python is usable
   command: "{{ homelab_venv_path }}/bin/python --version"

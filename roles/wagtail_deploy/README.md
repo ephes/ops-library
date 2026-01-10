@@ -9,7 +9,7 @@ This role deploys Wagtail applications (e.g. homepage, python-podcast) using eit
 ## Requirements
 
 - Ubuntu host with systemd
-- `uv` installed on the target host (default: `/usr/local/bin/uv`)
+- `uv` installed on the target host (role uses `uv_install` by default; path: `/usr/local/bin/uv`)
 - Ansible collections:
   - `ansible.posix`
 

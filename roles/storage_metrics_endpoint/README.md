@@ -1,6 +1,6 @@
 # storage_metrics_endpoint
 
-Exposes storage metrics (ZFS pool health, SMART status, ECC counters) as an authenticated HTTP endpoint.
+Exposes storage metrics (ZFS pool health, SMART status, ECC counters) as an authenticated HTTP endpoint. The HTTP server runs on system Python 3 (no venv/uv).
 
 ## Design
 
@@ -49,9 +49,8 @@ Additionally, the systemd unit includes `IPAddressAllow=100.64.0.0/10` which res
 ## Requirements
 
 - The `nyxmon_storage_exporter` role must be deployed first (provides `/usr/local/bin/nyxmon-storage-metrics`)
-- Python 3
-- apache2-utils (for htpasswd)
 - Tailscale must be installed and connected
+- System packages are installed via `storage_metrics_endpoint_packages` (defaults: `python3`, `apache2-utils`)
 
 ## Variables
 
@@ -63,6 +62,7 @@ Additionally, the systemd unit includes `IPAddressAllow=100.64.0.0/10` which res
 | `storage_metrics_endpoint_path` | `/.well-known/storage` | Endpoint path |
 | `storage_metrics_endpoint_auth_user` | `CHANGE_ME` | Basic auth username |
 | `storage_metrics_endpoint_auth_password` | `CHANGE_ME` | Basic auth password (stored as bcrypt hash) |
+| `storage_metrics_endpoint_packages` | `["python3", "apache2-utils"]` | System packages for the HTTP server |
 | `storage_metrics_endpoint_timer_interval` | `300` | Seconds between metrics collection |
 
 ## Response Format

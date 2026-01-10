@@ -1,23 +1,11 @@
 ---
 # Setup Python environment for Wagtail
 
-- name: Ensure Python runtime is installed
-  ansible.builtin.package:
-    name:
-      - python3
-      - python3-venv
-      - python3-pip
-    state: present
-
-- name: Check uv binary path
-  ansible.builtin.stat:
-    path: "{{ wagtail_uv_path }}"
-  register: wagtail_uv_stat
-
-- name: Fail if uv is not installed
-  ansible.builtin.fail:
-    msg: "uv is required but not installed at {{ wagtail_uv_path }}"
-  when: not wagtail_uv_stat.stat.exists
+- name: Ensure uv binary is installed
+  ansible.builtin.import_role:
+    name: uv_install
+  vars:
+    uv_install_dir: "{{ wagtail_uv_path | dirname }}"
 
 - name: Check for requested Python version
   ansible.builtin.command:

@@ -1,6 +1,11 @@
 ---
 # Setup Python environment for Nyxmon
 
+- name: Ensure uv binary is installed
+  ansible.builtin.import_role:
+    name: uv_install
+  when: nyxmon_use_uv
+
 - name: Ensure Python and pip are installed
   package:
     name:
@@ -8,20 +13,7 @@
       - python3-pip
       - python3-venv
     state: present
-
-- name: Check if uv is installed
-  command: which uv
-  register: uv_check
-  failed_when: false
-  changed_when: false
-  when: nyxmon_use_uv
-
-- name: Fail if uv is not installed
-  fail:
-    msg: "uv is required but not installed. Please install it globally first."
-  when:
-    - nyxmon_use_uv
-    - uv_check.rc != 0
+  when: not nyxmon_use_uv
 
 - name: Determine Django project path
   set_fact:

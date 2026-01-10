@@ -35,3 +35,7 @@ fd_self_cleanup_days: 7
 # Runner configuration for FastDeploy registration
 fd_self_runner_dir: "/home/deploy/runners/fastdeploy-self"
 fd_self_sops_age_key_file: "/home/deploy/.config/sops/age/keys.txt"
+
+# UV installation configuration
+fd_self_uv_install_dir: "/usr/local/bin"
+fd_self_uv_binary: "{{ fd_self_uv_install_dir }}/uv"

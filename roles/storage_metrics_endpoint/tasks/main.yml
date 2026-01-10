@@ -34,9 +34,7 @@
 
     - name: Install dependencies for storage metrics endpoint
       ansible.builtin.package:
-        name:
-          - python3
-          - apache2-utils
+        name: "{{ storage_metrics_endpoint_packages }}"
         state: present
 
     - name: Create metrics system group

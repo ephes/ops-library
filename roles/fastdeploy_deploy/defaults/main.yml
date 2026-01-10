@@ -119,6 +119,9 @@ fastdeploy_create_initial_user: true
 fastdeploy_sync_services: true
 fastdeploy_install_uv: true
 
+# Python version requested from uv for the virtualenv
+fastdeploy_python_version: "3.14"
+
 # uv installation settings (used when fastdeploy_install_uv is true)
 fastdeploy_uv_install_dir: /usr/local/bin
 fastdeploy_uv_binary: "{{ fastdeploy_uv_install_dir }}/uv"

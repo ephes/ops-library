@@ -1,4 +1,9 @@
 ---
+- name: install | Install system packages for exporter
+  ansible.builtin.package:
+    name: "{{ nyxmon_storage_exporter_packages }}"
+    state: present
+
 - name: install | Install nyxmon storage metrics exporter script
   ansible.builtin.template:
     src: nyxmon-storage-metrics.py.j2
