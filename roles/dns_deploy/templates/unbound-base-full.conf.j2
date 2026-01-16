@@ -19,8 +19,12 @@ server:
     access-control: ::1/128 allow
     access-control: {{ dns_split_lan_network | default('192.168.178.0/24') }} allow
     access-control: {{ dns_split_tailscale_network | default('100.64.0.0/10') }} allow
-    # Tailscale IPv6 range
-    access-control: fd7a:115c:a1e0::/48 allow
+{% for lan_ipv6 in dns_split_lan_ipv6_networks | default([]) %}
+    access-control: {{ lan_ipv6 }} allow
+{% endfor %}
+{% for ts_ipv6 in dns_split_tailscale_ipv6_networks | default([]) %}
+    access-control: {{ ts_ipv6 }} allow
+{% endfor %}
     access-control: 0.0.0.0/0 refuse
     access-control: ::/0 refuse
 

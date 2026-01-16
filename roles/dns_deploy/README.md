@@ -72,6 +72,8 @@ Unbound handles everything:
 |----------|---------|-------------|
 | `dns_split_lan_network` | `"192.168.0.0/16"` | LAN network range |
 | `dns_split_tailscale_network` | `"100.64.0.0/10"` | Tailscale network range |
+| `dns_split_lan_ipv6_networks` | `[]` | Optional LAN IPv6 ranges (e.g., `["fdxx:...::/64"]`) |
+| `dns_split_tailscale_ipv6_networks` | `[]` | Optional Tailscale IPv6 ranges (e.g., `["fdxx:...::/48"]`) |
 | `dns_split_lan_ip` | `{{ ansible_default_ipv4.address }}` | IP returned for LAN clients |
 | `dns_split_tailscale_ip` | `""` | IP returned for Tailscale clients |
 | `dns_split_services` | `[]` | Service-specific IP overrides |
@@ -118,6 +120,30 @@ dns_forward_zones:
       - "10.0.0.53"
       - "10.0.0.54"
     forward_first: true
+```
+
+**Example - Forward all other queries to public resolvers:**
+
+```yaml
+dns_forward_zones:
+  - name: "."
+    forward_addrs:
+      - "1.1.1.1"
+      - "1.0.0.1"
+      - "8.8.8.8"
+      - "8.8.4.4"
+  - name: "fritz.box"
+    forward_addrs:
+      - "192.168.178.1"
+```
+
+**Example - LAN/Tailscale IPv6 view mapping:**
+
+```yaml
+dns_split_lan_ipv6_networks:
+  - "fd50:3e45:c454::/64"
+dns_split_tailscale_ipv6_networks:
+  - "fd7a:115c:a1e0::/48"
 ```
 
 ### Local Resolver Management
