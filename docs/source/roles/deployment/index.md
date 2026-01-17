@@ -21,6 +21,7 @@ minecraft_java_deploy
 navidrome_deploy
 jellyfin_deploy
 metube_deploy
+open_webui_deploy
 mastodon_deploy
 mastodon_shared
 snappymail_deploy

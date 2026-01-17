@@ -1,0 +1,9 @@
+---
+- name: Ensure Docker Engine + Compose are installed
+  ansible.builtin.import_role:
+    name: local.ops_library.docker_install
+
+- name: Verify Docker Compose v2 is available
+  ansible.builtin.command: docker compose version
+  register: open_webui_docker_compose_version
+  changed_when: false

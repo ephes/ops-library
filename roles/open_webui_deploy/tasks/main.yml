@@ -1,0 +1,34 @@
+---
+- name: Validate required variables
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Ensure Docker is installed
+  ansible.builtin.import_tasks: docker.yml
+  when: open_webui_install_docker | bool
+
+- name: Ensure Open WebUI user exists
+  ansible.builtin.import_tasks: user.yml
+  when: open_webui_manage_user | bool
+
+- name: Ensure Open WebUI directories exist
+  ansible.builtin.import_tasks: directories.yml
+
+- name: Render Open WebUI environment file
+  ansible.builtin.import_tasks: env.yml
+
+- name: Render Open WebUI Docker Compose file
+  ansible.builtin.import_tasks: compose.yml
+
+- name: Configure Open WebUI systemd service
+  ansible.builtin.import_tasks: systemd.yml
+
+- name: Configure Traefik routing
+  ansible.builtin.import_tasks: traefik.yml
+  when: open_webui_traefik_enabled | bool
+
+- name: Apply pending handlers before health checks
+  ansible.builtin.meta: flush_handlers
+
+- name: Run Open WebUI health check
+  ansible.builtin.import_tasks: health.yml
+  when: open_webui_healthcheck_enabled | bool

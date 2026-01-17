@@ -1,0 +1,19 @@
+---
+- name: Reload systemd for open webui
+  listen: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Restart open webui
+  listen: restart open webui
+  ansible.builtin.systemd:
+    name: "{{ open_webui_service_name }}"
+    state: restarted
+    enabled: true
+    daemon_reload: true
+
+- name: Restart traefik for open webui
+  listen: reload traefik
+  ansible.builtin.systemd:
+    name: traefik
+    state: restarted

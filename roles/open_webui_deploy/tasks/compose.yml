@@ -1,0 +1,9 @@
+---
+- name: Render Open WebUI Docker Compose file
+  ansible.builtin.template:
+    src: open-webui-compose.yml.j2
+    dest: "{{ open_webui_compose_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart open webui

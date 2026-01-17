@@ -1,0 +1,37 @@
+---
+- name: Validate core Open WebUI settings
+  ansible.builtin.assert:
+    that:
+      - open_webui_ollama_base_url | length > 0
+      - open_webui_site_dir | length > 0
+      - open_webui_data_dir | length > 0
+      - open_webui_bind_host | length > 0
+      - open_webui_host_port | int > 0
+      - open_webui_host_port | int < 65536
+      - open_webui_container_port | int > 0
+      - open_webui_container_port | int < 65536
+    fail_msg: >-
+      Missing required Open WebUI settings (ollama_base_url/site_dir/data_dir/ports).
+
+- name: Validate extra env settings
+  ansible.builtin.assert:
+    that:
+      - open_webui_extra_env is mapping
+      - open_webui_extra_env is not string
+    fail_msg: "open_webui_extra_env must be a mapping of environment variables."
+
+- name: Validate Traefik settings when enabled
+  ansible.builtin.assert:
+    that:
+      - open_webui_traefik_host | length > 0
+      - open_webui_traefik_config_path | length > 0
+    fail_msg: "open_webui_traefik_host and open_webui_traefik_config_path are required when Traefik is enabled."
+  when: open_webui_traefik_enabled | bool
+
+- name: Validate basic auth settings when enabled
+  ansible.builtin.assert:
+    that:
+      - open_webui_basic_auth_user | length > 0
+      - (open_webui_basic_auth_password | length > 0) or (open_webui_basic_auth_password_hash | length > 0)
+    fail_msg: "Provide open_webui_basic_auth_password or open_webui_basic_auth_password_hash when basic auth is enabled."
+  when: open_webui_traefik_enabled | bool and open_webui_basic_auth_enabled | bool

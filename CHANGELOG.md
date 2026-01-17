@@ -19,9 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Takahe lifecycle roles: `takahe_shared`, `takahe_deploy`, `takahe_backup`, `takahe_restore`, and `takahe_remove` with systemd services, nginx caching/accel proxy, Traefik routing, and PostgreSQL provisioning
 - Mastodon lifecycle roles: `mastodon_shared`, `mastodon_deploy`, `mastodon_backup`, `mastodon_restore`, `mastodon_maintenance`, and `mastodon_remove` with rbenv+nvm runtimes, systemd services, Traefik routing, and backup/restore tooling
+- `open_webui_deploy` and `open_webui_remove` roles to run Open WebUI via Docker Compose with Traefik routing, persistent storage, and optional basic auth
 - `encrypted_volume_prepare` role to verify, unlock, and mount LUKS data volumes with keyfile support, UUID validation, crypttab/fstab wiring, and a validate-only dry run
 - `nyxmon_backup` role for SQLite-safe snapshots with metadata, manifests, and automatic archive fetches
 - `nyxmon_restore` role with staging validation, safety snapshots, rollback support, and service verification
+- `ollama_install` role to install and run Ollama on macOS via Homebrew with launchd management
+- `ollama_remove` role to unload launchd, remove the plist, and optionally remove data/logs, service user, and Homebrew package
 - `docker_install` role to install Docker Engine + Docker Compose v2 (plugin) on Ubuntu via the official Docker apt repository
 - `shell_basics_deploy` role to install fish, modern CLI tools (btop, bmon, sysstat/iotop, tealdeer, eza), set shell/editor defaults, and keep chezmoi current via upstream installer
 - `snappymail_deploy` role to install SnappyMail from upstream archives (PHP-FPM + nginx), wire IMAP/SMTP defaults, persist data under `/mnt/cryptdata/snappymail`, and expose via Traefik
@@ -52,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `nyxmon_restore` now mirrors the Home Assistant structure (validate/prepare/restore/verify/cleanup), adds block/rescue rollback, conditional restores, handler flush, and health checks
 - `nyxmon_deploy` systemd service now launches Granian instead of Gunicorn to match the upstream project
+- `ollama_install` stops any Homebrew-managed Ollama service by default, stops conflicting user-level `ollama serve` processes, and ensures the launchd service is running
 - Updated README.md with prominent link to ReadTheDocs
 - Updated repository URLs to https://github.com/ephes/ops-library
 - Modernized Python tooling: uv replaces traditional pip/venv workflow
@@ -64,12 +68,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `nyxmon_deploy` and `homelab_deploy` switch from Granian to Gunicorn and gained configurable Python version management (defaulting to 3.13)
 - `nyxmon_deploy` now enforces the same dual-router authentication policy as other public services, including validation and hashed credentials
 - DNS deployment/removal flows hardened with improved resolver management, legacy `unbound_only` port detection, and safer variable validation
+- `open_webui_deploy` documentation now calls out the `studio.tailde2ec.ts.net` hostname, Traefik config path/basic auth wiring, and ops-control preflight bypass flag
+- `open_webui_remove` now defaults to non-destructive options and supports removing compose/env files separately from the site directory
 
 ### Fixed
 - Home Assistant presence automations now include the default file to prevent missing automation imports after deployment
 - `dns_remove` cleans up DDNS units reliably and no longer crashes on undefined variables during selective removal
 - `unifi_restore` now re-imports MongoDB dumps, honors host/port overrides, and ships with sane defaults so UniFi logins and controller state survive a remove/deploy/restore cycle
 - `unifi_deploy` gracefully skips the Home Assistant integration on the very first bootstrap when the UniFi “default” site does not exist yet, avoiding infinite waits on greenfield installs
+- `open_webui_deploy` now validates the bind host and host port range to catch invalid settings earlier
 
 ## [2.0.0] - 2025-10-09
 

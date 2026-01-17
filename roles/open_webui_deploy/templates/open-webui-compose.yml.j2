@@ -1,0 +1,17 @@
+services:
+  open-webui:
+    image: {{ open_webui_image }}
+    container_name: {{ open_webui_container_name }}
+    restart: {{ open_webui_restart_policy }}
+    ports:
+      - "{{ open_webui_bind_host }}:{{ open_webui_host_port }}:{{ open_webui_container_port }}"
+    env_file:
+      - .env
+    volumes:
+      - "{{ open_webui_data_dir }}:/app/backend/data"
+{% if open_webui_extra_hosts | length > 0 %}
+    extra_hosts:
+{% for host in open_webui_extra_hosts %}
+      - "{{ host }}"
+{% endfor %}
+{% endif %}

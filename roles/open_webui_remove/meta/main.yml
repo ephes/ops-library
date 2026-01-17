@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: open_webui_remove
+  author: Jochen Wersdörfer
+  description: Remove Open WebUI deployment and optional data
+  license: MIT
+  min_ansible_version: 2.14
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble

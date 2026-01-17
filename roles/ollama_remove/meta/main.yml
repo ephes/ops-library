@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Remove Ollama on macOS, including launchd service and optional cleanup
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: MacOS
+      versions:
+        - all
+  galaxy_tags:
+    - ollama
+    - llm
+    - macos
+    - launchd
+    - homebrew
+
+dependencies: []

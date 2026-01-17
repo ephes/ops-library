@@ -9,6 +9,7 @@ ansible_install
 boot_visible_i915
 docker_install
 dpkg_arch_remove
+ollama_install
 uv_install
 sops_dependencies
 postgres_install

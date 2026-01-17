@@ -1,0 +1,63 @@
+---
+open_webui_service_name: open-webui
+open_webui_container_name: open-webui
+
+open_webui_user: openwebui
+open_webui_group: openwebui
+open_webui_home: "/home/{{ open_webui_user }}"
+open_webui_site_dir: "{{ open_webui_home }}/site"
+open_webui_data_dir: /mnt/cryptdata/open-webui/data
+
+open_webui_env_file: "{{ open_webui_site_dir }}/.env"
+open_webui_compose_path: "{{ open_webui_site_dir }}/compose.yml"
+
+open_webui_image: "ghcr.io/open-webui/open-webui:main"
+open_webui_restart_policy: unless-stopped
+
+open_webui_bind_host: 127.0.0.1
+open_webui_host_port: 3000
+open_webui_container_port: 8080
+
+open_webui_ollama_base_url: "http://localhost:11434"
+
+# Optional WebUI env vars
+open_webui_webui_secret_key: ""
+open_webui_webui_auth_enabled: true
+open_webui_openai_api_key: ""
+open_webui_openai_api_base_url: ""
+
+open_webui_extra_env: {}
+open_webui_extra_hosts: []
+
+open_webui_install_docker: true
+open_webui_manage_user: true
+
+open_webui_systemd_enabled: true
+
+open_webui_traefik_enabled: true
+open_webui_traefik_config_path: /etc/traefik/dynamic/open-webui.yml
+open_webui_traefik_host: ""
+open_webui_traefik_entrypoints:
+  - web-secure
+open_webui_traefik_cert_resolver: ""
+open_webui_traefik_middlewares: []
+
+open_webui_basic_auth_enabled: true
+open_webui_basic_auth_user: admin
+open_webui_basic_auth_password: ""
+open_webui_basic_auth_password_hash: ""
+open_webui_basic_auth_remove_header: true
+
+open_webui_internal_ip_ranges:
+  - "192.168.0.0/16"
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"
+  - "100.64.0.0/10"
+  - "fd7a:115c:a1e0::/48"
+
+open_webui_healthcheck_enabled: true
+open_webui_healthcheck_host: 127.0.0.1
+open_webui_healthcheck_path: "/"
+open_webui_healthcheck_status: 200
+open_webui_healthcheck_timeout: 10
+open_webui_healthcheck_retries: 12

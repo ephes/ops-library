@@ -1,0 +1,14 @@
+---
+- name: Ensure Open WebUI group exists
+  ansible.builtin.group:
+    name: "{{ open_webui_group }}"
+    system: true
+
+- name: Ensure Open WebUI user exists
+  ansible.builtin.user:
+    name: "{{ open_webui_user }}"
+    group: "{{ open_webui_group }}"
+    system: true
+    create_home: true
+    home: "{{ open_webui_home }}"
+    shell: /usr/sbin/nologin

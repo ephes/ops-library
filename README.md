@@ -50,6 +50,7 @@ The table below links each published role to its dedicated documentation. Refer 
 | Service deployment | [`navidrome_deploy`](roles/navidrome_deploy/README.md) | Deploy Navidrome music server (binary/systemd, Traefik, optional rescan timer). |
 | Service deployment | [`jellyfin_deploy`](roles/jellyfin_deploy/README.md) | Deploy Jellyfin media server (apt packages, systemd, Traefik with basic auth). |
 | Service deployment | [`metube_deploy`](roles/metube_deploy/README.md) | Deploy MeTube (yt-dlp web UI) from source with uv, Angular build, systemd, and Traefik internal-bypass/basic-auth. |
+| Service deployment | [`open_webui_deploy`](roles/open_webui_deploy/README.md) | Deploy Open WebUI (Docker Compose) with Traefik routing and optional basic auth. |
 | Service deployment | [`mail_backend_deploy`](roles/mail_backend_deploy/README.md) | Deploy mail backend with Postfix, Dovecot, OpenDKIM, and PostgreSQL virtual users/domains. |
 | Service deployment | [`mail_relay_deploy`](roles/mail_relay_deploy/README.md) | Deploy Postfix edge relay with greylisting, TLS termination, and backend routing. |
 | Service deployment | [`snappymail_deploy`](roles/snappymail_deploy/README.md) | Deploy SnappyMail webmail via PHP-FPM + nginx with Traefik exposure and IMAP/SMTP defaults. |
@@ -86,13 +87,16 @@ The table below links each published role to its dedicated documentation. Refer 
 | Service removal | [`tailscale_remove`](roles/tailscale_remove/README.md) | Remove Tailscale packages/repo, optionally logout and purge `/var/lib/tailscale`. |
 | Service removal | [`jellyfin_remove`](roles/jellyfin_remove/README.md) | Remove Jellyfin packages, config/data/logs, Traefik wiring, and user with confirmation toggles. |
 | Service removal | [`metube_remove`](roles/metube_remove/README.md) | Remove MeTube service, env/state/Traefik wiring, optional downloads, with confirmation guard. |
+| Service removal | [`open_webui_remove`](roles/open_webui_remove/README.md) | Remove Open WebUI service, compose files, Traefik wiring, and optional data. |
 | Service removal | [`mastodon_remove`](roles/mastodon_remove/README.md) | Remove Mastodon services, config, and user with confirmation gates. |
+| Service removal | [`ollama_remove`](roles/ollama_remove/README.md) | Remove Ollama launchd service on macOS with optional data/user/brew cleanup. |
 | Service registration | [`apt_upgrade_register`](roles/apt_upgrade_register/README.md) | Register apt-upgrade maintenance runners with FastDeploy. |
 | Service registration | [`fastdeploy_register_service`](roles/fastdeploy_register_service/README.md) | Generic FastDeploy service registration helper. |
 | Bootstrap | [`ansible_install`](roles/ansible_install/README.md) | Ensure controller has Ansible and required plugins. |
 | Bootstrap | [`shell_basics_deploy`](roles/shell_basics_deploy/README.md) | Install fish, modern CLI tools (btop, bmon, sysstat/iotop, tealdeer, eza), set shell/editor defaults, and keep chezmoi current from upstream. |
 | Bootstrap | [`docker_install`](roles/docker_install/README.md) | Install Docker Engine + Docker Compose v2 (plugin) from the official Docker apt repository. |
 | Bootstrap | [`dpkg_arch_remove`](roles/dpkg_arch_remove/README.md) | Remove foreign dpkg architectures (defaults to i386) and optionally purge packages. |
+| Bootstrap | [`ollama_install`](roles/ollama_install/README.md) | Install Ollama on macOS via Homebrew and manage a launchd service. |
 | Bootstrap | [`uv_install`](roles/uv_install/README.md) | Install uv for Python environment management. |
 | Bootstrap | [`sops_dependencies`](roles/sops_dependencies/README.md) | Install age/SOPS prerequisites. |
 | Testing/demo | [`test_dummy`](roles/test_dummy/README.md) | Demonstration service for developing and testing runners. |

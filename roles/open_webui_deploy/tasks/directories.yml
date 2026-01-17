@@ -1,0 +1,16 @@
+---
+- name: Ensure Open WebUI site directory exists
+  ansible.builtin.file:
+    path: "{{ open_webui_site_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure Open WebUI data directory exists
+  ansible.builtin.file:
+    path: "{{ open_webui_data_dir }}"
+    state: directory
+    owner: "{{ open_webui_user if open_webui_manage_user | bool else 'root' }}"
+    group: "{{ open_webui_group if open_webui_manage_user | bool else 'root' }}"
+    mode: "0750"

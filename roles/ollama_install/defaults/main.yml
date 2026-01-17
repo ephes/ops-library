@@ -1,0 +1,49 @@
+---
+# Default values for ollama_install role (macOS)
+
+# Enable/disable role execution
+ollama_enabled: true
+
+# Homebrew package name and update behavior
+ollama_brew_package: "ollama"
+ollama_brew_update: false
+
+# Path to brew binary (auto-detected if empty)
+ollama_brew_bin: ""
+
+# Homebrew user (required when connecting as root)
+ollama_brew_user: ""
+
+# Disable any Homebrew-managed Ollama service to avoid conflicts with launchd
+ollama_disable_brew_service: true
+ollama_brew_service_name: "ollama"
+
+# Stop any conflicting user-level Ollama processes (e.g., manual `ollama serve`)
+ollama_stop_conflicting_processes: true
+ollama_conflicting_process_pattern: "[/]ollama serve"
+
+# Optional override for the Ollama binary path
+ollama_binary_path: ""
+
+# Launchd configuration
+ollama_launchd_label: "com.ollama.ollama"
+ollama_launchd_plist_path: "/Library/LaunchDaemons/{{ ollama_launchd_label }}.plist"
+ollama_launchd_command: "serve"
+ollama_launchd_command_args: []
+
+# Service user/group management
+ollama_manage_user: true
+ollama_service_user: "ollama"
+ollama_service_group: "ollama"
+ollama_service_uid: ""
+ollama_service_gid: ""
+
+# Directories
+ollama_service_home: "/usr/local/var/ollama"
+ollama_models_dir: "/usr/local/var/ollama/models"
+ollama_log_dir: "/usr/local/var/ollama/logs"
+
+# Environment variables passed to Ollama via launchd
+ollama_env:
+  OLLAMA_HOST: "127.0.0.1:11434"
+  OLLAMA_MODELS: "{{ ollama_models_dir }}"
