@@ -9,12 +9,22 @@
       Removal not confirmed. Set vaultwarden_confirm_removal=true to proceed.
       WARNING: This will remove Vaultwarden and optionally all password data!
 
+- name: Check for Vaultwarden systemd unit
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /etc/systemd/system/vaultwarden.service
+    - /lib/systemd/system/vaultwarden.service
+    - /usr/lib/systemd/system/vaultwarden.service
+  register: vaultwarden_unit_stats
+
 - name: Stop and disable Vaultwarden service
   ansible.builtin.systemd:
     name: vaultwarden
     state: stopped
     enabled: false
   ignore_errors: true
+  when: (vaultwarden_unit_stats.results | selectattr('stat.exists') | list | length) > 0
 
 - name: Remove Vaultwarden packages
   ansible.builtin.apt:

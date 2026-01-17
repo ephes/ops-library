@@ -226,21 +226,22 @@ molecule-test-all:
     export ANSIBLE_ALLOW_BROKEN_CONDITIONALS=1
 
     shopt -s nullglob
-    molecule_dirs=(roles/*/molecule)
+    molecule_files=(roles/*/molecule/*/molecule.yml)
 
-    if [[ ${#molecule_dirs[@]} -eq 0 ]]; then
+    if [[ ${#molecule_files[@]} -eq 0 ]]; then
         echo "No roles with molecule tests found"
         exit 0
     fi
 
     failed_roles=()
-    for molecule_dir in "${molecule_dirs[@]}"; do
-        role_name=$(basename "$(dirname "$molecule_dir")")
+    for molecule_file in "${molecule_files[@]}"; do
+        role_name=$(basename "$(dirname "$(dirname "$molecule_file")")")
+        scenario_name=$(basename "$(dirname "$molecule_file")")
         echo "========================================"
-        echo "Testing role: $role_name"
+        echo "Testing role: $role_name (scenario: $scenario_name)"
         echo "========================================"
-        if ! (cd "roles/$role_name" && uv run molecule test); then
-            failed_roles+=("$role_name")
+        if ! (cd "roles/$role_name" && uv run molecule test -s "$scenario_name"); then
+            failed_roles+=("$role_name/$scenario_name")
         fi
     done
 
