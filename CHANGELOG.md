@@ -19,9 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Takahe lifecycle roles: `takahe_shared`, `takahe_deploy`, `takahe_backup`, `takahe_restore`, and `takahe_remove` with systemd services, nginx caching/accel proxy, Traefik routing, and PostgreSQL provisioning
 - Mastodon lifecycle roles: `mastodon_shared`, `mastodon_deploy`, `mastodon_backup`, `mastodon_restore`, `mastodon_maintenance`, and `mastodon_remove` with rbenv+nvm runtimes, systemd services, Traefik routing, and backup/restore tooling
+- `open_webui_deploy` and `open_webui_remove` roles to run Open WebUI via Docker Compose with Traefik routing, persistent storage, and optional basic auth
 - `encrypted_volume_prepare` role to verify, unlock, and mount LUKS data volumes with keyfile support, UUID validation, crypttab/fstab wiring, and a validate-only dry run
 - `nyxmon_backup` role for SQLite-safe snapshots with metadata, manifests, and automatic archive fetches
 - `nyxmon_restore` role with staging validation, safety snapshots, rollback support, and service verification
+- `ollama_install` role to install and run Ollama on macOS via Homebrew with launchd management
 - `docker_install` role to install Docker Engine + Docker Compose v2 (plugin) on Ubuntu via the official Docker apt repository
 - `shell_basics_deploy` role to install fish, modern CLI tools (btop, bmon, sysstat/iotop, tealdeer, eza), set shell/editor defaults, and keep chezmoi current via upstream installer
 - `snappymail_deploy` role to install SnappyMail from upstream archives (PHP-FPM + nginx), wire IMAP/SMTP defaults, persist data under `/mnt/cryptdata/snappymail`, and expose via Traefik

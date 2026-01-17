@@ -1,0 +1,34 @@
+---
+- name: Render Open WebUI systemd service
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ open_webui_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Open WebUI (Docker Compose)
+      Requires=docker.service
+      After=docker.service network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      WorkingDirectory={{ open_webui_site_dir }}
+      ExecStart=/usr/bin/docker compose -f {{ open_webui_compose_path }} up -d --remove-orphans
+      ExecStop=/usr/bin/docker compose -f {{ open_webui_compose_path }} down
+      TimeoutStartSec=0
+
+      [Install]
+      WantedBy=multi-user.target
+  notify:
+    - reload systemd
+    - restart open webui
+
+- name: Ensure Open WebUI systemd service is enabled and started
+  ansible.builtin.systemd:
+    name: "{{ open_webui_service_name }}"
+    enabled: "{{ open_webui_systemd_enabled | bool }}"
+    state: "{{ 'started' if open_webui_systemd_enabled | bool else 'stopped' }}"
+    daemon_reload: true

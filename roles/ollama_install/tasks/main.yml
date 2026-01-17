@@ -1,0 +1,148 @@
+---
+# Install and configure Ollama on macOS via Homebrew + launchd
+
+- name: Validate macOS target
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] == 'Darwin'
+    fail_msg: "ollama_install only supports macOS targets."
+  when: ollama_enabled
+
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - ollama_service_user | length > 0
+      - ollama_service_group | length > 0
+      - ollama_service_home | length > 0
+      - ollama_models_dir | length > 0
+      - ollama_log_dir | length > 0
+      - ollama_launchd_label | length > 0
+      - ollama_launchd_plist_path | length > 0
+      - ollama_launchd_command | length > 0
+      - ollama_env is mapping
+    fail_msg: "ollama_install variables are invalid; check defaults/main.yml overrides."
+  when: ollama_enabled
+
+- name: Resolve Homebrew path when not provided
+  ansible.builtin.block:
+    - name: Check Homebrew at /opt/homebrew/bin/brew
+      ansible.builtin.stat:
+        path: /opt/homebrew/bin/brew
+      register: ollama_brew_opt
+
+    - name: Check Homebrew at /usr/local/bin/brew
+      ansible.builtin.stat:
+        path: /usr/local/bin/brew
+      register: ollama_brew_usr
+
+    - name: Set resolved Homebrew binary
+      ansible.builtin.set_fact:
+        ollama_brew_bin_resolved: >-
+          {{
+            (ollama_brew_opt.stat.exists | default(false))
+            | ternary('/opt/homebrew/bin/brew',
+              (ollama_brew_usr.stat.exists | default(false))
+              | ternary('/usr/local/bin/brew', '')
+            )
+          }}
+  when:
+    - ollama_enabled
+    - ollama_brew_bin | length == 0
+
+- name: Use provided Homebrew binary path
+  ansible.builtin.set_fact:
+    ollama_brew_bin_resolved: "{{ ollama_brew_bin }}"
+  when:
+    - ollama_enabled
+    - ollama_brew_bin | length > 0
+
+- name: Validate Homebrew binary path
+  ansible.builtin.assert:
+    that:
+      - ollama_brew_bin_resolved is defined
+      - ollama_brew_bin_resolved | length > 0
+    fail_msg: "Homebrew binary not found. Set ollama_brew_bin to the brew path."
+  when: ollama_enabled
+
+- name: Install Ollama via Homebrew
+  community.general.homebrew:
+    name: "{{ ollama_brew_package }}"
+    state: present
+    update_homebrew: "{{ ollama_brew_update }}"
+    path: "{{ ollama_brew_bin_resolved }}"
+  become: false
+  when: ollama_enabled
+
+- name: Get Homebrew prefix
+  ansible.builtin.command: "{{ ollama_brew_bin_resolved }} --prefix"
+  register: ollama_brew_prefix_cmd
+  changed_when: false
+  become: false
+  when: ollama_enabled
+
+- name: Set Homebrew prefix fact
+  ansible.builtin.set_fact:
+    ollama_brew_prefix: "{{ ollama_brew_prefix_cmd.stdout }}"
+  when: ollama_enabled
+
+- name: Resolve Ollama binary path
+  ansible.builtin.set_fact:
+    ollama_binary_path_resolved: >-
+      {{
+        (ollama_binary_path | length > 0)
+        | ternary(ollama_binary_path, ollama_brew_prefix ~ '/bin/ollama')
+      }}
+  when: ollama_enabled
+
+- name: Ensure Ollama service group exists
+  ansible.builtin.group:
+    name: "{{ ollama_service_group }}"
+    gid: "{{ (ollama_service_gid | length > 0) | ternary(ollama_service_gid, omit) }}"
+    state: present
+  become: true
+  when:
+    - ollama_enabled
+    - ollama_manage_user
+
+- name: Ensure Ollama service user exists
+  ansible.builtin.user:
+    name: "{{ ollama_service_user }}"
+    group: "{{ ollama_service_group }}"
+    uid: "{{ (ollama_service_uid | length > 0) | ternary(ollama_service_uid, omit) }}"
+    home: "{{ ollama_service_home }}"
+    create_home: true
+    system: true
+    state: present
+  become: true
+  when:
+    - ollama_enabled
+    - ollama_manage_user
+
+- name: Ensure Ollama directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ (ollama_manage_user | bool) | ternary(ollama_service_user, omit) }}"
+    group: "{{ (ollama_manage_user | bool) | ternary(ollama_service_group, omit) }}"
+    mode: "0750"
+  loop:
+    - "{{ ollama_service_home }}"
+    - "{{ ollama_models_dir }}"
+    - "{{ ollama_log_dir }}"
+  become: true
+  when: ollama_enabled
+
+- name: Render launchd plist for Ollama
+  ansible.builtin.template:
+    src: ollama.launchd.plist.j2
+    dest: "{{ ollama_launchd_plist_path }}"
+    owner: root
+    group: wheel
+    mode: "0644"
+  notify: Restart Ollama launchd service
+  become: true
+  when: ollama_enabled
+
+- name: Ensure launchd service is loaded
+  ansible.builtin.meta: flush_handlers
+  when: ollama_enabled

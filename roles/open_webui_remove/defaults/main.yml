@@ -1,0 +1,15 @@
+---
+open_webui_service_name: open-webui
+open_webui_user: openwebui
+open_webui_group: openwebui
+open_webui_home: "/home/{{ open_webui_user }}"
+open_webui_site_dir: "{{ open_webui_home }}/site"
+open_webui_data_dir: /mnt/cryptdata/open-webui/data
+open_webui_traefik_config_path: /etc/traefik/dynamic/open-webui.yml
+
+open_webui_remove_confirm: false
+open_webui_remove_site_dir: true
+open_webui_remove_data: false
+open_webui_remove_traefik_config: true
+open_webui_remove_user: true
+open_webui_remove_group: true

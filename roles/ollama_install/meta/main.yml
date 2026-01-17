@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Install and run Ollama on macOS via Homebrew and launchd
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: MacOS
+      versions:
+        - all
+  galaxy_tags:
+    - ollama
+    - llm
+    - macos
+    - launchd
+    - homebrew
+
+dependencies: []

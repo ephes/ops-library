@@ -1,0 +1,16 @@
+---
+- name: Wait for Open WebUI port to become available
+  ansible.builtin.wait_for:
+    host: "{{ open_webui_healthcheck_host }}"
+    port: "{{ open_webui_host_port }}"
+    delay: 2
+    timeout: "{{ open_webui_healthcheck_timeout * open_webui_healthcheck_retries }}"
+
+- name: Check Open WebUI HTTP endpoint
+  ansible.builtin.uri:
+    url: "http://{{ open_webui_healthcheck_host }}:{{ open_webui_host_port }}{{ open_webui_healthcheck_path }}"
+    status_code: "{{ open_webui_healthcheck_status }}"
+  register: open_webui_healthcheck
+  retries: "{{ open_webui_healthcheck_retries }}"
+  delay: 5
+  until: open_webui_healthcheck.status == open_webui_healthcheck_status
