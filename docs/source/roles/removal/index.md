@@ -22,6 +22,7 @@ metube_remove
 open_webui_remove
 mastodon_remove
 takahe_remove
+ollama_remove
 ```
 
 These roles handle:
