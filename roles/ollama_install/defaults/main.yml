@@ -11,6 +11,17 @@ ollama_brew_update: false
 # Path to brew binary (auto-detected if empty)
 ollama_brew_bin: ""
 
+# Homebrew user (required when connecting as root)
+ollama_brew_user: ""
+
+# Disable any Homebrew-managed Ollama service to avoid conflicts with launchd
+ollama_disable_brew_service: true
+ollama_brew_service_name: "ollama"
+
+# Stop any conflicting user-level Ollama processes (e.g., manual `ollama serve`)
+ollama_stop_conflicting_processes: true
+ollama_conflicting_process_pattern: "[/]ollama serve"
+
 # Optional override for the Ollama binary path
 ollama_binary_path: ""
 

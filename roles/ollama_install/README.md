@@ -25,8 +25,13 @@ None.
 ### Common Configuration
 
 ```yaml
+ollama_brew_user: ""               # Required when Ansible connects as root
 ollama_brew_bin: ""                # Auto-detect if empty
 ollama_brew_update: false          # Set true to run brew update during install
+ollama_disable_brew_service: true  # Stop any brew-managed ollama service
+ollama_brew_service_name: "ollama"
+ollama_stop_conflicting_processes: true  # Stop manual/user-level `ollama serve`
+ollama_conflicting_process_pattern: "[/]ollama serve"
 ollama_launchd_label: "com.ollama.ollama"
 ollama_launchd_command: "serve"
 ollama_launchd_command_args: []

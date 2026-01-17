@@ -5,7 +5,9 @@
       - open_webui_ollama_base_url | length > 0
       - open_webui_site_dir | length > 0
       - open_webui_data_dir | length > 0
+      - open_webui_bind_host | length > 0
       - open_webui_host_port | int > 0
+      - open_webui_host_port | int < 65536
       - open_webui_container_port | int > 0
       - open_webui_container_port | int < 65536
     fail_msg: >-

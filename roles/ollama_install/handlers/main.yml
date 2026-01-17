@@ -1,23 +1,28 @@
 ---
-- name: Restart Ollama launchd service
+- name: Unload existing launchd service
+  ansible.builtin.command: "launchctl bootout system {{ ollama_launchd_plist_path }}"
+  failed_when: false
+  changed_when: false
+  listen: Restart Ollama launchd service
   become: true
-  block:
-    - name: Unload existing launchd service
-      ansible.builtin.command: "launchctl bootout system {{ ollama_launchd_plist_path }}"
-      failed_when: false
-      changed_when: false
 
-    - name: Bootstrap launchd service
-      ansible.builtin.command: "launchctl bootstrap system {{ ollama_launchd_plist_path }}"
-      register: ollama_launchd_bootstrap
-      changed_when: ollama_launchd_bootstrap.rc == 0
+- name: Bootstrap launchd service
+  ansible.builtin.command: "launchctl bootstrap system {{ ollama_launchd_plist_path }}"
+  register: ollama_launchd_bootstrap
+  changed_when: ollama_launchd_bootstrap.rc == 0
+  listen: Restart Ollama launchd service
+  become: true
 
-    - name: Enable launchd service
-      ansible.builtin.command: "launchctl enable system/{{ ollama_launchd_label }}"
-      register: ollama_launchd_enable
-      changed_when: ollama_launchd_enable.rc == 0
+- name: Enable launchd service
+  ansible.builtin.command: "launchctl enable system/{{ ollama_launchd_label }}"
+  register: ollama_launchd_enable
+  changed_when: ollama_launchd_enable.rc == 0
+  listen: Restart Ollama launchd service
+  become: true
 
-    - name: Kickstart launchd service
-      ansible.builtin.command: "launchctl kickstart -k system/{{ ollama_launchd_label }}"
-      register: ollama_launchd_kickstart
-      changed_when: ollama_launchd_kickstart.rc == 0
+- name: Kickstart launchd service
+  ansible.builtin.command: "launchctl kickstart -k system/{{ ollama_launchd_label }}"
+  register: ollama_launchd_kickstart
+  changed_when: ollama_launchd_kickstart.rc == 0
+  listen: Restart Ollama launchd service
+  become: true

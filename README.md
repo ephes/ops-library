@@ -89,6 +89,7 @@ The table below links each published role to its dedicated documentation. Refer 
 | Service removal | [`metube_remove`](roles/metube_remove/README.md) | Remove MeTube service, env/state/Traefik wiring, optional downloads, with confirmation guard. |
 | Service removal | [`open_webui_remove`](roles/open_webui_remove/README.md) | Remove Open WebUI service, compose files, Traefik wiring, and optional data. |
 | Service removal | [`mastodon_remove`](roles/mastodon_remove/README.md) | Remove Mastodon services, config, and user with confirmation gates. |
+| Service removal | [`ollama_remove`](roles/ollama_remove/README.md) | Remove Ollama launchd service on macOS with optional data/user/brew cleanup. |
 | Service registration | [`apt_upgrade_register`](roles/apt_upgrade_register/README.md) | Register apt-upgrade maintenance runners with FastDeploy. |
 | Service registration | [`fastdeploy_register_service`](roles/fastdeploy_register_service/README.md) | Generic FastDeploy service registration helper. |
 | Bootstrap | [`ansible_install`](roles/ansible_install/README.md) | Ensure controller has Ansible and required plugins. |

@@ -10,11 +10,13 @@ Deploys Open WebUI on Ubuntu using Docker Compose and exposes it through Traefik
   roles:
     - role: local.ops_library.open_webui_deploy
       vars:
-        open_webui_ollama_base_url: "http://macstudio.tailde2ec.ts.net:11434"
+        open_webui_ollama_base_url: "http://studio.tailde2ec.ts.net:11434"
         open_webui_traefik_host: "open-webui.home.xn--wersdrfer-47a.de"
         open_webui_basic_auth_user: "admin"
         open_webui_basic_auth_password: "CHANGEME"
 ```
+
+Note: the inventory host is `macstudio`, but the Tailscale hostname is `studio.tailde2ec.ts.net` (not `macstudio.tailde2ec.ts.net`). Use the `studio` hostname for `open_webui_ollama_base_url`.
 
 ## Architecture
 
@@ -69,6 +71,8 @@ Traefik uses a dual-router pattern:
 - Internal IPs bypass basic auth.
 - External access requires basic auth.
 
+The Traefik dynamic config path defaults to `/etc/traefik/dynamic/open-webui.yml` via `open_webui_traefik_config_path`. In ops-control, the basic auth inputs typically map to `traefik_secrets.basic_auth_user` and `traefik_secrets.basic_auth_password`.
+
 Set `open_webui_traefik_entrypoints`, `open_webui_traefik_middlewares`, and `open_webui_traefik_cert_resolver`
 if your Traefik instance needs custom settings.
 
@@ -80,6 +84,20 @@ systemctl status open-webui
 
 # Verify local HTTP response
 curl -fsS http://127.0.0.1:3000/
+```
+
+## Deploy preflight (ops-control)
+
+The ops-control deploy playbook includes a port-collision preflight. If you intentionally need to bypass it, use:
+
+```bash
+SKIP_PREFLIGHT_PORTS=true just deploy-one open_webui
+```
+
+Or when calling Ansible directly:
+
+```bash
+ansible-playbook -e skip_preflight_ports=true playbooks/deploy-open-webui.yml
 ```
 
 ## Troubleshooting

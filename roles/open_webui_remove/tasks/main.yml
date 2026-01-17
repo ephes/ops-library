@@ -23,6 +23,15 @@
   when: open_webui_remove_traefik_config | bool
   notify: reload traefik
 
+- name: Remove Open WebUI compose/env files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ open_webui_env_file }}"
+    - "{{ open_webui_compose_path }}"
+  when: open_webui_remove_compose_files | bool
+
 - name: Remove Open WebUI site directory
   ansible.builtin.file:
     path: "{{ open_webui_site_dir }}"
@@ -34,6 +43,12 @@
     path: "{{ open_webui_data_dir }}"
     state: absent
   when: open_webui_remove_data | bool
+
+- name: Remove Open WebUI data parent directory
+  ansible.builtin.file:
+    path: "{{ open_webui_data_parent_dir }}"
+    state: absent
+  when: open_webui_remove_data_parent | bool
 
 - name: Remove Open WebUI user
   ansible.builtin.user:
