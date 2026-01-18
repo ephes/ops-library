@@ -1,0 +1,106 @@
+---
+- name: python | Check for requested Python version
+  ansible.builtin.command:
+    cmd: "{{ open_webui_uv_path }} python find {{ open_webui_python_version }}"
+  register: _open_webui_uv_python_find
+  become: true
+  become_user: "{{ open_webui_user }}"
+  changed_when: false
+  failed_when: false
+
+- name: python | Install requested Python version via uv
+  ansible.builtin.command:
+    cmd: "{{ open_webui_uv_path }} python install {{ open_webui_python_version }}"
+  become: true
+  become_user: "{{ open_webui_user }}"
+  when: _open_webui_uv_python_find.rc != 0
+
+- name: python | Determine Python executable path
+  ansible.builtin.command:
+    cmd: "{{ open_webui_uv_path }} python find {{ open_webui_python_version }}"
+  register: _open_webui_python_exec_path
+  become: true
+  become_user: "{{ open_webui_user }}"
+  changed_when: false
+
+- name: python | Set Python executable fact
+  ansible.builtin.set_fact:
+    _open_webui_python_executable: "{{ _open_webui_python_exec_path.stdout | trim }}"
+
+- name: python | Check existing virtualenv Python binary
+  ansible.builtin.stat:
+    path: "{{ open_webui_venv_path }}/bin/python"
+  register: _open_webui_venv_python_stat
+
+- name: python | Detect current virtualenv Python version
+  ansible.builtin.command:
+    cmd: "{{ open_webui_venv_path }}/bin/python --version"
+  register: _open_webui_current_python_version
+  changed_when: false
+  failed_when: false
+  when: _open_webui_venv_python_stat.stat.exists
+
+- name: python | Normalize current Python version
+  ansible.builtin.set_fact:
+    _open_webui_current_python_version_str: >-
+      {{
+        (_open_webui_current_python_version.stdout | default('') | replace('Python', '') | trim)
+      }}
+  when:
+    - _open_webui_venv_python_stat.stat.exists
+    - _open_webui_current_python_version.stdout is defined
+
+- name: python | Set Python version mismatch fact
+  ansible.builtin.set_fact:
+    _open_webui_python_mismatch: >-
+      {{
+        (_open_webui_current_python_version_str | length > 0) and not (
+          _open_webui_current_python_version_str == open_webui_python_version or
+          _open_webui_current_python_version_str.startswith(open_webui_python_version ~ '.')
+        )
+      }}
+  when:
+    - _open_webui_venv_python_stat.stat.exists
+    - _open_webui_current_python_version.stdout is defined
+
+- name: python | Remove broken virtualenv if Python is not usable
+  ansible.builtin.file:
+    path: "{{ open_webui_venv_path }}"
+    state: absent
+  when:
+    - _open_webui_venv_python_stat.stat.exists
+    - _open_webui_current_python_version.rc is defined
+    - _open_webui_current_python_version.rc != 0
+
+- name: python | Remove virtualenv if Python version changed
+  ansible.builtin.file:
+    path: "{{ open_webui_venv_path }}"
+    state: absent
+  when:
+    - _open_webui_venv_python_stat.stat.exists
+    - _open_webui_python_mismatch | default(false)
+
+- name: python | Create virtual environment using uv
+  ansible.builtin.command: "{{ open_webui_uv_path }} venv --python {{ _open_webui_python_executable }} {{ open_webui_venv_path }}"
+  args:
+    creates: "{{ open_webui_venv_path }}/bin/python"
+  environment:
+    UV_NO_PROGRESS: "1"
+  notify: restart open webui
+  become: true
+  become_user: "{{ open_webui_user }}"
+
+- name: python | Install Open WebUI via uv pip
+  ansible.builtin.command: "{{ open_webui_uv_path }} pip install --python {{ open_webui_venv_path }} {{ open_webui_package_spec }}"
+  args:
+    chdir: "{{ open_webui_site_dir }}"
+  environment:
+    UV_NO_PROGRESS: "1"
+  register: open_webui_uv_install
+  changed_when: >-
+    'installed' in open_webui_uv_install.stdout | lower or
+    'updated' in open_webui_uv_install.stdout | lower or
+    'installing' in open_webui_uv_install.stdout | lower
+  notify: restart open webui
+  become: true
+  become_user: "{{ open_webui_user }}"

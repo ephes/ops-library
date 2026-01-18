@@ -1,0 +1,12 @@
+---
+- name: Reload systemd for open webui remove
+  listen: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Reload traefik for open webui remove
+  listen: reload traefik
+  ansible.builtin.systemd:
+    name: traefik
+    state: reloaded
+  failed_when: false

@@ -1,0 +1,67 @@
+---
+open_webui_service_name: open-webui
+
+open_webui_user: openwebui
+open_webui_group: openwebui
+open_webui_home: "/home/{{ open_webui_user }}"
+open_webui_manage_user: true
+
+open_webui_site_dir: /opt/open-webui
+open_webui_data_dir: /var/lib/open-webui
+open_webui_log_dir: /var/log/open-webui
+open_webui_env_path: "{{ open_webui_site_dir }}/open-webui.env"
+open_webui_venv_path: "{{ open_webui_site_dir }}/.venv"
+
+open_webui_package_spec: open-webui
+open_webui_python_version: "3.11"
+
+open_webui_manage_uv: true
+open_webui_uv_install_dir: /usr/local/bin
+open_webui_uv_path: "{{ open_webui_uv_install_dir }}/uv"
+open_webui_uv_version: latest
+open_webui_uv_update_existing: true
+open_webui_uv_force_reinstall: false
+
+open_webui_bind_host: 127.0.0.1
+open_webui_host_port: 3000
+open_webui_use_host_flag: true
+open_webui_extra_args: []
+
+open_webui_systemd_enabled: true
+open_webui_systemd_restart: on-failure
+open_webui_systemd_restart_sec: 5
+
+open_webui_ollama_base_url: "http://localhost:11434"
+open_webui_webui_secret_key: ""
+open_webui_webui_auth_enabled: true
+open_webui_openai_api_key: ""
+open_webui_openai_api_base_url: ""
+open_webui_extra_env: {}
+
+open_webui_traefik_enabled: true
+open_webui_traefik_config_path: /etc/traefik/dynamic/open-webui.yml
+open_webui_traefik_host: ""
+open_webui_traefik_entrypoints:
+  - web-secure
+open_webui_traefik_cert_resolver: ""
+open_webui_traefik_middlewares: []
+
+open_webui_basic_auth_enabled: true
+open_webui_basic_auth_user: admin
+open_webui_basic_auth_password: ""
+open_webui_basic_auth_password_hash: ""
+open_webui_basic_auth_remove_header: true
+
+open_webui_internal_ip_ranges:
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"
+  - "192.168.0.0/16"
+  - "100.64.0.0/10"
+  - "fd7a:115c:a1e0::/48"
+
+open_webui_healthcheck_enabled: true
+open_webui_healthcheck_host: 127.0.0.1
+open_webui_healthcheck_path: "/"
+open_webui_healthcheck_status: 200
+open_webui_healthcheck_timeout: 10
+open_webui_healthcheck_retries: 12

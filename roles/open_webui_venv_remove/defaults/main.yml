@@ -1,0 +1,23 @@
+---
+open_webui_service_name: open-webui
+
+open_webui_user: openwebui
+open_webui_group: openwebui
+open_webui_home: "/home/{{ open_webui_user }}"
+
+open_webui_site_dir: /opt/open-webui
+open_webui_env_path: "{{ open_webui_site_dir }}/open-webui.env"
+open_webui_venv_path: "{{ open_webui_site_dir }}/.venv"
+open_webui_data_dir: /var/lib/open-webui
+open_webui_log_dir: /var/log/open-webui
+open_webui_traefik_config_path: /etc/traefik/dynamic/open-webui.yml
+
+open_webui_remove_confirm: false
+open_webui_remove_env_file: false
+open_webui_remove_venv: false
+open_webui_remove_site_dir: false
+open_webui_remove_data: false
+open_webui_remove_log_dir: false
+open_webui_remove_traefik_config: false
+open_webui_remove_user: false
+open_webui_remove_group: false
