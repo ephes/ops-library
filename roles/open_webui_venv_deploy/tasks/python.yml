@@ -44,8 +44,7 @@
   ansible.builtin.set_fact:
     _open_webui_current_python_version_str: >-
       {{
-        (_open_webui_current_python_version.stdout | default('') | regex_search('([0-9]+\\.[0-9]+\\.[0-9]+|[0-9]+\\.[0-9]+)', '\\1'))
-        | default('')
+        (_open_webui_current_python_version.stdout | default('') | replace('Python', '') | trim)
       }}
   when:
     - _open_webui_venv_python_stat.stat.exists
