@@ -1,0 +1,18 @@
+---
+- name: systemd | Render Open WebUI systemd service
+  ansible.builtin.template:
+    src: open-webui.service.j2
+    dest: "/etc/systemd/system/{{ open_webui_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart open webui
+
+- name: systemd | Ensure Open WebUI systemd service is enabled and started
+  ansible.builtin.systemd:
+    name: "{{ open_webui_service_name }}"
+    enabled: "{{ open_webui_systemd_enabled | bool }}"
+    state: "{{ 'started' if open_webui_systemd_enabled | bool else 'stopped' }}"
+    daemon_reload: true

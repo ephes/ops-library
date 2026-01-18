@@ -1,0 +1,49 @@
+---
+- name: validate | Validate Open WebUI settings
+  ansible.builtin.assert:
+    that:
+      - open_webui_ollama_base_url | length > 0
+      - open_webui_site_dir | length > 0
+      - open_webui_data_dir | length > 0
+      - open_webui_log_dir | length > 0
+      - open_webui_env_path | length > 0
+      - open_webui_venv_path | length > 0
+      - open_webui_bind_host | length > 0
+      - open_webui_host_port | int > 0
+      - open_webui_host_port | int < 65536
+      - open_webui_package_spec | length > 0
+      - open_webui_python_version | length > 0
+      - open_webui_extra_env is mapping
+      - open_webui_extra_env is not string
+      - open_webui_extra_args is iterable
+      - open_webui_extra_args is not string
+    fail_msg: "Open WebUI deployment settings are invalid."
+
+- name: validate | Validate Traefik settings
+  ansible.builtin.assert:
+    that:
+      - open_webui_traefik_host | length > 0
+      - open_webui_traefik_config_path | length > 0
+    fail_msg: "open_webui_traefik_host and open_webui_traefik_config_path are required when Traefik is enabled."
+  when: open_webui_traefik_enabled | bool
+
+- name: validate | Validate basic auth settings
+  ansible.builtin.assert:
+    that:
+      - open_webui_basic_auth_user | length > 0
+      - (open_webui_basic_auth_password | length > 0) or (open_webui_basic_auth_password_hash | length > 0)
+    fail_msg: "Provide open_webui_basic_auth_password or open_webui_basic_auth_password_hash when basic auth is enabled."
+  when: open_webui_traefik_enabled | bool and open_webui_basic_auth_enabled | bool
+
+- name: validate | Validate uv binary exists when unmanaged
+  ansible.builtin.stat:
+    path: "{{ open_webui_uv_path }}"
+  register: open_webui_uv_stat
+  when: not open_webui_manage_uv | bool
+
+- name: validate | Fail when uv binary is missing
+  ansible.builtin.fail:
+    msg: "uv binary not found at {{ open_webui_uv_path }}. Enable open_webui_manage_uv or install uv."
+  when:
+    - not open_webui_manage_uv | bool
+    - not open_webui_uv_stat.stat.exists

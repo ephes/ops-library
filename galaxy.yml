@@ -1,7 +1,7 @@
 ---
 namespace: local
 name: ops_library
-version: 2.3.0
+version: 2.3.1
 readme: README.md
 authors:
   - Jochen Wersdörfer

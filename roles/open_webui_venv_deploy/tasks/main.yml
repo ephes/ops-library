@@ -1,0 +1,33 @@
+---
+- name: main | Validate required variables
+  ansible.builtin.import_tasks: validate.yml
+
+- name: main | Ensure uv is installed
+  ansible.builtin.import_tasks: uv.yml
+
+- name: main | Ensure Open WebUI user exists
+  ansible.builtin.import_tasks: user.yml
+  when: open_webui_manage_user | bool
+
+- name: main | Ensure Open WebUI directories exist
+  ansible.builtin.import_tasks: directories.yml
+
+- name: main | Render Open WebUI environment file
+  ansible.builtin.import_tasks: env.yml
+
+- name: main | Provision Open WebUI Python environment
+  ansible.builtin.import_tasks: python.yml
+
+- name: main | Configure Open WebUI systemd service
+  ansible.builtin.import_tasks: systemd.yml
+
+- name: main | Configure Traefik routing
+  ansible.builtin.import_tasks: traefik.yml
+  when: open_webui_traefik_enabled | bool
+
+- name: main | Apply pending handlers before health checks
+  ansible.builtin.meta: flush_handlers
+
+- name: main | Run Open WebUI health check
+  ansible.builtin.import_tasks: health.yml
+  when: open_webui_healthcheck_enabled | bool

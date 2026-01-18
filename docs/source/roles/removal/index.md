@@ -20,6 +20,7 @@ navidrome_remove
 jellyfin_remove
 metube_remove
 open_webui_remove
+open_webui_venv_remove
 mastodon_remove
 takahe_remove
 ollama_remove

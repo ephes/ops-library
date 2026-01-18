@@ -1,0 +1,6 @@
+---
+- name: validate | Validate removal settings
+  ansible.builtin.assert:
+    that:
+      - open_webui_remove_confirm | bool
+    fail_msg: "Set open_webui_remove_confirm=true to allow removal."

@@ -1,0 +1,10 @@
+---
+- name: uv | Ensure uv is installed
+  ansible.builtin.import_role:
+    name: uv_install
+  vars:
+    uv_install_dir: "{{ open_webui_uv_install_dir }}"
+    uv_version: "{{ open_webui_uv_version }}"
+    uv_update_existing: "{{ open_webui_uv_update_existing }}"
+    uv_force_reinstall: "{{ open_webui_uv_force_reinstall }}"
+  when: open_webui_manage_uv | bool
