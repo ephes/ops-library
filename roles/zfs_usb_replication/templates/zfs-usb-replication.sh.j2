@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+log_tag="zfs-usb-replication"
+device="{{ zfs_usb_replication_device }}"
+pool="{{ zfs_usb_replication_pool }}"
+key_path="{{ zfs_usb_replication_key_path }}"
+syncoid_bin="{{ zfs_usb_replication_syncoid_path }}"
+
+if [[ -z "${device}" || -z "${pool}" ]]; then
+  logger -t "${log_tag}" "Missing device or pool configuration; aborting."
+  exit 1
+fi
+
+if [[ ! -e "${device}" ]]; then
+  logger -t "${log_tag}" "USB device ${device} not present; skipping replication."
+  exit 0
+fi
+
+pool_preexisting=false
+if zpool list -H -o name | grep -qx "${pool}"; then
+  pool_preexisting=true
+else
+  logger -t "${log_tag}" "Importing pool ${pool} from ${device}"
+  zpool import -d "$(dirname "${device}")" -o cachefile=none "${pool}"
+fi
+
+cleanup() {
+  if [[ "${pool_preexisting}" == "true" ]]; then
+    return
+  fi
+  logger -t "${log_tag}" "Exporting pool ${pool}"
+  zfs unmount -r "${pool}" >/dev/null 2>&1 || true
+  zpool export "${pool}" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+keystatus=$(zfs get -H -o value keystatus "${pool}" 2>/dev/null || echo "")
+if [[ "${keystatus}" != "available" ]]; then
+  logger -t "${log_tag}" "Loading key for pool ${pool}"
+  zfs load-key -L "file://${key_path}" "${pool}"
+fi
+
+zfs mount -a
+
+{% for job in zfs_usb_replication_jobs %}
+{% set args = [] %}
+{% if job.recursive | default(false) %}{% set _ = args.append('--recursive') %}{% endif %}
+{% if job.readonly | default(false) %}{% set _ = args.append('--recvoptions=\"o readonly=on\"') %}{% endif %}
+{% for arg in zfs_usb_replication_default_args %}{% set _ = args.append(arg) %}{% endfor %}
+{% for arg in job.extra_args | default([]) %}{% set _ = args.append(arg) %}{% endfor %}
+logger -t "${log_tag}" "Running syncoid: {{ job.source }} -> {{ job.target }}"
+"${syncoid_bin}" {{ (args + [job.source, job.target]) | join(' ') }}
+{% endfor %}
+
+logger -t "${log_tag}" "USB replication complete for pool ${pool}"

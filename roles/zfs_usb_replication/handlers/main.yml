@@ -1,0 +1,10 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart zfs-usb-replication-timer
+  ansible.builtin.systemd:
+    name: "{{ zfs_usb_replication_timer_name }}.timer"
+    state: restarted
+  when: zfs_usb_replication_enabled | bool

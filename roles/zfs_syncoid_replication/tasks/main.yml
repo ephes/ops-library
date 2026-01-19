@@ -1,0 +1,103 @@
+---
+- name: Skip zfs_syncoid_replication when disabled
+  ansible.builtin.debug:
+    msg: "zfs_syncoid_replication role skipped (zfs_syncoid_replication_enabled=false)."
+  when: not zfs_syncoid_replication_enabled | bool
+
+- name: Configure ZFS syncoid replication
+  when: zfs_syncoid_replication_enabled | bool
+  block:
+    - name: Validate replication jobs
+      ansible.builtin.assert:
+        that:
+          - zfs_syncoid_replication_jobs is defined
+          - zfs_syncoid_replication_jobs | length > 0
+        fail_msg: "zfs_syncoid_replication_jobs must be defined and non-empty"
+
+    - name: Validate job fields
+      ansible.builtin.assert:
+        that:
+          - job.source is defined
+          - job.source | length > 0
+          - job.target is defined
+          - job.target | length > 0
+        fail_msg: "Each zfs_syncoid_replication job requires source and target"
+      loop: "{{ zfs_syncoid_replication_jobs }}"
+      loop_control:
+        loop_var: job
+        label: "{{ job.source | default('missing') }} -> {{ job.target | default('missing') }}"
+
+    - name: Validate alert configuration
+      ansible.builtin.assert:
+        that:
+          - zfs_syncoid_replication_alert_email is defined
+          - zfs_syncoid_replication_alert_email | length > 0
+          - zfs_syncoid_replication_alert_email != 'CHANGE_ME'
+        fail_msg: "zfs_syncoid_replication_alert_email must be set when alerting is enabled"
+      when: zfs_syncoid_replication_alert_enabled | bool
+
+    - name: Install syncoid packages
+      ansible.builtin.package:
+        name: "{{ zfs_syncoid_replication_packages }}"
+        state: present
+
+    - name: Install alert script
+      ansible.builtin.template:
+        src: zfs-syncoid-alert.sh.j2
+        dest: "{{ zfs_syncoid_replication_alert_script_path }}"
+        owner: root
+        group: root
+        mode: "0750"
+      when: zfs_syncoid_replication_alert_enabled | bool
+
+    - name: Install spindown script
+      ansible.builtin.template:
+        src: zfs-syncoid-spindown.sh.j2
+        dest: "{{ zfs_syncoid_replication_spindown_script_path }}"
+        owner: root
+        group: root
+        mode: "0750"
+      when: zfs_syncoid_replication_spindown_enabled | bool
+
+    - name: Install replication service unit
+      ansible.builtin.template:
+        src: zfs-syncoid-replication.service.j2
+        dest: "/etc/systemd/system/{{ zfs_syncoid_replication_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart zfs-syncoid-replication-timer
+
+    - name: Install failure alert unit
+      ansible.builtin.template:
+        src: zfs-syncoid-replication-failure@.service.j2
+        dest: "/etc/systemd/system/{{ zfs_syncoid_replication_service_name }}-failure@.service"
+        owner: root
+        group: root
+        mode: "0644"
+      when: zfs_syncoid_replication_alert_enabled | bool
+      notify:
+        - reload systemd
+
+    - name: Install replication timer unit
+      ansible.builtin.template:
+        src: zfs-syncoid-replication.timer.j2
+        dest: "/etc/systemd/system/{{ zfs_syncoid_replication_timer_name }}.timer"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart zfs-syncoid-replication-timer
+
+    - name: Flush handlers to register systemd units
+      ansible.builtin.meta: flush_handlers
+
+    - name: Enable replication timer
+      ansible.builtin.systemd:
+        name: "{{ zfs_syncoid_replication_timer_name }}.timer"
+        enabled: true
+        state: started
+        daemon_reload: true

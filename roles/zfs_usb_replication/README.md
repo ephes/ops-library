@@ -1,0 +1,106 @@
+# zfs_usb_replication
+
+Configure a scheduled USB-attached ZFS replication workflow using `syncoid`, with optional mail alerts.
+
+## Description
+
+This role installs `syncoid` (via the `sanoid` package), writes a USB replication script, and wires a systemd
+service + timer. The script checks for the configured USB device path, imports the ZFS pool when present,
+loads the encryption key from a key file, runs the configured syncoid jobs, and exports the pool afterwards.
+If the USB device is absent, the run logs a clean skip and exits successfully.
+When `readonly: true` is set on a job, the script passes `--recvoptions="o readonly=on"` so the target
+datasets are created/updated as read-only without toggling properties between runs.
+
+## Requirements
+
+- ZFS pool on the USB disk, with native encryption enabled.
+- A key file stored on the host (managed by this role if `zfs_usb_replication_key_manage=true`).
+- Outbound mail relay configured if alerting is enabled (e.g., via `mail_relay_client`).
+
+## Role Variables
+
+### Required
+
+```yaml
+zfs_usb_replication_device: /dev/disk/by-id/usb-EXAMPLE
+zfs_usb_replication_pool: vault
+zfs_usb_replication_key: "{{ vault_usb_key }}"
+zfs_usb_replication_jobs:
+  - source: tank/replica/fast
+    target: vault/replica/fast
+    recursive: true
+    readonly: true
+```
+
+### Common
+
+```yaml
+zfs_usb_replication_on_calendar: "Sun 04:00"
+zfs_usb_replication_alert_email: "root"
+zfs_usb_replication_key_path: "/root/.zfs-key-vault"
+```
+
+### Advanced
+
+```yaml
+zfs_usb_replication_default_args:
+  - "--no-rollback"
+zfs_usb_replication_syncoid_path: "/usr/sbin/syncoid"
+zfs_usb_replication_timeout_sec: "8h"
+zfs_usb_replication_alert_subject_prefix: "[zfs-usb]"
+zfs_usb_replication_key_manage: true
+```
+
+For the full list, see `defaults/main.yml`.
+
+## Dependencies
+
+None.
+
+## Example Playbook
+
+```yaml
+- name: Configure USB replication
+  hosts: storage
+  become: true
+  vars:
+    zfs_usb_replication_key: "{{ vault_usb_key }}"
+  roles:
+    - role: local.ops_library.zfs_usb_replication
+      vars:
+        zfs_usb_replication_device: /dev/disk/by-id/usb-EXAMPLE
+        zfs_usb_replication_pool: vault
+        zfs_usb_replication_jobs:
+          - source: tank/replica/fast
+            target: vault/replica/fast
+            recursive: true
+            readonly: true
+        zfs_usb_replication_alert_email: root
+```
+
+## Handlers
+
+- `reload systemd` - reloads systemd daemon after unit changes
+- `restart zfs-usb-replication-timer` - restarts the timer after updates
+
+## Tags
+
+- `zfs_usb_replication`
+
+## Testing
+
+```bash
+just test-role zfs_usb_replication
+```
+
+## Changelog
+
+- **1.0.0** (2026-01-18): Initial release
+
+## License
+
+MIT
+
+## Author Information
+
+Jochen Wersdoerfer

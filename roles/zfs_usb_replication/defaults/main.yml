@@ -1,0 +1,49 @@
+---
+# zfs_usb_replication - Default Variables
+
+# Enable/disable role execution
+zfs_usb_replication_enabled: true
+
+# Packages needed for syncoid
+zfs_usb_replication_packages:
+  - sanoid
+
+# Syncoid binary path
+zfs_usb_replication_syncoid_path: "/usr/sbin/syncoid"
+
+# Systemd units
+zfs_usb_replication_service_name: "zfs-usb-replication"
+zfs_usb_replication_timer_name: "zfs-usb-replication"
+
+# Schedule
+zfs_usb_replication_on_calendar: "Sun 04:00"
+zfs_usb_replication_randomized_delay_sec: "30m"
+zfs_usb_replication_timeout_sec: "8h"
+
+# USB device and pool
+zfs_usb_replication_device: ""
+zfs_usb_replication_pool: ""
+
+# ZFS encryption key handling
+zfs_usb_replication_key_manage: true
+zfs_usb_replication_key_path: "/root/.zfs-key-vault"
+# zfs_usb_replication_key: ""  # Set via SOPS
+
+# Default syncoid args
+zfs_usb_replication_default_args:
+  - "--no-rollback"
+
+# Replication jobs (REQUIRED)
+# Each job supports:
+# - source (string)
+# - target (string)
+# - recursive (bool)
+# - readonly (bool)
+# - extra_args (list)
+zfs_usb_replication_jobs: []
+
+# Alerting
+zfs_usb_replication_alert_enabled: true
+zfs_usb_replication_alert_email: "root"
+zfs_usb_replication_alert_subject_prefix: "[zfs-usb]"
+zfs_usb_replication_alert_script_path: "/usr/local/bin/zfs-usb-alert.sh"
