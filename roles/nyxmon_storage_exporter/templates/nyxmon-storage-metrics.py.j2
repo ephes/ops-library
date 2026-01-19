@@ -14,6 +14,12 @@ SMARTCTL_ARGS = ["smartctl", "-H", "-A"]
 SMARTCTL_ARGS += ["-n", "standby"]
 {% endif %}
 
+QUIET_HOURS_ENABLED = {{ nyxmon_storage_exporter_quiet_hours_enabled | default(false) | bool | ternary('True', 'False') }}
+QUIET_HOURS_START = "{{ nyxmon_storage_exporter_quiet_hours_start | default('06:00') }}"
+QUIET_HOURS_END = "{{ nyxmon_storage_exporter_quiet_hours_end | default('22:00') }}"
+QUIET_SKIP_POOLS = json.loads(r'''{{ nyxmon_storage_exporter_quiet_hours_skip_pools | default([]) | to_json }}''')
+QUIET_SKIP_DISK_TYPES = json.loads(r'''{{ nyxmon_storage_exporter_quiet_hours_skip_disk_types | default(['sat']) | to_json }}''')
+
 
 def _run(argv: list[str]) -> subprocess.CompletedProcess[str]:
     try:
@@ -63,18 +69,30 @@ def _parse_zpool_scan_ts(zpool_status_output: str) -> int | None:
     return None
 
 
-def _zpool_list() -> dict[str, dict[str, Any]]:
-    result = _run(["zpool", "list", "-H", "-o", "name,health,size,alloc,free,cap"])
-    if result.returncode != 0:
-        return {"_error": {"error": result.stderr.strip() or "zpool list failed"}}
+def _zpool_list(pools: list[str], skip_pools: set[str]) -> dict[str, dict[str, Any]]:
+    if not pools:
+        if skip_pools:
+            return {}
+        result = _run(["zpool", "list", "-H", "-o", "name,health,size,alloc,free,cap"])
+        if result.returncode != 0:
+            return {"_error": {"error": result.stderr.strip() or "zpool list failed"}}
+        pools = [line.split()[0] for line in result.stdout.splitlines() if line.split()]
 
-    pools: dict[str, dict[str, Any]] = {}
-    for line in result.stdout.splitlines():
-        parts = line.split()
-        if len(parts) != 6:
+    payload: dict[str, dict[str, Any]] = {}
+    for name in pools:
+        if name in skip_pools:
+            payload[name] = {"skipped": True, "reason": "quiet_hours"}
             continue
-        name, health, size, alloc, free, cap = parts
-        pools[name] = {
+        result = _run(["zpool", "list", "-H", "-o", "name,health,size,alloc,free,cap", name])
+        if result.returncode != 0:
+            payload[name] = {"error": result.stderr.strip() or "zpool list failed"}
+            continue
+        parts = result.stdout.split()
+        if len(parts) != 6:
+            payload[name] = {"error": "unexpected zpool list output"}
+            continue
+        _, health, size, alloc, free, cap = parts
+        payload[name] = {
             "health": health,
             "size": size,
             "alloc": alloc,
@@ -85,16 +103,48 @@ def _zpool_list() -> dict[str, dict[str, Any]]:
         status = _run(["zpool", "status", name])
         if status.returncode == 0:
             scrub_ts = _parse_zpool_scan_ts(status.stdout)
-            pools[name]["last_scrub_ts"] = scrub_ts
-            pools[name]["last_scrub_age_days"] = (
+            payload[name]["last_scrub_ts"] = scrub_ts
+            payload[name]["last_scrub_age_days"] = (
                 None
                 if scrub_ts is None
                 else round((_now_ts() - scrub_ts) / 86400, 2)
             )
         else:
-            pools[name]["status_error"] = status.stderr.strip()
+            payload[name]["status_error"] = status.stderr.strip()
 
-    return pools
+    return payload
+
+
+def _parse_hhmm(value: str) -> tuple[int, int] | None:
+    try:
+        parts = value.split(":")
+        if len(parts) != 2:
+            return None
+        hour = int(parts[0])
+        minute = int(parts[1])
+        if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+            return None
+        return hour, minute
+    except (TypeError, ValueError):
+        return None
+
+
+def _in_quiet_hours() -> bool:
+    if not QUIET_HOURS_ENABLED:
+        return False
+    start = _parse_hhmm(QUIET_HOURS_START)
+    end = _parse_hhmm(QUIET_HOURS_END)
+    if not start or not end:
+        return False
+    now = datetime.now().time()
+    now_min = now.hour * 60 + now.minute
+    start_min = start[0] * 60 + start[1]
+    end_min = end[0] * 60 + end[1]
+    if start_min == end_min:
+        return False
+    if start_min < end_min:
+        return start_min <= now_min < end_min
+    return now_min >= start_min or now_min < end_min
 
 
 def _smartctl_health(device: str) -> dict[str, Any]:
@@ -180,14 +230,15 @@ def main() -> int:
     pools: list[str] = json.loads(r'''{{ nyxmon_storage_exporter_pools | to_json }}''')
     disks: list[dict[str, Any]] = json.loads(r'''{{ nyxmon_storage_exporter_disks | to_json }}''')
 
-    payload: dict[str, Any] = {"ts": _now_ts()}
-    pool_data = _zpool_list()
-    # When pools list is empty, report no pool data; otherwise filter to requested pools
-    if pools:
-        pool_data = {k: v for k, v in pool_data.items() if k in pools or k == "_error"}
-    else:
-        pool_data = {}
-    payload["pools"] = pool_data
+    quiet = _in_quiet_hours()
+    skip_pools = set(QUIET_SKIP_POOLS) if quiet else set()
+    skip_disk_types = set(QUIET_SKIP_DISK_TYPES) if quiet else set()
+
+    payload: dict[str, Any] = {
+        "ts": _now_ts(),
+        "quiet_hours": {"enabled": QUIET_HOURS_ENABLED, "active": quiet},
+    }
+    payload["pools"] = _zpool_list(pools, skip_pools)
 
     disk_results: list[dict[str, Any]] = []
     disks_by_name: dict[str, dict[str, Any]] = {}
@@ -197,7 +248,9 @@ def main() -> int:
         name = disk.get("name")
         if not device:
             continue
-        if dtype == "nvme":
+        if quiet and dtype in skip_disk_types:
+            res = {"device": device, "ok": None, "skipped": True, "reason": "quiet_hours"}
+        elif dtype == "nvme":
             res = _nvme_smart(device)
         else:
             res = _smartctl_health(device)
