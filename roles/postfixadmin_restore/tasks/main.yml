@@ -168,8 +168,13 @@
         login_password: "{{ postfixadmin_db_password }}"
         query: |
           INSERT INTO domain_admins (username, domain, active, created)
-          VALUES (%(username)s, %(domain)s, %(active)s, NOW())
-          ON CONFLICT (username, domain) DO NOTHING
+          SELECT %(username)s, %(domain)s, %(active)s, NOW()
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM domain_admins
+            WHERE username = %(username)s
+              AND domain = %(domain)s
+          )
         named_args:
           username: "{{ item.username }}"
           domain: "{{ item.domain }}"

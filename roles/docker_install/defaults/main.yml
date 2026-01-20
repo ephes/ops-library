@@ -39,6 +39,7 @@ docker_install_conflicting_packages:
 docker_install_service_name: docker
 docker_install_enable_service: true
 docker_install_start_service: true
+docker_install_manage_service: true
 
 # Optional: users to add to the `docker` group (requires re-login)
 docker_install_users: []

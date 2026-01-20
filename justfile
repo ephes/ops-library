@@ -235,7 +235,7 @@ molecule-test-all:
 
     failed_roles=()
     for molecule_file in "${molecule_files[@]}"; do
-        role_name=$(basename "$(dirname "$(dirname "$molecule_file")")")
+        role_name=$(basename "$(dirname "$(dirname "$(dirname "$molecule_file")")")")
         scenario_name=$(basename "$(dirname "$molecule_file")")
         echo "========================================"
         echo "Testing role: $role_name (scenario: $scenario_name)"

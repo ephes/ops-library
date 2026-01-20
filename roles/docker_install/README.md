@@ -21,6 +21,7 @@ See `defaults/main.yml` for the full list. Key options:
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
+| `docker_install_manage_service` | `true` | Run service management tasks (group + systemd unit) |
 | `docker_install_enable_service` | `true` | Enable docker systemd unit |
 | `docker_install_start_service` | `true` | Start docker systemd unit |
 | `docker_install_users` | `[]` | Users to add to the `docker` group |

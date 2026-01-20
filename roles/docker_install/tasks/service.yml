@@ -21,3 +21,4 @@
     state: "{{ 'started' if docker_install_start_service else 'stopped' }}"
     daemon_reload: true
   become: true
+  when: ansible_service_mgr | default('') == "systemd"

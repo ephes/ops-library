@@ -10,6 +10,7 @@
 
 - name: Include service management
   ansible.builtin.include_tasks: service.yml
+  when: docker_install_manage_service | bool
 
 - name: Include verification
   ansible.builtin.include_tasks: verify.yml
