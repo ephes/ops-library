@@ -1,0 +1,46 @@
+---
+# zfs_syncoid_replication - Default Variables
+
+# Enable/disable role execution
+zfs_syncoid_replication_enabled: true
+
+# Packages needed for syncoid
+zfs_syncoid_replication_packages:
+  - sanoid
+
+# Syncoid binary path
+zfs_syncoid_replication_syncoid_path: "/usr/sbin/syncoid"
+
+# Systemd units
+zfs_syncoid_replication_service_name: "zfs-syncoid-replication"
+zfs_syncoid_replication_timer_name: "zfs-syncoid-replication"
+
+# Schedule
+zfs_syncoid_replication_on_calendar: "02:00"
+zfs_syncoid_replication_randomized_delay_sec: "10m"
+zfs_syncoid_replication_timeout_sec: "6h"
+
+# Default syncoid args
+zfs_syncoid_replication_default_args:
+  - "--no-rollback"
+
+# Replication jobs (REQUIRED)
+# Each job supports:
+# - source (string)
+# - target (string)
+# - recursive (bool)
+# - readonly (bool)
+# - extra_args (list)
+zfs_syncoid_replication_jobs: []
+
+# Alerting
+zfs_syncoid_replication_alert_enabled: true
+zfs_syncoid_replication_alert_email: "root"
+zfs_syncoid_replication_alert_subject_prefix: "[zfs-syncoid]"
+zfs_syncoid_replication_alert_script_path: "/usr/local/bin/zfs-syncoid-alert.sh"
+
+# Spindown
+zfs_syncoid_replication_spindown_enabled: true
+zfs_syncoid_replication_spindown_devices: []
+zfs_syncoid_replication_spindown_pool: ""
+zfs_syncoid_replication_spindown_script_path: "/usr/local/bin/zfs-syncoid-spindown.sh"

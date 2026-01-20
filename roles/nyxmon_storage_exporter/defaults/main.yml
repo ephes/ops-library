@@ -15,6 +15,14 @@ nyxmon_storage_exporter_mode: "0755"
 # If true, add "smartctl -n standby" to avoid waking sleeping disks.
 nyxmon_storage_exporter_smartctl_no_spinup: false
 
+# Quiet hours: skip HDD/pool probing to keep disks spun down during the day.
+nyxmon_storage_exporter_quiet_hours_enabled: false
+nyxmon_storage_exporter_quiet_hours_start: "06:00"
+nyxmon_storage_exporter_quiet_hours_end: "22:00"
+nyxmon_storage_exporter_quiet_hours_skip_pools: []
+nyxmon_storage_exporter_quiet_hours_skip_disk_types:
+  - sat
+
 # Input inventory
 nyxmon_storage_exporter_pools: []
 nyxmon_storage_exporter_disks: []

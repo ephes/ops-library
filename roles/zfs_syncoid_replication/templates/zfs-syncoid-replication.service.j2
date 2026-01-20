@@ -1,0 +1,21 @@
+[Unit]
+Description=ZFS syncoid replication (ops-library)
+After=network-online.target
+Wants=network-online.target
+{% if zfs_syncoid_replication_alert_enabled | bool %}OnFailure={{ zfs_syncoid_replication_service_name }}-failure@%n.service
+{% endif %}
+
+[Service]
+Type=oneshot
+TimeoutStartSec={{ zfs_syncoid_replication_timeout_sec }}
+{% for job in zfs_syncoid_replication_jobs %}
+{% set args = [] %}
+{% if job.recursive | default(false) %}{% set _ = args.append('--recursive') %}{% endif %}
+{% if job.readonly | default(false) %}{% set _ = args.append('--recvoptions="o readonly=on"') %}{% endif %}
+{% for arg in zfs_syncoid_replication_default_args %}{% set _ = args.append(arg) %}{% endfor %}
+{% for arg in job.extra_args | default([]) %}{% set _ = args.append(arg) %}{% endfor %}
+ExecStart={{ ([zfs_syncoid_replication_syncoid_path] + args + [job.source, job.target]) | join(' ') }}
+{% endfor %}
+{% if zfs_syncoid_replication_spindown_enabled | bool and (zfs_syncoid_replication_spindown_devices | length > 0) %}
+ExecStartPost={{ zfs_syncoid_replication_spindown_script_path }}
+{% endif %}

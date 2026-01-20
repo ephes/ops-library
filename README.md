@@ -31,6 +31,8 @@ The table below links each published role to its dedicated documentation. Refer 
 | Storage | [`zfs_pool_deploy`](roles/zfs_pool_deploy/README.md) | Create/manage encrypted ZFS pools with safety toggles and boot-time unlock wiring. |
 | Storage | [`zfs_dataset`](roles/zfs_dataset/README.md) | Create/manage ZFS datasets with property support and optional macOS SMB compatibility defaults. |
 | Storage | [`sanoid`](roles/sanoid/README.md) | Configure sanoid snapshot policies and a dedicated systemd timer. |
+| Storage | [`zfs_syncoid_replication`](roles/zfs_syncoid_replication/README.md) | Schedule syncoid replication jobs with systemd timers, alerts, and optional HDD spindown hooks. |
+| Storage | [`zfs_usb_replication`](roles/zfs_usb_replication/README.md) | Replicate ZFS datasets to an encrypted USB pool with device detection and optional alerts. |
 | Storage | [`hdparm_tune`](roles/hdparm_tune/README.md) | Configure persistent hdparm power settings (APM/spindown) for disks. |
 | Infrastructure | [`netplan_config`](roles/netplan_config/README.md) | Configure persistent netplan networking. |
 | Monitoring | [`smartd`](roles/smartd/README.md) | Configure smartmontools smartd for HDD/NVMe monitoring and scheduled tests. |

@@ -1,0 +1,24 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Configure USB-attached ZFS replication via syncoid with systemd scheduling and alerts
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - zfs
+    - syncoid
+    - backup
+    - usb
+    - replication
+
+dependencies: []

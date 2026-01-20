@@ -1,0 +1,142 @@
+---
+- name: Skip zfs_usb_replication when disabled
+  ansible.builtin.debug:
+    msg: "zfs_usb_replication role skipped (zfs_usb_replication_enabled=false)."
+  when: not zfs_usb_replication_enabled | bool
+
+- name: Configure ZFS USB replication
+  when: zfs_usb_replication_enabled | bool
+  block:
+    - name: Validate replication jobs
+      ansible.builtin.assert:
+        that:
+          - zfs_usb_replication_jobs is defined
+          - zfs_usb_replication_jobs | length > 0
+        fail_msg: "zfs_usb_replication_jobs must be defined and non-empty"
+
+    - name: Validate USB device and pool
+      ansible.builtin.assert:
+        that:
+          - zfs_usb_replication_device is defined
+          - zfs_usb_replication_device | length > 0
+          - zfs_usb_replication_device != 'CHANGE_ME'
+          - zfs_usb_replication_pool is defined
+          - zfs_usb_replication_pool | length > 0
+          - zfs_usb_replication_pool != 'CHANGE_ME'
+        fail_msg: "zfs_usb_replication_device and zfs_usb_replication_pool must be set"
+
+    - name: Validate job fields
+      ansible.builtin.assert:
+        that:
+          - job.source is defined
+          - job.source | length > 0
+          - job.target is defined
+          - job.target | length > 0
+        fail_msg: "Each zfs_usb_replication job requires source and target"
+      loop: "{{ zfs_usb_replication_jobs }}"
+      loop_control:
+        loop_var: job
+        label: "{{ job.source | default('missing') }} -> {{ job.target | default('missing') }}"
+
+    - name: Validate key material
+      ansible.builtin.assert:
+        that:
+          - zfs_usb_replication_key is defined
+          - zfs_usb_replication_key | length > 0
+          - zfs_usb_replication_key != 'CHANGE_ME'
+        fail_msg: "zfs_usb_replication_key must be set when key management is enabled"
+      when: zfs_usb_replication_key_manage | bool
+      no_log: true
+
+    - name: Validate alert configuration
+      ansible.builtin.assert:
+        that:
+          - zfs_usb_replication_alert_email is defined
+          - zfs_usb_replication_alert_email | length > 0
+          - zfs_usb_replication_alert_email != 'CHANGE_ME'
+        fail_msg: "zfs_usb_replication_alert_email must be set when alerting is enabled"
+      when: zfs_usb_replication_alert_enabled | bool
+
+    - name: Install syncoid packages
+      ansible.builtin.package:
+        name: "{{ zfs_usb_replication_packages }}"
+        state: present
+
+    - name: Ensure key directory exists
+      ansible.builtin.file:
+        path: "{{ zfs_usb_replication_key_path | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      when: zfs_usb_replication_key_manage | bool
+
+    - name: Write key file
+      ansible.builtin.copy:
+        dest: "{{ zfs_usb_replication_key_path }}"
+        content: "{{ zfs_usb_replication_key }}"
+        owner: root
+        group: root
+        mode: "0400"
+      when: zfs_usb_replication_key_manage | bool
+      no_log: true
+
+    - name: Install alert script
+      ansible.builtin.template:
+        src: zfs-usb-alert.sh.j2
+        dest: "{{ zfs_usb_replication_alert_script_path }}"
+        owner: root
+        group: root
+        mode: "0750"
+      when: zfs_usb_replication_alert_enabled | bool
+
+    - name: Install USB replication script
+      ansible.builtin.template:
+        src: zfs-usb-replication.sh.j2
+        dest: "/usr/local/bin/zfs-usb-replication.sh"
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Install USB replication service unit
+      ansible.builtin.template:
+        src: zfs-usb-replication.service.j2
+        dest: "/etc/systemd/system/{{ zfs_usb_replication_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart zfs-usb-replication-timer
+
+    - name: Install failure alert unit
+      ansible.builtin.template:
+        src: zfs-usb-replication-failure@.service.j2
+        dest: "/etc/systemd/system/{{ zfs_usb_replication_service_name }}-failure@.service"
+        owner: root
+        group: root
+        mode: "0644"
+      when: zfs_usb_replication_alert_enabled | bool
+      notify:
+        - reload systemd
+
+    - name: Install USB replication timer unit
+      ansible.builtin.template:
+        src: zfs-usb-replication.timer.j2
+        dest: "/etc/systemd/system/{{ zfs_usb_replication_timer_name }}.timer"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart zfs-usb-replication-timer
+
+    - name: Flush handlers to register systemd units
+      ansible.builtin.meta: flush_handlers
+
+    - name: Enable USB replication timer
+      ansible.builtin.systemd:
+        name: "{{ zfs_usb_replication_timer_name }}.timer"
+        enabled: true
+        state: started
+        daemon_reload: true

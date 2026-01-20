@@ -33,6 +33,8 @@ Available runbooks:
 - [Tailscale Restore](https://github.com/ephes/ops-library/blob/main/roles/tailscale_restore/README.md)
 - [Minecraft Java Backup](https://github.com/ephes/ops-library/blob/main/roles/minecraft_java_backup/README.md)
 - [Minecraft Java Restore](https://github.com/ephes/ops-library/blob/main/roles/minecraft_java_restore/README.md)
+- [ZFS Syncoid Replication](https://github.com/ephes/ops-library/blob/main/roles/zfs_syncoid_replication/README.md)
+- [ZFS USB Replication](https://github.com/ephes/ops-library/blob/main/roles/zfs_usb_replication/README.md)
 
 ```{toctree}
 :maxdepth: 1
@@ -66,6 +68,8 @@ tailscale_backup
 tailscale_restore
 minecraft_java_backup
 minecraft_java_restore
+zfs_syncoid_replication
+zfs_usb_replication
 ```
 
 Operations roles provide consistent snapshot, restore, and maintenance tooling that can be composed with deployment/removal roles to rehearse disaster-recovery scenarios.

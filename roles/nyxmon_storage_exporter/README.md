@@ -55,6 +55,11 @@ Each disk in `nyxmon_storage_exporter_disks` must have:
 | `nyxmon_storage_exporter_bin_path` | `/usr/local/bin/nyxmon-storage-metrics` | Path to install the script |
 | `nyxmon_storage_exporter_mode` | `0755` | File permissions for the script |
 | `nyxmon_storage_exporter_smartctl_no_spinup` | `false` | Add `smartctl -n standby` to avoid waking sleeping disks |
+| `nyxmon_storage_exporter_quiet_hours_enabled` | `false` | When true, skip configured disk/pool probes during quiet hours |
+| `nyxmon_storage_exporter_quiet_hours_start` | `06:00` | Quiet hours start (local system time, `HH:MM`) |
+| `nyxmon_storage_exporter_quiet_hours_end` | `22:00` | Quiet hours end (local system time, `HH:MM`) |
+| `nyxmon_storage_exporter_quiet_hours_skip_pools` | `[]` | ZFS pools to skip during quiet hours |
+| `nyxmon_storage_exporter_quiet_hours_skip_disk_types` | `["sat"]` | Disk types to skip during quiet hours (e.g., `sat` for HDDs) |
 
 See `defaults/main.yml` for the full list.
 

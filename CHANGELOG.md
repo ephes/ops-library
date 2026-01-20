@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mastodon lifecycle roles: `mastodon_shared`, `mastodon_deploy`, `mastodon_backup`, `mastodon_restore`, `mastodon_maintenance`, and `mastodon_remove` with rbenv+nvm runtimes, systemd services, Traefik routing, and backup/restore tooling
 - `open_webui_deploy` and `open_webui_remove` roles to run Open WebUI via Docker Compose with Traefik routing, persistent storage, and optional basic auth
 - `open_webui_venv_deploy` and `open_webui_venv_remove` roles for a uv-managed venv deployment with systemd, Traefik routing, and persistent data
+- `zfs_syncoid_replication` role for scheduled syncoid replication with alert hooks and optional spindown script
+- `zfs_usb_replication` role for USB-attached ZFS replication with device detection and optional alerts
 - `encrypted_volume_prepare` role to verify, unlock, and mount LUKS data volumes with keyfile support, UUID validation, crypttab/fstab wiring, and a validate-only dry run
 - `nyxmon_backup` role for SQLite-safe snapshots with metadata, manifests, and automatic archive fetches
 - `nyxmon_restore` role with staging validation, safety snapshots, rollback support, and service verification
