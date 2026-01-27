@@ -26,9 +26,22 @@ zfs_syncoid_replication_jobs:
     target: tank/replica/fast/general
     recursive: false
     readonly: true
+    force_delete: false
+    no_rollback: true
+    prune_conflicting_snapshots: false
+    prune_target_only_snapshots: false
     extra_args:
       - "--no-rollback"
 ```
+
+`force_delete: true` adds `--force-delete` so syncoid can remove target-only snapshots that
+would otherwise block incremental receives.
+`no_rollback: false` removes `--no-rollback` from the default args for that job, allowing
+syncoid to roll back the target to the most recent common snapshot.
+`prune_conflicting_snapshots: true` runs a local preflight cleanup that destroys target
+snapshots whose GUIDs do not match the source (or do not exist on the source).
+`prune_target_only_snapshots: true` (only used with `prune_conflicting_snapshots`) also removes
+snapshots that exist only on the target. Default is false for safety.
 
 ### Common
 
@@ -70,6 +83,10 @@ None.
           - source: fast/timemachine
             target: tank/replica/fast/timemachine
             readonly: true
+            force_delete: false
+            no_rollback: true
+            prune_conflicting_snapshots: false
+            prune_target_only_snapshots: false
             extra_args:
               - "--no-rollback"
         zfs_syncoid_replication_on_calendar: "02:00"

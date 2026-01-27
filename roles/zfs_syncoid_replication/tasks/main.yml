@@ -27,6 +27,21 @@
         loop_var: job
         label: "{{ job.source | default('missing') }} -> {{ job.target | default('missing') }}"
 
+    - name: Validate job flag types
+      ansible.builtin.assert:
+        that:
+          - job.recursive is not defined or job.recursive is boolean
+          - job.readonly is not defined or job.readonly is boolean
+          - job.force_delete is not defined or job.force_delete is boolean
+          - job.no_rollback is not defined or job.no_rollback is boolean
+          - job.prune_conflicting_snapshots is not defined or job.prune_conflicting_snapshots is boolean
+          - job.prune_target_only_snapshots is not defined or job.prune_target_only_snapshots is boolean
+        fail_msg: "Invalid zfs_syncoid_replication job flags: {{ job }}"
+      loop: "{{ zfs_syncoid_replication_jobs }}"
+      loop_control:
+        loop_var: job
+        label: "{{ job.source | default('missing') }} -> {{ job.target | default('missing') }}"
+
     - name: Validate alert configuration
       ansible.builtin.assert:
         that:
@@ -58,6 +73,14 @@
         group: root
         mode: "0750"
       when: zfs_syncoid_replication_spindown_enabled | bool
+
+    - name: Install prune-conflicts script
+      ansible.builtin.template:
+        src: zfs-syncoid-prune-conflicts.sh.j2
+        dest: "{{ zfs_syncoid_replication_prune_script_path }}"
+        owner: root
+        group: root
+        mode: "0750"
 
     - name: Install replication service unit
       ansible.builtin.template:

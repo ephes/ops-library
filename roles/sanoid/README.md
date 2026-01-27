@@ -12,6 +12,7 @@ Installs and configures `sanoid` for ZFS snapshot automation.
 
 - `sanoid_templates` (mapping): Template definitions used by datasets.
 - `sanoid_datasets` (list): Dataset policies that reference templates.
+  - Optional per-dataset key `sanoid_skip: true` to omit an entry from `sanoid.conf`.
 
 ### Common
 

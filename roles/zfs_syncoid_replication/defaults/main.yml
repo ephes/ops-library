@@ -44,3 +44,6 @@ zfs_syncoid_replication_spindown_enabled: true
 zfs_syncoid_replication_spindown_devices: []
 zfs_syncoid_replication_spindown_pool: ""
 zfs_syncoid_replication_spindown_script_path: "/usr/local/bin/zfs-syncoid-spindown.sh"
+
+# Optional prune helper for conflicting snapshots
+zfs_syncoid_replication_prune_script_path: "/usr/local/bin/zfs-syncoid-prune-conflicts.sh"

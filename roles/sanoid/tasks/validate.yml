@@ -22,3 +22,4 @@
   loop: "{{ sanoid_datasets }}"
   loop_control:
     label: "{{ item.name | default('UNSET') }}"
+  when: not item.sanoid_skip | default(false)

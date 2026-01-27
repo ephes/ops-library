@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+source_dataset="${1:-}"
+target_dataset="${2:-}"
+recursive="${3:-false}"
+prune_target_only="${4:-false}"
+log_tag="zfs-syncoid-prune"
+
+if [[ -z "${source_dataset}" || -z "${target_dataset}" ]]; then
+  logger -t "${log_tag}" "Usage: ${0} <source_dataset> <target_dataset>"
+  exit 1
+fi
+
+if ! zfs list -H -o name "${target_dataset}" >/dev/null 2>&1; then
+  logger -t "${log_tag}" "Target dataset ${target_dataset} not found; skipping."
+  exit 0
+fi
+
+_is_true() {
+  case "${1}" in
+    1|true|TRUE|True|yes|YES|on|ON) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+zfs_list_args=("${target_dataset}")
+if _is_true "${recursive}"; then
+  zfs_list_args=(-r "${target_dataset}")
+fi
+
+mapfile -t snapshots < <(zfs list -t snapshot -H -o name -s creation "${zfs_list_args[@]}" 2>/dev/null || true)
+for snapshot in "${snapshots[@]}"; do
+  snap_dataset="${snapshot%@*}"
+  snap_name="${snapshot#*@}"
+  if [[ "${snap_dataset}" != "${target_dataset}"* ]]; then
+    continue
+  fi
+
+  suffix="${snap_dataset#${target_dataset}}"
+  source_snap_dataset="${source_dataset}${suffix}"
+  source_snapshot="${source_snap_dataset}@${snap_name}"
+
+  if zfs list -t snapshot -H -o name "${source_snapshot}" >/dev/null 2>&1; then
+    src_guid="$(zfs get -H -o value guid "${source_snapshot}" 2>/dev/null || true)"
+    tgt_guid="$(zfs get -H -o value guid "${snap_dataset}@${snap_name}" 2>/dev/null || true)"
+    if [[ -n "${src_guid}" && -n "${tgt_guid}" && "${src_guid}" != "${tgt_guid}" ]]; then
+      logger -t "${log_tag}" "Destroying conflicting snapshot ${snap_dataset}@${snap_name}"
+      if ! zfs destroy "${snap_dataset}@${snap_name}" >/dev/null 2>&1; then
+        logger -t "${log_tag}" "Failed to destroy ${snap_dataset}@${snap_name}"
+      fi
+    fi
+  else
+    if _is_true "${prune_target_only}"; then
+      logger -t "${log_tag}" "Destroying target-only snapshot ${snap_dataset}@${snap_name}"
+      if ! zfs destroy "${snap_dataset}@${snap_name}" >/dev/null 2>&1; then
+        logger -t "${log_tag}" "Failed to destroy ${snap_dataset}@${snap_name}"
+      fi
+    else
+      logger -t "${log_tag}" "Skipping target-only snapshot ${snap_dataset}@${snap_name} (prune_target_only=false)"
+    fi
+  fi
+done

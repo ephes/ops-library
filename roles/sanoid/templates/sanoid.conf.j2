@@ -5,7 +5,7 @@
 {% endfor %}
 
 {% endfor %}
-{% for ds in sanoid_datasets %}
+{% for ds in sanoid_datasets if not (ds.sanoid_skip | default(false)) %}
 [{{ ds.name }}]
 use_template = template_{{ ds.template }}
 {% if ds.autosnap | default(none) is not none %}
