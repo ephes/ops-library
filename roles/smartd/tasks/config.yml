@@ -7,3 +7,15 @@
     group: root
     mode: "0644"
   notify: Restart smartd
+
+- name: config | Set smartd_opts in /etc/default/smartmontools
+  ansible.builtin.lineinfile:
+    path: /etc/default/smartmontools
+    regexp: '^#?smartd_opts='
+    line: 'smartd_opts="{{ smartd_opts }}"'
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+  when: smartd_opts | default('') | length > 0
+  notify: Restart smartd

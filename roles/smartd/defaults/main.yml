@@ -20,6 +20,9 @@ smartd_mail_from: "root"
 # Service management
 smartd_manage_service: true
 
+# Additional smartd daemon options (e.g., "--interval=7200")
+smartd_opts: ""
+
 # Temperature warning/critical (smartd -W DIFF,INFO,CRIT)
 smartd_temp_diff: 4
 smartd_temp_info: 40

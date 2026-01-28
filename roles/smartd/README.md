@@ -35,6 +35,7 @@ smartd_mail_to: "admin@example.com"  # Email recipient for alerts
 smartd_enabled: true                  # Enable/disable the role
 smartd_mail_from: "root"              # Email sender
 smartd_manage_service: true           # Manage smartd service
+smartd_opts: ""                       # Extra smartd daemon options (e.g., "--interval=7200")
 
 # Temperature thresholds (smartd -W DIFF,INFO,CRIT)
 smartd_temp_diff: 4                   # Delta to trigger warning
@@ -59,6 +60,8 @@ smartd_devices:
     type: sat
     name: tank-hdd-1
     smartd_no_spinup: true  # Adds "-n standby" to avoid waking sleeping disks
+    smartd_short_test_schedule: "S/../../0/06"  # Override short test schedule
+    smartd_long_test_schedule: "L/../../0/07"   # Override long test schedule
 ```
 
 See `defaults/main.yml` for the full list.
