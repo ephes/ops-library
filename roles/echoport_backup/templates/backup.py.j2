@@ -1,0 +1,453 @@
+#!/usr/bin/env python3
+"""
+Echoport backup runner for FastDeploy.
+Performs SQLite backup and file archiving, uploads to MinIO.
+Deployed by Ansible from ops-control.
+"""
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, Optional
+from urllib.request import Request, urlopen
+from urllib.error import URLError
+
+# Ensure unbuffered output
+os.environ['PYTHONUNBUFFERED'] = '1'
+
+
+# Configuration from Ansible
+MC_PATH = "{{ echoport_backup_mc_install_path }}"
+MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
+DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
+TEMP_DIR = "{{ echoport_backup_temp_dir }}"
+
+
+def read_config_file() -> Optional[Dict]:
+    """Read deployment configuration from secure file if available."""
+    config_file = os.environ.get("DEPLOY_CONFIG_FILE")
+
+    if "--config" in sys.argv:
+        idx = sys.argv.index("--config")
+        if idx + 1 < len(sys.argv):
+            config_file = sys.argv[idx + 1]
+
+    if not config_file or not Path(config_file).exists():
+        return None
+
+    try:
+        with open(config_file, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Failed to read config file: {e}", file=sys.stderr)
+        return None
+
+
+def _emit(obj: Dict) -> None:
+    """Emit JSON object to stdout for FastDeploy to parse."""
+    print(json.dumps(obj, ensure_ascii=False), flush=True)
+
+
+def output_step(name: str, state: str, message: str = None) -> None:
+    """Output step as NDJSON to stdout."""
+    step = {"name": name, "state": state}
+    if message:
+        step["message"] = message
+    _emit(step)
+
+
+def finish_stdout(status: str, message: str = None) -> None:
+    """Output finish event to stdout."""
+    finish = {"event": "finish", "status": status}
+    if message:
+        finish["message"] = message
+    _emit(finish)
+
+
+def post_json(url: str, token: str, payload: Dict) -> bool:
+    """Post JSON data to FastDeploy API (best-effort)."""
+    try:
+        data = json.dumps(payload).encode("utf-8")
+        req = Request(url, data=data, headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+        })
+        with urlopen(req, timeout=5) as response:
+            return response.status == 200
+    except (URLError, Exception) as e:
+        print(f"[HTTP API] Failed to post to {url}: {e}", file=sys.stderr)
+        return False
+
+
+def update_step(name: str, state: str, message: str = "") -> None:
+    """Hybrid step update: stdout + HTTP API."""
+    output_step(name, state, message)
+
+    config = read_config_file()
+    if config:
+        token = config.get("access_token", "")
+        steps_url = config.get("steps_url", "")
+    else:
+        token = os.environ.get("ACCESS_TOKEN", "")
+        steps_url = os.environ.get("STEPS_URL", "")
+
+    if token and steps_url:
+        try:
+            post_json(steps_url, token, {
+                "name": name,
+                "state": state,
+                "message": message
+            })
+        except Exception as e:
+            print(f"[HTTP API] Step update failed: {e}", file=sys.stderr)
+
+
+def finish_deployment(status: str = "success", message: str = None) -> None:
+    """Hybrid deployment finish."""
+    finish_stdout(status, message or f"Backup {status}")
+
+    config = read_config_file()
+    if config:
+        token = config.get("access_token", "")
+        finish_url = config.get("deployment_finish_url", "")
+    else:
+        token = os.environ.get("ACCESS_TOKEN", "")
+        finish_url = os.environ.get("DEPLOYMENT_FINISH_URL", "")
+
+    if token and finish_url:
+        try:
+            post_json(finish_url, token, {
+                "status": status,
+                "message": message
+            })
+        except Exception as e:
+            print(f"[HTTP API] Finish call failed: {e}", file=sys.stderr)
+
+
+def emit_echoport_result(success: bool, bucket: str = "", key: str = "",
+                         size_bytes: int = 0, checksum_sha256: str = "",
+                         file_count: int = 0, error: str = None) -> None:
+    """
+    Output ECHOPORT_RESULT as a step message for Echoport to parse.
+
+    We embed the result in a step's message field because FastDeploy only
+    parses valid JSON lines from stdout. A prefixed line like
+    "ECHOPORT_RESULT:{...}" would be silently dropped.
+
+    IMPORTANT: FastDeploy truncates step messages at 4096 bytes, so we emit
+    only essential metadata. The full manifest is stored in the tarball.
+
+    The result is emitted as a 'result' step with the JSON payload in the
+    message field, prefixed with ECHOPORT_RESULT: for easy parsing.
+    """
+    # Keep payload small to avoid 4KB truncation
+    # Full manifest is in the tarball, not needed here
+    result = {
+        "success": success,
+        "bucket": bucket,
+        "key": key,
+        "size_bytes": size_bytes,
+        "checksum_sha256": checksum_sha256,
+        "file_count": file_count,
+    }
+    if error:
+        result["error"] = error
+
+    # Emit as a step so FastDeploy captures it in the steps array
+    # Echoport parses ECHOPORT_RESULT: prefix from step messages
+    result_json = json.dumps(result)
+    output_step("result", "success" if success else "failure", f"ECHOPORT_RESULT:{result_json}")
+
+
+def calculate_sha256(filepath: Path) -> str:
+    """Calculate SHA256 checksum of a file."""
+    sha256_hash = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            sha256_hash.update(chunk)
+    return sha256_hash.hexdigest()
+
+
+def backup_sqlite(db_path: str, backup_path: Path) -> bool:
+    """
+    Perform safe SQLite backup using .backup command.
+    This ensures a consistent backup even if the database is being written to.
+    """
+    print(f"Backing up SQLite database: {db_path}", file=sys.stderr)
+
+    try:
+        result = subprocess.run(
+            ["sqlite3", db_path, f".backup '{backup_path}'"],
+            capture_output=True,
+            text=True,
+            shell=False
+        )
+
+        if result.returncode != 0:
+            print(f"sqlite3 backup failed: {result.stderr}", file=sys.stderr)
+            return False
+
+        # Verify the backup
+        if not backup_path.exists():
+            print("Backup file not created", file=sys.stderr)
+            return False
+
+        # Run integrity check on backup
+        integrity_result = subprocess.run(
+            ["sqlite3", str(backup_path), "PRAGMA integrity_check;"],
+            capture_output=True,
+            text=True
+        )
+
+        if "ok" not in integrity_result.stdout.lower():
+            print(f"Backup integrity check failed: {integrity_result.stdout}", file=sys.stderr)
+            return False
+
+        print(f"SQLite backup successful: {backup_path}", file=sys.stderr)
+        return True
+
+    except Exception as e:
+        print(f"SQLite backup error: {e}", file=sys.stderr)
+        return False
+
+
+def copy_files(file_list: list, dest_dir: Path) -> list:
+    """Copy additional files to backup directory."""
+    copied = []
+
+    for file_path in file_list:
+        src = Path(file_path)
+        if not src.exists():
+            print(f"Skipping non-existent file: {file_path}", file=sys.stderr)
+            continue
+
+        if src.is_file():
+            dest = dest_dir / src.name
+            shutil.copy2(src, dest)
+            copied.append(str(src))
+            print(f"Copied file: {file_path}", file=sys.stderr)
+        elif src.is_dir():
+            dest = dest_dir / src.name
+            shutil.copytree(src, dest)
+            copied.append(str(src))
+            print(f"Copied directory: {file_path}", file=sys.stderr)
+
+    return copied
+
+
+def create_tarball(source_dir: Path, tarball_path: Path) -> bool:
+    """Create a compressed tarball from the backup directory."""
+    print(f"Creating tarball: {tarball_path}", file=sys.stderr)
+
+    try:
+        with tarfile.open(tarball_path, "w:gz") as tar:
+            for item in source_dir.iterdir():
+                tar.add(item, arcname=item.name)
+
+        print(f"Tarball created successfully: {tarball_path}", file=sys.stderr)
+        return True
+
+    except Exception as e:
+        print(f"Failed to create tarball: {e}", file=sys.stderr)
+        return False
+
+
+def upload_to_minio(tarball_path: Path, bucket: str, key: str) -> bool:
+    """Upload tarball to MinIO using mc."""
+    dest = f"{MINIO_ALIAS}/{bucket}/{key}"
+    print(f"Uploading to MinIO: {dest}", file=sys.stderr)
+
+    try:
+        result = subprocess.run(
+            [MC_PATH, "cp", str(tarball_path), dest],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode != 0:
+            print(f"mc upload failed: {result.stderr}", file=sys.stderr)
+            return False
+
+        print(f"Upload successful: {dest}", file=sys.stderr)
+        return True
+
+    except Exception as e:
+        print(f"Upload error: {e}", file=sys.stderr)
+        return False
+
+
+def main() -> int:
+    """Main backup logic."""
+    update_step("init", "running", "Starting backup")
+
+    # Read configuration
+    config = read_config_file()
+
+    if config:
+        context = config.get("context", {})
+    else:
+        context_raw = os.environ.get("CONTEXT", "{}")
+        try:
+            context = json.loads(context_raw)
+        except json.JSONDecodeError:
+            context = {}
+
+    cenv = context.get("env", {})
+
+    # Get Echoport-specific configuration
+    target_name = cenv.get("ECHOPORT_TARGET", "unknown")
+    run_id = cenv.get("ECHOPORT_RUN_ID", "0")
+    db_path = cenv.get("ECHOPORT_DB_PATH", "")
+    backup_files_str = cenv.get("ECHOPORT_BACKUP_FILES", "")
+    bucket = cenv.get("ECHOPORT_BUCKET", DEFAULT_BUCKET)
+    key_prefix = cenv.get("ECHOPORT_KEY_PREFIX", f"{target_name}/{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H-%M-%S')}")
+    timestamp = cenv.get("ECHOPORT_TIMESTAMP", datetime.now(timezone.utc).strftime('%Y-%m-%dT%H-%M-%S'))
+
+    backup_files = [f.strip() for f in backup_files_str.split(",") if f.strip()]
+
+    print(f"Backup configuration:", file=sys.stderr)
+    print(f"  Target: {target_name}", file=sys.stderr)
+    print(f"  Run ID: {run_id}", file=sys.stderr)
+    print(f"  DB Path: {db_path}", file=sys.stderr)
+    print(f"  Files: {backup_files}", file=sys.stderr)
+    print(f"  Bucket: {bucket}", file=sys.stderr)
+    print(f"  Key Prefix: {key_prefix}", file=sys.stderr)
+
+    update_step("init", "success", f"Configuration loaded for {target_name}")
+
+    # Create temporary backup directory
+    work_dir = Path(tempfile.mkdtemp(prefix="echoport_", dir=TEMP_DIR if Path(TEMP_DIR).exists() else None))
+    backup_dir = work_dir / "backup"
+    backup_dir.mkdir(parents=True)
+
+    try:
+        update_step("backup", "running", "Creating backup")
+
+        manifest = {
+            "target": target_name,
+            "run_id": run_id,
+            "timestamp": timestamp,
+            "files": [],
+            "database": None,
+        }
+
+        # Backup SQLite database if specified
+        if db_path:
+            db_backup_path = backup_dir / Path(db_path).name
+            if backup_sqlite(db_path, db_backup_path):
+                manifest["database"] = {
+                    "source": db_path,
+                    "filename": db_backup_path.name,
+                    "size": db_backup_path.stat().st_size,
+                }
+            else:
+                update_step("backup", "failure", f"Failed to backup database: {db_path}")
+                emit_echoport_result(False, error=f"Database backup failed: {db_path}")
+                finish_deployment("failure", "Database backup failed")
+                return 1
+
+        # Copy additional files
+        if backup_files:
+            copied = copy_files(backup_files, backup_dir)
+            manifest["files"] = copied
+
+        # Write manifest
+        manifest_path = backup_dir / "manifest.json"
+        with open(manifest_path, "w") as f:
+            json.dump(manifest, f, indent=2)
+
+        update_step("backup", "success", f"Backup created ({len(manifest['files'])} files)")
+
+        # Create tarball
+        update_step("upload", "running", "Creating archive and uploading")
+
+        tarball_name = f"{key_prefix.replace('/', '_')}.tar.gz"
+        tarball_path = work_dir / tarball_name
+
+        if not create_tarball(backup_dir, tarball_path):
+            update_step("upload", "failure", "Failed to create archive")
+            emit_echoport_result(False, error="Failed to create tarball")
+            finish_deployment("failure", "Archive creation failed")
+            return 1
+
+        # Calculate checksum
+        checksum = calculate_sha256(tarball_path)
+        size_bytes = tarball_path.stat().st_size
+
+        # Upload to MinIO
+        storage_key = f"{key_prefix}.tar.gz"
+
+        if not upload_to_minio(tarball_path, bucket, storage_key):
+            update_step("upload", "failure", "Failed to upload to MinIO")
+            emit_echoport_result(False, error="MinIO upload failed")
+            finish_deployment("failure", "Upload failed")
+            return 1
+
+        update_step("upload", "success", f"Uploaded {size_bytes:,} bytes")
+
+        # Verify upload
+        update_step("verify", "running", "Verifying upload")
+
+        # Use mc stat to verify the object exists
+        verify_result = subprocess.run(
+            [MC_PATH, "stat", f"{MINIO_ALIAS}/{bucket}/{storage_key}"],
+            capture_output=True,
+            text=True
+        )
+
+        if verify_result.returncode != 0:
+            update_step("verify", "failure", "Upload verification failed")
+            emit_echoport_result(False, error="Upload verification failed")
+            finish_deployment("failure", "Verification failed")
+            return 1
+
+        update_step("verify", "success", "Backup verified in MinIO")
+
+        # Emit success result for Echoport
+        # Note: full manifest is in the tarball, we just send essential metadata
+        file_count = len(manifest.get("files", [])) + (1 if manifest.get("database") else 0)
+        emit_echoport_result(
+            success=True,
+            bucket=bucket,
+            key=storage_key,
+            size_bytes=size_bytes,
+            checksum_sha256=checksum,
+            file_count=file_count,
+        )
+
+        finish_deployment("success", f"Backup completed: {bucket}/{storage_key}")
+        return 0
+
+    except Exception as e:
+        print(f"Backup failed with error: {e}", file=sys.stderr)
+        update_step("error", "failure", str(e))
+        emit_echoport_result(False, error=str(e))
+        finish_deployment("failure", f"Unexpected error: {e}")
+        return 1
+
+    finally:
+        # Cleanup temporary directory
+        try:
+            shutil.rmtree(work_dir)
+        except Exception as e:
+            print(f"Failed to cleanup temp dir: {e}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    # Ensure temp directory exists
+    Path(TEMP_DIR).mkdir(parents=True, exist_ok=True)
+
+    try:
+        sys.exit(main())
+    except Exception as e:
+        print(f"Backup failed with error: {e}", file=sys.stderr)
+        update_step("error", "failure", str(e))
+        emit_echoport_result(False, error=str(e))
+        finish_deployment("failure", f"Unexpected error: {e}")
+        sys.exit(1)

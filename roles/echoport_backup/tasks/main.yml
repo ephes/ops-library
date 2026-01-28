@@ -1,0 +1,110 @@
+---
+# Echoport backup role - registers backup service with FastDeploy
+
+- name: Ensure sqlite3 is installed
+  ansible.builtin.package:
+    name: sqlite3
+    state: present
+
+- name: Check if mc (MinIO client) exists
+  ansible.builtin.stat:
+    path: "{{ echoport_backup_mc_install_path }}"
+  register: echoport_backup_mc_stat
+
+- name: Download mc (MinIO client)
+  ansible.builtin.get_url:
+    url: "{{ echoport_backup_mc_download_url }}"
+    dest: "{{ echoport_backup_mc_install_path }}"
+    mode: "0755"
+  when: not echoport_backup_mc_stat.stat.exists
+
+- name: Configure mc alias for MinIO
+  ansible.builtin.command:
+    cmd: >
+      {{ echoport_backup_mc_install_path }} alias set
+      {{ echoport_backup_minio_alias }}
+      {{ echoport_backup_minio_url }}
+      {{ echoport_backup_minio_access_key }}
+      {{ echoport_backup_minio_secret_key }}
+  become: true
+  become_user: "{{ echoport_backup_user }}"
+  no_log: true
+  changed_when: true
+  when:
+    - echoport_backup_minio_url | length > 0
+    - echoport_backup_minio_access_key | length > 0
+    - echoport_backup_minio_secret_key | length > 0
+
+- name: Ensure backup service directory exists
+  ansible.builtin.file:
+    path: "{{ echoport_backup_service_dir }}"
+    state: directory
+    # Directory owned by root to prevent privilege escalation:
+    # fastdeploy user can read/execute but not create/delete files
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy backup runner script
+  ansible.builtin.template:
+    src: backup.py.j2
+    dest: "{{ echoport_backup_service_dir }}/backup.py"
+    # Script owned by root to prevent privilege escalation:
+    # fastdeploy user can execute but not modify the script
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Create service config.json
+  ansible.builtin.copy:
+    content: |
+      {
+        "name": "{{ echoport_backup_service_name }}",
+        "description": "{{ echoport_backup_service_description }}",
+        "deploy_script": "backup.py",
+        "steps": [
+          {"name": "init"},
+          {"name": "backup"},
+          {"name": "upload"},
+          {"name": "verify"},
+          {"name": "result"}
+        ]
+      }
+    dest: "{{ echoport_backup_service_dir }}/config.json"
+    # Config owned by root to prevent tampering
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Configure sudoers for backup execution
+  ansible.builtin.copy:
+    content: |
+      # Allow fastdeploy user to run backup script as root
+      # NOSETENV prevents environment variable manipulation for security
+      # Script is owned by root (not fastdeploy) to prevent privilege escalation
+      {{ echoport_backup_fastdeploy_user }} ALL=({{ echoport_backup_user }}) NOPASSWD:NOSETENV: {{ echoport_backup_service_dir }}/backup.py
+    dest: "/etc/sudoers.d/echoport_backup"
+    mode: "0440"
+    validate: 'visudo -cf %s'
+
+- name: Sync services with FastDeploy API
+  ansible.builtin.uri:
+    url: "{{ echoport_backup_api_base }}/services/sync"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ echoport_backup_api_token }}"
+    status_code: [200, 201]
+  when:
+    - echoport_backup_sync_services
+    - echoport_backup_api_token | length > 0
+  register: echoport_backup_sync_result
+  failed_when: false
+
+- name: Display sync result
+  ansible.builtin.debug:
+    msg: "Service sync result: {{ echoport_backup_sync_result.json | default('No response') }}"
+  when:
+    - echoport_backup_sync_result is defined
+    - echoport_backup_sync_result is not skipped
+    - echoport_backup_sync_result.status is defined
+    - echoport_backup_sync_result.status in [200, 201]
