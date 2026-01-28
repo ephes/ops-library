@@ -8,6 +8,7 @@ echoport_backup_service_description: "Echoport backup service - backs up SQLite 
 # FastDeploy paths
 echoport_backup_fastdeploy_root: "/home/fastdeploy/site"
 echoport_backup_fastdeploy_user: "fastdeploy"
+echoport_backup_deploy_user: "deploy"  # User that FastDeploy runs scripts as
 echoport_backup_services_root: "services"
 echoport_backup_service_dir: "{{ echoport_backup_fastdeploy_root }}/{{ echoport_backup_services_root }}/{{ echoport_backup_service_name }}"
 
@@ -28,6 +29,14 @@ echoport_backup_mc_download_url: "https://dl.min.io/client/mc/release/linux-amd6
 
 # Temporary directory for backup operations
 echoport_backup_temp_dir: "/tmp/echoport-backup"
+
+# Security: Allowed backup path roots (defense-in-depth)
+# Only paths under these directories can be backed up.
+# This prevents potential file exfiltration if config is compromised.
+echoport_backup_allowed_roots:
+  - "/home/"
+  - "/opt/"
+  - "/var/lib/"
 
 # FastDeploy API (for sync)
 echoport_backup_api_base: "http://localhost:8000"

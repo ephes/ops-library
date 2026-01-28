@@ -28,6 +28,15 @@ MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
 DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
 TEMP_DIR = "{{ echoport_backup_temp_dir }}"
 
+# Security: Allowed backup path roots (defense-in-depth)
+# Only paths under these directories can be backed up.
+# This prevents potential file exfiltration if config is compromised.
+ALLOWED_BACKUP_ROOTS = [
+{% for root in echoport_backup_allowed_roots %}
+    "{{ root }}",
+{% endfor %}
+]
+
 
 def read_config_file() -> Optional[Dict]:
     """Read deployment configuration from secure file if available."""
@@ -162,7 +171,39 @@ def emit_echoport_result(success: bool, bucket: str = "", key: str = "",
     # Emit as a step so FastDeploy captures it in the steps array
     # Echoport parses ECHOPORT_RESULT: prefix from step messages
     result_json = json.dumps(result)
-    output_step("result", "success" if success else "failure", f"ECHOPORT_RESULT:{result_json}")
+    update_step("result", "success" if success else "failure", f"ECHOPORT_RESULT:{result_json}")
+
+
+def validate_path(path: str) -> bool:
+    """
+    Validate that a path is under an allowed root directory.
+
+    This is a defense-in-depth measure to prevent file exfiltration
+    if the config file is somehow compromised.
+    """
+    if not path:
+        return True  # Empty paths are skipped anyway
+
+    try:
+        # Resolve symlinks and normalize the path
+        resolved = os.path.realpath(path)
+
+        # Check if path is under any allowed root
+        # Normalize roots to avoid footgun: "/home" matching "/homeevil"
+        for root in ALLOWED_BACKUP_ROOTS:
+            # Ensure root ends with separator for proper prefix matching
+            normalized_root = os.path.realpath(root)
+            if not normalized_root.endswith(os.sep):
+                normalized_root += os.sep
+
+            # Check if resolved path starts with normalized root,
+            # or equals the root directory itself (without trailing sep)
+            if resolved.startswith(normalized_root) or resolved == normalized_root.rstrip(os.sep):
+                return True
+
+        return False
+    except Exception:
+        return False
 
 
 def calculate_sha256(filepath: Path) -> str:
@@ -180,6 +221,11 @@ def backup_sqlite(db_path: str, backup_path: Path) -> bool:
     This ensures a consistent backup even if the database is being written to.
     """
     print(f"Backing up SQLite database: {db_path}", file=sys.stderr)
+
+    # Validate the database file exists (prevents sqlite3 from creating empty DB)
+    if not os.path.isfile(db_path):
+        print(f"Database file not found: {db_path}", file=sys.stderr)
+        return False
 
     try:
         result = subprocess.run(
@@ -217,8 +263,35 @@ def backup_sqlite(db_path: str, backup_path: Path) -> bool:
         return False
 
 
+def _make_symlink_ignore_func(base_path: str):
+    """
+    Create an ignore function for shutil.copytree that skips symlinks
+    pointing outside allowed roots.
+
+    This enforces the symlink policy consistently for nested symlinks
+    within directory copies.
+    """
+    def ignore_func(directory: str, entries: list) -> list:
+        ignored = []
+        for entry in entries:
+            full_path = os.path.join(directory, entry)
+            if os.path.islink(full_path):
+                target = os.path.realpath(full_path)
+                if not validate_path(target):
+                    print(f"Skipping nested symlink outside allowed roots: {full_path} -> {target}", file=sys.stderr)
+                    ignored.append(entry)
+        return ignored
+    return ignore_func
+
+
 def copy_files(file_list: list, dest_dir: Path) -> list:
-    """Copy additional files to backup directory."""
+    """
+    Copy additional files to backup directory.
+
+    Security: Symlinks are copied as symlinks (not followed) to prevent
+    exfiltration of files outside allowed roots via symlink traversal.
+    Nested symlinks pointing outside allowed roots are skipped entirely.
+    """
     copied = []
 
     for file_path in file_list:
@@ -227,14 +300,32 @@ def copy_files(file_list: list, dest_dir: Path) -> list:
             print(f"Skipping non-existent file: {file_path}", file=sys.stderr)
             continue
 
+        # Security: If it's a symlink, validate the target is in allowed roots
+        if src.is_symlink():
+            target = os.path.realpath(src)
+            if not validate_path(target):
+                print(f"Skipping symlink with target outside allowed roots: {file_path} -> {target}", file=sys.stderr)
+                continue
+
         if src.is_file():
             dest = dest_dir / src.name
-            shutil.copy2(src, dest)
+            # For symlinks, copy as symlink; for regular files, copy content
+            if src.is_symlink():
+                os.symlink(os.readlink(src), dest)
+                print(f"Copied symlink: {file_path}", file=sys.stderr)
+            else:
+                shutil.copy2(src, dest)
+                print(f"Copied file: {file_path}", file=sys.stderr)
             copied.append(str(src))
-            print(f"Copied file: {file_path}", file=sys.stderr)
         elif src.is_dir():
             dest = dest_dir / src.name
-            shutil.copytree(src, dest)
+            # Copy directory with symlinks as symlinks (don't follow them)
+            # Use ignore callback to skip nested symlinks pointing outside allowed roots
+            shutil.copytree(
+                src, dest,
+                symlinks=True,
+                ignore=_make_symlink_ignore_func(str(src))
+            )
             copied.append(str(src))
             print(f"Copied directory: {file_path}", file=sys.stderr)
 
@@ -286,12 +377,26 @@ def main() -> int:
     """Main backup logic."""
     update_step("init", "running", "Starting backup")
 
-    # Read configuration
+    # Read configuration from secure config file
+    # NOTE: FastDeploy ALWAYS passes --config with a secure config file.
+    # The environment variable fallback is only for manual testing/debugging.
     config = read_config_file()
 
     if config:
         context = config.get("context", {})
     else:
+        # Fail fast if running as root without config - this should never happen
+        # in production and likely indicates a misconfiguration
+        if os.getuid() == 0:
+            error_msg = "No config file found while running as root. This is a security safeguard - config is required in production."
+            print(f"Error: {error_msg}", file=sys.stderr)
+            update_step("init", "failure", error_msg)
+            emit_echoport_result(False, error=error_msg)
+            finish_deployment("failure", "Missing config file")
+            return 1
+
+        # Fallback for manual testing only (non-root) - not used in production
+        print("Warning: No config file found, using environment (testing mode)", file=sys.stderr)
         context_raw = os.environ.get("CONTEXT", "{}")
         try:
             context = json.loads(context_raw)
@@ -318,6 +423,18 @@ def main() -> int:
     print(f"  Files: {backup_files}", file=sys.stderr)
     print(f"  Bucket: {bucket}", file=sys.stderr)
     print(f"  Key Prefix: {key_prefix}", file=sys.stderr)
+
+    # Security: Validate all paths are under allowed roots
+    all_paths = ([db_path] if db_path else []) + backup_files
+    for path in all_paths:
+        if not validate_path(path):
+            error_msg = f"Path not under allowed roots: {path}"
+            print(f"Security error: {error_msg}", file=sys.stderr)
+            print(f"Allowed roots: {ALLOWED_BACKUP_ROOTS}", file=sys.stderr)
+            update_step("init", "failure", error_msg)
+            emit_echoport_result(False, error=error_msg)
+            finish_deployment("failure", "Path validation failed")
+            return 1
 
     update_step("init", "success", f"Configuration loaded for {target_name}")
 
@@ -440,6 +557,16 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # Run as root if not already running as root
+    # This is needed because FastDeploy runs scripts as 'deploy' user,
+    # but we need root access to read files from different service users
+    if os.getuid() != 0:
+        # Run via sudo and relay output (subprocess keeps stdout connected)
+        script_path = os.path.abspath(__file__)
+        args = ["sudo", "-n", script_path] + sys.argv[1:]
+        result = subprocess.run(args, stdout=sys.stdout, stderr=sys.stderr)
+        sys.exit(result.returncode)
+
     # Ensure temp directory exists
     Path(TEMP_DIR).mkdir(parents=True, exist_ok=True)
 

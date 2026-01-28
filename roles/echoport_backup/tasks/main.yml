@@ -79,10 +79,21 @@
 - name: Configure sudoers for backup execution
   ansible.builtin.copy:
     content: |
-      # Allow fastdeploy user to run backup script as root
-      # NOSETENV prevents environment variable manipulation for security
-      # Script is owned by root (not fastdeploy) to prevent privilege escalation
-      {{ echoport_backup_fastdeploy_user }} ALL=({{ echoport_backup_user }}) NOPASSWD:NOSETENV: {{ echoport_backup_service_dir }}/backup.py
+      # Sudoers for echoport-backup service
+      # Two-stage sudo chain for FastDeploy execution
+      #
+      # Security notes:
+      # - NOSETENV on stage 2 prevents environment variable injection
+      # - This is safe because FastDeploy ALWAYS passes --config with a secure
+      #   config file containing all context (tokens, paths, etc.)
+      # - The script reads from config file, not environment variables
+      # - The * allows --config argument; script validates paths internally
+
+      # Stage 1: Allow fastdeploy to run backup.py as deploy user
+      {{ echoport_backup_fastdeploy_user }} ALL=({{ echoport_backup_deploy_user }}) NOPASSWD: {{ echoport_backup_service_dir }}/backup.py *
+
+      # Stage 2: Allow deploy to run backup.py as root for privileged operations
+      {{ echoport_backup_deploy_user }} ALL=({{ echoport_backup_user }}) NOPASSWD:NOSETENV: {{ echoport_backup_service_dir }}/backup.py *
     dest: "/etc/sudoers.d/echoport_backup"
     mode: "0440"
     validate: 'visudo -cf %s'
