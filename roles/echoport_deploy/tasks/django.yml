@@ -1,0 +1,60 @@
+---
+# Configure Django application
+
+- name: Create environment file for Django
+  template:
+    src: echoport.env.j2
+    dest: "{{ echoport_site_path }}/.env"
+    owner: "{{ echoport_user }}"
+    group: "{{ echoport_group }}"
+    mode: '0600'
+  notify: restart echoport
+
+- name: Run Django migrations
+  django_manage:
+    command: migrate
+    app_path: "{{ echoport_django_path }}"
+    virtualenv: "{{ echoport_venv_path }}"
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ echoport_django_settings_module }}"
+    SECRET_KEY: "{{ echoport_django_secret_key }}"
+    ALLOWED_HOSTS: "{{ echoport_django_allowed_hosts }}"
+    FASTDEPLOY_BASE_URL: "{{ echoport_fastdeploy_base_url }}"
+    FASTDEPLOY_SERVICE_TOKEN: "{{ echoport_fastdeploy_service_token }}"
+  become_user: "{{ echoport_user }}"
+  when: not echoport_skip_django_manage | default(false)
+  no_log: true
+
+- name: Collect static files
+  django_manage:
+    command: collectstatic
+    app_path: "{{ echoport_django_path }}"
+    virtualenv: "{{ echoport_venv_path }}"
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ echoport_django_settings_module }}"
+    SECRET_KEY: "{{ echoport_django_secret_key }}"
+    ALLOWED_HOSTS: "{{ echoport_django_allowed_hosts }}"
+    FASTDEPLOY_BASE_URL: "{{ echoport_fastdeploy_base_url }}"
+    FASTDEPLOY_SERVICE_TOKEN: "{{ echoport_fastdeploy_service_token }}"
+  become_user: "{{ echoport_user }}"
+  when: not echoport_skip_django_manage | default(false)
+  no_log: true
+
+- name: Ensure admin user exists
+  django_manage:
+    command: ensure_superuser
+    app_path: "{{ echoport_django_path }}"
+    virtualenv: "{{ echoport_venv_path }}"
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ echoport_django_settings_module }}"
+    SECRET_KEY: "{{ echoport_django_secret_key }}"
+    ALLOWED_HOSTS: "{{ echoport_django_allowed_hosts }}"
+    ADMIN_USERNAME: "{{ echoport_admin_username }}"
+    ADMIN_EMAIL: "{{ echoport_admin_email | default('') }}"
+    ADMIN_PASSWORD: "{{ echoport_admin_password }}"
+  become_user: "{{ echoport_user }}"
+  when:
+    - not echoport_skip_django_manage | default(false)
+    - echoport_admin_username is defined
+    - echoport_admin_password is defined
+  no_log: true

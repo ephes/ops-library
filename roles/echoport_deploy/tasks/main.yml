@@ -1,0 +1,71 @@
+---
+# Echoport deployment main tasks
+
+- name: Validate required variables
+  assert:
+    that:
+      - echoport_django_secret_key is defined
+      - echoport_django_secret_key != ""
+      - echoport_django_secret_key != "CHANGEME"
+      - echoport_django_secret_key != "development-secret-key-change-in-production"
+      - echoport_fastdeploy_base_url is defined
+      - echoport_fastdeploy_base_url != ""
+      - echoport_fastdeploy_service_token is defined
+      - echoport_fastdeploy_service_token != ""
+    fail_msg: |
+      SECURITY ERROR: Required secrets are missing or contain placeholder values!
+
+      The following secrets MUST be properly configured:
+      - echoport_django_secret_key: {{ echoport_django_secret_key | default('NOT SET') }}
+      - echoport_fastdeploy_base_url: {{ echoport_fastdeploy_base_url | default('NOT SET') }}
+      - echoport_fastdeploy_service_token: {{ echoport_fastdeploy_service_token | default('NOT SET') | regex_replace('.', '*') }}
+
+      Placeholder or development values are NOT allowed in production.
+      Please update secrets/prod/echoport.yml with real values using:
+      SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt sops secrets/prod/echoport.yml
+
+- name: Validate rsync-specific requirements
+  assert:
+    that:
+      - echoport_source_path != ""
+      - echoport_source_path is defined
+    fail_msg: "echoport_source_path must be set for rsync deployment"
+
+- name: Validate Traefik basic auth configuration
+  assert:
+    that:
+      - not echoport_basic_auth_enabled or (
+          echoport_basic_auth_password is defined and
+          echoport_basic_auth_password != "CHANGEME" and
+          (echoport_basic_auth_password | default('') | length) > 0
+        )
+    fail_msg: |
+      Basic auth is enabled but password is invalid.
+
+      Requirements:
+      - Must not be "CHANGEME"
+      - Must not be empty, whitespace, or null
+
+      Please update secrets/prod/traefik.yml with a strong password.
+      The role will automatically hash it using htpasswd (bcrypt).
+
+      Or disable basic auth with: echoport_basic_auth_enabled: false
+
+- name: Setup user and directories
+  include_tasks: user.yml
+
+- name: Deploy source code
+  include_tasks: source_rsync.yml
+
+- name: Setup Python environment
+  include_tasks: python.yml
+
+- name: Configure Django application
+  include_tasks: django.yml
+
+- name: Setup systemd service
+  include_tasks: service.yml
+
+- name: Configure Traefik
+  include_tasks: traefik.yml
+  when: echoport_traefik_enabled

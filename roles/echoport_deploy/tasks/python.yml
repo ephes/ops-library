@@ -1,0 +1,139 @@
+---
+# Setup Python environment for Echoport
+
+- name: Ensure uv binary is installed
+  ansible.builtin.import_role:
+    name: uv_install
+  when: echoport_use_uv
+
+- name: Ensure Python and pip are installed
+  package:
+    name:
+      - python3
+      - python3-pip
+      - python3-venv
+    state: present
+  when: not echoport_use_uv
+
+- name: Determine Django project path
+  set_fact:
+    echoport_django_path: "{{ echoport_site_path }}"
+
+- name: Ensure pyproject.toml exists when using source copy
+  stat:
+    path: "{{ echoport_site_path }}/pyproject.toml"
+  register: echoport_pyproject
+  when:
+    - echoport_use_uv
+    - echoport_use_source_pyproject
+
+- name: Fail if pyproject.toml is missing
+  fail:
+    msg: "pyproject.toml was not found at {{ echoport_site_path }}. Set echoport_use_source_pyproject=false or ensure the file is synced."
+  when:
+    - echoport_use_uv
+    - echoport_use_source_pyproject
+    - not echoport_pyproject.stat.exists
+
+- name: Ensure pyproject.toml ownership and mode
+  file:
+    path: "{{ echoport_site_path }}/pyproject.toml"
+    owner: "{{ echoport_user }}"
+    group: "{{ echoport_group }}"
+    mode: '0644'
+  when:
+    - echoport_use_uv
+    - echoport_use_source_pyproject
+
+- name: Remove stale uv.lock before syncing
+  file:
+    path: "{{ echoport_site_path }}/uv.lock"
+    state: absent
+  when: echoport_use_uv
+
+- name: Build uv sync command arguments
+  set_fact:
+    echoport_uv_sync_cmd: >-
+      uv sync --no-default-groups --no-dev
+  when: echoport_use_uv
+
+- name: Test if venv Python is usable
+  command: "{{ echoport_venv_path }}/bin/python --version"
+  register: venv_python_test
+  become_user: "{{ echoport_user }}"
+  failed_when: false
+  changed_when: false
+  when: echoport_use_uv
+
+- name: Extract current venv Python version
+  set_fact:
+    venv_python_current: "{{ venv_python_test.stdout | regex_replace('^Python (\\d+\\.\\d+).*$', '\\1') }}"
+  when:
+    - echoport_use_uv
+    - venv_python_test.rc == 0
+
+- name: Remove broken venv if Python is not usable
+  file:
+    path: "{{ echoport_venv_path }}"
+    state: absent
+  when:
+    - echoport_use_uv
+    - venv_python_test.rc != 0
+
+- name: Remove venv if Python version doesn't match
+  file:
+    path: "{{ echoport_venv_path }}"
+    state: absent
+  when:
+    - echoport_use_uv
+    - venv_python_test.rc == 0
+    - venv_python_current is defined
+    - venv_python_current != echoport_python_version
+
+- name: Create virtual environment using uv
+  command: uv venv --python {{ echoport_python_version }} {{ echoport_venv_path }}
+  args:
+    creates: "{{ echoport_venv_path }}/bin/python"
+  become_user: "{{ echoport_user }}"
+  when: echoport_use_uv
+
+- name: Check if venv symlink exists
+  stat:
+    path: "{{ echoport_site_path }}/venv"
+  register: venv_link
+  when: echoport_use_uv
+
+- name: Create venv symlink to .venv
+  file:
+    src: "{{ echoport_venv_path }}"
+    dest: "{{ echoport_site_path }}/venv"
+    state: link
+    owner: "{{ echoport_user }}"
+    group: "{{ echoport_group }}"
+    force: true  # Replace if exists with wrong owner
+  when: echoport_use_uv
+
+- name: Create virtual environment using venv
+  command: python3 -m venv {{ echoport_venv_path }}
+  args:
+    creates: "{{ echoport_venv_path }}/bin/python"
+  become_user: "{{ echoport_user }}"
+  when: not echoport_use_uv
+
+- name: Install dependencies using uv
+  command: "{{ echoport_uv_sync_cmd }}"
+  args:
+    chdir: "{{ echoport_django_path }}"
+  environment:
+    VIRTUAL_ENV: "{{ echoport_venv_path }}"
+  become_user: "{{ echoport_user }}"
+  when: echoport_use_uv
+  register: uv_sync
+
+- name: Install dependencies using pip
+  pip:
+    requirements: "{{ echoport_django_path }}/requirements.txt"
+    virtualenv: "{{ echoport_venv_path }}"
+    state: present
+  become_user: "{{ echoport_user }}"
+  when: not echoport_use_uv

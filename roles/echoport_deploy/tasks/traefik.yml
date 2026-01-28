@@ -1,0 +1,33 @@
+---
+# Configure Traefik for Echoport
+
+- name: Ensure Traefik dynamic config directory exists
+  file:
+    path: /etc/traefik/dynamic
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Generate basic auth password hash
+  shell: |
+    echo '{{ echoport_basic_auth_password }}' | htpasswd -nBi {{ echoport_basic_auth_user }} | cut -d: -f2
+  register: password_hash
+  changed_when: false
+  no_log: true
+  when: echoport_basic_auth_enabled
+
+- name: Set password hash fact
+  set_fact:
+    echoport_basic_auth_password_hash: "{{ password_hash.stdout }}"
+  no_log: true
+  when: echoport_basic_auth_enabled
+
+- name: Create Traefik configuration for Echoport
+  template:
+    src: traefik-echoport.yml.j2
+    dest: /etc/traefik/dynamic/echoport.yml
+    owner: root
+    group: root
+    mode: '0644'
+  notify: reload traefik

@@ -1,0 +1,18 @@
+---
+# Handlers for Echoport deployment
+
+- name: reload systemd
+  systemd:
+    daemon_reload: true
+
+- name: restart echoport
+  systemd:
+    name: echoport
+    state: restarted
+  when: echoport_service_restart_on_change
+
+- name: reload traefik
+  systemd:
+    name: traefik
+    state: restarted
+  ignore_errors: true  # Traefik might not be installed or might not support reload

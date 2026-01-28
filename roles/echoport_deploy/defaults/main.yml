@@ -1,0 +1,72 @@
+---
+# Echoport deployment role defaults
+# These are safe defaults that can be public
+# Sensitive values should be overridden in ops-control
+
+# User and paths
+echoport_user: echoport
+echoport_group: "{{ echoport_user }}"
+echoport_home: /home/echoport
+echoport_site_path: "{{ echoport_home }}/site"
+echoport_venv_path: "{{ echoport_site_path }}/.venv"
+echoport_venv_bin: "{{ echoport_venv_path }}/bin"
+echoport_cache_dir: "{{ echoport_site_path }}/cache"
+
+# Deployment method (echoport only supports rsync)
+echoport_deploy_method: rsync
+
+# Source for rsync method (required for development)
+echoport_source_path: ""  # REQUIRED - e.g., /path/to/your/echoport
+# When using rsync, copy these additional source directories to the target host
+echoport_rsync_additional_paths:
+  - src/backups/
+# Additional individual files to copy from source
+echoport_rsync_extra_files: []
+# Whether to reuse the project's pyproject.toml from echoport_source_path (rsync)
+echoport_use_source_pyproject: true
+
+# Application settings
+echoport_app_port: 10018
+echoport_app_host: "127.0.0.1"
+echoport_workers: 2
+
+# Django settings
+echoport_django_settings_module: "config.settings.production"
+echoport_django_allowed_hosts: "127.0.0.1"
+echoport_django_admin_url: "admin/"
+# REQUIRED - Must be provided, no default for security
+# echoport_django_secret_key: ""
+echoport_django_debug: false
+
+# FastDeploy integration (for backup orchestration)
+echoport_fastdeploy_base_url: ""  # REQUIRED - e.g., https://deploy.home.xn--wersdrfer-47a.de
+echoport_fastdeploy_service_token: ""  # REQUIRED
+
+# Traefik configuration
+echoport_traefik_enabled: true
+echoport_traefik_host: "echoport.example.com"  # Override in ops-control
+echoport_traefik_cert_resolver: ""  # empty -> use file-provider certs
+echoport_traefik_middlewares: []
+
+# Traefik dual router authentication (SECURITY: mandatory for public-facing services)
+echoport_basic_auth_enabled: true  # Follows security policy - dual router pattern
+echoport_basic_auth_user: "admin"
+# REQUIRED when basic_auth_enabled=true - Must be provided, no default for security
+# echoport_basic_auth_password: "CHANGEME"
+
+# Internal network IP ranges (for dual router pattern)
+# These clients bypass basic auth (internal router)
+# NOTE: Add site-specific ranges (e.g., ISP IPv6) in ops-control playbook
+echoport_internal_ip_ranges:
+  - "192.168.0.0/16"      # RFC1918 private
+  - "10.0.0.0/8"          # RFC1918 private
+  - "172.16.0.0/12"       # RFC1918 private
+  - "100.64.0.0/10"       # Tailscale CGNAT
+  - "fd7a:115c:a1e0::/48" # Tailscale IPv6
+
+# Python package management
+echoport_use_uv: true  # Use uv for package management
+echoport_python_version: "3.13"
+
+# Service restart
+echoport_service_restart_on_change: true

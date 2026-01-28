@@ -1,0 +1,151 @@
+---
+# Deploy Echoport source code using rsync
+
+- name: Ensure source directory exists
+  delegate_to: localhost
+  stat:
+    path: "{{ echoport_source_path }}"
+  register: source_dir
+  become: false
+
+- name: Fail if source directory doesn't exist
+  fail:
+    msg: "Source directory {{ echoport_source_path }} does not exist"
+  when: not source_dir.stat.exists or not source_dir.stat.isdir
+
+- name: Build list of required source paths
+  set_fact:
+    echoport_required_source_paths: >-
+      {{ ['src/django/']
+         + (echoport_rsync_additional_paths | default([]))
+         + (echoport_rsync_extra_files | default([]))
+         + (['pyproject.toml'] if echoport_use_source_pyproject else []) }}
+  delegate_to: localhost
+  become: false
+
+- name: Validate required source paths exist
+  stat:
+    path: "{{ echoport_source_path }}/{{ item }}"
+  register: echoport_source_path_stats
+  delegate_to: localhost
+  become: false
+  loop: "{{ echoport_required_source_paths }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Fail if required source paths are missing
+  assert:
+    that: item.stat.exists
+    fail_msg: "Missing required path for rsync deployment: {{ item.invocation.module_args.path }}"
+  loop: "{{ echoport_source_path_stats.results }}"
+  loop_control:
+    label: "{{ item.invocation.module_args.path }}"
+
+- name: Ensure parent directories exist for additional sources
+  file:
+    path: "{{ (echoport_site_path ~ '/' ~ item) | regex_replace('/+$', '') | dirname }}"
+    state: directory
+    owner: "{{ echoport_user }}"
+    group: "{{ echoport_group }}"
+    mode: '0755'
+  loop: "{{ echoport_rsync_additional_paths }}"
+  loop_control:
+    label: "{{ item }}"
+  when:
+    - echoport_rsync_additional_paths is defined
+    - echoport_rsync_additional_paths | length > 0
+
+- name: Ensure destination directories exist for additional sources
+  file:
+    path: "{{ (echoport_site_path ~ '/' ~ item) | regex_replace('/+$', '') }}"
+    state: directory
+    owner: "{{ echoport_user }}"
+    group: "{{ echoport_group }}"
+    mode: '0755'
+  loop: "{{ echoport_rsync_additional_paths }}"
+  loop_control:
+    label: "{{ item }}"
+  when:
+    - echoport_rsync_additional_paths is defined
+    - echoport_rsync_additional_paths | length > 0
+
+- name: Sync Django source code to target
+  ansible.posix.synchronize:
+    src: "{{ echoport_source_path }}/src/django/"
+    dest: "{{ echoport_site_path }}/"
+    delete: true
+    rsync_opts:
+      - "--exclude=.git"
+      - "--exclude=.venv"
+      - "--exclude=__pycache__"
+      - "--exclude=*.pyc"
+      - "--exclude=.pytest_cache"
+      - "--exclude=.coverage"
+      - "--exclude=htmlcov"
+      - "--exclude=.tox"
+      - "--exclude=.mypy_cache"
+      - "--exclude=node_modules"
+      - "--exclude=cache"
+      - "--exclude=src/"  # Preserve package sources; synced explicitly later
+      - "--exclude=db.sqlite3"  # Don't overwrite the database
+      - "--exclude=media/"
+      - "--exclude=staticfiles/"
+  become: false
+  delegate_to: localhost
+
+- name: Sync additional Echoport source directories
+  ansible.posix.synchronize:
+    src: "{{ echoport_source_path }}/{{ item }}"
+    dest: "{{ echoport_site_path }}/{{ item }}"
+    delete: true
+    rsync_opts:
+      - "--exclude=.git"
+      - "--exclude=.venv"
+      - "--exclude=__pycache__"
+      - "--exclude=*.pyc"
+      - "--exclude=.pytest_cache"
+      - "--exclude=.coverage"
+      - "--exclude=htmlcov"
+      - "--exclude=.tox"
+      - "--exclude=.mypy_cache"
+      - "--exclude=node_modules"
+      - "--exclude=cache"
+  become: false
+  delegate_to: localhost
+  loop: "{{ echoport_rsync_additional_paths }}"
+  loop_control:
+    label: "{{ item }}"
+  when:
+    - echoport_rsync_additional_paths is defined
+    - echoport_rsync_additional_paths | length > 0
+
+- name: Copy pyproject.toml from source
+  copy:
+    src: "{{ echoport_source_path }}/pyproject.toml"
+    dest: "{{ echoport_site_path }}/pyproject.toml"
+    owner: "{{ echoport_user }}"
+    group: "{{ echoport_group }}"
+    mode: '0644'
+  when:
+    - echoport_use_source_pyproject
+
+- name: Copy extra files from source
+  copy:
+    src: "{{ echoport_source_path }}/{{ item }}"
+    dest: "{{ echoport_site_path }}/{{ item }}"
+    owner: "{{ echoport_user }}"
+    group: "{{ echoport_group }}"
+    mode: '0644'
+  loop: "{{ echoport_rsync_extra_files }}"
+  loop_control:
+    label: "{{ item }}"
+  when:
+    - echoport_rsync_extra_files is defined
+    - echoport_rsync_extra_files | length > 0
+
+- name: Set ownership for synced files
+  file:
+    path: "{{ echoport_site_path }}"
+    owner: "{{ echoport_user }}"
+    group: "{{ echoport_group }}"
+    recurse: true

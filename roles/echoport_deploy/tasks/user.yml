@@ -1,0 +1,47 @@
+---
+# Setup user and directories for Echoport
+
+- name: Ensure echoport group exists
+  group:
+    name: "{{ echoport_group }}"
+    state: present
+
+- name: Check if echoport user exists
+  getent:
+    database: passwd
+    key: "{{ echoport_user }}"
+  register: echoport_user_check
+  failed_when: false
+
+- name: Ensure echoport user exists
+  user:
+    name: "{{ echoport_user }}"
+    group: "{{ echoport_group }}"
+    home: "{{ echoport_home }}"
+    system: true
+    shell: /bin/bash
+    state: present
+    move_home: false  # Don't try to move home if it's in use
+  when: echoport_user_check.failed  # Only create if user doesn't exist
+
+- name: Ensure echoport user is in correct group
+  user:
+    name: "{{ echoport_user }}"
+    groups: "{{ echoport_group }}"
+    append: true
+  when: not echoport_user_check.failed  # Only modify group if user exists
+
+- name: Create application directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ echoport_user }}"
+    group: "{{ echoport_group }}"
+    mode: '0755'
+  loop:
+    - "{{ echoport_home }}"
+    - "{{ echoport_site_path }}"
+    - "{{ echoport_cache_dir }}"
+    - "{{ echoport_home }}/logs"
+  loop_control:
+    label: "{{ item }}"
