@@ -103,21 +103,10 @@ def update_step(name: str, state: str, message: str = "") -> None:
 
 
 def finish_deployment(status: str = "success", message: str = None) -> None:
-    """Hybrid deployment finish."""
-    finish_stdout(status, message or f"Backup {status}")
-
-    config = read_config_file()
-    if config:
-        token = config.get("access_token", "")
-        finish_url = config.get("deployment_finish_url", "")
-    else:
-        token = os.environ.get("ACCESS_TOKEN", "")
-        finish_url = os.environ.get("DEPLOYMENT_FINISH_URL", "")
-
-    # Note: We don't need to send HTTP PUT to finish - FastDeploy's DeployTask
-    # automatically finishes the deployment when the subprocess exits.
-    # Sending PUT here can cause a race condition where the deployment is
-    # marked finished before the result step HTTP POST completes.
+    """Signal deployment completion via stdout."""
+    # Only use stdout - FastDeploy's DeployTask automatically finishes the
+    # deployment when the subprocess exits after reading all stdout.
+    finish_stdout(status, message or f"Deployment {status}")
 
 
 def emit_echoport_result(success: bool, bucket: str = "", key: str = "",
