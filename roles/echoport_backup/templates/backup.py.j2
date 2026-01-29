@@ -95,26 +95,11 @@ def request_json(url: str, token: str, payload: Dict | None = None, method: str 
 
 
 def update_step(name: str, state: str, message: str = "") -> None:
-    """Hybrid step update: stdout + HTTP API."""
+    """Update step via stdout for FastDeploy to process."""
+    # Only use stdout - FastDeploy's DeployTask reads stdout and posts steps.
+    # Sending HTTP requests directly causes race conditions with DeployTask's
+    # processing and cleanup when the subprocess exits.
     output_step(name, state, message)
-
-    config = read_config_file()
-    if config:
-        token = config.get("access_token", "")
-        steps_url = config.get("steps_url", "")
-    else:
-        token = os.environ.get("ACCESS_TOKEN", "")
-        steps_url = os.environ.get("STEPS_URL", "")
-
-    if token and steps_url:
-        try:
-            request_json(steps_url, token, {
-                "name": name,
-                "state": state,
-                "message": message
-            })
-        except Exception as e:
-            print(f"[HTTP API] Step update failed: {e}", file=sys.stderr)
 
 
 def finish_deployment(status: str = "success", message: str = None) -> None:
