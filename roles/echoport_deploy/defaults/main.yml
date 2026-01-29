@@ -70,3 +70,7 @@ echoport_python_version: "3.13"
 
 # Service restart
 echoport_service_restart_on_change: true
+
+# Scheduled backups
+echoport_scheduler_enabled: true
+echoport_scheduler_interval: "*/5"  # Run every 5 minutes by default

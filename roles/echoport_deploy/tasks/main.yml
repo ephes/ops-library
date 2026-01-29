@@ -69,3 +69,6 @@
 - name: Configure Traefik
   include_tasks: traefik.yml
   when: echoport_traefik_enabled
+
+- name: Setup scheduler cron job
+  include_tasks: scheduler.yml

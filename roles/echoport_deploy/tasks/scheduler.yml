@@ -1,0 +1,26 @@
+---
+# Setup scheduled backup cron job for Echoport
+
+- name: scheduler | Setup scheduled backup cron job
+  ansible.builtin.cron:
+    name: "Echoport scheduled backups"
+    minute: "{{ echoport_scheduler_interval }}"
+    hour: "*"
+    job: >-
+      cd {{ echoport_site_path }}/src/django &&
+      DJANGO_SETTINGS_MODULE={{ echoport_django_settings_module }}
+      {{ echoport_venv_bin }}/python manage.py run_scheduled_backups
+      >> {{ echoport_home }}/logs/scheduler.log 2>&1
+    user: "{{ echoport_user }}"
+    state: "{{ 'present' if echoport_scheduler_enabled else 'absent' }}"
+
+- name: scheduler | Create scheduler log file
+  ansible.builtin.file:
+    path: "{{ echoport_home }}/logs/scheduler.log"
+    state: touch
+    owner: "{{ echoport_user }}"
+    group: "{{ echoport_group }}"
+    mode: "0640"
+    modification_time: preserve
+    access_time: preserve
+  when: echoport_scheduler_enabled
