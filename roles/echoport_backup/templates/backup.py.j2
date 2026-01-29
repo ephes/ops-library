@@ -129,12 +129,10 @@ def finish_deployment(status: str = "success", message: str = None) -> None:
         token = os.environ.get("ACCESS_TOKEN", "")
         finish_url = os.environ.get("DEPLOYMENT_FINISH_URL", "")
 
-    if token and finish_url:
-        try:
-            # FastDeploy finish endpoint expects PUT, not POST
-            request_json(finish_url, token, method="PUT")
-        except Exception as e:
-            print(f"[HTTP API] Finish call failed: {e}", file=sys.stderr)
+    # Note: We don't need to send HTTP PUT to finish - FastDeploy's DeployTask
+    # automatically finishes the deployment when the subprocess exits.
+    # Sending PUT here can cause a race condition where the deployment is
+    # marked finished before the result step HTTP POST completes.
 
 
 def emit_echoport_result(success: bool, bucket: str = "", key: str = "",
