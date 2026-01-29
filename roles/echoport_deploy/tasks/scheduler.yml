@@ -7,7 +7,7 @@
     minute: "{{ echoport_scheduler_interval }}"
     hour: "*"
     job: >-
-      cd {{ echoport_site_path }}/src/django &&
+      cd {{ echoport_site_path }} &&
       DJANGO_SETTINGS_MODULE={{ echoport_django_settings_module }}
       {{ echoport_venv_bin }}/python manage.py run_scheduled_backups
       >> {{ echoport_home }}/logs/scheduler.log 2>&1
