@@ -12,7 +12,6 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
@@ -1000,21 +999,10 @@ if __name__ == "__main__":
     Path(TEMP_DIR).mkdir(parents=True, exist_ok=True)
 
     try:
-        exit_code = main()
+        sys.exit(main())
     except Exception as e:
         print(f"Backup failed with error: {e}", file=sys.stderr)
         update_step("error", "failure", str(e))
         emit_echoport_result(False, error=str(e))
         finish_deployment("failure", f"Unexpected error: {e}")
-        exit_code = 1
-
-    # Workaround for FastDeploy race condition: FastDeploy's DeployTask reads
-    # stdout in a loop, but checks if the process has exited BEFORE processing
-    # the data it just read. If the process exits too quickly (while FastDeploy
-    # is doing HTTP POST for a step), FastDeploy discards remaining output.
-    # Sleep to ensure FastDeploy has time to read and process all output.
-    # Using 5 seconds as a conservative value - each step takes ~100-500ms to POST.
-    sys.stdout.flush()
-    sys.stderr.flush()
-    time.sleep(5)  # Give FastDeploy time to process all output
-    sys.exit(exit_code)
+        sys.exit(1)
