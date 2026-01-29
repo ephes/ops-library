@@ -65,8 +65,13 @@
         "steps": [
           {"name": "init"},
           {"name": "backup"},
+          {"name": "download"},
           {"name": "upload"},
           {"name": "verify"},
+          {"name": "extract"},
+          {"name": "stop"},
+          {"name": "restore"},
+          {"name": "start"},
           {"name": "result"}
         ]
       }
