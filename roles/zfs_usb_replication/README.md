@@ -38,7 +38,24 @@ zfs_usb_replication_jobs:
 zfs_usb_replication_on_calendar: "Sun 04:00"
 zfs_usb_replication_alert_email: "root"
 zfs_usb_replication_key_path: "/root/.zfs-key-vault"
+zfs_usb_replication_identifier: "usb"
+zfs_usb_replication_force_export: true
 ```
+
+### Spindown (optional)
+
+```yaml
+zfs_usb_replication_spindown_enabled: true
+zfs_usb_replication_spindown_pool: "tank"  # pool to check for activity before parking HDDs
+zfs_usb_replication_spindown_devices:
+  - /dev/disk/by-id/ata-WDC_WD120EFGX-68CPHN0_WD-B00MJ7WD
+  - /dev/disk/by-id/ata-WDC_WD120EFGX-68CPHN0_WD-B00MRZAD
+```
+
+Notes:
+- `zfs_usb_replication_force_export: true` exports the USB pool after each run, even on failure.
+- `zfs_usb_replication_spindown_pool` should be the HDD pool (the USB job reads from this pool).
+- Spindown is invoked only after a successful replication run.
 
 ### Advanced
 
@@ -95,6 +112,8 @@ just test-role zfs_usb_replication
 
 ## Changelog
 
+- **1.0.2** (2026-01-30): Added force-export and spindown support for USB replication runs
+- **1.0.1** (2026-01-29): Added `zfs_usb_replication_identifier` to avoid syncoid snapshot name collisions
 - **1.0.0** (2026-01-18): Initial release
 
 ## License

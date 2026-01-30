@@ -73,6 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - DNS deployment/removal flows hardened with improved resolver management, legacy `unbound_only` port detection, and safer variable validation
 - `open_webui_deploy` documentation now calls out the `studio.tailde2ec.ts.net` hostname, Traefik config path/basic auth wiring, and ops-control preflight bypass flag
 - `open_webui_remove` now defaults to non-destructive options and supports removing compose/env files separately from the site directory
+- `zfs_usb_replication` gained optional syncoid identifiers, force-export, and spindown hooks to prevent snapshot collisions and park disks after USB runs
 
 ### Fixed
 - Home Assistant presence automations now include the default file to prevent missing automation imports after deployment

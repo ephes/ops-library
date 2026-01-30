@@ -6,6 +6,9 @@ device="{{ zfs_usb_replication_device }}"
 pool="{{ zfs_usb_replication_pool }}"
 key_path="{{ zfs_usb_replication_key_path }}"
 syncoid_bin="{{ zfs_usb_replication_syncoid_path }}"
+force_export="{{ zfs_usb_replication_force_export | bool | ternary('true', 'false') }}"
+spindown_enabled="{{ zfs_usb_replication_spindown_enabled | bool | ternary('true', 'false') }}"
+spindown_script="{{ zfs_usb_replication_spindown_script_path }}"
 
 if [[ -z "${device}" || -z "${pool}" ]]; then
   logger -t "${log_tag}" "Missing device or pool configuration; aborting."
@@ -26,7 +29,7 @@ else
 fi
 
 cleanup() {
-  if [[ "${pool_preexisting}" == "true" ]]; then
+  if [[ "${pool_preexisting}" == "true" && "${force_export}" != "true" ]]; then
     return
   fi
   logger -t "${log_tag}" "Exporting pool ${pool}"
@@ -47,6 +50,7 @@ zfs mount -a
 {% set args = [] %}
 {% if job.recursive | default(false) %}{% set _ = args.append('--recursive') %}{% endif %}
 {% if job.readonly | default(false) %}{% set _ = args.append('--recvoptions=\"o readonly=on\"') %}{% endif %}
+{% if zfs_usb_replication_identifier | default('') | length > 0 %}{% set _ = args.append('--identifier="' ~ zfs_usb_replication_identifier ~ '"') %}{% endif %}
 {% for arg in zfs_usb_replication_default_args %}{% set _ = args.append(arg) %}{% endfor %}
 {% for arg in job.extra_args | default([]) %}{% set _ = args.append(arg) %}{% endfor %}
 logger -t "${log_tag}" "Running syncoid: {{ job.source }} -> {{ job.target }}"
@@ -54,3 +58,11 @@ logger -t "${log_tag}" "Running syncoid: {{ job.source }} -> {{ job.target }}"
 {% endfor %}
 
 logger -t "${log_tag}" "USB replication complete for pool ${pool}"
+
+if [[ "${spindown_enabled}" == "true" ]]; then
+  if [[ -x "${spindown_script}" ]]; then
+    "${spindown_script}" || true
+  else
+    logger -t "${log_tag}" "Spindown script not executable: ${spindown_script}"
+  fi
+fi
