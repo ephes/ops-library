@@ -21,6 +21,62 @@
     - reload systemd
     - restart marina
 
+- name: Check for existing listeners on marina port
+  shell: |
+    set -euo pipefail
+    pids=$(ss -lntp "sport = :{{ marina_app_port }}" 2>/dev/null | awk -F'pid=' 'NR>1{print $2}' | awk -F',' '{print $1}' | sort -u)
+    if [ -z "$pids" ]; then
+      echo "PORT_FREE"
+      exit 0
+    fi
+    external_pids=()
+    for pid in $pids; do
+      if [ -r "/proc/$pid/cgroup" ]; then
+        if ! grep -q "marina.service" "/proc/$pid/cgroup"; then
+          external_pids+=("$pid")
+        fi
+      else
+        external_pids+=("$pid")
+      fi
+    done
+    if [ "${#external_pids[@]}" -eq 0 ]; then
+      echo "PORT_OWNED_BY_MARINA"
+      exit 0
+    fi
+    echo "PORT_IN_USE external_pids=${external_pids[*]}"
+    exit 2
+  register: marina_port_check
+  changed_when: false
+  failed_when: marina_port_check.rc == 2 and not marina_force_port_cleanup
+  when: marina_port_check_enabled
+  become: true
+
+- name: Cleanup stale listeners on marina port
+  shell: |
+    set -euo pipefail
+    pids=$(ss -lntp "sport = :{{ marina_app_port }}" 2>/dev/null | awk -F'pid=' 'NR>1{print $2}' | awk -F',' '{print $1}' | sort -u)
+    if [ -z "$pids" ]; then
+      exit 0
+    fi
+    external_pids=()
+    for pid in $pids; do
+      if [ -r "/proc/$pid/cgroup" ]; then
+        if ! grep -q "marina.service" "/proc/$pid/cgroup"; then
+          external_pids+=("$pid")
+        fi
+      else
+        external_pids+=("$pid")
+      fi
+    done
+    if [ "${#external_pids[@]}" -eq 0 ]; then
+      exit 0
+    fi
+    kill ${external_pids[*]} || true
+    sleep 1
+    kill -9 ${external_pids[*]} || true
+  when: marina_port_check_enabled and marina_force_port_cleanup
+  become: true
+
 - name: Enable and start marina service
   systemd:
     name: "{{ marina_user }}"
