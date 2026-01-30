@@ -1,5 +1,5 @@
 ---
-# Setup scheduled backup cron job for Echoport
+# Setup scheduled backup and cleanup cron jobs for Echoport
 
 - name: scheduler | Setup scheduled backup cron job
   ansible.builtin.cron:
@@ -24,3 +24,27 @@
     modification_time: preserve
     access_time: preserve
   when: echoport_scheduler_enabled
+
+- name: scheduler | Setup cleanup cron job
+  ansible.builtin.cron:
+    name: "Echoport cleanup old backups"
+    minute: "0"
+    hour: "{{ echoport_cleanup_hour }}"
+    job: >-
+      cd {{ echoport_site_path }} &&
+      DJANGO_SETTINGS_MODULE={{ echoport_django_settings_module }}
+      {{ echoport_venv_bin }}/python manage.py cleanup_old_backups
+      >> {{ echoport_home }}/logs/cleanup.log 2>&1
+    user: "{{ echoport_user }}"
+    state: "{{ 'present' if echoport_cleanup_enabled else 'absent' }}"
+
+- name: scheduler | Create cleanup log file
+  ansible.builtin.file:
+    path: "{{ echoport_home }}/logs/cleanup.log"
+    state: touch
+    owner: "{{ echoport_user }}"
+    group: "{{ echoport_group }}"
+    mode: "0640"
+    modification_time: preserve
+    access_time: preserve
+  when: echoport_cleanup_enabled

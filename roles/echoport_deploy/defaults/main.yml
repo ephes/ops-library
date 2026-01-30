@@ -74,3 +74,7 @@ echoport_service_restart_on_change: true
 # Scheduled backups
 echoport_scheduler_enabled: true
 echoport_scheduler_interval: "*/5"  # Run every 5 minutes by default
+
+# Retention cleanup (runs daily to delete old backups from MinIO)
+echoport_cleanup_enabled: true
+echoport_cleanup_hour: "3"  # Run at 3am (after 2am backups complete)
