@@ -25,6 +25,18 @@
           - zfs_usb_replication_pool != 'CHANGE_ME'
         fail_msg: "zfs_usb_replication_device and zfs_usb_replication_pool must be set"
 
+    - name: Validate syncoid identifier
+      ansible.builtin.assert:
+        that:
+          - zfs_usb_replication_identifier is match('^[a-zA-Z0-9_-]+$')
+        fail_msg: "zfs_usb_replication_identifier must contain only letters, numbers, hyphens, or underscores"
+      when: zfs_usb_replication_identifier | default('') | length > 0
+
+    - name: Warn when syncoid identifier is not set
+      ansible.builtin.debug:
+        msg: "WARNING: zfs_usb_replication_identifier is empty; syncoid snapshots may collide across jobs."
+      when: zfs_usb_replication_identifier | default('') | length == 0
+
     - name: Validate job fields
       ansible.builtin.assert:
         that:
@@ -56,6 +68,14 @@
           - zfs_usb_replication_alert_email != 'CHANGE_ME'
         fail_msg: "zfs_usb_replication_alert_email must be set when alerting is enabled"
       when: zfs_usb_replication_alert_enabled | bool
+
+    - name: Validate spindown configuration
+      ansible.builtin.assert:
+        that:
+          - zfs_usb_replication_spindown_devices | length > 0
+          - zfs_usb_replication_spindown_pool | length > 0
+        fail_msg: "zfs_usb_replication_spindown_devices and zfs_usb_replication_spindown_pool must be set when spindown is enabled"
+      when: zfs_usb_replication_spindown_enabled | bool
 
     - name: Install syncoid packages
       ansible.builtin.package:
@@ -89,6 +109,15 @@
         group: root
         mode: "0750"
       when: zfs_usb_replication_alert_enabled | bool
+
+    - name: Install spindown script
+      ansible.builtin.template:
+        src: zfs-usb-spindown.sh.j2
+        dest: "{{ zfs_usb_replication_spindown_script_path }}"
+        owner: root
+        group: root
+        mode: "0750"
+      when: zfs_usb_replication_spindown_enabled | bool
 
     - name: Install USB replication script
       ansible.builtin.template:
