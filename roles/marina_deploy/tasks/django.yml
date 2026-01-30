@@ -1,0 +1,43 @@
+---
+# Configure Django application
+
+- name: Create environment file for Django
+  template:
+    src: marina.env.j2
+    dest: "{{ marina_env_file }}"
+    owner: "{{ marina_user }}"
+    group: "{{ marina_group }}"
+    mode: '0600'
+  notify: restart marina
+
+- name: Run Django migrations
+  shell: |
+    set -a
+    . {{ marina_env_file }}
+    set +a
+    {{ marina_venv_bin }}/python manage.py migrate
+  args:
+    chdir: "{{ marina_site_path }}"
+    executable: /bin/bash
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ marina_django_settings_module }}"
+  become: true
+  become_user: "{{ marina_user }}"
+  register: marina_migrate_result
+  changed_when: "'No migrations to apply' not in marina_migrate_result.stdout"
+
+- name: Collect static files
+  shell: |
+    set -a
+    . {{ marina_env_file }}
+    set +a
+    {{ marina_venv_bin }}/python manage.py collectstatic --noinput
+  args:
+    chdir: "{{ marina_site_path }}"
+    executable: /bin/bash
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ marina_django_settings_module }}"
+  become: true
+  become_user: "{{ marina_user }}"
+  register: marina_collectstatic_result
+  changed_when: "'0 static files copied' not in marina_collectstatic_result.stdout"

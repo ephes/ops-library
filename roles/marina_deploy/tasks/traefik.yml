@@ -1,0 +1,19 @@
+---
+# Configure Traefik for Marina
+
+- name: Ensure Traefik dynamic config directory exists
+  file:
+    path: "{{ marina_traefik_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create Traefik configuration for Marina
+  template:
+    src: traefik.yml.j2
+    dest: "{{ marina_traefik_config_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+  # Traefik automatically watches dynamic directory, no reload needed

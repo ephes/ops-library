@@ -1,0 +1,29 @@
+---
+# Setup systemd service for Marina
+
+- name: Create gunicorn start script
+  template:
+    src: gunicorn.sh.j2
+    dest: "{{ marina_site_path }}/gunicorn.sh"
+    owner: "{{ marina_user }}"
+    group: "{{ marina_group }}"
+    mode: '0755'
+  notify: restart marina
+
+- name: Create systemd service file
+  template:
+    src: systemd.service.j2
+    dest: "{{ marina_systemd_unit_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - reload systemd
+    - restart marina
+
+- name: Enable and start marina service
+  systemd:
+    name: "{{ marina_user }}"
+    enabled: true
+    state: started
+    daemon_reload: true

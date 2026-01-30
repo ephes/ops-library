@@ -1,0 +1,9 @@
+---
+- name: reload systemd
+  systemd:
+    daemon_reload: true
+
+- name: restart marina
+  systemd:
+    name: "{{ marina_user }}"
+    state: restarted

@@ -1,0 +1,30 @@
+---
+# Deploy Marina source code using rsync
+
+- name: Ensure source directory exists
+  delegate_to: localhost
+  stat:
+    path: "{{ marina_source_path }}"
+  register: marina_source_dir
+  become: false
+
+- name: Fail if source directory doesn't exist
+  fail:
+    msg: "Source directory {{ marina_source_path }} does not exist"
+  when: not marina_source_dir.stat.exists or not marina_source_dir.stat.isdir
+
+- name: Sync Marina source code to target
+  ansible.posix.synchronize:
+    src: "{{ marina_source_path }}/"
+    dest: "{{ marina_site_path }}/"
+    delete: false
+    rsync_opts: "{{ marina_rsync_excludes | map('regex_replace', '^(.*)$', '--exclude=\\1') | list }}"
+  become: false
+  delegate_to: localhost
+
+- name: Set ownership for synced files
+  file:
+    path: "{{ marina_site_path }}"
+    owner: "{{ marina_user }}"
+    group: "{{ marina_group }}"
+    recurse: true

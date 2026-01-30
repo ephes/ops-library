@@ -1,0 +1,60 @@
+---
+# Default values for marina_deploy role
+
+marina_service_name: "marina"
+
+# Deployment user
+marina_user: "marina"
+marina_group: "marina"
+marina_home: "/home/{{ marina_user }}"
+
+# Paths
+marina_site_path: "{{ marina_home }}/site"
+marina_venv_path: "{{ marina_site_path }}/.venv"
+marina_venv_bin: "{{ marina_venv_path }}/bin"
+marina_cache_dir: "{{ marina_site_path }}/cache"
+marina_env_file: "{{ marina_site_path }}/.env"
+marina_systemd_unit_path: "/etc/systemd/system/{{ marina_user }}.service"
+marina_fish_config_dir: "{{ marina_home }}/.config/fish"
+marina_fish_config_path: "{{ marina_fish_config_dir }}/config.fish"
+
+# Source (required)
+# marina_source_path: "/path/to/marina"
+
+# Python/uv
+marina_use_uv: true
+marina_uv_path: "/usr/local/bin/uv"
+marina_python_version: "python3.13"
+
+# App config
+marina_app_port: 10019
+marina_gunicorn_workers: 4
+marina_gunicorn_timeout: 3600
+marina_django_settings_module: "config.settings.production"
+marina_django_admin_url: "hidden_admin/"
+marina_django_allowed_hosts: "{{ marina_fqdn }},localhost"
+marina_django_cache_location: "{{ marina_cache_dir }}"
+
+# Secrets (required)
+# marina_django_secret_key: ""
+
+# Traefik
+marina_traefik_enabled: true
+marina_traefik_config_dir: "/etc/traefik/dynamic"
+marina_traefik_config_path: "{{ marina_traefik_config_dir }}/{{ marina_user }}.traefik.yml"
+
+# Host configuration (required)
+# marina_fqdn: "marina-adler.de"
+# marina_traefik_host_rule: "Host(`marina-adler.de`) || Host(`www.marina-adler.de`)"
+
+# Rsync
+marina_rsync_excludes:
+  - "media"
+  - "backups"
+  - ".venv"
+  - ".git"
+  - "__pycache__"
+  - "*.pyc"
+  - ".pytest_cache"
+  - ".mypy_cache"
+  - "node_modules"

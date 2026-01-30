@@ -1,0 +1,48 @@
+---
+# Marina deployment main tasks
+
+- name: Validate required variables
+  assert:
+    that:
+      - marina_django_secret_key is defined
+      - marina_django_secret_key != ""
+      - marina_django_secret_key != "CHANGEME"
+      - marina_source_path is defined
+      - marina_source_path != ""
+      - marina_fqdn is defined
+      - marina_fqdn != ""
+      - marina_traefik_host_rule is defined
+      - marina_traefik_host_rule != ""
+      - marina_app_port | int > 0
+    fail_msg: |
+      SECURITY ERROR: Required variables are missing or contain placeholder values!
+
+      The following variables MUST be properly configured:
+      - marina_django_secret_key: {{ marina_django_secret_key | default('NOT SET') }}
+      - marina_source_path: {{ marina_source_path | default('NOT SET') }}
+      - marina_fqdn: {{ marina_fqdn | default('NOT SET') }}
+      - marina_traefik_host_rule: {{ marina_traefik_host_rule | default('NOT SET') }}
+
+      Placeholder or development values are NOT allowed in production.
+      Please update the marina secrets (e.g. secrets/prod/marina.yml or
+      secrets/staging/marina.yml) with real values using:
+      SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt sops secrets/<env>/marina.yml
+
+- name: Setup user and directories
+  include_tasks: user.yml
+
+- name: Deploy source code
+  include_tasks: source_rsync.yml
+
+- name: Setup Python environment
+  include_tasks: python.yml
+
+- name: Configure Django application
+  include_tasks: django.yml
+
+- name: Setup systemd service
+  include_tasks: service.yml
+
+- name: Configure Traefik
+  include_tasks: traefik.yml
+  when: marina_traefik_enabled

@@ -1,0 +1,14 @@
+[Unit]
+Description=Marina web application
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+WorkingDirectory={{ marina_site_path }}
+User={{ marina_user }}
+Environment="DJANGO_SETTINGS_MODULE={{ marina_django_settings_module }}"
+ExecStart={{ marina_site_path }}/gunicorn.sh
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,59 @@
+---
+# Setup user and directories for Marina
+
+- name: Ensure marina group exists
+  group:
+    name: "{{ marina_group }}"
+    state: present
+
+- name: Check if marina user exists
+  getent:
+    database: passwd
+    key: "{{ marina_user }}"
+  register: marina_user_check
+  failed_when: false
+
+- name: Ensure marina user exists
+  user:
+    name: "{{ marina_user }}"
+    group: "{{ marina_group }}"
+    home: "{{ marina_home }}"
+    shell: /usr/bin/fish
+    state: present
+    move_home: false
+  when: marina_user_check.failed
+
+- name: Ensure marina user is in correct group
+  user:
+    name: "{{ marina_user }}"
+    groups: "{{ marina_group }}"
+    append: true
+  when: not marina_user_check.failed
+
+- name: Create application directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ marina_user }}"
+    group: "{{ marina_group }}"
+    mode: '0755'
+  loop:
+    - "{{ marina_home }}"
+    - "{{ marina_site_path }}"
+    - "{{ marina_cache_dir }}"
+
+- name: Create fish config directory
+  file:
+    path: "{{ marina_fish_config_dir }}"
+    state: directory
+    owner: "{{ marina_user }}"
+    group: "{{ marina_group }}"
+    mode: '0755'
+
+- name: Create fish config
+  template:
+    src: user_config.fish.j2
+    dest: "{{ marina_fish_config_path }}"
+    owner: "{{ marina_user }}"
+    group: "{{ marina_group }}"
+    mode: '0644'

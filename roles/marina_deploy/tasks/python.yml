@@ -1,0 +1,71 @@
+---
+# Setup Python environment for Marina
+
+- name: Ensure uv binary is installed
+  ansible.builtin.import_role:
+    name: uv_install
+  when: marina_use_uv
+
+- name: Ensure Python and pip are installed
+  package:
+    name:
+      - python3
+      - python3-pip
+      - python3-venv
+    state: present
+  when: not marina_use_uv
+
+- name: Determine Django project path
+  set_fact:
+    marina_django_path: "{{ marina_site_path }}"
+
+- name: Create virtual environment using uv
+  command: "{{ marina_uv_path }} venv --python {{ marina_python_version }} {{ marina_venv_path }}"
+  args:
+    creates: "{{ marina_venv_path }}/bin/python"
+  become: true
+  become_user: "{{ marina_user }}"
+  when: marina_use_uv
+
+- name: Check if venv symlink exists
+  stat:
+    path: "{{ marina_site_path }}/venv"
+  register: marina_venv_link
+  when: marina_use_uv
+
+- name: Create venv symlink to .venv
+  file:
+    src: "{{ marina_venv_path }}"
+    dest: "{{ marina_site_path }}/venv"
+    state: link
+    owner: "{{ marina_user }}"
+    group: "{{ marina_group }}"
+    force: true
+  when: marina_use_uv
+
+- name: Create virtual environment using venv
+  command: python3 -m venv {{ marina_venv_path }}
+  args:
+    creates: "{{ marina_venv_path }}/bin/python"
+  become: true
+  become_user: "{{ marina_user }}"
+  when: not marina_use_uv
+
+- name: Install dependencies using uv
+  command: "{{ marina_uv_path }} sync --no-dev"
+  args:
+    chdir: "{{ marina_django_path }}"
+  environment:
+    VIRTUAL_ENV: "{{ marina_venv_path }}"
+  become: true
+  become_user: "{{ marina_user }}"
+  when: marina_use_uv
+
+- name: Install dependencies using pip
+  pip:
+    requirements: "{{ marina_django_path }}/requirements.txt"
+    virtualenv: "{{ marina_venv_path }}"
+    state: present
+  become: true
+  become_user: "{{ marina_user }}"
+  when: not marina_use_uv
