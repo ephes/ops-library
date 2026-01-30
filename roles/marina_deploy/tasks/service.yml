@@ -77,6 +77,20 @@
   when: marina_port_check_enabled and marina_force_port_cleanup
   become: true
 
+- name: Verify marina port is free after cleanup
+  shell: |
+    set -euo pipefail
+    sleep 1
+    if ss -lntp "sport = :{{ marina_app_port }}" 2>/dev/null | awk 'NR>1{print $0}' | grep -q .; then
+      ss -lntp "sport = :{{ marina_app_port }}" || true
+      exit 2
+    fi
+  register: marina_port_post_cleanup_check
+  changed_when: false
+  failed_when: marina_port_post_cleanup_check.rc != 0
+  when: marina_port_check_enabled and marina_force_port_cleanup
+  become: true
+
 - name: Enable and start marina service
   systemd:
     name: "{{ marina_user }}"
