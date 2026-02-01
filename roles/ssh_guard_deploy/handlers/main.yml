@@ -1,0 +1,12 @@
+---
+- name: Reload ssh service
+  ansible.builtin.service:
+    name: "{{ ssh_guard_sshd_service_name }}"
+    state: reloaded
+  listen: "Reload ssh"
+
+- name: Restart fail2ban
+  ansible.builtin.service:
+    name: "{{ ssh_guard_fail2ban_service_name }}"
+    state: restarted
+  listen: "Restart fail2ban"

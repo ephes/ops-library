@@ -1,0 +1,23 @@
+---
+# Fail2ban settings
+ssh_guard_fail2ban_enabled: true
+ssh_guard_fail2ban_package: "fail2ban"
+ssh_guard_fail2ban_service_name: "fail2ban"
+ssh_guard_fail2ban_jail_name: "sshd"
+ssh_guard_fail2ban_backend: "systemd"
+ssh_guard_fail2ban_filter: "sshd"
+ssh_guard_fail2ban_port: "ssh"
+ssh_guard_fail2ban_maxretry: 5
+ssh_guard_fail2ban_findtime: "10m"
+ssh_guard_fail2ban_bantime: "1h"
+ssh_guard_fail2ban_ignoreip: "127.0.0.1/8 ::1 100.64.0.0/10"
+
+# SSHD hardening drop-in
+ssh_guard_sshd_dropin_enabled: true
+ssh_guard_sshd_dropin_path: "/etc/ssh/sshd_config.d/99-ssh-guard.conf"
+ssh_guard_sshd_service_name: "ssh"
+
+# Set to empty string to omit the directive.
+ssh_guard_per_source_max_startups: "5"
+ssh_guard_max_auth_tries: ""
+ssh_guard_login_grace_time: ""

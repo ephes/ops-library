@@ -1,0 +1,72 @@
+---
+- name: Validate fail2ban inputs
+  ansible.builtin.assert:
+    that:
+      - ssh_guard_fail2ban_maxretry | int > 0
+    fail_msg: "ssh_guard_fail2ban_maxretry must be > 0."
+  when: ssh_guard_fail2ban_enabled | bool
+
+- name: Validate sshd inputs
+  ansible.builtin.assert:
+    that:
+      - ssh_guard_per_source_max_startups is not none
+    fail_msg: "Use empty string to omit PerSourceMaxStartups (null is invalid)."
+  when: ssh_guard_sshd_dropin_enabled | bool
+
+- name: Ensure sshd config drop-in directory exists
+  ansible.builtin.file:
+    path: "{{ ssh_guard_sshd_dropin_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: ssh_guard_sshd_dropin_enabled | bool
+
+- name: Install fail2ban
+  ansible.builtin.package:
+    name: "{{ ssh_guard_fail2ban_package }}"
+    state: present
+  when: ssh_guard_fail2ban_enabled | bool
+
+- name: Ensure fail2ban service is enabled and running
+  ansible.builtin.service:
+    name: "{{ ssh_guard_fail2ban_service_name }}"
+    enabled: true
+    state: started
+  when: ssh_guard_fail2ban_enabled | bool
+
+- name: Configure fail2ban sshd jail
+  ansible.builtin.template:
+    src: fail2ban-sshd.local.j2
+    dest: /etc/fail2ban/jail.d/ssh-guard.local
+    owner: root
+    group: root
+    mode: "0644"
+  when: ssh_guard_fail2ban_enabled | bool
+  notify: "Restart fail2ban"
+
+- name: Configure sshd drop-in hardening
+  block:
+    - name: Write sshd drop-in
+      ansible.builtin.template:
+        src: sshd-guard.conf.j2
+        dest: "{{ ssh_guard_sshd_dropin_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      register: ssh_guard_dropin_result
+
+    - name: Validate sshd config
+      ansible.builtin.command: sshd -t -f /etc/ssh/sshd_config
+      changed_when: false
+      when: ssh_guard_dropin_result.changed
+  rescue:
+    - name: Remove invalid sshd drop-in
+      ansible.builtin.file:
+        path: "{{ ssh_guard_sshd_dropin_path }}"
+        state: absent
+    - name: Fail due to invalid sshd config
+      ansible.builtin.fail:
+        msg: "Invalid sshd config; removed {{ ssh_guard_sshd_dropin_path }}."
+  when: ssh_guard_sshd_dropin_enabled | bool
+  notify: "Reload ssh"
