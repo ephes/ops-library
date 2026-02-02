@@ -26,3 +26,6 @@ zed_scrub_timer_on_calendar: "weekly"
 zed_scrub_timer_randomized_delay_sec: "6h"
 zed_scrub_service_template: "zpool-scrub@.service"
 zed_scrub_timer_template: "zpool-scrub@.timer"
+zed_scrub_wait_for_completion: false
+zed_scrub_spindown_enabled: false
+zed_scrub_spindown_script_path: ""
