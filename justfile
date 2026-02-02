@@ -96,6 +96,10 @@ status:
 stats:
     @cloc --include-lang=YAML --exclude-dir=.venv .
 
+# Count total YAML lines
+yaml-lines:
+    @rg --files -0 -g '*.yml' -g '*.yaml' . | xargs -0 wc -l | awk 'BEGIN {sum=0} !/^ *[0-9]+ total$/ {sum += $1} END {print sum}'
+
 # Show YAML lines of code per role (top 20)
 stats-roles:
     #!/usr/bin/env bash
@@ -330,6 +334,7 @@ help:
     @echo "Info:"
     @echo "  just status         # Show component overview"
     @echo "  just stats          # Show YAML lines of code (requires cloc)"
+    @echo "  just yaml-lines     # Show total YAML line count"
     @echo "  just stats-roles    # Show YAML lines per role (top 20)"
     @echo ""
     @echo "Run 'just' to see all available commands"
