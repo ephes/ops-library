@@ -36,7 +36,13 @@ zed_manage_scrub_timer: true                   # Create scrub timers
 zed_scrub_pools: []                            # List of pools to scrub
 zed_scrub_timer_on_calendar: "weekly"          # Scrub frequency
 zed_scrub_timer_randomized_delay_sec: "6h"     # Random delay to spread load
+zed_scrub_wait_for_completion: false          # Wait for scrub to finish (uses `zpool scrub -w`)
+zed_scrub_spindown_enabled: false             # Run spindown hook after scrub completes
+zed_scrub_spindown_script_path: ""            # Script to run after scrub (required if enabled)
 ```
+
+Note: When scrub spindown is enabled, the script path must exist on the target host (this role does not
+install a spindown script).
 
 See `defaults/main.yml` for the full list.
 

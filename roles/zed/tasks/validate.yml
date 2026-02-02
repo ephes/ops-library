@@ -4,3 +4,30 @@
     that:
       - zed_email_to | length > 0
     fail_msg: "zed_email_to must be set"
+
+- name: validate | Assert scrub spindown configuration when enabled
+  ansible.builtin.assert:
+    that:
+      - zed_scrub_spindown_script_path | length > 0
+    fail_msg: "zed_scrub_spindown_script_path must be set when scrub spindown is enabled"
+  when:
+    - zed_manage_scrub_timer
+    - zed_scrub_spindown_enabled | bool
+
+- name: validate | Check scrub spindown script exists
+  ansible.builtin.stat:
+    path: "{{ zed_scrub_spindown_script_path }}"
+  register: zed_scrub_spindown_script_stat
+  when:
+    - zed_manage_scrub_timer
+    - zed_scrub_spindown_enabled | bool
+
+- name: validate | Assert scrub spindown script present
+  ansible.builtin.assert:
+    that:
+      - zed_scrub_spindown_script_stat.stat.exists
+      - zed_scrub_spindown_script_stat.stat.isreg
+    fail_msg: "zed_scrub_spindown_script_path does not exist on the target host"
+  when:
+    - zed_manage_scrub_timer
+    - zed_scrub_spindown_enabled | bool
