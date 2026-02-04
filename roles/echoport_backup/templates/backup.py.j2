@@ -415,6 +415,72 @@ def start_service(service_name: str) -> bool:
         return False
 
 
+def cleanup_sqlite_wal(db_path: str) -> bool:
+    """
+    Remove SQLite WAL and SHM files before/after restore.
+
+    When SQLite is in WAL mode, stale -wal and -shm files can cause
+    corruption or boot failures if the service tries to use them
+    with a restored database.
+    """
+    if not db_path:
+        return True
+
+    wal_path = f"{db_path}-wal"
+    shm_path = f"{db_path}-shm"
+
+    for path in [wal_path, shm_path]:
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+                print(f"Removed SQLite WAL/SHM file: {path}", file=sys.stderr)
+            except Exception as e:
+                print(f"Failed to remove {path}: {e}", file=sys.stderr)
+                return False
+
+    return True
+
+
+def apply_ownership(paths: list, owner: str) -> bool:
+    """
+    Apply user:group ownership to restored files.
+
+    Args:
+        paths: List of file/directory paths to chown
+        owner: Owner string in 'user:group' format
+
+    Returns:
+        True if successful, False otherwise
+    """
+    if not owner:
+        return True
+
+    if ":" not in owner:
+        print(f"Invalid owner format (expected 'user:group'): {owner}", file=sys.stderr)
+        return False
+
+    for path in paths:
+        if not path or not os.path.exists(path):
+            continue
+
+        try:
+            # Use chown -R for directories
+            args = ["chown", "-R", owner, path] if os.path.isdir(path) else ["chown", owner, path]
+            result = subprocess.run(args, capture_output=True, text=True)
+
+            if result.returncode != 0:
+                print(f"Failed to chown {path}: {result.stderr}", file=sys.stderr)
+                return False
+
+            print(f"Applied ownership {owner} to {path}", file=sys.stderr)
+
+        except Exception as e:
+            print(f"Error applying ownership to {path}: {e}", file=sys.stderr)
+            return False
+
+    return True
+
+
 def _is_safe_tar_member(member: tarfile.TarInfo, dest_dir: Path) -> bool:
     """
     High: Check if a tar member is safe to extract.
@@ -639,6 +705,7 @@ def main_restore(config: Optional[Dict], context: Dict, cenv: Dict) -> int:
     storage_key = cenv.get("ECHOPORT_KEY", "")
     expected_checksum = cenv.get("ECHOPORT_CHECKSUM", "")
     service_name = cenv.get("ECHOPORT_SERVICE_NAME", "")
+    restore_owner = cenv.get("ECHOPORT_RESTORE_OWNER", "")
 
     backup_files = [f.strip() for f in backup_files_str.split(",") if f.strip()]
 
@@ -650,6 +717,7 @@ def main_restore(config: Optional[Dict], context: Dict, cenv: Dict) -> int:
     print(f"  Bucket: {bucket}", file=sys.stderr)
     print(f"  Key: {storage_key}", file=sys.stderr)
     print(f"  Service: {service_name}", file=sys.stderr)
+    print(f"  Restore Owner: {restore_owner or '(none)'}", file=sys.stderr)
 
     # Security: Validate all target paths are under allowed roots
     all_paths = ([db_path] if db_path else []) + backup_files
@@ -742,6 +810,16 @@ def main_restore(config: Optional[Dict], context: Dict, cenv: Dict) -> int:
             service_was_stopped = True
             update_step("stop", "success", f"Stopped {service_name}")
 
+        # Clean up SQLite WAL/SHM files before restore
+        if db_path:
+            if not cleanup_sqlite_wal(db_path):
+                if service_was_stopped and service_name:
+                    start_service(service_name)
+                update_step("restore", "failure", "Failed to clean up WAL/SHM files")
+                emit_echoport_result(False, error="WAL/SHM cleanup failed")
+                finish_deployment("failure", "WAL cleanup failed")
+                return 1
+
         # Restore database
         files_restored = 0
         update_step("restore", "running", "Restoring files")
@@ -785,6 +863,30 @@ def main_restore(config: Optional[Dict], context: Dict, cenv: Dict) -> int:
             return 1
 
         update_step("restore", "success", f"Restored {files_restored} file(s)")
+
+        # Clean up SQLite WAL/SHM files after restore (in case tarball contained them)
+        if db_path:
+            cleanup_sqlite_wal(db_path)
+
+        # Apply ownership to restored files
+        if restore_owner:
+            update_step("ownership", "running", f"Applying ownership {restore_owner}")
+            # Collect all restored paths, including parent directory of DB
+            # (restore_database creates parent dirs as root if they don't exist)
+            restored_paths = []
+            if db_path:
+                db_parent = str(Path(db_path).parent)
+                restored_paths.append(db_parent)
+            restored_paths.extend(backup_files)
+
+            if not apply_ownership(restored_paths, restore_owner):
+                if service_was_stopped and service_name:
+                    start_service(service_name)
+                update_step("ownership", "failure", f"Failed to apply ownership {restore_owner}")
+                emit_echoport_result(False, error=f"Failed to apply ownership {restore_owner}")
+                finish_deployment("failure", "Ownership fix failed")
+                return 1
+            update_step("ownership", "success", f"Applied ownership {restore_owner}")
 
         # Start service after restore
         if service_was_stopped and service_name:
