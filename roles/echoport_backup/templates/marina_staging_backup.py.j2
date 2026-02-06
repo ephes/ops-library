@@ -968,16 +968,7 @@ def main() -> int:
     if config:
         context = config.get("context", {})
     else:
-        # Fail fast if running as root without config
-        if os.getuid() == 0:
-            error_msg = "No config file found while running as root."
-            print(f"Error: {error_msg}", file=sys.stderr)
-            emit_step("init", "failure", error_msg)
-            emit_result(success=False, error=error_msg)
-            finish_stdout("failure", "Missing config file")
-            return 1
-
-        # Fallback for manual testing
+        # Fallback for manual testing (non-production)
         print("Warning: No config file found, using environment (testing mode)", file=sys.stderr)
         context_raw = os.environ.get("CONTEXT", "{}")
         try:
@@ -1065,15 +1056,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    # Run as root if not already running as root
-    # This is needed because FastDeploy runs scripts as 'deploy' user,
-    # but we need root access for SSH and file operations
-    if os.getuid() != 0:
-        # Run via sudo and relay output
-        script_path = os.path.abspath(__file__)
-        args = ["sudo", "-n", script_path] + sys.argv[1:]
-        result = subprocess.run(args, stdout=sys.stdout, stderr=sys.stderr)
-        sys.exit(result.returncode)
+    # Script runs as deploy user (has SSH access to staging via deploy key)
+    # No sudo elevation needed - deploy user can SSH to staging as root
 
     # Ensure temp directory exists
     Path(TEMP_DIR).mkdir(parents=True, exist_ok=True)
