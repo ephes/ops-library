@@ -1,0 +1,32 @@
+---
+# Defaults for Ollama Traefik proxy role
+# Safe defaults only; override secrets in ops-control
+
+# Traefik configuration
+ollama_proxy_traefik_enabled: true
+ollama_proxy_traefik_host: ""  # REQUIRED when Traefik is enabled
+ollama_proxy_traefik_entrypoints:
+  - web-secure
+ollama_proxy_traefik_cert_resolver: ""  # empty -> use file-provider certs
+ollama_proxy_traefik_config_path: /etc/traefik/dynamic/ollama.yml
+
+# Backend URL (Ollama API)
+ollama_proxy_backend_url: "http://127.0.0.1:11434"
+
+# Basic auth (dedicated credentials)
+ollama_proxy_basic_auth_enabled: true
+ollama_proxy_basic_auth_user: "ollama"
+# REQUIRED when basic_auth_enabled=true - no default for security
+# ollama_proxy_basic_auth_password: "CHANGEME"
+ollama_proxy_basic_auth_password_hash: ""
+ollama_proxy_basic_auth_remove_header: true
+
+# Internal network IP ranges (bypass basic auth)
+ollama_proxy_internal_ip_ranges:
+  - "192.168.0.0/16"      # RFC1918 private
+  - "10.0.0.0/8"          # RFC1918 private
+  - "172.16.0.0/12"       # RFC1918 private
+  - "100.64.0.0/10"       # Tailscale CGNAT
+  - "fd7a:115c:a1e0::/48" # Tailscale IPv6
+  - "fd50:3e45:c454::/64" # ULA IPv6
+  - "2a02:3100:3d40:9c00::/64" # ISP IPv6 (customize per deployment)

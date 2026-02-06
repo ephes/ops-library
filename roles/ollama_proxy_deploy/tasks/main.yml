@@ -1,0 +1,7 @@
+---
+- name: Validate Ollama proxy configuration
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Configure Traefik for Ollama proxy
+  ansible.builtin.import_tasks: traefik.yml
+  when: ollama_proxy_traefik_enabled | bool

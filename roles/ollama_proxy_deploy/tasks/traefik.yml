@@ -1,0 +1,57 @@
+---
+- name: Ensure Traefik dynamic config directory exists
+  ansible.builtin.file:
+    path: "{{ ollama_proxy_traefik_config_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure htpasswd is installed (apache2-utils)
+  ansible.builtin.package:
+    name: apache2-utils
+    state: present
+  when:
+    - ollama_proxy_basic_auth_enabled | bool
+    - ansible_facts['os_family'] == 'Debian'
+
+- name: Build basic auth hash from password
+  ansible.builtin.command:
+    argv:
+      - htpasswd
+      - -nbB
+      - "{{ ollama_proxy_basic_auth_user }}"
+      - "{{ ollama_proxy_basic_auth_password }}"
+  register: ollama_proxy_basic_auth_htpasswd
+  changed_when: false
+  no_log: true
+  when:
+    - ollama_proxy_basic_auth_enabled | bool
+    - ollama_proxy_basic_auth_password | default('') | length > 0
+    - ollama_proxy_basic_auth_password_hash | length == 0
+
+- name: Set Ollama proxy basic auth hash fact (generated)
+  ansible.builtin.set_fact:
+    ollama_proxy_basic_auth_password_hash: "{{ ollama_proxy_basic_auth_htpasswd.stdout.split(':', 1)[1] }}"
+  no_log: true
+  when:
+    - ollama_proxy_basic_auth_enabled | bool
+    - ollama_proxy_basic_auth_password | default('') | length > 0
+    - ollama_proxy_basic_auth_password_hash | length == 0
+
+- name: Preserve provided Ollama proxy basic auth hash
+  ansible.builtin.set_fact:
+    ollama_proxy_basic_auth_password_hash: "{{ ollama_proxy_basic_auth_password_hash }}"
+  no_log: true
+  when:
+    - ollama_proxy_basic_auth_enabled | bool
+    - ollama_proxy_basic_auth_password_hash | length > 0
+
+- name: Render Traefik configuration for Ollama proxy
+  ansible.builtin.template:
+    src: ollama-proxy-traefik.yml.j2
+    dest: "{{ ollama_proxy_traefik_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload traefik

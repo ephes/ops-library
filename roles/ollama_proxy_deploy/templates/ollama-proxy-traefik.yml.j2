@@ -1,0 +1,109 @@
+# Traefik configuration for Ollama proxy
+# Managed by Ansible - do not edit manually
+# Implements dual router pattern: no auth on LAN/Tailscale, basic auth on public
+
+http:
+  routers:
+{% if ollama_proxy_basic_auth_enabled %}
+    # INTERNAL router (LAN + Tailscale) - NO auth, higher priority
+    ollama-int:
+      rule: "Host(`{{ ollama_proxy_traefik_host }}`) && ({% for range in ollama_proxy_internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+{% for ep in ollama_proxy_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      priority: 120
+      middlewares:
+        - ollama-headers
+        - ollama-gzip
+      service: ollama
+{% if ollama_proxy_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ ollama_proxy_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    # EXTERNAL router (Public) - WITH auth, lower priority
+    ollama-ext:
+      rule: "Host(`{{ ollama_proxy_traefik_host }}`)"
+      entryPoints:
+{% for ep in ollama_proxy_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      priority: 100
+      middlewares:
+        - ollama-auth
+        - ollama-headers
+        - ollama-gzip
+      service: ollama
+{% if ollama_proxy_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ ollama_proxy_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% else %}
+    # Single router without authentication (legacy mode)
+    ollama-secure:
+      rule: "Host(`{{ ollama_proxy_traefik_host }}`)"
+      entryPoints:
+{% for ep in ollama_proxy_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      middlewares:
+        - ollama-headers
+        - ollama-gzip
+      service: ollama
+{% if ollama_proxy_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ ollama_proxy_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% endif %}
+
+    # HTTP -> HTTPS redirect
+    ollama-http:
+      rule: "Host(`{{ ollama_proxy_traefik_host }}`)"
+      entryPoints:
+        - web
+      middlewares:
+        - ollama-redirect
+      service: ollama
+
+  middlewares:
+{% if ollama_proxy_basic_auth_enabled %}
+    ollama-auth:
+      basicAuth:
+        users:
+          - "{{ ollama_proxy_basic_auth_user }}:{{ ollama_proxy_basic_auth_password_hash }}"
+        removeHeader: {{ ollama_proxy_basic_auth_remove_header | bool }}
+{% endif %}
+
+    ollama-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: SAMEORIGIN
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "{{ ollama_proxy_traefik_host }}"
+
+    ollama-gzip:
+      compress: {}
+
+    ollama-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    ollama:
+      loadBalancer:
+        servers:
+          - url: "{{ ollama_proxy_backend_url }}"

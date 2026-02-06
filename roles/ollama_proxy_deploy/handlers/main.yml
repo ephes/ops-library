@@ -1,0 +1,20 @@
+---
+- name: reload traefik
+  ansible.builtin.service:
+    name: traefik
+    state: reloaded
+  failed_when: false
+  register: ollama_proxy_traefik_reload
+
+- name: warn when Traefik reload failed
+  ansible.builtin.debug:
+    msg: "Traefik reload failed (rc={{ ollama_proxy_traefik_reload.rc | default('n/a') }}). Check Traefik logs and dynamic config."
+  when: (ollama_proxy_traefik_reload.rc | default(0)) != 0
+
+- name: restart traefik when reload unsupported
+  ansible.builtin.service:
+    name: traefik
+    state: restarted
+  when:
+    - ollama_proxy_traefik_reload.rc is defined
+    - ollama_proxy_traefik_reload.rc != 0

@@ -1,0 +1,20 @@
+---
+- name: Fail if removal not confirmed
+  ansible.builtin.fail:
+    msg: |
+      SAFETY CHECK: Ollama proxy removal not confirmed!
+
+      This role will remove:
+      - Traefik dynamic config: {{ ollama_proxy_traefik_config_path }}
+
+      To proceed, set: ollama_proxy_remove_confirm: true
+  when: not ollama_proxy_remove_confirm
+
+- name: Remove Ollama proxy Traefik configuration
+  ansible.builtin.file:
+    path: "{{ ollama_proxy_traefik_config_path }}"
+    state: absent
+  notify: reload traefik
+
+- name: Apply pending handlers
+  ansible.builtin.meta: flush_handlers
