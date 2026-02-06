@@ -1,0 +1,4 @@
+---
+# Defaults for Ollama proxy removal
+ollama_proxy_remove_confirm: false
+ollama_proxy_traefik_config_path: /etc/traefik/dynamic/ollama.yml

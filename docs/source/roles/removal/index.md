@@ -24,6 +24,7 @@ open_webui_venv_remove
 mastodon_remove
 takahe_remove
 ollama_remove
+ollama_proxy_remove
 ```
 
 These roles handle:

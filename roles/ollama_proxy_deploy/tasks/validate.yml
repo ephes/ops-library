@@ -1,0 +1,22 @@
+---
+- name: Validate core Ollama proxy settings
+  ansible.builtin.assert:
+    that:
+      - ollama_proxy_backend_url | length > 0
+    fail_msg: "ollama_proxy_backend_url is required."
+
+- name: Validate Traefik settings when enabled
+  ansible.builtin.assert:
+    that:
+      - ollama_proxy_traefik_host | length > 0
+      - ollama_proxy_traefik_config_path | length > 0
+    fail_msg: "ollama_proxy_traefik_host and ollama_proxy_traefik_config_path are required when Traefik is enabled."
+  when: ollama_proxy_traefik_enabled | bool
+
+- name: Validate basic auth settings when enabled
+  ansible.builtin.assert:
+    that:
+      - ollama_proxy_basic_auth_user | length > 0
+      - (ollama_proxy_basic_auth_password | default('') | length > 0) or (ollama_proxy_basic_auth_password_hash | length > 0)
+    fail_msg: "Provide ollama_proxy_basic_auth_password or ollama_proxy_basic_auth_password_hash when basic auth is enabled."
+  when: ollama_proxy_traefik_enabled | bool and ollama_proxy_basic_auth_enabled | bool
