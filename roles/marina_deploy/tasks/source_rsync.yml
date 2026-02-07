@@ -21,6 +21,7 @@
     rsync_opts: "{{ marina_rsync_excludes | map('regex_replace', '^(.*)$', '--exclude=\\1') | list }}"
   become: false
   delegate_to: localhost
+  notify: restart marina
 
 - name: Set ownership for synced files
   file:
