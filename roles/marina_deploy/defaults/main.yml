@@ -43,10 +43,6 @@ marina_traefik_enabled: true
 marina_traefik_config_dir: "/etc/traefik/dynamic"
 marina_traefik_config_path: "{{ marina_traefik_config_dir }}/{{ marina_user }}.traefik.yml"
 
-# Safety checks
-marina_port_check_enabled: true
-marina_force_port_cleanup: false
-
 # Host configuration (required)
 # marina_fqdn: "marina-adler.de"
 # marina_traefik_host_rule: "Host(`marina-adler.de`) || Host(`www.marina-adler.de`)"
