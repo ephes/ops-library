@@ -41,3 +41,24 @@
   become_user: "{{ marina_user }}"
   register: marina_collectstatic_result
   changed_when: "'0 static files copied' not in marina_collectstatic_result.stdout"
+
+- name: Ensure admin user exists
+  shell: |
+    set -a
+    . {{ marina_env_file }}
+    set +a
+    {{ marina_venv_bin }}/python manage.py ensure_superuser
+  args:
+    chdir: "{{ marina_site_path }}"
+    executable: /bin/bash
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ marina_django_settings_module }}"
+    ADMIN_USERNAME: "{{ marina_admin_username }}"
+    ADMIN_EMAIL: "{{ marina_admin_email | default('') }}"
+    ADMIN_PASSWORD: "{{ marina_admin_password }}"
+  become: true
+  become_user: "{{ marina_user }}"
+  when:
+    - marina_admin_username is defined
+    - marina_admin_password is defined
+  no_log: true
