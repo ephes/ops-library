@@ -3,6 +3,8 @@ set -euo pipefail
 
 pool="{{ zfs_syncoid_replication_spindown_pool }}"
 spindown_device_count={{ zfs_syncoid_replication_spindown_devices | length }}
+spindown_retries={{ zfs_syncoid_replication_spindown_retries | int }}
+spindown_sleep_sec={{ zfs_syncoid_replication_spindown_sleep_sec | int }}
 
 {% if zfs_syncoid_replication_spindown_devices | length > 0 %}
 spindown_devices=(
@@ -16,14 +18,24 @@ spindown_devices=()
 
 if [[ -n "${pool}" ]]; then
   if command -v zpool >/dev/null 2>&1; then
-    stats=$(zpool iostat -H -p "${pool}" 1 2 | tail -n 1 || true)
-    if [[ -n "${stats}" ]]; then
-      read -r _pool _alloc _free read_ops write_ops read_bytes write_bytes <<<"${stats}"
-      if [[ "${read_ops:-0}" != "0" || "${write_ops:-0}" != "0" || "${read_bytes:-0}" != "0" || "${write_bytes:-0}" != "0" ]]; then
-        logger -t zfs-syncoid-spindown "Pool ${pool} active (r=${read_ops:-0} w=${write_ops:-0} rb=${read_bytes:-0} wb=${write_bytes:-0}); skipping spindown."
-        exit 0
+    attempt=0
+    while true; do
+      stats=$(zpool iostat -H -p "${pool}" 1 2 | tail -n 1 || true)
+      if [[ -n "${stats}" ]]; then
+        read -r _pool _alloc _free read_ops write_ops read_bytes write_bytes <<<"${stats}"
+        if [[ "${read_ops:-0}" != "0" || "${write_ops:-0}" != "0" || "${read_bytes:-0}" != "0" || "${write_bytes:-0}" != "0" ]]; then
+          if [[ "${attempt}" -ge "${spindown_retries}" ]]; then
+            logger -t zfs-syncoid-spindown "Pool ${pool} active (r=${read_ops:-0} w=${write_ops:-0} rb=${read_bytes:-0} wb=${write_bytes:-0}); giving up after ${attempt} retries."
+            exit 0
+          fi
+          attempt=$((attempt + 1))
+          logger -t zfs-syncoid-spindown "Pool ${pool} active (r=${read_ops:-0} w=${write_ops:-0} rb=${read_bytes:-0} wb=${write_bytes:-0}); retrying in ${spindown_sleep_sec}s (attempt ${attempt}/${spindown_retries})."
+          sleep "${spindown_sleep_sec}"
+          continue
+        fi
       fi
-    fi
+      break
+    done
   fi
 fi
 

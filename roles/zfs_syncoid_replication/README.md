@@ -52,6 +52,8 @@ zfs_syncoid_replication_alert_email: "root"
 zfs_syncoid_replication_spindown_devices:
   - /dev/disk/by-id/ata-EXAMPLE
 zfs_syncoid_replication_spindown_pool: "tank"
+zfs_syncoid_replication_spindown_retries: 10
+zfs_syncoid_replication_spindown_sleep_sec: 60
 ```
 
 ### Advanced
