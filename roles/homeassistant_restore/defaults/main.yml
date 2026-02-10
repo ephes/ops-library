@@ -41,6 +41,9 @@ homeassistant_restore_health_url: http://localhost:10020/auth/providers
 homeassistant_restore_health_retries: 5
 homeassistant_restore_health_delay: 5
 homeassistant_restore_health_expected_status: 200
+# Use proxy-aware headers by default so health checks work even when localhost is banned.
+homeassistant_restore_health_forwarded_for: "{{ ansible_default_ipv4.address | default('192.168.0.1') }}"
+homeassistant_restore_health_forwarded_proto: "http"
 homeassistant_restore_health_headers: {}
 homeassistant_restore_system_files: false
 homeassistant_restore_fix_ownership: true

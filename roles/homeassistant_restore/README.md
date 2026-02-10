@@ -36,7 +36,9 @@ homeassistant_restore_system_files: false
 homeassistant_restore_create_safety_backup: true
 homeassistant_restore_cleanup_safety_backup: true
 homeassistant_restore_verify_http: true
-homeassistant_restore_health_url: http://localhost:10020
+homeassistant_restore_health_url: http://localhost:10020/auth/providers
+homeassistant_restore_health_forwarded_for: "{{ ansible_default_ipv4.address }}"
+homeassistant_restore_health_forwarded_proto: http
 homeassistant_restore_dirs:
   - { name: config, dest: /home/homeassistant/site/config, optional: false }
   - { name: data,   dest: /home/homeassistant/site/data,   optional: false }

@@ -67,6 +67,37 @@
       changed_when: false
       when: homeassistant_restore_service_available | default(false)
 
+    - name: Build base HTTP health-check headers
+      when:
+        - homeassistant_restore_service_available | default(false)
+        - homeassistant_restore_verify_http | bool
+      ansible.builtin.set_fact:
+        _ha_restore_health_headers_effective: "{{ homeassistant_restore_health_headers | default({}) }}"
+
+    - name: Add X-Forwarded-For health-check header
+      when:
+        - homeassistant_restore_service_available | default(false)
+        - homeassistant_restore_verify_http | bool
+        - homeassistant_restore_health_forwarded_for | default('') | length > 0
+      ansible.builtin.set_fact:
+        _ha_restore_health_headers_effective: >-
+          {{
+            _ha_restore_health_headers_effective
+            | combine({'X-Forwarded-For': homeassistant_restore_health_forwarded_for})
+          }}
+
+    - name: Add X-Forwarded-Proto health-check header
+      when:
+        - homeassistant_restore_service_available | default(false)
+        - homeassistant_restore_verify_http | bool
+        - homeassistant_restore_health_forwarded_proto | default('') | length > 0
+      ansible.builtin.set_fact:
+        _ha_restore_health_headers_effective: >-
+          {{
+            _ha_restore_health_headers_effective
+            | combine({'X-Forwarded-Proto': homeassistant_restore_health_forwarded_proto})
+          }}
+
     - name: Perform HTTP health check
       when:
         - homeassistant_restore_service_available | default(false)
@@ -75,7 +106,7 @@
         url: "{{ homeassistant_restore_health_url }}"
         method: GET
         status_code: "{{ homeassistant_restore_health_expected_status | int }}"
-        headers: "{{ homeassistant_restore_health_headers }}"
+        headers: "{{ _ha_restore_health_headers_effective }}"
         return_content: false
         timeout: 10
       register: _ha_restore_health_result
