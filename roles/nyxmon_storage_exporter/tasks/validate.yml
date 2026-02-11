@@ -43,3 +43,27 @@
     index_var: idx
     label: "{{ item.name | default('disk ' ~ idx) }}"
   when: nyxmon_storage_exporter_disks | length > 0
+
+- name: validate | Assert quiet-hours spindown interval is valid
+  ansible.builtin.assert:
+    that:
+      - nyxmon_storage_exporter_quiet_hours_spindown_min_interval_sec is number
+      - nyxmon_storage_exporter_quiet_hours_spindown_min_interval_sec | int >= 0
+    fail_msg: "nyxmon_storage_exporter_quiet_hours_spindown_min_interval_sec must be a non-negative integer"
+
+- name: validate | Assert quiet-hours spindown state file path is valid
+  ansible.builtin.assert:
+    that:
+      - nyxmon_storage_exporter_quiet_hours_spindown_state_file is string
+      - nyxmon_storage_exporter_quiet_hours_spindown_state_file | length > 0
+      - nyxmon_storage_exporter_quiet_hours_spindown_state_file.startswith("/")
+    fail_msg: "nyxmon_storage_exporter_quiet_hours_spindown_state_file must be a non-empty absolute path"
+
+- name: validate | Assert quiet-hours spindown script is set when enabled
+  ansible.builtin.assert:
+    that:
+      - nyxmon_storage_exporter_quiet_hours_spindown_script is string
+      - nyxmon_storage_exporter_quiet_hours_spindown_script | length > 0
+      - nyxmon_storage_exporter_quiet_hours_spindown_script.startswith("/")
+    fail_msg: "nyxmon_storage_exporter_quiet_hours_spindown_script must be a non-empty absolute path when quiet-hours spindown is enabled"
+  when: nyxmon_storage_exporter_quiet_hours_spindown_enabled | bool

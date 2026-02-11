@@ -60,6 +60,10 @@ Each disk in `nyxmon_storage_exporter_disks` must have:
 | `nyxmon_storage_exporter_quiet_hours_end` | `22:00` | Quiet hours end (local system time, `HH:MM`) |
 | `nyxmon_storage_exporter_quiet_hours_skip_pools` | `[]` | ZFS pools to skip during quiet hours |
 | `nyxmon_storage_exporter_quiet_hours_skip_disk_types` | `["sat"]` | Disk types to skip during quiet hours (e.g., `sat` for HDDs) |
+| `nyxmon_storage_exporter_quiet_hours_spindown_enabled` | `false` | When true, run a spindown hook during quiet hours (rate-limited) |
+| `nyxmon_storage_exporter_quiet_hours_spindown_script` | `""` | Absolute path to executable spindown script used by quiet-hours hook |
+| `nyxmon_storage_exporter_quiet_hours_spindown_min_interval_sec` | `300` | Minimum seconds between quiet-hours spindown hook runs |
+| `nyxmon_storage_exporter_quiet_hours_spindown_state_file` | `/run/nyxmon-storage-metrics-spindown.ts` | State file storing last quiet-hours spindown hook run timestamp |
 
 See `defaults/main.yml` for the full list.
 
@@ -87,6 +91,17 @@ nyxmon_storage_exporter_disks:
     type: sat
     name: tank-hdd-2
     pool: tank
+
+nyxmon_storage_exporter_quiet_hours_enabled: true
+nyxmon_storage_exporter_quiet_hours_start: "06:00"
+nyxmon_storage_exporter_quiet_hours_end: "22:00"
+nyxmon_storage_exporter_quiet_hours_skip_pools:
+  - tank
+nyxmon_storage_exporter_quiet_hours_skip_disk_types:
+  - sat
+nyxmon_storage_exporter_quiet_hours_spindown_enabled: true
+nyxmon_storage_exporter_quiet_hours_spindown_script: /usr/local/bin/zfs-usb-spindown.sh
+nyxmon_storage_exporter_quiet_hours_spindown_min_interval_sec: 300
 ```
 
 ## Nyxmon Threshold Configuration
@@ -119,7 +134,7 @@ You can also use array indices (e.g., `$.disks.0.ok`), but **the order matches `
 
 ## Output Format
 
-The script outputs JSON with disk temperatures, health status, pool information, and ECC memory status:
+The script outputs JSON with disk temperatures, health status, pool information, quiet-hours status, and ECC memory status:
 
 ```json
 {
@@ -133,6 +148,11 @@ The script outputs JSON with disk temperatures, health status, pool information,
   },
   "pools": {
     "tank": {"health": "ONLINE", "size": "10.9T", "alloc": "7.54M", "free": "10.9T", "cap": "0%", "last_scrub_age_days": 0.5}
+  },
+  "quiet_hours": {
+    "enabled": true,
+    "active": true,
+    "spindown": {"enabled": true, "attempted": true, "reason": "ok"}
   },
   "ecc": {"loaded": true, "ce": null, "ue": null},
   "ts": 1702548000

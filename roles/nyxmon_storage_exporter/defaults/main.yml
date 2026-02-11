@@ -22,6 +22,10 @@ nyxmon_storage_exporter_quiet_hours_end: "22:00"
 nyxmon_storage_exporter_quiet_hours_skip_pools: []
 nyxmon_storage_exporter_quiet_hours_skip_disk_types:
   - sat
+nyxmon_storage_exporter_quiet_hours_spindown_enabled: false
+nyxmon_storage_exporter_quiet_hours_spindown_script: ""
+nyxmon_storage_exporter_quiet_hours_spindown_min_interval_sec: 300
+nyxmon_storage_exporter_quiet_hours_spindown_state_file: "/run/nyxmon-storage-metrics-spindown.ts"
 
 # Input inventory
 nyxmon_storage_exporter_pools: []

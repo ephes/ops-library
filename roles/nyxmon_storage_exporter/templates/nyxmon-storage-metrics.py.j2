@@ -19,6 +19,10 @@ QUIET_HOURS_START = "{{ nyxmon_storage_exporter_quiet_hours_start | default('06:
 QUIET_HOURS_END = "{{ nyxmon_storage_exporter_quiet_hours_end | default('22:00') }}"
 QUIET_SKIP_POOLS = json.loads(r'''{{ nyxmon_storage_exporter_quiet_hours_skip_pools | default([]) | to_json }}''')
 QUIET_SKIP_DISK_TYPES = json.loads(r'''{{ nyxmon_storage_exporter_quiet_hours_skip_disk_types | default(['sat']) | to_json }}''')
+QUIET_SPINDOWN_ENABLED = {{ nyxmon_storage_exporter_quiet_hours_spindown_enabled | default(false) | bool | ternary('True', 'False') }}
+QUIET_SPINDOWN_SCRIPT = "{{ nyxmon_storage_exporter_quiet_hours_spindown_script | default('') }}"
+QUIET_SPINDOWN_MIN_INTERVAL_SEC = {{ nyxmon_storage_exporter_quiet_hours_spindown_min_interval_sec | default(300) | int }}
+QUIET_SPINDOWN_STATE_FILE = "{{ nyxmon_storage_exporter_quiet_hours_spindown_state_file | default('/run/nyxmon-storage-metrics-spindown.ts') }}"
 
 
 def _run(argv: list[str]) -> subprocess.CompletedProcess[str]:
@@ -147,6 +151,73 @@ def _in_quiet_hours() -> bool:
     return now_min >= start_min or now_min < end_min
 
 
+def _read_ts(path: str) -> int | None:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = f.read().strip()
+        if not raw:
+            return None
+        return int(raw)
+    except (OSError, ValueError):
+        return None
+
+
+def _write_ts(path: str, ts: int) -> bool:
+    try:
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        tmp = f"{path}.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(str(ts))
+        os.replace(tmp, path)
+        return True
+    except OSError:
+        return False
+
+
+def _run_quiet_hours_spindown(quiet_active: bool) -> dict[str, Any]:
+    status: dict[str, Any] = {"enabled": QUIET_SPINDOWN_ENABLED, "attempted": False}
+    if not QUIET_SPINDOWN_ENABLED:
+        status["reason"] = "disabled"
+        return status
+    if not quiet_active:
+        status["reason"] = "outside_quiet_hours"
+        return status
+    if not QUIET_SPINDOWN_SCRIPT:
+        status["reason"] = "missing_script"
+        return status
+    if not os.path.isfile(QUIET_SPINDOWN_SCRIPT):
+        status["reason"] = "script_not_found"
+        return status
+    if not os.access(QUIET_SPINDOWN_SCRIPT, os.X_OK):
+        status["reason"] = "script_not_executable"
+        return status
+
+    now_ts = _now_ts()
+    last_ts = _read_ts(QUIET_SPINDOWN_STATE_FILE)
+    status["last_run_ts"] = last_ts
+    if last_ts is not None and now_ts - last_ts < QUIET_SPINDOWN_MIN_INTERVAL_SEC:
+        status["reason"] = "cooldown"
+        status["next_eligible_ts"] = last_ts + QUIET_SPINDOWN_MIN_INTERVAL_SEC
+        return status
+
+    result = _run([QUIET_SPINDOWN_SCRIPT])
+    status["attempted"] = True
+    status["returncode"] = result.returncode
+    if result.returncode != 0:
+        status["reason"] = "spindown_failed"
+        status["error"] = result.stderr.strip() or result.stdout.strip() or "spindown command failed"
+        return status
+
+    status["reason"] = "ok"
+    status["ok"] = True
+    status["run_ts"] = now_ts
+    if not _write_ts(QUIET_SPINDOWN_STATE_FILE, now_ts):
+        status["state_write_error"] = True
+    return status
+
+
 def _smartctl_health(device: str) -> dict[str, Any]:
     out = _run(SMARTCTL_ARGS + [device])
     payload: dict[str, Any] = {"device": device, "ok": False}
@@ -263,6 +334,7 @@ def main() -> int:
     payload["disks"] = disk_results
     payload["disks_by_name"] = disks_by_name
 
+    payload["quiet_hours"]["spindown"] = _run_quiet_hours_spindown(quiet)
     payload["ecc"] = _edac_status()
 
     print(json.dumps(payload, sort_keys=True))
