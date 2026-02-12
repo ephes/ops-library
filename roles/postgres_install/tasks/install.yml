@@ -1,8 +1,15 @@
 ---
+- name: Update apt cache for PostgreSQL installation
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  become: true
+  ignore_errors: true
+  register: postgres_install_cache_result
+
 - name: Install PostgreSQL packages
   ansible.builtin.apt:
     name: "{{ postgres_install_packages + postgres_install_extra_packages }}"
     state: present
-    update_cache: true
   register: postgres_install_apt_result
   become: true
