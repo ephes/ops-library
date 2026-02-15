@@ -54,7 +54,6 @@ homelab_internal_ip_ranges:
   - "100.64.0.0/10"
   - "fd7a:115c:a1e0::/48"
   - "fd50:3e45:c454:0::/64"
-  - "2a02:3100:3d40:9c00::/64"
 
 # Backup defaults shared across roles
 homelab_backup_prefix: manual

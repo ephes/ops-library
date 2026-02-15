@@ -75,7 +75,6 @@ homelab_internal_ip_ranges:
   - "100.64.0.0/10"       # Tailscale CGNAT
   - "fd7a:115c:a1e0::/48" # Tailscale IPv6
   - "fd50:3e45:c454:0::/64" # ULA IPv6
-  - "2a02:3100:3d40:9c00::/64" # ISP IPv6 (customize per deployment)
 ```
 
 ### Advanced Configuration
@@ -194,9 +193,8 @@ Default internal IP ranges include:
 - **Tailscale IPv4**: `100.64.0.0/10` (CGNAT range)
 - **Tailscale IPv6**: `fd7a:115c:a1e0::/48` (example, customize per deployment)
 - **ULA IPv6**: `fd50:3e45:c454:0::/64` (example, customize per deployment)
-- **ISP IPv6**: `2a02:3100:3d40:9c00::/64` (example, customize per deployment)
 
-**Important**: Update the IPv6 prefixes to match your actual network configuration!
+**Important**: Keep internal ranges private-only (RFC1918/Tailscale/ULA). Do not add public ISP IPv6 prefixes.
 
 To find your IPv6 prefixes:
 ```bash
