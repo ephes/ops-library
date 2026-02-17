@@ -1,0 +1,402 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from datetime import datetime, timezone
+from typing import Any
+
+UNITS = json.loads(r'''{{ backup_metrics_endpoint_units | to_json }}''')
+LOCAL_DATASETS = json.loads(r'''{{ backup_metrics_endpoint_local_datasets | to_json }}''')
+USB_DATASETS = json.loads(r'''{{ backup_metrics_endpoint_usb_datasets | to_json }}''')
+USB_ENABLED = {{ backup_metrics_endpoint_usb_enabled | bool | ternary('True', 'False') }}
+USB_POOL = {{ backup_metrics_endpoint_usb_pool | to_json }}
+USB_DEVICE = {{ backup_metrics_endpoint_usb_device | to_json }}
+SYSTEMCTL_TIMEOUT = {{ backup_metrics_endpoint_systemctl_timeout | int }}
+ZFS_TIMEOUT = {{ backup_metrics_endpoint_zfs_timeout | int }}
+
+
+def _run(argv: list[str], timeout: int) -> tuple[int, str, str]:
+    try:
+        result = subprocess.run(
+            argv,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return result.returncode, result.stdout.strip(), result.stderr.strip()
+    except subprocess.TimeoutExpired:
+        return 124, "", f"timeout after {timeout}s"
+    except FileNotFoundError:
+        return 127, "", f"command not found: {argv[0] if argv else 'unknown'}"
+
+
+def _now_epoch() -> int:
+    return int(datetime.now(tz=timezone.utc).timestamp())
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
+
+
+def _epoch_to_iso(epoch: int | None) -> str | None:
+    if epoch is None:
+        return None
+    return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat()
+
+
+def _usec_to_epoch(raw: str | None) -> int | None:
+    if not raw:
+        return None
+    if not raw.isdigit():
+        return None
+    usec = int(raw)
+    if usec <= 0:
+        return None
+    return usec // 1_000_000
+
+
+def _systemctl_show(unit: str, properties: list[str]) -> dict[str, str]:
+    args = ["systemctl", "show", unit]
+    for prop in properties:
+        args.extend(["-p", prop])
+    rc, stdout, stderr = _run(args, SYSTEMCTL_TIMEOUT)
+    if rc != 0:
+        return {
+            "unit": unit,
+            "exists": "false",
+            "error": stderr or stdout or f"systemctl show failed ({rc})",
+        }
+
+    data: dict[str, str] = {"unit": unit}
+    for line in stdout.splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        data[key] = value
+
+    load_state = data.get("LoadState", "")
+    data["exists"] = "false" if load_state in ("", "not-found") else "true"
+    return data
+
+
+def _timer_status(name: str) -> dict[str, Any]:
+    props = [
+        "LoadState",
+        "ActiveState",
+        "SubState",
+        "UnitFileState",
+        "Result",
+        "LastTriggerUSec",
+        "NextElapseUSecRealtime",
+    ]
+    raw = _systemctl_show(name, props)
+    exists = raw.get("exists") == "true"
+    last_trigger_epoch = _usec_to_epoch(raw.get("LastTriggerUSec"))
+    next_elapse_epoch = _usec_to_epoch(raw.get("NextElapseUSecRealtime"))
+
+    return {
+        "unit": name,
+        "exists": exists,
+        "load_state": raw.get("LoadState"),
+        "active_state": raw.get("ActiveState"),
+        "sub_state": raw.get("SubState"),
+        "unit_file_state": raw.get("UnitFileState"),
+        "result": raw.get("Result"),
+        "last_trigger_epoch": last_trigger_epoch,
+        "last_trigger_iso": _epoch_to_iso(last_trigger_epoch),
+        "next_elapse_epoch": next_elapse_epoch,
+        "next_elapse_iso": _epoch_to_iso(next_elapse_epoch),
+        "error": raw.get("error"),
+    }
+
+
+def _service_status(name: str) -> dict[str, Any]:
+    props = [
+        "LoadState",
+        "ActiveState",
+        "SubState",
+        "UnitFileState",
+        "Result",
+        "ExecMainCode",
+        "ExecMainStatus",
+        "ExecMainStartTimestampUSec",
+        "ExecMainExitTimestampUSec",
+        "ActiveEnterTimestampUSec",
+        "ActiveExitTimestampUSec",
+    ]
+    raw = _systemctl_show(name, props)
+    exists = raw.get("exists") == "true"
+    start_epoch = _usec_to_epoch(raw.get("ExecMainStartTimestampUSec"))
+    exit_epoch = _usec_to_epoch(raw.get("ExecMainExitTimestampUSec"))
+    active_enter_epoch = _usec_to_epoch(raw.get("ActiveEnterTimestampUSec"))
+    active_exit_epoch = _usec_to_epoch(raw.get("ActiveExitTimestampUSec"))
+
+    exec_main_status = raw.get("ExecMainStatus")
+    return {
+        "unit": name,
+        "exists": exists,
+        "load_state": raw.get("LoadState"),
+        "active_state": raw.get("ActiveState"),
+        "sub_state": raw.get("SubState"),
+        "unit_file_state": raw.get("UnitFileState"),
+        "result": raw.get("Result"),
+        "exec_main_code": raw.get("ExecMainCode"),
+        "exec_main_status": int(exec_main_status) if exec_main_status and exec_main_status.isdigit() else None,
+        "exec_main_start_epoch": start_epoch,
+        "exec_main_start_iso": _epoch_to_iso(start_epoch),
+        "exec_main_exit_epoch": exit_epoch,
+        "exec_main_exit_iso": _epoch_to_iso(exit_epoch),
+        "active_enter_epoch": active_enter_epoch,
+        "active_enter_iso": _epoch_to_iso(active_enter_epoch),
+        "active_exit_epoch": active_exit_epoch,
+        "active_exit_iso": _epoch_to_iso(active_exit_epoch),
+        "error": raw.get("error"),
+    }
+
+
+def _unit_ok(unit: dict[str, Any], required: bool) -> tuple[bool, list[str]]:
+    issues: list[str] = []
+
+    timer = unit.get("timer")
+    service = unit.get("service")
+
+    if timer:
+        if not timer.get("exists"):
+            if required:
+                issues.append("timer_missing")
+        else:
+            if timer.get("active_state") != "active":
+                issues.append("timer_not_active")
+
+    if service:
+        if not service.get("exists"):
+            if required:
+                issues.append("service_missing")
+        else:
+            active_state = service.get("active_state")
+            if active_state == "failed":
+                issues.append("service_failed")
+            result = service.get("result")
+            if result and result not in ("success", "exit-code", "done", "") and active_state != "active":
+                issues.append(f"service_result_{result}")
+
+    return len(issues) == 0, issues
+
+
+def _latest_snapshot(dataset: str) -> dict[str, Any]:
+    rc, stdout, stderr = _run(
+        [
+            "zfs",
+            "list",
+            "-H",
+            "-p",
+            "-t",
+            "snapshot",
+            "-d",
+            "1",
+            "-o",
+            "name,creation",
+            "-S",
+            "creation",
+            dataset,
+        ],
+        ZFS_TIMEOUT,
+    )
+    if rc != 0:
+        return {
+            "dataset": dataset,
+            "ok": False,
+            "snapshot": None,
+            "creation_epoch": None,
+            "creation_iso": None,
+            "age_seconds": None,
+            "age_hours": None,
+            "error": stderr or stdout or f"zfs list failed ({rc})",
+        }
+
+    line = next((item for item in stdout.splitlines() if item.strip()), "")
+    if not line:
+        return {
+            "dataset": dataset,
+            "ok": False,
+            "snapshot": None,
+            "creation_epoch": None,
+            "creation_iso": None,
+            "age_seconds": None,
+            "age_hours": None,
+            "error": "no snapshots found",
+        }
+
+    parts = line.split("\t")
+    if len(parts) < 2:
+        parts = line.split()
+    if len(parts) < 2:
+        return {
+            "dataset": dataset,
+            "ok": False,
+            "snapshot": None,
+            "creation_epoch": None,
+            "creation_iso": None,
+            "age_seconds": None,
+            "age_hours": None,
+            "error": "unexpected zfs output format",
+        }
+
+    snapshot = parts[0]
+    creation_raw = parts[1]
+    try:
+        creation_epoch = int(creation_raw)
+    except ValueError:
+        creation_epoch = None
+
+    now_epoch = _now_epoch()
+    age_seconds = None if creation_epoch is None else max(0, now_epoch - creation_epoch)
+    age_hours = None if age_seconds is None else round(age_seconds / 3600, 2)
+
+    return {
+        "dataset": dataset,
+        "ok": creation_epoch is not None,
+        "snapshot": snapshot,
+        "creation_epoch": creation_epoch,
+        "creation_iso": _epoch_to_iso(creation_epoch),
+        "age_seconds": age_seconds,
+        "age_hours": age_hours,
+        "error": None if creation_epoch is not None else "invalid creation timestamp",
+    }
+
+
+def _pool_imported(pool: str) -> bool:
+    rc, _, _ = _run(["zpool", "list", "-H", "-o", "name", pool], ZFS_TIMEOUT)
+    return rc == 0
+
+
+def main() -> int:
+    now_epoch = _now_epoch()
+    payload: dict[str, Any] = {
+        "ts": now_epoch,
+        "generated_at": _epoch_to_iso(now_epoch),
+        "units": {},
+        "snapshots": {
+            "local": [],
+            "usb": [],
+        },
+        "usb": {
+            "enabled": USB_ENABLED,
+            "pool": USB_POOL,
+            "pool_imported": None,
+            "device_path": USB_DEVICE or None,
+            "device_present": None,
+        },
+        "summary": {},
+    }
+
+    for item in UNITS:
+        unit_id = item.get("id") or item.get("timer") or item.get("service") or "unknown"
+        required = _as_bool(item.get("required", True))
+        unit_payload: dict[str, Any] = {
+            "required": required,
+        }
+        timer_name = item.get("timer")
+        service_name = item.get("service")
+
+        if timer_name:
+            unit_payload["timer"] = _timer_status(timer_name)
+        if service_name:
+            unit_payload["service"] = _service_status(service_name)
+
+        ok, issues = _unit_ok(unit_payload, required)
+        unit_payload["ok"] = ok
+        unit_payload["issues"] = issues
+        payload["units"][unit_id] = unit_payload
+
+    for dataset in LOCAL_DATASETS:
+        payload["snapshots"]["local"].append(_latest_snapshot(dataset))
+
+    if USB_DEVICE:
+        payload["usb"]["device_present"] = os.path.exists(USB_DEVICE)
+
+    usb_enabled = bool(USB_ENABLED)
+    if not usb_enabled:
+        for dataset in USB_DATASETS:
+            payload["snapshots"]["usb"].append(
+                {
+                    "dataset": dataset,
+                    "ok": None,
+                    "snapshot": None,
+                    "creation_epoch": None,
+                    "creation_iso": None,
+                    "age_seconds": None,
+                    "age_hours": None,
+                    "error": "usb_disabled",
+                }
+            )
+    else:
+        pool_imported = _pool_imported(USB_POOL)
+        payload["usb"]["pool_imported"] = pool_imported
+
+        if not pool_imported:
+            for dataset in USB_DATASETS:
+                payload["snapshots"]["usb"].append(
+                    {
+                        "dataset": dataset,
+                        "ok": None,
+                        "snapshot": None,
+                        "creation_epoch": None,
+                        "creation_iso": None,
+                        "age_seconds": None,
+                        "age_hours": None,
+                        "error": "usb_pool_not_imported",
+                    }
+                )
+        else:
+            for dataset in USB_DATASETS:
+                payload["snapshots"]["usb"].append(_latest_snapshot(dataset))
+
+    required_units_ok = all(
+        unit.get("ok", False)
+        for unit in payload["units"].values()
+        if unit.get("required")
+    )
+    local_snapshots_ok = all(
+        bool(item.get("ok"))
+        for item in payload["snapshots"]["local"]
+    ) if payload["snapshots"]["local"] else False
+
+    usb_snapshots = payload["snapshots"]["usb"]
+    usb_snapshots_ok: bool | None
+    if not usb_enabled:
+        usb_state = "disabled"
+        usb_snapshots_ok = None
+    elif payload["usb"]["pool_imported"] is False:
+        usb_state = "offline"
+        usb_snapshots_ok = None
+    else:
+        usb_state = "online"
+        usb_snapshots_ok = all(bool(item.get("ok")) for item in usb_snapshots)
+
+    usb_pool_offline = usb_state == "offline"
+    payload["usb"]["state"] = usb_state
+    overall_ok = required_units_ok and local_snapshots_ok and (usb_snapshots_ok in (None, True))
+    payload["summary"] = {
+        "required_units_ok": required_units_ok,
+        "local_snapshots_ok": local_snapshots_ok,
+        "usb_snapshots_ok": usb_snapshots_ok,
+        "usb_state": usb_state,
+        "usb_pool_offline": usb_pool_offline,
+        "overall_ok": overall_ok,
+    }
+
+    print(json.dumps(payload, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

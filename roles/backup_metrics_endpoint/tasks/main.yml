@@ -1,0 +1,164 @@
+---
+- name: Skip backup_metrics_endpoint when disabled
+  ansible.builtin.debug:
+    msg: "backup_metrics_endpoint role skipped (backup_metrics_endpoint_enabled=false)."
+  when: not backup_metrics_endpoint_enabled | bool
+
+- name: Deploy backup metrics endpoint
+  when: backup_metrics_endpoint_enabled | bool
+  block:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - backup_metrics_endpoint_auth_user is defined
+          - backup_metrics_endpoint_auth_user != "CHANGE_ME"
+          - backup_metrics_endpoint_auth_user | length > 0
+          - backup_metrics_endpoint_auth_password is defined
+          - backup_metrics_endpoint_auth_password != "CHANGE_ME"
+          - backup_metrics_endpoint_auth_password | length > 0
+        fail_msg: |
+          backup_metrics_endpoint auth values are missing or still set to CHANGE_ME.
+          Set backup_metrics_endpoint_auth_user/password via ops-control vault before enabling.
+
+    - name: Install dependencies for backup metrics endpoint
+      ansible.builtin.package:
+        name: "{{ backup_metrics_endpoint_packages }}"
+        state: present
+
+    - name: Create metrics system group
+      ansible.builtin.group:
+        name: "{{ backup_metrics_endpoint_group }}"
+        system: true
+        state: present
+
+    - name: Create metrics system user
+      ansible.builtin.user:
+        name: "{{ backup_metrics_endpoint_user }}"
+        group: "{{ backup_metrics_endpoint_group }}"
+        shell: /usr/sbin/nologin
+        create_home: false
+        system: true
+        state: present
+
+    - name: Ensure data directory exists
+      ansible.builtin.file:
+        path: "{{ backup_metrics_endpoint_data_dir }}"
+        state: directory
+        owner: root
+        group: "{{ backup_metrics_endpoint_group }}"
+        mode: "0750"
+
+    - name: Ensure htpasswd directory exists
+      ansible.builtin.file:
+        path: "{{ backup_metrics_endpoint_htpasswd_dir }}"
+        state: directory
+        owner: root
+        group: "{{ backup_metrics_endpoint_group }}"
+        mode: "0750"
+
+    - name: Deploy backup metrics exporter script
+      ansible.builtin.template:
+        src: backup_metrics_exporter.py.j2
+        dest: "{{ backup_metrics_endpoint_exporter_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+      register: _backup_exporter_script
+
+    - name: Deploy HTTP server script
+      ansible.builtin.template:
+        src: backup_metrics_httpd.py.j2
+        dest: "{{ backup_metrics_endpoint_server_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+      notify: restart backup-metrics-endpoint
+
+    - name: Verify existing htpasswd credentials
+      ansible.builtin.command: "htpasswd -viB {{ backup_metrics_endpoint_htpasswd_path }} {{ backup_metrics_endpoint_auth_user }}"
+      args:
+        stdin: "{{ backup_metrics_endpoint_auth_password }}"
+      register: _backup_htpasswd_verify
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Generate htpasswd entry
+      ansible.builtin.command: "htpasswd -niB {{ backup_metrics_endpoint_auth_user }}"
+      args:
+        stdin: "{{ backup_metrics_endpoint_auth_password }}"
+      register: _backup_htpasswd_entry
+      changed_when: false
+      when: _backup_htpasswd_verify.rc != 0
+      no_log: true
+
+    - name: Write htpasswd file
+      ansible.builtin.copy:
+        dest: "{{ backup_metrics_endpoint_htpasswd_path }}"
+        content: "{{ _backup_htpasswd_entry.stdout }}\n"
+        owner: root
+        group: "{{ backup_metrics_endpoint_group }}"
+        mode: "0640"
+      notify: restart backup-metrics-endpoint
+      when: _backup_htpasswd_verify.rc != 0
+      no_log: true
+
+    - name: Create collector service unit
+      ansible.builtin.template:
+        src: backup-metrics-collector.service.j2
+        dest: "/etc/systemd/system/{{ backup_metrics_endpoint_timer_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+
+    - name: Create collector timer unit
+      ansible.builtin.template:
+        src: backup-metrics-collector.timer.j2
+        dest: "/etc/systemd/system/{{ backup_metrics_endpoint_timer_name }}.timer"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart backup-metrics-collector-timer
+
+    - name: Create HTTP server service unit
+      ansible.builtin.template:
+        src: backup-metrics-endpoint.service.j2
+        dest: "/etc/systemd/system/{{ backup_metrics_endpoint_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart backup-metrics-endpoint
+
+    - name: Flush handlers to ensure units are registered
+      ansible.builtin.meta: flush_handlers
+
+    - name: Check whether backup metrics JSON exists
+      ansible.builtin.stat:
+        path: "{{ backup_metrics_endpoint_json_path }}"
+      register: _backup_metrics_json_stat
+
+    - name: Run collector once to create initial metrics file
+      ansible.builtin.systemd:
+        name: "{{ backup_metrics_endpoint_timer_name }}.service"
+        state: started
+      when: (not _backup_metrics_json_stat.stat.exists) or (_backup_exporter_script is changed)
+
+    - name: Ensure collector timer is enabled and started
+      ansible.builtin.systemd:
+        name: "{{ backup_metrics_endpoint_timer_name }}.timer"
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Ensure HTTP server is enabled and running
+      ansible.builtin.systemd:
+        name: "{{ backup_metrics_endpoint_service_name }}"
+        enabled: true
+        state: started
+        daemon_reload: true
