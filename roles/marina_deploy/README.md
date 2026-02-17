@@ -36,7 +36,7 @@ marina_gunicorn_workers: 4
 marina_gunicorn_timeout: 3600
 
 marina_django_settings_module: "config.settings.production"
-marina_django_admin_url: "hidden_admin/"
+marina_django_admin_url: "marina_admin/"
 marina_django_allowed_hosts: "{{ marina_fqdn }},localhost"
 
 marina_traefik_enabled: true
