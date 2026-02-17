@@ -93,6 +93,17 @@
       changed_when: false
       failed_when: smtpd_milters.rc != 0
 
+    - name: Verify | SMTPUTF8 is disabled
+      ansible.builtin.command: postconf -h smtputf8_enable
+      register: smtputf8_enabled
+      changed_when: false
+
+    - name: Verify | Assert SMTPUTF8 disabled
+      ansible.builtin.assert:
+        that:
+          - smtputf8_enabled.stdout | trim == "no"
+        fail_msg: "smtputf8_enable should be 'no' for relay/backend compatibility"
+
     - name: Verify | Postfix is active
       ansible.builtin.command: systemctl is-active postfix
       register: postfix_status

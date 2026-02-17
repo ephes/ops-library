@@ -84,6 +84,7 @@ mail_backend_relay_password: "CHANGEME"  # Set via SOPS
 | `mail_backend_mydomain` | `wersdoerfer.de` | Primary mail domain |
 | `mail_backend_imap_hostname` | `imap.home.wersdoerfer.de` | IMAP hostname |
 | `mail_backend_smtp_hostname` | `smtp.home.wersdoerfer.de` | SMTP hostname |
+| `mail_backend_smtputf8_enable` | `false` | Advertise SMTPUTF8 support (`false` recommended for current Dovecot LMTP compatibility) |
 
 ### Storage
 

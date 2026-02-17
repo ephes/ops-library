@@ -121,6 +121,10 @@ mail_backend_password_scheme: "SHA512-CRYPT"
 # Tag addressing delimiter (user-tag@domain delivers to user)
 mail_backend_recipient_delimiter: "-"
 
+# SMTPUTF8 support
+# Keep disabled by default because Dovecot LMTP on current distro does not advertise SMTPUTF8.
+mail_backend_smtputf8_enable: false
+
 # Rate limiting (submission)
 mail_backend_submission_rate_limit: 100
 

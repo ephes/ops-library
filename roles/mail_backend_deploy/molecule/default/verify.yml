@@ -88,6 +88,17 @@
           - dovecot_status.stdout | trim == "active"
         fail_msg: "Mail services are not running"
 
+    - name: Verify | SMTPUTF8 is disabled
+      ansible.builtin.command: postconf -h smtputf8_enable
+      register: smtputf8_enabled
+      changed_when: false
+
+    - name: Verify | Assert SMTPUTF8 disabled
+      ansible.builtin.assert:
+        that:
+          - smtputf8_enabled.stdout | trim == "no"
+        fail_msg: "smtputf8_enable should be 'no' for Dovecot LMTP compatibility"
+
     - name: Verify | Check domains exist in database
       ansible.builtin.command: sudo -u postgres psql -d {{ mail_backend_postgres_database | default('mail') }} -tAc "SELECT name FROM mail_domains WHERE name = '{{ item }}';"
       register: domain_query

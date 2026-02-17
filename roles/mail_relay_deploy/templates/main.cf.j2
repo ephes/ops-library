@@ -129,6 +129,9 @@ message_size_limit = 52428800
 maximal_queue_lifetime = 5d
 bounce_queue_lifetime = 5d
 
+# SMTPUTF8 support (disabled by default; backend delivery path is ASCII/punycode only)
+smtputf8_enable = {{ 'yes' if mail_relay_smtputf8_enable else 'no' }}
+
 # Logging
 maillog_file = {{ mail_relay_maillog_file }}
 

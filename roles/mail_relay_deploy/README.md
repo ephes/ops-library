@@ -37,7 +37,8 @@ INTERNET                    EDGE (this role)              BACKEND
 
 ```yaml
 # Domains to accept mail for
-# For IDNs, include the A-label (punycode) and optionally U-label if accepting SMTPUTF8 RCPT domains.
+# For IDNs, include the A-label (punycode).
+# U-label entries are optional forward-compatibility for future SMTPUTF8 enablement.
 mail_relay_domains:
   - "xn--wersdrfer-47a.de"
   - "wersdörfer.de"
@@ -58,6 +59,7 @@ mail_relay_sasl_password: "CHANGEME"  # Set via SOPS
 | `mail_relay_hostname` | `mail.wersdoerfer.de` | Hostname (must match PTR) |
 | `mail_relay_mydomain` | `wersdoerfer.de` | Mail domain |
 | `mail_relay_backend_port` | `25` | Backend relay port |
+| `mail_relay_smtputf8_enable` | `false` | Advertise SMTPUTF8 support (`false` recommended for current backend LMTP compatibility) |
 
 ### TLS
 

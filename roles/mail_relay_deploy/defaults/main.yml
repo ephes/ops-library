@@ -69,6 +69,10 @@ mail_relay_smtpd_tls_security_level: "may"  # inbound from internet
 # TLS to backend (mandatory)
 mail_relay_backend_tls_security_level: "encrypt"
 
+# SMTPUTF8 support
+# Keep disabled by default because backend LMTP delivery path does not support SMTPUTF8.
+mail_relay_smtputf8_enable: false
+
 # Minimum TLS version
 mail_relay_tls_protocols: ">=TLSv1.2"
 
