@@ -16,6 +16,13 @@
 # mail_relay_backend_host: ""  # Backend server to relay to
 # mail_relay_sasl_password: ""  # Password for outbound auth from backend
 
+# Optional address rewrites applied to recipient envelope addresses.
+# Useful for handling Unicode IDN recipient variants from remote MTAs.
+# mail_relay_recipient_rewrites:
+#   - from: "@wersdörfer.de"
+#     to: "@xn--wersdrfer-47a.de"
+mail_relay_recipient_rewrites: []
+
 # =============================================================================
 # Server Configuration
 # =============================================================================

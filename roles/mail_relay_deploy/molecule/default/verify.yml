@@ -41,6 +41,52 @@
           - transport_grep.rc == 0
         fail_msg: "Backend mapping for {{ mail_relay_backend_host }} missing in /etc/postfix/transport"
 
+    - name: Verify | Check recipient canonical map file is absent when rewrites disabled
+      ansible.builtin.stat:
+        path: /etc/postfix/recipient_canonical
+      register: recipient_canonical_file
+
+    - name: Verify | Assert recipient canonical map file absent when rewrites disabled
+      ansible.builtin.assert:
+        that:
+          - not recipient_canonical_file.stat.exists
+        fail_msg: "/etc/postfix/recipient_canonical should be absent when rewrites are disabled"
+
+    - name: Verify | Check recipient canonical db is absent when rewrites disabled
+      ansible.builtin.stat:
+        path: /etc/postfix/recipient_canonical.db
+      register: recipient_canonical_db
+
+    - name: Verify | Assert recipient canonical db absent when rewrites disabled
+      ansible.builtin.assert:
+        that:
+          - not recipient_canonical_db.stat.exists
+        fail_msg: "/etc/postfix/recipient_canonical.db should be absent when rewrites are disabled"
+
+    - name: Verify | main.cf has no recipient_canonical_maps when rewrites disabled
+      ansible.builtin.command: grep "^recipient_canonical_maps = hash:/etc/postfix/recipient_canonical$" /etc/postfix/main.cf
+      register: canonical_maps_disabled_grep
+      changed_when: false
+      failed_when: false
+
+    - name: Verify | Assert recipient_canonical_maps absent when rewrites disabled
+      ansible.builtin.assert:
+        that:
+          - canonical_maps_disabled_grep.rc != 0
+        fail_msg: "recipient_canonical_maps should be absent in /etc/postfix/main.cf when rewrites are disabled"
+
+    - name: Verify | main.cf has no recipient_canonical_classes override when rewrites disabled
+      ansible.builtin.command: grep "^recipient_canonical_classes = envelope_recipient$" /etc/postfix/main.cf
+      register: canonical_classes_disabled_grep
+      changed_when: false
+      failed_when: false
+
+    - name: Verify | Assert recipient_canonical_classes override absent when rewrites disabled
+      ansible.builtin.assert:
+        that:
+          - canonical_classes_disabled_grep.rc != 0
+        fail_msg: "recipient_canonical_classes override should be absent in /etc/postfix/main.cf when rewrites are disabled"
+
     - name: Verify | smtpd_milters is defined
       ansible.builtin.command: postconf -h smtpd_milters
       register: smtpd_milters

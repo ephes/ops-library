@@ -16,6 +16,20 @@
       - mail_relay_backend_host: Backend server to relay inbound mail to
       - mail_relay_sasl_password: Password for backend SMTP AUTH
 
+- name: Validate recipient rewrite entries
+  ansible.builtin.assert:
+    that:
+      - item.from is defined
+      - item.from is string
+      - item.from | length > 0
+      - item.from is match('^(@[^@\\s]+|[^@\\s]+@[^@\\s]+)$')
+      - item.to is defined
+      - item.to is string
+      - item.to | length > 0
+      - item.to is match('^(@[^@\\s]+|[^@\\s]+@[^@\\s]+)$')
+    fail_msg: "Each mail_relay_recipient_rewrites item must define valid non-empty 'from' and 'to' values ('user@domain' or '@domain')"
+  loop: "{{ mail_relay_recipient_rewrites }}"
+
 - name: Install mail relay packages
   ansible.builtin.import_tasks: packages.yml
 

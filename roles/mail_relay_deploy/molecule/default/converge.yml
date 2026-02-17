@@ -21,6 +21,49 @@
     mail_relay_mynetworks:
       - "127.0.0.0/8"
       - "[::1]/128"
+    _mail_relay_recipient_rewrites_enabled:
+      - from: "@wersdörfer.de"
+        to: "@xn--wersdrfer-47a.de"
 
-  roles:
-    - role: mail_relay_deploy
+  tasks:
+    - name: Converge | Apply role with recipient rewrites enabled
+      ansible.builtin.include_role:
+        name: mail_relay_deploy
+      vars:
+        mail_relay_recipient_rewrites: "{{ _mail_relay_recipient_rewrites_enabled }}"
+
+    - name: Converge | Flush handlers after enabled run
+      ansible.builtin.meta: flush_handlers
+
+    - name: Converge | Recipient canonical map contains domain rewrite
+      ansible.builtin.command: grep "@xn--wersdrfer-47a.de" /etc/postfix/recipient_canonical
+      changed_when: false
+
+    - name: Converge | Check recipient canonical db exists when rewrites enabled
+      ansible.builtin.stat:
+        path: /etc/postfix/recipient_canonical.db
+      register: canonical_db_stat
+
+    - name: Converge | Assert recipient canonical db exists
+      ansible.builtin.assert:
+        that:
+          - canonical_db_stat.stat.exists
+          - canonical_db_stat.stat.size | int > 0
+        fail_msg: "/etc/postfix/recipient_canonical.db missing or empty when rewrites are enabled"
+
+    - name: Converge | Check main.cf has recipient canonical maps when rewrites enabled
+      ansible.builtin.command: grep "^recipient_canonical_maps = hash:/etc/postfix/recipient_canonical$" /etc/postfix/main.cf
+      register: canonical_maps_enabled_grep
+      changed_when: false
+
+    - name: Converge | Assert recipient canonical maps configured when rewrites enabled
+      ansible.builtin.assert:
+        that:
+          - canonical_maps_enabled_grep.rc == 0
+        fail_msg: "recipient_canonical_maps missing from /etc/postfix/main.cf when rewrites are enabled"
+
+    - name: Converge | Apply role with recipient rewrites disabled
+      ansible.builtin.include_role:
+        name: mail_relay_deploy
+      vars:
+        mail_relay_recipient_rewrites: []

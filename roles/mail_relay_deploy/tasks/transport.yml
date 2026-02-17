@@ -19,6 +19,26 @@
     mode: "0644"
   notify: Postmap relay_domains
 
+- name: Create recipient canonical map
+  ansible.builtin.template:
+    src: recipient_canonical.j2
+    dest: /etc/postfix/recipient_canonical
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Postmap recipient_canonical
+  when: mail_relay_recipient_rewrites | length > 0
+
+- name: Remove recipient canonical map when rewrites disabled
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/postfix/recipient_canonical
+    - /etc/postfix/recipient_canonical.db
+  when: mail_relay_recipient_rewrites | length == 0
+  notify: Reload postfix
+
 - name: Create TLS policy map for backend
   ansible.builtin.template:
     src: tls_policy.j2

@@ -2,25 +2,6 @@
 # Handlers for mail_relay_deploy
 # All handlers skip in check mode since services won't be installed
 
-- name: Restart postfix
-  ansible.builtin.systemd:
-    name: postfix
-    state: restarted
-    daemon_reload: true
-  when: not ansible_check_mode
-
-- name: Reload postfix
-  ansible.builtin.command: postfix reload
-  changed_when: true
-  when: not ansible_check_mode
-
-- name: Restart postgrey
-  ansible.builtin.systemd:
-    name: postgrey
-    state: restarted
-    daemon_reload: true
-  when: not ansible_check_mode
-
 - name: Postmap transport
   ansible.builtin.command: postmap /etc/postfix/transport
   changed_when: true
@@ -43,4 +24,29 @@
   ansible.builtin.command: postmap /etc/postfix/tls_policy
   changed_when: true
   notify: Reload postfix
+  when: not ansible_check_mode
+
+- name: Postmap recipient_canonical
+  ansible.builtin.command: postmap /etc/postfix/recipient_canonical
+  changed_when: true
+  notify: Reload postfix
+  when: not ansible_check_mode
+
+- name: Reload postfix
+  ansible.builtin.command: postfix reload
+  changed_when: true
+  when: not ansible_check_mode
+
+- name: Restart postfix
+  ansible.builtin.systemd:
+    name: postfix
+    state: restarted
+    daemon_reload: true
+  when: not ansible_check_mode
+
+- name: Restart postgrey
+  ansible.builtin.systemd:
+    name: postgrey
+    state: restarted
+    daemon_reload: true
   when: not ansible_check_mode

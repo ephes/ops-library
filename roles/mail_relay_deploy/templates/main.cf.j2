@@ -33,6 +33,12 @@ relay_domains = hash:/etc/postfix/relay_domains
 # Transport map for routing to backend
 transport_maps = hash:/etc/postfix/transport
 
+# Optional recipient canonical rewrites (e.g. Unicode IDN -> punycode)
+{% if mail_relay_recipient_rewrites | length > 0 %}
+recipient_canonical_maps = hash:/etc/postfix/recipient_canonical
+recipient_canonical_classes = envelope_recipient
+{% endif %}
+
 # Do NOT set relayhost here - we use transport_maps for inbound relay
 # Outbound mail from submission goes directly to destination
 

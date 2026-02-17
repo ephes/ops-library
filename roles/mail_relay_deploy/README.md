@@ -36,13 +36,14 @@ INTERNET                    EDGE (this role)              BACKEND
 ## Required Variables
 
 ```yaml
-# Domains to accept mail for (use punycode for IDN)
+# Domains to accept mail for
+# For IDNs, include the A-label (punycode) and optionally U-label if accepting SMTPUTF8 RCPT domains.
 mail_relay_domains:
   - "xn--wersdrfer-47a.de"
-  - "wersdoerfer.de"
+  - "wersdörfer.de"
 
 # Backend server to relay inbound mail to
-mail_relay_backend_host: "smtp.home.wersdoerfer.de"
+mail_relay_backend_host: "smtp.home.xn--wersdrfer-47a.de"
 
 # SASL password for backend authentication on submission
 mail_relay_sasl_password: "CHANGEME"  # Set via SOPS
@@ -81,6 +82,15 @@ mail_relay_sasl_password: "CHANGEME"  # Set via SOPS
 | `mail_relay_client_connection_rate_limit` | `10` | Connections per minute |
 | `mail_relay_client_recipient_rate_limit` | `100` | Recipients per minute |
 
+### Recipient Rewrites
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `mail_relay_recipient_rewrites` | `[]` | Optional recipient envelope rewrites (`from` -> `to`) via Postfix `recipient_canonical_maps` |
+
+When enabled, rewrites are applied to envelope recipients only (`recipient_canonical_classes = envelope_recipient`).
+Supported rewrite keys/values are `user@domain` and domain-wide `@domain` patterns.
+
 ## Example Playbook
 
 ```yaml
@@ -95,8 +105,11 @@ mail_relay_sasl_password: "CHANGEME"  # Set via SOPS
       vars:
         mail_relay_domains:
           - "xn--wersdrfer-47a.de"
-          - "wersdoerfer.de"
-        mail_relay_backend_host: "smtp.home.wersdoerfer.de"
+          - "wersdörfer.de"
+        mail_relay_recipient_rewrites:
+          - from: "@wersdörfer.de"
+            to: "@xn--wersdrfer-47a.de"
+        mail_relay_backend_host: "smtp.home.xn--wersdrfer-47a.de"
         mail_relay_sasl_password: "{{ mail_secrets.relay_sasl_password }}"
 ```
 
@@ -108,6 +121,7 @@ mail_relay_sasl_password: "CHANGEME"  # Set via SOPS
 | `/etc/postfix/master.cf` | Postfix service definitions |
 | `/etc/postfix/transport` | Domain → backend routing |
 | `/etc/postfix/relay_domains` | Accepted domains |
+| `/etc/postfix/recipient_canonical` | Optional recipient rewrite map |
 | `/etc/postfix/sasl_passwd` | SASL credentials |
 | `/etc/postfix/sasl/smtpd.conf` | SASL configuration |
 | `/etc/default/postgrey` | Greylisting settings |
