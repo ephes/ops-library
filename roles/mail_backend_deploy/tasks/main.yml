@@ -17,6 +17,18 @@
       - mail_backend_relay_host: Edge relay for outbound mail
       - mail_backend_relay_password: Password for SMTP AUTH to edge
 
+- name: Validate PostfixAdmin domain alias mappings
+  ansible.builtin.assert:
+    that:
+      - item.alias_domain is defined
+      - item.target_domain is defined
+      - (item.alias_domain | trim) | length > 0
+      - (item.target_domain | trim) | length > 0
+      - (item.alias_domain | lower) != (item.target_domain | lower)
+    fail_msg: "Invalid mail_backend_postfixadmin_domain_aliases entry: {{ item | to_json }}"
+  loop: "{{ mail_backend_postfixadmin_domain_aliases | default([]) }}"
+  when: mail_backend_postfixadmin_domain_aliases | default([]) | length > 0
+
 - name: Install mail backend packages
   ansible.builtin.import_tasks: packages.yml
 

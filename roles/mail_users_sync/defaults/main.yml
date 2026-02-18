@@ -7,3 +7,18 @@ mail_users_list: []
 
 # Optional: when true, disables users present in DB but not in mail_users_list.
 mail_users_disable_unlisted: false
+
+# Database/schema mode:
+# - postfixadmin: use domain/mailbox/alias tables (recommended)
+# - legacy: use mail_domains/mail_users/mail_aliases tables
+mail_users_schema_mode: "postfixadmin"
+
+# Database name
+mail_users_postgres_database: "mail"
+
+# Additional alias domains to create for each user localpart.
+# Example:
+# mail_users_additional_alias_domains:
+#   - "wersdoerfer.de"
+#   - "xn--wersdrfer-47a.de"
+mail_users_additional_alias_domains: []

@@ -84,7 +84,6 @@ mail_backend_relay_password: "CHANGEME"  # Set via SOPS
 | `mail_backend_mydomain` | `wersdoerfer.de` | Primary mail domain |
 | `mail_backend_imap_hostname` | `imap.home.wersdoerfer.de` | IMAP hostname |
 | `mail_backend_smtp_hostname` | `smtp.home.wersdoerfer.de` | SMTP hostname |
-| `mail_backend_smtputf8_enable` | `false` | Advertise SMTPUTF8 support (`false` recommended for current Dovecot LMTP compatibility) |
 
 ### Storage
 
@@ -101,6 +100,8 @@ mail_backend_relay_password: "CHANGEME"  # Set via SOPS
 | `mail_backend_postgres_host` | `localhost` | Database host |
 | `mail_backend_postgres_database` | `mail` | Database name |
 | `mail_backend_postgres_user` | `mail` | Database user |
+| `mail_backend_schema_mode` | `legacy` | SQL schema mode (`legacy` or `postfixadmin`) |
+| `mail_backend_postfixadmin_domain_aliases` | `[]` | Domain alias mappings (`alias_domain` -> `target_domain`) in PostfixAdmin mode |
 
 ### DKIM
 

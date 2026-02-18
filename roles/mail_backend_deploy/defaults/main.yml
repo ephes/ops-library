@@ -121,10 +121,6 @@ mail_backend_password_scheme: "SHA512-CRYPT"
 # Tag addressing delimiter (user-tag@domain delivers to user)
 mail_backend_recipient_delimiter: "-"
 
-# SMTPUTF8 support
-# Keep disabled by default because Dovecot LMTP on current distro does not advertise SMTPUTF8.
-mail_backend_smtputf8_enable: false
-
 # Rate limiting (submission)
 mail_backend_submission_rate_limit: 100
 
@@ -156,6 +152,14 @@ mail_backend_required_aliases:
 # Schema mode: "legacy" (mail_* tables) or "postfixadmin" (native PostfixAdmin schema)
 # Set to "postfixadmin" after migrating to PostfixAdmin for consistent SQL queries
 mail_backend_schema_mode: "legacy"
+
+# Domain aliases for PostfixAdmin schema mode.
+# Each alias domain rewrites localpart@alias_domain -> localpart@target_domain.
+# Example:
+# mail_backend_postfixadmin_domain_aliases:
+#   - alias_domain: "wersdoerfer.de"
+#     target_domain: "xn--wersdrfer-47a.de"
+mail_backend_postfixadmin_domain_aliases: []
 
 # =============================================================================
 # Package Management

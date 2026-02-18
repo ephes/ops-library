@@ -1,14 +1,32 @@
 ---
-- name: Get existing mail users from database
+- name: Validate schema mode
+  ansible.builtin.assert:
+    that:
+      - mail_users_schema_mode in ['postfixadmin', 'legacy']
+    fail_msg: "mail_users_schema_mode must be 'postfixadmin' or 'legacy'"
+
+- name: Get existing mail users from database (PostfixAdmin)
   community.postgresql.postgresql_query:
-    db: mail
+    db: "{{ mail_users_postgres_database }}"
     query: |
-      SELECT u.localpart || '@' || d.name AS email, u.active
+      SELECT LOWER(username) AS email, active
+      FROM mailbox
+  register: existing_users
+  become: true
+  become_user: postgres
+  when: mail_users_schema_mode == 'postfixadmin'
+
+- name: Get existing mail users from database (legacy)
+  community.postgresql.postgresql_query:
+    db: "{{ mail_users_postgres_database }}"
+    query: |
+      SELECT LOWER(u.localpart || '@' || d.name) AS email, u.active
       FROM mail_users u
       JOIN mail_domains d ON u.domain_id = d.id
   register: existing_users
   become: true
   become_user: postgres
+  when: mail_users_schema_mode == 'legacy'
 
 - name: Build list of existing emails
   ansible.builtin.set_fact:
@@ -20,9 +38,26 @@
   loop_control:
     loop_var: user
 
-- name: Disable users not in secrets (optional - if desired)
+- name: Disable users not in secrets (optional - PostfixAdmin)
   community.postgresql.postgresql_query:
-    db: mail
+    db: "{{ mail_users_postgres_database }}"
+    query: |
+      UPDATE mailbox
+      SET active = '0', modified = NOW()
+      WHERE LOWER(username) = LOWER(%(email)s)
+        AND active = '1'
+    named_args:
+      email: "{{ item }}"
+  loop: "{{ existing_emails | difference(mail_users_list | map(attribute='email') | map('lower') | list) }}"
+  become: true
+  become_user: postgres
+  when:
+    - mail_users_disable_unlisted | default(false)
+    - mail_users_schema_mode == 'postfixadmin'
+
+- name: Disable users not in secrets (optional - legacy)
+  community.postgresql.postgresql_query:
+    db: "{{ mail_users_postgres_database }}"
     query: |
       UPDATE mail_users u
       SET active = false
@@ -35,4 +70,6 @@
   loop: "{{ existing_emails | difference(mail_users_list | map(attribute='email') | map('lower') | list) }}"
   become: true
   become_user: postgres
-  when: mail_users_disable_unlisted | default(false)
+  when:
+    - mail_users_disable_unlisted | default(false)
+    - mail_users_schema_mode == 'legacy'

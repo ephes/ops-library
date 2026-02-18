@@ -13,22 +13,144 @@
   ansible.builtin.set_fact:
     user_localpart: "{{ user.email.split('@')[0] | lower }}"
     user_domain: "{{ user.email.split('@')[1] | lower }}"
+    user_email: "{{ user.email | lower }}"
     user_active: "{{ user.active | default(true) }}"
 
-- name: Get domain ID for {{ user_domain }}
+- name: Build alias-domain list for {{ user.email }}
+  ansible.builtin.set_fact:
+    user_alias_domains: "{{ mail_users_additional_alias_domains | default([]) | map('lower') | reject('equalto', user_domain) | unique | list }}"
+
+- name: Get domain row for {{ user_domain }} (PostfixAdmin)
   community.postgresql.postgresql_query:
-    db: mail
+    db: "{{ mail_users_postgres_database }}"
+    query: "SELECT domain FROM domain WHERE LOWER(domain) = LOWER(%(domain)s)"
+    named_args:
+      domain: "{{ user_domain }}"
+  register: domain_result_postfixadmin
+  become: true
+  become_user: postgres
+  when: mail_users_schema_mode == 'postfixadmin'
+
+- name: Get domain row for {{ user_domain }} (legacy)
+  community.postgresql.postgresql_query:
+    db: "{{ mail_users_postgres_database }}"
     query: "SELECT id FROM mail_domains WHERE LOWER(name) = LOWER(%(domain)s)"
     named_args:
       domain: "{{ user_domain }}"
-  register: domain_result
+  register: domain_result_legacy
   become: true
   become_user: postgres
+  when: mail_users_schema_mode == 'legacy'
 
-- name: Fail if domain does not exist
+- name: Fail if domain does not exist (PostfixAdmin)
+  ansible.builtin.fail:
+    msg: "Domain '{{ user_domain }}' not found in domain table"
+  when:
+    - mail_users_schema_mode == 'postfixadmin'
+    - domain_result_postfixadmin.query_result | length == 0
+
+- name: Check whether domain is configured as alias domain (PostfixAdmin)
+  community.postgresql.postgresql_query:
+    db: "{{ mail_users_postgres_database }}"
+    query: |
+      SELECT target_domain
+      FROM alias_domain
+      WHERE LOWER(alias_domain) = LOWER(%(domain)s)
+        AND active = '1'
+    named_args:
+      domain: "{{ user_domain }}"
+  register: alias_domain_row_postfixadmin
+  become: true
+  become_user: postgres
+  when: mail_users_schema_mode == 'postfixadmin'
+
+- name: Fail when primary user domain is an alias domain (PostfixAdmin)
+  ansible.builtin.fail:
+    msg: >-
+      Domain '{{ user_domain }}' is configured as alias_domain ->
+      '{{ alias_domain_row_postfixadmin.query_result[0].target_domain }}'.
+      Create users on canonical target domains only.
+  when:
+    - mail_users_schema_mode == 'postfixadmin'
+    - alias_domain_row_postfixadmin.query_result | length > 0
+
+- name: Fail if domain does not exist (legacy)
   ansible.builtin.fail:
     msg: "Domain '{{ user_domain }}' not found in mail_domains table"
-  when: domain_result.query_result | length == 0
+  when:
+    - mail_users_schema_mode == 'legacy'
+    - domain_result_legacy.query_result | length == 0
+
+- name: Check whether domain is configured as alias domain (legacy)
+  community.postgresql.postgresql_query:
+    db: "{{ mail_users_postgres_database }}"
+    query: |
+      SELECT dd.name AS target_domain
+      FROM mail_domain_aliases da
+      JOIN mail_domains sd ON da.source_domain_id = sd.id
+      JOIN mail_domains dd ON da.dest_domain_id = dd.id
+      WHERE LOWER(sd.name) = LOWER(%(domain)s)
+        AND da.active = true
+    named_args:
+      domain: "{{ user_domain }}"
+  register: alias_domain_row_legacy
+  become: true
+  become_user: postgres
+  when: mail_users_schema_mode == 'legacy'
+
+- name: Fail when primary user domain is an alias domain (legacy)
+  ansible.builtin.fail:
+    msg: >-
+      Domain '{{ user_domain }}' is configured as alias domain ->
+      '{{ alias_domain_row_legacy.query_result[0].target_domain }}'.
+      Create users on canonical target domains only.
+  when:
+    - mail_users_schema_mode == 'legacy'
+    - alias_domain_row_legacy.query_result | length > 0
+
+- name: Validate alias domains exist (PostfixAdmin)
+  community.postgresql.postgresql_query:
+    db: "{{ mail_users_postgres_database }}"
+    query: "SELECT domain FROM domain WHERE LOWER(domain) = LOWER(%(domain)s)"
+    named_args:
+      domain: "{{ item }}"
+  register: alias_domain_checks_postfixadmin
+  become: true
+  become_user: postgres
+  loop: "{{ user_alias_domains }}"
+  when:
+    - mail_users_schema_mode == 'postfixadmin'
+    - user_alias_domains | length > 0
+
+- name: Fail if alias domain is missing (PostfixAdmin)
+  ansible.builtin.fail:
+    msg: "Alias domain '{{ item.item }}' not found in domain table"
+  loop: "{{ alias_domain_checks_postfixadmin.results | default([]) }}"
+  when:
+    - mail_users_schema_mode == 'postfixadmin'
+    - item.query_result | length == 0
+
+- name: Validate alias domains exist (legacy)
+  community.postgresql.postgresql_query:
+    db: "{{ mail_users_postgres_database }}"
+    query: "SELECT id FROM mail_domains WHERE LOWER(name) = LOWER(%(domain)s)"
+    named_args:
+      domain: "{{ item }}"
+  register: alias_domain_checks_legacy
+  become: true
+  become_user: postgres
+  loop: "{{ user_alias_domains }}"
+  when:
+    - mail_users_schema_mode == 'legacy'
+    - user_alias_domains | length > 0
+
+- name: Fail if alias domain is missing (legacy)
+  ansible.builtin.fail:
+    msg: "Alias domain '{{ item.item }}' not found in mail_domains table"
+  loop: "{{ alias_domain_checks_legacy.results | default([]) }}"
+  when:
+    - mail_users_schema_mode == 'legacy'
+    - item.query_result | length == 0
 
 - name: Generate password hash for {{ user.email }}
   ansible.builtin.command: doveadm pw -s SHA512-CRYPT
@@ -38,33 +160,83 @@
   changed_when: false
   no_log: true
 
-- name: Check if user exists {{ user.email }}
+- name: Check if user exists {{ user.email }} (PostfixAdmin)
   community.postgresql.postgresql_query:
-    db: mail
+    db: "{{ mail_users_postgres_database }}"
     query: |
-      SELECT id, password, active FROM mail_users
+      SELECT username, password, active
+      FROM mailbox
+      WHERE LOWER(username) = LOWER(%(username)s)
+    named_args:
+      username: "{{ user_email }}"
+  register: user_exists
+  become: true
+  become_user: postgres
+  when: mail_users_schema_mode == 'postfixadmin'
+
+- name: Check if user exists {{ user.email }} (legacy)
+  community.postgresql.postgresql_query:
+    db: "{{ mail_users_postgres_database }}"
+    query: |
+      SELECT id, password, active
+      FROM mail_users
       WHERE domain_id = %(domain_id)s
         AND LOWER(localpart) = LOWER(%(localpart)s)
     named_args:
-      domain_id: "{{ domain_result.query_result[0].id }}"
+      domain_id: "{{ domain_result_legacy.query_result[0].id }}"
       localpart: "{{ user_localpart }}"
   register: user_exists
+  become: true
   become_user: postgres
+  when: mail_users_schema_mode == 'legacy'
 
-- name: Create mail user {{ user.email }}
+- name: Create mailbox {{ user.email }} (PostfixAdmin)
   community.postgresql.postgresql_query:
-    db: mail
+    db: "{{ mail_users_postgres_database }}"
+    query: |
+      INSERT INTO mailbox (username, password, name, maildir, quota, local_part, domain, active, created, modified)
+      VALUES (
+        LOWER(%(username)s),
+        %(password)s,
+        '',
+        LOWER(CONCAT(%(domain)s, '/', %(localpart)s, '/')),
+        0,
+        LOWER(%(localpart)s),
+        LOWER(%(domain)s),
+        %(active)s,
+        NOW(),
+        NOW()
+      )
+    named_args:
+      username: "{{ user_email }}"
+      password: "{{ password_hash.stdout }}"
+      localpart: "{{ user_localpart }}"
+      domain: "{{ user_domain }}"
+      active: "{{ '1' if user_active | bool else '0' }}"
+  become: true
+  become_user: postgres
+  no_log: true
+  when:
+    - mail_users_schema_mode == 'postfixadmin'
+    - user_exists.query_result | length == 0
+
+- name: Create mail user {{ user.email }} (legacy)
+  community.postgresql.postgresql_query:
+    db: "{{ mail_users_postgres_database }}"
     query: |
       INSERT INTO mail_users (domain_id, localpart, password, active)
       VALUES (%(domain_id)s, %(localpart)s, %(password)s, %(active)s)
     named_args:
-      domain_id: "{{ domain_result.query_result[0].id }}"
+      domain_id: "{{ domain_result_legacy.query_result[0].id }}"
       localpart: "{{ user_localpart }}"
       password: "{{ password_hash.stdout }}"
       active: "{{ user_active }}"
   become: true
   become_user: postgres
-  when: user_exists.query_result | length == 0
+  no_log: true
+  when:
+    - mail_users_schema_mode == 'legacy'
+    - user_exists.query_result | length == 0
 
 - name: Verify existing password for {{ user.email }}
   ansible.builtin.command: doveadm pw -t "{{ user_exists.query_result[0].password }}"
@@ -79,22 +251,125 @@
 - name: Set password_changed fact for {{ user.email }}
   ansible.builtin.set_fact:
     password_changed: "{{ password_verify.rc != 0 }}"
-    active_changed: "{{ user_exists.query_result[0].active != user_active }}"
+    active_changed: "{{ ((user_exists.query_result[0].active | string | lower) in ['1', 't', 'true', 'yes']) != (user_active | bool) }}"
   when: user_exists.query_result | length > 0
 
-- name: Update mail user {{ user.email }}
+- name: Update mailbox {{ user.email }} (PostfixAdmin)
   community.postgresql.postgresql_query:
-    db: mail
+    db: "{{ mail_users_postgres_database }}"
+    query: |
+      UPDATE mailbox
+      SET password = %(password)s,
+          active = %(active)s,
+          modified = NOW()
+      WHERE LOWER(username) = LOWER(%(username)s)
+    named_args:
+      username: "{{ user_email }}"
+      password: "{{ password_hash.stdout }}"
+      active: "{{ '1' if user_active | bool else '0' }}"
+  become: true
+  become_user: postgres
+  no_log: true
+  when:
+    - mail_users_schema_mode == 'postfixadmin'
+    - user_exists.query_result | length > 0
+    - password_changed | bool or active_changed | bool
+
+- name: Update mail user {{ user.email }} (legacy)
+  community.postgresql.postgresql_query:
+    db: "{{ mail_users_postgres_database }}"
     query: |
       UPDATE mail_users
       SET password = %(password)s, active = %(active)s
       WHERE domain_id = %(domain_id)s
         AND LOWER(localpart) = LOWER(%(localpart)s)
     named_args:
-      domain_id: "{{ domain_result.query_result[0].id }}"
+      domain_id: "{{ domain_result_legacy.query_result[0].id }}"
       localpart: "{{ user_localpart }}"
       password: "{{ password_hash.stdout }}"
       active: "{{ user_active }}"
   become: true
   become_user: postgres
-  when: user_exists.query_result | length > 0 and (password_changed | bool or active_changed | bool)
+  when:
+    - mail_users_schema_mode == 'legacy'
+    - user_exists.query_result | length > 0
+    - password_changed | bool or active_changed | bool
+
+- name: Ensure primary self-alias exists {{ user.email }} (PostfixAdmin)
+  community.postgresql.postgresql_query:
+    db: "{{ mail_users_postgres_database }}"
+    query: |
+      INSERT INTO alias (address, goto, domain, active, created, modified)
+      VALUES (
+        LOWER(%(address)s),
+        LOWER(%(goto)s),
+        LOWER(%(domain)s),
+        %(active)s,
+        NOW(),
+        NOW()
+      )
+      ON CONFLICT (address) DO UPDATE
+      SET goto = EXCLUDED.goto,
+          domain = EXCLUDED.domain,
+          active = EXCLUDED.active,
+          modified = NOW()
+    named_args:
+      address: "{{ user_email }}"
+      goto: "{{ user_email }}"
+      domain: "{{ user_domain }}"
+      active: "{{ '1' if user_active | bool else '0' }}"
+  become: true
+  become_user: postgres
+  when: mail_users_schema_mode == 'postfixadmin'
+
+- name: Ensure additional alias domains for {{ user.email }} (PostfixAdmin)
+  community.postgresql.postgresql_query:
+    db: "{{ mail_users_postgres_database }}"
+    query: |
+      INSERT INTO alias (address, goto, domain, active, created, modified)
+      VALUES (
+        LOWER(CONCAT(%(localpart)s, '@', %(alias_domain)s)),
+        LOWER(%(goto)s),
+        LOWER(%(alias_domain)s),
+        %(active)s,
+        NOW(),
+        NOW()
+      )
+      ON CONFLICT (address) DO UPDATE
+      SET goto = EXCLUDED.goto,
+          domain = EXCLUDED.domain,
+          active = EXCLUDED.active,
+          modified = NOW()
+    named_args:
+      localpart: "{{ user_localpart }}"
+      alias_domain: "{{ item }}"
+      goto: "{{ user_email }}"
+      active: "{{ '1' if user_active | bool else '0' }}"
+  become: true
+  become_user: postgres
+  loop: "{{ user_alias_domains }}"
+  when:
+    - mail_users_schema_mode == 'postfixadmin'
+    - user_alias_domains | length > 0
+
+- name: Ensure additional alias domains for {{ user.email }} (legacy)
+  community.postgresql.postgresql_query:
+    db: "{{ mail_users_postgres_database }}"
+    query: |
+      INSERT INTO mail_aliases (source_domain_id, source_localpart, destination, active)
+      SELECT d.id, %(localpart)s, %(destination)s, %(active)s
+      FROM mail_domains d
+      WHERE LOWER(d.name) = LOWER(%(alias_domain)s)
+      ON CONFLICT (source_domain_id, LOWER(source_localpart), LOWER(destination)) DO UPDATE
+      SET active = EXCLUDED.active
+    named_args:
+      localpart: "{{ user_localpart }}"
+      destination: "{{ user_email }}"
+      alias_domain: "{{ item }}"
+      active: "{{ user_active }}"
+  become: true
+  become_user: postgres
+  loop: "{{ user_alias_domains }}"
+  when:
+    - mail_users_schema_mode == 'legacy'
+    - user_alias_domains | length > 0

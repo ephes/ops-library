@@ -32,7 +32,7 @@
   when:
     - bind_firewall_check_enabled
     - bind_ufw_check.rc == 0
-    - bind_ufw_status.stdout is search('Status: inactive')
+    - "'Status: inactive' in bind_ufw_status.stdout"
 
 - name: Warn when UFW is active but port 53 is not explicitly allowed
   ansible.builtin.debug:
@@ -40,5 +40,5 @@
   when:
     - bind_firewall_check_enabled
     - bind_ufw_check.rc == 0
-    - bind_ufw_status.stdout is search('Status: active')
-    - bind_ufw_status.stdout is not search('53/(tcp|udp)')
+    - "'Status: active' in bind_ufw_status.stdout"
+    - "'53/tcp' not in bind_ufw_status.stdout and '53/udp' not in bind_ufw_status.stdout"

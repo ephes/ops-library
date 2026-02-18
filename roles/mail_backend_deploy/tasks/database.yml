@@ -95,6 +95,60 @@
       become_user: postgres
       loop: "{{ mail_backend_domains }}"
 
+    - name: Insert initial domains (PostfixAdmin schema)
+      community.postgresql.postgresql_query:
+        db: "{{ mail_backend_postgres_database }}"
+        query: |
+          INSERT INTO domain (domain, description, aliases, mailboxes, maxquota, quota, transport, backupmx, active, created, modified)
+          VALUES (%(domain)s, %(description)s, 0, 0, 0, 0, '', '0', '1', NOW(), NOW())
+          ON CONFLICT (domain) DO NOTHING
+        named_args:
+          domain: "{{ item }}"
+          description: "Managed by mail_backend_deploy"
+      become: true
+      become_user: postgres
+      loop: "{{ mail_backend_domains }}"
+      when: mail_backend_schema_mode == 'postfixadmin'
+
+    - name: Configure domain aliases (legacy schema)
+      community.postgresql.postgresql_query:
+        db: "{{ mail_backend_postgres_database }}"
+        query: |
+          INSERT INTO mail_domain_aliases (source_domain_id, dest_domain_id, active)
+          SELECT sd.id, dd.id, true
+          FROM mail_domains sd
+          JOIN mail_domains dd ON LOWER(dd.name) = LOWER(%(target_domain)s)
+          WHERE LOWER(sd.name) = LOWER(%(alias_domain)s)
+          ON CONFLICT (source_domain_id) DO UPDATE
+          SET dest_domain_id = EXCLUDED.dest_domain_id, active = true
+        named_args:
+          alias_domain: "{{ item.alias_domain }}"
+          target_domain: "{{ item.target_domain }}"
+      become: true
+      become_user: postgres
+      loop: "{{ mail_backend_postfixadmin_domain_aliases }}"
+      when:
+        - mail_backend_schema_mode != 'postfixadmin'
+        - mail_backend_postfixadmin_domain_aliases | length > 0
+
+    - name: Configure domain aliases (PostfixAdmin schema)
+      community.postgresql.postgresql_query:
+        db: "{{ mail_backend_postgres_database }}"
+        query: |
+          INSERT INTO alias_domain (alias_domain, target_domain, active, created, modified)
+          VALUES (%(alias_domain)s, %(target_domain)s, '1', NOW(), NOW())
+          ON CONFLICT (alias_domain) DO UPDATE
+          SET target_domain = EXCLUDED.target_domain, active = '1', modified = NOW()
+        named_args:
+          alias_domain: "{{ item.alias_domain | lower }}"
+          target_domain: "{{ item.target_domain | lower }}"
+      become: true
+      become_user: postgres
+      loop: "{{ mail_backend_postfixadmin_domain_aliases }}"
+      when:
+        - mail_backend_schema_mode == 'postfixadmin'
+        - mail_backend_postfixadmin_domain_aliases | length > 0
+
     # =========================================================================
     # Initial User Creation
     # =========================================================================
@@ -112,7 +166,7 @@
         - mail_backend_initial_user_password is defined
         - mail_backend_initial_user_password | length > 0
 
-    - name: Create initial mail user
+    - name: Create initial mail user (legacy schema)
       community.postgresql.postgresql_query:
         db: "{{ mail_backend_postgres_database }}"
         query: |
@@ -134,8 +188,69 @@
         - mail_backend_initial_user_domain is defined
         - mail_backend_initial_user_password is defined
         - mail_backend_initial_user_password | length > 0
+        - mail_backend_schema_mode != 'postfixadmin'
 
-    - name: Create required aliases (postmaster, abuse) for each domain
+    - name: Create initial mailbox (PostfixAdmin schema)
+      community.postgresql.postgresql_query:
+        db: "{{ mail_backend_postgres_database }}"
+        query: |
+          INSERT INTO mailbox (username, password, name, maildir, quota, local_part, domain, active, created, modified)
+          VALUES (
+            LOWER(CONCAT(%(localpart)s, '@', %(domain)s)),
+            %(password)s,
+            '',
+            LOWER(CONCAT(%(domain)s, '/', %(localpart)s, '/')),
+            0,
+            LOWER(%(localpart)s),
+            LOWER(%(domain)s),
+            '1',
+            NOW(),
+            NOW()
+          )
+          ON CONFLICT (username) DO UPDATE
+          SET password = EXCLUDED.password, active = '1', modified = NOW()
+        named_args:
+          localpart: "{{ mail_backend_initial_user }}"
+          domain: "{{ mail_backend_initial_user_domain }}"
+          password: "{{ doveadm_pw_result.stdout }}"
+      become: true
+      become_user: postgres
+      no_log: true
+      when:
+        - mail_backend_initial_user is defined
+        - mail_backend_initial_user_domain is defined
+        - mail_backend_initial_user_password is defined
+        - mail_backend_initial_user_password | length > 0
+        - mail_backend_schema_mode == 'postfixadmin'
+
+    - name: Ensure initial mailbox self-alias exists (PostfixAdmin schema)
+      community.postgresql.postgresql_query:
+        db: "{{ mail_backend_postgres_database }}"
+        query: |
+          INSERT INTO alias (address, goto, domain, active, created, modified)
+          VALUES (
+            LOWER(CONCAT(%(localpart)s, '@', %(domain)s)),
+            LOWER(CONCAT(%(localpart)s, '@', %(domain)s)),
+            LOWER(%(domain)s),
+            '1',
+            NOW(),
+            NOW()
+          )
+          ON CONFLICT (address) DO UPDATE
+          SET goto = EXCLUDED.goto, domain = EXCLUDED.domain, active = '1', modified = NOW()
+        named_args:
+          localpart: "{{ mail_backend_initial_user }}"
+          domain: "{{ mail_backend_initial_user_domain }}"
+      become: true
+      become_user: postgres
+      when:
+        - mail_backend_initial_user is defined
+        - mail_backend_initial_user_domain is defined
+        - mail_backend_initial_user_password is defined
+        - mail_backend_initial_user_password | length > 0
+        - mail_backend_schema_mode == 'postfixadmin'
+
+    - name: Create required aliases (postmaster, abuse) for each domain (legacy schema)
       community.postgresql.postgresql_query:
         db: "{{ mail_backend_postgres_database }}"
         query: |
@@ -154,6 +269,105 @@
       when:
         - mail_backend_initial_user is defined
         - mail_backend_required_aliases is defined
+        - mail_backend_schema_mode != 'postfixadmin'
+
+    - name: Create required aliases (postmaster, abuse) for each domain (PostfixAdmin schema)
+      community.postgresql.postgresql_query:
+        db: "{{ mail_backend_postgres_database }}"
+        query: |
+          INSERT INTO alias (address, goto, domain, active, created, modified)
+          VALUES (
+            LOWER(CONCAT(%(source_localpart)s, '@', %(domain)s)),
+            LOWER(%(destination)s),
+            LOWER(%(domain)s),
+            '1',
+            NOW(),
+            NOW()
+          )
+          ON CONFLICT (address) DO UPDATE
+          SET goto = EXCLUDED.goto, domain = EXCLUDED.domain, active = '1', modified = NOW()
+        named_args:
+          source_localpart: "{{ item.0.localpart }}"
+          destination: "{{ item.0.destination_localpart }}@{{ item.1 }}"
+          domain: "{{ item.1 }}"
+      become: true
+      become_user: postgres
+      loop: "{{ mail_backend_required_aliases | product(mail_backend_domains) | list }}"
+      when:
+        - mail_backend_initial_user is defined
+        - mail_backend_required_aliases is defined
+        - mail_backend_schema_mode == 'postfixadmin'
+
+    - name: Ensure mailbox self-alias entries exist (PostfixAdmin schema)
+      community.postgresql.postgresql_query:
+        db: "{{ mail_backend_postgres_database }}"
+        query: |
+          INSERT INTO alias (address, goto, domain, active, created, modified)
+          SELECT LOWER(m.username), LOWER(m.username), LOWER(m.domain), '1', NOW(), NOW()
+          FROM mailbox m
+          WHERE m.active = '1'
+          ON CONFLICT (address) DO NOTHING
+      become: true
+      become_user: postgres
+      when: mail_backend_schema_mode == 'postfixadmin'
+
+    - name: Expand alias domains into explicit mailbox aliases (PostfixAdmin schema)
+      community.postgresql.postgresql_query:
+        db: "{{ mail_backend_postgres_database }}"
+        query: |
+          WITH RECURSIVE alias_chain AS (
+            SELECT
+              LOWER(%(alias_domain)s) AS alias_domain,
+              LOWER(%(target_domain)s) AS current_target,
+              ARRAY[LOWER(%(alias_domain)s), LOWER(%(target_domain)s)]::text[] AS path,
+              1 AS depth
+            UNION ALL
+            SELECT
+              ac.alias_domain,
+              LOWER(ad.target_domain) AS current_target,
+              ac.path || LOWER(ad.target_domain),
+              ac.depth + 1
+            FROM alias_chain ac
+            JOIN alias_domain ad
+              ON LOWER(ad.alias_domain) = ac.current_target
+             AND ad.active
+            WHERE ac.depth < 10
+              AND NOT LOWER(ad.target_domain) = ANY(ac.path)
+          ),
+          leaf_target AS (
+            SELECT
+              ac.alias_domain,
+              ac.current_target AS target_domain
+            FROM alias_chain ac
+            LEFT JOIN alias_domain ad
+              ON LOWER(ad.alias_domain) = ac.current_target
+             AND ad.active
+            WHERE ad.alias_domain IS NULL
+            ORDER BY ac.depth DESC
+            LIMIT 1
+          )
+          INSERT INTO alias (address, goto, domain, active, created, modified)
+          SELECT
+            LOWER(CONCAT(m.local_part, '@', lt.alias_domain)),
+            LOWER(m.username),
+            LOWER(lt.alias_domain),
+            m.active,
+            NOW(),
+            NOW()
+          FROM leaf_target lt
+          JOIN mailbox m
+            ON LOWER(m.domain) = lt.target_domain
+          ON CONFLICT (address) DO UPDATE
+          SET goto = EXCLUDED.goto, domain = EXCLUDED.domain, active = EXCLUDED.active, modified = NOW()
+        named_args:
+          alias_domain: "{{ item.alias_domain | lower }}"
+          target_domain: "{{ item.target_domain | lower }}"
+      become: true
+      become_user: postgres
+      loop: "{{ mail_backend_postfixadmin_domain_aliases }}"
+      when:
+        - mail_backend_schema_mode == 'postfixadmin'
+        - mail_backend_postfixadmin_domain_aliases | length > 0
 
 - name: Check mode notice for database tasks
   ansible.builtin.debug:
