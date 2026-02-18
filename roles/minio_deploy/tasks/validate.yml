@@ -42,7 +42,9 @@
       - minio_version must be set to an explicit release (e.g., "RELEASE.2024-10-02T17-50-41Z")
       - minio_checksum must be in format "sha256:<64-hex-digits>"
 
-      Get checksums from: https://dl.min.io/server/minio/release/linux-amd64/archive/
+      Get checksums from:
+      - https://dl.min.io/server/minio/release/linux-amd64/archive/
+      - https://dl.min.io/server/minio/hotfixes/linux-amd64/archive/archive/
 
 - name: Validate mc client configuration if bootstrap enabled
   assert:

@@ -129,12 +129,19 @@ See [defaults/main.yml](defaults/main.yml) for complete list.
 ### Get MinIO Checksums
 
 ```bash
-# List available releases
+# List available release builds
 curl -s https://dl.min.io/server/minio/release/linux-amd64/archive/ | grep RELEASE
 
-# Get checksum for specific version
+# List available hotfix builds
+curl -s https://dl.min.io/server/minio/hotfixes/linux-amd64/archive/archive/ | grep RELEASE
+
+# Get checksum for a release build
 VERSION="RELEASE.2024-10-02T17-50-41Z"
 curl -s "https://dl.min.io/server/minio/release/linux-amd64/archive/minio.${VERSION}.sha256sum"
+
+# Get checksum for a hotfix build
+HOTFIX_VERSION="RELEASE.2025-10-15T17-29-55Z.hotfix.c392ab039"
+curl -s "https://dl.min.io/server/minio/hotfixes/linux-amd64/archive/archive/minio.${HOTFIX_VERSION}.sha256sum"
 ```
 
 ### Get mc Client Checksums
@@ -228,7 +235,7 @@ To upgrade MinIO:
 2. Get new checksum (see Version Pinning section)
 3. Update playbook variables:
    ```yaml
-   minio_version: "RELEASE.2024-11-01T12-00-00Z"
+   minio_version: "RELEASE.2025-10-15T17-29-55Z.hotfix.c392ab039"
    minio_checksum: "sha256:newchecksum..."
    ```
 4. Rerun deployment - role will download new binary and restart service
@@ -257,6 +264,8 @@ echo "sha256:abc123..." | grep -E '^sha256:[a-f0-9]{64}$'
 
 # Get correct checksum
 curl -s "https://dl.min.io/server/minio/release/linux-amd64/archive/minio.RELEASE.xxx.sha256sum"
+# or hotfix stream:
+curl -s "https://dl.min.io/server/minio/hotfixes/linux-amd64/archive/archive/minio.RELEASE.xxx.hotfix.yyyyyyyyy.sha256sum"
 ```
 
 ### Bootstrap fails
