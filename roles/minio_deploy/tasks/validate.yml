@@ -105,11 +105,14 @@
       - minio_traefik_host is defined
       - minio_traefik_host != ""
       - minio_traefik_host != "minio.home.example.com"
+      - minio_traefik_api_host is defined
+      - minio_traefik_api_host != ""
     fail_msg: |
       ERROR: Traefik exposure is enabled but host is not configured!
 
       When minio_expose_via_traefik is true, you must provide:
-      - minio_traefik_host: Your domain (e.g., "minio.home.example.com")
+      - minio_traefik_host: Console domain (e.g., "minio.home.example.com")
+      - minio_traefik_api_host: API domain (e.g., "s3.home.example.com")
 
       Please update your playbook with the correct domain.
   when: minio_expose_via_traefik | bool
@@ -171,6 +174,7 @@
       {% endif %}
       - Traefik exposure: {{ minio_expose_via_traefik }}
       {% if minio_expose_via_traefik %}
-      - Traefik host: {{ minio_traefik_host }}
+      - Console host: {{ minio_traefik_host }}
+      - API host: {{ minio_traefik_api_host }}
       - Console auth: {{ 'enabled (dual router)' if minio_console_basic_auth_enabled else 'disabled' }}
       {% endif %}

@@ -5,10 +5,10 @@
 
 http:
   routers:
-    # ===== API ENDPOINT (S3 operations) on s3.* subdomain =====
+    # ===== API ENDPOINT (S3 operations) =====
     # No authentication - S3 credentials in requests
     minio-api-secure:
-      rule: "Host(`s3.{{ minio_traefik_host }}`)"
+      rule: "Host(`{{ minio_traefik_api_host }}`)"
       entryPoints:
         - web-secure
       middlewares:
@@ -23,7 +23,7 @@ http:
 
     # HTTP redirect for API
     minio-api-http:
-      rule: "Host(`s3.{{ minio_traefik_host }}`)"
+      rule: "Host(`{{ minio_traefik_api_host }}`)"
       entryPoints:
         - web
       middlewares:

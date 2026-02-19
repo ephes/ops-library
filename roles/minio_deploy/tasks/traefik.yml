@@ -45,6 +45,6 @@
     msg: |
       MinIO Traefik configuration deployed:
       - Config: {{ minio_traefik_config_path }}
-      - S3 API URL: https://s3.{{ minio_traefik_host }}/
+      - S3 API URL: https://{{ minio_traefik_api_host }}/
       - Web Console URL: https://{{ minio_traefik_host }}/
       - Console auth: {{ 'enabled (dual router - no auth from LAN/Tailscale)' if minio_console_basic_auth_enabled else 'disabled' }}
