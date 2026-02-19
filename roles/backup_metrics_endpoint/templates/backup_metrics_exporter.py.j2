@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -16,6 +17,8 @@ USB_POOL = {{ backup_metrics_endpoint_usb_pool | to_json }}
 USB_DEVICE = {{ backup_metrics_endpoint_usb_device | to_json }}
 SYSTEMCTL_TIMEOUT = {{ backup_metrics_endpoint_systemctl_timeout | int }}
 ZFS_TIMEOUT = {{ backup_metrics_endpoint_zfs_timeout | int }}
+ZFS_RETRIES = {{ backup_metrics_endpoint_zfs_retries | int }}
+ZFS_RETRY_DELAY = {{ backup_metrics_endpoint_zfs_retry_delay | int }}
 
 
 def _run(argv: list[str], timeout: int) -> tuple[int, str, str]:
@@ -32,6 +35,24 @@ def _run(argv: list[str], timeout: int) -> tuple[int, str, str]:
         return 124, "", f"timeout after {timeout}s"
     except FileNotFoundError:
         return 127, "", f"command not found: {argv[0] if argv else 'unknown'}"
+
+
+def _run_with_retries(
+    argv: list[str],
+    timeout: int,
+    retries: int,
+    retry_delay: int,
+    retryable_rcs: set[int],
+) -> tuple[int, str, str, int]:
+    attempts = 0
+    while True:
+        attempts += 1
+        rc, stdout, stderr = _run(argv, timeout)
+        if rc == 0:
+            return rc, stdout, stderr, attempts
+        if rc not in retryable_rcs or attempts > retries + 1:
+            return rc, stdout, stderr, attempts
+        time.sleep(retry_delay)
 
 
 def _now_epoch() -> int:
@@ -192,7 +213,7 @@ def _unit_ok(unit: dict[str, Any], required: bool) -> tuple[bool, list[str]]:
 
 
 def _latest_snapshot(dataset: str) -> dict[str, Any]:
-    rc, stdout, stderr = _run(
+    rc, stdout, stderr, attempts = _run_with_retries(
         [
             "zfs",
             "list",
@@ -209,6 +230,9 @@ def _latest_snapshot(dataset: str) -> dict[str, Any]:
             dataset,
         ],
         ZFS_TIMEOUT,
+        ZFS_RETRIES,
+        ZFS_RETRY_DELAY,
+        {124},
     )
     if rc != 0:
         return {
@@ -219,6 +243,8 @@ def _latest_snapshot(dataset: str) -> dict[str, Any]:
             "creation_iso": None,
             "age_seconds": None,
             "age_hours": None,
+            "probe_attempts": attempts,
+            "probe_retries_used": max(0, attempts - 1),
             "error": stderr or stdout or f"zfs list failed ({rc})",
         }
 
@@ -232,6 +258,8 @@ def _latest_snapshot(dataset: str) -> dict[str, Any]:
             "creation_iso": None,
             "age_seconds": None,
             "age_hours": None,
+            "probe_attempts": attempts,
+            "probe_retries_used": max(0, attempts - 1),
             "error": "no snapshots found",
         }
 
@@ -247,6 +275,8 @@ def _latest_snapshot(dataset: str) -> dict[str, Any]:
             "creation_iso": None,
             "age_seconds": None,
             "age_hours": None,
+            "probe_attempts": attempts,
+            "probe_retries_used": max(0, attempts - 1),
             "error": "unexpected zfs output format",
         }
 
@@ -269,6 +299,8 @@ def _latest_snapshot(dataset: str) -> dict[str, Any]:
         "creation_iso": _epoch_to_iso(creation_epoch),
         "age_seconds": age_seconds,
         "age_hours": age_hours,
+        "probe_attempts": attempts,
+        "probe_retries_used": max(0, attempts - 1),
         "error": None if creation_epoch is not None else "invalid creation timestamp",
     }
 

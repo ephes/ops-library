@@ -64,6 +64,8 @@ Additionally, the systemd unit includes `IPAddressAllow=100.64.0.0/10` which res
 | `storage_metrics_endpoint_auth_password` | `CHANGE_ME` | Basic auth password (stored as bcrypt hash) |
 | `storage_metrics_endpoint_packages` | `["python3", "apache2-utils"]` | System packages for the HTTP server |
 | `storage_metrics_endpoint_timer_interval` | `300` | Seconds between metrics collection |
+| `storage_metrics_endpoint_timer_on_boot_sec` | `30` | Initial timer delay after boot |
+| `storage_metrics_endpoint_timer_randomized_delay_sec` | `30` | Jitter added to each timer run |
 
 ## Response Format
 

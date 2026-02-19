@@ -36,6 +36,12 @@ The endpoint adds staleness metadata (`meta.age_seconds`) based on JSON file mti
 | `backup_metrics_endpoint_path` | `/.well-known/backup` | Endpoint path |
 | `backup_metrics_endpoint_auth_user` | `CHANGE_ME` | Basic auth user |
 | `backup_metrics_endpoint_auth_password` | `CHANGE_ME` | Basic auth password |
+| `backup_metrics_endpoint_timer_interval` | `300` | Collector interval in seconds |
+| `backup_metrics_endpoint_timer_on_boot_sec` | `30` | Initial timer delay after boot |
+| `backup_metrics_endpoint_timer_randomized_delay_sec` | `15` | Jitter added to each timer run |
+| `backup_metrics_endpoint_zfs_timeout` | `45` | Timeout per `zfs list` probe |
+| `backup_metrics_endpoint_zfs_retries` | `1` | Retry count for probe timeouts |
+| `backup_metrics_endpoint_zfs_retry_delay` | `2` | Delay between timeout retries (seconds) |
 
 ### Backup Signals
 

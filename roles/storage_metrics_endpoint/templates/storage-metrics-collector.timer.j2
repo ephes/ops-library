@@ -2,9 +2,10 @@
 Description=Collect storage metrics every {{ storage_metrics_endpoint_timer_interval }} seconds
 
 [Timer]
-OnBootSec=30
+OnBootSec={{ storage_metrics_endpoint_timer_on_boot_sec }}
 OnUnitActiveSec={{ storage_metrics_endpoint_timer_interval }}
-AccuracySec=10
+AccuracySec={{ storage_metrics_endpoint_timer_accuracy_sec }}
+RandomizedDelaySec={{ storage_metrics_endpoint_timer_randomized_delay_sec }}
 Persistent=true
 
 [Install]

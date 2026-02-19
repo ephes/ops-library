@@ -2,9 +2,10 @@
 Description=Collect backup metrics every {{ backup_metrics_endpoint_timer_interval }} seconds
 
 [Timer]
-OnBootSec=30
+OnBootSec={{ backup_metrics_endpoint_timer_on_boot_sec }}
 OnUnitActiveSec={{ backup_metrics_endpoint_timer_interval }}
-AccuracySec=10
+AccuracySec={{ backup_metrics_endpoint_timer_accuracy_sec }}
+RandomizedDelaySec={{ backup_metrics_endpoint_timer_randomized_delay_sec }}
 Persistent=true
 
 [Install]
