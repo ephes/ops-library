@@ -16,6 +16,9 @@ The collector gathers:
 - USB pool/device context (enabled/imported/device-present)
 
 The endpoint adds staleness metadata (`meta.age_seconds`) based on JSON file mtime.
+When quiet-hours skipping is enabled, the collector reuses cached local snapshot
+metadata and updates `age_seconds`/`age_hours` without issuing fresh `zfs list`
+probes against sleeping replica pools.
 
 ## Design
 
@@ -42,6 +45,10 @@ The endpoint adds staleness metadata (`meta.age_seconds`) based on JSON file mti
 | `backup_metrics_endpoint_zfs_timeout` | `45` | Timeout per `zfs list` probe |
 | `backup_metrics_endpoint_zfs_retries` | `1` | Retry count for probe timeouts |
 | `backup_metrics_endpoint_zfs_retry_delay` | `2` | Delay between timeout retries (seconds) |
+| `backup_metrics_endpoint_quiet_hours_enabled` | `false` | Enable quiet-hours mode |
+| `backup_metrics_endpoint_quiet_hours_start` | `"06:00"` | Quiet-hours window start (`HH:MM`, local host time) |
+| `backup_metrics_endpoint_quiet_hours_end` | `"22:00"` | Quiet-hours window end (`HH:MM`, local host time) |
+| `backup_metrics_endpoint_quiet_hours_skip_local_snapshot_probes` | `true` | Reuse cached local snapshot data during quiet hours |
 
 ### Backup Signals
 
@@ -81,8 +88,22 @@ The endpoint adds staleness metadata (`meta.age_seconds`) based on JSON file mti
 ```json
 {
   "generated_at": "2026-02-17T06:00:00+00:00",
+  "quiet_hours": {
+    "enabled": true,
+    "active": true,
+    "skip_local_snapshot_probes": true
+  },
   "snapshots": {
-    "local": [{"dataset": "tank/replica/fast/general", "ok": true, "age_hours": 2.1}],
+    "local": [{
+      "dataset": "tank/replica/fast/general",
+      "ok": true,
+      "age_hours": 2.1,
+      "probe_attempts": 0,
+      "probe_retries_used": 0,
+      "probe_skipped": true,
+      "probe_skip_reason": "quiet_hours",
+      "source": "cache"
+    }],
     "usb": [{"dataset": "vault/replica/fast/general", "ok": null, "error": "usb_pool_not_imported"}]
   },
   "summary": {
