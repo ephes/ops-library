@@ -1,0 +1,6 @@
+---
+- name: Reload sshd
+  listen: reload sshd
+  ansible.builtin.systemd:
+    name: ssh
+    state: reloaded

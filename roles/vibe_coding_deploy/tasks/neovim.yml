@@ -1,0 +1,30 @@
+---
+- name: neovim | Check installed version
+  ansible.builtin.command:
+    cmd: nvim --version
+  register: vibe_coding_nvim_version
+  changed_when: false
+  failed_when: false
+
+- name: neovim | Install from GitHub releases
+  when: >-
+    vibe_coding_nvim_version.rc != 0 or
+    vibe_coding_nvim_version.stdout_lines[0] | default('') is not search('NVIM v' + vibe_coding_neovim_version)
+  block:
+    - name: neovim | Remove apt neovim if present
+      ansible.builtin.apt:
+        name: neovim
+        state: absent
+        force_apt_get: true
+
+    - name: neovim | Download and extract release tarball
+      ansible.builtin.unarchive:
+        src: "https://github.com/neovim/neovim/releases/download/v{{ vibe_coding_neovim_version }}/nvim-linux-x86_64.tar.gz"
+        dest: /opt
+        remote_src: true
+
+    - name: neovim | Symlink nvim to /usr/local/bin
+      ansible.builtin.file:
+        src: /opt/nvim-linux-x86_64/bin/nvim
+        dest: /usr/local/bin/nvim
+        state: link

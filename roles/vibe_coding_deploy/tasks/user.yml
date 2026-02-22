@@ -1,0 +1,17 @@
+---
+- name: user | Ensure vibe group exists
+  ansible.builtin.group:
+    name: "{{ vibe_coding_group }}"
+    state: present
+
+- name: user | Ensure vibe user exists
+  ansible.builtin.user:
+    name: "{{ vibe_coding_user }}"
+    group: "{{ vibe_coding_group }}"
+    groups: []
+    append: false
+    home: "{{ vibe_coding_user_home }}"
+    shell: "{{ vibe_coding_shell }}"
+    create_home: true
+    password: "!"
+    password_lock: true

@@ -1,0 +1,52 @@
+---
+- name: main | Validate required variables
+  ansible.builtin.assert:
+    that:
+      - vibe_coding_ssh_authorized_keys | length > 0
+      - (vibe_coding_npm_tools | length == 0) or (vibe_coding_install_node | bool)
+    fail_msg: >-
+      Validation failed. Check:
+      (1) vibe_coding_ssh_authorized_keys must not be empty — the user has a locked password
+      and needs at least one SSH key to be reachable.
+      (2) vibe_coding_npm_tools requires vibe_coding_install_node to be true — these tools
+      are installed via npm.
+    quiet: true
+
+- name: main | Create user and group
+  ansible.builtin.import_tasks: user.yml
+
+- name: main | Configure SSH authorized keys
+  ansible.builtin.import_tasks: ssh.yml
+
+- name: main | Run shell_basics_deploy
+  ansible.builtin.import_tasks: shell.yml
+
+- name: main | Initialize chezmoi
+  ansible.builtin.import_tasks: chezmoi.yml
+  when: vibe_coding_chezmoi_source_dir | length > 0
+
+- name: main | Deploy secrets to fish config
+  ansible.builtin.import_tasks: secrets.yml
+  when: vibe_coding_fish_env | length > 0
+
+- name: main | Ensure projects directory
+  ansible.builtin.import_tasks: directories.yml
+
+- name: main | Install Node.js
+  ansible.builtin.import_tasks: nodejs.yml
+  when: vibe_coding_install_node | bool
+
+- name: main | Install Neovim
+  ansible.builtin.import_tasks: neovim.yml
+
+- name: main | Install coding tools
+  ansible.builtin.import_tasks: coding_tools.yml
+  when: vibe_coding_npm_tools | length > 0
+
+- name: main | Install zellij
+  ansible.builtin.import_tasks: zellij.yml
+  when: vibe_coding_zellij_install | bool
+
+- name: main | Harden SSH for vibe user
+  ansible.builtin.import_tasks: sshd.yml
+  when: vibe_coding_sshd_hardening | bool

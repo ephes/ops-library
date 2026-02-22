@@ -1,0 +1,10 @@
+---
+- name: shell | Run shell_basics_deploy for vibe user
+  ansible.builtin.include_role:
+    name: local.ops_library.shell_basics_deploy
+  vars:
+    shell_basics_user: "{{ vibe_coding_user }}"
+    shell_basics_user_home: "{{ vibe_coding_user_home }}"
+    shell_basics_extra_packages: "{{ vibe_coding_shell_basics_extra_packages }}"
+    shell_basics_manage_fish_config: false
+    shell_basics_switch_shell: true

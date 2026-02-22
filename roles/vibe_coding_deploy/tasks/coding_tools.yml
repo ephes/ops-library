@@ -1,0 +1,13 @@
+---
+- name: coding_tools | Check installed npm global packages
+  ansible.builtin.command:
+    cmd: npm list -g --depth=0
+  register: vibe_coding_npm_global_list
+  changed_when: false
+  failed_when: false
+
+- name: coding_tools | Install missing npm tools
+  ansible.builtin.command:
+    cmd: "npm install -g {{ item }}"
+  loop: "{{ vibe_coding_npm_tools }}"
+  when: item not in vibe_coding_npm_global_list.stdout

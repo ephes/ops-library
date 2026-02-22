@@ -1,0 +1,43 @@
+---
+# User and group
+vibe_coding_user: "vibe"
+vibe_coding_group: "vibe"
+vibe_coding_user_home: "/mnt/cryptdata/vibe"
+vibe_coding_shell: "/usr/bin/fish"
+
+# Projects directory
+vibe_coding_projects_dir: "{{ vibe_coding_user_home }}/projects"
+
+# SSH authorized keys (list of public key strings)
+vibe_coding_ssh_authorized_keys: []
+
+# chezmoi — rsync dotfiles source from local machine
+vibe_coding_chezmoi_source_dir: ""  # e.g. "~/.local/share/chezmoi" — empty to skip
+
+# Environment variables (for API keys — deployed outside chezmoi)
+vibe_coding_fish_env: {}
+#   ANTHROPIC_API_KEY: "sk-ant-..."
+
+# Extra packages passed through to shell_basics_deploy
+vibe_coding_shell_basics_extra_packages:
+  - zoxide
+
+# Node.js (NodeSource LTS)
+vibe_coding_install_node: true
+vibe_coding_node_major_version: "22"
+
+# Neovim (from GitHub releases — apt version is too old for LazyVim)
+vibe_coding_neovim_version: "0.11.6"
+
+# AI coding tools installed globally via npm
+vibe_coding_npm_tools:
+  - "@anthropic-ai/claude-code"
+  - "@openai/codex"
+  - "opencode-ai"
+  - "@mariozechner/pi-coding-agent"
+
+# zellij (installed alongside tmux as a first-class multiplexer option)
+vibe_coding_zellij_install: true
+
+# SSH hardening — Match User block in sshd_config
+vibe_coding_sshd_hardening: true

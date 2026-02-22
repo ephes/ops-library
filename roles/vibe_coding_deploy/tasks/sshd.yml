@@ -1,0 +1,14 @@
+---
+- name: sshd | Deploy SSH hardening for vibe user
+  ansible.builtin.blockinfile:
+    path: /etc/ssh/sshd_config
+    marker: "# {mark} ANSIBLE MANAGED — vibe_coding_deploy"
+    block: |
+      Match User {{ vibe_coding_user }}
+          PasswordAuthentication no
+          PermitEmptyPasswords no
+          AllowAgentForwarding yes
+          X11Forwarding no
+          AllowTcpForwarding no
+    validate: "sshd -t -f %s"
+  notify: reload sshd

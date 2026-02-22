@@ -1,0 +1,8 @@
+---
+- name: directories | Ensure projects directory exists
+  ansible.builtin.file:
+    path: "{{ vibe_coding_projects_dir }}"
+    state: directory
+    owner: "{{ vibe_coding_user }}"
+    group: "{{ vibe_coding_group }}"
+    mode: "0755"

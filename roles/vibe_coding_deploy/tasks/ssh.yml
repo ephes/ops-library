@@ -1,0 +1,33 @@
+---
+- name: ssh | Ensure .ssh directory exists
+  ansible.builtin.file:
+    path: "{{ vibe_coding_user_home }}/.ssh"
+    state: directory
+    owner: "{{ vibe_coding_user }}"
+    group: "{{ vibe_coding_group }}"
+    mode: "0700"
+
+- name: ssh | Deploy authorized_keys
+  ansible.builtin.template:
+    src: authorized_keys.j2
+    dest: "{{ vibe_coding_user_home }}/.ssh/authorized_keys"
+    owner: "{{ vibe_coding_user }}"
+    group: "{{ vibe_coding_group }}"
+    mode: "0600"
+
+- name: ssh | Find any existing SSH private keys
+  ansible.builtin.find:
+    paths: "{{ vibe_coding_user_home }}/.ssh"
+    patterns:
+      - "id_*"
+    excludes:
+      - "*.pub"
+  register: vibe_coding_ssh_private_keys
+
+- name: ssh | Remove SSH private keys (no persistent GitHub keys)
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ vibe_coding_ssh_private_keys.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"

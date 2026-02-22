@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  role_name: vibe_coding_deploy
+  author: Jochen Wersdörfer
+  description: Set up a dedicated interactive coding user with tmux, fish, chezmoi, Node.js, and Claude Code
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+
+dependencies: []

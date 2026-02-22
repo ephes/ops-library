@@ -1,0 +1,53 @@
+---
+- name: chezmoi | Sync chezmoi source from local machine
+  ansible.posix.synchronize:
+    src: "{{ vibe_coding_chezmoi_source_dir }}/"
+    dest: "{{ vibe_coding_user_home }}/.local/share/chezmoi/"
+    delete: true
+    rsync_opts:
+      - "--exclude=.git"
+      - "--exclude=encrypted_*"
+      - "--delete-excluded"
+
+- name: chezmoi | Set ownership of chezmoi source
+  ansible.builtin.file:
+    path: "{{ vibe_coding_user_home }}/.local/share/chezmoi"
+    state: directory
+    owner: "{{ vibe_coding_user }}"
+    group: "{{ vibe_coding_group }}"
+    recurse: true
+
+- name: chezmoi | Check for pending dotfile changes
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/chezmoi
+      - status
+      - --source
+      - "{{ vibe_coding_user_home }}/.local/share/chezmoi"
+  become: true
+  become_user: "{{ vibe_coding_user }}"
+  environment:
+    HOME: "{{ vibe_coding_user_home }}"
+  register: vibe_coding_chezmoi_status
+  changed_when: false
+
+- name: chezmoi | Initialize and apply dotfiles
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/chezmoi
+      - init
+      - --apply
+      - --force
+      - --source
+      - "{{ vibe_coding_user_home }}/.local/share/chezmoi"
+  become: true
+  become_user: "{{ vibe_coding_user }}"
+  environment:
+    HOME: "{{ vibe_coding_user_home }}"
+  register: vibe_coding_chezmoi_apply
+  changed_when: vibe_coding_chezmoi_status.stdout | length > 0
+
+- name: chezmoi | Remove legacy z.fish alias (migrated to zz.fish)
+  ansible.builtin.file:
+    path: "{{ vibe_coding_user_home }}/.config/fish/functions/z.fish"
+    state: absent

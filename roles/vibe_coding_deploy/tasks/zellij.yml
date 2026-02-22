@@ -1,0 +1,28 @@
+---
+- name: zellij | Check if zellij is installed
+  ansible.builtin.command: which zellij
+  register: vibe_coding_zellij_check
+  changed_when: false
+  failed_when: false
+
+- name: zellij | Install zellij from GitHub release
+  when: vibe_coding_zellij_check.rc != 0
+  block:
+    - name: zellij | Determine system architecture
+      ansible.builtin.set_fact:
+        vibe_coding_zellij_arch: "{{ 'x86_64' if ansible_architecture == 'x86_64' else 'aarch64' }}"
+
+    - name: zellij | Look up latest release
+      ansible.builtin.uri:
+        url: https://api.github.com/repos/zellij-org/zellij/releases/latest
+        return_content: true
+        headers:
+          User-Agent: ansible-vibe-coding
+      register: vibe_coding_zellij_release
+
+    - name: zellij | Download and extract binary
+      ansible.builtin.unarchive:
+        src: "https://github.com/zellij-org/zellij/releases/download/{{ vibe_coding_zellij_release.json.tag_name }}/zellij-{{ vibe_coding_zellij_arch }}-unknown-linux-musl.tar.gz"
+        dest: /usr/local/bin
+        remote_src: true
+        mode: "0755"
