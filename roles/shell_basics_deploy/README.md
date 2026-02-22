@@ -4,7 +4,7 @@ Install a curated set of command line tools, switch the default shell to fish, a
 
 ## Features
 
-- Installs modern CLI defaults: `fish`, `eza`, `fd-find` (with `fd` symlink), `ripgrep`, `bat` (`batcat` symlink), `fzf`, `tmux`, `tealdeer`, `btop`, `bmon`, `sysstat` (`iostat`/`mpstat`), `iotop`, and common utilities.
+- Installs modern CLI defaults: `fish`, `eza`, `fd-find` (with `fd` symlink), `ripgrep`, `bat` (`batcat` symlink), `fzf`, `tmux`, `tealdeer`, `just`, `btop`, `bmon`, `sysstat` (`iostat`/`mpstat`), `iotop`, and common utilities.
 - Fetches the latest chezmoi release via the official installer (no pinned, outdated `.deb`).
 - Adds a managed block to `~/.config/fish/config.fish` using `fish_add_path` so existing user content is preserved; optional extra lines supported.
 - Switches the target user's login shell to fish and sets the system `editor` alternative to `vim.basic`.
@@ -41,6 +41,7 @@ shell_basics_packages:              # Core set
   - sysstat
   - iotop
   - tealdeer
+  - just
 shell_basics_extra_packages: []     # Optional additions
 shell_basics_apt_cache_valid_time: 3600
 
