@@ -10,7 +10,7 @@ Set up a dedicated interactive coding user with persistent tmux sessions, fish s
 - Rsyncs chezmoi source from local machine and applies dotfiles (optional).
 - Deploys API keys to `~/.config/fish/conf.d/secrets.fish` (role-managed, outside chezmoi).
 - Installs Node.js LTS via NodeSource apt repo (pinned to major version).
-- Installs Claude Code globally via npm.
+- Installs Claude Code per-user via npm (user-owned prefix allows auto-updates).
 - Installs zellij alongside tmux as a first-class multiplexer option.
 
 ## Role Variables
@@ -89,7 +89,7 @@ vibe_coding_sshd_hardening: true
 5. Deploy secrets to `~/.config/fish/conf.d/secrets.fish`
 6. Ensure `~/projects` directory
 7. Install Node.js via NodeSource
-8. Install Claude Code via npm
+8. Install coding tools via npm (per-user prefix)
 9. Install zellij
 10. Harden sshd for the user
 

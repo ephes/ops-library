@@ -1,7 +1,30 @@
 ---
+- name: coding_tools | Create per-user npm global directory
+  ansible.builtin.file:
+    path: "{{ vibe_coding_npm_prefix }}"
+    state: directory
+    owner: "{{ vibe_coding_user }}"
+    group: "{{ vibe_coding_group }}"
+    mode: "0755"
+
+- name: coding_tools | Configure npm global prefix for user
+  ansible.builtin.command:
+    cmd: "npm config set prefix {{ vibe_coding_npm_prefix }}"
+  become_user: "{{ vibe_coding_user }}"
+  changed_when: false
+
+- name: coding_tools | Deploy npm PATH config for fish
+  ansible.builtin.template:
+    src: npm-paths.fish.j2
+    dest: "{{ vibe_coding_user_home }}/.config/fish/conf.d/npm-paths.fish"
+    owner: "{{ vibe_coding_user }}"
+    group: "{{ vibe_coding_group }}"
+    mode: "0644"
+
 - name: coding_tools | Check installed npm global packages
   ansible.builtin.command:
     cmd: npm list -g --depth=0
+  become_user: "{{ vibe_coding_user }}"
   register: vibe_coding_npm_global_list
   changed_when: false
   failed_when: false
@@ -9,5 +32,6 @@
 - name: coding_tools | Install missing npm tools
   ansible.builtin.command:
     cmd: "npm install -g {{ item }}"
+  become_user: "{{ vibe_coding_user }}"
   loop: "{{ vibe_coding_npm_tools }}"
   when: item not in vibe_coding_npm_global_list.stdout
