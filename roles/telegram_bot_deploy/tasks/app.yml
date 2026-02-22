@@ -1,0 +1,31 @@
+---
+- name: Render bot.mjs into data directory
+  ansible.builtin.template:
+    src: bot.mjs.j2
+    dest: "{{ telegram_bot_data_dir }}/bot.mjs"
+    owner: "1000"
+    group: "1000"
+    mode: "0644"
+  register: telegram_bot_script_result
+  notify: restart telegram-bot
+
+- name: Render package.json into data directory
+  ansible.builtin.template:
+    src: package.json.j2
+    dest: "{{ telegram_bot_data_dir }}/package.json"
+    owner: "1000"
+    group: "1000"
+    mode: "0644"
+  register: telegram_bot_package_result
+  notify: restart telegram-bot
+
+- name: Install npm dependencies via throwaway container
+  ansible.builtin.command:
+    cmd: >
+      docker run --rm
+      -v {{ telegram_bot_data_dir }}:/app
+      -w /app
+      {{ telegram_bot_image }}
+      npm install --omit=dev
+  when: telegram_bot_package_result.changed
+  notify: restart telegram-bot

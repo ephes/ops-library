@@ -1,0 +1,9 @@
+---
+- name: Render Telegram Bot Docker Compose file
+  ansible.builtin.template:
+    src: telegram-bot-compose.yml.j2
+    dest: "{{ telegram_bot_site_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart telegram-bot

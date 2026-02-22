@@ -1,0 +1,11 @@
+# Managed by Ansible (telegram_bot_deploy). Do not edit on the host.
+services:
+  {{ telegram_bot_container_name }}:
+    image: {{ telegram_bot_image }}
+    container_name: {{ telegram_bot_container_name }}
+    restart: {{ telegram_bot_restart_policy }}
+    command: ["node", "/app/bot.mjs"]
+    env_file:
+      - .env
+    volumes:
+      - "{{ telegram_bot_data_dir }}:/app"

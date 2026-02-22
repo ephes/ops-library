@@ -1,0 +1,13 @@
+---
+- name: Reload systemd for telegram-bot
+  listen: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Restart telegram-bot
+  listen: restart telegram-bot
+  ansible.builtin.systemd:
+    name: "{{ telegram_bot_service_name }}"
+    state: restarted
+    enabled: true
+    daemon_reload: true

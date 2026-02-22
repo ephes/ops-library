@@ -1,0 +1,13 @@
+---
+galaxy_info:
+  role_name: telegram_bot_deploy
+  author: Jochen Wersdörfer
+  description: Deploy a Telegram bot with Anthropic AI replies using Docker Compose
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+dependencies: []

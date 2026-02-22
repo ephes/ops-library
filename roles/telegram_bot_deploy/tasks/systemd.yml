@@ -1,0 +1,17 @@
+---
+- name: Render Telegram Bot systemd service unit
+  ansible.builtin.template:
+    src: telegram-bot.service.j2
+    dest: "/etc/systemd/system/{{ telegram_bot_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart telegram-bot
+
+- name: Enable Telegram Bot service
+  ansible.builtin.systemd:
+    name: "{{ telegram_bot_service_name }}"
+    enabled: true
+    daemon_reload: true
