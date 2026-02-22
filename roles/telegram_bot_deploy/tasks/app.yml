@@ -19,13 +19,18 @@
   register: telegram_bot_package_result
   notify: restart telegram-bot
 
+- name: Check if node_modules exists
+  ansible.builtin.stat:
+    path: "{{ telegram_bot_data_dir }}/node_modules"
+  register: telegram_bot_node_modules
+
 - name: Install npm dependencies via throwaway container
   ansible.builtin.command:
     cmd: >
-      docker run --rm
+      docker run --rm --network host
       -v {{ telegram_bot_data_dir }}:/app
       -w /app
       {{ telegram_bot_image }}
       npm install --omit=dev
-  when: telegram_bot_package_result.changed
+  when: telegram_bot_package_result.changed or not telegram_bot_node_modules.stat.exists
   notify: restart telegram-bot
