@@ -10,6 +10,9 @@ minecraft_java_group: minecraft
 minecraft_java_home: /home/minecraft
 minecraft_java_server_dir: "{{ minecraft_java_home }}/server"
 minecraft_java_backup_dir: "{{ minecraft_java_home }}/backups"
+minecraft_java_loader_mode: vanilla  # vanilla | forge
+minecraft_java_loader_mode_marker_path: "{{ minecraft_java_server_dir }}/.loader_mode"
+minecraft_java_allow_mode_switch_same_world: false
 
 # =============================================================================
 # Java Runtime
@@ -18,6 +21,7 @@ minecraft_java_version: "21"
 minecraft_java_memory_min: 2G
 minecraft_java_memory_max: 4G
 minecraft_java_extra_args: "-XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions -XX:+DisableExplicitGC -XX:+AlwaysPreTouch -XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 -XX:G1HeapRegionSize=8M -XX:G1ReservePercent=20 -XX:G1HeapWastePercent=5 -XX:G1MixedGCCountTarget=4 -XX:InitiatingHeapOccupancyPercent=15 -XX:G1MixedGCLiveThresholdPercent=90 -XX:G1RSetUpdatingPauseTimePercent=5 -XX:SurvivorRatio=32 -XX:+PerfDisableSharedMem -XX:MaxTenuringThreshold=1"
+minecraft_java_startup_timeout: "{{ 300 if minecraft_java_loader_mode == 'forge' else 60 }}"
 
 # =============================================================================
 # Server Download (REQUIRED - must be set in ops-control)
@@ -25,6 +29,28 @@ minecraft_java_extra_args: "-XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPa
 # Get URL and SHA256 from https://mcversions.net or https://minecraft.net/en-us/download/server
 minecraft_java_server_jar_url: "CHANGEME"
 minecraft_java_server_jar_sha256: "CHANGEME"
+
+# =============================================================================
+# Forge (REQUIRED when minecraft_java_loader_mode=forge)
+# =============================================================================
+minecraft_java_forge_version: "CHANGEME"
+minecraft_java_forge_installer_url: "CHANGEME"
+minecraft_java_forge_installer_sha256: "CHANGEME"
+minecraft_java_forge_installer_sha1: "CHANGEME"
+minecraft_java_forge_install_dir: "{{ minecraft_java_server_dir }}"
+minecraft_java_forge_installer_path: "{{ minecraft_java_server_dir }}/forge-installer.jar"
+minecraft_java_forge_user_jvm_args_path: "{{ minecraft_java_server_dir }}/user_jvm_args.txt"
+minecraft_java_forge_wrapper_script_path: "{{ minecraft_java_server_dir }}/start-forge.sh"
+minecraft_java_forge_unix_args_path: "{{ minecraft_java_server_dir }}/libraries/net/minecraftforge/forge/{{ minecraft_java_forge_version }}/unix_args.txt"
+minecraft_java_forge_version_marker_path: "{{ minecraft_java_server_dir }}/.forge_version"
+minecraft_java_forge_checksum_marker_path: "{{ minecraft_java_server_dir }}/.forge_installer_checksum"
+
+# =============================================================================
+# Mods (Forge mode)
+# =============================================================================
+minecraft_java_mods_enabled: false
+minecraft_java_mods_prune_unmanaged: false
+minecraft_java_mods: []
 
 # =============================================================================
 # Server Configuration

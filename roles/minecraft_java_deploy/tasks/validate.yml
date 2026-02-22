@@ -1,6 +1,17 @@
 ---
 # minecraft_java_deploy - Validate required configuration
 
+- name: Validate loader mode
+  ansible.builtin.assert:
+    that:
+      - minecraft_java_loader_mode in ['vanilla', 'forge']
+    fail_msg: |
+      Invalid minecraft_java_loader_mode: {{ minecraft_java_loader_mode }}
+
+      Allowed values:
+      - vanilla
+      - forge
+
 - name: Validate EULA agreement
   ansible.builtin.assert:
     that:
@@ -14,7 +25,7 @@
 
       Set minecraft_java_eula_agreed: "true" in your playbook variables.
 
-- name: Validate server JAR URL
+- name: Validate server JAR URL (vanilla mode)
   ansible.builtin.assert:
     that:
       - minecraft_java_server_jar_url is defined
@@ -26,8 +37,9 @@
       Set minecraft_java_server_jar_url to the download URL for server.jar
       Get it from: https://www.minecraft.net/en-us/download/server
       Or: https://mcversions.net
+  when: minecraft_java_loader_mode == 'vanilla'
 
-- name: Validate server JAR SHA256 checksum
+- name: Validate server JAR SHA256 checksum (vanilla mode)
   ansible.builtin.assert:
     that:
       - minecraft_java_server_jar_sha256 is defined
@@ -40,6 +52,94 @@
       Get it from: https://mcversions.net (shows checksums for each version)
 
       This is REQUIRED to verify download integrity and prevent corrupted/poisoned downloads.
+  when: minecraft_java_loader_mode == 'vanilla'
+
+- name: Validate Forge version (forge mode)
+  ansible.builtin.assert:
+    that:
+      - minecraft_java_forge_version is defined
+      - minecraft_java_forge_version != 'CHANGEME'
+      - minecraft_java_forge_version | length > 0
+    fail_msg: |
+      Forge version not configured!
+
+      Set minecraft_java_forge_version, e.g. 1.20.1-47.4.0
+  when: minecraft_java_loader_mode == 'forge'
+
+- name: Validate Forge installer URL (forge mode)
+  ansible.builtin.assert:
+    that:
+      - minecraft_java_forge_installer_url is defined
+      - minecraft_java_forge_installer_url != 'CHANGEME'
+      - minecraft_java_forge_installer_url | length > 0
+    fail_msg: |
+      Forge installer URL not configured!
+
+      Set minecraft_java_forge_installer_url to the Forge installer jar URL.
+  when: minecraft_java_loader_mode == 'forge'
+
+- name: Validate Forge installer checksum availability (forge mode)
+  ansible.builtin.assert:
+    that:
+      - >
+        (
+          minecraft_java_forge_installer_sha256 is defined
+          and minecraft_java_forge_installer_sha256 != 'CHANGEME'
+          and minecraft_java_forge_installer_sha256 | length >= 64
+        )
+        or
+        (
+          minecraft_java_forge_installer_sha1 is defined
+          and minecraft_java_forge_installer_sha1 != 'CHANGEME'
+          and minecraft_java_forge_installer_sha1 | length >= 40
+        )
+    fail_msg: |
+      Forge installer checksum not configured!
+
+      Provide one of:
+      - minecraft_java_forge_installer_sha256 (preferred)
+      - minecraft_java_forge_installer_sha1 (fallback)
+  when: minecraft_java_loader_mode == 'forge'
+
+- name: Validate Forge mod toggle usage
+  ansible.builtin.assert:
+    that:
+      - not (minecraft_java_mods_enabled | bool) or minecraft_java_loader_mode == 'forge'
+    fail_msg: |
+      minecraft_java_mods_enabled=true requires minecraft_java_loader_mode=forge.
+
+- name: Validate mods variable type
+  ansible.builtin.assert:
+    that:
+      - minecraft_java_mods is iterable
+    fail_msg: "minecraft_java_mods must be a list."
+  when: minecraft_java_loader_mode == 'forge'
+
+- name: Validate mod entries
+  ansible.builtin.assert:
+    that:
+      - item.name is defined
+      - item.name | string | length > 0
+      - item.url is defined
+      - item.url | string | length > 0
+      - item.sha256 is defined
+      - item.sha256 | string | length >= 64
+      - item.filename is not defined or item.filename | string | length > 0
+      - item.version is not defined or item.version | string | length > 0
+    fail_msg: |
+      Invalid mod entry in minecraft_java_mods:
+      {{ item | to_nice_yaml }}
+
+      Required keys:
+      - name
+      - url
+      - sha256
+  loop: "{{ minecraft_java_mods }}"
+  loop_control:
+    label: "{{ item.name | default('unknown-mod') }}"
+  when:
+    - minecraft_java_loader_mode == 'forge'
+    - minecraft_java_mods_enabled | bool
 
 - name: Validate RCON password
   ansible.builtin.assert:
@@ -61,3 +161,10 @@
       - minecraft_java_memory_min is defined
       - minecraft_java_memory_max is defined
     fail_msg: "Memory settings (minecraft_java_memory_min, minecraft_java_memory_max) must be defined"
+
+- name: Validate startup timeout
+  ansible.builtin.assert:
+    that:
+      - minecraft_java_startup_timeout is defined
+      - minecraft_java_startup_timeout | int > 0
+    fail_msg: "minecraft_java_startup_timeout must be a positive integer."

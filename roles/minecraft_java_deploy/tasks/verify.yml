@@ -12,20 +12,20 @@
       - service_status.status.ActiveState == 'active'
     fail_msg: "Minecraft Java service is not running. Check logs with: journalctl -u {{ minecraft_java_service_name }}"
 
-- name: Wait for server to start (up to 60 seconds)
+- name: Wait for server to start (up to {{ minecraft_java_startup_timeout }}s)
   ansible.builtin.wait_for:
     port: "{{ minecraft_java_port }}"
     host: 127.0.0.1
     state: started
-    timeout: 60
+    timeout: "{{ minecraft_java_startup_timeout }}"
     delay: 5
 
-- name: Wait for RCON to be available
+- name: Wait for RCON to be available (up to {{ minecraft_java_startup_timeout }}s)
   ansible.builtin.wait_for:
     port: "{{ minecraft_java_rcon_port }}"
     host: 127.0.0.1
     state: started
-    timeout: 60
+    timeout: "{{ minecraft_java_startup_timeout }}"
     delay: 5
   when: minecraft_java_rcon_enabled
 
@@ -52,6 +52,7 @@
       Server: {{ minecraft_java_motd }}
       Address: {{ ansible_hostname }}:{{ minecraft_java_port }}
       Memory: {{ minecraft_java_memory_min }} - {{ minecraft_java_memory_max }}
+      Loader mode: {{ minecraft_java_loader_mode }}
       Difficulty: {{ minecraft_java_difficulty }}
       Game mode: {{ minecraft_java_gamemode }}
       Max players: {{ minecraft_java_max_players }}

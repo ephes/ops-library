@@ -1,0 +1,84 @@
+---
+# minecraft_java_deploy - Guard unsafe loader mode switches
+
+- name: Check loader mode marker file
+  ansible.builtin.stat:
+    path: "{{ minecraft_java_loader_mode_marker_path }}"
+  register: minecraft_java_loader_mode_marker_stat
+
+- name: Default previous loader mode
+  ansible.builtin.set_fact:
+    minecraft_java_previous_loader_mode: vanilla
+
+- name: Read loader mode marker when present
+  ansible.builtin.slurp:
+    path: "{{ minecraft_java_loader_mode_marker_path }}"
+  register: minecraft_java_loader_mode_marker_content
+  when: minecraft_java_loader_mode_marker_stat.stat.exists
+
+- name: Set previous loader mode from marker
+  ansible.builtin.set_fact:
+    minecraft_java_previous_loader_mode: "{{ minecraft_java_loader_mode_marker_content.content | b64decode | trim | lower }}"
+  when: minecraft_java_loader_mode_marker_stat.stat.exists
+
+- name: Check existing server.properties
+  ansible.builtin.stat:
+    path: "{{ minecraft_java_server_dir }}/server.properties"
+  register: minecraft_java_server_properties_stat
+
+- name: Default previous world name
+  ansible.builtin.set_fact:
+    minecraft_java_previous_world_name: ""
+
+- name: Read existing server.properties when present
+  ansible.builtin.slurp:
+    path: "{{ minecraft_java_server_dir }}/server.properties"
+  register: minecraft_java_server_properties_content
+  when: minecraft_java_server_properties_stat.stat.exists
+
+- name: Set previous world name from server.properties
+  ansible.builtin.set_fact:
+    minecraft_java_previous_world_name: >-
+      {{
+        (
+          minecraft_java_server_properties_content.content
+          | b64decode
+          | regex_findall('(?m)^level-name=(.+)$')
+          | first
+          | default('')
+        ) | trim
+      }}
+  when: minecraft_java_server_properties_stat.stat.exists
+
+- name: Determine whether this host has prior deployment state
+  ansible.builtin.set_fact:
+    minecraft_java_mode_guard_has_prior_state: >-
+      {{
+        minecraft_java_loader_mode_marker_stat.stat.exists
+        or minecraft_java_server_properties_stat.stat.exists
+      }}
+
+- name: Assert unsafe same-world mode switches are acknowledged
+  ansible.builtin.assert:
+    that:
+      - >-
+        not (
+          minecraft_java_mode_guard_has_prior_state | bool
+          and minecraft_java_loader_mode != minecraft_java_previous_loader_mode
+          and minecraft_java_previous_world_name | length > 0
+          and minecraft_java_previous_world_name == minecraft_java_world_name
+          and not (minecraft_java_allow_mode_switch_same_world | bool)
+        )
+    fail_msg: |
+      Unsafe mode switch detected!
+
+      Previous mode: {{ minecraft_java_previous_loader_mode }}
+      Requested mode: {{ minecraft_java_loader_mode }}
+      World name (existing): {{ minecraft_java_previous_world_name }}
+      World name (requested): {{ minecraft_java_world_name }}
+
+      Switching loader mode on the same world can corrupt/downgrade world data.
+
+      Safer options:
+      1) Use a different minecraft_java_world_name for the new mode.
+      2) Or set minecraft_java_allow_mode_switch_same_world=true to acknowledge the risk explicitly.

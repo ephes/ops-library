@@ -1,0 +1,82 @@
+---
+# minecraft_java_deploy - Manage Forge mods
+
+- name: Ensure mods directory exists
+  ansible.builtin.file:
+    path: "{{ minecraft_java_server_dir }}/mods"
+    state: directory
+    owner: "{{ minecraft_java_user }}"
+    group: "{{ minecraft_java_group }}"
+    mode: "0755"
+  when: minecraft_java_mods_enabled | bool
+
+- name: Initialize enabled mod filename list
+  ansible.builtin.set_fact:
+    minecraft_java_enabled_mod_filenames: []
+  when: minecraft_java_mods_enabled | bool
+
+- name: Build enabled mod filename list
+  ansible.builtin.set_fact:
+    minecraft_java_enabled_mod_filenames: >-
+      {{
+        minecraft_java_enabled_mod_filenames
+        + [item.filename | default(item.url | regex_replace('^.*/', ''))]
+      }}
+  loop: "{{ minecraft_java_mods }}"
+  loop_control:
+    label: "{{ item.name | default('unknown-mod') }}"
+  when:
+    - minecraft_java_mods_enabled | bool
+    - item.enabled | default(true) | bool
+
+- name: Download enabled mod jars
+  ansible.builtin.get_url:
+    url: "{{ item.url }}"
+    dest: "{{ minecraft_java_server_dir }}/mods/{{ item.filename | default(item.url | regex_replace('^.*/', '')) }}"
+    checksum: "sha256:{{ item.sha256 }}"
+    owner: "{{ minecraft_java_user }}"
+    group: "{{ minecraft_java_group }}"
+    mode: "0644"
+    timeout: 180
+  loop: "{{ minecraft_java_mods }}"
+  loop_control:
+    label: "{{ item.name | default('unknown-mod') }}"
+  when:
+    - minecraft_java_mods_enabled | bool
+    - item.enabled | default(true) | bool
+  notify: restart minecraft-java
+
+- name: Remove jars for disabled mod entries
+  ansible.builtin.file:
+    path: "{{ minecraft_java_server_dir }}/mods/{{ item.filename | default(item.url | regex_replace('^.*/', '')) }}"
+    state: absent
+  loop: "{{ minecraft_java_mods }}"
+  loop_control:
+    label: "{{ item.name | default('unknown-mod') }}"
+  when:
+    - minecraft_java_mods_enabled | bool
+    - not (item.enabled | default(true) | bool)
+  notify: restart minecraft-java
+
+- name: Find existing mod jars for prune pass
+  ansible.builtin.find:
+    paths: "{{ minecraft_java_server_dir }}/mods"
+    patterns: "*.jar"
+    file_type: file
+  register: minecraft_java_existing_mod_jars
+  when:
+    - minecraft_java_mods_enabled | bool
+    - minecraft_java_mods_prune_unmanaged | bool
+
+- name: Remove unmanaged mod jars when prune is enabled
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ minecraft_java_existing_mod_jars.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when:
+    - minecraft_java_mods_enabled | bool
+    - minecraft_java_mods_prune_unmanaged | bool
+    - (item.path | basename) not in minecraft_java_enabled_mod_filenames
+  notify: restart minecraft-java

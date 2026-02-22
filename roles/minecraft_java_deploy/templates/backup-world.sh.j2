@@ -41,8 +41,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Check if server is running
-if ! pgrep -f "server.jar" > /dev/null; then
+# Check if server service is running
+if ! systemctl is-active --quiet "{{ minecraft_java_service_name }}"; then
     log "Server not running, skipping backup"
     exit 0
 fi
@@ -86,6 +86,13 @@ for optional_file in ops.json whitelist.json banned-ips.json banned-players.json
         BACKUP_FILES+=("$optional_file")
     fi
 done
+{% if minecraft_java_loader_mode == 'forge' %}
+for optional_dir in mods config; do
+    if [[ -d "$optional_dir" ]]; then
+        BACKUP_FILES+=("$optional_dir")
+    fi
+done
+{% endif %}
 
 tar -czf "$BACKUP_FILE" "${BACKUP_FILES[@]}" || {
     log "ERROR: Failed to create backup archive"

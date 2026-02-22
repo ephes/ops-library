@@ -1,0 +1,10 @@
+---
+# minecraft_java_deploy - Persist deployment state markers
+
+- name: Persist loader mode marker
+  ansible.builtin.copy:
+    content: "{{ minecraft_java_loader_mode }}\n"
+    dest: "{{ minecraft_java_loader_mode_marker_path }}"
+    owner: "{{ minecraft_java_user }}"
+    group: "{{ minecraft_java_group }}"
+    mode: "0644"

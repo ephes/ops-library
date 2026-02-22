@@ -10,12 +10,17 @@ Group={{ minecraft_java_group }}
 WorkingDirectory={{ minecraft_java_server_dir }}
 EnvironmentFile={{ minecraft_java_home }}/.env
 
-# Start command with optimized JVM settings
+{% if minecraft_java_loader_mode == 'forge' %}
+# Forge runtime wrapper (execs java directly)
+ExecStart={{ minecraft_java_forge_wrapper_script_path }}
+{% else %}
+# Vanilla start command with optimized JVM settings
 ExecStart=/usr/bin/java \
     -Xms{{ minecraft_java_memory_min }} \
     -Xmx{{ minecraft_java_memory_max }} \
     {{ minecraft_java_extra_args }} \
     -jar server.jar nogui
+{% endif %}
 
 # Graceful shutdown via RCON
 ExecStop=/usr/local/bin/mcrcon -H 127.0.0.1 -P {{ minecraft_java_rcon_port }} -p "${RCON_PASSWORD}" "stop"

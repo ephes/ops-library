@@ -7,14 +7,26 @@
 - name: Setup user and directories
   ansible.builtin.include_tasks: user.yml
 
+- name: Validate mode switch safety constraints
+  ansible.builtin.include_tasks: mode_guard.yml
+
 - name: Install Java and mcrcon
   ansible.builtin.include_tasks: install.yml
 
 - name: Download Minecraft server
   ansible.builtin.include_tasks: download.yml
+  when: minecraft_java_loader_mode == 'vanilla'
+
+- name: Install and configure Forge runtime
+  ansible.builtin.include_tasks: forge.yml
+  when: minecraft_java_loader_mode == 'forge'
 
 - name: Configure server
   ansible.builtin.include_tasks: configure.yml
+
+- name: Manage server mods
+  ansible.builtin.include_tasks: mods.yml
+  when: minecraft_java_loader_mode == 'forge'
 
 - name: Setup cron backup
   ansible.builtin.include_tasks: cron_backup.yml
@@ -29,3 +41,6 @@
 
 - name: Verify deployment
   ansible.builtin.include_tasks: verify.yml
+
+- name: Persist deployment markers
+  ansible.builtin.include_tasks: markers.yml
