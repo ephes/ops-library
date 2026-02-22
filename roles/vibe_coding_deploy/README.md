@@ -43,8 +43,15 @@ vibe_coding_shell_basics_extra_packages:
 vibe_coding_install_node: true
 vibe_coding_node_major_version: "22"
 
-# Claude Code
-vibe_coding_install_claude_code: true
+# Per-user npm prefix (user-owned, allows auto-updates)
+vibe_coding_npm_prefix: "{{ vibe_coding_user_home }}/.npm-global"
+
+# AI coding tools installed via npm (per-user)
+vibe_coding_npm_tools:
+  - "@anthropic-ai/claude-code"
+  - "@openai/codex"
+  - "opencode-ai"
+  - "@mariozechner/pi-coding-agent"
 
 # zellij (alongside tmux)
 vibe_coding_zellij_install: true

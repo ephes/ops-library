@@ -11,7 +11,17 @@
   ansible.builtin.command:
     cmd: "npm config set prefix {{ vibe_coding_npm_prefix }}"
   become_user: "{{ vibe_coding_user }}"
+  environment:
+    HOME: "{{ vibe_coding_user_home }}"
   changed_when: false
+
+- name: coding_tools | Ensure fish conf.d directory exists
+  ansible.builtin.file:
+    path: "{{ vibe_coding_user_home }}/.config/fish/conf.d"
+    state: directory
+    owner: "{{ vibe_coding_user }}"
+    group: "{{ vibe_coding_group }}"
+    mode: "0755"
 
 - name: coding_tools | Deploy npm PATH config for fish
   ansible.builtin.template:
@@ -25,6 +35,8 @@
   ansible.builtin.command:
     cmd: npm list -g --depth=0
   become_user: "{{ vibe_coding_user }}"
+  environment:
+    HOME: "{{ vibe_coding_user_home }}"
   register: vibe_coding_npm_global_list
   changed_when: false
   failed_when: false
@@ -33,5 +45,7 @@
   ansible.builtin.command:
     cmd: "npm install -g {{ item }}"
   become_user: "{{ vibe_coding_user }}"
+  environment:
+    HOME: "{{ vibe_coding_user_home }}"
   loop: "{{ vibe_coding_npm_tools }}"
   when: item not in vibe_coding_npm_global_list.stdout
