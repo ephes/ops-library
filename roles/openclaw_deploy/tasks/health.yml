@@ -1,0 +1,25 @@
+---
+- name: health | Wait for OpenClaw port
+  ansible.builtin.wait_for:
+    host: "{{ openclaw_bind_host }}"
+    port: "{{ openclaw_host_port }}"
+    delay: 2
+    timeout: "{{ openclaw_healthcheck_delay * openclaw_healthcheck_retries }}"
+
+- name: health | Verify container is running
+  ansible.builtin.command:
+    cmd: docker inspect --format '{{ '{{' }}.State.Running{{ '}}' }}' {{ openclaw_container_name }}
+  register: openclaw_health_container
+  changed_when: false
+  failed_when: openclaw_health_container.stdout != 'true'
+
+- name: health | Wait for container to stabilize (catch early crash loops)
+  ansible.builtin.pause:
+    seconds: 5
+
+- name: health | Verify container still running after stabilization
+  ansible.builtin.command:
+    cmd: docker inspect --format '{{ '{{' }}.State.Running{{ '}}' }}' {{ openclaw_container_name }}
+  register: openclaw_health_stable
+  changed_when: false
+  failed_when: openclaw_health_stable.stdout != 'true'

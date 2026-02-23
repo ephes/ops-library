@@ -1,0 +1,8 @@
+---
+- name: source | Clone OpenClaw repository
+  ansible.builtin.git:
+    repo: "{{ openclaw_repo_url }}"
+    dest: "{{ openclaw_build_dir }}"
+    version: "{{ openclaw_version }}"
+    force: true
+  register: openclaw_source_result

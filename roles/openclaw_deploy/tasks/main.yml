@@ -1,0 +1,46 @@
+---
+- name: main | Validate required variables
+  ansible.builtin.import_tasks: validate.yml
+
+- name: main | Ensure Docker is installed
+  ansible.builtin.import_tasks: docker.yml
+  when: openclaw_install_docker | bool
+
+- name: main | Ensure OpenClaw user exists
+  ansible.builtin.import_tasks: user.yml
+  when: openclaw_manage_user | bool
+
+- name: main | Ensure OpenClaw directories exist
+  ansible.builtin.import_tasks: directories.yml
+
+- name: main | Clone OpenClaw source repository
+  ansible.builtin.import_tasks: source.yml
+
+- name: main | Build OpenClaw Docker image
+  ansible.builtin.import_tasks: build.yml
+
+- name: main | Render OpenClaw environment file
+  ansible.builtin.import_tasks: env.yml
+
+- name: main | Render gateway config
+  ansible.builtin.import_tasks: config.yml
+
+- name: main | Render OpenClaw Docker Compose file
+  ansible.builtin.import_tasks: compose.yml
+
+- name: main | Configure OpenClaw systemd service
+  ansible.builtin.import_tasks: systemd.yml
+
+- name: main | Configure Traefik reverse proxy
+  ansible.builtin.import_tasks: traefik.yml
+  when: openclaw_traefik_enabled | bool
+
+- name: main | Configure log rotation
+  ansible.builtin.import_tasks: logrotate.yml
+
+- name: main | Apply pending handlers before health checks
+  ansible.builtin.meta: flush_handlers
+
+- name: main | Run OpenClaw health check
+  ansible.builtin.import_tasks: health.yml
+  when: openclaw_healthcheck_enabled | bool

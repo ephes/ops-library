@@ -1,4 +1,0 @@
----
-- name: Install Docker via docker_install role
-  ansible.builtin.include_role:
-    name: local.ops_library.docker_install

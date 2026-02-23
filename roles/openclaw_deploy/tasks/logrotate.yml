@@ -1,0 +1,17 @@
+---
+- name: logrotate | Configure log rotation for OpenClaw
+  ansible.builtin.copy:
+    content: |
+      {{ openclaw_log_dir }}/*.log {
+          daily
+          rotate {{ openclaw_logrotate_days }}
+          compress
+          delaycompress
+          missingok
+          notifempty
+          create 0640 1000 1000
+      }
+    dest: /etc/logrotate.d/openclaw
+    owner: root
+    group: root
+    mode: "0644"
