@@ -4,8 +4,8 @@ This guide explains how to add a brand-new service to the ops-library/ops-contro
 
 ```{admonition} Document meta
 :class: tip
-**Last updated:** 2025-11-14  
-**Version:** 1.1 (bump this when the checklist materially changes)  
+**Last updated:** 2026-02-23  
+**Version:** 1.2 (bump this when the checklist materially changes)  
 **Feedback:** open a GitHub issue in `ops-library` or mention it in the ops-control stand-up notes so we can track improvements.
 ```
 

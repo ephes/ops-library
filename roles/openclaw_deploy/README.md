@@ -12,7 +12,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 
 - Backup/restore is centralized through Echoport.
 - Do not use `just backup openclaw` or `just restore openclaw`.
-- Use the operator commands and restore-drill workflow in `ops-control/docs/OPENCLAW_RUNBOOK.md`.
+- Use the operator commands and restore-drill workflow in `ops-control/docs/OPENCLAW_RUNBOOK.md` (private `ops-control` repo).
 
 ## Quick Start
 

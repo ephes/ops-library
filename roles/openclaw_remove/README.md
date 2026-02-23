@@ -43,4 +43,4 @@ Safely removes the OpenClaw deployment from a host with explicit confirmation an
 - Image and user removal are also opt-in.
 - Re-running the role is safe: already-removed artifacts do not cause hard failures.
 - In production (`ops-control`), `openclaw_data_dir` is explicitly set to `/mnt/cryptdata/openclaw/data`.
-- OpenClaw backup/restore is an Echoport lifecycle exception: do not expect `openclaw_backup`/`openclaw_restore` roles, and use `ops-control/docs/OPENCLAW_RUNBOOK.md` for restore-drill/operator commands.
+- OpenClaw backup/restore is an Echoport lifecycle exception: do not expect `openclaw_backup`/`openclaw_restore` roles, and use `ops-control/docs/OPENCLAW_RUNBOOK.md` (private `ops-control` repo) for restore-drill/operator commands.
