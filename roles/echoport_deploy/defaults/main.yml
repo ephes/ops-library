@@ -29,6 +29,10 @@ echoport_use_source_pyproject: true
 echoport_app_port: 10018
 echoport_app_host: "127.0.0.1"
 echoport_workers: 2
+echoport_allowed_path_prefixes:
+  - "/home/"
+  - "/opt/"
+  - "/var/lib/"
 
 # Django settings
 echoport_django_settings_module: "config.settings.production"

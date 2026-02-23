@@ -51,6 +51,14 @@
 
       Or disable basic auth with: echoport_basic_auth_enabled: false
 
+- name: Validate allowed path prefixes
+  assert:
+    that:
+      - echoport_allowed_path_prefixes is defined
+      - echoport_allowed_path_prefixes | length > 0
+      - (echoport_allowed_path_prefixes | select('match', '^/.+') | list | length) == (echoport_allowed_path_prefixes | length)
+    fail_msg: "echoport_allowed_path_prefixes must be a non-empty list of absolute paths"
+
 - name: Setup user and directories
   include_tasks: user.yml
 
