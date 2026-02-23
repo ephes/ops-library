@@ -1,0 +1,18 @@
+---
+- name: systemd | Render OpenClaw systemd service
+  ansible.builtin.template:
+    src: openclaw.service.j2
+    dest: "/etc/systemd/system/{{ openclaw_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart openclaw
+
+- name: systemd | Ensure OpenClaw systemd service is enabled and started
+  ansible.builtin.systemd:
+    name: "{{ openclaw_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true

@@ -24,6 +24,7 @@ metube_deploy
 open_webui_deploy
 open_webui_venv_deploy
 ollama_proxy_deploy
+openclaw_deploy
 mastodon_deploy
 mastodon_shared
 snappymail_deploy

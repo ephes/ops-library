@@ -1,0 +1,9 @@
+---
+- name: compose | Render OpenClaw Docker Compose file
+  ansible.builtin.template:
+    src: openclaw-compose.yml.j2
+    dest: "{{ openclaw_site_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart openclaw

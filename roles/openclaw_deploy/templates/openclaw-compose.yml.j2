@@ -1,0 +1,29 @@
+# Managed by Ansible (openclaw_deploy). Do not edit on the host.
+services:
+  {{ openclaw_container_name }}:
+    image: {{ openclaw_image_name }}:{{ openclaw_image_tag }}
+    container_name: {{ openclaw_container_name }}
+    restart: {{ openclaw_restart_policy }}
+    mem_limit: {{ openclaw_mem_limit }}
+    cpus: {{ openclaw_cpus }}
+    pids_limit: {{ openclaw_pids_limit }}
+    user: "1000:1000"
+    ports:
+      - "{{ openclaw_bind_host }}:{{ openclaw_host_port }}:{{ openclaw_container_port }}"
+    env_file:
+      - .env
+    volumes:
+      - "{{ openclaw_data_dir }}:/home/node/.openclaw"
+      - "{{ openclaw_log_dir }}:/tmp/openclaw"
+
+  openclaw-cli:
+    image: {{ openclaw_image_name }}:{{ openclaw_image_tag }}
+    container_name: openclaw-cli
+    user: "1000:1000"
+    entrypoint: ["node", "dist/index.js"]
+    env_file:
+      - .env
+    volumes:
+      - "{{ openclaw_data_dir }}:/home/node/.openclaw"
+    profiles:
+      - cli

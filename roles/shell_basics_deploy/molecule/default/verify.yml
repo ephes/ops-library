@@ -56,3 +56,15 @@
         that:
           - fd_link.stat.exists
         fail_msg: "fd link missing in {{ shell_basics_local_bin }}"
+
+    - name: Verify | just binary present
+      ansible.builtin.stat:
+        path: /usr/bin/just
+      register: just_bin
+
+    - name: Verify | Assert just binary exists
+      ansible.builtin.assert:
+        that:
+          - just_bin.stat.exists
+          - just_bin.stat.executable
+        fail_msg: "just binary missing at /usr/bin/just"

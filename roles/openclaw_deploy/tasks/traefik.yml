@@ -1,0 +1,17 @@
+---
+- name: traefik | Ensure Traefik dynamic config directory exists
+  ansible.builtin.file:
+    path: "{{ openclaw_traefik_config_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: traefik | Render Traefik configuration for OpenClaw
+  ansible.builtin.template:
+    src: openclaw-traefik.yml.j2
+    dest: "{{ openclaw_traefik_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload traefik

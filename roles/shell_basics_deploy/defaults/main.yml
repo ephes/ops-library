@@ -31,6 +31,7 @@ shell_basics_packages:
   - sysstat
   - iotop
   - tealdeer
+  - just
 
 # Optional extra packages to include
 shell_basics_extra_packages: []

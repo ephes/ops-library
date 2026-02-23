@@ -1,0 +1,17 @@
+---
+- name: build | Check if OpenClaw image already exists
+  ansible.builtin.command:
+    cmd: "docker image inspect {{ openclaw_image_name }}:{{ openclaw_image_tag }}"
+  register: openclaw_image_check
+  changed_when: false
+  failed_when: false
+
+- name: build | Build OpenClaw Docker image
+  ansible.builtin.command:
+    cmd: "docker build --network host -t {{ openclaw_image_name }}:{{ openclaw_image_tag }} ."
+    chdir: "{{ openclaw_build_dir }}"
+  when: >
+    openclaw_force_rebuild | bool
+    or openclaw_image_check.rc != 0
+    or (openclaw_source_result is defined and openclaw_source_result.changed)
+  notify: restart openclaw

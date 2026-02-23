@@ -1,0 +1,82 @@
+---
+- name: validate | OpenClaw version is set
+  ansible.builtin.assert:
+    that:
+      - openclaw_version | length > 0
+    fail_msg: >-
+      openclaw_version is required (e.g. "v2026.2.21"). Set it in the playbook or inventory.
+
+- name: validate | Core OpenClaw settings
+  ansible.builtin.assert:
+    that:
+      - openclaw_site_dir | length > 0
+      - openclaw_data_dir | length > 0
+      - openclaw_build_dir | length > 0
+    fail_msg: >-
+      Missing required OpenClaw settings (site_dir/data_dir/build_dir).
+
+- name: validate | Extra env settings
+  ansible.builtin.assert:
+    that:
+      - openclaw_extra_env is mapping
+      - openclaw_extra_env is not string
+    fail_msg: "openclaw_extra_env must be a mapping of environment variables."
+
+- name: validate | Gateway token is set
+  ansible.builtin.assert:
+    that:
+      - openclaw_gateway_token | length > 0
+      - openclaw_gateway_token != 'CHANGEME'
+    fail_msg: >-
+      openclaw_gateway_token is required for gateway mode.
+      Set it in the playbook or via SOPS secrets.
+
+- name: validate | Anthropic API key is set
+  ansible.builtin.assert:
+    that:
+      - openclaw_anthropic_api_key | length > 0
+      - openclaw_anthropic_api_key != 'CHANGEME'
+    fail_msg: >-
+      openclaw_anthropic_api_key is required. Set it in the playbook or via SOPS secrets.
+
+- name: validate | Telegram bot token when Telegram is enabled
+  ansible.builtin.assert:
+    that:
+      - openclaw_telegram_bot_token | length > 0
+      - openclaw_telegram_bot_token != 'CHANGEME'
+    fail_msg: >-
+      openclaw_telegram_bot_token is required when Telegram is enabled.
+  when: openclaw_telegram_enabled | bool
+
+- name: validate | Networking settings
+  ansible.builtin.assert:
+    that:
+      - openclaw_bind_host | length > 0
+      - openclaw_host_port | int > 0
+      - openclaw_host_port | int <= 65535
+      - openclaw_container_port | int > 0
+      - openclaw_container_port | int <= 65535
+    fail_msg: >-
+      Invalid networking settings. openclaw_bind_host must be non-empty,
+      ports must be between 1 and 65535.
+
+- name: validate | Resource limits
+  ansible.builtin.assert:
+    that:
+      - openclaw_mem_limit | string is regex('^[0-9]+[bkmgBKMG]$')
+      - openclaw_cpus | float > 0
+      - openclaw_pids_limit | int > 0
+    fail_msg: >-
+      Invalid resource limits. openclaw_mem_limit must match [0-9]+[bkmg] (e.g. "2g", "512m"),
+      openclaw_cpus must be > 0, openclaw_pids_limit must be > 0.
+
+- name: validate | Traefik settings when enabled
+  ansible.builtin.assert:
+    that:
+      - openclaw_traefik_host | length > 0
+      - openclaw_traefik_config_path | length > 0
+      - openclaw_bind_host == '127.0.0.1' or openclaw_bind_host == 'localhost'
+    fail_msg: >-
+      openclaw_traefik_host and openclaw_traefik_config_path are required when Traefik is enabled.
+      openclaw_bind_host must be 127.0.0.1 (loopback) when Traefik is the external entry point.
+  when: openclaw_traefik_enabled | bool

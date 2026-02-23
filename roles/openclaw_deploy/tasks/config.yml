@@ -1,0 +1,78 @@
+---
+- name: config | Check if gateway config exists
+  ansible.builtin.stat:
+    path: "{{ openclaw_data_dir }}/openclaw.json"
+  register: openclaw_config_stat
+
+- name: config | Build gateway config from individual variables
+  ansible.builtin.set_fact:
+    _openclaw_built_config: >-
+      {{
+        {
+          "channels": {
+            "telegram": {
+              "enabled": openclaw_telegram_enabled | bool,
+              "dmPolicy": openclaw_telegram_dm_policy,
+              "allowFrom": openclaw_telegram_allow_from
+            }
+          },
+          "plugins": {
+            "entries": {
+              "telegram": { "enabled": openclaw_telegram_enabled | bool },
+              "whatsapp": { "enabled": false }
+            }
+          }
+        }
+      }}
+  when: openclaw_gateway_config | length == 0
+
+- name: config | Render OpenClaw gateway config (seed)
+  ansible.builtin.template:
+    src: openclaw-config.json.j2
+    dest: "{{ openclaw_data_dir }}/openclaw.json"
+    owner: "1000"
+    group: "1000"
+    mode: "0644"
+  no_log: true
+  when: not openclaw_config_stat.stat.exists or (openclaw_force_config | bool)
+  notify: restart openclaw
+
+- name: config | Ensure WhatsApp plugin is disabled in existing config
+  when: openclaw_config_stat.stat.exists and not (openclaw_force_config | bool)
+  no_log: true
+  block:
+    - name: config | Read existing gateway config
+      ansible.builtin.slurp:
+        src: "{{ openclaw_data_dir }}/openclaw.json"
+      register: _openclaw_existing_config_raw
+
+    - name: config | Parse existing gateway config
+      ansible.builtin.set_fact:
+        _openclaw_existing_config: "{{ _openclaw_existing_config_raw.content | b64decode | from_json }}"
+
+    - name: config | Patch WhatsApp plugin to disabled
+      ansible.builtin.copy:
+        content: "{{ _openclaw_existing_config | combine(_openclaw_whatsapp_patch, recursive=True) | to_nice_json }}\n"
+        dest: "{{ openclaw_data_dir }}/openclaw.json"
+        owner: "1000"
+        group: "1000"
+        mode: "0644"
+      vars:
+        _openclaw_whatsapp_patch:
+          plugins:
+            entries:
+              whatsapp:
+                enabled: false
+      when: >
+        (_openclaw_existing_config.plugins.entries.whatsapp.enabled | default(true)) | bool
+      notify: restart openclaw
+
+- name: config | Render SOUL.md (system prompt)
+  ansible.builtin.copy:
+    content: "{{ openclaw_reply_system_prompt }}"
+    dest: "{{ openclaw_data_dir }}/SOUL.md"
+    owner: "1000"
+    group: "1000"
+    mode: "0644"
+  notify: restart openclaw
+  when: openclaw_reply_system_prompt | length > 0

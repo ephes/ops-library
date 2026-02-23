@@ -1,0 +1,22 @@
+---
+- name: directories | Ensure OpenClaw directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ openclaw_user }}"
+    group: "{{ openclaw_group }}"
+    mode: "0755"
+  loop:
+    - "{{ openclaw_site_dir }}"
+    - "{{ openclaw_build_dir | dirname }}"
+
+- name: directories | Ensure OpenClaw bind-mount directories exist (container uid 1000)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0700"
+  loop:
+    - "{{ openclaw_data_dir }}"
+    - "{{ openclaw_log_dir }}"
