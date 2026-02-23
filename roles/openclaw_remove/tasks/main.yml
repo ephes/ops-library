@@ -1,0 +1,133 @@
+---
+- name: Confirm OpenClaw removal
+  ansible.builtin.assert:
+    that:
+      - openclaw_remove_confirm | bool
+    fail_msg: >-
+      Set openclaw_remove_confirm=true to allow removal.
+      Data deletion is opt-in via openclaw_remove_data=true.
+
+- name: Stop and disable OpenClaw systemd service
+  ansible.builtin.systemd:
+    name: "{{ openclaw_service_name }}"
+    state: stopped
+    enabled: false
+    daemon_reload: true
+  failed_when: false
+
+- name: Remove OpenClaw systemd unit
+  ansible.builtin.file:
+    path: "{{ openclaw_systemd_unit_path }}"
+    state: absent
+  notify: reload systemd
+
+- name: Remove OpenClaw logrotate configuration
+  ansible.builtin.file:
+    path: "{{ openclaw_logrotate_path }}"
+    state: absent
+
+- name: Check if OpenClaw compose file exists
+  ansible.builtin.stat:
+    path: "{{ openclaw_compose_path }}"
+  register: openclaw_compose_file
+
+- name: Remove OpenClaw compose stack (best effort)
+  ansible.builtin.command:
+    cmd: "/usr/bin/docker compose -f {{ openclaw_compose_path }} down --remove-orphans"
+  register: openclaw_compose_down_result
+  changed_when: false
+  failed_when: false
+  when: openclaw_compose_file.stat.exists
+
+- name: Remove OpenClaw containers (best effort)
+  ansible.builtin.command:
+    cmd: "docker container rm -f {{ item }}"
+  loop:
+    - "{{ openclaw_container_name }}"
+    - "{{ openclaw_cli_container_name }}"
+  changed_when: false
+  failed_when: false
+
+- name: List OpenClaw image ids
+  ansible.builtin.command:
+    cmd: "docker images --filter=reference={{ openclaw_image_name }}:* --quiet"
+  register: openclaw_image_ids
+  changed_when: false
+  failed_when: false
+  when: openclaw_remove_image | bool
+
+- name: Derive unique OpenClaw image ids
+  ansible.builtin.set_fact:
+    openclaw_image_ids_unique: "{{ openclaw_image_ids.stdout_lines | reject('equalto', '') | unique | list }}"
+  when: openclaw_remove_image | bool
+
+- name: Remove OpenClaw images
+  ansible.builtin.command:
+    cmd: "docker image rm {{ item }}"
+  loop: "{{ openclaw_image_ids_unique }}"
+  changed_when: false
+  failed_when: false
+  when:
+    - openclaw_remove_image | bool
+    - (openclaw_image_ids_unique | default([]) | length) > 0
+
+- name: Remove OpenClaw compose file
+  ansible.builtin.file:
+    path: "{{ openclaw_compose_path }}"
+    state: absent
+
+- name: Remove OpenClaw site directory
+  ansible.builtin.file:
+    path: "{{ openclaw_site_dir }}"
+    state: absent
+  when: openclaw_remove_site_dir | bool
+
+- name: Remove OpenClaw build directory
+  ansible.builtin.file:
+    path: "{{ openclaw_build_dir }}"
+    state: absent
+  when: openclaw_remove_build_dir | bool
+
+- name: Remove OpenClaw log directory
+  ansible.builtin.file:
+    path: "{{ openclaw_log_dir }}"
+    state: absent
+  when: openclaw_remove_log_dir | bool
+
+- name: Remove OpenClaw Traefik dynamic configuration
+  ansible.builtin.file:
+    path: "{{ openclaw_traefik_config_path }}"
+    state: absent
+  when: openclaw_remove_traefik_config | bool
+  notify: reload traefik
+
+- name: Remove OpenClaw data directory
+  ansible.builtin.file:
+    path: "{{ openclaw_data_dir }}"
+    state: absent
+  when: openclaw_remove_data | bool
+
+- name: Remove OpenClaw user
+  ansible.builtin.user:
+    name: "{{ openclaw_user }}"
+    state: absent
+    remove: true
+  when: openclaw_remove_user | bool
+
+- name: Remove OpenClaw group
+  ansible.builtin.group:
+    name: "{{ openclaw_group }}"
+    state: absent
+  when: openclaw_remove_user | bool
+
+- name: Apply pending handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Display OpenClaw removal summary
+  ansible.builtin.debug:
+    msg: |
+      OpenClaw removal completed.
+      Data directory removed: {{ openclaw_remove_data }}
+      Docker images removed: {{ openclaw_remove_image }}
+      Traefik config removed: {{ openclaw_remove_traefik_config }}
+      User/group removed: {{ openclaw_remove_user }}
