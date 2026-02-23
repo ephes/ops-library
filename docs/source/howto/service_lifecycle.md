@@ -1,6 +1,6 @@
 # Service Lifecycle Guide
 
-This guide explains how to add a brand-new service to the ops-library/ops-control pairing without missing any of the moving parts (roles, documentation, tests, and metadata). Use it whenever you introduce a service such as `homeassistant`, `minio`, or any future workload that needs deploy/backup/restore/remove coverage.
+This guide explains how to add a brand-new service to the ops-library/ops-control pairing without missing any of the moving parts (roles, documentation, tests, and metadata). Use it whenever you introduce a service such as `homeassistant`, `minio`, or any future workload that needs deploy/backup/restore/remove coverage, or an approved backup/restore exception.
 
 ```{admonition} Document meta
 :class: tip
@@ -63,9 +63,19 @@ Follow this sequence for every service.
 3. Create an encrypted secrets file in `ops-control/secrets/<env>/<service>.yml` so automation has a home for credentials from day one.
 4. Confirm defaults such as `backup_root_prefix` in `services-metadata.yml` align with your service needs (`/opt/backups/<service>/` on remote hosts and `~/backups/<service>/` locally are the common pattern).
 
+#### Lifecycle exception: centralized backup/restore orchestration
+
+Some services are intentionally backed up and restored via a centralized orchestrator such as Echoport instead of `<service>_backup` / `<service>_restore` roles.
+
+If you use this exception:
+
+1. Document the exception in the service spec/PRD and the operator runbook (include the exact command path operators must use).
+2. Do not advertise unsupported capabilities in `services-metadata.yml`. If there is no `<service>_backup` or `<service>_restore` role, do not list `backup`/`restore` capabilities.
+3. Provide equivalent restore-drill evidence and operator commands in the runbook (for example: manual backup trigger, restore command, and post-restore health checks).
+
 ### 2. Create service roles inside ops-library
 
-For each capability add a role under `roles/<service>_<action>/`. Re-use shared snippets (templated configs, facts, path calculations) by putting them in `roles/<service>_shared/` and including that role where needed. Offer both rsync (local dev) and git (production) deployment modes whenever the codebase lives in git:
+For each advertised capability add a role under `roles/<service>_<action>/`. Re-use shared snippets (templated configs, facts, path calculations) by putting them in `roles/<service>_shared/` and including that role where needed. Offer both rsync (local dev) and git (production) deployment modes whenever the codebase lives in git. If you use a centralized backup/restore exception, omit backup/restore roles and document the alternate flow.
 
 - **rsync mode** is ideal for hacking on a role locally (`just deploy-one <service> dev`). It pushes whatever is under `{{ service_repo_path }}`.
 - **git mode** is for production/staging where FastDeploy or CI clones a clean tag/branch and reduces drift.
@@ -131,6 +141,7 @@ For each capability add a role under `roles/<service>_<action>/`. Re-use shared 
   - `just backup <service>`
   - `just restore <service> [archive]`
   - `just remove-one <service>`
+- If backup/restore is centralized (Echoport exception), explicitly document that `just backup <service>` / `just restore <service>` are not the operator path for that service and link the runbook commands instead.
 - Update ops-control docs/runbooks so operators know about the new service.
 
 ### 6. Publish and validate
@@ -150,6 +161,7 @@ For each capability add a role under `roles/<service>_<action>/`. Re-use shared 
 - **Hard-coded paths:** use variables (`backup_root_prefix`, `<service>_home`, `fastdeploy_services_root`, etc.) so roles stay portable.
 - **Untested restore flows:** a backup without a tested restore is not complete; always add at least one restore test.
 - **ops-control gaps:** ensure every capability exposed in metadata has matching `just` recipes and playbooks before calling the service “done”.
+- **Capability drift under exceptions:** if backup/restore is handled by Echoport (or another centralized plane), do not leave stale `backup`/`restore` capabilities in metadata.
 - **docs-build not run:** skipping the docs build is the fastest way to ship broken navigation. Run it every time.
 
 ## Getting This Guide In Front of Contributors

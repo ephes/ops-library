@@ -6,6 +6,14 @@ Deploys the OpenClaw gateway on Ubuntu using Docker Compose and systemd. The gat
 
 Unlike other service roles, OpenClaw has no prebuilt Docker image. This role clones the source repo and runs `docker build` on-host using the upstream Dockerfile. The build is skipped when the image+tag already exists and the source hasn't changed.
 
+## Lifecycle Exception (Backup/Restore)
+
+OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` roles.
+
+- Backup/restore is centralized through Echoport.
+- Do not use `just backup openclaw` or `just restore openclaw`.
+- Use the operator commands and restore-drill workflow in `ops-control/docs/OPENCLAW_RUNBOOK.md`.
+
 ## Quick Start
 
 ```yaml
