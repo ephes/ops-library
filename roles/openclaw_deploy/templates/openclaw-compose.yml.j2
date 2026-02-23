@@ -21,6 +21,7 @@ services:
     container_name: openclaw-cli
     user: "1000:1000"
     entrypoint: ["node", "dist/index.js"]
+    network_mode: "service:{{ openclaw_container_name }}"
     env_file:
       - .env
     volumes:

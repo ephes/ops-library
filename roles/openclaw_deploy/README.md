@@ -154,7 +154,7 @@ Note: The gateway is a WebSocket server and does not serve plain HTTP, so HTTP-l
 ## Docker Compose Services
 
 - **openclaw-gateway**: Main gateway service, starts with `docker compose up`
-- **openclaw-cli**: CLI utility, available via `docker compose run --rm openclaw-cli <subcommand>` (uses `profiles: [cli]`, does not auto-start)
+- **openclaw-cli**: CLI utility, available via `docker compose run --rm openclaw-cli <subcommand>` (uses `profiles: [cli]`, does not auto-start, and shares the gateway network namespace so CLI commands can reach `ws://127.0.0.1:18789`)
 
 ## Post-Deploy: Telegram
 
