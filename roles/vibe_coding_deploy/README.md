@@ -10,7 +10,11 @@ Set up a dedicated interactive coding user with persistent tmux sessions, fish s
 - Rsyncs chezmoi source from local machine and applies dotfiles (optional).
 - Deploys API keys to `~/.config/fish/conf.d/secrets.fish` (role-managed, outside chezmoi).
 - Installs Node.js LTS via NodeSource apt repo (pinned to major version).
-- Installs Claude Code per-user via npm (user-owned prefix allows auto-updates).
+- Installs Neovim from GitHub releases (pinned version; apt is too old for LazyVim).
+- Installs lazygit from GitHub releases (required by LazyVim `<leader>gg`).
+- Installs Rust toolchain via rustup with rust-analyzer (needed by LazyVim rust extra).
+- Installs Claude Code and other AI coding tools per-user via npm (user-owned prefix allows auto-updates).
+- Cleans up conflicting system-wide npm packages automatically.
 - Installs zellij alongside tmux as a first-class multiplexer option.
 
 ## Role Variables
@@ -42,6 +46,15 @@ vibe_coding_shell_basics_extra_packages:
 # Node.js (NodeSource LTS)
 vibe_coding_install_node: true
 vibe_coding_node_major_version: "22"
+
+# Neovim (from GitHub releases)
+vibe_coding_neovim_version: "0.11.6"
+
+# lazygit (from GitHub releases)
+vibe_coding_lazygit_version: "0.59.0"
+
+# Rust toolchain (rustup + rust-analyzer)
+vibe_coding_install_rust: true
 
 # Per-user npm prefix (user-owned, allows auto-updates)
 vibe_coding_npm_prefix: "{{ vibe_coding_user_home }}/.npm-global"
@@ -96,9 +109,12 @@ vibe_coding_sshd_hardening: true
 5. Deploy secrets to `~/.config/fish/conf.d/secrets.fish`
 6. Ensure `~/projects` directory
 7. Install Node.js via NodeSource
-8. Install coding tools via npm (per-user prefix)
-9. Install zellij
-10. Harden sshd for the user
+8. Install Neovim from GitHub releases
+9. Install lazygit from GitHub releases
+10. Install Rust toolchain via rustup
+11. Install coding tools via npm (per-user prefix, with system-wide cleanup)
+12. Install zellij
+13. Harden sshd for the user
 
 ## Notes
 
