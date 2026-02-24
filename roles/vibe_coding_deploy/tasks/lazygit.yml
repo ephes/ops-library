@@ -1,0 +1,23 @@
+---
+- name: lazygit | Check installed version
+  ansible.builtin.command:
+    cmd: lazygit --version
+  register: vibe_coding_lazygit_version_check
+  changed_when: false
+  failed_when: false
+
+- name: lazygit | Install from GitHub releases
+  when: >-
+    vibe_coding_lazygit_version_check.rc != 0 or
+    vibe_coding_lazygit_version_check.stdout is not search(vibe_coding_lazygit_version)
+  block:
+    - name: lazygit | Determine system architecture
+      ansible.builtin.set_fact:
+        vibe_coding_lazygit_arch: "{{ 'x86_64' if ansible_architecture == 'x86_64' else 'arm64' }}"
+
+    - name: lazygit | Download and extract release
+      ansible.builtin.unarchive:
+        src: "https://github.com/jesseduffield/lazygit/releases/download/v{{ vibe_coding_lazygit_version }}/lazygit_{{ vibe_coding_lazygit_version }}_linux_{{ vibe_coding_lazygit_arch }}.tar.gz"
+        dest: /usr/local/bin
+        remote_src: true
+        mode: "0755"

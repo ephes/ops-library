@@ -39,6 +39,13 @@
 - name: main | Install Neovim
   ansible.builtin.import_tasks: neovim.yml
 
+- name: main | Install lazygit
+  ansible.builtin.import_tasks: lazygit.yml
+
+- name: main | Install Rust toolchain
+  ansible.builtin.import_tasks: rust.yml
+  when: vibe_coding_install_rust | bool
+
 - name: main | Install coding tools
   ansible.builtin.import_tasks: coding_tools.yml
   when: vibe_coding_npm_tools | length > 0

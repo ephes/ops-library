@@ -29,6 +29,12 @@ vibe_coding_node_major_version: "22"
 # Neovim (from GitHub releases — apt version is too old for LazyVim)
 vibe_coding_neovim_version: "0.11.6"
 
+# lazygit (required by LazyVim <leader>gg keybinding)
+vibe_coding_lazygit_version: "0.59.0"
+
+# Rust toolchain (rustup) — needed by rustaceanvim / LazyVim rust extra
+vibe_coding_install_rust: true
+
 # Per-user npm global prefix (avoids root-owned binaries that break auto-update)
 vibe_coding_npm_prefix: "{{ vibe_coding_user_home }}/.npm-global"
 
