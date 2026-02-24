@@ -7,6 +7,10 @@ Runs on macmini and copies media objects directly between:
 - Destination: MinIO backup bucket
 
 No large persistent local copy is created.
+
+By default, media objects are copied into a rolling prefix:
+- <prefix_root>/current/objects
+Override with ECHOPORT_MEDIA_OBJECTS_PREFIX if needed.
 """
 
 import hashlib
