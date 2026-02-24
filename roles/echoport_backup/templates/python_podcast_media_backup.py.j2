@@ -188,7 +188,7 @@ def rclone_size(config_path: Path, remote: str) -> tuple[int, int]:
     return int(payload.get("bytes", 0)), int(payload.get("count", 0))
 
 
-def backup(bucket: str, key_prefix: str, credentials: Dict[str, str]) -> int:
+def backup(bucket: str, key_prefix: str, objects_prefix: str, credentials: Dict[str, str]) -> int:
     work_dir = Path(tempfile.mkdtemp(prefix="python-podcast-media-", dir=TEMP_DIR if Path(TEMP_DIR).exists() else None))
 
     try:
@@ -202,7 +202,7 @@ def backup(bucket: str, key_prefix: str, credentials: Dict[str, str]) -> int:
         emit_step("init", "success", "Configuration prepared")
 
         src_remote = f"src:{SOURCE_BUCKET}"
-        dst_objects_remote = f"dst:{bucket}/{key_prefix}/objects"
+        dst_objects_remote = f"dst:{bucket}/{objects_prefix}/objects"
 
         emit_step("sync_media", "running", "Copying S3 media to MinIO")
         run_cmd(
@@ -233,6 +233,7 @@ def backup(bucket: str, key_prefix: str, credentials: Dict[str, str]) -> int:
             "source_bucket": SOURCE_BUCKET,
             "storage_bucket": bucket,
             "storage_prefix": key_prefix,
+            "objects_prefix": objects_prefix,
             "bytes": size_bytes,
             "count": file_count,
         }
@@ -313,7 +314,17 @@ def restore(bucket: str, key_prefix: str, expected_checksum: str, credentials: D
             )
         emit_step("verify_checksum", "success", "Checksum verified")
 
-        src_objects_remote = f"dst:{bucket}/{key_prefix}/objects"
+        try:
+            manifest = json.loads(manifest_path.read_text())
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Manifest JSON is invalid: {exc}") from exc
+
+        objects_prefix = manifest.get("objects_prefix")
+        if not isinstance(objects_prefix, str) or not objects_prefix.strip():
+            # Backward compatibility: old backups stored objects under run key prefix.
+            objects_prefix = key_prefix
+
+        src_objects_remote = f"dst:{bucket}/{objects_prefix}/objects"
         dst_remote = f"src:{SOURCE_BUCKET}"
 
         emit_step("restore_media", "running", "Copying media from MinIO backup to S3")
@@ -402,8 +413,9 @@ def main() -> int:
         return restore(bucket=bucket, key_prefix=key, expected_checksum=checksum, credentials=credentials)
 
     timestamp = cenv.get("ECHOPORT_TIMESTAMP", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S"))
-    key_prefix = cenv.get("ECHOPORT_KEY_PREFIX", f"{DEST_PREFIX_ROOT}/{timestamp}")
-    return backup(bucket=bucket, key_prefix=key_prefix, credentials=credentials)
+    key_prefix = cenv.get("ECHOPORT_KEY_PREFIX", f"{DEST_PREFIX_ROOT}/{timestamp}").strip("/")
+    objects_prefix = cenv.get("ECHOPORT_MEDIA_OBJECTS_PREFIX", f"{DEST_PREFIX_ROOT}/current").strip("/")
+    return backup(bucket=bucket, key_prefix=key_prefix, objects_prefix=objects_prefix, credentials=credentials)
 
 
 if __name__ == "__main__":
