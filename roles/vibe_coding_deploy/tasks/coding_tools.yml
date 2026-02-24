@@ -31,6 +31,19 @@
     group: "{{ vibe_coding_group }}"
     mode: "0644"
 
+- name: coding_tools | Check system-wide npm global packages
+  ansible.builtin.command:
+    cmd: npm list -g --depth=0
+  register: vibe_coding_npm_system_list
+  changed_when: false
+  failed_when: false
+
+- name: coding_tools | Remove system-wide npm packages that conflict with per-user install
+  ansible.builtin.command:
+    cmd: "npm uninstall -g {{ item }}"
+  loop: "{{ vibe_coding_npm_tools }}"
+  when: item in vibe_coding_npm_system_list.stdout
+
 - name: coding_tools | Check installed npm global packages
   ansible.builtin.command:
     cmd: npm list -g --depth=0
@@ -41,11 +54,23 @@
   changed_when: false
   failed_when: false
 
-- name: coding_tools | Install missing npm tools
+- name: coding_tools | Check outdated npm global packages
+  ansible.builtin.command:
+    cmd: npm outdated -g
+  become_user: "{{ vibe_coding_user }}"
+  environment:
+    HOME: "{{ vibe_coding_user_home }}"
+  register: vibe_coding_npm_outdated
+  changed_when: false
+  failed_when: false
+
+- name: coding_tools | Install or update npm tools
   ansible.builtin.command:
     cmd: "npm install -g {{ item }}"
   become_user: "{{ vibe_coding_user }}"
   environment:
     HOME: "{{ vibe_coding_user_home }}"
   loop: "{{ vibe_coding_npm_tools }}"
-  when: item not in vibe_coding_npm_global_list.stdout
+  when: >-
+    item not in vibe_coding_npm_global_list.stdout or
+    item in vibe_coding_npm_outdated.stdout
