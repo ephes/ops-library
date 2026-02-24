@@ -11,6 +11,8 @@
       ansible.builtin.tempfile:
         state: directory
         prefix: rustup_
+      become: true
+      become_user: "{{ vibe_coding_user }}"
       register: vibe_coding_rustup_tmpdir
 
     - name: rust | Download rustup-init
@@ -18,6 +20,8 @@
         url: https://sh.rustup.rs
         dest: "{{ vibe_coding_rustup_tmpdir.path }}/rustup-init.sh"
         mode: "0755"
+      become: true
+      become_user: "{{ vibe_coding_user }}"
 
     - name: rust | Run rustup-init
       ansible.builtin.command:
@@ -32,6 +36,8 @@
         path: "{{ vibe_coding_rustup_tmpdir.path }}"
         state: absent
       when: vibe_coding_rustup_tmpdir is defined
+      become: true
+      become_user: "{{ vibe_coding_user }}"
 
 - name: rust | Ensure rust-analyzer is installed
   ansible.builtin.command:
