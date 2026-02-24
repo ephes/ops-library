@@ -78,3 +78,10 @@ echoport_scheduler_interval: "*/5"  # Run every 5 minutes by default
 # Retention cleanup (runs daily to delete old backups from MinIO)
 echoport_cleanup_enabled: true
 echoport_cleanup_hour: "3"  # Run at 3am (after 2am backups complete)
+
+# Nightly staging DB refresh (best-effort, warning-only)
+echoport_staging_db_refresh_enabled: false
+echoport_staging_db_refresh_hour: "2"
+echoport_staging_db_refresh_minute: "20"
+echoport_staging_db_refresh_targets: []
+echoport_staging_db_refresh_triggered_by: "staging-refresh-scheduler"

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Python Podcast staging backup/restore runner for FastDeploy.
+Python Podcast production DB backup + staging DB restore runner for FastDeploy.
 
-This script runs ON MACMINI and uses SSH/SCP to access the remote
-staging server. Staging has no backup tools, no MinIO access - it's just
-a dumb target.
+This script runs ON MACMINI and uses SSH/SCP to access:
+- production host for backups
+- staging host for restores
 
 Architecture:
-- Backup: SSH pg_dump on staging, SCP dump to macmini, verify with
+- Backup: SSH pg_dump on production, SCP dump to macmini, verify with
           pg_restore --list, upload to MinIO (no service stop needed)
 - Restore: Download from MinIO, verify checksum, SCP dump to staging,
            stop service, drop/recreate DB, pg_restore, start service
@@ -41,11 +41,12 @@ TEMP_DIR = "{{ echoport_backup_temp_dir }}"
 SSH_OPTS = "-o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=30"
 
 # Locked defaults (Ansible-templated, not overridable from Echoport context)
-REMOTE_HOST = "{{ pp_staging_backup_default_host | default('staging.wersdoerfer.de') }}"
-REMOTE_USER = "{{ pp_staging_backup_remote_user | default('root') }}"
-DB_NAME = "{{ pp_staging_backup_db_name | default('python-podcast') }}"
-DB_USER = "{{ pp_staging_backup_db_user | default('python-podcast') }}"
-SERVICE_NAME = "{{ pp_staging_backup_service_name | default('python-podcast') }}"
+BACKUP_HOST = "{{ pp_prod_db_backup_source_host | default('wersdoerfer.de') }}"
+RESTORE_HOST = "{{ pp_prod_db_backup_restore_host | default('staging.wersdoerfer.de') }}"
+REMOTE_USER = "{{ pp_prod_db_backup_remote_user | default('root') }}"
+DB_NAME = "{{ pp_prod_db_backup_db_name | default('python-podcast') }}"
+DB_USER = "{{ pp_prod_db_backup_db_user | default('python-podcast') }}"
+SERVICE_NAME = "{{ pp_prod_db_backup_service_name | default('python-podcast') }}"
 
 
 def read_config_file() -> Optional[Dict]:
@@ -270,16 +271,16 @@ def backup(
     timestamp: str,
 ) -> int:
     """
-    Perform PostgreSQL backup from remote staging server.
+    Perform PostgreSQL backup from remote production server.
 
     Steps:
     1. Validate config
-    2. SSH pg_dump on staging
+    2. SSH pg_dump on production
     3. SCP dump to macmini
     4. Verify dump with pg_restore --list
     5. Create manifest and tarball, upload to MinIO
     6. Verify upload
-    7. Cleanup remote temp dump
+    7. Cleanup production temp dump
 
     No service stop needed - pg_dump provides consistent snapshots.
 
@@ -297,16 +298,16 @@ def backup(
         emit_step("init", "running", "Starting PostgreSQL backup")
 
         # Validate SSH identifiers
-        _validate_ssh_identifier(REMOTE_HOST, "remote_host")
+        _validate_ssh_identifier(BACKUP_HOST, "backup_host")
         _validate_ssh_identifier(REMOTE_USER, "remote_user")
 
         emit_step("init", "success", f"Configuration validated (db: {DB_NAME})")
 
-        # pg_dump on staging (no service stop needed)
-        emit_step("dump_database", "running", f"Running pg_dump on {REMOTE_HOST}")
+        # pg_dump on production (no service stop needed)
+        emit_step("dump_database", "running", f"Running pg_dump on {BACKUP_HOST}")
         try:
             ssh(
-                REMOTE_HOST,
+                BACKUP_HOST,
                 REMOTE_USER,
                 f"sudo -u postgres pg_dump --format=custom --file={shlex.quote(remote_dump_path)} --dbname={shlex.quote(DB_NAME)}",
             )
@@ -317,11 +318,11 @@ def backup(
             finish_stdout("failure", "pg_dump failed")
             return 1
 
-        # SCP dump from staging to local temp dir
-        emit_step("copy_dump", "running", "Copying dump from staging")
+        # SCP dump from production to local temp dir
+        emit_step("copy_dump", "running", "Copying dump from production")
         local_dump_path = work_dir / dump_filename
         try:
-            scp_from_remote(REMOTE_HOST, REMOTE_USER, remote_dump_path, str(local_dump_path))
+            scp_from_remote(BACKUP_HOST, REMOTE_USER, remote_dump_path, str(local_dump_path))
             emit_step("copy_dump", "success", f"Dump copied ({local_dump_path.stat().st_size:,} bytes)")
         except subprocess.CalledProcessError as e:
             emit_step("copy_dump", "failure", f"Failed to copy dump: {e.stderr}")
@@ -348,7 +349,7 @@ def backup(
         dump_size = local_dump_path.stat().st_size
         dump_checksum = calculate_sha256(local_dump_path)
         manifest = {
-            "target": "python-podcast-staging",
+            "target": "python-podcast-production-db",
             "timestamp": timestamp,
             "database": {
                 "type": "postgresql",
@@ -423,7 +424,7 @@ def backup(
         emit_step("cleanup", "running", "Cleaning up temporary files")
         cleanup_ok = True
         try:
-            result = ssh(REMOTE_HOST, REMOTE_USER, f"rm -f {shlex.quote(remote_dump_path)}", check=False)
+            result = ssh(BACKUP_HOST, REMOTE_USER, f"rm -f {shlex.quote(remote_dump_path)}", check=False)
             if result.returncode != 0:
                 print(f"[WARN] Remote cleanup returned non-zero: {result.stderr}", file=sys.stderr)
                 cleanup_ok = False
@@ -483,7 +484,7 @@ def restore(
         emit_step("init", "running", "Starting PostgreSQL restore")
 
         # Validate SSH identifiers
-        _validate_ssh_identifier(REMOTE_HOST, "remote_host")
+        _validate_ssh_identifier(RESTORE_HOST, "restore_host")
         _validate_ssh_identifier(REMOTE_USER, "remote_user")
 
         emit_step("init", "success", f"Configuration validated (db: {DB_NAME})")
@@ -553,7 +554,7 @@ def restore(
         # SCP dump to staging
         emit_step("upload_dump", "running", "Uploading dump to staging")
         try:
-            scp_to_remote(REMOTE_HOST, REMOTE_USER, str(dump_path), remote_dump_path)
+            scp_to_remote(RESTORE_HOST, REMOTE_USER, str(dump_path), remote_dump_path)
             emit_step("upload_dump", "success", "Dump uploaded to staging")
         except subprocess.CalledProcessError as e:
             emit_step("upload_dump", "failure", f"Failed to upload dump: {e.stderr}")
@@ -564,7 +565,7 @@ def restore(
         # Stop service
         emit_step("stop_service", "running", f"Stopping {SERVICE_NAME}")
         try:
-            ssh(REMOTE_HOST, REMOTE_USER, f"systemctl stop {shlex.quote(SERVICE_NAME)}")
+            ssh(RESTORE_HOST, REMOTE_USER, f"systemctl stop {shlex.quote(SERVICE_NAME)}")
             service_stopped = True
             emit_step("stop_service", "success", f"Stopped {SERVICE_NAME}")
         except subprocess.CalledProcessError as e:
@@ -577,12 +578,12 @@ def restore(
         emit_step("drop_recreate_db", "running", f"Dropping and recreating database {DB_NAME}")
         try:
             ssh(
-                REMOTE_HOST,
+                RESTORE_HOST,
                 REMOTE_USER,
                 f"sudo -u postgres dropdb --if-exists --force {shlex.quote(DB_NAME)}",
             )
             ssh(
-                REMOTE_HOST,
+                RESTORE_HOST,
                 REMOTE_USER,
                 f"sudo -u postgres createdb --owner={shlex.quote(DB_USER)} {shlex.quote(DB_NAME)}",
             )
@@ -598,7 +599,7 @@ def restore(
         emit_step("restore_database", "running", "Restoring database from dump")
         try:
             ssh(
-                REMOTE_HOST,
+                RESTORE_HOST,
                 REMOTE_USER,
                 f"sudo -u postgres pg_restore --exit-on-error --dbname={shlex.quote(DB_NAME)} --no-owner --role={shlex.quote(DB_USER)} {shlex.quote(remote_dump_path)}",
             )
@@ -612,7 +613,7 @@ def restore(
         # Start service
         emit_step("start_service", "running", f"Starting {SERVICE_NAME}")
         try:
-            ssh(REMOTE_HOST, REMOTE_USER, f"systemctl start {shlex.quote(SERVICE_NAME)}")
+            ssh(RESTORE_HOST, REMOTE_USER, f"systemctl start {shlex.quote(SERVICE_NAME)}")
             service_stopped = False
             emit_step("start_service", "success", f"Started {SERVICE_NAME}")
         except subprocess.CalledProcessError as e:
@@ -625,7 +626,7 @@ def restore(
         emit_step("post_check", "running", "Verifying database connectivity")
         try:
             ssh(
-                REMOTE_HOST,
+                RESTORE_HOST,
                 REMOTE_USER,
                 f"sudo -u postgres psql -d {shlex.quote(DB_NAME)} -c 'SELECT 1'",
             )
@@ -656,7 +657,7 @@ def restore(
         if service_stopped:
             emit_step("start_service", "running", f"Best-effort restart of {SERVICE_NAME}")
             try:
-                ssh(REMOTE_HOST, REMOTE_USER, f"systemctl start {shlex.quote(SERVICE_NAME)}")
+                ssh(RESTORE_HOST, REMOTE_USER, f"systemctl start {shlex.quote(SERVICE_NAME)}")
                 emit_step("start_service", "success", f"Started {SERVICE_NAME}")
             except subprocess.CalledProcessError as e:
                 emit_step("start_service", "failure", f"Failed to restart service: {e.stderr}")
@@ -665,7 +666,7 @@ def restore(
         emit_step("cleanup", "running", "Cleaning up temporary files")
         cleanup_ok = True
         try:
-            result = ssh(REMOTE_HOST, REMOTE_USER, f"rm -f {shlex.quote(remote_dump_path)}", check=False)
+            result = ssh(RESTORE_HOST, REMOTE_USER, f"rm -f {shlex.quote(remote_dump_path)}", check=False)
             if result.returncode != 0:
                 print(f"[WARN] Remote cleanup returned non-zero: {result.stderr}", file=sys.stderr)
                 cleanup_ok = False
@@ -714,7 +715,8 @@ def main() -> int:
 
     print(f"Configuration:", file=sys.stderr)
     print(f"  Action: {action}", file=sys.stderr)
-    print(f"  Remote Host: {REMOTE_HOST}", file=sys.stderr)
+    print(f"  Backup Host: {BACKUP_HOST}", file=sys.stderr)
+    print(f"  Restore Host: {RESTORE_HOST}", file=sys.stderr)
     print(f"  Remote User: {REMOTE_USER}", file=sys.stderr)
     print(f"  Database: {DB_NAME}", file=sys.stderr)
     print(f"  DB User: {DB_USER}", file=sys.stderr)
@@ -752,7 +754,7 @@ def main() -> int:
         key_prefix = cenv.get("ECHOPORT_KEY_PREFIX", "")
 
         if not key_prefix:
-            key_prefix = f"python-podcast-staging/{timestamp}"
+            key_prefix = f"python-podcast-production-db/{timestamp}"
 
         print(f"  Key Prefix: {key_prefix}", file=sys.stderr)
         print(f"  Timestamp: {timestamp}", file=sys.stderr)
@@ -765,8 +767,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    # Script runs as deploy user (has SSH access to staging via deploy key)
-    # No sudo elevation needed - deploy user can SSH to staging as root
+    # Script runs as deploy user (has SSH access to production/staging via deploy key)
 
     # Ensure temp directory exists
     Path(TEMP_DIR).mkdir(parents=True, exist_ok=True)

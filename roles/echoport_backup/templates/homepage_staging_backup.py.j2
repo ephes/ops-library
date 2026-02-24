@@ -17,6 +17,7 @@ Deployed by Ansible from ops-control.
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -117,9 +118,6 @@ def finish_stdout(status: str, message: str = None) -> None:
         finish["message"] = message
     _emit(finish)
 
-
-import re
-
 # Strict regex for SSH identifiers (hostname, username)
 # Allows alphanumeric, dots, hyphens, underscores - no shell metacharacters
 _SSH_IDENTIFIER_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
@@ -144,7 +142,7 @@ def ssh(
     """Execute command on remote host via SSH."""
     _validate_ssh_identifier(remote_host, "remote_host")
     _validate_ssh_identifier(remote_user, "remote_user")
-    full_cmd = f"ssh {SSH_OPTS} {remote_user}@{remote_host} {cmd}"
+    full_cmd = f"ssh {SSH_OPTS} {remote_user}@{remote_host} {shlex.quote(cmd)}"
     print(f"[SSH] {cmd}", file=sys.stderr)
     result = subprocess.run(full_cmd, shell=True, capture_output=True, text=True)
     if check and result.returncode != 0:
@@ -629,7 +627,7 @@ def restore(
             ssh(
                 REMOTE_HOST,
                 REMOTE_USER,
-                shlex.quote(f"sudo -u postgres psql -d {DB_NAME} -c 'SELECT 1'"),
+                f"sudo -u postgres psql -d {shlex.quote(DB_NAME)} -c 'SELECT 1'",
             )
             emit_step("post_check", "success", "Database connectivity verified")
         except subprocess.CalledProcessError as e:

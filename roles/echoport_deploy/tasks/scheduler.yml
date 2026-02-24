@@ -48,3 +48,39 @@
     modification_time: preserve
     access_time: preserve
   when: echoport_cleanup_enabled
+
+- name: scheduler | Deploy staging DB refresh helper script
+  ansible.builtin.template:
+    src: staging-db-refresh.sh.j2
+    dest: "{{ echoport_site_path }}/staging-db-refresh.sh"
+    owner: "{{ echoport_user }}"
+    group: "{{ echoport_group }}"
+    mode: "0750"
+  when:
+    - echoport_staging_db_refresh_enabled
+    - echoport_staging_db_refresh_targets | length > 0
+
+- name: scheduler | Setup staging DB refresh cron job
+  ansible.builtin.cron:
+    name: "Echoport staging DB refresh"
+    minute: "{{ echoport_staging_db_refresh_minute }}"
+    hour: "{{ echoport_staging_db_refresh_hour }}"
+    job: >-
+      cd {{ echoport_site_path }} &&
+      {{ echoport_site_path }}/staging-db-refresh.sh
+      >> {{ echoport_home }}/logs/staging-db-refresh.log 2>&1
+    user: "{{ echoport_user }}"
+    state: "{{ 'present' if (echoport_staging_db_refresh_enabled and (echoport_staging_db_refresh_targets | length > 0)) else 'absent' }}"
+
+- name: scheduler | Create staging DB refresh log file
+  ansible.builtin.file:
+    path: "{{ echoport_home }}/logs/staging-db-refresh.log"
+    state: touch
+    owner: "{{ echoport_user }}"
+    group: "{{ echoport_group }}"
+    mode: "0640"
+    modification_time: preserve
+    access_time: preserve
+  when:
+    - echoport_staging_db_refresh_enabled
+    - echoport_staging_db_refresh_targets | length > 0
