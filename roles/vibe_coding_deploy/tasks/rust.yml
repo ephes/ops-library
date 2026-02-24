@@ -7,23 +7,31 @@
 - name: rust | Install rustup
   when: not vibe_coding_rustup_bin.stat.exists
   block:
+    - name: rust | Create temporary directory for installer
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: rustup_
+      register: vibe_coding_rustup_tmpdir
+
     - name: rust | Download rustup-init
       ansible.builtin.get_url:
         url: https://sh.rustup.rs
-        dest: /tmp/rustup-init.sh
+        dest: "{{ vibe_coding_rustup_tmpdir.path }}/rustup-init.sh"
         mode: "0755"
 
     - name: rust | Run rustup-init
       ansible.builtin.command:
-        cmd: /tmp/rustup-init.sh -y --no-modify-path
+        cmd: "{{ vibe_coding_rustup_tmpdir.path }}/rustup-init.sh -y --no-modify-path"
       become: true
       become_user: "{{ vibe_coding_user }}"
       changed_when: true
 
-    - name: rust | Remove installer
+  always:
+    - name: rust | Remove temporary installer directory
       ansible.builtin.file:
-        path: /tmp/rustup-init.sh
+        path: "{{ vibe_coding_rustup_tmpdir.path }}"
         state: absent
+      when: vibe_coding_rustup_tmpdir is defined
 
 - name: rust | Ensure rust-analyzer is installed
   ansible.builtin.command:

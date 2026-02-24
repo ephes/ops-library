@@ -9,7 +9,7 @@
 - name: lazygit | Install from GitHub releases
   when: >-
     vibe_coding_lazygit_version_check.rc != 0 or
-    vibe_coding_lazygit_version_check.stdout is not search(vibe_coding_lazygit_version)
+    vibe_coding_lazygit_version_check.stdout is not search(vibe_coding_lazygit_version | regex_escape)
   block:
     - name: lazygit | Determine system architecture
       ansible.builtin.set_fact:
