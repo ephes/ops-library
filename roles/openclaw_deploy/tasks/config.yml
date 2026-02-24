@@ -6,6 +6,32 @@
 
 - name: config | Build gateway config from individual variables
   ansible.builtin.set_fact:
+    _openclaw_gateway_access_patch: >-
+      {{
+        {
+          "gateway": {
+            "bind": ("lan" if (openclaw_traefik_enabled | bool) else "loopback")
+          }
+        }
+        | combine(
+            (
+              {
+                "gateway": {
+                  "controlUi": {
+                    "allowedOrigins": [("https://" ~ openclaw_traefik_host)]
+                  }
+                }
+              }
+              if (openclaw_traefik_enabled | bool)
+              else {}
+            ),
+            recursive=True
+          )
+      }}
+  when: openclaw_gateway_config | length == 0
+
+- name: config | Build gateway config from individual variables
+  ansible.builtin.set_fact:
     _openclaw_built_config: >-
       {{
         {
@@ -23,6 +49,7 @@
             }
           }
         }
+        | combine(_openclaw_gateway_access_patch, recursive=True)
       }}
   when: openclaw_gateway_config | length == 0
 
@@ -50,21 +77,50 @@
       ansible.builtin.set_fact:
         _openclaw_existing_config: "{{ _openclaw_existing_config_raw.content | b64decode | from_json }}"
 
-    - name: config | Patch WhatsApp plugin to disabled
+    - name: config | Build runtime config patch
+      ansible.builtin.set_fact:
+        _openclaw_runtime_patch: >-
+          {{
+            {
+              "plugins": {
+                "entries": {
+                  "whatsapp": {
+                    "enabled": false
+                  }
+                }
+              },
+              "gateway": {
+                "bind": ("lan" if (openclaw_traefik_enabled | bool) else "loopback")
+              }
+            }
+            | combine(
+                (
+                  {
+                    "gateway": {
+                      "controlUi": {
+                        "allowedOrigins": [("https://" ~ openclaw_traefik_host)]
+                      }
+                    }
+                  }
+                  if (openclaw_traefik_enabled | bool)
+                  else {}
+                ),
+                recursive=True
+              )
+          }}
+
+    - name: config | Merge runtime config patch
+      ansible.builtin.set_fact:
+        _openclaw_patched_config: "{{ _openclaw_existing_config | combine(_openclaw_runtime_patch, recursive=True) }}"
+
+    - name: config | Persist runtime config patch
       ansible.builtin.copy:
-        content: "{{ _openclaw_existing_config | combine(_openclaw_whatsapp_patch, recursive=True) | to_nice_json }}\n"
+        content: "{{ _openclaw_patched_config | to_nice_json }}\n"
         dest: "{{ openclaw_data_dir }}/openclaw.json"
         owner: "1000"
         group: "1000"
         mode: "0644"
-      vars:
-        _openclaw_whatsapp_patch:
-          plugins:
-            entries:
-              whatsapp:
-                enabled: false
-      when: >
-        (_openclaw_existing_config.plugins.entries.whatsapp.enabled | default(true)) | bool
+      when: _openclaw_patched_config != _openclaw_existing_config
       notify: restart openclaw
 
 - name: config | Render SOUL.md (system prompt)
