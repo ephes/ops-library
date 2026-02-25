@@ -10,6 +10,10 @@ This role sets up a backup runner that can be triggered by Echoport (or directly
 4. Upload to MinIO object storage
 5. Output `ECHOPORT_RESULT:{...}` for Echoport to parse
 
+For media backup services (for example homepage/python-podcast templates in this role), object data is
+stored in a rolling prefix (`<service>/current/objects`) while each run still writes a per-run manifest
+under `ECHOPORT_KEY_PREFIX`.
+
 ## Requirements
 
 - FastDeploy must be installed and running
@@ -73,6 +77,20 @@ When triggering a backup via FastDeploy/Echoport, the following context variable
 | `ECHOPORT_BUCKET` | MinIO bucket name |
 | `ECHOPORT_KEY_PREFIX` | Object key prefix (e.g., `nyxmon/2024-01-15T02-00-00`) |
 | `ECHOPORT_TIMESTAMP` | Backup timestamp |
+| `ECHOPORT_MEDIA_OBJECTS_PREFIX` | Optional override for rolling media object prefix (default `<prefix_root>/current`) |
+
+## Media Rolling Mode Notes
+
+Media templates in this role use rolling object storage by default:
+
+- Objects are copied to `.../current/objects` (incremental destination).
+- Per-run manifests/checksums are still written under the run key prefix for traceability.
+- Point-in-time media restore is not supported in this rolling mode; restore reads from the current objects prefix.
+
+Operational tradeoff:
+
+- Media templates use `rclone copy`, which does not delete objects from the destination if they were removed at source.
+- This is safer for backup retention, but destination may accumulate deleted-from-source objects over time.
 
 ## Output Format
 
