@@ -17,3 +17,17 @@
   ansible.builtin.systemd:
     name: traefik
     state: restarted
+
+- name: Restart openclaw metrics endpoint
+  listen: restart openclaw-metrics-endpoint
+  ansible.builtin.systemd:
+    name: "{{ openclaw_metrics_endpoint_service_name }}"
+    state: restarted
+    daemon_reload: true
+
+- name: Restart openclaw metrics collector timer
+  listen: restart openclaw-metrics-collector-timer
+  ansible.builtin.systemd:
+    name: "{{ openclaw_metrics_endpoint_timer_name }}.timer"
+    state: restarted
+    daemon_reload: true

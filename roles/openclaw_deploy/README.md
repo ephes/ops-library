@@ -22,7 +22,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
   roles:
     - role: local.ops_library.openclaw_deploy
       vars:
-        openclaw_version: "v2026.2.21"
+        openclaw_version: "v2026.2.23"
         openclaw_data_dir: "/mnt/cryptdata/openclaw/data"
         openclaw_gateway_token: "{{ sops_secrets.gateway_token }}"
         openclaw_anthropic_api_key: "{{ sops_secrets.anthropic_api_key }}"
@@ -45,6 +45,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 - When Traefik is enabled, role-managed config sets `gateway.bind: "lan"` and `gateway.controlUi.allowedOrigins` to `https://<openclaw_traefik_host>` so the host-side reverse proxy can reach the gateway UI safely.
 - Gateway config (`openclaw.json`) is seeded once on first deploy and not overwritten on subsequent runs (use `openclaw_force_config: true` to overwrite). Existing configs are patched to ensure unused plugins (WhatsApp) are explicitly disabled.
 - Logs are written to a bind-mounted log directory with automatic logrotate.
+- Optional: an authenticated loopback HTTP endpoint (`/.well-known/openclaw-health`) can be enabled for Nyxmon `json-metrics` checks.
 
 ## Role Variables
 
@@ -96,6 +97,20 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 | `openclaw_traefik_config_path` | `/etc/traefik/dynamic/openclaw.yml` | Path for Traefik dynamic config |
 | `openclaw_traefik_entrypoints` | `[web-secure]` | Traefik entrypoints to listen on |
 | `openclaw_traefik_cert_resolver` | `""` | TLS cert resolver (empty = default TLS) |
+
+### Nyxmon Metrics Endpoint
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `openclaw_metrics_endpoint_enabled` | `false` | Enable OpenClaw JSON metrics endpoint for Nyxmon |
+| `openclaw_metrics_endpoint_bind` | `127.0.0.1` | Bind address for endpoint service |
+| `openclaw_metrics_endpoint_port` | `9104` | Endpoint port |
+| `openclaw_metrics_endpoint_path` | `/.well-known/openclaw-health` | Endpoint path |
+| `openclaw_metrics_endpoint_auth_user` | `CHANGEME` | Basic-auth username (required when enabled) |
+| `openclaw_metrics_endpoint_auth_password` | `CHANGEME` | Basic-auth password (required when enabled) |
+| `openclaw_metrics_endpoint_timer_interval` | `120` | Collector timer interval in seconds |
+| `openclaw_metrics_endpoint_container_name` | `{{ openclaw_container_name }}` | OpenClaw container queried by collector |
+| `openclaw_metrics_endpoint_remove_data_on_disable` | `false` | Remove `openclaw_metrics_endpoint_data_dir` when endpoint is disabled |
 
 ### Advanced
 
@@ -150,7 +165,24 @@ The role performs a two-stage health check after deploy:
 1. **TCP port check** — `wait_for` on the bound host/port (TCP connect)
 2. **Container check** — verifies the Docker container is in running state
 
-Note: The gateway is a WebSocket server and does not serve plain HTTP, so HTTP-level probes are not used.
+Note: The deploy health check intentionally uses TCP + container state. OpenClaw also serves a control UI over HTTP, but role health checks avoid endpoint/auth coupling.
+
+## Nyxmon Monitoring Integration
+
+When `openclaw_metrics_endpoint_enabled: true`:
+
+- a root collector timer (`openclaw-metrics-collector.timer`) runs `docker exec <container> node dist/index.js ... --json` and writes JSON to:
+  - `{{ openclaw_metrics_endpoint_json_path }}`
+- an unprivileged HTTP server (`{{ openclaw_metrics_endpoint_service_name }}`) serves the JSON with basic auth at:
+  - `http://{{ openclaw_metrics_endpoint_bind }}:{{ openclaw_metrics_endpoint_port }}{{ openclaw_metrics_endpoint_path }}`
+- response includes `meta.age_seconds` to detect stale collector output.
+
+Designed for Nyxmon `json-metrics` checks, for example:
+
+- `$.openclaw.collector_ok == true`
+- `$.openclaw.health.ok == true`
+- `$.openclaw.channels.telegram.running == true`
+- `$.meta.age_seconds < 600`
 
 ## Docker Compose Services
 

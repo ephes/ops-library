@@ -1,0 +1,231 @@
+---
+- name: metrics | Skip OpenClaw metrics endpoint when disabled
+  ansible.builtin.debug:
+    msg: "OpenClaw metrics endpoint skipped (openclaw_metrics_endpoint_enabled=false)."
+  when: not openclaw_metrics_endpoint_enabled | bool
+
+- name: metrics | Disable OpenClaw metrics endpoint when disabled
+  when: not openclaw_metrics_endpoint_enabled | bool
+  block:
+    - name: metrics | Check metrics unit files
+      ansible.builtin.stat:
+        path: "{{ item.path }}"
+      loop:
+        - name: "{{ openclaw_metrics_endpoint_service_name }}"
+          path: "/etc/systemd/system/{{ openclaw_metrics_endpoint_service_name }}.service"
+        - name: "{{ openclaw_metrics_endpoint_timer_name }}.timer"
+          path: "/etc/systemd/system/{{ openclaw_metrics_endpoint_timer_name }}.timer"
+      register: _openclaw_metrics_unit_stats
+
+    - name: metrics | Stop and disable metrics services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+        daemon_reload: true
+      loop: >-
+        {{
+          _openclaw_metrics_unit_stats.results
+          | selectattr("stat.exists", "equalto", true)
+          | map(attribute="item.name")
+          | list
+        }}
+      when: >-
+        (
+          _openclaw_metrics_unit_stats.results
+          | selectattr("stat.exists", "equalto", true)
+          | list
+          | length
+        ) > 0
+
+    - name: metrics | Remove metrics systemd units
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/etc/systemd/system/{{ openclaw_metrics_endpoint_service_name }}.service"
+        - "/etc/systemd/system/{{ openclaw_metrics_endpoint_timer_name }}.service"
+        - "/etc/systemd/system/{{ openclaw_metrics_endpoint_timer_name }}.timer"
+
+    - name: metrics | Remove metrics scripts
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ openclaw_metrics_endpoint_server_path }}"
+        - "{{ openclaw_metrics_endpoint_collector_path }}"
+
+    - name: metrics | Remove metrics auth file and directory
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ openclaw_metrics_endpoint_htpasswd_path }}"
+        - "{{ openclaw_metrics_endpoint_htpasswd_dir }}"
+
+    - name: metrics | Remove metrics data directory when requested
+      ansible.builtin.file:
+        path: "{{ openclaw_metrics_endpoint_data_dir }}"
+        state: absent
+      when: openclaw_metrics_endpoint_remove_data_on_disable | bool
+
+    - name: metrics | Reload systemd after unit removal
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+- name: metrics | Deploy OpenClaw metrics endpoint
+  when: openclaw_metrics_endpoint_enabled | bool
+  block:
+    - name: metrics | Validate required variables
+      ansible.builtin.assert:
+        that:
+          - openclaw_metrics_endpoint_auth_user is defined
+          - openclaw_metrics_endpoint_auth_user != "CHANGEME"
+          - openclaw_metrics_endpoint_auth_user | length > 0
+          - openclaw_metrics_endpoint_auth_password is defined
+          - openclaw_metrics_endpoint_auth_password != "CHANGEME"
+          - openclaw_metrics_endpoint_auth_password | length > 0
+          - openclaw_metrics_endpoint_bind | length > 0
+          - openclaw_metrics_endpoint_port | int > 0
+          - openclaw_metrics_endpoint_port | int <= 65535
+        fail_msg: >-
+          Invalid OpenClaw metrics endpoint configuration.
+          Set auth user/password and valid bind/port values before enabling.
+
+    - name: metrics | Install dependencies
+      ansible.builtin.package:
+        name: "{{ openclaw_metrics_endpoint_packages }}"
+        state: present
+
+    - name: metrics | Create metrics system group
+      ansible.builtin.group:
+        name: "{{ openclaw_metrics_endpoint_group }}"
+        system: true
+        state: present
+
+    - name: metrics | Create metrics system user
+      ansible.builtin.user:
+        name: "{{ openclaw_metrics_endpoint_user }}"
+        group: "{{ openclaw_metrics_endpoint_group }}"
+        shell: /usr/sbin/nologin
+        create_home: false
+        system: true
+        state: present
+
+    - name: metrics | Ensure data directory exists
+      ansible.builtin.file:
+        path: "{{ openclaw_metrics_endpoint_data_dir }}"
+        state: directory
+        owner: root
+        group: "{{ openclaw_metrics_endpoint_group }}"
+        mode: "0750"
+
+    - name: metrics | Ensure htpasswd directory exists
+      ansible.builtin.file:
+        path: "{{ openclaw_metrics_endpoint_htpasswd_dir }}"
+        state: directory
+        owner: root
+        group: "{{ openclaw_metrics_endpoint_group }}"
+        mode: "0750"
+
+    - name: metrics | Deploy OpenClaw collector script
+      ansible.builtin.template:
+        src: openclaw-metrics-collector.py.j2
+        dest: "{{ openclaw_metrics_endpoint_collector_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+      notify: restart openclaw-metrics-collector-timer
+
+    - name: metrics | Deploy OpenClaw metrics HTTP server
+      ansible.builtin.template:
+        src: openclaw-metrics-httpd.py.j2
+        dest: "{{ openclaw_metrics_endpoint_server_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+      notify: restart openclaw-metrics-endpoint
+
+    - name: metrics | Verify existing htpasswd credentials
+      ansible.builtin.command: >-
+        htpasswd -viB {{ openclaw_metrics_endpoint_htpasswd_path }} {{ openclaw_metrics_endpoint_auth_user }}
+      args:
+        stdin: "{{ openclaw_metrics_endpoint_auth_password }}"
+      register: _openclaw_metrics_htpasswd_verify
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: metrics | Generate htpasswd entry
+      ansible.builtin.command: "htpasswd -niB {{ openclaw_metrics_endpoint_auth_user }}"
+      args:
+        stdin: "{{ openclaw_metrics_endpoint_auth_password }}"
+      register: _openclaw_metrics_htpasswd_entry
+      changed_when: false
+      when: _openclaw_metrics_htpasswd_verify.rc != 0
+      no_log: true
+
+    - name: metrics | Write htpasswd file
+      ansible.builtin.copy:
+        dest: "{{ openclaw_metrics_endpoint_htpasswd_path }}"
+        content: "{{ _openclaw_metrics_htpasswd_entry.stdout }}\n"
+        owner: root
+        group: "{{ openclaw_metrics_endpoint_group }}"
+        mode: "0640"
+      notify: restart openclaw-metrics-endpoint
+      when: _openclaw_metrics_htpasswd_verify.rc != 0
+      no_log: true
+
+    - name: metrics | Create collector service unit
+      ansible.builtin.template:
+        src: openclaw-metrics-collector.service.j2
+        dest: "/etc/systemd/system/{{ openclaw_metrics_endpoint_timer_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: reload systemd
+
+    - name: metrics | Create collector timer unit
+      ansible.builtin.template:
+        src: openclaw-metrics-collector.timer.j2
+        dest: "/etc/systemd/system/{{ openclaw_metrics_endpoint_timer_name }}.timer"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart openclaw-metrics-collector-timer
+
+    - name: metrics | Create HTTP endpoint service unit
+      ansible.builtin.template:
+        src: openclaw-metrics-endpoint.service.j2
+        dest: "/etc/systemd/system/{{ openclaw_metrics_endpoint_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart openclaw-metrics-endpoint
+
+    - name: metrics | Flush handlers so units are reloaded before first run
+      ansible.builtin.meta: flush_handlers
+
+    - name: metrics | Run collector once for initial metrics file
+      ansible.builtin.systemd:
+        name: "{{ openclaw_metrics_endpoint_timer_name }}.service"
+        state: started
+      changed_when: false
+
+    - name: metrics | Ensure collector timer is enabled and running
+      ansible.builtin.systemd:
+        name: "{{ openclaw_metrics_endpoint_timer_name }}.timer"
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: metrics | Ensure metrics endpoint service is enabled and running
+      ansible.builtin.systemd:
+        name: "{{ openclaw_metrics_endpoint_service_name }}"
+        enabled: true
+        state: started
+        daemon_reload: true

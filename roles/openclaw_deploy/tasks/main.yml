@@ -44,3 +44,6 @@
 - name: main | Run OpenClaw health check
   ansible.builtin.import_tasks: health.yml
   when: openclaw_healthcheck_enabled | bool
+
+- name: main | Configure OpenClaw metrics endpoint for Nyxmon
+  ansible.builtin.import_tasks: metrics.yml

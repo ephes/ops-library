@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""Collect OpenClaw health signals and write JSON for Nyxmon json-metrics."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import socket
+import subprocess
+import sys
+from datetime import datetime, timezone
+from typing import Any
+
+
+def run_json_command(command: list[str], timeout: int) -> dict[str, Any]:
+    completed = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if completed.returncode != 0:
+        stderr = (completed.stderr or "").strip()
+        raise RuntimeError(
+            f"command failed rc={completed.returncode}: {' '.join(command)}: {stderr}"
+        )
+    try:
+        return json.loads(completed.stdout)
+    except json.JSONDecodeError as err:
+        raise RuntimeError(f"invalid JSON from {' '.join(command)}: {err}") from err
+
+
+def build_payload() -> dict[str, Any]:
+    return {
+        "hostname": socket.gethostname(),
+        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+        "openclaw": {
+            "collector_ok": True,
+            "collector_errors": [],
+            "health": {
+                "ok": False,
+                "telegram_probe_ok": False,
+            },
+            "channels": {
+                "telegram": {
+                    "running": False,
+                    "configured": False,
+                    "last_error": None,
+                }
+            },
+        },
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Collect OpenClaw health and channel status JSON"
+    )
+    parser.add_argument("--container", required=True, help="OpenClaw container name")
+    parser.add_argument("--output", required=True, help="Output JSON path")
+    parser.add_argument(
+        "--command-timeout",
+        type=int,
+        default={{ openclaw_metrics_endpoint_command_timeout }},
+        help="Timeout in seconds for each OpenClaw command",
+    )
+    args = parser.parse_args()
+
+    payload = build_payload()
+    openclaw = payload["openclaw"]
+
+    health_cmd = [
+        "docker",
+        "exec",
+        args.container,
+        "node",
+        "dist/index.js",
+        "health",
+        "--json",
+    ]
+    channels_cmd = [
+        "docker",
+        "exec",
+        args.container,
+        "node",
+        "dist/index.js",
+        "channels",
+        "status",
+        "--json",
+    ]
+
+    try:
+        health_json = run_json_command(health_cmd, args.command_timeout)
+        openclaw["health"]["ok"] = bool(health_json.get("ok"))
+        telegram_probe = (
+            (health_json.get("channels") or {})
+            .get("telegram", {})
+            .get("probe", {})
+            .get("ok")
+        )
+        openclaw["health"]["telegram_probe_ok"] = bool(telegram_probe)
+    except Exception as err:  # noqa: BLE001
+        openclaw["collector_ok"] = False
+        openclaw["collector_errors"].append(str(err))
+
+    try:
+        channels_json = run_json_command(channels_cmd, args.command_timeout)
+        telegram = (channels_json.get("channels") or {}).get("telegram", {})
+        openclaw["channels"]["telegram"]["running"] = bool(telegram.get("running"))
+        openclaw["channels"]["telegram"]["configured"] = bool(
+            telegram.get("configured")
+        )
+        openclaw["channels"]["telegram"]["last_error"] = telegram.get("lastError")
+    except Exception as err:  # noqa: BLE001
+        openclaw["collector_ok"] = False
+        openclaw["collector_errors"].append(str(err))
+
+    output_dir = os.path.dirname(args.output)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+
+    tmp_path = f"{args.output}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, sort_keys=True)
+    os.replace(tmp_path, args.output)
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

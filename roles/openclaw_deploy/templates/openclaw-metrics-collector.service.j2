@@ -1,0 +1,22 @@
+[Unit]
+Description=Collect OpenClaw metrics and write JSON
+After=network.target docker.service openclaw.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 {{ openclaw_metrics_endpoint_collector_path }} \
+  --container {{ openclaw_metrics_endpoint_container_name }} \
+  --output {{ openclaw_metrics_endpoint_json_path }} \
+  --command-timeout {{ openclaw_metrics_endpoint_command_timeout }}
+
+# Root is required for docker exec.
+User=root
+Group=root
+
+# Ensure data directory exists and has readable group permissions for endpoint service.
+ExecStartPre=/bin/mkdir -p {{ openclaw_metrics_endpoint_data_dir }}
+ExecStartPre=/bin/chown root:{{ openclaw_metrics_endpoint_group }} {{ openclaw_metrics_endpoint_data_dir }}
+ExecStartPre=/bin/chmod 0750 {{ openclaw_metrics_endpoint_data_dir }}
+ExecStartPost=/bin/chown root:{{ openclaw_metrics_endpoint_group }} {{ openclaw_metrics_endpoint_json_path }}
+ExecStartPost=/bin/chmod 0640 {{ openclaw_metrics_endpoint_json_path }}
