@@ -39,6 +39,14 @@
     fail_msg: >-
       openclaw_anthropic_api_key is required. Set it in the playbook or via SOPS secrets.
 
+- name: validate | Optional OpenAI API key is not placeholder
+  ansible.builtin.assert:
+    that:
+      - openclaw_openai_api_key != 'CHANGEME'
+    fail_msg: >-
+      openclaw_openai_api_key is optional, but when set it must not be CHANGEME.
+  when: openclaw_openai_api_key | length > 0
+
 - name: validate | Telegram bot token when Telegram is enabled
   ansible.builtin.assert:
     that:

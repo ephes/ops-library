@@ -78,6 +78,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `openclaw_openai_api_key` | `""` | Optional OpenAI API key (`OPENAI_API_KEY`) for provider `openai` |
 | `openclaw_reply_system_prompt` | `You are a concise assistant.` | System prompt for AI replies |
 
 ### Build Configuration
