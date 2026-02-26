@@ -1,6 +1,6 @@
 # OpenClaw Deploy Role
 
-Deploys the OpenClaw gateway on Ubuntu using Docker Compose and systemd. The gateway supports multiple messaging channels (Telegram, WhatsApp) with AI-powered replies via Anthropic.
+Deploys the OpenClaw gateway on Ubuntu using Docker Compose and systemd. The gateway supports multiple messaging channels (Telegram, WhatsApp) with AI-powered replies via configured providers (Anthropic/OpenAI/OpenRouter/Ollama).
 
 ## Key Difference
 
@@ -39,7 +39,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 - OpenClaw runs as a Docker container managed by a systemd oneshot unit.
 - The source repo is cloned to a build directory and `docker build` creates the image using the upstream Dockerfile. The container uses the upstream `CMD` — no command override in compose.
 - The gateway handles all messaging channels internally (Telegram via grammY, etc.).
-- AI replies are handled by the gateway using the Anthropic API — no external scripts needed.
+- AI replies are handled by the gateway using configured provider APIs — no external scripts needed.
 - Persistent state (sessions, config) is stored in a bind-mounted directory owned by container uid 1000.
 - The container binds to `127.0.0.1:18789` by default, with optional Traefik reverse proxy for external access. When Traefik is enabled, the bind host is validated to be loopback.
 - When Traefik is enabled, role-managed config sets `gateway.bind: "lan"` and `gateway.controlUi.allowedOrigins` to `https://<openclaw_traefik_host>` so the host-side reverse proxy can reach the gateway UI safely.
@@ -79,6 +79,9 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `openclaw_openai_api_key` | `""` | Optional OpenAI API key (`OPENAI_API_KEY`) for provider `openai` |
+| `openclaw_openrouter_api_key` | `""` | Optional OpenRouter API key (`OPENROUTER_API_KEY`) for provider `openrouter` |
+| `openclaw_ollama_api_key` | `""` | Optional Ollama API key (`OLLAMA_API_KEY`) for provider `ollama` |
+| `openclaw_ollama_base_url` | `""` | Optional Ollama endpoint (`OLLAMA_BASE_URL`); must be reachable from inside the OpenClaw container |
 | `openclaw_reply_system_prompt` | `You are a concise assistant.` | System prompt for AI replies |
 
 ### Build Configuration

@@ -47,6 +47,30 @@
       openclaw_openai_api_key is optional, but when set it must not be CHANGEME.
   when: openclaw_openai_api_key | length > 0
 
+- name: validate | Optional OpenRouter API key is not placeholder
+  ansible.builtin.assert:
+    that:
+      - openclaw_openrouter_api_key != 'CHANGEME'
+    fail_msg: >-
+      openclaw_openrouter_api_key is optional, but when set it must not be CHANGEME.
+  when: openclaw_openrouter_api_key | length > 0
+
+- name: validate | Optional Ollama API key is not placeholder
+  ansible.builtin.assert:
+    that:
+      - openclaw_ollama_api_key != 'CHANGEME'
+    fail_msg: >-
+      openclaw_ollama_api_key is optional, but when set it must not be CHANGEME.
+  when: openclaw_ollama_api_key | length > 0
+
+- name: validate | Optional Ollama base URL format
+  ansible.builtin.assert:
+    that:
+      - openclaw_ollama_base_url is regex('^https?://')
+    fail_msg: >-
+      openclaw_ollama_base_url is optional, but when set it must start with http:// or https://.
+  when: openclaw_ollama_base_url | length > 0
+
 - name: validate | Telegram bot token when Telegram is enabled
   ansible.builtin.assert:
     that:
