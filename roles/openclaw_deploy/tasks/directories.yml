@@ -21,6 +21,14 @@
     - "{{ openclaw_data_dir }}"
     - "{{ openclaw_log_dir }}"
 
+- name: directories | Ensure OpenClaw credentials directory is private
+  ansible.builtin.file:
+    path: "{{ openclaw_data_dir }}/credentials"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0700"
+
 - name: directories | Ensure weeknotes directories exist
   ansible.builtin.file:
     path: "{{ item }}"

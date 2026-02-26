@@ -102,15 +102,50 @@
       Invalid resource limits. openclaw_mem_limit must match [0-9]+[bkmg] (e.g. "2g", "512m"),
       openclaw_cpus must be > 0, openclaw_pids_limit must be > 0.
 
+- name: validate | Gateway config file mode format
+  ansible.builtin.assert:
+    that:
+      - openclaw_gateway_config_mode | string is regex('^0?[0-7]{3,4}$')
+    fail_msg: >-
+      openclaw_gateway_config_mode must be a valid octal file mode string (for example "0600").
+
+- name: validate | Gateway trusted proxies list
+  ansible.builtin.assert:
+    that:
+      - openclaw_gateway_trusted_proxies is sequence
+      - openclaw_gateway_trusted_proxies is not string
+      - >-
+        (
+          openclaw_gateway_trusted_proxies
+          | map('trim')
+          | reject('equalto', '')
+          | list
+          | length
+        ) == (openclaw_gateway_trusted_proxies | length)
+    fail_msg: >-
+      openclaw_gateway_trusted_proxies must be a list of non-empty proxy IP/CIDR strings.
+
+- name: validate | Gateway auth rate limiting settings
+  ansible.builtin.assert:
+    that:
+      - openclaw_gateway_auth_rate_limit_max_attempts | int > 0
+      - openclaw_gateway_auth_rate_limit_window_ms | int > 0
+      - openclaw_gateway_auth_rate_limit_lockout_ms | int >= 0
+    fail_msg: >-
+      Gateway auth rate limit values must be positive (lockout_ms can be 0).
+  when: openclaw_gateway_auth_rate_limit_enabled | bool
+
 - name: validate | Traefik settings when enabled
   ansible.builtin.assert:
     that:
       - openclaw_traefik_host | length > 0
       - openclaw_traefik_config_path | length > 0
       - openclaw_bind_host == '127.0.0.1' or openclaw_bind_host == 'localhost'
+      - openclaw_gateway_trusted_proxies | length > 0
     fail_msg: >-
       openclaw_traefik_host and openclaw_traefik_config_path are required when Traefik is enabled.
-      openclaw_bind_host must be 127.0.0.1 (loopback) when Traefik is the external entry point.
+      openclaw_bind_host must be 127.0.0.1 (loopback) and openclaw_gateway_trusted_proxies must be non-empty
+      when Traefik is the external entry point.
   when: openclaw_traefik_enabled | bool
 
 - name: validate | Weeknotes backend when weeknotes is enabled

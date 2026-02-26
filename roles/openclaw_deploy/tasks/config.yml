@@ -10,9 +10,30 @@
       {{
         {
           "gateway": {
-            "bind": ("lan" if (openclaw_traefik_enabled | bool) else "loopback")
+            "bind": ("lan" if (openclaw_traefik_enabled | bool) else "loopback"),
+            "trustedProxies": openclaw_gateway_trusted_proxies,
+            "allowRealIpFallback": openclaw_gateway_allow_real_ip_fallback | bool
           }
         }
+        | combine(
+            (
+              {
+                "gateway": {
+                  "auth": {
+                    "rateLimit": {
+                      "maxAttempts": openclaw_gateway_auth_rate_limit_max_attempts | int,
+                      "windowMs": openclaw_gateway_auth_rate_limit_window_ms | int,
+                      "lockoutMs": openclaw_gateway_auth_rate_limit_lockout_ms | int,
+                      "exemptLoopback": openclaw_gateway_auth_rate_limit_exempt_loopback | bool
+                    }
+                  }
+                }
+              }
+              if (openclaw_gateway_auth_rate_limit_enabled | bool)
+              else {}
+            ),
+            recursive=True
+          )
         | combine(
             (
               {
@@ -59,7 +80,7 @@
     dest: "{{ openclaw_data_dir }}/openclaw.json"
     owner: "1000"
     group: "1000"
-    mode: "0644"
+    mode: "{{ openclaw_gateway_config_mode }}"
   no_log: true
   when: not openclaw_config_stat.stat.exists or (openclaw_force_config | bool)
   notify: restart openclaw
@@ -90,9 +111,30 @@
                 }
               },
               "gateway": {
-                "bind": ("lan" if (openclaw_traefik_enabled | bool) else "loopback")
+                "bind": ("lan" if (openclaw_traefik_enabled | bool) else "loopback"),
+                "trustedProxies": openclaw_gateway_trusted_proxies,
+                "allowRealIpFallback": openclaw_gateway_allow_real_ip_fallback | bool
               }
             }
+            | combine(
+                (
+                  {
+                    "gateway": {
+                      "auth": {
+                        "rateLimit": {
+                          "maxAttempts": openclaw_gateway_auth_rate_limit_max_attempts | int,
+                          "windowMs": openclaw_gateway_auth_rate_limit_window_ms | int,
+                          "lockoutMs": openclaw_gateway_auth_rate_limit_lockout_ms | int,
+                          "exemptLoopback": openclaw_gateway_auth_rate_limit_exempt_loopback | bool
+                        }
+                      }
+                    }
+                  }
+                  if (openclaw_gateway_auth_rate_limit_enabled | bool)
+                  else {}
+                ),
+                recursive=True
+              )
             | combine(
                 (
                   {
@@ -119,7 +161,7 @@
         dest: "{{ openclaw_data_dir }}/openclaw.json"
         owner: "1000"
         group: "1000"
-        mode: "0644"
+        mode: "{{ openclaw_gateway_config_mode }}"
       when: _openclaw_patched_config != _openclaw_existing_config
       notify: restart openclaw
 

@@ -43,6 +43,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 - Persistent state (sessions, config) is stored in a bind-mounted directory owned by container uid 1000.
 - The container binds to `127.0.0.1:18789` by default, with optional Traefik reverse proxy for external access. When Traefik is enabled, the bind host is validated to be loopback.
 - When Traefik is enabled, role-managed config sets `gateway.bind: "lan"` and `gateway.controlUi.allowedOrigins` to `https://<openclaw_traefik_host>` so the host-side reverse proxy can reach the gateway UI safely.
+- Role-managed gateway hardening sets explicit `gateway.trustedProxies`, disables `gateway.allowRealIpFallback`, and configures `gateway.auth.rateLimit`.
 - Gateway config (`openclaw.json`) is seeded once on first deploy and not overwritten on subsequent runs (use `openclaw_force_config: true` to overwrite). Existing configs are patched to ensure unused plugins (WhatsApp) are explicitly disabled.
 - Logs are written to a bind-mounted log directory with automatic logrotate.
 - Optional: an authenticated loopback HTTP endpoint (`/.well-known/openclaw-health`) can be enabled for Nyxmon `json-metrics` checks.
@@ -64,6 +65,19 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 | `openclaw_bind_host` | `127.0.0.1` | Host IP to bind the container port |
 | `openclaw_host_port` | `18789` | Host port for the gateway |
 | `openclaw_container_port` | `18789` | Container port for the gateway |
+
+### Gateway Hardening
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `openclaw_gateway_config_mode` | `0600` | File mode used for `openclaw.json` |
+| `openclaw_gateway_trusted_proxies` | `[127.0.0.1, ::1]` | Trusted proxy IP/CIDR list written to `gateway.trustedProxies` |
+| `openclaw_gateway_allow_real_ip_fallback` | `false` | Controls `gateway.allowRealIpFallback` |
+| `openclaw_gateway_auth_rate_limit_enabled` | `true` | Enable `gateway.auth.rateLimit` patching |
+| `openclaw_gateway_auth_rate_limit_max_attempts` | `10` | Failed auth attempts per window |
+| `openclaw_gateway_auth_rate_limit_window_ms` | `60000` | Rate-limit window in ms |
+| `openclaw_gateway_auth_rate_limit_lockout_ms` | `300000` | Lockout duration in ms after threshold |
+| `openclaw_gateway_auth_rate_limit_exempt_loopback` | `true` | Exempt loopback clients from auth rate limiting |
 
 ### Telegram Channel
 
