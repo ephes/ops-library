@@ -15,6 +15,9 @@ services:
     volumes:
       - "{{ openclaw_data_dir }}:/home/node/.openclaw"
       - "{{ openclaw_log_dir }}:/tmp/openclaw"
+{% if openclaw_weeknotes_enabled | bool and openclaw_weeknotes_backend == 's3' %}
+      - "{{ openclaw_weeknotes_s3_mc_host_path }}:{{ openclaw_weeknotes_s3_mc_container_path }}:ro"
+{% endif %}
 
   openclaw-cli:
     image: {{ openclaw_image_name }}:{{ openclaw_image_tag }}
@@ -26,5 +29,8 @@ services:
       - .env
     volumes:
       - "{{ openclaw_data_dir }}:/home/node/.openclaw"
+{% if openclaw_weeknotes_enabled | bool and openclaw_weeknotes_backend == 's3' %}
+      - "{{ openclaw_weeknotes_s3_mc_host_path }}:{{ openclaw_weeknotes_s3_mc_container_path }}:ro"
+{% endif %}
     profiles:
       - cli

@@ -184,6 +184,61 @@ Designed for Nyxmon `json-metrics` checks, for example:
 - `$.openclaw.channels.telegram.running == true`
 - `$.meta.age_seconds < 600`
 
+## Weeknotes/Todo Automation
+
+When `openclaw_weeknotes_enabled: true`, the role deploys a weeknotes handler plus command skills (`/todo`, `/note`, `/snooze`) that provide chat-driven todo and journal management. Weeknotes data is stored under a dedicated directory with pre-edit snapshots and an append-only operation log.
+
+Commands: `/todo add`, `/note add`, `/todo list`, `/snooze`. A daily cron reminder summarizes open todos on weekdays (noise-suppressed when empty; can be snoozed per-day with `/snooze`).
+
+### Weeknotes Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `openclaw_weeknotes_enabled` | `false` | Enable weeknotes/todo skill |
+| `openclaw_weeknotes_tz` | `Europe/Berlin` | Timezone for the container (`TZ` env var) |
+| `openclaw_weeknotes_skill_name` | `weeknotes-md` | Handler directory name under `openclaw_weeknotes_skills_dir` |
+| `openclaw_weeknotes_command_skill_names` | `[todo, note, snooze]` | Slash command skill names deployed as `SKILL.md` |
+| `openclaw_weeknotes_skills_dir` | `{{ openclaw_data_dir }}/skills` | Host path for custom skills |
+| `openclaw_weeknotes_dir` | `{{ openclaw_data_dir }}/weeknotes` | Host path for weeknotes data |
+| `openclaw_weeknotes_container_dir` | `/home/node/.openclaw/weeknotes` | Container mount for weeknotes |
+| `openclaw_weeknotes_container_skills_dir` | `/home/node/.openclaw/skills` | Container mount for skills |
+| `openclaw_weeknotes_backend` | `local` | Storage backend: `local` or `s3` |
+| `openclaw_weeknotes_snapshot_max_count` | `200` | Max snapshots retained per file |
+| `openclaw_weeknotes_snapshot_max_days` | `14` | Max snapshot age in days |
+| `openclaw_weeknotes_lock_timeout` | `5` | File lock timeout in seconds |
+| `openclaw_weeknotes_max_payload_length` | `500` | Max payload length for write operations |
+| `openclaw_weeknotes_rate_limit_writes` | `10` | Max writes per rate-limit window |
+| `openclaw_weeknotes_rate_limit_window_secs` | `600` | Rate-limit window in seconds |
+| `openclaw_weeknotes_reminder_cron` | `0 9 * * 1-5` | Cron schedule for daily reminder |
+| `openclaw_weeknotes_reminder_command` | `/todo reminder` | System-event text sent by reminder cron job |
+
+### Weeknotes S3 Backend Variables
+
+Used when `openclaw_weeknotes_backend: s3`.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `openclaw_weeknotes_s3_endpoint` | `""` | S3/MinIO endpoint URL |
+| `openclaw_weeknotes_s3_region` | `us-east-1` | S3 region string |
+| `openclaw_weeknotes_s3_bucket` | `""` | Bucket name |
+| `openclaw_weeknotes_s3_prefix` | `""` | Optional object key prefix |
+| `openclaw_weeknotes_s3_access_key` | `""` | Access key for weeknotes service account |
+| `openclaw_weeknotes_s3_secret_key` | `""` | Secret key for weeknotes service account |
+| `openclaw_weeknotes_s3_note_key_format` | `%Y-%m-%d.md` | `date` format string for note object key |
+| `openclaw_weeknotes_s3_todo_list_mode` | `current_note` | Todo-list source mode: `current_note` or `daily_notes` |
+| `openclaw_weeknotes_s3_todo_list_key_regex` | `^[0-9]{4}-[0-9]{2}-[0-9]{2}\\.md$` | Regex used in `daily_notes` mode to select note object keys |
+| `openclaw_weeknotes_s3_todo_cache_refresh_secs` | `120` | Cache refresh interval for `daily_notes` mode |
+| `openclaw_weeknotes_s3_mc_alias` | `weeknotes` | MinIO client alias name used by handler |
+| `openclaw_weeknotes_s3_mc_host_path` | `/usr/local/bin/mc` | Host path to MinIO client binary (bind-mounted read-only) |
+| `openclaw_weeknotes_s3_mc_container_path` | `/usr/local/bin/mc` | Container path for MinIO client binary |
+
+### Storage Model
+
+- `local` backend: weekly files `YYYY-Www.md` (e.g., `2026-W09.md`)
+- `s3` backend: direct object-store reads/writes using `openclaw_weeknotes_s3_note_key_format` (default daily keys like `2026-02-25.md`)
+- Pre-edit snapshots: `.snapshots/<file-or-key>.<timestamp>.bak`
+- Operation log: `.ops-log.jsonl` (append-only)
+
 ## Docker Compose Services
 
 - **openclaw-gateway**: Main gateway service, starts with `docker compose up`

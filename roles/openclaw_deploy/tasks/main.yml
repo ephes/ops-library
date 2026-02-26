@@ -45,5 +45,9 @@
   ansible.builtin.import_tasks: health.yml
   when: openclaw_healthcheck_enabled | bool
 
+- name: main | Configure weeknotes/todo automation
+  ansible.builtin.import_tasks: weeknotes.yml
+  when: openclaw_weeknotes_enabled | bool
+
 - name: main | Configure OpenClaw metrics endpoint for Nyxmon
   ansible.builtin.import_tasks: metrics.yml

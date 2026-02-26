@@ -20,3 +20,26 @@
   loop:
     - "{{ openclaw_data_dir }}"
     - "{{ openclaw_log_dir }}"
+
+- name: directories | Ensure weeknotes directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0750"
+  loop:
+    - "{{ openclaw_weeknotes_dir }}"
+    - "{{ openclaw_weeknotes_dir }}/.snapshots"
+    - "{{ openclaw_weeknotes_skills_dir }}"
+  when: openclaw_weeknotes_enabled | bool
+
+- name: directories | Ensure weeknotes command skill directories exist
+  ansible.builtin.file:
+    path: "{{ openclaw_weeknotes_skills_dir }}/{{ item }}"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0750"
+  loop: "{{ [openclaw_weeknotes_skill_name] + openclaw_weeknotes_command_skill_names }}"
+  when: openclaw_weeknotes_enabled | bool

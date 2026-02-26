@@ -1,0 +1,188 @@
+---
+# Weeknotes/todo automation — skill deployment and cron registration.
+# Included from main.yml when openclaw_weeknotes_enabled is true.
+
+- name: weeknotes | Deploy skill manifest
+  ansible.builtin.template:
+    src: weeknotes-md-skill.json.j2
+    dest: "{{ openclaw_weeknotes_skills_dir }}/{{ openclaw_weeknotes_skill_name }}/skill.json"
+    owner: "1000"
+    group: "1000"
+    mode: "0640"
+  notify: restart openclaw
+
+- name: weeknotes | Deploy SKILL.md files for slash commands
+  ansible.builtin.template:
+    src: "{{ weeknotes_skill_templates[item] }}"
+    dest: "{{ openclaw_weeknotes_skills_dir }}/{{ item }}/SKILL.md"
+    owner: "1000"
+    group: "1000"
+    mode: "0640"
+  loop: "{{ openclaw_weeknotes_command_skill_names }}"
+  vars:
+    weeknotes_skill_templates:
+      todo: weeknotes-todo-skill.md.j2
+      note: weeknotes-note-skill.md.j2
+      snooze: weeknotes-snooze-skill.md.j2
+  notify: restart openclaw
+
+- name: weeknotes | Deploy skill handler
+  ansible.builtin.template:
+    src: weeknotes-md-handler.sh.j2
+    dest: "{{ openclaw_weeknotes_skills_dir }}/{{ openclaw_weeknotes_skill_name }}/handler.sh"
+    owner: "1000"
+    group: "1000"
+    mode: "0750"
+  notify: restart openclaw
+
+- name: weeknotes | Flush handlers before cron registration
+  ansible.builtin.meta: flush_handlers
+
+- name: weeknotes | Wait for gateway to accept commands
+  ansible.builtin.wait_for:
+    host: "{{ openclaw_bind_host }}"
+    port: "{{ openclaw_host_port }}"
+    timeout: 30
+
+- name: weeknotes | Build expected reminder system event payload
+  ansible.builtin.set_fact:
+    weeknotes_expected_system_event: "{{ openclaw_weeknotes_reminder_command }}"
+
+- name: weeknotes | Check existing cron jobs
+  ansible.builtin.command:
+    cmd: >-
+      docker compose -f {{ openclaw_site_dir }}/docker-compose.yml
+      run --rm openclaw-cli cron list --json
+  register: weeknotes_cron_list
+  retries: 3
+  delay: 3
+  until: weeknotes_cron_list.rc == 0
+  changed_when: false
+  failed_when: false
+
+- name: weeknotes | Parse cron list JSON payload
+  ansible.builtin.set_fact:
+    weeknotes_cron_payload: "{{ weeknotes_cron_list.stdout | from_json }}"
+  when:
+    - weeknotes_cron_list.rc == 0
+    - weeknotes_cron_list.stdout is defined
+    - weeknotes_cron_list.stdout | trim | length > 0
+
+- name: weeknotes | Extract weeknotes-reminder cron jobs
+  ansible.builtin.set_fact:
+    weeknotes_cron_jobs: >-
+      {{
+        (weeknotes_cron_payload.jobs | default([]))
+        | selectattr('name', 'equalto', 'weeknotes-reminder')
+        | list
+      }}
+    weeknotes_cron_job: >-
+      {{
+        (
+          weeknotes_cron_payload.jobs | default([])
+          | selectattr('name', 'equalto', 'weeknotes-reminder')
+          | sort(attribute='updatedAtMs', reverse=true)
+        )
+        | first
+        | default({})
+      }}
+  when: weeknotes_cron_payload is defined
+
+- name: weeknotes | Detect cron schedule, payload, or duplicate drift
+  ansible.builtin.set_fact:
+    weeknotes_cron_drifted: >-
+      {{
+        (
+          weeknotes_cron_jobs | default([]) | length
+        ) > 1
+        or
+        (
+          weeknotes_cron_job is defined
+          and (weeknotes_cron_job | length > 0)
+          and (
+            weeknotes_cron_job.schedule.kind | default('') != 'cron'
+            or weeknotes_cron_job.schedule.expr | default('') != openclaw_weeknotes_reminder_cron
+            or weeknotes_cron_job.sessionTarget | default('') != 'main'
+            or weeknotes_cron_job.payload.kind | default('') != 'systemEvent'
+            or weeknotes_cron_job.payload.text | default('') != weeknotes_expected_system_event
+          )
+        )
+      }}
+  when: weeknotes_cron_payload is defined
+
+- name: weeknotes | Register reminder cron job when missing
+  ansible.builtin.command:
+    cmd: >-
+      docker compose -f {{ openclaw_site_dir }}/docker-compose.yml
+      run --rm openclaw-cli cron add
+      --name weeknotes-reminder
+      --cron "{{ openclaw_weeknotes_reminder_cron }}"
+      --session main
+      --wake now
+      --system-event "{{ weeknotes_expected_system_event }}"
+      --json
+  register: weeknotes_cron_add_missing
+  retries: 5
+  delay: 3
+  until: weeknotes_cron_add_missing.rc == 0
+  when: >-
+    weeknotes_cron_payload is defined
+    and (weeknotes_cron_jobs | default([]) | length == 0)
+  changed_when: weeknotes_cron_add_missing.rc == 0
+  failed_when: false
+
+- name: weeknotes | Remove drifted or duplicate cron jobs
+  ansible.builtin.command:
+    cmd: >-
+      docker compose -f {{ openclaw_site_dir }}/docker-compose.yml
+      run --rm openclaw-cli cron rm {{ item.id | default('') }}
+      --json
+  loop: "{{ weeknotes_cron_jobs | default([]) }}"
+  register: weeknotes_cron_rm_results
+  when: weeknotes_cron_drifted | default(false) | bool
+  failed_when: false
+
+- name: weeknotes | Detect cron remove failures
+  ansible.builtin.set_fact:
+    weeknotes_cron_rm_failed: >-
+      {{
+        (
+          weeknotes_cron_rm_results.results | default([])
+          | rejectattr('rc', 'equalto', 0)
+          | list
+          | length
+        ) > 0
+      }}
+  when: weeknotes_cron_drifted | default(false) | bool
+
+- name: weeknotes | Re-register cron job with correct schedule and payload
+  ansible.builtin.command:
+    cmd: >-
+      docker compose -f {{ openclaw_site_dir }}/docker-compose.yml
+      run --rm openclaw-cli cron add
+      --name weeknotes-reminder
+      --cron "{{ openclaw_weeknotes_reminder_cron }}"
+      --session main
+      --wake now
+      --system-event "{{ weeknotes_expected_system_event }}"
+      --json
+  register: weeknotes_cron_add_drifted
+  retries: 5
+  delay: 3
+  until: weeknotes_cron_add_drifted.rc == 0
+  when: >-
+    weeknotes_cron_drifted | default(false) | bool
+    and not (weeknotes_cron_rm_failed | default(false) | bool)
+  changed_when: weeknotes_cron_add_drifted.rc == 0
+  failed_when: false
+
+- name: weeknotes | Warn when cron registration could not be confirmed
+  ansible.builtin.debug:
+    msg: >-
+      Weeknotes reminder cron registration did not complete successfully.
+      Inspect gateway health and rerun deploy-openclaw.
+  when: >-
+    weeknotes_cron_list.rc != 0
+    or (weeknotes_cron_add_missing is defined and (weeknotes_cron_add_missing.rc | default(0)) != 0)
+    or (weeknotes_cron_add_drifted is defined and (weeknotes_cron_add_drifted.rc | default(0)) != 0)
+    or (weeknotes_cron_rm_failed | default(false) | bool)

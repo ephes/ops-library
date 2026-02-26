@@ -1,0 +1,29 @@
+---
+name: note
+description: "Append timestamped journal notes to live weeknotes (/note add)."
+metadata: { "openclaw": { "emoji": "📝", "requires": { "bins": ["bash"] } } }
+---
+
+# Note Skill
+
+Use the managed weeknotes handler for journal entries.
+
+## Input Contract
+
+User input is everything after `/note`.
+
+- `add <text...>`: append a timestamped note to the Journal section.
+
+## Execution Rules
+
+Always execute exactly one command:
+
+```bash
+/home/node/.openclaw/skills/{{ openclaw_weeknotes_skill_name }}/handler.sh note <raw-user-input>
+```
+
+When no input is provided, return:
+
+`Usage: /note add <text>`
+
+Return the handler output as-is.

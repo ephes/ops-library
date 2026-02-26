@@ -80,3 +80,53 @@
       openclaw_traefik_host and openclaw_traefik_config_path are required when Traefik is enabled.
       openclaw_bind_host must be 127.0.0.1 (loopback) when Traefik is the external entry point.
   when: openclaw_traefik_enabled | bool
+
+- name: validate | Weeknotes backend when weeknotes is enabled
+  ansible.builtin.assert:
+    that:
+      - openclaw_weeknotes_backend in ['local', 's3']
+      - openclaw_weeknotes_reminder_command | length > 0
+    fail_msg: "openclaw_weeknotes_backend must be either 'local' or 's3'."
+  when: openclaw_weeknotes_enabled | bool
+
+- name: validate | Weeknotes S3 settings when backend is s3
+  ansible.builtin.assert:
+    that:
+      - openclaw_weeknotes_s3_endpoint | length > 0
+      - openclaw_weeknotes_s3_bucket | length > 0
+      - openclaw_weeknotes_s3_access_key | length > 0
+      - openclaw_weeknotes_s3_secret_key | length > 0
+      - openclaw_weeknotes_s3_note_key_format | length > 0
+      - openclaw_weeknotes_s3_todo_list_mode in ['current_note', 'daily_notes']
+      - openclaw_weeknotes_s3_todo_list_key_regex | length > 0
+      - openclaw_weeknotes_s3_todo_cache_refresh_secs | int > 0
+      - openclaw_weeknotes_s3_mc_host_path | length > 0
+      - openclaw_weeknotes_s3_mc_container_path | length > 0
+    fail_msg: >-
+      openclaw_weeknotes_s3_endpoint, openclaw_weeknotes_s3_bucket,
+      openclaw_weeknotes_s3_access_key, openclaw_weeknotes_s3_secret_key,
+      openclaw_weeknotes_s3_note_key_format, openclaw_weeknotes_s3_todo_cache_refresh_secs,
+      openclaw_weeknotes_s3_mc_host_path, and openclaw_weeknotes_s3_mc_container_path are required when
+      openclaw_weeknotes_backend is s3.
+  when:
+    - openclaw_weeknotes_enabled | bool
+    - openclaw_weeknotes_backend == 's3'
+
+- name: validate | Weeknotes S3 client binary exists on host
+  ansible.builtin.stat:
+    path: "{{ openclaw_weeknotes_s3_mc_host_path }}"
+  register: openclaw_weeknotes_s3_mc_stat
+  when:
+    - openclaw_weeknotes_enabled | bool
+    - openclaw_weeknotes_backend == 's3'
+
+- name: validate | Weeknotes S3 client binary is executable
+  ansible.builtin.assert:
+    that:
+      - openclaw_weeknotes_s3_mc_stat.stat.exists
+      - openclaw_weeknotes_s3_mc_stat.stat.executable
+    fail_msg: >-
+      openclaw_weeknotes_s3_mc_host_path must point to an executable MinIO client binary.
+  when:
+    - openclaw_weeknotes_enabled | bool
+    - openclaw_weeknotes_backend == 's3'
