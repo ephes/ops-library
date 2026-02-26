@@ -7,7 +7,7 @@ Set up a dedicated interactive coding user with persistent tmux sessions, fish s
 - Creates a locked user (no sudo, SSH key-only) with home on a custom path (e.g. encrypted volume).
 - Configures SSH `authorized_keys` and hardens sshd with a `Match User` block.
 - Runs `shell_basics_deploy` for CLI tools (fish, tmux, fzf, ripgrep, zoxide, etc.) with `manage_fish_config: false` so chezmoi owns the fish config.
-- Rsyncs chezmoi source from local machine and applies dotfiles (optional).
+- Clones dotfiles repo via SSH agent forwarding and applies with chezmoi (preferred), or rsyncs chezmoi source from local machine (legacy fallback).
 - Deploys API keys to `~/.config/fish/conf.d/secrets.fish` (role-managed, outside chezmoi).
 - Installs Node.js LTS via NodeSource apt repo (pinned to major version).
 - Installs Neovim from GitHub releases (pinned version; apt is too old for LazyVim).
@@ -32,7 +32,10 @@ vibe_coding_projects_dir: "{{ vibe_coding_user_home }}/projects"
 # SSH authorized keys (list of public key strings)
 vibe_coding_ssh_authorized_keys: []
 
-# chezmoi dotfiles source dir (rsynced to target; empty to skip)
+# chezmoi dotfiles git repo (cloned via SSH agent forwarding; preferred)
+vibe_coding_dotfiles_repo: ""  # e.g. "git@github.com:user/dotfiles.git"
+
+# chezmoi dotfiles source dir (rsynced to target; legacy fallback)
 vibe_coding_chezmoi_source_dir: ""
 
 # Environment variables deployed to fish conf.d/secrets.fish
@@ -80,6 +83,7 @@ vibe_coding_sshd_hardening: true
   hosts: macmini
   become: true
   vars:
+    ansible_ssh_extra_args: "-o ForwardAgent=yes"
     secrets: "{{ lookup('community.sops.sops', 'secrets/prod/vibe-coding.yml') | from_yaml }}"
   roles:
     - role: local.ops_library.vibe_coding_deploy
@@ -87,7 +91,7 @@ vibe_coding_sshd_hardening: true
         vibe_coding_user_home: "/mnt/cryptdata/vibe"
         vibe_coding_ssh_authorized_keys:
           - "ssh-ed25519 AAAA... jochen@machine"
-        vibe_coding_chezmoi_source_dir: "~/.local/share/chezmoi"
+        vibe_coding_dotfiles_repo: "git@github.com:user/dotfiles.git"
         vibe_coding_fish_env:
           ANTHROPIC_API_KEY: "{{ secrets.anthropic_api_key }}"
 ```
@@ -119,6 +123,7 @@ vibe_coding_sshd_hardening: true
 ## Notes
 
 - The user's home directory must be on an existing mount (e.g. `/mnt/cryptdata`).
-- Chezmoi source is rsynced from local machine; `chezmoi init --apply` runs on each deploy.
+- When `vibe_coding_dotfiles_repo` is set, the repo is git-cloned to the target via SSH agent forwarding. The vibe user can then run `chezmoi update` or `git pull` independently. Requires `ansible_ssh_extra_args: "-o ForwardAgent=yes"` in the playbook.
+- Legacy: when only `vibe_coding_chezmoi_source_dir` is set, chezmoi source is rsynced from local machine (no `.git` on target).
 - Node.js is pinned to a major version via NodeSource (e.g. `22`); minor updates come via apt.
 - Intended for Ubuntu targets. MIT licensed.

@@ -11,7 +11,10 @@ vibe_coding_projects_dir: "{{ vibe_coding_user_home }}/projects"
 # SSH authorized keys (list of public key strings)
 vibe_coding_ssh_authorized_keys: []
 
-# chezmoi — rsync dotfiles source from local machine
+# chezmoi — dotfiles git repo (cloned via SSH agent forwarding; preferred)
+vibe_coding_dotfiles_repo: ""  # e.g. "git@github.com:user/dotfiles.git" — empty to skip
+
+# chezmoi — rsync dotfiles source from local machine (legacy fallback)
 vibe_coding_chezmoi_source_dir: ""  # e.g. "~/.local/share/chezmoi" — empty to skip
 
 # Environment variables (for API keys — deployed outside chezmoi)

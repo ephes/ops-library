@@ -1,4 +1,99 @@
 ---
+# ── git-based flow (preferred) ──────────────────────────────────────────
+
+- name: chezmoi | Trust GitHub SSH host key for root
+  ansible.builtin.known_hosts:
+    name: github.com
+    key: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+    state: present
+  when: vibe_coding_dotfiles_repo | length > 0
+
+- name: chezmoi | Trust GitHub SSH host key for vibe user
+  ansible.builtin.known_hosts:
+    name: github.com
+    key: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+    path: "{{ vibe_coding_user_home }}/.ssh/known_hosts"
+    state: present
+  become: true
+  become_user: "{{ vibe_coding_user }}"
+  when: vibe_coding_dotfiles_repo | length > 0
+
+- name: chezmoi | Check if chezmoi source is already a git repo
+  ansible.builtin.stat:
+    path: "{{ vibe_coding_user_home }}/.local/share/chezmoi/.git"
+  register: _chezmoi_git_dir
+  when: vibe_coding_dotfiles_repo | length > 0
+
+- name: chezmoi | Check if existing repo has correct origin remote
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ vibe_coding_user_home }}/.local/share/chezmoi"
+      - remote
+      - get-url
+      - origin
+  register: _chezmoi_remote_url
+  changed_when: false
+  failed_when: false
+  when:
+    - vibe_coding_dotfiles_repo | length > 0
+    - _chezmoi_git_dir.stat.exists | default(false)
+
+- name: chezmoi | Remove chezmoi source without correct origin
+  ansible.builtin.file:
+    path: "{{ vibe_coding_user_home }}/.local/share/chezmoi"
+    state: absent
+  when:
+    - vibe_coding_dotfiles_repo | length > 0
+    - >-
+      not (_chezmoi_git_dir.stat.exists | default(false))
+      or (_chezmoi_remote_url.stdout | default('') != vibe_coding_dotfiles_repo)
+
+- name: chezmoi | Check if safe.directory is already configured for root
+  ansible.builtin.command:
+    argv:
+      - git
+      - config
+      - --global
+      - --get-all
+      - safe.directory
+  register: _chezmoi_safe_dirs
+  changed_when: false
+  failed_when: false
+  when: vibe_coding_dotfiles_repo | length > 0
+
+- name: chezmoi | Mark chezmoi source as safe directory for root
+  ansible.builtin.command:
+    argv:
+      - git
+      - config
+      - --global
+      - --add
+      - safe.directory
+      - "{{ vibe_coding_user_home }}/.local/share/chezmoi"
+  when:
+    - vibe_coding_dotfiles_repo | length > 0
+    - (vibe_coding_user_home + '/.local/share/chezmoi') not in (_chezmoi_safe_dirs.stdout_lines | default([]))
+
+- name: chezmoi | Clone/update dotfiles repo
+  ansible.builtin.git:
+    repo: "{{ vibe_coding_dotfiles_repo }}"
+    dest: "{{ vibe_coding_user_home }}/.local/share/chezmoi"
+  register: _chezmoi_git_result
+  when: vibe_coding_dotfiles_repo | length > 0
+
+- name: chezmoi | Set ownership of chezmoi source (git)
+  ansible.builtin.file:
+    path: "{{ vibe_coding_user_home }}/.local/share/chezmoi"
+    state: directory
+    owner: "{{ vibe_coding_user }}"
+    group: "{{ vibe_coding_group }}"
+    recurse: true
+  when: vibe_coding_dotfiles_repo | length > 0
+
+# ── rsync-based flow (legacy fallback) ──────────────────────────────────
+
 - name: chezmoi | Sync chezmoi source from local machine
   ansible.posix.synchronize:
     src: "{{ vibe_coding_chezmoi_source_dir }}/"
@@ -8,14 +103,36 @@
       - "--exclude=.git"
       - "--exclude=encrypted_*"
       - "--delete-excluded"
+  when:
+    - vibe_coding_dotfiles_repo | length == 0
+    - vibe_coding_chezmoi_source_dir | length > 0
 
-- name: chezmoi | Set ownership of chezmoi source
+- name: chezmoi | Set ownership of chezmoi source (rsync)
   ansible.builtin.file:
     path: "{{ vibe_coding_user_home }}/.local/share/chezmoi"
     state: directory
     owner: "{{ vibe_coding_user }}"
     group: "{{ vibe_coding_group }}"
     recurse: true
+  when:
+    - vibe_coding_dotfiles_repo | length == 0
+    - vibe_coding_chezmoi_source_dir | length > 0
+
+# ── common: init, check status, and apply ───────────────────────────────
+
+- name: chezmoi | Initialize chezmoi (renders config from template)
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/chezmoi
+      - init
+      - --force
+      - --source
+      - "{{ vibe_coding_user_home }}/.local/share/chezmoi"
+  become: true
+  become_user: "{{ vibe_coding_user }}"
+  environment:
+    HOME: "{{ vibe_coding_user_home }}"
+  changed_when: false
 
 - name: chezmoi | Check for pending dotfile changes
   ansible.builtin.command:
@@ -31,12 +148,11 @@
   register: vibe_coding_chezmoi_status
   changed_when: false
 
-- name: chezmoi | Initialize and apply dotfiles
+- name: chezmoi | Apply dotfiles
   ansible.builtin.command:
     argv:
       - /usr/local/bin/chezmoi
-      - init
-      - --apply
+      - apply
       - --force
       - --source
       - "{{ vibe_coding_user_home }}/.local/share/chezmoi"
@@ -44,7 +160,6 @@
   become_user: "{{ vibe_coding_user }}"
   environment:
     HOME: "{{ vibe_coding_user_home }}"
-  register: vibe_coding_chezmoi_apply
   changed_when: vibe_coding_chezmoi_status.stdout | length > 0
 
 - name: chezmoi | Remove legacy z.fish alias (migrated to zz.fish)

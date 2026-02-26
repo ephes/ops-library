@@ -23,7 +23,7 @@
 
 - name: main | Initialize chezmoi
   ansible.builtin.import_tasks: chezmoi.yml
-  when: vibe_coding_chezmoi_source_dir | length > 0
+  when: (vibe_coding_dotfiles_repo | length > 0) or (vibe_coding_chezmoi_source_dir | length > 0)
 
 - name: main | Deploy secrets to fish config
   ansible.builtin.import_tasks: secrets.yml
