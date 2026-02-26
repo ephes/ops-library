@@ -80,7 +80,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 |----------|---------|-------------|
 | `openclaw_openai_api_key` | `""` | Optional OpenAI API key (`OPENAI_API_KEY`) for provider `openai` |
 | `openclaw_openrouter_api_key` | `""` | Optional OpenRouter API key (`OPENROUTER_API_KEY`) for provider `openrouter` |
-| `openclaw_ollama_api_key` | `""` | Optional Ollama API key (`OLLAMA_API_KEY`) for provider `ollama` |
+| `openclaw_ollama_api_key` | `""` | Optional Ollama API key (`OLLAMA_API_KEY`) for provider `ollama`; when `openclaw_ollama_base_url` is set and this is empty, role injects `ollama-local` |
 | `openclaw_ollama_base_url` | `""` | Optional Ollama endpoint (`OLLAMA_BASE_URL`); must be reachable from inside the OpenClaw container |
 | `openclaw_reply_system_prompt` | `You are a concise assistant.` | System prompt for AI replies |
 
