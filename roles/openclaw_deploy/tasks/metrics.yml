@@ -55,6 +55,11 @@
         - "{{ openclaw_metrics_endpoint_server_path }}"
         - "{{ openclaw_metrics_endpoint_collector_path }}"
 
+    - name: metrics | Remove synthetic canary state file
+      ansible.builtin.file:
+        path: "{{ openclaw_metrics_endpoint_synthetic_canary_state_path }}"
+        state: absent
+
     - name: metrics | Remove metrics auth file and directory
       ansible.builtin.file:
         path: "{{ item }}"
@@ -91,6 +96,27 @@
         fail_msg: >-
           Invalid OpenClaw metrics endpoint configuration.
           Set auth user/password and valid bind/port values before enabling.
+
+    - name: metrics | Validate synthetic canary settings
+      ansible.builtin.assert:
+        that:
+          - openclaw_metrics_endpoint_synthetic_canary_agent | length > 0
+          - openclaw_metrics_endpoint_synthetic_canary_message | trim | length > 0
+          - openclaw_metrics_endpoint_synthetic_canary_expected_text | trim | length > 0
+          - openclaw_metrics_endpoint_synthetic_canary_state_path | length > 0
+          - openclaw_metrics_endpoint_synthetic_canary_interval | int >= 300
+          - openclaw_metrics_endpoint_synthetic_canary_timeout | int > 0
+          - openclaw_metrics_endpoint_synthetic_canary_timeout | int <= 120
+          - openclaw_metrics_endpoint_synthetic_canary_max_attempts | int >= 1
+          - openclaw_metrics_endpoint_synthetic_canary_max_attempts | int <= 3
+          - openclaw_metrics_endpoint_synthetic_canary_retry_delay_seconds | int >= 0
+          - openclaw_metrics_endpoint_synthetic_canary_retry_delay_seconds | int <= 60
+          - openclaw_metrics_endpoint_synthetic_canary_output_max_chars | int >= 32
+        fail_msg: >-
+          Invalid synthetic canary configuration.
+          Expected non-empty agent/message/expected-text/state-path and bounded
+          interval/timeout/retry values.
+      when: openclaw_metrics_endpoint_synthetic_canary_enabled | bool
 
     - name: metrics | Install dependencies
       ansible.builtin.package:

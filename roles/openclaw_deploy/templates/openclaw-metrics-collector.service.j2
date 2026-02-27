@@ -8,7 +8,17 @@ Type=oneshot
 ExecStart=/usr/bin/python3 {{ openclaw_metrics_endpoint_collector_path }} \
   --container {{ openclaw_metrics_endpoint_container_name }} \
   --output {{ openclaw_metrics_endpoint_json_path }} \
-  --command-timeout {{ openclaw_metrics_endpoint_command_timeout }}
+  --command-timeout {{ openclaw_metrics_endpoint_command_timeout }} \
+  --synthetic-canary-enabled {{ 1 if (openclaw_metrics_endpoint_synthetic_canary_enabled | bool) else 0 }} \
+  --synthetic-canary-agent {{ openclaw_metrics_endpoint_synthetic_canary_agent | quote }} \
+  --synthetic-canary-message {{ openclaw_metrics_endpoint_synthetic_canary_message | quote }} \
+  --synthetic-canary-expected-text {{ openclaw_metrics_endpoint_synthetic_canary_expected_text | quote }} \
+  --synthetic-canary-interval {{ openclaw_metrics_endpoint_synthetic_canary_interval }} \
+  --synthetic-canary-timeout {{ openclaw_metrics_endpoint_synthetic_canary_timeout }} \
+  --synthetic-canary-max-attempts {{ openclaw_metrics_endpoint_synthetic_canary_max_attempts }} \
+  --synthetic-canary-retry-delay {{ openclaw_metrics_endpoint_synthetic_canary_retry_delay_seconds }} \
+  --synthetic-canary-state-path {{ openclaw_metrics_endpoint_synthetic_canary_state_path | quote }} \
+  --synthetic-canary-output-max-chars {{ openclaw_metrics_endpoint_synthetic_canary_output_max_chars }}
 
 # Root is required for docker exec.
 User=root
@@ -20,3 +30,4 @@ ExecStartPre=/bin/chown root:{{ openclaw_metrics_endpoint_group }} {{ openclaw_m
 ExecStartPre=/bin/chmod 0750 {{ openclaw_metrics_endpoint_data_dir }}
 ExecStartPost=/bin/chown root:{{ openclaw_metrics_endpoint_group }} {{ openclaw_metrics_endpoint_json_path }}
 ExecStartPost=/bin/chmod 0640 {{ openclaw_metrics_endpoint_json_path }}
+ExecStartPost=/bin/sh -c 'if [ -e "{{ openclaw_metrics_endpoint_synthetic_canary_state_path }}" ]; then chown root:root "{{ openclaw_metrics_endpoint_synthetic_canary_state_path }}" && chmod 0640 "{{ openclaw_metrics_endpoint_synthetic_canary_state_path }}"; fi'

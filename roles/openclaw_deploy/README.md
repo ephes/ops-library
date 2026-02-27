@@ -137,6 +137,16 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 | `openclaw_metrics_endpoint_timer_interval` | `120` | Collector timer interval in seconds |
 | `openclaw_metrics_endpoint_container_name` | `{{ openclaw_container_name }}` | OpenClaw container queried by collector |
 | `openclaw_metrics_endpoint_remove_data_on_disable` | `false` | Remove `openclaw_metrics_endpoint_data_dir` when endpoint is disabled |
+| `openclaw_metrics_endpoint_synthetic_canary_enabled` | `false` | Enable synthetic real agent-turn canary collection in metrics payload |
+| `openclaw_metrics_endpoint_synthetic_canary_agent` | `main` | Agent id used for canary command |
+| `openclaw_metrics_endpoint_synthetic_canary_message` | `Reply exactly: OPENCLAW_CANARY_OK` | Deterministic prompt for canary request |
+| `openclaw_metrics_endpoint_synthetic_canary_expected_text` | `OPENCLAW_CANARY_OK` | Exact expected response text for canary success |
+| `openclaw_metrics_endpoint_synthetic_canary_interval` | `1800` | Minimum seconds between canary executions (collector cycles in between use cached result) |
+| `openclaw_metrics_endpoint_synthetic_canary_timeout` | `45` | Per-attempt timeout (seconds) for canary command |
+| `openclaw_metrics_endpoint_synthetic_canary_max_attempts` | `2` | Max attempts per due canary run |
+| `openclaw_metrics_endpoint_synthetic_canary_retry_delay_seconds` | `5` | Delay between failed canary attempts |
+| `openclaw_metrics_endpoint_synthetic_canary_state_path` | `{{ openclaw_metrics_endpoint_data_dir }}/openclaw-canary-state.json` | Local state file for last canary result |
+| `openclaw_metrics_endpoint_synthetic_canary_output_max_chars` | `256` | Max response chars persisted from canary output |
 
 ### Advanced
 
@@ -202,6 +212,12 @@ When `openclaw_metrics_endpoint_enabled: true`:
 - an unprivileged HTTP server (`{{ openclaw_metrics_endpoint_service_name }}`) serves the JSON with basic auth at:
   - `http://{{ openclaw_metrics_endpoint_bind }}:{{ openclaw_metrics_endpoint_port }}{{ openclaw_metrics_endpoint_path }}`
 - response includes `meta.age_seconds` to detect stale collector output.
+- optional synthetic canary mode executes a real `agent --json` turn at a conservative cadence and stores:
+  - `$.openclaw.synthetic.canary.last_run.ok`
+  - `$.openclaw.synthetic.canary.last_run.expected_match`
+  - `$.openclaw.synthetic.canary.last_success_epoch`
+  - `$.openclaw.synthetic.canary.last_success_age_seconds`
+  - `last_success_age_seconds` is always numeric (`2147483647` sentinel when there is no successful run yet)
 
 Designed for Nyxmon `json-metrics` checks, for example:
 
@@ -209,6 +225,7 @@ Designed for Nyxmon `json-metrics` checks, for example:
 - `$.openclaw.health.ok == true`
 - `$.openclaw.channels.telegram.running == true`
 - `$.meta.age_seconds < 600`
+- `$.openclaw.synthetic.canary.last_run.ok == true` (synthetic check)
 
 ## Weeknotes/Todo Automation
 

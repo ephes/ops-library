@@ -9,8 +9,30 @@ import os
 import socket
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from typing import Any
+
+NO_SUCCESS_AGE_SECONDS = 2147483647
+
+
+def parse_json_output(raw_stdout: str, command: list[str]) -> dict[str, Any]:
+    text = (raw_stdout or "").strip()
+    if not text:
+        raise RuntimeError(f"empty JSON output from {' '.join(command)}")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(text[start : end + 1])
+            except json.JSONDecodeError as err:
+                raise RuntimeError(
+                    f"invalid JSON from {' '.join(command)}: {err}"
+                ) from err
+        raise RuntimeError(f"invalid JSON from {' '.join(command)}")
 
 
 def run_json_command(command: list[str], timeout: int) -> dict[str, Any]:
@@ -26,10 +48,7 @@ def run_json_command(command: list[str], timeout: int) -> dict[str, Any]:
         raise RuntimeError(
             f"command failed rc={completed.returncode}: {' '.join(command)}: {stderr}"
         )
-    try:
-        return json.loads(completed.stdout)
-    except json.JSONDecodeError as err:
-        raise RuntimeError(f"invalid JSON from {' '.join(command)}: {err}") from err
+    return parse_json_output(completed.stdout, command)
 
 
 def build_payload() -> dict[str, Any]:
@@ -50,8 +69,227 @@ def build_payload() -> dict[str, Any]:
                     "last_error": None,
                 }
             },
+            "synthetic": {
+                "canary": {
+                    "enabled": False,
+                    "cached": True,
+                    "due": False,
+                    "interval_seconds": 0,
+                    "last_run": {
+                        "at": None,
+                        "epoch": 0,
+                        "ok": False,
+                        "expected_match": False,
+                        "attempts": 0,
+                        "duration_ms": None,
+                        "status": "never",
+                        "provider": None,
+                        "model": None,
+                        "output_text": "",
+                        "error": None,
+                    },
+                    "last_success_at": None,
+                    "last_success_epoch": 0,
+                    "last_success_age_seconds": NO_SUCCESS_AGE_SECONDS,
+                    "next_due_epoch": 0,
+                    "next_due_in_seconds": 0,
+                }
+            },
         },
     }
+
+
+def clip_text(value: str, max_chars: int) -> str:
+    if max_chars <= 0:
+        return ""
+    if len(value) <= max_chars:
+        return value
+    return value[: max_chars - 3] + "..."
+
+
+def default_canary_state() -> dict[str, Any]:
+    return {
+        "last_run": {
+            "at": None,
+            "epoch": 0,
+            "ok": False,
+            "expected_match": False,
+            "attempts": 0,
+            "duration_ms": None,
+            "status": "never",
+            "provider": None,
+            "model": None,
+            "output_text": "",
+            "error": None,
+        },
+        "last_success_at": None,
+        "last_success_epoch": 0,
+    }
+
+
+def load_canary_state(path: str) -> dict[str, Any]:
+    state = default_canary_state()
+    if not path or not os.path.exists(path):
+        return state
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            raw = json.load(handle)
+    except (OSError, ValueError):
+        return state
+    if not isinstance(raw, dict):
+        return state
+
+    raw_last_run = raw.get("last_run")
+    if isinstance(raw_last_run, dict):
+        for key in state["last_run"]:
+            if key in raw_last_run:
+                state["last_run"][key] = raw_last_run[key]
+
+    if "last_success_at" in raw:
+        state["last_success_at"] = raw.get("last_success_at")
+    if "last_success_epoch" in raw:
+        try:
+            state["last_success_epoch"] = int(raw.get("last_success_epoch") or 0)
+        except (TypeError, ValueError):
+            state["last_success_epoch"] = 0
+    return state
+
+
+def save_json_atomic(path: str, payload: dict[str, Any], mode: int | None = None) -> None:
+    output_dir = os.path.dirname(path)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, sort_keys=True)
+    os.replace(tmp_path, path)
+    if mode is not None:
+        os.chmod(path, mode)
+
+
+def run_synthetic_canary(args: argparse.Namespace, payload: dict[str, Any]) -> None:
+    canary = payload["openclaw"]["synthetic"]["canary"]
+    canary["enabled"] = bool(args.synthetic_canary_enabled)
+    canary["interval_seconds"] = int(args.synthetic_canary_interval)
+
+    if not canary["enabled"]:
+        return
+
+    now_epoch = int(time.time())
+    expected_text = (args.synthetic_canary_expected_text or "").strip()
+    state = load_canary_state(args.synthetic_canary_state_path)
+    last_run_epoch = int((state.get("last_run") or {}).get("epoch") or 0)
+    canary_due = (
+        bool(args.synthetic_canary_force_run)
+        or last_run_epoch == 0
+        or now_epoch - last_run_epoch >= int(args.synthetic_canary_interval)
+    )
+    canary["due"] = canary_due
+
+    if canary_due:
+        run_result: dict[str, Any] = {}
+        max_attempts = max(1, int(args.synthetic_canary_max_attempts))
+        for attempt in range(1, max_attempts + 1):
+            started_epoch = int(time.time())
+            started_monotonic = time.monotonic()
+            cmd = [
+                "docker",
+                "exec",
+                args.container,
+                "node",
+                "dist/index.js",
+                "agent",
+                "--agent",
+                args.synthetic_canary_agent,
+                "--message",
+                args.synthetic_canary_message,
+                "--json",
+            ]
+            try:
+                canary_json = run_json_command(
+                    cmd, timeout=int(args.synthetic_canary_timeout)
+                )
+                status = str(canary_json.get("status") or "").lower()
+                payloads = ((canary_json.get("result") or {}).get("payloads") or [])
+                first_payload = payloads[0] if payloads and isinstance(payloads[0], dict) else {}
+                observed_text = str(first_payload.get("text") or "").strip()
+                expected_match = observed_text == expected_text
+                meta = (canary_json.get("result") or {}).get("meta") or {}
+                agent_meta = meta.get("agentMeta") or {}
+
+                duration_ms_raw = meta.get("durationMs")
+                try:
+                    duration_ms = int(duration_ms_raw)
+                except (TypeError, ValueError):
+                    duration_ms = int((time.monotonic() - started_monotonic) * 1000)
+
+                ok = status == "ok" and expected_match
+                error = None
+                if not ok:
+                    error = (
+                        f"unexpected canary response status={status!r}, "
+                        f"expected={expected_text!r}, got={observed_text!r}"
+                    )
+                run_result = {
+                    "at": datetime.now(tz=timezone.utc).isoformat(),
+                    "epoch": started_epoch,
+                    "ok": ok,
+                    "expected_match": expected_match,
+                    "attempts": attempt,
+                    "duration_ms": duration_ms,
+                    "status": status or "unknown",
+                    "provider": agent_meta.get("provider"),
+                    "model": agent_meta.get("model"),
+                    "output_text": clip_text(
+                        observed_text, int(args.synthetic_canary_output_max_chars)
+                    ),
+                    "error": error,
+                }
+            except Exception as err:  # noqa: BLE001
+                run_result = {
+                    "at": datetime.now(tz=timezone.utc).isoformat(),
+                    "epoch": started_epoch,
+                    "ok": False,
+                    "expected_match": False,
+                    "attempts": attempt,
+                    "duration_ms": int((time.monotonic() - started_monotonic) * 1000),
+                    "status": "error",
+                    "provider": None,
+                    "model": None,
+                    "output_text": "",
+                    "error": str(err),
+                }
+
+            if run_result["ok"]:
+                break
+            if attempt < max_attempts and int(args.synthetic_canary_retry_delay) > 0:
+                time.sleep(int(args.synthetic_canary_retry_delay))
+
+        state["last_run"] = run_result
+        if run_result["ok"]:
+            state["last_success_at"] = run_result["at"]
+            state["last_success_epoch"] = run_result["epoch"]
+
+        save_json_atomic(args.synthetic_canary_state_path, state, mode=0o640)
+        canary["cached"] = False
+    else:
+        run_result = state.get("last_run") or default_canary_state()["last_run"]
+        canary["cached"] = True
+
+    last_success_epoch = int(state.get("last_success_epoch") or 0)
+    next_due_epoch = int((state.get("last_run") or {}).get("epoch") or now_epoch) + int(
+        args.synthetic_canary_interval
+    )
+    canary["last_run"] = run_result
+    canary["last_success_at"] = state.get("last_success_at")
+    canary["last_success_epoch"] = last_success_epoch
+    canary["last_success_age_seconds"] = (
+        now_epoch - last_success_epoch
+        if last_success_epoch > 0
+        else NO_SUCCESS_AGE_SECONDS
+    )
+    canary["next_due_epoch"] = next_due_epoch
+    canary["next_due_in_seconds"] = max(0, next_due_epoch - now_epoch)
 
 
 def main() -> int:
@@ -65,6 +303,67 @@ def main() -> int:
         type=int,
         default={{ openclaw_metrics_endpoint_command_timeout }},
         help="Timeout in seconds for each OpenClaw command",
+    )
+    parser.add_argument(
+        "--synthetic-canary-enabled",
+        type=int,
+        default={{ 1 if (openclaw_metrics_endpoint_synthetic_canary_enabled | bool) else 0 }},
+        help="Enable synthetic canary execution",
+    )
+    parser.add_argument(
+        "--synthetic-canary-agent",
+        default={{ openclaw_metrics_endpoint_synthetic_canary_agent | to_json }},
+        help="OpenClaw agent id for synthetic canary command",
+    )
+    parser.add_argument(
+        "--synthetic-canary-message",
+        default={{ openclaw_metrics_endpoint_synthetic_canary_message | to_json }},
+        help="Prompt used for synthetic canary command",
+    )
+    parser.add_argument(
+        "--synthetic-canary-expected-text",
+        default={{ openclaw_metrics_endpoint_synthetic_canary_expected_text | to_json }},
+        help="Expected exact response text for deterministic canary success",
+    )
+    parser.add_argument(
+        "--synthetic-canary-interval",
+        type=int,
+        default={{ openclaw_metrics_endpoint_synthetic_canary_interval }},
+        help="Minimum interval in seconds between canary executions",
+    )
+    parser.add_argument(
+        "--synthetic-canary-timeout",
+        type=int,
+        default={{ openclaw_metrics_endpoint_synthetic_canary_timeout }},
+        help="Timeout in seconds per canary command attempt",
+    )
+    parser.add_argument(
+        "--synthetic-canary-max-attempts",
+        type=int,
+        default={{ openclaw_metrics_endpoint_synthetic_canary_max_attempts }},
+        help="Maximum canary command attempts per due run",
+    )
+    parser.add_argument(
+        "--synthetic-canary-retry-delay",
+        type=int,
+        default={{ openclaw_metrics_endpoint_synthetic_canary_retry_delay_seconds }},
+        help="Delay in seconds between failed canary attempts",
+    )
+    parser.add_argument(
+        "--synthetic-canary-state-path",
+        default={{ openclaw_metrics_endpoint_synthetic_canary_state_path | to_json }},
+        help="Path to synthetic canary state cache",
+    )
+    parser.add_argument(
+        "--synthetic-canary-output-max-chars",
+        type=int,
+        default={{ openclaw_metrics_endpoint_synthetic_canary_output_max_chars }},
+        help="Maximum stored response chars from canary result text",
+    )
+    parser.add_argument(
+        "--synthetic-canary-force-run",
+        action="store_true",
+        help="Force canary execution even when interval has not elapsed",
     )
     args = parser.parse_args()
 
@@ -117,14 +416,27 @@ def main() -> int:
         openclaw["collector_ok"] = False
         openclaw["collector_errors"].append(str(err))
 
-    output_dir = os.path.dirname(args.output)
-    if output_dir:
-        os.makedirs(output_dir, exist_ok=True)
+    try:
+        run_synthetic_canary(args, payload)
+    except Exception as err:  # noqa: BLE001
+        canary = openclaw["synthetic"]["canary"]
+        canary["enabled"] = bool(args.synthetic_canary_enabled)
+        canary["cached"] = False
+        canary["last_run"] = {
+            "at": datetime.now(tz=timezone.utc).isoformat(),
+            "epoch": int(time.time()),
+            "ok": False,
+            "expected_match": False,
+            "attempts": 0,
+            "duration_ms": None,
+            "status": "error",
+            "provider": None,
+            "model": None,
+            "output_text": "",
+            "error": f"collector synthetic canary error: {err}",
+        }
 
-    tmp_path = f"{args.output}.tmp"
-    with open(tmp_path, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, sort_keys=True)
-    os.replace(tmp_path, args.output)
+    save_json_atomic(args.output, payload)
 
     return 0
 
