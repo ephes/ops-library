@@ -121,6 +121,12 @@ current_s3_note_key() {
   fi
 }
 
+current_s3_note_basename() {
+  local note_name
+  note_name=$(date +"${S3_NOTE_KEY_FORMAT}")
+  printf '%s' "${note_name##*/}"
+}
+
 current_note_id() {
   if s3_enabled; then
     current_s3_note_key
@@ -847,6 +853,56 @@ cmd_note_add() {
   ) 200>"${lock_path}"
 }
 
+cmd_note_find() {
+  local query="$*"
+  [[ -z "$query" ]] && { printf 'ERROR: Empty search query'; exit 1; }
+  [[ $(printf '%s' "$query" | wc -m) -gt $MAX_PAYLOAD ]] && { printf 'ERROR: Query exceeds %d characters' "$MAX_PAYLOAD"; exit 1; }
+
+  local file source_label tmp_file=""
+  if s3_enabled; then
+    if ! require_s3_config; then
+      exit 1
+    fi
+    s3_init_alias || { printf 'ERROR: Failed to initialize S3 client alias'; exit 1; }
+
+    local key
+    key=$(current_s3_note_key)
+    tmp_file=$(mktemp "${WEEKNOTES_DIR}/.s3-find.XXXXXX")
+    if ! s3_object_exists "$key"; then
+      rm -f -- "$tmp_file"
+      printf 'No note file for current date (expected %s).' "$(current_s3_note_basename)"
+      exit 0
+    fi
+    if ! s3_download_to_file "$key" "$tmp_file"; then
+      rm -f -- "$tmp_file"
+      printf 'ERROR: Failed to read current note from object store.'
+      exit 1
+    fi
+    file="$tmp_file"
+    source_label="$key"
+  else
+    file="${WEEKNOTES_DIR}/$(current_week_file)"
+    source_label="$(basename "$file")"
+    if [[ ! -f "$file" ]]; then
+      printf 'No weeknotes file for current week (%s).' "$(basename "$file")"
+      exit 0
+    fi
+  fi
+
+  local matches
+  matches=$(grep -inF -- "$query" "$file" | head -n 20 || true)
+
+  rm -f -- "$tmp_file"
+
+  if [[ -z "$matches" ]]; then
+    printf 'No entry found for "%s" in %s.' "$query" "$source_label"
+    exit 0
+  fi
+
+  printf 'Matches for "%s" in %s:\n' "$query" "$source_label"
+  printf '%s\n' "$matches"
+}
+
 cmd_snooze() {
   local today
   today=$(date +"%Y-%m-%d")
@@ -904,7 +960,7 @@ cmd_reminder() {
 
 if [[ $# -lt 1 ]]; then
   printf 'Usage: handler.sh <command> [subcommand] [args...]\n'
-  printf 'Commands: todo add|list, note add, reminder, snooze, hello\n'
+  printf 'Commands: todo add|list, note add|find, reminder, snooze, hello\n'
   exit 1
 fi
 
@@ -921,10 +977,11 @@ case "$cmd" in
     esac
     ;;
   note)
-    [[ $# -lt 1 ]] && { printf 'Usage: note add'; exit 1; }
+    [[ $# -lt 1 ]] && { printf 'Usage: note add|find'; exit 1; }
     subcmd="$1"; shift
     case "$subcmd" in
       add)  cmd_note_add "$@" ;;
+      find) cmd_note_find "$@" ;;
       *)    printf 'Unknown note subcommand: %s' "$subcmd"; exit 1 ;;
     esac
     ;;
@@ -938,7 +995,7 @@ case "$cmd" in
     printf 'Hello from weeknotes-md skill!'
     ;;
   *)
-    printf 'Unknown command: %s\nAvailable: todo add|list, note add, reminder, snooze, hello\n' "$cmd"
+    printf 'Unknown command: %s\nAvailable: todo add|list, note add|find, reminder, snooze, hello\n' "$cmd"
     exit 1
     ;;
 esac

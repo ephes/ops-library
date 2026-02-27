@@ -231,7 +231,7 @@ Designed for Nyxmon `json-metrics` checks, for example:
 
 When `openclaw_weeknotes_enabled: true`, the role deploys a weeknotes handler plus command skills (`/todo`, `/note`, `/snooze`) that provide chat-driven todo and journal management. Weeknotes data is stored under a dedicated directory with pre-edit snapshots and an append-only operation log.
 
-Commands: `/todo add`, `/note add`, `/todo list`, `/snooze`. A daily cron reminder summarizes open todos on weekdays (noise-suppressed when empty; can be snoozed per-day with `/snooze`).
+Commands: `/todo add`, `/todo list`, `/note add`, `/note find`, `/snooze`. A daily cron reminder summarizes open todos on weekdays (noise-suppressed when empty; can be snoozed per-day with `/snooze`).
 
 ### Weeknotes Variables
 
