@@ -1,0 +1,78 @@
+---
+# mail_offsite_replication - Default variables
+
+mail_offsite_replication_enabled: true
+
+mail_offsite_replication_packages:
+  - rsync
+  - openssh-client
+
+mail_offsite_replication_service_name: "mail-offsite-replication"
+mail_offsite_replication_timer_name: "mail-offsite-replication"
+
+mail_offsite_replication_on_calendar: "04:00"
+mail_offsite_replication_randomized_delay_sec: "15m"
+mail_offsite_replication_timeout_sec: "4h"
+
+# Source host (macmini)
+mail_offsite_replication_source_host: ""
+mail_offsite_replication_source_user: "root"
+mail_offsite_replication_source_vmail_path: "/mnt/cryptdata/vmail"
+mail_offsite_replication_source_stage_path: "/mnt/cryptdata/mail-backup-stage"
+mail_offsite_replication_source_stage_command: "/usr/local/sbin/mail-backup-stage.sh"
+
+# SSH settings
+mail_offsite_replication_ssh_key_manage: true
+mail_offsite_replication_ssh_private_key: ""
+mail_offsite_replication_ssh_key_path: "/root/.ssh/mail-offsite-replication-ed25519"
+mail_offsite_replication_ssh_known_hosts_path: "/root/.ssh/known_hosts"
+mail_offsite_replication_ssh_connect_timeout: 30
+mail_offsite_replication_manage_known_hosts: true
+mail_offsite_replication_ssh_keyscan_type: "ed25519"
+
+# Destination (fractal)
+mail_offsite_replication_destination_path: "/tank/backups/mail"
+mail_offsite_replication_destination_owner: "root"
+mail_offsite_replication_destination_group: "root"
+mail_offsite_replication_destination_mode: "0750"
+mail_offsite_replication_destination_vmail_subdir: "vmail"
+mail_offsite_replication_destination_stage_subdir: "stage"
+
+# Persist run metadata for monitoring/debugging
+mail_offsite_replication_status_dir: "/var/lib/mail-offsite-replication"
+mail_offsite_replication_status_file: "{{ mail_offsite_replication_status_dir }}/status.json"
+mail_offsite_replication_status_owner: "root"
+mail_offsite_replication_status_group: "root"
+mail_offsite_replication_status_mode: "0750"
+mail_offsite_replication_latest_marker_file: "{{ mail_offsite_replication_status_dir }}/latest-success.marker"
+
+# Rsync behavior
+mail_offsite_replication_vmail_rsync_extra_args:
+  - "--archive"
+  - "--hard-links"
+  - "--numeric-ids"
+  - "--partial-dir=.rsync-partial"
+  - "--delete"
+
+mail_offsite_replication_stage_rsync_extra_args:
+  - "--archive"
+  - "--numeric-ids"
+
+# Snapshot management
+mail_offsite_replication_snapshot_enabled: true
+mail_offsite_replication_snapshot_dataset: "tank/backups/mail"
+mail_offsite_replication_snapshot_prefix: "mail-sync"
+mail_offsite_replication_snapshot_keep: 30
+
+# Alerting
+mail_offsite_replication_alert_enabled: true
+mail_offsite_replication_alert_email: "root"
+mail_offsite_replication_alert_subject_prefix: "[mail-offsite]"
+mail_offsite_replication_alert_script_path: "/usr/local/bin/mail-offsite-alert.sh"
+
+# Script path
+mail_offsite_replication_script_path: "/usr/local/bin/mail-offsite-replication.sh"
+
+# Optional post-sync spindown hook
+mail_offsite_replication_spindown_enabled: false
+mail_offsite_replication_spindown_script_path: ""

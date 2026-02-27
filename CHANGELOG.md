@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `open_webui_venv_deploy` and `open_webui_venv_remove` roles for a uv-managed venv deployment with systemd, Traefik routing, and persistent data
 - `zfs_syncoid_replication` role for scheduled syncoid replication with alert hooks and optional spindown script
 - `zfs_usb_replication` role for USB-attached ZFS replication with device detection and optional alerts
+- `minio_offsite_replication` role to pull MinIO archives from a remote host into offsite storage via systemd timer, rsync/SSH, and alert hooks
+- `mail_offsite_replication` role to pull maildir + staged DB/config artifacts from a remote host into offsite ZFS storage with post-sync snapshots, status markers, and alert hooks
 - `encrypted_volume_prepare` role to verify, unlock, and mount LUKS data volumes with keyfile support, UUID validation, crypttab/fstab wiring, and a validate-only dry run
 - `nyxmon_backup` role for SQLite-safe snapshots with metadata, manifests, and automatic archive fetches
 - `nyxmon_restore` role with staging validation, safety snapshots, rollback support, and service verification

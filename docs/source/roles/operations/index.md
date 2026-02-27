@@ -19,6 +19,7 @@ Available runbooks:
 - [MinIO Backup](https://github.com/ephes/ops-library/blob/main/roles/minio_backup/README.md)
 - [MinIO Restore](https://github.com/ephes/ops-library/blob/main/roles/minio_restore/README.md)
 - [MinIO Offsite Replication](https://github.com/ephes/ops-library/blob/main/roles/minio_offsite_replication/README.md)
+- [Mail Offsite Replication](https://github.com/ephes/ops-library/blob/main/roles/mail_offsite_replication/README.md)
 - [Navidrome Backup](https://github.com/ephes/ops-library/blob/main/roles/navidrome_backup/README.md)
 - [Navidrome Restore](https://github.com/ephes/ops-library/blob/main/roles/navidrome_restore/README.md)
 - [Takahe Backup](https://github.com/ephes/ops-library/blob/main/roles/takahe_backup/README.md)
@@ -55,6 +56,7 @@ unifi_restore
 minio_backup
 minio_restore
 minio_offsite_replication
+mail_offsite_replication
 navidrome_backup
 navidrome_restore
 takahe_backup

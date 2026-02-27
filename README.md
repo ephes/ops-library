@@ -82,6 +82,8 @@ The table below links each published role to its dedicated documentation. Refer 
 | Service operations | [`mastodon_backup`](roles/mastodon_backup/README.md) | Backup Mastodon database, media, and configuration with optional archive fetch. |
 | Service operations | [`mastodon_restore`](roles/mastodon_restore/README.md) | Restore Mastodon from archives produced by `mastodon_backup`. |
 | Service operations | [`mastodon_maintenance`](roles/mastodon_maintenance/README.md) | Run Mastodon tootctl maintenance commands (media cleanup, cache pruning). |
+| Service operations | [`minio_offsite_replication`](roles/minio_offsite_replication/README.md) | Pull MinIO backup archives from a remote source into offsite storage via systemd timer + rsync/SSH. |
+| Service operations | [`mail_offsite_replication`](roles/mail_offsite_replication/README.md) | Pull maildir + staged DB/config artifacts into a single offsite ZFS dataset via rsync/SSH with post-sync snapshots. |
 | Service removal | [`fastdeploy_remove`](roles/fastdeploy_remove/README.md) | Remove FastDeploy and related resources safely. |
 | Service removal | [`nyxmon_remove`](roles/nyxmon_remove/README.md) | Remove Nyxmon while preserving data as needed. |
 | Service removal | [`homeassistant_remove`](roles/homeassistant_remove/README.md) | Tear down Home Assistant (service, config, user) with confirmation guards. |

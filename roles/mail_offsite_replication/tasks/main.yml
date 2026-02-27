@@ -1,0 +1,240 @@
+---
+- name: Skip mail_offsite_replication when disabled
+  ansible.builtin.debug:
+    msg: "mail_offsite_replication role skipped (mail_offsite_replication_enabled=false)."
+  when: not mail_offsite_replication_enabled | bool
+
+- name: Configure mail offsite replication
+  when: mail_offsite_replication_enabled | bool
+  block:
+    - name: Validate required replication variables
+      ansible.builtin.assert:
+        that:
+          - mail_offsite_replication_source_host is defined
+          - mail_offsite_replication_source_host | length > 0
+          - mail_offsite_replication_source_host != "CHANGE_ME"
+          - mail_offsite_replication_source_vmail_path is defined
+          - mail_offsite_replication_source_vmail_path | length > 0
+          - mail_offsite_replication_source_vmail_path.startswith("/")
+          - mail_offsite_replication_source_stage_path is defined
+          - mail_offsite_replication_source_stage_path | length > 0
+          - mail_offsite_replication_source_stage_path.startswith("/")
+          - mail_offsite_replication_source_stage_command is defined
+          - mail_offsite_replication_source_stage_command | length > 0
+          - mail_offsite_replication_source_stage_command.startswith("/")
+          - mail_offsite_replication_destination_path is defined
+          - mail_offsite_replication_destination_path | length > 0
+          - mail_offsite_replication_destination_path.startswith("/")
+          - mail_offsite_replication_destination_vmail_subdir | length > 0
+          - mail_offsite_replication_destination_stage_subdir | length > 0
+        fail_msg: |
+          mail_offsite_replication requires source host, source paths, pre-sync command,
+          and destination settings.
+
+    - name: Validate SSH private key when key management is enabled
+      ansible.builtin.assert:
+        that:
+          - mail_offsite_replication_ssh_private_key is defined
+          - mail_offsite_replication_ssh_private_key | length > 0
+          - mail_offsite_replication_ssh_private_key != "CHANGE_ME"
+        fail_msg: |
+          mail_offsite_replication_ssh_private_key must be set when
+          mail_offsite_replication_ssh_key_manage=true.
+      when: mail_offsite_replication_ssh_key_manage | bool
+      no_log: true
+
+    - name: Validate alert configuration
+      ansible.builtin.assert:
+        that:
+          - mail_offsite_replication_alert_email is defined
+          - mail_offsite_replication_alert_email | length > 0
+          - mail_offsite_replication_alert_email != "CHANGE_ME"
+        fail_msg: |
+          mail_offsite_replication_alert_email must be set when alerting is enabled.
+      when: mail_offsite_replication_alert_enabled | bool
+
+    - name: Validate snapshot settings when enabled
+      ansible.builtin.assert:
+        that:
+          - mail_offsite_replication_snapshot_dataset is defined
+          - mail_offsite_replication_snapshot_dataset | length > 0
+          - mail_offsite_replication_snapshot_prefix is defined
+          - mail_offsite_replication_snapshot_prefix | length > 0
+          - mail_offsite_replication_snapshot_keep | int > 0
+        fail_msg: |
+          Snapshot settings are invalid. Set snapshot dataset/prefix and keep > 0.
+      when: mail_offsite_replication_snapshot_enabled | bool
+
+    - name: Validate spindown configuration when enabled
+      ansible.builtin.assert:
+        that:
+          - mail_offsite_replication_spindown_script_path is defined
+          - mail_offsite_replication_spindown_script_path | length > 0
+          - mail_offsite_replication_spindown_script_path.startswith("/")
+        fail_msg: |
+          mail_offsite_replication_spindown_script_path must be a non-empty absolute path
+          when mail_offsite_replication_spindown_enabled=true.
+      when: mail_offsite_replication_spindown_enabled | bool
+
+    - name: Install replication packages
+      ansible.builtin.package:
+        name: "{{ mail_offsite_replication_packages }}"
+        state: present
+
+    - name: Ensure /root/.ssh directory exists
+      ansible.builtin.file:
+        path: "{{ mail_offsite_replication_ssh_key_path | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Write SSH private key for replication
+      ansible.builtin.copy:
+        dest: "{{ mail_offsite_replication_ssh_key_path }}"
+        content: "{{ mail_offsite_replication_ssh_private_key | regex_replace('\n?$', '\n') }}"
+        owner: root
+        group: root
+        mode: "0600"
+      when: mail_offsite_replication_ssh_key_manage | bool
+      no_log: true
+
+    - name: Ensure known_hosts file exists
+      ansible.builtin.file:
+        path: "{{ mail_offsite_replication_ssh_known_hosts_path }}"
+        state: touch
+        owner: root
+        group: root
+        mode: "0644"
+      when: mail_offsite_replication_manage_known_hosts | bool
+
+    - name: Gather source host SSH key
+      ansible.builtin.command:
+        argv:
+          - ssh-keyscan
+          - -t
+          - "{{ mail_offsite_replication_ssh_keyscan_type }}"
+          - "{{ mail_offsite_replication_source_host }}"
+      register: _mail_offsite_replication_keyscan
+      changed_when: false
+      when: mail_offsite_replication_manage_known_hosts | bool
+
+    - name: Validate source host SSH keyscan output
+      ansible.builtin.assert:
+        that:
+          - _mail_offsite_replication_keyscan.stdout is defined
+          - _mail_offsite_replication_keyscan.stdout | trim | length > 0
+        fail_msg: >-
+          Failed to collect SSH host key for {{ mail_offsite_replication_source_host }}.
+      when: mail_offsite_replication_manage_known_hosts | bool
+
+    - name: Add source host to known_hosts
+      ansible.builtin.known_hosts:
+        path: "{{ mail_offsite_replication_ssh_known_hosts_path }}"
+        name: "{{ mail_offsite_replication_source_host }}"
+        key: "{{ _mail_offsite_replication_keyscan.stdout }}"
+        state: present
+      when: mail_offsite_replication_manage_known_hosts | bool
+
+    - name: Ensure destination group exists when non-root group is configured
+      ansible.builtin.group:
+        name: "{{ mail_offsite_replication_destination_group }}"
+        state: present
+        system: true
+      when: mail_offsite_replication_destination_group != "root"
+
+    - name: Ensure destination root path exists
+      ansible.builtin.file:
+        path: "{{ mail_offsite_replication_destination_path }}"
+        state: directory
+        owner: "{{ mail_offsite_replication_destination_owner }}"
+        group: "{{ mail_offsite_replication_destination_group }}"
+        mode: "{{ mail_offsite_replication_destination_mode }}"
+
+    - name: Ensure destination vmail path exists
+      ansible.builtin.file:
+        path: "{{ mail_offsite_replication_destination_path }}/{{ mail_offsite_replication_destination_vmail_subdir }}"
+        state: directory
+        owner: "{{ mail_offsite_replication_destination_owner }}"
+        group: "{{ mail_offsite_replication_destination_group }}"
+        mode: "{{ mail_offsite_replication_destination_mode }}"
+
+    - name: Ensure destination stage path exists
+      ansible.builtin.file:
+        path: "{{ mail_offsite_replication_destination_path }}/{{ mail_offsite_replication_destination_stage_subdir }}"
+        state: directory
+        owner: "{{ mail_offsite_replication_destination_owner }}"
+        group: "{{ mail_offsite_replication_destination_group }}"
+        mode: "{{ mail_offsite_replication_destination_mode }}"
+
+    - name: Ensure status directory exists
+      ansible.builtin.file:
+        path: "{{ mail_offsite_replication_status_dir }}"
+        state: directory
+        owner: "{{ mail_offsite_replication_status_owner }}"
+        group: "{{ mail_offsite_replication_status_group }}"
+        mode: "{{ mail_offsite_replication_status_mode }}"
+
+    - name: Install replication script
+      ansible.builtin.template:
+        src: mail-offsite-replication.sh.j2
+        dest: "{{ mail_offsite_replication_script_path }}"
+        owner: root
+        group: root
+        mode: "0750"
+      notify:
+        - restart mail-offsite-replication-timer
+
+    - name: Install alert script
+      ansible.builtin.template:
+        src: mail-offsite-alert.sh.j2
+        dest: "{{ mail_offsite_replication_alert_script_path }}"
+        owner: root
+        group: root
+        mode: "0750"
+      when: mail_offsite_replication_alert_enabled | bool
+      notify:
+        - restart mail-offsite-replication-timer
+
+    - name: Install replication service unit
+      ansible.builtin.template:
+        src: mail-offsite-replication.service.j2
+        dest: "/etc/systemd/system/{{ mail_offsite_replication_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart mail-offsite-replication-timer
+
+    - name: Install failure alert unit
+      ansible.builtin.template:
+        src: mail-offsite-replication-failure@.service.j2
+        dest: "/etc/systemd/system/{{ mail_offsite_replication_service_name }}-failure@.service"
+        owner: root
+        group: root
+        mode: "0644"
+      when: mail_offsite_replication_alert_enabled | bool
+      notify:
+        - reload systemd
+
+    - name: Install replication timer unit
+      ansible.builtin.template:
+        src: mail-offsite-replication.timer.j2
+        dest: "/etc/systemd/system/{{ mail_offsite_replication_timer_name }}.timer"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart mail-offsite-replication-timer
+
+    - name: Flush handlers to register systemd units
+      ansible.builtin.meta: flush_handlers
+
+    - name: Enable replication timer
+      ansible.builtin.systemd:
+        name: "{{ mail_offsite_replication_timer_name }}.timer"
+        enabled: true
+        state: started
+        daemon_reload: true

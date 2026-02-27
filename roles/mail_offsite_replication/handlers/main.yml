@@ -1,0 +1,10 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart mail-offsite-replication-timer
+  ansible.builtin.systemd:
+    name: "{{ mail_offsite_replication_timer_name }}.timer"
+    state: restarted
+  when: mail_offsite_replication_enabled | bool
