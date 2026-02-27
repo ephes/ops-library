@@ -71,6 +71,61 @@
       openclaw_ollama_base_url is optional, but when set it must start with http:// or https://.
   when: openclaw_ollama_base_url | length > 0
 
+- name: validate | Optional model fallback policy shape
+  ansible.builtin.assert:
+    that:
+      - openclaw_agent_model_fallbacks is sequence
+      - openclaw_agent_model_fallbacks is not string
+      - >-
+        (
+          openclaw_agent_model_fallbacks
+          | map('trim')
+          | reject('equalto', '')
+          | list
+          | length
+        ) == (openclaw_agent_model_fallbacks | length)
+    fail_msg: >-
+      openclaw_agent_model_fallbacks must be a list of non-empty model IDs.
+
+- name: validate | Optional model fallback entry format
+  ansible.builtin.assert:
+    that:
+      - item is regex('^[^\\s]+/[^\\s]+$')
+    fail_msg: >-
+      Each entry in openclaw_agent_model_fallbacks must be in provider/model format.
+      Invalid entry: {{ item }}
+  loop: "{{ openclaw_agent_model_fallbacks }}"
+  when: openclaw_agent_model_fallbacks | length > 0
+
+- name: validate | Optional model fallback policy semantics
+  ansible.builtin.assert:
+    that:
+      - openclaw_agent_model_primary | trim | length > 0
+      - openclaw_agent_model_primary is regex('^[^\\s]+/[^\\s]+$')
+      - >-
+        (openclaw_agent_model_primary | trim)
+        not in (openclaw_agent_model_fallbacks | map('trim') | list)
+      - >-
+        (
+          openclaw_agent_model_fallbacks
+          | map('trim')
+          | unique
+          | list
+          | length
+        ) == (openclaw_agent_model_fallbacks | length)
+    fail_msg: >-
+      openclaw_agent_model_primary must be set as provider/model when model fallbacks are configured.
+      Fallbacks must be unique and must not contain the primary model.
+  when: openclaw_agent_model_fallbacks | length > 0
+
+- name: validate | Optional model primary format
+  ansible.builtin.assert:
+    that:
+      - openclaw_agent_model_primary is regex('^[^\\s]+/[^\\s]+$')
+    fail_msg: >-
+      openclaw_agent_model_primary must be in provider/model format.
+  when: openclaw_agent_model_primary | trim | length > 0
+
 - name: validate | Telegram bot token when Telegram is enabled
   ansible.builtin.assert:
     that:

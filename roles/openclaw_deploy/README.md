@@ -40,6 +40,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 - The source repo is cloned to a build directory and `docker build` creates the image using the upstream Dockerfile. The container uses the upstream `CMD` — no command override in compose.
 - The gateway handles all messaging channels internally (Telegram via grammY, etc.).
 - AI replies are handled by the gateway using configured provider APIs — no external scripts needed.
+- Optional model policy patching can enforce a default model and ordered fallback chain under `agents.defaults.model`.
 - Persistent state (sessions, config) is stored in a bind-mounted directory owned by container uid 1000.
 - The container binds to `127.0.0.1:18789` by default, with optional Traefik reverse proxy for external access. When Traefik is enabled, the bind host is validated to be loopback.
 - When Traefik is enabled, role-managed config sets `gateway.bind: "lan"` and `gateway.controlUi.allowedOrigins` to `https://<openclaw_traefik_host>` so the host-side reverse proxy can reach the gateway UI safely.
@@ -97,6 +98,13 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 | `openclaw_ollama_api_key` | `""` | Optional Ollama API key (`OLLAMA_API_KEY`) for provider `ollama`; when `openclaw_ollama_base_url` is set and this is empty, role injects `ollama-local` |
 | `openclaw_ollama_base_url` | `""` | Optional Ollama endpoint (`OLLAMA_BASE_URL`); must be reachable from inside the OpenClaw container |
 | `openclaw_reply_system_prompt` | `You are a concise assistant.` | System prompt for AI replies |
+
+### Model Routing Policy
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `openclaw_agent_model_primary` | `""` | Optional default model (`provider/model`) patched to `agents.defaults.model.primary` |
+| `openclaw_agent_model_fallbacks` | `[]` | Optional ordered fallback list (`provider/model` entries) patched to `agents.defaults.model.fallbacks` |
 
 ### Build Configuration
 

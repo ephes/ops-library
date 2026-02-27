@@ -51,6 +51,25 @@
       }}
   when: openclaw_gateway_config | length == 0
 
+- name: config | Build optional model policy patch
+  ansible.builtin.set_fact:
+    _openclaw_model_policy_patch: >-
+      {{
+        {
+          "agents": {
+            "defaults": {
+              "model": {
+                "primary": openclaw_agent_model_primary | trim,
+                "fallbacks": openclaw_agent_model_fallbacks | map('trim') | list
+              }
+            }
+          }
+        }
+      }}
+  when:
+    - openclaw_gateway_config | length == 0
+    - openclaw_agent_model_primary | trim | length > 0
+
 - name: config | Build gateway config from individual variables
   ansible.builtin.set_fact:
     _openclaw_built_config: >-
@@ -71,6 +90,7 @@
           }
         }
         | combine(_openclaw_gateway_access_patch, recursive=True)
+        | combine(_openclaw_model_policy_patch | default({}), recursive=True)
       }}
   when: openclaw_gateway_config | length == 0
 
@@ -149,6 +169,7 @@
                 ),
                 recursive=True
               )
+            | combine(_openclaw_model_policy_patch | default({}), recursive=True)
           }}
 
     - name: config | Merge runtime config patch
