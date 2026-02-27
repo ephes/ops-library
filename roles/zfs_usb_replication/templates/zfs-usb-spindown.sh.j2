@@ -34,6 +34,13 @@ fi
 
 for dev in "${spindown_devices[@]}"; do
   if [[ -b "${dev}" ]]; then
+    # Avoid redundant standby commands for already-sleeping disks.
+    if command -v smartctl >/dev/null 2>&1; then
+      smart_out="$(smartctl -n standby "${dev}" 2>&1 || true)"
+      if grep -q "STANDBY mode" <<<"${smart_out}"; then
+        continue
+      fi
+    fi
     if ! hdparm -y "${dev}" >/dev/null 2>&1; then
       logger -t zfs-usb-spindown "hdparm failed for ${dev}"
     fi

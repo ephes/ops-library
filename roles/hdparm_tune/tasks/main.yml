@@ -24,11 +24,24 @@
       - item.device is defined
       - item.device | length > 0
       - item.apm is defined or item.spindown_time is defined or item.acoustic_management is defined
+      - item.apm is not defined or (item.apm | string is match('^[0-9]+$'))
+      - item.apm is not defined or (item.apm | int >= 1 and item.apm | int <= 255)
       - item.spindown_time is not defined or (item.spindown_time | string is match('^[0-9]+$'))
       - item.spindown_time is not defined or (item.spindown_time | int >= 0 and item.spindown_time | int <= 253)
     fail_msg: "Each hdparm_tune_devices entry needs device and at least one setting."
   loop: "{{ hdparm_tune_devices }}"
   when: hdparm_tune_devices | length > 0
+
+- name: Warn when APM range may block automatic spindown
+  ansible.builtin.debug:
+    msg: >-
+      hdparm_tune: APM {{ item.apm }} for {{ item.device }} is in 128-254,
+      which may prevent automatic disk spindown on many drives.
+  loop: "{{ hdparm_tune_devices }}"
+  when:
+    - item.apm is defined
+    - item.apm | int >= 128
+    - item.apm | int <= 254
 
 - name: Configure hdparm settings
   ansible.builtin.blockinfile:
