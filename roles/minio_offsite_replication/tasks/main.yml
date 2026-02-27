@@ -1,0 +1,203 @@
+---
+- name: Skip minio_offsite_replication when disabled
+  ansible.builtin.debug:
+    msg: "minio_offsite_replication role skipped (minio_offsite_replication_enabled=false)."
+  when: not minio_offsite_replication_enabled | bool
+
+- name: Configure MinIO offsite replication
+  when: minio_offsite_replication_enabled | bool
+  block:
+    - name: Validate required replication variables
+      ansible.builtin.assert:
+        that:
+          - minio_offsite_replication_source_host is defined
+          - minio_offsite_replication_source_host | length > 0
+          - minio_offsite_replication_source_host != "CHANGE_ME"
+          - minio_offsite_replication_source_path is defined
+          - minio_offsite_replication_source_path | length > 0
+          - minio_offsite_replication_destination_path is defined
+          - minio_offsite_replication_destination_path | length > 0
+          - minio_offsite_replication_archive_patterns | length > 0
+        fail_msg: |
+          minio_offsite_replication requires source host/path, destination path, and at least one archive pattern.
+
+    - name: Validate SSH private key when key management is enabled
+      ansible.builtin.assert:
+        that:
+          - minio_offsite_replication_ssh_private_key is defined
+          - minio_offsite_replication_ssh_private_key | length > 0
+          - minio_offsite_replication_ssh_private_key != "CHANGE_ME"
+        fail_msg: |
+          minio_offsite_replication_ssh_private_key must be set when
+          minio_offsite_replication_ssh_key_manage=true.
+      when: minio_offsite_replication_ssh_key_manage | bool
+      no_log: true
+
+    - name: Validate alert configuration
+      ansible.builtin.assert:
+        that:
+          - minio_offsite_replication_alert_email is defined
+          - minio_offsite_replication_alert_email | length > 0
+          - minio_offsite_replication_alert_email != "CHANGE_ME"
+        fail_msg: |
+          minio_offsite_replication_alert_email must be set when alerting is enabled.
+      when: minio_offsite_replication_alert_enabled | bool
+
+    - name: Validate spindown configuration when enabled
+      ansible.builtin.assert:
+        that:
+          - minio_offsite_replication_spindown_script_path is defined
+          - minio_offsite_replication_spindown_script_path | length > 0
+          - minio_offsite_replication_spindown_script_path.startswith("/")
+        fail_msg: |
+          minio_offsite_replication_spindown_script_path must be a non-empty absolute path
+          when minio_offsite_replication_spindown_enabled=true.
+      when: minio_offsite_replication_spindown_enabled | bool
+
+    - name: Install replication packages
+      ansible.builtin.package:
+        name: "{{ minio_offsite_replication_packages }}"
+        state: present
+
+    - name: Ensure /root/.ssh directory exists
+      ansible.builtin.file:
+        path: "{{ minio_offsite_replication_ssh_key_path | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Write SSH private key for replication
+      ansible.builtin.copy:
+        dest: "{{ minio_offsite_replication_ssh_key_path }}"
+        content: "{{ minio_offsite_replication_ssh_private_key }}"
+        owner: root
+        group: root
+        mode: "0600"
+      when: minio_offsite_replication_ssh_key_manage | bool
+      no_log: true
+
+    - name: Ensure known_hosts file exists
+      ansible.builtin.file:
+        path: "{{ minio_offsite_replication_ssh_known_hosts_path }}"
+        state: touch
+        owner: root
+        group: root
+        mode: "0644"
+      when: minio_offsite_replication_manage_known_hosts | bool
+
+    - name: Gather source host SSH key
+      ansible.builtin.command:
+        argv:
+          - ssh-keyscan
+          - -t
+          - "{{ minio_offsite_replication_ssh_keyscan_type }}"
+          - "{{ minio_offsite_replication_source_host }}"
+      register: _minio_offsite_replication_keyscan
+      changed_when: false
+      when: minio_offsite_replication_manage_known_hosts | bool
+
+    - name: Validate source host SSH keyscan output
+      ansible.builtin.assert:
+        that:
+          - _minio_offsite_replication_keyscan.stdout is defined
+          - _minio_offsite_replication_keyscan.stdout | trim | length > 0
+        fail_msg: >
+          Failed to collect SSH host key for
+          {{ minio_offsite_replication_source_host }}.
+      when: minio_offsite_replication_manage_known_hosts | bool
+
+    - name: Add source host to known_hosts
+      ansible.builtin.known_hosts:
+        path: "{{ minio_offsite_replication_ssh_known_hosts_path }}"
+        name: "{{ minio_offsite_replication_source_host }}"
+        key: "{{ _minio_offsite_replication_keyscan.stdout }}"
+        state: present
+      when: minio_offsite_replication_manage_known_hosts | bool
+
+    - name: Ensure destination group exists when non-root group is configured
+      ansible.builtin.group:
+        name: "{{ minio_offsite_replication_destination_group }}"
+        state: present
+        system: true
+      when: minio_offsite_replication_destination_group != "root"
+
+    - name: Ensure destination path exists
+      ansible.builtin.file:
+        path: "{{ minio_offsite_replication_destination_path }}"
+        state: directory
+        owner: "{{ minio_offsite_replication_destination_owner }}"
+        group: "{{ minio_offsite_replication_destination_group }}"
+        mode: "{{ minio_offsite_replication_destination_mode }}"
+
+    - name: Ensure status directory exists
+      ansible.builtin.file:
+        path: "{{ minio_offsite_replication_status_dir }}"
+        state: directory
+        owner: "{{ minio_offsite_replication_status_owner }}"
+        group: "{{ minio_offsite_replication_status_group }}"
+        mode: "{{ minio_offsite_replication_status_mode }}"
+
+    - name: Install replication script
+      ansible.builtin.template:
+        src: minio-offsite-replication.sh.j2
+        dest: "{{ minio_offsite_replication_script_path }}"
+        owner: root
+        group: root
+        mode: "0750"
+      notify:
+        - restart minio-offsite-replication-timer
+
+    - name: Install alert script
+      ansible.builtin.template:
+        src: minio-offsite-alert.sh.j2
+        dest: "{{ minio_offsite_replication_alert_script_path }}"
+        owner: root
+        group: root
+        mode: "0750"
+      when: minio_offsite_replication_alert_enabled | bool
+      notify:
+        - restart minio-offsite-replication-timer
+
+    - name: Install replication service unit
+      ansible.builtin.template:
+        src: minio-offsite-replication.service.j2
+        dest: "/etc/systemd/system/{{ minio_offsite_replication_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart minio-offsite-replication-timer
+
+    - name: Install failure alert unit
+      ansible.builtin.template:
+        src: minio-offsite-replication-failure@.service.j2
+        dest: "/etc/systemd/system/{{ minio_offsite_replication_service_name }}-failure@.service"
+        owner: root
+        group: root
+        mode: "0644"
+      when: minio_offsite_replication_alert_enabled | bool
+      notify:
+        - reload systemd
+
+    - name: Install replication timer unit
+      ansible.builtin.template:
+        src: minio-offsite-replication.timer.j2
+        dest: "/etc/systemd/system/{{ minio_offsite_replication_timer_name }}.timer"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart minio-offsite-replication-timer
+
+    - name: Flush handlers to register systemd units
+      ansible.builtin.meta: flush_handlers
+
+    - name: Enable replication timer
+      ansible.builtin.systemd:
+        name: "{{ minio_offsite_replication_timer_name }}.timer"
+        enabled: true
+        state: started
+        daemon_reload: true

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
 import time
@@ -15,6 +16,7 @@ USB_DATASETS = json.loads(r'''{{ backup_metrics_endpoint_usb_datasets | to_json 
 USB_ENABLED = {{ backup_metrics_endpoint_usb_enabled | bool | ternary('True', 'False') }}
 USB_POOL = {{ backup_metrics_endpoint_usb_pool | to_json }}
 USB_DEVICE = {{ backup_metrics_endpoint_usb_device | to_json }}
+FILE_BACKUPS = json.loads(r'''{{ backup_metrics_endpoint_file_backups | default([]) | to_json }}''')
 SYSTEMCTL_TIMEOUT = {{ backup_metrics_endpoint_systemctl_timeout | int }}
 ZFS_TIMEOUT = {{ backup_metrics_endpoint_zfs_timeout | int }}
 ZFS_RETRIES = {{ backup_metrics_endpoint_zfs_retries | int }}
@@ -407,6 +409,101 @@ def _snapshot_from_cache(dataset: str, cached: dict[str, Any], reason: str) -> d
     }
 
 
+def _parse_max_age_hours(raw: Any, default: float = 48.0) -> float:
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    if isinstance(raw, str):
+        try:
+            return float(raw.strip())
+        except ValueError:
+            return default
+    return default
+
+
+def _file_backup_status(item: dict[str, Any], now_epoch: int) -> dict[str, Any]:
+    check_id = str(item.get("id") or item.get("path") or "unknown")
+    label = str(item.get("label") or check_id)
+    path_raw = str(item.get("path") or "")
+    glob_pattern = str(item.get("glob") or "*.tar.*")
+    max_age_hours = _parse_max_age_hours(item.get("max_age_hours"), default=48.0)
+    required = _as_bool(item.get("required", True))
+    enabled = _as_bool(item.get("enabled", True))
+
+    payload: dict[str, Any] = {
+        "id": check_id,
+        "label": label,
+        "path": path_raw,
+        "glob": glob_pattern,
+        "max_age_hours": max_age_hours,
+        "required": required,
+        "enabled": enabled,
+        "ok": None,
+        "stale": None,
+        "latest_file": None,
+        "latest_mtime_epoch": None,
+        "latest_mtime_iso": None,
+        "age_seconds": None,
+        "age_hours": None,
+        "error": None,
+    }
+    if not enabled:
+        payload["error"] = "disabled"
+        return payload
+
+    if not path_raw:
+        payload["ok"] = False
+        payload["error"] = "path_not_set"
+        return payload
+
+    base_path = Path(path_raw)
+    if not base_path.exists():
+        payload["ok"] = False
+        payload["error"] = "path_missing"
+        return payload
+
+    try:
+        if base_path.is_file():
+            candidates = [base_path]
+        else:
+            candidates = [entry for entry in base_path.glob(glob_pattern) if entry.is_file()]
+    except OSError as exc:
+        payload["ok"] = False
+        payload["error"] = f"glob_failed: {exc}"
+        return payload
+
+    if not candidates:
+        payload["ok"] = False
+        payload["error"] = "no_matching_files"
+        return payload
+
+    try:
+        stat_results = [(entry, entry.stat()) for entry in candidates]
+    except OSError as exc:
+        payload["ok"] = False
+        payload["error"] = f"stat_failed: {exc}"
+        return payload
+    latest_file, latest_stat = max(stat_results, key=lambda pair: pair[1].st_mtime)
+    latest_epoch = int(latest_stat.st_mtime)
+
+    age_seconds = max(0, now_epoch - latest_epoch)
+    age_hours = round(age_seconds / 3600, 2)
+    stale = age_hours > max_age_hours
+
+    payload.update(
+        {
+            "ok": not stale,
+            "stale": stale,
+            "latest_file": str(latest_file),
+            "latest_mtime_epoch": latest_epoch,
+            "latest_mtime_iso": _epoch_to_iso(latest_epoch),
+            "age_seconds": age_seconds,
+            "age_hours": age_hours,
+            "error": None,
+        }
+    )
+    return payload
+
+
 def _pool_imported(pool: str) -> bool:
     rc, _, _ = _run(["zpool", "list", "-H", "-o", "name", pool], ZFS_TIMEOUT)
     return rc == 0
@@ -428,6 +525,7 @@ def main() -> int:
             "local": [],
             "usb": [],
         },
+        "file_backups": [],
         "usb": {
             "enabled": USB_ENABLED,
             "pool": USB_POOL,
@@ -475,6 +573,10 @@ def main() -> int:
                 file=sys.stderr,
             )
         payload["snapshots"]["local"].append(_latest_snapshot(dataset))
+
+    for item in FILE_BACKUPS:
+        if isinstance(item, dict):
+            payload["file_backups"].append(_file_backup_status(item, now_epoch))
 
     if USB_DEVICE:
         payload["usb"]["device_present"] = os.path.exists(USB_DEVICE)
@@ -525,6 +627,22 @@ def main() -> int:
         bool(item.get("ok"))
         for item in payload["snapshots"]["local"]
     ) if payload["snapshots"]["local"] else False
+    enabled_file_backups = [
+        item for item in payload["file_backups"]
+        if item.get("enabled") is True
+    ]
+    required_file_backups = [
+        item for item in enabled_file_backups
+        if item.get("required") is True
+    ]
+    file_backups_ok = (
+        all(bool(item.get("ok")) for item in enabled_file_backups)
+        if enabled_file_backups else True
+    )
+    required_file_backups_ok = (
+        all(bool(item.get("ok")) for item in required_file_backups)
+        if required_file_backups else True
+    )
 
     usb_snapshots = payload["snapshots"]["usb"]
     usb_snapshots_ok: bool | None
@@ -540,10 +658,17 @@ def main() -> int:
 
     usb_pool_offline = usb_state == "offline"
     payload["usb"]["state"] = usb_state
-    overall_ok = required_units_ok and local_snapshots_ok and (usb_snapshots_ok in (None, True))
+    overall_ok = (
+        required_units_ok
+        and local_snapshots_ok
+        and (usb_snapshots_ok in (None, True))
+        and required_file_backups_ok
+    )
     payload["summary"] = {
         "required_units_ok": required_units_ok,
         "local_snapshots_ok": local_snapshots_ok,
+        "file_backups_ok": file_backups_ok,
+        "required_file_backups_ok": required_file_backups_ok,
         "usb_snapshots_ok": usb_snapshots_ok,
         "usb_state": usb_state,
         "usb_pool_offline": usb_pool_offline,

@@ -10,9 +10,10 @@ This role deploys two components:
 2. `backup-metrics-endpoint.service` serves the collected JSON at `/.well-known/backup` (configurable).
 
 The collector gathers:
-- systemd timer/service state for backup jobs (`sanoid`, local `syncoid`, USB `syncoid`)
+- systemd timer/service state for configured backup/health units (`backup_metrics_endpoint_units`, e.g. `sanoid`, `syncoid`, MinIO replica/lag units)
 - latest snapshot recency for configured local replica datasets
 - latest snapshot recency for USB datasets (when USB pool is imported)
+- optional file/archive freshness checks (`backup_metrics_endpoint_file_backups`, e.g. MinIO lag marker and offsite fallback marker)
 - USB pool/device context (enabled/imported/device-present)
 
 The endpoint adds staleness metadata (`meta.age_seconds`) based on JSON file mtime.
@@ -60,6 +61,7 @@ probes against sleeping replica pools.
 | `backup_metrics_endpoint_usb_pool` | `vault` | USB pool name |
 | `backup_metrics_endpoint_usb_device` | `""` | optional `/dev/disk/by-id/...` path |
 | `backup_metrics_endpoint_usb_datasets` | `vault/...` defaults | USB replica datasets to check |
+| `backup_metrics_endpoint_file_backups` | `[]` | Optional archive/file freshness checks (`id`, `path`, `glob`, `max_age_hours`, `required`, `enabled`) |
 
 ## Example
 
@@ -81,6 +83,52 @@ probes against sleeping replica pools.
       - vault/photos
       - vault/videos
       - vault/backups
+    backup_metrics_endpoint_file_backups:
+      - id: minio_offsite
+        label: minio offsite archives (fallback)
+        path: /tank/backups/minio
+        glob: "*.tar.*"
+        max_age_hours: 40
+        required: false
+        enabled: true
+```
+
+### Example: MinIO Replica Lag/Parity Signals
+
+```yaml
+- role: local.ops_library.backup_metrics_endpoint
+  vars:
+    backup_metrics_endpoint_enabled: true
+    backup_metrics_endpoint_bind: "{{ tailscale_ip }}"
+    backup_metrics_endpoint_auth_user: nyxmon
+    backup_metrics_endpoint_auth_password: "{{ nyxmon_secrets.nyxmon_storage_metrics_password }}"
+    backup_metrics_endpoint_units:
+      - id: minio_replica
+        service: minio.service
+        required: true
+      - id: minio_replication_lag
+        timer: minio-replication-lag-check.timer
+        service: minio-replication-lag-check.service
+        required: true
+      - id: minio_offsite
+        timer: minio-offsite-replication.timer
+        service: minio-offsite-replication.service
+        required: false
+    backup_metrics_endpoint_file_backups:
+      - id: minio_replication_lag_warning
+        label: minio replication lag warning
+        path: /var/lib/minio-replication-monitor/lag.marker
+        glob: "lag.marker"
+        max_age_hours: 2
+        required: false
+        enabled: true
+      - id: minio_replication_lag_critical
+        label: minio replication lag critical
+        path: /var/lib/minio-replication-monitor/lag.marker
+        glob: "lag.marker"
+        max_age_hours: 6
+        required: true
+        enabled: true
 ```
 
 ## Response Shape (abridged)
@@ -106,9 +154,20 @@ probes against sleeping replica pools.
     }],
     "usb": [{"dataset": "vault/replica/fast/general", "ok": null, "error": "usb_pool_not_imported"}]
   },
+  "file_backups": [{
+    "id": "minio_offsite",
+    "path": "/tank/backups/minio",
+    "glob": "*.tar.*",
+    "max_age_hours": 40.0,
+    "ok": true,
+    "stale": false,
+    "age_hours": 3.1
+  }],
   "summary": {
     "required_units_ok": true,
     "local_snapshots_ok": true,
+    "file_backups_ok": true,
+    "required_file_backups_ok": true,
     "usb_snapshots_ok": null,
     "usb_state": "offline",
     "usb_pool_offline": true,

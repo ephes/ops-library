@@ -1,0 +1,74 @@
+---
+# minio_offsite_replication - Default Variables
+
+# Enable/disable role execution
+minio_offsite_replication_enabled: true
+
+# Packages required for pull-based archive replication
+minio_offsite_replication_packages:
+  - rsync
+  - openssh-client
+
+# Systemd units
+minio_offsite_replication_service_name: "minio-offsite-replication"
+minio_offsite_replication_timer_name: "minio-offsite-replication"
+
+# Schedule
+minio_offsite_replication_on_calendar: "05:00"
+minio_offsite_replication_randomized_delay_sec: "15m"
+minio_offsite_replication_timeout_sec: "4h"
+
+# Source (remote host that stores MinIO archives)
+minio_offsite_replication_source_host: ""
+minio_offsite_replication_source_user: "root"
+minio_offsite_replication_source_path: "/opt/backups/minio"
+
+# SSH settings
+minio_offsite_replication_ssh_key_manage: true
+minio_offsite_replication_ssh_private_key: ""
+minio_offsite_replication_ssh_key_path: "/root/.ssh/minio-offsite-replication-ed25519"
+minio_offsite_replication_ssh_known_hosts_path: "/root/.ssh/known_hosts"
+minio_offsite_replication_ssh_connect_timeout: 30
+
+# Host key handling
+minio_offsite_replication_manage_known_hosts: true
+minio_offsite_replication_ssh_keyscan_type: "ed25519"
+
+# Destination (local Fractal storage)
+minio_offsite_replication_destination_path: "/tank/backups/minio"
+minio_offsite_replication_destination_owner: "root"
+minio_offsite_replication_destination_group: "root"
+minio_offsite_replication_destination_mode: "0750"
+
+# Persist run metadata for monitoring/debugging
+minio_offsite_replication_status_dir: "/var/lib/minio-offsite-replication"
+minio_offsite_replication_status_file: "{{ minio_offsite_replication_status_dir }}/status.json"
+minio_offsite_replication_status_owner: "root"
+minio_offsite_replication_status_group: "root"
+minio_offsite_replication_status_mode: "0750"
+minio_offsite_replication_latest_marker_file: "{{ minio_offsite_replication_status_dir }}/latest-archive.marker"
+
+# Archive selection and rsync behavior
+minio_offsite_replication_archive_patterns:
+  - "*.tar.gz"
+  - "*.tar.zst"
+minio_offsite_replication_rsync_extra_args:
+  - "--archive"
+  - "--hard-links"
+  - "--numeric-ids"
+  - "--partial-dir=.rsync-partial"
+minio_offsite_replication_rsync_delete: false
+minio_offsite_replication_require_archives: false
+
+# Alerting
+minio_offsite_replication_alert_enabled: true
+minio_offsite_replication_alert_email: "root"
+minio_offsite_replication_alert_subject_prefix: "[minio-offsite]"
+minio_offsite_replication_alert_script_path: "/usr/local/bin/minio-offsite-alert.sh"
+
+# Script path
+minio_offsite_replication_script_path: "/usr/local/bin/minio-offsite-replication.sh"
+
+# Optional post-sync spindown hook (for parking HDD pools after archive pull)
+minio_offsite_replication_spindown_enabled: false
+minio_offsite_replication_spindown_script_path: ""
