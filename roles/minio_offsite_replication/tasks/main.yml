@@ -17,9 +17,17 @@
           - minio_offsite_replication_source_path | length > 0
           - minio_offsite_replication_destination_path is defined
           - minio_offsite_replication_destination_path | length > 0
+          - minio_offsite_replication_archive_patterns is sequence
           - minio_offsite_replication_archive_patterns | length > 0
+          - >-
+            (minio_offsite_replication_archive_patterns | select('string') | list | length)
+            == (minio_offsite_replication_archive_patterns | length)
+          - >-
+            (minio_offsite_replication_archive_patterns | map('trim') | reject('equalto', '') | list | length)
+            == (minio_offsite_replication_archive_patterns | length)
         fail_msg: |
-          minio_offsite_replication requires source host/path, destination path, and at least one archive pattern.
+          minio_offsite_replication requires source host/path, destination path, and
+          archive_patterns as a non-empty list of non-empty strings.
 
     - name: Validate SSH private key when key management is enabled
       ansible.builtin.assert:

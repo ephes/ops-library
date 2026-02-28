@@ -98,10 +98,26 @@ done
 find_args+=( ")" -printf '%T@ %p\n' )
 
 latest_archive="$(
-  find "${find_args[@]}" \
-    | sort -nr \
-    | head -n 1 \
-    | cut -d' ' -f2-
+  {
+    find "${find_args[@]}" || true
+  } \
+    | awk '
+        BEGIN { max = -1; file = "" }
+        {
+          ts = $1
+          $1 = ""
+          sub(/^ /, "", $0)
+          if (ts > max) {
+            max = ts
+            file = $0
+          }
+        }
+        END {
+          if (file != "") {
+            print file
+          }
+        }
+      '
 )"
 
 generated_epoch="$(date +%s)"

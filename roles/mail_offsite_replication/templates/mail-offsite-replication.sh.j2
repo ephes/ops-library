@@ -125,7 +125,27 @@ if [[ "${snapshot_enabled}" == "true" ]]; then
   fi
 fi
 
-latest_mail_file="$({ find "${destination_vmail_path}" -type f -printf '%T@ %p\n' || true; } | sort -nr | head -n 1 | cut -d' ' -f2-)"
+latest_mail_file="$(
+  {
+    find "${destination_vmail_path}" -type f -printf '%T@ %p\n' || true
+  } | awk '
+    BEGIN { max = -1; file = "" }
+    {
+      ts = $1
+      $1 = ""
+      sub(/^ /, "", $0)
+      if (ts > max) {
+        max = ts
+        file = $0
+      }
+    }
+    END {
+      if (file != "") {
+        print file
+      }
+    }
+  '
+)"
 latest_mail_epoch=""
 if [[ -n "${latest_mail_file}" && -f "${latest_mail_file}" ]]; then
   latest_mail_epoch="$(stat -c '%Y' "${latest_mail_file}")"
