@@ -1,6 +1,13 @@
 ---
-# Home Assistant read-only skill deployment.
+# Home Assistant skill deployment (read + guarded write actions).
 # Included from main.yml when openclaw_homeassistant_enabled is true.
+
+- name: homeassistant | Remove legacy /ha command skill directory
+  ansible.builtin.file:
+    path: "{{ openclaw_homeassistant_skills_dir }}/ha"
+    state: absent
+  when: openclaw_homeassistant_command_skill_name != 'ha'
+  notify: restart openclaw
 
 - name: homeassistant | Build runtime configuration payload
   ansible.builtin.set_fact:
@@ -18,6 +25,22 @@
       allow_entities: >-
         {{
           openclaw_homeassistant_allow_entities
+          | map('trim')
+          | map('lower')
+          | unique
+          | list
+        }}
+      allow_write_domains: >-
+        {{
+          openclaw_homeassistant_allow_write_domains
+          | map('trim')
+          | map('lower')
+          | unique
+          | list
+        }}
+      allow_write_entities: >-
+        {{
+          openclaw_homeassistant_allow_write_entities
           | map('trim')
           | map('lower')
           | unique

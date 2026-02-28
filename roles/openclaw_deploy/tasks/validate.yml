@@ -322,6 +322,7 @@
     that:
       - openclaw_homeassistant_base_url | string | trim | length > 0
       - openclaw_homeassistant_base_url is regex('^https?://')
+      - not (openclaw_homeassistant_base_url | string is regex('[?#]'))
       - openclaw_homeassistant_token | string | trim | length > 0
       - openclaw_homeassistant_token != 'CHANGEME'
       - openclaw_homeassistant_skill_name | string | trim | length > 0
@@ -341,11 +342,16 @@
       - openclaw_homeassistant_allow_domains is not string
       - openclaw_homeassistant_allow_entities is sequence
       - openclaw_homeassistant_allow_entities is not string
+      - openclaw_homeassistant_allow_write_domains is sequence
+      - openclaw_homeassistant_allow_write_domains is not string
+      - openclaw_homeassistant_allow_write_entities is sequence
+      - openclaw_homeassistant_allow_write_entities is not string
       - >-
         (openclaw_homeassistant_allow_domains | length) > 0
         or (openclaw_homeassistant_allow_entities | length) > 0
     fail_msg: >-
-      Invalid Home Assistant settings. Set base_url/token, skill paths, limits/timeouts, and at least one
+      Invalid Home Assistant settings. Set base_url/token (without query/fragment),
+      skill paths, limits/timeouts, and at least one
       allowlist (domain and/or entity) when openclaw_homeassistant_enabled is true.
   no_log: true
   when: openclaw_homeassistant_enabled | bool
@@ -370,6 +376,28 @@
       Invalid Home Assistant entity allowlist entry: {{ item }}.
       Entity IDs must match domain.object_id (^[a-z0-9_]+\\.[a-z0-9_]+$).
   loop: "{{ openclaw_homeassistant_allow_entities }}"
+  when: openclaw_homeassistant_enabled | bool
+
+- name: validate | Home Assistant allowed write domains format
+  ansible.builtin.assert:
+    that:
+      - item | string | trim | length > 0
+      - item | string | trim is regex('^[a-z0-9_]+$')
+    fail_msg: >-
+      Invalid Home Assistant write-domain allowlist entry: {{ item }}.
+      Domains must match ^[a-z0-9_]+$.
+  loop: "{{ openclaw_homeassistant_allow_write_domains }}"
+  when: openclaw_homeassistant_enabled | bool
+
+- name: validate | Home Assistant allowed write entities format
+  ansible.builtin.assert:
+    that:
+      - item | string | trim | length > 0
+      - item | string | trim is regex('^[a-z0-9_]+\\.[a-z0-9_]+$')
+    fail_msg: >-
+      Invalid Home Assistant write-entity allowlist entry: {{ item }}.
+      Entity IDs must match domain.object_id (^[a-z0-9_]+\\.[a-z0-9_]+$).
+  loop: "{{ openclaw_homeassistant_allow_write_entities }}"
   when: openclaw_homeassistant_enabled | bool
 
 - name: validate | Weeknotes backend when weeknotes is enabled

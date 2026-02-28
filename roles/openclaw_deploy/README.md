@@ -222,20 +222,25 @@ Safety guarantees:
 | `openclaw_smtp_subject_max_chars` | `240` | Max `/mail send --subject` length |
 | `openclaw_smtp_body_max_chars` | `4000` | Max `/mail send --body` length |
 
-### Home Assistant Skill (`/homeassistant`): Read-only State Access
+### Home Assistant Skill (`/homeassistant`): Read + Guarded Write
 
-When `openclaw_homeassistant_enabled: true`, the role deploys a read-only `/homeassistant` command skill and
-handler using the Home Assistant REST API.
+When `openclaw_homeassistant_enabled: true`, the role deploys a `/homeassistant` command skill and handler
+using the Home Assistant REST API with a tightly restricted command surface.
 
 Command surface:
 
 - `/homeassistant state <entity_id>`
 - `/homeassistant list [--domain <domain>] [--limit N]`
+- `/homeassistant turn_on <entity_id>`
+- `/homeassistant turn_off <entity_id>`
 
 Safety guarantees:
 
-- Read-only endpoint usage only (`GET /api/states` and `GET /api/states/<entity_id>`).
-- Explicit entity/domain allowlists enforced in-handler.
+- Read endpoint usage is restricted to `GET /api/states` and `GET /api/states/<entity_id>`.
+- Write endpoint usage is restricted to:
+  - `POST /api/services/homeassistant/turn_on`
+  - `POST /api/services/homeassistant/turn_off`
+- Explicit read and write allowlists are enforced separately in-handler.
 - Strict entity/domain input validation.
 - Bounded output (limit/field truncation/attribute cap) and request timeout.
 - Sanitized operational errors (no token/header leakage).
@@ -261,6 +266,8 @@ Operational note:
 | `openclaw_homeassistant_container_credentials_path` | `/home/node/.openclaw/credentials/homeassistant.json` | Container runtime config path used by handler |
 | `openclaw_homeassistant_allow_domains` | `[]` | Allowed Home Assistant domains (for example `sensor`, `climate`) |
 | `openclaw_homeassistant_allow_entities` | `[]` | Allowed full entity IDs (for example `sun.sun`) |
+| `openclaw_homeassistant_allow_write_domains` | `[]` | Allowed Home Assistant domains for `/homeassistant turn_on|turn_off` |
+| `openclaw_homeassistant_allow_write_entities` | `[]` | Allowed full entity IDs for `/homeassistant turn_on|turn_off` |
 | `openclaw_homeassistant_request_timeout_seconds` | `8` | Home Assistant HTTP timeout per request |
 | `openclaw_homeassistant_default_limit` | `10` | Default `/homeassistant list` row limit |
 | `openclaw_homeassistant_max_limit` | `25` | Maximum `/homeassistant list` row limit |
