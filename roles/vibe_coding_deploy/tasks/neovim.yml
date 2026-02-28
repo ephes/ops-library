@@ -1,4 +1,15 @@
 ---
+- name: neovim | Determine release architecture
+  ansible.builtin.set_fact:
+    vibe_coding_neovim_arch: >-
+      {{ 'x86_64' if ansible_architecture == 'x86_64' else ('arm64' if ansible_architecture == 'aarch64' else '') }}
+
+- name: neovim | Validate release architecture support
+  ansible.builtin.assert:
+    that:
+      - vibe_coding_neovim_arch | length > 0
+    fail_msg: "Unsupported architecture for Neovim release tarball: {{ ansible_architecture }}"
+
 - name: neovim | Check installed version
   ansible.builtin.command:
     cmd: nvim --version
@@ -19,12 +30,12 @@
 
     - name: neovim | Download and extract release tarball
       ansible.builtin.unarchive:
-        src: "https://github.com/neovim/neovim/releases/download/v{{ vibe_coding_neovim_version }}/nvim-linux-x86_64.tar.gz"
+        src: "https://github.com/neovim/neovim/releases/download/v{{ vibe_coding_neovim_version }}/nvim-linux-{{ vibe_coding_neovim_arch }}.tar.gz"
         dest: /opt
         remote_src: true
 
     - name: neovim | Symlink nvim to /usr/local/bin
       ansible.builtin.file:
-        src: /opt/nvim-linux-x86_64/bin/nvim
+        src: "/opt/nvim-linux-{{ vibe_coding_neovim_arch }}/bin/nvim"
         dest: /usr/local/bin/nvim
         state: link

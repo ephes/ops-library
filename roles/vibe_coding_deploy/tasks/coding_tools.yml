@@ -10,6 +10,7 @@
 - name: coding_tools | Configure npm global prefix for user
   ansible.builtin.command:
     cmd: "npm config set prefix {{ vibe_coding_npm_prefix }}"
+  become: true
   become_user: "{{ vibe_coding_user }}"
   environment:
     HOME: "{{ vibe_coding_user_home }}"
@@ -52,6 +53,7 @@
 - name: coding_tools | Check installed npm global packages (JSON)
   ansible.builtin.command:
     cmd: npm list -g --depth=0 --json
+  become: true
   become_user: "{{ vibe_coding_user }}"
   environment:
     HOME: "{{ vibe_coding_user_home }}"
@@ -67,6 +69,7 @@
 - name: coding_tools | Check outdated npm global packages (JSON)
   ansible.builtin.command:
     cmd: npm outdated -g --json
+  become: true
   become_user: "{{ vibe_coding_user }}"
   environment:
     HOME: "{{ vibe_coding_user_home }}"
@@ -82,6 +85,7 @@
 - name: coding_tools | Install or update npm tools
   ansible.builtin.command:
     cmd: "npm install -g -- {{ item }}"
+  become: true
   become_user: "{{ vibe_coding_user }}"
   environment:
     HOME: "{{ vibe_coding_user_home }}"
