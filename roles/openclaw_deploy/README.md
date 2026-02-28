@@ -170,6 +170,8 @@ Safety guarantees:
 - Bounded recipients/subject/body lengths with explicit limits.
 - Sender identity is account-configured only: optional `from_name` and `reply_to` are static per account
   (not user-provided at command time).
+- SMTP success confirms handoff acceptance to the configured relay/MTA; final inbox placement depends on
+  downstream recipient filtering.
 - Per-account credentials are split by purpose:
   - IMAP readers: `imap_accounts.json`
   - SMTP senders: `smtp_accounts.json`
