@@ -148,24 +148,37 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 | `openclaw_metrics_endpoint_synthetic_canary_state_path` | `{{ openclaw_metrics_endpoint_data_dir }}/openclaw-canary-state.json` | Local state file for last canary result |
 | `openclaw_metrics_endpoint_synthetic_canary_output_max_chars` | `256` | Max response chars persisted from canary output |
 
-### IMAP Read-Only Mail Skill
+### Mail Skill (`/mail`): IMAP Read + SMTP Send
 
-When `openclaw_imap_enabled: true`, the role deploys a `/mail` skill with read-only IMAP operations:
+When `openclaw_imap_enabled: true`, the role deploys the `/mail` command skill and handler. IMAP
+command surface:
 
 - `/mail unread [--account <name>]`
 - `/mail list [--account <name>] [--limit N]`
 - `/mail read <uid> [--account <name>]`
 - `/mail search <query> [--account <name>] [--limit N]`
 
-Read-only behavior is enforced technically in the handler:
+Optional phase-2 SMTP send command (requires `openclaw_smtp_enabled: true`):
 
-- IMAP mailbox is opened using `SELECT ...` read-only mode.
-- Only `SEARCH` and `FETCH` are used.
-- No `STORE`, `MOVE`, `DELETE`, `EXPUNGE`, or SMTP/send logic is implemented.
+- `/mail send --to <email[,email...]> --subject <text> --body <text> [--account <name>] [--cc <email[,email...]>] [--bcc <email[,email...]>]`
+
+Safety guarantees:
+
+- IMAP path remains read-only (`SELECT ...` readonly + `SEARCH`/`FETCH` only).
+- SMTP path supports plain-text send only (no attachments, no HTML composition).
+- Strict recipient/address validation with newline/header-injection rejection.
+- Bounded recipients/subject/body lengths with explicit limits.
+- Sender identity is account-configured only: optional `from_name` and `reply_to` are static per account
+  (not user-provided at command time).
+- Per-account credentials are split by purpose:
+  - IMAP readers: `imap_accounts.json`
+  - SMTP senders: `smtp_accounts.json`
+
+#### IMAP Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `openclaw_imap_enabled` | `false` | Enable IMAP read-only mail skill deployment |
+| `openclaw_imap_enabled` | `false` | Enable `/mail` skill deployment with IMAP read commands |
 | `openclaw_imap_host` | `""` | IMAP host reachable from OpenClaw container |
 | `openclaw_imap_port` | `993` | IMAP port |
 | `openclaw_imap_tls_mode` | `imaps` | TLS mode: `imaps` or `starttls` |
@@ -186,6 +199,26 @@ Read-only behavior is enforced technically in the handler:
 | `openclaw_imap_read_fetch_bytes` | `4096` | Max bytes fetched for read snippet |
 | `openclaw_imap_read_snippet_chars` | `800` | Max chars returned in `/mail read` snippet |
 | `openclaw_imap_search_query_max_chars` | `200` | Max `/mail search` query length |
+
+#### SMTP Variables (Phase-2 Send)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `openclaw_smtp_enabled` | `false` | Enable `/mail send` SMTP delivery path |
+| `openclaw_smtp_host` | `""` | SMTP host reachable from OpenClaw container |
+| `openclaw_smtp_port` | `587` | SMTP submission port |
+| `openclaw_smtp_tls_mode` | `starttls` | TLS mode: `starttls` or `smtps` |
+| `openclaw_smtp_account_map` | `{}` | Account map (`logical_account -> {username, password, from_address, from_name?, reply_to?}`) |
+| `openclaw_smtp_default_account` | `""` | Default sender account for `/mail send` without `--account` |
+| `openclaw_smtp_credentials_path` | `{{ openclaw_data_dir }}/credentials/smtp_accounts.json` | Rendered SMTP credential map (mode `0600`) |
+| `openclaw_smtp_container_credentials_path` | `/home/node/.openclaw/credentials/smtp_accounts.json` | Container path used by SMTP handler branch |
+| `openclaw_smtp_connect_timeout_seconds` | `10` | SMTP connection timeout |
+| `openclaw_smtp_command_timeout_seconds` | `15` | SMTP command timeout |
+| `openclaw_smtp_max_recipients` | `10` | Max total recipients across To/Cc/Bcc |
+| `openclaw_smtp_address_max_chars` | `254` | Max length for sender/recipient address fields |
+| `openclaw_smtp_from_name_max_chars` | `120` | Max configured sender display-name length (`from_name`) |
+| `openclaw_smtp_subject_max_chars` | `240` | Max `/mail send --subject` length |
+| `openclaw_smtp_body_max_chars` | `4000` | Max `/mail send --body` length |
 
 ### Advanced
 

@@ -1,5 +1,7 @@
 ---
-# IMAP read-only mail skill deployment.
+# Mail skill deployment:
+# - IMAP read-only commands (phase-1)
+# - optional SMTP send command (phase-2)
 # Included from main.yml when openclaw_imap_enabled is true.
 
 - name: imap | Initialize resolved account map
@@ -56,6 +58,66 @@
     mode: "0600"
   no_log: true
   notify: restart openclaw
+
+- name: imap | SMTP initialize resolved account map
+  ansible.builtin.set_fact:
+    _openclaw_smtp_accounts_resolved: {}
+  no_log: true
+  when: openclaw_smtp_enabled | bool
+
+- name: imap | SMTP normalize account credentials
+  ansible.builtin.set_fact:
+    _openclaw_smtp_accounts_resolved: >-
+      {{
+        _openclaw_smtp_accounts_resolved
+        | combine(
+            {
+              item.key: {
+                "username": item.value.username,
+                "password": item.value.password,
+                "from_address": item.value.from_address,
+                "from_name": item.value.from_name | default(''),
+                "reply_to": item.value.reply_to | default('')
+              }
+            },
+            recursive=True
+          )
+      }}
+  loop: "{{ openclaw_smtp_account_map | dict2items }}"
+  no_log: true
+  when: openclaw_smtp_enabled | bool
+
+- name: imap | SMTP validate resolved account credentials
+  ansible.builtin.assert:
+    that:
+      - item.value.username | string | trim | length > 0
+      - item.value.password | string | trim | length > 0
+      - item.value.from_address | string | trim | length > 0
+    fail_msg: >-
+      SMTP account {{ item.key }} did not resolve to non-empty username/password/from_address.
+      Check openclaw_smtp_account_map.
+  loop: "{{ _openclaw_smtp_accounts_resolved | dict2items }}"
+  no_log: true
+  when: openclaw_smtp_enabled | bool
+
+- name: imap | SMTP build credentials payload
+  ansible.builtin.set_fact:
+    _openclaw_smtp_credentials_payload:
+      default_account: "{{ openclaw_smtp_default_account }}"
+      accounts: "{{ _openclaw_smtp_accounts_resolved }}"
+  no_log: true
+  when: openclaw_smtp_enabled | bool
+
+- name: imap | SMTP render account credentials file
+  ansible.builtin.copy:
+    content: "{{ _openclaw_smtp_credentials_payload | to_nice_json }}\n"
+    dest: "{{ openclaw_smtp_credentials_path }}"
+    owner: "1000"
+    group: "1000"
+    mode: "0600"
+  no_log: true
+  notify: restart openclaw
+  when: openclaw_smtp_enabled | bool
 
 - name: imap | Deploy mail-imap skill manifest
   ansible.builtin.template:

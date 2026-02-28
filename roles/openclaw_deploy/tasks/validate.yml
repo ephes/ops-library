@@ -252,6 +252,71 @@
   no_log: true
   when: openclaw_imap_enabled | bool
 
+- name: validate | SMTP send requires IMAP command skill deployment
+  ansible.builtin.assert:
+    that:
+      - openclaw_imap_enabled | bool
+    fail_msg: >-
+      openclaw_smtp_enabled requires openclaw_imap_enabled so the /mail command skill is deployed.
+  when: openclaw_smtp_enabled | bool
+
+- name: validate | SMTP base settings when SMTP send is enabled
+  ansible.builtin.assert:
+    that:
+      - openclaw_smtp_host | string | trim | length > 0
+      - openclaw_smtp_port | int > 0
+      - openclaw_smtp_port | int <= 65535
+      - openclaw_smtp_tls_mode in ['starttls', 'smtps']
+      - openclaw_smtp_account_map is mapping
+      - openclaw_smtp_account_map is not string
+      - openclaw_smtp_account_map | length > 0
+      - openclaw_smtp_default_account | string | trim | length > 0
+      - openclaw_smtp_default_account in (openclaw_smtp_account_map.keys() | list)
+      - openclaw_smtp_connect_timeout_seconds | int > 0
+      - openclaw_smtp_command_timeout_seconds | int > 0
+      - openclaw_smtp_max_recipients | int > 0
+      - openclaw_smtp_address_max_chars | int >= 6
+      - openclaw_smtp_from_name_max_chars | int > 0
+      - openclaw_smtp_subject_max_chars | int > 0
+      - openclaw_smtp_body_max_chars | int > 0
+      - openclaw_smtp_credentials_path | string | trim | length > 0
+      - openclaw_smtp_container_credentials_path | string | trim | length > 0
+    fail_msg: >-
+      Invalid SMTP send settings. Configure host/port/tls/default account, limits, and credential
+      paths when openclaw_smtp_enabled is true.
+  when: openclaw_smtp_enabled | bool
+
+- name: validate | SMTP account entries are valid
+  ansible.builtin.assert:
+    that:
+      - item.value is mapping
+      - item.value is not string
+      - item.value.username is defined
+      - item.value.username | string | trim | length > 0
+      - item.value.password is defined
+      - item.value.password | string | trim | length > 0
+      - item.value.from_address is defined
+      - item.value.from_address | string | trim | length > 0
+      - item.value.from_address | string | trim | length <= (openclaw_smtp_address_max_chars | int)
+      - not (item.value.from_address | string is regex('[\\r\\n]'))
+      - item.value.from_address | string | trim is regex('^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$')
+      - item.value.from_name | default('') | string | trim | length <= (openclaw_smtp_from_name_max_chars | int)
+      - not (item.value.from_name | default('') | string is regex('[\\r\\n]'))
+      - not (item.value.from_name | default('') | string is regex('[\\x00-\\x1f\\x7f]'))
+      - (
+          item.value.reply_to | default('') | string | trim | length == 0
+        ) or (
+          item.value.reply_to | default('') | string | trim | length <= (openclaw_smtp_address_max_chars | int)
+          and not (item.value.reply_to | default('') | string is regex('[\\r\\n]'))
+          and (item.value.reply_to | default('') | string | trim is regex('^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$'))
+        )
+    fail_msg: >-
+      SMTP account {{ item.key }} must define username/password/from_address with a valid sender
+      address and no newline/control characters. Optional from_name/reply_to values must be valid.
+  loop: "{{ openclaw_smtp_account_map | dict2items }}"
+  no_log: true
+  when: openclaw_smtp_enabled | bool
+
 - name: validate | Weeknotes backend when weeknotes is enabled
   ansible.builtin.assert:
     that:

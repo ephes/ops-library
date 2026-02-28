@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Managed by Ansible (openclaw_deploy IMAP skill). Do not edit on the host.
+# Managed by Ansible (openclaw_deploy mail skill). Do not edit on the host.
 
 import argparse
 import email
@@ -7,9 +7,12 @@ import imaplib
 import json
 import re
 import shlex
+import smtplib
 import ssl
 import sys
 from email.header import decode_header
+from email.message import EmailMessage
+from email.utils import formataddr, formatdate, make_msgid
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -29,9 +32,35 @@ IMAP_READ_FETCH_BYTES = {{ openclaw_imap_read_fetch_bytes | int }}
 IMAP_READ_SNIPPET_CHARS = {{ openclaw_imap_read_snippet_chars | int }}
 IMAP_SEARCH_QUERY_MAX_CHARS = {{ openclaw_imap_search_query_max_chars | int }}
 
+SMTP_ENABLED = {{ 'True' if (openclaw_smtp_enabled | bool) else 'False' }}
+SMTP_HOST = {{ openclaw_smtp_host | to_json }}
+SMTP_PORT = {{ openclaw_smtp_port | int }}
+SMTP_TLS_MODE = {{ openclaw_smtp_tls_mode | to_json }}
+SMTP_CREDENTIALS_PATH = {{ openclaw_smtp_container_credentials_path | to_json }}
+SMTP_CONNECT_TIMEOUT = {{ openclaw_smtp_connect_timeout_seconds | int }}
+SMTP_COMMAND_TIMEOUT = {{ openclaw_smtp_command_timeout_seconds | int }}
+SMTP_MAX_RECIPIENTS = {{ openclaw_smtp_max_recipients | int }}
+SMTP_ADDRESS_MAX_CHARS = {{ openclaw_smtp_address_max_chars | int }}
+SMTP_FROM_NAME_MAX_CHARS = {{ openclaw_smtp_from_name_max_chars | int }}
+SMTP_SUBJECT_MAX_CHARS = {{ openclaw_smtp_subject_max_chars | int }}
+SMTP_BODY_MAX_CHARS = {{ openclaw_smtp_body_max_chars | int }}
+
+EMAIL_ADDRESS_RE = re.compile(
+    r"(?i)^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@"
+    r"(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)"
+    r"(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$"
+)
+
 USAGE_TEXT = (
+{% if openclaw_smtp_enabled | bool %}
+    "Usage: /mail unread [--account <name>] | /mail list [--account <name>] [--limit N] | "
+    "/mail read <uid> [--account <name>] | /mail search <query> [--account <name>] [--limit N] | "
+    "/mail send --to <email[,email...]> --subject <text> --body <text> [--account <name>] "
+    "[--cc <email[,email...]>] [--bcc <email[,email...]>]"
+{% else %}
     "Usage: /mail unread [--account <name>] | /mail list [--account <name>] [--limit N] | "
     "/mail read <uid> [--account <name>] | /mail search <query> [--account <name>] [--limit N]"
+{% endif %}
 )
 
 
@@ -63,14 +92,14 @@ def _decode_header_value(raw_value: Optional[str], max_chars: int) -> str:
     return _sanitize_text("".join(chunks), max_chars)
 
 
-def _load_credentials(path: str) -> Tuple[str, Dict[str, Dict[str, str]]]:
+def _load_credentials(path: str, label: str = "Account") -> Tuple[str, Dict[str, Dict[str, str]]]:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     accounts = payload.get("accounts", {})
     default_account = payload.get("default_account", "")
     if not isinstance(accounts, dict) or not accounts:
-        raise MailSkillError("IMAP account configuration is missing.")
+        raise MailSkillError(f"{label} account configuration is missing.")
     if not isinstance(default_account, str) or not default_account:
-        raise MailSkillError("IMAP default account is not configured.")
+        raise MailSkillError(f"{label} default account is not configured.")
     return default_account, accounts
 
 
@@ -245,6 +274,14 @@ def _build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("--account", dest="account", default=None)
     search_parser.add_argument("--limit", dest="limit", type=int, default=IMAP_DEFAULT_LIMIT)
 
+    send_parser = subparsers.add_parser("send", add_help=False)
+    send_parser.add_argument("--to", dest="to", required=True)
+    send_parser.add_argument("--subject", dest="subject", required=True)
+    send_parser.add_argument("--body", dest="body", required=True)
+    send_parser.add_argument("--account", dest="account", default=None)
+    send_parser.add_argument("--cc", dest="cc", default="")
+    send_parser.add_argument("--bcc", dest="bcc", default="")
+
     return parser
 
 
@@ -274,6 +311,168 @@ def _normalize_uid(raw_uid: str) -> str:
     return uid
 
 
+def _normalize_mail_header(value: str, field_name: str, max_chars: int) -> str:
+    normalized = (value or "").strip()
+    if not normalized:
+        raise MailSkillError(f"{field_name} cannot be empty.")
+    if "\r" in normalized or "\n" in normalized:
+        raise MailSkillError(f"{field_name} must not contain newlines.")
+    if len(normalized) > max_chars:
+        raise MailSkillError(f"{field_name} too long (max {max_chars} chars).")
+    if re.search(r"[\x00-\x1f\x7f]", normalized):
+        raise MailSkillError(f"{field_name} contains control characters.")
+    return normalized
+
+
+def _normalize_mail_body(value: str) -> str:
+    normalized = (value or "").strip()
+    if not normalized:
+        raise MailSkillError("Body cannot be empty.")
+    normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
+    if len(normalized) > SMTP_BODY_MAX_CHARS:
+        raise MailSkillError(f"Body too long (max {SMTP_BODY_MAX_CHARS} chars).")
+    if re.search(r"[\x00-\x08\x0b-\x1f\x7f]", normalized):
+        raise MailSkillError("Body contains unsupported control characters.")
+    return normalized
+
+
+def _validate_email_address(value: str, field_name: str) -> str:
+    candidate = _normalize_mail_header(value, field_name, SMTP_ADDRESS_MAX_CHARS)
+    if not EMAIL_ADDRESS_RE.fullmatch(candidate):
+        raise MailSkillError(f"Invalid {field_name} email address: {candidate}")
+    return candidate
+
+
+def _normalize_optional_mail_header(value: str, field_name: str, max_chars: int) -> str:
+    candidate = (value or "").strip()
+    if not candidate:
+        return ""
+    return _normalize_mail_header(candidate, field_name, max_chars)
+
+
+def _parse_recipient_list(raw_value: Optional[str], field_name: str) -> List[str]:
+    if raw_value is None:
+        return []
+    value = (raw_value or "").strip()
+    if not value:
+        return []
+    if "\r" in value or "\n" in value:
+        raise MailSkillError(f"{field_name} must not contain newlines.")
+
+    parts = [part.strip() for part in value.split(",")]
+    if any(not part for part in parts):
+        raise MailSkillError(f"{field_name} list contains an empty recipient.")
+
+    recipients: List[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        address = _validate_email_address(part, field_name)
+        key = address.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        recipients.append(address)
+    return recipients
+
+
+def _dedupe_recipients(recipients: List[str], seen: set[str]) -> List[str]:
+    deduped: List[str] = []
+    for recipient in recipients:
+        key = recipient.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(recipient)
+    return deduped
+
+
+def _connect_smtp(username: str, password: str) -> smtplib.SMTP:
+    context = ssl.create_default_context()
+    conn: Optional[smtplib.SMTP] = None
+    try:
+        if SMTP_TLS_MODE == "smtps":
+            conn = smtplib.SMTP_SSL(
+                host=SMTP_HOST,
+                port=SMTP_PORT,
+                timeout=SMTP_CONNECT_TIMEOUT,
+                context=context,
+            )
+        elif SMTP_TLS_MODE == "starttls":
+            conn = smtplib.SMTP(host=SMTP_HOST, port=SMTP_PORT, timeout=SMTP_CONNECT_TIMEOUT)
+            conn.ehlo()
+            conn.starttls(context=context)
+            conn.ehlo()
+        else:
+            raise MailSkillError(f"Unsupported TLS mode: {SMTP_TLS_MODE}")
+
+        if hasattr(conn, "sock") and conn.sock is not None:
+            conn.sock.settimeout(SMTP_COMMAND_TIMEOUT)
+
+        conn.login(username, password)
+        return conn
+    except smtplib.SMTPAuthenticationError:
+        if conn is not None:
+            try:
+                conn.quit()
+            except Exception:
+                pass
+        raise MailSkillError("SMTP login failed.")
+    except MailSkillError:
+        if conn is not None:
+            try:
+                conn.quit()
+            except Exception:
+                pass
+        raise
+    except (smtplib.SMTPException, OSError) as exc:
+        if conn is not None:
+            try:
+                conn.quit()
+            except Exception:
+                pass
+        raise MailSkillError(f"SMTP connection failed ({exc.__class__.__name__}).")
+
+
+def _send_mail_message(
+    conn: smtplib.SMTP,
+    from_address: str,
+    from_header: str,
+    reply_to: str,
+    to_recipients: List[str],
+    cc_recipients: List[str],
+    bcc_recipients: List[str],
+    subject: str,
+    body: str,
+) -> Tuple[int, int]:
+    message = EmailMessage()
+    message["From"] = from_header
+    if reply_to:
+        message["Reply-To"] = reply_to
+    message["To"] = ", ".join(to_recipients)
+    if cc_recipients:
+        message["Cc"] = ", ".join(cc_recipients)
+    message["Subject"] = subject
+    message["Date"] = formatdate(localtime=True)
+    message["Message-ID"] = make_msgid()
+    message.set_content(body)
+
+    all_recipients = to_recipients + cc_recipients + bcc_recipients
+    try:
+        refused = conn.send_message(
+            message,
+            from_addr=from_address,
+            to_addrs=all_recipients,
+        )
+    except (smtplib.SMTPException, OSError) as exc:
+        raise MailSkillError(f"SMTP send failed ({exc.__class__.__name__}).")
+
+    rejected = len(refused or {})
+    accepted = len(all_recipients) - rejected
+    if accepted <= 0:
+        raise MailSkillError("SMTP server rejected all recipients.")
+    return accepted, rejected
+
+
 def main() -> int:
     argv = _normalize_argv(sys.argv[1:])
     if not argv:
@@ -292,7 +491,86 @@ def main() -> int:
         return 1
 
     try:
-        default_account, accounts = _load_credentials(IMAP_CREDENTIALS_PATH)
+        if args.command == "send":
+            if not SMTP_ENABLED:
+                raise MailSkillError("SMTP send is disabled by configuration.")
+
+            default_account, accounts = _load_credentials(SMTP_CREDENTIALS_PATH, label="SMTP")
+            account_name, account = _resolve_account(args.account, default_account, accounts)
+
+            username = str(account.get("username", "")).strip()
+            password = str(account.get("password", "")).strip()
+            from_address = _validate_email_address(
+                str(account.get("from_address", "")).strip(), "From"
+            )
+            from_name = _normalize_optional_mail_header(
+                str(account.get("from_name", "")), "From name", SMTP_FROM_NAME_MAX_CHARS
+            )
+            reply_to = ""
+            raw_reply_to = str(account.get("reply_to", "")).strip()
+            if raw_reply_to:
+                reply_to = _validate_email_address(raw_reply_to, "Reply-To")
+            from_header = formataddr((from_name, from_address)) if from_name else from_address
+            if not username or not password:
+                raise MailSkillError(f"Account '{account_name}' is missing credentials.")
+
+            subject = _normalize_mail_header(args.subject, "Subject", SMTP_SUBJECT_MAX_CHARS)
+            body = _normalize_mail_body(args.body)
+
+            to_recipients = _parse_recipient_list(args.to, "To")
+            cc_recipients = _parse_recipient_list(args.cc, "Cc")
+            bcc_recipients = _parse_recipient_list(args.bcc, "Bcc")
+            if not to_recipients:
+                raise MailSkillError("At least one --to recipient is required.")
+
+            seen: set[str] = set()
+            to_recipients = _dedupe_recipients(to_recipients, seen)
+            cc_recipients = _dedupe_recipients(cc_recipients, seen)
+            bcc_recipients = _dedupe_recipients(bcc_recipients, seen)
+
+            total_recipients = len(to_recipients) + len(cc_recipients) + len(bcc_recipients)
+            if total_recipients > SMTP_MAX_RECIPIENTS:
+                raise MailSkillError(
+                    f"Too many recipients ({total_recipients}); max {SMTP_MAX_RECIPIENTS}."
+                )
+
+            conn = _connect_smtp(username=username, password=password)
+            try:
+                accepted, rejected = _send_mail_message(
+                    conn=conn,
+                    from_address=from_address,
+                    from_header=from_header,
+                    reply_to=reply_to,
+                    to_recipients=to_recipients,
+                    cc_recipients=cc_recipients,
+                    bcc_recipients=bcc_recipients,
+                    subject=subject,
+                    body=body,
+                )
+            finally:
+                try:
+                    conn.quit()
+                except Exception:
+                    pass
+
+            lines = [
+                f"Account: {account_name}",
+                f"From: {from_header}",
+                f"Reply-To: {reply_to if reply_to else '-'}",
+                f"To: {', '.join(to_recipients)}",
+                f"Cc: {', '.join(cc_recipients) if cc_recipients else '-'}",
+                f"Bcc count: {len(bcc_recipients)}",
+                f"Subject: {_sanitize_text(subject, SMTP_SUBJECT_MAX_CHARS)}",
+                (
+                    f"Send result: accepted {accepted}/{total_recipients} recipient(s)."
+                    if rejected == 0
+                    else f"Send result: accepted {accepted}/{total_recipients} recipient(s), rejected {rejected}."
+                ),
+            ]
+            print("\n".join(lines))
+            return 0
+
+        default_account, accounts = _load_credentials(IMAP_CREDENTIALS_PATH, label="IMAP")
         account_name, account = _resolve_account(args.account, default_account, accounts)
         mailbox = _sanitize_text(account.get("mailbox", IMAP_DEFAULT_MAILBOX), 128)
         username = str(account.get("username", "")).strip()

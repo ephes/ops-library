@@ -49,7 +49,7 @@
   ansible.builtin.import_tasks: weeknotes.yml
   when: openclaw_weeknotes_enabled | bool
 
-- name: main | Configure IMAP read-only mail skill
+- name: main | Configure mail skill (IMAP read + optional SMTP send)
   ansible.builtin.import_tasks: imap.yml
   when: openclaw_imap_enabled | bool
 
