@@ -170,8 +170,7 @@ Read-only behavior is enforced technically in the handler:
 | `openclaw_imap_port` | `993` | IMAP port |
 | `openclaw_imap_tls_mode` | `imaps` | TLS mode: `imaps` or `starttls` |
 | `openclaw_imap_default_mailbox` | `INBOX` | Mailbox opened in read-only mode |
-| `openclaw_imap_account_map` | `{}` | Account map (`logical_account -> {username/password or *_secret_ref, mailbox?}`) |
-| `openclaw_imap_secret_source` | `{}` | Mapping used to resolve `*_secret_ref` entries |
+| `openclaw_imap_account_map` | `{}` | Account map (`logical_account -> {username, password, mailbox?}`) |
 | `openclaw_imap_default_account` | `""` | Default logical account name |
 | `openclaw_imap_skill_name` | `mail-imap` | Handler skill directory name |
 | `openclaw_imap_command_skill_name` | `mail` | Slash command skill directory name |

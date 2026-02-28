@@ -20,4 +20,5 @@ Synchronize mail users from secrets into the mail PostgreSQL database. Intended 
 - Idempotent: compares current password via `doveadm pw -t` and only updates when password/active flag changes.
 - In `postfixadmin` mode, manages `mailbox` + `alias` rows.
 - In `postfixadmin` mode, `mailbox_maildir` can map one login identity to another mailbox storage path (for example reader accounts).
+- When `mailbox_maildir` points to a mailbox user that is also created in the same run, place that target user earlier in `mail_users_list`.
 - In `legacy` mode, manages `mail_users` + `mail_aliases` rows.

@@ -236,51 +236,18 @@
       openclaw_imap_enabled is true.
   when: openclaw_imap_enabled | bool
 
-- name: validate | IMAP secret source shape when refs are used
-  ansible.builtin.assert:
-    that:
-      - openclaw_imap_secret_source is mapping
-      - openclaw_imap_secret_source is not string
-    fail_msg: >-
-      openclaw_imap_secret_source must be a mapping when using *_secret_ref entries.
-  when:
-    - openclaw_imap_enabled | bool
-    - >-
-      (
-        openclaw_imap_account_map | dict2items
-        | selectattr('value.username_secret_ref', 'defined')
-        | list
-        | length
-      ) > 0
-      or
-      (
-        openclaw_imap_account_map | dict2items
-        | selectattr('value.password_secret_ref', 'defined')
-        | list
-        | length
-      ) > 0
-
 - name: validate | IMAP account entries are valid
   ansible.builtin.assert:
     that:
       - item.value is mapping
       - item.value is not string
       - (item.value.mailbox | default(openclaw_imap_default_mailbox)) | string | trim | length > 0
-      - >-
-        (
-          (item.value.username is defined and (item.value.username | string | trim | length > 0))
-          or
-          (item.value.username_secret_ref is defined and (item.value.username_secret_ref | string | trim | length > 0))
-        )
-      - >-
-        (
-          (item.value.password is defined and (item.value.password | string | trim | length > 0))
-          or
-          (item.value.password_secret_ref is defined and (item.value.password_secret_ref | string | trim | length > 0))
-        )
+      - item.value.username is defined
+      - item.value.username | string | trim | length > 0
+      - item.value.password is defined
+      - item.value.password | string | trim | length > 0
     fail_msg: >-
-      IMAP account {{ item.key }} must define mailbox (optional), and username/password
-      either directly or via *_secret_ref keys.
+      IMAP account {{ item.key }} must define mailbox (optional), username, and password.
   loop: "{{ openclaw_imap_account_map | dict2items }}"
   no_log: true
   when: openclaw_imap_enabled | bool

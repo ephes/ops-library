@@ -5,6 +5,8 @@
 # - active: true/false (optional, default true)
 # - mailbox_maildir: "<domain>/<localpart>/" (optional; PostfixAdmin mode only)
 #   Maps login identity to a specific Maildir target, useful for read-only reader accounts.
+#   If the target mailbox user is also created in the same run, list that target user before
+#   the mapped reader user in mail_users_list.
 mail_users_list: []
 
 # Optional: when true, disables users present in DB but not in mail_users_list.

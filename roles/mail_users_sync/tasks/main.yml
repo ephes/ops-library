@@ -28,7 +28,7 @@
   become_user: postgres
   when: mail_users_schema_mode == 'legacy'
 
-- name: Build list of existing emails
+- name: Normalize existing user rows
   ansible.builtin.set_fact:
     existing_user_rows: >-
       {{
@@ -45,7 +45,7 @@
         )
       }}
 
-- name: Build list of existing emails
+- name: Build list of existing emails from rows
   ansible.builtin.set_fact:
     existing_emails: "{{ existing_user_rows | map(attribute='email') | map('lower') | list }}"
 

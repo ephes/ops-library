@@ -7,7 +7,7 @@
     _openclaw_imap_accounts_resolved: {}
   no_log: true
 
-- name: imap | Resolve account credentials from refs/direct values
+- name: imap | Normalize account credentials
   ansible.builtin.set_fact:
     _openclaw_imap_accounts_resolved: >-
       {{
@@ -15,40 +15,8 @@
         | combine(
             {
               item.key: {
-                "username": (
-                  item.value.username
-                  if (item.value.username is defined)
-                  else
-                  (
-                    (
-                      openclaw_imap_secret_source
-                      | json_query(item.value.username_secret_ref)
-                      | default('', true)
-                    )
-                    if (
-                      item.value.username_secret_ref is defined
-                      and (item.value.username_secret_ref | string | trim | length > 0)
-                    )
-                    else ''
-                  )
-                ),
-                "password": (
-                  item.value.password
-                  if (item.value.password is defined)
-                  else
-                  (
-                    (
-                      openclaw_imap_secret_source
-                      | json_query(item.value.password_secret_ref)
-                      | default('', true)
-                    )
-                    if (
-                      item.value.password_secret_ref is defined
-                      and (item.value.password_secret_ref | string | trim | length > 0)
-                    )
-                    else ''
-                  )
-                ),
+                "username": item.value.username,
+                "password": item.value.password,
                 "mailbox": (
                   item.value.mailbox | default(openclaw_imap_default_mailbox)
                 )
@@ -68,7 +36,7 @@
       - item.value.mailbox | string | trim | length > 0
     fail_msg: >-
       IMAP account {{ item.key }} did not resolve to non-empty username/password/mailbox.
-      Check openclaw_imap_account_map and openclaw_imap_secret_source.
+      Check openclaw_imap_account_map.
   loop: "{{ _openclaw_imap_accounts_resolved | dict2items }}"
   no_log: true
 
