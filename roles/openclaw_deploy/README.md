@@ -241,6 +241,8 @@ Safety guarantees:
   - `POST /api/services/homeassistant/turn_on`
   - `POST /api/services/homeassistant/turn_off`
 - Explicit read and write allowlists are enforced separately in-handler.
+- Write policy is entity-first: prefer `openclaw_homeassistant_allow_write_entities` and keep
+  `openclaw_homeassistant_allow_write_domains` empty unless a reviewed exception is required.
 - Strict entity/domain input validation.
 - Bounded output (limit/field truncation/attribute cap) and request timeout.
 - Sanitized operational errors (no token/header leakage).
@@ -266,8 +268,8 @@ Operational note:
 | `openclaw_homeassistant_container_credentials_path` | `/home/node/.openclaw/credentials/homeassistant.json` | Container runtime config path used by handler |
 | `openclaw_homeassistant_allow_domains` | `[]` | Allowed Home Assistant domains (for example `sensor`, `climate`) |
 | `openclaw_homeassistant_allow_entities` | `[]` | Allowed full entity IDs (for example `sun.sun`) |
-| `openclaw_homeassistant_allow_write_domains` | `[]` | Allowed Home Assistant domains for `/homeassistant turn_on|turn_off` |
-| `openclaw_homeassistant_allow_write_entities` | `[]` | Allowed full entity IDs for `/homeassistant turn_on|turn_off` |
+| `openclaw_homeassistant_allow_write_domains` | `[]` | Exception path: allowed write domains for `/homeassistant turn_on|turn_off` (prefer empty) |
+| `openclaw_homeassistant_allow_write_entities` | `[]` | Primary write allowlist: explicit entity IDs for `/homeassistant turn_on|turn_off` |
 | `openclaw_homeassistant_request_timeout_seconds` | `8` | Home Assistant HTTP timeout per request |
 | `openclaw_homeassistant_default_limit` | `10` | Default `/homeassistant list` row limit |
 | `openclaw_homeassistant_max_limit` | `25` | Maximum `/homeassistant list` row limit |
@@ -275,6 +277,10 @@ Operational note:
 | `openclaw_homeassistant_friendly_name_max_chars` | `120` | Max chars for rendered friendly names |
 | `openclaw_homeassistant_attribute_max_items` | `8` | Max rendered attribute key/value pairs in `/homeassistant state` |
 | `openclaw_homeassistant_attribute_value_max_chars` | `120` | Max chars per rendered attribute value |
+
+Handler unit tests for the Home Assistant integration live at:
+
+- `tests/unit/test_openclaw_homeassistant_handler.py`
 
 ### Advanced
 
