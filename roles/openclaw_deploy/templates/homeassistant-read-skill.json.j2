@@ -1,0 +1,22 @@
+{
+  "name": "{{ openclaw_homeassistant_skill_name }}",
+  "version": "1.0.0",
+  "description": "Read-only Home Assistant state access with allowlists and bounded output",
+  "commands": {
+    "{{ openclaw_homeassistant_command_skill_name }}": {
+      "description": "Home Assistant read-only commands",
+      "subcommands": {
+        "state": {
+          "description": "Get one entity state: /{{ openclaw_homeassistant_command_skill_name }} state <entity_id>"
+        },
+        "list": {
+          "description": "List allowed entities: /{{ openclaw_homeassistant_command_skill_name }} list [--domain <domain>] [--limit N]"
+        }
+      }
+    }
+  },
+  "handler": {
+    "type": "executable",
+    "path": "./handler.py"
+  }
+}

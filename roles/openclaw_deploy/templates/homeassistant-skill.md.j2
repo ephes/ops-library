@@ -1,0 +1,30 @@
+---
+name: {{ openclaw_homeassistant_command_skill_name }}
+description: "Read-only Home Assistant state access (/{{ openclaw_homeassistant_command_skill_name }} state|list)."
+metadata: { "openclaw": { "emoji": "🏠", "requires": { "bins": ["python3"] } } }
+---
+
+# Home Assistant Skill
+
+Use the managed Home Assistant read-only handler.
+
+## Input Contract
+
+User input is everything after `/{{ openclaw_homeassistant_command_skill_name }}`.
+
+- `state <entity_id>`
+- `list [--domain <domain>] [--limit N]`
+
+## Execution Rules
+
+Always execute exactly one command:
+
+```bash
+{{ openclaw_homeassistant_container_skills_dir }}/{{ openclaw_homeassistant_skill_name }}/handler.py <raw-user-input>
+```
+
+When no input is provided, return:
+
+`Usage: /{{ openclaw_homeassistant_command_skill_name }} state <entity_id> | /{{ openclaw_homeassistant_command_skill_name }} list [--domain <domain>] [--limit N]`
+
+Return the handler output as-is.

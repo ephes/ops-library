@@ -1,0 +1,70 @@
+---
+# Home Assistant read-only skill deployment.
+# Included from main.yml when openclaw_homeassistant_enabled is true.
+
+- name: homeassistant | Build runtime configuration payload
+  ansible.builtin.set_fact:
+    _openclaw_homeassistant_payload:
+      base_url: "{{ openclaw_homeassistant_base_url | trim }}"
+      token: "{{ openclaw_homeassistant_token }}"
+      allow_domains: >-
+        {{
+          openclaw_homeassistant_allow_domains
+          | map('trim')
+          | map('lower')
+          | unique
+          | list
+        }}
+      allow_entities: >-
+        {{
+          openclaw_homeassistant_allow_entities
+          | map('trim')
+          | map('lower')
+          | unique
+          | list
+        }}
+      request_timeout_seconds: "{{ openclaw_homeassistant_request_timeout_seconds | int }}"
+      default_limit: "{{ openclaw_homeassistant_default_limit | int }}"
+      max_limit: "{{ openclaw_homeassistant_max_limit | int }}"
+      state_max_chars: "{{ openclaw_homeassistant_state_max_chars | int }}"
+      friendly_name_max_chars: "{{ openclaw_homeassistant_friendly_name_max_chars | int }}"
+      attribute_max_items: "{{ openclaw_homeassistant_attribute_max_items | int }}"
+      attribute_value_max_chars: "{{ openclaw_homeassistant_attribute_value_max_chars | int }}"
+  no_log: true
+
+- name: homeassistant | Render runtime configuration file
+  ansible.builtin.copy:
+    content: "{{ _openclaw_homeassistant_payload | to_nice_json }}\n"
+    dest: "{{ openclaw_homeassistant_credentials_path }}"
+    owner: "1000"
+    group: "1000"
+    mode: "0600"
+  no_log: true
+  notify: restart openclaw
+
+- name: homeassistant | Deploy Home Assistant skill manifest
+  ansible.builtin.template:
+    src: homeassistant-read-skill.json.j2
+    dest: "{{ openclaw_homeassistant_skills_dir }}/{{ openclaw_homeassistant_skill_name }}/skill.json"
+    owner: "1000"
+    group: "1000"
+    mode: "0640"
+  notify: restart openclaw
+
+- name: homeassistant | Deploy Home Assistant skill handler
+  ansible.builtin.template:
+    src: homeassistant-read-handler.py.j2
+    dest: "{{ openclaw_homeassistant_skills_dir }}/{{ openclaw_homeassistant_skill_name }}/handler.py"
+    owner: "1000"
+    group: "1000"
+    mode: "0750"
+  notify: restart openclaw
+
+- name: homeassistant | Deploy /homeassistant command SKILL.md
+  ansible.builtin.template:
+    src: homeassistant-skill.md.j2
+    dest: "{{ openclaw_homeassistant_skills_dir }}/{{ openclaw_homeassistant_command_skill_name }}/SKILL.md"
+    owner: "1000"
+    group: "1000"
+    mode: "0640"
+  notify: restart openclaw

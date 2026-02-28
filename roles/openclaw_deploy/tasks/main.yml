@@ -53,5 +53,9 @@
   ansible.builtin.import_tasks: imap.yml
   when: openclaw_imap_enabled | bool
 
+- name: main | Configure Home Assistant read-only skill
+  ansible.builtin.import_tasks: homeassistant.yml
+  when: openclaw_homeassistant_enabled | bool
+
 - name: main | Configure OpenClaw metrics endpoint for Nyxmon
   ansible.builtin.import_tasks: metrics.yml

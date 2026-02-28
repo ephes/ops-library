@@ -222,6 +222,53 @@ Safety guarantees:
 | `openclaw_smtp_subject_max_chars` | `240` | Max `/mail send --subject` length |
 | `openclaw_smtp_body_max_chars` | `4000` | Max `/mail send --body` length |
 
+### Home Assistant Skill (`/homeassistant`): Read-only State Access
+
+When `openclaw_homeassistant_enabled: true`, the role deploys a read-only `/homeassistant` command skill and
+handler using the Home Assistant REST API.
+
+Command surface:
+
+- `/homeassistant state <entity_id>`
+- `/homeassistant list [--domain <domain>] [--limit N]`
+
+Safety guarantees:
+
+- Read-only endpoint usage only (`GET /api/states` and `GET /api/states/<entity_id>`).
+- Explicit entity/domain allowlists enforced in-handler.
+- Strict entity/domain input validation.
+- Bounded output (limit/field truncation/attribute cap) and request timeout.
+- Sanitized operational errors (no token/header leakage).
+
+Operational note:
+
+- OpenClaw caches skill snapshots per session. If a pre-existing session reports `/homeassistant` as not found
+  right after first deployment, clear `skillsSnapshot` entries in
+  `/mnt/cryptdata/openclaw/data/agents/main/sessions/sessions.json` and retry.
+
+#### Home Assistant Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `openclaw_homeassistant_enabled` | `false` | Enable `/homeassistant` skill deployment |
+| `openclaw_homeassistant_base_url` | `""` | Home Assistant base URL reachable from OpenClaw container |
+| `openclaw_homeassistant_token` | `""` | Home Assistant long-lived API token (required when enabled) |
+| `openclaw_homeassistant_skill_name` | `homeassistant-read` | Handler skill directory name |
+| `openclaw_homeassistant_command_skill_name` | `homeassistant` | Slash command skill directory name |
+| `openclaw_homeassistant_skills_dir` | `{{ openclaw_data_dir }}/skills` | Host skill root for Home Assistant skill files |
+| `openclaw_homeassistant_container_skills_dir` | `/home/node/.openclaw/skills` | Container path used by Home Assistant command skill |
+| `openclaw_homeassistant_credentials_path` | `{{ openclaw_data_dir }}/credentials/homeassistant.json` | Rendered Home Assistant runtime config (`0600`) |
+| `openclaw_homeassistant_container_credentials_path` | `/home/node/.openclaw/credentials/homeassistant.json` | Container runtime config path used by handler |
+| `openclaw_homeassistant_allow_domains` | `[]` | Allowed Home Assistant domains (for example `sensor`, `climate`) |
+| `openclaw_homeassistant_allow_entities` | `[]` | Allowed full entity IDs (for example `sun.sun`) |
+| `openclaw_homeassistant_request_timeout_seconds` | `8` | Home Assistant HTTP timeout per request |
+| `openclaw_homeassistant_default_limit` | `10` | Default `/homeassistant list` row limit |
+| `openclaw_homeassistant_max_limit` | `25` | Maximum `/homeassistant list` row limit |
+| `openclaw_homeassistant_state_max_chars` | `200` | Max chars for rendered state values |
+| `openclaw_homeassistant_friendly_name_max_chars` | `120` | Max chars for rendered friendly names |
+| `openclaw_homeassistant_attribute_max_items` | `8` | Max rendered attribute key/value pairs in `/homeassistant state` |
+| `openclaw_homeassistant_attribute_value_max_chars` | `120` | Max chars per rendered attribute value |
+
 ### Advanced
 
 | Variable | Default | Description |
