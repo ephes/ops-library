@@ -1,0 +1,32 @@
+---
+name: {{ openclaw_imap_command_skill_name }}
+description: "Read-only IMAP access (/mail unread|list|read|search)."
+metadata: { "openclaw": { "emoji": "📬", "requires": { "bins": ["python3"] } } }
+---
+
+# Mail Skill
+
+Use the managed IMAP read-only handler for mailbox access.
+
+## Input Contract
+
+User input is everything after `/mail`.
+
+- `unread [--account <name>]`
+- `list [--account <name>] [--limit N]`
+- `read <uid> [--account <name>]`
+- `search <query> [--account <name>] [--limit N]`
+
+## Execution Rules
+
+Always execute exactly one command:
+
+```bash
+{{ openclaw_imap_container_skills_dir }}/{{ openclaw_imap_skill_name }}/handler.py <raw-user-input>
+```
+
+When no input is provided, return:
+
+`Usage: /mail unread [--account <name>] | /mail list [--account <name>] [--limit N] | /mail read <uid> [--account <name>] | /mail search <query> [--account <name>] [--limit N]`
+
+Return the handler output as-is.

@@ -3,6 +3,8 @@
 # - email: user@example.com (required)
 # - password: plaintext password (required; hashed on sync)
 # - active: true/false (optional, default true)
+# - mailbox_maildir: "<domain>/<localpart>/" (optional; PostfixAdmin mode only)
+#   Maps login identity to a specific Maildir target, useful for read-only reader accounts.
 mail_users_list: []
 
 # Optional: when true, disables users present in DB but not in mail_users_list.

@@ -1,0 +1,28 @@
+{
+  "name": "{{ openclaw_imap_skill_name }}",
+  "version": "1.0.0",
+  "description": "Read-only IMAP mailbox access with per-account credentials",
+  "commands": {
+    "mail": {
+      "description": "Read-only mailbox commands",
+      "subcommands": {
+        "unread": {
+          "description": "List unread messages: /mail unread [--account <name>]"
+        },
+        "list": {
+          "description": "List recent messages: /mail list [--account <name>] [--limit N]"
+        },
+        "read": {
+          "description": "Read message snippet by UID: /mail read <uid> [--account <name>]"
+        },
+        "search": {
+          "description": "Search messages: /mail search <query> [--account <name>] [--limit N]"
+        }
+      }
+    }
+  },
+  "handler": {
+    "type": "executable",
+    "path": "./handler.py"
+  }
+}

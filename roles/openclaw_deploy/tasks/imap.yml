@@ -1,0 +1,117 @@
+---
+# IMAP read-only mail skill deployment.
+# Included from main.yml when openclaw_imap_enabled is true.
+
+- name: imap | Initialize resolved account map
+  ansible.builtin.set_fact:
+    _openclaw_imap_accounts_resolved: {}
+  no_log: true
+
+- name: imap | Resolve account credentials from refs/direct values
+  ansible.builtin.set_fact:
+    _openclaw_imap_accounts_resolved: >-
+      {{
+        _openclaw_imap_accounts_resolved
+        | combine(
+            {
+              item.key: {
+                "username": (
+                  item.value.username
+                  if (item.value.username is defined)
+                  else
+                  (
+                    (
+                      openclaw_imap_secret_source
+                      | json_query(item.value.username_secret_ref)
+                      | default('', true)
+                    )
+                    if (
+                      item.value.username_secret_ref is defined
+                      and (item.value.username_secret_ref | string | trim | length > 0)
+                    )
+                    else ''
+                  )
+                ),
+                "password": (
+                  item.value.password
+                  if (item.value.password is defined)
+                  else
+                  (
+                    (
+                      openclaw_imap_secret_source
+                      | json_query(item.value.password_secret_ref)
+                      | default('', true)
+                    )
+                    if (
+                      item.value.password_secret_ref is defined
+                      and (item.value.password_secret_ref | string | trim | length > 0)
+                    )
+                    else ''
+                  )
+                ),
+                "mailbox": (
+                  item.value.mailbox | default(openclaw_imap_default_mailbox)
+                )
+              }
+            },
+            recursive=True
+          )
+      }}
+  loop: "{{ openclaw_imap_account_map | dict2items }}"
+  no_log: true
+
+- name: imap | Validate resolved account credentials
+  ansible.builtin.assert:
+    that:
+      - item.value.username | string | trim | length > 0
+      - item.value.password | string | trim | length > 0
+      - item.value.mailbox | string | trim | length > 0
+    fail_msg: >-
+      IMAP account {{ item.key }} did not resolve to non-empty username/password/mailbox.
+      Check openclaw_imap_account_map and openclaw_imap_secret_source.
+  loop: "{{ _openclaw_imap_accounts_resolved | dict2items }}"
+  no_log: true
+
+- name: imap | Build credentials payload
+  ansible.builtin.set_fact:
+    _openclaw_imap_credentials_payload:
+      default_account: "{{ openclaw_imap_default_account }}"
+      accounts: "{{ _openclaw_imap_accounts_resolved }}"
+  no_log: true
+
+- name: imap | Render account credentials file
+  ansible.builtin.copy:
+    content: "{{ _openclaw_imap_credentials_payload | to_nice_json }}\n"
+    dest: "{{ openclaw_imap_credentials_path }}"
+    owner: "1000"
+    group: "1000"
+    mode: "0600"
+  no_log: true
+  notify: restart openclaw
+
+- name: imap | Deploy mail-imap skill manifest
+  ansible.builtin.template:
+    src: mail-imap-skill.json.j2
+    dest: "{{ openclaw_imap_skills_dir }}/{{ openclaw_imap_skill_name }}/skill.json"
+    owner: "1000"
+    group: "1000"
+    mode: "0640"
+  notify: restart openclaw
+
+- name: imap | Deploy mail-imap skill handler
+  ansible.builtin.template:
+    src: mail-imap-handler.py.j2
+    dest: "{{ openclaw_imap_skills_dir }}/{{ openclaw_imap_skill_name }}/handler.py"
+    owner: "1000"
+    group: "1000"
+    mode: "0750"
+  notify: restart openclaw
+
+- name: imap | Deploy /mail command SKILL.md
+  ansible.builtin.template:
+    src: mail-skill.md.j2
+    dest: "{{ openclaw_imap_skills_dir }}/{{ openclaw_imap_command_skill_name }}/SKILL.md"
+    owner: "1000"
+    group: "1000"
+    mode: "0640"
+  notify: restart openclaw

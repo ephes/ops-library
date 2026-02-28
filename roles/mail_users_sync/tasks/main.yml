@@ -30,7 +30,24 @@
 
 - name: Build list of existing emails
   ansible.builtin.set_fact:
-    existing_emails: "{{ existing_users.query_result | map(attribute='email') | map('lower') | list }}"
+    existing_user_rows: >-
+      {{
+        existing_users.query_result
+        if (existing_users.query_result is defined)
+        else
+        (
+          (existing_users.query_all_results | first)
+          if (
+            existing_users.query_all_results is defined
+            and (existing_users.query_all_results | length > 0)
+          )
+          else []
+        )
+      }}
+
+- name: Build list of existing emails
+  ansible.builtin.set_fact:
+    existing_emails: "{{ existing_user_rows | map(attribute='email') | map('lower') | list }}"
 
 - name: Create or update mail users
   ansible.builtin.include_tasks: sync_user.yml

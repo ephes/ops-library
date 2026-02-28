@@ -1,0 +1,376 @@
+#!/usr/bin/env python3
+# Managed by Ansible (openclaw_deploy IMAP skill). Do not edit on the host.
+
+import argparse
+import email
+import imaplib
+import json
+import re
+import shlex
+import ssl
+import sys
+from email.header import decode_header
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Tuple
+
+
+IMAP_HOST = {{ openclaw_imap_host | to_json }}
+IMAP_PORT = {{ openclaw_imap_port | int }}
+IMAP_TLS_MODE = {{ openclaw_imap_tls_mode | to_json }}
+IMAP_DEFAULT_MAILBOX = {{ openclaw_imap_default_mailbox | to_json }}
+IMAP_CREDENTIALS_PATH = {{ openclaw_imap_container_credentials_path | to_json }}
+IMAP_CONNECT_TIMEOUT = {{ openclaw_imap_connect_timeout_seconds | int }}
+IMAP_COMMAND_TIMEOUT = {{ openclaw_imap_command_timeout_seconds | int }}
+IMAP_DEFAULT_LIMIT = {{ openclaw_imap_default_limit | int }}
+IMAP_MAX_LIMIT = {{ openclaw_imap_max_limit | int }}
+IMAP_HEADER_MAX_CHARS = {{ openclaw_imap_header_max_chars | int }}
+IMAP_SUBJECT_MAX_CHARS = {{ openclaw_imap_subject_max_chars | int }}
+IMAP_READ_FETCH_BYTES = {{ openclaw_imap_read_fetch_bytes | int }}
+IMAP_READ_SNIPPET_CHARS = {{ openclaw_imap_read_snippet_chars | int }}
+IMAP_SEARCH_QUERY_MAX_CHARS = {{ openclaw_imap_search_query_max_chars | int }}
+
+USAGE_TEXT = (
+    "Usage: /mail unread [--account <name>] | /mail list [--account <name>] [--limit N] | "
+    "/mail read <uid> [--account <name>] | /mail search <query> [--account <name>] [--limit N]"
+)
+
+
+class MailSkillError(Exception):
+    pass
+
+
+class AccountNotFoundError(MailSkillError):
+    pass
+
+
+def _sanitize_text(value: str, max_chars: int) -> str:
+    normalized = re.sub(r"\s+", " ", (value or "").strip())
+    if len(normalized) <= max_chars:
+        return normalized
+    return normalized[: max_chars - 1] + "..."
+
+
+def _decode_header_value(raw_value: Optional[str], max_chars: int) -> str:
+    if not raw_value:
+        return ""
+    chunks: List[str] = []
+    for part, enc in decode_header(raw_value):
+        if isinstance(part, bytes):
+            encoding = enc or "utf-8"
+            chunks.append(part.decode(encoding, errors="replace"))
+        else:
+            chunks.append(str(part))
+    return _sanitize_text("".join(chunks), max_chars)
+
+
+def _load_credentials(path: str) -> Tuple[str, Dict[str, Dict[str, str]]]:
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    accounts = payload.get("accounts", {})
+    default_account = payload.get("default_account", "")
+    if not isinstance(accounts, dict) or not accounts:
+        raise MailSkillError("IMAP account configuration is missing.")
+    if not isinstance(default_account, str) or not default_account:
+        raise MailSkillError("IMAP default account is not configured.")
+    return default_account, accounts
+
+
+def _resolve_account(
+    requested: Optional[str], default_account: str, accounts: Dict[str, Dict[str, str]]
+) -> Tuple[str, Dict[str, str]]:
+    account_name = requested or default_account
+    if account_name not in accounts:
+        known = ", ".join(sorted(accounts.keys()))
+        raise AccountNotFoundError(
+            f"Unknown account '{account_name}'. Available accounts: {known}"
+        )
+    return account_name, accounts[account_name]
+
+
+def _connect_imap(username: str, password: str, mailbox: str) -> imaplib.IMAP4:
+    context = ssl.create_default_context()
+    if IMAP_TLS_MODE == "imaps":
+        conn = imaplib.IMAP4_SSL(
+            host=IMAP_HOST, port=IMAP_PORT, ssl_context=context, timeout=IMAP_CONNECT_TIMEOUT
+        )
+    elif IMAP_TLS_MODE == "starttls":
+        conn = imaplib.IMAP4(host=IMAP_HOST, port=IMAP_PORT, timeout=IMAP_CONNECT_TIMEOUT)
+        conn.starttls(ssl_context=context)
+    else:
+        raise MailSkillError(f"Unsupported TLS mode: {IMAP_TLS_MODE}")
+
+    if hasattr(conn, "sock") and conn.sock is not None:
+        conn.sock.settimeout(IMAP_COMMAND_TIMEOUT)
+
+    status, _ = conn.login(username, password)
+    if status != "OK":
+        conn.logout()
+        raise MailSkillError("IMAP login failed.")
+
+    status, _ = conn.select(mailbox, readonly=True)
+    if status != "OK":
+        conn.logout()
+        raise MailSkillError(f"Could not open mailbox '{mailbox}' in read-only mode.")
+
+    return conn
+
+
+def _parse_size(meta: str) -> str:
+    match = re.search(r"RFC822\.SIZE\s+(\d+)", meta)
+    return match.group(1) if match else "?"
+
+
+def _extract_fetch_literals(data: Iterable[object]) -> Tuple[bytes, bytes, str]:
+    header_literal = b""
+    body_literal = b""
+    size = "?"
+    for part in data:
+        if not isinstance(part, tuple) or len(part) < 2:
+            continue
+        meta_raw, literal = part[0], part[1]
+        if not isinstance(meta_raw, (bytes, bytearray)) or not isinstance(
+            literal, (bytes, bytearray)
+        ):
+            continue
+        meta = bytes(meta_raw).decode("utf-8", errors="ignore")
+        meta_upper = meta.upper()
+        parsed_size = _parse_size(meta)
+        if parsed_size != "?":
+            size = parsed_size
+        if "HEADER.FIELDS" in meta_upper or "RFC822.HEADER" in meta_upper:
+            header_literal = bytes(literal)
+        elif "BODY[TEXT" in meta_upper:
+            body_literal = bytes(literal)
+    return header_literal, body_literal, size
+
+
+def _search_uids(conn: imaplib.IMAP4, *criteria: str) -> List[str]:
+    status, data = conn.uid("SEARCH", None, *criteria)
+    if status != "OK":
+        raise MailSkillError("IMAP search failed.")
+    if not data or not data[0]:
+        return []
+    raw = data[0].decode("ascii", errors="ignore").strip()
+    if not raw:
+        return []
+    return [item for item in raw.split() if item]
+
+
+def _latest_uids(uids: List[str], limit: int) -> List[str]:
+    if not uids:
+        return []
+    bounded = max(1, min(limit, IMAP_MAX_LIMIT))
+    return list(reversed(uids[-bounded:]))
+
+
+def _fetch_overview(conn: imaplib.IMAP4, uid: str) -> Dict[str, str]:
+    status, data = conn.uid(
+        "FETCH", uid, "(BODY.PEEK[HEADER.FIELDS (DATE FROM TO SUBJECT)] RFC822.SIZE)"
+    )
+    if status != "OK":
+        raise MailSkillError(f"Could not fetch message UID {uid}.")
+    header_literal, _body_literal, size = _extract_fetch_literals(data or [])
+    message = email.message_from_bytes(header_literal or b"")
+    return {
+        "uid": uid,
+        "date": _decode_header_value(message.get("Date"), IMAP_HEADER_MAX_CHARS) or "-",
+        "from": _decode_header_value(message.get("From"), IMAP_HEADER_MAX_CHARS) or "-",
+        "to": _decode_header_value(message.get("To"), IMAP_HEADER_MAX_CHARS) or "-",
+        "subject": _decode_header_value(message.get("Subject"), IMAP_SUBJECT_MAX_CHARS) or "-",
+        "size": size,
+    }
+
+
+def _fetch_read_view(conn: imaplib.IMAP4, uid: str) -> Dict[str, str]:
+    fetch_spec = (
+        "(BODY.PEEK[HEADER.FIELDS (DATE FROM TO CC SUBJECT)] "
+        f"BODY.PEEK[TEXT]<0.{IMAP_READ_FETCH_BYTES}> RFC822.SIZE)"
+    )
+    status, data = conn.uid("FETCH", uid, fetch_spec)
+    if status != "OK":
+        raise MailSkillError(f"Could not fetch message UID {uid}.")
+    header_literal, body_literal, size = _extract_fetch_literals(data or [])
+    message = email.message_from_bytes(header_literal or b"")
+    snippet = _sanitize_text(
+        body_literal.decode("utf-8", errors="replace"), IMAP_READ_SNIPPET_CHARS
+    )
+    return {
+        "uid": uid,
+        "date": _decode_header_value(message.get("Date"), IMAP_HEADER_MAX_CHARS) or "-",
+        "from": _decode_header_value(message.get("From"), IMAP_HEADER_MAX_CHARS) or "-",
+        "to": _decode_header_value(message.get("To"), IMAP_HEADER_MAX_CHARS) or "-",
+        "cc": _decode_header_value(message.get("Cc"), IMAP_HEADER_MAX_CHARS) or "-",
+        "subject": _decode_header_value(message.get("Subject"), IMAP_SUBJECT_MAX_CHARS) or "-",
+        "size": size,
+        "snippet": snippet or "[no text snippet available]",
+    }
+
+
+def _format_overview_lines(
+    account_name: str, mailbox: str, title: str, total: int, rows: List[Dict[str, str]]
+) -> str:
+    lines = [
+        f"Account: {account_name}",
+        f"Mailbox: {mailbox}",
+        f"{title}: showing {len(rows)} of {total}",
+    ]
+    if not rows:
+        lines.append("No messages found.")
+        return "\n".join(lines)
+
+    for row in rows:
+        lines.append(
+            f"- UID {row['uid']} | Date: {row['date']} | From: {row['from']} | "
+            f"Subject: {row['subject']} | Size: {row['size']} bytes"
+        )
+    return "\n".join(lines)
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(add_help=False)
+    subparsers = parser.add_subparsers(dest="command")
+
+    unread_parser = subparsers.add_parser("unread", add_help=False)
+    unread_parser.add_argument("--account", dest="account", default=None)
+
+    list_parser = subparsers.add_parser("list", add_help=False)
+    list_parser.add_argument("--account", dest="account", default=None)
+    list_parser.add_argument("--limit", dest="limit", type=int, default=IMAP_DEFAULT_LIMIT)
+
+    read_parser = subparsers.add_parser("read", add_help=False)
+    read_parser.add_argument("uid")
+    read_parser.add_argument("--account", dest="account", default=None)
+
+    search_parser = subparsers.add_parser("search", add_help=False)
+    search_parser.add_argument("query", nargs="+")
+    search_parser.add_argument("--account", dest="account", default=None)
+    search_parser.add_argument("--limit", dest="limit", type=int, default=IMAP_DEFAULT_LIMIT)
+
+    return parser
+
+
+def _normalize_argv(raw_argv: List[str]) -> List[str]:
+    if len(raw_argv) == 1 and " " in raw_argv[0]:
+        try:
+            parsed = shlex.split(raw_argv[0])
+            if parsed:
+                return parsed
+        except ValueError:
+            pass
+    return raw_argv
+
+
+def _bounded_limit(limit: int) -> int:
+    return max(1, min(limit, IMAP_MAX_LIMIT))
+
+
+def _escape_search_query(query: str) -> str:
+    return query.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _normalize_uid(raw_uid: str) -> str:
+    uid = (raw_uid or "").strip()
+    if not re.fullmatch(r"[1-9]\d*", uid):
+        raise MailSkillError("UID must be a positive integer.")
+    return uid
+
+
+def main() -> int:
+    argv = _normalize_argv(sys.argv[1:])
+    if not argv:
+        print(USAGE_TEXT)
+        return 0
+
+    parser = _build_parser()
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit:
+        print(USAGE_TEXT)
+        return 1
+
+    if not getattr(args, "command", None):
+        print(USAGE_TEXT)
+        return 1
+
+    try:
+        default_account, accounts = _load_credentials(IMAP_CREDENTIALS_PATH)
+        account_name, account = _resolve_account(args.account, default_account, accounts)
+        mailbox = _sanitize_text(account.get("mailbox", IMAP_DEFAULT_MAILBOX), 128)
+        username = str(account.get("username", "")).strip()
+        password = str(account.get("password", "")).strip()
+        if not username or not password:
+            raise MailSkillError(f"Account '{account_name}' is missing credentials.")
+
+        conn = _connect_imap(username=username, password=password, mailbox=mailbox)
+        try:
+            if args.command == "unread":
+                uids = _search_uids(conn, "UNSEEN")
+                selected = _latest_uids(uids, IMAP_DEFAULT_LIMIT)
+                rows = [_fetch_overview(conn, uid) for uid in selected]
+                print(_format_overview_lines(account_name, mailbox, "Unread", len(uids), rows))
+                return 0
+
+            if args.command == "list":
+                limit = _bounded_limit(args.limit)
+                uids = _search_uids(conn, "ALL")
+                selected = _latest_uids(uids, limit)
+                rows = [_fetch_overview(conn, uid) for uid in selected]
+                print(_format_overview_lines(account_name, mailbox, "Recent", len(uids), rows))
+                return 0
+
+            if args.command == "read":
+                uid = _normalize_uid(str(args.uid))
+                read_view = _fetch_read_view(conn, uid)
+                lines = [
+                    f"Account: {account_name}",
+                    f"Mailbox: {mailbox}",
+                    f"UID: {read_view['uid']}",
+                    f"Date: {read_view['date']}",
+                    f"From: {read_view['from']}",
+                    f"To: {read_view['to']}",
+                    f"Cc: {read_view['cc']}",
+                    f"Subject: {read_view['subject']}",
+                    f"Size: {read_view['size']} bytes",
+                    "",
+                    "Snippet:",
+                    read_view["snippet"],
+                ]
+                print("\n".join(lines))
+                return 0
+
+            if args.command == "search":
+                query = " ".join(args.query).strip()
+                if not query:
+                    raise MailSkillError("Search query cannot be empty.")
+                if len(query) > IMAP_SEARCH_QUERY_MAX_CHARS:
+                    raise MailSkillError(
+                        f"Search query too long (max {IMAP_SEARCH_QUERY_MAX_CHARS} chars)."
+                    )
+                limit = _bounded_limit(args.limit)
+                uids = _search_uids(conn, "TEXT", f'"{_escape_search_query(query)}"')
+                selected = _latest_uids(uids, limit)
+                rows = [_fetch_overview(conn, uid) for uid in selected]
+                title = f"Search results for '{_sanitize_text(query, IMAP_SEARCH_QUERY_MAX_CHARS)}'"
+                print(_format_overview_lines(account_name, mailbox, title, len(uids), rows))
+                return 0
+
+            print(USAGE_TEXT)
+            return 1
+        finally:
+            try:
+                conn.logout()
+            except Exception:
+                pass
+
+    except AccountNotFoundError as exc:
+        print(str(exc))
+        return 2
+    except MailSkillError as exc:
+        print(f"Mail skill error: {exc}")
+        return 1
+    except Exception as exc:
+        print(f"Mail skill internal error: {exc.__class__.__name__}")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

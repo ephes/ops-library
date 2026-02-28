@@ -203,6 +203,88 @@
       when Traefik is the external entry point.
   when: openclaw_traefik_enabled | bool
 
+- name: validate | IMAP base settings when IMAP is enabled
+  ansible.builtin.assert:
+    that:
+      - openclaw_imap_host | string | trim | length > 0
+      - openclaw_imap_port | int > 0
+      - openclaw_imap_port | int <= 65535
+      - openclaw_imap_tls_mode in ['imaps', 'starttls']
+      - openclaw_imap_default_mailbox | string | trim | length > 0
+      - openclaw_imap_account_map is mapping
+      - openclaw_imap_account_map is not string
+      - openclaw_imap_account_map | length > 0
+      - openclaw_imap_default_account | string | trim | length > 0
+      - openclaw_imap_default_account in (openclaw_imap_account_map.keys() | list)
+      - openclaw_imap_connect_timeout_seconds | int > 0
+      - openclaw_imap_command_timeout_seconds | int > 0
+      - openclaw_imap_default_limit | int > 0
+      - (openclaw_imap_max_limit | int) >= (openclaw_imap_default_limit | int)
+      - openclaw_imap_header_max_chars | int > 0
+      - openclaw_imap_subject_max_chars | int > 0
+      - openclaw_imap_search_query_max_chars | int > 0
+      - openclaw_imap_read_fetch_bytes | int > 0
+      - openclaw_imap_read_snippet_chars | int > 0
+      - openclaw_imap_skills_dir | string | trim | length > 0
+      - openclaw_imap_container_skills_dir | string | trim | length > 0
+      - openclaw_imap_skill_name | string | trim | length > 0
+      - openclaw_imap_command_skill_name | string | trim | length > 0
+      - openclaw_imap_credentials_path | string | trim | length > 0
+      - openclaw_imap_container_credentials_path | string | trim | length > 0
+    fail_msg: >-
+      Invalid IMAP settings. Configure host/port/tls/default account plus limits and paths when
+      openclaw_imap_enabled is true.
+  when: openclaw_imap_enabled | bool
+
+- name: validate | IMAP secret source shape when refs are used
+  ansible.builtin.assert:
+    that:
+      - openclaw_imap_secret_source is mapping
+      - openclaw_imap_secret_source is not string
+    fail_msg: >-
+      openclaw_imap_secret_source must be a mapping when using *_secret_ref entries.
+  when:
+    - openclaw_imap_enabled | bool
+    - >-
+      (
+        openclaw_imap_account_map | dict2items
+        | selectattr('value.username_secret_ref', 'defined')
+        | list
+        | length
+      ) > 0
+      or
+      (
+        openclaw_imap_account_map | dict2items
+        | selectattr('value.password_secret_ref', 'defined')
+        | list
+        | length
+      ) > 0
+
+- name: validate | IMAP account entries are valid
+  ansible.builtin.assert:
+    that:
+      - item.value is mapping
+      - item.value is not string
+      - (item.value.mailbox | default(openclaw_imap_default_mailbox)) | string | trim | length > 0
+      - >-
+        (
+          (item.value.username is defined and (item.value.username | string | trim | length > 0))
+          or
+          (item.value.username_secret_ref is defined and (item.value.username_secret_ref | string | trim | length > 0))
+        )
+      - >-
+        (
+          (item.value.password is defined and (item.value.password | string | trim | length > 0))
+          or
+          (item.value.password_secret_ref is defined and (item.value.password_secret_ref | string | trim | length > 0))
+        )
+    fail_msg: >-
+      IMAP account {{ item.key }} must define mailbox (optional), and username/password
+      either directly or via *_secret_ref keys.
+  loop: "{{ openclaw_imap_account_map | dict2items }}"
+  no_log: true
+  when: openclaw_imap_enabled | bool
+
 - name: validate | Weeknotes backend when weeknotes is enabled
   ansible.builtin.assert:
     that:

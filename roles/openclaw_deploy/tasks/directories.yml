@@ -51,3 +51,24 @@
     mode: "0750"
   loop: "{{ [openclaw_weeknotes_skill_name] + openclaw_weeknotes_command_skill_names }}"
   when: openclaw_weeknotes_enabled | bool
+
+- name: directories | Ensure IMAP skills root directory exists
+  ansible.builtin.file:
+    path: "{{ openclaw_imap_skills_dir }}"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0750"
+  when: openclaw_imap_enabled | bool
+
+- name: directories | Ensure IMAP skill directories exist
+  ansible.builtin.file:
+    path: "{{ openclaw_imap_skills_dir }}/{{ item }}"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0750"
+  loop:
+    - "{{ openclaw_imap_skill_name }}"
+    - "{{ openclaw_imap_command_skill_name }}"
+  when: openclaw_imap_enabled | bool

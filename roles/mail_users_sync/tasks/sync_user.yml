@@ -16,6 +16,31 @@
     user_email: "{{ user.email | lower }}"
     user_active: "{{ user.active | default(true) }}"
 
+- name: Resolve maildir target for {{ user.email }}
+  ansible.builtin.set_fact:
+    user_maildir: >-
+      {{
+        (
+          user.mailbox_maildir
+          if (
+            user.mailbox_maildir is defined
+            and (user.mailbox_maildir | string | trim | length > 0)
+          )
+          else (user_domain ~ '/' ~ user_localpart ~ '/')
+        )
+        | string
+        | trim
+        | lower
+      }}
+
+- name: Validate maildir target format for {{ user.email }}
+  ansible.builtin.assert:
+    that:
+      - user_maildir is regex('^[^/]+/[^/]+/$')
+    fail_msg: >-
+      Invalid mailbox_maildir '{{ user_maildir }}' for {{ user.email }}.
+      Expected '<domain>/<localpart>/'.
+
 - name: Build alias-domain list for {{ user.email }}
   ansible.builtin.set_fact:
     user_alias_domains: "{{ mail_users_additional_alias_domains | default([]) | map('lower') | reject('equalto', user_domain) | unique | list }}"
@@ -48,6 +73,34 @@
   when:
     - mail_users_schema_mode == 'postfixadmin'
     - domain_result_postfixadmin.query_result | length == 0
+
+- name: Validate custom mailbox target exists (PostfixAdmin)
+  community.postgresql.postgresql_query:
+    db: "{{ mail_users_postgres_database }}"
+    query: |
+      SELECT username
+      FROM mailbox
+      WHERE LOWER(maildir) = LOWER(%(maildir)s)
+    named_args:
+      maildir: "{{ user_maildir }}"
+  register: maildir_target_postfixadmin
+  become: true
+  become_user: postgres
+  when:
+    - mail_users_schema_mode == 'postfixadmin'
+    - user.mailbox_maildir is defined
+    - user.mailbox_maildir | string | trim | length > 0
+
+- name: Fail when custom mailbox target does not exist (PostfixAdmin)
+  ansible.builtin.fail:
+    msg: >-
+      mailbox_maildir '{{ user_maildir }}' for {{ user.email }} does not exist in mailbox table.
+      Ensure the target mailbox is present before mapping a reader account.
+  when:
+    - mail_users_schema_mode == 'postfixadmin'
+    - user.mailbox_maildir is defined
+    - user.mailbox_maildir | string | trim | length > 0
+    - maildir_target_postfixadmin.query_result | length == 0
 
 - name: Check whether domain is configured as alias domain (PostfixAdmin)
   community.postgresql.postgresql_query:
@@ -164,12 +217,12 @@
   community.postgresql.postgresql_query:
     db: "{{ mail_users_postgres_database }}"
     query: |
-      SELECT username, password, active
+      SELECT username, password, active, maildir
       FROM mailbox
       WHERE LOWER(username) = LOWER(%(username)s)
     named_args:
       username: "{{ user_email }}"
-  register: user_exists
+  register: user_exists_postfixadmin
   become: true
   become_user: postgres
   when: mail_users_schema_mode == 'postfixadmin'
@@ -185,10 +238,44 @@
     named_args:
       domain_id: "{{ domain_result_legacy.query_result[0].id }}"
       localpart: "{{ user_localpart }}"
-  register: user_exists
+  register: user_exists_legacy
   become: true
   become_user: postgres
   when: mail_users_schema_mode == 'legacy'
+
+- name: Normalize existing user rows for {{ user.email }}
+  ansible.builtin.set_fact:
+    user_exists_rows: >-
+      {{
+        (
+          user_exists_postfixadmin.query_result
+          if (user_exists_postfixadmin.query_result is defined)
+          else
+          (
+            (user_exists_postfixadmin.query_all_results | first)
+            if (
+              user_exists_postfixadmin.query_all_results is defined
+              and (user_exists_postfixadmin.query_all_results | length > 0)
+            )
+            else []
+          )
+        )
+        if (mail_users_schema_mode == 'postfixadmin')
+        else
+        (
+          user_exists_legacy.query_result
+          if (user_exists_legacy.query_result is defined)
+          else
+          (
+            (user_exists_legacy.query_all_results | first)
+            if (
+              user_exists_legacy.query_all_results is defined
+              and (user_exists_legacy.query_all_results | length > 0)
+            )
+            else []
+          )
+        )
+      }}
 
 - name: Create mailbox {{ user.email }} (PostfixAdmin)
   community.postgresql.postgresql_query:
@@ -199,7 +286,7 @@
         LOWER(%(username)s),
         %(password)s,
         '',
-        LOWER(CONCAT(%(domain)s, '/', %(localpart)s, '/')),
+        LOWER(%(maildir)s),
         0,
         LOWER(%(localpart)s),
         LOWER(%(domain)s),
@@ -212,13 +299,14 @@
       password: "{{ password_hash.stdout }}"
       localpart: "{{ user_localpart }}"
       domain: "{{ user_domain }}"
+      maildir: "{{ user_maildir }}"
       active: "{{ '1' if user_active | bool else '0' }}"
   become: true
   become_user: postgres
   no_log: true
   when:
     - mail_users_schema_mode == 'postfixadmin'
-    - user_exists.query_result | length == 0
+    - user_exists_rows | length == 0
 
 - name: Create mail user {{ user.email }} (legacy)
   community.postgresql.postgresql_query:
@@ -236,23 +324,30 @@
   no_log: true
   when:
     - mail_users_schema_mode == 'legacy'
-    - user_exists.query_result | length == 0
+    - user_exists_rows | length == 0
 
 - name: Verify existing password for {{ user.email }}
-  ansible.builtin.command: doveadm pw -t "{{ user_exists.query_result[0].password }}"
+  ansible.builtin.command: doveadm pw -t "{{ user_exists_rows[0].password }}"
   args:
     stdin: "{{ user.password }}\n{{ user.password }}"
   register: password_verify
   changed_when: false
   failed_when: false
   no_log: true
-  when: user_exists.query_result | length > 0
+  when: user_exists_rows | length > 0
 
 - name: Set password_changed fact for {{ user.email }}
   ansible.builtin.set_fact:
     password_changed: "{{ password_verify.rc != 0 }}"
-    active_changed: "{{ ((user_exists.query_result[0].active | string | lower) in ['1', 't', 'true', 'yes']) != (user_active | bool) }}"
-  when: user_exists.query_result | length > 0
+    active_changed: "{{ ((user_exists_rows[0].active | string | lower) in ['1', 't', 'true', 'yes']) != (user_active | bool) }}"
+    maildir_changed: >-
+      {{
+        (
+          (user_exists_rows[0].maildir | default('') | lower)
+          != (user_maildir | lower)
+        ) if (mail_users_schema_mode == 'postfixadmin') else false
+      }}
+  when: user_exists_rows | length > 0
 
 - name: Update mailbox {{ user.email }} (PostfixAdmin)
   community.postgresql.postgresql_query:
@@ -260,20 +355,22 @@
     query: |
       UPDATE mailbox
       SET password = %(password)s,
+          maildir = LOWER(%(maildir)s),
           active = %(active)s,
           modified = NOW()
       WHERE LOWER(username) = LOWER(%(username)s)
     named_args:
       username: "{{ user_email }}"
       password: "{{ password_hash.stdout }}"
+      maildir: "{{ user_maildir }}"
       active: "{{ '1' if user_active | bool else '0' }}"
   become: true
   become_user: postgres
   no_log: true
   when:
     - mail_users_schema_mode == 'postfixadmin'
-    - user_exists.query_result | length > 0
-    - password_changed | bool or active_changed | bool
+    - user_exists_rows | length > 0
+    - password_changed | bool or active_changed | bool or maildir_changed | bool
 
 - name: Update mail user {{ user.email }} (legacy)
   community.postgresql.postgresql_query:
@@ -292,7 +389,7 @@
   become_user: postgres
   when:
     - mail_users_schema_mode == 'legacy'
-    - user_exists.query_result | length > 0
+    - user_exists_rows | length > 0
     - password_changed | bool or active_changed | bool
 
 - name: Ensure primary self-alias exists {{ user.email }} (PostfixAdmin)

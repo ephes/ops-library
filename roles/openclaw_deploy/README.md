@@ -148,6 +148,46 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 | `openclaw_metrics_endpoint_synthetic_canary_state_path` | `{{ openclaw_metrics_endpoint_data_dir }}/openclaw-canary-state.json` | Local state file for last canary result |
 | `openclaw_metrics_endpoint_synthetic_canary_output_max_chars` | `256` | Max response chars persisted from canary output |
 
+### IMAP Read-Only Mail Skill
+
+When `openclaw_imap_enabled: true`, the role deploys a `/mail` skill with read-only IMAP operations:
+
+- `/mail unread [--account <name>]`
+- `/mail list [--account <name>] [--limit N]`
+- `/mail read <uid> [--account <name>]`
+- `/mail search <query> [--account <name>] [--limit N]`
+
+Read-only behavior is enforced technically in the handler:
+
+- IMAP mailbox is opened using `SELECT ...` read-only mode.
+- Only `SEARCH` and `FETCH` are used.
+- No `STORE`, `MOVE`, `DELETE`, `EXPUNGE`, or SMTP/send logic is implemented.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `openclaw_imap_enabled` | `false` | Enable IMAP read-only mail skill deployment |
+| `openclaw_imap_host` | `""` | IMAP host reachable from OpenClaw container |
+| `openclaw_imap_port` | `993` | IMAP port |
+| `openclaw_imap_tls_mode` | `imaps` | TLS mode: `imaps` or `starttls` |
+| `openclaw_imap_default_mailbox` | `INBOX` | Mailbox opened in read-only mode |
+| `openclaw_imap_account_map` | `{}` | Account map (`logical_account -> {username/password or *_secret_ref, mailbox?}`) |
+| `openclaw_imap_secret_source` | `{}` | Mapping used to resolve `*_secret_ref` entries |
+| `openclaw_imap_default_account` | `""` | Default logical account name |
+| `openclaw_imap_skill_name` | `mail-imap` | Handler skill directory name |
+| `openclaw_imap_command_skill_name` | `mail` | Slash command skill directory name |
+| `openclaw_imap_skills_dir` | `{{ openclaw_data_dir }}/skills` | Host skill root for IMAP skill files |
+| `openclaw_imap_credentials_path` | `{{ openclaw_data_dir }}/credentials/imap_accounts.json` | Rendered credential map (mode `0600`) |
+| `openclaw_imap_container_credentials_path` | `/home/node/.openclaw/credentials/imap_accounts.json` | Container path used by IMAP handler |
+| `openclaw_imap_connect_timeout_seconds` | `10` | IMAP connection timeout |
+| `openclaw_imap_command_timeout_seconds` | `15` | IMAP command timeout |
+| `openclaw_imap_default_limit` | `10` | Default message listing limit |
+| `openclaw_imap_max_limit` | `25` | Max allowed `--limit` |
+| `openclaw_imap_header_max_chars` | `240` | Max chars for header fields in output |
+| `openclaw_imap_subject_max_chars` | `240` | Max chars for subject in output |
+| `openclaw_imap_read_fetch_bytes` | `4096` | Max bytes fetched for read snippet |
+| `openclaw_imap_read_snippet_chars` | `800` | Max chars returned in `/mail read` snippet |
+| `openclaw_imap_search_query_max_chars` | `200` | Max `/mail search` query length |
+
 ### Advanced
 
 | Variable | Default | Description |
