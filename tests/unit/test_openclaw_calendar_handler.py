@@ -613,11 +613,44 @@ def test_parse_event_id_rejects_malformed():
         handler._parse_event_id("missing-delimiter")
 
 
+def test_decode_event_token_rejects_invalid_base64():
+    with pytest.raises(handler.CalendarSkillError, match="Event ID is invalid"):
+        handler._decode_event_token("%%%")
+
+
+def test_build_event_id_rejects_null_byte_href():
+    with pytest.raises(handler.CalendarSkillError, match="Event ID is invalid"):
+        handler._build_event_id("family", "/family/event-\x00.ics")
+
+
+def test_normalize_event_href_extracts_path_from_absolute_url():
+    assert (
+        handler._normalize_event_href("https://caldav.example.test/family/event-1.ics")
+        == "/family/event-1.ics"
+    )
+
+
 def test_resolve_event_url_rejects_path_escape():
     with pytest.raises(handler.CalendarAccessDenied, match="does not belong"):
         handler._resolve_event_url(
             "https://caldav.example.test/family",
             "/other/cal/event-1.ics",
+        )
+
+
+def test_resolve_event_url_rejects_path_traversal():
+    with pytest.raises(handler.CalendarAccessDenied, match="does not belong"):
+        handler._resolve_event_url(
+            "https://caldav.example.test/family",
+            "/family/../other/event-1.ics",
+        )
+
+
+def test_resolve_event_url_rejects_scheme_netloc_in_event_href():
+    with pytest.raises(handler.CalendarSkillError, match="Event ID is invalid"):
+        handler._resolve_event_url(
+            "https://caldav.example.test/family",
+            "https://evil.example.test/family/event-1.ics",
         )
 
 
@@ -723,7 +756,7 @@ def test_edit_event_missing_event(monkeypatch, tmp_path):
     def _fake_request(**kwargs):
         raise handler.CalendarNotFound("Calendar endpoint not found for edit.")
 
-    monkeypatch.setattr(handler, "_caldav_request", _fake_request)
+    monkeypatch.setattr(handler, "_caldav_request_with_headers", _fake_request)
     with pytest.raises(handler.CalendarNotFound):
         handler._edit_event(
             config=config,
@@ -751,15 +784,19 @@ def test_edit_event_happy_path(monkeypatch, tmp_path):
         "END:VCALENDAR\r\n"
     )
 
-    calls = []
+    get_calls = []
+    put_calls = []
 
-    def _fake_request(**kwargs):
-        calls.append(kwargs)
-        if kwargs["method"] == "GET":
-            return 200, existing_ical.encode("utf-8")
+    def _fake_get_request(**kwargs):
+        get_calls.append(kwargs)
+        return 200, existing_ical.encode("utf-8"), {"etag": '"v1"'}
+
+    def _fake_put_request(**kwargs):
+        put_calls.append(kwargs)
         return 204, b""
 
-    monkeypatch.setattr(handler, "_caldav_request", _fake_request)
+    monkeypatch.setattr(handler, "_caldav_request_with_headers", _fake_get_request)
+    monkeypatch.setattr(handler, "_caldav_request", _fake_put_request)
     output = handler._edit_event(
         config=config,
         event_id=event_id,
@@ -768,14 +805,86 @@ def test_edit_event_happy_path(monkeypatch, tmp_path):
         duration=45,
     )
 
-    assert len(calls) == 2
-    assert calls[0]["method"] == "GET"
-    assert calls[1]["method"] == "PUT"
-    assert b"SUMMARY:Updated title" in calls[1]["body"]
-    assert b"DTSTART:" in calls[1]["body"]
-    assert b"DTEND:" in calls[1]["body"]
+    assert len(get_calls) == 1
+    assert len(put_calls) == 1
+    assert get_calls[0]["method"] == "GET"
+    assert put_calls[0]["method"] == "PUT"
+    assert put_calls[0]["headers"]["If-Match"] == '"v1"'
+    assert b"SUMMARY:Updated title" in put_calls[0]["body"]
+    assert b"DTSTART:" in put_calls[0]["body"]
+    assert b"DTEND:" in put_calls[0]["body"]
     assert "Status: updated" in output
     assert "Event ID: family:" in output
+
+
+def test_edit_event_title_only_keeps_existing_time_window(monkeypatch, tmp_path):
+    config_path = _write_config(tmp_path, writable=True)
+    config = handler._load_config(str(config_path))
+    event_id = handler._build_event_id("family", "/family/event-1.ics")
+
+    existing_ical = (
+        "BEGIN:VCALENDAR\r\n"
+        "VERSION:2.0\r\n"
+        "BEGIN:VEVENT\r\n"
+        "UID:event-1\r\n"
+        "DTSTART:20260302T160000Z\r\n"
+        "DTEND:20260302T170000Z\r\n"
+        "SUMMARY:Old title\r\n"
+        "END:VEVENT\r\n"
+        "END:VCALENDAR\r\n"
+    )
+
+    def _fake_get_request(**kwargs):
+        return 200, existing_ical.encode("utf-8"), {}
+
+    put_calls = []
+
+    def _fake_put_request(**kwargs):
+        put_calls.append(kwargs)
+        return 204, b""
+
+    monkeypatch.setattr(handler, "_caldav_request_with_headers", _fake_get_request)
+    monkeypatch.setattr(handler, "_caldav_request", _fake_put_request)
+    output = handler._edit_event(
+        config=config,
+        event_id=event_id,
+        title="Title only update",
+        start=None,
+        duration=None,
+    )
+
+    assert len(put_calls) == 1
+    assert "If-Match" not in put_calls[0]["headers"]
+    assert "Start: 2026-03-02" in output
+    assert "End: 2026-03-02" in output
+    assert "Title: Title only update" in output
+
+
+def test_edit_event_rejects_unknown_calendar(tmp_path):
+    config_path = _write_config(tmp_path, writable=True)
+    config = handler._load_config(str(config_path))
+    event_id = handler._build_event_id("unknown", "/unknown/event-1.ics")
+    with pytest.raises(handler.CalendarSkillError, match="Unknown calendar"):
+        handler._edit_event(
+            config=config,
+            event_id=event_id,
+            title="Updated title",
+            start=None,
+            duration=None,
+        )
+
+
+def test_extract_event_duration_minutes_clamps_negative_delta():
+    dtstart = datetime(2026, 3, 2, 16, 0, tzinfo=timezone.utc)
+    minutes = handler._extract_event_duration_minutes(
+        dtstart=dtstart,
+        dtend_params={},
+        dtend_raw="20260302T150000Z",
+        duration_raw=None,
+        timezone_name="Europe/Berlin",
+        fallback_minutes=60,
+    )
+    assert minutes == 1
 
 
 def test_main_edit_command_calls_edit(monkeypatch, capsys):

@@ -243,6 +243,18 @@ def _resolve_writable_event_target(
     return calendar_id, calendar, event_href, event_url, normalized_event_id
 
 
+def _normalize_event_href(raw_href: str) -> str:
+    href_text = str(raw_href or "").strip()
+    if not href_text:
+        return ""
+    parsed = urlsplit(href_text)
+    if parsed.query or parsed.fragment:
+        return ""
+    if parsed.scheme or parsed.netloc:
+        return parsed.path
+    return href_text
+
+
 def _load_config(path: str) -> Dict[str, Any]:
     try:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -340,7 +352,7 @@ def _http_json_error(status: int, operation: str) -> CalendarSkillError:
     return CalendarSkillError(f"Calendar request failed during {operation} (HTTP {status}).")
 
 
-def _caldav_request(
+def _caldav_request_with_headers(
     *,
     method: str,
     url: str,
@@ -350,7 +362,7 @@ def _caldav_request(
     operation: str,
     headers: Optional[Dict[str, str]] = None,
     body: Optional[bytes] = None,
-) -> Tuple[int, bytes]:
+) -> Tuple[int, bytes, Dict[str, str]]:
     merged_headers = {
         "Authorization": _auth_header_value(username, password),
         "Accept": "*/*",
@@ -367,12 +379,40 @@ def _caldav_request(
             if status in (301, 302, 303, 307, 308):
                 raise _http_json_error(status, operation)
             payload = response.read()
-            return status, payload
+            response_headers = {
+                str(key).lower(): str(value)
+                for key, value in getattr(response, "headers", {}).items()
+            }
+            return status, payload, response_headers
     except HTTPError as err:
         status = int(getattr(err, "code", 0))
         raise _http_json_error(status, operation)
     except (URLError, TimeoutError):
         raise CalendarSkillError(f"Calendar request failed during {operation}.")
+
+
+def _caldav_request(
+    *,
+    method: str,
+    url: str,
+    username: str,
+    password: str,
+    timeout_seconds: int,
+    operation: str,
+    headers: Optional[Dict[str, str]] = None,
+    body: Optional[bytes] = None,
+) -> Tuple[int, bytes]:
+    status, payload, _ = _caldav_request_with_headers(
+        method=method,
+        url=url,
+        username=username,
+        password=password,
+        timeout_seconds=timeout_seconds,
+        operation=operation,
+        headers=headers,
+        body=body,
+    )
+    return status, payload
 
 
 def _build_calendar_query_xml(range_start: datetime, range_end: datetime) -> bytes:
@@ -621,7 +661,9 @@ def _fetch_calendar_events(
     for response in responses:
         href = ""
         if response is not root:
-            href = str(response.findtext("d:href", default="", namespaces=NS_MAP) or "").strip()
+            href = _normalize_event_href(
+                str(response.findtext("d:href", default="", namespaces=NS_MAP) or "").strip()
+            )
 
         for element in response.findall(".//c:calendar-data", NS_MAP):
             ical_text = (element.text or "").strip()
@@ -1092,7 +1134,7 @@ def _edit_event(
         event_id=event_id,
     )
 
-    get_status, payload = _caldav_request(
+    get_status, payload, response_headers = _caldav_request_with_headers(
         method="GET",
         url=event_url,
         username=calendar["username"],
@@ -1114,6 +1156,11 @@ def _edit_event(
         default_duration_minutes=config["default_duration_minutes"],
     )
 
+    put_headers = {"Content-Type": "text/calendar; charset=utf-8"}
+    etag = str(response_headers.get("etag", "")).strip()
+    if etag:
+        put_headers["If-Match"] = etag
+
     put_status, _ = _caldav_request(
         method="PUT",
         url=event_url,
@@ -1121,7 +1168,7 @@ def _edit_event(
         password=calendar["password"],
         timeout_seconds=config["request_timeout_seconds"],
         operation=f"edit write for calendar '{calendar_id}'",
-        headers={"Content-Type": "text/calendar; charset=utf-8"},
+        headers=put_headers,
         body=patched_payload.encode("utf-8"),
     )
     if put_status not in (200, 201, 204):
