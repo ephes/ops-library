@@ -317,6 +317,102 @@
   no_log: true
   when: openclaw_smtp_enabled | bool
 
+- name: validate | Calendar base settings when integration is enabled
+  ansible.builtin.assert:
+    that:
+      - openclaw_calendar_timezone | string | trim | length > 0
+      - openclaw_calendar_skill_name | string | trim | length > 0
+      - openclaw_calendar_command_skill_name | string | trim | length > 0
+      - openclaw_calendar_skills_dir | string | trim | length > 0
+      - openclaw_calendar_container_skills_dir | string | trim | length > 0
+      - openclaw_calendar_credentials_path | string | trim | length > 0
+      - openclaw_calendar_container_credentials_path | string | trim | length > 0
+      - openclaw_calendar_account_map is mapping
+      - openclaw_calendar_account_map is not string
+      - openclaw_calendar_default_account | string | trim | length >= 0
+      - >-
+        (openclaw_calendar_default_account | string | trim | length == 0)
+        or
+        ((openclaw_calendar_default_account | string | trim | lower)
+          in (openclaw_calendar_account_map.keys() | map('lower') | list))
+      - openclaw_calendar_default_duration_minutes | int > 0
+      - openclaw_calendar_request_timeout_seconds | int > 0
+      - openclaw_calendar_default_limit | int > 0
+      - openclaw_calendar_max_limit | int >= (openclaw_calendar_default_limit | int)
+      - openclaw_calendar_title_max_chars | int > 0
+      - openclaw_calendar_location_max_chars | int > 0
+      - openclaw_calendar_map is mapping
+      - openclaw_calendar_map is not string
+      - openclaw_calendar_map | length > 0
+    fail_msg: >-
+      Invalid calendar settings. Configure timezone, skill/credential paths, limits/timeouts,
+      and a non-empty openclaw_calendar_map when openclaw_calendar_enabled is true.
+  no_log: true
+  when: openclaw_calendar_enabled | bool
+
+- name: validate | Calendar account-map entries are valid
+  ansible.builtin.assert:
+    that:
+      - item.key | string | trim is regex('^[a-z0-9_-]+$')
+      - item.value is mapping
+      - item.value is not string
+      - item.value.username is defined
+      - item.value.username | string | trim | length > 0
+      - item.value.password is defined
+      - item.value.password | string | trim | length > 0
+      - item.value.password != 'CHANGEME'
+      - item.value.password != 'CHANGE_ME'
+    fail_msg: >-
+      Calendar account entry {{ item.key }} is invalid. Required fields:
+      username, password. Account id keys must match ^[a-z0-9_-]+$.
+  loop: "{{ openclaw_calendar_account_map | dict2items }}"
+  no_log: true
+  when: openclaw_calendar_enabled | bool
+
+- name: validate | Calendar map entries are valid
+  ansible.builtin.assert:
+    that:
+      - item.key | string | trim is regex('^[a-z0-9_-]+$')
+      - item.value is mapping
+      - item.value is not string
+      - item.value.url is defined
+      - item.value.url | string | trim | length > 0
+      - item.value.url | string | trim is regex('^https?://')
+      - not (item.value.url | string is regex('[?#]'))
+      - item.value.display_name | default(item.key) | string | trim | length > 0
+      - item.value.read | default(true) is boolean
+      - item.value.write | default(false) is boolean
+      - (item.value.read | default(true) | bool) or (item.value.write | default(false) | bool)
+      - >-
+        (
+          (
+            (item.value.account | default(openclaw_calendar_default_account) | string | trim | lower | length) > 0
+          )
+          and
+          (
+            (item.value.account | default(openclaw_calendar_default_account) | string | trim | lower)
+            in (openclaw_calendar_account_map.keys() | map('lower') | list)
+          )
+        )
+        or
+        (
+          (item.value.username | default('') | string | trim | length) > 0
+          and
+          (item.value.password | default('') | string | trim | length) > 0
+          and
+          (item.value.password | default('') != 'CHANGEME')
+          and
+          (item.value.password | default('') != 'CHANGE_ME')
+        )
+    fail_msg: >-
+      Calendar entry {{ item.key }} is invalid. Required fields:
+      url and credentials via either account/default_account or inline username/password.
+      Optional fields: display_name, read, write, account.
+      Calendar id keys must match ^[a-z0-9_-]+$ and URL must be http(s) without query/fragment.
+  loop: "{{ openclaw_calendar_map | dict2items }}"
+  no_log: true
+  when: openclaw_calendar_enabled | bool
+
 - name: validate | Home Assistant base settings when integration is enabled
   ansible.builtin.assert:
     that:

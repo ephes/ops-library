@@ -222,6 +222,59 @@ Safety guarantees:
 | `openclaw_smtp_subject_max_chars` | `240` | Max `/mail send --subject` length |
 | `openclaw_smtp_body_max_chars` | `4000` | Max `/mail send --body` length |
 
+### Calendar Skill (`/calendar`): CalDAV Read + Guarded Create
+
+When `openclaw_calendar_enabled: true`, the role deploys a `/calendar` command skill and handler
+using CalDAV calendars with explicit read/write allowlists per calendar id.
+
+Command surface:
+
+- `/calendar today`
+- `/calendar tomorrow`
+- `/calendar on <YYYY-MM-DD>`
+- `/calendar week [--start <YYYY-MM-DD>]`
+- `/calendar free --at <datetime> [--duration <minutes>]`
+- `/calendar create --calendar <id> --title <text> --start <datetime> [--duration <minutes>] [--repeat daily|weekly|monthly] [--count N | --until YYYY-MM-DD]`
+
+Safety guarantees:
+
+- Read and write access are configured per calendar entry in `openclaw_calendar_map`.
+- Write attempts to non-writable calendars are denied deterministically.
+- Recurrence is bounded to `daily|weekly|monthly` with optional `count` or `until`.
+- Recurring-event reads/free-time checks use CalDAV expansion for occurrence-correct results.
+- Event creation uses UTC timestamps (`DTSTART/DTEND ...Z`) to avoid timezone-component interoperability issues.
+- iCalendar lines are folded to RFC-friendly lengths for better CalDAV compatibility.
+- Read commands degrade gracefully: if one calendar fails, results from healthy calendars are still returned with warnings.
+- Bounded output and strict datetime/date validation.
+- Sanitized operational errors (no credential leakage).
+
+#### Calendar Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `openclaw_calendar_enabled` | `false` | Enable `/calendar` skill deployment |
+| `openclaw_calendar_timezone` | `Europe/Berlin` | Timezone used for parsing/rendering and event creation |
+| `openclaw_calendar_skill_name` | `calendar-caldav` | Handler skill directory name |
+| `openclaw_calendar_command_skill_name` | `calendar` | Slash command skill directory name |
+| `openclaw_calendar_skills_dir` | `{{ openclaw_data_dir }}/skills` | Host skill root for calendar skill files |
+| `openclaw_calendar_container_skills_dir` | `/home/node/.openclaw/skills` | Container path used by calendar command skill |
+| `openclaw_calendar_credentials_path` | `{{ openclaw_data_dir }}/credentials/calendar_accounts.json` | Rendered runtime calendar config (`0600`) |
+| `openclaw_calendar_container_credentials_path` | `/home/node/.openclaw/credentials/calendar_accounts.json` | Container runtime config path used by handler |
+| `openclaw_calendar_account_map` | `{}` | Optional credential map (`account_id -> {username, password}`) reused by multiple calendars |
+| `openclaw_calendar_default_account` | `""` | Optional default account id used when a calendar entry omits `account` |
+| `openclaw_calendar_map` | `{}` | Calendar map (`id -> {display_name?, url, account?, username?, password?, read?, write?}`) |
+| `openclaw_calendar_default_duration_minutes` | `60` | Default duration for `/calendar free` and `/calendar create` |
+| `openclaw_calendar_request_timeout_seconds` | `10` | CalDAV request timeout |
+| `openclaw_calendar_default_limit` | `10` | Default list limit for `today/on` output |
+| `openclaw_calendar_max_limit` | `25` | Maximum list limit for `today/on` output |
+| `openclaw_calendar_title_max_chars` | `180` | Max rendered/stored title chars |
+| `openclaw_calendar_location_max_chars` | `140` | Max rendered location chars |
+
+Credential resolution order for each `openclaw_calendar_map` entry:
+
+1. `account` field (or `openclaw_calendar_default_account`) referencing `openclaw_calendar_account_map`.
+2. Inline `username` + `password` on the calendar entry (backward compatibility path).
+
 ### Home Assistant Skill (`/homeassistant`): Read + Guarded Write
 
 When `openclaw_homeassistant_enabled: true`, the role deploys a `/homeassistant` command skill and handler
@@ -281,6 +334,7 @@ Operational note:
 Handler unit tests for the Home Assistant integration live at:
 
 - `tests/unit/test_openclaw_homeassistant_handler.py`
+- `tests/unit/test_openclaw_calendar_handler.py`
 
 ### Advanced
 

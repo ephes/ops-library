@@ -1,0 +1,40 @@
+---
+name: {{ openclaw_calendar_command_skill_name }}
+description: "CalDAV calendar access (/calendar today|tomorrow|on|week|free|create)."
+metadata: { "openclaw": { "emoji": "🗓️", "requires": { "bins": ["python3"] } } }
+---
+
+# Calendar Skill
+
+Use the managed CalDAV calendar handler.
+
+## Input Contract
+
+User input is everything after `/{{ openclaw_calendar_command_skill_name }}`.
+
+- `today`
+- `tomorrow`
+- `on <YYYY-MM-DD>`
+- `week [--start <YYYY-MM-DD>]`
+- `free --at <datetime> [--duration <minutes>]`
+- `create --calendar <id> --title <text> --start <datetime> [--duration <minutes>] [--repeat daily|weekly|monthly] [--count N | --until YYYY-MM-DD]`
+
+Natural-language mapping:
+
+- If the user asks for "tomorrow", run `tomorrow`.
+- If the user asks for "this week"/"diese Woche", run `week`.
+- If the user asks for "next week"/"nächste Woche", run `week --start <next Monday date>`.
+
+## Execution Rules
+
+Always execute exactly one command:
+
+```bash
+{{ openclaw_calendar_container_skills_dir }}/{{ openclaw_calendar_skill_name }}/handler.py <raw-user-input>
+```
+
+When no input is provided, return:
+
+`Usage: /{{ openclaw_calendar_command_skill_name }} today | /{{ openclaw_calendar_command_skill_name }} tomorrow | /{{ openclaw_calendar_command_skill_name }} on <YYYY-MM-DD> | /{{ openclaw_calendar_command_skill_name }} week [--start <YYYY-MM-DD>] | /{{ openclaw_calendar_command_skill_name }} free --at <datetime> [--duration <minutes>] | /{{ openclaw_calendar_command_skill_name }} create --calendar <id> --title <text> --start <datetime> [--duration <minutes>] [--repeat daily|weekly|monthly] [--count N | --until YYYY-MM-DD]`
+
+Return the handler output as-is.

@@ -53,6 +53,10 @@
   ansible.builtin.import_tasks: imap.yml
   when: openclaw_imap_enabled | bool
 
+- name: main | Configure calendar skill (CalDAV read + guarded create)
+  ansible.builtin.import_tasks: calendar.yml
+  when: openclaw_calendar_enabled | bool
+
 - name: main | Configure Home Assistant skill
   ansible.builtin.import_tasks: homeassistant.yml
   when: openclaw_homeassistant_enabled | bool

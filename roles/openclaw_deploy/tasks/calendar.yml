@@ -1,0 +1,131 @@
+---
+# Calendar skill deployment (CalDAV read + guarded create).
+# Included from main.yml when openclaw_calendar_enabled is true.
+
+- name: calendar | Initialize resolved account map
+  ansible.builtin.set_fact:
+    _openclaw_calendar_accounts_resolved: {}
+  no_log: true
+
+- name: calendar | Normalize account map
+  ansible.builtin.set_fact:
+    _openclaw_calendar_accounts_resolved: >-
+      {{
+        _openclaw_calendar_accounts_resolved
+        | combine(
+            {
+              (item.key | string | trim | lower): {
+                "username": (item.value.username | string),
+                "password": (item.value.password | string)
+              }
+            },
+            recursive=True
+          )
+      }}
+  loop: "{{ openclaw_calendar_account_map | dict2items }}"
+  no_log: true
+
+- name: calendar | Initialize resolved calendar map
+  ansible.builtin.set_fact:
+    _openclaw_calendar_map_resolved: {}
+  no_log: true
+
+- name: calendar | Normalize calendar map
+  ansible.builtin.set_fact:
+    _openclaw_calendar_map_resolved: >-
+      {{
+        _openclaw_calendar_map_resolved
+        | combine(
+            {
+              (item.key | string | trim | lower): {
+                "display_name": (item.value.display_name | default(item.key) | string | trim),
+                "url": (item.value.url | string | trim | regex_replace('/+$', '')),
+                "username": (
+                  _openclaw_calendar_accounts_resolved.get(
+                    (item.value.account | default(openclaw_calendar_default_account) | string | trim | lower),
+                    {}
+                  ).get("username")
+                  | default(item.value.username | default('') | string, true)
+                ),
+                "password": (
+                  _openclaw_calendar_accounts_resolved.get(
+                    (item.value.account | default(openclaw_calendar_default_account) | string | trim | lower),
+                    {}
+                  ).get("password")
+                  | default(item.value.password | default('') | string, true)
+                ),
+                "read": (item.value.read | default(true) | bool),
+                "write": (item.value.write | default(false) | bool)
+              }
+            },
+            recursive=True
+          )
+      }}
+  loop: "{{ openclaw_calendar_map | dict2items }}"
+  no_log: true
+
+- name: calendar | Validate resolved calendar map
+  ansible.builtin.assert:
+    that:
+      - item.value.display_name | string | trim | length > 0
+      - item.value.url | string | trim | length > 0
+      - item.value.username | string | trim | length > 0
+      - item.value.password | string | trim | length > 0
+      - item.value.read is boolean
+      - item.value.write is boolean
+      - item.value.read or item.value.write
+    fail_msg: >-
+      Calendar entry {{ item.key }} did not resolve to valid display_name/url/username/password/read/write fields.
+      Check openclaw_calendar_map.
+  loop: "{{ _openclaw_calendar_map_resolved | dict2items }}"
+  no_log: true
+
+- name: calendar | Build runtime configuration payload
+  ansible.builtin.set_fact:
+    _openclaw_calendar_payload:
+      timezone: "{{ openclaw_calendar_timezone | string | trim }}"
+      default_duration_minutes: "{{ openclaw_calendar_default_duration_minutes | int }}"
+      request_timeout_seconds: "{{ openclaw_calendar_request_timeout_seconds | int }}"
+      default_limit: "{{ openclaw_calendar_default_limit | int }}"
+      max_limit: "{{ openclaw_calendar_max_limit | int }}"
+      title_max_chars: "{{ openclaw_calendar_title_max_chars | int }}"
+      location_max_chars: "{{ openclaw_calendar_location_max_chars | int }}"
+      calendars: "{{ _openclaw_calendar_map_resolved }}"
+  no_log: true
+
+- name: calendar | Render runtime configuration file
+  ansible.builtin.copy:
+    content: "{{ _openclaw_calendar_payload | to_nice_json }}\n"
+    dest: "{{ openclaw_calendar_credentials_path }}"
+    owner: "1000"
+    group: "1000"
+    mode: "0600"
+  no_log: true
+  notify: restart openclaw
+
+- name: calendar | Deploy calendar skill manifest
+  ansible.builtin.template:
+    src: calendar-skill.json.j2
+    dest: "{{ openclaw_calendar_skills_dir }}/{{ openclaw_calendar_skill_name }}/skill.json"
+    owner: "1000"
+    group: "1000"
+    mode: "0640"
+  notify: restart openclaw
+
+- name: calendar | Deploy calendar skill handler
+  ansible.builtin.template:
+    src: calendar-handler.py.j2
+    dest: "{{ openclaw_calendar_skills_dir }}/{{ openclaw_calendar_skill_name }}/handler.py"
+    owner: "1000"
+    group: "1000"
+    mode: "0750"
+  notify: restart openclaw
+
+- name: calendar | Deploy /calendar command SKILL.md
+  ansible.builtin.template:
+    src: calendar-skill.md.j2
+    dest: "{{ openclaw_calendar_skills_dir }}/{{ openclaw_calendar_command_skill_name }}/SKILL.md"
+    owner: "1000"
+    group: "1000"
+    mode: "0640"
+  notify: restart openclaw

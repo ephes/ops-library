@@ -73,6 +73,27 @@
     - "{{ openclaw_imap_command_skill_name }}"
   when: openclaw_imap_enabled | bool
 
+- name: directories | Ensure calendar skills root directory exists
+  ansible.builtin.file:
+    path: "{{ openclaw_calendar_skills_dir }}"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0750"
+  when: openclaw_calendar_enabled | bool
+
+- name: directories | Ensure calendar skill directories exist
+  ansible.builtin.file:
+    path: "{{ openclaw_calendar_skills_dir }}/{{ item }}"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0750"
+  loop:
+    - "{{ openclaw_calendar_skill_name }}"
+    - "{{ openclaw_calendar_command_skill_name }}"
+  when: openclaw_calendar_enabled | bool
+
 - name: directories | Ensure Home Assistant skills root directory exists
   ansible.builtin.file:
     path: "{{ openclaw_homeassistant_skills_dir }}"
