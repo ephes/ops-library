@@ -127,13 +127,13 @@
       ansible.builtin.shell: |
         set -euo pipefail
         {{ paperless_restore_psql_binary }} \
-          {% if paperless_restore_postgres_host | default('') | string | length > 0 -%}
-          --host={{ paperless_restore_postgres_host }} \
+          {% if paperless_restore_postgres_admin_host | default('') | string | length > 0 -%}
+          --host={{ paperless_restore_postgres_admin_host }} \
           {%- endif %}
-          {% if paperless_restore_postgres_port | default('') | string | length > 0 -%}
-          --port={{ paperless_restore_postgres_port }} \
+          {% if paperless_restore_postgres_admin_port | default('') | string | length > 0 -%}
+          --port={{ paperless_restore_postgres_admin_port }} \
           {%- endif %}
-          --username={{ paperless_restore_postgres_user }} \
+          --username={{ paperless_restore_postgres_admin_user }} \
           --dbname={{ paperless_restore_postgres_database }} \
           --set ON_ERROR_STOP=1 \
           --file "{{ paperless_restore_staged_database_path }}"
@@ -141,8 +141,88 @@
         executable: /bin/bash
       become: true
       become_user: "{{ paperless_restore_postgres_become_user }}"
-      environment: "{{ {'PGPASSWORD': paperless_restore_postgres_password} if (paperless_restore_postgres_password | default('') | string | length) > 0 else {} }}"
-      no_log: "{{ paperless_restore_postgres_password | default('') | length > 0 }}"
+      environment: "{{ {'PGPASSWORD': paperless_restore_postgres_admin_password} if (paperless_restore_postgres_admin_password | default('') | string | length) > 0 else {} }}"
+      no_log: "{{ paperless_restore_postgres_admin_password | default('') | length > 0 }}"
+      when: not paperless_restore_used_importer | bool
+
+    - name: Reconcile PostgreSQL ownership and privileges after SQL restore
+      ansible.builtin.shell: |
+        set -euo pipefail
+        {{ paperless_restore_psql_binary }} \
+          {% if paperless_restore_postgres_admin_host | default('') | string | length > 0 -%}
+          --host={{ paperless_restore_postgres_admin_host }} \
+          {%- endif %}
+          {% if paperless_restore_postgres_admin_port | default('') | string | length > 0 -%}
+          --port={{ paperless_restore_postgres_admin_port }} \
+          {%- endif %}
+          --username={{ paperless_restore_postgres_admin_user }} \
+          --dbname={{ paperless_restore_postgres_database }} \
+          --set ON_ERROR_STOP=1 <<'SQL'
+        DO $$
+        DECLARE
+          _owner text := '{{ paperless_restore_postgres_owner | replace("'", "''") }}';
+          r record;
+        BEGIN
+          EXECUTE format('ALTER SCHEMA public OWNER TO %I', _owner);
+
+          FOR r IN
+            SELECT schemaname, tablename
+            FROM pg_tables
+            WHERE schemaname='public'
+          LOOP
+            EXECUTE format('ALTER TABLE %I.%I OWNER TO %I', r.schemaname, r.tablename, _owner);
+          END LOOP;
+
+          FOR r IN
+            SELECT schemaname, viewname
+            FROM pg_views
+            WHERE schemaname='public'
+          LOOP
+            EXECUTE format('ALTER VIEW %I.%I OWNER TO %I', r.schemaname, r.viewname, _owner);
+          END LOOP;
+
+          FOR r IN
+            SELECT schemaname, matviewname
+            FROM pg_matviews
+            WHERE schemaname='public'
+          LOOP
+            EXECUTE format('ALTER MATERIALIZED VIEW %I.%I OWNER TO %I', r.schemaname, r.matviewname, _owner);
+          END LOOP;
+
+          FOR r IN
+            SELECT sequence_schema, sequence_name
+            FROM information_schema.sequences
+            WHERE sequence_schema='public'
+          LOOP
+            EXECUTE format('ALTER SEQUENCE %I.%I OWNER TO %I', r.sequence_schema, r.sequence_name, _owner);
+          END LOOP;
+
+          EXECUTE format('GRANT USAGE ON SCHEMA public TO %I', _owner);
+          EXECUTE format(
+            'GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public TO %I',
+            _owner
+          );
+          EXECUTE format(
+            'GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO %I',
+            _owner
+          );
+
+          EXECUTE format(
+            'ALTER DEFAULT PRIVILEGES FOR USER postgres IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLES TO %I',
+            _owner
+          );
+          EXECUTE format(
+            'ALTER DEFAULT PRIVILEGES FOR USER postgres IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO %I',
+            _owner
+          );
+        END $$;
+        SQL
+      args:
+        executable: /bin/bash
+      become: true
+      become_user: "{{ paperless_restore_postgres_become_user }}"
+      environment: "{{ {'PGPASSWORD': paperless_restore_postgres_admin_password} if (paperless_restore_postgres_admin_password | default('') | string | length) > 0 else {} }}"
+      no_log: "{{ paperless_restore_postgres_admin_password | default('') | length > 0 }}"
       when: not paperless_restore_used_importer | bool
 
     - name: Rsync snapshot directories

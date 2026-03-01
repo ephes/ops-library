@@ -92,6 +92,17 @@ Operational tradeoff:
 - Media templates use `rclone copy`, which does not delete objects from the destination if they were removed at source.
 - This is safer for backup retention, but destination may accumulate deleted-from-source objects over time.
 
+## Paperless Template Notes
+
+`templates/paperless_backup.py.j2` adds service-specific restore safeguards:
+
+- SQL restore uses `--no-owner` dumps and then reconciles ownership/privileges to the app owner.
+- Reconciliation includes `public` tables, views, materialized views, and sequences.
+- Rollback path runs service-active and DB app-role checks before reporting rollback success.
+- Intended probes:
+  - HTTP: `http://127.0.0.1:10030/api/schema/view/` -> `200`
+  - DB query: `SELECT COUNT(*) FROM paperless_applicationconfiguration;`
+
 ## Output Format
 
 The backup script outputs a special line for Echoport to parse:

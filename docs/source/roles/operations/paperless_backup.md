@@ -7,6 +7,8 @@ Create comprehensive Paperless-ngx backups combining:
 - Exporter artifacts via `document_exporter`
 - Metadata (checksums, versions, size) plus optional controller download
 
+For Echoport-managed production backup/restore, see `ops-control/docs/PAPERLESS_BACKUP.md` and the service-owned template `roles/echoport_backup/templates/paperless_backup.py.j2`.
+
 ## Usage
 
 ```yaml

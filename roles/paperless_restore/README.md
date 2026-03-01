@@ -9,6 +9,7 @@ Restore a Paperless-ngx instance from an archive created by the `paperless_backu
 - Capture an optional safety snapshot via the existing `paperless_backup` role (`paperless_restore_safety_backup_prefix`).
 - Stop all Paperless services (`paperless`, `paperless-worker`, `paperless-scheduler`, `paperless-consumer`).
 - Drop/recreate the `paperless` PostgreSQL database (configurable) and either run the native `document_importer` (preferred) or fall back to replaying `database/paperless.sql`.
+- On SQL replay fallback, reconcile PostgreSQL ownership/privileges for schema objects (tables, views, materialized views, sequences) back to the app owner.
 - Rsync the `media/` + `data/` directories (and optional `consume/`, `export/`, `logs/` folders) back to `/mnt/cryptdata/paperless` when the raw snapshot path is used.
 - Restore `.env`, `gunicorn.conf.py`, systemd unit files, Traefik + scanner SSH configs.
 - Restart services, wait for them to report `active`, run a PostgreSQL test query, and hit the Paperless HTTP API.
@@ -35,7 +36,9 @@ Restore a Paperless-ngx instance from an archive created by the `paperless_backu
 | `paperless_restore_archive` | `latest` | Archive filename or `latest` to auto-select newest `.tar.gz` under `paperless_restore_archive_search_root`. |
 | `paperless_restore_validate_checksums` | `true` | Verify `manifest.sha256` before touching the host. |
 | `paperless_restore_create_safety_backup` | `true` | Run `paperless_backup` with prefix `pre-restore` to capture a rollback snapshot. |
-| `paperless_restore_postgres_*` | defaults from `defaults/main.yml` | Database connection/ownership configuration used for `pg_dump` replay + health checks. |
+| `paperless_restore_postgres_*` | defaults from `defaults/main.yml` | App-role DB connection used by verification checks. |
+| `paperless_restore_postgres_admin_*` | defaults from `defaults/main.yml` | Admin-role DB connection used for SQL restore fallback and ownership reconciliation. |
+| `paperless_restore_postgres_owner` | `paperless` | Target owner applied by reconciliation SQL after raw dump replay. |
 | `paperless_restore_storage_dirs` | see defaults | Mapping of snapshot folders to destination directories. `required: true` entries must exist in the backup. |
 | `paperless_restore_system_files` | `true` | Copy systemd and Traefik/SSH files from the snapshot and reload systemd. |
 | `paperless_restore_verify_http` | `true` | Hit `paperless_restore_health_url` after services restart. |
@@ -57,3 +60,8 @@ paperless_restore_safety_backup_vars:
 ```
 
 Set `paperless_restore_create_safety_backup: false` to skip this step (NOT recommended for production hosts).
+
+## Notes
+
+- SQL restore fallback is executed as admin (`paperless_restore_postgres_admin_user`) and then normalized back to app ownership via reconciliation SQL.
+- Verification DB query runs with app-role settings (`paperless_restore_postgres_user`), so host PostgreSQL auth (for example peer rules) must allow that role path.
