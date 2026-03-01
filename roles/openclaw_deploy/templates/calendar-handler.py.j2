@@ -4,6 +4,8 @@
 import argparse
 import base64
 import json
+import math
+import posixpath
 import re
 import shlex
 import sys
@@ -13,7 +15,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -27,10 +29,13 @@ USAGE_TEXT = (
     f"/{COMMAND_NAME} week [--start <YYYY-MM-DD>] | "
     f"/{COMMAND_NAME} free --at <datetime> [--duration <minutes>] | "
     f"/{COMMAND_NAME} create --calendar <id> --title <text> --start <datetime> "
-    f"[--duration <minutes>] [--repeat daily|weekly|monthly] [--count N | --until YYYY-MM-DD]"
+    f"[--duration <minutes>] [--repeat daily|weekly|monthly] [--count N | --until YYYY-MM-DD] | "
+    f"/{COMMAND_NAME} edit <event_id> [--title <text>] [--start <datetime>] [--duration <minutes>] | "
+    f"/{COMMAND_NAME} delete <event_id> --confirm"
 )
 
 CALENDAR_ID_RE = re.compile(r"^[a-z0-9_-]+$")
+EVENT_ID_RE = re.compile(r"^[a-z0-9_-]+:[A-Za-z0-9_-]+$")
 
 NS_C = "urn:ietf:params:xml:ns:caldav"
 NS_D = "DAV:"
@@ -137,6 +142,105 @@ def _normalize_url(raw_url: str) -> str:
     ):
         raise CalendarSkillError("Calendar URL is invalid.")
     return url
+
+
+def _encode_event_token(raw_value: str) -> str:
+    encoded = base64.urlsafe_b64encode(str(raw_value).encode("utf-8")).decode("ascii")
+    return encoded.rstrip("=")
+
+
+def _decode_event_token(raw_token: str) -> str:
+    token = str(raw_token or "").strip()
+    if not token or not re.fullmatch(r"[A-Za-z0-9_-]+", token):
+        raise CalendarSkillError("Event ID is invalid.")
+
+    padded = token + ("=" * (-len(token) % 4))
+    try:
+        decoded = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        raise CalendarSkillError("Event ID is invalid.")
+    if not decoded:
+        raise CalendarSkillError("Event ID is invalid.")
+    return decoded
+
+
+def _build_event_id(calendar_id: str, event_href: str) -> str:
+    normalized_calendar_id = str(calendar_id or "").strip().lower()
+    if not CALENDAR_ID_RE.fullmatch(normalized_calendar_id):
+        raise CalendarSkillError("Event ID is invalid.")
+    href = str(event_href or "").strip()
+    if not href or "\x00" in href:
+        raise CalendarSkillError("Event ID is invalid.")
+    return f"{normalized_calendar_id}:{_encode_event_token(href)}"
+
+
+def _parse_event_id(raw_event_id: str) -> Tuple[str, str]:
+    event_id = str(raw_event_id or "").strip()
+    if not EVENT_ID_RE.fullmatch(event_id):
+        raise CalendarSkillError("Event ID must match <calendar_id>:<event_token>.")
+
+    calendar_id, token = event_id.split(":", 1)
+    if not CALENDAR_ID_RE.fullmatch(calendar_id):
+        raise CalendarSkillError("Event ID must match <calendar_id>:<event_token>.")
+
+    event_href = _decode_event_token(token)
+    return calendar_id, event_href
+
+
+def _resolve_event_url(calendar_url: str, event_href: str) -> str:
+    base_url = _normalize_url(calendar_url)
+    base_parts = urlsplit(base_url)
+    href_parts = urlsplit(str(event_href or "").strip())
+
+    if href_parts.scheme or href_parts.netloc or href_parts.query or href_parts.fragment:
+        raise CalendarSkillError("Event ID is invalid.")
+
+    raw_path = href_parts.path.strip()
+    if not raw_path:
+        raise CalendarSkillError("Event ID is invalid.")
+    if not raw_path.startswith("/"):
+        raw_path = "/" + raw_path
+
+    normalized_path = posixpath.normpath(raw_path)
+    if not normalized_path.startswith("/"):
+        normalized_path = "/" + normalized_path
+
+    calendar_path = posixpath.normpath(base_parts.path.rstrip("/") or "/")
+    required_prefix = (calendar_path.rstrip("/") or "") + "/"
+    if not normalized_path.startswith(required_prefix):
+        raise CalendarAccessDenied("Event ID does not belong to the target calendar.")
+
+    resolved_url = urljoin(f"{base_parts.scheme}://{base_parts.netloc}/", normalized_path.lstrip("/"))
+    resolved_parts = urlsplit(resolved_url)
+    if (
+        resolved_parts.scheme != base_parts.scheme
+        or resolved_parts.netloc != base_parts.netloc
+        or resolved_parts.query
+        or resolved_parts.fragment
+    ):
+        raise CalendarSkillError("Event ID is invalid.")
+    return resolved_url
+
+
+def _resolve_writable_event_target(
+    *,
+    config: Dict[str, Any],
+    event_id: str,
+) -> Tuple[str, Dict[str, Any], str, str, str]:
+    calendar_id, event_href = _parse_event_id(event_id)
+    if calendar_id not in config["calendars"]:
+        known = ", ".join(sorted(config["calendars"].keys()))
+        raise CalendarSkillError(
+            f"Unknown calendar '{calendar_id}'. Available calendars: {known}"
+        )
+
+    calendar = config["calendars"][calendar_id]
+    if not calendar["write"]:
+        raise CalendarAccessDenied(f"Write access denied for calendar '{calendar_id}'.")
+
+    event_url = _resolve_event_url(calendar["url"], event_href)
+    normalized_event_id = _build_event_id(calendar_id, event_href)
+    return calendar_id, calendar, event_href, event_url, normalized_event_id
 
 
 def _load_config(path: str) -> Dict[str, Any]:
@@ -385,6 +489,7 @@ def _extract_events_from_ical(
     ical_text: str,
     calendar_id: str,
     display_name: str,
+    resource_href: Optional[str],
     timezone_name: str,
     title_max_chars: int,
     location_max_chars: int,
@@ -443,6 +548,13 @@ def _extract_events_from_ical(
             if end_dt <= start_dt:
                 end_dt = start_dt + (timedelta(days=1) if all_day else timedelta(hours=1))
 
+            event_id: Optional[str] = None
+            if resource_href:
+                try:
+                    event_id = _build_event_id(calendar_id, resource_href)
+                except CalendarSkillError:
+                    event_id = None
+
             events.append(
                 {
                     "uid": uid,
@@ -453,6 +565,7 @@ def _extract_events_from_ical(
                     "all_day": all_day,
                     "calendar_id": calendar_id,
                     "calendar_display_name": display_name,
+                    "event_id": event_id,
                 }
             )
 
@@ -501,20 +614,30 @@ def _fetch_calendar_events(
         raise CalendarSkillError(f"Calendar response for '{calendar['id']}' is not valid XML.")
 
     events: List[Dict[str, Any]] = []
-    for element in root.findall(".//c:calendar-data", NS_MAP):
-        ical_text = (element.text or "").strip()
-        if not ical_text:
-            continue
-        events.extend(
-            _extract_events_from_ical(
-                ical_text=ical_text,
-                calendar_id=calendar["id"],
-                display_name=calendar["display_name"],
-                timezone_name=timezone_name,
-                title_max_chars=title_max_chars,
-                location_max_chars=location_max_chars,
+    responses = root.findall(".//d:response", NS_MAP)
+    if not responses:
+        responses = [root]
+
+    for response in responses:
+        href = ""
+        if response is not root:
+            href = str(response.findtext("d:href", default="", namespaces=NS_MAP) or "").strip()
+
+        for element in response.findall(".//c:calendar-data", NS_MAP):
+            ical_text = (element.text or "").strip()
+            if not ical_text:
+                continue
+            events.extend(
+                _extract_events_from_ical(
+                    ical_text=ical_text,
+                    calendar_id=calendar["id"],
+                    display_name=calendar["display_name"],
+                    resource_href=href or None,
+                    timezone_name=timezone_name,
+                    title_max_chars=title_max_chars,
+                    location_max_chars=location_max_chars,
+                )
             )
-        )
 
     return events
 
@@ -605,8 +728,9 @@ def _format_event_row(event: Dict[str, Any], timezone_name: str) -> str:
             window = f"{start_date.isoformat()} (all-day)"
 
     location = f" | Location: {event['location']}" if event.get("location") else ""
+    event_id = f" | Event ID: {event['event_id']}" if event.get("event_id") else ""
     return (
-        f"- [{event['calendar_display_name']}] {window} | {event['summary']}{location}"
+        f"- [{event['calendar_display_name']}] {window} | {event['summary']}{location}{event_id}"
     )
 
 
@@ -784,10 +908,12 @@ def _create_event(
             f"Calendar create failed for '{normalized_calendar_id}' (HTTP {status})."
         )
 
+    event_id = _build_event_id(normalized_calendar_id, urlsplit(target_url).path)
     lines = [
         "Status: created",
         f"Calendar: {calendar['display_name']} ({normalized_calendar_id})",
         f"UID: {event_uid}",
+        f"Event ID: {event_id}",
         f"Start: {_format_local(start_dt, config['timezone'])}",
         f"End: {_format_local(end_dt, config['timezone'])}",
         f"Title: {normalized_title}",
@@ -795,6 +921,256 @@ def _create_event(
     if rrule:
         lines.append(f"Recurrence: {rrule}")
     return "\n".join(lines)
+
+
+def _find_first_vevent_bounds(lines: List[str]) -> Tuple[int, int]:
+    start_idx = -1
+    for idx, line in enumerate(lines):
+        if line.strip().upper() == "BEGIN:VEVENT":
+            start_idx = idx
+            break
+    if start_idx < 0:
+        raise CalendarSkillError("Event payload does not include VEVENT data.")
+
+    end_idx = -1
+    for idx in range(start_idx + 1, len(lines)):
+        if lines[idx].strip().upper() == "END:VEVENT":
+            end_idx = idx
+            break
+    if end_idx < 0:
+        raise CalendarSkillError("Event payload contains an incomplete VEVENT block.")
+    return start_idx, end_idx
+
+
+def _extract_event_duration_minutes(
+    *,
+    dtstart: datetime,
+    dtend_params: Optional[Dict[str, str]],
+    dtend_raw: Optional[str],
+    duration_raw: Optional[str],
+    timezone_name: str,
+    fallback_minutes: int,
+) -> int:
+    if dtend_raw is not None and dtend_params is not None:
+        dtend, _ = _parse_ical_datetime(dtend_raw, dtend_params, timezone_name)
+        delta = dtend - dtstart
+    elif duration_raw is not None:
+        parsed = _parse_ical_duration(duration_raw)
+        delta = parsed if parsed is not None else timedelta(minutes=fallback_minutes)
+    else:
+        delta = timedelta(minutes=fallback_minutes)
+
+    seconds = max(60, int(delta.total_seconds()))
+    return max(1, int(math.ceil(seconds / 60.0)))
+
+
+def _patch_ical_event(
+    *,
+    ical_text: str,
+    timezone_name: str,
+    title: Optional[str],
+    start: Optional[str],
+    duration: Optional[int],
+    title_max_chars: int,
+    default_duration_minutes: int,
+) -> Tuple[str, str, datetime, datetime]:
+    lines = _unfold_ical_lines(ical_text)
+    start_idx, end_idx = _find_first_vevent_bounds(lines)
+    block_lines = lines[start_idx + 1 : end_idx]
+
+    first_props: Dict[str, Tuple[Dict[str, str], str]] = {}
+    for raw_line in block_lines:
+        parsed = _parse_property_line(raw_line)
+        if parsed is None:
+            continue
+        prop_name, prop_params, prop_value = parsed
+        if prop_name not in first_props:
+            first_props[prop_name] = (prop_params, prop_value)
+
+    if "UID" not in first_props or not str(first_props["UID"][1]).strip():
+        raise CalendarSkillError("Event payload is missing UID.")
+
+    modify_time = start is not None or duration is not None
+    if modify_time and "DTSTART" not in first_props:
+        raise CalendarSkillError("Event payload is missing DTSTART.")
+
+    resolved_title = _sanitize_text(
+        title if title is not None else first_props.get("SUMMARY", ({}, "(no title)"))[1],
+        title_max_chars,
+    )
+    if not resolved_title:
+        raise CalendarSkillError("Event title cannot be empty.")
+
+    resolved_start: Optional[datetime] = None
+    resolved_end: Optional[datetime] = None
+    if modify_time:
+        dtstart_params, dtstart_raw = first_props["DTSTART"]
+        existing_start, _ = _parse_ical_datetime(dtstart_raw, dtstart_params, timezone_name)
+        if start is not None:
+            resolved_start = _parse_user_datetime(start, timezone_name)
+        else:
+            resolved_start = existing_start
+
+        if duration is None:
+            duration_minutes = _extract_event_duration_minutes(
+                dtstart=existing_start,
+                dtend_params=first_props.get("DTEND", (None, None))[0],  # type: ignore[index]
+                dtend_raw=first_props.get("DTEND", ({}, None))[1],  # type: ignore[index]
+                duration_raw=first_props.get("DURATION", ({}, None))[1],  # type: ignore[index]
+                timezone_name=timezone_name,
+                fallback_minutes=default_duration_minutes,
+            )
+        else:
+            duration_minutes = int(duration)
+        if duration_minutes <= 0:
+            raise CalendarSkillError("Duration must be a positive integer.")
+        resolved_end = resolved_start + timedelta(minutes=duration_minutes)
+
+    replace_names = {"DTSTAMP", "SUMMARY"}
+    if modify_time:
+        replace_names.update({"DTSTART", "DTEND", "DURATION"})
+
+    kept_lines: List[str] = []
+    insert_idx = 0
+    for raw_line in block_lines:
+        parsed = _parse_property_line(raw_line)
+        if parsed is None:
+            kept_lines.append(raw_line)
+            continue
+        name = parsed[0]
+        if name == "UID":
+            kept_lines.append(raw_line)
+            insert_idx = len(kept_lines)
+            continue
+        if name in replace_names:
+            continue
+        kept_lines.append(raw_line)
+
+    replacement_props = [f"DTSTAMP:{_format_utc_compact(datetime.now(tz=timezone.utc))}"]
+    if modify_time and resolved_start is not None and resolved_end is not None:
+        replacement_props.append(f"DTSTART:{_format_utc_compact(resolved_start)}")
+        replacement_props.append(f"DTEND:{_format_utc_compact(resolved_end)}")
+    replacement_props.append(f"SUMMARY:{_escape_ical_text(resolved_title)}")
+
+    new_block_lines = kept_lines[:insert_idx] + replacement_props + kept_lines[insert_idx:]
+    final_lines = lines[: start_idx + 1] + new_block_lines + lines[end_idx:]
+
+    folded_lines: List[str] = []
+    for raw_line in final_lines:
+        folded_lines.extend(_fold_ical_line(raw_line).split("\r\n"))
+    serialized = "\r\n".join(folded_lines) + "\r\n"
+
+    if not modify_time:
+        dtstart_params, dtstart_raw = first_props.get("DTSTART", ({}, "19700101T000000"))
+        resolved_start, _ = _parse_ical_datetime(dtstart_raw, dtstart_params, timezone_name)
+        duration_minutes = _extract_event_duration_minutes(
+            dtstart=resolved_start,
+            dtend_params=first_props.get("DTEND", (None, None))[0],  # type: ignore[index]
+            dtend_raw=first_props.get("DTEND", ({}, None))[1],  # type: ignore[index]
+            duration_raw=first_props.get("DURATION", ({}, None))[1],  # type: ignore[index]
+            timezone_name=timezone_name,
+            fallback_minutes=default_duration_minutes,
+        )
+        resolved_end = resolved_start + timedelta(minutes=duration_minutes)
+
+    return serialized, resolved_title, resolved_start, resolved_end  # type: ignore[arg-type]
+
+
+def _edit_event(
+    *,
+    config: Dict[str, Any],
+    event_id: str,
+    title: Optional[str],
+    start: Optional[str],
+    duration: Optional[int],
+) -> str:
+    if title is None and start is None and duration is None:
+        raise CalendarSkillError("Edit requires at least one of --title, --start, or --duration.")
+
+    calendar_id, calendar, _event_href, event_url, normalized_event_id = _resolve_writable_event_target(
+        config=config,
+        event_id=event_id,
+    )
+
+    get_status, payload = _caldav_request(
+        method="GET",
+        url=event_url,
+        username=calendar["username"],
+        password=calendar["password"],
+        timeout_seconds=config["request_timeout_seconds"],
+        operation=f"edit read for calendar '{calendar_id}'",
+        headers={"Accept": "text/calendar, application/calendar+json;q=0.5, */*;q=0.1"},
+    )
+    if get_status not in (200, 207):
+        raise CalendarSkillError(f"Calendar edit failed for '{calendar_id}' (HTTP {get_status}).")
+
+    patched_payload, resolved_title, resolved_start, resolved_end = _patch_ical_event(
+        ical_text=payload.decode("utf-8", errors="replace"),
+        timezone_name=config["timezone"],
+        title=title,
+        start=start,
+        duration=duration,
+        title_max_chars=config["title_max_chars"],
+        default_duration_minutes=config["default_duration_minutes"],
+    )
+
+    put_status, _ = _caldav_request(
+        method="PUT",
+        url=event_url,
+        username=calendar["username"],
+        password=calendar["password"],
+        timeout_seconds=config["request_timeout_seconds"],
+        operation=f"edit write for calendar '{calendar_id}'",
+        headers={"Content-Type": "text/calendar; charset=utf-8"},
+        body=patched_payload.encode("utf-8"),
+    )
+    if put_status not in (200, 201, 204):
+        raise CalendarSkillError(f"Calendar edit failed for '{calendar_id}' (HTTP {put_status}).")
+
+    return "\n".join(
+        [
+            "Status: updated",
+            f"Calendar: {calendar['display_name']} ({calendar_id})",
+            f"Event ID: {normalized_event_id}",
+            f"Start: {_format_local(resolved_start, config['timezone'])}",
+            f"End: {_format_local(resolved_end, config['timezone'])}",
+            f"Title: {resolved_title}",
+        ]
+    )
+
+
+def _delete_event(
+    *,
+    config: Dict[str, Any],
+    event_id: str,
+    confirm: bool,
+) -> str:
+    if not confirm:
+        raise CalendarSkillError("Delete requires --confirm.")
+
+    calendar_id, calendar, _event_href, event_url, normalized_event_id = _resolve_writable_event_target(
+        config=config,
+        event_id=event_id,
+    )
+
+    status, _ = _caldav_request(
+        method="DELETE",
+        url=event_url,
+        username=calendar["username"],
+        password=calendar["password"],
+        timeout_seconds=config["request_timeout_seconds"],
+        operation=f"delete for calendar '{calendar_id}'",
+    )
+    if status not in (200, 202, 204):
+        raise CalendarSkillError(f"Calendar delete failed for '{calendar_id}' (HTTP {status}).")
+
+    return "\n".join(
+        [
+            "Status: deleted",
+            f"Calendar: {calendar['display_name']} ({calendar_id})",
+            f"Event ID: {normalized_event_id}",
+        ]
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -832,6 +1208,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     create_parser.add_argument("--count", dest="count", type=int, default=None)
     create_parser.add_argument("--until", dest="until", default=None)
+
+    edit_parser = subparsers.add_parser("edit", add_help=False)
+    edit_parser.add_argument("event_id")
+    edit_parser.add_argument("--title", dest="title", default=None)
+    edit_parser.add_argument("--start", dest="start", default=None)
+    edit_parser.add_argument("--duration", dest="duration", type=int, default=None)
+
+    delete_parser = subparsers.add_parser("delete", add_help=False)
+    delete_parser.add_argument("event_id")
+    delete_parser.add_argument("--confirm", dest="confirm", action="store_true", default=False)
 
     return parser
 
@@ -964,6 +1350,28 @@ def main() -> int:
                     repeat=args.repeat,
                     count=args.count,
                     until=args.until,
+                )
+            )
+            return 0
+
+        if args.command == "edit":
+            print(
+                _edit_event(
+                    config=config,
+                    event_id=args.event_id,
+                    title=args.title,
+                    start=args.start,
+                    duration=args.duration,
+                )
+            )
+            return 0
+
+        if args.command == "delete":
+            print(
+                _delete_event(
+                    config=config,
+                    event_id=args.event_id,
+                    confirm=args.confirm,
                 )
             )
             return 0

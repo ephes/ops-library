@@ -275,6 +275,7 @@ def test_extract_events_from_ical_happy_path_with_duration_and_all_day():
         ical_text=ical,
         calendar_id="family",
         display_name="Family",
+        resource_href="/dav/cal/family/event-1.ics",
         timezone_name="Europe/Berlin",
         title_max_chars=180,
         location_max_chars=140,
@@ -302,6 +303,7 @@ def test_extract_events_from_ical_skips_event_without_dtstart():
         ical_text=ical,
         calendar_id="family",
         display_name="Family",
+        resource_href="/dav/cal/family/event-1.ics",
         timezone_name="Europe/Berlin",
         title_max_chars=180,
         location_max_chars=140,
@@ -428,6 +430,7 @@ def test_create_event_happy_path(monkeypatch, tmp_path):
     assert b"DTSTART;TZID=" not in calls[0]["body"]
     assert "Status: created" in output
     assert "Calendar: Family (family)" in output
+    assert "Event ID: family:" in output
     assert "Recurrence: FREQ=MONTHLY;COUNT=3" in output
 
 
@@ -596,3 +599,233 @@ def test_main_create_command_calls_create(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert result == 0
     assert "Status: created" in output
+
+
+def test_event_id_round_trip():
+    event_id = handler._build_event_id("family", "/dav/cal/family/event-1.ics")
+    calendar_id, href = handler._parse_event_id(event_id)
+    assert calendar_id == "family"
+    assert href == "/dav/cal/family/event-1.ics"
+
+
+def test_parse_event_id_rejects_malformed():
+    with pytest.raises(handler.CalendarSkillError, match="Event ID must match"):
+        handler._parse_event_id("missing-delimiter")
+
+
+def test_resolve_event_url_rejects_path_escape():
+    with pytest.raises(handler.CalendarAccessDenied, match="does not belong"):
+        handler._resolve_event_url(
+            "https://caldav.example.test/family",
+            "/other/cal/event-1.ics",
+        )
+
+
+def test_delete_event_requires_confirm(tmp_path):
+    config_path = _write_config(tmp_path, writable=True)
+    config = handler._load_config(str(config_path))
+    event_id = handler._build_event_id("family", "/family/event-1.ics")
+    with pytest.raises(handler.CalendarSkillError, match="Delete requires --confirm"):
+        handler._delete_event(config=config, event_id=event_id, confirm=False)
+
+
+def test_delete_event_denies_non_writable_calendar_without_request(monkeypatch, tmp_path):
+    config_path = _write_config(tmp_path, writable=False)
+    config = handler._load_config(str(config_path))
+    event_id = handler._build_event_id("family", "/family/event-1.ics")
+
+    called = []
+
+    def _fake_request(**kwargs):
+        called.append(kwargs)
+        return 204, b""
+
+    monkeypatch.setattr(handler, "_caldav_request", _fake_request)
+    with pytest.raises(handler.CalendarAccessDenied, match="Write access denied"):
+        handler._delete_event(config=config, event_id=event_id, confirm=True)
+    assert called == []
+
+
+def test_delete_event_happy_path(monkeypatch, tmp_path):
+    config_path = _write_config(tmp_path, writable=True)
+    config = handler._load_config(str(config_path))
+    event_id = handler._build_event_id("family", "/family/event-1.ics")
+
+    calls = []
+
+    def _fake_request(**kwargs):
+        calls.append(kwargs)
+        return 204, b""
+
+    monkeypatch.setattr(handler, "_caldav_request", _fake_request)
+    output = handler._delete_event(config=config, event_id=event_id, confirm=True)
+    assert len(calls) == 1
+    assert calls[0]["method"] == "DELETE"
+    assert "Status: deleted" in output
+    assert "Event ID: family:" in output
+
+
+def test_delete_event_missing_event(monkeypatch, tmp_path):
+    config_path = _write_config(tmp_path, writable=True)
+    config = handler._load_config(str(config_path))
+    event_id = handler._build_event_id("family", "/family/missing.ics")
+
+    def _fake_request(**kwargs):
+        raise handler.CalendarNotFound("Calendar endpoint not found for delete.")
+
+    monkeypatch.setattr(handler, "_caldav_request", _fake_request)
+    with pytest.raises(handler.CalendarNotFound):
+        handler._delete_event(config=config, event_id=event_id, confirm=True)
+
+
+def test_edit_event_requires_changes(tmp_path):
+    config_path = _write_config(tmp_path, writable=True)
+    config = handler._load_config(str(config_path))
+    event_id = handler._build_event_id("family", "/family/event-1.ics")
+    with pytest.raises(handler.CalendarSkillError, match="Edit requires at least one"):
+        handler._edit_event(
+            config=config,
+            event_id=event_id,
+            title=None,
+            start=None,
+            duration=None,
+        )
+
+
+def test_edit_event_denies_non_writable_calendar_without_request(monkeypatch, tmp_path):
+    config_path = _write_config(tmp_path, writable=False)
+    config = handler._load_config(str(config_path))
+    event_id = handler._build_event_id("family", "/family/event-1.ics")
+
+    called = []
+
+    def _fake_request(**kwargs):
+        called.append(kwargs)
+        return 200, b""
+
+    monkeypatch.setattr(handler, "_caldav_request", _fake_request)
+    with pytest.raises(handler.CalendarAccessDenied, match="Write access denied"):
+        handler._edit_event(
+            config=config,
+            event_id=event_id,
+            title="Updated title",
+            start=None,
+            duration=None,
+        )
+    assert called == []
+
+
+def test_edit_event_missing_event(monkeypatch, tmp_path):
+    config_path = _write_config(tmp_path, writable=True)
+    config = handler._load_config(str(config_path))
+    event_id = handler._build_event_id("family", "/family/missing.ics")
+
+    def _fake_request(**kwargs):
+        raise handler.CalendarNotFound("Calendar endpoint not found for edit.")
+
+    monkeypatch.setattr(handler, "_caldav_request", _fake_request)
+    with pytest.raises(handler.CalendarNotFound):
+        handler._edit_event(
+            config=config,
+            event_id=event_id,
+            title="Updated title",
+            start=None,
+            duration=None,
+        )
+
+
+def test_edit_event_happy_path(monkeypatch, tmp_path):
+    config_path = _write_config(tmp_path, writable=True)
+    config = handler._load_config(str(config_path))
+    event_id = handler._build_event_id("family", "/family/event-1.ics")
+
+    existing_ical = (
+        "BEGIN:VCALENDAR\r\n"
+        "VERSION:2.0\r\n"
+        "BEGIN:VEVENT\r\n"
+        "UID:event-1\r\n"
+        "DTSTART:20260302T160000Z\r\n"
+        "DTEND:20260302T170000Z\r\n"
+        "SUMMARY:Old title\r\n"
+        "END:VEVENT\r\n"
+        "END:VCALENDAR\r\n"
+    )
+
+    calls = []
+
+    def _fake_request(**kwargs):
+        calls.append(kwargs)
+        if kwargs["method"] == "GET":
+            return 200, existing_ical.encode("utf-8")
+        return 204, b""
+
+    monkeypatch.setattr(handler, "_caldav_request", _fake_request)
+    output = handler._edit_event(
+        config=config,
+        event_id=event_id,
+        title="Updated title",
+        start="2026-03-02T18:30",
+        duration=45,
+    )
+
+    assert len(calls) == 2
+    assert calls[0]["method"] == "GET"
+    assert calls[1]["method"] == "PUT"
+    assert b"SUMMARY:Updated title" in calls[1]["body"]
+    assert b"DTSTART:" in calls[1]["body"]
+    assert b"DTEND:" in calls[1]["body"]
+    assert "Status: updated" in output
+    assert "Event ID: family:" in output
+
+
+def test_main_edit_command_calls_edit(monkeypatch, capsys):
+    config = _base_config()
+    monkeypatch.setattr(handler, "_load_config", lambda _path: config)
+    monkeypatch.setattr(handler, "_edit_event", lambda **kwargs: "Status: updated")
+    monkeypatch.setattr(
+        handler.sys,
+        "argv",
+        [
+            "calendar-handler.py",
+            "edit",
+            "family:ZXZlbnQ",
+            "--title",
+            "New title",
+        ],
+    )
+
+    result = handler.main()
+    output = capsys.readouterr().out
+    assert result == 0
+    assert "Status: updated" in output
+
+
+def test_main_delete_command_calls_delete(monkeypatch, capsys):
+    config = _base_config()
+    monkeypatch.setattr(handler, "_load_config", lambda _path: config)
+    monkeypatch.setattr(handler, "_delete_event", lambda **kwargs: "Status: deleted")
+    monkeypatch.setattr(
+        handler.sys,
+        "argv",
+        ["calendar-handler.py", "delete", "family:ZXZlbnQ", "--confirm"],
+    )
+
+    result = handler.main()
+    output = capsys.readouterr().out
+    assert result == 0
+    assert "Status: deleted" in output
+
+
+def test_main_delete_requires_confirm(monkeypatch, capsys):
+    config = _base_config()
+    monkeypatch.setattr(handler, "_load_config", lambda _path: config)
+    monkeypatch.setattr(
+        handler.sys,
+        "argv",
+        ["calendar-handler.py", "delete", "family:ZXZlbnQ"],
+    )
+
+    result = handler.main()
+    output = capsys.readouterr().out
+    assert result == 1
+    assert "Delete requires --confirm" in output

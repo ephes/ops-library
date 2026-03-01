@@ -1,5 +1,5 @@
 ---
-# Calendar skill deployment (CalDAV read + guarded create).
+# Calendar skill deployment (CalDAV read + guarded create/edit/delete).
 # Included from main.yml when openclaw_calendar_enabled is true.
 
 - name: calendar | Initialize resolved account map

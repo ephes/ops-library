@@ -1,6 +1,6 @@
 ---
 name: {{ openclaw_calendar_command_skill_name }}
-description: "CalDAV calendar access (/calendar today|tomorrow|on|week|free|create)."
+description: "CalDAV calendar access (/calendar today|tomorrow|on|week|free|create|edit|delete)."
 metadata: { "openclaw": { "emoji": "🗓️", "requires": { "bins": ["python3"] } } }
 ---
 
@@ -18,6 +18,10 @@ User input is everything after `/{{ openclaw_calendar_command_skill_name }}`.
 - `week [--start <YYYY-MM-DD>]`
 - `free --at <datetime> [--duration <minutes>]`
 - `create --calendar <id> --title <text> --start <datetime> [--duration <minutes>] [--repeat daily|weekly|monthly] [--count N | --until YYYY-MM-DD]`
+- `edit <event_id> [--title <text>] [--start <datetime>] [--duration <minutes>]`
+- `delete <event_id> --confirm`
+
+`event_id` values are emitted in event listings and create output.
 
 Natural-language mapping:
 
@@ -35,6 +39,6 @@ Always execute exactly one command:
 
 When no input is provided, return:
 
-`Usage: /{{ openclaw_calendar_command_skill_name }} today | /{{ openclaw_calendar_command_skill_name }} tomorrow | /{{ openclaw_calendar_command_skill_name }} on <YYYY-MM-DD> | /{{ openclaw_calendar_command_skill_name }} week [--start <YYYY-MM-DD>] | /{{ openclaw_calendar_command_skill_name }} free --at <datetime> [--duration <minutes>] | /{{ openclaw_calendar_command_skill_name }} create --calendar <id> --title <text> --start <datetime> [--duration <minutes>] [--repeat daily|weekly|monthly] [--count N | --until YYYY-MM-DD]`
+`Usage: /{{ openclaw_calendar_command_skill_name }} today | /{{ openclaw_calendar_command_skill_name }} tomorrow | /{{ openclaw_calendar_command_skill_name }} on <YYYY-MM-DD> | /{{ openclaw_calendar_command_skill_name }} week [--start <YYYY-MM-DD>] | /{{ openclaw_calendar_command_skill_name }} free --at <datetime> [--duration <minutes>] | /{{ openclaw_calendar_command_skill_name }} create --calendar <id> --title <text> --start <datetime> [--duration <minutes>] [--repeat daily|weekly|monthly] [--count N | --until YYYY-MM-DD] | /{{ openclaw_calendar_command_skill_name }} edit <event_id> [--title <text>] [--start <datetime>] [--duration <minutes>] | /{{ openclaw_calendar_command_skill_name }} delete <event_id> --confirm`
 
 Return the handler output as-is.

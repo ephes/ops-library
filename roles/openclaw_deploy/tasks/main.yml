@@ -53,7 +53,7 @@
   ansible.builtin.import_tasks: imap.yml
   when: openclaw_imap_enabled | bool
 
-- name: main | Configure calendar skill (CalDAV read + guarded create)
+- name: main | Configure calendar skill (CalDAV read + guarded create/edit/delete)
   ansible.builtin.import_tasks: calendar.yml
   when: openclaw_calendar_enabled | bool
 

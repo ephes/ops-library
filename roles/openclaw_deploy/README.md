@@ -222,7 +222,7 @@ Safety guarantees:
 | `openclaw_smtp_subject_max_chars` | `240` | Max `/mail send --subject` length |
 | `openclaw_smtp_body_max_chars` | `4000` | Max `/mail send --body` length |
 
-### Calendar Skill (`/calendar`): CalDAV Read + Guarded Create
+### Calendar Skill (`/calendar`): CalDAV Read + Guarded Create/Edit/Delete
 
 When `openclaw_calendar_enabled: true`, the role deploys a `/calendar` command skill and handler
 using CalDAV calendars with explicit read/write allowlists per calendar id.
@@ -235,11 +235,15 @@ Command surface:
 - `/calendar week [--start <YYYY-MM-DD>]`
 - `/calendar free --at <datetime> [--duration <minutes>]`
 - `/calendar create --calendar <id> --title <text> --start <datetime> [--duration <minutes>] [--repeat daily|weekly|monthly] [--count N | --until YYYY-MM-DD]`
+- `/calendar edit <event_id> [--title <text>] [--start <datetime>] [--duration <minutes>]`
+- `/calendar delete <event_id> --confirm`
 
 Safety guarantees:
 
 - Read and write access are configured per calendar entry in `openclaw_calendar_map`.
 - Write attempts to non-writable calendars are denied deterministically.
+- Event IDs are generated from calendar-local CalDAV resource paths and are required for edit/delete.
+- Delete always requires explicit `--confirm`.
 - Recurrence is bounded to `daily|weekly|monthly` with optional `count` or `until`.
 - Recurring-event reads/free-time checks use CalDAV expansion for occurrence-correct results.
 - Event creation uses UTC timestamps (`DTSTART/DTEND ...Z`) to avoid timezone-component interoperability issues.
