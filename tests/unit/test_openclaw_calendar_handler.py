@@ -215,6 +215,19 @@ def test_normalize_url_rejects_query_and_fragment():
         handler._normalize_url("https://caldav.example.test/path#frag")
 
 
+def test_http_json_error_maps_edit_conflict_to_friendly_message():
+    err = handler._http_json_error(412, "edit write for calendar 'family'")
+    assert isinstance(err, handler.CalendarSkillError)
+    assert "edit conflict" in str(err)
+    assert "latest Event ID" in str(err)
+
+
+def test_http_json_error_keeps_generic_message_for_other_412():
+    err = handler._http_json_error(412, "delete for calendar 'family'")
+    assert isinstance(err, handler.CalendarSkillError)
+    assert "HTTP 412" in str(err)
+
+
 def test_sanitize_text_truncates_and_normalizes_whitespace():
     assert handler._sanitize_text("  hello   world  ", 20) == "hello world"
     assert handler._sanitize_text("x" * 20, 10).endswith("...")

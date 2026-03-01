@@ -347,6 +347,11 @@ def _http_json_error(status: int, operation: str) -> CalendarSkillError:
         return CalendarAccessDenied("Calendar authentication failed.")
     if status == 404:
         return CalendarNotFound(f"Calendar endpoint not found for {operation}.")
+    if status == 412 and operation.startswith("edit write for calendar"):
+        return CalendarSkillError(
+            "Calendar edit conflict: event was modified by another client. "
+            "Please retry with the latest Event ID."
+        )
     if status in (301, 302, 303, 307, 308):
         return CalendarSkillError("Calendar API redirects are not allowed.")
     return CalendarSkillError(f"Calendar request failed during {operation} (HTTP {status}).")

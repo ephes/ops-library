@@ -244,6 +244,7 @@ Safety guarantees:
 - Write attempts to non-writable calendars are denied deterministically.
 - Event IDs are generated from calendar-local CalDAV resource paths and are required for edit/delete.
 - Delete always requires explicit `--confirm`.
+- Edit handles stale-write conflicts explicitly: CalDAV `HTTP 412` returns a retry guidance message.
 - Recurrence is bounded to `daily|weekly|monthly` with optional `count` or `until`.
 - Recurring-event reads/free-time checks use CalDAV expansion for occurrence-correct results.
 - Event creation uses UTC timestamps (`DTSTART/DTEND ...Z`) to avoid timezone-component interoperability issues.
