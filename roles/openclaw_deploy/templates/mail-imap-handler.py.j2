@@ -328,6 +328,44 @@ def _normalize_mail_body(value: str) -> str:
     normalized = (value or "").strip()
     if not normalized:
         raise MailSkillError("Body cannot be empty.")
+    # Decode common escaped sequences produced by slash-command clients/LLMs.
+    # Unknown escapes are left unchanged.
+    if "\\" in normalized:
+        decoded: List[str] = []
+        i = 0
+        while i < len(normalized):
+            ch = normalized[i]
+            if ch != "\\" or i + 1 >= len(normalized):
+                decoded.append(ch)
+                i += 1
+                continue
+
+            nxt = normalized[i + 1]
+            if nxt == "n":
+                decoded.append("\n")
+                i += 2
+                continue
+            if nxt == "r":
+                if i + 2 < len(normalized) and normalized[i + 2] == "n":
+                    i += 3
+                else:
+                    i += 2
+                decoded.append("\n")
+                continue
+            if nxt == "t":
+                decoded.append("\t")
+                i += 2
+                continue
+            if nxt == "\\":
+                decoded.append("\\")
+                i += 2
+                continue
+
+            decoded.append("\\")
+            decoded.append(nxt)
+            i += 2
+
+        normalized = "".join(decoded)
     normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
     if len(normalized) > SMTP_BODY_MAX_CHARS:
         raise MailSkillError(f"Body too long (max {SMTP_BODY_MAX_CHARS} chars).")

@@ -166,6 +166,7 @@ Safety guarantees:
 
 - IMAP path remains read-only (`SELECT ...` readonly + `SEARCH`/`FETCH` only).
 - SMTP path supports plain-text send only (no attachments, no HTML composition).
+- Body formatting supports real newlines and escaped `\n`/`\r\n` sequences in `/mail send --body`.
 - Strict recipient/address validation with newline/header-injection rejection.
 - Bounded recipients/subject/body lengths with explicit limits.
 - Sender identity is account-configured only: optional `from_name` and `reply_to` are static per account
