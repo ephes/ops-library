@@ -84,6 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `unifi_restore` now re-imports MongoDB dumps, honors host/port overrides, and ships with sane defaults so UniFi logins and controller state survive a remove/deploy/restore cycle
 - `unifi_deploy` gracefully skips the Home Assistant integration on the very first bootstrap when the UniFi “default” site does not exist yet, avoiding infinite waits on greenfield installs
 - `open_webui_deploy` now validates the bind host and host port range to catch invalid settings earlier
+- `zfs_usb_replication` now creates `/etc/exports.d` before mount and auto-sets `canmount=off` on existing recursive+readonly targets to avoid mountpoint creation failures on subsequent runs
 
 ## [2.0.0] - 2025-10-09
 

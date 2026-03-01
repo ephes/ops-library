@@ -9,6 +9,9 @@ Runs syncoid replication to a USB-attached ZFS pool on a schedule, skipping clea
 - Loads ZFS encryption keys from a key file managed by the role.
 - Uses `OnFailure` to trigger a mail alert with recent logs.
 - Optional readonly toggle protects target datasets after replication.
+- For `recursive: true` + `readonly: true` jobs, existing target parents are auto-set to
+  `canmount=off` before `zfs mount -a` to avoid read-only mountpoint creation failures.
+- Ensures `/etc/exports.d` exists before mounting to avoid exportfs lock-path errors.
 
 ## Key Variables
 
@@ -19,6 +22,8 @@ Runs syncoid replication to a USB-attached ZFS pool on a schedule, skipping clea
 - `zfs_usb_replication_key` - key material (when key management is enabled).
 - `readonly: true` in a job uses `--recvoptions="o readonly=on"` so target datasets stay read-only
   without property toggling between runs.
+- `zfs_usb_replication_set_canmount_off_for_readonly_recursive_targets` - defaults to `true`.
+- `zfs_usb_replication_exportfs_lock_dir` - defaults to `/etc/exports.d`.
 
 Example usage:
 

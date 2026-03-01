@@ -30,6 +30,12 @@ zfs_usb_replication_identifier: ""
 # Pool export behavior (auto = only export when imported by the script)
 zfs_usb_replication_force_export: false
 
+# Runtime mount preparation
+zfs_usb_replication_exportfs_lock_dir: "/etc/exports.d"
+
+# Prevent read-only recursive parent datasets from blocking child mountpoint creation.
+zfs_usb_replication_set_canmount_off_for_readonly_recursive_targets: true
+
 # ZFS encryption key handling
 zfs_usb_replication_key_manage: true
 zfs_usb_replication_key_path: "/root/.zfs-key-vault"

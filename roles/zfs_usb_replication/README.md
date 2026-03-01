@@ -10,6 +10,8 @@ loads the encryption key from a key file, runs the configured syncoid jobs, and 
 If the USB device is absent, the run logs a clean skip and exits successfully.
 When `readonly: true` is set on a job, the script passes `--recvoptions="o readonly=on"` so the target
 datasets are created/updated as read-only without toggling properties between runs.
+For `recursive: true` + `readonly: true` jobs, the script auto-sets `canmount=off` on existing target
+parent datasets before `zfs mount -a` so read-only parents do not block child mountpoint creation.
 
 ## Requirements
 
@@ -42,6 +44,10 @@ zfs_usb_replication_identifier: "usb"
 zfs_usb_replication_force_export: true
 ```
 
+Runtime mount safeguards:
+- `zfs_usb_replication_exportfs_lock_dir` defaults to `/etc/exports.d` and is created before mounting.
+- `zfs_usb_replication_set_canmount_off_for_readonly_recursive_targets` defaults to `true`.
+
 ### Spindown (optional)
 
 ```yaml
@@ -66,6 +72,8 @@ zfs_usb_replication_syncoid_path: "/usr/sbin/syncoid"
 zfs_usb_replication_timeout_sec: "8h"
 zfs_usb_replication_alert_subject_prefix: "[zfs-usb]"
 zfs_usb_replication_key_manage: true
+zfs_usb_replication_exportfs_lock_dir: "/etc/exports.d"
+zfs_usb_replication_set_canmount_off_for_readonly_recursive_targets: true
 ```
 
 For the full list, see `defaults/main.yml`.
@@ -112,6 +120,7 @@ just test-role zfs_usb_replication
 
 ## Changelog
 
+- **1.0.3** (2026-03-01): Hardened readonly recursive USB runs by auto-setting `canmount=off` on existing target parents and ensuring `/etc/exports.d` exists before `zfs mount -a`
 - **1.0.2** (2026-01-30): Added force-export and spindown support for USB replication runs
 - **1.0.1** (2026-01-29): Added `zfs_usb_replication_identifier` to avoid syncoid snapshot name collisions
 - **1.0.0** (2026-01-18): Initial release
