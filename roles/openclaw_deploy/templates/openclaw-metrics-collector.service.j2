@@ -37,5 +37,4 @@ ExecStartPre=/bin/mkdir -p {{ openclaw_metrics_endpoint_data_dir }}
 ExecStartPre=/bin/chown root:{{ openclaw_metrics_endpoint_group }} {{ openclaw_metrics_endpoint_data_dir }}
 ExecStartPre=/bin/chmod 0750 {{ openclaw_metrics_endpoint_data_dir }}
 ExecStartPost=/bin/chown root:{{ openclaw_metrics_endpoint_group }} {{ openclaw_metrics_endpoint_json_path }}
-ExecStartPost=/bin/chmod 0640 {{ openclaw_metrics_endpoint_json_path }}
 ExecStartPost=/bin/sh -c 'if [ -e "{{ openclaw_metrics_endpoint_synthetic_canary_state_path }}" ]; then chown root:root "{{ openclaw_metrics_endpoint_synthetic_canary_state_path }}" && chmod 0640 "{{ openclaw_metrics_endpoint_synthetic_canary_state_path }}"; fi'
