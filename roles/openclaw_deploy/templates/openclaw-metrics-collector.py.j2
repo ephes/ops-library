@@ -82,6 +82,17 @@ def build_payload() -> dict[str, Any]:
                     "recent_failures": [],
                 }
             },
+            "paperless": {
+                "auth": {
+                    "enabled": False,
+                    "window_seconds": 0,
+                    "threshold": 0,
+                    "total_recent_failures": 0,
+                    "has_recent_failures": False,
+                    "has_repeated_failures": False,
+                    "last_failure_at": None,
+                }
+            },
             "synthetic": {
                 "canary": {
                     "enabled": False,
@@ -267,6 +278,66 @@ def apply_calendar_auth_health(args: argparse.Namespace, payload: dict[str, Any]
     auth["last_failure_at"] = latest_iso
 
 
+def apply_paperless_auth_health(args: argparse.Namespace, payload: dict[str, Any]) -> None:
+    auth = payload["openclaw"]["paperless"]["auth"]
+    auth["enabled"] = bool(args.paperless_auth_enabled)
+    auth["window_seconds"] = int(args.paperless_auth_window_seconds)
+    auth["threshold"] = int(args.paperless_auth_failure_threshold)
+    if not auth["enabled"]:
+        return
+
+    now_epoch = int(time.time())
+    threshold_epoch = now_epoch - int(args.paperless_auth_window_seconds)
+
+    try:
+        with open(args.paperless_health_state_path, "r", encoding="utf-8") as handle:
+            state = json.load(handle)
+    except FileNotFoundError:
+        state = {}
+    except (OSError, json.JSONDecodeError):
+        payload["openclaw"]["collector_ok"] = False
+        payload["openclaw"]["collector_errors"].append(
+            "paperless auth health state is unreadable"
+        )
+        return
+
+    if not isinstance(state, dict):
+        payload["openclaw"]["collector_ok"] = False
+        payload["openclaw"]["collector_errors"].append(
+            "paperless auth health state has invalid shape"
+        )
+        return
+
+    raw_epochs = state.get("auth_failure_epochs", [])
+    if not isinstance(raw_epochs, list):
+        payload["openclaw"]["collector_ok"] = False
+        payload["openclaw"]["collector_errors"].append(
+            "paperless auth health state has invalid auth_failure_epochs"
+        )
+        return
+
+    valid_epochs: list[int] = []
+    for raw_epoch in raw_epochs:
+        try:
+            epoch = int(raw_epoch)
+        except (TypeError, ValueError):
+            continue
+        if epoch >= threshold_epoch:
+            valid_epochs.append(epoch)
+
+    latest_epoch = max(valid_epochs) if valid_epochs else 0
+    auth["total_recent_failures"] = len(valid_epochs)
+    auth["has_recent_failures"] = bool(valid_epochs)
+    auth["has_repeated_failures"] = len(valid_epochs) >= int(
+        args.paperless_auth_failure_threshold
+    )
+    auth["last_failure_at"] = (
+        datetime.fromtimestamp(latest_epoch, tz=timezone.utc).isoformat()
+        if latest_epoch > 0
+        else None
+    )
+
+
 def run_synthetic_canary(args: argparse.Namespace, payload: dict[str, Any]) -> None:
     canary = payload["openclaw"]["synthetic"]["canary"]
     canary["enabled"] = bool(args.synthetic_canary_enabled)
@@ -428,6 +499,29 @@ def main() -> int:
         help="Threshold for repeated calendar auth failures",
     )
     parser.add_argument(
+        "--paperless-auth-enabled",
+        type=int,
+        default={{ 1 if (openclaw_paperless_enabled | bool) else 0 }},
+        help="Enable paperless auth-failure health signals",
+    )
+    parser.add_argument(
+        "--paperless-health-state-path",
+        default={{ openclaw_paperless_health_state_path | to_json }},
+        help="Path to paperless auth health-state cache",
+    )
+    parser.add_argument(
+        "--paperless-auth-window-seconds",
+        type=int,
+        default={{ openclaw_paperless_auth_failure_window_seconds }},
+        help="Window in seconds for recent paperless auth-failure counts",
+    )
+    parser.add_argument(
+        "--paperless-auth-failure-threshold",
+        type=int,
+        default={{ openclaw_paperless_auth_failure_threshold }},
+        help="Threshold for repeated paperless auth failures",
+    )
+    parser.add_argument(
         "--synthetic-canary-enabled",
         type=int,
         default={{ 1 if (openclaw_metrics_endpoint_synthetic_canary_enabled | bool) else 0 }},
@@ -546,6 +640,12 @@ def main() -> int:
         openclaw["collector_errors"].append(f"calendar auth collector error: {err}")
 
     try:
+        apply_paperless_auth_health(args, payload)
+    except Exception as err:  # noqa: BLE001
+        openclaw["collector_ok"] = False
+        openclaw["collector_errors"].append(f"paperless auth collector error: {err}")
+
+    try:
         run_synthetic_canary(args, payload)
     except Exception as err:  # noqa: BLE001
         canary = openclaw["synthetic"]["canary"]
@@ -565,7 +665,7 @@ def main() -> int:
             "error": f"collector synthetic canary error: {err}",
         }
 
-    save_json_atomic(args.output, payload)
+    save_json_atomic(args.output, payload, mode=0o640)
 
     return 0
 

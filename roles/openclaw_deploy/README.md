@@ -294,6 +294,65 @@ Credential resolution order for each `openclaw_calendar_map` entry:
 1. `account` field (or `openclaw_calendar_default_account`) referencing `openclaw_calendar_account_map`.
 2. Inline `username` + `password` on the calendar entry (backward compatibility path).
 
+### Paperless Skill (`/paperless`): Read-Only Search + Telegram Delivery
+
+When `openclaw_paperless_enabled: true`, the role deploys a `/paperless` command skill and handler
+using the Paperless-ngx REST API with read-only endpoint usage.
+
+Command surface:
+
+- `/paperless search <query> [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--limit N]`
+- `/paperless get <document_id> [--original|--archived]` (defaults to original file)
+- `/paperless latest [--query <text>] [--days N] [--limit N]`
+
+Safety guarantees:
+
+- Handler uses stdlib HTTP client (`urllib.request`) with explicit redirect deny.
+- Endpoint surface is read-only (`GET /api/documents/`, `GET /api/documents/<id>/`, `GET /api/documents/<id>/download/`).
+- Command skill execution assumes argv-style invocation by OpenClaw (no shell interpolation of raw user input).
+- Metadata-only search output format:
+  - `#{id} | {title} | {correspondent} | {created_date}`
+- Bounded limits (`default=5`, `max=10`) and bounded field lengths.
+- Separate search timeout and download timeout.
+- Download guardrails enforce Telegram upload cap behavior:
+  - if `Content-Length` is known and exceeds cap, skip body download and return deterministic URL fallback;
+  - if `Content-Length` is absent, stream with hard cap and abort deterministically when exceeded.
+- Delivery is constrained to active Telegram context target and falls back deterministically to Paperless URL when unavailable.
+- `HTTP 401/403` auth failures are tracked in rolling-window health state for metrics/Nyxmon alerting.
+- Sanitized errors only (no token/header leakage).
+
+#### Paperless Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `openclaw_paperless_enabled` | `false` | Enable `/paperless` skill deployment |
+| `openclaw_paperless_base_url` | `""` | Paperless base URL reachable from OpenClaw container |
+| `openclaw_paperless_token` | `""` | Paperless API token (required when enabled) |
+| `openclaw_paperless_skill_name` | `paperless-read` | Handler skill directory name |
+| `openclaw_paperless_command_skill_name` | `paperless` | Slash command skill directory name |
+| `openclaw_paperless_skills_dir` | `{{ openclaw_data_dir }}/skills` | Host skill root for Paperless skill files |
+| `openclaw_paperless_container_skills_dir` | `/home/node/.openclaw/skills` | Container path used by Paperless command skill |
+| `openclaw_paperless_credentials_path` | `{{ openclaw_data_dir }}/credentials/paperless.json` | Rendered Paperless runtime config (`0600`) |
+| `openclaw_paperless_container_credentials_path` | `/home/node/.openclaw/credentials/paperless.json` | Container runtime config path used by handler |
+| `openclaw_paperless_health_state_path` | `{{ openclaw_data_dir }}/credentials/paperless_health_state.json` | Host path for Paperless auth-failure rolling state (`0600`) |
+| `openclaw_paperless_container_health_state_path` | `/home/node/.openclaw/credentials/paperless_health_state.json` | Container path for Paperless auth-failure rolling state |
+| `openclaw_paperless_search_timeout_seconds` | `10` | Search/list request timeout |
+| `openclaw_paperless_download_timeout_seconds` | `60` | Download request timeout |
+| `openclaw_paperless_delivery_timeout_seconds` | `30` | Telegram media-send timeout |
+| `openclaw_paperless_default_limit` | `5` | Default search/list limit |
+| `openclaw_paperless_max_limit` | `10` | Maximum search/list limit |
+| `openclaw_paperless_latest_default_days` | `7` | Default lookback window for `/paperless latest` |
+| `openclaw_paperless_latest_max_days` | `365` | Maximum allowed `--days` for `/paperless latest` |
+| `openclaw_paperless_title_max_chars` | `120` | Max rendered title chars |
+| `openclaw_paperless_correspondent_max_chars` | `80` | Max rendered correspondent chars |
+| `openclaw_paperless_max_download_bytes` | `52428800` | Max file size cap in bytes (50 MB hard limit) |
+| `openclaw_paperless_download_chunk_bytes` | `65536` | Stream chunk size used for capped downloads |
+| `openclaw_paperless_downloads_dir` | `{{ openclaw_data_dir }}/workspace/.paperless-downloads` | Host temp downloads directory for handler |
+| `openclaw_paperless_container_downloads_dir` | `/home/node/.openclaw/workspace/.paperless-downloads` | Container temp downloads directory used by handler |
+| `openclaw_paperless_delivery_channel` | `telegram` | Delivery channel (fixed to Telegram) |
+| `openclaw_paperless_auth_failure_window_seconds` | `3600` | Rolling window used to count recent Paperless auth failures |
+| `openclaw_paperless_auth_failure_threshold` | `3` | Threshold for repeated Paperless auth failures in rolling window |
+
 ### Home Assistant Skill (`/homeassistant`): Read + Guarded Write
 
 When `openclaw_homeassistant_enabled: true`, the role deploys a `/homeassistant` command skill and handler
@@ -350,10 +409,11 @@ Operational note:
 | `openclaw_homeassistant_attribute_max_items` | `8` | Max rendered attribute key/value pairs in `/homeassistant state` |
 | `openclaw_homeassistant_attribute_value_max_chars` | `120` | Max chars per rendered attribute value |
 
-Handler unit tests for the Home Assistant integration live at:
+Handler unit tests for managed OpenClaw integration handlers live at:
 
 - `tests/unit/test_openclaw_homeassistant_handler.py`
 - `tests/unit/test_openclaw_calendar_handler.py`
+- `tests/unit/test_openclaw_paperless_handler.py`
 
 ### Advanced
 
@@ -433,6 +493,8 @@ Designed for Nyxmon `json-metrics` checks, for example:
 - `$.openclaw.channels.telegram.running == true`
 - `$.openclaw.calendar.auth.has_repeated_failures == false`
 - `$.openclaw.calendar.auth.has_recent_failures == false`
+- `$.openclaw.paperless.auth.has_repeated_failures == false`
+- `$.openclaw.paperless.auth.has_recent_failures == false`
 - `$.meta.age_seconds < 600`
 - `$.openclaw.synthetic.canary.last_run.ok == true` (synthetic check)
 

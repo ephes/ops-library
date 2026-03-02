@@ -1,0 +1,74 @@
+---
+# Paperless skill deployment (read-only search/get/latest with Telegram delivery fallback).
+# Included from main.yml when openclaw_paperless_enabled is true.
+
+- name: paperless | Build runtime configuration payload
+  ansible.builtin.set_fact:
+    _openclaw_paperless_payload:
+      base_url: "{{ openclaw_paperless_base_url | trim | regex_replace('/+$', '') }}"
+      token: "{{ openclaw_paperless_token }}"
+      search_timeout_seconds: "{{ openclaw_paperless_search_timeout_seconds | int }}"
+      download_timeout_seconds: "{{ openclaw_paperless_download_timeout_seconds | int }}"
+      delivery_timeout_seconds: "{{ openclaw_paperless_delivery_timeout_seconds | int }}"
+      default_limit: "{{ openclaw_paperless_default_limit | int }}"
+      max_limit: "{{ openclaw_paperless_max_limit | int }}"
+      latest_default_days: "{{ openclaw_paperless_latest_default_days | int }}"
+      latest_max_days: "{{ openclaw_paperless_latest_max_days | int }}"
+      title_max_chars: "{{ openclaw_paperless_title_max_chars | int }}"
+      correspondent_max_chars: "{{ openclaw_paperless_correspondent_max_chars | int }}"
+      max_download_bytes: "{{ openclaw_paperless_max_download_bytes | int }}"
+      download_chunk_bytes: "{{ openclaw_paperless_download_chunk_bytes | int }}"
+      downloads_dir: "{{ openclaw_paperless_container_downloads_dir | trim }}"
+      delivery_channel: "{{ openclaw_paperless_delivery_channel | trim }}"
+      health_state_path: "{{ openclaw_paperless_container_health_state_path | trim }}"
+      auth_failure_window_seconds: "{{ openclaw_paperless_auth_failure_window_seconds | int }}"
+      auth_failure_threshold: "{{ openclaw_paperless_auth_failure_threshold | int }}"
+  no_log: true
+
+- name: paperless | Render runtime configuration file
+  ansible.builtin.copy:
+    content: "{{ _openclaw_paperless_payload | to_nice_json }}\n"
+    dest: "{{ openclaw_paperless_credentials_path }}"
+    owner: "1000"
+    group: "1000"
+    mode: "0600"
+  no_log: true
+  notify: restart openclaw
+
+- name: paperless | Ensure health-state file exists
+  ansible.builtin.copy:
+    content: "{}\n"
+    dest: "{{ openclaw_paperless_health_state_path }}"
+    owner: "1000"
+    group: "1000"
+    mode: "0600"
+    force: false
+  no_log: true
+  notify: restart openclaw
+
+- name: paperless | Deploy paperless skill manifest
+  ansible.builtin.template:
+    src: paperless-skill.json.j2
+    dest: "{{ openclaw_paperless_skills_dir }}/{{ openclaw_paperless_skill_name }}/skill.json"
+    owner: "1000"
+    group: "1000"
+    mode: "0640"
+  notify: restart openclaw
+
+- name: paperless | Deploy paperless skill handler
+  ansible.builtin.template:
+    src: paperless-handler.py.j2
+    dest: "{{ openclaw_paperless_skills_dir }}/{{ openclaw_paperless_skill_name }}/handler.py"
+    owner: "1000"
+    group: "1000"
+    mode: "0750"
+  notify: restart openclaw
+
+- name: paperless | Deploy /paperless command SKILL.md
+  ansible.builtin.template:
+    src: paperless-skill.md.j2
+    dest: "{{ openclaw_paperless_skills_dir }}/{{ openclaw_paperless_command_skill_name }}/SKILL.md"
+    owner: "1000"
+    group: "1000"
+    mode: "0640"
+  notify: restart openclaw

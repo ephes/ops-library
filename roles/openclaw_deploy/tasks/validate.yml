@@ -420,6 +420,50 @@
   no_log: true
   when: openclaw_calendar_enabled | bool
 
+- name: validate | Paperless base settings when integration is enabled
+  ansible.builtin.assert:
+    that:
+      - openclaw_paperless_base_url | string | trim | length > 0
+      - openclaw_paperless_base_url is regex('^https?://')
+      - not (openclaw_paperless_base_url | string is regex('[?#]'))
+      - openclaw_paperless_token | string | trim | length > 0
+      - openclaw_paperless_token != 'CHANGEME'
+      - openclaw_paperless_token != 'CHANGE_ME'
+      - openclaw_paperless_skill_name | string | trim | length > 0
+      - openclaw_paperless_command_skill_name | string | trim | length > 0
+      - openclaw_paperless_skills_dir | string | trim | length > 0
+      - openclaw_paperless_container_skills_dir | string | trim | length > 0
+      - openclaw_paperless_credentials_path | string | trim | length > 0
+      - openclaw_paperless_container_credentials_path | string | trim | length > 0
+      - openclaw_paperless_health_state_path | string | trim | length > 0
+      - openclaw_paperless_container_health_state_path | string | trim | length > 0
+      - openclaw_paperless_downloads_dir | string | trim | length > 0
+      - openclaw_paperless_container_downloads_dir | string | trim | length > 0
+      - openclaw_paperless_search_timeout_seconds | int > 0
+      - openclaw_paperless_download_timeout_seconds | int > 0
+      - openclaw_paperless_delivery_timeout_seconds | int > 0
+      - openclaw_paperless_default_limit | int > 0
+      - openclaw_paperless_default_limit | int <= 10
+      - openclaw_paperless_max_limit | int >= (openclaw_paperless_default_limit | int)
+      - openclaw_paperless_max_limit | int <= 10
+      - openclaw_paperless_latest_default_days | int > 0
+      - openclaw_paperless_latest_max_days | int >= (openclaw_paperless_latest_default_days | int)
+      - openclaw_paperless_title_max_chars | int > 0
+      - openclaw_paperless_correspondent_max_chars | int > 0
+      - openclaw_paperless_max_download_bytes | int > 0
+      - openclaw_paperless_max_download_bytes | int <= 52428800
+      - openclaw_paperless_download_chunk_bytes | int > 0
+      - openclaw_paperless_delivery_channel | string | trim == 'telegram'
+      - openclaw_telegram_enabled | bool
+      - openclaw_paperless_auth_failure_window_seconds | int > 0
+      - openclaw_paperless_auth_failure_threshold | int > 0
+    fail_msg: >-
+      Invalid Paperless settings. Configure base_url/token, paths, limits/timeouts, and ensure
+      delivery channel is telegram (with Telegram channel enabled) and max download cap <= 50 MB
+      when openclaw_paperless_enabled is true.
+  no_log: true
+  when: openclaw_paperless_enabled | bool
+
 - name: validate | Home Assistant base settings when integration is enabled
   ansible.builtin.assert:
     that:
