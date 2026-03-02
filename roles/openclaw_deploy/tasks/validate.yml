@@ -337,6 +337,13 @@
           in (openclaw_calendar_account_map.keys() | map('lower') | list))
       - openclaw_calendar_default_duration_minutes | int > 0
       - openclaw_calendar_request_timeout_seconds | int > 0
+      - openclaw_calendar_read_parallelism | int > 0
+      - openclaw_calendar_read_parallelism | int <= 16
+      - openclaw_calendar_read_aggregate_timeout_seconds | int >= (openclaw_calendar_request_timeout_seconds | int)
+      - openclaw_calendar_health_state_path | string | trim | length > 0
+      - openclaw_calendar_container_health_state_path | string | trim | length > 0
+      - openclaw_calendar_auth_failure_window_seconds | int > 0
+      - openclaw_calendar_auth_failure_threshold | int > 0
       - openclaw_calendar_default_limit | int > 0
       - openclaw_calendar_max_limit | int >= (openclaw_calendar_default_limit | int)
       - openclaw_calendar_title_max_chars | int > 0

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 import types
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -50,10 +51,15 @@ def _write_config(tmp_path: Path, *, calendar_id: str = "family", writable: bool
                 "timezone": "Europe/Berlin",
                 "default_duration_minutes": 60,
                 "request_timeout_seconds": 10,
+                "read_parallelism": 4,
+                "read_aggregate_timeout_seconds": 20,
                 "default_limit": 10,
                 "max_limit": 25,
                 "title_max_chars": 180,
                 "location_max_chars": 140,
+                "health_state_path": str(tmp_path / "calendar_health_state.json"),
+                "auth_failure_window_seconds": 3600,
+                "auth_failure_threshold": 3,
                 "calendars": {
                     calendar_id: {
                         "display_name": "Family",
@@ -76,10 +82,15 @@ def _base_config():
         "timezone": "Europe/Berlin",
         "default_duration_minutes": 60,
         "request_timeout_seconds": 10,
+        "read_parallelism": 4,
+        "read_aggregate_timeout_seconds": 20,
         "default_limit": 10,
         "max_limit": 25,
         "title_max_chars": 180,
         "location_max_chars": 140,
+        "health_state_path": "/tmp/calendar_health_state.json",
+        "auth_failure_window_seconds": 3600,
+        "auth_failure_threshold": 3,
         "calendars": {
             "family": {
                 "id": "family",
@@ -226,6 +237,12 @@ def test_http_json_error_keeps_generic_message_for_other_412():
     err = handler._http_json_error(412, "delete for calendar 'family'")
     assert isinstance(err, handler.CalendarSkillError)
     assert "HTTP 412" in str(err)
+
+
+def test_http_json_error_maps_auth_to_access_denied_with_status():
+    err = handler._http_json_error(401, "REPORT for calendar 'family'")
+    assert isinstance(err, handler.CalendarAccessDenied)
+    assert err.status_code == 401
 
 
 def test_sanitize_text_truncates_and_normalizes_whitespace():
@@ -394,6 +411,106 @@ def test_collect_events_returns_partial_results_with_warning(monkeypatch):
     assert len(events) == 1
     assert len(warnings) == 1
     assert "Jochen" in warnings[0]
+
+
+def test_collect_events_records_auth_failure_state(monkeypatch, tmp_path):
+    config = _base_config()
+    config["health_state_path"] = str(tmp_path / "calendar_health_state.json")
+    config["calendars"]["jochen"] = {
+        "id": "jochen",
+        "display_name": "Jochen",
+        "url": "https://caldav.example.test/jochen",
+        "username": "jochen@example.com",
+        "password": "secret",
+        "read": True,
+        "write": False,
+    }
+
+    start = datetime(2026, 3, 2, 14, 0, tzinfo=timezone.utc)
+    end = datetime(2026, 3, 2, 15, 0, tzinfo=timezone.utc)
+
+    def _fake_fetch(**kwargs):
+        calendar = kwargs["calendar"]
+        if calendar["id"] == "jochen":
+            raise handler.CalendarAccessDenied(
+                "Calendar authentication failed.", status_code=401
+            )
+        return [
+            {
+                "uid": "event-1",
+                "summary": "Family time",
+                "location": "",
+                "start": start,
+                "end": end,
+                "all_day": False,
+                "calendar_id": "family",
+                "calendar_display_name": "Family",
+            }
+        ]
+
+    monkeypatch.setattr(handler, "_fetch_calendar_events", _fake_fetch)
+    events, warnings = handler._collect_events(
+        config=config,
+        range_start=start,
+        range_end=end,
+    )
+    assert len(events) == 1
+    assert any("authentication failed" in warning for warning in warnings)
+
+    state = json.loads(Path(config["health_state_path"]).read_text(encoding="utf-8"))
+    assert state["threshold"] == config["auth_failure_threshold"]
+    assert state["window_seconds"] == config["auth_failure_window_seconds"]
+    assert len(state["calendars"]["jochen"]["auth_failure_epochs"]) == 1
+    assert state["calendars"]["jochen"]["last_status_code"] == 401
+
+
+def test_collect_events_warns_when_aggregate_timeout_hits(monkeypatch, tmp_path):
+    config = _base_config()
+    config["health_state_path"] = str(tmp_path / "calendar_health_state.json")
+    config["read_aggregate_timeout_seconds"] = 1
+    config["calendars"]["jochen"] = {
+        "id": "jochen",
+        "display_name": "Jochen",
+        "url": "https://caldav.example.test/jochen",
+        "username": "jochen@example.com",
+        "password": "secret",
+        "read": True,
+        "write": False,
+    }
+
+    start = datetime(2026, 3, 2, 14, 0, tzinfo=timezone.utc)
+    end = datetime(2026, 3, 2, 15, 0, tzinfo=timezone.utc)
+
+    def _fake_fetch(**kwargs):
+        calendar = kwargs["calendar"]
+        if calendar["id"] == "jochen":
+            time.sleep(2.0)
+            return []
+        return [
+            {
+                "uid": "event-1",
+                "summary": "Family time",
+                "location": "",
+                "start": start,
+                "end": end,
+                "all_day": False,
+                "calendar_id": "family",
+                "calendar_display_name": "Family",
+            }
+        ]
+
+    monkeypatch.setattr(handler, "_fetch_calendar_events", _fake_fetch)
+    started = time.monotonic()
+    events, warnings = handler._collect_events(
+        config=config,
+        range_start=start,
+        range_end=end,
+    )
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 1.8
+    assert len(events) == 1
+    assert any("timed out for this request (aggregate timeout 1s)" in warning for warning in warnings)
 
 
 def test_create_event_denies_non_writable_calendar(tmp_path):

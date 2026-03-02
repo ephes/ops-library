@@ -86,10 +86,15 @@
       timezone: "{{ openclaw_calendar_timezone | string | trim }}"
       default_duration_minutes: "{{ openclaw_calendar_default_duration_minutes | int }}"
       request_timeout_seconds: "{{ openclaw_calendar_request_timeout_seconds | int }}"
+      read_parallelism: "{{ openclaw_calendar_read_parallelism | int }}"
+      read_aggregate_timeout_seconds: "{{ openclaw_calendar_read_aggregate_timeout_seconds | int }}"
       default_limit: "{{ openclaw_calendar_default_limit | int }}"
       max_limit: "{{ openclaw_calendar_max_limit | int }}"
       title_max_chars: "{{ openclaw_calendar_title_max_chars | int }}"
       location_max_chars: "{{ openclaw_calendar_location_max_chars | int }}"
+      health_state_path: "{{ openclaw_calendar_container_health_state_path | string | trim }}"
+      auth_failure_window_seconds: "{{ openclaw_calendar_auth_failure_window_seconds | int }}"
+      auth_failure_threshold: "{{ openclaw_calendar_auth_failure_threshold | int }}"
       calendars: "{{ _openclaw_calendar_map_resolved }}"
   no_log: true
 
@@ -100,6 +105,17 @@
     owner: "1000"
     group: "1000"
     mode: "0600"
+  no_log: true
+  notify: restart openclaw
+
+- name: calendar | Ensure health-state file exists
+  ansible.builtin.copy:
+    content: "{}\n"
+    dest: "{{ openclaw_calendar_health_state_path }}"
+    owner: "1000"
+    group: "1000"
+    mode: "0600"
+    force: false
   no_log: true
   notify: restart openclaw
 

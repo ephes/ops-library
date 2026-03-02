@@ -254,7 +254,9 @@ Safety guarantees:
 - Recurring-event reads/free-time checks use CalDAV expansion for occurrence-correct results.
 - Event creation uses UTC timestamps (`DTSTART/DTEND ...Z`) to avoid timezone-component interoperability issues.
 - iCalendar lines are folded to RFC-friendly lengths for better CalDAV compatibility.
-- Read commands degrade gracefully: if one calendar fails, results from healthy calendars are still returned with warnings.
+- Read commands use bounded parallelism with explicit aggregate timeout handling.
+- Read commands degrade gracefully: if one calendar fails/times out, results from healthy calendars are still returned with warnings.
+- CalDAV `401/403` responses are tracked in a bounded health-state cache for operational alerting.
 - Bounded output and strict datetime/date validation.
 - Sanitized operational errors (no credential leakage).
 
@@ -275,10 +277,16 @@ Safety guarantees:
 | `openclaw_calendar_map` | `{}` | Calendar map (`id -> {display_name?, url, account?, username?, password?, read?, write?}`) |
 | `openclaw_calendar_default_duration_minutes` | `60` | Default duration for `/calendar free` and `/calendar create` |
 | `openclaw_calendar_request_timeout_seconds` | `10` | CalDAV request timeout |
+| `openclaw_calendar_read_parallelism` | `4` | Max concurrent per-calendar read requests for `today/on/week/free` |
+| `openclaw_calendar_read_aggregate_timeout_seconds` | `20` | Aggregate timeout for multi-calendar read fan-out |
 | `openclaw_calendar_default_limit` | `10` | Default list limit for `today/on` output |
 | `openclaw_calendar_max_limit` | `25` | Maximum list limit for `today/on` output |
 | `openclaw_calendar_title_max_chars` | `180` | Max rendered/stored title chars |
 | `openclaw_calendar_location_max_chars` | `140` | Max rendered location chars |
+| `openclaw_calendar_health_state_path` | `{{ openclaw_data_dir }}/credentials/calendar_health_state.json` | Host path for sanitized calendar auth-failure health cache (`0600`) |
+| `openclaw_calendar_container_health_state_path` | `/home/node/.openclaw/credentials/calendar_health_state.json` | Container path for calendar auth-failure health cache |
+| `openclaw_calendar_auth_failure_window_seconds` | `3600` | Rolling window used to count recent calendar auth failures |
+| `openclaw_calendar_auth_failure_threshold` | `3` | Threshold for repeated calendar auth failures in the rolling window |
 
 Credential resolution order for each `openclaw_calendar_map` entry:
 
@@ -422,6 +430,8 @@ Designed for Nyxmon `json-metrics` checks, for example:
 - `$.openclaw.collector_ok == true`
 - `$.openclaw.health.ok == true`
 - `$.openclaw.channels.telegram.running == true`
+- `$.openclaw.calendar.auth.has_repeated_failures == false`
+- `$.openclaw.calendar.auth.has_recent_failures == false`
 - `$.meta.age_seconds < 600`
 - `$.openclaw.synthetic.canary.last_run.ok == true` (synthetic check)
 

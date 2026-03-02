@@ -69,6 +69,19 @@ def build_payload() -> dict[str, Any]:
                     "last_error": None,
                 }
             },
+            "calendar": {
+                "auth": {
+                    "enabled": False,
+                    "window_seconds": 0,
+                    "threshold": 0,
+                    "total_recent_failures": 0,
+                    "calendars_with_recent_failures": 0,
+                    "has_recent_failures": False,
+                    "has_repeated_failures": False,
+                    "last_failure_at": None,
+                    "recent_failures": [],
+                }
+            },
             "synthetic": {
                 "canary": {
                     "enabled": False,
@@ -165,6 +178,93 @@ def save_json_atomic(path: str, payload: dict[str, Any], mode: int | None = None
     os.replace(tmp_path, path)
     if mode is not None:
         os.chmod(path, mode)
+
+
+def apply_calendar_auth_health(args: argparse.Namespace, payload: dict[str, Any]) -> None:
+    auth = payload["openclaw"]["calendar"]["auth"]
+    auth["enabled"] = bool(args.calendar_auth_enabled)
+    auth["window_seconds"] = int(args.calendar_auth_window_seconds)
+    auth["threshold"] = int(args.calendar_auth_failure_threshold)
+    if not auth["enabled"]:
+        return
+
+    now_epoch = int(time.time())
+    threshold_epoch = now_epoch - int(args.calendar_auth_window_seconds)
+
+    try:
+        with open(args.calendar_health_state_path, "r", encoding="utf-8") as handle:
+            state = json.load(handle)
+    except FileNotFoundError:
+        state = {}
+    except (OSError, json.JSONDecodeError):
+        payload["openclaw"]["collector_ok"] = False
+        payload["openclaw"]["collector_errors"].append(
+            "calendar auth health state is unreadable"
+        )
+        return
+
+    calendars = state.get("calendars", {}) if isinstance(state, dict) else {}
+    if not isinstance(calendars, dict):
+        payload["openclaw"]["collector_ok"] = False
+        payload["openclaw"]["collector_errors"].append(
+            "calendar auth health state has invalid shape"
+        )
+        return
+
+    recent_failures: list[dict[str, Any]] = []
+    latest_epoch = 0
+    latest_iso: str | None = None
+
+    for calendar_id in sorted(calendars.keys()):
+        raw_item = calendars.get(calendar_id)
+        if not isinstance(raw_item, dict):
+            continue
+        raw_epochs = raw_item.get("auth_failure_epochs", [])
+        if not isinstance(raw_epochs, list):
+            continue
+
+        valid_epochs: list[int] = []
+        for raw_epoch in raw_epochs:
+            try:
+                epoch = int(raw_epoch)
+            except (TypeError, ValueError):
+                continue
+            if epoch >= threshold_epoch:
+                valid_epochs.append(epoch)
+
+        if not valid_epochs:
+            continue
+
+        last_failure_epoch = max(valid_epochs)
+        last_failure_iso = datetime.fromtimestamp(
+            last_failure_epoch, tz=timezone.utc
+        ).isoformat()
+        if last_failure_epoch > latest_epoch:
+            latest_epoch = last_failure_epoch
+            latest_iso = last_failure_iso
+
+        recent_failures.append(
+            {
+                "calendar_id": calendar_id,
+                "display_name": str(raw_item.get("display_name") or calendar_id),
+                "recent_auth_failures": len(valid_epochs),
+                "last_failure_at": last_failure_iso,
+                "last_status_code": int(raw_item.get("last_status_code") or 0),
+            }
+        )
+
+    auth["recent_failures"] = recent_failures
+    auth["total_recent_failures"] = sum(
+        int(item.get("recent_auth_failures") or 0) for item in recent_failures
+    )
+    auth["calendars_with_recent_failures"] = len(recent_failures)
+    auth["has_recent_failures"] = bool(recent_failures)
+    auth["has_repeated_failures"] = any(
+        int(item.get("recent_auth_failures") or 0)
+        >= int(args.calendar_auth_failure_threshold)
+        for item in recent_failures
+    )
+    auth["last_failure_at"] = latest_iso
 
 
 def run_synthetic_canary(args: argparse.Namespace, payload: dict[str, Any]) -> None:
@@ -305,6 +405,29 @@ def main() -> int:
         help="Timeout in seconds for each OpenClaw command",
     )
     parser.add_argument(
+        "--calendar-auth-enabled",
+        type=int,
+        default={{ 1 if (openclaw_calendar_enabled | bool) else 0 }},
+        help="Enable calendar auth-failure health signals",
+    )
+    parser.add_argument(
+        "--calendar-health-state-path",
+        default={{ openclaw_calendar_health_state_path | to_json }},
+        help="Path to calendar auth health-state cache",
+    )
+    parser.add_argument(
+        "--calendar-auth-window-seconds",
+        type=int,
+        default={{ openclaw_calendar_auth_failure_window_seconds }},
+        help="Window in seconds for recent calendar auth-failure counts",
+    )
+    parser.add_argument(
+        "--calendar-auth-failure-threshold",
+        type=int,
+        default={{ openclaw_calendar_auth_failure_threshold }},
+        help="Threshold for repeated calendar auth failures",
+    )
+    parser.add_argument(
         "--synthetic-canary-enabled",
         type=int,
         default={{ 1 if (openclaw_metrics_endpoint_synthetic_canary_enabled | bool) else 0 }},
@@ -415,6 +538,12 @@ def main() -> int:
     except Exception as err:  # noqa: BLE001
         openclaw["collector_ok"] = False
         openclaw["collector_errors"].append(str(err))
+
+    try:
+        apply_calendar_auth_health(args, payload)
+    except Exception as err:  # noqa: BLE001
+        openclaw["collector_ok"] = False
+        openclaw["collector_errors"].append(f"calendar auth collector error: {err}")
 
     try:
         run_synthetic_canary(args, payload)

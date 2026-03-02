@@ -9,6 +9,10 @@ ExecStart=/usr/bin/python3 {{ openclaw_metrics_endpoint_collector_path }} \
   --container {{ openclaw_metrics_endpoint_container_name }} \
   --output {{ openclaw_metrics_endpoint_json_path }} \
   --command-timeout {{ openclaw_metrics_endpoint_command_timeout }} \
+  --calendar-auth-enabled {{ 1 if (openclaw_calendar_enabled | bool) else 0 }} \
+  --calendar-health-state-path {{ openclaw_calendar_health_state_path | quote }} \
+  --calendar-auth-window-seconds {{ openclaw_calendar_auth_failure_window_seconds }} \
+  --calendar-auth-failure-threshold {{ openclaw_calendar_auth_failure_threshold }} \
   --synthetic-canary-enabled {{ 1 if (openclaw_metrics_endpoint_synthetic_canary_enabled | bool) else 0 }} \
   --synthetic-canary-agent {{ openclaw_metrics_endpoint_synthetic_canary_agent | quote }} \
   --synthetic-canary-message {{ openclaw_metrics_endpoint_synthetic_canary_message | quote }} \
