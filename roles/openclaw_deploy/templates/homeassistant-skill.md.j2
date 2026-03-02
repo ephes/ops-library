@@ -19,11 +19,26 @@ User input is everything after `/{{ openclaw_homeassistant_command_skill_name }}
 
 ## Execution Rules
 
-Always execute exactly one command:
+Execute via the Home Assistant handler:
 
 ```bash
 {{ openclaw_homeassistant_container_skills_dir }}/{{ openclaw_homeassistant_skill_name }}/handler.py <raw-user-input>
 ```
+
+You may execute multiple handler calls when needed (for example: discover candidates, then execute actions).
+
+When the user gives a natural-language request (for example "alle Lampen im Wintergarten ausmachen"):
+
+1. Discover candidates first with:
+   - `list --domain light --limit 200`
+2. Match using both:
+   - `entity_id`
+   - friendly name shown in list output
+3. Prefer room-group light entities when present (for example `light.wintergarten`).
+4. Execute `turn_on`/`turn_off` for the matched target(s).
+5. Do not claim "no matching lights" unless step 1 was run in the same turn.
+
+When the user already provides exact entity IDs, act directly without discovery.
 
 When no input is provided, return:
 

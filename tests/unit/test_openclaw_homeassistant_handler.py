@@ -249,3 +249,89 @@ def test_no_redirect_handler_rejects_redirect_request():
         no_redirect.redirect_request(req, None, 302, "Found", {}, "https://example.invalid")
         is None
     )
+
+
+def test_list_domain_without_limit_uses_max_limit(monkeypatch, capsys):
+    monkeypatch.setattr(
+        handler,
+        "_load_config",
+        lambda _path: {
+            "base_url": "http://ha.local",
+            "token": "test-token",
+            "allow_domains": ["light"],
+            "allow_entities": [],
+            "allow_write_domains": [],
+            "allow_write_entities": [],
+            "request_timeout_seconds": 8,
+            "default_limit": 10,
+            "max_limit": 25,
+            "state_max_chars": 200,
+            "friendly_name_max_chars": 120,
+            "attribute_max_items": 8,
+            "attribute_value_max_chars": 120,
+        },
+    )
+
+    states = [
+        {
+            "entity_id": f"light.item_{idx:02d}",
+            "state": "on",
+            "attributes": {"friendly_name": f"Light {idx:02d}"},
+        }
+        for idx in range(30)
+    ]
+    monkeypatch.setattr(handler, "_ha_get_json", lambda *args, **kwargs: states)
+    monkeypatch.setattr(
+        handler.sys,
+        "argv",
+        ["homeassistant-read-handler.py", "list", "--domain", "light"],
+    )
+
+    result = handler.main()
+    output = capsys.readouterr().out
+
+    assert result == 0
+    assert "Allowed entities: showing 25 of 30 (domain=light)" in output
+
+
+def test_list_domain_with_explicit_limit_respects_user_limit(monkeypatch, capsys):
+    monkeypatch.setattr(
+        handler,
+        "_load_config",
+        lambda _path: {
+            "base_url": "http://ha.local",
+            "token": "test-token",
+            "allow_domains": ["light"],
+            "allow_entities": [],
+            "allow_write_domains": [],
+            "allow_write_entities": [],
+            "request_timeout_seconds": 8,
+            "default_limit": 10,
+            "max_limit": 25,
+            "state_max_chars": 200,
+            "friendly_name_max_chars": 120,
+            "attribute_max_items": 8,
+            "attribute_value_max_chars": 120,
+        },
+    )
+
+    states = [
+        {
+            "entity_id": f"light.item_{idx:02d}",
+            "state": "on",
+            "attributes": {"friendly_name": f"Light {idx:02d}"},
+        }
+        for idx in range(30)
+    ]
+    monkeypatch.setattr(handler, "_ha_get_json", lambda *args, **kwargs: states)
+    monkeypatch.setattr(
+        handler.sys,
+        "argv",
+        ["homeassistant-read-handler.py", "list", "--domain", "light", "--limit", "7"],
+    )
+
+    result = handler.main()
+    output = capsys.readouterr().out
+
+    assert result == 0
+    assert "Allowed entities: showing 7 of 30 (domain=light)" in output

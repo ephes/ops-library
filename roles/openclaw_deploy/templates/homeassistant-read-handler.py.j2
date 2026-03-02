@@ -368,7 +368,7 @@ def _format_action_output(action: str, entity_id: str, response: Any) -> str:
     return "\n".join(lines)
 
 
-def _build_parser(default_limit: int) -> argparse.ArgumentParser:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(add_help=False)
     subparsers = parser.add_subparsers(dest="command")
 
@@ -377,7 +377,7 @@ def _build_parser(default_limit: int) -> argparse.ArgumentParser:
 
     list_parser = subparsers.add_parser("list", add_help=False)
     list_parser.add_argument("--domain", dest="domain", default="")
-    list_parser.add_argument("--limit", dest="limit", type=int, default=default_limit)
+    list_parser.add_argument("--limit", dest="limit", type=int, default=None)
 
     turn_on_parser = subparsers.add_parser("turn_on", add_help=False)
     turn_on_parser.add_argument("entity_id")
@@ -396,7 +396,7 @@ def main() -> int:
 
     try:
         config = _load_config(CREDENTIALS_PATH)
-        parser = _build_parser(config["default_limit"])
+        parser = _build_parser()
         try:
             args = parser.parse_args(argv)
         except SystemExit:
@@ -441,6 +441,10 @@ def main() -> int:
                     raise HAAccessDenied(f"Domain '{domain_filter}' is not allowlisted.")
 
             limit = _bounded_limit(args.limit, config["default_limit"], config["max_limit"])
+            # Domain-scoped listing is usually used for discovery in natural-language room/device
+            # requests, so default to max_limit unless user explicitly sets --limit.
+            if domain_filter and args.limit is None:
+                limit = config["max_limit"]
             states = _ha_get_json(
                 base_url=config["base_url"],
                 token=config["token"],
