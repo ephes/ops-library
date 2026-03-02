@@ -169,6 +169,10 @@ Safety guarantees:
 - Body formatting supports real newlines and escaped `\n`/`\r\n` sequences in `/mail send --body`.
 - Strict recipient/address validation with newline/header-injection rejection.
 - Bounded recipients/subject/body lengths with explicit limits.
+- SMTP body normalization handles common shell/LLM artifacts in `--body`, including:
+  - shell-quoted wrappers (`$'...'` / `$"..."`),
+  - escaped newline/tab tokens (`\n`, `\r`, `\t`),
+  - mixed payloads with both escaped tokens and real newlines.
 - Sender identity is account-configured only: optional `from_name` and `reply_to` are static per account
   (not user-provided at command time).
 - SMTP success confirms handoff acceptance to the configured relay/MTA; final inbox placement depends on

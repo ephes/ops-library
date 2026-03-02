@@ -324,49 +324,44 @@ def _normalize_mail_header(value: str, field_name: str, max_chars: int) -> str:
     return normalized
 
 
+def _strip_body_shell_wrapper(value: str) -> str:
+    if len(value) >= 3 and value[0] == "$" and value[1] in {"'", '"'} and value[-1] == value[1]:
+        return value[2:-1]
+    return value
+
+
+def _decode_mail_body_escapes(value: str) -> str:
+    decoded = re.sub(r"(?<!\\)\\r\\n", "\n", value)
+    decoded = re.sub(r"(?<!\\)\\n", "\n", decoded)
+    decoded = re.sub(r"(?<!\\)\\r", "\n", decoded)
+    decoded = re.sub(r"(?<!\\)\\t", "\t", decoded)
+    return decoded
+
+
 def _normalize_mail_body(value: str) -> str:
     normalized = (value or "").strip()
     if not normalized:
         raise MailSkillError("Body cannot be empty.")
-    # Decode common escaped sequences produced by slash-command clients/LLMs.
-    # Unknown escapes are left unchanged.
-    if "\\" in normalized:
-        decoded: List[str] = []
-        i = 0
-        while i < len(normalized):
-            ch = normalized[i]
-            if ch != "\\" or i + 1 >= len(normalized):
-                decoded.append(ch)
-                i += 1
-                continue
-
-            nxt = normalized[i + 1]
-            if nxt == "n":
-                decoded.append("\n")
-                i += 2
-                continue
-            if nxt == "r":
-                if i + 2 < len(normalized) and normalized[i + 2] == "n":
-                    i += 3
-                else:
-                    i += 2
-                decoded.append("\n")
-                continue
-            if nxt == "t":
-                decoded.append("\t")
-                i += 2
-                continue
-            if nxt == "\\":
-                decoded.append("\\")
-                i += 2
-                continue
-
-            decoded.append("\\")
-            decoded.append(nxt)
-            i += 2
-
-        normalized = "".join(decoded)
+    normalized = _strip_body_shell_wrapper(normalized)
     normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
+    has_escape_tokens = any(token in normalized for token in ("\\n", "\\r", "\\t"))
+    has_shell_artifact_prefix = (
+        has_escape_tokens
+        and normalized.startswith("$")
+        and len(normalized) > 1
+        and normalized[1].isalpha()
+    )
+    if has_shell_artifact_prefix:
+        # Guard against shell-style artifact like "$Hello\\n\\nWorld", including
+        # mixed payloads that already contain at least one real newline.
+        normalized = normalized[1:]
+        normalized = normalized.replace("\\\n", "\n")
+        normalized = _decode_mail_body_escapes(normalized)
+    elif has_escape_tokens and "\n" not in normalized:
+        normalized = _decode_mail_body_escapes(normalized)
+    normalized = normalized.strip()
+    if not normalized:
+        raise MailSkillError("Body cannot be empty.")
     if len(normalized) > SMTP_BODY_MAX_CHARS:
         raise MailSkillError(f"Body too long (max {SMTP_BODY_MAX_CHARS} chars).")
     if re.search(r"[\x00-\x08\x0b-\x1f\x7f]", normalized):
