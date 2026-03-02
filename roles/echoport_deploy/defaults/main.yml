@@ -33,6 +33,7 @@ echoport_allowed_path_prefixes:
   - "/home/"
   - "/opt/"
   - "/var/lib/"
+  - "/mnt/cryptdata/"
 
 # Django settings
 echoport_django_settings_module: "config.settings.production"
