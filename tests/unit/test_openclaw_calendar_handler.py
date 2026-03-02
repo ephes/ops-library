@@ -467,7 +467,7 @@ def test_collect_events_records_auth_failure_state(monkeypatch, tmp_path):
 def test_collect_events_warns_when_aggregate_timeout_hits(monkeypatch, tmp_path):
     config = _base_config()
     config["health_state_path"] = str(tmp_path / "calendar_health_state.json")
-    config["read_aggregate_timeout_seconds"] = 1
+    config["read_aggregate_timeout_seconds"] = 2
     config["calendars"]["jochen"] = {
         "id": "jochen",
         "display_name": "Jochen",
@@ -484,7 +484,7 @@ def test_collect_events_warns_when_aggregate_timeout_hits(monkeypatch, tmp_path)
     def _fake_fetch(**kwargs):
         calendar = kwargs["calendar"]
         if calendar["id"] == "jochen":
-            time.sleep(2.0)
+            time.sleep(4.0)
             return []
         return [
             {
@@ -508,9 +508,9 @@ def test_collect_events_warns_when_aggregate_timeout_hits(monkeypatch, tmp_path)
     )
     elapsed = time.monotonic() - started
 
-    assert elapsed < 1.8
+    assert elapsed < 3.5
     assert len(events) == 1
-    assert any("timed out for this request (aggregate timeout 1s)" in warning for warning in warnings)
+    assert any("timed out for this request (aggregate timeout 2s)" in warning for warning in warnings)
 
 
 def test_create_event_denies_non_writable_calendar(tmp_path):

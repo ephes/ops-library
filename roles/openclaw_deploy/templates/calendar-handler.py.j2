@@ -837,9 +837,8 @@ def _collect_events(
             )
 
         all_futures = list(future_by_calendar_id.values())
-        done_futures, pending_futures = wait(all_futures, timeout=timeout_seconds)
+        _done_futures, pending_futures = wait(all_futures, timeout=timeout_seconds)
         pending_set = set(pending_futures)
-        done_set = set(done_futures)
 
         for future in pending_futures:
             future.cancel()
@@ -850,11 +849,6 @@ def _collect_events(
                 warnings.append(
                     f"Warning: calendar '{calendar['display_name']}' timed out for this request "
                     f"(aggregate timeout {timeout_seconds}s)."
-                )
-                continue
-            if future not in done_set:
-                warnings.append(
-                    f"Warning: calendar '{calendar['display_name']}' is unavailable for this request."
                 )
                 continue
 

@@ -256,6 +256,7 @@ Safety guarantees:
 - iCalendar lines are folded to RFC-friendly lengths for better CalDAV compatibility.
 - Read commands use bounded parallelism with explicit aggregate timeout handling.
 - Read commands degrade gracefully: if one calendar fails/times out, results from healthy calendars are still returned with warnings.
+- Aggregate timeout applies to fan-out coordination; effective wall time can exceed it by up to one per-calendar request timeout.
 - CalDAV `401/403` responses are tracked in a bounded health-state cache for operational alerting.
 - Bounded output and strict datetime/date validation.
 - Sanitized operational errors (no credential leakage).
