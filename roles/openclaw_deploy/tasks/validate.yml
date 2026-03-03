@@ -439,6 +439,9 @@
       - openclaw_paperless_container_health_state_path | string | trim | length > 0
       - openclaw_paperless_downloads_dir | string | trim | length > 0
       - openclaw_paperless_container_downloads_dir | string | trim | length > 0
+      - openclaw_paperless_session_state_path | string | trim | length > 0
+      - openclaw_paperless_container_session_state_path | string | trim | length > 0
+      - openclaw_paperless_session_target_max_age_seconds | int > 0
       - openclaw_paperless_search_timeout_seconds | int > 0
       - openclaw_paperless_download_timeout_seconds | int > 0
       - openclaw_paperless_delivery_timeout_seconds | int > 0

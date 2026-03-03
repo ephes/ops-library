@@ -12,7 +12,7 @@ import urllib.parse
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -29,6 +29,8 @@ USAGE_TEXT = (
 NUMERIC_ID_RE = re.compile(r"^-?\d+$")
 FILENAME_DISPOSITION_RE = re.compile(r"filename\*?\s*=\s*(\"[^\"]+\"|[^;]+)", re.IGNORECASE)
 SAFE_EXTENSION_RE = re.compile(r"^\.[A-Za-z0-9]{1,10}$")
+TELEGRAM_SLASH_SESSION_KEY_RE = re.compile(r"^telegram:slash:(-?\d+)$", re.IGNORECASE)
+TELEGRAM_AGENT_SESSION_KEY_RE = re.compile(r":telegram:(?:direct|group):(-?\d+)(?::|$)", re.IGNORECASE)
 MIME_EXTENSION_MAP = {
     "application/pdf": ".pdf",
     "image/jpeg": ".jpg",
@@ -188,6 +190,7 @@ def _load_config(path: str) -> Dict[str, Any]:
         raise PaperlessSkillError("Paperless integration limits are invalid.")
 
     downloads_dir = str(payload.get("downloads_dir", "")).strip()
+    session_state_path = str(payload.get("session_state_path", "")).strip()
     health_state_path = str(payload.get("health_state_path", "")).strip()
 
     if (
@@ -207,8 +210,16 @@ def _load_config(path: str) -> Dict[str, Any]:
         or auth_failure_window_seconds <= 0
         or auth_failure_threshold <= 0
         or not downloads_dir
+        or not session_state_path
         or not health_state_path
     ):
+        raise PaperlessSkillError("Paperless integration limits are invalid.")
+
+    try:
+        session_target_max_age_seconds = int(payload.get("session_target_max_age_seconds", 180))
+    except (TypeError, ValueError):
+        raise PaperlessSkillError("Paperless integration limits are invalid.")
+    if session_target_max_age_seconds <= 0:
         raise PaperlessSkillError("Paperless integration limits are invalid.")
 
     return {
@@ -227,6 +238,8 @@ def _load_config(path: str) -> Dict[str, Any]:
         "max_download_bytes": max_download_bytes,
         "download_chunk_bytes": download_chunk_bytes,
         "downloads_dir": downloads_dir,
+        "session_state_path": session_state_path,
+        "session_target_max_age_seconds": session_target_max_age_seconds,
         "health_state_path": health_state_path,
         "auth_failure_window_seconds": auth_failure_window_seconds,
         "auth_failure_threshold": auth_failure_threshold,
@@ -313,7 +326,152 @@ def _parse_json_from_mixed_output(raw_text: str) -> Dict[str, Any]:
     return parsed
 
 
-def _resolve_active_telegram_target() -> Optional[str]:
+def _extract_numeric_id_from_telegram_route(raw_value: Any) -> Optional[str]:
+    value = str(raw_value or "").strip()
+    if not value:
+        return None
+    if NUMERIC_ID_RE.fullmatch(value):
+        return value
+    parts = [part.strip() for part in value.split(":") if part.strip()]
+    if not parts or parts[0].lower() != "telegram":
+        return None
+    for part in parts[1:]:
+        if NUMERIC_ID_RE.fullmatch(part):
+            return part
+    return None
+
+
+def _extract_numeric_id_from_session_key(raw_key: Any) -> Optional[str]:
+    key = str(raw_key or "").strip()
+    if not key:
+        return None
+    slash_match = TELEGRAM_SLASH_SESSION_KEY_RE.fullmatch(key)
+    if slash_match:
+        return slash_match.group(1)
+    agent_match = TELEGRAM_AGENT_SESSION_KEY_RE.search(key)
+    if agent_match:
+        return agent_match.group(1)
+    return None
+
+
+def _session_entry_is_telegram(session_key: str, entry: Dict[str, Any]) -> bool:
+    key_text = str(session_key or "").strip().lower()
+    if "telegram" in key_text:
+        return True
+
+    origin = entry.get("origin", {})
+    if isinstance(origin, dict):
+        provider = str(origin.get("provider", "")).strip().lower()
+        surface = str(origin.get("surface", "")).strip().lower()
+        if provider == "telegram" or surface == "telegram":
+            return True
+        if _extract_numeric_id_from_telegram_route(origin.get("from")):
+            return True
+        if _extract_numeric_id_from_telegram_route(origin.get("to")):
+            return True
+
+    delivery = entry.get("deliveryContext", {})
+    if isinstance(delivery, dict):
+        channel = str(delivery.get("channel", "")).strip().lower()
+        if channel == "telegram":
+            return True
+        if _extract_numeric_id_from_telegram_route(delivery.get("to")):
+            return True
+
+    if str(entry.get("lastChannel", "")).strip().lower() == "telegram":
+        return True
+    if _extract_numeric_id_from_telegram_route(entry.get("lastTo")):
+        return True
+    return False
+
+
+def _resolve_telegram_target_from_session_state(config: Dict[str, Any]) -> Optional[str]:
+    session_state_path = str(config.get("session_state_path", "")).strip()
+    if not session_state_path:
+        return None
+    try:
+        max_age_seconds = int(config.get("session_target_max_age_seconds", 180))
+    except (TypeError, ValueError):
+        return None
+    if max_age_seconds <= 0:
+        return None
+
+    try:
+        raw = json.loads(Path(session_state_path).read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+
+    now_ms = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+    threshold_ms = now_ms - (max_age_seconds * 1000)
+
+    slash_ids: Set[str] = set()
+    route_ids: Set[str] = set()
+    saw_ambiguous_route_entry = False
+
+    for session_key, entry in raw.items():
+        if not isinstance(entry, dict):
+            continue
+        try:
+            updated_at = int(entry.get("updatedAt", 0))
+        except (TypeError, ValueError):
+            continue
+        if updated_at < threshold_ms:
+            continue
+
+        key_text = str(session_key or "").strip()
+        slash_match = TELEGRAM_SLASH_SESSION_KEY_RE.fullmatch(key_text)
+        if slash_match:
+            slash_ids.add(slash_match.group(1))
+            continue
+        if not _session_entry_is_telegram(key_text, entry):
+            continue
+
+        entry_ids: Set[str] = set()
+        key_id = _extract_numeric_id_from_session_key(key_text)
+        if key_id:
+            entry_ids.add(key_id)
+
+        origin = entry.get("origin", {})
+        if isinstance(origin, dict):
+            origin_id_from = _extract_numeric_id_from_telegram_route(origin.get("from"))
+            if origin_id_from:
+                entry_ids.add(origin_id_from)
+            origin_id_to = _extract_numeric_id_from_telegram_route(origin.get("to"))
+            if origin_id_to:
+                entry_ids.add(origin_id_to)
+
+        delivery = entry.get("deliveryContext", {})
+        if isinstance(delivery, dict):
+            delivery_id = _extract_numeric_id_from_telegram_route(delivery.get("to"))
+            if delivery_id:
+                entry_ids.add(delivery_id)
+
+        last_to_id = _extract_numeric_id_from_telegram_route(entry.get("lastTo"))
+        if last_to_id:
+            entry_ids.add(last_to_id)
+
+        if len(entry_ids) > 1:
+            # Keep the resolver fail-safe for route-derived targets without
+            # discarding potentially authoritative slash-session keys.
+            saw_ambiguous_route_entry = True
+            continue
+        if len(entry_ids) == 1:
+            route_ids.update(entry_ids)
+
+    if len(slash_ids) == 1:
+        return next(iter(slash_ids))
+    if len(slash_ids) > 1:
+        return None
+    if saw_ambiguous_route_entry:
+        return None
+    if len(route_ids) == 1:
+        return next(iter(route_ids))
+    return None
+
+
+def _resolve_active_telegram_target(config: Optional[Dict[str, Any]] = None) -> Optional[str]:
     context_keys = [
         "OPENCLAW_TOOL_CONTEXT",
         "OPENCLAW_CONTEXT",
@@ -378,6 +536,10 @@ def _resolve_active_telegram_target() -> Optional[str]:
         if value and NUMERIC_ID_RE.fullmatch(value):
             return value
 
+    if config:
+        session_target = _resolve_telegram_target_from_session_state(config)
+        if session_target and NUMERIC_ID_RE.fullmatch(session_target):
+            return session_target
     return None
 
 
@@ -755,7 +917,7 @@ def _handle_get(args: argparse.Namespace, config: Dict[str, Any]) -> str:
         return _render_large_file_fallback(document_meta, doc_url, config["max_download_bytes"])
 
     try:
-        target = _resolve_active_telegram_target()
+        target = _resolve_active_telegram_target(config=config)
         if not target:
             return _render_delivery_fallback(document_meta, doc_url, "active Telegram chat context missing")
 

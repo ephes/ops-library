@@ -317,7 +317,10 @@ Safety guarantees:
 - Download guardrails enforce Telegram upload cap behavior:
   - if `Content-Length` is known and exceeds cap, skip body download and return deterministic URL fallback;
   - if `Content-Length` is absent, stream with hard cap and abort deterministically when exceeded.
-- Delivery is constrained to active Telegram context target and falls back deterministically to Paperless URL when unavailable.
+- Delivery target resolution is bounded and deterministic:
+  - runtime invocation context/env (preferred),
+  - recent OpenClaw session-state target when uniquely resolvable,
+  - otherwise URL fallback with explicit reason.
 - `HTTP 401/403` auth failures are tracked in rolling-window health state for metrics/Nyxmon alerting.
 - Sanitized errors only (no token/header leakage).
 
@@ -349,6 +352,9 @@ Safety guarantees:
 | `openclaw_paperless_download_chunk_bytes` | `65536` | Stream chunk size used for capped downloads |
 | `openclaw_paperless_downloads_dir` | `{{ openclaw_data_dir }}/workspace/.paperless-downloads` | Host temp downloads directory for handler |
 | `openclaw_paperless_container_downloads_dir` | `/home/node/.openclaw/workspace/.paperless-downloads` | Container temp downloads directory used by handler |
+| `openclaw_paperless_session_state_path` | `{{ openclaw_data_dir }}/agents/main/sessions/sessions.json` | Host OpenClaw session-state JSON used for delivery-target fallback |
+| `openclaw_paperless_container_session_state_path` | `/home/node/.openclaw/agents/main/sessions/sessions.json` | Container path to OpenClaw session-state JSON used by handler |
+| `openclaw_paperless_session_target_max_age_seconds` | `180` | Max age for session-state target fallback candidates |
 | `openclaw_paperless_delivery_channel` | `telegram` | Delivery channel (fixed to Telegram) |
 | `openclaw_paperless_auth_failure_window_seconds` | `3600` | Rolling window used to count recent Paperless auth failures |
 | `openclaw_paperless_auth_failure_threshold` | `3` | Threshold for repeated Paperless auth failures in rolling window |

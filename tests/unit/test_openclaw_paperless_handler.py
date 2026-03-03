@@ -80,6 +80,8 @@ def _base_config(tmp_path: Path) -> dict:
         "max_download_bytes": 1024,
         "download_chunk_bytes": 128,
         "downloads_dir": str(tmp_path / "downloads"),
+        "session_state_path": str(tmp_path / "sessions.json"),
+        "session_target_max_age_seconds": 180,
         "health_state_path": str(tmp_path / "paperless_health_state.json"),
         "auth_failure_window_seconds": 3600,
         "auth_failure_threshold": 3,
@@ -251,6 +253,119 @@ def test_resolve_active_telegram_target_returns_none_when_missing(monkeypatch):
     for key in TARGET_CONTEXT_ENV_KEYS + TARGET_ID_ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
     assert handler._resolve_active_telegram_target() is None
+
+
+def test_resolve_active_telegram_target_from_recent_unique_slash_session(tmp_path, monkeypatch):
+    for key in TARGET_CONTEXT_ENV_KEYS + TARGET_ID_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+    config = _base_config(tmp_path)
+    now_ms = int(handler.datetime.now(tz=handler.timezone.utc).timestamp() * 1000)
+    sessions = {
+        "telegram:slash:304012876": {
+            "updatedAt": now_ms,
+            "origin": {"provider": "telegram", "to": "telegram:304012876"},
+        }
+    }
+    Path(config["session_state_path"]).write_text(json.dumps(sessions), encoding="utf-8")
+
+    assert handler._resolve_active_telegram_target(config=config) == "304012876"
+
+
+def test_resolve_active_telegram_target_returns_none_for_ambiguous_recent_slash_sessions(
+    tmp_path, monkeypatch
+):
+    for key in TARGET_CONTEXT_ENV_KEYS + TARGET_ID_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+    config = _base_config(tmp_path)
+    now_ms = int(handler.datetime.now(tz=handler.timezone.utc).timestamp() * 1000)
+    sessions = {
+        "telegram:slash:304012876": {"updatedAt": now_ms},
+        "telegram:slash:999999999": {"updatedAt": now_ms},
+    }
+    Path(config["session_state_path"]).write_text(json.dumps(sessions), encoding="utf-8")
+
+    assert handler._resolve_active_telegram_target(config=config) is None
+
+
+def test_resolve_active_telegram_target_ignores_stale_slash_sessions(tmp_path, monkeypatch):
+    for key in TARGET_CONTEXT_ENV_KEYS + TARGET_ID_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+    config = _base_config(tmp_path)
+    now_ms = int(handler.datetime.now(tz=handler.timezone.utc).timestamp() * 1000)
+    stale_ms = now_ms - ((config["session_target_max_age_seconds"] + 30) * 1000)
+    sessions = {
+        "telegram:slash:304012876": {"updatedAt": stale_ms},
+    }
+    Path(config["session_state_path"]).write_text(json.dumps(sessions), encoding="utf-8")
+
+    assert handler._resolve_active_telegram_target(config=config) is None
+
+
+def test_resolve_active_telegram_target_from_recent_unique_delivery_context(
+    tmp_path, monkeypatch
+):
+    for key in TARGET_CONTEXT_ENV_KEYS + TARGET_ID_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+    config = _base_config(tmp_path)
+    now_ms = int(handler.datetime.now(tz=handler.timezone.utc).timestamp() * 1000)
+    sessions = {
+        "agent:main:telegram:direct:304012876": {
+            "updatedAt": now_ms,
+            "origin": {"provider": "telegram", "to": "telegram:304012876"},
+            "deliveryContext": {"channel": "telegram", "to": "telegram:304012876"},
+        }
+    }
+    Path(config["session_state_path"]).write_text(json.dumps(sessions), encoding="utf-8")
+
+    assert handler._resolve_active_telegram_target(config=config) == "304012876"
+
+
+def test_resolve_active_telegram_target_prefers_unique_slash_over_ambiguous_route_entry(
+    tmp_path, monkeypatch
+):
+    for key in TARGET_CONTEXT_ENV_KEYS + TARGET_ID_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+    config = _base_config(tmp_path)
+    now_ms = int(handler.datetime.now(tz=handler.timezone.utc).timestamp() * 1000)
+    sessions = {
+        "telegram:slash:304012876": {
+            "updatedAt": now_ms,
+            "origin": {"provider": "telegram", "to": "telegram:304012876"},
+        },
+        "agent:main:telegram:direct:304012876": {
+            "updatedAt": now_ms,
+            "origin": {"provider": "telegram", "from": "telegram:111111", "to": "telegram:222222"},
+            "deliveryContext": {"channel": "telegram", "to": "telegram:304012876"},
+        },
+    }
+    Path(config["session_state_path"]).write_text(json.dumps(sessions), encoding="utf-8")
+
+    assert handler._resolve_active_telegram_target(config=config) == "304012876"
+
+
+def test_resolve_active_telegram_target_returns_none_for_ambiguous_route_entry_without_slash(
+    tmp_path, monkeypatch
+):
+    for key in TARGET_CONTEXT_ENV_KEYS + TARGET_ID_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+    config = _base_config(tmp_path)
+    now_ms = int(handler.datetime.now(tz=handler.timezone.utc).timestamp() * 1000)
+    sessions = {
+        "agent:main:telegram:direct:304012876": {
+            "updatedAt": now_ms,
+            "origin": {"provider": "telegram", "from": "telegram:111111", "to": "telegram:222222"},
+            "deliveryContext": {"channel": "telegram", "to": "telegram:304012876"},
+        },
+    }
+    Path(config["session_state_path"]).write_text(json.dumps(sessions), encoding="utf-8")
+
+    assert handler._resolve_active_telegram_target(config=config) is None
 
 
 def test_download_precheck_content_length_over_limit(tmp_path, monkeypatch):
@@ -443,7 +558,7 @@ def test_handle_get_falls_back_when_active_chat_target_missing(tmp_path, monkeyp
         "_download_document_with_cap",
         lambda **_kwargs: (downloaded, 5),
     )
-    monkeypatch.setattr(handler, "_resolve_active_telegram_target", lambda: None)
+    monkeypatch.setattr(handler, "_resolve_active_telegram_target", lambda **_kwargs: None)
 
     args = types.SimpleNamespace(document_id="10", original=False)
     output = handler._handle_get(args, config)
@@ -476,7 +591,7 @@ def test_handle_get_falls_back_when_send_fails(tmp_path, monkeypatch):
         "_download_document_with_cap",
         lambda **_kwargs: (downloaded, 5),
     )
-    monkeypatch.setattr(handler, "_resolve_active_telegram_target", lambda: "304012876")
+    monkeypatch.setattr(handler, "_resolve_active_telegram_target", lambda **_kwargs: "304012876")
     monkeypatch.setattr(
         handler,
         "_send_telegram_media",
@@ -546,7 +661,7 @@ def test_handle_get_success_output_is_deterministic(tmp_path, monkeypatch):
         "_download_document_with_cap",
         lambda **_kwargs: (downloaded, 5),
     )
-    monkeypatch.setattr(handler, "_resolve_active_telegram_target", lambda: "304012876")
+    monkeypatch.setattr(handler, "_resolve_active_telegram_target", lambda **_kwargs: "304012876")
     monkeypatch.setattr(handler, "_send_telegram_media", lambda **_kwargs: "777")
 
     args = types.SimpleNamespace(document_id="13", original=True)

@@ -19,6 +19,8 @@
       max_download_bytes: "{{ openclaw_paperless_max_download_bytes | int }}"
       download_chunk_bytes: "{{ openclaw_paperless_download_chunk_bytes | int }}"
       downloads_dir: "{{ openclaw_paperless_container_downloads_dir | trim }}"
+      session_state_path: "{{ openclaw_paperless_container_session_state_path | trim }}"
+      session_target_max_age_seconds: "{{ openclaw_paperless_session_target_max_age_seconds | int }}"
       delivery_channel: "{{ openclaw_paperless_delivery_channel | trim }}"
       health_state_path: "{{ openclaw_paperless_container_health_state_path | trim }}"
       auth_failure_window_seconds: "{{ openclaw_paperless_auth_failure_window_seconds | int }}"
