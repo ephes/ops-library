@@ -32,7 +32,7 @@
   register: opsgate_launchd_kickstart
   changed_when: opsgate_launchd_kickstart.rc == 0
   when:
-    - opsgate_launchd_start_services | bool
+    - opsgate_launchd_start_unit | bool
     - >-
       opsgate_launchd_template_changed | bool
       or opsgate_launchd_unit_status.rc != 0

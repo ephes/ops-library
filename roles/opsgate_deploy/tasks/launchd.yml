@@ -23,7 +23,8 @@
     opsgate_launchd_unit_label: "{{ opsgate_api_launchd_label }}"
     opsgate_launchd_unit_plist_path: "{{ opsgate_api_launchd_plist_path }}"
     opsgate_launchd_template_changed: "{{ opsgate_api_launchd_template.changed }}"
-  when: opsgate_launchd_manage_state | bool
+    opsgate_launchd_start_unit: "{{ opsgate_api_launchd_start_service | bool }}"
+  when: opsgate_api_launchd_manage_state | bool
 
 - name: launchd | Manage runner launchd state when enabled
   ansible.builtin.include_tasks: manage_launchd_unit.yml
@@ -31,4 +32,5 @@
     opsgate_launchd_unit_label: "{{ opsgate_runner_launchd_label }}"
     opsgate_launchd_unit_plist_path: "{{ opsgate_runner_launchd_plist_path }}"
     opsgate_launchd_template_changed: "{{ opsgate_runner_launchd_template.changed }}"
-  when: opsgate_launchd_manage_state | bool
+    opsgate_launchd_start_unit: "{{ opsgate_runner_launchd_start_service | bool }}"
+  when: opsgate_runner_launchd_manage_state | bool

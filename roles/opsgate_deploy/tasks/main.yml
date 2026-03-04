@@ -9,6 +9,12 @@
 - name: main | Ensure opsgate directory layout exists
   ansible.builtin.import_tasks: directories.yml
 
+- name: main | Sync OpsGate application source into control service home
+  ansible.builtin.import_tasks: app_source.yml
+
+- name: main | Install OpsGate runtime environment with uv
+  ansible.builtin.import_tasks: app_runtime.yml
+
 - name: main | Wire ops account credentials and git identity
   ansible.builtin.import_tasks: ops_credentials.yml
 

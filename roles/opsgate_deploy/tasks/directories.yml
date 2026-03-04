@@ -32,6 +32,8 @@
       mode: "0750"
     - path: "{{ opsgate_app_dir }}"
       mode: "0750"
+    - path: "{{ opsgate_state_dir }}"
+      mode: "0750"
 
 - name: directories | Ensure ops account directory layout exists
   ansible.builtin.file:

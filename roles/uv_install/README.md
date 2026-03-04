@@ -1,13 +1,14 @@
 # UV Install Role
 
-Install and manage the Astral uv package manager with proper self-update support.
+Install and manage the Astral uv package manager.
 
 ## Features
 
-- Installs uv to user's `.local/bin` directory (preserves self-update capability)
-- Creates system-wide symlinks for easy access
+- Installs uv into a configurable system path (default `/usr/local/bin`)
+- Supports explicit owner/group for cross-platform compatibility (`root:wheel` on macOS)
+- Optionally creates system-wide symlinks for compatibility
 - Supports updating existing installations
-- Verifies installation and self-update functionality
+- Verifies installation and basic functionality
 
 ## Requirements
 
@@ -20,14 +21,18 @@ Install and manage the Astral uv package manager with proper self-update support
 # Version to install (latest, or specific like "0.8.15")
 uv_version: latest
 
-# Installation directory (user's local bin)
-uv_install_dir: "/root/.local/bin"
+# Installation directory
+uv_install_dir: "/usr/local/bin"
+
+# File ownership for installed binaries
+uv_install_owner: "root"
+uv_install_group: "{{ 'wheel' if ansible_facts.os_family == 'Darwin' else 'root' }}"
 
 # System-wide symlink location
 uv_symlink_dir: "/usr/local/bin"
 
 # Whether to create system-wide symlinks
-uv_create_symlinks: true
+uv_create_symlinks: false
 
 # Whether to update if already installed
 uv_update_existing: true

@@ -1,0 +1,35 @@
+---
+- name: app_source | Verify local OpsGate source path exists
+  ansible.builtin.stat:
+    path: "{{ opsgate_source_path }}"
+  delegate_to: localhost
+  run_once: true
+  become: false
+  register: opsgate_source_path_stat
+
+- name: app_source | Validate local source path is a directory
+  ansible.builtin.assert:
+    that:
+      - opsgate_source_path_stat.stat.exists
+      - opsgate_source_path_stat.stat.isdir
+    fail_msg: "opsgate_source_path {{ opsgate_source_path }} does not exist or is not a directory."
+
+- name: app_source | Build rsync exclude options
+  ansible.builtin.set_fact:
+    opsgate_rsync_exclude_opts: "{{ opsgate_rsync_excludes | map('regex_replace', '^', '--exclude=') | list }}"
+
+- name: app_source | Sync local OpsGate source to target
+  ansible.posix.synchronize:
+    src: "{{ opsgate_source_path }}/"
+    dest: "{{ opsgate_app_dir }}/"
+    delete: true
+    rsync_opts: "{{ opsgate_rsync_exclude_opts }}"
+
+- name: app_source | Ensure synced app source ownership
+  ansible.builtin.file:
+    path: "{{ opsgate_app_dir }}"
+    state: directory
+    owner: "{{ control_service_user }}"
+    group: "{{ control_service_group }}"
+    mode: "0750"
+    recurse: true

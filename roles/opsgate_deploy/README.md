@@ -1,10 +1,6 @@
 # opsgate_deploy
 
-Bootstrap OpsGate Phase 1 runtime prerequisites on macOS (`launchd` host model).
-
-This role intentionally does not implement OpsGate application business logic (API or runner code).
-It establishes the account model, filesystem layout, environment wiring, tmux defaults, and launchd
-plist placeholders required for Phase 2/3 implementation.
+Deploy OpsGate on macOS (`launchd` host model) with the Phase 2 control service.
 
 ## What this role does
 
@@ -16,6 +12,8 @@ plist placeholders required for Phase 2/3 implementation.
   - `execution_data_dir` (default `{{ ops_home_dir }}/remediation`)
   - `tickets_dir` (default `{{ execution_data_dir }}/jobs`)
   - `session_artifacts_dir` (default `{{ execution_data_dir }}/sessions`)
+- Syncs local app source (`opsgate_source_path`) into `{{ opsgate_app_dir }}`
+- Installs runtime dependencies using `uv sync --frozen --no-dev`
 - Wires optional `ops` credentials (SSH private/public key, SOPS age key, GitHub token)
 - Renders API/runner env files under `/etc/opsgate`
 - Writes tmux defaults for the `ops` runner account
@@ -23,12 +21,16 @@ plist placeholders required for Phase 2/3 implementation.
   - `de.wersdoerfer.opsgate.api` as `control_service_user`
   - `de.wersdoerfer.opsgate.runner` as `ops`
 
-## Important Phase 1 defaults
+The runner daemon remains placeholder/stub in Phase 2; only API/UI is expected to be activated.
 
-- `opsgate_launchd_manage_state: false` (only renders plists unless enabled)
-- `opsgate_launchd_start_services: false` (prevents placeholder daemons from being started)
+## Important defaults
 
-This keeps Phase 1 safe while API/runner binaries are not implemented yet.
+- `opsgate_launchd_manage_state: false`
+- `opsgate_launchd_start_services: false`
+- `opsgate_api_launchd_manage_state: "{{ opsgate_launchd_manage_state }}"`
+- `opsgate_runner_launchd_manage_state: "{{ opsgate_launchd_manage_state }}"`
+- `opsgate_api_launchd_start_service: "{{ opsgate_launchd_start_services }}"`
+- `opsgate_runner_launchd_start_service: "{{ opsgate_launchd_start_services }}"`
 
 ## macOS runtime path note
 
@@ -52,20 +54,32 @@ ops_home_dir: "/Users/ops"
 execution_data_dir: "{{ ops_home_dir }}/remediation"
 tickets_dir: "{{ execution_data_dir }}/jobs"
 session_artifacts_dir: "{{ execution_data_dir }}/sessions"
+opsgate_source_path: "/Users/jochen/projects/opsgate"
+opsgate_uv_bin: "uv"
 
 opsgate_ui_password_bcrypt: "CHANGEME_BCRYPT_HASH"
 opsgate_submit_token_openclaw: "CHANGEME_OPENCLAW_SUBMIT_TOKEN"
 opsgate_submit_token_nyxmon: "CHANGEME_NYXMON_SUBMIT_TOKEN"
 opsgate_submit_token_operator: "CHANGEME_OPERATOR_SUBMIT_TOKEN"
 opsgate_runner_token: "CHANGEME_RUNNER_TOKEN"
+opsgate_session_secret: "CHANGEME_OPSGATE_SESSION_SECRET"
+opsgate_require_tailscale_context: true
+opsgate_allowed_cidrs:
+  - "127.0.0.1/32"
+  - "::1/128"
+  - "100.64.0.0/10"
+  - "fd7a:115c:a1e0::/48"
 
 opsgate_ops_ssh_private_key: ""
 opsgate_ops_age_private_key: ""
 opsgate_ops_github_username: ""
 opsgate_ops_github_token: ""
 
-opsgate_launchd_manage_state: false
-opsgate_launchd_start_services: false
+opsgate_launchd_manage_state: true
+opsgate_api_launchd_manage_state: true
+opsgate_runner_launchd_manage_state: false
+opsgate_api_launchd_start_service: true
+opsgate_runner_launchd_start_service: false
 ```
 
 See `defaults/main.yml` for the full variable reference.
@@ -73,9 +87,16 @@ See `defaults/main.yml` for the full variable reference.
 ## Example playbook
 
 ```yaml
-- name: Deploy OpsGate Phase 1 bootstrap
+- name: Deploy OpsGate control service (Phase 2)
   hosts: macstudio
   become: true
   roles:
     - role: local.ops_library.opsgate_deploy
+      vars:
+        opsgate_source_path: "/Users/jochen/projects/opsgate"
+        opsgate_launchd_manage_state: true
+        opsgate_api_launchd_manage_state: true
+        opsgate_runner_launchd_manage_state: false
+        opsgate_api_launchd_start_service: true
+        opsgate_runner_launchd_start_service: false
 ```

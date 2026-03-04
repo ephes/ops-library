@@ -117,8 +117,8 @@
     - name: Ensure uv binaries are owned by root and world-executable
       file:
         path: "{{ uv_install_dir }}/{{ item }}"
-        owner: root
-        group: root
+        owner: "{{ uv_install_owner }}"
+        group: "{{ uv_install_group }}"
         mode: '0755'
       loop:
         - uv

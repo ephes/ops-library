@@ -1,0 +1,26 @@
+---
+- name: app_runtime | Ensure uv is available for control service user
+  ansible.builtin.shell: >-
+    sudo -u {{ control_service_user }}
+    env HOME={{ control_service_home_dir }}
+    PATH={{ opsgate_launchd_path }}
+    {{ opsgate_uv_bin }} --version
+  args:
+    chdir: "{{ opsgate_app_dir }}"
+  changed_when: false
+
+- name: app_runtime | Sync OpsGate runtime dependencies with uv
+  ansible.builtin.shell: >-
+    sudo -u {{ control_service_user }}
+    env HOME={{ control_service_home_dir }}
+    PATH={{ opsgate_launchd_path }}
+    {{ opsgate_uv_bin }} sync --frozen --no-dev
+  args:
+    chdir: "{{ opsgate_app_dir }}"
+  register: opsgate_uv_sync
+  changed_when: >-
+    'Installed' in (opsgate_uv_sync.stdout | default(''))
+    or 'Prepared' in (opsgate_uv_sync.stdout | default(''))
+    or 'Removed' in (opsgate_uv_sync.stdout | default(''))
+    or 'Uninstalled' in (opsgate_uv_sync.stdout | default(''))
+    or 'Built' in (opsgate_uv_sync.stdout | default(''))

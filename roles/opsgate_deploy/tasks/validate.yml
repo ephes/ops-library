@@ -32,7 +32,15 @@
       - opsgate_app_dir | trim | length > 0
       - opsgate_config_dir | trim | length > 0
       - opsgate_log_dir | trim | length > 0
+      - opsgate_db_path | trim | length > 0
     fail_msg: "OpsGate path variables are incomplete."
+
+- name: validate | Ensure app deployment inputs are configured
+  ansible.builtin.assert:
+    that:
+      - opsgate_source_path | trim | length > 0
+      - opsgate_uv_bin | trim | length > 0
+    fail_msg: "OpsGate app deployment requires opsgate_source_path and opsgate_uv_bin."
 
 - name: validate | Ensure launchd labels and plist paths are set
   ansible.builtin.assert:
@@ -52,10 +60,12 @@
       - "'CHANGEME' not in opsgate_submit_token_nyxmon"
       - "'CHANGEME' not in opsgate_submit_token_operator"
       - "'CHANGEME' not in opsgate_runner_token"
+      - "'CHANGEME' not in opsgate_session_secret"
       - opsgate_submit_token_openclaw | trim | length >= 20
       - opsgate_submit_token_nyxmon | trim | length >= 20
       - opsgate_submit_token_operator | trim | length >= 20
       - opsgate_runner_token | trim | length >= 20
+      - opsgate_session_secret | trim | length >= 20
     fail_msg: >-
       OpsGate credentials still contain placeholder values. Provide real (or at least non-placeholder)
       bcrypt/token values via ops-control secrets before deployment.

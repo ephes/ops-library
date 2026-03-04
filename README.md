@@ -104,7 +104,7 @@ The table below links each published role to its dedicated documentation. Refer 
 | Bootstrap | [`shell_basics_deploy`](roles/shell_basics_deploy/README.md) | Install fish, modern CLI tools (btop, bmon, sysstat/iotop, tealdeer, eza), set shell/editor defaults, and keep chezmoi current from upstream. |
 | Bootstrap | [`docker_install`](roles/docker_install/README.md) | Install Docker Engine + Docker Compose v2 (plugin) from the official Docker apt repository. |
 | Bootstrap | [`dpkg_arch_remove`](roles/dpkg_arch_remove/README.md) | Remove foreign dpkg architectures (defaults to i386) and optionally purge packages. |
-| Bootstrap | [`opsgate_deploy`](roles/opsgate_deploy/README.md) | Bootstrap OpsGate Phase 1 on macOS: users, execution filesystem layout, tmux defaults, and launchd API/runner placeholders. |
+| Bootstrap | [`opsgate_deploy`](roles/opsgate_deploy/README.md) | Deploy OpsGate Phase 2 control service on macOS: API/UI app sync + uv runtime setup, launchd API daemon under `control_service_user`, runner kept as stub. |
 | Bootstrap | [`ollama_install`](roles/ollama_install/README.md) | Install Ollama on macOS via Homebrew and manage a launchd service. |
 | Bootstrap | [`uv_install`](roles/uv_install/README.md) | Install uv for Python environment management. |
 | Bootstrap | [`sops_dependencies`](roles/sops_dependencies/README.md) | Install age/SOPS prerequisites. |

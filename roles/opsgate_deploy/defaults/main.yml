@@ -33,6 +33,32 @@ opsgate_config_dir: "/etc/opsgate"
 opsgate_log_dir: "/var/log/opsgate"
 # Persistent runtime dir for macOS (avoid volatile /var/run tmpfs semantics).
 opsgate_runtime_dir: "/usr/local/var/opsgate/run"
+opsgate_state_dir: "{{ opsgate_runtime_dir }}/control"
+opsgate_db_path: "{{ opsgate_state_dir }}/opsgate.sqlite3"
+
+# Application deployment model (Phase 2)
+opsgate_source_path: ""
+opsgate_uv_bin: "uv"
+opsgate_rsync_excludes:
+  - ".git"
+  - ".venv"
+  - ".pytest_cache"
+  - ".mypy_cache"
+  - ".ruff_cache"
+  - "__pycache__"
+
+# API/UI runtime configuration
+opsgate_api_bind_host: "0.0.0.0"
+opsgate_api_bind_port: 8711
+opsgate_session_secret: "CHANGEME_OPSGATE_SESSION_SECRET"
+opsgate_ui_session_timeout_seconds: 28800
+opsgate_require_tailscale_context: true
+opsgate_allowed_cidrs:
+  - "127.0.0.1/32"
+  - "::1/128"
+  - "100.64.0.0/10"
+  - "fd7a:115c:a1e0::/48"
+opsgate_disable_file_path: "{{ execution_data_dir }}/.disabled"
 
 # Runner model defaults (Phase 1 placeholders for Phase 2 implementation)
 opsgate_runner_poll_interval_seconds: 5
@@ -41,6 +67,9 @@ opsgate_runner_stale_after_seconds: 120
 opsgate_max_parallel_jobs: 3
 opsgate_max_duration_seconds_default: 3600
 opsgate_policy_floor_require_reviewer_step: false
+opsgate_submit_policy_openclaw_require_reviewer_step: false
+opsgate_submit_policy_nyxmon_require_reviewer_step: false
+opsgate_submit_policy_operator_require_reviewer_step: true
 
 # API/UI bootstrap credentials and producer/runner tokens (wired via ops-control secrets)
 opsgate_ui_username: "opsgate-admin"
@@ -73,11 +102,13 @@ opsgate_launchd_path: "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:
 
 opsgate_api_launchd_label: "de.wersdoerfer.opsgate.api"
 opsgate_api_launchd_plist_path: "/Library/LaunchDaemons/{{ opsgate_api_launchd_label }}.plist"
+opsgate_api_launchd_manage_state: "{{ opsgate_launchd_manage_state }}"
+opsgate_api_launchd_start_service: "{{ opsgate_launchd_start_services }}"
 opsgate_api_program: "/usr/bin/env"
 opsgate_api_program_arguments:
   - bash
   - -lc
-  - "echo 'opsgate api placeholder (phase 1)' && sleep 3600"
+  - "cd {{ opsgate_app_dir }} && {{ opsgate_uv_bin }} run --no-sync python -m opsgate serve"
 opsgate_api_working_directory: "{{ opsgate_app_dir }}"
 opsgate_api_stdout_log: "{{ opsgate_log_dir }}/opsgate-api.log"
 opsgate_api_stderr_log: "{{ opsgate_log_dir }}/opsgate-api.err.log"
@@ -88,6 +119,8 @@ opsgate_api_environment:
 
 opsgate_runner_launchd_label: "de.wersdoerfer.opsgate.runner"
 opsgate_runner_launchd_plist_path: "/Library/LaunchDaemons/{{ opsgate_runner_launchd_label }}.plist"
+opsgate_runner_launchd_manage_state: "{{ opsgate_launchd_manage_state }}"
+opsgate_runner_launchd_start_service: "{{ opsgate_launchd_start_services }}"
 opsgate_runner_program: "/usr/bin/env"
 opsgate_runner_program_arguments:
   - bash
