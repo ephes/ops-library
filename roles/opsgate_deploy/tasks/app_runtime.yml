@@ -1,26 +1,66 @@
 ---
 - name: app_runtime | Ensure uv is available for control service user
   ansible.builtin.shell: >-
-    sudo -u {{ control_service_user }}
-    env HOME={{ control_service_home_dir }}
-    PATH={{ opsgate_launchd_path }}
+    sudo -u {{ control_service_user }} -H
+    env HOME={{ control_service_home_dir }} PATH={{ opsgate_launchd_path }}
     {{ opsgate_uv_bin }} --version
   args:
     chdir: "{{ opsgate_app_dir }}"
   changed_when: false
 
+- name: app_runtime | Ensure control service venv is writable before sync
+  ansible.builtin.file:
+    path: "{{ opsgate_app_dir }}/.venv"
+    state: directory
+    owner: "{{ control_service_user }}"
+    group: "{{ control_service_group }}"
+    mode: "0750"
+    recurse: true
+
 - name: app_runtime | Sync OpsGate runtime dependencies with uv
   ansible.builtin.shell: >-
-    sudo -u {{ control_service_user }}
-    env HOME={{ control_service_home_dir }}
-    PATH={{ opsgate_launchd_path }}
+    sudo -u {{ control_service_user }} -H
+    env HOME={{ control_service_home_dir }} PATH={{ opsgate_launchd_path }}
     {{ opsgate_uv_bin }} sync --frozen --no-dev
   args:
     chdir: "{{ opsgate_app_dir }}"
   register: opsgate_uv_sync
   changed_when: >-
-    'Installed' in (opsgate_uv_sync.stdout | default(''))
-    or 'Prepared' in (opsgate_uv_sync.stdout | default(''))
-    or 'Removed' in (opsgate_uv_sync.stdout | default(''))
-    or 'Uninstalled' in (opsgate_uv_sync.stdout | default(''))
-    or 'Built' in (opsgate_uv_sync.stdout | default(''))
+    'Installed' in ((opsgate_uv_sync.stdout | default('')) ~ (opsgate_uv_sync.stderr | default('')))
+    or 'Prepared' in ((opsgate_uv_sync.stdout | default('')) ~ (opsgate_uv_sync.stderr | default('')))
+    or 'Removed' in ((opsgate_uv_sync.stdout | default('')) ~ (opsgate_uv_sync.stderr | default('')))
+    or 'Uninstalled' in ((opsgate_uv_sync.stdout | default('')) ~ (opsgate_uv_sync.stderr | default('')))
+    or 'Built' in ((opsgate_uv_sync.stdout | default('')) ~ (opsgate_uv_sync.stderr | default('')))
+
+- name: app_runtime | Ensure uv is available for runner user
+  ansible.builtin.shell: >-
+    sudo -u {{ ops_user }} -H
+    env HOME={{ ops_home_dir }} PATH={{ opsgate_launchd_path }}
+    {{ opsgate_uv_bin }} --version
+  args:
+    chdir: "{{ opsgate_runner_app_dir }}"
+  changed_when: false
+
+- name: app_runtime | Ensure runner venv is writable before sync
+  ansible.builtin.file:
+    path: "{{ opsgate_runner_app_dir }}/.venv"
+    state: directory
+    owner: "{{ ops_user }}"
+    group: "{{ ops_group }}"
+    mode: "0750"
+    recurse: true
+
+- name: app_runtime | Sync runner dependencies with uv
+  ansible.builtin.shell: >-
+    sudo -u {{ ops_user }} -H
+    env HOME={{ ops_home_dir }} PATH={{ opsgate_launchd_path }}
+    {{ opsgate_uv_bin }} sync --frozen --no-dev
+  args:
+    chdir: "{{ opsgate_runner_app_dir }}"
+  register: opsgate_runner_uv_sync
+  changed_when: >-
+    'Installed' in ((opsgate_runner_uv_sync.stdout | default('')) ~ (opsgate_runner_uv_sync.stderr | default('')))
+    or 'Prepared' in ((opsgate_runner_uv_sync.stdout | default('')) ~ (opsgate_runner_uv_sync.stderr | default('')))
+    or 'Removed' in ((opsgate_runner_uv_sync.stdout | default('')) ~ (opsgate_runner_uv_sync.stderr | default('')))
+    or 'Uninstalled' in ((opsgate_runner_uv_sync.stdout | default('')) ~ (opsgate_runner_uv_sync.stderr | default('')))
+    or 'Built' in ((opsgate_runner_uv_sync.stdout | default('')) ~ (opsgate_runner_uv_sync.stderr | default('')))

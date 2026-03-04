@@ -57,6 +57,22 @@
 
       Or disable basic auth with: nyxmon_basic_auth_enabled: false
 
+- name: Validate OpsGate producer wiring
+  assert:
+    that:
+      - >-
+        (
+          (nyxmon_opsgate_submit_base_url | trim | length) == 0 and
+          (nyxmon_opsgate_submit_token | trim | length) == 0
+        ) or
+        (
+          (nyxmon_opsgate_submit_base_url | trim | length) > 0 and
+          (nyxmon_opsgate_submit_token | trim | length) >= 20
+        )
+    fail_msg: >-
+      OpsGate producer config is invalid. Set both nyxmon_opsgate_submit_base_url and
+      nyxmon_opsgate_submit_token (>=20 chars), or leave both empty to disable integration.
+
 - name: Setup user and directories
   include_tasks: user.yml
 

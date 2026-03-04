@@ -30,6 +30,7 @@
       - tickets_dir | trim | length > 0
       - session_artifacts_dir | trim | length > 0
       - opsgate_app_dir | trim | length > 0
+      - opsgate_runner_app_dir | trim | length > 0
       - opsgate_config_dir | trim | length > 0
       - opsgate_log_dir | trim | length > 0
       - opsgate_db_path | trim | length > 0
@@ -56,16 +57,20 @@
     that:
       - "'CHANGEME' not in opsgate_ui_password_bcrypt"
       - opsgate_ui_password_bcrypt is match('^\\$2[aby]\\$.+')
-      - "'CHANGEME' not in opsgate_submit_token_openclaw"
       - "'CHANGEME' not in opsgate_submit_token_nyxmon"
       - "'CHANGEME' not in opsgate_submit_token_operator"
       - "'CHANGEME' not in opsgate_runner_token"
       - "'CHANGEME' not in opsgate_session_secret"
-      - opsgate_submit_token_openclaw | trim | length >= 20
+      - >-
+        (opsgate_submit_token_openclaw | trim | length == 0) or
+        (
+          'CHANGEME' not in opsgate_submit_token_openclaw and
+          (opsgate_submit_token_openclaw | trim | length >= 20)
+        )
       - opsgate_submit_token_nyxmon | trim | length >= 20
       - opsgate_submit_token_operator | trim | length >= 20
       - opsgate_runner_token | trim | length >= 20
       - opsgate_session_secret | trim | length >= 20
     fail_msg: >-
       OpsGate credentials still contain placeholder values. Provide real (or at least non-placeholder)
-      bcrypt/token values via ops-control secrets before deployment.
+      bcrypt/token values via ops-control secrets before deployment. OpenClaw submit token is optional in Phase 4A.

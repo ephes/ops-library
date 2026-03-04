@@ -33,3 +33,19 @@
     group: "{{ control_service_group }}"
     mode: "0750"
     recurse: true
+
+- name: app_source | Sync local OpsGate source to runner target
+  ansible.posix.synchronize:
+    src: "{{ opsgate_source_path }}/"
+    dest: "{{ opsgate_runner_app_dir }}/"
+    delete: true
+    rsync_opts: "{{ opsgate_rsync_exclude_opts }}"
+
+- name: app_source | Ensure synced runner app source ownership
+  ansible.builtin.file:
+    path: "{{ opsgate_runner_app_dir }}"
+    state: directory
+    owner: "{{ ops_user }}"
+    group: "{{ ops_group }}"
+    mode: "0750"
+    recurse: true

@@ -29,6 +29,7 @@
     mode: "{{ item.mode }}"
   loop:
     - path: "{{ control_service_home_dir }}"
+      # Keep home private while still allowing group access for operational tasks.
       mode: "0750"
     - path: "{{ opsgate_app_dir }}"
       mode: "0750"
@@ -54,6 +55,8 @@
     - path: "{{ ops_home_dir }}/.config/sops/age"
       mode: "0700"
     - path: "{{ opsgate_ops_workspace_dir }}"
+      mode: "0750"
+    - path: "{{ opsgate_runner_app_dir }}"
       mode: "0750"
     - path: "{{ execution_data_dir }}"
       mode: "0750"

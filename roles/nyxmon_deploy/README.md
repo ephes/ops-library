@@ -36,6 +36,16 @@ nyxmon_telegram_chat_id: "your-chat-id"
 nyxmon_source_path: "/path/to/local/nyxmon"  # Required when nyxmon_deploy_method: rsync
 ```
 
+### Optional OpsGate Producer Integration (Phase 4A)
+
+Set these only when Nyxmon should create OpsGate tickets directly:
+
+```yaml
+nyxmon_opsgate_submit_base_url: "http://studio.tailde2ec.ts.net:8711"
+nyxmon_opsgate_submit_token: "{{ opsgate_secrets.submit_token_nyxmon }}"
+nyxmon_opsgate_approval_base_url: "http://studio.tailde2ec.ts.net:8711"
+```
+
 ### Common Configuration
 
 ```yaml

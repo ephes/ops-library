@@ -27,3 +27,10 @@
     system: true
     create_home: true
     state: present
+
+- name: users | Allow ops user to read control service app tree
+  ansible.builtin.user:
+    name: "{{ ops_user }}"
+    groups: "{{ control_service_group }}"
+    append: true
+    state: present

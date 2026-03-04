@@ -50,6 +50,14 @@ nyxmon_django_debug: false
 # nyxmon_telegram_bot_token: ""
 # nyxmon_telegram_chat_id: ""
 
+# Optional OpsGate producer integration (Phase 4A)
+nyxmon_opsgate_submit_base_url: ""
+nyxmon_opsgate_submit_token: ""
+nyxmon_opsgate_approval_base_url: "{{ nyxmon_opsgate_submit_base_url }}"
+nyxmon_opsgate_ticket_expires_seconds: 14400
+nyxmon_opsgate_submit_timeout_seconds: 10
+nyxmon_opsgate_submit_include_warnings: false
+
 # Traefik configuration
 nyxmon_traefik_enabled: true
 nyxmon_traefik_host: "nyxmon.example.com"  # Override in ops-control

@@ -3,30 +3,30 @@
 <plist version="1.0">
   <dict>
     <key>Label</key>
-    <string>{{ opsgate_api_launchd_label }}</string>
+    <string>{{ opsgate_api_launchd_label | e }}</string>
 
     <key>ProgramArguments</key>
     <array>
-      <string>{{ opsgate_api_program }}</string>
+      <string>{{ opsgate_api_program | e }}</string>
 {% for arg in opsgate_api_program_arguments %}
-      <string>{{ arg }}</string>
+      <string>{{ arg | e }}</string>
 {% endfor %}
     </array>
 
     <key>EnvironmentVariables</key>
     <dict>
 {% for key, value in opsgate_api_environment | dictsort %}
-      <key>{{ key }}</key>
-      <string>{{ value }}</string>
+      <key>{{ key | e }}</key>
+      <string>{{ value | e }}</string>
 {% endfor %}
     </dict>
 
     <key>UserName</key>
-    <string>{{ control_service_user }}</string>
+    <string>{{ control_service_user | e }}</string>
     <key>GroupName</key>
-    <string>{{ control_service_group }}</string>
+    <string>{{ control_service_group | e }}</string>
     <key>WorkingDirectory</key>
-    <string>{{ opsgate_api_working_directory }}</string>
+    <string>{{ opsgate_api_working_directory | e }}</string>
 
     <key>RunAtLoad</key>
     <true/>
@@ -38,8 +38,8 @@
 {% endif %}
 
     <key>StandardOutPath</key>
-    <string>{{ opsgate_api_stdout_log }}</string>
+    <string>{{ opsgate_api_stdout_log | e }}</string>
     <key>StandardErrorPath</key>
-    <string>{{ opsgate_api_stderr_log }}</string>
+    <string>{{ opsgate_api_stderr_log | e }}</string>
   </dict>
 </plist>
