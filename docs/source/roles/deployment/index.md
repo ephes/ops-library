@@ -8,6 +8,7 @@ Roles for deploying and configuring services.
 fastdeploy_deploy
 fastdeploy_self_deploy
 nyxmon_deploy
+graphyard_ingress_deploy
 traefik_deploy
 dns_deploy
 tailscale_deploy

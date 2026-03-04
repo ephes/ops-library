@@ -1,0 +1,146 @@
+---
+- name: Skip graphyard_ingress_deploy when disabled
+  ansible.builtin.debug:
+    msg: "graphyard_ingress_deploy skipped (graphyard_ingress_enabled=false)."
+  when: not graphyard_ingress_enabled | bool
+
+- name: Configure Graphyard + Grafana ingress
+  when: graphyard_ingress_enabled | bool
+  block:
+    - name: Validate required ingress variables
+      ansible.builtin.assert:
+        that:
+          - graphyard_ingress_graphyard_host | length > 0
+          - graphyard_ingress_graphyard_host != "graphyard.example.com"
+          - graphyard_ingress_grafana_host | length > 0
+          - graphyard_ingress_grafana_host != "grafana.example.com"
+          - graphyard_ingress_graphyard_backend_url | length > 0
+          - graphyard_ingress_grafana_backend_url | length > 0
+          - not graphyard_ingress_basic_auth_enabled or (
+              graphyard_ingress_basic_auth_password is defined and
+              graphyard_ingress_basic_auth_password | length > 0 and
+              graphyard_ingress_basic_auth_password != "CHANGEME"
+            )
+          - not graphyard_ingress_basic_auth_enabled or graphyard_ingress_internal_ip_ranges | length > 0
+          - not graphyard_ingress_manage_graphyard_env or graphyard_ingress_django_allowed_hosts | length > 0
+          - not graphyard_ingress_manage_graphyard_env or graphyard_ingress_django_csrf_trusted_origins | length > 0
+          - graphyard_ingress_django_admin_url | length == 0 or (
+              graphyard_ingress_django_admin_url.endswith('/') and
+              not graphyard_ingress_django_admin_url.startswith('/')
+            )
+        fail_msg: >-
+          Missing required graphyard_ingress_* configuration.
+          Ensure graphyard/grafana hosts, backend URLs, and (when enabled) basic auth password are set.
+          If graphyard_ingress_django_admin_url is set, use a relative path ending with '/' (example: admin/).
+
+    - name: Ensure Traefik dynamic config directory exists
+      ansible.builtin.file:
+        path: "{{ graphyard_ingress_traefik_config_path | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install apache2-utils for htpasswd
+      ansible.builtin.package:
+        name: apache2-utils
+        state: present
+      when:
+        - ansible_facts["os_family"] == "Debian"
+        - graphyard_ingress_basic_auth_enabled | bool
+
+    - name: Generate basic auth password hash
+      ansible.builtin.command:
+        argv:
+          - htpasswd
+          - -nBi
+          - "{{ graphyard_ingress_basic_auth_user }}"
+      args:
+        stdin: "{{ graphyard_ingress_basic_auth_password }}"
+      register: _graphyard_ingress_password_hash
+      changed_when: false
+      no_log: true
+      when: graphyard_ingress_basic_auth_enabled | bool
+
+    - name: Set basic auth password hash fact
+      ansible.builtin.set_fact:
+        graphyard_ingress_basic_auth_password_hash: "{{ _graphyard_ingress_password_hash.stdout.split(':', 1)[1] | trim }}"
+      no_log: true
+      when: graphyard_ingress_basic_auth_enabled | bool
+
+    - name: Render Traefik dynamic config for Graphyard stack
+      ansible.builtin.template:
+        src: traefik-graphyard.yml.j2
+        dest: "{{ graphyard_ingress_traefik_config_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      # Traefik file provider watches this directory and hot-reloads dynamic config.
+      # Avoid restarting Traefik to prevent brief edge downtime for unrelated services.
+
+    - name: Update Graphyard environment for reverse proxy hosts
+      when: graphyard_ingress_manage_graphyard_env | bool
+      block:
+        - name: Check Graphyard environment file
+          ansible.builtin.stat:
+            path: "{{ graphyard_ingress_env_path }}"
+          register: graphyard_ingress_env_stat
+
+        - name: Require Graphyard environment file when configured
+          ansible.builtin.assert:
+            that:
+              - graphyard_ingress_env_stat.stat.exists
+            fail_msg: >-
+              Graphyard environment file not found: {{ graphyard_ingress_env_path }}.
+              Set graphyard_ingress_manage_graphyard_env=false to skip this management.
+          when: graphyard_ingress_require_env_file | bool
+
+        - name: Set DJANGO_ALLOWED_HOSTS in Graphyard env
+          ansible.builtin.lineinfile:
+            path: "{{ graphyard_ingress_env_path }}"
+            regexp: "^DJANGO_ALLOWED_HOSTS="
+            line: "DJANGO_ALLOWED_HOSTS={{ graphyard_ingress_django_allowed_hosts | join(',') }}"
+            create: false
+            backup: true
+          when: graphyard_ingress_env_stat.stat.exists | default(false)
+          notify:
+            - restart graphyard web
+            - restart graphyard agent
+
+        - name: Set DJANGO_CSRF_TRUSTED_ORIGINS in Graphyard env
+          ansible.builtin.lineinfile:
+            path: "{{ graphyard_ingress_env_path }}"
+            regexp: "^DJANGO_CSRF_TRUSTED_ORIGINS="
+            line: "DJANGO_CSRF_TRUSTED_ORIGINS={{ graphyard_ingress_django_csrf_trusted_origins | join(',') }}"
+            create: false
+            backup: true
+          when: graphyard_ingress_env_stat.stat.exists | default(false)
+          notify:
+            - restart graphyard web
+            - restart graphyard agent
+
+        - name: Set GRAFANA_BASE_URL in Graphyard env
+          ansible.builtin.lineinfile:
+            path: "{{ graphyard_ingress_env_path }}"
+            regexp: "^GRAFANA_BASE_URL="
+            line: "GRAFANA_BASE_URL={{ graphyard_ingress_grafana_public_url }}"
+            create: false
+            backup: true
+          when: graphyard_ingress_env_stat.stat.exists | default(false)
+          notify:
+            - restart graphyard web
+            - restart graphyard agent
+
+        - name: Set DJANGO_ADMIN_URL in Graphyard env
+          ansible.builtin.lineinfile:
+            path: "{{ graphyard_ingress_env_path }}"
+            regexp: "^DJANGO_ADMIN_URL="
+            line: "DJANGO_ADMIN_URL={{ graphyard_ingress_django_admin_url }}"
+            create: false
+            backup: true
+          when:
+            - graphyard_ingress_env_stat.stat.exists | default(false)
+            - graphyard_ingress_django_admin_url | length > 0
+          notify:
+            - restart graphyard web
+            - restart graphyard agent

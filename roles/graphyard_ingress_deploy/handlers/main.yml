@@ -1,0 +1,11 @@
+- name: restart graphyard web
+  listen: restart graphyard web
+  ansible.builtin.service:
+    name: "{{ graphyard_ingress_graphyard_web_service_name }}"
+    state: restarted
+
+- name: restart graphyard agent
+  listen: restart graphyard agent
+  ansible.builtin.service:
+    name: "{{ graphyard_ingress_graphyard_agent_service_name }}"
+    state: restarted

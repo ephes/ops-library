@@ -49,6 +49,7 @@ The table below links each published role to its dedicated documentation. Refer 
 | Infrastructure | [`bind_authoritative_deploy`](roles/bind_authoritative_deploy/README.md) | Deploy authoritative BIND 9 with managed configs and zone files. |
 | Service deployment | [`fastdeploy_deploy`](roles/fastdeploy_deploy/README.md) | Deploy the FastDeploy platform (database, uv, frontend build, systemd, Traefik). |
 | Service deployment | [`nyxmon_deploy`](roles/nyxmon_deploy/README.md) | Deploy Nyxmon (Django app, monitoring agent, Telegram integration). |
+| Service deployment | [`graphyard_ingress_deploy`](roles/graphyard_ingress_deploy/README.md) | Expose Graphyard + Grafana through Traefik with LAN/Tailscale bypass and public basic auth. |
 | Service deployment | [`homeassistant_deploy`](roles/homeassistant_deploy/README.md) | Deploy Home Assistant Core with uv-managed Python env, Traefik, and systemd. |
 | Service deployment | [`unifi_deploy`](roles/unifi_deploy/README.md) | Install UniFi Network Application with MongoDB 8.0, Java 17, Traefik + UFW wiring, and optional HA integration. |
 | Service deployment | [`navidrome_deploy`](roles/navidrome_deploy/README.md) | Deploy Navidrome music server (binary/systemd, Traefik, optional rescan timer). |

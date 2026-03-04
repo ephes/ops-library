@@ -1,0 +1,108 @@
+---
+# Test playbook for graphyard_ingress_deploy role
+# Run with: ansible-playbook tests/test_graphyard_ingress_deploy.yml -i tests/inventory/test.yml
+
+- name: Test Graphyard Ingress Deploy Role Components
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/graphyard_ingress_deploy"
+    rendered_config: "/tmp/test-graphyard-ingress.yml"
+
+  tasks:
+    - name: Verify role files exist
+      block:
+        - name: Check defaults file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/defaults/main.yml"
+          register: defaults_file
+
+        - name: Check tasks file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/tasks/main.yml"
+          register: tasks_file
+
+        - name: Check handlers file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/handlers/main.yml"
+          register: handlers_file
+
+        - name: Check template file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/templates/traefik-graphyard.yml.j2"
+          register: template_file
+
+        - name: Assert required files exist
+          ansible.builtin.assert:
+            that:
+              - defaults_file.stat.exists
+              - tasks_file.stat.exists
+              - handlers_file.stat.exists
+              - template_file.stat.exists
+
+    - name: Validate defaults are safe
+      block:
+        - name: Load defaults
+          ansible.builtin.include_vars:
+            file: "{{ role_path }}/defaults/main.yml"
+
+        - name: Assert required defaults
+          ansible.builtin.assert:
+            that:
+              - graphyard_ingress_enabled == false
+              - graphyard_ingress_graphyard_host == "graphyard.example.com"
+              - graphyard_ingress_grafana_host == "grafana.example.com"
+              - graphyard_ingress_basic_auth_enabled == true
+              - graphyard_ingress_internal_ip_ranges | length > 0
+
+    - name: Validate template renders expected dual-router and middleware configuration
+      block:
+        - name: Render template with test values
+          ansible.builtin.template:
+            src: "{{ role_path }}/templates/traefik-graphyard.yml.j2"
+            dest: "{{ rendered_config }}"
+          vars:
+            graphyard_ingress_basic_auth_enabled: true
+            graphyard_ingress_graphyard_host: "graphyard.home.xn--wersdrfer-47a.de"
+            graphyard_ingress_grafana_host: "grafana.home.xn--wersdrfer-47a.de"
+            graphyard_ingress_graphyard_backend_url: "http://127.0.0.1:8051"
+            graphyard_ingress_grafana_backend_url: "http://127.0.0.1:3300"
+            graphyard_ingress_traefik_cert_resolver: "letsencrypt"
+            graphyard_ingress_internal_ip_ranges:
+              - "192.168.0.0/16"
+              - "100.64.0.0/10"
+            graphyard_ingress_basic_auth_user: "admin"
+            graphyard_ingress_basic_auth_password_hash: "$2y$05$abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+            graphyard_ingress_graphyard_middlewares: []
+            graphyard_ingress_grafana_middlewares: []
+
+        - name: Read rendered template
+          ansible.builtin.slurp:
+            path: "{{ rendered_config }}"
+          register: rendered_file
+
+        - name: Assert rendered config includes expected routers and security middleware
+          ansible.builtin.assert:
+            that:
+              - "'graphyard-int:' in rendered_text"
+              - "'graphyard-ext:' in rendered_text"
+              - "'grafana-int:' in rendered_text"
+              - "'grafana-ext:' in rendered_text"
+              - "'priority: 120' in rendered_text"
+              - "'priority: 100' in rendered_text"
+              - "'graphyard-stack-auth' in rendered_text"
+              - "'removeHeader: true' in rendered_text"
+              - "'redirect-to-https' in rendered_text"
+              - "'redirectScheme:' in rendered_text"
+              - "'customFrameOptionsValue: DENY' in rendered_text"
+              - "'customFrameOptionsValue: SAMEORIGIN' in rendered_text"
+              - "'certResolver: letsencrypt' in rendered_text"
+          vars:
+            rendered_text: "{{ rendered_file.content | b64decode }}"
+
+    - name: Clean up rendered test file
+      ansible.builtin.file:
+        path: "{{ rendered_config }}"
+        state: absent
