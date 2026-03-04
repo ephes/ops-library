@@ -1,0 +1,249 @@
+---
+- name: Skip graphyard_auth_bootstrap_deploy when disabled
+  ansible.builtin.debug:
+    msg: "graphyard_auth_bootstrap_deploy skipped (graphyard_auth_bootstrap_enabled=false)."
+  when: not (graphyard_auth_bootstrap_enabled | bool)
+  tags: [graphyard_auth_bootstrap]
+
+- name: End host when graphyard_auth_bootstrap_deploy is disabled
+  ansible.builtin.meta: end_host
+  when: not (graphyard_auth_bootstrap_enabled | bool)
+  tags: [graphyard_auth_bootstrap]
+
+- name: Validate graphyard auth bootstrap configuration
+  ansible.builtin.assert:
+    that:
+      - graphyard_auth_bootstrap_django_username is defined
+      - graphyard_auth_bootstrap_django_username | length > 0
+      - graphyard_auth_bootstrap_django_username != "CHANGEME"
+      - graphyard_auth_bootstrap_django_password is defined
+      - graphyard_auth_bootstrap_django_password | length > 0
+      - graphyard_auth_bootstrap_django_password != "CHANGEME"
+      - graphyard_auth_bootstrap_grafana_admin_password is defined
+      - graphyard_auth_bootstrap_grafana_admin_password | length > 0
+      - graphyard_auth_bootstrap_grafana_admin_password != "CHANGEME"
+      - graphyard_auth_bootstrap_python | length > 0
+      - graphyard_auth_bootstrap_manage_py | length > 0
+      - graphyard_auth_bootstrap_workdir | length > 0
+      - graphyard_auth_bootstrap_system_user | length > 0
+      - graphyard_auth_bootstrap_grafana_container_name | length > 0
+      - graphyard_auth_bootstrap_grafana_admin_user | length > 0
+      - graphyard_auth_bootstrap_grafana_cli_bin | length > 0
+      - graphyard_auth_bootstrap_grafana_homepath | length > 0
+      - graphyard_auth_bootstrap_grafana_db_path | length > 0
+    fail_msg: >-
+      graphyard auth bootstrap requires Django username/password and Grafana admin password,
+      plus valid Graphyard path/container settings.
+  tags: [graphyard_auth_bootstrap]
+
+- name: Check graphyard manage.py path
+  ansible.builtin.stat:
+    path: "{{ graphyard_auth_bootstrap_manage_py }}"
+  register: graphyard_auth_bootstrap_manage_py_stat
+  tags: [graphyard_auth_bootstrap]
+
+- name: Check graphyard python path
+  ansible.builtin.stat:
+    path: "{{ graphyard_auth_bootstrap_python }}"
+  register: graphyard_auth_bootstrap_python_stat
+  tags: [graphyard_auth_bootstrap]
+
+- name: Assert graphyard manage.py and python exist
+  ansible.builtin.assert:
+    that:
+      - graphyard_auth_bootstrap_manage_py_stat.stat.exists
+      - graphyard_auth_bootstrap_python_stat.stat.exists
+    fail_msg: >-
+      Graphyard manage.py/python paths do not exist. Ensure graphyard is deployed before auth bootstrap.
+  tags: [graphyard_auth_bootstrap]
+
+- name: Ensure Graphyard bootstrap Django user is present with expected password
+  ansible.builtin.command:
+    argv:
+      - "{{ graphyard_auth_bootstrap_python }}"
+      - "{{ graphyard_auth_bootstrap_manage_py }}"
+      - shell
+  args:
+    chdir: "{{ graphyard_auth_bootstrap_workdir }}"
+    stdin: |
+      import os
+      from django.contrib.auth import get_user_model
+
+      username = os.environ["GRAPHYARD_BOOTSTRAP_USERNAME"]
+      password = os.environ["GRAPHYARD_BOOTSTRAP_PASSWORD"]
+      User = get_user_model()
+
+      user, created = User.objects.get_or_create(
+          username=username,
+          defaults={"is_active": True, "is_staff": True, "is_superuser": True},
+      )
+
+      changed = created
+      if not user.is_active:
+          user.is_active = True
+          changed = True
+      if not user.is_staff:
+          user.is_staff = True
+          changed = True
+      if not user.is_superuser:
+          user.is_superuser = True
+          changed = True
+      if not user.check_password(password):
+          user.set_password(password)
+          changed = True
+
+      if changed:
+          user.save(update_fields=["password", "is_active", "is_staff", "is_superuser"])
+
+      print("CHANGED" if changed else "UNCHANGED")
+  become: true
+  become_user: "{{ graphyard_auth_bootstrap_system_user }}"
+  environment:
+    GRAPHYARD_BOOTSTRAP_USERNAME: "{{ graphyard_auth_bootstrap_django_username }}"
+    GRAPHYARD_BOOTSTRAP_PASSWORD: "{{ graphyard_auth_bootstrap_django_password }}"
+  register: graphyard_auth_bootstrap_django_user_result
+  changed_when: >-
+    (graphyard_auth_bootstrap_django_user_result.stdout_lines | last | default('')) == 'CHANGED'
+  no_log: true
+  tags: [graphyard_auth_bootstrap]
+
+- name: Check Graphyard Grafana container running state
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{.State.Running}}' }}"
+      - "{{ graphyard_auth_bootstrap_grafana_container_name }}"
+  register: graphyard_auth_bootstrap_grafana_container_state
+  changed_when: false
+  failed_when: graphyard_auth_bootstrap_grafana_container_state.stdout | trim != "true"
+  tags: [graphyard_auth_bootstrap]
+
+- name: Check Grafana database path
+  ansible.builtin.stat:
+    path: "{{ graphyard_auth_bootstrap_grafana_db_path }}"
+  register: graphyard_auth_bootstrap_grafana_db_path_stat
+  tags: [graphyard_auth_bootstrap]
+
+- name: Assert Grafana database exists
+  ansible.builtin.assert:
+    that:
+      - graphyard_auth_bootstrap_grafana_db_path_stat.stat.exists
+    fail_msg: >-
+      Grafana DB path {{ graphyard_auth_bootstrap_grafana_db_path }} does not exist.
+      Ensure Grafana data bind mount is available before auth bootstrap.
+  tags: [graphyard_auth_bootstrap]
+
+- name: Check whether Grafana admin password hash already matches desired secret
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import hashlib
+        import os
+        import sqlite3
+        import sys
+
+        db_path = os.environ["GRAFANA_DB_PATH"]
+        username = os.environ["GRAFANA_ADMIN_USER"]
+        password = os.environ["GRAFANA_ADMIN_PASSWORD"].encode()
+
+        conn = sqlite3.connect(db_path)
+        row = conn.execute("select password, salt from user where login = ?", (username,)).fetchone()
+        if row is None:
+            print("MISSING_USER")
+            sys.exit(2)
+
+        stored_hash, salt = row
+        desired_hash = hashlib.pbkdf2_hmac("sha256", password, salt.encode(), 10000, dklen=50).hex()
+        print("MATCH" if stored_hash == desired_hash else "MISMATCH")
+  environment:
+    GRAFANA_DB_PATH: "{{ graphyard_auth_bootstrap_grafana_db_path }}"
+    GRAFANA_ADMIN_USER: "{{ graphyard_auth_bootstrap_grafana_admin_user }}"
+    GRAFANA_ADMIN_PASSWORD: "{{ graphyard_auth_bootstrap_grafana_admin_password }}"
+  register: graphyard_auth_bootstrap_grafana_password_check
+  changed_when: false
+  failed_when: graphyard_auth_bootstrap_grafana_password_check.rc != 0
+  no_log: true
+  tags: [graphyard_auth_bootstrap]
+
+- name: Reset Grafana admin password when mismatch is detected
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - -e
+      - "GRAFANA_ADMIN_PASSWORD={{ graphyard_auth_bootstrap_grafana_admin_password }}"
+      - "{{ graphyard_auth_bootstrap_grafana_container_name }}"
+      - sh
+      - -lc
+      - "{{ graphyard_auth_bootstrap_grafana_cli_bin }} cli --homepath {{ graphyard_auth_bootstrap_grafana_homepath }} admin reset-admin-password \"$GRAFANA_ADMIN_PASSWORD\""
+  register: graphyard_auth_bootstrap_grafana_reset
+  changed_when: true
+  when: "'MISMATCH' in graphyard_auth_bootstrap_grafana_password_check.stdout"
+  no_log: true
+  tags: [graphyard_auth_bootstrap]
+
+- name: Clear Grafana login lockout rows for admin user
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import os
+        import sqlite3
+
+        db_path = os.environ["GRAFANA_DB_PATH"]
+        username = os.environ["GRAFANA_ADMIN_USER"]
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("delete from login_attempt where username = ?", (username,))
+        conn.commit()
+        print(cur.rowcount)
+  environment:
+    GRAFANA_DB_PATH: "{{ graphyard_auth_bootstrap_grafana_db_path }}"
+    GRAFANA_ADMIN_USER: "{{ graphyard_auth_bootstrap_grafana_admin_user }}"
+  register: graphyard_auth_bootstrap_grafana_login_attempt_cleanup
+  changed_when: graphyard_auth_bootstrap_grafana_login_attempt_cleanup.stdout | trim != "0"
+  tags: [graphyard_auth_bootstrap]
+
+- name: Verify Grafana admin password hash matches desired secret
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import hashlib
+        import os
+        import sqlite3
+        import sys
+
+        db_path = os.environ["GRAFANA_DB_PATH"]
+        username = os.environ["GRAFANA_ADMIN_USER"]
+        password = os.environ["GRAFANA_ADMIN_PASSWORD"].encode()
+
+        conn = sqlite3.connect(db_path)
+        row = conn.execute("select password, salt from user where login = ?", (username,)).fetchone()
+        if row is None:
+            print("MISSING_USER")
+            sys.exit(2)
+
+        stored_hash, salt = row
+        desired_hash = hashlib.pbkdf2_hmac("sha256", password, salt.encode(), 10000, dklen=50).hex()
+        print("MATCH" if stored_hash == desired_hash else "MISMATCH")
+  environment:
+    GRAFANA_DB_PATH: "{{ graphyard_auth_bootstrap_grafana_db_path }}"
+    GRAFANA_ADMIN_USER: "{{ graphyard_auth_bootstrap_grafana_admin_user }}"
+    GRAFANA_ADMIN_PASSWORD: "{{ graphyard_auth_bootstrap_grafana_admin_password }}"
+  register: graphyard_auth_bootstrap_grafana_verify
+  retries: 5
+  delay: 1
+  until: "'MATCH' in graphyard_auth_bootstrap_grafana_verify.stdout"
+  changed_when: false
+  failed_when: >-
+    graphyard_auth_bootstrap_grafana_verify.rc != 0
+    or 'MATCH' not in graphyard_auth_bootstrap_grafana_verify.stdout
+  no_log: true
+  tags: [graphyard_auth_bootstrap]

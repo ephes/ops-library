@@ -1,0 +1,73 @@
+---
+# Test playbook for graphyard_auth_bootstrap_deploy role
+# Run with: ansible-playbook tests/test_graphyard_auth_bootstrap_deploy.yml -i tests/inventory/test.yml
+
+- name: Test Graphyard Auth Bootstrap Deploy Role Components
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/graphyard_auth_bootstrap_deploy"
+
+  tasks:
+    - name: Verify role files exist
+      block:
+        - name: Check defaults file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/defaults/main.yml"
+          register: defaults_file
+
+        - name: Check tasks file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/tasks/main.yml"
+          register: tasks_file
+
+        - name: Check role README file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/README.md"
+          register: readme_file
+
+        - name: Assert required files exist
+          ansible.builtin.assert:
+            that:
+              - defaults_file.stat.exists
+              - tasks_file.stat.exists
+              - readme_file.stat.exists
+
+    - name: Validate defaults are safe
+      block:
+        - name: Load defaults
+          ansible.builtin.include_vars:
+            file: "{{ role_path }}/defaults/main.yml"
+
+        - name: Assert required defaults
+          ansible.builtin.assert:
+            that:
+              - graphyard_auth_bootstrap_enabled == false
+              - graphyard_auth_bootstrap_django_username == "CHANGEME"
+              - graphyard_auth_bootstrap_django_password == "CHANGEME"
+              - graphyard_auth_bootstrap_grafana_admin_user == "admin"
+              - graphyard_auth_bootstrap_grafana_admin_password == "CHANGEME"
+              - graphyard_auth_bootstrap_manage_py == "/opt/apps/graphyard/site/src/django/manage.py"
+              - graphyard_auth_bootstrap_grafana_cli_bin == "/usr/share/grafana/bin/grafana"
+              - graphyard_auth_bootstrap_grafana_db_path == "/var/lib/graphyard/grafana/grafana.db"
+
+    - name: Validate tasks include idempotent Django and Grafana credential logic
+      block:
+        - name: Read tasks file
+          ansible.builtin.slurp:
+            path: "{{ role_path }}/tasks/main.yml"
+          register: tasks_content
+
+        - name: Assert expected credential bootstrap steps are present
+          ansible.builtin.assert:
+            that:
+              - "'GRAPHYARD_BOOTSTRAP_USERNAME' in tasks_text"
+              - "'get_user_model' in tasks_text"
+              - "'user.check_password(password)' in tasks_text"
+              - "'pbkdf2_hmac(\"sha256\"' in tasks_text"
+              - "'delete from login_attempt where username = ?' in tasks_text"
+              - "'/usr/share/grafana/bin/grafana cli --homepath /usr/share/grafana admin reset-admin-password' in tasks_text"
+          vars:
+            tasks_text: "{{ tasks_content.content | b64decode }}"

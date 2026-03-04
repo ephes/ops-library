@@ -9,6 +9,7 @@ fastdeploy_deploy
 fastdeploy_self_deploy
 nyxmon_deploy
 graphyard_ingress_deploy
+graphyard_auth_bootstrap_deploy
 traefik_deploy
 dns_deploy
 tailscale_deploy

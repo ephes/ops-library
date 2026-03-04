@@ -1,0 +1,19 @@
+---
+# graphyard_auth_bootstrap_deploy defaults
+
+graphyard_auth_bootstrap_enabled: false
+
+graphyard_auth_bootstrap_system_user: "graphyard"
+graphyard_auth_bootstrap_python: "/opt/apps/graphyard/site/.venv/bin/python"
+graphyard_auth_bootstrap_manage_py: "/opt/apps/graphyard/site/src/django/manage.py"
+graphyard_auth_bootstrap_workdir: "/opt/apps/graphyard/site/src/django"
+
+graphyard_auth_bootstrap_django_username: "CHANGEME"
+graphyard_auth_bootstrap_django_password: "CHANGEME"
+
+graphyard_auth_bootstrap_grafana_container_name: "graphyard-grafana"
+graphyard_auth_bootstrap_grafana_admin_user: "admin"
+graphyard_auth_bootstrap_grafana_admin_password: "CHANGEME"
+graphyard_auth_bootstrap_grafana_cli_bin: "/usr/share/grafana/bin/grafana"
+graphyard_auth_bootstrap_grafana_homepath: "/usr/share/grafana"
+graphyard_auth_bootstrap_grafana_db_path: "/var/lib/graphyard/grafana/grafana.db"
