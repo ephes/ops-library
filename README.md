@@ -38,6 +38,7 @@ The table below links each published role to its dedicated documentation. Refer 
 | Monitoring | [`smartd`](roles/smartd/README.md) | Configure smartmontools smartd for HDD/NVMe monitoring and scheduled tests. |
 | Monitoring | [`zed`](roles/zed/README.md) | Configure ZFS Event Daemon notifications and optional zpool scrub timers. |
 | Monitoring | [`nyxmon_storage_exporter`](roles/nyxmon_storage_exporter/README.md) | Install `nyxmon-storage-metrics` JSON exporter for storage health monitoring via HTTP endpoints. |
+| Monitoring | [`graphyard_vector_deploy`](roles/graphyard_vector_deploy/README.md) | Deploy Vector host-metrics ingest producer for Graphyard (`POST /v1/metrics`) with disk buffering and retries. |
 | Monitoring | [`backup_metrics_endpoint`](roles/backup_metrics_endpoint/README.md) | Expose backup-job + replication freshness signals as authenticated JSON for Nyxmon (`/.well-known/backup`). |
 | Infrastructure | [`mail_relay_client`](roles/mail_relay_client/README.md) | Configure a minimal Postfix setup for relaying outbound alert mail via a smarthost. |
 | File sharing | [`samba_timemachine`](roles/samba_timemachine/README.md) | Configure Samba Time Machine share with vfs_fruit and conf.d snippet wiring. |

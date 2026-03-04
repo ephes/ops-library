@@ -1,0 +1,107 @@
+---
+# Test playbook for graphyard_vector_deploy role
+# Run with: ansible-playbook tests/test_graphyard_vector_deploy.yml -i tests/inventory/test.yml
+
+- name: Test Graphyard Vector Deploy Role Components
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/graphyard_vector_deploy"
+    rendered_config: "/tmp/test-graphyard-vector.yaml"
+
+  tasks:
+    - name: Verify role files exist
+      block:
+        - name: Check defaults file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/defaults/main.yml"
+          register: defaults_file
+
+        - name: Check tasks file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/tasks/main.yml"
+          register: tasks_file
+
+        - name: Check handlers file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/handlers/main.yml"
+          register: handlers_file
+
+        - name: Check template file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/templates/vector.yaml.j2"
+          register: template_file
+
+        - name: Assert required files exist
+          ansible.builtin.assert:
+            that:
+              - defaults_file.stat.exists
+              - tasks_file.stat.exists
+              - handlers_file.stat.exists
+              - template_file.stat.exists
+
+    - name: Validate defaults are safe
+      block:
+        - name: Load defaults
+          ansible.builtin.include_vars:
+            file: "{{ role_path }}/defaults/main.yml"
+
+        - name: Assert required defaults
+          ansible.builtin.assert:
+            that:
+              - graphyard_vector_ingest_url == "CHANGEME"
+              - graphyard_vector_enabled == false
+              - graphyard_vector_request_concurrency == 1
+              - graphyard_vector_buffer_max_size == 268435488
+              - graphyard_vector_filesystem_mountpoint_excludes | length > 0
+
+    - name: Validate template renders expected fields
+      block:
+        - name: Render template with test values
+          ansible.builtin.template:
+            src: "{{ role_path }}/templates/vector.yaml.j2"
+            dest: "{{ rendered_config }}"
+          vars:
+            graphyard_vector_data_dir: /var/lib/vector
+            graphyard_vector_scrape_interval_secs: 60
+            graphyard_vector_collectors: [disk, filesystem]
+            graphyard_vector_filesystem_mountpoint_excludes:
+              - /run/docker/netns/*
+              - /var/lib/docker/*
+            graphyard_vector_metric_prefixes: [filesystem_, disk_]
+            graphyard_vector_host_id: macmini
+            graphyard_vector_service_id: host_metrics
+            graphyard_vector_source_tag: macmini-vector
+            graphyard_vector_ingest_url: http://127.0.0.1:8051/v1/metrics
+            graphyard_vector_http_timeout_secs: 15
+            graphyard_vector_request_concurrency: 1
+            graphyard_vector_retry_initial_backoff_secs: 1
+            graphyard_vector_retry_max_duration_secs: 3600
+            graphyard_vector_ingest_token: test-token
+            graphyard_vector_batch_max_events: 1
+            graphyard_vector_batch_timeout_secs: 2
+            graphyard_vector_buffer_max_size: 268435488
+
+        - name: Read rendered template
+          ansible.builtin.slurp:
+            path: "{{ rendered_config }}"
+          register: rendered_file
+
+        - name: Assert rendered template includes security and sink settings
+          ansible.builtin.assert:
+            that:
+              - "'Authorization: \"Bearer test-token\"' in rendered_text"
+              - "'concurrency: 1' in rendered_text"
+              - "'enabled: false' in rendered_text"
+              - "'/run/docker/netns/*' in rendered_text"
+              - "'/var/lib/docker/*' in rendered_text"
+              - "'\"metric\": \"host.\" + metric_name' in rendered_text"
+          vars:
+            rendered_text: "{{ rendered_file.content | b64decode }}"
+
+    - name: Clean up rendered test file
+      ansible.builtin.file:
+        path: "{{ rendered_config }}"
+        state: absent

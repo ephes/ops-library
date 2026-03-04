@@ -1,0 +1,54 @@
+---
+# graphyard_vector_deploy defaults
+# Deploy Vector as a host-metrics producer that pushes Graphyard ingest payloads.
+
+graphyard_vector_enabled: false
+
+graphyard_vector_package_name: vector
+
+graphyard_vector_repo_url: "https://apt.vector.dev/"
+graphyard_vector_repo_channel: "stable"
+graphyard_vector_repo_version: "vector-0"
+graphyard_vector_repo_key_url: "https://keys.datadoghq.com/DATADOG_APT_KEY_CURRENT.public"
+graphyard_vector_repo_key_tmp: "/tmp/vector-datadog-archive-keyring.public"
+graphyard_vector_repo_keyring_path: "/usr/share/keyrings/datadog-archive-keyring.gpg"
+graphyard_vector_repo_list_file: "/etc/apt/sources.list.d/vector.list"
+
+graphyard_vector_config_path: "/etc/vector/vector.yaml"
+graphyard_vector_data_dir: "/var/lib/vector"
+graphyard_vector_service_name: "vector"
+
+graphyard_vector_scrape_interval_secs: 60
+graphyard_vector_collectors:
+  - cpu
+  - disk
+  - filesystem
+  - load
+  - memory
+  - network
+graphyard_vector_filesystem_mountpoint_excludes:
+  - "/run/docker/netns/*"
+  - "/var/lib/docker/*"
+graphyard_vector_metric_prefixes:
+  - filesystem_
+  - disk_
+  - memory_
+  - cpu_
+  - load
+  - network_
+
+graphyard_vector_host_id: "{{ inventory_hostname }}"
+graphyard_vector_service_id: "host_metrics"
+graphyard_vector_ingest_url: "CHANGEME"
+# REQUIRED secret, no default on purpose:
+# graphyard_vector_ingest_token
+
+graphyard_vector_http_timeout_secs: 15
+graphyard_vector_request_concurrency: 1
+graphyard_vector_retry_initial_backoff_secs: 1
+graphyard_vector_retry_max_duration_secs: 3600
+graphyard_vector_batch_timeout_secs: 2
+graphyard_vector_batch_max_events: 1
+graphyard_vector_buffer_max_size: 268435488
+
+graphyard_vector_source_tag: "vector-host-metrics"
