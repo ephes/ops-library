@@ -1,0 +1,34 @@
+---
+- name: launchd | Render API plist
+  ansible.builtin.template:
+    src: opsgate.api.launchd.plist.j2
+    dest: "{{ opsgate_api_launchd_plist_path }}"
+    owner: root
+    group: wheel
+    mode: "0644"
+  register: opsgate_api_launchd_template
+
+- name: launchd | Render runner plist
+  ansible.builtin.template:
+    src: opsgate.runner.launchd.plist.j2
+    dest: "{{ opsgate_runner_launchd_plist_path }}"
+    owner: root
+    group: wheel
+    mode: "0644"
+  register: opsgate_runner_launchd_template
+
+- name: launchd | Manage API launchd state when enabled
+  ansible.builtin.include_tasks: manage_launchd_unit.yml
+  vars:
+    opsgate_launchd_unit_label: "{{ opsgate_api_launchd_label }}"
+    opsgate_launchd_unit_plist_path: "{{ opsgate_api_launchd_plist_path }}"
+    opsgate_launchd_template_changed: "{{ opsgate_api_launchd_template.changed }}"
+  when: opsgate_launchd_manage_state | bool
+
+- name: launchd | Manage runner launchd state when enabled
+  ansible.builtin.include_tasks: manage_launchd_unit.yml
+  vars:
+    opsgate_launchd_unit_label: "{{ opsgate_runner_launchd_label }}"
+    opsgate_launchd_unit_plist_path: "{{ opsgate_runner_launchd_plist_path }}"
+    opsgate_launchd_template_changed: "{{ opsgate_runner_launchd_template.changed }}"
+  when: opsgate_launchd_manage_state | bool

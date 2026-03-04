@@ -1,0 +1,8 @@
+---
+- name: tmux | Write ops tmux defaults for runner sessions
+  ansible.builtin.template:
+    src: ops.tmux.conf.j2
+    dest: "{{ opsgate_tmux_conf_path }}"
+    owner: "{{ ops_user }}"
+    group: "{{ ops_group }}"
+    mode: "0644"

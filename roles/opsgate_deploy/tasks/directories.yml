@@ -1,0 +1,97 @@
+---
+- name: directories | Ensure root-owned opsgate directories exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ opsgate_config_dir }}"
+      owner: root
+      group: wheel
+      mode: "0755"
+    - path: "{{ opsgate_log_dir }}"
+      owner: root
+      group: wheel
+      mode: "0755"
+    - path: "{{ opsgate_runtime_dir }}"
+      owner: root
+      group: wheel
+      mode: "0755"
+
+- name: directories | Ensure control service directories exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ control_service_user }}"
+    group: "{{ control_service_group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ control_service_home_dir }}"
+      mode: "0750"
+    - path: "{{ opsgate_app_dir }}"
+      mode: "0750"
+
+- name: directories | Ensure ops account directory layout exists
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ ops_user }}"
+    group: "{{ ops_group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ ops_home_dir }}"
+      mode: "0750"
+    - path: "{{ ops_home_dir }}/.ssh"
+      mode: "0700"
+    - path: "{{ ops_home_dir }}/.config"
+      mode: "0700"
+    - path: "{{ ops_home_dir }}/.config/sops"
+      mode: "0700"
+    - path: "{{ ops_home_dir }}/.config/sops/age"
+      mode: "0700"
+    - path: "{{ opsgate_ops_workspace_dir }}"
+      mode: "0750"
+    - path: "{{ execution_data_dir }}"
+      mode: "0750"
+    - path: "{{ tickets_dir }}"
+      mode: "0750"
+    - path: "{{ session_artifacts_dir }}"
+      mode: "0750"
+    - path: "{{ opsgate_runner_tmp_dir }}"
+      mode: "0750"
+    - path: "{{ opsgate_tmux_tmpdir }}"
+      mode: "0700"
+
+- name: directories | Ensure expected workspace placeholders exist for ops user
+  ansible.builtin.file:
+    path: "{{ opsgate_ops_workspace_dir }}/{{ item }}"
+    state: directory
+    owner: "{{ ops_user }}"
+    group: "{{ ops_group }}"
+    mode: "0750"
+  loop: "{{ opsgate_ops_workspace_repos }}"
+
+- name: directories | Ensure launchd log files exist with daemon ownership
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: touch
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "0640"
+    modification_time: preserve
+    access_time: preserve
+  loop:
+    - path: "{{ opsgate_api_stdout_log }}"
+      owner: "{{ control_service_user }}"
+      group: "{{ control_service_group }}"
+    - path: "{{ opsgate_api_stderr_log }}"
+      owner: "{{ control_service_user }}"
+      group: "{{ control_service_group }}"
+    - path: "{{ opsgate_runner_stdout_log }}"
+      owner: "{{ ops_user }}"
+      group: "{{ ops_group }}"
+    - path: "{{ opsgate_runner_stderr_log }}"
+      owner: "{{ ops_user }}"
+      group: "{{ ops_group }}"

@@ -1,0 +1,22 @@
+---
+- name: main | Validate required variables and target
+  ansible.builtin.import_tasks: validate.yml
+
+- name: main | Ensure opsgate users and groups exist
+  ansible.builtin.import_tasks: users.yml
+  when: opsgate_manage_users | bool
+
+- name: main | Ensure opsgate directory layout exists
+  ansible.builtin.import_tasks: directories.yml
+
+- name: main | Wire ops account credentials and git identity
+  ansible.builtin.import_tasks: ops_credentials.yml
+
+- name: main | Write control-plane and runner environment files
+  ansible.builtin.import_tasks: service_env.yml
+
+- name: main | Configure tmux defaults for ops runner sessions
+  ansible.builtin.import_tasks: tmux.yml
+
+- name: main | Render and optionally manage launchd plists
+  ansible.builtin.import_tasks: launchd.yml

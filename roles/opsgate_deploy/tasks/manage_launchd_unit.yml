@@ -1,0 +1,39 @@
+---
+- name: manage_launchd_unit | Check launchd unit status
+  ansible.builtin.command: "launchctl print system/{{ opsgate_launchd_unit_label }}"
+  register: opsgate_launchd_unit_status
+  changed_when: false
+  failed_when: false
+
+- name: manage_launchd_unit | Unload existing unit before bootstrap
+  ansible.builtin.command: "launchctl bootout system {{ opsgate_launchd_unit_plist_path }}"
+  changed_when: false
+  failed_when: false
+  when:
+    - opsgate_launchd_template_changed | bool
+    - opsgate_launchd_unit_status.rc == 0
+
+- name: manage_launchd_unit | Bootstrap launchd unit
+  ansible.builtin.command: "launchctl bootstrap system {{ opsgate_launchd_unit_plist_path }}"
+  register: opsgate_launchd_bootstrap
+  changed_when: opsgate_launchd_bootstrap.rc == 0
+  when:
+    - opsgate_launchd_template_changed | bool or opsgate_launchd_unit_status.rc != 0
+
+- name: manage_launchd_unit | Enable launchd unit
+  ansible.builtin.command: "launchctl enable system/{{ opsgate_launchd_unit_label }}"
+  register: opsgate_launchd_enable
+  changed_when: opsgate_launchd_enable.rc == 0
+  when:
+    - opsgate_launchd_template_changed | bool or opsgate_launchd_unit_status.rc != 0
+
+- name: manage_launchd_unit | Start or restart launchd unit
+  ansible.builtin.command: "launchctl kickstart -k system/{{ opsgate_launchd_unit_label }}"
+  register: opsgate_launchd_kickstart
+  changed_when: opsgate_launchd_kickstart.rc == 0
+  when:
+    - opsgate_launchd_start_services | bool
+    - >-
+      opsgate_launchd_template_changed | bool
+      or opsgate_launchd_unit_status.rc != 0
+      or 'state = running' not in (opsgate_launchd_unit_status.stdout | default(''))

@@ -1,0 +1,61 @@
+---
+- name: validate | Ensure target host is macOS
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] == 'Darwin'
+    fail_msg: "opsgate_deploy only supports macOS targets (launchd runtime model)."
+
+- name: validate | Enforce fixed opsgate service name
+  ansible.builtin.assert:
+    that:
+      - opsgate_service_name == 'opsgate'
+    fail_msg: "Service name must remain fixed to 'opsgate'."
+
+- name: validate | Ensure account model invariants
+  ansible.builtin.assert:
+    that:
+      - ops_user | trim | length > 0
+      - control_service_user | trim | length > 0
+      - ops_user != control_service_user
+      - ops_home_dir | trim | length > 0
+      - control_service_home_dir | trim | length > 0
+    fail_msg: >-
+      OpsGate account model invalid. Runner must use ops user, API/UI must use control_service_user,
+      and both homes must be set.
+
+- name: validate | Ensure execution and artifact paths are configured
+  ansible.builtin.assert:
+    that:
+      - execution_data_dir | trim | length > 0
+      - tickets_dir | trim | length > 0
+      - session_artifacts_dir | trim | length > 0
+      - opsgate_app_dir | trim | length > 0
+      - opsgate_config_dir | trim | length > 0
+      - opsgate_log_dir | trim | length > 0
+    fail_msg: "OpsGate path variables are incomplete."
+
+- name: validate | Ensure launchd labels and plist paths are set
+  ansible.builtin.assert:
+    that:
+      - opsgate_api_launchd_label | trim | length > 0
+      - opsgate_runner_launchd_label | trim | length > 0
+      - opsgate_api_launchd_plist_path | trim | length > 0
+      - opsgate_runner_launchd_plist_path | trim | length > 0
+    fail_msg: "Launchd configuration is incomplete for opsgate api/runner daemons."
+
+- name: validate | Ensure credential placeholders are not deployed
+  ansible.builtin.assert:
+    that:
+      - "'CHANGEME' not in opsgate_ui_password_bcrypt"
+      - opsgate_ui_password_bcrypt is match('^\\$2[aby]\\$.+')
+      - "'CHANGEME' not in opsgate_submit_token_openclaw"
+      - "'CHANGEME' not in opsgate_submit_token_nyxmon"
+      - "'CHANGEME' not in opsgate_submit_token_operator"
+      - "'CHANGEME' not in opsgate_runner_token"
+      - opsgate_submit_token_openclaw | trim | length >= 20
+      - opsgate_submit_token_nyxmon | trim | length >= 20
+      - opsgate_submit_token_operator | trim | length >= 20
+      - opsgate_runner_token | trim | length >= 20
+    fail_msg: >-
+      OpsGate credentials still contain placeholder values. Provide real (or at least non-placeholder)
+      bcrypt/token values via ops-control secrets before deployment.

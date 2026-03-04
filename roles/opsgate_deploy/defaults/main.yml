@@ -1,0 +1,104 @@
+---
+opsgate_service_name: "opsgate"
+
+# Account model (spec invariant):
+# - API/UI process runs as control_service_user
+# - Runner process runs as ops
+ops_user: "ops"
+ops_group: "{{ ops_user }}"
+ops_home_dir: "/Users/{{ ops_user }}"
+ops_shell: "/bin/zsh"
+
+control_service_user: "control_service_user"
+control_service_group: "{{ control_service_user }}"
+control_service_home_dir: "/Users/{{ control_service_user }}"
+control_service_shell: "/usr/bin/false"
+
+opsgate_manage_users: true
+
+# Filesystem layout (spec defaults for macstudio)
+execution_data_dir: "{{ ops_home_dir }}/remediation"
+tickets_dir: "{{ execution_data_dir }}/jobs"
+session_artifacts_dir: "{{ execution_data_dir }}/sessions"
+opsgate_runner_tmp_dir: "{{ execution_data_dir }}/tmp"
+opsgate_tmux_tmpdir: "{{ execution_data_dir }}/tmux"
+
+opsgate_ops_workspace_dir: "{{ ops_home_dir }}/workspaces"
+opsgate_ops_workspace_repos:
+  - ops-control
+  - ops-library
+
+opsgate_app_dir: "{{ control_service_home_dir }}/opsgate"
+opsgate_config_dir: "/etc/opsgate"
+opsgate_log_dir: "/var/log/opsgate"
+# Persistent runtime dir for macOS (avoid volatile /var/run tmpfs semantics).
+opsgate_runtime_dir: "/usr/local/var/opsgate/run"
+
+# Runner model defaults (Phase 1 placeholders for Phase 2 implementation)
+opsgate_runner_poll_interval_seconds: 5
+opsgate_runner_heartbeat_interval_seconds: 30
+opsgate_runner_stale_after_seconds: 120
+opsgate_max_parallel_jobs: 3
+opsgate_max_duration_seconds_default: 3600
+opsgate_policy_floor_require_reviewer_step: false
+
+# API/UI bootstrap credentials and producer/runner tokens (wired via ops-control secrets)
+opsgate_ui_username: "opsgate-admin"
+opsgate_ui_password_bcrypt: "CHANGEME_BCRYPT_HASH"
+opsgate_submit_token_openclaw: "CHANGEME_OPENCLAW_SUBMIT_TOKEN"
+opsgate_submit_token_nyxmon: "CHANGEME_NYXMON_SUBMIT_TOKEN"
+opsgate_submit_token_operator: "CHANGEME_OPERATOR_SUBMIT_TOKEN"
+opsgate_runner_token: "CHANGEME_RUNNER_TOKEN"
+
+# ops account credential wiring (optional in role, provided by ops-control secrets)
+opsgate_ops_ssh_private_key: ""
+opsgate_ops_ssh_public_key: ""
+opsgate_ops_age_private_key: ""
+opsgate_ops_git_user_name: "OpsGate Runner"
+opsgate_ops_git_user_email: "opsgate@localhost"
+opsgate_ops_github_username: ""
+opsgate_ops_github_token: ""
+
+# tmux runner defaults
+opsgate_tmux_socket_label: "remediation"
+opsgate_tmux_conf_path: "{{ ops_home_dir }}/.tmux.conf"
+opsgate_tmux_history_limit: 200000
+opsgate_tmux_base_index: 1
+
+# launchd model (two LaunchDaemons)
+opsgate_launchd_manage_state: false
+opsgate_launchd_start_services: false
+opsgate_launchd_keepalive: true
+opsgate_launchd_path: "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+opsgate_api_launchd_label: "de.wersdoerfer.opsgate.api"
+opsgate_api_launchd_plist_path: "/Library/LaunchDaemons/{{ opsgate_api_launchd_label }}.plist"
+opsgate_api_program: "/usr/bin/env"
+opsgate_api_program_arguments:
+  - bash
+  - -lc
+  - "echo 'opsgate api placeholder (phase 1)' && sleep 3600"
+opsgate_api_working_directory: "{{ opsgate_app_dir }}"
+opsgate_api_stdout_log: "{{ opsgate_log_dir }}/opsgate-api.log"
+opsgate_api_stderr_log: "{{ opsgate_log_dir }}/opsgate-api.err.log"
+opsgate_api_environment:
+  HOME: "{{ control_service_home_dir }}"
+  PATH: "{{ opsgate_launchd_path }}"
+  OPSGATE_ENV_FILE: "{{ opsgate_config_dir }}/opsgate-api.env"
+
+opsgate_runner_launchd_label: "de.wersdoerfer.opsgate.runner"
+opsgate_runner_launchd_plist_path: "/Library/LaunchDaemons/{{ opsgate_runner_launchd_label }}.plist"
+opsgate_runner_program: "/usr/bin/env"
+opsgate_runner_program_arguments:
+  - bash
+  - -lc
+  - "echo 'opsgate runner placeholder (phase 1)' && sleep 3600"
+opsgate_runner_working_directory: "{{ execution_data_dir }}"
+opsgate_runner_stdout_log: "{{ opsgate_log_dir }}/opsgate-runner.log"
+opsgate_runner_stderr_log: "{{ opsgate_log_dir }}/opsgate-runner.err.log"
+opsgate_runner_environment:
+  HOME: "{{ ops_home_dir }}"
+  PATH: "{{ opsgate_launchd_path }}"
+  TMUX_TMPDIR: "{{ opsgate_tmux_tmpdir }}"
+  OPSGATE_TMUX_SOCKET_LABEL: "{{ opsgate_tmux_socket_label }}"
+  OPSGATE_ENV_FILE: "{{ opsgate_config_dir }}/opsgate-runner.env"

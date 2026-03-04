@@ -1,0 +1,29 @@
+---
+- name: users | Ensure ops group exists
+  ansible.builtin.group:
+    name: "{{ ops_group }}"
+    state: present
+
+- name: users | Ensure ops user exists
+  ansible.builtin.user:
+    name: "{{ ops_user }}"
+    group: "{{ ops_group }}"
+    home: "{{ ops_home_dir }}"
+    shell: "{{ ops_shell }}"
+    create_home: true
+    state: present
+
+- name: users | Ensure control_service_user group exists
+  ansible.builtin.group:
+    name: "{{ control_service_group }}"
+    state: present
+
+- name: users | Ensure control_service_user account exists
+  ansible.builtin.user:
+    name: "{{ control_service_user }}"
+    group: "{{ control_service_group }}"
+    home: "{{ control_service_home_dir }}"
+    shell: "{{ control_service_shell }}"
+    system: true
+    create_home: true
+    state: present
