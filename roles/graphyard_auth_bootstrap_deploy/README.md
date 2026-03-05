@@ -7,6 +7,10 @@ Idempotently bootstrap Graphyard app and Grafana login credentials on an existin
 - Ensures a Django user exists with expected privileges (`is_active`, `is_staff`, `is_superuser`) and password.
 - Verifies Grafana admin password by comparing the desired secret against Grafana's stored password hash in SQLite.
 - Resets Grafana admin password only when the desired password hash does not match.
+- Keeps the Grafana datasource URL aligned to the running InfluxDB container IP.
+- Rewrites Grafana datasource provisioning URL to the same target so restarts do not revert it.
+- Restarts Grafana only when datasource URL changes so the new datasource target is loaded in-memory.
+- Verifies datasource health via Grafana API after bootstrap.
 
 This role is intended to run **after** Graphyard and Grafana are already running on the host.
 
@@ -29,6 +33,11 @@ graphyard_auth_bootstrap_grafana_admin_password: "CHANGEME"
 graphyard_auth_bootstrap_grafana_cli_bin: "/usr/share/grafana/bin/grafana"
 graphyard_auth_bootstrap_grafana_homepath: "/usr/share/grafana"
 graphyard_auth_bootstrap_grafana_db_path: "/var/lib/graphyard/grafana/grafana.db"
+graphyard_auth_bootstrap_grafana_datasource_provisioning_path: "/opt/apps/graphyard/site/deploy/grafana/provisioning/datasources/graphyard.yaml"
+graphyard_auth_bootstrap_grafana_datasource_uid: "graphyard-influxdb"
+
+graphyard_auth_bootstrap_influx_container_name: "graphyard-influxdb"
+graphyard_auth_bootstrap_influx_container_port: 8086
 ```
 
 ## Example
@@ -53,3 +62,4 @@ graphyard_auth_bootstrap_grafana_db_path: "/var/lib/graphyard/grafana/grafana.db
 - Keep credential values in SOPS-managed secrets (`ops-control/secrets/prod/graphyard.yml`).
 - This role uses `no_log: true` for all tasks that handle credential values.
 - The role clears Grafana login-attempt lockout rows for the admin user on each run.
+- If the InfluxDB container IP changes later, rerun this role to realign datasource URLs.

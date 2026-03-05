@@ -17,3 +17,8 @@ graphyard_auth_bootstrap_grafana_admin_password: "CHANGEME"
 graphyard_auth_bootstrap_grafana_cli_bin: "/usr/share/grafana/bin/grafana"
 graphyard_auth_bootstrap_grafana_homepath: "/usr/share/grafana"
 graphyard_auth_bootstrap_grafana_db_path: "/var/lib/graphyard/grafana/grafana.db"
+graphyard_auth_bootstrap_grafana_datasource_provisioning_path: "/opt/apps/graphyard/site/deploy/grafana/provisioning/datasources/graphyard.yaml"
+graphyard_auth_bootstrap_grafana_datasource_uid: "graphyard-influxdb"
+
+graphyard_auth_bootstrap_influx_container_name: "graphyard-influxdb"
+graphyard_auth_bootstrap_influx_container_port: 8086

@@ -31,6 +31,10 @@
       - graphyard_auth_bootstrap_grafana_cli_bin | length > 0
       - graphyard_auth_bootstrap_grafana_homepath | length > 0
       - graphyard_auth_bootstrap_grafana_db_path | length > 0
+      - graphyard_auth_bootstrap_grafana_datasource_provisioning_path | length > 0
+      - graphyard_auth_bootstrap_grafana_datasource_uid | length > 0
+      - graphyard_auth_bootstrap_influx_container_name | length > 0
+      - graphyard_auth_bootstrap_influx_container_port | int > 0
     fail_msg: >-
       graphyard auth bootstrap requires Django username/password and Grafana admin password,
       plus valid Graphyard path/container settings.
@@ -120,6 +124,25 @@
   failed_when: graphyard_auth_bootstrap_grafana_container_state.stdout | trim != "true"
   tags: [graphyard_auth_bootstrap]
 
+- name: Resolve Graphyard InfluxDB container IP
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' }}"
+      - "{{ graphyard_auth_bootstrap_influx_container_name }}"
+  register: graphyard_auth_bootstrap_influx_container_ip
+  changed_when: false
+  failed_when: graphyard_auth_bootstrap_influx_container_ip.stdout | trim == ""
+  tags: [graphyard_auth_bootstrap]
+
+- name: Set Grafana datasource target URL
+  ansible.builtin.set_fact:
+    graphyard_auth_bootstrap_grafana_datasource_target_url: >-
+      http://{{ graphyard_auth_bootstrap_influx_container_ip.stdout | trim }}:{{ graphyard_auth_bootstrap_influx_container_port }}
+  tags: [graphyard_auth_bootstrap]
+
 - name: Check Grafana database path
   ansible.builtin.stat:
     path: "{{ graphyard_auth_bootstrap_grafana_db_path }}"
@@ -133,6 +156,21 @@
     fail_msg: >-
       Grafana DB path {{ graphyard_auth_bootstrap_grafana_db_path }} does not exist.
       Ensure Grafana data bind mount is available before auth bootstrap.
+  tags: [graphyard_auth_bootstrap]
+
+- name: Check Grafana datasource provisioning file path
+  ansible.builtin.stat:
+    path: "{{ graphyard_auth_bootstrap_grafana_datasource_provisioning_path }}"
+  register: graphyard_auth_bootstrap_grafana_datasource_provisioning_path_stat
+  tags: [graphyard_auth_bootstrap]
+
+- name: Assert Grafana datasource provisioning file exists
+  ansible.builtin.assert:
+    that:
+      - graphyard_auth_bootstrap_grafana_datasource_provisioning_path_stat.stat.exists
+    fail_msg: >-
+      Grafana datasource provisioning file {{ graphyard_auth_bootstrap_grafana_datasource_provisioning_path }} does not exist.
+      Ensure Graphyard Grafana provisioning files are present before auth bootstrap.
   tags: [graphyard_auth_bootstrap]
 
 - name: Check whether Grafana admin password hash already matches desired secret
@@ -166,6 +204,177 @@
   register: graphyard_auth_bootstrap_grafana_password_check
   changed_when: false
   failed_when: graphyard_auth_bootstrap_grafana_password_check.rc != 0
+  no_log: true
+  tags: [graphyard_auth_bootstrap]
+
+- name: Read current Grafana datasource URL
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import os
+        import sqlite3
+        import sys
+
+        db_path = os.environ["GRAFANA_DB_PATH"]
+        uid = os.environ["GRAFANA_DATASOURCE_UID"]
+
+        conn = sqlite3.connect(db_path)
+        row = conn.execute("select url from data_source where uid = ?", (uid,)).fetchone()
+        if row is None:
+            print("MISSING_DATASOURCE")
+            sys.exit(2)
+        print(row[0] or "")
+  environment:
+    GRAFANA_DB_PATH: "{{ graphyard_auth_bootstrap_grafana_db_path }}"
+    GRAFANA_DATASOURCE_UID: "{{ graphyard_auth_bootstrap_grafana_datasource_uid }}"
+  register: graphyard_auth_bootstrap_grafana_datasource_current_url
+  changed_when: false
+  failed_when: graphyard_auth_bootstrap_grafana_datasource_current_url.rc != 0
+  tags: [graphyard_auth_bootstrap]
+
+- name: Update Grafana datasource URL when it does not match target
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import os
+        import sqlite3
+
+        db_path = os.environ["GRAFANA_DB_PATH"]
+        uid = os.environ["GRAFANA_DATASOURCE_UID"]
+        target_url = os.environ["GRAFANA_DATASOURCE_TARGET_URL"]
+
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("update data_source set url = ? where uid = ?", (target_url, uid))
+        conn.commit()
+        print(cur.rowcount)
+  environment:
+    GRAFANA_DB_PATH: "{{ graphyard_auth_bootstrap_grafana_db_path }}"
+    GRAFANA_DATASOURCE_UID: "{{ graphyard_auth_bootstrap_grafana_datasource_uid }}"
+    GRAFANA_DATASOURCE_TARGET_URL: "{{ graphyard_auth_bootstrap_grafana_datasource_target_url }}"
+  register: graphyard_auth_bootstrap_grafana_datasource_url_update
+  changed_when: graphyard_auth_bootstrap_grafana_datasource_url_update.stdout | trim != "0"
+  when: (graphyard_auth_bootstrap_grafana_datasource_current_url.stdout | trim) != graphyard_auth_bootstrap_grafana_datasource_target_url
+  tags: [graphyard_auth_bootstrap]
+
+- name: Update Grafana datasource provisioning URL when it does not match target
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import os
+        from pathlib import Path
+
+        path = Path(os.environ["GRAFANA_DATASOURCE_PROVISIONING_PATH"])
+        target_url = os.environ["GRAFANA_DATASOURCE_TARGET_URL"]
+        desired_line = f"    url: {target_url}\n"
+
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+        out_lines = []
+        seen_url = False
+        changed = False
+
+        for line in lines:
+          if line.lstrip().startswith("url:"):
+            if not seen_url:
+              out_lines.append(desired_line)
+              seen_url = True
+              if line != desired_line:
+                changed = True
+            else:
+              changed = True
+          else:
+            out_lines.append(line)
+
+        if not seen_url:
+          changed = True
+          inserted = False
+          for idx, line in enumerate(out_lines):
+            if line.strip().startswith("access:"):
+              out_lines.insert(idx + 1, desired_line)
+              inserted = True
+              break
+          if not inserted:
+            out_lines.append(desired_line)
+
+        if changed:
+          path.write_text("".join(out_lines), encoding="utf-8")
+
+        print("CHANGED" if changed else "UNCHANGED")
+  environment:
+    GRAFANA_DATASOURCE_PROVISIONING_PATH: "{{ graphyard_auth_bootstrap_grafana_datasource_provisioning_path }}"
+    GRAFANA_DATASOURCE_TARGET_URL: "{{ graphyard_auth_bootstrap_grafana_datasource_target_url }}"
+  register: graphyard_auth_bootstrap_grafana_datasource_provisioning_url_update
+  changed_when: "'CHANGED' in graphyard_auth_bootstrap_grafana_datasource_provisioning_url_update.stdout"
+  tags: [graphyard_auth_bootstrap]
+
+- name: Restart Grafana container when datasource URL changed
+  ansible.builtin.command:
+    argv:
+      - docker
+      - restart
+      - "{{ graphyard_auth_bootstrap_grafana_container_name }}"
+  when: >-
+    graphyard_auth_bootstrap_grafana_datasource_url_update is changed
+    or graphyard_auth_bootstrap_grafana_datasource_provisioning_url_update is changed
+  tags: [graphyard_auth_bootstrap]
+
+- name: Wait for Grafana API after datasource URL restart
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - "{{ graphyard_auth_bootstrap_grafana_container_name }}"
+      - sh
+      - -lc
+      - "curl -fsS --max-time 5 http://127.0.0.1:3000/api/health >/dev/null"
+  register: graphyard_auth_bootstrap_grafana_api_ready
+  changed_when: false
+  retries: 15
+  delay: 2
+  until: graphyard_auth_bootstrap_grafana_api_ready.rc == 0
+  when: >-
+    graphyard_auth_bootstrap_grafana_datasource_url_update is changed
+    or graphyard_auth_bootstrap_grafana_datasource_provisioning_url_update is changed
+  tags: [graphyard_auth_bootstrap]
+
+- name: Verify Grafana container can reach InfluxDB ping endpoint
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - "{{ graphyard_auth_bootstrap_grafana_container_name }}"
+      - sh
+      - -lc
+      - "curl -fsS --max-time 5 -I {{ graphyard_auth_bootstrap_grafana_datasource_target_url }}/ping >/dev/null"
+  changed_when: false
+  tags: [graphyard_auth_bootstrap]
+
+- name: Verify Grafana datasource health via API
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - -e
+      - "GRAFANA_ADMIN_USER={{ graphyard_auth_bootstrap_grafana_admin_user }}"
+      - -e
+      - "GRAFANA_ADMIN_PASSWORD={{ graphyard_auth_bootstrap_grafana_admin_password }}"
+      - "{{ graphyard_auth_bootstrap_grafana_container_name }}"
+      - sh
+      - -lc
+      - >-
+        curl -fsS --max-time 10 -u "$GRAFANA_ADMIN_USER:$GRAFANA_ADMIN_PASSWORD"
+        "http://127.0.0.1:3000/api/datasources/uid/{{ graphyard_auth_bootstrap_grafana_datasource_uid }}/health"
+  register: graphyard_auth_bootstrap_grafana_datasource_health
+  changed_when: false
+  failed_when: >-
+    graphyard_auth_bootstrap_grafana_datasource_health.rc != 0
+    or '"status":"OK"' not in graphyard_auth_bootstrap_grafana_datasource_health.stdout
   no_log: true
   tags: [graphyard_auth_bootstrap]
 
