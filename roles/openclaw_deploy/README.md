@@ -140,7 +140,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 | `openclaw_metrics_endpoint_synthetic_canary_enabled` | `false` | Enable synthetic real agent-turn canary collection in metrics payload |
 | `openclaw_metrics_endpoint_synthetic_canary_agent` | `main` | Agent id used for canary command |
 | `openclaw_metrics_endpoint_synthetic_canary_message` | `Reply exactly: OPENCLAW_CANARY_OK` | Deterministic prompt for canary request |
-| `openclaw_metrics_endpoint_synthetic_canary_expected_text` | `OPENCLAW_CANARY_OK` | Exact expected response text for canary success |
+| `openclaw_metrics_endpoint_synthetic_canary_expected_text` | `OPENCLAW_CANARY_OK` | Expected canary marker text (success when present as a standalone trimmed line) |
 | `openclaw_metrics_endpoint_synthetic_canary_interval` | `1800` | Minimum seconds between canary executions (collector cycles in between use cached result) |
 | `openclaw_metrics_endpoint_synthetic_canary_timeout` | `45` | Per-attempt timeout (seconds) for canary command |
 | `openclaw_metrics_endpoint_synthetic_canary_max_attempts` | `2` | Max attempts per due canary run |

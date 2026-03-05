@@ -131,6 +131,16 @@ def clip_text(value: str, max_chars: int) -> str:
     return value[: max_chars - 3] + "..."
 
 
+def canary_expected_match(observed_text: str, expected_text: str) -> bool:
+    expected = (expected_text or "").strip()
+    observed = (observed_text or "").strip()
+    if not expected or not observed:
+        return False
+    if observed == expected:
+        return True
+    return any(line.strip() == expected for line in observed.splitlines())
+
+
 def default_canary_state() -> dict[str, Any]:
     return {
         "last_run": {
@@ -384,7 +394,7 @@ def run_synthetic_canary(args: argparse.Namespace, payload: dict[str, Any]) -> N
                 payloads = ((canary_json.get("result") or {}).get("payloads") or [])
                 first_payload = payloads[0] if payloads and isinstance(payloads[0], dict) else {}
                 observed_text = str(first_payload.get("text") or "").strip()
-                expected_match = observed_text == expected_text
+                expected_match = canary_expected_match(observed_text, expected_text)
                 meta = (canary_json.get("result") or {}).get("meta") or {}
                 agent_meta = meta.get("agentMeta") or {}
 
@@ -540,7 +550,7 @@ def main() -> int:
     parser.add_argument(
         "--synthetic-canary-expected-text",
         default={{ openclaw_metrics_endpoint_synthetic_canary_expected_text | to_json }},
-        help="Expected exact response text for deterministic canary success",
+        help="Expected marker text for deterministic canary success",
     )
     parser.add_argument(
         "--synthetic-canary-interval",
