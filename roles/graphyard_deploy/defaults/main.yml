@@ -32,6 +32,8 @@ graphyard_rsync_excludes:
   - ".tox/"
   - ".mypy_cache/"
   - "src/django/db.sqlite3"
+  - "src/django/db.sqlite3-wal"
+  - "src/django/db.sqlite3-shm"
   - "src/django/staticfiles/"
   - "src/django/media/"
 

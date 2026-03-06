@@ -37,3 +37,5 @@
     UV_PROJECT_ENVIRONMENT: "{{ graphyard_venv_path }}"
   become: true
   become_user: "{{ graphyard_user }}"
+  register: graphyard_uv_sync_result
+  changed_when: "'Installed' in graphyard_uv_sync_result.stdout or 'Updated' in graphyard_uv_sync_result.stdout"

@@ -22,8 +22,6 @@
     - src/graphyard
     - pyproject.toml
     - uv.lock
-    - deploy/systemd/graphyard-web.service
-    - deploy/systemd/graphyard-agent.service
   loop_control:
     label: "{{ item }}"
 
@@ -36,7 +34,7 @@
   loop_control:
     label: "{{ item.invocation.module_args.path }}"
 
-- name: source_rsync | Sync Graphyard project to target
+- name: source_rsync | Sync Graphyard project to target (controller push)
   ansible.posix.synchronize:
     src: "{{ graphyard_source_path }}/"
     dest: "{{ graphyard_site_path }}/"
