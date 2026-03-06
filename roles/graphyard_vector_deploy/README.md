@@ -12,6 +12,7 @@ Deploys [Vector](https://vector.dev/) on a host and configures it to push normal
   - fixed request concurrency (default `1`)
   - explicit HTTP timeout
   - explicit retry backoff + retry window
+  - `X-Forwarded-Proto: https` request header so local HTTP ingest targets behind Django HTTPS redirect logic are accepted
 - Writes `/etc/vector/vector.yaml` with mode `0640` and group `vector` to avoid exposing the bearer token to other users
 - Sends JSON list payloads to Graphyard ingest (Graphyard accepts lists of metric objects)
 - Validates Vector config before service restart

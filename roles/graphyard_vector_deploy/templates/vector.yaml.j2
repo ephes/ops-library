@@ -97,6 +97,7 @@ sinks:
       headers:
         Authorization: {{ ("Bearer " ~ graphyard_vector_ingest_token) | to_json }}
         Content-Type: "application/json"
+        X-Forwarded-Proto: "https"
     batch:
       max_events: {{ graphyard_vector_batch_max_events }}
       timeout_secs: {{ graphyard_vector_batch_timeout_secs }}
