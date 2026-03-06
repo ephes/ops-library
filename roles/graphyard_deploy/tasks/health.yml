@@ -1,0 +1,38 @@
+---
+- name: health | Wait for graphyard web port
+  ansible.builtin.wait_for:
+    host: "{{ graphyard_web_bind_host }}"
+    port: "{{ graphyard_web_bind_port }}"
+    timeout: "{{ graphyard_healthcheck_retries * graphyard_healthcheck_delay_seconds }}"
+
+- name: health | Query Graphyard health endpoint
+  ansible.builtin.uri:
+    url: "{{ graphyard_healthcheck_url }}"
+    method: GET
+    status_code: 200
+    timeout: "{{ graphyard_healthcheck_timeout_seconds }}"
+  register: graphyard_health_response
+  retries: "{{ graphyard_healthcheck_retries }}"
+  delay: "{{ graphyard_healthcheck_delay_seconds }}"
+  until: graphyard_health_response.status == 200
+
+- name: health | Validate health payload status value
+  ansible.builtin.assert:
+    that:
+      - graphyard_health_response.json is defined
+      - graphyard_health_response.json.status is defined
+      - graphyard_health_response.json.status in ["ok", "warning", "critical"]
+    fail_msg: "Graphyard health endpoint returned an unexpected payload"
+
+- name: health | Collect service facts
+  ansible.builtin.service_facts:
+
+- name: health | Verify graphyard services are active
+  ansible.builtin.assert:
+    that:
+      - (ansible_facts.services.get(graphyard_web_service_name ~ '.service', {}).get('state')) == 'running'
+      - (ansible_facts.services.get(graphyard_agent_service_name ~ '.service', {}).get('state')) == 'running'
+    fail_msg: >-
+      Graphyard services are not active:
+      {{ graphyard_web_service_name }}={{ ansible_facts.services.get(graphyard_web_service_name ~ '.service', {}).get('state', 'missing') }},
+      {{ graphyard_agent_service_name }}={{ ansible_facts.services.get(graphyard_agent_service_name ~ '.service', {}).get('state', 'missing') }}

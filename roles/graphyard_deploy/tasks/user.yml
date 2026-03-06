@@ -1,0 +1,35 @@
+---
+- name: user | Ensure graphyard group exists
+  ansible.builtin.group:
+    name: "{{ graphyard_group }}"
+    state: present
+
+- name: user | Ensure graphyard user exists
+  ansible.builtin.user:
+    name: "{{ graphyard_user }}"
+    group: "{{ graphyard_group }}"
+    home: "{{ graphyard_home }}"
+    shell: /bin/bash
+    create_home: true
+    state: present
+
+- name: user | Create application directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ graphyard_home }}"
+      owner: "{{ graphyard_user }}"
+      group: "{{ graphyard_group }}"
+      mode: "0755"
+    - path: "{{ graphyard_site_path }}"
+      owner: "{{ graphyard_user }}"
+      group: "{{ graphyard_group }}"
+      mode: "0755"
+    - path: "{{ graphyard_env_dir }}"
+      owner: root
+      group: "{{ graphyard_group }}"
+      mode: "0750"

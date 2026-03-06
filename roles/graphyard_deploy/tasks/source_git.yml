@@ -1,0 +1,21 @@
+---
+- name: source_git | Install git
+  ansible.builtin.package:
+    name: git
+    state: present
+
+- name: source_git | Clone or update Graphyard repository
+  ansible.builtin.git:
+    repo: "{{ graphyard_git_repo }}"
+    dest: "{{ graphyard_site_path }}"
+    version: "{{ graphyard_git_version }}"
+    force: true
+  become: true
+  become_user: "{{ graphyard_user }}"
+
+- name: source_git | Ensure ownership for repository files
+  ansible.builtin.file:
+    path: "{{ graphyard_site_path }}"
+    owner: "{{ graphyard_user }}"
+    group: "{{ graphyard_group }}"
+    recurse: true

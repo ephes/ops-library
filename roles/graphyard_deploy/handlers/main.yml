@@ -1,0 +1,14 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart graphyard web
+  ansible.builtin.systemd:
+    name: "{{ graphyard_web_service_name }}"
+    state: restarted
+
+- name: restart graphyard agent
+  ansible.builtin.systemd:
+    name: "{{ graphyard_agent_service_name }}"
+    state: restarted

@@ -1,0 +1,54 @@
+---
+- name: django | Render Graphyard environment file
+  ansible.builtin.template:
+    src: graphyard.env.j2
+    dest: "{{ graphyard_env_path }}"
+    owner: root
+    group: "{{ graphyard_group }}"
+    mode: "0640"
+  notify:
+    - restart graphyard web
+    - restart graphyard agent
+
+- name: django | Run Django migrations
+  ansible.builtin.shell: |
+    set -a
+    . {{ graphyard_env_path }}
+    set +a
+    {{ graphyard_venv_bin }}/python manage.py migrate --noinput
+  args:
+    chdir: "{{ graphyard_django_path }}"
+    executable: /bin/bash
+  become: true
+  become_user: "{{ graphyard_user }}"
+  register: graphyard_migrate_result
+  changed_when: "'No migrations to apply' not in graphyard_migrate_result.stdout"
+  when: not graphyard_skip_django_manage | bool
+
+- name: django | Collect static files
+  ansible.builtin.shell: |
+    set -a
+    . {{ graphyard_env_path }}
+    set +a
+    {{ graphyard_venv_bin }}/python manage.py collectstatic --noinput
+  args:
+    chdir: "{{ graphyard_django_path }}"
+    executable: /bin/bash
+  become: true
+  become_user: "{{ graphyard_user }}"
+  register: graphyard_collectstatic_result
+  changed_when: "'0 static files copied' not in graphyard_collectstatic_result.stdout"
+  when: not graphyard_skip_django_manage | bool
+
+- name: django | Check sqlite database file exists
+  ansible.builtin.stat:
+    path: "{{ graphyard_django_path }}/db.sqlite3"
+  register: graphyard_db_file
+
+- name: django | Ensure sqlite database ownership
+  ansible.builtin.file:
+    path: "{{ graphyard_django_path }}/db.sqlite3"
+    owner: "{{ graphyard_user }}"
+    group: "{{ graphyard_group }}"
+    mode: "0640"
+  when: graphyard_db_file.stat.exists

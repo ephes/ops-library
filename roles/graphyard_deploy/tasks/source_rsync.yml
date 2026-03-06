@@ -1,0 +1,53 @@
+---
+- name: source_rsync | Ensure source directory exists
+  ansible.builtin.stat:
+    path: "{{ graphyard_source_path }}"
+  register: graphyard_source_dir
+  delegate_to: localhost
+  become: false
+
+- name: source_rsync | Fail when source directory is missing
+  ansible.builtin.fail:
+    msg: "Source directory {{ graphyard_source_path }} does not exist"
+  when: not graphyard_source_dir.stat.exists or not graphyard_source_dir.stat.isdir
+
+- name: source_rsync | Validate required source paths exist
+  ansible.builtin.stat:
+    path: "{{ graphyard_source_path }}/{{ item }}"
+  register: graphyard_source_path_stats
+  delegate_to: localhost
+  become: false
+  loop:
+    - src/django
+    - src/graphyard
+    - pyproject.toml
+    - uv.lock
+    - deploy/systemd/graphyard-web.service
+    - deploy/systemd/graphyard-agent.service
+  loop_control:
+    label: "{{ item }}"
+
+- name: source_rsync | Fail when required source paths are missing
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+    fail_msg: "Missing required path for rsync deployment: {{ item.invocation.module_args.path }}"
+  loop: "{{ graphyard_source_path_stats.results }}"
+  loop_control:
+    label: "{{ item.invocation.module_args.path }}"
+
+- name: source_rsync | Sync Graphyard project to target
+  ansible.posix.synchronize:
+    src: "{{ graphyard_source_path }}/"
+    dest: "{{ graphyard_site_path }}/"
+    delete: true
+    rsync_opts: "{{ graphyard_rsync_excludes | map('regex_replace', '^(.*)$', '--exclude=\\1') | list }}"
+  delegate_to: localhost
+  become: false
+
+- name: source_rsync | Ensure ownership for synced files
+  ansible.builtin.file:
+    path: "{{ graphyard_site_path }}"
+    owner: "{{ graphyard_user }}"
+    group: "{{ graphyard_group }}"
+    recurse: true

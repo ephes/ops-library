@@ -1,0 +1,17 @@
+[Unit]
+Description=graphyard agent (HA polling + condition evaluation)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ graphyard_user }}
+Group={{ graphyard_group }}
+WorkingDirectory={{ graphyard_django_path }}
+EnvironmentFile={{ graphyard_env_path }}
+ExecStart={{ graphyard_venv_bin }}/python manage.py start_agent
+Restart=always
+RestartSec={{ graphyard_agent_restart_sec }}
+
+[Install]
+WantedBy=multi-user.target

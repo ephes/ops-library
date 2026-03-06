@@ -1,0 +1,53 @@
+---
+- name: main | Skip role when disabled
+  ansible.builtin.meta: end_host
+  when: not graphyard_enabled | bool
+
+- name: main | Validate required variables
+  ansible.builtin.assert:
+    that:
+      - graphyard_deploy_method in ["rsync", "git"]
+      - graphyard_django_secret_key is defined
+      - graphyard_django_secret_key | length > 0
+      - graphyard_django_secret_key != "CHANGEME"
+      - graphyard_django_secret_key != "replace-me"
+      - not graphyard_influx_token_required | bool or (
+          graphyard_influx_token is defined and
+          graphyard_influx_token | length > 0 and
+          graphyard_influx_token != "CHANGEME" and
+          graphyard_influx_token != "replace-me"
+        )
+    fail_msg: >-
+      Invalid Graphyard deploy configuration. Ensure deploy_method is one of rsync/git,
+      graphyard_django_secret_key is set, and graphyard_influx_token is set when
+      graphyard_influx_token_required=true.
+
+- name: main | Validate rsync-specific requirements
+  ansible.builtin.assert:
+    that:
+      - graphyard_source_path is defined
+      - graphyard_source_path | length > 0
+    fail_msg: "graphyard_source_path must be set when graphyard_deploy_method=rsync"
+  when: graphyard_deploy_method == "rsync"
+
+- name: main | Ensure graphyard user and directories
+  ansible.builtin.import_tasks: user.yml
+
+- name: main | Sync Graphyard source code
+  ansible.builtin.include_tasks: "source_{{ graphyard_deploy_method }}.yml"
+
+- name: main | Prepare Python runtime and dependencies
+  ansible.builtin.import_tasks: python.yml
+
+- name: main | Apply Django environment and management tasks
+  ansible.builtin.import_tasks: django.yml
+
+- name: main | Configure and start systemd services
+  ansible.builtin.import_tasks: service.yml
+
+- name: main | Apply handlers before health verification
+  ansible.builtin.meta: flush_handlers
+
+- name: main | Verify Graphyard health endpoint and services
+  ansible.builtin.import_tasks: health.yml
+  when: graphyard_healthcheck_enabled | bool

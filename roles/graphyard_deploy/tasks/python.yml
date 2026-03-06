@@ -1,0 +1,39 @@
+---
+- name: python | Ensure uv is installed
+  ansible.builtin.import_role:
+    name: uv_install
+
+- name: python | Validate pyproject and lock files are present
+  ansible.builtin.stat:
+    path: "{{ graphyard_site_path }}/{{ item }}"
+  register: graphyard_python_project_files
+  loop:
+    - pyproject.toml
+    - uv.lock
+
+- name: python | Fail when required project files are missing
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+    fail_msg: "Missing required file at {{ item.invocation.module_args.path }}"
+  loop: "{{ graphyard_python_project_files.results }}"
+  loop_control:
+    label: "{{ item.invocation.module_args.path }}"
+
+- name: python | Create virtual environment
+  ansible.builtin.command:
+    cmd: "uv venv --python {{ graphyard_python_version }} {{ graphyard_venv_path }}"
+  args:
+    creates: "{{ graphyard_venv_bin }}/python"
+  become: true
+  become_user: "{{ graphyard_user }}"
+
+- name: python | Sync runtime dependencies with uv
+  ansible.builtin.command:
+    cmd: "uv sync {{ graphyard_uv_sync_args }}"
+  args:
+    chdir: "{{ graphyard_site_path }}"
+  environment:
+    UV_PROJECT_ENVIRONMENT: "{{ graphyard_venv_path }}"
+  become: true
+  become_user: "{{ graphyard_user }}"

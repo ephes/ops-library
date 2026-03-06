@@ -1,0 +1,32 @@
+---
+- name: service | Render graphyard web systemd unit
+  ansible.builtin.template:
+    src: graphyard-web.service.j2
+    dest: "/etc/systemd/system/{{ graphyard_web_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart graphyard web
+
+- name: service | Render graphyard agent systemd unit
+  ansible.builtin.template:
+    src: graphyard-agent.service.j2
+    dest: "/etc/systemd/system/{{ graphyard_agent_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart graphyard agent
+
+- name: service | Enable and start Graphyard services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop:
+    - "{{ graphyard_web_service_name }}"
+    - "{{ graphyard_agent_service_name }}"

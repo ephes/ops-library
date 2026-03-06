@@ -1,0 +1,98 @@
+---
+# Graphyard core application deployment defaults
+
+# Toggle role execution
+graphyard_enabled: true
+
+# User and paths
+graphyard_user: graphyard
+graphyard_group: "{{ graphyard_user }}"
+graphyard_home: "/opt/apps/graphyard"
+graphyard_site_path: "{{ graphyard_home }}/site"
+graphyard_django_path: "{{ graphyard_site_path }}/src/django"
+graphyard_venv_path: "{{ graphyard_site_path }}/.venv"
+graphyard_venv_bin: "{{ graphyard_venv_path }}/bin"
+graphyard_env_dir: "/etc/graphyard"
+graphyard_env_path: "{{ graphyard_env_dir }}/graphyard.env"
+
+# Source deployment
+graphyard_deploy_method: rsync  # Options: rsync, git
+graphyard_source_path: ""  # REQUIRED when graphyard_deploy_method=rsync
+graphyard_git_repo: "https://github.com/ephes/graphyard.git"
+graphyard_git_version: "main"
+graphyard_rsync_excludes:
+  - ".git/"
+  - ".venv/"
+  - ".dev/"
+  - "__pycache__/"
+  - "*.pyc"
+  - ".pytest_cache/"
+  - ".coverage"
+  - "htmlcov/"
+  - ".tox/"
+  - ".mypy_cache/"
+  - "src/django/db.sqlite3"
+  - "src/django/staticfiles/"
+  - "src/django/media/"
+
+# Python runtime and dependency sync
+graphyard_python_version: "3.12"
+graphyard_uv_sync_args: "--no-default-groups --no-dev"
+
+# Django runtime config
+graphyard_django_settings_module: "config.settings.production"
+graphyard_django_secret_key: "CHANGEME"
+graphyard_django_allowed_hosts:
+  - "127.0.0.1"
+  - "localhost"
+graphyard_django_csrf_trusted_origins: []
+graphyard_django_admin_url: "hidden_admin/"
+graphyard_django_login_url: "/login/"
+graphyard_django_login_redirect_url: "/"
+graphyard_django_session_cookie_age_seconds: 86400
+
+# Influx integration
+graphyard_influx_url: "http://127.0.0.1:8086"
+graphyard_influx_token: "CHANGEME"
+graphyard_influx_token_required: true
+graphyard_influx_org: "graphyard"
+graphyard_influx_bucket: "graphyard"
+graphyard_influx_measurement: "graphyard_metrics"
+graphyard_influx_api_mode: "v2"
+graphyard_influx_timeout_ms: 10000
+
+# Grafana base URL for Graphyard UI links
+graphyard_grafana_base_url: ""
+
+# Agent and health settings
+graphyard_metric_collection_interval_seconds: 60
+graphyard_condition_eval_interval_seconds: 60
+graphyard_ingest_heartbeat_min_interval_seconds: 15
+graphyard_heartbeat_warning_seconds: 900
+graphyard_heartbeat_critical_seconds: 3600
+graphyard_condition_data_stale_warning_seconds: 600
+
+# SQLite settings
+graphyard_sqlite_timeout_seconds: 30
+graphyard_sqlite_busy_timeout_ms: 30000
+graphyard_sqlite_journal_mode: "WAL"
+graphyard_sqlite_synchronous: "NORMAL"
+
+# Systemd service config
+graphyard_web_service_name: "graphyard-web"
+graphyard_agent_service_name: "graphyard-agent"
+graphyard_web_bind_host: "127.0.0.1"
+graphyard_web_bind_port: 8051
+graphyard_web_workers: 1
+graphyard_web_restart_sec: 5
+graphyard_agent_restart_sec: 5
+
+# Health verification after deploy
+graphyard_healthcheck_enabled: true
+graphyard_healthcheck_url: "http://127.0.0.1:{{ graphyard_web_bind_port }}/v1/health"
+graphyard_healthcheck_timeout_seconds: 5
+graphyard_healthcheck_retries: 12
+graphyard_healthcheck_delay_seconds: 5
+
+# Optional skips for emergency rollback workflows
+graphyard_skip_django_manage: false
