@@ -9,6 +9,8 @@
   ansible.builtin.uri:
     url: "{{ graphyard_healthcheck_url }}"
     method: GET
+    headers:
+      X-Forwarded-Proto: "https"
     status_code: 200
     timeout: "{{ graphyard_healthcheck_timeout_seconds }}"
   register: graphyard_health_response
