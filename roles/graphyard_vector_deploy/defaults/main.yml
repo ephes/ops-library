@@ -47,8 +47,8 @@ graphyard_vector_http_timeout_secs: 15
 graphyard_vector_request_concurrency: 1
 graphyard_vector_retry_initial_backoff_secs: 1
 graphyard_vector_retry_max_duration_secs: 3600
-graphyard_vector_batch_timeout_secs: 2
-graphyard_vector_batch_max_events: 1
+graphyard_vector_batch_timeout_secs: 5
+graphyard_vector_batch_max_events: 50
 graphyard_vector_buffer_max_size: 268435488
 
 graphyard_vector_source_tag: "vector-host-metrics"

@@ -32,6 +32,8 @@ graphyard_vector_service_id: "host_metrics"
 graphyard_vector_source_tag: "macmini-vector"
 graphyard_vector_scrape_interval_secs: 60
 graphyard_vector_request_concurrency: 1
+graphyard_vector_batch_max_events: 50
+graphyard_vector_batch_timeout_secs: 5
 graphyard_vector_filesystem_mountpoint_excludes:
   - "/run/docker/netns/*"
   - "/var/lib/docker/*"
@@ -50,7 +52,8 @@ See `defaults/main.yml` for full variable reference.
 ## Notes
 
 - Sink healthcheck is disabled because Graphyard does not expose a dedicated Vector-compatible healthcheck endpoint for this sink.
-- `batch.max_events: 1` keeps request bodies small and predictable; tune this only if Graphyard ingest batching behavior is validated for your workload.
+- Batch defaults are tuned for lower ingest request pressure: `batch.max_events: 50`, `batch.timeout_secs: 5`.
+- Request concurrency remains pinned to `1` for stable single-node ingest behavior.
 - Filesystem mountpoint excludes are rendered only when the `filesystem` collector is enabled.
 
 ## Example Playbook
