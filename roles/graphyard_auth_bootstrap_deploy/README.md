@@ -10,7 +10,7 @@ Idempotently bootstrap Graphyard app and Grafana login credentials on an existin
 - Keeps the Grafana datasource URL aligned to the running InfluxDB container IP.
 - Rewrites Grafana datasource provisioning URL to the same target so restarts do not revert it.
 - Restarts Grafana only when datasource URL changes so the new datasource target is loaded in-memory.
-- Verifies datasource health via Grafana API after bootstrap.
+- Verifies datasource health via Grafana API after Grafana admin password reconciliation.
 
 This role is intended to run **after** Graphyard and Grafana are already running on the host.
 

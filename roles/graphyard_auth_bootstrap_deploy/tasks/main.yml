@@ -355,29 +355,6 @@
   changed_when: false
   tags: [graphyard_auth_bootstrap]
 
-- name: Verify Grafana datasource health via API
-  ansible.builtin.command:
-    argv:
-      - docker
-      - exec
-      - -e
-      - "GRAFANA_ADMIN_USER={{ graphyard_auth_bootstrap_grafana_admin_user }}"
-      - -e
-      - "GRAFANA_ADMIN_PASSWORD={{ graphyard_auth_bootstrap_grafana_admin_password }}"
-      - "{{ graphyard_auth_bootstrap_grafana_container_name }}"
-      - sh
-      - -lc
-      - >-
-        curl -fsS --max-time 10 -u "$GRAFANA_ADMIN_USER:$GRAFANA_ADMIN_PASSWORD"
-        "http://127.0.0.1:3000/api/datasources/uid/{{ graphyard_auth_bootstrap_grafana_datasource_uid }}/health"
-  register: graphyard_auth_bootstrap_grafana_datasource_health
-  changed_when: false
-  failed_when: >-
-    graphyard_auth_bootstrap_grafana_datasource_health.rc != 0
-    or '"status":"OK"' not in graphyard_auth_bootstrap_grafana_datasource_health.stdout
-  no_log: true
-  tags: [graphyard_auth_bootstrap]
-
 - name: Reset Grafana admin password when mismatch is detected
   ansible.builtin.command:
     argv:
@@ -454,5 +431,28 @@
   failed_when: >-
     graphyard_auth_bootstrap_grafana_verify.rc != 0
     or 'MATCH' not in graphyard_auth_bootstrap_grafana_verify.stdout
+  no_log: true
+  tags: [graphyard_auth_bootstrap]
+
+- name: Verify Grafana datasource health via API
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - -e
+      - "GRAFANA_ADMIN_USER={{ graphyard_auth_bootstrap_grafana_admin_user }}"
+      - -e
+      - "GRAFANA_ADMIN_PASSWORD={{ graphyard_auth_bootstrap_grafana_admin_password }}"
+      - "{{ graphyard_auth_bootstrap_grafana_container_name }}"
+      - sh
+      - -lc
+      - >-
+        curl -fsS --max-time 10 -u "$GRAFANA_ADMIN_USER:$GRAFANA_ADMIN_PASSWORD"
+        "http://127.0.0.1:3000/api/datasources/uid/{{ graphyard_auth_bootstrap_grafana_datasource_uid }}/health"
+  register: graphyard_auth_bootstrap_grafana_datasource_health
+  changed_when: false
+  failed_when: >-
+    graphyard_auth_bootstrap_grafana_datasource_health.rc != 0
+    or '"status":"OK"' not in graphyard_auth_bootstrap_grafana_datasource_health.stdout
   no_log: true
   tags: [graphyard_auth_bootstrap]
