@@ -24,6 +24,7 @@
     dest: "{{ opsgate_app_dir }}/"
     delete: true
     rsync_opts: "{{ opsgate_rsync_exclude_opts }}"
+  register: opsgate_api_source_sync
 
 - name: app_source | Ensure synced app source ownership
   ansible.builtin.file:
@@ -40,6 +41,7 @@
     dest: "{{ opsgate_runner_app_dir }}/"
     delete: true
     rsync_opts: "{{ opsgate_rsync_exclude_opts }}"
+  register: opsgate_runner_source_sync
 
 - name: app_source | Ensure synced runner app source ownership
   ansible.builtin.file:

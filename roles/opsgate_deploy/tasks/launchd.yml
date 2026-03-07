@@ -23,6 +23,12 @@
     opsgate_launchd_unit_label: "{{ opsgate_api_launchd_label }}"
     opsgate_launchd_unit_plist_path: "{{ opsgate_api_launchd_plist_path }}"
     opsgate_launchd_template_changed: "{{ opsgate_api_launchd_template.changed }}"
+    opsgate_launchd_force_restart: >-
+      {{
+        opsgate_api_source_sync.changed
+        or opsgate_uv_sync.changed
+        or opsgate_api_env_template.changed
+      }}
     opsgate_launchd_start_unit: "{{ opsgate_api_launchd_start_service | bool }}"
   when: opsgate_api_launchd_manage_state | bool
 
@@ -32,5 +38,11 @@
     opsgate_launchd_unit_label: "{{ opsgate_runner_launchd_label }}"
     opsgate_launchd_unit_plist_path: "{{ opsgate_runner_launchd_plist_path }}"
     opsgate_launchd_template_changed: "{{ opsgate_runner_launchd_template.changed }}"
+    opsgate_launchd_force_restart: >-
+      {{
+        opsgate_runner_source_sync.changed
+        or opsgate_runner_uv_sync.changed
+        or opsgate_runner_env_template.changed
+      }}
     opsgate_launchd_start_unit: "{{ opsgate_runner_launchd_start_service | bool }}"
   when: opsgate_runner_launchd_manage_state | bool

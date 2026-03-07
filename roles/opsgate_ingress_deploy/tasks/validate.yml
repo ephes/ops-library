@@ -1,0 +1,17 @@
+---
+- name: validate | Validate core OpsGate ingress settings
+  ansible.builtin.assert:
+    that:
+      - opsgate_ingress_backend_url | length > 0
+    fail_msg: "opsgate_ingress_backend_url is required."
+
+- name: validate | Validate Traefik settings when enabled
+  ansible.builtin.assert:
+    that:
+      - opsgate_ingress_traefik_host | length > 0
+      - opsgate_ingress_traefik_config_path | length > 0
+      - opsgate_ingress_allowed_ip_ranges | length > 0
+    fail_msg: >-
+      opsgate_ingress_traefik_host, opsgate_ingress_traefik_config_path, and
+      opsgate_ingress_allowed_ip_ranges are required when Traefik is enabled.
+  when: opsgate_ingress_traefik_enabled | bool

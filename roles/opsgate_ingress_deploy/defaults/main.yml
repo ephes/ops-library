@@ -1,0 +1,17 @@
+---
+# Private HTTPS ingress for OpsGate via Traefik on the edge host.
+
+opsgate_ingress_traefik_enabled: true
+opsgate_ingress_traefik_host: ""
+opsgate_ingress_traefik_entrypoints:
+  - web-secure
+opsgate_ingress_traefik_cert_resolver: ""
+opsgate_ingress_traefik_config_path: "/etc/traefik/dynamic/opsgate.yml"
+
+opsgate_ingress_backend_url: ""
+
+opsgate_ingress_allowed_ip_ranges:
+  - "127.0.0.1/32"
+  - "::1/128"
+  - "100.64.0.0/10"
+  - "fd7a:115c:a1e0::/48"

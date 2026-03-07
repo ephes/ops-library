@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - UniFi lifecycle roles: `unifi_deploy`, `unifi_backup`, `unifi_restore`, and `unifi_remove` (Mongo-auth aware, Traefik/HA integration, Justfile wiring, docs)
 - Navidrome lifecycle roles: `navidrome_deploy`, `navidrome_backup`, `navidrome_restore`, and `navidrome_remove` (systemd binary install, Traefik basic auth, rescan timer, backup/restore tooling)
 - `zed` role scrub timers can optionally wait for completion and run a post-scrub spindown hook
+- Unit tests for OpenClaw metrics collector canary behavior and schema invariants (`tests/unit/test_openclaw_metrics_collector.py`)
 
 ### Changed
 - `nyxmon_restore` now mirrors the Home Assistant structure (validate/prepare/restore/verify/cleanup), adds block/rescue rollback, conditional restores, handler flush, and health checks
@@ -77,6 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `open_webui_deploy` documentation now calls out the `studio.tailde2ec.ts.net` hostname, Traefik config path/basic auth wiring, and ops-control preflight bypass flag
 - `open_webui_remove` now defaults to non-destructive options and supports removing compose/env files separately from the site directory
 - `zfs_usb_replication` gained optional syncoid identifiers, force-export, and spindown hooks to prevent snapshot collisions and park disks after USB runs
+- `openclaw_deploy` synthetic canary collection now sets explicit collector `TimeoutStartSec=600`, keeps dedicated canary session-id routing, and preserves stable canary metadata keys (`agent`, `timeout_seconds`, `session_id`) in payload defaults
 
 ### Fixed
 - Home Assistant presence automations now include the default file to prevent missing automation imports after deployment

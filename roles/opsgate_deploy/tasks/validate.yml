@@ -73,4 +73,4 @@
       - opsgate_session_secret | trim | length >= 20
     fail_msg: >-
       OpsGate credentials still contain placeholder values. Provide real (or at least non-placeholder)
-      bcrypt/token values via ops-control secrets before deployment. OpenClaw submit token is optional in Phase 4A.
+      bcrypt/token values via ops-control secrets before deployment. OpenClaw submit token is optional in the current slice.

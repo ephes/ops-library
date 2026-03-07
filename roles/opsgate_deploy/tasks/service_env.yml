@@ -6,6 +6,7 @@
     owner: root
     group: "{{ control_service_group }}"
     mode: "0640"
+  register: opsgate_api_env_template
   no_log: true
 
 - name: service_env | Render runner environment file
@@ -15,4 +16,5 @@
     owner: root
     group: "{{ ops_group }}"
     mode: "0640"
+  register: opsgate_runner_env_template
   no_log: true

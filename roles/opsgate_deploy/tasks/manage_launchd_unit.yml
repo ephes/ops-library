@@ -35,5 +35,6 @@
     - opsgate_launchd_start_unit | bool
     - >-
       opsgate_launchd_template_changed | bool
+      or (opsgate_launchd_force_restart | default(false) | bool)
       or opsgate_launchd_unit_status.rc != 0
       or 'state = running' not in (opsgate_launchd_unit_status.stdout | default(''))

@@ -1,6 +1,6 @@
 # opsgate_deploy
 
-Deploy OpsGate on macOS (`launchd` host model) with the Phase 4A control service + runner baseline.
+Deploy OpsGate on macOS (`launchd` host model) with the Phase 4B control service + runner baseline.
 
 ## What this role does
 
@@ -22,6 +22,7 @@ Deploy OpsGate on macOS (`launchd` host model) with the Phase 4A control service
 - Renders two LaunchDaemons:
   - `de.wersdoerfer.opsgate.api` as `control_service_user`
   - `de.wersdoerfer.opsgate.runner` as `ops`
+- Leaves HTTPS ingress to a separate Traefik-facing role on the edge host
 
 ## Important defaults
 
@@ -60,7 +61,9 @@ opsgate_runner_app_dir: "/Users/ops/opsgate"
 opsgate_uv_bin: "uv"
 
 opsgate_ui_password_bcrypt: "CHANGEME_BCRYPT_HASH"
-# Optional in Phase 4A
+opsgate_trust_proxy_headers: false
+opsgate_session_cookie_secure: false
+# Optional in current slice
 opsgate_submit_token_openclaw: ""
 opsgate_submit_token_nyxmon: "CHANGEME_NYXMON_SUBMIT_TOKEN"
 opsgate_submit_token_operator: "CHANGEME_OPERATOR_SUBMIT_TOKEN"
@@ -87,18 +90,22 @@ opsgate_api_launchd_start_service: false
 opsgate_runner_launchd_start_service: false
 ```
 
+Set `opsgate_trust_proxy_headers: true` and `opsgate_session_cookie_secure: true` when the UI is served behind HTTPS ingress.
+
 See `defaults/main.yml` for the full variable reference.
 
 ## Example playbook
 
 ```yaml
-- name: Deploy OpsGate control service and runner (Phase 4A)
+- name: Deploy OpsGate control service and runner (Phase 4B)
   hosts: macstudio
   become: true
   roles:
     - role: local.ops_library.opsgate_deploy
       vars:
         opsgate_source_path: "/Users/jochen/projects/opsgate"
+        opsgate_trust_proxy_headers: true
+        opsgate_session_cookie_secure: true
         opsgate_launchd_manage_state: true
         opsgate_api_launchd_manage_state: true
         opsgate_runner_launchd_manage_state: true
