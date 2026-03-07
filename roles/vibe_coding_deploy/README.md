@@ -6,6 +6,7 @@ Set up a dedicated interactive coding user with persistent tmux sessions, fish s
 
 - Creates a locked user (no sudo, SSH key-only) with home on a custom path (e.g. encrypted volume).
 - Configures SSH `authorized_keys` and hardens sshd with a `Match User` block.
+- Fixes SSH agent forwarding inside tmux/zellij by deploying `~/.ssh/rc` (creates a stable `~/.ssh/auth_sock` symlink on each login) and a fish `conf.d` snippet that points `SSH_AUTH_SOCK` at the symlink.
 - Runs `shell_basics_deploy` for CLI tools (fish, tmux, fzf, ripgrep, zoxide, etc.) with `manage_fish_config: false` so chezmoi owns the fish config.
 - Clones dotfiles repo via SSH agent forwarding and applies with chezmoi (preferred), or rsyncs chezmoi source from local machine (legacy fallback).
 - Deploys API keys to `~/.config/fish/conf.d/secrets.fish` (role-managed, outside chezmoi).
@@ -102,12 +103,12 @@ vibe_coding_sshd_hardening: true
 - **Locked password** — SSH key-only authentication (`password: "!"`, `password_lock: true`).
 - **No persistent GitHub keys** — existing `~/.ssh/id_*` private keys are removed on each run. Only `authorized_keys` remains.
 - **SSH key required** — the role fails early if `vibe_coding_ssh_authorized_keys` is empty, preventing an unreachable locked account.
-- **sshd Match block** enforces `PasswordAuthentication no`, `AllowAgentForwarding yes` (for `ta` workflow), `X11Forwarding no`, `AllowTcpForwarding no`.
+- **sshd Match block** enforces `PasswordAuthentication no`, `AllowAgentForwarding yes`, `PermitUserRC yes` (for agent forwarding inside multiplexers), `X11Forwarding no`, `AllowTcpForwarding no`.
 
 ## Task Order
 
 1. Create group and user
-2. Configure `authorized_keys`
+2. Configure `authorized_keys`, deploy `~/.ssh/rc` and agent-forwarding fish snippet
 3. Run `shell_basics_deploy` (fish config disabled)
 4. Initialize/update chezmoi
 5. Deploy secrets to `~/.config/fish/conf.d/secrets.fish`

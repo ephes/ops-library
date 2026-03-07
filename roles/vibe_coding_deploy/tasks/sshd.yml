@@ -8,6 +8,7 @@
           PasswordAuthentication no
           PermitEmptyPasswords no
           AllowAgentForwarding yes
+          PermitUserRC yes
           X11Forwarding no
           AllowTcpForwarding no
     validate: "sshd -t -f %s"

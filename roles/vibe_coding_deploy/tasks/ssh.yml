@@ -15,6 +15,30 @@
     group: "{{ vibe_coding_group }}"
     mode: "0600"
 
+- name: ssh | Deploy SSH rc for agent forwarding symlink
+  ansible.builtin.template:
+    src: ssh_rc.j2
+    dest: "{{ vibe_coding_user_home }}/.ssh/rc"
+    owner: "{{ vibe_coding_user }}"
+    group: "{{ vibe_coding_group }}"
+    mode: "0700"
+
+- name: ssh | Ensure fish conf.d directory exists
+  ansible.builtin.file:
+    path: "{{ vibe_coding_user_home }}/.config/fish/conf.d"
+    state: directory
+    owner: "{{ vibe_coding_user }}"
+    group: "{{ vibe_coding_group }}"
+    mode: "0755"
+
+- name: ssh | Deploy fish snippet for SSH agent forwarding
+  ansible.builtin.template:
+    src: ssh-agent-forward.fish.j2
+    dest: "{{ vibe_coding_user_home }}/.config/fish/conf.d/ssh-agent-forward.fish"
+    owner: "{{ vibe_coding_user }}"
+    group: "{{ vibe_coding_group }}"
+    mode: "0644"
+
 - name: ssh | Find any existing SSH private keys
   ansible.builtin.find:
     paths: "{{ vibe_coding_user_home }}/.ssh"
