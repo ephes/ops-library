@@ -138,7 +138,8 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 | `openclaw_metrics_endpoint_container_name` | `{{ openclaw_container_name }}` | OpenClaw container queried by collector |
 | `openclaw_metrics_endpoint_remove_data_on_disable` | `false` | Remove `openclaw_metrics_endpoint_data_dir` when endpoint is disabled |
 | `openclaw_metrics_endpoint_synthetic_canary_enabled` | `false` | Enable synthetic real agent-turn canary collection in metrics payload |
-| `openclaw_metrics_endpoint_synthetic_canary_agent` | `main` | Agent id used for canary command |
+| `openclaw_metrics_endpoint_synthetic_canary_agent` | `main` | Optional agent id for canary command; leave empty to route by `session_id` only |
+| `openclaw_metrics_endpoint_synthetic_canary_session_id` | `probe-openclaw-canary` | Dedicated session id used for canary turns to avoid lock contention with regular sessions |
 | `openclaw_metrics_endpoint_synthetic_canary_message` | `Reply exactly: OPENCLAW_CANARY_OK` | Deterministic prompt for canary request |
 | `openclaw_metrics_endpoint_synthetic_canary_expected_text` | `OPENCLAW_CANARY_OK` | Expected canary marker text (success when present as a standalone trimmed line) |
 | `openclaw_metrics_endpoint_synthetic_canary_interval` | `1800` | Minimum seconds between canary executions (collector cycles in between use cached result) |
@@ -485,7 +486,10 @@ When `openclaw_metrics_endpoint_enabled: true`:
 - an unprivileged HTTP server (`{{ openclaw_metrics_endpoint_service_name }}`) serves the JSON with basic auth at:
   - `http://{{ openclaw_metrics_endpoint_bind }}:{{ openclaw_metrics_endpoint_port }}{{ openclaw_metrics_endpoint_path }}`
 - response includes `meta.age_seconds` to detect stale collector output.
+- collector runs that execute the synthetic canary can take longer than one timer tick (`openclaw_metrics_endpoint_timer_interval`); systemd oneshot does not overlap runs.
 - optional synthetic canary mode executes a real `agent --json` turn at a conservative cadence and stores:
+  - uses a dedicated canary session id (`probe-openclaw-canary` by default)
+  - passes `--timeout` to the OpenClaw CLI and keeps a short outer subprocess grace window
   - `$.openclaw.synthetic.canary.last_run.ok`
   - `$.openclaw.synthetic.canary.last_run.expected_match`
   - `$.openclaw.synthetic.canary.last_success_epoch`

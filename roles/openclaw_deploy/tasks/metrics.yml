@@ -100,7 +100,7 @@
     - name: metrics | Validate synthetic canary settings
       ansible.builtin.assert:
         that:
-          - openclaw_metrics_endpoint_synthetic_canary_agent | length > 0
+          - openclaw_metrics_endpoint_synthetic_canary_session_id | trim | length > 0
           - openclaw_metrics_endpoint_synthetic_canary_message | trim | length > 0
           - openclaw_metrics_endpoint_synthetic_canary_expected_text | trim | length > 0
           - openclaw_metrics_endpoint_synthetic_canary_state_path | length > 0
@@ -114,7 +114,7 @@
           - openclaw_metrics_endpoint_synthetic_canary_output_max_chars | int >= 32
         fail_msg: >-
           Invalid synthetic canary configuration.
-          Expected non-empty agent/message/expected-text/state-path and bounded
+          Expected non-empty session-id/message/expected-text/state-path and bounded
           interval/timeout/retry values.
       when: openclaw_metrics_endpoint_synthetic_canary_enabled | bool
 

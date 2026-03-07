@@ -99,6 +99,9 @@ def build_payload() -> dict[str, Any]:
                     "cached": True,
                     "due": False,
                     "interval_seconds": 0,
+                    "agent": None,
+                    "timeout_seconds": 0,
+                    "session_id": "",
                     "last_run": {
                         "at": None,
                         "epoch": 0,
@@ -352,6 +355,14 @@ def run_synthetic_canary(args: argparse.Namespace, payload: dict[str, Any]) -> N
     canary = payload["openclaw"]["synthetic"]["canary"]
     canary["enabled"] = bool(args.synthetic_canary_enabled)
     canary["interval_seconds"] = int(args.synthetic_canary_interval)
+    canary_timeout = max(1, int(args.synthetic_canary_timeout))
+    canary_agent_id = (args.synthetic_canary_agent or "").strip()
+    canary_session_id = (args.synthetic_canary_session_id or "").strip()
+    if not canary_session_id:
+        canary_session_id = "probe-openclaw-canary"
+    canary["agent"] = canary_agent_id or None
+    canary["timeout_seconds"] = canary_timeout
+    canary["session_id"] = canary_session_id
 
     if not canary["enabled"]:
         return
@@ -380,16 +391,22 @@ def run_synthetic_canary(args: argparse.Namespace, payload: dict[str, Any]) -> N
                 "node",
                 "dist/index.js",
                 "agent",
-                "--agent",
-                args.synthetic_canary_agent,
-                "--message",
-                args.synthetic_canary_message,
-                "--json",
             ]
+            if canary_agent_id:
+                cmd.extend(["--agent", canary_agent_id])
+            cmd.extend(
+                [
+                    "--session-id",
+                    canary_session_id,
+                    "--message",
+                    args.synthetic_canary_message,
+                    "--timeout",
+                    str(canary_timeout),
+                    "--json",
+                ]
+            )
             try:
-                canary_json = run_json_command(
-                    cmd, timeout=int(args.synthetic_canary_timeout)
-                )
+                canary_json = run_json_command(cmd, timeout=canary_timeout + 10)
                 status = str(canary_json.get("status") or "").lower()
                 payloads = ((canary_json.get("result") or {}).get("payloads") or [])
                 first_payload = payloads[0] if payloads and isinstance(payloads[0], dict) else {}
@@ -540,7 +557,12 @@ def main() -> int:
     parser.add_argument(
         "--synthetic-canary-agent",
         default={{ openclaw_metrics_endpoint_synthetic_canary_agent | to_json }},
-        help="OpenClaw agent id for synthetic canary command",
+        help="Optional OpenClaw agent id for synthetic canary command",
+    )
+    parser.add_argument(
+        "--synthetic-canary-session-id",
+        default={{ openclaw_metrics_endpoint_synthetic_canary_session_id | to_json }},
+        help="OpenClaw session id used for synthetic canary command",
     )
     parser.add_argument(
         "--synthetic-canary-message",

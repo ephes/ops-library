@@ -5,6 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+# Keep this explicit to avoid host-level DefaultTimeoutStartSec overrides killing
+# long synthetic-canary runs.
+TimeoutStartSec=600
 ExecStart=/usr/bin/python3 {{ openclaw_metrics_endpoint_collector_path }} \
   --container {{ openclaw_metrics_endpoint_container_name }} \
   --output {{ openclaw_metrics_endpoint_json_path }} \
@@ -19,6 +22,7 @@ ExecStart=/usr/bin/python3 {{ openclaw_metrics_endpoint_collector_path }} \
   --paperless-auth-failure-threshold {{ openclaw_paperless_auth_failure_threshold }} \
   --synthetic-canary-enabled {{ 1 if (openclaw_metrics_endpoint_synthetic_canary_enabled | bool) else 0 }} \
   --synthetic-canary-agent {{ openclaw_metrics_endpoint_synthetic_canary_agent | quote }} \
+  --synthetic-canary-session-id {{ openclaw_metrics_endpoint_synthetic_canary_session_id | quote }} \
   --synthetic-canary-message {{ openclaw_metrics_endpoint_synthetic_canary_message | quote }} \
   --synthetic-canary-expected-text {{ openclaw_metrics_endpoint_synthetic_canary_expected_text | quote }} \
   --synthetic-canary-interval {{ openclaw_metrics_endpoint_synthetic_canary_interval }} \
