@@ -1,5 +1,5 @@
 ---
-- name: Restart Vector
+- name: Restart Graphyard Vector Service
   ansible.builtin.systemd:
     name: "{{ graphyard_vector_service_name }}"
     state: restarted

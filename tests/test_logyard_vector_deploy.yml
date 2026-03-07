@@ -44,16 +44,16 @@
         - name: Load defaults
           ansible.builtin.include_vars:
             file: "{{ role_path }}/defaults/main.yml"
+            name: logyard_vector_defaults
 
         - name: Assert required defaults
           ansible.builtin.assert:
             that:
-              - logyard_vector_enabled == false
-              - logyard_vector_ingest_endpoint == "http://127.0.0.1:3101"
-              - logyard_vector_config_dir == "/etc/vector/config.d"
-              - logyard_vector_config_path == "/etc/vector/config.d/30-logyard-journald.yaml"
-              - logyard_vector_batch_max_events == 200
-              - logyard_vector_source_type == "journald"
+              - logyard_vector_defaults.logyard_vector_enabled == false
+              - logyard_vector_defaults.logyard_vector_ingest_endpoint == "http://127.0.0.1:3101"
+              - logyard_vector_defaults.logyard_vector_config_dir == "/etc/vector/config.d"
+              - logyard_vector_defaults.logyard_vector_batch_max_events == 200
+              - logyard_vector_defaults.logyard_vector_source_type == "journald"
 
     - name: Validate template renders expected fields
       block:
@@ -91,8 +91,10 @@
             that:
               - "'type: journald' in rendered_text"
               - "'type: loki' in rendered_text"
-              - "'endpoint: \"http://127.0.0.1:3101\"' in rendered_text"
+              - "'endpoint: \"https://logyard.home.xn--wersdrfer-47a.de\"' in rendered_text"
               - "'\"source_type\": \"journald\"' in rendered_text"
+              - "'\"host\": \"macmini\"' in rendered_text"
+              - "'ssh.service' in rendered_text"
               - "'labels:' in rendered_text"
               - "'data_dir:' not in rendered_text"
           vars:

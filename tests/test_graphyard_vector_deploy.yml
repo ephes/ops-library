@@ -47,17 +47,17 @@
         - name: Load defaults
           ansible.builtin.include_vars:
             file: "{{ role_path }}/defaults/main.yml"
+            name: graphyard_vector_defaults
 
         - name: Assert required defaults
           ansible.builtin.assert:
             that:
-              - graphyard_vector_ingest_url == "CHANGEME"
-              - graphyard_vector_enabled == false
-              - graphyard_vector_config_dir == "/etc/vector/config.d"
-              - graphyard_vector_config_path == "/etc/vector/config.d/20-graphyard-host-metrics.yaml"
-              - graphyard_vector_request_concurrency == 1
-              - graphyard_vector_buffer_max_size == 268435488
-              - graphyard_vector_filesystem_mountpoint_excludes | length > 0
+              - graphyard_vector_defaults.graphyard_vector_ingest_url == "CHANGEME"
+              - graphyard_vector_defaults.graphyard_vector_enabled == false
+              - graphyard_vector_defaults.graphyard_vector_config_dir == "/etc/vector/config.d"
+              - graphyard_vector_defaults.graphyard_vector_request_concurrency == 1
+              - graphyard_vector_defaults.graphyard_vector_buffer_max_size == 268435488
+              - graphyard_vector_defaults.graphyard_vector_filesystem_mountpoint_excludes | length > 0
 
     - name: Validate template renders expected fields
       block:
@@ -95,6 +95,8 @@
           ansible.builtin.assert:
             that:
               - "'Authorization: \"Bearer test-token\"' in rendered_text"
+              - "'uri: \"http://127.0.0.1:8051/v1/metrics\"' in rendered_text"
+              - "'\"host\": \"macmini\"' in rendered_text"
               - "'concurrency: 1' in rendered_text"
               - "'enabled: false' in rendered_text"
               - "'/run/docker/netns/*' in rendered_text"

@@ -121,7 +121,40 @@
         owner: root
         group: root
         mode: "0644"
-      notify: Restart Vector
+      notify: Restart Graphyard Vector Service
+
+    - name: Check existing shared Vector global config
+      ansible.builtin.stat:
+        path: "{{ graphyard_vector_global_config_path }}"
+      register: graphyard_vector_global_config_stat
+
+    - name: Read existing shared Vector global config
+      ansible.builtin.slurp:
+        path: "{{ graphyard_vector_global_config_path }}"
+      register: graphyard_vector_global_config_raw
+      when: graphyard_vector_global_config_stat.stat.exists
+
+    - name: Assert shared Vector global config matches requested data directory
+      ansible.builtin.assert:
+        that:
+          - existing_graphyard_vector_global_data_dir == graphyard_vector_data_dir
+        fail_msg: >-
+          Existing shared Vector global config uses data_dir={{ existing_graphyard_vector_global_data_dir }},
+          but graphyard_vector_data_dir={{ graphyard_vector_data_dir }}. Align the shared Vector data_dir
+          before deploying.
+      vars:
+        existing_graphyard_vector_global_data_dir: >-
+          {{
+            ((graphyard_vector_global_config_raw.content | b64decode | from_yaml).data_dir
+            | default(graphyard_vector_data_dir, true))
+            if graphyard_vector_global_config_stat.stat.exists
+            else graphyard_vector_data_dir
+          }}
+
+    - name: Remove legacy monolithic Vector config
+      ansible.builtin.file:
+        path: "/etc/vector/vector.yaml"
+        state: absent
 
     - name: Stage and validate Graphyard Vector config fragment
       block:
@@ -189,7 +222,7 @@
             owner: root
             group: vector
             mode: "0640"
-          notify: Restart Vector
+          notify: Restart Graphyard Vector Service
 
         - name: Deploy Vector config fragment for Graphyard ingest
           ansible.builtin.template:
@@ -198,7 +231,7 @@
             owner: root
             group: vector
             mode: "0640"
-          notify: Restart Vector
+          notify: Restart Graphyard Vector Service
       always:
         - name: Clean up temporary Vector validation directory
           ansible.builtin.file:
