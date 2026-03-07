@@ -38,6 +38,7 @@ The table below links each published role to its dedicated documentation. Refer 
 | Monitoring | [`smartd`](roles/smartd/README.md) | Configure smartmontools smartd for HDD/NVMe monitoring and scheduled tests. |
 | Monitoring | [`zed`](roles/zed/README.md) | Configure ZFS Event Daemon notifications and optional zpool scrub timers. |
 | Monitoring | [`nyxmon_storage_exporter`](roles/nyxmon_storage_exporter/README.md) | Install `nyxmon-storage-metrics` JSON exporter for storage health monitoring via HTTP endpoints. |
+| Monitoring | [`logyard_vector_deploy`](roles/logyard_vector_deploy/README.md) | Deploy Vector journald producers for Logyard/Loki with low-cardinality labels, disk buffering, and retries. |
 | Monitoring | [`graphyard_vector_deploy`](roles/graphyard_vector_deploy/README.md) | Deploy Vector host-metrics ingest producer for Graphyard (`POST /v1/metrics`) with disk buffering and retries. |
 | Monitoring | [`backup_metrics_endpoint`](roles/backup_metrics_endpoint/README.md) | Expose backup-job + replication freshness signals as authenticated JSON for Nyxmon (`/.well-known/backup`). |
 | Infrastructure | [`mail_relay_client`](roles/mail_relay_client/README.md) | Configure a minimal Postfix setup for relaying outbound alert mail via a smarthost. |
@@ -49,6 +50,8 @@ The table below links each published role to its dedicated documentation. Refer 
 | Infrastructure | [`bind_authoritative_deploy`](roles/bind_authoritative_deploy/README.md) | Deploy authoritative BIND 9 with managed configs and zone files. |
 | Service deployment | [`fastdeploy_deploy`](roles/fastdeploy_deploy/README.md) | Deploy the FastDeploy platform (database, uv, frontend build, systemd, Traefik). |
 | Service deployment | [`nyxmon_deploy`](roles/nyxmon_deploy/README.md) | Deploy Nyxmon (Django app, monitoring agent, Telegram integration). |
+| Service deployment | [`logyard_deploy`](roles/logyard_deploy/README.md) | Deploy Logyard core runtime (Loki, shared Grafana datasource wiring, retention, and Nyxmon-facing health endpoint). |
+| Service deployment | [`logyard_ingress_deploy`](roles/logyard_ingress_deploy/README.md) | Expose Logyard Loki through an internal-only Traefik route for trusted LAN/Tailscale producers. |
 | Service deployment | [`graphyard_deploy`](roles/graphyard_deploy/README.md) | Deploy Graphyard core app/runtime (source sync, uv env, migrate/collectstatic, systemd web+agent, health checks). |
 | Service deployment | [`graphyard_ingress_deploy`](roles/graphyard_ingress_deploy/README.md) | Expose Graphyard + Grafana through Traefik with LAN/Tailscale bypass and public basic auth. |
 | Service deployment | [`graphyard_auth_bootstrap_deploy`](roles/graphyard_auth_bootstrap_deploy/README.md) | Idempotently bootstrap Graphyard Django login and Grafana admin credentials from secrets. |

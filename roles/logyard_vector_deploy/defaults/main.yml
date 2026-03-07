@@ -1,0 +1,34 @@
+---
+# logyard_vector_deploy defaults
+
+logyard_vector_enabled: false
+
+logyard_vector_package_name: vector
+logyard_vector_repo_url: "https://apt.vector.dev/"
+logyard_vector_repo_channel: "stable"
+logyard_vector_repo_version: "vector-0"
+logyard_vector_repo_key_url: "https://keys.datadoghq.com/DATADOG_APT_KEY_CURRENT.public"
+logyard_vector_repo_key_tmp: "/tmp/vector-datadog-archive-keyring.public"
+logyard_vector_repo_keyring_path: "/usr/share/keyrings/datadog-archive-keyring.gpg"
+logyard_vector_repo_list_file: "/etc/apt/sources.list.d/vector.list"
+
+logyard_vector_config_path: "/etc/vector/vector.yaml"
+logyard_vector_data_dir: "/var/lib/vector"
+logyard_vector_service_name: "vector"
+
+logyard_vector_ingest_endpoint: "http://127.0.0.1:3101"
+logyard_vector_host_id: "{{ inventory_hostname }}"
+logyard_vector_environment: "prod"
+logyard_vector_source_type: "journald"
+logyard_vector_include_units: []
+logyard_vector_exclude_units: []
+logyard_vector_include_matches: []
+logyard_vector_current_boot_only: false
+
+logyard_vector_http_timeout_secs: 15
+logyard_vector_request_concurrency: 1
+logyard_vector_retry_initial_backoff_secs: 1
+logyard_vector_retry_max_duration_secs: 3600
+logyard_vector_batch_timeout_secs: 5
+logyard_vector_batch_max_events: 200
+logyard_vector_buffer_max_size: 268435488

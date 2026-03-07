@@ -1,0 +1,101 @@
+---
+- name: Test Logyard Vector Deploy Role Components
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/logyard_vector_deploy"
+    rendered_config: "/tmp/test-logyard-vector.yaml"
+
+  tasks:
+    - name: Verify role files exist
+      block:
+        - name: Check defaults file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/defaults/main.yml"
+          register: defaults_file
+
+        - name: Check tasks file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/tasks/main.yml"
+          register: tasks_file
+
+        - name: Check handlers file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/handlers/main.yml"
+          register: handlers_file
+
+        - name: Check template file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/templates/vector.yaml.j2"
+          register: template_file
+
+        - name: Assert required files exist
+          ansible.builtin.assert:
+            that:
+              - defaults_file.stat.exists
+              - tasks_file.stat.exists
+              - handlers_file.stat.exists
+              - template_file.stat.exists
+
+    - name: Validate defaults are safe
+      block:
+        - name: Load defaults
+          ansible.builtin.include_vars:
+            file: "{{ role_path }}/defaults/main.yml"
+
+        - name: Assert required defaults
+          ansible.builtin.assert:
+            that:
+              - logyard_vector_enabled == false
+              - logyard_vector_ingest_endpoint == "http://127.0.0.1:3101"
+              - logyard_vector_batch_max_events == 200
+              - logyard_vector_source_type == "journald"
+
+    - name: Validate template renders expected fields
+      block:
+        - name: Render template with test values
+          ansible.builtin.template:
+            src: "{{ role_path }}/templates/vector.yaml.j2"
+            dest: "{{ rendered_config }}"
+          vars:
+            logyard_vector_data_dir: /var/lib/vector
+            logyard_vector_current_boot_only: false
+            logyard_vector_include_units:
+              - ssh.service
+              - vector.service
+            logyard_vector_exclude_units: []
+            logyard_vector_include_matches: []
+            logyard_vector_host_id: macmini
+            logyard_vector_environment: prod
+            logyard_vector_source_type: journald
+            logyard_vector_ingest_endpoint: https://logyard.home.xn--wersdrfer-47a.de
+            logyard_vector_http_timeout_secs: 15
+            logyard_vector_request_concurrency: 1
+            logyard_vector_retry_initial_backoff_secs: 1
+            logyard_vector_retry_max_duration_secs: 3600
+            logyard_vector_batch_max_events: 200
+            logyard_vector_batch_timeout_secs: 5
+            logyard_vector_buffer_max_size: 268435488
+
+        - name: Read rendered template
+          ansible.builtin.slurp:
+            path: "{{ rendered_config }}"
+          register: rendered_file
+
+        - name: Assert rendered template includes journald and Loki settings
+          ansible.builtin.assert:
+            that:
+              - "'type: journald' in rendered_text"
+              - "'type: loki' in rendered_text"
+              - "'endpoint: \"https://logyard.home.xn--wersdrfer-47a.de\"' in rendered_text"
+              - "'host: \"{{ host }}\"' in rendered_text"
+              - "'ssh.service' in rendered_text"
+          vars:
+            rendered_text: "{{ rendered_file.content | b64decode }}"
+
+    - name: Clean up rendered test file
+      ansible.builtin.file:
+        path: "{{ rendered_config }}"
+        state: absent

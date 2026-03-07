@@ -1,0 +1,123 @@
+---
+- name: grafana | Check Graphyard Grafana container running state
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{.State.Running}}' }}"
+      - "{{ logyard_grafana_container_name }}"
+  register: logyard_grafana_container_state
+  changed_when: false
+  failed_when: logyard_grafana_container_state.rc != 0
+
+- name: grafana | Read Graphyard Grafana network attachments
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{json .NetworkSettings.Networks}}' }}"
+      - "{{ logyard_grafana_container_name }}"
+  register: logyard_grafana_networks
+  changed_when: false
+
+- name: grafana | Connect Graphyard Grafana container to Logyard network
+  ansible.builtin.command:
+    argv:
+      - docker
+      - network
+      - connect
+      - "{{ logyard_docker_network_name }}"
+      - "{{ logyard_grafana_container_name }}"
+  when: logyard_docker_network_name not in (logyard_grafana_networks.stdout | from_json).keys()
+  notify: restart graphyard grafana container
+
+- name: grafana | Ensure datasource directory exists
+  ansible.builtin.file:
+    path: "{{ logyard_grafana_datasource_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: grafana | Render Logyard datasource provisioning file
+  ansible.builtin.template:
+    src: grafana-logyard-datasource.yml.j2
+    dest: "{{ logyard_grafana_datasource_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart graphyard grafana container
+
+- name: grafana | Ensure Logyard dashboard root exists
+  ansible.builtin.file:
+    path: "{{ logyard_grafana_dashboards_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: grafana | Ensure Logyard dashboard target directory exists
+  ansible.builtin.file:
+    path: "{{ logyard_grafana_dashboard_target_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: grafana | Copy Logyard dashboard assets into shared Grafana tree
+  ansible.builtin.copy:
+    src: "{{ logyard_grafana_dashboard_source_dir }}/"
+    dest: "{{ logyard_grafana_dashboard_target_dir }}/"
+    owner: root
+    group: root
+    mode: "0644"
+    directory_mode: "0755"
+    remote_src: true
+  notify: restart graphyard grafana container
+
+- name: grafana | Find Logyard dashboard directories
+  ansible.builtin.find:
+    paths: "{{ logyard_grafana_dashboard_target_dir }}"
+    file_type: directory
+    recurse: true
+  register: logyard_dashboard_directories
+
+- name: grafana | Ensure Logyard dashboard directory permissions are traversable
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ [ {'path': logyard_grafana_dashboard_target_dir} ] + logyard_dashboard_directories.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  notify: restart graphyard grafana container
+
+- name: grafana | Find Logyard dashboard files
+  ansible.builtin.find:
+    paths: "{{ logyard_grafana_dashboard_target_dir }}"
+    file_type: file
+    recurse: true
+  register: logyard_dashboard_files
+
+- name: grafana | Ensure Logyard dashboard file permissions are readable
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ logyard_dashboard_files.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  notify: restart graphyard grafana container
+
+- name: grafana | Start Graphyard Grafana container when currently stopped
+  ansible.builtin.command:
+    argv:
+      - docker
+      - start
+      - "{{ logyard_grafana_container_name }}"
+  when: logyard_grafana_container_state.stdout | trim != "true"
+  changed_when: true

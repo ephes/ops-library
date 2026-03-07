@@ -1,0 +1,35 @@
+---
+- name: Skip logyard_ingress_deploy when disabled
+  ansible.builtin.debug:
+    msg: "logyard_ingress_deploy skipped (logyard_ingress_enabled=false)."
+  when: not logyard_ingress_enabled | bool
+
+- name: Configure Logyard ingress
+  when: logyard_ingress_enabled | bool
+  block:
+    - name: Validate required ingress variables
+      ansible.builtin.assert:
+        that:
+          - logyard_ingress_host | length > 0
+          - logyard_ingress_host != "logyard.example.com"
+          - logyard_ingress_backend_url | length > 0
+          - logyard_ingress_internal_ip_ranges | length > 0
+        fail_msg: >-
+          Missing required logyard_ingress_* configuration. Ensure host, backend URL,
+          and internal IP ranges are set.
+
+    - name: Ensure Traefik dynamic config directory exists
+      ansible.builtin.file:
+        path: "{{ logyard_ingress_traefik_config_path | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Render Traefik dynamic config for Logyard
+      ansible.builtin.template:
+        src: traefik-logyard.yml.j2
+        dest: "{{ logyard_ingress_traefik_config_path }}"
+        owner: root
+        group: root
+        mode: "0644"

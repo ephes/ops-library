@@ -1,0 +1,50 @@
+---
+- name: source_rsync | Ensure source directory exists
+  ansible.builtin.stat:
+    path: "{{ logyard_source_path }}"
+  register: logyard_source_dir
+  delegate_to: localhost
+  become: false
+
+- name: source_rsync | Fail when source directory is missing
+  ansible.builtin.fail:
+    msg: "Source directory {{ logyard_source_path }} does not exist"
+  when: not logyard_source_dir.stat.exists or not logyard_source_dir.stat.isdir
+
+- name: source_rsync | Validate required source paths exist
+  ansible.builtin.stat:
+    path: "{{ logyard_source_path }}/{{ item }}"
+  register: logyard_source_path_stats
+  delegate_to: localhost
+  become: false
+  loop:
+    - README.md
+    - docs/operational-assumptions.md
+    - deploy/grafana/dashboards/logyard/logyard-home.json
+  loop_control:
+    label: "{{ item }}"
+
+- name: source_rsync | Fail when required source paths are missing
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+    fail_msg: "Missing required path for rsync deployment: {{ item.invocation.module_args.path }}"
+  loop: "{{ logyard_source_path_stats.results }}"
+  loop_control:
+    label: "{{ item.invocation.module_args.path }}"
+
+- name: source_rsync | Sync Logyard project to target
+  ansible.posix.synchronize:
+    src: "{{ logyard_source_path }}/"
+    dest: "{{ logyard_site_path }}/"
+    delete: true
+    rsync_opts: "{{ logyard_rsync_excludes | map('regex_replace', '^(.*)$', '--exclude=\\1') | list }}"
+  delegate_to: localhost
+  become: false
+
+- name: source_rsync | Ensure ownership for synced files
+  ansible.builtin.file:
+    path: "{{ logyard_site_path }}"
+    owner: "{{ logyard_user }}"
+    group: "{{ logyard_group }}"
+    recurse: true

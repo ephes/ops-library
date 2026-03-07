@@ -1,0 +1,118 @@
+---
+- name: Skip logyard_vector_deploy when disabled
+  ansible.builtin.debug:
+    msg: "logyard_vector_deploy skipped (logyard_vector_enabled=false)."
+  when: not logyard_vector_enabled | bool
+
+- name: Deploy Vector producer for Logyard ingest
+  when: logyard_vector_enabled | bool
+  block:
+    - name: Validate required Logyard Vector variables
+      ansible.builtin.assert:
+        that:
+          - logyard_vector_ingest_endpoint is defined
+          - logyard_vector_ingest_endpoint | length > 0
+          - logyard_vector_host_id | length > 0
+          - logyard_vector_environment | length > 0
+          - logyard_vector_source_type == "journald"
+        fail_msg: >-
+          Missing required logyard_vector_* configuration. Ensure ingest endpoint, host id,
+          environment, and journald source settings are set.
+
+    - name: Install apt prerequisites for Vector repository
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+        state: present
+        update_cache: true
+
+    - name: Ensure Vector keyring parent directory exists
+      ansible.builtin.file:
+        path: "{{ logyard_vector_repo_keyring_path | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Download Vector repository key
+      ansible.builtin.get_url:
+        url: "{{ logyard_vector_repo_key_url }}"
+        dest: "{{ logyard_vector_repo_key_tmp }}"
+        owner: root
+        group: root
+        mode: "0644"
+      register: logyard_vector_repo_key
+
+    - name: Check existing Vector apt keyring
+      ansible.builtin.stat:
+        path: "{{ logyard_vector_repo_keyring_path }}"
+      register: logyard_vector_repo_keyring
+
+    - name: Convert repository key to apt keyring format
+      ansible.builtin.command:
+        argv:
+          - gpg
+          - --dearmor
+          - --yes
+          - --output
+          - "{{ logyard_vector_repo_keyring_path }}"
+          - "{{ logyard_vector_repo_key_tmp }}"
+      when: logyard_vector_repo_key.changed or not logyard_vector_repo_keyring.stat.exists
+
+    - name: Ensure apt can read Vector keyring
+      ansible.builtin.file:
+        path: "{{ logyard_vector_repo_keyring_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Add Vector apt repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by={{ logyard_vector_repo_keyring_path }}] {{ logyard_vector_repo_url }} {{ logyard_vector_repo_channel }} {{ logyard_vector_repo_version }}"
+        filename: "{{ logyard_vector_repo_list_file | basename | regex_replace('\\.list$', '') }}"
+        state: present
+      register: logyard_vector_repo
+
+    - name: Install Vector package
+      ansible.builtin.apt:
+        name: "{{ logyard_vector_package_name }}"
+        state: present
+        update_cache: "{{ logyard_vector_repo.changed or logyard_vector_repo_key.changed }}"
+
+    - name: Ensure Vector data directory exists
+      ansible.builtin.file:
+        path: "{{ logyard_vector_data_dir }}"
+        state: directory
+        owner: vector
+        group: vector
+        mode: "0750"
+
+    - name: Deploy Vector config for Logyard ingest
+      ansible.builtin.template:
+        src: vector.yaml.j2
+        dest: "{{ logyard_vector_config_path }}"
+        owner: root
+        group: vector
+        mode: "0640"
+      notify: Restart Vector
+
+    - name: Validate Vector configuration
+      ansible.builtin.command:
+        argv:
+          - vector
+          - validate
+          - "{{ logyard_vector_config_path }}"
+      changed_when: false
+
+    - name: Flush Vector restart handler
+      ansible.builtin.meta: flush_handlers
+
+    - name: Ensure Vector service is enabled and running
+      ansible.builtin.systemd:
+        name: "{{ logyard_vector_service_name }}"
+        enabled: true
+        state: started
+        daemon_reload: true

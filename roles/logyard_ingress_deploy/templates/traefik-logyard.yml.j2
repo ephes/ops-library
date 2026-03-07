@@ -1,0 +1,59 @@
+# Traefik configuration for Logyard
+# Managed by Ansible - do not edit manually
+
+http:
+  routers:
+    logyard-int:
+      rule: "Host(`{{ logyard_ingress_host }}`) && ({% for range in logyard_ingress_internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+        - web-secure
+      priority: 120
+      middlewares:
+        - logyard-headers
+        - logyard-gzip
+{% for middleware in logyard_ingress_middlewares %}
+        - {{ middleware }}
+{% endfor %}
+      service: logyard
+{% if logyard_ingress_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ logyard_ingress_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    logyard-http:
+      rule: "Host(`{{ logyard_ingress_host }}`)"
+      entryPoints:
+        - web
+      middlewares:
+        - redirect-to-https
+      service: logyard
+
+  middlewares:
+    logyard-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: DENY
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    logyard-gzip:
+      compress: {}
+
+    redirect-to-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    logyard:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "{{ logyard_ingress_backend_url }}"

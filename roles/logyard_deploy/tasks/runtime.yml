@@ -1,0 +1,56 @@
+---
+- name: runtime | Ensure Logyard compose network exists
+  ansible.builtin.command:
+    argv:
+      - docker
+      - network
+      - inspect
+      - "{{ logyard_docker_network_name }}"
+  register: logyard_network_inspect
+  changed_when: false
+  failed_when: false
+
+- name: runtime | Create Logyard compose network when missing
+  ansible.builtin.command:
+    argv:
+      - docker
+      - network
+      - create
+      - "{{ logyard_docker_network_name }}"
+  when: logyard_network_inspect.rc != 0
+
+- name: runtime | Render Loki config
+  ansible.builtin.template:
+    src: loki-config.yml.j2
+    dest: "{{ logyard_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart logyard
+
+- name: runtime | Render Logyard compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ logyard_compose_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart logyard
+
+- name: runtime | Render Logyard systemd service
+  ansible.builtin.template:
+    src: logyard.service.j2
+    dest: "/etc/systemd/system/{{ logyard_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart logyard
+
+- name: runtime | Ensure Logyard systemd service is enabled and started
+  ansible.builtin.systemd:
+    name: "{{ logyard_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true

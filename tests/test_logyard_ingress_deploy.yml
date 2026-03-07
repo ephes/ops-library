@@ -1,0 +1,66 @@
+---
+- name: Test Logyard Ingress Deploy Role Components
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/logyard_ingress_deploy"
+    rendered_config: "/tmp/test-logyard-ingress.yml"
+
+  tasks:
+    - name: Verify role files exist
+      block:
+        - name: Check defaults file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/defaults/main.yml"
+          register: defaults_file
+
+        - name: Check tasks file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/tasks/main.yml"
+          register: tasks_file
+
+        - name: Check template file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/templates/traefik-logyard.yml.j2"
+          register: template_file
+
+        - name: Assert required files exist
+          ansible.builtin.assert:
+            that:
+              - defaults_file.stat.exists
+              - tasks_file.stat.exists
+              - template_file.stat.exists
+
+    - name: Render ingress template
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/traefik-logyard.yml.j2"
+        dest: "{{ rendered_config }}"
+      vars:
+        logyard_ingress_host: logyard.home.xn--wersdrfer-47a.de
+        logyard_ingress_backend_url: http://127.0.0.1:3101
+        logyard_ingress_internal_ip_ranges:
+          - 192.168.0.0/16
+          - 100.64.0.0/10
+        logyard_ingress_middlewares: []
+        logyard_ingress_traefik_cert_resolver: letsencrypt
+
+    - name: Read rendered ingress template
+      ansible.builtin.slurp:
+        path: "{{ rendered_config }}"
+      register: rendered_file
+
+    - name: Assert rendered ingress config includes internal-only router
+      ansible.builtin.assert:
+        that:
+          - "'Host(`logyard.home.xn--wersdrfer-47a.de`)' in rendered_text"
+          - "'ClientIP(`192.168.0.0/16`) || ClientIP(`100.64.0.0/10`)' in rendered_text"
+          - "'url: \"http://127.0.0.1:3101\"' in rendered_text"
+      vars:
+        rendered_text: "{{ rendered_file.content | b64decode }}"
+
+    - name: Clean up rendered ingress template
+      ansible.builtin.file:
+        path: "{{ rendered_config }}"
+        state: absent

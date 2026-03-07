@@ -1,0 +1,27 @@
+---
+- name: health_endpoint | Render Logyard health endpoint script
+  ansible.builtin.template:
+    src: logyard_health_httpd.py.j2
+    dest: "{{ logyard_health_script_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: restart logyard health endpoint
+
+- name: health_endpoint | Render Logyard health endpoint systemd unit
+  ansible.builtin.template:
+    src: logyard-health-endpoint.service.j2
+    dest: "/etc/systemd/system/{{ logyard_health_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart logyard health endpoint
+
+- name: health_endpoint | Ensure Logyard health endpoint is enabled and started
+  ansible.builtin.systemd:
+    name: "{{ logyard_health_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true

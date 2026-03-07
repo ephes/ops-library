@@ -1,0 +1,22 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart logyard
+  ansible.builtin.systemd:
+    name: "{{ logyard_service_name }}"
+    state: restarted
+
+- name: restart logyard health endpoint
+  ansible.builtin.systemd:
+    name: "{{ logyard_health_service_name }}"
+    state: restarted
+
+- name: restart graphyard grafana container
+  ansible.builtin.command:
+    argv:
+      - docker
+      - restart
+      - "{{ logyard_grafana_container_name }}"
+  changed_when: true

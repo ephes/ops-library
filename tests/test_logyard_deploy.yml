@@ -1,0 +1,111 @@
+---
+- name: Test Logyard Deploy Role Components
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/logyard_deploy"
+    rendered_dir: "/tmp/test-logyard-deploy"
+    rendered_config: "/tmp/test-logyard-deploy/loki-config.yml"
+    rendered_datasource: "/tmp/test-logyard-deploy/logyard-datasource.yml"
+
+  tasks:
+    - name: Verify role files exist
+      block:
+        - name: Check defaults file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/defaults/main.yml"
+          register: defaults_file
+
+        - name: Check tasks file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/tasks/main.yml"
+          register: tasks_file
+
+        - name: Check template files
+          ansible.builtin.stat:
+            path: "{{ role_path }}/templates/{{ item }}"
+          register: template_files
+          loop:
+            - loki-config.yml.j2
+            - docker-compose.yml.j2
+            - grafana-logyard-datasource.yml.j2
+            - logyard_health_httpd.py.j2
+
+        - name: Assert required files exist
+          ansible.builtin.assert:
+            that:
+              - defaults_file.stat.exists
+              - tasks_file.stat.exists
+              - (template_files.results | map(attribute='stat.exists') | list) | min
+
+    - name: Validate safe defaults
+      block:
+        - name: Load defaults
+          ansible.builtin.include_vars:
+            file: "{{ role_path }}/defaults/main.yml"
+
+        - name: Assert important defaults
+          ansible.builtin.assert:
+            that:
+              - logyard_enabled == false
+              - logyard_loki_image == "grafana/loki:3.5.11"
+              - logyard_retention_period == "336h"
+              - logyard_health_path == "/.well-known/logyard"
+              - logyard_grafana_datasource_uid == "logyard-loki"
+
+    - name: Validate templates render expected settings
+      block:
+        - name: Ensure render directory exists
+          ansible.builtin.file:
+            path: "{{ rendered_dir }}"
+            state: directory
+            mode: "0755"
+
+        - name: Render Loki config
+          ansible.builtin.template:
+            src: "{{ role_path }}/templates/loki-config.yml.j2"
+            dest: "{{ rendered_config }}"
+          vars:
+            logyard_loki_http_port: 3100
+            logyard_loki_schema_from: "2024-01-01"
+            logyard_loki_index_prefix: "logyard_index_"
+            logyard_query_cache_max_size_mb: 100
+            logyard_retention_period: "336h"
+            logyard_volume_enabled: true
+
+        - name: Render Grafana datasource
+          ansible.builtin.template:
+            src: "{{ role_path }}/templates/grafana-logyard-datasource.yml.j2"
+            dest: "{{ rendered_datasource }}"
+          vars:
+            logyard_grafana_datasource_name: "Logyard Loki"
+            logyard_grafana_datasource_uid: "logyard-loki"
+            logyard_loki_container_name: "logyard-loki"
+            logyard_loki_http_port: 3100
+            logyard_grafana_datasource_is_default: false
+
+        - name: Read rendered files
+          ansible.builtin.slurp:
+            path: "{{ item }}"
+          register: rendered_files
+          loop:
+            - "{{ rendered_config }}"
+            - "{{ rendered_datasource }}"
+
+        - name: Assert rendered output includes retention and datasource URL
+          ansible.builtin.assert:
+            that:
+              - "'retention_period: 336h' in rendered_loki"
+              - "'retention_enabled: true' in rendered_loki"
+              - "'url: http://logyard-loki:3100' in rendered_datasource"
+              - "'uid: logyard-loki' in rendered_datasource"
+          vars:
+            rendered_loki: "{{ rendered_files.results[0].content | b64decode }}"
+            rendered_datasource: "{{ rendered_files.results[1].content | b64decode }}"
+
+    - name: Clean up rendered test directory
+      ansible.builtin.file:
+        path: "{{ rendered_dir }}"
+        state: absent

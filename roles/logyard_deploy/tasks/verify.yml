@@ -1,0 +1,26 @@
+---
+- name: verify | Wait for Loki ready endpoint
+  ansible.builtin.uri:
+    url: "{{ logyard_ready_url }}"
+    method: GET
+    return_content: true
+    status_code: 200
+  register: logyard_ready_check
+  retries: "{{ logyard_healthcheck_retries }}"
+  delay: "{{ logyard_healthcheck_delay_seconds }}"
+  until:
+    - logyard_ready_check.status == 200
+    - "'ready' in (logyard_ready_check.content | lower)"
+
+- name: verify | Wait for Logyard health endpoint
+  ansible.builtin.uri:
+    url: "http://{{ logyard_health_bind_host }}:{{ logyard_health_port }}{{ logyard_health_path }}"
+    method: GET
+    return_content: true
+    status_code: 200
+  register: logyard_health_check
+  retries: "{{ logyard_healthcheck_retries }}"
+  delay: "{{ logyard_healthcheck_delay_seconds }}"
+  until:
+    - logyard_health_check.status == 200
+    - logyard_health_check.json.loki.ready | default(false)

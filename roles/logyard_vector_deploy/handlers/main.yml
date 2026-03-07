@@ -1,0 +1,5 @@
+---
+- name: Restart Vector
+  ansible.builtin.systemd:
+    name: "{{ logyard_vector_service_name }}"
+    state: restarted

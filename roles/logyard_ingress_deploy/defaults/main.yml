@@ -1,0 +1,18 @@
+---
+# logyard_ingress_deploy defaults
+
+logyard_ingress_enabled: false
+logyard_ingress_traefik_config_path: "/etc/traefik/dynamic/logyard.yml"
+logyard_ingress_traefik_service_name: "traefik"
+logyard_ingress_traefik_cert_resolver: ""
+
+logyard_ingress_host: "logyard.example.com"
+logyard_ingress_backend_url: "http://127.0.0.1:3101"
+logyard_ingress_middlewares: []
+logyard_ingress_internal_ip_ranges:
+  - "192.168.0.0/16"
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"
+  - "100.64.0.0/10"
+  - "fd7a:115c:a1e0::/48"
+  - "fd50:3e45:c454:0::/64"

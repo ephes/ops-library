@@ -1,0 +1,21 @@
+---
+- name: source_git | Install git
+  ansible.builtin.package:
+    name: git
+    state: present
+
+- name: source_git | Clone or update Logyard repository
+  ansible.builtin.git:
+    repo: "{{ logyard_git_repo }}"
+    dest: "{{ logyard_site_path }}"
+    version: "{{ logyard_git_version }}"
+    force: true
+  become: true
+  become_user: "{{ logyard_user }}"
+
+- name: source_git | Ensure ownership for repository files
+  ansible.builtin.file:
+    path: "{{ logyard_site_path }}"
+    owner: "{{ logyard_user }}"
+    group: "{{ logyard_group }}"
+    recurse: true
