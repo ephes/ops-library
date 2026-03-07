@@ -40,6 +40,8 @@
       vars:
         logyard_ingress_host: logyard.home.xn--wersdrfer-47a.de
         logyard_ingress_backend_url: http://127.0.0.1:3101
+        logyard_ingress_root_redirect_enabled: true
+        logyard_ingress_root_redirect_url: https://grafana.home.xn--wersdrfer-47a.de/d/logyard-home/logyard-overview
         logyard_ingress_internal_ip_ranges:
           - 192.168.0.0/16
           - 100.64.0.0/10
@@ -54,6 +56,9 @@
     - name: Assert rendered ingress config includes internal-only router
       ansible.builtin.assert:
         that:
+          - "'logyard-root:' in rendered_text"
+          - "'Path(`/`)' in rendered_text"
+          - "'replacement: \"https://grafana.home.xn--wersdrfer-47a.de/d/logyard-home/logyard-overview\"' in rendered_text"
           - "'Host(`logyard.home.xn--wersdrfer-47a.de`)' in rendered_text"
           - "'ClientIP(`192.168.0.0/16`) || ClientIP(`100.64.0.0/10`)' in rendered_text"
           - "'url: \"http://127.0.0.1:3101\"' in rendered_text"

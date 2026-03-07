@@ -14,9 +14,10 @@
           - logyard_ingress_host != "logyard.example.com"
           - logyard_ingress_backend_url | length > 0
           - logyard_ingress_internal_ip_ranges | length > 0
+          - not logyard_ingress_root_redirect_enabled | bool or logyard_ingress_root_redirect_url | length > 0
         fail_msg: >-
           Missing required logyard_ingress_* configuration. Ensure host, backend URL,
-          and internal IP ranges are set.
+          internal IP ranges, and optional root redirect target are set.
 
     - name: Ensure Traefik dynamic config directory exists
       ansible.builtin.file:

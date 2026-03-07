@@ -3,6 +3,22 @@
 
 http:
   routers:
+{% if logyard_ingress_root_redirect_enabled | bool %}
+    logyard-root:
+      rule: "Host(`{{ logyard_ingress_host }}`) && Path(`/`)"
+      entryPoints:
+        - web-secure
+      priority: 140
+      middlewares:
+        - logyard-root-redirect
+      service: noop@internal
+{% if logyard_ingress_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ logyard_ingress_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% endif %}
     logyard-int:
       rule: "Host(`{{ logyard_ingress_host }}`) && ({% for range in logyard_ingress_internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
       entryPoints:
@@ -31,6 +47,14 @@ http:
       service: logyard
 
   middlewares:
+{% if logyard_ingress_root_redirect_enabled | bool %}
+    logyard-root-redirect:
+      redirectRegex:
+        regex: "^https?://[^/]+/$"
+        replacement: "{{ logyard_ingress_root_redirect_url }}"
+        permanent: false
+
+{% endif %}
     logyard-headers:
       headers:
         browserXssFilter: true

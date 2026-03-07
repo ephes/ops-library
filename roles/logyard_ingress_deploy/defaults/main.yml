@@ -8,6 +8,8 @@ logyard_ingress_traefik_cert_resolver: ""
 
 logyard_ingress_host: "logyard.example.com"
 logyard_ingress_backend_url: "http://127.0.0.1:3101"
+logyard_ingress_root_redirect_enabled: true
+logyard_ingress_root_redirect_url: "https://grafana.home.xn--wersdrfer-47a.de/d/logyard-home/logyard-overview"
 logyard_ingress_middlewares: []
 logyard_ingress_internal_ip_ranges:
   - "192.168.0.0/16"
