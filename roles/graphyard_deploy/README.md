@@ -36,8 +36,9 @@ Deploys the core Graphyard Django application and runtime services (`graphyard-w
 | `graphyard_django_secret_key` | `CHANGEME` | Required, must be overridden |
 | `graphyard_influx_token` | `CHANGEME` | Required when `graphyard_influx_token_required=true` |
 | `graphyard_metric_collection_specs_apply` | `false` | Render/apply declarative metric specs via `manage.py apply_metric_collection_specs` |
+| `graphyard_metric_collection_specs_prune` | `false` | Pass `--prune` so DB specs omitted from the rendered file are deleted by `name` |
 | `graphyard_metric_collection_specs_path` | `/etc/graphyard/metric-collection-specs.json` | Rendered JSON file path for declarative specs |
-| `graphyard_metric_collection_specs` | `[]` | List of spec objects to create/update by name |
+| `graphyard_metric_collection_specs` | `[]` | Authoritative list of spec objects keyed by `name` |
 | `graphyard_web_bind_host` | `127.0.0.1` | Web bind host |
 | `graphyard_web_bind_port` | `8051` | Web bind port |
 | `graphyard_web_workers` | `1` | Keep conservative for SQLite profile |
@@ -67,6 +68,7 @@ See `defaults/main.yml` for the full variable set.
           - https://graphyard.home.xn--wersdrfer-47a.de
         graphyard_grafana_base_url: https://grafana.home.xn--wersdrfer-47a.de
         graphyard_metric_collection_specs_apply: true
+        graphyard_metric_collection_specs_prune: true
         graphyard_metric_collection_specs:
           - name: Home Assistant Environment Scan
             enabled: true
@@ -86,4 +88,7 @@ See `defaults/main.yml` for the full variable set.
   - `graphyard_vector_deploy`
   - `graphyard_ingress_deploy`
 - Auth/bootstrap reconciliation remains in `graphyard_auth_bootstrap_deploy`.
-- Declarative metric spec provisioning is create/update by spec `name`; unspecified specs are left untouched.
+- Declarative metric spec provisioning is keyed by spec `name`.
+- Default behavior is create/update only; omitted specs are left untouched unless `graphyard_metric_collection_specs_prune: true`.
+- Prune is intentionally opt-in because it deletes any existing `MetricCollectionSpec` row whose `name` is not present in the rendered file.
+- The underlying management command refuses `--prune` when the desired file is empty, which protects against accidental full deletion from a broken render.

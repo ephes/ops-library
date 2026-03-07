@@ -76,6 +76,7 @@ graphyard_condition_data_stale_warning_seconds: 600
 
 # Optional declarative metric collection spec provisioning
 graphyard_metric_collection_specs_apply: false
+graphyard_metric_collection_specs_prune: false
 graphyard_metric_collection_specs_path: "{{ graphyard_env_dir }}/metric-collection-specs.json"
 graphyard_metric_collection_specs: []
 

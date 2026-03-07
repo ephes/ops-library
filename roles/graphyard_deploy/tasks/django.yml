@@ -68,8 +68,7 @@
     set -a
     . {{ graphyard_env_path }}
     set +a
-    {{ graphyard_venv_bin }}/python manage.py apply_metric_collection_specs \
-      --file {{ graphyard_metric_collection_specs_path | quote }}
+    {{ graphyard_venv_bin }}/python manage.py apply_metric_collection_specs --file {{ graphyard_metric_collection_specs_path | quote }}{% if graphyard_metric_collection_specs_prune %} --prune{% endif %}
   args:
     chdir: "{{ graphyard_django_path }}"
     executable: /bin/bash
@@ -78,7 +77,8 @@
   register: graphyard_apply_metric_specs_result
   changed_when: >-
     'created=0' not in graphyard_apply_metric_specs_result.stdout or
-    'updated=0' not in graphyard_apply_metric_specs_result.stdout
+    'updated=0' not in graphyard_apply_metric_specs_result.stdout or
+    'deleted=0' not in graphyard_apply_metric_specs_result.stdout
   when:
     - graphyard_metric_collection_specs_apply | bool
     - not graphyard_skip_django_manage | bool
