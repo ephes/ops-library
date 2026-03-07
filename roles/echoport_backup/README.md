@@ -103,6 +103,29 @@ Operational tradeoff:
   - HTTP: `http://127.0.0.1:10030/api/schema/view/` -> `200`
   - DB query: `SELECT COUNT(*) FROM paperless_applicationconfiguration;`
 
+## Graphyard Template Notes
+
+`templates/graphyard_backup.py.j2` is the service-owned same-host runner for Graphyard:
+
+- Backup scope:
+  - Django SQLite DB
+  - native InfluxDB backup payload from the `graphyard-influxdb` container
+  - `/etc/graphyard/graphyard.env`
+  - Graphyard systemd units
+  - optional `/var/lib/graphyard/influxdb2-config`
+- Restore ordering is explicit:
+  - restore InfluxDB first
+  - restore SQLite second
+  - restore env/systemd/config
+  - start `graphyard-web`
+  - run `manage.py start_agent --run-once`
+  - start `graphyard-agent`
+  - verify `/v1/health`
+- Safety snapshot + rollback use the same native InfluxDB backup format, so rollback restores both
+  the time-series state and SQLite state.
+- Grafana DB state is intentionally excluded. Dashboards/provisioning live in the Graphyard repo and
+  Grafana datasource/admin reconciliation is handled by the Graphyard bootstrap/deploy path.
+
 ## Output Format
 
 The backup script outputs a special line for Echoport to parse:
