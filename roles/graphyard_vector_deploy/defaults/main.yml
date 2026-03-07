@@ -14,7 +14,10 @@ graphyard_vector_repo_key_tmp: "/tmp/vector-datadog-archive-keyring.public"
 graphyard_vector_repo_keyring_path: "/usr/share/keyrings/datadog-archive-keyring.gpg"
 graphyard_vector_repo_list_file: "/etc/apt/sources.list.d/vector.list"
 
-graphyard_vector_config_path: "/etc/vector/vector.yaml"
+graphyard_vector_config_dir: "/etc/vector/config.d"
+graphyard_vector_config_path: "{{ graphyard_vector_config_dir }}/20-graphyard-host-metrics.yaml"
+graphyard_vector_global_config_path: "{{ graphyard_vector_config_dir }}/00-global.yaml"
+graphyard_vector_env_file: "/etc/default/vector"
 graphyard_vector_data_dir: "/var/lib/vector"
 graphyard_vector_service_name: "vector"
 

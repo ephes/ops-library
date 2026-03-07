@@ -33,4 +33,3 @@
     owner: "{{ logyard_loki_data_owner }}"
     group: "{{ logyard_loki_data_group }}"
     mode: "0755"
-    recurse: true

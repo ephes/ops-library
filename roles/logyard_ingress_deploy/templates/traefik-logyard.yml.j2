@@ -43,7 +43,7 @@ http:
       entryPoints:
         - web
       middlewares:
-        - redirect-to-https
+        - logyard-redirect-to-https
       service: logyard
 
   middlewares:
@@ -70,7 +70,7 @@ http:
     logyard-gzip:
       compress: {}
 
-    redirect-to-https:
+    logyard-redirect-to-https:
       redirectScheme:
         scheme: https
         permanent: true

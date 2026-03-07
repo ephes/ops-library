@@ -9,7 +9,9 @@ Deploys Vector on a producer host and ships journald logs to Logyard/Loki.
 - normalizes logs into a compact JSON payload
 - keeps Loki labels low-cardinality and stable
 - uses disk buffering and explicit retry settings
-- validates `vector.yaml` before restart
+- writes a shared Vector config directory under `/etc/vector/config.d/`
+- stores the Logyard pipeline in its own fragment so it can coexist with other Vector-managed services on the same host
+- validates the full staged config directory before replacing the live fragment
 
 ## Required Variables
 
@@ -60,5 +62,6 @@ logyard_vector_current_boot_only: false
 ```bash
 systemctl status vector
 journalctl -u vector -n 100 --no-pager
-vector validate /etc/vector/vector.yaml
+vector validate --config-dir /etc/vector/config.d
+ls /etc/vector/config.d
 ```

@@ -90,22 +90,107 @@
         group: vector
         mode: "0750"
 
-    - name: Deploy Vector config for Logyard ingest
-      ansible.builtin.template:
-        src: vector.yaml.j2
-        dest: "{{ logyard_vector_config_path }}"
+    - name: Ensure Vector config directory exists
+      ansible.builtin.file:
+        path: "{{ logyard_vector_config_dir }}"
+        state: directory
         owner: root
         group: vector
-        mode: "0640"
+        mode: "0750"
+
+    - name: Ensure Vector reads config fragments from config directory
+      ansible.builtin.lineinfile:
+        path: "{{ logyard_vector_env_file }}"
+        regexp: '^VECTOR_CONFIG_DIR='
+        line: "VECTOR_CONFIG_DIR={{ logyard_vector_config_dir }}"
+        create: true
+        owner: root
+        group: root
+        mode: "0644"
       notify: Restart Vector
 
-    - name: Validate Vector configuration
-      ansible.builtin.command:
-        argv:
-          - vector
-          - validate
-          - "{{ logyard_vector_config_path }}"
-      changed_when: false
+    - name: Stage and validate Logyard Vector config fragment
+      block:
+        - name: Create temporary Vector validation directory
+          ansible.builtin.tempfile:
+            state: directory
+            prefix: logyard-vector-validate-
+          register: logyard_vector_validation_dir
+
+        - name: Find existing Vector config fragments
+          ansible.builtin.find:
+            paths: "{{ logyard_vector_config_dir }}"
+            file_type: file
+            patterns:
+              - "*.yaml"
+              - "*.yml"
+              - "*.toml"
+              - "*.json"
+          register: logyard_vector_existing_configs
+
+        - name: Copy existing Vector config fragments into validation directory
+          ansible.builtin.copy:
+            remote_src: true
+            src: "{{ item.path }}"
+            dest: "{{ logyard_vector_validation_dir.path }}/{{ item.path | basename }}"
+            owner: root
+            group: root
+            mode: "0644"
+          loop: "{{ logyard_vector_existing_configs.files }}"
+          when:
+            - item.path != logyard_vector_config_path
+            - item.path != logyard_vector_global_config_path
+
+        - name: Render candidate shared Vector global config
+          ansible.builtin.copy:
+            dest: "{{ logyard_vector_validation_dir.path }}/{{ logyard_vector_global_config_path | basename }}"
+            content: |
+              data_dir: {{ logyard_vector_data_dir | to_json }}
+            owner: root
+            group: root
+            mode: "0644"
+
+        - name: Render candidate Logyard Vector fragment
+          ansible.builtin.template:
+            src: vector.yaml.j2
+            dest: "{{ logyard_vector_validation_dir.path }}/{{ logyard_vector_config_path | basename }}"
+            owner: root
+            group: root
+            mode: "0644"
+
+        - name: Validate staged Vector configuration directory
+          ansible.builtin.command:
+            argv:
+              - vector
+              - validate
+              - --config-dir
+              - "{{ logyard_vector_validation_dir.path }}"
+          changed_when: false
+
+        - name: Deploy shared Vector global config
+          ansible.builtin.copy:
+            dest: "{{ logyard_vector_global_config_path }}"
+            content: |
+              data_dir: {{ logyard_vector_data_dir | to_json }}
+            owner: root
+            group: vector
+            mode: "0640"
+          notify: Restart Vector
+
+        - name: Deploy Vector config fragment for Logyard ingest
+          ansible.builtin.template:
+            src: vector.yaml.j2
+            dest: "{{ logyard_vector_config_path }}"
+            owner: root
+            group: vector
+            mode: "0640"
+          notify: Restart Vector
+      always:
+        - name: Clean up temporary Vector validation directory
+          ansible.builtin.file:
+            path: "{{ logyard_vector_validation_dir.path }}"
+            state: absent
+          when: logyard_vector_validation_dir is defined and logyard_vector_validation_dir.path is defined
 
     - name: Flush Vector restart handler
       ansible.builtin.meta: flush_handlers

@@ -12,7 +12,10 @@ logyard_vector_repo_key_tmp: "/tmp/vector-datadog-archive-keyring.public"
 logyard_vector_repo_keyring_path: "/usr/share/keyrings/datadog-archive-keyring.gpg"
 logyard_vector_repo_list_file: "/etc/apt/sources.list.d/vector.list"
 
-logyard_vector_config_path: "/etc/vector/vector.yaml"
+logyard_vector_config_dir: "/etc/vector/config.d"
+logyard_vector_config_path: "{{ logyard_vector_config_dir }}/30-logyard-journald.yaml"
+logyard_vector_global_config_path: "{{ logyard_vector_config_dir }}/00-global.yaml"
+logyard_vector_env_file: "/etc/default/vector"
 logyard_vector_data_dir: "/var/lib/vector"
 logyard_vector_service_name: "vector"
 

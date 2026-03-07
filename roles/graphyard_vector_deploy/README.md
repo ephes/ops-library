@@ -13,9 +13,10 @@ Deploys [Vector](https://vector.dev/) on a host and configures it to push normal
   - explicit HTTP timeout
   - explicit retry backoff + retry window
   - `X-Forwarded-Proto: https` request header so local HTTP ingest targets behind Django HTTPS redirect logic are accepted
-- Writes `/etc/vector/vector.yaml` with mode `0640` and group `vector` to avoid exposing the bearer token to other users
+- Writes a shared Vector config directory under `/etc/vector/config.d/`
+- Stores the Graphyard pipeline in its own fragment so it can coexist with other Vector-managed services on the same host
 - Sends JSON list payloads to Graphyard ingest (Graphyard accepts lists of metric objects)
-- Validates Vector config before service restart
+- Validates the full staged config directory before replacing the live fragment
 
 ## Required Variables
 
@@ -81,5 +82,6 @@ See `defaults/main.yml` for full variable reference.
 # On target host
 systemctl status vector
 journalctl -u vector -n 100 --no-pager
-vector validate /etc/vector/vector.yaml
+vector validate --config-dir /etc/vector/config.d
+ls /etc/vector/config.d
 ```

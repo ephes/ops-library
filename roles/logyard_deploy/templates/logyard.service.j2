@@ -10,7 +10,7 @@ RemainAfterExit=yes
 WorkingDirectory={{ logyard_home }}
 ExecStart=/usr/bin/docker compose -f {{ logyard_compose_path }} up -d --remove-orphans
 ExecStop=/usr/bin/docker compose -f {{ logyard_compose_path }} down
-TimeoutStartSec=0
+TimeoutStartSec=300
 
 [Install]
 WantedBy=multi-user.target

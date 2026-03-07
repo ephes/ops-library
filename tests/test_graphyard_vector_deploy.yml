@@ -53,6 +53,8 @@
             that:
               - graphyard_vector_ingest_url == "CHANGEME"
               - graphyard_vector_enabled == false
+              - graphyard_vector_config_dir == "/etc/vector/config.d"
+              - graphyard_vector_config_path == "/etc/vector/config.d/20-graphyard-host-metrics.yaml"
               - graphyard_vector_request_concurrency == 1
               - graphyard_vector_buffer_max_size == 268435488
               - graphyard_vector_filesystem_mountpoint_excludes | length > 0
@@ -98,6 +100,7 @@
               - "'/run/docker/netns/*' in rendered_text"
               - "'/var/lib/docker/*' in rendered_text"
               - "'\"metric\": \"host.\" + metric_name' in rendered_text"
+              - "'data_dir:' not in rendered_text"
           vars:
             rendered_text: "{{ rendered_file.content | b64decode }}"
 
