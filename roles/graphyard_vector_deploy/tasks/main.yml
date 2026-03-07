@@ -33,68 +33,18 @@
           - graphyard_vector_collectors
           - graphyard_vector_metric_prefixes
 
-    - name: Install apt prerequisites for Vector repository
-      ansible.builtin.apt:
-        name:
-          - apt-transport-https
-          - ca-certificates
-          - curl
-          - gnupg
-        state: present
-        update_cache: true
-
-    - name: Ensure Vector keyring parent directory exists
-      ansible.builtin.file:
-        path: "{{ graphyard_vector_repo_keyring_path | dirname }}"
-        state: directory
-        owner: root
-        group: root
-        mode: "0755"
-
-    - name: Download Vector repository key
-      ansible.builtin.get_url:
-        url: "{{ graphyard_vector_repo_key_url }}"
-        dest: "{{ graphyard_vector_repo_key_tmp }}"
-        owner: root
-        group: root
-        mode: "0644"
-      register: _vector_repo_key
-
-    - name: Check existing Vector apt keyring
-      ansible.builtin.stat:
-        path: "{{ graphyard_vector_repo_keyring_path }}"
-      register: _vector_repo_keyring
-
-    - name: Convert repository key to apt keyring format
-      ansible.builtin.command:
-        argv:
-          - gpg
-          - --dearmor
-          - --yes
-          - --output
-          - "{{ graphyard_vector_repo_keyring_path }}"
-          - "{{ graphyard_vector_repo_key_tmp }}"
-      when: _vector_repo_key.changed or not _vector_repo_keyring.stat.exists
-
-    - name: Ensure apt can read Vector keyring
-      ansible.builtin.file:
-        path: "{{ graphyard_vector_repo_keyring_path }}"
-        owner: root
-        group: root
-        mode: "0644"
-
-    - name: Add Vector apt repository
-      ansible.builtin.apt_repository:
-        repo: "deb [signed-by={{ graphyard_vector_repo_keyring_path }}] {{ graphyard_vector_repo_url }} {{ graphyard_vector_repo_channel }} {{ graphyard_vector_repo_version }}"
-        filename: "{{ graphyard_vector_repo_list_file | basename | regex_replace('\\.list$', '') }}"
-        state: present
-      register: _vector_repo
-
-    - name: Install Vector package
-      ansible.builtin.apt:
-        name: "{{ graphyard_vector_package_name }}"
-        state: present
-        update_cache: "{{ _vector_repo.changed or _vector_repo_key.changed }}"
+    - name: Install Vector package prerequisites
+      ansible.builtin.include_role:
+        name: local.ops_library.vector_apt_install
+      vars:
+        vector_apt_install_package_name: "{{ graphyard_vector_package_name }}"
+        vector_apt_install_repo_url: "{{ graphyard_vector_repo_url }}"
+        vector_apt_install_repo_channel: "{{ graphyard_vector_repo_channel }}"
+        vector_apt_install_repo_version: "{{ graphyard_vector_repo_version }}"
+        vector_apt_install_repo_key_url: "{{ graphyard_vector_repo_key_url }}"
+        vector_apt_install_repo_key_tmp: "{{ graphyard_vector_repo_key_tmp }}"
+        vector_apt_install_repo_keyring_path: "{{ graphyard_vector_repo_keyring_path }}"
+        vector_apt_install_repo_list_file: "{{ graphyard_vector_repo_list_file }}"
 
     - name: Ensure Vector data directory exists
       ansible.builtin.file:

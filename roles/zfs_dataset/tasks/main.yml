@@ -3,13 +3,13 @@
 #
 # Creates and configures ZFS datasets with proper properties.
 
-- name: Validate required variables
+- name: main | validate required variables
   ansible.builtin.include_tasks: validate.yml
 
-- name: Create ZFS dataset
+- name: main | create ZFS dataset
   ansible.builtin.include_tasks: create_dataset.yml
   when: not zfs_dataset_validate_only
 
-- name: Configure dataset properties
+- name: main | configure dataset properties
   ansible.builtin.include_tasks: configure_dataset.yml
   when: not zfs_dataset_validate_only

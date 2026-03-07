@@ -5,13 +5,13 @@
 # Get Current Properties
 # =============================================================================
 
-- name: Get current dataset properties
+- name: configure_dataset | get current dataset properties
   ansible.builtin.command:
     cmd: zfs get all {{ zfs_dataset_name }} -H -o property,value
   register: _zfs_dataset_current_props
   changed_when: false
 
-- name: Parse current dataset properties
+- name: configure_dataset | parse current dataset properties
   ansible.builtin.set_fact:
     _zfs_dataset_props_dict: "{{ dict(_zfs_dataset_current_props.stdout_lines | map('split', '\t') | list) }}"
 
@@ -20,7 +20,7 @@
 # =============================================================================
 
 # casesensitivity cannot be changed after creation - warn if mismatch
-- name: Check casesensitivity for macOS compatibility
+- name: configure_dataset | check casesensitivity for macOS compatibility
   ansible.builtin.debug:
     msg: |
       WARNING: Dataset '{{ zfs_dataset_name }}' has casesensitivity={{ _zfs_dataset_props_dict.casesensitivity }}
@@ -35,7 +35,7 @@
 # Build Desired Properties
 # =============================================================================
 
-- name: Build effective properties for configuration
+- name: configure_dataset | build effective properties for configuration
   ansible.builtin.set_fact:
     _zfs_dataset_desired_props: >-
       {{
@@ -43,7 +43,7 @@
         | combine(zfs_dataset_properties | default({}))
       }}
 
-- name: Normalize known property aliases (runtime)
+- name: configure_dataset | normalize known property aliases
   ansible.builtin.set_fact:
     _zfs_dataset_desired_props: "{{ _zfs_dataset_desired_props | combine({'acltype': 'nfsv4'}) }}"
   when: _zfs_dataset_desired_props.acltype | default('') == 'nfs4'
@@ -55,11 +55,11 @@
 # Properties that cannot be changed after creation
 # casesensitivity: must be set at creation time only
 
-- name: Define properties that can be modified
+- name: configure_dataset | define properties that can be modified
   ansible.builtin.set_fact:
     _zfs_dataset_modifiable_props: "{{ _zfs_dataset_desired_props | dict2items | rejectattr('key', 'in', ['casesensitivity']) | list }}"
 
-- name: Configure dataset properties
+- name: configure_dataset | configure dataset properties
   ansible.builtin.command:
     cmd: zfs set {{ item.key }}={{ item.value }} {{ zfs_dataset_name }}
   loop: "{{ _zfs_dataset_modifiable_props }}"
@@ -71,7 +71,7 @@
 # Mountpoint Configuration
 # =============================================================================
 
-- name: Configure mountpoint if specified
+- name: configure_dataset | configure mountpoint if specified
   ansible.builtin.command:
     cmd: zfs set mountpoint={{ zfs_dataset_mountpoint }} {{ zfs_dataset_name }}
   when:
@@ -84,13 +84,13 @@
 # Ensure Mounted
 # =============================================================================
 
-- name: Check if dataset is mounted
+- name: configure_dataset | check if dataset is mounted
   ansible.builtin.command:
     cmd: zfs get mounted {{ zfs_dataset_name }} -H -o value
   register: _zfs_dataset_mounted_status
   changed_when: false
 
-- name: Mount dataset if needed
+- name: configure_dataset | mount dataset if needed
   ansible.builtin.command:
     cmd: zfs mount {{ zfs_dataset_name }}
   when:
@@ -103,13 +103,13 @@
 # Summary
 # =============================================================================
 
-- name: Get final dataset info
+- name: configure_dataset | get final dataset info
   ansible.builtin.command:
     cmd: zfs list {{ zfs_dataset_name }} -o name,used,avail,refer,mountpoint,compression,recordsize
   register: _zfs_dataset_summary
   changed_when: false
 
-- name: Display dataset summary
+- name: configure_dataset | display dataset summary
   ansible.builtin.debug:
     msg: |
       Dataset Summary:

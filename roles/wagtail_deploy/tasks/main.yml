@@ -1,7 +1,7 @@
 ---
 # Wagtail deployment main tasks
 
-- name: Validate required variables
+- name: main | Validate required variables
   ansible.builtin.assert:
     that:
       - wagtail_service_name | length > 0
@@ -54,7 +54,7 @@
       - wagtail_mailgun_sender_domain
       - wagtail_django_server_email
 
-- name: Validate rsync-specific requirements
+- name: main | Validate rsync-specific requirements
   ansible.builtin.assert:
     that:
       - wagtail_source_path is defined
@@ -63,7 +63,7 @@
     fail_msg: "wagtail_source_path must be set when using rsync deployment"
   when: wagtail_deploy_method == "rsync"
 
-- name: Validate git-specific requirements
+- name: main | Validate git-specific requirements
   ansible.builtin.assert:
     that:
       - wagtail_git_repo is defined
@@ -71,24 +71,24 @@
     fail_msg: "wagtail_git_repo must be set when using git deployment"
   when: wagtail_deploy_method == "git"
 
-- name: Provision PostgreSQL database and user
+- name: main | Provision PostgreSQL database and user
   ansible.builtin.include_tasks: postgres.yml
 
-- name: Setup user and directories
+- name: main | Setup user and directories
   ansible.builtin.include_tasks: user.yml
 
-- name: Deploy source code
+- name: main | Deploy source code
   ansible.builtin.include_tasks: "source_{{ wagtail_deploy_method }}.yml"
 
-- name: Setup Python environment
+- name: main | Setup Python environment
   ansible.builtin.include_tasks: python.yml
 
-- name: Configure Django application
+- name: main | Configure Django application
   ansible.builtin.include_tasks: django.yml
 
-- name: Setup systemd service
+- name: main | Setup systemd service
   ansible.builtin.include_tasks: service.yml
 
-- name: Configure Traefik
+- name: main | Configure Traefik
   ansible.builtin.include_tasks: traefik.yml
   when: wagtail_traefik_enabled | bool

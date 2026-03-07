@@ -1,7 +1,7 @@
 ---
 # Configure Traefik for Wagtail
 
-- name: Ensure Traefik dynamic config directory exists
+- name: traefik | Ensure Traefik dynamic config directory exists
   ansible.builtin.file:
     path: /etc/traefik/dynamic
     state: directory
@@ -9,7 +9,7 @@
     group: root
     mode: "0755"
 
-- name: Create Traefik configuration
+- name: traefik | Create Traefik configuration
   ansible.builtin.template:
     src: wagtail.traefik.yml.j2
     dest: "{{ wagtail_traefik_config_path }}"

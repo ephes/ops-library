@@ -1,53 +1,56 @@
 ---
 # Setup Python environment for Wagtail
 
-- name: Ensure uv binary is installed
+- name: python | Ensure uv binary is installed
   ansible.builtin.import_role:
     name: uv_install
   vars:
     uv_install_dir: "{{ wagtail_uv_path | dirname }}"
 
-- name: Check for requested Python version
+- name: python | Check for requested Python version
   ansible.builtin.command:
     cmd: "{{ wagtail_uv_path }} python find {{ wagtail_python_version }}"
   register: _wagtail_uv_python_find
+  become: true
   become_user: "{{ wagtail_user }}"
   changed_when: false
   failed_when: false
   when: wagtail_python_version | length > 0
 
-- name: Install requested Python version via uv
+- name: python | Install requested Python version via uv
   ansible.builtin.command:
     cmd: "{{ wagtail_uv_path }} python install {{ wagtail_python_version }}"
+  become: true
   become_user: "{{ wagtail_user }}"
   when:
     - wagtail_python_version | length > 0
     - _wagtail_uv_python_find.rc != 0
 
-- name: Determine Python executable path
+- name: python | Determine Python executable path
   ansible.builtin.command:
     cmd: "{{ wagtail_uv_path }} python find {{ wagtail_python_version }}"
   register: _wagtail_python_exec_path
+  become: true
   become_user: "{{ wagtail_user }}"
   changed_when: false
   when: wagtail_python_version | length > 0
 
-- name: Set Python executable fact
+- name: python | Set Python executable fact
   ansible.builtin.set_fact:
     _wagtail_python_executable: "{{ _wagtail_python_exec_path.stdout | trim }}"
   when: wagtail_python_version | length > 0
 
-- name: Set Python executable fact (fallback)
+- name: python | Set Python executable fact (fallback)
   ansible.builtin.set_fact:
     _wagtail_python_executable: "{{ wagtail_global_python }}"
   when: wagtail_python_version | length == 0
 
-- name: Check existing virtualenv Python binary
+- name: python | Check existing virtualenv Python binary
   ansible.builtin.stat:
     path: "{{ wagtail_venv_path }}/bin/python"
   register: _wagtail_venv_python_stat
 
-- name: Detect current virtualenv Python version
+- name: python | Detect current virtualenv Python version
   ansible.builtin.command:
     cmd: "{{ wagtail_venv_path }}/bin/python --version"
   register: _wagtail_current_python_version
@@ -55,7 +58,7 @@
   failed_when: false
   when: _wagtail_venv_python_stat.stat.exists
 
-- name: Set Python version mismatch fact
+- name: python | Set Python version mismatch fact
   ansible.builtin.set_fact:
     _wagtail_python_mismatch: >-
       {{ (_wagtail_current_python_version.stdout | default('')).split()[1] != wagtail_python_version }}
@@ -64,7 +67,7 @@
     - _wagtail_current_python_version.stdout is defined
     - wagtail_python_version | length > 0
 
-- name: Remove broken virtualenv if Python is not usable
+- name: python | Remove broken virtualenv if Python is not usable
   ansible.builtin.file:
     path: "{{ wagtail_venv_path }}"
     state: absent
@@ -73,7 +76,7 @@
     - _wagtail_current_python_version.rc is defined
     - _wagtail_current_python_version.rc != 0
 
-- name: Remove virtualenv if Python version changed
+- name: python | Remove virtualenv if Python version changed
   ansible.builtin.file:
     path: "{{ wagtail_venv_path }}"
     state: absent
@@ -81,14 +84,14 @@
     - _wagtail_venv_python_stat.stat.exists
     - _wagtail_python_mismatch | default(false)
 
-- name: Create virtual environment using uv
+- name: python | Create virtual environment using uv
   ansible.builtin.command: "{{ wagtail_uv_path }} venv --python {{ _wagtail_python_executable }} {{ wagtail_venv_path }}"
   args:
     creates: "{{ wagtail_venv_path }}/bin/python"
   become: true
   become_user: "{{ wagtail_user }}"
 
-- name: Create venv symlink
+- name: python | Create venv symlink
   ansible.builtin.file:
     src: "{{ wagtail_venv_path }}"
     dest: "{{ wagtail_site_path }}/venv"
@@ -97,7 +100,7 @@
     group: "{{ wagtail_group }}"
     force: true
 
-- name: Install dependencies with uv
+- name: python | Install dependencies with uv
   ansible.builtin.command: "{{ wagtail_uv_path }} sync --frozen"
   args:
     chdir: "{{ wagtail_site_path }}"

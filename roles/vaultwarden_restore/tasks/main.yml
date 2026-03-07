@@ -209,14 +209,14 @@
     remote_src: true
   when: vaultwarden_restore_payload_stats.results[0].stat.exists
 
-- name: Restore attachments directory
+- name: Restore attachments directory  # noqa: command-instead-of-module
   ansible.builtin.command:
     cmd: >
       rsync -a "{{ vaultwarden_restore_payload_dir }}/data/attachments/" "{{ vaultwarden_data_dir }}/attachments/"
   changed_when: true
   failed_when: false
 
-- name: Restore sends directory
+- name: Restore sends directory  # noqa: command-instead-of-module
   ansible.builtin.command:
     cmd: >
       rsync -a "{{ vaultwarden_restore_payload_dir }}/data/sends/" "{{ vaultwarden_data_dir }}/sends/"

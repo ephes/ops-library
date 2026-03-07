@@ -103,7 +103,8 @@
     msg: "wagtail_restore_dry_run=true - skipping service stop and database restore"
   when: wagtail_restore_dry_run | bool
 
-- block:
+- when: not wagtail_restore_dry_run | bool
+  block:
     - name: Stop Wagtail service before restore
       ansible.builtin.systemd:
         name: "{{ wagtail_restore_systemd_unit_name }}"
@@ -226,8 +227,6 @@
         state: "{{ wagtail_restore_restart | bool | ternary('restarted', 'started') }}"
         daemon_reload: true
       failed_when: false
-  when: not wagtail_restore_dry_run | bool
-
 - name: Cleanup restore staging directory
   ansible.builtin.file:
     path: "{{ wagtail_restore_staging_dir }}"

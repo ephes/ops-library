@@ -1,0 +1,49 @@
+---
+- name: Test Vector apt install helper role metadata
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/vector_apt_install"
+
+  tasks:
+    - name: Verify helper role files exist
+      block:
+        - name: Check defaults file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/defaults/main.yml"
+          register: defaults_file
+
+        - name: Check tasks file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/tasks/main.yml"
+          register: tasks_file
+
+        - name: Check README file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/README.md"
+          register: readme_file
+
+        - name: Assert helper role files exist
+          ansible.builtin.assert:
+            that:
+              - defaults_file.stat.exists
+              - tasks_file.stat.exists
+              - readme_file.stat.exists
+
+    - name: Validate defaults are populated
+      block:
+        - name: Load defaults
+          ansible.builtin.include_vars:
+            file: "{{ role_path }}/defaults/main.yml"
+            name: vector_apt_install_defaults
+
+        - name: Assert default repository settings
+          ansible.builtin.assert:
+            that:
+              - vector_apt_install_defaults.vector_apt_install_package_name == "vector"
+              - vector_apt_install_defaults.vector_apt_install_repo_url == "https://apt.vector.dev/"
+              - vector_apt_install_defaults.vector_apt_install_repo_channel == "stable"
+              - vector_apt_install_defaults.vector_apt_install_repo_version == "vector-0"
+              - vector_apt_install_defaults.vector_apt_install_repo_keyring_path == "/usr/share/keyrings/datadog-archive-keyring.gpg"

@@ -1,7 +1,7 @@
 ---
 # Setup systemd service for Wagtail
 
-- name: Create systemd service file
+- name: service | Create systemd service file
   ansible.builtin.template:
     src: wagtail.service.j2
     dest: "{{ wagtail_systemd_unit_path }}"
@@ -12,7 +12,7 @@
     - reload systemd
     - restart wagtail
 
-- name: Enable and start Wagtail service
+- name: service | Enable and start Wagtail service
   ansible.builtin.systemd:
     name: "{{ wagtail_systemd_unit_name }}"
     enabled: true

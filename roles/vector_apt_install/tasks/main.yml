@@ -1,0 +1,78 @@
+---
+- name: Validate Vector apt install inputs
+  ansible.builtin.assert:
+    that:
+      - vector_apt_install_package_name | length > 0
+      - vector_apt_install_repo_url | length > 0
+      - vector_apt_install_repo_channel | length > 0
+      - vector_apt_install_repo_version | length > 0
+      - vector_apt_install_repo_key_url | length > 0
+      - vector_apt_install_repo_key_tmp | length > 0
+      - vector_apt_install_repo_keyring_path | length > 0
+      - vector_apt_install_repo_list_file | length > 0
+    fail_msg: >-
+      Missing required vector_apt_install_* inputs. Ensure package, repository,
+      key, and apt list file settings are configured before including this role.
+
+- name: Install apt prerequisites for Vector repository
+  ansible.builtin.apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+    state: present
+    update_cache: true
+
+- name: Ensure Vector keyring parent directory exists
+  ansible.builtin.file:
+    path: "{{ vector_apt_install_repo_keyring_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download Vector repository key
+  ansible.builtin.get_url:
+    url: "{{ vector_apt_install_repo_key_url }}"
+    dest: "{{ vector_apt_install_repo_key_tmp }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: vector_apt_install_repo_key
+
+- name: Check existing Vector apt keyring
+  ansible.builtin.stat:
+    path: "{{ vector_apt_install_repo_keyring_path }}"
+  register: vector_apt_install_repo_keyring
+
+- name: Convert repository key to apt keyring format
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --dearmor
+      - --yes
+      - --output
+      - "{{ vector_apt_install_repo_keyring_path }}"
+      - "{{ vector_apt_install_repo_key_tmp }}"
+  when: vector_apt_install_repo_key.changed or not vector_apt_install_repo_keyring.stat.exists
+
+- name: Ensure apt can read Vector keyring
+  ansible.builtin.file:
+    path: "{{ vector_apt_install_repo_keyring_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Add Vector apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by={{ vector_apt_install_repo_keyring_path }}] {{ vector_apt_install_repo_url }} {{ vector_apt_install_repo_channel }} {{ vector_apt_install_repo_version }}"
+    filename: "{{ vector_apt_install_repo_list_file | basename | regex_replace('\\.list$', '') }}"
+    state: present
+  register: vector_apt_install_repo
+
+- name: Install Vector package
+  ansible.builtin.apt:
+    name: "{{ vector_apt_install_package_name }}"
+    state: present
+    update_cache: "{{ vector_apt_install_repo.changed or vector_apt_install_repo_key.changed }}"

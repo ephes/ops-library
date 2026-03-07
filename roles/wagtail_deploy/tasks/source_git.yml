@@ -1,12 +1,12 @@
 ---
 # Deploy Wagtail source code using git
 
-- name: Install git
+- name: source_git | Install git
   ansible.builtin.package:
     name: git
     state: present
 
-- name: Clone or update repository
+- name: source_git | Clone or update repository
   ansible.builtin.git:
     repo: "{{ wagtail_git_repo }}"
     dest: "{{ wagtail_site_path }}"
@@ -16,6 +16,6 @@
   become_user: "{{ wagtail_user }}"
   register: wagtail_git_result
 
-- name: Report git update status
+- name: source_git | Report git update status
   ansible.builtin.debug:
     msg: "Repository updated: {{ wagtail_git_result.changed }}"

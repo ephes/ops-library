@@ -1,14 +1,14 @@
 ---
 # Create ZFS dataset
 
-- name: Check if dataset already exists
+- name: create_dataset | check if dataset already exists
   ansible.builtin.command:
     cmd: zfs list {{ zfs_dataset_name }}
   register: _zfs_dataset_exists
   changed_when: false
   failed_when: false
 
-- name: Display dataset status if exists
+- name: create_dataset | display dataset status if it exists
   ansible.builtin.debug:
     msg: "Dataset '{{ zfs_dataset_name }}' already exists, will configure properties"
   when: _zfs_dataset_exists.rc == 0
@@ -16,7 +16,7 @@
 # Build properties for dataset creation
 # Note: Some properties can only be set at creation time (e.g., casesensitivity)
 # Strip casesensitivity from user properties - it's handled separately by macos_compat
-- name: Build effective properties
+- name: create_dataset | build effective properties
   ansible.builtin.set_fact:
     _zfs_dataset_effective_props: >-
       {{
@@ -25,14 +25,14 @@
       }}
   when: _zfs_dataset_exists.rc != 0
 
-- name: Normalize known property aliases (create-time)
+- name: create_dataset | normalize known property aliases
   ansible.builtin.set_fact:
     _zfs_dataset_effective_props: "{{ _zfs_dataset_effective_props | combine({'acltype': 'nfsv4'}) }}"
   when:
     - _zfs_dataset_exists.rc != 0
     - _zfs_dataset_effective_props.acltype | default('') == 'nfs4'
 
-- name: Build zfs create command
+- name: create_dataset | build zfs create command
   ansible.builtin.set_fact:
     _zfs_dataset_create_cmd: >-
       zfs create
@@ -48,25 +48,25 @@
       {{ zfs_dataset_name }}
   when: _zfs_dataset_exists.rc != 0
 
-- name: Display zfs create command (for verification)
+- name: create_dataset | display zfs create command
   ansible.builtin.debug:
     msg: "{{ _zfs_dataset_create_cmd }}"
   when: _zfs_dataset_exists.rc != 0
 
-- name: Create ZFS dataset
+- name: create_dataset | create ZFS dataset
   ansible.builtin.command:
     cmd: "{{ _zfs_dataset_create_cmd }}"
   register: _zfs_dataset_create_result
   when: _zfs_dataset_exists.rc != 0
 
-- name: Verify dataset was created
+- name: create_dataset | verify dataset was created
   ansible.builtin.command:
     cmd: zfs list {{ zfs_dataset_name }} -o name,used,avail,refer,mountpoint
   register: _zfs_dataset_info
   changed_when: false
   when: _zfs_dataset_exists.rc != 0
 
-- name: Display new dataset info
+- name: create_dataset | display new dataset info
   ansible.builtin.debug:
     msg: "{{ _zfs_dataset_info.stdout_lines }}"
   when:

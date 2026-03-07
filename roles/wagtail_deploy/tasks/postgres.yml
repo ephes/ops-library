@@ -1,5 +1,5 @@
 ---
-- name: Validate PostgreSQL provisioning inputs
+- name: postgres | Validate PostgreSQL provisioning inputs
   ansible.builtin.include_role:
     name: local.ops_library.postgres_install
     tasks_from: validate.yml
@@ -13,7 +13,7 @@
       - name: "{{ wagtail_postgres_user }}"
         password: "{{ wagtail_postgres_password }}"
 
-- name: Ensure PostgreSQL database and user exist
+- name: postgres | Ensure PostgreSQL database and user exist
   ansible.builtin.include_role:
     name: local.ops_library.postgres_install
     tasks_from: databases.yml

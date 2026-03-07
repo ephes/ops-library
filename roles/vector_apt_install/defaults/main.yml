@@ -1,0 +1,13 @@
+---
+# vector_apt_install defaults
+# Install the Vector apt repository and package on Debian/Ubuntu hosts.
+
+vector_apt_install_package_name: vector
+
+vector_apt_install_repo_url: "https://apt.vector.dev/"
+vector_apt_install_repo_channel: "stable"
+vector_apt_install_repo_version: "vector-0"
+vector_apt_install_repo_key_url: "https://keys.datadoghq.com/DATADOG_APT_KEY_CURRENT.public"
+vector_apt_install_repo_key_tmp: "/tmp/vector-datadog-archive-keyring.public"
+vector_apt_install_repo_keyring_path: "/usr/share/keyrings/datadog-archive-keyring.gpg"
+vector_apt_install_repo_list_file: "/etc/apt/sources.list.d/vector.list"
