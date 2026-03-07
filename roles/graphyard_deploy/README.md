@@ -9,6 +9,7 @@ Deploys the core Graphyard Django application and runtime services (`graphyard-w
 - Creates a uv-managed virtual environment and syncs runtime dependencies.
 - Renders `/etc/graphyard/graphyard.env`.
 - Runs `manage.py migrate` and `manage.py collectstatic --noinput`.
+- Optionally renders and applies declarative `MetricCollectionSpec` definitions.
 - Renders and enables systemd units:
   - `graphyard-web.service`
   - `graphyard-agent.service`
@@ -34,6 +35,9 @@ Deploys the core Graphyard Django application and runtime services (`graphyard-w
 | `graphyard_env_path` | `/etc/graphyard/graphyard.env` | Environment file consumed by systemd units |
 | `graphyard_django_secret_key` | `CHANGEME` | Required, must be overridden |
 | `graphyard_influx_token` | `CHANGEME` | Required when `graphyard_influx_token_required=true` |
+| `graphyard_metric_collection_specs_apply` | `false` | Render/apply declarative metric specs via `manage.py apply_metric_collection_specs` |
+| `graphyard_metric_collection_specs_path` | `/etc/graphyard/metric-collection-specs.json` | Rendered JSON file path for declarative specs |
+| `graphyard_metric_collection_specs` | `[]` | List of spec objects to create/update by name |
 | `graphyard_web_bind_host` | `127.0.0.1` | Web bind host |
 | `graphyard_web_bind_port` | `8051` | Web bind port |
 | `graphyard_web_workers` | `1` | Keep conservative for SQLite profile |
@@ -62,6 +66,17 @@ See `defaults/main.yml` for the full variable set.
         graphyard_django_csrf_trusted_origins:
           - https://graphyard.home.xn--wersdrfer-47a.de
         graphyard_grafana_base_url: https://grafana.home.xn--wersdrfer-47a.de
+        graphyard_metric_collection_specs_apply: true
+        graphyard_metric_collection_specs:
+          - name: Home Assistant Environment Scan
+            enabled: true
+            spec_type: home_assistant_env_scan
+            interval_seconds: 60
+            config:
+              base_url: http://macmini.local:10020
+              access_token: "{{ homeassistant_secrets.api_token }}"
+              host_id: homeassistant
+              service_id: homeassistant
 ```
 
 ## Notes
@@ -71,3 +86,4 @@ See `defaults/main.yml` for the full variable set.
   - `graphyard_vector_deploy`
   - `graphyard_ingress_deploy`
 - Auth/bootstrap reconciliation remains in `graphyard_auth_bootstrap_deploy`.
+- Declarative metric spec provisioning is create/update by spec `name`; unspecified specs are left untouched.

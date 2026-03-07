@@ -74,6 +74,11 @@ graphyard_heartbeat_warning_seconds: 900
 graphyard_heartbeat_critical_seconds: 3600
 graphyard_condition_data_stale_warning_seconds: 600
 
+# Optional declarative metric collection spec provisioning
+graphyard_metric_collection_specs_apply: false
+graphyard_metric_collection_specs_path: "{{ graphyard_env_dir }}/metric-collection-specs.json"
+graphyard_metric_collection_specs: []
+
 # SQLite settings
 graphyard_sqlite_timeout_seconds: 30
 graphyard_sqlite_busy_timeout_ms: 30000

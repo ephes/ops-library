@@ -52,3 +52,34 @@
     group: "{{ graphyard_group }}"
     mode: "0640"
   when: graphyard_db_file.stat.exists
+
+- name: django | Render declarative metric collection specs
+  ansible.builtin.template:
+    src: metric-collection-specs.json.j2
+    dest: "{{ graphyard_metric_collection_specs_path }}"
+    owner: root
+    group: "{{ graphyard_group }}"
+    mode: "0640"
+  when: graphyard_metric_collection_specs_apply | bool
+  no_log: true
+
+- name: django | Apply declarative metric collection specs
+  ansible.builtin.shell: |
+    set -a
+    . {{ graphyard_env_path }}
+    set +a
+    {{ graphyard_venv_bin }}/python manage.py apply_metric_collection_specs \
+      --file {{ graphyard_metric_collection_specs_path | quote }}
+  args:
+    chdir: "{{ graphyard_django_path }}"
+    executable: /bin/bash
+  become: true
+  become_user: "{{ graphyard_user }}"
+  register: graphyard_apply_metric_specs_result
+  changed_when: >-
+    'created=0' not in graphyard_apply_metric_specs_result.stdout or
+    'updated=0' not in graphyard_apply_metric_specs_result.stdout
+  when:
+    - graphyard_metric_collection_specs_apply | bool
+    - not graphyard_skip_django_manage | bool
+  no_log: true
