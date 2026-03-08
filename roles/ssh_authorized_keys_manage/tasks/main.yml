@@ -1,0 +1,55 @@
+---
+- name: Validate SSH authorized_keys configuration
+  when: ssh_authorized_keys_manage_enabled | bool
+  block:
+    - name: Validate target account settings are present
+      ansible.builtin.assert:
+        that:
+          - ssh_authorized_keys_manage_user | trim | length > 0
+          - ssh_authorized_keys_manage_group | trim | length > 0
+          - ssh_authorized_keys_manage_home | trim | length > 0
+        fail_msg: >-
+          ssh_authorized_keys_manage_user, ssh_authorized_keys_manage_group, and
+          ssh_authorized_keys_manage_home must all be set when key management is enabled.
+        quiet: true
+
+    - name: Validate at least one authorized key entry is configured
+      ansible.builtin.assert:
+        that:
+          - ssh_authorized_keys_manage_entries | length > 0
+        fail_msg: >-
+          ssh_authorized_keys_manage_entries cannot be empty when
+          ssh_authorized_keys_manage_enabled is true.
+        quiet: true
+
+    - name: Validate authorized key entries contain key material
+      ansible.builtin.assert:
+        that:
+          - item.key is defined
+          - item.key | string | trim | length > 0
+        fail_msg: >-
+          Each ssh_authorized_keys_manage_entries item must define a non-empty
+          key. Invalid entry: {{ item | to_nice_yaml(indent=2) | trim }}
+        quiet: true
+      loop: "{{ ssh_authorized_keys_manage_entries }}"
+      loop_control:
+        label: "{{ item.comment | default(item.key | default('missing-key')) }}"
+
+- name: Ensure target ~/.ssh directory exists
+  when: ssh_authorized_keys_manage_enabled | bool
+  ansible.builtin.file:
+    path: "{{ ssh_authorized_keys_manage_home }}/.ssh"
+    state: directory
+    owner: "{{ ssh_authorized_keys_manage_user }}"
+    group: "{{ ssh_authorized_keys_manage_group }}"
+    mode: "0700"
+
+- name: Render target authorized_keys file
+  when: ssh_authorized_keys_manage_enabled | bool
+  ansible.builtin.template:
+    src: authorized_keys.j2
+    dest: "{{ ssh_authorized_keys_manage_home }}/.ssh/authorized_keys"
+    owner: "{{ ssh_authorized_keys_manage_user }}"
+    group: "{{ ssh_authorized_keys_manage_group }}"
+    mode: "0600"
+    validate: "/bin/test -s %s"

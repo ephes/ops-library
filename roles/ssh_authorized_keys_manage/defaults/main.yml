@@ -1,0 +1,11 @@
+---
+ssh_authorized_keys_manage_enabled: true
+ssh_authorized_keys_manage_user: "root"
+ssh_authorized_keys_manage_group: "{{ ssh_authorized_keys_manage_user }}"
+ssh_authorized_keys_manage_home: >-
+  {{
+    '/root'
+    if ssh_authorized_keys_manage_user == 'root'
+    else '/home/' ~ ssh_authorized_keys_manage_user
+  }}
+ssh_authorized_keys_manage_entries: []

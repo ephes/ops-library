@@ -1,0 +1,25 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Manage ~/.ssh and authorized_keys for an existing target account
+  license: MIT
+  min_ansible_version: "2.10"
+
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+
+  galaxy_tags:
+    - ssh
+    - security
+    - users
+    - authorized_keys
+
+dependencies: []

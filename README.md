@@ -42,6 +42,7 @@ The table below links each published role to its dedicated documentation. Refer 
 | Monitoring | [`graphyard_vector_deploy`](roles/graphyard_vector_deploy/README.md) | Deploy Vector host-metrics ingest producer for Graphyard (`POST /v1/metrics`) with disk buffering and retries. |
 | Monitoring | [`backup_metrics_endpoint`](roles/backup_metrics_endpoint/README.md) | Expose backup-job + replication freshness signals as authenticated JSON for Nyxmon (`/.well-known/backup`). |
 | Infrastructure | [`mail_relay_client`](roles/mail_relay_client/README.md) | Configure a minimal Postfix setup for relaying outbound alert mail via a smarthost. |
+| Infrastructure | [`ssh_authorized_keys_manage`](roles/ssh_authorized_keys_manage/README.md) | Manage `~/.ssh` and the full `authorized_keys` file for an arbitrary target account, including `root`. |
 | File sharing | [`samba_timemachine`](roles/samba_timemachine/README.md) | Configure Samba Time Machine share with vfs_fruit and conf.d snippet wiring. |
 | File sharing | [`samba_share`](roles/samba_share/README.md) | Configure generic Samba shares via conf.d snippets and user provisioning. |
 | Infrastructure | [`encrypted_volume_prepare`](roles/encrypted_volume_prepare/README.md) | Prepare and mount a LUKS data volume with UUID checks, keyfile unlock, and boot-time wiring (crypttab/fstab). |
