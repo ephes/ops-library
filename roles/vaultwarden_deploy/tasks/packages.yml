@@ -1,7 +1,7 @@
 ---
 # Install Vaultwarden packages
 
-- name: Install Vaultwarden packages
+- name: packages | Install Vaultwarden packages
   ansible.builtin.apt:
     name:
       - vaultwarden
@@ -10,7 +10,7 @@
   notify: restart vaultwarden
   when: not vaultwarden_skip_install | default(false)
 
-- name: Ensure Vaultwarden data directory exists
+- name: packages | Ensure Vaultwarden data directory exists
   ansible.builtin.file:
     path: /var/lib/vaultwarden/data
     state: directory
@@ -18,7 +18,7 @@
     group: vaultwarden
     mode: "0750"
 
-- name: Ensure Vaultwarden log directory exists
+- name: packages | Ensure Vaultwarden log directory exists
   ansible.builtin.file:
     path: /var/log/vaultwarden
     state: directory

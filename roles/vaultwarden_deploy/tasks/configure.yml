@@ -1,7 +1,7 @@
 ---
 # Configure Vaultwarden
 
-- name: Deploy Vaultwarden environment configuration
+- name: configure | Deploy Vaultwarden environment configuration
   ansible.builtin.template:
     src: vaultwarden.env.j2
     dest: /etc/vaultwarden.env
@@ -12,23 +12,23 @@
 
 # Vaultwarden's config.json (created via admin panel) overrides env vars.
 # We must sync SMTP settings to config.json to ensure consistent behavior.
-- name: Check if config.json exists (admin panel was used)
+- name: configure | Check if config.json exists (admin panel was used)
   ansible.builtin.stat:
     path: /var/lib/vaultwarden/data/config.json
   register: vaultwarden_config_json
 
-- name: Sync SMTP settings to config.json if it exists
+- name: configure | Sync SMTP settings to config.json if it exists
   when:
     - vaultwarden_config_json.stat.exists
     - vaultwarden_smtp_host is defined
     - vaultwarden_smtp_host | length > 0
   block:
-    - name: Read current config.json
+    - name: configure | Read current config.json
       ansible.builtin.slurp:
         src: /var/lib/vaultwarden/data/config.json
       register: vaultwarden_config_json_content
 
-    - name: Update SMTP settings in config.json
+    - name: configure | Update SMTP settings in config.json
       vars:
         current_config: "{{ vaultwarden_config_json_content.content | b64decode | from_json }}"
         # Base SMTP settings (always synced)
@@ -53,13 +53,13 @@
         mode: "0600"
       notify: restart vaultwarden
 
-- name: Ensure systemd override directory exists
+- name: configure | Ensure systemd override directory exists
   ansible.builtin.file:
     path: /etc/systemd/system/vaultwarden.service.d
     state: directory
     mode: "0755"
 
-- name: Deploy systemd override for security hardening
+- name: configure | Deploy systemd override for security hardening
   ansible.builtin.template:
     src: vaultwarden-override.conf.j2
     dest: /etc/systemd/system/vaultwarden.service.d/override.conf

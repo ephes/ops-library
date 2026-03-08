@@ -1,7 +1,7 @@
 ---
 # Ensure Vaultwarden service state
 
-- name: Ensure Vaultwarden service is enabled and started
+- name: service | Ensure Vaultwarden service is enabled and started
   ansible.builtin.systemd:
     name: vaultwarden
     enabled: "{{ vaultwarden_service_enabled }}"

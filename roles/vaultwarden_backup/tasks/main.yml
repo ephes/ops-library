@@ -80,27 +80,45 @@
     - vaultwarden_backup_include_data | bool
     - vaultwarden_backup_stats.results[0].stat.exists
 
-- name: Sync Vaultwarden attachments directory
-  ansible.builtin.command:
-    cmd: >
-      rsync -a
-      "{{ vaultwarden_data_dir }}/attachments/" "{{ vaultwarden_backup_dir }}/data/attachments/"
-  changed_when: true
-  failed_when: false
+- name: Check Vaultwarden attachments directory
+  ansible.builtin.stat:
+    path: "{{ vaultwarden_data_dir }}/attachments"
+  register: vaultwarden_backup_attachments_stat
   when:
     - vaultwarden_backup_include_data | bool
     - vaultwarden_backup_stats.results[0].stat.exists
 
-- name: Sync Vaultwarden sends directory
-  ansible.builtin.command:
-    cmd: >
-      rsync -a
-      "{{ vaultwarden_data_dir }}/sends/" "{{ vaultwarden_backup_dir }}/data/sends/"
-  changed_when: true
-  failed_when: false
+- name: Check Vaultwarden sends directory
+  ansible.builtin.stat:
+    path: "{{ vaultwarden_data_dir }}/sends"
+  register: vaultwarden_backup_sends_stat
   when:
     - vaultwarden_backup_include_data | bool
     - vaultwarden_backup_stats.results[0].stat.exists
+
+- name: Sync Vaultwarden attachments directory
+  ansible.posix.synchronize:
+    src: "{{ vaultwarden_data_dir }}/attachments/"
+    dest: "{{ vaultwarden_backup_dir }}/data/attachments/"
+    archive: true
+    recursive: true
+  delegate_to: "{{ inventory_hostname }}"
+  when:
+    - vaultwarden_backup_include_data | bool
+    - vaultwarden_backup_stats.results[0].stat.exists
+    - vaultwarden_backup_attachments_stat.stat.exists
+
+- name: Sync Vaultwarden sends directory
+  ansible.posix.synchronize:
+    src: "{{ vaultwarden_data_dir }}/sends/"
+    dest: "{{ vaultwarden_backup_dir }}/data/sends/"
+    archive: true
+    recursive: true
+  delegate_to: "{{ inventory_hostname }}"
+  when:
+    - vaultwarden_backup_include_data | bool
+    - vaultwarden_backup_stats.results[0].stat.exists
+    - vaultwarden_backup_sends_stat.stat.exists
 
 - name: Copy RSA key files
   ansible.builtin.copy:
@@ -272,13 +290,14 @@
 
 - name: Combine and prune old Vaultwarden backup archives
   vars:
+    _retain_count: "{{ vaultwarden_backup_retain }}"
     _all_backups: >-
       {{
         ((vaultwarden_backup_existing_plain.files | default([])) +
          (vaultwarden_backup_existing_encrypted.files | default([])))
         | sort(attribute='mtime', reverse=true)
       }}
-    _backups_to_delete: "{{ _all_backups[vaultwarden_backup_retain | int:] }}"
+    _backups_to_delete: "{{ _all_backups[(_retain_count | int) :] }}"
   ansible.builtin.file:
     path: "{{ item.path }}"
     state: absent
