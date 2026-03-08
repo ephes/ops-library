@@ -36,6 +36,8 @@ graphyard_rsync_excludes:
   - "src/django/db.sqlite3-shm"
   - "src/django/staticfiles/"
   - "src/django/media/"
+  - "deploy/grafana/dashboards/logyard/"
+  - "deploy/grafana/provisioning/datasources/logyard.yaml"
 
 # Python runtime and dependency sync
 graphyard_python_version: "3.12"

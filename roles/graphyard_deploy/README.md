@@ -88,6 +88,9 @@ See `defaults/main.yml` for the full variable set.
   - `graphyard_vector_deploy`
   - `graphyard_ingress_deploy`
 - Auth/bootstrap reconciliation remains in `graphyard_auth_bootstrap_deploy`.
+- Default `graphyard_rsync_excludes` also protect shared Logyard Grafana assets under
+  `deploy/grafana/` so a Graphyard rsync deploy does not delete Logyard's dashboard or
+  datasource provisioning files from the shared Grafana tree.
 - Declarative metric spec provisioning is keyed by spec `name`.
 - Default behavior is create/update only; omitted specs are left untouched unless `graphyard_metric_collection_specs_prune: true`.
 - Prune is intentionally opt-in because it deletes any existing `MetricCollectionSpec` row whose `name` is not present in the rendered file.
