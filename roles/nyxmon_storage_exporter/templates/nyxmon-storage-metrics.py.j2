@@ -73,6 +73,35 @@ def _parse_zpool_scan_ts(zpool_status_output: str) -> int | None:
     return None
 
 
+def _parse_size_to_bytes(value: str) -> int | None:
+    match = re.match(r"^\s*([0-9]+(?:\.[0-9]+)?)\s*([KMGTPEZ]?)(?:i?B?)?\s*$", value)
+    if not match:
+        return None
+    number = float(match.group(1))
+    suffix = match.group(2).upper()
+    units = {
+        "": 1,
+        "K": 1024,
+        "M": 1024**2,
+        "G": 1024**3,
+        "T": 1024**4,
+        "P": 1024**5,
+        "E": 1024**6,
+        "Z": 1024**7,
+    }
+    multiplier = units.get(suffix)
+    if multiplier is None:
+        return None
+    return int(number * multiplier)
+
+
+def _parse_percent_ratio(value: str) -> float | None:
+    match = re.match(r"^\s*([0-9]+(?:\.[0-9]+)?)%\s*$", value)
+    if not match:
+        return None
+    return float(match.group(1)) / 100.0
+
+
 def _zpool_list(pools: list[str], skip_pools: set[str]) -> dict[str, dict[str, Any]]:
     if not pools:
         if skip_pools:
@@ -103,6 +132,18 @@ def _zpool_list(pools: list[str], skip_pools: set[str]) -> dict[str, dict[str, A
             "free": free,
             "cap": cap,
         }
+        size_bytes = _parse_size_to_bytes(size)
+        alloc_bytes = _parse_size_to_bytes(alloc)
+        free_bytes = _parse_size_to_bytes(free)
+        cap_ratio = _parse_percent_ratio(cap)
+        if size_bytes is not None:
+            payload[name]["size_bytes"] = size_bytes
+        if alloc_bytes is not None:
+            payload[name]["alloc_bytes"] = alloc_bytes
+        if free_bytes is not None:
+            payload[name]["free_bytes"] = free_bytes
+        if cap_ratio is not None:
+            payload[name]["cap_ratio"] = cap_ratio
 
         status = _run(["zpool", "status", name])
         if status.returncode == 0:
@@ -297,9 +338,51 @@ def _edac_status() -> dict[str, Any]:
     return status
 
 
+def _filesystem_stats(path: str) -> dict[str, Any]:
+    result = _run(
+        [
+            "df",
+            "-B1",
+            "--output=source,size,used,avail,pcent,target",
+            path,
+        ]
+    )
+    payload: dict[str, Any] = {"path": path}
+    if result.returncode != 0:
+        payload["error"] = result.stderr.strip() or result.stdout.strip() or "df failed"
+        return payload
+
+    lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    if len(lines) < 2:
+        payload["error"] = "unexpected df output"
+        return payload
+
+    parts = lines[-1].split()
+    if len(parts) < 5:
+        payload["error"] = "unexpected df output"
+        return payload
+
+    source, size_bytes, used_bytes, avail_bytes, percent = parts[:5]
+    payload["source"] = source
+    try:
+        payload["size_bytes"] = int(size_bytes)
+        payload["used_bytes"] = int(used_bytes)
+        payload["avail_bytes"] = int(avail_bytes)
+    except ValueError:
+        payload["error"] = "df size fields were not numeric"
+        return payload
+
+    used_ratio = _parse_percent_ratio(percent)
+    if used_ratio is not None:
+        payload["used_ratio"] = used_ratio
+    payload["ok"] = "error" not in payload
+    return payload
+
+
 def main() -> int:
     pools: list[str] = json.loads(r'''{{ nyxmon_storage_exporter_pools | to_json }}''')
     disks: list[dict[str, Any]] = json.loads(r'''{{ nyxmon_storage_exporter_disks | to_json }}''')
+    filesystems: list[dict[str, Any]] = json.loads(r'''{{ nyxmon_storage_exporter_filesystems | to_json }}''')
 
     quiet = _in_quiet_hours()
     skip_pools = set(QUIET_SKIP_POOLS) if quiet else set()
@@ -333,6 +416,20 @@ def main() -> int:
             disks_by_name[name] = res
     payload["disks"] = disk_results
     payload["disks_by_name"] = disks_by_name
+
+    filesystem_results: list[dict[str, Any]] = []
+    filesystems_by_name: dict[str, dict[str, Any]] = {}
+    for filesystem in filesystems:
+        name = str(filesystem.get("name", "")).strip()
+        path = str(filesystem.get("path", "")).strip()
+        if not name or not path:
+            continue
+        result = _filesystem_stats(path)
+        result["name"] = name
+        filesystem_results.append(result)
+        filesystems_by_name[name] = result
+    payload["filesystems"] = filesystem_results
+    payload["filesystems_by_name"] = filesystems_by_name
 
     payload["quiet_hours"]["spindown"] = _run_quiet_hours_spindown(quiet)
     payload["ecc"] = _edac_status()

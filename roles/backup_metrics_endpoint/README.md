@@ -176,7 +176,17 @@ probes against sleeping replica pools.
   "units": {
     "sanoid": {"ok": true, "timer": {"active_state": "active"}, "service": {"result": "success"}}
   },
-  "usb": {"enabled": true, "pool": "vault", "pool_imported": false, "state": "offline"}
+  "usb": {
+    "enabled": true,
+    "enabled_value": 1,
+    "pool": "vault",
+    "pool_imported": false,
+    "pool_imported_value": 0,
+    "device_present": true,
+    "device_present_value": 1,
+    "state": "offline",
+    "state_code": 1
+  }
 }
 ```
 

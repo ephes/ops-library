@@ -528,10 +528,13 @@ def main() -> int:
         "file_backups": [],
         "usb": {
             "enabled": USB_ENABLED,
+            "enabled_value": 1 if USB_ENABLED else 0,
             "pool": USB_POOL,
             "pool_imported": None,
+            "pool_imported_value": 0,
             "device_path": USB_DEVICE or None,
             "device_present": None,
+            "device_present_value": 0,
         },
         "summary": {},
     }
@@ -580,6 +583,7 @@ def main() -> int:
 
     if USB_DEVICE:
         payload["usb"]["device_present"] = os.path.exists(USB_DEVICE)
+        payload["usb"]["device_present_value"] = 1 if payload["usb"]["device_present"] else 0
 
     usb_enabled = bool(USB_ENABLED)
     if not usb_enabled:
@@ -599,6 +603,7 @@ def main() -> int:
     else:
         pool_imported = _pool_imported(USB_POOL)
         payload["usb"]["pool_imported"] = pool_imported
+        payload["usb"]["pool_imported_value"] = 1 if pool_imported else 0
 
         if not pool_imported:
             for dataset in USB_DATASETS:
@@ -658,6 +663,7 @@ def main() -> int:
 
     usb_pool_offline = usb_state == "offline"
     payload["usb"]["state"] = usb_state
+    payload["usb"]["state_code"] = {"disabled": 0, "offline": 1, "online": 2}[usb_state]
     overall_ok = (
         required_units_ok
         and local_snapshots_ok

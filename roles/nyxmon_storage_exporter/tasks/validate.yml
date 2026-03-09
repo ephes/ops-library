@@ -44,6 +44,30 @@
     label: "{{ item.name | default('disk ' ~ idx) }}"
   when: nyxmon_storage_exporter_disks | length > 0
 
+- name: validate | Assert filesystems is a list (not string)
+  ansible.builtin.assert:
+    that:
+      - nyxmon_storage_exporter_filesystems is sequence
+      - nyxmon_storage_exporter_filesystems is not string
+      - nyxmon_storage_exporter_filesystems is not mapping
+    fail_msg: "nyxmon_storage_exporter_filesystems must be a list, got: {{ nyxmon_storage_exporter_filesystems | type_debug }}"
+
+- name: validate | Assert each filesystem has required keys
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - item.name is defined
+      - item.path is defined
+      - item.name | length > 0
+      - item.path | length > 0
+      - item.path.startswith("/")
+    fail_msg: "nyxmon_storage_exporter_filesystems[{{ idx }}] must have non-empty 'name' and absolute 'path'"
+  loop: "{{ nyxmon_storage_exporter_filesystems }}"
+  loop_control:
+    index_var: idx
+    label: "{{ item.name | default('filesystem ' ~ idx) }}"
+  when: nyxmon_storage_exporter_filesystems | length > 0
+
 - name: validate | Assert quiet-hours spindown interval is valid
   ansible.builtin.assert:
     that:

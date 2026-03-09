@@ -30,3 +30,4 @@ nyxmon_storage_exporter_quiet_hours_spindown_state_file: "/run/nyxmon-storage-me
 # Input inventory
 nyxmon_storage_exporter_pools: []
 nyxmon_storage_exporter_disks: []
+nyxmon_storage_exporter_filesystems: []

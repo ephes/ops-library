@@ -4,7 +4,7 @@ Storage health metrics exporter for Nyxmon integration.
 
 ## Description
 
-This role installs a Python script that collects and outputs storage health metrics as JSON. It gathers SMART data from disks (temperature, health status) and ZFS pool information (health, capacity, last scrub). The JSON output is designed to be served over HTTP and monitored using Nyxmon's `json-metrics` check type, using system Python 3 (no venv/uv).
+This role installs a Python script that collects and outputs storage health metrics as JSON. It gathers SMART data from disks (temperature, health status), ZFS pool information (health, capacity, last scrub), and optional named filesystem usage. The JSON output is designed to be served over HTTP and monitored using Nyxmon's `json-metrics` check type, using system Python 3 (no venv/uv).
 
 ## Requirements
 
@@ -32,6 +32,7 @@ The role installs `nyxmon_storage_exporter_packages` (defaults to `python3`). Ad
 |----------|------|---------|-------------|
 | `nyxmon_storage_exporter_disks` | list | `[]` | List of disks to monitor (see structure below) |
 | `nyxmon_storage_exporter_pools` | list | `[]` | List of ZFS pool names to monitor |
+| `nyxmon_storage_exporter_filesystems` | list | `[]` | List of named filesystems/paths to measure with `df -B1` |
 
 **Note:** Both lists default to empty. If empty, the exporter will still run but report no disk/pool data. Configure at least one of these to get meaningful metrics.
 
@@ -45,6 +46,15 @@ Each disk in `nyxmon_storage_exporter_disks` must have:
 | `type` | string | One of `nvme`, `ata`, `scsi`, or `sat` |
 | `name` | string | Human-readable name for the disk |
 | `pool` | string | ZFS pool name this disk belongs to (or `none`) |
+
+#### Filesystem Entry Structure
+
+Each filesystem in `nyxmon_storage_exporter_filesystems` must have:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `name` | string | Stable logical name for the filesystem |
+| `path` | string | Absolute path to measure via `df -B1` |
 
 ### Optional Variables
 
@@ -91,6 +101,10 @@ nyxmon_storage_exporter_disks:
     type: sat
     name: tank-hdd-2
     pool: tank
+
+nyxmon_storage_exporter_filesystems:
+  - name: rootfs
+    path: /
 
 nyxmon_storage_exporter_quiet_hours_enabled: true
 nyxmon_storage_exporter_quiet_hours_start: "06:00"
@@ -147,7 +161,42 @@ The script outputs JSON with disk temperatures, health status, pool information,
     "boot-nvme": {"name": "boot-nvme", "device": "/dev/...", "type": "nvme", "pool": "none", "temp_c": 25, "ok": true}
   },
   "pools": {
-    "tank": {"health": "ONLINE", "size": "10.9T", "alloc": "7.54M", "free": "10.9T", "cap": "0%", "last_scrub_age_days": 0.5}
+    "tank": {
+      "health": "ONLINE",
+      "size": "10.9T",
+      "alloc": "7.54M",
+      "free": "10.9T",
+      "cap": "0%",
+      "size_bytes": 11984625352704,
+      "alloc_bytes": 7906263,
+      "free_bytes": 11984617446441,
+      "cap_ratio": 0.0,
+      "last_scrub_age_days": 0.5
+    }
+  },
+  "filesystems": [
+    {
+      "name": "rootfs",
+      "path": "/",
+      "source": "/dev/mapper/ubuntu--vg-ubuntu--lv",
+      "size_bytes": 105149440000,
+      "used_bytes": 11787485184,
+      "avail_bytes": 87974522880,
+      "used_ratio": 0.12,
+      "ok": true
+    }
+  ],
+  "filesystems_by_name": {
+    "rootfs": {
+      "name": "rootfs",
+      "path": "/",
+      "source": "/dev/mapper/ubuntu--vg-ubuntu--lv",
+      "size_bytes": 105149440000,
+      "used_bytes": 11787485184,
+      "avail_bytes": 87974522880,
+      "used_ratio": 0.12,
+      "ok": true
+    }
   },
   "quiet_hours": {
     "enabled": true,
@@ -180,6 +229,9 @@ The script outputs JSON with disk temperatures, health status, pool information,
             type: sat
             name: tank-hdd-1
             pool: tank
+        nyxmon_storage_exporter_filesystems:
+          - name: rootfs
+            path: /
 ```
 
 ## Tags
