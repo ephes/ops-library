@@ -347,7 +347,7 @@ def _filesystem_stats(path: str) -> dict[str, Any]:
             path,
         ]
     )
-    payload: dict[str, Any] = {"path": path}
+    payload: dict[str, Any] = {"path": path, "ok": False}
     if result.returncode != 0:
         payload["error"] = result.stderr.strip() or result.stdout.strip() or "df failed"
         return payload
@@ -357,12 +357,12 @@ def _filesystem_stats(path: str) -> dict[str, Any]:
         payload["error"] = "unexpected df output"
         return payload
 
-    parts = lines[-1].split()
-    if len(parts) < 5:
+    parts = lines[-1].rsplit(maxsplit=5)
+    if len(parts) != 6:
         payload["error"] = "unexpected df output"
         return payload
 
-    source, size_bytes, used_bytes, avail_bytes, percent = parts[:5]
+    source, size_bytes, used_bytes, avail_bytes, percent, _target = parts
     payload["source"] = source
     try:
         payload["size_bytes"] = int(size_bytes)
