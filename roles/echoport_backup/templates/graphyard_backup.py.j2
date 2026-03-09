@@ -64,6 +64,7 @@ CREATE_SAFETY_SNAPSHOT_RAW = "{{ graphyard_echoport_backup_create_safety_snapsho
 ROLLBACK_ON_FAILURE_RAW = "{{ graphyard_echoport_backup_rollback_on_failure }}"
 CLEANUP_SAFETY_SNAPSHOT_RAW = "{{ graphyard_echoport_backup_cleanup_safety_snapshot }}"
 INCLUDE_INFLUX_CONFIG_RAW = "{{ graphyard_echoport_backup_include_influx_config }}"
+RESTORE_FAILPOINT_DEFAULT_RAW = "{{ graphyard_echoport_backup_restore_failpoint | default('', true) }}"
 
 ALLOWED_ROOTS_RAW = "{{ graphyard_echoport_backup_allowed_roots | join(',') }}"
 
@@ -104,6 +105,7 @@ ROLLBACK_ON_FAILURE = parse_bool(ROLLBACK_ON_FAILURE_RAW, True)
 CLEANUP_SAFETY_SNAPSHOT = parse_bool(CLEANUP_SAFETY_SNAPSHOT_RAW, True)
 INCLUDE_INFLUX_CONFIG = parse_bool(INCLUDE_INFLUX_CONFIG_RAW, True)
 ALLOWED_ROOTS = [item.strip() for item in ALLOWED_ROOTS_RAW.split(",") if item.strip()]
+RESTORE_FAILPOINT_DEFAULT = str(RESTORE_FAILPOINT_DEFAULT_RAW or "").strip()
 
 
 def read_config_file() -> Optional[Dict]:
@@ -740,6 +742,11 @@ def best_effort_start_services() -> list[str]:
     return errors
 
 
+def maybe_trigger_restore_failpoint(failpoint: str, expected: str) -> None:
+    if failpoint == expected:
+        raise RuntimeError(f"Injected restore failure at failpoint: {expected}")
+
+
 def restore_stage(stage_dir: Path, label: str) -> None:
     run_influx_restore(stage_dir / "influx-backup", label)
     restore_sqlite_from_stage(stage_dir)
@@ -877,6 +884,9 @@ def restore_flow(cenv: Dict[str, str]) -> int:
     bucket = cenv.get("ECHOPORT_BUCKET", DEFAULT_BUCKET)
     storage_key = cenv.get("ECHOPORT_KEY", "")
     expected_checksum = cenv.get("ECHOPORT_CHECKSUM", "")
+    restore_failpoint = str(
+        cenv.get("GRAPHYARD_RESTORE_FAILPOINT", RESTORE_FAILPOINT_DEFAULT)
+    ).strip()
 
     if not storage_key:
         error = "ECHOPORT_KEY missing for restore"
@@ -950,14 +960,17 @@ def restore_flow(cenv: Dict[str, str]) -> int:
         emit_step("restore_influx", "running", "Restoring InfluxDB from native backup")
         run_influx_restore(extract_dir / "influx-backup", "restore")
         emit_step("restore_influx", "success", "InfluxDB restore completed")
+        maybe_trigger_restore_failpoint(restore_failpoint, "after_restore_influx")
 
         emit_step("restore_sqlite", "running", "Restoring Graphyard SQLite database")
         restore_sqlite_from_stage(extract_dir)
         emit_step("restore_sqlite", "success", "SQLite restore completed")
+        maybe_trigger_restore_failpoint(restore_failpoint, "after_restore_sqlite")
 
         emit_step("restore_config", "running", "Restoring Graphyard env and systemd files")
         restore_config_from_stage(extract_dir)
         emit_step("restore_config", "success", "Graphyard env and systemd files restored")
+        maybe_trigger_restore_failpoint(restore_failpoint, "after_restore_config")
 
         emit_step("start_web", "running", f"Starting {WEB_SERVICE}")
         start_graphyard_web()
@@ -971,6 +984,7 @@ def restore_flow(cenv: Dict[str, str]) -> int:
         start_graphyard_agent()
         emit_step("start_agent", "success", f"{AGENT_SERVICE} is active")
 
+        maybe_trigger_restore_failpoint(restore_failpoint, "before_health_check")
         emit_step("health_check", "running", "Checking Graphyard health endpoint")
         run_health_check()
         emit_step("health_check", "success", "Graphyard health check passed")
