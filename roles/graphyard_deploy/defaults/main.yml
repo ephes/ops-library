@@ -64,6 +64,10 @@ graphyard_influx_bucket: "graphyard"
 graphyard_influx_measurement: "graphyard_metrics"
 graphyard_influx_api_mode: "v2"
 graphyard_influx_timeout_ms: 10000
+graphyard_influx_retention_apply: false
+# Influx interprets 0s as infinite retention.
+graphyard_influx_bucket_retention: "0s"
+graphyard_influx_container_name: "graphyard-influxdb"
 
 # Grafana base URL for Graphyard UI links
 graphyard_grafana_base_url: ""

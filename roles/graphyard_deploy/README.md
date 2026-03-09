@@ -10,6 +10,8 @@ Deploys the core Graphyard Django application and runtime services (`graphyard-w
 - Renders `/etc/graphyard/graphyard.env`.
 - Runs `manage.py migrate` and `manage.py collectstatic --noinput`.
 - Optionally renders and applies declarative `MetricCollectionSpec` definitions.
+- Optionally enforces retention on the existing InfluxDB bucket through the local
+  `graphyard-influxdb` container CLI.
 - Renders and enables systemd units:
   - `graphyard-web.service`
   - `graphyard-agent.service`
@@ -39,6 +41,9 @@ Deploys the core Graphyard Django application and runtime services (`graphyard-w
 | `graphyard_metric_collection_specs_prune` | `false` | Pass `--prune` so DB specs omitted from the rendered file are deleted by `name` |
 | `graphyard_metric_collection_specs_path` | `/etc/graphyard/metric-collection-specs.json` | Rendered JSON file path for declarative specs |
 | `graphyard_metric_collection_specs` | `[]` | Authoritative list of spec objects keyed by `name` |
+| `graphyard_influx_retention_apply` | `false` | Inspect/update the existing InfluxDB bucket retention during deploy |
+| `graphyard_influx_bucket_retention` | `0s` | Desired retention duration for `graphyard_influx_bucket` (for example `180d`) |
+| `graphyard_influx_container_name` | `graphyard-influxdb` | Container used for `influx bucket list/update` |
 | `graphyard_web_bind_host` | `127.0.0.1` | Web bind host |
 | `graphyard_web_bind_port` | `8051` | Web bind port |
 | `graphyard_web_workers` | `1` | Keep conservative for SQLite profile |
@@ -60,6 +65,8 @@ See `defaults/main.yml` for the full variable set.
         graphyard_source_path: /Users/jochen/projects/graphyard
         graphyard_django_secret_key: "{{ graphyard_secrets.django_secret_key }}"
         graphyard_influx_token: "{{ graphyard_secrets.influx_token }}"
+        graphyard_influx_retention_apply: true
+        graphyard_influx_bucket_retention: 180d
         graphyard_django_allowed_hosts:
           - 127.0.0.1
           - localhost
@@ -97,3 +104,5 @@ See `defaults/main.yml` for the full variable set.
 - Default behavior is create/update only; omitted specs are left untouched unless `graphyard_metric_collection_specs_prune: true`.
 - Prune is intentionally opt-in because it deletes any existing `MetricCollectionSpec` row whose `name` is not present in the rendered file.
 - The underlying management command refuses `--prune` when the desired file is empty, which protects against accidental full deletion from a broken render.
+- Retention enforcement updates the existing bucket in place; it does not create rollup buckets or
+  rewrite Grafana to query alternate storage.

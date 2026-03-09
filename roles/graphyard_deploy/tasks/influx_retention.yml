@@ -1,0 +1,98 @@
+---
+- name: influx_retention | Validate desired retention configuration
+  ansible.builtin.assert:
+    that:
+      - graphyard_influx_bucket | length > 0
+      - graphyard_influx_bucket_retention | length > 0
+      - graphyard_influx_container_name | length > 0
+      - (graphyard_influx_bucket_retention | community.general.to_time_unit('s')) >= 0
+    fail_msg: >-
+      Invalid Graphyard InfluxDB retention configuration. Ensure bucket, retention,
+      and container name are set and retention parses to a non-negative duration.
+
+- name: influx_retention | Inspect current bucket settings
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{.State.Running}}' }}"
+      - "{{ graphyard_influx_container_name }}"
+  register: graphyard_influx_container_running
+  changed_when: false
+
+- name: influx_retention | Assert InfluxDB container is running
+  ansible.builtin.assert:
+    that:
+      - graphyard_influx_container_running.stdout | trim == "true"
+    fail_msg: >-
+      Graphyard InfluxDB container {{ graphyard_influx_container_name }} is not running.
+      Start the container or correct graphyard_influx_container_name before enforcing retention.
+
+- name: influx_retention | Inspect current bucket settings
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - "{{ graphyard_influx_container_name }}"
+      - influx
+      - bucket
+      - list
+      - --name
+      - "{{ graphyard_influx_bucket }}"
+      - --json
+  register: graphyard_influx_bucket_list
+  changed_when: false
+
+- name: influx_retention | Parse current bucket settings
+  ansible.builtin.set_fact:
+    graphyard_influx_bucket_rows: "{{ graphyard_influx_bucket_list.stdout | from_json }}"
+    graphyard_influx_bucket_retention_desired_seconds: >-
+      {{
+        graphyard_influx_bucket_retention
+        | community.general.to_time_unit('s')
+        | round(0, 'common')
+        | int
+      }}
+
+- name: influx_retention | Assert target bucket exists exactly once
+  ansible.builtin.assert:
+    that:
+      - graphyard_influx_bucket_rows | length == 1
+    fail_msg: >-
+      Expected exactly one InfluxDB bucket named {{ graphyard_influx_bucket }},
+      found {{ graphyard_influx_bucket_rows | length }}.
+
+- name: influx_retention | Derive current retention state
+  ansible.builtin.set_fact:
+    graphyard_influx_bucket_id: "{{ graphyard_influx_bucket_rows[0].id }}"
+    graphyard_influx_bucket_retention_current_seconds: >-
+      {{
+        (
+          graphyard_influx_bucket_rows[0].retentionRules
+          | default([])
+          | first
+          | default({})
+        ).everySeconds
+        | default(0, true)
+        | int
+      }}
+
+- name: influx_retention | Update bucket retention when it drifts
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - "{{ graphyard_influx_container_name }}"
+      - influx
+      - bucket
+      - update
+      - --id
+      - "{{ graphyard_influx_bucket_id }}"
+      - --retention
+      - "{{ graphyard_influx_bucket_retention }}"
+  register: graphyard_influx_bucket_update
+  when: >-
+    graphyard_influx_bucket_retention_current_seconds !=
+    graphyard_influx_bucket_retention_desired_seconds
+  changed_when: true

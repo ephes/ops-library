@@ -1,0 +1,98 @@
+---
+# Test playbook for graphyard_deploy role
+# Run with: ansible-playbook tests/test_graphyard_deploy.yml -i tests/inventory/test.yml
+
+- name: Test Graphyard Deploy Role Components
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/graphyard_deploy"
+
+  tasks:
+    - name: Verify role files exist
+      block:
+        - name: Check defaults file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/defaults/main.yml"
+          register: defaults_file
+
+        - name: Check tasks file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/tasks/main.yml"
+          register: tasks_file
+
+        - name: Check retention tasks file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/tasks/influx_retention.yml"
+          register: influx_retention_file
+
+        - name: Check role README file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/README.md"
+          register: readme_file
+
+        - name: Assert required files exist
+          ansible.builtin.assert:
+            that:
+              - defaults_file.stat.exists
+              - tasks_file.stat.exists
+              - influx_retention_file.stat.exists
+              - readme_file.stat.exists
+
+    - name: Validate defaults are safe
+      block:
+        - name: Load defaults
+          ansible.builtin.include_vars:
+            file: "{{ role_path }}/defaults/main.yml"
+            name: graphyard_deploy_defaults
+
+        - name: Parse sample retention duration
+          ansible.builtin.set_fact:
+            graphyard_sample_retention_seconds: >-
+              {{
+                '180d'
+                | community.general.to_time_unit('s')
+                | round(0, 'common')
+                | int
+              }}
+
+        - name: Assert required defaults
+          ansible.builtin.assert:
+            that:
+              - graphyard_deploy_defaults.graphyard_enabled == true
+              - graphyard_deploy_defaults.graphyard_influx_token == "CHANGEME"
+              - graphyard_deploy_defaults.graphyard_influx_retention_apply == false
+              - graphyard_deploy_defaults.graphyard_influx_bucket_retention == "0s"
+              - graphyard_deploy_defaults.graphyard_influx_container_name == "graphyard-influxdb"
+              - graphyard_sample_retention_seconds == 15552000
+
+    - name: Validate retention tasks are wired into the role
+      block:
+        - name: Read main tasks file
+          ansible.builtin.slurp:
+            path: "{{ role_path }}/tasks/main.yml"
+          register: main_tasks_content
+
+        - name: Read retention tasks file
+          ansible.builtin.slurp:
+            path: "{{ role_path }}/tasks/influx_retention.yml"
+          register: retention_tasks_content
+
+        - name: Assert expected retention enforcement steps are present
+          ansible.builtin.assert:
+            that:
+              - "'import_tasks: influx_retention.yml' in main_tasks_text"
+              - "'graphyard_influx_retention_apply | bool' in main_tasks_text"
+              - "'community.general.to_time_unit(' in retention_tasks_text"
+              - "'graphyard_influx_container_running' in retention_tasks_text"
+              - "'State.Running' in retention_tasks_text"
+              - "'Graphyard InfluxDB container' in retention_tasks_text"
+              - "'graphyard_influx_bucket_list.stdout | from_json' in retention_tasks_text"
+              - "'graphyard_influx_bucket_update' in retention_tasks_text"
+              - "'--retention' in retention_tasks_text"
+              - "'Expected exactly one InfluxDB bucket named' in retention_tasks_text"
+          vars:
+            main_tasks_text: "{{ main_tasks_content.content | b64decode }}"
+            retention_tasks_text: "{{ retention_tasks_content.content | b64decode }}"

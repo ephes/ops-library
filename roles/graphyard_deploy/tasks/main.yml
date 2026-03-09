@@ -42,6 +42,10 @@
 - name: main | Apply Django environment and management tasks
   ansible.builtin.import_tasks: django.yml
 
+- name: main | Enforce InfluxDB bucket retention
+  ansible.builtin.import_tasks: influx_retention.yml
+  when: graphyard_influx_retention_apply | bool
+
 - name: main | Configure and start systemd services
   ansible.builtin.import_tasks: service.yml
 
