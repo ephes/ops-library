@@ -7,6 +7,7 @@ Deploy OpsGate on macOS (`launchd` host model) with the Phase 4B control service
 - Creates and manages both required users:
   - `control_service_user` for API/UI process execution
   - `ops` for runner/tmux execution
+- Grants `control_service_user` read access to the `ops` artifact tree so the web UI can display runner logs
 - Creates spec-aligned execution layout:
   - `ops_home_dir` (default `/Users/ops`)
   - `execution_data_dir` (default `{{ ops_home_dir }}/remediation`)

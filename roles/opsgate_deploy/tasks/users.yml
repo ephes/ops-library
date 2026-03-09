@@ -28,6 +28,13 @@
     create_home: true
     state: present
 
+- name: users | Allow control_service_user to read ops artifact tree
+  ansible.builtin.user:
+    name: "{{ control_service_user }}"
+    groups: "{{ ops_group }}"
+    append: true
+    state: present
+
 - name: users | Allow ops user to read control service app tree
   ansible.builtin.user:
     name: "{{ ops_user }}"
