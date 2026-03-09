@@ -91,6 +91,8 @@ See `defaults/main.yml` for the full variable set.
 - Default `graphyard_rsync_excludes` also protect shared Logyard Grafana assets under
   `deploy/grafana/` so a Graphyard rsync deploy does not delete Logyard's dashboard or
   datasource provisioning files from the shared Grafana tree.
+- Source changes from either `rsync` or `git` deploy mode notify both systemd services for restart,
+  so updated Graphyard application code takes effect even when the unit files and env file are unchanged.
 - Declarative metric spec provisioning is keyed by spec `name`.
 - Default behavior is create/update only; omitted specs are left untouched unless `graphyard_metric_collection_specs_prune: true`.
 - Prune is intentionally opt-in because it deletes any existing `MetricCollectionSpec` row whose `name` is not present in the rendered file.

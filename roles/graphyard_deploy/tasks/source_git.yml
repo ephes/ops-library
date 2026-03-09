@@ -12,6 +12,9 @@
     force: true
   become: true
   become_user: "{{ graphyard_user }}"
+  notify:
+    - restart graphyard web
+    - restart graphyard agent
 
 - name: source_git | Ensure ownership for repository files
   ansible.builtin.file:

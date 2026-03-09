@@ -42,6 +42,9 @@
     rsync_opts: "{{ graphyard_rsync_excludes | map('regex_replace', '^(.*)$', '--exclude=\\1') | list }}"
   delegate_to: localhost
   become: false
+  notify:
+    - restart graphyard web
+    - restart graphyard agent
 
 - name: source_rsync | Ensure ownership for synced files
   ansible.builtin.file:
