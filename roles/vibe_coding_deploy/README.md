@@ -8,6 +8,7 @@ Set up a dedicated interactive coding user with persistent tmux sessions, fish s
 - Configures SSH `authorized_keys` and hardens sshd with a `Match User` block.
 - Fixes SSH agent forwarding inside tmux/zellij by deploying `~/.ssh/rc` (creates a stable `~/.ssh/auth_sock` symlink on each login) and a fish `conf.d` snippet that points `SSH_AUTH_SOCK` at the symlink.
 - Runs `shell_basics_deploy` for CLI tools (fish, tmux, fzf, ripgrep, zoxide, etc.) with `manage_fish_config: false` so chezmoi owns the fish config.
+- Installs GitHub CLI (`gh`) and can manage durable GitHub auth in `~/.config/gh/hosts.yml` for non-interactive release automation.
 - Clones dotfiles repo via SSH agent forwarding and applies with chezmoi (preferred), or rsyncs chezmoi source from local machine (legacy fallback).
 - Deploys API keys to `~/.config/fish/conf.d/secrets.fish` (role-managed, outside chezmoi).
 - Installs Node.js LTS via NodeSource apt repo (pinned to major version).
@@ -45,6 +46,7 @@ vibe_coding_fish_env: {}
 
 # Extra packages passed through to shell_basics_deploy
 vibe_coding_shell_basics_extra_packages:
+  - gh
   - zoxide
 
 # Node.js (NodeSource LTS)
@@ -73,6 +75,11 @@ vibe_coding_npm_tools:
 # zellij (alongside tmux)
 vibe_coding_zellij_install: true
 
+# Optional GitHub CLI auth (writes ~/.config/gh/hosts.yml)
+vibe_coding_github_cli_auth_enabled: false
+vibe_coding_github_username: ""
+vibe_coding_github_token: ""
+
 # SSH hardening (Match User block in sshd_config)
 vibe_coding_sshd_hardening: true
 ```
@@ -95,6 +102,9 @@ vibe_coding_sshd_hardening: true
         vibe_coding_dotfiles_repo: "git@github.com:user/dotfiles.git"
         vibe_coding_fish_env:
           ANTHROPIC_API_KEY: "{{ secrets.anthropic_api_key }}"
+        vibe_coding_github_cli_auth_enabled: true
+        vibe_coding_github_username: "{{ secrets.github_username }}"
+        vibe_coding_github_token: "{{ secrets.github_token }}"
 ```
 
 ## Security
@@ -102,6 +112,7 @@ vibe_coding_sshd_hardening: true
 - **No sudo** — supplementary groups are stripped on each run (`groups: []`, `append: false`), so even pre-existing users in the `sudo` group have it removed.
 - **Locked password** — SSH key-only authentication (`password: "!"`, `password_lock: true`).
 - **No persistent GitHub keys** — existing `~/.ssh/id_*` private keys are removed on each run. Only `authorized_keys` remains.
+- **Optional durable `gh` auth** — when enabled, the role writes `~/.config/gh/hosts.yml` with mode `0600` for GitHub CLI automation on Linux hosts without relying on shell-only environment variables.
 - **SSH key required** — the role fails early if `vibe_coding_ssh_authorized_keys` is empty, preventing an unreachable locked account.
 - **sshd Match block** enforces `PasswordAuthentication no`, `AllowAgentForwarding yes`, `PermitUserRC yes` (for agent forwarding inside multiplexers), `X11Forwarding no`, `AllowTcpForwarding no`.
 
@@ -112,14 +123,15 @@ vibe_coding_sshd_hardening: true
 3. Run `shell_basics_deploy` (fish config disabled)
 4. Initialize/update chezmoi
 5. Deploy secrets to `~/.config/fish/conf.d/secrets.fish`
-6. Ensure `~/projects` directory
-7. Install Node.js via NodeSource
-8. Install Neovim from GitHub releases
-9. Install lazygit from GitHub releases
-10. Install Rust toolchain via rustup
-11. Install coding tools via npm (per-user prefix, with system-wide cleanup)
-12. Install zellij
-13. Harden sshd for the user
+6. Configure GitHub CLI auth in `~/.config/gh/hosts.yml` (optional)
+7. Ensure `~/projects` directory
+8. Install Node.js via NodeSource
+9. Install Neovim from GitHub releases
+10. Install lazygit from GitHub releases
+11. Install Rust toolchain via rustup
+12. Install coding tools via npm (per-user prefix, with system-wide cleanup)
+13. Install zellij
+14. Harden sshd for the user
 
 ## Notes
 

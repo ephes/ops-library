@@ -1,0 +1,25 @@
+---
+- name: github_cli | Ensure gh config directory exists
+  ansible.builtin.file:
+    path: "{{ vibe_coding_user_home }}/.config/gh"
+    state: directory
+    owner: "{{ vibe_coding_user }}"
+    group: "{{ vibe_coding_group }}"
+    mode: "0700"
+  when: vibe_coding_github_cli_auth_enabled | bool
+
+- name: github_cli | Deploy gh hosts.yml
+  ansible.builtin.template:
+    src: gh-hosts.yml.j2
+    dest: "{{ vibe_coding_user_home }}/.config/gh/hosts.yml"
+    owner: "{{ vibe_coding_user }}"
+    group: "{{ vibe_coding_group }}"
+    mode: "0600"
+  no_log: true
+  when: vibe_coding_github_cli_auth_enabled | bool
+
+- name: github_cli | Remove gh hosts.yml when auth is disabled
+  ansible.builtin.file:
+    path: "{{ vibe_coding_user_home }}/.config/gh/hosts.yml"
+    state: absent
+  when: not (vibe_coding_github_cli_auth_enabled | bool)

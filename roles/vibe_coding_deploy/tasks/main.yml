@@ -4,12 +4,20 @@
     that:
       - vibe_coding_ssh_authorized_keys | length > 0
       - (vibe_coding_npm_tools | length == 0) or (vibe_coding_install_node | bool)
+      - >-
+        (not (vibe_coding_github_cli_auth_enabled | bool)) or
+        (
+          (vibe_coding_github_username | length > 0) and
+          (vibe_coding_github_token | length > 0)
+        )
     fail_msg: >-
       Validation failed. Check:
       (1) vibe_coding_ssh_authorized_keys must not be empty — the user has a locked password
       and needs at least one SSH key to be reachable.
       (2) vibe_coding_npm_tools requires vibe_coding_install_node to be true — these tools
       are installed via npm.
+      (3) vibe_coding_github_cli_auth_enabled requires both vibe_coding_github_username and
+      vibe_coding_github_token so gh can authenticate non-interactively.
     quiet: true
 
 - name: main | Create user and group
@@ -28,6 +36,9 @@
 - name: main | Deploy secrets to fish config
   ansible.builtin.import_tasks: secrets.yml
   when: vibe_coding_fish_env | length > 0
+
+- name: main | Reconcile GitHub CLI auth
+  ansible.builtin.import_tasks: github_cli.yml
 
 - name: main | Ensure projects directory
   ansible.builtin.import_tasks: directories.yml

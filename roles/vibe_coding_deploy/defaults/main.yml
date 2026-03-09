@@ -23,6 +23,7 @@ vibe_coding_fish_env: {}
 
 # Extra packages passed through to shell_basics_deploy
 vibe_coding_shell_basics_extra_packages:
+  - gh
   - zoxide
 
 # Node.js (NodeSource LTS)
@@ -50,6 +51,11 @@ vibe_coding_npm_tools:
 
 # zellij (installed alongside tmux as a first-class multiplexer option)
 vibe_coding_zellij_install: true
+
+# GitHub CLI auth (managed via ~/.config/gh/hosts.yml)
+vibe_coding_github_cli_auth_enabled: false
+vibe_coding_github_username: ""
+vibe_coding_github_token: ""
 
 # SSH hardening — Match User block in sshd_config
 vibe_coding_sshd_hardening: true
