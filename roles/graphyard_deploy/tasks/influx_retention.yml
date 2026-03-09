@@ -10,7 +10,7 @@
       Invalid Graphyard InfluxDB retention configuration. Ensure bucket, retention,
       and container name are set and retention parses to a non-negative duration.
 
-- name: influx_retention | Inspect current bucket settings
+- name: influx_retention | Check InfluxDB container state
   ansible.builtin.command:
     argv:
       - docker
