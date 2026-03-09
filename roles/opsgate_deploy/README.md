@@ -16,7 +16,8 @@ Deploy OpsGate on macOS (`launchd` host model) with the Phase 4B control service
   - `{{ opsgate_app_dir }}` (API/UI runtime, `control_service_user`)
   - `{{ opsgate_runner_app_dir }}` (runner runtime, `ops`)
 - Installs runtime dependencies using `uv sync --frozen --no-dev` for both runtimes
-- Wires optional `ops` credentials (SSH private/public key, SOPS age key, GitHub token)
+- Wires optional `ops` credentials (machine SSH key, dedicated GitHub SSH key, SOPS age key, GitHub token)
+- Optionally clones/updates managed `ops` workspaces (for example `ops-control`, `ops-library`) once GitHub-side access exists
 - Renders API/runner env files under `/etc/opsgate`
 - Writes tmux defaults for the `ops` runner account
 - Renders two LaunchDaemons:
@@ -40,11 +41,34 @@ Deploy OpsGate on macOS (`launchd` host model) with the Phase 4B control service
 
 ## Workspace placeholder note
 
-- The role pre-creates:
-  - `{{ ops_home_dir }}/workspaces/ops-control`
-  - `{{ ops_home_dir }}/workspaces/ops-library`
+- The role pre-creates placeholder directories for the repository names listed in
+  `opsgate_ops_workspace_repositories`.
 - Future clone steps should use explicit target paths (for example `git -C <path> ...`) to avoid accidental
   conflicts with implicit clone destination behavior.
+
+## Managed workspace bootstrap
+
+The role can optionally clone/update a managed set of repositories for the `ops` user.
+
+Default behavior:
+
+- `opsgate_ops_manage_workspace_repos: false`
+- workspace directories are created as placeholders only
+
+When enabled:
+
+- the role ensures a `known_hosts` file exists for `ops`
+- it adds the GitHub ED25519 host key when any configured repo uses a GitHub SSH URL
+- it clones/updates each repository under `{{ ops_home_dir }}/workspaces/<name>`
+- it does not force-reset dirty worktrees during updates
+
+This is intended for the OpsGate implementer workflow, where the runner-side `ops` account needs durable
+repo access for tickets that modify source and deploy through the normal path.
+
+Important prerequisite:
+
+- the deployed GitHub SSH key or GitHub credential must already be authorized for the target repositories
+- enabling managed workspace repos before GitHub-side access exists will cause the clone/update task to fail
 
 ## Key Variables
 
@@ -79,9 +103,19 @@ opsgate_allowed_cidrs:
   - "fd7a:115c:a1e0::/48"
 
 opsgate_ops_ssh_private_key: ""
+opsgate_ops_github_ssh_private_key: ""
+opsgate_ops_github_ssh_public_key: ""
 opsgate_ops_age_private_key: ""
 opsgate_ops_github_username: ""
 opsgate_ops_github_token: ""
+opsgate_ops_manage_workspace_repos: false
+opsgate_ops_workspace_repositories:
+  - name: "ops-control"
+    repo: "git@github.com:ephes/ops-control.git"
+    version: "main"
+  - name: "ops-library"
+    repo: "git@github.com:ephes/ops-library.git"
+    version: "main"
 
 opsgate_launchd_manage_state: false
 opsgate_api_launchd_manage_state: false
@@ -106,9 +140,21 @@ See `defaults/main.yml` for the full variable reference.
         opsgate_source_path: "/Users/jochen/projects/opsgate"
         opsgate_trust_proxy_headers: true
         opsgate_session_cookie_secure: true
+        opsgate_ops_manage_workspace_repos: true
         opsgate_launchd_manage_state: true
         opsgate_api_launchd_manage_state: true
         opsgate_runner_launchd_manage_state: true
         opsgate_api_launchd_start_service: true
         opsgate_runner_launchd_start_service: true
 ```
+
+If GitHub-side access is not ready yet, leave `opsgate_ops_manage_workspace_repos: false` and use the
+placeholder directories only until the machine user or deploy-key model is completed.
+
+Recommended key separation:
+
+- `opsgate_ops_ssh_private_key` / `opsgate_ops_ssh_public_key` remain the machine-access keypair for the
+  `ops` account
+- `opsgate_ops_github_ssh_private_key` / `opsgate_ops_github_ssh_public_key` are the dedicated GitHub
+  repo-access keypair installed as `~/.ssh/id_github_ed25519`
+- the role renders `~/.ssh/config` so `git@github.com:*` uses the dedicated GitHub key automatically

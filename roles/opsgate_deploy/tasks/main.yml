@@ -18,6 +18,9 @@
 - name: main | Wire ops account credentials and git identity
   ansible.builtin.import_tasks: ops_credentials.yml
 
+- name: main | Optionally clone/update managed ops workspaces
+  ansible.builtin.import_tasks: workspace_repos.yml
+
 - name: main | Write control-plane and runner environment files
   ansible.builtin.import_tasks: service_env.yml
 

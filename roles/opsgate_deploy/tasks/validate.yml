@@ -43,6 +43,60 @@
       - opsgate_uv_bin | trim | length > 0
     fail_msg: "OpsGate app deployment requires opsgate_source_path and opsgate_uv_bin."
 
+- name: validate | Ensure workspace repo bootstrap inputs are coherent
+  ansible.builtin.assert:
+    that:
+      - >-
+        (opsgate_ops_github_ssh_private_key | trim | length == 0) ==
+        (opsgate_ops_github_ssh_public_key | trim | length == 0)
+      - not (opsgate_ops_manage_workspace_repos | bool) or (opsgate_ops_workspace_repositories | length > 0)
+      - >-
+        not (opsgate_ops_manage_workspace_repos | bool) or
+        (
+          (
+            opsgate_ops_workspace_repositories
+            | map(attribute='repo')
+            | select('match', '^(git@github\\.com:|ssh://git@github\\.com/)')
+            | list
+            | length
+          ) == 0
+        ) or
+        (
+          opsgate_ops_github_ssh_private_key | trim | length > 0 and
+          opsgate_ops_github_ssh_public_key | trim | length > 0
+        )
+      - >-
+        not (opsgate_ops_manage_workspace_repos | bool) or
+        (
+          opsgate_ops_workspace_repositories
+          | map(attribute='name')
+          | reject('equalto', '')
+          | list
+          | length
+        ) == (opsgate_ops_workspace_repositories | length)
+      - >-
+        not (opsgate_ops_manage_workspace_repos | bool) or
+        (
+          opsgate_ops_workspace_repositories
+          | map(attribute='repo')
+          | reject('equalto', '')
+          | list
+          | length
+        ) == (opsgate_ops_workspace_repositories | length)
+      - >-
+        not (opsgate_ops_manage_workspace_repos | bool) or
+        (
+          opsgate_ops_workspace_repositories
+          | map(attribute='name')
+          | list
+          | unique
+          | length
+        ) == (opsgate_ops_workspace_repositories | length)
+    fail_msg: >-
+      Workspace repo bootstrap requires non-empty unique repository names and non-empty repo URLs
+      for each entry in opsgate_ops_workspace_repositories. GitHub SSH repository URLs also require
+      both opsgate_ops_github_ssh_private_key and opsgate_ops_github_ssh_public_key.
+
 - name: validate | Ensure launchd labels and plist paths are set
   ansible.builtin.assert:
     that:

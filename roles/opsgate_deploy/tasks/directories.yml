@@ -71,12 +71,14 @@
 
 - name: directories | Ensure expected workspace placeholders exist for ops user
   ansible.builtin.file:
-    path: "{{ opsgate_ops_workspace_dir }}/{{ item }}"
+    path: "{{ opsgate_ops_workspace_dir }}/{{ item.name }}"
     state: directory
     owner: "{{ ops_user }}"
     group: "{{ ops_group }}"
     mode: "0750"
-  loop: "{{ opsgate_ops_workspace_repos }}"
+  loop: "{{ opsgate_ops_workspace_repositories }}"
+  loop_control:
+    label: "{{ item.name }}"
 
 - name: directories | Ensure launchd log files exist with daemon ownership
   ansible.builtin.file:

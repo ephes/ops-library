@@ -1,0 +1,60 @@
+---
+- name: workspace_repos | Ensure ops known_hosts file exists
+  ansible.builtin.file:
+    path: "{{ opsgate_ops_ssh_known_hosts_path }}"
+    state: touch
+    owner: "{{ ops_user }}"
+    group: "{{ ops_group }}"
+    mode: "0600"
+    modification_time: preserve
+    access_time: preserve
+  when: opsgate_ops_manage_workspace_repos | bool
+
+- name: workspace_repos | Trust GitHub SSH host key for ops
+  ansible.builtin.known_hosts:
+    name: github.com
+    key: "{{ opsgate_ops_github_host_key }}"
+    path: "{{ opsgate_ops_ssh_known_hosts_path }}"
+    state: present
+  become: true
+  become_user: "{{ ops_user }}"
+  become_flags: "-i"
+  when:
+    - opsgate_ops_manage_workspace_repos | bool
+    - >-
+      (
+        opsgate_ops_workspace_repositories
+        | map(attribute='repo')
+        | select('match', '^(git@github\\.com:|ssh://git@github\\.com/)')
+        | list
+        | length
+      ) > 0
+
+- name: workspace_repos | Clone or update managed ops workspaces
+  ansible.builtin.git:
+    repo: "{{ item.repo }}"
+    dest: "{{ opsgate_ops_workspace_dir }}/{{ item.name }}"
+    version: "{{ item.version | default('HEAD') }}"
+    update: true
+    force: false
+  become: true
+  become_user: "{{ ops_user }}"
+  become_flags: "-i"
+  environment:
+    HOME: "{{ ops_home_dir }}"
+  loop: "{{ opsgate_ops_workspace_repositories }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: opsgate_ops_manage_workspace_repos | bool
+
+- name: workspace_repos | Ensure ownership for managed workspaces
+  ansible.builtin.file:
+    path: "{{ opsgate_ops_workspace_dir }}/{{ item.name }}"
+    state: directory
+    owner: "{{ ops_user }}"
+    group: "{{ ops_group }}"
+    recurse: true
+  loop: "{{ opsgate_ops_workspace_repositories }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: opsgate_ops_manage_workspace_repos | bool

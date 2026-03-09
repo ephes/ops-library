@@ -24,9 +24,19 @@ opsgate_runner_tmp_dir: "{{ execution_data_dir }}/tmp"
 opsgate_tmux_tmpdir: "{{ execution_data_dir }}/tmux"
 
 opsgate_ops_workspace_dir: "{{ ops_home_dir }}/workspaces"
-opsgate_ops_workspace_repos:
-  - ops-control
-  - ops-library
+opsgate_ops_manage_workspace_repos: false
+opsgate_ops_workspace_repositories:
+  - name: "ops-control"
+    repo: "git@github.com:ephes/ops-control.git"
+    version: "main"
+  - name: "ops-library"
+    repo: "git@github.com:ephes/ops-library.git"
+    version: "main"
+opsgate_ops_ssh_known_hosts_path: "{{ ops_home_dir }}/.ssh/known_hosts"
+opsgate_ops_ssh_config_path: "{{ ops_home_dir }}/.ssh/config"
+opsgate_ops_github_ssh_private_key_path: "{{ ops_home_dir }}/.ssh/id_github_ed25519"
+opsgate_ops_github_ssh_public_key_path: "{{ ops_home_dir }}/.ssh/id_github_ed25519.pub"
+opsgate_ops_github_host_key: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
 
 opsgate_app_dir: "{{ control_service_home_dir }}/opsgate"
 opsgate_runner_app_dir: "{{ ops_home_dir }}/opsgate"
@@ -88,6 +98,8 @@ opsgate_runner_token: "CHANGEME_RUNNER_TOKEN"
 # ops account credential wiring (optional in role, provided by ops-control secrets)
 opsgate_ops_ssh_private_key: ""
 opsgate_ops_ssh_public_key: ""
+opsgate_ops_github_ssh_private_key: ""
+opsgate_ops_github_ssh_public_key: ""
 opsgate_ops_age_private_key: ""
 opsgate_ops_git_user_name: "OpsGate Runner"
 opsgate_ops_git_user_email: "opsgate@localhost"
