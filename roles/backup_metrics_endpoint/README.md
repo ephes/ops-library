@@ -14,7 +14,7 @@ The collector gathers:
 - latest snapshot recency for configured local replica datasets
 - latest snapshot recency for USB datasets (when USB pool is imported)
 - optional file/archive freshness checks (`backup_metrics_endpoint_file_backups`, e.g. MinIO lag marker and offsite fallback marker)
-- USB pool/device context (enabled/imported/device-present)
+- USB pool/device context (enabled/imported/device-present) plus last-known USB pool utilization cached from the last time the pool was imported
 
 The endpoint adds staleness metadata (`meta.age_seconds`) based on JSON file mtime.
 When quiet-hours skipping is enabled, the collector reuses cached local snapshot
@@ -184,6 +184,12 @@ probes against sleeping replica pools.
     "pool_imported_value": 0,
     "device_present": true,
     "device_present_value": 1,
+    "last_known_used_ratio": 0.73,
+    "last_known_size_bytes": 3999452297216,
+    "last_known_alloc_bytes": 2919601704960,
+    "last_known_free_bytes": 1079850592256,
+    "last_known_observed_epoch": 1773091800,
+    "last_known_observed_iso": "2026-03-09T04:30:00+00:00",
     "state": "offline",
     "state_code": 1
   }

@@ -374,6 +374,42 @@ def _load_cached_local_snapshots(path: str) -> dict[str, dict[str, Any]]:
     return by_dataset
 
 
+def _load_cached_usb_metrics(path: str) -> dict[str, Any]:
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    usb = payload.get("usb")
+    if not isinstance(usb, dict):
+        return {}
+
+    cached: dict[str, Any] = {}
+    numeric_fields = {
+        "last_known_used_ratio",
+        "last_known_size_bytes",
+        "last_known_alloc_bytes",
+        "last_known_free_bytes",
+        "last_known_observed_epoch",
+    }
+    string_fields = {
+        "last_known_observed_iso",
+    }
+
+    for field in numeric_fields:
+        value = usb.get(field)
+        if isinstance(value, (int, float)):
+            cached[field] = value
+
+    for field in string_fields:
+        value = usb.get(field)
+        if isinstance(value, str) and value:
+            cached[field] = value
+
+    return cached
+
+
 def _snapshot_from_cache(dataset: str, cached: dict[str, Any], reason: str) -> dict[str, Any]:
     now_epoch = _now_epoch()
     creation_raw = cached.get("creation_epoch")
@@ -509,6 +545,52 @@ def _pool_imported(pool: str) -> bool:
     return rc == 0
 
 
+def _pool_usage(pool: str) -> dict[str, Any]:
+    rc, stdout, stderr = _run(
+        ["zpool", "list", "-H", "-p", "-o", "name,size,alloc,free,health", pool],
+        ZFS_TIMEOUT,
+    )
+    if rc != 0:
+        return {
+            "ok": False,
+            "error": stderr or stdout or f"zpool list failed ({rc})",
+        }
+
+    line = next((item for item in stdout.splitlines() if item.strip()), "")
+    parts = line.split()
+    if len(parts) != 5:
+        return {
+            "ok": False,
+            "error": "unexpected zpool list output",
+        }
+
+    _, size_raw, alloc_raw, free_raw, health = parts
+    try:
+        size_bytes = int(size_raw)
+        alloc_bytes = int(alloc_raw)
+        free_bytes = int(free_raw)
+    except ValueError:
+        return {
+            "ok": False,
+            "error": "non-numeric zpool size output",
+        }
+
+    if size_bytes <= 0:
+        return {
+            "ok": False,
+            "error": "invalid zpool size output",
+        }
+
+    return {
+        "ok": True,
+        "health": health,
+        "size_bytes": size_bytes,
+        "alloc_bytes": alloc_bytes,
+        "free_bytes": free_bytes,
+        "used_ratio": alloc_bytes / size_bytes,
+    }
+
+
 def main() -> int:
     now_epoch = _now_epoch()
     quiet_active = _in_quiet_hours()
@@ -535,6 +617,12 @@ def main() -> int:
             "device_path": USB_DEVICE or None,
             "device_present": None,
             "device_present_value": 0,
+            "last_known_used_ratio": None,
+            "last_known_size_bytes": None,
+            "last_known_alloc_bytes": None,
+            "last_known_free_bytes": None,
+            "last_known_observed_epoch": None,
+            "last_known_observed_iso": None,
         },
         "summary": {},
     }
@@ -561,6 +649,8 @@ def main() -> int:
     cached_local_by_dataset: dict[str, dict[str, Any]] = {}
     if quiet_active and QUIET_HOURS_SKIP_LOCAL_SNAPSHOT_PROBES:
         cached_local_by_dataset = _load_cached_local_snapshots(CACHE_JSON_PATH)
+
+    payload["usb"].update(_load_cached_usb_metrics(CACHE_JSON_PATH))
 
     for dataset in LOCAL_DATASETS:
         if quiet_active and QUIET_HOURS_SKIP_LOCAL_SNAPSHOT_PROBES:
@@ -620,6 +710,17 @@ def main() -> int:
                     }
                 )
         else:
+            usage = _pool_usage(USB_POOL)
+            if usage.get("ok"):
+                payload["usb"]["last_known_used_ratio"] = usage["used_ratio"]
+                payload["usb"]["last_known_size_bytes"] = usage["size_bytes"]
+                payload["usb"]["last_known_alloc_bytes"] = usage["alloc_bytes"]
+                payload["usb"]["last_known_free_bytes"] = usage["free_bytes"]
+                payload["usb"]["last_known_observed_epoch"] = now_epoch
+                payload["usb"]["last_known_observed_iso"] = _epoch_to_iso(now_epoch)
+            else:
+                payload["usb"]["usage_error"] = usage.get("error")
+
             for dataset in USB_DATASETS:
                 payload["snapshots"]["usb"].append(_latest_snapshot(dataset))
 
