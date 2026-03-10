@@ -4,6 +4,40 @@
     path: "{{ openclaw_data_dir }}/openclaw.json"
   register: openclaw_config_stat
 
+- name: config | Build managed plugin patch inputs
+  ansible.builtin.set_fact:
+    _openclaw_managed_plugin_entries: >-
+      {{
+        {
+          "telegram": { "enabled": openclaw_telegram_enabled | bool },
+          "whatsapp": { "enabled": false }
+        }
+        | combine(
+            (
+              {
+                openclaw_opsgate_extension_id: {
+                  "enabled": true
+                }
+              }
+              if (openclaw_opsgate_enabled | bool)
+              else {}
+            ),
+            recursive=True
+          )
+      }}
+    _openclaw_managed_plugin_load_paths: >-
+      {{
+        [openclaw_opsgate_container_extension_dir]
+        if (openclaw_opsgate_enabled | bool)
+        else []
+      }}
+    _openclaw_managed_plugin_allow: >-
+      {{
+        [openclaw_opsgate_extension_id]
+        if (openclaw_opsgate_enabled | bool)
+        else []
+      }}
+
 - name: config | Build gateway config from individual variables
   ansible.builtin.set_fact:
     _openclaw_gateway_access_patch: >-
@@ -83,12 +117,24 @@
             }
           },
           "plugins": {
-            "entries": {
-              "telegram": { "enabled": openclaw_telegram_enabled | bool },
-              "whatsapp": { "enabled": false }
-            }
+            "entries": _openclaw_managed_plugin_entries
           }
         }
+        | combine(
+            (
+              {
+                "plugins": {
+                  "allow": _openclaw_managed_plugin_allow,
+                  "load": {
+                    "paths": _openclaw_managed_plugin_load_paths
+                  }
+                }
+              }
+              if (_openclaw_managed_plugin_load_paths | length > 0)
+              else {}
+            ),
+            recursive=True
+          )
         | combine(_openclaw_gateway_access_patch, recursive=True)
         | combine(_openclaw_model_policy_patch | default({}), recursive=True)
       }}
@@ -122,16 +168,12 @@
       ansible.builtin.set_fact:
         _openclaw_runtime_patch: >-
           {{
-            {
-              "plugins": {
-                "entries": {
-                  "whatsapp": {
-                    "enabled": false
-                  }
-                }
-              },
-              "gateway": {
-                "bind": ("lan" if (openclaw_traefik_enabled | bool) else "loopback"),
+              {
+                "plugins": {
+                  "entries": _openclaw_managed_plugin_entries
+                },
+                "gateway": {
+                  "bind": ("lan" if (openclaw_traefik_enabled | bool) else "loopback"),
                 "trustedProxies": openclaw_gateway_trusted_proxies,
                 "allowRealIpFallback": openclaw_gateway_allow_real_ip_fallback | bool
               }
@@ -158,6 +200,30 @@
             | combine(
                 (
                   {
+                    "plugins": {
+                      "allow": (
+                        (
+                          (_openclaw_existing_config.plugins.allow | default([]))
+                          if ((_openclaw_existing_config.plugins | default({})) is mapping)
+                          else []
+                        )
+                        + _openclaw_managed_plugin_allow
+                      )
+                      | map('string')
+                      | map('trim')
+                      | reject('equalto', '')
+                      | unique
+                      | list
+                    }
+                  }
+                  if (_openclaw_managed_plugin_allow | length > 0)
+                  else {}
+                ),
+                recursive=True
+              )
+            | combine(
+                (
+                  {
                     "gateway": {
                       "controlUi": {
                         "allowedOrigins": [("https://" ~ openclaw_traefik_host)]
@@ -165,6 +231,37 @@
                     }
                   }
                   if (openclaw_traefik_enabled | bool)
+                  else {}
+                ),
+                recursive=True
+              )
+            | combine(
+                (
+                  {
+                    "plugins": {
+                      "load": {
+                        "paths": (
+                          (
+                            (
+                              (((_openclaw_existing_config.plugins | default({})).load | default({})).paths | default([]))
+                              if (
+                                (_openclaw_existing_config.plugins | default({})) is mapping
+                                and (((_openclaw_existing_config.plugins | default({})).load | default({})) is mapping)
+                              )
+                              else []
+                            )
+                            + _openclaw_managed_plugin_load_paths
+                          )
+                          | map('string')
+                          | map('trim')
+                          | reject('equalto', '')
+                          | unique
+                          | list
+                        )
+                      }
+                    }
+                  }
+                  if (_openclaw_managed_plugin_load_paths | length > 0)
                   else {}
                 ),
                 recursive=True

@@ -53,6 +53,24 @@
     mode: "0750"
   notify: restart openclaw
 
+- name: opsgate | Deploy plugin manifest
+  ansible.builtin.template:
+    src: opsgate-plugin.json.j2
+    dest: "{{ openclaw_opsgate_extension_dir }}/openclaw.plugin.json"
+    owner: "1000"
+    group: "1000"
+    mode: "0640"
+  notify: restart openclaw
+
+- name: opsgate | Deploy plugin tool
+  ansible.builtin.template:
+    src: opsgate-plugin-index.ts.j2
+    dest: "{{ openclaw_opsgate_extension_dir }}/index.ts"
+    owner: "1000"
+    group: "1000"
+    mode: "0640"
+  notify: restart openclaw
+
 - name: opsgate | Deploy /opsgate command SKILL.md
   ansible.builtin.template:
     src: opsgate-skill.md.j2

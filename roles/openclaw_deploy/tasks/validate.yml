@@ -568,6 +568,11 @@
       - openclaw_opsgate_submit_token | string | trim | length >= 20
       - openclaw_opsgate_submit_token != 'CHANGEME'
       - openclaw_opsgate_submit_token != 'CHANGE_ME'
+      - openclaw_opsgate_extension_id | string | trim | length > 0
+      - openclaw_opsgate_tool_name | string | trim | length > 0
+      - openclaw_opsgate_extensions_dir | string | trim | length > 0
+      - openclaw_opsgate_extension_dir | string | trim | length > 0
+      - openclaw_opsgate_container_extension_dir | string | trim | length > 0
       - openclaw_opsgate_skill_name | string | trim | length > 0
       - openclaw_opsgate_command_skill_name | string | trim | length > 0
       - openclaw_opsgate_skills_dir | string | trim | length > 0

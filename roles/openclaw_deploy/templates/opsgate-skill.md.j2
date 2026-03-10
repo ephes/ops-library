@@ -1,6 +1,10 @@
 ---
 name: {{ openclaw_opsgate_command_skill_name }}
 description: "Create explicit OpsGate investigator tickets (/{{ openclaw_opsgate_command_skill_name }} create ...)."
+user-invocable: true
+command-dispatch: tool
+command-tool: {{ openclaw_opsgate_tool_name }}
+command-arg-mode: raw
 metadata: { "openclaw": { "emoji": "🎫", "requires": { "bins": ["python3"] } } }
 ---
 
@@ -40,14 +44,8 @@ Natural-language mapping:
 
 ## Execution Rules
 
-Always execute exactly one command:
-
-```bash
-{{ openclaw_opsgate_container_skills_dir }}/{{ openclaw_opsgate_skill_name }}/handler.py <raw-user-input>
-```
-
-When no input is provided, return:
+- `/{{ openclaw_opsgate_command_skill_name }} ...` is wired to a deterministic managed tool.
+- The managed tool invokes the audited submit handler directly and returns its output as-is.
+- When no input is provided, return:
 
 `Usage: /{{ openclaw_opsgate_command_skill_name }} create [--title <text>] [--task-ref <text>] <issue description>`
-
-Return the handler output as-is.

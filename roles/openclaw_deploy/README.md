@@ -418,8 +418,9 @@ Operational note:
 
 ### OpsGate Skill (`/opsgate`): Explicit Investigator Ticket Submit
 
-When `openclaw_opsgate_enabled: true`, the role deploys a `/opsgate` command skill and handler
-that submits a new OpsGate ticket through the existing submit-token API.
+When `openclaw_opsgate_enabled: true`, the role deploys a `/opsgate` command skill, a
+deterministic local plugin tool, and the audited submit handler that creates a new OpsGate
+ticket through the existing submit-token API.
 
 Command surface:
 
@@ -431,6 +432,7 @@ Safety guarantees:
   - one step
   - role `investigator`
   - agent `codex`
+- `/opsgate ...` is wired to a deterministic local plugin tool instead of relying on prompt-only inference.
 - The handler cannot approve, reject, cancel, archive, or mutate existing OpsGate tickets.
 - The skill does not submit arbitrary execution plans or reviewer/implementer workflows.
 - OpsGate approval is still required before any execution happens.
@@ -444,6 +446,10 @@ Safety guarantees:
 | `openclaw_opsgate_submit_base_url` | `""` | OpsGate API base URL reachable from the OpenClaw container |
 | `openclaw_opsgate_approval_base_url` | `""` | Optional operator-facing base URL used for returned ticket links (defaults to submit base URL) |
 | `openclaw_opsgate_submit_token` | `""` | OpsGate submit token for source `openclaw` |
+| `openclaw_opsgate_extension_id` | `opsgate-submit` | Local OpenClaw plugin id used for deterministic slash-command dispatch |
+| `openclaw_opsgate_tool_name` | `opsgate_submit` | Tool name registered by the local OpsGate plugin |
+| `openclaw_opsgate_extensions_dir` | `{{ openclaw_data_dir }}/extensions` | Host root for local OpenClaw extensions |
+| `openclaw_opsgate_extension_dir` | `{{ openclaw_opsgate_extensions_dir }}/{{ openclaw_opsgate_extension_id }}` | Host path for the OpsGate local plugin |
 | `openclaw_opsgate_skill_name` | `opsgate-submit` | Handler skill directory name |
 | `openclaw_opsgate_command_skill_name` | `opsgate` | Slash command skill directory name |
 | `openclaw_opsgate_skills_dir` | `{{ openclaw_data_dir }}/skills` | Host skill root for OpsGate skill files |
@@ -503,8 +509,13 @@ openclaw_gateway_config:
       dmPolicy: allowlist
       allowFrom: [304012876]
   plugins:
+    load:
+      paths:
+        - /home/openclaw/data/extensions/opsgate-submit
     entries:
       telegram:
+        enabled: true
+      opsgate-submit:
         enabled: true
       whatsapp:
         enabled: false
