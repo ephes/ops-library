@@ -2,13 +2,13 @@
 
 Deploy the Archive Django service on a host with a local SQLite database, systemd, and Traefik.
 
-This role covers the deployed Archive MVP through Milestone 2:
+This role covers the deployed Archive MVP through Milestone 3:
 
 - source deployment via `rsync` or `git`
 - `uv`-managed virtualenv
 - Django migrations and static collection
 - admin/editor bootstrap user
-- systemd service
+- systemd web service plus metadata worker
 - public Traefik ingress
 - automatic service restart when app source, environment, or dependency state changes
 
@@ -46,6 +46,9 @@ archive_django_allowed_hosts:
   - "archive.home.xn--wersdrfer-47a.de"
 archive_django_csrf_trusted_origins:
   - "https://archive.home.xn--wersdrfer-47a.de"
+archive_metadata_worker_interval: 10
+archive_metadata_worker_limit: 10
+archive_metadata_request_timeout: 15
 ```
 
 ## Example
@@ -67,4 +70,5 @@ archive_django_csrf_trusted_origins:
           - "archive.home.xn--wersdrfer-47a.de"
         archive_django_csrf_trusted_origins:
           - "https://archive.home.xn--wersdrfer-47a.de"
+        archive_metadata_worker_interval: 10
 ```

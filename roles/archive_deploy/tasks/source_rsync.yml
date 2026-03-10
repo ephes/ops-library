@@ -36,7 +36,9 @@
       - "--omit-dir-times"
   delegate_to: localhost
   become: false
-  notify: restart archive
+  notify:
+    - restart archive
+    - restart archive metadata worker
 
 - name: source_rsync | Set ownership on archive site
   ansible.builtin.file:

@@ -6,7 +6,9 @@
     owner: "{{ archive_user }}"
     group: "{{ archive_group }}"
     mode: "0600"
-  notify: restart archive
+  notify:
+    - restart archive
+    - restart archive metadata worker
 
 - name: django | Run archive migrations
   ansible.builtin.command:

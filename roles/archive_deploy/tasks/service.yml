@@ -10,3 +10,28 @@
     webapp_deploy_internal_service_notify_handlers:
       - reload systemd
       - restart archive
+
+- name: service | Render archive metadata worker systemd service
+  ansible.builtin.template:
+    src: archive-metadata-worker.service.j2
+    dest: /etc/systemd/system/archive-metadata-worker.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart archive metadata worker
+
+- name: service | Enable and start archive service
+  ansible.builtin.systemd:
+    name: archive
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: service | Enable and start archive metadata worker service
+  ansible.builtin.systemd:
+    name: archive-metadata-worker
+    enabled: true
+    state: started
+    daemon_reload: true

@@ -7,4 +7,6 @@
     accept_hostkey: true
   become: true
   become_user: "{{ archive_user }}"
-  notify: restart archive
+  notify:
+    - restart archive
+    - restart archive metadata worker

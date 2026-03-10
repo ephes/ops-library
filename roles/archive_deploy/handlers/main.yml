@@ -8,6 +8,11 @@
     name: archive
     state: restarted
 
+- name: restart archive metadata worker
+  ansible.builtin.systemd:
+    name: archive-metadata-worker
+    state: restarted
+
 - name: reload traefik
   ansible.builtin.systemd:
     name: traefik

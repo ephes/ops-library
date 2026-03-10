@@ -18,6 +18,9 @@ archive_git_version: "main"
 archive_app_host: "127.0.0.1"
 archive_app_port: 10041
 archive_workers: 2
+archive_metadata_worker_interval: 10
+archive_metadata_worker_limit: 10
+archive_metadata_request_timeout: 15
 archive_python_version: "3.12"
 
 archive_django_settings_module: "config.settings.production"
