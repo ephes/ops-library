@@ -2,7 +2,7 @@
 
 Deploy the Archive Django service on a host with a local SQLite database, systemd, and Traefik.
 
-This role covers Milestone 1 of the archive service:
+This role covers the deployed Archive MVP through Milestone 2:
 
 - source deployment via `rsync` or `git`
 - `uv`-managed virtualenv
@@ -10,6 +10,7 @@ This role covers Milestone 1 of the archive service:
 - admin/editor bootstrap user
 - systemd service
 - public Traefik ingress
+- automatic service restart when app source, environment, or dependency state changes
 
 Backup and restore are intentionally handled through Echoport orchestration, not `archive_backup` /
 `archive_restore` roles. The primary backup target is the SQLite database at

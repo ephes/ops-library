@@ -25,7 +25,11 @@
     cmd: "uv sync --no-dev"
   args:
     chdir: "{{ archive_site_path }}"
+  register: archive_uv_sync_result
+  changed_when:
+    - "'Installed ' in archive_uv_sync_result.stdout or 'Uninstalled ' in archive_uv_sync_result.stdout"
   environment:
     VIRTUAL_ENV: "{{ archive_venv_path }}"
   become: true
   become_user: "{{ archive_user }}"
+  notify: restart archive

@@ -18,6 +18,9 @@
     src: "{{ archive_source_path }}/"
     dest: "{{ archive_site_path }}/"
     delete: true
+    owner: false
+    group: false
+    perms: false
     rsync_opts:
       - "--exclude=.git"
       - "--exclude=.venv"
@@ -29,8 +32,11 @@
       - "--exclude=.env"
       - "--exclude=db.sqlite3"
       - "--exclude=staticfiles/"
+      - "--exclude=src/django/gunicorn.ctl"
+      - "--omit-dir-times"
   delegate_to: localhost
   become: false
+  notify: restart archive
 
 - name: source_rsync | Set ownership on archive site
   ansible.builtin.file:
