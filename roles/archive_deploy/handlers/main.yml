@@ -1,0 +1,14 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart archive
+  ansible.builtin.systemd:
+    name: archive
+    state: restarted
+
+- name: reload traefik
+  ansible.builtin.systemd:
+    name: traefik
+    state: restarted

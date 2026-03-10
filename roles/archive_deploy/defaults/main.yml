@@ -1,0 +1,40 @@
+---
+archive_user: archive
+archive_group: "{{ archive_user }}"
+archive_home: "/home/archive"
+archive_site_path: "{{ archive_home }}/site"
+archive_django_path: "{{ archive_site_path }}/src/django"
+archive_venv_path: "{{ archive_site_path }}/.venv"
+archive_venv_bin: "{{ archive_venv_path }}/bin"
+archive_env_path: "{{ archive_site_path }}/.env"
+archive_db_path: "{{ archive_site_path }}/db.sqlite3"
+archive_static_root: "{{ archive_site_path }}/staticfiles"
+
+archive_deploy_method: rsync
+archive_source_path: ""
+archive_git_repo: "git@github.com:ephes/archive.git"
+archive_git_version: "main"
+
+archive_app_host: "127.0.0.1"
+archive_app_port: 10041
+archive_workers: 2
+archive_python_version: "3.12"
+
+archive_django_settings_module: "config.settings.production"
+archive_django_debug: false
+archive_django_secret_key: "CHANGEME"
+archive_django_allowed_hosts:
+  - "127.0.0.1"
+archive_django_csrf_trusted_origins: []
+
+archive_api_token: "CHANGEME"
+archive_admin_username: "archive"
+archive_admin_password: "CHANGEME"
+archive_admin_email: ""
+
+archive_traefik_enabled: true
+archive_traefik_host: "archive.example.com"
+archive_traefik_entrypoints:
+  - web-secure
+archive_traefik_cert_resolver: ""
+archive_traefik_middlewares: []

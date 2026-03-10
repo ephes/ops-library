@@ -51,6 +51,7 @@ The table below links each published role to its dedicated documentation. Refer 
 | Infrastructure | [`bind_authoritative_deploy`](roles/bind_authoritative_deploy/README.md) | Deploy authoritative BIND 9 with managed configs and zone files. |
 | Service deployment | [`fastdeploy_deploy`](roles/fastdeploy_deploy/README.md) | Deploy the FastDeploy platform (database, uv, frontend build, systemd, Traefik). |
 | Service deployment | [`nyxmon_deploy`](roles/nyxmon_deploy/README.md) | Deploy Nyxmon (Django app, monitoring agent, Telegram integration). |
+| Service deployment | [`archive_deploy`](roles/archive_deploy/README.md) | Deploy the Archive Django service with SQLite, systemd, Traefik, and admin bootstrap. |
 | Service deployment | [`logyard_deploy`](roles/logyard_deploy/README.md) | Deploy Logyard core runtime (Loki, shared Grafana datasource wiring, retention, and Nyxmon-facing health endpoint). |
 | Service deployment | [`logyard_ingress_deploy`](roles/logyard_ingress_deploy/README.md) | Expose Logyard Loki through an internal-only Traefik route for trusted LAN/Tailscale producers. |
 | Service deployment | [`graphyard_deploy`](roles/graphyard_deploy/README.md) | Deploy Graphyard core app/runtime (source sync, uv env, migrate/collectstatic, systemd web+agent, health checks). |

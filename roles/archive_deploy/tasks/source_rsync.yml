@@ -1,0 +1,40 @@
+---
+- name: source_rsync | Ensure archive source path exists locally
+  ansible.builtin.stat:
+    path: "{{ archive_source_path }}"
+  delegate_to: localhost
+  become: false
+  register: archive_source_dir
+
+- name: source_rsync | Fail when archive source path is missing
+  ansible.builtin.assert:
+    that:
+      - archive_source_dir.stat.exists
+      - archive_source_dir.stat.isdir
+    fail_msg: "archive source path {{ archive_source_path }} does not exist"
+
+- name: source_rsync | Sync archive repository contents
+  ansible.posix.synchronize:
+    src: "{{ archive_source_path }}/"
+    dest: "{{ archive_site_path }}/"
+    delete: true
+    rsync_opts:
+      - "--exclude=.git"
+      - "--exclude=.venv"
+      - "--exclude=__pycache__"
+      - "--exclude=*.pyc"
+      - "--exclude=.pytest_cache"
+      - "--exclude=.ruff_cache"
+      - "--exclude=.mypy_cache"
+      - "--exclude=.env"
+      - "--exclude=db.sqlite3"
+      - "--exclude=staticfiles/"
+  delegate_to: localhost
+  become: false
+
+- name: source_rsync | Set ownership on archive site
+  ansible.builtin.file:
+    path: "{{ archive_site_path }}"
+    owner: "{{ archive_user }}"
+    group: "{{ archive_group }}"
+    recurse: true

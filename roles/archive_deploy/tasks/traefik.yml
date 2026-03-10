@@ -1,0 +1,17 @@
+---
+- name: traefik | Ensure Traefik dynamic directory exists
+  ansible.builtin.file:
+    path: /etc/traefik/dynamic
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: traefik | Render archive Traefik config
+  ansible.builtin.template:
+    src: archive.traefik.yml.j2
+    dest: /etc/traefik/dynamic/archive.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload traefik

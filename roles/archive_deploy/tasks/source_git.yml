@@ -1,0 +1,9 @@
+---
+- name: source_git | Checkout archive repository
+  ansible.builtin.git:
+    repo: "{{ archive_git_repo }}"
+    dest: "{{ archive_site_path }}"
+    version: "{{ archive_git_version }}"
+    accept_hostkey: true
+  become: true
+  become_user: "{{ archive_user }}"

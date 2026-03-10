@@ -1,0 +1,66 @@
+---
+- name: django | Render archive environment file
+  ansible.builtin.template:
+    src: archive.env.j2
+    dest: "{{ archive_env_path }}"
+    owner: "{{ archive_user }}"
+    group: "{{ archive_group }}"
+    mode: "0600"
+  notify: restart archive
+
+- name: django | Run archive migrations
+  ansible.builtin.command:
+    cmd: "{{ archive_venv_bin }}/python manage.py migrate --noinput"
+  args:
+    chdir: "{{ archive_django_path }}"
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ archive_django_settings_module }}"
+    DJANGO_SECRET_KEY: "{{ archive_django_secret_key }}"
+    DJANGO_ALLOWED_HOSTS: "{{ archive_django_allowed_hosts | join(',') }}"
+    DJANGO_CSRF_TRUSTED_ORIGINS: "{{ archive_django_csrf_trusted_origins | join(',') }}"
+    DJANGO_DB_PATH: "{{ archive_db_path }}"
+    DJANGO_STATIC_ROOT: "{{ archive_static_root }}"
+    ARCHIVE_API_TOKEN: "{{ archive_api_token }}"
+  become: true
+  become_user: "{{ archive_user }}"
+
+- name: django | Collect archive static files
+  ansible.builtin.command:
+    cmd: "{{ archive_venv_bin }}/python manage.py collectstatic --noinput"
+  args:
+    chdir: "{{ archive_django_path }}"
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ archive_django_settings_module }}"
+    DJANGO_SECRET_KEY: "{{ archive_django_secret_key }}"
+    DJANGO_ALLOWED_HOSTS: "{{ archive_django_allowed_hosts | join(',') }}"
+    DJANGO_CSRF_TRUSTED_ORIGINS: "{{ archive_django_csrf_trusted_origins | join(',') }}"
+    DJANGO_DB_PATH: "{{ archive_db_path }}"
+    DJANGO_STATIC_ROOT: "{{ archive_static_root }}"
+    ARCHIVE_API_TOKEN: "{{ archive_api_token }}"
+  become: true
+  become_user: "{{ archive_user }}"
+
+- name: django | Ensure archive admin user exists
+  ansible.builtin.command:
+    argv:
+      - "{{ archive_venv_bin }}/python"
+      - manage.py
+      - ensure_admin_user
+      - --username
+      - "{{ archive_admin_username }}"
+      - --password
+      - "{{ archive_admin_password }}"
+      - --email
+      - "{{ archive_admin_email }}"
+  args:
+    chdir: "{{ archive_django_path }}"
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ archive_django_settings_module }}"
+    DJANGO_SECRET_KEY: "{{ archive_django_secret_key }}"
+    DJANGO_ALLOWED_HOSTS: "{{ archive_django_allowed_hosts | join(',') }}"
+    DJANGO_CSRF_TRUSTED_ORIGINS: "{{ archive_django_csrf_trusted_origins | join(',') }}"
+    DJANGO_DB_PATH: "{{ archive_db_path }}"
+    DJANGO_STATIC_ROOT: "{{ archive_static_root }}"
+    ARCHIVE_API_TOKEN: "{{ archive_api_token }}"
+  become: true
+  become_user: "{{ archive_user }}"

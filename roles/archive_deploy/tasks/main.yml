@@ -1,0 +1,52 @@
+---
+- name: Validate archive configuration
+  ansible.builtin.assert:
+    that:
+      - archive_deploy_method in ["rsync", "git"]
+      - archive_django_secret_key | length > 20
+      - archive_django_secret_key != "CHANGEME"
+      - archive_api_token | length > 20
+      - archive_api_token != "CHANGEME"
+      - archive_admin_username | length > 0
+      - archive_admin_password | length > 0
+      - archive_admin_password != "CHANGEME"
+      - archive_traefik_host | length > 0
+    fail_msg: "archive_deploy requires real Django/API/admin secrets and a valid host/site URL."
+
+- name: Validate rsync source path
+  ansible.builtin.assert:
+    that:
+      - archive_source_path | length > 0
+    fail_msg: "archive_source_path must be set when archive_deploy_method=rsync"
+  when: archive_deploy_method == "rsync"
+
+- name: Setup archive user and directories
+  ansible.builtin.include_tasks: user.yml
+
+- name: Deploy archive source
+  ansible.builtin.include_tasks: "source_{{ archive_deploy_method }}.yml"
+
+- name: Setup Python environment
+  ansible.builtin.include_tasks: python.yml
+
+- name: Configure Django
+  ansible.builtin.include_tasks: django.yml
+
+- name: Configure systemd service
+  ansible.builtin.include_tasks: service.yml
+
+- name: Configure Traefik
+  ansible.builtin.include_tasks: traefik.yml
+  when: archive_traefik_enabled | bool
+
+- name: Apply pending archive handlers before health check
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify archive application health
+  ansible.builtin.uri:
+    url: "http://{{ archive_app_host }}:{{ archive_app_port }}/"
+    status_code: 200
+  register: archive_healthcheck
+  retries: 20
+  delay: 3
+  until: archive_healthcheck.status == 200

@@ -1,0 +1,27 @@
+---
+- name: user | Ensure archive group exists
+  ansible.builtin.group:
+    name: "{{ archive_group }}"
+    state: present
+
+- name: user | Ensure archive user exists
+  ansible.builtin.user:
+    name: "{{ archive_user }}"
+    group: "{{ archive_group }}"
+    home: "{{ archive_home }}"
+    shell: /bin/bash
+    system: true
+    create_home: true
+    state: present
+
+- name: user | Ensure archive directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ archive_user }}"
+    group: "{{ archive_group }}"
+    mode: "0755"
+  loop:
+    - "{{ archive_home }}"
+    - "{{ archive_site_path }}"
+    - "{{ archive_static_root }}"

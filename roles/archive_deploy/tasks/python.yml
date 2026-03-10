@@ -1,0 +1,31 @@
+---
+- name: python | Ensure runtime packages are installed
+  ansible.builtin.package:
+    name:
+      - python3
+      - python3-venv
+      - sqlite3
+      - rsync
+    state: present
+
+- name: python | Ensure uv is available
+  ansible.builtin.import_role:
+    name: uv_install
+
+- name: python | Ensure archive virtual environment exists
+  ansible.builtin.command:
+    cmd: "uv venv --python {{ archive_python_version }} {{ archive_venv_path }}"
+  args:
+    creates: "{{ archive_venv_path }}/bin/python"
+  become: true
+  become_user: "{{ archive_user }}"
+
+- name: python | Install archive dependencies
+  ansible.builtin.command:
+    cmd: "uv sync --no-dev"
+  args:
+    chdir: "{{ archive_site_path }}"
+  environment:
+    VIRTUAL_ENV: "{{ archive_venv_path }}"
+  become: true
+  become_user: "{{ archive_user }}"
