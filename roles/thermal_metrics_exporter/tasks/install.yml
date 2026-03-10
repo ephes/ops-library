@@ -1,0 +1,13 @@
+---
+- name: install | Install system packages for exporter
+  ansible.builtin.package:
+    name: "{{ thermal_metrics_exporter_packages }}"
+    state: present
+
+- name: install | Install thermal metrics exporter script
+  ansible.builtin.template:
+    src: thermal-metrics-exporter.py.j2
+    dest: "{{ thermal_metrics_exporter_bin_path }}"
+    owner: root
+    group: root
+    mode: "{{ thermal_metrics_exporter_mode }}"

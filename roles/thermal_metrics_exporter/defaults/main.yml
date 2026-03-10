@@ -1,0 +1,19 @@
+---
+# thermal_metrics_exporter - Default Variables
+#
+# Installs a small local exporter script that prints bounded thermal/fan metrics
+# as JSON. Intended for local collection plus a cached authenticated HTTP
+# endpoint.
+
+thermal_metrics_exporter_enabled: true
+
+thermal_metrics_exporter_packages:
+  - python3
+  - lm-sensors
+  - ipmitool
+
+thermal_metrics_exporter_bin_path: "/usr/local/bin/thermal-metrics-exporter"
+thermal_metrics_exporter_mode: "0755"
+
+thermal_metrics_exporter_lm_sensors: []
+thermal_metrics_exporter_ipmi_sensors: []

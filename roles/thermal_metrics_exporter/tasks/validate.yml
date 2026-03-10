@@ -1,0 +1,64 @@
+---
+- name: validate | Assert lm_sensors list is a sequence
+  ansible.builtin.assert:
+    that:
+      - thermal_metrics_exporter_lm_sensors is sequence
+      - thermal_metrics_exporter_lm_sensors is not string
+      - thermal_metrics_exporter_lm_sensors is not mapping
+    fail_msg: >-
+      thermal_metrics_exporter_lm_sensors must be a list, got:
+      {{ thermal_metrics_exporter_lm_sensors | type_debug }}
+
+- name: validate | Assert lm_sensors entries are well formed
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - item.id is defined
+      - item.id | length > 0
+      - item.id is match('^[A-Za-z0-9_]+$')
+      - item.source_entity_id is defined
+      - item.source_entity_id | length > 0
+      - item.feature_name is defined
+      - item.feature_name | length > 0
+      - item.value_key is defined
+      - item.value_key | length > 0
+      - (item.chip_name_regex is defined and item.chip_name_regex | length > 0) or
+        (item.device_path is defined and item.device_path | length > 0 and item.device_path.startswith('/'))
+    fail_msg: >-
+      thermal_metrics_exporter_lm_sensors[{{ idx }}] must define id, source_entity_id,
+      feature_name, value_key, and either chip_name_regex or an absolute device_path
+  loop: "{{ thermal_metrics_exporter_lm_sensors }}"
+  loop_control:
+    index_var: idx
+    label: "{{ item.id | default('lm-sensor ' ~ idx) }}"
+  when: thermal_metrics_exporter_lm_sensors | length > 0
+
+- name: validate | Assert ipmi_sensors list is a sequence
+  ansible.builtin.assert:
+    that:
+      - thermal_metrics_exporter_ipmi_sensors is sequence
+      - thermal_metrics_exporter_ipmi_sensors is not string
+      - thermal_metrics_exporter_ipmi_sensors is not mapping
+    fail_msg: >-
+      thermal_metrics_exporter_ipmi_sensors must be a list, got:
+      {{ thermal_metrics_exporter_ipmi_sensors | type_debug }}
+
+- name: validate | Assert ipmi_sensors entries are well formed
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - item.id is defined
+      - item.id | length > 0
+      - item.id is match('^[A-Za-z0-9_]+$')
+      - item.sensor_name is defined
+      - item.sensor_name | length > 0
+      - item.source_entity_id is defined
+      - item.source_entity_id | length > 0
+    fail_msg: >-
+      thermal_metrics_exporter_ipmi_sensors[{{ idx }}] must define id, sensor_name,
+      and source_entity_id
+  loop: "{{ thermal_metrics_exporter_ipmi_sensors }}"
+  loop_control:
+    index_var: idx
+    label: "{{ item.id | default('ipmi-sensor ' ~ idx) }}"
+  when: thermal_metrics_exporter_ipmi_sensors | length > 0

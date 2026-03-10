@@ -1,0 +1,14 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart thermal-metrics-endpoint
+  ansible.builtin.systemd:
+    name: "{{ thermal_metrics_endpoint_service_name }}"
+    state: restarted
+
+- name: restart thermal-metrics-collector-timer
+  ansible.builtin.systemd:
+    name: "{{ thermal_metrics_endpoint_timer_name }}.timer"
+    state: restarted
