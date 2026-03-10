@@ -1,0 +1,63 @@
+---
+# OpsGate ticket submit skill deployment (single-step investigator tickets only).
+# Included from main.yml when openclaw_opsgate_enabled is true.
+
+- name: opsgate | Build runtime configuration payload
+  ansible.builtin.set_fact:
+    _openclaw_opsgate_payload:
+      submit_base_url: "{{ openclaw_opsgate_submit_base_url | trim | regex_replace('/+$', '') }}"
+      approval_base_url: >-
+        {{
+          (
+            openclaw_opsgate_approval_base_url
+            if (openclaw_opsgate_approval_base_url | trim | length > 0)
+            else openclaw_opsgate_submit_base_url
+          )
+          | trim
+          | regex_replace('/+$', '')
+        }}
+      submit_token: "{{ openclaw_opsgate_submit_token }}"
+      submit_timeout_seconds: "{{ openclaw_opsgate_submit_timeout_seconds | int }}"
+      ticket_expires_seconds: "{{ openclaw_opsgate_ticket_expires_seconds | int }}"
+      title_max_chars: "{{ openclaw_opsgate_title_max_chars | int }}"
+      summary_max_chars: "{{ openclaw_opsgate_summary_max_chars | int }}"
+      request_max_chars: "{{ openclaw_opsgate_request_max_chars | int }}"
+      task_ref_max_chars: "{{ openclaw_opsgate_task_ref_max_chars | int }}"
+  no_log: true
+
+- name: opsgate | Render runtime configuration file
+  ansible.builtin.copy:
+    content: "{{ _openclaw_opsgate_payload | to_nice_json }}\n"
+    dest: "{{ openclaw_opsgate_credentials_path }}"
+    owner: "1000"
+    group: "1000"
+    mode: "0600"
+  no_log: true
+  notify: restart openclaw
+
+- name: opsgate | Deploy skill manifest
+  ansible.builtin.template:
+    src: opsgate-submit-skill.json.j2
+    dest: "{{ openclaw_opsgate_skills_dir }}/{{ openclaw_opsgate_skill_name }}/skill.json"
+    owner: "1000"
+    group: "1000"
+    mode: "0640"
+  notify: restart openclaw
+
+- name: opsgate | Deploy skill handler
+  ansible.builtin.template:
+    src: opsgate-submit-handler.py.j2
+    dest: "{{ openclaw_opsgate_skills_dir }}/{{ openclaw_opsgate_skill_name }}/handler.py"
+    owner: "1000"
+    group: "1000"
+    mode: "0750"
+  notify: restart openclaw
+
+- name: opsgate | Deploy /opsgate command SKILL.md
+  ansible.builtin.template:
+    src: opsgate-skill.md.j2
+    dest: "{{ openclaw_opsgate_skills_dir }}/{{ openclaw_opsgate_command_skill_name }}/SKILL.md"
+    owner: "1000"
+    group: "1000"
+    mode: "0640"
+  notify: restart openclaw

@@ -22,7 +22,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
   roles:
     - role: local.ops_library.openclaw_deploy
       vars:
-        openclaw_version: "v2026.2.23"
+        openclaw_version: "v2026.3.8"
         openclaw_data_dir: "/mnt/cryptdata/openclaw/data"
         openclaw_gateway_token: "{{ sops_secrets.gateway_token }}"
         openclaw_anthropic_api_key: "{{ sops_secrets.anthropic_api_key }}"
@@ -416,10 +416,52 @@ Operational note:
 | `openclaw_homeassistant_attribute_max_items` | `8` | Max rendered attribute key/value pairs in `/homeassistant state` |
 | `openclaw_homeassistant_attribute_value_max_chars` | `120` | Max chars per rendered attribute value |
 
+### OpsGate Skill (`/opsgate`): Explicit Investigator Ticket Submit
+
+When `openclaw_opsgate_enabled: true`, the role deploys a `/opsgate` command skill and handler
+that submits a new OpsGate ticket through the existing submit-token API.
+
+Command surface:
+
+- `/opsgate create [--title <text>] [--task-ref <text>] <issue description>`
+
+Safety guarantees:
+
+- The handler submits exactly one fixed workflow shape:
+  - one step
+  - role `investigator`
+  - agent `codex`
+- The handler cannot approve, reject, cancel, archive, or mutate existing OpsGate tickets.
+- The skill does not submit arbitrary execution plans or reviewer/implementer workflows.
+- OpsGate approval is still required before any execution happens.
+- Approval links can use a different base URL from the internal submit endpoint, which matches the current split deploy model (`submit` via internal service URL, `approve/view` via operator HTTPS URL).
+
+#### OpsGate Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `openclaw_opsgate_enabled` | `false` | Enable `/opsgate` skill deployment |
+| `openclaw_opsgate_submit_base_url` | `""` | OpsGate API base URL reachable from the OpenClaw container |
+| `openclaw_opsgate_approval_base_url` | `""` | Optional operator-facing base URL used for returned ticket links (defaults to submit base URL) |
+| `openclaw_opsgate_submit_token` | `""` | OpsGate submit token for source `openclaw` |
+| `openclaw_opsgate_skill_name` | `opsgate-submit` | Handler skill directory name |
+| `openclaw_opsgate_command_skill_name` | `opsgate` | Slash command skill directory name |
+| `openclaw_opsgate_skills_dir` | `{{ openclaw_data_dir }}/skills` | Host skill root for OpsGate skill files |
+| `openclaw_opsgate_container_skills_dir` | `/home/node/.openclaw/skills` | Container path used by OpsGate command skill |
+| `openclaw_opsgate_credentials_path` | `{{ openclaw_data_dir }}/credentials/opsgate_submit.json` | Rendered OpsGate runtime config (`0600`) |
+| `openclaw_opsgate_container_credentials_path` | `/home/node/.openclaw/credentials/opsgate_submit.json` | Container runtime config path used by handler |
+| `openclaw_opsgate_submit_timeout_seconds` | `10` | HTTP timeout for OpsGate ticket creation |
+| `openclaw_opsgate_ticket_expires_seconds` | `14400` | Ticket expiry window in seconds (`0` disables expiry) |
+| `openclaw_opsgate_title_max_chars` | `120` | Max generated or user-supplied title length |
+| `openclaw_opsgate_summary_max_chars` | `240` | Max generated summary length |
+| `openclaw_opsgate_request_max_chars` | `4000` | Max captured issue description length |
+| `openclaw_opsgate_task_ref_max_chars` | `120` | Max `task_ref` length for optional dedupe key |
+
 Handler unit tests for managed OpenClaw integration handlers live at:
 
 - `tests/unit/test_openclaw_homeassistant_handler.py`
 - `tests/unit/test_openclaw_calendar_handler.py`
+- `tests/unit/test_openclaw_opsgate_handler.py`
 - `tests/unit/test_openclaw_paperless_handler.py`
 
 ### Advanced

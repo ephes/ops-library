@@ -550,6 +550,42 @@
   loop: "{{ openclaw_homeassistant_allow_write_entities }}"
   when: openclaw_homeassistant_enabled | bool
 
+- name: validate | OpsGate base settings when integration is enabled
+  ansible.builtin.assert:
+    that:
+      - openclaw_opsgate_submit_base_url | string | trim | length > 0
+      - openclaw_opsgate_submit_base_url is regex('^https?://')
+      - not (openclaw_opsgate_submit_base_url | string is regex('[?#]'))
+      - >-
+        (
+          openclaw_opsgate_approval_base_url | string | trim | length == 0
+        )
+        or
+        (
+          openclaw_opsgate_approval_base_url is regex('^https?://')
+          and not (openclaw_opsgate_approval_base_url | string is regex('[?#]'))
+        )
+      - openclaw_opsgate_submit_token | string | trim | length >= 20
+      - openclaw_opsgate_submit_token != 'CHANGEME'
+      - openclaw_opsgate_submit_token != 'CHANGE_ME'
+      - openclaw_opsgate_skill_name | string | trim | length > 0
+      - openclaw_opsgate_command_skill_name | string | trim | length > 0
+      - openclaw_opsgate_skills_dir | string | trim | length > 0
+      - openclaw_opsgate_container_skills_dir | string | trim | length > 0
+      - openclaw_opsgate_credentials_path | string | trim | length > 0
+      - openclaw_opsgate_container_credentials_path | string | trim | length > 0
+      - openclaw_opsgate_submit_timeout_seconds | int > 0
+      - openclaw_opsgate_ticket_expires_seconds | int >= 0
+      - openclaw_opsgate_title_max_chars | int > 0
+      - openclaw_opsgate_summary_max_chars | int >= (openclaw_opsgate_title_max_chars | int)
+      - openclaw_opsgate_request_max_chars | int >= (openclaw_opsgate_summary_max_chars | int)
+      - openclaw_opsgate_task_ref_max_chars | int > 0
+    fail_msg: >-
+      Invalid OpsGate settings. Configure submit_base_url, submit_token, paths, and
+      positive limits/timeouts when openclaw_opsgate_enabled is true.
+  no_log: true
+  when: openclaw_opsgate_enabled | bool
+
 - name: validate | Weeknotes backend when weeknotes is enabled
   ansible.builtin.assert:
     that:
