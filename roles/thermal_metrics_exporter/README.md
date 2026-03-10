@@ -7,6 +7,7 @@ Collect a bounded allowlist of thermal and fan sensors as JSON for a local cache
 This role installs a Python script that reads:
 
 - `lm-sensors` JSON (`sensors -j`) for host-side thermals
+- direct sysfs files for bounded host-local thermal or fan values
 - local `ipmitool sensor list -c` for BMC/IPMI thermals and fan tach
 
 The script is designed for a privilege-split monitoring path:
@@ -34,6 +35,7 @@ These are installed through `thermal_metrics_exporter_packages` by default.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `thermal_metrics_exporter_lm_sensors` | `[]` | Allowlist of host-side sensors from `sensors -j` |
+| `thermal_metrics_exporter_sysfs_sensors` | `[]` | Allowlist of host-local sysfs sensor files |
 | `thermal_metrics_exporter_ipmi_sensors` | `[]` | Allowlist of local BMC/IPMI sensors from `ipmitool sensor list -c` |
 
 ### Optional variables
@@ -80,6 +82,24 @@ Optional:
 - `sensor_class`
 - `metric_kind`
 
+### `thermal_metrics_exporter_sysfs_sensors` entry
+
+Each entry must include:
+
+| Key | Description |
+|-----|-------------|
+| `id` | Stable JSON object key (letters/numbers/underscore only) |
+| `source_entity_id` | Stable upstream identity, for example `sysfs:coretemp:package_id_0` |
+| `value_path_glob` | Absolute sysfs path or glob that must resolve to exactly one readable file |
+
+Optional:
+
+- `sensor_label`
+- `sensor_class`
+- `metric_kind`
+- `unit`
+- `scale` (for example `0.001` for millidegree Celsius inputs)
+
 ## Output shape
 
 Example:
@@ -97,6 +117,19 @@ Example:
       "metric_kind": "temperature",
       "unit": "celsius",
       "value": 31.25
+    }
+  },
+  "sysfs": {
+    "cpu_package": {
+      "collector_kind": "sysfs",
+      "source_entity_id": "sysfs:coretemp:package_id_0",
+      "sensor_class": "cpu",
+      "sensor_label": "cpu_package",
+      "metric_kind": "temperature",
+      "unit": "celsius",
+      "value_path": "/sys/devices/platform/coretemp.0/hwmon/hwmon3/temp1_input",
+      "scale": 0.001,
+      "value": 68.0
     }
   },
   "ipmi": {
@@ -136,6 +169,15 @@ so operators can distinguish parser drift from a totally missing endpoint.
             value_key: "temp1_input"
             sensor_label: "cpu_tctl"
             sensor_class: "cpu"
+        thermal_metrics_exporter_sysfs_sensors:
+          - id: cpu_package
+            source_entity_id: "sysfs:coretemp:package_id_0"
+            value_path_glob: "/sys/devices/platform/coretemp.0/hwmon/*/temp1_input"
+            sensor_label: "cpu_package"
+            sensor_class: "cpu"
+            metric_kind: "temperature"
+            unit: "celsius"
+            scale: 0.001
         thermal_metrics_exporter_ipmi_sensors:
           - id: TEMP_CPU
             sensor_name: "TEMP_CPU"

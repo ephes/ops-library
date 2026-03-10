@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import glob
 import json
 import os
 import re
@@ -11,6 +12,9 @@ from typing import Any
 
 LM_SENSORS = json.loads(
     r'''{{ thermal_metrics_exporter_lm_sensors | default([]) | to_json }}'''
+)
+SYSFS_SENSORS = json.loads(
+    r'''{{ thermal_metrics_exporter_sysfs_sensors | default([]) | to_json }}'''
 )
 IPMI_SENSORS = json.loads(
     r'''{{ thermal_metrics_exporter_ipmi_sensors | default([]) | to_json }}'''
@@ -119,6 +123,9 @@ def _resolve_lm_chip_name(
 
 
 def _collect_lm_sensors() -> tuple[dict[str, Any], str | None]:
+    if not LM_SENSORS:
+        return {}, None
+
     result = _run(["sensors", "-j"])
     if result.returncode != 0:
         error = result.stderr.strip() or result.stdout.strip() or "sensors command failed"
@@ -201,6 +208,81 @@ def _collect_lm_sensors() -> tuple[dict[str, Any], str | None]:
     return entries, None
 
 
+def _resolve_sysfs_value_path(spec: dict[str, Any]) -> tuple[str | None, str | None]:
+    value_path_glob = str(spec["value_path_glob"]).strip()
+    matches = sorted({os.path.realpath(path) for path in glob.glob(value_path_glob)})
+    if not matches:
+        return None, f"no sysfs path matches {value_path_glob!r}"
+    if len(matches) > 1:
+        return None, f"multiple sysfs paths match {value_path_glob!r}: {matches!r}"
+    value_path = matches[0]
+    if not os.path.isfile(value_path):
+        return None, f"sysfs path {value_path!r} is not a regular file"
+    return value_path, None
+
+
+def _collect_sysfs_sensors() -> tuple[dict[str, Any], str | None]:
+    if not SYSFS_SENSORS:
+        return {}, None
+
+    entries: dict[str, Any] = {}
+    for spec in SYSFS_SENSORS:
+        sensor_id = str(spec["id"])
+        value_path, value_path_error = _resolve_sysfs_value_path(spec)
+        if value_path_error is not None or value_path is None:
+            entries[sensor_id] = _error_entry(
+                spec,
+                "sysfs",
+                "path_not_found",
+                value_path_error or "sysfs path not found",
+            )
+            continue
+
+        try:
+            with open(value_path, encoding="utf-8") as handle:
+                raw_value = handle.read().strip()
+        except OSError as err:
+            entries[sensor_id] = _error_entry(
+                spec,
+                "sysfs",
+                "read_failed",
+                f"failed to read {value_path!r}: {err}",
+            )
+            continue
+
+        value = _normalize_numeric(raw_value)
+        if value is None:
+            entries[sensor_id] = _error_entry(
+                spec,
+                "sysfs",
+                "value_missing",
+                f"value from {value_path!r} is missing or not numeric",
+            )
+            continue
+
+        try:
+            scale = float(spec.get("scale", 1.0))
+        except (TypeError, ValueError):
+            entries[sensor_id] = _error_entry(
+                spec,
+                "sysfs",
+                "invalid_scale",
+                f"invalid scale for {sensor_id!r}",
+            )
+            continue
+
+        entry = _base_entry(spec, "sysfs")
+        entry["metric_kind"] = str(spec.get("metric_kind", "temperature"))
+        entry["unit"] = str(spec.get("unit", "celsius"))
+        entry["value_path"] = value_path
+        if scale != 1.0:
+            entry["scale"] = scale
+        entry["value"] = value * scale
+        entries[sensor_id] = entry
+
+    return entries, None
+
+
 def _parse_ipmi_rows(output: str) -> dict[str, dict[str, Any]]:
     rows: dict[str, dict[str, Any]] = {}
     for row in csv.reader(output.splitlines()):
@@ -227,6 +309,9 @@ def _parse_ipmi_rows(output: str) -> dict[str, dict[str, Any]]:
 
 
 def _collect_ipmi_sensors() -> tuple[dict[str, Any], str | None]:
+    if not IPMI_SENSORS:
+        return {}, None
+
     result = _run(["ipmitool", "sensor", "list", "-c"])
     if result.returncode != 0:
         error = result.stderr.strip() or result.stdout.strip() or "ipmitool sensor failed"
@@ -278,16 +363,20 @@ def _collect_ipmi_sensors() -> tuple[dict[str, Any], str | None]:
 
 def main() -> None:
     lm_entries, lm_error = _collect_lm_sensors()
+    sysfs_entries, sysfs_error = _collect_sysfs_sensors()
     ipmi_entries, ipmi_error = _collect_ipmi_sensors()
 
     payload: dict[str, Any] = {
         "lm_sensors": lm_entries,
+        "sysfs": sysfs_entries,
         "ipmi": ipmi_entries,
         "ts": _now_ts(),
     }
     collector_errors: dict[str, str] = {}
     if lm_error is not None:
         collector_errors["lm_sensors"] = lm_error
+    if sysfs_error is not None:
+        collector_errors["sysfs"] = sysfs_error
     if ipmi_error is not None:
         collector_errors["ipmi"] = ipmi_error
     if collector_errors:

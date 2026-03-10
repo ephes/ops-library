@@ -33,6 +33,38 @@
     label: "{{ item.id | default('lm-sensor ' ~ idx) }}"
   when: thermal_metrics_exporter_lm_sensors | length > 0
 
+- name: validate | Assert sysfs_sensors list is a sequence
+  ansible.builtin.assert:
+    that:
+      - thermal_metrics_exporter_sysfs_sensors is sequence
+      - thermal_metrics_exporter_sysfs_sensors is not string
+      - thermal_metrics_exporter_sysfs_sensors is not mapping
+    fail_msg: >-
+      thermal_metrics_exporter_sysfs_sensors must be a list, got:
+      {{ thermal_metrics_exporter_sysfs_sensors | type_debug }}
+
+- name: validate | Assert sysfs_sensors entries are well formed
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - item.id is defined
+      - item.id | length > 0
+      - item.id is match('^[A-Za-z0-9_]+$')
+      - item.source_entity_id is defined
+      - item.source_entity_id | length > 0
+      - item.value_path_glob is defined
+      - item.value_path_glob | length > 0
+      - item.value_path_glob.startswith("/")
+      - item.scale is not defined or item.scale is number
+    fail_msg: >-
+      thermal_metrics_exporter_sysfs_sensors[{{ idx }}] must define id,
+      source_entity_id, and an absolute value_path_glob. Optional scale must be numeric.
+  loop: "{{ thermal_metrics_exporter_sysfs_sensors }}"
+  loop_control:
+    index_var: idx
+    label: "{{ item.id | default('sysfs-sensor ' ~ idx) }}"
+  when: thermal_metrics_exporter_sysfs_sensors | length > 0
+
 - name: validate | Assert ipmi_sensors list is a sequence
   ansible.builtin.assert:
     that:

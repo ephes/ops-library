@@ -16,4 +16,5 @@ thermal_metrics_exporter_bin_path: "/usr/local/bin/thermal-metrics-exporter"
 thermal_metrics_exporter_mode: "0755"
 
 thermal_metrics_exporter_lm_sensors: []
+thermal_metrics_exporter_sysfs_sensors: []
 thermal_metrics_exporter_ipmi_sensors: []
