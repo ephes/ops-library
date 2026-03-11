@@ -34,6 +34,16 @@
             path: "{{ role_path }}/templates/vector.yaml.j2"
           register: template_file
 
+        - name: Check launchd template file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/templates/vector.launchd.plist.j2"
+          register: launchd_template_file
+
+        - name: Check newsyslog template file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/templates/vector.newsyslog.conf.j2"
+          register: newsyslog_template_file
+
         - name: Assert required files exist
           ansible.builtin.assert:
             that:
@@ -41,6 +51,8 @@
               - tasks_file.stat.exists
               - handlers_file.stat.exists
               - template_file.stat.exists
+              - launchd_template_file.stat.exists
+              - newsyslog_template_file.stat.exists
 
     - name: Validate defaults are safe
       block:
@@ -57,7 +69,10 @@
               - graphyard_vector_defaults.graphyard_vector_config_dir == "/etc/vector/config.d"
               - graphyard_vector_defaults.graphyard_vector_request_concurrency == 1
               - graphyard_vector_defaults.graphyard_vector_buffer_max_size == 268435488
-              - graphyard_vector_defaults.graphyard_vector_filesystem_mountpoint_excludes | length > 0
+              - graphyard_vector_defaults.graphyard_vector_filesystem_mountpoint_excludes is defined
+              - graphyard_vector_defaults.graphyard_vector_brew_package == "vector"
+              - graphyard_vector_defaults.graphyard_vector_launchd_label == "de.wersdoerfer.graphyard.vector"
+              - graphyard_vector_defaults.graphyard_vector_newsyslog_conf_path == "/etc/newsyslog.d/graphyard-vector.conf"
 
     - name: Validate template renders expected fields
       block:
@@ -109,4 +124,78 @@
     - name: Clean up rendered test file
       ansible.builtin.file:
         path: "{{ rendered_config }}"
+        state: absent
+
+    - name: Validate launchd template renders expected fields
+      block:
+        - name: Render launchd template with test values
+          ansible.builtin.template:
+            src: "{{ role_path }}/templates/vector.launchd.plist.j2"
+            dest: "{{ rendered_config }}.plist"
+          vars:
+            graphyard_vector_launchd_label: de.wersdoerfer.graphyard.vector
+            graphyard_vector_binary_path_resolved: /opt/homebrew/bin/vector
+            graphyard_vector_config_dir: /etc/vector/config.d
+            graphyard_vector_runtime_user: root
+            graphyard_vector_runtime_group: wheel
+            graphyard_vector_data_dir: /var/lib/vector
+            graphyard_vector_launchd_keepalive: true
+            graphyard_vector_stdout_log_path: /var/log/vector/graphyard-vector.log
+            graphyard_vector_stderr_log_path: /var/log/vector/graphyard-vector.err.log
+            graphyard_vector_launchd_path: /usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
+
+        - name: Read rendered launchd template
+          ansible.builtin.slurp:
+            path: "{{ rendered_config }}.plist"
+          register: rendered_launchd_file
+
+        - name: Assert rendered launchd template includes Vector launch arguments
+          ansible.builtin.assert:
+            that:
+              - "'<string>de.wersdoerfer.graphyard.vector</string>' in rendered_launchd_text"
+              - "'<string>/opt/homebrew/bin/vector</string>' in rendered_launchd_text"
+              - "'<string>--config-dir</string>' in rendered_launchd_text"
+              - "'<string>/etc/vector/config.d</string>' in rendered_launchd_text"
+              - "'<key>PATH</key>' in rendered_launchd_text"
+              - "'<string>/var/log/vector/graphyard-vector.log</string>' in rendered_launchd_text"
+          vars:
+            rendered_launchd_text: "{{ rendered_launchd_file.content | b64decode }}"
+
+    - name: Clean up rendered launchd test file
+      ansible.builtin.file:
+        path: "{{ rendered_config }}.plist"
+        state: absent
+
+    - name: Validate newsyslog template renders expected fields
+      block:
+        - name: Render newsyslog template with test values
+          ansible.builtin.template:
+            src: "{{ role_path }}/templates/vector.newsyslog.conf.j2"
+            dest: "{{ rendered_config }}.newsyslog"
+          vars:
+            graphyard_vector_stdout_log_path: /var/log/vector/graphyard-vector.log
+            graphyard_vector_stderr_log_path: /var/log/vector/graphyard-vector.err.log
+            graphyard_vector_log_rotation_owner_group: root:wheel
+            graphyard_vector_log_rotation_mode: "640"
+            graphyard_vector_log_rotation_count: 7
+            graphyard_vector_log_rotation_size_kb: 10240
+            graphyard_vector_log_rotation_when: "*"
+            graphyard_vector_log_rotation_flags: ZN
+
+        - name: Read rendered newsyslog template
+          ansible.builtin.slurp:
+            path: "{{ rendered_config }}.newsyslog"
+          register: rendered_newsyslog_file
+
+        - name: Assert rendered newsyslog template includes both log files
+          ansible.builtin.assert:
+            that:
+              - "'/var/log/vector/graphyard-vector.log root:wheel 640 7 10240 * ZN' in rendered_newsyslog_text"
+              - "'/var/log/vector/graphyard-vector.err.log root:wheel 640 7 10240 * ZN' in rendered_newsyslog_text"
+          vars:
+            rendered_newsyslog_text: "{{ rendered_newsyslog_file.content | b64decode }}"
+
+    - name: Clean up rendered newsyslog test file
+      ansible.builtin.file:
+        path: "{{ rendered_config }}.newsyslog"
         state: absent

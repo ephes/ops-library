@@ -1,5 +1,14 @@
 ---
-- name: Restart Graphyard Vector Service
+- name: Restart Graphyard Vector Service (systemd)
   ansible.builtin.systemd:
     name: "{{ graphyard_vector_service_name }}"
     state: restarted
+  listen: Restart Graphyard Vector Service
+  when: graphyard_vector_service_manager == 'systemd'
+
+- name: Restart Graphyard Vector Service (launchd)
+  ansible.builtin.command: "launchctl kickstart -k system/{{ graphyard_vector_launchd_label }}"
+  register: graphyard_vector_launchd_restart
+  changed_when: graphyard_vector_launchd_restart.rc == 0
+  listen: Restart Graphyard Vector Service
+  when: graphyard_vector_service_manager == 'launchd'

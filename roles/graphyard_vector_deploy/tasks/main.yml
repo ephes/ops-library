@@ -33,6 +33,29 @@
           - graphyard_vector_collectors
           - graphyard_vector_metric_prefixes
 
+    - name: Validate Graphyard Vector platform settings
+      ansible.builtin.assert:
+        that:
+          - graphyard_vector_install_method in ['apt', 'homebrew']
+          - graphyard_vector_service_manager in ['systemd', 'launchd']
+          - not (graphyard_vector_install_method == 'homebrew' and ansible_facts['os_family'] != 'Darwin')
+          - not (graphyard_vector_service_manager == 'launchd' and ansible_facts['os_family'] != 'Darwin')
+        fail_msg: >-
+          graphyard_vector_install_method/service_manager are invalid for this host.
+          Use apt+systemd on Linux or homebrew+launchd on Darwin.
+
+    - name: Validate Homebrew user when running as root on Darwin
+      ansible.builtin.assert:
+        that:
+          - graphyard_vector_brew_user | length > 0
+        fail_msg: >-
+          graphyard_vector_brew_user must be set when Ansible connects as root on Darwin
+          because Homebrew refuses to run as root.
+      when:
+        - ansible_facts['os_family'] == 'Darwin'
+        - graphyard_vector_install_method == 'homebrew'
+        - ansible_user_id == 'root'
+
     - name: Install Vector package prerequisites
       ansible.builtin.include_role:
         name: local.ops_library.vector_apt_install
@@ -45,13 +68,174 @@
         vector_apt_install_repo_key_tmp: "{{ graphyard_vector_repo_key_tmp }}"
         vector_apt_install_repo_keyring_path: "{{ graphyard_vector_repo_keyring_path }}"
         vector_apt_install_repo_list_file: "{{ graphyard_vector_repo_list_file }}"
+      when: graphyard_vector_install_method == 'apt'
+
+    - name: Resolve Homebrew path when not provided
+      when:
+        - graphyard_vector_install_method == 'homebrew'
+        - graphyard_vector_brew_bin | length == 0
+      block:
+        - name: Check Homebrew at /opt/homebrew/bin/brew
+          ansible.builtin.stat:
+            path: /opt/homebrew/bin/brew
+          register: graphyard_vector_brew_opt
+
+        - name: Check Homebrew at /usr/local/bin/brew
+          ansible.builtin.stat:
+            path: /usr/local/bin/brew
+          register: graphyard_vector_brew_usr
+
+        - name: Set resolved Homebrew binary
+          ansible.builtin.set_fact:
+            graphyard_vector_brew_bin_resolved: >-
+              {{
+                (graphyard_vector_brew_opt.stat.exists | default(false))
+                | ternary('/opt/homebrew/bin/brew',
+                  (graphyard_vector_brew_usr.stat.exists | default(false))
+                  | ternary('/usr/local/bin/brew', '')
+                )
+              }}
+
+    - name: Use provided Homebrew binary path
+      ansible.builtin.set_fact:
+        graphyard_vector_brew_bin_resolved: "{{ graphyard_vector_brew_bin }}"
+      when:
+        - graphyard_vector_install_method == 'homebrew'
+        - graphyard_vector_brew_bin | length > 0
+
+    - name: Validate Homebrew binary path
+      ansible.builtin.assert:
+        that:
+          - graphyard_vector_brew_bin_resolved is defined
+          - graphyard_vector_brew_bin_resolved | length > 0
+        fail_msg: "Homebrew binary not found. Set graphyard_vector_brew_bin to the brew path."
+      when: graphyard_vector_install_method == 'homebrew'
+
+    - name: Update Homebrew metadata when requested
+      ansible.builtin.command: "{{ graphyard_vector_brew_bin_resolved }} update"
+      register: graphyard_vector_brew_update_cmd
+      changed_when: >-
+        graphyard_vector_brew_update_cmd.rc == 0 and
+        'Already up-to-date.' not in
+        ((graphyard_vector_brew_update_cmd.stdout | default('')) ~ '\n' ~
+        (graphyard_vector_brew_update_cmd.stderr | default('')))
+      become: "{{ graphyard_vector_brew_user | length > 0 }}"
+      become_user: "{{ graphyard_vector_brew_user | default(omit) }}"
+      become_flags: "-i"
+      when:
+        - graphyard_vector_install_method == 'homebrew'
+        - graphyard_vector_brew_update | bool
+
+    - name: List configured Homebrew taps
+      ansible.builtin.command: "{{ graphyard_vector_brew_bin_resolved }} tap"
+      register: graphyard_vector_brew_taps
+      changed_when: false
+      become: "{{ graphyard_vector_brew_user | length > 0 }}"
+      become_user: "{{ graphyard_vector_brew_user | default(omit) }}"
+      become_flags: "-i"
+      when: graphyard_vector_install_method == 'homebrew'
+
+    - name: Add Vector Homebrew tap
+      ansible.builtin.command: "{{ graphyard_vector_brew_bin_resolved }} tap vectordotdev/brew"
+      register: graphyard_vector_brew_tap_add
+      changed_when: graphyard_vector_brew_tap_add.rc == 0
+      become: "{{ graphyard_vector_brew_user | length > 0 }}"
+      become_user: "{{ graphyard_vector_brew_user | default(omit) }}"
+      become_flags: "-i"
+      when:
+        - graphyard_vector_install_method == 'homebrew'
+        - "'vectordotdev/brew' not in (graphyard_vector_brew_taps.stdout_lines | default([]))"
+
+    - name: Check whether Vector is already installed via Homebrew
+      ansible.builtin.command: "{{ graphyard_vector_brew_bin_resolved }} list --versions {{ graphyard_vector_brew_package }}"
+      register: graphyard_vector_brew_list
+      changed_when: false
+      failed_when: false
+      become: "{{ graphyard_vector_brew_user | length > 0 }}"
+      become_user: "{{ graphyard_vector_brew_user | default(omit) }}"
+      become_flags: "-i"
+      when: graphyard_vector_install_method == 'homebrew'
+
+    - name: Install Vector via Homebrew on Darwin
+      ansible.builtin.command: "{{ graphyard_vector_brew_bin_resolved }} install {{ graphyard_vector_brew_package }}"
+      register: graphyard_vector_brew_install
+      changed_when: graphyard_vector_brew_install.rc == 0
+      become: "{{ graphyard_vector_brew_user | length > 0 }}"
+      become_user: "{{ graphyard_vector_brew_user | default(omit) }}"
+      become_flags: "-i"
+      when:
+        - graphyard_vector_install_method == 'homebrew'
+        - graphyard_vector_brew_list.rc != 0 or (graphyard_vector_brew_list.stdout | trim) == ""
+
+    - name: List Homebrew service status
+      ansible.builtin.command: "{{ graphyard_vector_brew_bin_resolved }} services list"
+      register: graphyard_vector_brew_services
+      changed_when: false
+      become: "{{ graphyard_vector_brew_user | length > 0 }}"
+      become_user: "{{ graphyard_vector_brew_user | default(omit) }}"
+      become_flags: "-i"
+      when:
+        - graphyard_vector_install_method == 'homebrew'
+        - graphyard_vector_disable_brew_service | bool
+
+    - name: Stop Homebrew-managed Vector service to avoid duplicate producers
+      ansible.builtin.command: "{{ graphyard_vector_brew_bin_resolved }} services stop {{ graphyard_vector_brew_service_name }}"
+      register: graphyard_vector_brew_service_stop
+      changed_when: graphyard_vector_brew_service_stop.rc == 0
+      failed_when: false
+      become: "{{ graphyard_vector_brew_user | length > 0 }}"
+      become_user: "{{ graphyard_vector_brew_user | default(omit) }}"
+      become_flags: "-i"
+      when:
+        - graphyard_vector_install_method == 'homebrew'
+        - graphyard_vector_disable_brew_service | bool
+        - graphyard_vector_brew_service_status not in ['', 'none', 'stopped']
+      vars:
+        graphyard_vector_brew_service_status: >-
+          {{
+            (
+              graphyard_vector_brew_services.stdout_lines | default([])
+              | select('match', '^' ~ graphyard_vector_brew_service_name ~ '\\s+')
+              | map(
+                  'regex_replace',
+                  '^' ~ graphyard_vector_brew_service_name ~ '\\s+([^\\s]+).*$',
+                  '\\1'
+                )
+              | list
+              | first
+            ) | default('')
+          }}
+
+    - name: Resolve Homebrew prefix
+      ansible.builtin.command: "{{ graphyard_vector_brew_bin_resolved }} --prefix"
+      register: graphyard_vector_brew_prefix_cmd
+      changed_when: false
+      become: "{{ graphyard_vector_brew_user | length > 0 }}"
+      become_user: "{{ graphyard_vector_brew_user | default(omit) }}"
+      become_flags: "-i"
+      when: graphyard_vector_install_method == 'homebrew'
+
+    - name: Set Vector binary path for Darwin
+      ansible.builtin.set_fact:
+        graphyard_vector_binary_path_resolved: >-
+          {{
+            (graphyard_vector_binary_path | length > 0)
+            | ternary(graphyard_vector_binary_path, graphyard_vector_brew_prefix_cmd.stdout ~ '/bin/vector')
+          }}
+      when: graphyard_vector_install_method == 'homebrew'
+
+    - name: Set Vector binary path for apt/systemd hosts
+      ansible.builtin.set_fact:
+        graphyard_vector_binary_path_resolved: >-
+          {{ (graphyard_vector_binary_path | length > 0) | ternary(graphyard_vector_binary_path, 'vector') }}
+      when: graphyard_vector_install_method == 'apt'
 
     - name: Ensure Vector data directory exists
       ansible.builtin.file:
         path: "{{ graphyard_vector_data_dir }}"
         state: directory
-        owner: vector
-        group: vector
+        owner: "{{ graphyard_vector_runtime_user }}"
+        group: "{{ graphyard_vector_runtime_group }}"
         mode: "0750"
 
     - name: Ensure Vector config directory exists
@@ -59,7 +243,7 @@
         path: "{{ graphyard_vector_config_dir }}"
         state: directory
         owner: root
-        group: vector
+        group: "{{ graphyard_vector_runtime_group }}"
         mode: "0750"
 
     - name: Ensure Vector reads config fragments from config directory
@@ -72,6 +256,61 @@
         group: root
         mode: "0644"
       notify: Restart Graphyard Vector Service
+      when: graphyard_vector_service_manager == 'systemd'
+
+    - name: Ensure launchd log directory exists
+      ansible.builtin.file:
+        path: "{{ graphyard_vector_log_dir }}"
+        state: directory
+        owner: root
+        group: wheel
+        mode: "0755"
+      when: graphyard_vector_service_manager == 'launchd'
+
+    - name: Render newsyslog rotation config for Graphyard Vector logs
+      ansible.builtin.template:
+        src: vector.newsyslog.conf.j2
+        dest: "{{ graphyard_vector_newsyslog_conf_path }}"
+        owner: root
+        group: wheel
+        mode: "0644"
+      when:
+        - graphyard_vector_service_manager == 'launchd'
+        - graphyard_vector_log_rotation_enabled | bool
+
+    - name: Render launchd plist for Graphyard Vector
+      ansible.builtin.template:
+        src: vector.launchd.plist.j2
+        dest: "{{ graphyard_vector_launchd_plist_path }}"
+        owner: root
+        group: wheel
+        mode: "0644"
+      register: graphyard_vector_launchd_plist
+      when: graphyard_vector_service_manager == 'launchd'
+
+    - name: Reload launchd service when plist changes
+      ansible.builtin.command: "launchctl bootout system {{ graphyard_vector_launchd_plist_path }}"
+      changed_when: false
+      failed_when: false
+      when:
+        - graphyard_vector_service_manager == 'launchd'
+        - graphyard_vector_launchd_plist is changed
+
+    - name: Bootstrap launchd service when plist changes
+      ansible.builtin.command: "launchctl bootstrap system {{ graphyard_vector_launchd_plist_path }}"
+      register: graphyard_vector_launchd_bootstrap
+      changed_when: graphyard_vector_launchd_bootstrap.rc == 0
+      when:
+        - graphyard_vector_service_manager == 'launchd'
+        - graphyard_vector_launchd_plist is changed
+
+    - name: Enable launchd service when plist changes
+      ansible.builtin.command: "launchctl enable system/{{ graphyard_vector_launchd_label }}"
+      register: graphyard_vector_launchd_enable
+      changed_when: graphyard_vector_launchd_enable.rc == 0
+      when:
+        - graphyard_vector_service_manager == 'launchd'
+        - graphyard_vector_launchd_plist is changed
 
     - name: Check existing shared Vector global config
       ansible.builtin.stat:
@@ -131,7 +370,7 @@
             src: "{{ item.path }}"
             dest: "{{ graphyard_vector_validation_dir.path }}/{{ item.path | basename }}"
             owner: root
-            group: root
+            group: "{{ graphyard_vector_validation_group }}"
             mode: "0644"
           loop: "{{ graphyard_vector_existing_configs.files }}"
           when:
@@ -144,7 +383,7 @@
             content: |
               data_dir: {{ graphyard_vector_data_dir | to_json }}
             owner: root
-            group: root
+            group: "{{ graphyard_vector_validation_group }}"
             mode: "0644"
 
         - name: Render candidate Graphyard Vector fragment
@@ -152,13 +391,13 @@
             src: vector.yaml.j2
             dest: "{{ graphyard_vector_validation_dir.path }}/{{ graphyard_vector_config_path | basename }}"
             owner: root
-            group: root
+            group: "{{ graphyard_vector_validation_group }}"
             mode: "0644"
 
         - name: Validate staged Vector configuration directory
           ansible.builtin.command:
             argv:
-              - vector
+              - "{{ graphyard_vector_binary_path_resolved }}"
               - validate
               - --config-dir
               - "{{ graphyard_vector_validation_dir.path }}"
@@ -170,7 +409,7 @@
             content: |
               data_dir: {{ graphyard_vector_data_dir | to_json }}
             owner: root
-            group: vector
+            group: "{{ graphyard_vector_runtime_group }}"
             mode: "0640"
           notify: Restart Graphyard Vector Service
 
@@ -179,7 +418,7 @@
             src: vector.yaml.j2
             dest: "{{ graphyard_vector_config_path }}"
             owner: root
-            group: vector
+            group: "{{ graphyard_vector_runtime_group }}"
             mode: "0640"
           notify: Restart Graphyard Vector Service
       always:
@@ -198,3 +437,35 @@
         enabled: true
         state: started
         daemon_reload: true
+      when: graphyard_vector_service_manager == 'systemd'
+
+    - name: Check launchd service status
+      ansible.builtin.command: "launchctl print system/{{ graphyard_vector_launchd_label }}"
+      register: graphyard_vector_launchd_status
+      changed_when: false
+      failed_when: false
+      when: graphyard_vector_service_manager == 'launchd'
+
+    - name: Bootstrap launchd service when not loaded
+      ansible.builtin.command: "launchctl bootstrap system {{ graphyard_vector_launchd_plist_path }}"
+      register: graphyard_vector_launchd_bootstrap_missing
+      changed_when: graphyard_vector_launchd_bootstrap_missing.rc == 0
+      when:
+        - graphyard_vector_service_manager == 'launchd'
+        - graphyard_vector_launchd_status.rc != 0
+
+    - name: Enable launchd service when not loaded
+      ansible.builtin.command: "launchctl enable system/{{ graphyard_vector_launchd_label }}"
+      register: graphyard_vector_launchd_enable_missing
+      changed_when: graphyard_vector_launchd_enable_missing.rc == 0
+      when:
+        - graphyard_vector_service_manager == 'launchd'
+        - graphyard_vector_launchd_status.rc != 0
+
+    - name: Kickstart launchd service when not running
+      ansible.builtin.command: "launchctl kickstart -k system/{{ graphyard_vector_launchd_label }}"
+      register: graphyard_vector_launchd_kickstart_missing
+      changed_when: graphyard_vector_launchd_kickstart_missing.rc == 0
+      when:
+        - graphyard_vector_service_manager == 'launchd'
+        - graphyard_vector_launchd_status.rc != 0 or 'state = running' not in (graphyard_vector_launchd_status.stdout | default(''))

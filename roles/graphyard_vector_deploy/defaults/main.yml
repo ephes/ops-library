@@ -4,6 +4,12 @@
 
 graphyard_vector_enabled: false
 
+graphyard_vector_install_method: "{{ 'homebrew' if ansible_facts.os_family == 'Darwin' else 'apt' }}"
+graphyard_vector_service_manager: "{{ 'launchd' if ansible_facts.os_family == 'Darwin' else 'systemd' }}"
+graphyard_vector_runtime_user: "{{ 'root' if ansible_facts.os_family == 'Darwin' else 'vector' }}"
+graphyard_vector_runtime_group: "{{ 'wheel' if ansible_facts.os_family == 'Darwin' else 'vector' }}"
+graphyard_vector_validation_group: "{{ 'wheel' if ansible_facts.os_family == 'Darwin' else 'root' }}"
+
 graphyard_vector_package_name: vector
 
 graphyard_vector_repo_url: "https://apt.vector.dev/"
@@ -21,6 +27,29 @@ graphyard_vector_env_file: "/etc/default/vector"
 graphyard_vector_data_dir: "/var/lib/vector"
 graphyard_vector_service_name: "vector"
 
+graphyard_vector_brew_package: "vector"
+graphyard_vector_brew_update: false
+graphyard_vector_brew_bin: ""
+graphyard_vector_brew_user: ""
+graphyard_vector_disable_brew_service: true
+graphyard_vector_brew_service_name: "vector"
+graphyard_vector_binary_path: ""
+graphyard_vector_launchd_label: "de.wersdoerfer.graphyard.vector"
+graphyard_vector_launchd_plist_path: "/Library/LaunchDaemons/{{ graphyard_vector_launchd_label }}.plist"
+graphyard_vector_launchd_keepalive: true
+graphyard_vector_launchd_path: "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+graphyard_vector_log_dir: "/var/log/vector"
+graphyard_vector_stdout_log_path: "{{ graphyard_vector_log_dir }}/graphyard-vector.log"
+graphyard_vector_stderr_log_path: "{{ graphyard_vector_log_dir }}/graphyard-vector.err.log"
+graphyard_vector_newsyslog_conf_path: "/etc/newsyslog.d/graphyard-vector.conf"
+graphyard_vector_log_rotation_enabled: "{{ ansible_facts.os_family == 'Darwin' }}"
+graphyard_vector_log_rotation_owner_group: "root:wheel"
+graphyard_vector_log_rotation_mode: "640"
+graphyard_vector_log_rotation_count: 7
+graphyard_vector_log_rotation_size_kb: 10240
+graphyard_vector_log_rotation_when: "*"
+graphyard_vector_log_rotation_flags: "ZN"
+
 graphyard_vector_scrape_interval_secs: 60
 graphyard_vector_collectors:
   - cpu
@@ -29,9 +58,12 @@ graphyard_vector_collectors:
   - load
   - memory
   - network
-graphyard_vector_filesystem_mountpoint_excludes:
-  - "/run/docker/netns/*"
-  - "/var/lib/docker/*"
+graphyard_vector_filesystem_mountpoint_excludes: >-
+  {{
+    []
+    if ansible_facts.os_family == 'Darwin'
+    else ['/run/docker/netns/*', '/var/lib/docker/*']
+  }}
 graphyard_vector_metric_prefixes:
   - filesystem_
   - disk_
