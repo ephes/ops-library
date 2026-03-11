@@ -1,0 +1,91 @@
+---
+# Refresh cached OpenClaw session state when the managed slash-skill set changes.
+
+- name: session_state | Build managed slash-skill manifest
+  ansible.builtin.set_fact:
+    _openclaw_managed_slash_skills: >-
+      {{
+        (
+          (openclaw_weeknotes_command_skill_names if (openclaw_weeknotes_enabled | bool) else [])
+          + ([openclaw_imap_command_skill_name] if (openclaw_imap_enabled | bool) else [])
+          + ([openclaw_calendar_command_skill_name] if (openclaw_calendar_enabled | bool) else [])
+          + ([openclaw_paperless_command_skill_name] if (openclaw_paperless_enabled | bool) else [])
+          + ([openclaw_homeassistant_command_skill_name] if (openclaw_homeassistant_enabled | bool) else [])
+          + ([openclaw_opsgate_command_skill_name] if (openclaw_opsgate_enabled | bool) else [])
+        )
+        | map('string')
+        | map('trim')
+        | reject('equalto', '')
+        | unique
+        | sort
+        | list
+      }}
+
+- name: session_state | Render managed slash-skill manifest
+  ansible.builtin.copy:
+    content: >-
+      {{
+        {
+          # Bump this when reset semantics change and existing sessions should be re-rotated.
+          "version": 2,
+          "managed_slash_skills": _openclaw_managed_slash_skills
+        }
+        | to_nice_json
+      }}{{ '\n' }}
+    dest: "{{ openclaw_managed_skills_manifest_path }}"
+    owner: "1000"
+    group: "1000"
+    mode: "0644"
+  register: _openclaw_managed_skills_manifest_write
+
+- name: session_state | Check whether session state exists
+  ansible.builtin.stat:
+    path: "{{ openclaw_session_state_path }}"
+  register: _openclaw_session_state_stat
+
+- name: session_state | Reset session bindings when managed slash skills changed
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import json
+        import sys
+        from pathlib import Path
+
+        path = Path(sys.argv[1])
+        data = json.loads(path.read_text(encoding="utf-8"))
+        updated_entries = 0
+
+        for key, entry in list(data.items()):
+            if not isinstance(entry, dict):
+                continue
+            changed = False
+            for field in ("skillsSnapshot", "systemPromptReport", "sessionId", "sessionFile"):
+                if field in entry:
+                    entry.pop(field, None)
+                    changed = True
+            if changed:
+                entry["systemSent"] = False
+                entry["abortedLastRun"] = False
+                entry["updatedAt"] = 0
+                updated_entries += 1
+
+        if updated_entries > 0:
+            path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+        print(json.dumps({"updated_entries": updated_entries}))
+      - "{{ openclaw_session_state_path }}"
+  register: _openclaw_session_state_refresh
+  changed_when: >-
+    (
+      _openclaw_session_state_refresh.stdout
+      | default('')
+      | regex_search('"updated_entries"\\s*:\\s*[1-9][0-9]*')
+    ) is not none
+  when:
+    - _openclaw_managed_skills_manifest_write is changed
+    - _openclaw_session_state_stat.stat.exists

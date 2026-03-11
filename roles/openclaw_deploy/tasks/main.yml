@@ -71,3 +71,6 @@
 
 - name: main | Configure OpenClaw metrics endpoint for Nyxmon
   ansible.builtin.import_tasks: metrics.yml
+
+- name: main | Refresh cached session skill snapshots when managed skills change
+  ansible.builtin.import_tasks: session_state.yml

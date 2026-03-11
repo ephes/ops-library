@@ -387,9 +387,9 @@ Safety guarantees:
 
 Operational note:
 
-- OpenClaw caches skill snapshots per session. If a pre-existing session reports `/homeassistant` as not found
-  right after first deployment, clear `skillsSnapshot` entries in
-  `/mnt/cryptdata/openclaw/data/agents/main/sessions/sessions.json` and retry.
+- OpenClaw caches skill snapshots per session. The role now invalidates cached `skillsSnapshot` entries
+  and rotates existing session bindings automatically when the managed slash-skill set changes, so
+  pre-existing sessions pick up newly deployed commands in a fresh session context on the next message.
 
 #### Home Assistant Variables
 
@@ -438,6 +438,11 @@ Safety guarantees:
 - OpsGate approval is still required before any execution happens.
 - Approval links can use a different base URL from the internal submit endpoint, which matches the current split deploy model (`submit` via internal service URL, `approve/view` via operator HTTPS URL).
 
+Operational note:
+
+- Both `openclaw agent --message '/opsgate ...' --json` and long-lived Telegram chats use the same deterministic local plugin path.
+- When the managed slash-skill set changes, the role automatically invalidates cached skill snapshots and rotates existing session bindings so pre-existing Telegram sessions pick up `/opsgate` and other managed slash skills on the next message.
+
 #### OpsGate Variables
 
 | Variable | Default | Description |
@@ -476,6 +481,8 @@ Handler unit tests for managed OpenClaw integration handlers live at:
 |----------|---------|-------------|
 | `openclaw_gateway_config` | `{}` | Full config override — rendered directly as `openclaw.json`, ignoring individual channel vars |
 | `openclaw_force_config` | `false` | Overwrite `openclaw.json` even if it already exists |
+| `openclaw_session_state_path` | `{{ openclaw_data_dir }}/agents/main/sessions/sessions.json` | Host session-state JSON patched when managed slash-skill snapshots must be invalidated |
+| `openclaw_managed_skills_manifest_path` | `{{ openclaw_data_dir }}/managed-skills-manifest.json` | Host manifest file used to detect managed slash-skill set changes across deploys |
 | `openclaw_extra_env` | `{}` | Extra environment variables merged into the container env |
 | `openclaw_data_dir` | `/home/openclaw/data` | Persistent data directory (bind-mounted into container) |
 | `openclaw_log_dir` | `/home/openclaw/logs` | Log directory (bind-mounted to `/tmp/openclaw` in container) |
