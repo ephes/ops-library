@@ -21,6 +21,7 @@ archive_workers: 2
 archive_metadata_worker_interval: 10
 archive_metadata_worker_limit: 10
 archive_metadata_request_timeout: 15
+archive_summary_request_timeout: 60
 archive_python_version: "3.12"
 
 archive_django_settings_module: "config.settings.production"
@@ -31,6 +32,9 @@ archive_django_allowed_hosts:
 archive_django_csrf_trusted_origins: []
 
 archive_api_token: "CHANGEME"
+archive_summary_api_key: "CHANGEME"
+archive_summary_api_base: "https://api.openai.com/v1"
+archive_summary_model: "gpt-4o-mini"
 archive_admin_username: "archive"
 archive_admin_password: "CHANGEME"
 archive_admin_email: ""

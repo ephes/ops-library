@@ -7,11 +7,13 @@
       - archive_django_secret_key != "CHANGEME"
       - archive_api_token | length > 20
       - archive_api_token != "CHANGEME"
+      - archive_summary_api_key | length > 20
+      - archive_summary_api_key != "CHANGEME"
       - archive_admin_username | length > 0
       - archive_admin_password | length > 0
       - archive_admin_password != "CHANGEME"
       - archive_traefik_host | length > 0
-    fail_msg: "archive_deploy requires real Django/API/admin secrets and a valid host/site URL."
+    fail_msg: "archive_deploy requires real Django/API/admin/summary secrets and a valid host/site URL."
 
 - name: Validate rsync source path
   ansible.builtin.assert:

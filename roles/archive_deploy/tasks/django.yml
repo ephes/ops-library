@@ -23,6 +23,9 @@
     DJANGO_DB_PATH: "{{ archive_db_path }}"
     DJANGO_STATIC_ROOT: "{{ archive_static_root }}"
     ARCHIVE_API_TOKEN: "{{ archive_api_token }}"
+    ARCHIVE_SUMMARY_API_KEY: "{{ archive_summary_api_key }}"
+    ARCHIVE_SUMMARY_API_BASE: "{{ archive_summary_api_base }}"
+    ARCHIVE_SUMMARY_MODEL: "{{ archive_summary_model }}"
   become: true
   become_user: "{{ archive_user }}"
 
@@ -39,6 +42,9 @@
     DJANGO_DB_PATH: "{{ archive_db_path }}"
     DJANGO_STATIC_ROOT: "{{ archive_static_root }}"
     ARCHIVE_API_TOKEN: "{{ archive_api_token }}"
+    ARCHIVE_SUMMARY_API_KEY: "{{ archive_summary_api_key }}"
+    ARCHIVE_SUMMARY_API_BASE: "{{ archive_summary_api_base }}"
+    ARCHIVE_SUMMARY_MODEL: "{{ archive_summary_model }}"
   become: true
   become_user: "{{ archive_user }}"
 
@@ -64,5 +70,8 @@
     DJANGO_DB_PATH: "{{ archive_db_path }}"
     DJANGO_STATIC_ROOT: "{{ archive_static_root }}"
     ARCHIVE_API_TOKEN: "{{ archive_api_token }}"
+    ARCHIVE_SUMMARY_API_KEY: "{{ archive_summary_api_key }}"
+    ARCHIVE_SUMMARY_API_BASE: "{{ archive_summary_api_base }}"
+    ARCHIVE_SUMMARY_MODEL: "{{ archive_summary_model }}"
   become: true
   become_user: "{{ archive_user }}"

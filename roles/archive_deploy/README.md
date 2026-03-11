@@ -2,15 +2,19 @@
 
 Deploy the Archive Django service on a host with a local SQLite database, systemd, and Traefik.
 
-This role covers the deployed Archive MVP through Milestone 3:
+This role covers the deployed Archive MVP through Milestone 4:
 
 - source deployment via `rsync` or `git`
 - `uv`-managed virtualenv
 - Django migrations and static collection
 - admin/editor bootstrap user
-- systemd web service plus metadata worker
+- systemd web service plus enrichment worker
 - public Traefik ingress
 - automatic service restart when app source, environment, or dependency state changes
+
+The enrichment worker performs Milestone 3 metadata extraction plus Milestone 4 short summary, long
+summary, and tag generation. Summary generation uses an OpenAI-compatible API backend and retries failed
+summary jobs with bounded backoff before leaving them in a failed state for operator review.
 
 Backup and restore are intentionally handled through Echoport orchestration, not `archive_backup` /
 `archive_restore` roles. The primary backup target is the SQLite database at
@@ -31,6 +35,7 @@ Required:
 ```yaml
 archive_django_secret_key: "long-random-secret"
 archive_api_token: "long-random-api-token"
+archive_summary_api_key: "openai-or-compatible-api-key"
 archive_admin_username: "archive"
 archive_admin_password: "long-random-password"
 archive_traefik_host: "archive.home.xn--wersdrfer-47a.de"
@@ -49,6 +54,9 @@ archive_django_csrf_trusted_origins:
 archive_metadata_worker_interval: 10
 archive_metadata_worker_limit: 10
 archive_metadata_request_timeout: 15
+archive_summary_request_timeout: 60
+archive_summary_api_base: "https://api.openai.com/v1"
+archive_summary_model: "gpt-4o-mini"
 ```
 
 ## Example
@@ -62,6 +70,9 @@ archive_metadata_request_timeout: 15
         archive_source_path: "/Users/jochen/projects/archive"
         archive_django_secret_key: "{{ archive_secrets.django_secret_key }}"
         archive_api_token: "{{ archive_secrets.api_token }}"
+        archive_summary_api_key: "{{ archive_secrets.summary_api_key }}"
+        archive_summary_api_base: "{{ archive_secrets.summary_api_base }}"
+        archive_summary_model: "{{ archive_secrets.summary_model }}"
         archive_admin_username: "{{ archive_secrets.admin_username }}"
         archive_admin_password: "{{ archive_secrets.admin_password }}"
         archive_traefik_host: "archive.home.xn--wersdrfer-47a.de"
