@@ -23,3 +23,26 @@
     - "'state = running' in (voxhelm_worker_healthcheck.stdout | default(''))"
   changed_when: false
   when: voxhelm_worker_enabled | bool
+
+- name: health | Wait for Voxhelm Wyoming STT launchd unit to report running
+  ansible.builtin.command: "launchctl print system/{{ voxhelm_wyoming_stt_label }}"
+  register: voxhelm_wyoming_stt_healthcheck
+  retries: "{{ voxhelm_healthcheck_retries }}"
+  delay: "{{ voxhelm_healthcheck_delay }}"
+  until:
+    - voxhelm_wyoming_stt_healthcheck.rc == 0
+    - "'state = running' in (voxhelm_wyoming_stt_healthcheck.stdout | default(''))"
+  changed_when: false
+  when: voxhelm_wyoming_stt_enabled | bool
+
+- name: health | Wait for Voxhelm Wyoming STT port to listen
+  ansible.builtin.wait_for:
+    host: >-
+      {{
+        (voxhelm_wyoming_stt_host in ['0.0.0.0', '::'])
+        | ternary('127.0.0.1', voxhelm_wyoming_stt_host)
+      }}
+    port: "{{ voxhelm_wyoming_stt_port }}"
+    timeout: "{{ (voxhelm_healthcheck_retries | int) * (voxhelm_healthcheck_delay | int) }}"
+  changed_when: false
+  when: voxhelm_wyoming_stt_enabled | bool

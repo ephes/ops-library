@@ -27,3 +27,13 @@
     mode: "0755"
   register: voxhelm_worker_script_template
   when: voxhelm_worker_enabled | bool
+
+- name: config | Render Voxhelm Wyoming STT script
+  ansible.builtin.template:
+    src: wyoming-stt.sh.j2
+    dest: "{{ voxhelm_wyoming_stt_script_path }}"
+    owner: root
+    group: wheel
+    mode: "0755"
+  register: voxhelm_wyoming_stt_script_template
+  when: voxhelm_wyoming_stt_enabled | bool

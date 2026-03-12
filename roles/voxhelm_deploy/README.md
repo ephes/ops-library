@@ -15,6 +15,7 @@ Current default runtime:
 
 - one `uvicorn` HTTP API process
 - one Django Tasks `db_worker` process
+- one Wyoming STT sidecar process on port `10300`
 - `whisper.cpp` as the default STT backend on `studio`, with `mlx-whisper` as fallback
 - bearer-token authentication via environment variables
 - filesystem artifact storage by default, with S3/MinIO-compatible env vars available
@@ -47,6 +48,15 @@ voxhelm_whispercpp_model: "ggml-large-v3.bin"
 voxhelm_whispercpp_bin: "/opt/homebrew/bin/whisper-cli"
 voxhelm_whispercpp_processors: 4
 voxhelm_model_cache_dir: "/opt/apps/voxhelm/site/var/models"
+voxhelm_wyoming_stt_enabled: true
+voxhelm_wyoming_stt_host: "0.0.0.0"
+voxhelm_wyoming_stt_port: 10300
+voxhelm_wyoming_stt_backend: ""
+voxhelm_wyoming_stt_model: ""
+voxhelm_wyoming_stt_language: ""
+voxhelm_wyoming_stt_languages:
+  - "de"
+  - "en"
 voxhelm_allowed_hosts:
   - "studio.tailde2ec.ts.net"
   - "studio"
@@ -73,6 +83,17 @@ For the full list, see `defaults/main.yml`.
         voxhelm_django_secret_key: "{{ service_secrets.django_secret_key }}"
         voxhelm_bearer_tokens_env: "archive={{ service_secrets.api_token_archive }}"
 ```
+
+## Wyoming STT Notes
+
+- The Wyoming listener is STT-only in this slice. TTS/Piper is not deployed here.
+- `voxhelm_wyoming_stt_backend` and `voxhelm_wyoming_stt_model` are optional. If
+  unset, the sidecar reuses the service-wide STT defaults.
+- There is no cross-process lane scheduler yet. The Wyoming sidecar has its own
+  process and its own in-process serialization, but it can still contend with
+  the HTTP API and batch worker for CPU, RAM, and model cache use on `studio`.
+- The role verifies the sidecar by checking the launchd unit state and waiting
+  for the configured TCP port to listen locally on the target host.
 
 ## License
 
