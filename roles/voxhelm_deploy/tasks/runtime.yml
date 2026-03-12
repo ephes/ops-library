@@ -8,6 +8,131 @@
     PATH: "{{ voxhelm_launchd_path }}"
   changed_when: false
 
+- name: runtime | Check Homebrew at /opt/homebrew/bin/brew
+  ansible.builtin.stat:
+    path: /opt/homebrew/bin/brew
+  register: voxhelm_brew_opt
+
+- name: runtime | Check Homebrew at /usr/local/bin/brew
+  ansible.builtin.stat:
+    path: /usr/local/bin/brew
+  register: voxhelm_brew_usr
+  when: not (voxhelm_brew_opt.stat.exists | default(false))
+
+- name: runtime | Resolve Homebrew binary path
+  ansible.builtin.set_fact:
+    voxhelm_brew_bin_resolved: >-
+      {{
+        (voxhelm_brew_bin | length > 0)
+        | ternary(
+          voxhelm_brew_bin,
+          (
+            (voxhelm_brew_opt.stat.exists | default(false))
+            | ternary('/opt/homebrew/bin/brew', '/usr/local/bin/brew')
+          )
+        )
+      }}
+
+- name: runtime | Stat resolved Homebrew binary
+  ansible.builtin.stat:
+    path: "{{ voxhelm_brew_bin_resolved }}"
+  register: voxhelm_brew_bin_stat
+
+- name: runtime | Validate Homebrew binary path
+  ansible.builtin.assert:
+    that:
+      - voxhelm_brew_bin_resolved | length > 0
+      - voxhelm_brew_bin_stat.stat.exists | default(false)
+    fail_msg: "Homebrew binary not found. Set voxhelm_brew_bin to the brew path."
+
+- name: runtime | Resolve Homebrew owner for package installs
+  ansible.builtin.set_fact:
+    voxhelm_brew_user_resolved: >-
+      {{
+        (voxhelm_brew_user | length > 0)
+        | ternary(voxhelm_brew_user, voxhelm_brew_bin_stat.stat.pw_name | default(''))
+      }}
+
+- name: runtime | Validate Homebrew owner when running as root
+  ansible.builtin.assert:
+    that:
+      - voxhelm_brew_user_resolved | length > 0
+    fail_msg: >-
+      Voxhelm deploy needs a Homebrew owner to install whisper-cpp when Ansible
+      runs as root. Set voxhelm_brew_user explicitly if the brew binary owner is
+      not the correct account.
+  when: ansible_user_id == 'root'
+
+- name: runtime | Check whisper.cpp Homebrew package
+  ansible.builtin.command: "{{ voxhelm_brew_bin_resolved }} list --versions whisper-cpp"
+  register: voxhelm_whispercpp_brew_list
+  changed_when: false
+  failed_when: false
+  become: "{{ voxhelm_brew_user_resolved | length > 0 }}"
+  become_user: "{{ voxhelm_brew_user_resolved | default(omit) }}"
+  become_flags: "-i"
+
+- name: runtime | Install whisper.cpp via Homebrew
+  ansible.builtin.command: "{{ voxhelm_brew_bin_resolved }} install whisper-cpp"
+  register: voxhelm_whispercpp_brew_install
+  changed_when: voxhelm_whispercpp_brew_install.rc == 0
+  become: "{{ voxhelm_brew_user_resolved | length > 0 }}"
+  become_user: "{{ voxhelm_brew_user_resolved | default(omit) }}"
+  become_flags: "-i"
+  when: voxhelm_whispercpp_brew_list.rc != 0
+
+- name: runtime | Check whisper.cpp model path
+  ansible.builtin.stat:
+    path: "{{ voxhelm_model_cache_dir }}/{{ voxhelm_whispercpp_model }}"
+  register: voxhelm_whispercpp_model_stat
+
+- name: runtime | Announce whisper.cpp model download
+  ansible.builtin.debug:
+    msg: >-
+      Downloading whisper.cpp model {{ voxhelm_whispercpp_model }} from
+      {{ voxhelm_whispercpp_model_url }} into {{ voxhelm_model_cache_dir }}.
+      This can take several minutes on a fresh host.
+  when: not (voxhelm_whispercpp_model_stat.stat.exists | default(false))
+
+- name: runtime | Create temporary whisper.cpp model path
+  ansible.builtin.tempfile:
+    path: "{{ voxhelm_model_cache_dir }}"
+    prefix: "{{ voxhelm_whispercpp_model }}."
+    suffix: .part
+    state: file
+  register: voxhelm_whispercpp_model_tmp
+  when: not (voxhelm_whispercpp_model_stat.stat.exists | default(false))
+
+- name: runtime | Download whisper.cpp large-v3 model to temporary path
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/curl
+      - -L
+      - --fail
+      - --progress-bar
+      - --output
+      - "{{ voxhelm_whispercpp_model_tmp.path }}"
+      - "{{ voxhelm_whispercpp_model_url }}"
+  register: voxhelm_whispercpp_model_download
+  changed_when: true
+  when: not (voxhelm_whispercpp_model_stat.stat.exists | default(false))
+
+- name: runtime | Install whisper.cpp large-v3 model atomically
+  ansible.builtin.command:
+    argv:
+      - /bin/mv
+      - "{{ voxhelm_whispercpp_model_tmp.path }}"
+      - "{{ voxhelm_model_cache_dir }}/{{ voxhelm_whispercpp_model }}"
+  when: not (voxhelm_whispercpp_model_stat.stat.exists | default(false))
+
+- name: runtime | Remove failed whisper.cpp model temp file
+  ansible.builtin.file:
+    path: "{{ voxhelm_whispercpp_model_tmp.path }}"
+    state: absent
+  when:
+    - not (voxhelm_whispercpp_model_stat.stat.exists | default(false))
+    - voxhelm_whispercpp_model_tmp is defined
+
 - name: runtime | Sync Voxhelm dependencies with uv
   ansible.builtin.command:
     argv:

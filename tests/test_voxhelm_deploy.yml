@@ -55,6 +55,9 @@
     - name: Assert rendered files include M1b runtime wiring
       ansible.builtin.assert:
         that:
+          - "'VOXHELM_STT_BACKEND=' in rendered_env_text"
+          - "'VOXHELM_STT_FALLBACK_BACKEND=' in rendered_env_text"
+          - "'VOXHELM_WHISPERCPP_MODEL=' in rendered_env_text"
           - "'VOXHELM_TASKS_BACKEND=' in rendered_env_text"
           - "'VOXHELM_ARTIFACT_BACKEND=' in rendered_env_text"
           - "'config.asgi:application' in rendered_start_text"

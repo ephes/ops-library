@@ -32,6 +32,9 @@ voxhelm_worker_stdout_log: "{{ voxhelm_log_dir }}/voxhelm-worker.log"
 voxhelm_worker_stderr_log: "{{ voxhelm_log_dir }}/voxhelm-worker.err.log"
 voxhelm_batch_max_download_bytes: 536870912
 voxhelm_ffmpeg_bin: "/opt/homebrew/bin/ffmpeg"
+voxhelm_stt_backend: "whispercpp"
+voxhelm_stt_fallback_backend: "mlx"
+voxhelm_model_cache_dir: "{{ voxhelm_app_dir }}/var/models"
 voxhelm_artifact_backend: "filesystem"
 voxhelm_artifact_root: "{{ voxhelm_app_dir }}/var/artifacts"
 voxhelm_artifact_bucket: "voxhelm"
@@ -49,7 +52,14 @@ voxhelm_allowed_hosts:
   - "studio"
   - "localhost"
   - "127.0.0.1"
-voxhelm_mlx_model: "mlx-community/whisper-large-v3-turbo"
+voxhelm_mlx_model: "mlx-community/whisper-large-v3-mlx"
+voxhelm_whispercpp_model: "ggml-large-v3.bin"
+voxhelm_whispercpp_model_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{{ voxhelm_whispercpp_model }}"
+voxhelm_whispercpp_bin: "/opt/homebrew/bin/whisper-cli"
+voxhelm_whispercpp_processors: 4
+voxhelm_brew_bin: ""
+voxhelm_brew_user: ""
+voxhelm_brew_update: false
 voxhelm_allowed_url_hosts: []
 voxhelm_trusted_http_hosts: []
 voxhelm_max_upload_bytes: 26214400

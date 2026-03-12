@@ -15,6 +15,7 @@ Current default runtime:
 
 - one `uvicorn` HTTP API process
 - one Django Tasks `db_worker` process
+- `whisper.cpp` as the default STT backend on `studio`, with `mlx-whisper` as fallback
 - bearer-token authentication via environment variables
 - filesystem artifact storage by default, with S3/MinIO-compatible env vars available
 - no Traefik dependency; the service binds directly on the configured port
@@ -39,7 +40,13 @@ voxhelm_bearer_tokens_env: "archive=replace-me"
 ```yaml
 voxhelm_app_port: 8787
 voxhelm_bind_host: "0.0.0.0"
-voxhelm_mlx_model: "mlx-community/whisper-large-v3-turbo"
+voxhelm_stt_backend: "whispercpp"
+voxhelm_stt_fallback_backend: "mlx"
+voxhelm_mlx_model: "mlx-community/whisper-large-v3-mlx"
+voxhelm_whispercpp_model: "ggml-large-v3.bin"
+voxhelm_whispercpp_bin: "/opt/homebrew/bin/whisper-cli"
+voxhelm_whispercpp_processors: 4
+voxhelm_model_cache_dir: "/opt/apps/voxhelm/site/var/models"
 voxhelm_allowed_hosts:
   - "studio.tailde2ec.ts.net"
   - "studio"
