@@ -1,0 +1,27 @@
+---
+- name: runtime | Ensure uv is available
+  ansible.builtin.command:
+    argv:
+      - "{{ voxhelm_uv_bin }}"
+      - --version
+  environment:
+    PATH: "{{ voxhelm_launchd_path }}"
+  changed_when: false
+
+- name: runtime | Sync Voxhelm dependencies with uv
+  ansible.builtin.command:
+    argv:
+      - "{{ voxhelm_uv_bin }}"
+      - sync
+      - --frozen
+      - --no-dev
+    chdir: "{{ voxhelm_app_dir }}"
+  environment:
+    PATH: "{{ voxhelm_launchd_path }}"
+  register: voxhelm_uv_sync
+  changed_when: >-
+    'Installed' in ((voxhelm_uv_sync.stdout | default('')) ~ (voxhelm_uv_sync.stderr | default('')))
+    or 'Prepared' in ((voxhelm_uv_sync.stdout | default('')) ~ (voxhelm_uv_sync.stderr | default('')))
+    or 'Removed' in ((voxhelm_uv_sync.stdout | default('')) ~ (voxhelm_uv_sync.stderr | default('')))
+    or 'Uninstalled' in ((voxhelm_uv_sync.stdout | default('')) ~ (voxhelm_uv_sync.stderr | default('')))
+    or 'Built' in ((voxhelm_uv_sync.stdout | default('')) ~ (voxhelm_uv_sync.stderr | default('')))

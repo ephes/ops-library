@@ -1,0 +1,49 @@
+---
+voxhelm_service_name: "voxhelm"
+
+voxhelm_source_path: ""
+voxhelm_sync_excludes:
+  - ".git"
+  - ".venv"
+  - ".pytest_cache"
+  - ".mypy_cache"
+  - ".ruff_cache"
+  - "__pycache__"
+
+voxhelm_app_dir: "/opt/apps/voxhelm/site"
+voxhelm_config_dir: "/etc/voxhelm"
+voxhelm_log_dir: "/var/log/voxhelm"
+voxhelm_start_script_path: "{{ voxhelm_app_dir }}/start.sh"
+
+voxhelm_uv_bin: "/usr/local/bin/uv"
+voxhelm_bind_host: "0.0.0.0"
+voxhelm_app_port: 8787
+voxhelm_uvicorn_log_level: "info"
+
+voxhelm_django_secret_key: "CHANGEME"
+voxhelm_bearer_tokens_env: "CHANGEME"
+voxhelm_allowed_hosts:
+  - "studio.tailde2ec.ts.net"
+  - "studio"
+  - "localhost"
+  - "127.0.0.1"
+voxhelm_mlx_model: "mlx-community/whisper-large-v3-turbo"
+voxhelm_allowed_url_hosts: []
+voxhelm_trusted_http_hosts: []
+voxhelm_max_upload_bytes: 26214400
+voxhelm_max_url_download_bytes: 134217728
+voxhelm_url_fetch_timeout_seconds: 60
+
+voxhelm_launchd_label: "de.wersdoerfer.voxhelm"
+voxhelm_launchd_plist_path: "/Library/LaunchDaemons/{{ voxhelm_launchd_label }}.plist"
+voxhelm_launchd_path: "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+voxhelm_launchd_keepalive: true
+voxhelm_launchd_manage_state: true
+voxhelm_launchd_start_service: true
+voxhelm_launchd_stdout_log: "{{ voxhelm_log_dir }}/voxhelm.log"
+voxhelm_launchd_stderr_log: "{{ voxhelm_log_dir }}/voxhelm.err.log"
+
+voxhelm_healthcheck_enabled: true
+voxhelm_healthcheck_url: "http://127.0.0.1:{{ voxhelm_app_port }}/v1/health"
+voxhelm_healthcheck_retries: 15
+voxhelm_healthcheck_delay: 2

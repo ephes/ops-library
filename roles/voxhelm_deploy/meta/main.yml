@@ -1,0 +1,17 @@
+---
+galaxy_info:
+  author: Jochen Wersdoerfer
+  description: Deploy Voxhelm on macOS with uv and launchd
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: MacOSX
+      versions:
+        - all
+  galaxy_tags:
+    - macos
+    - launchd
+    - django
+    - transcription
+
+dependencies: []

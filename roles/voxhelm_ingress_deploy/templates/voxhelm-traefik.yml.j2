@@ -1,0 +1,56 @@
+# Managed by Ansible - Traefik configuration for Voxhelm private ingress
+
+http:
+  routers:
+    voxhelm-secure:
+      rule: "Host(`{{ voxhelm_ingress_traefik_host }}`) && ({% for range in voxhelm_ingress_allowed_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+{% for ep in voxhelm_ingress_traefik_entrypoints %}
+        - {{ ep }}
+{% endfor %}
+      middlewares:
+        - voxhelm-headers
+        - voxhelm-gzip
+      service: voxhelm
+{% if voxhelm_ingress_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ voxhelm_ingress_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+    voxhelm-http:
+      rule: "Host(`{{ voxhelm_ingress_traefik_host }}`) && ({% for range in voxhelm_ingress_allowed_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      entryPoints:
+        - web
+      middlewares:
+        - voxhelm-redirect
+      service: voxhelm
+
+  middlewares:
+    voxhelm-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: SAMEORIGIN
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+          X-Forwarded-Host: "{{ voxhelm_ingress_traefik_host }}"
+
+    voxhelm-gzip:
+      compress: {}
+
+    voxhelm-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    voxhelm:
+      loadBalancer:
+        servers:
+          - url: "{{ voxhelm_ingress_backend_url }}"

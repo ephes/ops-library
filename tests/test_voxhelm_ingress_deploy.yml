@@ -1,0 +1,97 @@
+---
+# Test playbook for voxhelm_ingress_deploy role
+# Run with: ansible-playbook tests/test_voxhelm_ingress_deploy.yml -i tests/inventory/test.yml
+
+- name: Test Voxhelm Ingress Deploy Role Components
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/voxhelm_ingress_deploy"
+    rendered_config: "/tmp/test-voxhelm-ingress.yml"
+
+  tasks:
+    - name: Verify role files exist
+      block:
+        - name: Check defaults file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/defaults/main.yml"
+          register: defaults_file
+
+        - name: Check tasks file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/tasks/main.yml"
+          register: tasks_file
+
+        - name: Check handlers file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/handlers/main.yml"
+          register: handlers_file
+
+        - name: Check template file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/templates/voxhelm-traefik.yml.j2"
+          register: template_file
+
+        - name: Assert required files exist
+          ansible.builtin.assert:
+            that:
+              - defaults_file.stat.exists
+              - tasks_file.stat.exists
+              - handlers_file.stat.exists
+              - template_file.stat.exists
+
+    - name: Validate defaults are safe
+      block:
+        - name: Load defaults
+          ansible.builtin.include_vars:
+            file: "{{ role_path }}/defaults/main.yml"
+
+        - name: Assert required defaults
+          ansible.builtin.assert:
+            that:
+              - voxhelm_ingress_traefik_enabled == true
+              - voxhelm_ingress_traefik_host == ""
+              - voxhelm_ingress_backend_url == ""
+              - voxhelm_ingress_allowed_ip_ranges | length > 0
+
+    - name: Validate template renders expected routers and backend
+      block:
+        - name: Set test values for template rendering
+          ansible.builtin.set_fact:
+            voxhelm_ingress_traefik_host: "voxhelm.home.xn--wersdrfer-47a.de"
+            voxhelm_ingress_backend_url: "http://studio.tailde2ec.ts.net:8787"
+            voxhelm_ingress_traefik_cert_resolver: ""
+            voxhelm_ingress_allowed_ip_ranges:
+              - "100.64.0.0/10"
+              - "fd7a:115c:a1e0::/48"
+            voxhelm_ingress_traefik_entrypoints:
+              - web-secure
+
+        - name: Render template with test values
+          ansible.builtin.template:
+            src: "{{ role_path }}/templates/voxhelm-traefik.yml.j2"
+            dest: "{{ rendered_config }}"
+
+        - name: Read rendered template
+          ansible.builtin.slurp:
+            path: "{{ rendered_config }}"
+          register: rendered_file
+
+        - name: Assert rendered config includes expected routers and backend
+          ansible.builtin.assert:
+            that:
+              - "'voxhelm-secure:' in rendered_text"
+              - "'voxhelm-http:' in rendered_text"
+              - "'voxhelm.home.xn--wersdrfer-47a.de' in rendered_text"
+              - "'X-Forwarded-Host: \"voxhelm.home.xn--wersdrfer-47a.de\"' in rendered_text"
+              - "'redirectScheme:' in rendered_text"
+              - "'url: \"http://studio.tailde2ec.ts.net:8787\"' in rendered_text"
+          vars:
+            rendered_text: "{{ rendered_file.content | b64decode }}"
+
+    - name: Clean up rendered test file
+      ansible.builtin.file:
+        path: "{{ rendered_config }}"
+        state: absent

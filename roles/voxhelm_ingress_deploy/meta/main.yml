@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  author: Jochen Wersdörfer
+  description: Expose Voxhelm over private HTTPS via Traefik on the edge host.
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: MacOSX
+      versions:
+        - all
+    - name: Ubuntu
+      versions:
+        - all
+dependencies: []

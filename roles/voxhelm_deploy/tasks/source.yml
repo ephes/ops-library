@@ -1,0 +1,36 @@
+---
+- name: source | Verify local Voxhelm source path exists
+  ansible.builtin.stat:
+    path: "{{ voxhelm_source_path }}"
+  delegate_to: localhost
+  run_once: true
+  become: false
+  register: voxhelm_source_path_stat
+
+- name: source | Validate local source path
+  ansible.builtin.assert:
+    that:
+      - voxhelm_source_path_stat.stat.exists
+      - voxhelm_source_path_stat.stat.isdir
+    fail_msg: "voxhelm_source_path {{ voxhelm_source_path }} does not exist or is not a directory."
+
+- name: source | Build rsync exclude options
+  ansible.builtin.set_fact:
+    voxhelm_rsync_exclude_opts: "{{ voxhelm_sync_excludes | map('regex_replace', '^', '--exclude=') | list }}"
+
+- name: source | Sync local Voxhelm source to target
+  ansible.posix.synchronize:
+    src: "{{ voxhelm_source_path }}/"
+    dest: "{{ voxhelm_app_dir }}/"
+    delete: true
+    rsync_opts: "{{ voxhelm_rsync_exclude_opts }}"
+  register: voxhelm_source_sync
+
+- name: source | Ensure synced files are owned by root
+  ansible.builtin.file:
+    path: "{{ voxhelm_app_dir }}"
+    state: directory
+    owner: root
+    group: wheel
+    mode: "0755"
+    recurse: true

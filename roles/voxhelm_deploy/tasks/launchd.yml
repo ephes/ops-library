@@ -1,0 +1,22 @@
+---
+- name: launchd | Render Voxhelm plist
+  ansible.builtin.template:
+    src: voxhelm.launchd.plist.j2
+    dest: "{{ voxhelm_launchd_plist_path }}"
+    owner: root
+    group: wheel
+    mode: "0644"
+  register: voxhelm_launchd_template
+
+- name: launchd | Manage Voxhelm launchd state
+  ansible.builtin.include_tasks: manage_launchd_unit.yml
+  vars:
+    voxhelm_launchd_template_changed: "{{ voxhelm_launchd_template.changed }}"
+    voxhelm_launchd_force_restart: >-
+      {{
+        voxhelm_source_sync.changed
+        or voxhelm_uv_sync.changed
+        or voxhelm_env_template.changed
+        or voxhelm_start_script_template.changed
+      }}
+  when: voxhelm_launchd_manage_state | bool

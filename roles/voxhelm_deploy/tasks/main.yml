@@ -1,0 +1,22 @@
+---
+- name: main | Validate target and required variables
+  ansible.builtin.import_tasks: validate.yml
+
+- name: main | Ensure directory layout exists
+  ansible.builtin.import_tasks: directories.yml
+
+- name: main | Sync Voxhelm source tree
+  ansible.builtin.import_tasks: source.yml
+
+- name: main | Install Python runtime dependencies
+  ansible.builtin.import_tasks: runtime.yml
+
+- name: main | Render environment and launcher files
+  ansible.builtin.import_tasks: config.yml
+
+- name: main | Render and optionally manage launchd plist
+  ansible.builtin.import_tasks: launchd.yml
+
+- name: main | Verify service health
+  ansible.builtin.import_tasks: health.yml
+  when: voxhelm_healthcheck_enabled | bool

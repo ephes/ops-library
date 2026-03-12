@@ -1,0 +1,14 @@
+---
+- name: health | Wait for Voxhelm health endpoint
+  ansible.builtin.uri:
+    url: "{{ voxhelm_healthcheck_url }}"
+    method: GET
+    status_code: 200
+    return_content: true
+  register: voxhelm_healthcheck
+  retries: "{{ voxhelm_healthcheck_retries }}"
+  delay: "{{ voxhelm_healthcheck_delay }}"
+  until:
+    - voxhelm_healthcheck.status == 200
+    - (voxhelm_healthcheck.json.status | default('')) == 'ok'
+  changed_when: false

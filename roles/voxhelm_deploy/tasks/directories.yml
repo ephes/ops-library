@@ -1,0 +1,23 @@
+---
+- name: directories | Ensure app, config, and log directories exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: wheel
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ voxhelm_app_dir }}", mode: "0755" }
+    - { path: "{{ voxhelm_config_dir }}", mode: "0750" }
+    - { path: "{{ voxhelm_log_dir }}", mode: "0755" }
+
+- name: directories | Ensure launchd log files exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: touch
+    owner: root
+    group: wheel
+    mode: "0644"
+  loop:
+    - "{{ voxhelm_launchd_stdout_log }}"
+    - "{{ voxhelm_launchd_stderr_log }}"

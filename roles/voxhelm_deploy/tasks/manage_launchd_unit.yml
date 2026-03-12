@@ -1,0 +1,40 @@
+---
+- name: manage_launchd_unit | Check launchd unit status
+  ansible.builtin.command: "launchctl print system/{{ voxhelm_launchd_label }}"
+  register: voxhelm_launchd_status
+  changed_when: false
+  failed_when: false
+
+- name: manage_launchd_unit | Unload existing unit before bootstrap
+  ansible.builtin.command: "launchctl bootout system {{ voxhelm_launchd_plist_path }}"
+  changed_when: false
+  failed_when: false
+  when:
+    - voxhelm_launchd_template_changed | bool
+    - voxhelm_launchd_status.rc == 0
+
+- name: manage_launchd_unit | Bootstrap launchd unit
+  ansible.builtin.command: "launchctl bootstrap system {{ voxhelm_launchd_plist_path }}"
+  register: voxhelm_launchd_bootstrap
+  changed_when: voxhelm_launchd_bootstrap.rc == 0
+  when:
+    - voxhelm_launchd_template_changed | bool or voxhelm_launchd_status.rc != 0
+
+- name: manage_launchd_unit | Enable launchd unit
+  ansible.builtin.command: "launchctl enable system/{{ voxhelm_launchd_label }}"
+  register: voxhelm_launchd_enable
+  changed_when: voxhelm_launchd_enable.rc == 0
+  when:
+    - voxhelm_launchd_template_changed | bool or voxhelm_launchd_status.rc != 0
+
+- name: manage_launchd_unit | Start or restart launchd unit
+  ansible.builtin.command: "launchctl kickstart -k system/{{ voxhelm_launchd_label }}"
+  register: voxhelm_launchd_kickstart
+  changed_when: voxhelm_launchd_kickstart.rc == 0
+  when:
+    - voxhelm_launchd_start_service | bool
+    - >-
+      voxhelm_launchd_template_changed | bool
+      or (voxhelm_launchd_force_restart | default(false) | bool)
+      or voxhelm_launchd_status.rc != 0
+      or 'state = running' not in (voxhelm_launchd_status.stdout | default(''))

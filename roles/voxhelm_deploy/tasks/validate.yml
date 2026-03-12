@@ -1,0 +1,20 @@
+---
+- name: validate | Ensure target host is macOS
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] == 'Darwin'
+    fail_msg: "voxhelm_deploy only supports macOS targets."
+
+- name: validate | Ensure required variables are configured
+  ansible.builtin.assert:
+    that:
+      - voxhelm_source_path | trim | length > 0
+      - voxhelm_django_secret_key | trim | length > 0
+      - voxhelm_django_secret_key != "CHANGEME"
+      - voxhelm_bearer_tokens_env | trim | length > 0
+      - "'CHANGEME' not in voxhelm_bearer_tokens_env"
+      - voxhelm_app_port | int > 0
+      - voxhelm_uv_bin | trim | length > 0
+    fail_msg: >-
+      Voxhelm deployment is missing required configuration. Check source path,
+      Django secret key, bearer token config, port, and uv binary path.

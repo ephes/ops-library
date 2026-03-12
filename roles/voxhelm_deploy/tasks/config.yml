@@ -1,0 +1,19 @@
+---
+- name: config | Render Voxhelm environment file
+  ansible.builtin.template:
+    src: voxhelm.env.j2
+    dest: "{{ voxhelm_config_dir }}/voxhelm.env"
+    owner: root
+    group: wheel
+    mode: "0640"
+  register: voxhelm_env_template
+  no_log: true
+
+- name: config | Render Voxhelm launcher script
+  ansible.builtin.template:
+    src: start.sh.j2
+    dest: "{{ voxhelm_start_script_path }}"
+    owner: root
+    group: wheel
+    mode: "0755"
+  register: voxhelm_start_script_template

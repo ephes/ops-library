@@ -1,0 +1,17 @@
+---
+- name: validate | Validate core Voxhelm ingress settings
+  ansible.builtin.assert:
+    that:
+      - voxhelm_ingress_backend_url | length > 0
+    fail_msg: "voxhelm_ingress_backend_url is required."
+
+- name: validate | Validate Traefik settings when enabled
+  ansible.builtin.assert:
+    that:
+      - voxhelm_ingress_traefik_host | length > 0
+      - voxhelm_ingress_traefik_config_path | length > 0
+      - voxhelm_ingress_allowed_ip_ranges | length > 0
+    fail_msg: >-
+      voxhelm_ingress_traefik_host, voxhelm_ingress_traefik_config_path, and
+      voxhelm_ingress_allowed_ip_ranges are required when Traefik is enabled.
+  when: voxhelm_ingress_traefik_enabled | bool
