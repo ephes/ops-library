@@ -17,3 +17,13 @@
     group: wheel
     mode: "0755"
   register: voxhelm_start_script_template
+
+- name: config | Render Voxhelm worker script
+  ansible.builtin.template:
+    src: worker.sh.j2
+    dest: "{{ voxhelm_worker_script_path }}"
+    owner: root
+    group: wheel
+    mode: "0755"
+  register: voxhelm_worker_script_template
+  when: voxhelm_worker_enabled | bool

@@ -1,0 +1,15 @@
+---
+- name: database | Apply Django migrations
+  ansible.builtin.shell: |
+    set -euo pipefail
+    set -a
+    source {{ (voxhelm_config_dir ~ '/voxhelm.env') | quote }}
+    set +a
+    .venv/bin/python manage.py migrate --noinput
+  args:
+    chdir: "{{ voxhelm_app_dir }}"
+    executable: /bin/bash
+  environment:
+    PATH: "{{ voxhelm_launchd_path }}"
+  register: voxhelm_migrate
+  changed_when: "'Applying ' in (voxhelm_migrate.stdout | default(''))"

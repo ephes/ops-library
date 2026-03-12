@@ -21,3 +21,5 @@
   loop:
     - "{{ voxhelm_launchd_stdout_log }}"
     - "{{ voxhelm_launchd_stderr_log }}"
+    - "{{ voxhelm_worker_stdout_log }}"
+    - "{{ voxhelm_worker_stderr_log }}"

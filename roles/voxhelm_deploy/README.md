@@ -4,17 +4,19 @@ Deploy Voxhelm on macOS using `uv`, `uvicorn`, and a launchd `LaunchDaemon`.
 
 ## Description
 
-This role deploys the Archive-first Voxhelm M1a service to the `studio`
-Mac Studio. It syncs the local source tree, installs dependencies with
-`uv sync --frozen --no-dev`, renders a shell environment file, creates an
-`uvicorn` launcher script, installs a launchd plist, and verifies the health
-endpoint locally on the target host.
+This role deploys the Voxhelm service to the `studio` Mac Studio. It syncs the
+local source tree, installs dependencies with `uv sync --frozen --no-dev`,
+renders a shell environment file, applies Django migrations, creates launcher
+scripts for the HTTP API and the Django Tasks worker, installs launchd plists,
+and verifies both the HTTP health endpoint and worker launchd state locally on
+the target host.
 
-The role intentionally keeps M1a simple:
+Current default runtime:
 
-- one synchronous HTTP API process
+- one `uvicorn` HTTP API process
+- one Django Tasks `db_worker` process
 - bearer-token authentication via environment variables
-- no batch workers or MinIO wiring yet
+- filesystem artifact storage by default, with S3/MinIO-compatible env vars available
 - no Traefik dependency; the service binds directly on the configured port
 
 ## Requirements

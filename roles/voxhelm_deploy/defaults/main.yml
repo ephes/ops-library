@@ -9,16 +9,38 @@ voxhelm_sync_excludes:
   - ".mypy_cache"
   - ".ruff_cache"
   - "__pycache__"
+  - "db.sqlite3"
+  - "var"
 
 voxhelm_app_dir: "/opt/apps/voxhelm/site"
 voxhelm_config_dir: "/etc/voxhelm"
 voxhelm_log_dir: "/var/log/voxhelm"
 voxhelm_start_script_path: "{{ voxhelm_app_dir }}/start.sh"
+voxhelm_worker_script_path: "{{ voxhelm_app_dir }}/worker.sh"
 
 voxhelm_uv_bin: "/usr/local/bin/uv"
 voxhelm_bind_host: "0.0.0.0"
 voxhelm_app_port: 8787
 voxhelm_uvicorn_log_level: "info"
+voxhelm_task_backend: "django_tasks_db.backend.DatabaseBackend"
+voxhelm_task_queue: "default"
+voxhelm_worker_enabled: true
+voxhelm_worker_interval_seconds: 1
+voxhelm_worker_label: "de.wersdoerfer.voxhelm-worker"
+voxhelm_worker_plist_path: "/Library/LaunchDaemons/{{ voxhelm_worker_label }}.plist"
+voxhelm_worker_stdout_log: "{{ voxhelm_log_dir }}/voxhelm-worker.log"
+voxhelm_worker_stderr_log: "{{ voxhelm_log_dir }}/voxhelm-worker.err.log"
+voxhelm_batch_max_download_bytes: 536870912
+voxhelm_ffmpeg_bin: "/opt/homebrew/bin/ffmpeg"
+voxhelm_artifact_backend: "filesystem"
+voxhelm_artifact_root: "{{ voxhelm_app_dir }}/var/artifacts"
+voxhelm_artifact_bucket: "voxhelm"
+voxhelm_artifact_prefix: "voxhelm"
+voxhelm_artifact_s3_endpoint_url: ""
+voxhelm_artifact_s3_region: "us-east-1"
+voxhelm_artifact_s3_access_key_id: ""
+voxhelm_artifact_s3_secret_access_key: ""
+voxhelm_artifact_s3_force_path_style: true
 
 voxhelm_django_secret_key: "CHANGEME"
 voxhelm_bearer_tokens_env: "CHANGEME"

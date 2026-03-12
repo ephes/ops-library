@@ -20,3 +20,38 @@
         or voxhelm_start_script_template.changed
       }}
   when: voxhelm_launchd_manage_state | bool
+
+- name: launchd | Render Voxhelm worker plist
+  ansible.builtin.template:
+    src: voxhelm.launchd.plist.j2
+    dest: "{{ voxhelm_worker_plist_path }}"
+    owner: root
+    group: wheel
+    mode: "0644"
+  vars:
+    voxhelm_launchd_label: "{{ voxhelm_worker_label }}"
+    voxhelm_start_script_path: "{{ voxhelm_worker_script_path }}"
+    voxhelm_launchd_stdout_log: "{{ voxhelm_worker_stdout_log }}"
+    voxhelm_launchd_stderr_log: "{{ voxhelm_worker_stderr_log }}"
+  register: voxhelm_worker_launchd_template
+  when: voxhelm_worker_enabled | bool
+
+- name: launchd | Manage Voxhelm worker launchd state
+  ansible.builtin.include_tasks: manage_launchd_unit.yml
+  vars:
+    voxhelm_launchd_label: "{{ voxhelm_worker_label }}"
+    voxhelm_launchd_plist_path: "{{ voxhelm_worker_plist_path }}"
+    voxhelm_start_script_path: "{{ voxhelm_worker_script_path }}"
+    voxhelm_launchd_stdout_log: "{{ voxhelm_worker_stdout_log }}"
+    voxhelm_launchd_stderr_log: "{{ voxhelm_worker_stderr_log }}"
+    voxhelm_launchd_template_changed: "{{ voxhelm_worker_launchd_template.changed }}"
+    voxhelm_launchd_force_restart: >-
+      {{
+        voxhelm_source_sync.changed
+        or voxhelm_uv_sync.changed
+        or voxhelm_env_template.changed
+        or (voxhelm_worker_script_template.changed | default(false))
+      }}
+  when:
+    - voxhelm_worker_enabled | bool
+    - voxhelm_launchd_manage_state | bool

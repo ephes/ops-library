@@ -12,3 +12,14 @@
     - voxhelm_healthcheck.status == 200
     - (voxhelm_healthcheck.json.status | default('')) == 'ok'
   changed_when: false
+
+- name: health | Wait for Voxhelm worker launchd unit to report running
+  ansible.builtin.command: "launchctl print system/{{ voxhelm_worker_label }}"
+  register: voxhelm_worker_healthcheck
+  retries: "{{ voxhelm_healthcheck_retries }}"
+  delay: "{{ voxhelm_healthcheck_delay }}"
+  until:
+    - voxhelm_worker_healthcheck.rc == 0
+    - "'state = running' in (voxhelm_worker_healthcheck.stdout | default(''))"
+  changed_when: false
+  when: voxhelm_worker_enabled | bool

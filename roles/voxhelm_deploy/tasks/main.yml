@@ -14,6 +14,9 @@
 - name: main | Render environment and launcher files
   ansible.builtin.import_tasks: config.yml
 
+- name: main | Apply database migrations
+  ansible.builtin.import_tasks: database.yml
+
 - name: main | Render and optionally manage launchd plist
   ansible.builtin.import_tasks: launchd.yml
 

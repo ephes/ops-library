@@ -1,0 +1,75 @@
+---
+# Test playbook for voxhelm_deploy role templates
+# Run with: ansible-playbook tests/test_voxhelm_deploy.yml -i tests/inventory/test.yml
+
+- name: Test Voxhelm Deploy Role Templates
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/voxhelm_deploy"
+    rendered_env: "/tmp/test-voxhelm.env"
+    rendered_start: "/tmp/test-voxhelm-start.sh"
+    rendered_worker: "/tmp/test-voxhelm-worker.sh"
+
+  tasks:
+    - name: Load role defaults
+      ansible.builtin.include_vars:
+        file: "{{ role_path }}/defaults/main.yml"
+
+    - name: Assert sync excludes protect runtime state
+      ansible.builtin.assert:
+        that:
+          - "'db.sqlite3' in voxhelm_sync_excludes"
+          - "'var' in voxhelm_sync_excludes"
+
+    - name: Render environment template with test values
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/voxhelm.env.j2"
+        dest: "{{ rendered_env }}"
+      vars:
+        voxhelm_django_secret_key: "test-secret"
+        voxhelm_bearer_tokens_env: "archive=test-token"
+        voxhelm_artifact_backend: "filesystem"
+
+    - name: Render API start script
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/start.sh.j2"
+        dest: "{{ rendered_start }}"
+
+    - name: Render worker start script
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/worker.sh.j2"
+        dest: "{{ rendered_worker }}"
+
+    - name: Read rendered files
+      ansible.builtin.slurp:
+        path: "{{ item }}"
+      loop:
+        - "{{ rendered_env }}"
+        - "{{ rendered_start }}"
+        - "{{ rendered_worker }}"
+      register: rendered_files
+
+    - name: Assert rendered files include M1b runtime wiring
+      ansible.builtin.assert:
+        that:
+          - "'VOXHELM_TASKS_BACKEND=' in rendered_env_text"
+          - "'VOXHELM_ARTIFACT_BACKEND=' in rendered_env_text"
+          - "'config.asgi:application' in rendered_start_text"
+          - "'manage.py db_worker' in rendered_worker_text"
+          - "'--queue-name' in rendered_worker_text"
+      vars:
+        rendered_env_text: "{{ rendered_files.results[0].content | b64decode }}"
+        rendered_start_text: "{{ rendered_files.results[1].content | b64decode }}"
+        rendered_worker_text: "{{ rendered_files.results[2].content | b64decode }}"
+
+    - name: Clean up rendered files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ rendered_env }}"
+        - "{{ rendered_start }}"
+        - "{{ rendered_worker }}"
