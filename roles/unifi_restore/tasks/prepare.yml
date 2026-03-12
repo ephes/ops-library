@@ -92,9 +92,9 @@
 
 - name: Evaluate version compatibility
   ansible.builtin.set_fact:
-    unifi_restore_backup_version: "{{ unifi_restore_metadata.unifi_version | default('unknown') }}"
+    unifi_restore_backup_version: "{{ unifi_restore_metadata.get('unifi_version', 'unknown') }}"
     unifi_restore_installed_version: "{{ unifi_restore_installed_version_cmd.stdout | default('unknown') | trim }}"
-    unifi_restore_backup_major: "{{ (unifi_restore_metadata.unifi_version | default('') ) | regex_search('^([0-9]+)') | default('') }}"
+    unifi_restore_backup_major: "{{ (unifi_restore_metadata.get('unifi_version', '')) | regex_search('^([0-9]+)') | default('') }}"
     unifi_restore_installed_major: "{{ (unifi_restore_installed_version_cmd.stdout | default('') | trim) | regex_search('^([0-9]+)') | default('') }}"
 
 - name: Assert UniFi major versions are compatible

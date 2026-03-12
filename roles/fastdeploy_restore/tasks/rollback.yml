@@ -1,7 +1,12 @@
 ---
 - name: "Evaluate rollback prerequisites"
   ansible.builtin.set_fact:
-    fastdeploy_restore_can_rollback: "{{ (fastdeploy_restore_create_safety_backup | bool) and (fastdeploy_restore_safety_snapshot_dir | default('')) | length > 0 and (not fastdeploy_restore_dry_run) }}"
+    fastdeploy_restore_can_rollback: >-
+      {{
+        (fastdeploy_restore_create_safety_backup | bool)
+        and (((fastdeploy_restore_safety_snapshot_dir | default('')) | length) > 0)
+        and (not fastdeploy_restore_dry_run)
+      }}
 
 - block:
     - name: "Log rollback attempt"
@@ -21,10 +26,13 @@
         src: "{{ fastdeploy_restore_snapshot_dir }}/metadata.yml"
       register: fastdeploy_restore_safety_metadata
 
-    - name: "Update metadata-derived facts for rollback"
+    - name: "Parse safety snapshot metadata"
       ansible.builtin.set_fact:
         fastdeploy_restore_safety_metadata_decoded: "{{ fastdeploy_restore_safety_metadata.content | b64decode | from_yaml }}"
-        fastdeploy_restore_snapshot_services_expected: "{{ fastdeploy_restore_safety_metadata_decoded.services.count | default(0) }}"
+
+    - name: "Update metadata-derived facts for rollback"
+      ansible.builtin.set_fact:
+        fastdeploy_restore_snapshot_services_expected: "{{ (fastdeploy_restore_safety_metadata_decoded.services | default({})).get('count', 0) }}"
         fastdeploy_restore_snapshot_includes_database: "{{ (fastdeploy_restore_safety_metadata_decoded.components.database | default(true)) | bool }}"
         fastdeploy_restore_snapshot_includes_workspace: "{{ (fastdeploy_restore_safety_metadata_decoded.components.deploy_workspace | default(false)) | bool }}"
 

@@ -5,6 +5,8 @@ Restores a UniFi Network Application from a snapshot created by `unifi_backup`. 
 1. **Automated** (default): drops/restores the MongoDB database, rsyncs the data directory, reapplies systemd/Traefik files, and verifies service health.
 2. **Manual .unf prep**: extracts the most recent `.unf` file to `/tmp/unifi-restore.unf` so an administrator can import it via the UniFi web UI. Cleanup removes the file automatically once the run finishes.
 
+This role is one of the two Wave 3 restore pilots. It shares the current host-local restore scaffold with `fastdeploy_restore`; controller-fallback, controller-local, and exception restores remain intentionally outside that scaffold.
+
 ## Features
 
 - Validates archive availability (`latest` selection supported) and required tooling.
@@ -66,3 +68,14 @@ To prepare a manual `.unf` import instead:
 ```
 
 The play reports where `/tmp/unifi-restore.unf` was placed so you can upload it via the UniFi UI before cleanup removes the file.
+
+## Validation harness
+
+Wave 3 adds a focused Molecule scenario for this role:
+
+```bash
+just molecule-test unifi_restore
+```
+
+The scenario covers archive resolution, post-restore health verification, and targeted rollback replay from a seeded safety snapshot. The role currently has no separate executable dry-run path inside the Molecule harness, so validation-only coverage remains specific to `fastdeploy_restore`.
+The Molecule fixture also skips package-aware UniFi version compatibility checks; that precondition still needs a dedicated package-backed test if Wave 4 or later changes that logic.

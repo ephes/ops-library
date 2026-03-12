@@ -72,6 +72,46 @@ public role names and behavior over expanding helper abstraction.
 - `README_TESTING.md` and `TESTING.md` document expectations for contributors (pytest harness, Molecule-style checks, etc.).
 - {doc}`Service Lifecycle Guide <howto/service_lifecycle>` captures the checklist for adding or refactoring lifecycle roles and should stay aligned with these architecture notes.
 
+## Restore Scaffold Boundary
+
+Wave 3 establishes a restore pilot boundary before any shared restore helper is extracted.
+The current pilot scaffold is intentionally narrow:
+
+- `fastdeploy_restore`
+- `unifi_restore`
+
+These two roles are the Wave 4 extraction candidates because they already share the same repo-proven shape:
+
+- host-local archive resolution under a remote backup root
+- split restore phases (`validate`, `restore`, `verify`, `cleanup`) plus one preparatory safety phase (`safety_backup` or `prepare`)
+- `block`-based orchestration with an explicit rollback path
+- metadata and manifest validation before destructive steps
+- post-restore health checks that stay on the target host
+
+This boundary is about present structure, not idealized abstraction. `ops-library` does not yet ship a generic restore helper role, and Wave 3 deliberately stops short of inventing one.
+
+### Delayed Restore Roles
+
+The following restore roles remain outside that scaffold on purpose:
+
+- `homeassistant_restore`: scaffolded, but uses controller-fallback transport and has no rescue/rollback block in `main.yml`
+- `paperless_restore`: scaffolded, but uses controller-fallback transport and has the heaviest validation path in this family
+- `vaultwarden_restore`: monolithic and controller-local by design
+- `minio_restore`: extended multi-phase exception for object-storage recovery
+- `nyxmon_restore`: incomplete scaffold; no rollback phase and its `local_cache` story is still unfinished
+- `mail_restore`, `postfixadmin_restore`, `snappymail_restore`: mail-adjacent narrow restores with their own established flows
+
+Wave 3 documents these roles rather than refactoring them. Their differences are meaningful enough that treating them as pilot inputs now would make the first shared extraction less safe, not more representative.
+
+### Restore Validation Harness
+
+The restore pilot boundary now has executable Molecule coverage at the role level:
+
+- `fastdeploy_restore`: archive resolution, validation-only dry run, post-restore health checks, and targeted rollback replay using a seeded safety snapshot
+- `unifi_restore`: archive resolution, post-restore health checks, and targeted rollback replay using a seeded safety snapshot
+
+The harness is intentionally role-local. It proves the pilot roles before Wave 4 starts, but it does not imply that delayed restore roles already fit the same scaffold.
+
 ## FastDeploy Service Registry Pattern
 
 FastDeploy provides an API-driven interface for privileged operations, allowing unprivileged services to trigger maintenance tasks without requiring direct SSH root access. Services only need a FastDeploy API token to execute pre-registered operations like system updates, backups, or database maintenance.

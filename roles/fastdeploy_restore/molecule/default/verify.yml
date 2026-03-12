@@ -1,0 +1,77 @@
+---
+- name: Verify FastDeploy restore molecule scenario
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Check coverage marker files
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /tmp/fastdeploy-dry-run.ok
+        - /tmp/fastdeploy-rollback.ok
+      register: fastdeploy_markers
+
+    - name: Assert coverage markers exist
+      ansible.builtin.assert:
+        that:
+          - fastdeploy_markers.results | map(attribute='stat.exists') | min
+        fail_msg: "FastDeploy restore scenario did not complete all coverage phases."
+
+    - name: Verify FastDeploy env reflects rollback snapshot
+      ansible.builtin.slurp:
+        path: /home/fastdeploy/site/.env
+      register: fastdeploy_verify_env
+
+    - name: Verify FastDeploy service directories
+      ansible.builtin.stat:
+        path: /home/fastdeploy/site/services/rollback-service/config.txt
+      register: fastdeploy_service_marker
+
+    - name: Verify FastDeploy workspace marker
+      ansible.builtin.slurp:
+        path: /home/deploy/_workspace/workspace.txt
+      register: fastdeploy_workspace_marker
+
+    - name: Verify FastDeploy mock database count
+      ansible.builtin.slurp:
+        path: /tmp/mock-fastdeploy-db/service_count
+      register: fastdeploy_service_count
+
+    - name: Check FastDeploy systemd service
+      ansible.builtin.command: systemctl is-active fastdeploy
+      register: fastdeploy_service_status
+      changed_when: false
+
+    - name: Check FastDeploy health endpoint
+      ansible.builtin.uri:
+        url: http://127.0.0.1:9999/docs
+        status_code: 200
+      register: fastdeploy_health
+
+    - name: Assert FastDeploy verify state
+      ansible.builtin.assert:
+        that:
+          - "'RESTORE_MARKER=rollback' in (fastdeploy_verify_env.content | b64decode)"
+          - fastdeploy_service_marker.stat.exists
+          - "'rollback-workspace' in (fastdeploy_workspace_marker.content | b64decode)"
+          - (fastdeploy_service_count.content | b64decode | trim) == '1'
+          - fastdeploy_service_status.stdout == "active"
+          - fastdeploy_health.status == 200
+        fail_msg: "FastDeploy restore verification did not match the expected rollback end state."
+
+    - name: Ensure FastDeploy extracted staging directories were cleaned up
+      ansible.builtin.find:
+        paths: /tmp/fastdeploy-restore
+        file_type: directory
+        recurse: false
+      register: fastdeploy_stage_dirs
+      failed_when: false
+      changed_when: false
+
+    - name: Assert FastDeploy staging cleanup
+      ansible.builtin.assert:
+        that:
+          - (fastdeploy_stage_dirs.matched | default(0) | int) == 0
+        fail_msg: "FastDeploy extracted staging directories were not cleaned up."

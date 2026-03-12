@@ -98,6 +98,23 @@ For each advertised capability add a role under `roles/<service>_<action>/`. Re-
 - Restores files/databases and brings services back online.
 - Exposes `restore-check` mode for dry runs when feasible.
 
+##### Restore pilot scaffold
+
+Use the Wave 3 restore pilot scaffold only when the role actually matches the existing host-local pattern in this repo. Today that means `fastdeploy_restore` and `unifi_restore`, which both:
+
+- resolve archives on the target host
+- split validation, destructive restore, health verification, and cleanup into separate task files
+- keep rollback logic inside the role instead of depending on controller-local staging
+
+Do not force other restore roles into this shape just because they also have multiple task files. The following remain intentionally outside the pilot scaffold:
+
+- controller-fallback variants: `homeassistant_restore`, `paperless_restore`
+- object-storage exception: `minio_restore`
+- incomplete scaffold: `nyxmon_restore`
+- controller-local or mail-adjacent narrow restores: `vaultwarden_restore`, `mail_restore`, `postfixadmin_restore`, `snappymail_restore`
+
+Wave 3 stops at documenting that boundary and adding executable coverage. Shared restore helpers belong to the follow-on extraction wave, not this groundwork slice.
+
 #### Remove role
 
 - Deletes services safely with confirmation toggles (`service_confirm_removal`, `service_remove_data`, etc.).
@@ -131,6 +148,11 @@ For each advertised capability add a role under `roles/<service>_<action>/`. Re-
   - **Backup:** archive + manifest created, manifests list expected files, optional fetch succeeds.
   - **Restore:** validates archive, restores files, service healthy afterwards, supports `restore-check` when available.
   - **Remove:** confirmation guard works, data removal toggles respected, no lingering systemd units.
+- Restore pilot roles that are candidates for shared extraction must add role-level Molecule coverage before helper extraction starts.
+  Current Wave 3 pilot commands:
+  `just molecule-test fastdeploy_restore`
+  `just molecule-test unifi_restore`
+- That restore harness should cover archive resolution, validation-only or dry-run behavior where the role truly supports it, rollback behavior, and post-restore health verification.
 - When FastDeploy metadata is involved, add a test that validates generated service descriptors (JSON schema, permissions).
 - Run focused tests with `just test-role <role>` during development and `just test` before publishing so regressions surface early.
 

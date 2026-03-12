@@ -1,0 +1,56 @@
+---
+- name: Verify UniFi restore molecule scenario
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Check UniFi coverage marker files
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /tmp/unifi-latest.ok
+        - /tmp/unifi-rollback.ok
+      register: unifi_markers
+
+    - name: Assert UniFi coverage markers exist
+      ansible.builtin.assert:
+        that:
+          - unifi_markers.results | map(attribute='stat.exists') | min
+        fail_msg: "UniFi restore scenario did not complete all coverage phases."
+
+    - name: Verify UniFi data marker
+      ansible.builtin.slurp:
+        path: /usr/lib/unifi/data/system.properties
+      register: unifi_verify_marker
+
+    - name: Verify UniFi Traefik marker
+      ansible.builtin.slurp:
+        path: /etc/traefik/dynamic/unifi.yml
+      register: unifi_verify_traefik
+
+    - name: Check UniFi systemd service
+      ansible.builtin.command: systemctl is-active unifi.service
+      register: unifi_service_status
+      changed_when: false
+
+    - name: Check UniFi health endpoint
+      ansible.builtin.uri:
+        url: http://127.0.0.1:18443/
+        status_code: 200
+      register: unifi_health
+
+    - name: Ensure UniFi staging cleanup
+      ansible.builtin.stat:
+        path: /tmp/unifi-restore
+      register: unifi_stage_dir
+
+    - name: Assert UniFi verify state
+      ansible.builtin.assert:
+        that:
+          - "'marker=rollback' in (unifi_verify_marker.content | b64decode)"
+          - "'rollback-unifi.example.test' in (unifi_verify_traefik.content | b64decode)"
+          - unifi_service_status.stdout == "active"
+          - unifi_health.status == 200
+          - not unifi_stage_dir.stat.exists
+        fail_msg: "UniFi restore verification did not match the expected rollback end state."

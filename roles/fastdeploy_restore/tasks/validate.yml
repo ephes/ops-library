@@ -157,9 +157,12 @@
 - name: "Set metadata facts"
   ansible.builtin.set_fact:
     fastdeploy_restore_metadata: "{{ fastdeploy_restore_metadata_file.content | b64decode | from_yaml }}"
+
+- name: "Set metadata-derived restore facts"
+  ansible.builtin.set_fact:
     fastdeploy_restore_snapshot_includes_database: "{{ (fastdeploy_restore_metadata.components.database | default(true)) | bool }}"
     fastdeploy_restore_snapshot_includes_workspace: "{{ (fastdeploy_restore_metadata.components.deploy_workspace | default(false)) | bool }}"
-    fastdeploy_restore_snapshot_services_expected: "{{ fastdeploy_restore_metadata.services.count | default(0) }}"
+    fastdeploy_restore_snapshot_services_expected: "{{ (fastdeploy_restore_metadata.services | default({})).get('count', 0) }}"
 
 - name: "Stat manifest file"
   ansible.builtin.stat:

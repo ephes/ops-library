@@ -1,0 +1,79 @@
+---
+- name: Converge UniFi restore scenarios
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    unifi_archive_root: /opt/backups/unifi
+    unifi_latest_archive: "{{ unifi_archive_root }}/unifi-latest.tar.gz"
+    unifi_safety_snapshot: /tmp/unifi-safety-snapshot
+
+  tasks:
+    - name: Run UniFi restore against latest archive
+      ansible.builtin.include_role:
+        name: unifi_restore
+      vars:
+        unifi_restore_archive: latest
+        unifi_restore_archive_search_root: "{{ unifi_archive_root }}"
+        unifi_restore_required_packages: []
+        unifi_restore_check_version_compatibility: false
+        unifi_restore_create_safety_backup: false
+        unifi_restore_include_mongodb: false
+        unifi_restore_verify_mongodb: false
+        unifi_restore_verify_http: true
+        unifi_restore_health_url: http://127.0.0.1:18443/
+        unifi_restore_service_stop_pause: 0
+        unifi_restore_method: automated
+
+    - name: Read restored UniFi marker
+      ansible.builtin.slurp:
+        path: /usr/lib/unifi/data/system.properties
+      register: unifi_restored_marker
+
+    - name: Assert UniFi restore resolved latest archive and applied content
+      ansible.builtin.assert:
+        that:
+          - unifi_restore_archive_path == unifi_latest_archive
+          - "'marker=latest' in (unifi_restored_marker.content | b64decode)"
+        fail_msg: "UniFi restore did not use the newest archive."
+
+    - name: Record UniFi latest-archive coverage marker
+      ansible.builtin.copy:
+        dest: /tmp/unifi-latest.ok
+        mode: "0644"
+        content: "{{ unifi_restore_archive_path }}\n"
+
+    - name: Break UniFi state before rollback exercise
+      ansible.builtin.copy:
+        dest: "{{ item.dest }}"
+        mode: "{{ item.mode }}"
+        content: "{{ item.content }}"
+      loop:
+        - { dest: "/usr/lib/unifi/data/system.properties", mode: "0644", content: "marker=broken\n" }
+        - { dest: "/etc/traefik/dynamic/unifi.yml", mode: "0644", content: "http:\n  routers:\n    unifi:\n      rule: Host(`broken.example.test`)\n" }
+
+    - name: Exercise UniFi rollback task with safety snapshot
+      ansible.builtin.import_tasks: ../../tasks/rollback.yml
+      vars:
+        unifi_safety_backup_path: "{{ unifi_safety_snapshot }}"
+        unifi_restore_rsync_binary: rsync
+        unifi_service_name: unifi.service
+        unifi_data_path: /usr/lib/unifi/data
+
+    - name: Read UniFi marker after rollback
+      ansible.builtin.slurp:
+        path: /usr/lib/unifi/data/system.properties
+      register: unifi_rollback_marker
+
+    - name: Assert UniFi rollback restored safety snapshot
+      ansible.builtin.assert:
+        that:
+          - "'marker=rollback' in (unifi_rollback_marker.content | b64decode)"
+        fail_msg: "UniFi rollback did not restore the safety snapshot."
+
+    - name: Record UniFi rollback coverage marker
+      ansible.builtin.copy:
+        dest: /tmp/unifi-rollback.ok
+        mode: "0644"
+        content: "rollback-covered\n"

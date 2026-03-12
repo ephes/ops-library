@@ -89,14 +89,17 @@ molecule test -s delegated
 
 ## Molecule (container-based) quick start
 
-Tier 1 roles with Molecule scenarios: `test_dummy`, `shell_basics_deploy`, `uv_install`, `ansible_install`, `apt_upgrade_register`.
+Tier 1 roles with Molecule scenarios: `test_dummy`, `shell_basics_deploy`, `uv_install`, `ansible_install`, `apt_upgrade_register`, `fastdeploy_restore`, `unifi_restore`.
 
 ```bash
 # From repo root, auto-detect Colima/Docker and run a role's scenario
 just molecule-test test_dummy
 just molecule-test shell_basics_deploy
+just molecule-test fastdeploy_restore
+just molecule-test unifi_restore
 ```
 
 Notes:
 - Colima, Docker Desktop, or native Docker are supported via `just` detection helpers.
 - Dependency step warnings are silenced with empty `requirements.yml` / `collections.yml` in each scenario.
+- The Wave 3 restore pilot scenarios are intentionally narrow role-level harnesses for scaffold validation, not generic restore-family coverage.

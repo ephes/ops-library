@@ -1,0 +1,202 @@
+---
+- name: Prepare UniFi restore fixture
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    unifi_archive_root: /opt/backups/unifi
+    unifi_snapshot_root: /tmp/unifi-snapshots
+    unifi_old_snapshot: "{{ unifi_snapshot_root }}/unifi-old"
+    unifi_latest_snapshot: "{{ unifi_snapshot_root }}/unifi-latest"
+    unifi_safety_snapshot: /tmp/unifi-safety-snapshot
+    unifi_old_archive: "{{ unifi_archive_root }}/unifi-old.tar.gz"
+    unifi_latest_archive: "{{ unifi_archive_root }}/unifi-latest.tar.gz"
+    unifi_snapshot_unit: |
+      [Unit]
+      Description=Mock UniFi
+      After=network.target
+
+      [Service]
+      Type=simple
+      ExecStart=/usr/bin/python3 /usr/local/bin/mock-unifi-server
+      Restart=always
+
+      [Install]
+      WantedBy=multi-user.target
+
+  tasks:
+    - name: Ensure Ansible remote tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+
+    - name: Install fixture dependencies
+      ansible.builtin.apt:
+        name:
+          - rsync
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Ensure UniFi group exists
+      ansible.builtin.group:
+        name: unifi
+        state: present
+
+    - name: Ensure UniFi user exists
+      ansible.builtin.user:
+        name: unifi
+        group: unifi
+        shell: /usr/sbin/nologin
+        home: /usr/lib/unifi
+        create_home: false
+        state: present
+
+    - name: Create UniFi fixture directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner | default('root') }}"
+        group: "{{ item.group | default('root') }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ unifi_archive_root }}", mode: "0755" }
+        - { path: "{{ unifi_snapshot_root }}", mode: "0755" }
+        - { path: "/usr/lib/unifi/data", owner: "unifi", group: "unifi", mode: "0755" }
+        - { path: "/etc/traefik/dynamic", mode: "0755" }
+
+    - name: Seed baseline UniFi data
+      ansible.builtin.copy:
+        dest: "{{ item.dest }}"
+        owner: "{{ item.owner | default('root') }}"
+        group: "{{ item.group | default('root') }}"
+        mode: "{{ item.mode }}"
+        content: "{{ item.content }}"
+      loop:
+        - { dest: "/usr/lib/unifi/data/system.properties", owner: "unifi", group: "unifi", mode: "0644", content: "marker=baseline\n" }
+        - { dest: "/etc/traefik/dynamic/unifi.yml", mode: "0644", content: "http:\n  routers: {}\n" }
+
+    - name: Install mock UniFi HTTP helper
+      ansible.builtin.copy:
+        dest: /usr/local/bin/mock-unifi-server
+        mode: "0755"
+        content: |
+          #!/usr/bin/env python3
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+
+          class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+              self.send_response(200)
+              self.end_headers()
+              self.wfile.write(b"unifi-ok")
+
+            def log_message(self, format, *args):
+              return
+
+          HTTPServer(("127.0.0.1", 18443), Handler).serve_forever()
+
+    - name: Install baseline UniFi systemd unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/unifi.service
+        mode: "0644"
+        content: "{{ unifi_snapshot_unit }}"
+
+    - name: Reload systemd for baseline UniFi unit
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Start baseline UniFi service
+      ansible.builtin.systemd:
+        name: unifi.service
+        state: started
+        enabled: true
+
+    - name: Create UniFi snapshot trees
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ unifi_old_snapshot }}"
+        - "{{ unifi_old_snapshot }}/data"
+        - "{{ unifi_old_snapshot }}/systemd"
+        - "{{ unifi_old_snapshot }}/traefik"
+        - "{{ unifi_latest_snapshot }}"
+        - "{{ unifi_latest_snapshot }}/data"
+        - "{{ unifi_latest_snapshot }}/systemd"
+        - "{{ unifi_latest_snapshot }}/traefik"
+        - "{{ unifi_safety_snapshot }}"
+        - "{{ unifi_safety_snapshot }}/data"
+        - "{{ unifi_safety_snapshot }}/systemd"
+        - "{{ unifi_safety_snapshot }}/traefik"
+
+    - name: Seed old UniFi snapshot payload
+      ansible.builtin.copy:
+        dest: "{{ item.dest }}"
+        mode: "{{ item.mode }}"
+        content: "{{ item.content }}"
+      loop:
+        - { dest: "{{ unifi_old_snapshot }}/metadata.yml", mode: "0644", content: "unifi_version: 8.0.0\n" }
+        - { dest: "{{ unifi_old_snapshot }}/data/system.properties", mode: "0644", content: "marker=old\n" }
+        - { dest: "{{ unifi_old_snapshot }}/systemd/unifi.service", mode: "0644", content: "{{ unifi_snapshot_unit }}" }
+        - { dest: "{{ unifi_old_snapshot }}/traefik/unifi.yml", mode: "0644", content: "http:\n  routers:\n    unifi:\n      rule: Host(`old-unifi.example.test`)\n" }
+
+    - name: Seed latest UniFi snapshot payload
+      ansible.builtin.copy:
+        dest: "{{ item.dest }}"
+        mode: "{{ item.mode }}"
+        content: "{{ item.content }}"
+      loop:
+        - { dest: "{{ unifi_latest_snapshot }}/metadata.yml", mode: "0644", content: "unifi_version: 8.1.0\n" }
+        - { dest: "{{ unifi_latest_snapshot }}/data/system.properties", mode: "0644", content: "marker=latest\n" }
+        - { dest: "{{ unifi_latest_snapshot }}/systemd/unifi.service", mode: "0644", content: "{{ unifi_snapshot_unit }}" }
+        - { dest: "{{ unifi_latest_snapshot }}/traefik/unifi.yml", mode: "0644", content: "http:\n  routers:\n    unifi:\n      rule: Host(`latest-unifi.example.test`)\n" }
+
+    - name: Seed UniFi rollback safety snapshot payload
+      ansible.builtin.copy:
+        dest: "{{ item.dest }}"
+        mode: "{{ item.mode }}"
+        content: "{{ item.content }}"
+      loop:
+        - { dest: "{{ unifi_safety_snapshot }}/metadata.yml", mode: "0644", content: "unifi_version: 8.1.1\n" }
+        - { dest: "{{ unifi_safety_snapshot }}/data/system.properties", mode: "0644", content: "marker=rollback\n" }
+        - { dest: "{{ unifi_safety_snapshot }}/systemd/unifi.service", mode: "0644", content: "{{ unifi_snapshot_unit }}" }
+        - { dest: "{{ unifi_safety_snapshot }}/traefik/unifi.yml", mode: "0644", content: "http:\n  routers:\n    unifi:\n      rule: Host(`rollback-unifi.example.test`)\n" }
+
+    - name: Generate manifest files for UniFi snapshots
+      ansible.builtin.shell: |
+        set -euo pipefail
+        find . -type f ! -name manifest.sha256 -printf '%P\n' \
+          | sort \
+          | xargs sha256sum > manifest.sha256
+      args:
+        chdir: "{{ item }}"
+        executable: /bin/bash
+      loop:
+        - "{{ unifi_old_snapshot }}"
+        - "{{ unifi_latest_snapshot }}"
+        - "{{ unifi_safety_snapshot }}"
+      changed_when: true
+
+    - name: Build UniFi restore archives
+      community.general.archive:
+        path: "{{ item.path }}"
+        dest: "{{ item.dest }}"
+        format: gz
+      loop:
+        - { path: "{{ unifi_old_snapshot }}", dest: "{{ unifi_old_archive }}" }
+        - { path: "{{ unifi_latest_snapshot }}", dest: "{{ unifi_latest_archive }}" }
+
+    - name: Set archive timestamps for latest selection test
+      ansible.builtin.command:
+        argv:
+          - touch
+          - -t
+          - "{{ item.timestamp }}"
+          - "{{ item.path }}"
+      loop:
+        - { path: "{{ unifi_old_archive }}", timestamp: "202603120101.00" }
+        - { path: "{{ unifi_latest_archive }}", timestamp: "202603120102.00" }
+      changed_when: true

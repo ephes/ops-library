@@ -1,0 +1,169 @@
+---
+- name: Converge FastDeploy restore scenarios
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    fastdeploy_archive_root: /opt/backups/fastdeploy
+    fastdeploy_success_archive: "{{ fastdeploy_archive_root }}/fastdeploy-success.tar.gz"
+    fastdeploy_latest_archive: "{{ fastdeploy_archive_root }}/fastdeploy-latest.tar.gz"
+    fastdeploy_safety_snapshot: /tmp/fastdeploy-safety-snapshot
+    fastdeploy_common_vars:
+      fastdeploy_restore_archive_search_root: "{{ fastdeploy_archive_root }}"
+      fastdeploy_restore_validate_checksums: true
+      fastdeploy_restore_create_safety_backup: false
+      fastdeploy_restore_postgres_become_user: root
+      fastdeploy_restore_postgres_user: fastdeploy
+      fastdeploy_restore_postgres_password: ""
+      fastdeploy_restore_psql_binary: /usr/local/bin/psql
+      fastdeploy_restore_health_url: http://127.0.0.1:9999/docs
+      fastdeploy_restore_require_sops_key: false
+
+  tasks:
+    - name: Run FastDeploy dry-run validation using latest archive
+      ansible.builtin.include_role:
+        name: fastdeploy_restore
+      vars:
+        fastdeploy_restore_archive: latest
+        fastdeploy_restore_dry_run: true
+        fastdeploy_restore_http_check_enabled: false
+        fastdeploy_restore_service_count_check: false
+        fastdeploy_restore_create_safety_backup: false
+        fastdeploy_restore_archive_search_root: "{{ fastdeploy_common_vars.fastdeploy_restore_archive_search_root }}"
+        fastdeploy_restore_validate_checksums: "{{ fastdeploy_common_vars.fastdeploy_restore_validate_checksums }}"
+        fastdeploy_restore_postgres_become_user: "{{ fastdeploy_common_vars.fastdeploy_restore_postgres_become_user }}"
+        fastdeploy_restore_postgres_user: "{{ fastdeploy_common_vars.fastdeploy_restore_postgres_user }}"
+        fastdeploy_restore_postgres_password: "{{ fastdeploy_common_vars.fastdeploy_restore_postgres_password }}"
+        fastdeploy_restore_psql_binary: "{{ fastdeploy_common_vars.fastdeploy_restore_psql_binary }}"
+        fastdeploy_restore_health_url: "{{ fastdeploy_common_vars.fastdeploy_restore_health_url }}"
+        fastdeploy_restore_require_sops_key: "{{ fastdeploy_common_vars.fastdeploy_restore_require_sops_key }}"
+
+    - name: Read baseline env after dry run
+      ansible.builtin.slurp:
+        path: /home/fastdeploy/site/.env
+      register: fastdeploy_dry_run_env
+
+    - name: Assert dry run resolved latest archive and preserved current state
+      ansible.builtin.assert:
+        that:
+          - fastdeploy_restore_resolved_artifact_path == fastdeploy_latest_archive
+          - "'BASELINE_ENV=original' in (fastdeploy_dry_run_env.content | b64decode)"
+        fail_msg: "FastDeploy dry run did not stay validation-only."
+
+    - name: Assert FastDeploy dry-run staging directory was cleaned up
+      ansible.builtin.stat:
+        path: "{{ fastdeploy_restore_stage_dir }}"
+      register: fastdeploy_dry_run_stage
+
+    - name: Record FastDeploy dry-run coverage marker
+      ansible.builtin.copy:
+        dest: /tmp/fastdeploy-dry-run.ok
+        mode: "0644"
+        content: "{{ fastdeploy_restore_resolved_artifact_path }}\n"
+      when: not fastdeploy_dry_run_stage.stat.exists
+
+    - name: Run FastDeploy restore against explicit archive
+      ansible.builtin.include_role:
+        name: fastdeploy_restore
+      vars:
+        fastdeploy_restore_archive: fastdeploy-success.tar.gz
+        fastdeploy_restore_dry_run: false
+        fastdeploy_restore_http_check_enabled: true
+        fastdeploy_restore_service_count_check: true
+        fastdeploy_restore_create_safety_backup: false
+        fastdeploy_restore_archive_search_root: "{{ fastdeploy_common_vars.fastdeploy_restore_archive_search_root }}"
+        fastdeploy_restore_validate_checksums: "{{ fastdeploy_common_vars.fastdeploy_restore_validate_checksums }}"
+        fastdeploy_restore_postgres_become_user: "{{ fastdeploy_common_vars.fastdeploy_restore_postgres_become_user }}"
+        fastdeploy_restore_postgres_user: "{{ fastdeploy_common_vars.fastdeploy_restore_postgres_user }}"
+        fastdeploy_restore_postgres_password: "{{ fastdeploy_common_vars.fastdeploy_restore_postgres_password }}"
+        fastdeploy_restore_psql_binary: "{{ fastdeploy_common_vars.fastdeploy_restore_psql_binary }}"
+        fastdeploy_restore_health_url: "{{ fastdeploy_common_vars.fastdeploy_restore_health_url }}"
+        fastdeploy_restore_require_sops_key: "{{ fastdeploy_common_vars.fastdeploy_restore_require_sops_key }}"
+
+    - name: Read restored FastDeploy env
+      ansible.builtin.slurp:
+        path: /home/fastdeploy/site/.env
+      register: fastdeploy_restored_env
+
+    - name: Assert explicit FastDeploy restore content
+      ansible.builtin.assert:
+        that:
+          - fastdeploy_restore_resolved_artifact_path == fastdeploy_success_archive
+          - "'RESTORE_MARKER=success' in (fastdeploy_restored_env.content | b64decode)"
+        fail_msg: "FastDeploy restore did not apply the expected snapshot."
+
+    - name: Break FastDeploy state before rollback exercise
+      ansible.builtin.copy:
+        dest: "{{ item.dest }}"
+        mode: "{{ item.mode }}"
+        content: "{{ item.content }}"
+      loop:
+        - { dest: "/home/fastdeploy/site/.env", mode: "0640", content: "RESTORE_MARKER=broken\n" }
+        - { dest: "/tmp/mock-fastdeploy-db/service_count", mode: "0644", content: "99\n" }
+
+    - name: Remove restored FastDeploy service directories before rollback
+      ansible.builtin.file:
+        path: /home/fastdeploy/site/services
+        state: absent
+
+    - name: Seed FastDeploy rollback context facts
+      ansible.builtin.set_fact:
+        fastdeploy_restore_create_safety_backup: true
+        fastdeploy_restore_dry_run: false
+        fastdeploy_restore_snapshot_dir: /tmp/fastdeploy-primary-placeholder
+        fastdeploy_restore_safety_snapshot_dir: "{{ fastdeploy_safety_snapshot }}"
+        fastdeploy_restore_snapshot_includes_database: true
+        fastdeploy_restore_snapshot_includes_workspace: true
+        fastdeploy_restore_snapshot_services_expected: 1
+        fastdeploy_restore_operation_successful: false
+        fastdeploy_restore_rollback_executed: false
+        fastdeploy_restore_systemd_service: fastdeploy
+        fastdeploy_restore_postgres_become_user: root
+        fastdeploy_restore_postgres_user: fastdeploy
+        fastdeploy_restore_postgres_database: fastdeploy
+        fastdeploy_restore_postgres_password: ""
+        fastdeploy_restore_psql_binary: /usr/local/bin/psql
+        fastdeploy_restore_user: fastdeploy
+        fastdeploy_restore_group: fastdeploy
+        fastdeploy_restore_site_path: /home/fastdeploy/site
+        fastdeploy_restore_services_path: /home/fastdeploy/site/services
+        fastdeploy_restore_env_file: /home/fastdeploy/site/.env
+        fastdeploy_restore_deploy_user: deploy
+        fastdeploy_restore_deploy_group: deploy
+        fastdeploy_restore_deploy_runner_root: /home/deploy/runners
+        fastdeploy_restore_deploy_workspace: /home/deploy/_workspace
+        fastdeploy_restore_traefik_config_path: /etc/traefik/dynamic/fastdeploy.yml
+        fastdeploy_restore_sudoers_glob: /etc/sudoers.d/fastdeploy_*
+        fastdeploy_restore_http_check_enabled: true
+        fastdeploy_restore_health_url: http://127.0.0.1:9999/docs
+        fastdeploy_restore_http_check_retries: 5
+        fastdeploy_restore_http_check_delay: 1
+        fastdeploy_restore_service_count_check: true
+
+    - name: Exercise FastDeploy rollback task with safety snapshot
+      block:
+        - ansible.builtin.import_tasks: ../../tasks/rollback.yml
+      rescue:
+        - name: Mark expected FastDeploy rollback failure
+          ansible.builtin.set_fact:
+            fastdeploy_rollback_failed_as_expected: true
+
+    - name: Read FastDeploy env after rollback
+      ansible.builtin.slurp:
+        path: /home/fastdeploy/site/.env
+      register: fastdeploy_rollback_env
+
+    - name: Assert FastDeploy rollback restored safety snapshot
+      ansible.builtin.assert:
+        that:
+          - fastdeploy_rollback_failed_as_expected | default(false) | bool
+          - fastdeploy_restore_rollback_executed | bool
+          - "'RESTORE_MARKER=rollback' in (fastdeploy_rollback_env.content | b64decode)"
+        fail_msg: "FastDeploy rollback did not restore the safety snapshot."
+
+    - name: Record FastDeploy rollback coverage marker
+      ansible.builtin.copy:
+        dest: /tmp/fastdeploy-rollback.ok
+        mode: "0644"
+        content: "rollback-covered\n"

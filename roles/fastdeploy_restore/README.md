@@ -2,6 +2,8 @@
 
 Restore a FastDeploy instance from a snapshot produced by `fastdeploy_backup`. The role locates the requested artifact, verifies metadata (and optional checksums), optionally captures a safety snapshot before touching the host, restores PostgreSQL plus FastDeploy/deploy-user files, and performs layered health checks (systemd, HTTP endpoint, database query). A rollback path replays the safety snapshot automatically when verification fails.
 
+This role is one of the two Wave 3 restore pilots. It defines the current host-local restore scaffold together with `unifi_restore`; controller-fallback, controller-local, and exception restores remain outside that scaffold for now.
+
 ## Features
 
 - Accepts explicit archive/directory paths or `latest` (auto-select newest `.tar.gz`/`.tar.zst` under `/opt/backups/fastdeploy`).
@@ -63,6 +65,16 @@ See `defaults/main.yml` for the full list.
 ## Dry-run mode
 
 Set `fastdeploy_restore_dry_run: true` to validate the archive (metadata + checksums) without stopping services or copying data. Useful for `just restore-fastdeploy-check`.
+
+## Validation harness
+
+Wave 3 adds a focused Molecule scenario for this role:
+
+```bash
+just molecule-test fastdeploy_restore
+```
+
+The scenario covers archive resolution, validation-only dry-run behavior, post-restore health verification, and targeted rollback replay using a seeded safety snapshot. It does not yet prove the full `fastdeploy_backup` integration path inside Molecule.
 
 ## Requirements
 
