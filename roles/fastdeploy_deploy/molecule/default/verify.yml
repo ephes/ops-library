@@ -8,6 +8,7 @@
     fastdeploy_site_path: /home/fastdeploy/site
     fastdeploy_env_path: "{{ fastdeploy_site_path }}/.env"
     fastdeploy_service_unit: /etc/systemd/system/fastdeploy.service
+    fastdeploy_traefik_config: /etc/traefik/dynamic/fastdeploy.yml
     fastdeploy_venv_python: "{{ fastdeploy_site_path }}/.venv/bin/python"
 
   tasks:
@@ -44,6 +45,17 @@
         that:
           - service_unit.stat.exists
         fail_msg: "fastdeploy.service unit not found at {{ fastdeploy_service_unit }}"
+
+    - name: Verify | Traefik config exists
+      ansible.builtin.stat:
+        path: "{{ fastdeploy_traefik_config }}"
+      register: traefik_config
+
+    - name: Verify | Assert Traefik config exists
+      ansible.builtin.assert:
+        that:
+          - traefik_config.stat.exists
+        fail_msg: "FastDeploy Traefik config missing at {{ fastdeploy_traefik_config }}"
 
     - name: Verify | Virtualenv python exists
       ansible.builtin.stat:

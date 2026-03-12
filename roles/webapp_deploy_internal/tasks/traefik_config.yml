@@ -1,0 +1,55 @@
+---
+- name: traefik_config | Resolve caller role path
+  ansible.builtin.set_fact:
+    webapp_deploy_internal_effective_caller_role_path: >-
+      {{
+        webapp_deploy_internal_caller_role_path
+        | default((ansible_parent_role_paths | default([])) | first, true)
+      }}
+
+- name: traefik_config | Ensure Traefik dynamic directory exists
+  ansible.builtin.file:
+    path: /etc/traefik/dynamic
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: traefik_config | Install htpasswd packages
+  ansible.builtin.package:
+    name: "{{ webapp_deploy_internal_traefik_auth_packages }}"
+    state: present
+  when:
+    - webapp_deploy_internal_traefik_basic_auth_enabled | default(false) | bool
+    - (webapp_deploy_internal_traefik_auth_packages | default([])) | length > 0
+    - ansible_facts["os_family"] in (webapp_deploy_internal_traefik_auth_package_os_families | default([]))
+
+- name: traefik_config | Generate basic auth password hash
+  ansible.builtin.shell: |
+    echo '{{ webapp_deploy_internal_traefik_basic_auth_password }}' | htpasswd -nBi {{ webapp_deploy_internal_traefik_basic_auth_user }} | cut -d: -f2
+  register: webapp_deploy_internal_password_hash
+  changed_when: false
+  no_log: true
+  when: webapp_deploy_internal_traefik_basic_auth_enabled | default(false) | bool
+
+- name: traefik_config | Set password hash fact
+  ansible.builtin.set_fact:
+    "{{ webapp_deploy_internal_traefik_password_hash_var }}": "{{ webapp_deploy_internal_password_hash.stdout }}"
+  no_log: true
+  when: webapp_deploy_internal_traefik_basic_auth_enabled | default(false) | bool
+
+- name: traefik_config | Render Traefik dynamic config
+  ansible.builtin.template:
+    src: "{{ webapp_deploy_internal_effective_caller_role_path }}/{{ webapp_deploy_internal_traefik_template_src }}"
+    dest: "{{ webapp_deploy_internal_traefik_dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: "{{ webapp_deploy_internal_traefik_notify_handlers | default([]) }}"
+
+- name: traefik_config | Restart Traefik to pick up dynamic config
+  ansible.builtin.systemd:
+    name: "{{ webapp_deploy_internal_traefik_service_name }}"
+    state: restarted
+  changed_when: false
+  when: webapp_deploy_internal_traefik_force_restart | default(false) | bool

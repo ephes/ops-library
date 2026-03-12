@@ -1,17 +1,10 @@
 ---
-- name: traefik | Ensure Traefik dynamic directory exists
-  ansible.builtin.file:
-    path: /etc/traefik/dynamic
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
-
 - name: traefik | Render archive Traefik config
-  ansible.builtin.template:
-    src: archive.traefik.yml.j2
-    dest: /etc/traefik/dynamic/archive.yml
-    owner: root
-    group: root
-    mode: "0644"
-  notify: reload traefik
+  ansible.builtin.include_role:
+    name: local.ops_library.webapp_deploy_internal
+    tasks_from: traefik_config
+  vars:
+    webapp_deploy_internal_traefik_template_src: "templates/archive.traefik.yml.j2"
+    webapp_deploy_internal_traefik_dest: /etc/traefik/dynamic/archive.yml
+    webapp_deploy_internal_traefik_notify_handlers:
+      - reload traefik

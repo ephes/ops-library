@@ -137,6 +137,14 @@ fastdeploy_internal_ip_ranges:  # Customize for your network
 
 This role automatically depends on `local.ops_library.postgres_install` to install PostgreSQL and provision the FastDeploy database/user.
 
+## Contributor Notes
+
+Wave 1 of the deploy refactor keeps the public role entrypoint unchanged while
+moving the duplicated systemd and Traefik plumbing into the internal helper role
+`local.ops_library.webapp_deploy_internal`. FastDeploy still owns its
+role-specific validation, environment setup, templates, handlers, and
+application initialization flow.
+
 ## Example Playbook
 
 ### Basic Usage

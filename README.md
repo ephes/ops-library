@@ -2,7 +2,7 @@
 
 A collection of reusable Ansible roles for homelab automation and service deployment.
 
-📖 **[Full Documentation](https://ops-library.readthedocs.io/)** | 📚 [Architecture](./ARCHITECTURE.md) | 🧪 [Testing](./TESTING.md)
+📖 **[Full Documentation](https://ops-library.readthedocs.io/)** | 📚 [Architecture](./ARCHITECTURE.md) | 🧭 [Service Lifecycle Guide](./docs/source/howto/service_lifecycle.md) | 🧪 [Testing](./TESTING.md)
 
 ## Quick Start
 
@@ -25,6 +25,11 @@ system Python builds; set `uv_version` and the role-specific `*_python_version` 
 ## Available Roles
 
 The table below links each published role to its dedicated documentation. Refer to the role README for full variable reference, workflows, and examples.
+
+Some roles under `roles/` are intentionally internal helper surfaces rather than
+published service entrypoints. Keep those helpers narrowly scoped, document them
+in their role-level README, and do not treat them as the public API that
+consumer repos depend on.
 
 | Category | Role | Summary |
 |----------|------|---------|
@@ -152,6 +157,7 @@ just stats-roles
 ## Documentation
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) - System design and patterns
+- [docs/source/howto/service_lifecycle.md](./docs/source/howto/service_lifecycle.md) - Checklist for adding or refactoring service lifecycle roles
 - [CHANGELOG.md](./CHANGELOG.md) - Version history and changes
 - [TESTING.md](./TESTING.md) - Testing guidelines
 - [Role-specific READMEs](./roles/) - Detailed documentation per role

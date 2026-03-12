@@ -8,6 +8,7 @@
     nyxmon_site_path: /home/nyxmon/site
     nyxmon_env_path: "{{ nyxmon_site_path }}/.env"
     nyxmon_service_unit: /etc/systemd/system/nyxmon.service
+    nyxmon_traefik_config: /etc/traefik/dynamic/nyxmon.yml
     nyxmon_venv_python: "{{ nyxmon_site_path }}/.venv/bin/python"
 
   tasks:
@@ -44,6 +45,17 @@
         that:
           - nyxmon_unit.stat.exists
         fail_msg: "nyxmon.service not found at {{ nyxmon_service_unit }}"
+
+    - name: Verify | Traefik config exists
+      ansible.builtin.stat:
+        path: "{{ nyxmon_traefik_config }}"
+      register: nyxmon_traefik
+
+    - name: Verify | Assert Traefik config exists
+      ansible.builtin.assert:
+        that:
+          - nyxmon_traefik.stat.exists
+        fail_msg: "Nyxmon Traefik config missing at {{ nyxmon_traefik_config }}"
 
     - name: Verify | Virtualenv python exists
       ansible.builtin.stat:

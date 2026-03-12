@@ -1,20 +1,14 @@
 ---
 # Setup systemd service for Nyxmon
 
-- name: Create systemd service file
-  template:
-    src: nyxmon.service.j2
-    dest: /etc/systemd/system/nyxmon.service
-    owner: root
-    group: root
-    mode: '0644'
-  notify:
-    - reload systemd
-    - restart nyxmon
-
-- name: Enable and start nyxmon service
-  systemd:
-    name: nyxmon
-    enabled: true
-    state: started
-    daemon_reload: true
+- name: service | Render and enable Nyxmon systemd unit
+  ansible.builtin.include_role:
+    name: local.ops_library.webapp_deploy_internal
+    tasks_from: systemd_service
+  vars:
+    webapp_deploy_internal_service_template_src: "templates/nyxmon.service.j2"
+    webapp_deploy_internal_service_unit_dest: /etc/systemd/system/nyxmon.service
+    webapp_deploy_internal_service_name: nyxmon
+    webapp_deploy_internal_service_notify_handlers:
+      - reload systemd
+      - restart nyxmon

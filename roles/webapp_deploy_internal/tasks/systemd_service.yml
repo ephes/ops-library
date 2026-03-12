@@ -1,0 +1,24 @@
+---
+- name: systemd_service | Resolve caller role path
+  ansible.builtin.set_fact:
+    webapp_deploy_internal_effective_caller_role_path: >-
+      {{
+        webapp_deploy_internal_caller_role_path
+        | default((ansible_parent_role_paths | default([])) | first, true)
+      }}
+
+- name: systemd_service | Render application systemd unit
+  ansible.builtin.template:
+    src: "{{ webapp_deploy_internal_effective_caller_role_path }}/{{ webapp_deploy_internal_service_template_src }}"
+    dest: "{{ webapp_deploy_internal_service_unit_dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: "{{ webapp_deploy_internal_service_notify_handlers | default([]) }}"
+
+- name: systemd_service | Enable and start application service
+  ansible.builtin.systemd:
+    name: "{{ webapp_deploy_internal_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true

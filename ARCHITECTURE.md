@@ -43,6 +43,24 @@ Roles are the primary surface area. They fall into distinct categories:
 
 Each role follows standard Ansible structure (`defaults/`, `tasks/`, `templates/`, `handlers/`, optional `meta/`). Sensitive or environment-specific values are never hard-coded.
 
+### Internal Helper Surfaces
+
+Most consumer repos should depend only on the public service entrypoint roles
+such as `fastdeploy_deploy` or `wagtail_deploy`. When multiple public roles
+share a small, stable implementation detail, `ops-library` may add an internal
+helper role to hold that duplicated plumbing while keeping the public entrypoint
+unchanged.
+
+Current example:
+
+- `webapp_deploy_internal` centralizes the narrow single-unit systemd and
+  Traefik rendering steps shared by the Wave 1 and Wave 2 web application
+  deploy refactors.
+
+Internal helper roles are not the public compatibility contract. Keep them
+small, document them at the role level, and prefer preserving the existing
+public role names and behavior over expanding helper abstraction.
+
 ## Packaging Model
 - `galaxy.yml` defines the collection metadata (namespace `local`, name `ops_library`, dependencies on `community.general` and `ansible.posix`).
 - Consumer repos run `just install-local-library` to build (`ansible-galaxy collection build`) and install the tarball into `collections/ansible_collections/local/ops_library`.
@@ -52,6 +70,7 @@ Each role follows standard Ansible structure (`defaults/`, `tasks/`, `templates/
 - `justfile` offers tasks for building the collection, running role tests, and installing pre-commit hooks.
 - `tests/` plus the shell helpers (`test_runner.sh`, `test_service.sh`, etc.) provide smoke and integration coverage for roles and service flows.
 - `README_TESTING.md` and `TESTING.md` document expectations for contributors (pytest harness, Molecule-style checks, etc.).
+- {doc}`Service Lifecycle Guide <howto/service_lifecycle>` captures the checklist for adding or refactoring lifecycle roles and should stay aligned with these architecture notes.
 
 ## FastDeploy Service Registry Pattern
 

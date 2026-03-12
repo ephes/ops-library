@@ -1,0 +1,7 @@
+---
+- name: main | Reject direct role execution without tasks_from
+  ansible.builtin.fail:
+    msg: >-
+      local.ops_library.webapp_deploy_internal is an internal helper role.
+      Include it with tasks_from (for example: systemd_service or
+      traefik_config).

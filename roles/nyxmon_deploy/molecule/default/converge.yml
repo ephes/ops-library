@@ -15,6 +15,33 @@
         state: present
         update_cache: true
 
+    - name: Install dummy Traefik unit for Molecule
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/traefik.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Dummy Traefik for Molecule
+
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          ExecStart=/bin/true
+          ExecReload=/bin/true
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd after dummy Traefik unit
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Start dummy Traefik service
+      ansible.builtin.systemd:
+        name: traefik
+        enabled: true
+        state: started
+
     - name: Remove existing site path for clean git clone
       ansible.builtin.file:
         path: "{{ nyxmon_site_path }}"
@@ -40,7 +67,7 @@
     nyxmon_telegram_bot_token: "molecule-telegram-token"
     nyxmon_telegram_chat_id: "123456"
     nyxmon_basic_auth_enabled: false
-    nyxmon_traefik_enabled: false
+    nyxmon_traefik_enabled: true
     nyxmon_monitoring_enabled: false
 
   roles:

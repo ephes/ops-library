@@ -4,8 +4,8 @@ This guide explains how to add a brand-new service to the ops-library/ops-contro
 
 ```{admonition} Document meta
 :class: tip
-**Last updated:** 2026-02-23  
-**Version:** 1.2 (bump this when the checklist materially changes)  
+**Last updated:** 2026-03-12  
+**Version:** 1.3 (bump this when the checklist materially changes)  
 **Feedback:** open a GitHub issue in `ops-library` or mention it in the ops-control stand-up notes so we can track improvements.
 ```
 
@@ -107,6 +107,10 @@ For each advertised capability add a role under `roles/<service>_<action>/`. Re-
 
 - `*_register` roles wire FastDeploy runners for ongoing maintenance.
 - `*_shared` roles encapsulate tasks (e.g., path calculations, templates) that other lifecycle roles import via `include_role`.
+- Narrow internal helper roles are acceptable when multiple public roles share
+  the same implementation detail but the public entrypoints must stay stable.
+  Document the helper at the role level and keep the abstraction intentionally
+  small.
 
 #### Role dependencies and shared infrastructure
 

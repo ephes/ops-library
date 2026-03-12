@@ -226,6 +226,14 @@ sudo -u nyxmon /home/nyxmon/site/.venv/bin/python \
   /home/nyxmon/site/src/django/manage.py <command>
 ```
 
+## Contributor Notes
+
+Wave 1 of the deploy refactor keeps the public role entrypoint unchanged while
+moving the duplicated systemd and Traefik plumbing into the internal helper role
+`local.ops_library.webapp_deploy_internal`. Nyxmon still owns its
+role-specific validation, source deployment, Django setup, handlers, and
+monitoring tasks.
+
 ## License
 
 See repository license.

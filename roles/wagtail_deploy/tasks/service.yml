@@ -1,20 +1,14 @@
 ---
 # Setup systemd service for Wagtail
 
-- name: service | Create systemd service file
-  ansible.builtin.template:
-    src: wagtail.service.j2
-    dest: "{{ wagtail_systemd_unit_path }}"
-    owner: root
-    group: root
-    mode: "0644"
-  notify:
-    - reload systemd
-    - restart wagtail
-
-- name: service | Enable and start Wagtail service
-  ansible.builtin.systemd:
-    name: "{{ wagtail_systemd_unit_name }}"
-    enabled: true
-    state: started
-    daemon_reload: true
+- name: service | Render and enable Wagtail systemd unit
+  ansible.builtin.include_role:
+    name: local.ops_library.webapp_deploy_internal
+    tasks_from: systemd_service
+  vars:
+    webapp_deploy_internal_service_template_src: "templates/wagtail.service.j2"
+    webapp_deploy_internal_service_unit_dest: "{{ wagtail_systemd_unit_path }}"
+    webapp_deploy_internal_service_name: "{{ wagtail_systemd_unit_name }}"
+    webapp_deploy_internal_service_notify_handlers:
+      - reload systemd
+      - restart wagtail

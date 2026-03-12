@@ -1,47 +1,22 @@
 ---
 # Setup Traefik routing for FastDeploy
 
-- name: Ensure Traefik dynamic directory exists
-  file:
-    path: /etc/traefik/dynamic
-    state: directory
-    owner: root
-    group: root
-    mode: '0755'
-
-- name: Install apache2-utils for htpasswd
-  package:
-    name: apache2-utils
-    state: present
-  when:
-    - ansible_facts['os_family'] == "Debian"
-    - fastdeploy_basic_auth_enabled
-
-- name: Generate basic auth password hash
-  shell: |
-    echo '{{ fastdeploy_basic_auth_password }}' | htpasswd -nBi {{ fastdeploy_basic_auth_user }} | cut -d: -f2
-  register: password_hash
-  changed_when: false
-  no_log: true
-  when: fastdeploy_basic_auth_enabled
-
-- name: Set password hash fact
-  set_fact:
-    fastdeploy_basic_auth_password_hash: "{{ password_hash.stdout }}"
-  no_log: true
-  when: fastdeploy_basic_auth_enabled
-
-- name: Deploy Traefik configuration
-  template:
-    src: traefik.yml.j2
-    dest: "/etc/traefik/dynamic/{{ fastdeploy_service_name }}.yml"
-    owner: root
-    group: root
-    mode: '0644'
-  notify: restart traefik
-
-- name: Ensure Traefik picks up the service
-  systemd:
-    name: traefik
-    state: restarted
-  changed_when: false  # Always restart to ensure service is picked up
+- name: traefik | Render FastDeploy Traefik config
+  ansible.builtin.include_role:
+    name: local.ops_library.webapp_deploy_internal
+    tasks_from: traefik_config
+  vars:
+    webapp_deploy_internal_traefik_template_src: "templates/traefik.yml.j2"
+    webapp_deploy_internal_traefik_dest: "/etc/traefik/dynamic/{{ fastdeploy_service_name }}.yml"
+    webapp_deploy_internal_traefik_basic_auth_enabled: "{{ fastdeploy_basic_auth_enabled }}"
+    webapp_deploy_internal_traefik_basic_auth_user: "{{ fastdeploy_basic_auth_user }}"
+    webapp_deploy_internal_traefik_basic_auth_password: "{{ fastdeploy_basic_auth_password }}"
+    webapp_deploy_internal_traefik_password_hash_var: fastdeploy_basic_auth_password_hash
+    webapp_deploy_internal_traefik_auth_packages:
+      - apache2-utils
+    webapp_deploy_internal_traefik_auth_package_os_families:
+      - Debian
+    webapp_deploy_internal_traefik_notify_handlers:
+      - restart traefik
+    webapp_deploy_internal_traefik_service_name: traefik
+    webapp_deploy_internal_traefik_force_restart: true

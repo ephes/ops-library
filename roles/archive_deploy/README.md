@@ -16,6 +16,14 @@ Backup and restore are intentionally handled through Echoport orchestration, not
 `archive_restore` roles. The primary backup target is the SQLite database at
 `{{ archive_db_path }}` via the existing `echoport-backup` FastDeploy service.
 
+## Contributor Notes
+
+Wave 2 of the deploy refactor keeps the public role entrypoint unchanged while
+moving the duplicated single-unit systemd and Traefik rendering steps into the
+internal helper role `local.ops_library.webapp_deploy_internal`. Archive still
+owns its validation, source deployment, Django setup, templates, handlers, and
+health verification flow.
+
 ## Variables
 
 Required:

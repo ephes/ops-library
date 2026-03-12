@@ -1,18 +1,12 @@
 ---
-- name: service | Render archive systemd service
-  ansible.builtin.template:
-    src: archive.service.j2
-    dest: /etc/systemd/system/archive.service
-    owner: root
-    group: root
-    mode: "0644"
-  notify:
-    - reload systemd
-    - restart archive
-
-- name: service | Enable and start archive service
-  ansible.builtin.systemd:
-    name: archive
-    enabled: true
-    state: started
-    daemon_reload: true
+- name: service | Render and enable archive systemd unit
+  ansible.builtin.include_role:
+    name: local.ops_library.webapp_deploy_internal
+    tasks_from: systemd_service
+  vars:
+    webapp_deploy_internal_service_template_src: "templates/archive.service.j2"
+    webapp_deploy_internal_service_unit_dest: /etc/systemd/system/archive.service
+    webapp_deploy_internal_service_name: archive
+    webapp_deploy_internal_service_notify_handlers:
+      - reload systemd
+      - restart archive
