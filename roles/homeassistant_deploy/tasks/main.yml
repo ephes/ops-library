@@ -48,3 +48,14 @@
 - name: "Provision OTBR integration"
   ansible.builtin.import_tasks: otbr_integration.yml
   when: homeassistant_manage_otbr_integration
+
+- name: "Provision Wyoming integration"
+  ansible.builtin.import_tasks: wyoming_integration.yml
+  when: homeassistant_manage_wyoming_integration
+
+- name: "Select Assist pipeline voice engines"
+  ansible.builtin.import_tasks: assist_pipeline_stt.yml
+  when:
+    - >-
+        homeassistant_manage_assist_pipeline_stt_engine
+        or homeassistant_manage_assist_pipeline_tts_engine

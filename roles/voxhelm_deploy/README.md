@@ -15,8 +15,9 @@ Current default runtime:
 
 - one `uvicorn` HTTP API process
 - one Django Tasks `db_worker` process
-- one Wyoming STT sidecar process on port `10300`
+- one Wyoming STT/TTS sidecar process on port `10300`
 - `whisper.cpp` as the default STT backend on `studio`, with `mlx-whisper` as fallback
+- `piper` as the default TTS backend on `studio`
 - bearer-token authentication via environment variables
 - filesystem artifact storage by default, with S3/MinIO-compatible env vars available
 - no Traefik dependency; the service binds directly on the configured port
@@ -43,11 +44,23 @@ voxhelm_app_port: 8787
 voxhelm_bind_host: "0.0.0.0"
 voxhelm_stt_backend: "whispercpp"
 voxhelm_stt_fallback_backend: "mlx"
+voxhelm_tts_backend: "piper"
+voxhelm_tts_max_input_chars: 5000
 voxhelm_mlx_model: "mlx-community/whisper-large-v3-mlx"
 voxhelm_whispercpp_model: "ggml-large-v3.bin"
 voxhelm_whispercpp_bin: "/opt/homebrew/bin/whisper-cli"
 voxhelm_whispercpp_processors: 4
 voxhelm_model_cache_dir: "/opt/apps/voxhelm/site/var/models"
+voxhelm_piper_voice_dir: "/opt/apps/voxhelm/site/var/piper"
+voxhelm_piper_voices:
+  - "en_US-lessac-medium"
+  - "de_DE-thorsten-high"
+voxhelm_piper_default_voice: "en_US-lessac-medium"
+voxhelm_piper_language_voices:
+  en: "en_US-lessac-medium"
+  en_US: "en_US-lessac-medium"
+  de: "de_DE-thorsten-high"
+  de_DE: "de_DE-thorsten-high"
 voxhelm_wyoming_stt_enabled: true
 voxhelm_wyoming_stt_host: "0.0.0.0"
 voxhelm_wyoming_stt_port: 10300
@@ -86,9 +99,14 @@ For the full list, see `defaults/main.yml`.
 
 ## Wyoming STT Notes
 
-- The Wyoming listener is STT-only in this slice. TTS/Piper is not deployed here.
+- The Wyoming listener on `10300` now exposes both STT and TTS backed by Voxhelm.
+- The launchd label and helper script retain the legacy `-stt` suffix for continuity, but the runtime
+  serves both speech directions.
 - `voxhelm_wyoming_stt_backend` and `voxhelm_wyoming_stt_model` are optional. If
   unset, the sidecar reuses the service-wide STT defaults.
+- Piper voice files are downloaded during deploy into `voxhelm_piper_voice_dir`.
+- `voxhelm_piper_language_voices` maps requested language codes such as `en` / `de`
+  to installed Piper voice IDs for both Wyoming TTS and HTTP or batch synthesis.
 - There is no cross-process lane scheduler yet. The Wyoming sidecar has its own
   process and its own in-process serialization, but it can still contend with
   the HTTP API and batch worker for CPU, RAM, and model cache use on `studio`.

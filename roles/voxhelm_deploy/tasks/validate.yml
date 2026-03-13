@@ -15,6 +15,9 @@
       - "'CHANGEME' not in voxhelm_bearer_tokens_env"
       - voxhelm_app_port | int > 0
       - voxhelm_uv_bin | trim | length > 0
+      - voxhelm_tts_backend | trim | length > 0
+      - voxhelm_piper_voices | length > 0
+      - voxhelm_piper_default_voice | trim | length > 0
     fail_msg: >-
       Voxhelm deployment is missing required configuration. Check source path,
-      Django secret key, bearer token config, port, and uv binary path.
+      Django secret key, bearer token config, port, uv binary path, and Piper voice config.

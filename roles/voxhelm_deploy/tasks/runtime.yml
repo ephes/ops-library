@@ -150,3 +150,47 @@
     or 'Removed' in ((voxhelm_uv_sync.stdout | default('')) ~ (voxhelm_uv_sync.stderr | default('')))
     or 'Uninstalled' in ((voxhelm_uv_sync.stdout | default('')) ~ (voxhelm_uv_sync.stderr | default('')))
     or 'Built' in ((voxhelm_uv_sync.stdout | default('')) ~ (voxhelm_uv_sync.stderr | default('')))
+
+- name: runtime | Check Piper voice models
+  ansible.builtin.stat:
+    path: "{{ voxhelm_piper_voice_dir }}/{{ item }}.onnx"
+  loop: "{{ voxhelm_piper_voices }}"
+  register: voxhelm_piper_model_stats
+
+- name: runtime | Check Piper voice configs
+  ansible.builtin.stat:
+    path: "{{ voxhelm_piper_voice_dir }}/{{ item }}.onnx.json"
+  loop: "{{ voxhelm_piper_voices }}"
+  register: voxhelm_piper_config_stats
+
+- name: runtime | Build missing Piper voice list
+  ansible.builtin.set_fact:
+    voxhelm_piper_missing_voices: >-
+      {{
+        (voxhelm_piper_missing_voices | default([]))
+        + [voxhelm_piper_voices[item]]
+      }}
+  loop: "{{ range(0, voxhelm_piper_voices | length) | list }}"
+  when:
+    - not (voxhelm_piper_model_stats.results[item].stat.exists | default(false))
+      or not (voxhelm_piper_config_stats.results[item].stat.exists | default(false))
+
+- name: runtime | Announce Piper voice downloads
+  ansible.builtin.debug:
+    msg: >-
+      Downloading Piper voice {{ item }} into {{ voxhelm_piper_voice_dir }}.
+      This can take several minutes on a fresh host.
+  loop: "{{ voxhelm_piper_missing_voices | default([]) }}"
+
+- name: runtime | Download Piper voices
+  ansible.builtin.command:
+    argv:
+      - "{{ voxhelm_app_dir }}/.venv/bin/python"
+      - -m
+      - piper.download_voices
+      - --download-dir
+      - "{{ voxhelm_piper_voice_dir }}"
+      - "{{ item }}"
+  loop: "{{ voxhelm_piper_missing_voices | default([]) }}"
+  register: voxhelm_piper_download
+  changed_when: true

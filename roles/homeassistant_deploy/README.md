@@ -10,6 +10,7 @@ Ansible role that installs and configures a Home Assistant Core instance on bare
 - Optional Matter server install + systemd unit for the Home Assistant Matter integration (`ws://localhost:5580/ws`).
 - Optional Matter integration provisioning via the Home Assistant config entry API.
 - Optional OpenThread Border Router (OTBR) integration provisioning via the Home Assistant config entry API.
+- Optional Wyoming integration provisioning via the Home Assistant config entry API.
 - Optional management of `configuration.yaml`, `secrets.yaml`, and include files with overwrite guards.
 - Supports UniFi presence integration credentials sourced from file, generated fallback, or provided variables.
 
@@ -48,6 +49,17 @@ All tunables live in `defaults/main.yml`; the most important ones are listed bel
 | `homeassistant_matter_integration_url` | `ws://localhost:5580/ws` | WebSocket URL used for the Matter integration |
 | `homeassistant_manage_otbr_integration` | `false` | Provision the OTBR config entry via the Home Assistant API |
 | `homeassistant_otbr_integration_url` | `http://127.0.0.1:8081` | REST URL used for the OpenThread Border Router integration |
+| `homeassistant_manage_wyoming_integration` | `false` | Provision the Wyoming config entry via the Home Assistant API |
+| `homeassistant_wyoming_host` | `""` | Hostname or IP for the Wyoming server Home Assistant should add |
+| `homeassistant_wyoming_port` | `10300` | TCP port for the Wyoming server |
+| `homeassistant_manage_assist_pipeline_stt_engine` | `false` | Update the preferred Assist pipeline (or `homeassistant_assist_pipeline_id`) to use the configured STT engine |
+| `homeassistant_manage_assist_pipeline_tts_engine` | `false` | Update the preferred Assist pipeline (or `homeassistant_assist_pipeline_id`) to use the configured TTS engine |
+| `homeassistant_assist_pipeline_id` | `""` | Assist pipeline ID to update; defaults to Home Assistant’s preferred pipeline |
+| `homeassistant_assist_pipeline_stt_engine_id` | `""` | Explicit STT entity ID (for example `stt.voxhelm`); leave empty to auto-discover the Wyoming STT entity |
+| `homeassistant_assist_pipeline_stt_language` | `""` | STT language to store alongside the engine; defaults to the pipeline’s existing STT language or pipeline language |
+| `homeassistant_assist_pipeline_tts_engine_id` | `""` | Explicit TTS entity ID (for example `tts.voxhelm`); leave empty to auto-discover the Wyoming TTS entity |
+| `homeassistant_assist_pipeline_tts_language` | `""` | TTS language to store alongside the engine; defaults to the pipeline’s existing TTS language or pipeline language |
+| `homeassistant_assist_pipeline_tts_voice` | `""` | Optional TTS voice ID (for example `en_US-lessac-medium`) stored on the Assist pipeline |
 | `homeassistant_api_url` | `http://localhost:10020` | Base URL for Home Assistant API calls |
 | `homeassistant_api_token` | `""` | Long-lived access token used for Home Assistant API calls |
 | `homeassistant_api_forwarded_for` | **(auto)** | X-Forwarded-For header value for Home Assistant API requests (defaults to host IPv4 or `127.0.0.1`) |
@@ -85,6 +97,8 @@ See the defaults file for recorder, logger, timezone, and UniFi integration sett
 - Matter/Thread traffic depends on IPv6 link-local multicast and correct Router Advertisement handling on the host network.
 - When `homeassistant_manage_matter_integration: true`, the role provisions the Matter config entry via the Home Assistant API using `homeassistant_matter_integration_url`. Otherwise, configure the integration via the UI.
 - When `homeassistant_manage_otbr_integration: true`, the role provisions the OTBR config entry via the Home Assistant API using `homeassistant_otbr_integration_url`. Otherwise, configure the integration via the UI.
+- When `homeassistant_manage_wyoming_integration: true`, the role provisions the Wyoming config entry via the Home Assistant API using `homeassistant_wyoming_host` and `homeassistant_wyoming_port`.
+- When `homeassistant_manage_assist_pipeline_stt_engine: true` and/or `homeassistant_manage_assist_pipeline_tts_engine: true`, the role updates the preferred Assist pipeline (or `homeassistant_assist_pipeline_id`) over the Home Assistant admin WebSocket API so the STT and TTS engines point at the Wyoming entities. By default it auto-discovers both entities from the matching Wyoming config entry.
 - OTBR provisioning assumes the OTBR REST API is already reachable; the role does not manage OTBR itself.
 - The API token must be a long-lived Home Assistant access token with admin permissions; validation fails if it is missing, too short, or a placeholder like `CHANGE_ME`.
 - The server does not require a Bluetooth adapter by default because HA uses the Companion app for commissioning.

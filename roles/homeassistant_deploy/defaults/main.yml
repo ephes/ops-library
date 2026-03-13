@@ -67,6 +67,21 @@ homeassistant_matter_integration_url: "ws://localhost:{{ homeassistant_matter_se
 homeassistant_manage_otbr_integration: false
 homeassistant_otbr_integration_url: "http://127.0.0.1:8081"
 
+# Wyoming integration (HA config entry)
+homeassistant_manage_wyoming_integration: false
+homeassistant_wyoming_host: ""
+homeassistant_wyoming_port: 10300
+
+# Assist pipeline STT selection
+homeassistant_manage_assist_pipeline_stt_engine: false
+homeassistant_manage_assist_pipeline_tts_engine: false
+homeassistant_assist_pipeline_id: ""
+homeassistant_assist_pipeline_stt_engine_id: ""
+homeassistant_assist_pipeline_stt_language: ""
+homeassistant_assist_pipeline_tts_engine_id: ""
+homeassistant_assist_pipeline_tts_language: ""
+homeassistant_assist_pipeline_tts_voice: ""
+
 # Configuration management toggles
 homeassistant_manage_configuration: false
 homeassistant_manage_secrets: false

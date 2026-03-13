@@ -62,3 +62,63 @@
       homeassistant_api_token must be a real Home Assistant long-lived access token
       (not CHANGE_ME) and at least 32 characters long.
   when: homeassistant_manage_otbr_integration | bool
+
+- name: "Validate Wyoming integration provisioning"
+  ansible.builtin.assert:
+    that:
+      - homeassistant_api_url | length > 0
+      - homeassistant_api_token | length > 0
+      - homeassistant_api_token | length >= 32
+      - (homeassistant_api_token | lower) not in ['change_me', 'changeme', 'replace_me', 'replace-me']
+      - homeassistant_wyoming_host | length > 0
+      - homeassistant_wyoming_port | int > 0
+    quiet: true
+    msg: >-
+      homeassistant_api_token must be a real Home Assistant long-lived access token
+      and homeassistant_wyoming_host/homeassistant_wyoming_port must point at the
+      target Wyoming server.
+  when: homeassistant_manage_wyoming_integration | bool
+
+- name: "Validate Assist pipeline STT selection"
+  ansible.builtin.assert:
+    that:
+      - homeassistant_api_url | length > 0
+      - homeassistant_api_token | length > 0
+      - homeassistant_api_token | length >= 32
+      - (homeassistant_api_token | lower) not in ['change_me', 'changeme', 'replace_me', 'replace-me']
+      - homeassistant_virtualenv_path | length > 0
+      - >-
+          (homeassistant_assist_pipeline_stt_engine_id | default('', true) | length > 0)
+          or (
+            homeassistant_wyoming_host | length > 0
+            and homeassistant_wyoming_port | int > 0
+          )
+    quiet: true
+    msg: >-
+      Assist pipeline STT selection requires a real Home Assistant long-lived access token,
+      a valid homeassistant_virtualenv_path, and either an explicit
+      homeassistant_assist_pipeline_stt_engine_id or a Wyoming host/port that can be
+      auto-discovered.
+  when: homeassistant_manage_assist_pipeline_stt_engine | bool
+
+- name: "Validate Assist pipeline TTS selection"
+  ansible.builtin.assert:
+    that:
+      - homeassistant_api_url | length > 0
+      - homeassistant_api_token | length > 0
+      - homeassistant_api_token | length >= 32
+      - (homeassistant_api_token | lower) not in ['change_me', 'changeme', 'replace_me', 'replace-me']
+      - homeassistant_virtualenv_path | length > 0
+      - >-
+          (homeassistant_assist_pipeline_tts_engine_id | default('', true) | length > 0)
+          or (
+            homeassistant_wyoming_host | length > 0
+            and homeassistant_wyoming_port | int > 0
+          )
+    quiet: true
+    msg: >-
+      Assist pipeline TTS selection requires a real Home Assistant long-lived access token,
+      a valid homeassistant_virtualenv_path, and either an explicit
+      homeassistant_assist_pipeline_tts_engine_id or a Wyoming host/port that can be
+      auto-discovered.
+  when: homeassistant_manage_assist_pipeline_tts_engine | bool
