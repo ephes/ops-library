@@ -143,7 +143,9 @@ Wave 1 of the deploy refactor keeps the public role entrypoint unchanged while
 moving the duplicated systemd and Traefik plumbing into the internal helper role
 `local.ops_library.webapp_deploy_internal`. FastDeploy still owns its
 role-specific validation, environment setup, templates, handlers, and
-application initialization flow.
+application initialization flow. The remaining `user.yml`, `source_*`, and
+`python.yml` steps are intentionally still local to this role because the pilot
+comparison with `nyxmon_deploy` did not show a narrower stable primitive yet.
 
 ## Example Playbook
 

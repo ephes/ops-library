@@ -4,8 +4,21 @@ Internal helper role for the Wave 1 and Wave 2 deploy refactor waves.
 
 This role is not a public deployment entrypoint. It exists to hold the shared
 deploy helpers extracted from the `fastdeploy_deploy`, `nyxmon_deploy`,
-`archive_deploy`, and `wagtail_deploy` roles while keeping those public roles
-readable.
+`archive_deploy`, `wagtail_deploy`, and `graphyard_ingress_deploy` roles while
+keeping those public roles readable.
+
+For the Wave 1 pilot roles, the safe extraction boundary currently stops at the
+systemd unit and Traefik config steps. The remaining pilot-role task files
+still diverge materially in user creation, source deployment, Python setup, and
+application initialization, so they stay in the public roles until later waves
+prove a narrower shared primitive. `graphyard_deploy` remains a Wave 2 concern
+because it has health checks but no `traefik.yml`.
+
+Wave 2 keeps that same boundary. `archive_deploy` and `wagtail_deploy` fit the
+existing single-unit systemd and Traefik helpers, while `graphyard_deploy`
+still stays outside the systemd helper because it manages two distinct units.
+Its separate ingress role can still use `traefik_config.yml`, which keeps the
+Traefik abstraction narrow without inventing a multi-unit systemd helper.
 
 Current helper task entrypoints:
 

@@ -33,48 +33,21 @@
           Ensure graphyard/grafana hosts, backend URLs, and (when enabled) basic auth password are set.
           If graphyard_ingress_django_admin_url is set, use a relative path ending with '/' (example: admin/).
 
-    - name: Ensure Traefik dynamic config directory exists
-      ansible.builtin.file:
-        path: "{{ graphyard_ingress_traefik_config_path | dirname }}"
-        state: directory
-        owner: root
-        group: root
-        mode: "0755"
-
-    - name: Install apache2-utils for htpasswd
-      ansible.builtin.package:
-        name: apache2-utils
-        state: present
-      when:
-        - ansible_facts["os_family"] == "Debian"
-        - graphyard_ingress_basic_auth_enabled | bool
-
-    - name: Generate basic auth password hash
-      ansible.builtin.command:
-        argv:
-          - htpasswd
-          - -nBi
-          - "{{ graphyard_ingress_basic_auth_user }}"
-      args:
-        stdin: "{{ graphyard_ingress_basic_auth_password }}"
-      register: _graphyard_ingress_password_hash
-      changed_when: false
-      no_log: true
-      when: graphyard_ingress_basic_auth_enabled | bool
-
-    - name: Set basic auth password hash fact
-      ansible.builtin.set_fact:
-        graphyard_ingress_basic_auth_password_hash: "{{ _graphyard_ingress_password_hash.stdout.split(':', 1)[1] | trim }}"
-      no_log: true
-      when: graphyard_ingress_basic_auth_enabled | bool
-
     - name: Render Traefik dynamic config for Graphyard stack
-      ansible.builtin.template:
-        src: traefik-graphyard.yml.j2
-        dest: "{{ graphyard_ingress_traefik_config_path }}"
-        owner: root
-        group: root
-        mode: "0644"
+      ansible.builtin.include_role:
+        name: local.ops_library.webapp_deploy_internal
+        tasks_from: traefik_config
+      vars:
+        webapp_deploy_internal_traefik_template_src: "templates/traefik-graphyard.yml.j2"
+        webapp_deploy_internal_traefik_dest: "{{ graphyard_ingress_traefik_config_path }}"
+        webapp_deploy_internal_traefik_basic_auth_enabled: "{{ graphyard_ingress_basic_auth_enabled }}"
+        webapp_deploy_internal_traefik_basic_auth_user: "{{ graphyard_ingress_basic_auth_user }}"
+        webapp_deploy_internal_traefik_basic_auth_password: "{{ graphyard_ingress_basic_auth_password }}"
+        webapp_deploy_internal_traefik_password_hash_var: graphyard_ingress_basic_auth_password_hash
+        webapp_deploy_internal_traefik_auth_packages:
+          - apache2-utils
+        webapp_deploy_internal_traefik_auth_package_os_families:
+          - Debian
       # Traefik file provider watches this directory and hot-reloads dynamic config.
       # Avoid restarting Traefik to prevent brief edge downtime for unrelated services.
 
