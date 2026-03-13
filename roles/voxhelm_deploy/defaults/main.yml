@@ -65,6 +65,9 @@ voxhelm_wyoming_stt_languages:
 voxhelm_wyoming_stt_prompt: ""
 voxhelm_wyoming_stt_normalize_transcript: true
 voxhelm_wyoming_samples_per_chunk: 1024
+voxhelm_lane_scheduler_enabled: true
+voxhelm_lane_scheduler_dir: "{{ voxhelm_app_dir }}/var/lane-scheduler"
+voxhelm_lane_scheduler_stale_seconds: 1800
 voxhelm_artifact_backend: "filesystem"
 voxhelm_artifact_root: "{{ voxhelm_app_dir }}/var/artifacts"
 voxhelm_artifact_bucket: "voxhelm"

@@ -12,6 +12,7 @@
     - { path: "{{ voxhelm_log_dir }}", mode: "0755" }
     - { path: "{{ voxhelm_model_cache_dir }}", mode: "0755" }
     - { path: "{{ voxhelm_piper_voice_dir }}", mode: "0755" }
+    - { path: "{{ voxhelm_lane_scheduler_dir }}", mode: "0755" }
 
 - name: directories | Ensure launchd log files exist
   ansible.builtin.file:

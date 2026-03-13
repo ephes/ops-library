@@ -19,6 +19,7 @@ Current default runtime:
 - `whisper.cpp` as the default STT backend on `studio`, with `mlx-whisper` as fallback
 - `mlx-whisper` as the default Wyoming STT backend for short interactive speech
 - `piper` as the default TTS backend on `studio`
+- host-wide lane scheduling enabled by default for local inference on `studio`
 - bearer-token authentication via environment variables
 - filesystem artifact storage by default, with S3/MinIO-compatible env vars available
 - no Traefik dependency; the service binds directly on the configured port
@@ -74,6 +75,9 @@ voxhelm_wyoming_stt_languages:
   - "en"
 voxhelm_wyoming_stt_prompt: ""
 voxhelm_wyoming_stt_normalize_transcript: true
+voxhelm_lane_scheduler_enabled: true
+voxhelm_lane_scheduler_dir: "/opt/apps/voxhelm/site/var/lane-scheduler"
+voxhelm_lane_scheduler_stale_seconds: 1800
 voxhelm_allowed_hosts:
   - "studio.tailde2ec.ts.net"
   - "studio"
@@ -117,6 +121,14 @@ For the full list, see `defaults/main.yml`.
   returned to Home Assistant. This is enabled by default because the built-in
   German Assist parser is materially less tolerant of those prefixes than the
   English one.
+- `voxhelm_lane_scheduler_enabled` enables the first C13 slice: one host-wide
+  admission gate shared by the HTTP API, Django Tasks worker, and Wyoming
+  sidecar.
+- `voxhelm_lane_scheduler_dir` stores the shared scheduler state on local disk.
+- `voxhelm_lane_scheduler_stale_seconds` defaults to `1800` so a crashed holder
+  can be reclaimed without risking false expiry during long-running local
+  inference. Lower this only if the runtime also refreshes the lease while work
+  is active.
 - `voxhelm_stt_debug_logging` enables one structured log line per transcription
   containing the input audio shape, requested and resolved backend/model/language,
   and transcript preview. When normalization changes the transcript, the debug
@@ -125,9 +137,10 @@ For the full list, see `defaults/main.yml`.
 - Piper voice files are downloaded during deploy into `voxhelm_piper_voice_dir`.
 - `voxhelm_piper_language_voices` maps requested language codes such as `en` / `de`
   to installed Piper voice IDs for both Wyoming TTS and HTTP or batch synthesis.
-- There is no cross-process lane scheduler yet. The Wyoming sidecar has its own
-  process and its own in-process serialization, but it can still contend with
-  the HTTP API and batch worker for CPU, RAM, and model cache use on `studio`.
+- The first C13 slice is cooperative, not preemptive. A running HTTP or batch
+  inference can still delay a later Wyoming turn, but new non-interactive work
+  will not be admitted ahead of a waiting Wyoming request while the scheduler is
+  enabled.
 - The role verifies the sidecar by checking the launchd unit state and waiting
   for the configured TCP port to listen locally on the target host.
 
