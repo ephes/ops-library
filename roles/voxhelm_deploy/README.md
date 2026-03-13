@@ -17,6 +17,7 @@ Current default runtime:
 - one Django Tasks `db_worker` process
 - one Wyoming STT/TTS sidecar process on port `10300`
 - `whisper.cpp` as the default STT backend on `studio`, with `mlx-whisper` as fallback
+- `mlx-whisper` as the default Wyoming STT backend for short interactive speech
 - `piper` as the default TTS backend on `studio`
 - bearer-token authentication via environment variables
 - filesystem artifact storage by default, with S3/MinIO-compatible env vars available
@@ -50,6 +51,7 @@ voxhelm_mlx_model: "mlx-community/whisper-large-v3-mlx"
 voxhelm_whispercpp_model: "ggml-large-v3.bin"
 voxhelm_whispercpp_bin: "/opt/homebrew/bin/whisper-cli"
 voxhelm_whispercpp_processors: 4
+voxhelm_stt_debug_logging: false
 voxhelm_model_cache_dir: "/opt/apps/voxhelm/site/var/models"
 voxhelm_piper_voice_dir: "/opt/apps/voxhelm/site/var/piper"
 voxhelm_piper_voices:
@@ -64,12 +66,14 @@ voxhelm_piper_language_voices:
 voxhelm_wyoming_stt_enabled: true
 voxhelm_wyoming_stt_host: "0.0.0.0"
 voxhelm_wyoming_stt_port: 10300
-voxhelm_wyoming_stt_backend: ""
+voxhelm_wyoming_stt_backend: "mlx"
 voxhelm_wyoming_stt_model: ""
 voxhelm_wyoming_stt_language: ""
 voxhelm_wyoming_stt_languages:
   - "de"
   - "en"
+voxhelm_wyoming_stt_prompt: ""
+voxhelm_wyoming_stt_normalize_transcript: true
 voxhelm_allowed_hosts:
   - "studio.tailde2ec.ts.net"
   - "studio"
@@ -102,8 +106,22 @@ For the full list, see `defaults/main.yml`.
 - The Wyoming listener on `10300` now exposes both STT and TTS backed by Voxhelm.
 - The launchd label and helper script retain the legacy `-stt` suffix for continuity, but the runtime
   serves both speech directions.
-- `voxhelm_wyoming_stt_backend` and `voxhelm_wyoming_stt_model` are optional. If
-  unset, the sidecar reuses the service-wide STT defaults.
+- `voxhelm_wyoming_stt_backend` defaults to `mlx` because it performed materially
+  better than the current `whisper.cpp` setup on short Home Assistant commands
+  with trailing silence.
+- `voxhelm_wyoming_stt_model`, `voxhelm_wyoming_stt_language`, and
+  `voxhelm_wyoming_stt_prompt` can be used to pin the interactive listener to a
+  specific model, language, or prompt without changing the main HTTP/batch lane.
+- `voxhelm_wyoming_stt_normalize_transcript` trims a small set of leading
+  filler words such as `okay` / `und` from Wyoming transcripts before they are
+  returned to Home Assistant. This is enabled by default because the built-in
+  German Assist parser is materially less tolerant of those prefixes than the
+  English one.
+- `voxhelm_stt_debug_logging` enables one structured log line per transcription
+  containing the input audio shape, requested and resolved backend/model/language,
+  and transcript preview. When normalization changes the transcript, the debug
+  log also includes the raw transcript for comparison. Leave it off unless you
+  are actively tuning or debugging.
 - Piper voice files are downloaded during deploy into `voxhelm_piper_voice_dir`.
 - `voxhelm_piper_language_voices` maps requested language codes such as `en` / `de`
   to installed Piper voice IDs for both Wyoming TTS and HTTP or batch synthesis.

@@ -41,6 +41,10 @@
 - name: "Ensure Home Assistant service state"
   ansible.builtin.import_tasks: service.yml
 
+- name: "Manage Home Assistant area registry"
+  ansible.builtin.import_tasks: area_registry.yml
+  when: homeassistant_area_registry_updates | length > 0
+
 - name: "Provision Matter integration"
   ansible.builtin.import_tasks: matter_integration.yml
   when: homeassistant_manage_matter_integration
@@ -53,9 +57,14 @@
   ansible.builtin.import_tasks: wyoming_integration.yml
   when: homeassistant_manage_wyoming_integration
 
+- name: "Manage Assist pipelines"
+  ansible.builtin.import_tasks: assist_pipelines.yml
+  when: homeassistant_assist_pipelines | length > 0
+
 - name: "Select Assist pipeline voice engines"
   ansible.builtin.import_tasks: assist_pipeline_stt.yml
   when:
+    - homeassistant_assist_pipelines | length == 0
     - >-
         homeassistant_manage_assist_pipeline_stt_engine
         or homeassistant_manage_assist_pipeline_tts_engine

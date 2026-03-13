@@ -40,6 +40,7 @@ voxhelm_batch_max_download_bytes: 536870912
 voxhelm_ffmpeg_bin: "/opt/homebrew/bin/ffmpeg"
 voxhelm_stt_backend: "whispercpp"
 voxhelm_stt_fallback_backend: "mlx"
+voxhelm_stt_debug_logging: false
 voxhelm_tts_backend: "piper"
 voxhelm_tts_max_input_chars: 5000
 voxhelm_model_cache_dir: "{{ voxhelm_app_dir }}/var/models"
@@ -55,12 +56,14 @@ voxhelm_piper_language_voices:
   de_DE: "de_DE-thorsten-high"
 voxhelm_wyoming_stt_host: "0.0.0.0"
 voxhelm_wyoming_stt_port: 10300
-voxhelm_wyoming_stt_backend: ""
+voxhelm_wyoming_stt_backend: "mlx"
 voxhelm_wyoming_stt_model: ""
 voxhelm_wyoming_stt_language: ""
 voxhelm_wyoming_stt_languages:
   - "de"
   - "en"
+voxhelm_wyoming_stt_prompt: ""
+voxhelm_wyoming_stt_normalize_transcript: true
 voxhelm_wyoming_samples_per_chunk: 1024
 voxhelm_artifact_backend: "filesystem"
 voxhelm_artifact_root: "{{ voxhelm_app_dir }}/var/artifacts"

@@ -81,6 +81,10 @@ homeassistant_assist_pipeline_stt_language: ""
 homeassistant_assist_pipeline_tts_engine_id: ""
 homeassistant_assist_pipeline_tts_language: ""
 homeassistant_assist_pipeline_tts_voice: ""
+homeassistant_assist_pipelines: []
+
+# Area registry management
+homeassistant_area_registry_updates: []
 
 # Configuration management toggles
 homeassistant_manage_configuration: false

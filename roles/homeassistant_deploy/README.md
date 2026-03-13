@@ -11,6 +11,7 @@ Ansible role that installs and configures a Home Assistant Core instance on bare
 - Optional Matter integration provisioning via the Home Assistant config entry API.
 - Optional OpenThread Border Router (OTBR) integration provisioning via the Home Assistant config entry API.
 - Optional Wyoming integration provisioning via the Home Assistant config entry API.
+- Optional area-registry updates via the Home Assistant admin WebSocket API.
 - Optional management of `configuration.yaml`, `secrets.yaml`, and include files with overwrite guards.
 - Supports UniFi presence integration credentials sourced from file, generated fallback, or provided variables.
 
@@ -60,6 +61,8 @@ All tunables live in `defaults/main.yml`; the most important ones are listed bel
 | `homeassistant_assist_pipeline_tts_engine_id` | `""` | Explicit TTS entity ID (for example `tts.voxhelm`); leave empty to auto-discover the Wyoming TTS entity |
 | `homeassistant_assist_pipeline_tts_language` | `""` | TTS language to store alongside the engine; defaults to the pipeline’s existing TTS language or pipeline language |
 | `homeassistant_assist_pipeline_tts_voice` | `""` | Optional TTS voice ID (for example `en_US-lessac-medium`) stored on the Assist pipeline |
+| `homeassistant_assist_pipelines` | `[]` | Declarative Assist pipelines managed by name or id, including preferred pipeline selection |
+| `homeassistant_area_registry_updates` | `[]` | Area alias and canonical sensor updates applied through Home Assistant’s area registry |
 | `homeassistant_api_url` | `http://localhost:10020` | Base URL for Home Assistant API calls |
 | `homeassistant_api_token` | `""` | Long-lived access token used for Home Assistant API calls |
 | `homeassistant_api_forwarded_for` | **(auto)** | X-Forwarded-For header value for Home Assistant API requests (defaults to host IPv4 or `127.0.0.1`) |
@@ -86,6 +89,25 @@ See the defaults file for recorder, logger, timezone, and UniFi integration sett
           - "192.168.178.0/24"
         homeassistant_unifi_password_source: variable
         homeassistant_unifi_password_variable: "{{ sops_homeassistant_unifi_password }}"
+        homeassistant_assist_pipelines:
+          - name: "Home Assistant"
+            language: "en"
+            stt_language: "en"
+            tts_language: "en"
+            tts_voice: "en_US-lessac-medium"
+          - name: "Home Assistant DE"
+            language: "de"
+            stt_language: "de"
+            tts_language: "de"
+            tts_voice: "de_DE-thorsten-high"
+            preferred: true
+        homeassistant_area_registry_updates:
+          - area_id: "living_room"
+            aliases: ["living room"]
+            temperature_entity_id: "sensor.wohnzimmer_sensor_temperature"
+          - area_id: "wintergarten"
+            aliases: ["winter garden"]
+            temperature_entity_id: "sensor.sensor_wintergarten_temperature"
 ```
 
 ## Notes
@@ -99,6 +121,8 @@ See the defaults file for recorder, logger, timezone, and UniFi integration sett
 - When `homeassistant_manage_otbr_integration: true`, the role provisions the OTBR config entry via the Home Assistant API using `homeassistant_otbr_integration_url`. Otherwise, configure the integration via the UI.
 - When `homeassistant_manage_wyoming_integration: true`, the role provisions the Wyoming config entry via the Home Assistant API using `homeassistant_wyoming_host` and `homeassistant_wyoming_port`.
 - When `homeassistant_manage_assist_pipeline_stt_engine: true` and/or `homeassistant_manage_assist_pipeline_tts_engine: true`, the role updates the preferred Assist pipeline (or `homeassistant_assist_pipeline_id`) over the Home Assistant admin WebSocket API so the STT and TTS engines point at the Wyoming entities. By default it auto-discovers both entities from the matching Wyoming config entry.
+- When `homeassistant_assist_pipelines` is non-empty, the role creates or updates those pipelines over the Home Assistant admin WebSocket API and can switch the preferred pipeline in the same run. This is the safer option when you want both English and German pipelines available at once.
+- When `homeassistant_area_registry_updates` is non-empty, the role updates the matching areas over the Home Assistant admin WebSocket API. This is useful for adding Assist-friendly area aliases such as `living room` for `Wohnzimmer`, and for pinning an area to the preferred temperature sensor when multiple temperature entities exist.
 - OTBR provisioning assumes the OTBR REST API is already reachable; the role does not manage OTBR itself.
 - The API token must be a long-lived Home Assistant access token with admin permissions; validation fails if it is missing, too short, or a placeholder like `CHANGE_ME`.
 - The server does not require a Bluetooth adapter by default because HA uses the Companion app for commissioning.
