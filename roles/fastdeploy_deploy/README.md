@@ -139,12 +139,12 @@ This role automatically depends on `local.ops_library.postgres_install` to insta
 
 ## Contributor Notes
 
-Wave 1 of the deploy refactor keeps the public role entrypoint unchanged while
-moving the duplicated systemd and Traefik plumbing into the internal helper role
-`local.ops_library.webapp_deploy_internal`. FastDeploy still owns its
+The deploy helper extraction keeps the public role entrypoint unchanged while
+moving the duplicated systemd and Traefik plumbing into the internal helper
+role `local.ops_library.webapp_deploy_internal`. FastDeploy still owns its
 role-specific validation, environment setup, templates, handlers, and
 application initialization flow. The remaining `user.yml`, `source_*`, and
-`python.yml` steps are intentionally still local to this role because the pilot
+`python.yml` steps are intentionally still local to this role because the
 comparison with `nyxmon_deploy` did not show a narrower stable primitive yet.
 
 ## Example Playbook

@@ -103,7 +103,7 @@ For a complete list of variables, see `roles/wagtail_deploy/defaults/main.yml`.
 
 ## Contributor Notes
 
-Wave 2 of the deploy refactor keeps the public role entrypoint unchanged while
+The deploy helper extraction keeps the public role entrypoint unchanged while
 moving the duplicated single-unit systemd and Traefik rendering steps into the
 internal helper role `local.ops_library.webapp_deploy_internal`. Wagtail still
 owns its validation, PostgreSQL provisioning, source deployment, Django setup,

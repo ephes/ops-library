@@ -8,10 +8,12 @@ Restore a FastDeploy instance from a snapshot produced by `fastdeploy_backup`. T
 for routine FastDeploy restores. This role remains callable for break-glass or
 manual recovery and compatibility, but it is not the default operator workflow.
 
-This role is one of the two Wave 3 restore pilots. It defines the current host-local restore scaffold together with `unifi_restore`; controller-fallback, controller-local, and exception restores remain outside that scaffold for now.
+This role is one of the two restore pilot roles. It defines the current
+host-local restore scaffold together with `unifi_restore`; controller-fallback,
+controller-local, and exception restores remain outside that scaffold for now.
 
-Wave 4 keeps this public role entrypoint unchanged while moving the shared
-pilot scaffold into the internal helper role
+The restore helper extraction keeps this public role entrypoint unchanged while
+moving the shared pilot scaffold into the internal helper role
 `local.ops_library.restore_pilot_internal`. FastDeploy still owns its
 service-specific safety backup wiring, PostgreSQL/filesystem restore steps,
 metadata-derived facts, verification, and rollback behavior.
@@ -80,7 +82,7 @@ Set `fastdeploy_restore_dry_run: true` to validate the archive (metadata + check
 
 ## Validation harness
 
-Wave 4 extends the focused Molecule scenario for this role:
+The focused Molecule scenario for this role covers:
 
 ```bash
 just molecule-test fastdeploy_restore

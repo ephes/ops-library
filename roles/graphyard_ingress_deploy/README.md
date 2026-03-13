@@ -71,7 +71,7 @@ graphyard_ingress_django_admin_url: ""      # optional; example "hidden_admin/" 
 
 ## Notes
 
-- Wave 2 of the deploy refactor keeps the public role entrypoint unchanged
+- The deploy helper extraction keeps the public role entrypoint unchanged
   while moving the duplicated Traefik config and basic-auth hashing plumbing
   into `local.ops_library.webapp_deploy_internal`. Graphyard-specific ingress
   validation and Graphyard env-file reconciliation stay in this role.

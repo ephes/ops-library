@@ -60,6 +60,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit tests for OpenClaw metrics collector canary behavior and schema invariants (`tests/unit/test_openclaw_metrics_collector.py`)
 
 ### Changed
+- Closed out the refactor documentation pass so top-level docs and role READMEs
+  describe the landed deploy/restore helper boundaries as complete work and
+  frame remaining items as normal follow-up maintenance instead of pending
+  refactor waves
 - `nyxmon_restore` now mirrors the Home Assistant structure (validate/prepare/restore/verify/cleanup), adds block/rescue rollback, conditional restores, handler flush, and health checks
 - `nyxmon_deploy` systemd service now launches Granian instead of Gunicorn to match the upstream project
 - `ollama_install` stops any Homebrew-managed Ollama service by default, stops conflicting user-level `ollama serve` processes, and ensures the launchd service is running

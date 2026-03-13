@@ -11,10 +11,13 @@ Restores a UniFi Network Application from a snapshot created by `unifi_backup`. 
 routine UniFi restores. This role remains callable for break-glass or manual
 recovery and compatibility, but it is not the default operator workflow.
 
-This role is one of the two Wave 3 restore pilots. It shares the current host-local restore scaffold with `fastdeploy_restore`; controller-fallback, controller-local, and exception restores remain intentionally outside that scaffold.
+This role is one of the two restore pilot roles. It shares the current
+host-local restore scaffold with `fastdeploy_restore`; controller-fallback,
+controller-local, and exception restores remain intentionally outside that
+scaffold.
 
-Wave 4 keeps this public role entrypoint unchanged while moving the shared
-pilot scaffold into the internal helper role
+The restore helper extraction keeps this public role entrypoint unchanged while
+moving the shared pilot scaffold into the internal helper role
 `local.ops_library.restore_pilot_internal`. UniFi still owns its
 service-specific safety backup wiring, MongoDB/filesystem restore logic,
 version-compatibility checks, verification, and rollback behavior.
@@ -90,7 +93,7 @@ or applying restore/verify phases.
 
 ## Validation harness
 
-Wave 4 extends the focused Molecule scenario for this role:
+The focused Molecule scenario for this role covers:
 
 ```bash
 just molecule-test unifi_restore

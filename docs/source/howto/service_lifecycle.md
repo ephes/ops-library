@@ -5,7 +5,7 @@ This guide explains how to add a brand-new service to the ops-library/ops-contro
 ```{admonition} Document meta
 :class: tip
 **Last updated:** 2026-03-13<br>
-**Version:** 1.4 (bump this when the checklist materially changes)<br>
+**Version:** 1.5 (bump this when the checklist materially changes)<br>
 **Feedback:** open a GitHub issue in `ops-library` or mention it in the ops-control stand-up notes so we can track improvements.
 ```
 
@@ -113,7 +113,7 @@ Offer both rsync (local dev) and git (production) deployment modes whenever the 
 
 ##### Restore pilot scaffold
 
-Use the Wave 3/Wave 4 restore pilot scaffold only when the role actually
+Use the current restore pilot scaffold only when the role actually
 matches the existing host-local pattern in this repo. Today that means
 `fastdeploy_restore` and `unifi_restore`, which both:
 
@@ -122,7 +122,7 @@ matches the existing host-local pattern in this repo. Today that means
   separate task files
 - keep rollback logic inside the role instead of depending on controller-local staging
 
-Wave 4 extracts the shared parts of that scaffold into the internal helper role
+The shared parts of that scaffold now live in the internal helper role
 `local.ops_library.restore_pilot_internal`. The helper covers host-local
 archive/snapshot validation plus the shared `block`/`rescue`/`always`
 orchestration only. Callers still own service-specific safety backup, restore,
@@ -181,7 +181,7 @@ does not pretend to be a shared-defaults surface.
   - **Restore:** validates archive, restores files, service healthy afterwards, supports `restore-check` when available.
   - **Remove:** confirmation guard works, data removal toggles respected, no lingering systemd units.
 - Restore pilot roles that are candidates for shared extraction must add role-level Molecule coverage before helper extraction starts.
-  Current Wave 3 pilot commands:
+  Current pilot validation commands:
   `just molecule-test fastdeploy_restore`
   `just molecule-test unifi_restore`
 - That restore harness should cover archive resolution, validation-only or dry-run behavior where the role truly supports it, rollback behavior, and post-restore health verification.

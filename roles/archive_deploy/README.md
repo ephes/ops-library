@@ -18,7 +18,7 @@ Backup and restore are intentionally handled through Echoport orchestration, not
 
 ## Contributor Notes
 
-Wave 2 of the deploy refactor keeps the public role entrypoint unchanged while
+The deploy helper extraction keeps the public role entrypoint unchanged while
 moving the duplicated single-unit systemd and Traefik rendering steps into the
 internal helper role `local.ops_library.webapp_deploy_internal`. Archive still
 owns its validation, source deployment, Django setup, templates, handlers, and

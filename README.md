@@ -25,7 +25,7 @@ system Python builds; set `uv_version` and the role-specific `*_python_version` 
 ## Role Taxonomy
 
 `ops-library` ships three different role surfaces. Keeping those categories separate is part of the
-current refactoring contract:
+current repository contract:
 
 | Surface | Naming pattern | Intended use |
 |----------|----------------|--------------|

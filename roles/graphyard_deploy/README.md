@@ -94,7 +94,7 @@ See `defaults/main.yml` for the full variable set.
 - Vector producer and Traefik ingress stay in separate roles:
   - `graphyard_vector_deploy`
   - `graphyard_ingress_deploy`
-- Wave 2 of the deploy refactor intentionally leaves `tasks/service.yml`
+- The current deploy helper boundary intentionally leaves `tasks/service.yml`
   inline. Graphyard renders and manages two distinct systemd units, and there
   is not yet a second caller that justifies a shared internal multi-unit helper.
 - Auth/bootstrap reconciliation remains in `graphyard_auth_bootstrap_deploy`.

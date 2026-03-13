@@ -87,8 +87,8 @@ public entrypoint unchanged.
 Current helper surfaces:
 
 - `webapp_deploy_internal` centralizes the narrow single-unit systemd and
-  Traefik rendering steps shared by the Wave 1 and Wave 2 web-application
-  deploy refactors.
+  Traefik rendering steps shared by the landed web-application deploy helper
+  extraction.
 - `restore_pilot_internal` centralizes the narrow restore pilot scaffold shared
   by `fastdeploy_restore` and `unifi_restore`: host-local archive/snapshot
   validation plus the `block`/`rescue`/`always` orchestration that still calls
@@ -179,7 +179,10 @@ The following restore roles remain outside that scaffold on purpose:
 - `minecraft_java_restore`: hybrid multi-file restore split (`resolve_archive`, `stop_service`, `restore_data`, `start_service`), but not the pilot scaffold pattern
 - `mail_restore`, `postfixadmin_restore`, `snappymail_restore`: mail-adjacent narrow restores with their own established flows
 
-Wave 3 documents these roles rather than refactoring them. Their differences are meaningful enough that treating them as pilot inputs now would make the first shared extraction less safe, not more representative.
+The current architecture documents these roles rather than folding them into
+the restore pilot helper. Their differences are meaningful enough that
+treating them as pilot inputs now would make the first shared extraction less
+safe, not more representative.
 
 ### Restore Validation Harness
 
@@ -188,7 +191,9 @@ The restore pilot boundary now has executable Molecule coverage at the role leve
 - `fastdeploy_restore`: archive resolution, validation-only dry run, post-restore health checks, and targeted rollback replay using a seeded safety snapshot
 - `unifi_restore`: archive resolution, post-restore health checks, and targeted rollback replay using a seeded safety snapshot
 
-The harness is intentionally role-local. It proves the pilot roles before Wave 4 starts, but it does not imply that delayed restore roles already fit the same scaffold.
+The harness is intentionally role-local. It proves the landed pilot boundary,
+but it does not imply that delayed restore roles already fit the same
+scaffold.
 
 ## FastDeploy Service Registry Pattern
 

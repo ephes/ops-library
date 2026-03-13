@@ -102,4 +102,4 @@ just molecule-test unifi_restore
 Notes:
 - Colima, Docker Desktop, or native Docker are supported via `just` detection helpers.
 - Dependency step warnings are silenced with empty `requirements.yml` / `collections.yml` in each scenario.
-- The Wave 3 restore pilot scenarios are intentionally narrow role-level harnesses for scaffold validation, not generic restore-family coverage.
+- The restore pilot scenarios are intentionally narrow role-level harnesses for scaffold validation, not generic restore-family coverage.

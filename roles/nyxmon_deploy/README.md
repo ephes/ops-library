@@ -228,14 +228,14 @@ sudo -u nyxmon /home/nyxmon/site/.venv/bin/python \
 
 ## Contributor Notes
 
-Wave 1 of the deploy refactor keeps the public role entrypoint unchanged while
-moving the duplicated systemd and Traefik plumbing into the internal helper role
-`local.ops_library.webapp_deploy_internal`. Nyxmon still owns its
+The deploy helper extraction keeps the public role entrypoint unchanged while
+moving the duplicated systemd and Traefik plumbing into the internal helper
+role `local.ops_library.webapp_deploy_internal`. Nyxmon still owns its
 role-specific validation, source deployment, Django setup, handlers, and
 monitoring tasks. The remaining `user.yml`, `source_*`, and `python.yml` steps
-stay in this public role because the pilot comparison with
-`fastdeploy_deploy` showed meaningful divergence in ownership, deployment
-transport, and runtime orchestration.
+stay in this public role because the comparison with `fastdeploy_deploy`
+showed meaningful divergence in ownership, deployment transport, and runtime
+orchestration.
 
 ## License
 

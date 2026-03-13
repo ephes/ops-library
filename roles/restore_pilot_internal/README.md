@@ -1,6 +1,6 @@
 # Restore Pilot Internal Role
 
-Internal helper role for the Wave 4 restore pilot extraction.
+Internal helper role for the landed restore pilot extraction.
 
 This role is not a public restore entrypoint. It exists to hold the narrow,
 repo-proven scaffold shared by `fastdeploy_restore` and `unifi_restore` while
