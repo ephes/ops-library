@@ -41,7 +41,6 @@
     owner: "{{ fd_deploy_user }}"
     group: "{{ fd_deploy_group }}"
     mode: "0700"
-    recurse: yes
 
 - name: Install SOPS age key
   copy:
@@ -68,6 +67,8 @@
     dest: "{{ fd_ops_control_remote_path }}"
     delete: yes
     rsync_opts:
+      - "--no-owner"
+      - "--no-group"
       - "--exclude=.git"
       - "--exclude=*.pyc"
       - "--exclude=__pycache__"

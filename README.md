@@ -192,21 +192,35 @@ consumer repos depend on.
 
 ### Testing
 ```bash
-# Run all tests
+# Run the default contributor validation path
 just test
 
-# Test specific role
+# Run the stricter gate when you want lint failures to stop the run
+just validate-strict
+
+# Test specific roles
 just test-role fastdeploy_deploy
 just test-role traefik_deploy
+
+# Run focused Molecule coverage for high-risk roles
+just molecule-test fastdeploy_register_service
+just molecule-test fastdeploy_restore
 
 # Or run test playbooks directly
 ansible-playbook tests/test_traefik_deploy.yml -i tests/inventory/test.yml
 ```
 
-### Pre-commit Hooks
+`just test` now runs role tests, the non-failing lint summary, a strict Sphinx build, and docs validation.
+Use `just validate-strict` when you want `ansible-lint` failures to stop the run, and use `just lint`
+only as a quick summary helper.
+
+### Developer Setup
 ```bash
-# Install pre-commit hooks
-just install-hooks
+# Bootstrap the local dev environment and install hooks
+just setup
+
+# Run hooks on demand
+just pre-commit
 ```
 
 ### Statistics
@@ -233,7 +247,7 @@ just stats-roles
 - **Python 3.14+** (3.8-3.13 no longer supported as of v3.0.0)
 - Collections: `community.general`, `ansible.posix`
 
-> **Note:** This collection follows an N-2 Python version support policy, supporting the current release and two prior minor versions (currently 3.14).
+> **Note:** The checked-in developer tooling currently targets Python 3.14+ on the controller.
 
 ## License
 

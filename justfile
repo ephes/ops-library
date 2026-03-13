@@ -10,10 +10,15 @@ setup:
     @echo "Setting up development environment..."
     @./setup-pre-commit.sh
 
-# Run ALL tests (roles, lint)
-test: venv test-roles lint
+# Run the default contributor validation path
+test: venv test-roles lint docs-build docs-lint
     @echo ""
-    @echo "✅ All tests completed!"
+    @echo "✅ Validation completed!"
+
+# Run the strict validation gate
+validate-strict: venv test-roles lint-strict docs-build docs-lint
+    @echo ""
+    @echo "✅ Strict validation completed!"
 
 # Test all roles
 test-roles: venv
@@ -30,9 +35,10 @@ syntax-check: venv
     @echo "Running quick syntax check..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run ./test_roles.py --all | grep -E "(Testing role:|YAML Syntax|✓ PASSED|✗ FAILED)" || true
 
-# Run ansible-lint on everything (non-failing for CI)
+# Run ansible-lint summary (non-failing convenience helper)
 lint: venv
     @echo "Running ansible-lint..."
+    @echo "Note: this is a summary-only helper. Use 'just lint-strict' or 'just test' for a failing validation gate."
     @echo "Linting roles..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-lint roles/ 2>&1 | tail -3 || true
 
@@ -125,7 +131,7 @@ dev ROLE:
 # Documentation commands
 docs-build:
     @echo "Building documentation..."
-    @uv run --extra docs sphinx-build -b html docs/source docs/build/html
+    @uv run --extra docs sphinx-build -E -n -b html docs/source docs/build/html
 
 docs-serve:
     @echo "Serving documentation at http://localhost:8000"
@@ -300,9 +306,11 @@ help:
     @echo "ops-library Testing Commands"
     @echo ""
     @echo "Quick commands:"
-    @echo "  just test           # Run all tests"
+    @echo "  just test           # Role tests + lint summary + strict docs checks"
+    @echo "  just validate-strict # Role tests + failing lint + strict docs checks"
     @echo "  just test-roles     # Test all roles"
-    @echo "  just lint           # Run ansible-lint"
+    @echo "  just lint-strict    # Fail on ansible-lint issues"
+    @echo "  just lint           # Summary-only ansible-lint helper"
     @echo "  just syntax-check   # Quick syntax validation"
     @echo ""
     @echo "Specific testing:"

@@ -1,0 +1,122 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    fd_test_service_name: molecule_fastdeploy
+    service_name: "{{ fd_test_service_name }}"
+    fd_service_description: "Molecule FastDeploy registration helper"
+    fd_ops_control_method: git
+    fd_ops_control_git: file:///srv/ops-control-fixture
+    fd_ops_control_ref: main
+    fd_ansible_playbook_bin: /usr/local/bin/mock-ansible-playbook
+    fd_ansible_galaxy_bin: /usr/local/bin/mock-ansible-galaxy
+    fd_sops_age_key_contents: |
+      AGE-SECRET-KEY-1MOLECULEEXAMPLE000000000000000000000000000000000000
+    fd_sync_services: false
+
+  pre_tasks:
+    - name: Install fixture dependencies
+      ansible.builtin.apt:
+        name:
+          - sudo
+          - git
+        state: present
+        update_cache: true
+
+    - name: Ensure FastDeploy group exists
+      ansible.builtin.group:
+        name: fastdeploy
+        state: present
+
+    - name: Ensure FastDeploy user exists
+      ansible.builtin.user:
+        name: fastdeploy
+        group: fastdeploy
+        home: /home/fastdeploy
+        shell: /bin/bash
+        create_home: true
+        state: present
+
+    - name: Ensure deploy group exists for fixture ownership
+      ansible.builtin.group:
+        name: deploy
+        state: present
+        system: true
+
+    - name: Ensure deploy user exists for fixture ownership
+      ansible.builtin.user:
+        name: deploy
+        group: deploy
+        home: /home/deploy
+        shell: /bin/bash
+        create_home: true
+        state: present
+        system: true
+
+    - name: Install mock ansible-playbook binary
+      ansible.builtin.copy:
+        dest: /usr/local/bin/mock-ansible-playbook
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          set -eu
+          printf '%s\n' "$*" > /tmp/mock-ansible-playbook.log
+          printf 'PLAY [localhost]\n'
+          printf 'TASK [Molecule fixture task]\n'
+          printf 'changed: [localhost]\n'
+
+    - name: Install mock ansible-galaxy binary
+      ansible.builtin.copy:
+        dest: /usr/local/bin/mock-ansible-galaxy
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          set -eu
+          printf '%s\n' "$*" > /tmp/mock-ansible-galaxy.log
+
+    - name: Create git fixture directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: deploy
+        group: deploy
+        mode: "0755"
+      loop:
+        - /srv/ops-control-fixture
+        - /srv/ops-control-fixture/inventories/prod
+        - /srv/ops-control-fixture/playbooks
+
+    - name: Seed git fixture repository files
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/fixtures/ops-control/{{ item.src }}"
+        dest: "/srv/ops-control-fixture/{{ item.src }}"
+        owner: deploy
+        group: deploy
+        mode: "{{ item.mode }}"
+      loop:
+        - { src: "ansible.cfg", mode: "0644" }
+        - { src: "inventories/prod/hosts.yml", mode: "0644" }
+        - { src: "playbooks/site.yml", mode: "0644" }
+
+    - name: Initialize git fixture repository
+      become_user: deploy
+      ansible.builtin.shell: |
+        set -euo pipefail
+        if [ ! -d /srv/ops-control-fixture/.git ]; then
+          git init --initial-branch=main /srv/ops-control-fixture
+        fi
+        git -C /srv/ops-control-fixture config user.name Molecule
+        git -C /srv/ops-control-fixture config user.email molecule@example.test
+        git -C /srv/ops-control-fixture add .
+        if ! git -C /srv/ops-control-fixture diff --cached --quiet; then
+          git -C /srv/ops-control-fixture commit -m "fixture"
+        fi
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+  roles:
+    - role: fastdeploy_register_service

@@ -56,20 +56,26 @@ See the {doc}`complete role catalog <roles/index>` for details on each role.
 - Collections: `community.general`, `ansible.posix`
 
 ```{note}
-This collection follows an N-2 Python version support policy, supporting the current release and two prior minor versions (currently 3.14).
+The checked-in developer tooling currently targets Python 3.14+ on the controller.
 ```
 
 ## Development
 
 ```bash
-# Run all tests
+# Run the default contributor validation path
 just test
+
+# Run the stricter gate when you want lint failures to stop the run
+just validate-strict
 
 # Test specific role
 just test-role fastdeploy_deploy
 
-# Install pre-commit hooks
-just install-hooks
+# Run focused Molecule coverage
+just molecule-test fastdeploy_register_service
+
+# Bootstrap the local dev environment and install hooks
+just setup
 ```
 
 ## Documentation

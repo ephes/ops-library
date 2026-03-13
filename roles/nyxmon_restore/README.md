@@ -28,7 +28,6 @@ playbooks and legacy/manual workflows.
 ```yaml
 nyxmon_restore_archive: latest
 nyxmon_restore_archive_search_root: /opt/backups/nyxmon
-nyxmon_restore_local_cache: "{{ lookup('env','HOME') }}/backups/nyxmon"
 nyxmon_restore_validate_checksums: true
 nyxmon_restore_dry_run: false
 nyxmon_restore_create_safety_backup: true
@@ -41,6 +40,10 @@ nyxmon_restore_dirs:
   - { name: cache,  src: cache,  dest: /home/nyxmon/site/cache,      optional: true }
   - { name: logs,   src: logs,   dest: /home/nyxmon/logs,            optional: true }
 ```
+
+Archives are restored from `nyxmon_restore_archive_search_root` on the target host. The older
+`nyxmon_restore_local_cache` compatibility variable still exists in defaults, but this role's
+current flow does not fetch archives from the controller.
 
 ## Example Playbook
 

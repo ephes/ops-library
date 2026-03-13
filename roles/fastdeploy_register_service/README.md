@@ -1,308 +1,124 @@
 # FastDeploy Service Registration Role
 
-This role registers services with FastDeploy for web-based git deployments, enabling services to be deployed through the FastDeploy UI with real-time progress tracking.
+Register a service runner with FastDeploy so the FastDeploy UI/API can trigger a narrowly scoped
+`ops-control` deployment flow through a controlled `fastdeploy -> deploy -> root` privilege chain.
 
-## Overview
+## What The Role Does
 
-The `fastdeploy_register_service` role creates a complete FastDeploy service registration, including:
+`fastdeploy_register_service` currently:
 
-- Service configuration in FastDeploy UI
-- Deployment runner script with proper security isolation
-- Sudoers rules for cross-user execution
-- SOPS integration for secrets management
-- Real-time deployment progress tracking
+- creates the `deploy` user/group and its runner workspace under `/home/deploy/`
+- optionally installs an age key at `/home/deploy/.config/sops/age/keys.txt`
+- prepares `ops-control` for the runner:
+  - `rsync`: syncs to `/home/deploy/ops-control`
+  - `git`: clones or refreshes `/home/deploy/_workspace/ops-control`
+- renders the runner to `/home/deploy/runners/<service>/deploy.py`
+- copies that runner into `/home/fastdeploy/site/services/<service>/deploy.py`
+- writes `/home/fastdeploy/site/services/<service>/config.json`
+- installs `/etc/sudoers.d/fastdeploy_<service>`
+- optionally calls `POST <fd_api_base>/services/sync`
 
-## Key Features
+The role does not generate `deploy.sh` or `playbook.yml`. Those belong to other FastDeploy
+registration patterns such as `apt_upgrade_register`.
 
-✅ **Custom Script Support**: Use `fd_runner_content` to provide simple deployment scripts
-✅ **Proper Security Model**: Multi-user execution with `fastdeploy` → `deploy` user isolation  
-✅ **Real-time Progress**: JSON status output for FastDeploy UI progress tracking
-✅ **Configuration Handling**: Automatic parsing of FastDeploy's config structure
-✅ **From-scratch Compatible**: Works correctly when redeploying entire infrastructure
-✅ **Unified Commands**: Integrates with `just register-one service-name` pattern
+## Requirements
 
-## Complete Example
+- FastDeploy must already be installed, including the `fastdeploy` user/group.
+- Run the role with `become: true`.
+- For the default `rsync` method, the controller must provide a readable local `ops-control`
+  checkout via `fd_ops_control_local_path`.
+- `rsync` must be available on the controller and target when using `fd_ops_control_method: rsync`.
 
-The `test_dummy` service demonstrates all features and serves as a template for other services.
+## Default Paths
 
-### Registration Playbook
+```text
+/home/fastdeploy/site/services/<service>/
+├── config.json
+└── deploy.py
+
+/home/deploy/
+├── .config/sops/age/keys.txt
+├── ops-control/
+├── runners/<service>/deploy.py
+└── _workspace/
+
+/etc/sudoers.d/fastdeploy_<service>
+```
+
+## Key Variables
+
 ```yaml
-# playbooks/register-test-dummy-proper.yml
-- name: Register test_dummy service with FastDeploy
-  hosts: homelab
+service_name: nyxmon
+
+fd_service_name: "{{ service_name | mandatory }}"
+fd_service_description: "Deploy {{ fd_service_name }} via ops-control"
+
+fd_fastdeploy_root: /home/fastdeploy/site
+fd_fastdeploy_user: fastdeploy
+fd_service_config_dir: "{{ fd_fastdeploy_root }}/services/{{ fd_service_name }}"
+
+fd_deploy_user: deploy
+fd_deploy_home: "/home/{{ fd_deploy_user }}"
+fd_runner_script: "{{ fd_deploy_home }}/runners/{{ fd_service_name }}/deploy.py"
+fd_sudoers_file: "/etc/sudoers.d/fastdeploy_{{ fd_service_name }}"
+
+fd_ops_control_method: rsync
+fd_ops_control_local_path: /path/to/ops-control
+fd_ops_control_remote_path: "{{ fd_deploy_home }}/ops-control"
+
+fd_api_base: http://localhost:8000
+fd_api_token: ""
+fd_sync_services: true
+
+fd_sops_age_key_contents: ""
+fd_runner_content: ""
+```
+
+Notes:
+
+- `fd_service_name` defaults to `service_name` and is required.
+- `fd_runner_content` overrides the default `deploy.py.j2` template.
+- `fd_ops_control_local_path` is required when `fd_ops_control_method == "rsync"`.
+- If `fd_api_token` is empty, the service sync call is skipped.
+
+## Example
+
+```yaml
+- name: Register Nyxmon with FastDeploy
+  hosts: fastdeploy_host
   become: true
-  tasks:
-    - name: Register test_dummy service
-      include_role:
-        name: local.ops_library.fastdeploy_register_service
+  roles:
+    - role: local.ops_library.fastdeploy_register_service
       vars:
-        fd_service_name: "test_dummy"
-        fd_service_description: "Example deployment service demonstrating FastDeploy best practices"
-        
-        # Custom deployment script content
-        fd_runner_content: |
-          #!/usr/bin/env python3
-          import json, time, sys, argparse
-          from pathlib import Path
-          
-          def emit_step(name, state, message=""):
-              print(json.dumps({"name": name, "state": state, "message": message}), flush=True)
-          
-          def main():
-              parser = argparse.ArgumentParser()
-              parser.add_argument('--config', help='Configuration file path')
-              args = parser.parse_args()
-              
-              config = {}
-              if args.config and Path(args.config).exists():
-                  with open(args.config, 'r') as f:
-                      config = json.load(f)
-              
-              # Extract service name from FastDeploy's deploy_script path
-              deploy_script = config.get('deploy_script', '')
-              service_name = deploy_script.split('/')[0] if '/' in deploy_script else 'test_dummy'
-              
-              emit_step("Initialize deployment", "success", f"Starting deployment for {service_name}")
-              
-              steps = ["Validate environment", "Install dependencies", "Configure service", "Start service"]
-              for step in steps:
-                  emit_step(step, "running", f"Executing: {step}")
-                  time.sleep(2)  # Simulate work
-                  emit_step(step, "success", f"Completed: {step}")
-              
-              return 0
-          
-          if __name__ == "__main__":
-              sys.exit(main())
+        service_name: nyxmon
+        fd_service_description: "Deploy nyxmon via ops-control"
+        fd_ops_control_method: rsync
+        fd_ops_control_local_path: "{{ playbook_dir }}/../ops-control"
+        fd_sops_age_key_contents: "{{ lookup('file', lookup('env', 'HOME') ~ '/.config/sops/age/keys.txt') }}"
+        fd_api_token: "{{ fastdeploy_api_token }}"
 ```
 
-### Usage
+## Execution Flow
+
+1. FastDeploy starts `/home/fastdeploy/site/services/<service>/deploy.py`.
+2. The sudoers rule allows that runner to execute as `deploy`.
+3. The runner prepares `ops-control`:
+   - `rsync`: uses the pre-synced checkout already placed at `/home/deploy/ops-control`
+   - `git`: clones or refreshes a checkout in `/home/deploy/_workspace/ops-control`
+4. The runner installs Ansible collections when `collections/requirements.yml` exists.
+5. The runner executes:
+
+```text
+ansible-playbook -i inventories/prod/hosts.yml playbooks/site.yml -l localhost --extra-vars filter=<service> --become --become-user root
+```
+
+6. Progress is emitted as NDJSON on stdout. If FastDeploy supplied callback URLs and a token, the
+   runner also sends best-effort HTTP updates.
+
+## Validation
+
+Focused Molecule coverage for this role lives under:
+
 ```bash
-# Register the service
-just register-one test-dummy
-
-# Test deployment
-./scripts/test_deployment.py --service test_dummy
-
-# Deploy via FastDeploy web UI
-# Navigate to https://your-fastdeploy-instance/
+just molecule-test fastdeploy_register_service
 ```
-
-## FastDeploy Script Requirements
-
-### 1. Configuration Handling
-FastDeploy passes a `--config` parameter with this JSON structure:
-```json
-{
-  "deployment_id": "deploy_123",
-  "access_token": "jwt_token", 
-  "deploy_script": "service_name/deploy.py",
-  "steps_url": "https://host/steps/",
-  "deployment_finish_url": "https://host/deployments/finish/",
-  "context": {"env": {}},
-  "path_for_deploy": "/usr/bin:/bin"
-}
-```
-
-Extract service name: `service_name = config.get('deploy_script', '').split('/')[0]`
-
-### 2. JSON Status Output
-```python
-def emit_step(name, state, message=""):
-    step_data = {"name": name, "state": state}
-    if message:
-        step_data["message"] = message  
-    print(json.dumps(step_data), flush=True)
-
-# States: "running", "success", "failure"
-emit_step("Install packages", "running", "Installing dependencies...")
-emit_step("Install packages", "success", "All packages installed")
-```
-
-### 3. Exit Codes
-- Return `0` for success
-- Return non-zero for failure
-- Handle exceptions gracefully
-
-## Role Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `fd_service_name` | *required* | Service name |
-| `fd_service_description` | `"Deploy {service} via ops-control"` | Description for FastDeploy UI |
-| `fd_runner_content` | `""` | Custom script content (overrides default template) |
-| `fd_fastdeploy_user` | `"fastdeploy"` | FastDeploy service user |
-| `fd_deploy_user` | `"deploy"` | Deployment execution user |
-
-## Architecture
-
-### File Locations
-```
-/home/fastdeploy/site/services/{service}/
-├── config.json          # Service metadata for FastDeploy UI
-└── deploy.py            # Deployment script (FastDeploy calls this)
-
-/home/deploy/runners/{service}/  
-└── deploy.py            # Source deployment script
-
-/etc/sudoers.d/fastdeploy_{service}  # Sudoers rules
-```
-
-### Security Model
-1. **FastDeploy** (fastdeploy user) receives web requests
-2. **Creates secure config** in `/var/tmp/` with deployment parameters  
-3. **Uses sudo** to execute script as `deploy` user
-4. **Deploy user** runs script with restricted permissions
-
-## From-Scratch Compatibility
-
-✅ **The role now properly handles from-scratch deployments** by:
-
-1. **Creating script in both locations**:
-   - `/home/deploy/runners/{service}/deploy.py` (source)  
-   - `/home/fastdeploy/site/services/{service}/deploy.py` (FastDeploy calls this)
-
-2. **Updating config.json** to reference `deploy.py` (relative path)
-
-3. **Maintaining sync** between both script locations
-
-This means when you remove the fastdeploy user and redeploy everything, the service registration will work correctly without manual intervention.
-
-## Integration with ops-control
-
-Works seamlessly with the unified command pattern:
-```bash
-just register-one test-dummy    # Uses register-test-dummy-proper.yml
-just register-one fastdeploy-self  # Uses register-fastdeploy-self.yml  
-just register-one new-service  # Shows available services if not found
-```
-
-The role sets up everything needed for fastDeploy to deploy a service using ops-control:
-- Creates a deploy user with restricted permissions
-- Installs runner scripts and configuration
-- Sets up SOPS age keys for secret decryption
-- Configures sudoers rules for secure execution
-- Registers the service with fastDeploy's API
-
-## Ops-Control Execution Flow
-
-```
-fastDeploy (runs as 'fastdeploy' user)
-    ↓
-    sudo (via sudoers rule)
-    ↓
-deploy.py (runs as 'deploy' user)
-    ↓
-    - Clones ops-control
-    - Runs ansible-playbook
-    - Has access to SOPS keys
-```
-
-## Directory Structure
-
-After running this role, the following structure is created:
-
-```
-/Users/deploy/                        # Deploy user home
-├── .config/sops/age/keys.txt        # SOPS decryption key
-├── .ssh/id_ed25519                  # SSH key for git
-├── runners/
-│   └── nyxmon/deploy.py             # Runner script
-├── ops-control/                     # Git clone workspace
-└── _workspace/                      # Temp workspace
-
-/path/to/your/fastdeploy/            # FastDeploy installation
-└── services/nyxmon/config.json      # Service definition
-```
-
-## Compatibility Inputs
-
-Existing playbooks often set these values directly:
-
-```yaml
-service_name: nyxmon                 # Feeds the default fd_service_name alias
-fd_sops_age_key_contents: "..."      # Provide when the runner needs local SOPS decryption
-
-# FastDeploy paths
-fd_fastdeploy_root: "/path/to/your/fastdeploy"
-fd_fastdeploy_user: "fastdeploy"
-fd_services_root: "services"
-
-# Deploy user
-fd_deploy_user: "deploy"
-fd_deploy_home: "/Users/deploy"
-
-# Git configuration
-fd_ops_control_git: "git@github.com:yourorg/ops-control.git"
-fd_ops_control_ref: "main"
-
-# API configuration
-fd_api_base: "http://localhost:8000"
-fd_api_token: "your-bearer-token"
-```
-
-## Example Playbook
-
-```yaml
----
-- name: Register nyxmon with fastDeploy
-  hosts: homelab
-  become: yes
-  
-  vars:
-    service_name: nyxmon
-    fd_sops_age_key_contents: "{{ lookup('file', '~/.config/sops/age/keys.txt') }}"
-    fd_api_token: "{{ lookup('env', 'FASTDEPLOY_TOKEN') }}"
-    
-  tasks:
-    - name: Register service
-      include_role:
-        name: local.ops_library.fastdeploy_register_service
-```
-
-## Manual Registration Steps
-
-1. **Install the role** in your ops-library collection
-2. **Configure variables** in your playbook or group_vars
-3. **Run the registration**:
-   ```bash
-   just fastdeploy-register nyxmon homelab
-   ```
-4. **Verify** the service appears in fastDeploy UI
-5. **Deploy** by clicking the Deploy button in the UI
-
-## Runner Script
-
-The deployed `deploy.py` script:
-- Receives deployment context from fastDeploy via environment variables
-- Clones/updates ops-control repository
-- Installs Ansible collections
-- Runs the deployment playbook with appropriate filters
-- Reports progress back to fastDeploy API
-- Verifies service status after deployment
-
-## Security Considerations
-
-- Deploy user has minimal privileges
-- SOPS keys are readable only by deploy user (mode 0600)
-- Sudoers rule is specific to the runner script path
-- Environment variables are preserved for deployment context
-- No secrets are stored in fastDeploy
-
-## Troubleshooting
-
-### Service doesn't appear in UI
-- Check `config.json` was created in services directory
-- Verify API token is valid
-- Check fastDeploy logs for sync errors
-
-### Deployment fails
-- Check deploy user has access to ops-control repository
-- Verify SOPS age key is correct
-- Check ansible is installed and accessible
-- Review runner script output in fastDeploy logs
-
-### Permission denied
-- Verify sudoers rule is in place
-- Check file ownership and permissions
-- Ensure deploy user exists

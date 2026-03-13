@@ -108,9 +108,9 @@ names and behavior over expanding helper abstraction.
 - Version bumps happen by editing `galaxy.yml` before publishing or reinstalling the collection.
 
 ## Tooling & Tests
-- `justfile` offers tasks for building the collection, running role tests, and installing pre-commit hooks.
+- `justfile` offers a practical contributor path (`just test`), a stricter lint-enforcing gate (`just validate-strict`), focused role checks, Molecule helpers, and local bootstrap commands.
 - `tests/` plus the shell helpers (`test_runner.sh`, `test_service.sh`, etc.) provide smoke and integration coverage for roles and service flows.
-- `README_TESTING.md` and `TESTING.md` document expectations for contributors (pytest harness, Molecule-style checks, etc.).
+- `README_TESTING.md` and `TESTING.md` document the current contributor path: strict lint, strict docs builds, and role-local Molecule coverage for high-risk surfaces.
 - {doc}`Service Lifecycle Guide <howto/service_lifecycle>` captures the checklist for adding or refactoring lifecycle roles and should stay aligned with these architecture notes.
 
 ## Echoport And Role Dispositions
@@ -175,7 +175,7 @@ The following restore roles remain outside that scaffold on purpose:
 - `paperless_restore`: scaffolded, but uses controller-fallback transport and has the heaviest validation path in this family
 - `vaultwarden_restore`: monolithic and controller-local by design
 - `minio_restore`: extended multi-phase exception for object-storage recovery
-- `nyxmon_restore`: incomplete scaffold; no rollback phase and its `local_cache` story is still unfinished
+- `nyxmon_restore`: keeps its own structure; `main.yml` orchestrates with `block` + `always`, while `restore.yml` owns a role-local `block` + `rescue` rollback that reapplies the safety snapshot on failure
 - `minecraft_java_restore`: hybrid multi-file restore split (`resolve_archive`, `stop_service`, `restore_data`, `start_service`), but not the pilot scaffold pattern
 - `mail_restore`, `postfixadmin_restore`, `snappymail_restore`: mail-adjacent narrow restores with their own established flows
 
@@ -197,53 +197,67 @@ scaffold.
 
 ## FastDeploy Service Registry Pattern
 
-FastDeploy provides an API-driven interface for privileged operations, allowing unprivileged services to trigger maintenance tasks without requiring direct SSH root access. Services only need a FastDeploy API token to execute pre-registered operations like system updates, backups, or database maintenance.
+FastDeploy registration roles expose pre-registered maintenance or deployment runners through the
+FastDeploy UI/API while keeping the actual privileged execution on the host. The pattern is about
+privilege boundaries and runner registration, not about generating arbitrary wrapper playbooks.
 
-### Example: System Update Registration
+### Generic Registration Helper
 
-1. **Registration Phase** (one-time setup):
+`fastdeploy_register_service` currently does the following:
+
+1. Creates the dedicated `deploy` user and runner directories under `/home/deploy/`.
+2. Optionally installs a SOPS age key for that runner user.
+3. Syncs an `ops-control` checkout to `/home/deploy/ops-control` when using the default `rsync` method.
+4. Writes the runner script to `/home/deploy/runners/<service>/deploy.py`.
+5. Copies that runner into `/home/fastdeploy/site/services/<service>/deploy.py` and renders `config.json`.
+6. Installs a sudoers rule so the `fastdeploy` user can invoke that one runner as `deploy`, while `deploy` can escalate to root for the actual Ansible run.
+7. Optionally calls `POST /services/sync` on the FastDeploy API after registration.
+
+### Example: Service Registration
+
+1. **Registration phase**:
    ```yaml
-   # Consumer playbook registering apt upgrades for staging
-   - name: Register system updates with FastDeploy
-     hosts: deployment_server
-     vars:
-       ssh_keys: "{{ encrypted_secrets }}"
+   - name: Register Nyxmon deployment runner with FastDeploy
+     hosts: fastdeploy_host
+     become: true
      roles:
-       - role: local.ops_library.apt_upgrade_register
+       - role: local.ops_library.fastdeploy_register_service
          vars:
-           apt_upgrade_target: "staging.example.com"
-           apt_upgrade_ssh_private_key: "{{ ssh_keys.private_key }}"
+           service_name: nyxmon
+           fd_ops_control_method: rsync
+           fd_ops_control_local_path: "{{ playbook_dir }}/../ops-control"
+           fd_sops_age_key_contents: "{{ lookup('file', lookup('env', 'HOME') ~ '/.config/sops/age/keys.txt') }}"
+           fd_api_token: "{{ fastdeploy_api_token }}"
    ```
 
-2. **Role Creates** (in `/home/fastdeploy/site/services/apt_upgrade_staging/`):
+2. **Role output** (for `/home/fastdeploy/site/services/nyxmon/`):
    - `config.json`: Service metadata for FastDeploy UI
-   - `deploy.py`: Python script that executes ansible and reports progress
-   - `deploy.sh`: Shell wrapper for FastDeploy to invoke
-   - `playbook.yml`: Ansible playbook that runs the actual apt upgrade
-   - SSH keys deployed to `/home/deploy/.ssh/` for remote access
+   - `deploy.py`: Runner FastDeploy executes
+   - `/home/deploy/runners/nyxmon/deploy.py`: canonical runner path used in sudoers
+   - `/etc/sudoers.d/fastdeploy_nyxmon`: privilege boundary for `fastdeploy -> deploy -> root`
+   - `/home/deploy/ops-control`: synced or cloned orchestration checkout used by the runner
 
-3. **Execution Phase** (triggered via API or UI):
-   - Unprivileged service sends API request with FastDeploy token
-   - FastDeploy validates token and permissions
-   - Executes registered operation with proper privileges
-   - Returns real-time progress updates via JSON
+3. **Execution phase**:
+   - FastDeploy launches `services/<service>/deploy.py`
+   - the sudoers rule allows that script to re-exec as `deploy`
+   - the runner prepares `ops-control`, installs collections when needed, runs `ansible-playbook`, and streams NDJSON progress updates back to FastDeploy
+   - optional HTTP callbacks (`steps_url`, `deployment_finish_url`) remain best-effort side channels rather than the only progress path
 
 ### Use Cases for Registration Pattern
 
-- **System Maintenance**: apt updates, package upgrades, security patches
-- **Backup Operations**: Database dumps, file backups, snapshot creation
-- **Database Tasks**: Migrations, vacuum operations, restore procedures
-- **Certificate Renewal**: Let's Encrypt updates, key rotation
-- **Log Rotation**: Cleanup, archival, compression
+- **Deployment runners**: Execute a filtered `ops-control` site playbook for one service
+- **System maintenance**: apt upgrades or package-management entrypoints
+- **Privileged break-glass jobs**: restore, migration, or repair flows that should be callable from FastDeploy but still constrained by sudoers
+- **Repository-prepared automation**: jobs that need local SOPS decryption or a synced/cloned control repo before they can run
 
 ### Key Features of Registration Roles
 
 - **API Access Control**: Operations exposed via REST API with token authentication
 - **Privilege Separation**: Unprivileged services can trigger privileged operations safely
-- **SSH Key Management**: Deploy persistent SSH keys from encrypted secrets
-- **Sudoers Configuration**: Fine-grained permission control for operations
-- **Progress Reporting**: Real-time JSON-formatted status updates
-- **Audit Trail**: All operations logged with user, timestamp, and outcome
+- **Sudoers Configuration**: Narrow runner execution boundary plus `deploy -> root` escalation for the actual Ansible run
+- **Progress Reporting**: NDJSON on stdout first, optional HTTP callbacks second
+- **Ops-control Integration**: Supports host-local `rsync` or repository `git` preparation before execution
+- **SOPS Support**: Can provision an age key for runners that need local secret decryption
 
 ## Integration with Consumer Repositories
 

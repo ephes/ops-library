@@ -1,0 +1,152 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    fd_test_service_name: molecule_fastdeploy
+    fd_service_dir: "/home/fastdeploy/site/services/{{ fd_test_service_name }}"
+    fd_runner_path: "/home/deploy/runners/{{ fd_test_service_name }}/deploy.py"
+    fd_fastdeploy_runner_path: "{{ fd_service_dir }}/deploy.py"
+    fd_sops_key_path: /home/deploy/.config/sops/age/keys.txt
+    fd_sudoers_path: "/etc/sudoers.d/fastdeploy_{{ fd_test_service_name }}"
+    fd_workspace_ops_control: /home/deploy/_workspace/ops-control
+    fd_runner_config_path: /tmp/molecule-fastdeploy-config.json
+
+  tasks:
+    - name: Verify | FastDeploy user exists
+      ansible.builtin.getent:
+        database: passwd
+        key: fastdeploy
+      register: fd_fastdeploy_user
+
+    - name: Verify | Deploy user exists
+      ansible.builtin.getent:
+        database: passwd
+        key: deploy
+      register: fd_deploy_user
+
+    - name: Verify | Assert required users exist
+      ansible.builtin.assert:
+        that:
+          - fd_fastdeploy_user.ansible_facts.getent_passwd.fastdeploy is defined
+          - fd_deploy_user.ansible_facts.getent_passwd.deploy is defined
+        fail_msg: "Expected FastDeploy registration users were not created."
+
+    - name: Verify | Read deploy user groups
+      ansible.builtin.command: id -nG deploy
+      register: fd_deploy_groups
+      changed_when: false
+
+    - name: Verify | Assert deploy user joined fastdeploy group
+      ansible.builtin.assert:
+        that:
+          - "'fastdeploy' in fd_deploy_groups.stdout.split()"
+        fail_msg: "Deploy user was not added to the fastdeploy group."
+
+    - name: Verify | Check service directory
+      ansible.builtin.stat:
+        path: "{{ fd_service_dir }}"
+      register: fd_service_dir_stat
+
+    - name: Verify | Check registered files
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: fd_registered_files
+      loop:
+        - "{{ fd_service_dir }}/config.json"
+        - "{{ fd_runner_path }}"
+        - "{{ fd_fastdeploy_runner_path }}"
+        - "{{ fd_sops_key_path }}"
+        - "{{ fd_sudoers_path }}"
+
+    - name: Verify | Assert registered files exist
+      ansible.builtin.assert:
+        that:
+          - fd_service_dir_stat.stat.exists
+          - fd_service_dir_stat.stat.isdir
+          - fd_registered_files.results | map(attribute='stat.exists') | min
+        fail_msg: "FastDeploy registration did not render the expected files."
+
+    - name: Verify | Read service config
+      ansible.builtin.slurp:
+        path: "{{ fd_service_dir }}/config.json"
+      register: fd_config_raw
+
+    - name: Verify | Parse service config
+      ansible.builtin.set_fact:
+        fd_config: "{{ fd_config_raw.content | b64decode | from_json }}"
+
+    - name: Verify | Read runner copies
+      ansible.builtin.slurp:
+        path: "{{ item }}"
+      register: fd_runner_copies
+      loop:
+        - "{{ fd_runner_path }}"
+        - "{{ fd_fastdeploy_runner_path }}"
+
+    - name: Verify | Read sudoers file
+      ansible.builtin.slurp:
+        path: "{{ fd_sudoers_path }}"
+      register: fd_sudoers_raw
+
+    - name: Verify | Check SOPS key metadata
+      ansible.builtin.stat:
+        path: "{{ fd_sops_key_path }}"
+      register: fd_sops_key_stat
+
+    - name: Verify | Assert config and privilege boundary
+      ansible.builtin.assert:
+        that:
+          - fd_config.name == fd_test_service_name
+          - fd_config.description == "Molecule FastDeploy registration helper"
+          - fd_config.deploy_script == "deploy.py"
+          - fd_config.steps | map(attribute='name') | list == ['prepare', 'bootstrap', 'ansible', 'verify']
+          - (fd_runner_copies.results[0].content | b64decode) == (fd_runner_copies.results[1].content | b64decode)
+          - "'OPS_CONTROL_METHOD' in (fd_runner_copies.results[0].content | b64decode)"
+          - "'file:///srv/ops-control-fixture' in (fd_runner_copies.results[0].content | b64decode)"
+          - "'fastdeploy ALL=(deploy) NOPASSWD: /home/deploy/runners/molecule_fastdeploy/deploy.py' in (fd_sudoers_raw.content | b64decode)"
+          - "'deploy ALL=(root) NOPASSWD: ALL' in (fd_sudoers_raw.content | b64decode)"
+          - fd_sops_key_stat.stat.mode == '0600'
+        fail_msg: "FastDeploy registration outputs did not match the expected current role behavior."
+
+    - name: Verify | Write runner config fixture
+      ansible.builtin.copy:
+        dest: "{{ fd_runner_config_path }}"
+        mode: "0644"
+        content: |
+          {
+            "context": {
+              "env": {}
+            }
+          }
+
+    - name: Verify | Execute runner through fastdeploy sudo boundary
+      become_user: fastdeploy
+      ansible.builtin.command:
+        cmd: "sudo -n -u deploy {{ fd_runner_path }} --config {{ fd_runner_config_path }}"
+      register: fd_runner_execution
+      changed_when: false
+
+    - name: Verify | Read mock ansible-playbook log
+      ansible.builtin.slurp:
+        path: /tmp/mock-ansible-playbook.log
+      register: fd_mock_playbook_log
+
+    - name: Verify | Read cloned playbook fixture
+      ansible.builtin.slurp:
+        path: "{{ fd_workspace_ops_control }}/playbooks/site.yml"
+      register: fd_cloned_playbook
+
+    - name: Verify | Assert runner execution
+      ansible.builtin.assert:
+        that:
+          - fd_runner_execution.rc == 0
+          - "'\"name\": \"prepare\"' in fd_runner_execution.stdout"
+          - "'\"name\": \"ansible\"' in fd_runner_execution.stdout"
+          - "'\"event\": \"finish\"' in fd_runner_execution.stdout"
+          - "'\"status\": \"success\"' in fd_runner_execution.stdout"
+          - "'Molecule fixture playbook' in (fd_cloned_playbook.content | b64decode)"
+          - "'-i /home/deploy/_workspace/ops-control/inventories/prod/hosts.yml /home/deploy/_workspace/ops-control/playbooks/site.yml -l localhost --extra-vars filter=molecule_fastdeploy --extra-vars ansible_connection=local --become --become-user root -v' in (fd_mock_playbook_log.content | b64decode | trim)"
+        fail_msg: "Registered FastDeploy runner did not execute through the expected sudo/Ansible path."
