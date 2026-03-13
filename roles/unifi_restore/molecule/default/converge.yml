@@ -8,7 +8,10 @@
     unifi_archive_root: /opt/backups/unifi
     unifi_latest_archive: "{{ unifi_archive_root }}/unifi-latest.tar.gz"
     unifi_old_archive: "{{ unifi_archive_root }}/unifi-old.tar.gz"
+    unifi_failure_archive: "{{ unifi_archive_root }}/unifi-failure.tar.gz"
     unifi_safety_snapshot: /tmp/unifi-safety-snapshot
+    unifi_dummy_package_version: "8.1.99"
+    unifi_mock_mongodb_port: 18443
 
   tasks:
     - name: Run UniFi dry-run validation using latest archive
@@ -18,13 +21,14 @@
         unifi_restore_archive: latest
         unifi_restore_archive_search_root: "{{ unifi_archive_root }}"
         unifi_restore_required_packages: []
-        unifi_restore_check_version_compatibility: false
+        unifi_restore_check_version_compatibility: true
         unifi_restore_dry_run: true
         unifi_restore_create_safety_backup: true
         unifi_restore_include_mongodb: true
         unifi_restore_verify_mongodb: true
         unifi_restore_verify_http: true
         unifi_restore_health_url: http://127.0.0.1:18443/
+        unifi_restore_mongodb_port: "{{ unifi_mock_mongodb_port }}"
         unifi_restore_service_stop_pause: 0
         unifi_restore_method: automated
         unifi_mongodb_shell_binary: /usr/local/bin/mongosh
@@ -40,6 +44,8 @@
       ansible.builtin.assert:
         that:
           - unifi_restore_archive_path == unifi_latest_archive
+          - unifi_restore_installed_version == unifi_dummy_package_version
+          - unifi_restore_backup_version == '8.1.0'
           - "'marker=baseline' in (unifi_dry_run_marker.content | b64decode)"
         fail_msg: "UniFi dry run did not stay validation-only."
 
@@ -53,6 +59,13 @@
         dest: /tmp/unifi-dry-run.ok
         mode: "0644"
         content: "{{ unifi_restore_archive_path }}\n"
+      when: not unifi_dry_run_stage.stat.exists
+
+    - name: Record UniFi version compatibility coverage marker
+      ansible.builtin.copy:
+        dest: /tmp/unifi-version.ok
+        mode: "0644"
+        content: "{{ unifi_restore_installed_version }} -> {{ unifi_restore_backup_version }}\n"
       when: not unifi_dry_run_stage.stat.exists
 
     - name: Run UniFi restore against latest archive
@@ -112,6 +125,7 @@
         unifi_restore_verify_mongodb: false
         unifi_restore_verify_http: true
         unifi_restore_health_url: http://127.0.0.1:18443/
+        unifi_restore_mongodb_port: "{{ unifi_mock_mongodb_port }}"
         unifi_restore_service_stop_pause: 0
         unifi_restore_method: automated
         unifi_mongodb_shell_binary: /usr/local/bin/mongosh
@@ -147,6 +161,108 @@
         mode: "0644"
         content: "{{ unifi_restore_archive_path }}\n"
 
+    - name: Seed pre-failure UniFi state before scaffold rescue coverage
+      ansible.builtin.copy:
+        dest: "{{ item.dest }}"
+        owner: "{{ item.owner | default('root') }}"
+        group: "{{ item.group | default('root') }}"
+        mode: "{{ item.mode }}"
+        content: "{{ item.content }}"
+      loop:
+        - { dest: "/usr/lib/unifi/data/system.properties", owner: "unifi", group: "unifi", mode: "0644", content: "marker=pre-failure\n" }
+        - { dest: "/usr/lib/unifi/data/keystore", owner: "unifi", group: "unifi", mode: "0644", content: "keystore=pre-failure\n" }
+        - { dest: "/etc/traefik/dynamic/unifi.yml", mode: "0644", content: "http:\n  routers:\n    unifi:\n      rule: Host(`pre-failure-unifi.example.test`)\n" }
+
+    - name: Reset mock MongoDB logs before scaffold rescue coverage
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/mock-unifi-mongo/mongosh.log
+        - /tmp/mock-unifi-mongo/mongorestore.log
+        - /tmp/mock-unifi-mongo/mongodump.log
+
+    - name: Trigger UniFi restore failure to exercise scaffold rescue
+      block:
+        - name: Run UniFi restore with failing service archive
+          ansible.builtin.include_role:
+            name: unifi_restore
+          vars:
+            unifi_restore_archive: unifi-failure.tar.gz
+            unifi_restore_archive_search_root: "{{ unifi_archive_root }}"
+            unifi_restore_required_packages: []
+            unifi_restore_check_version_compatibility: false
+            unifi_restore_dry_run: false
+            unifi_restore_create_safety_backup: true
+            unifi_restore_cleanup_safety_backup: false
+            unifi_restore_include_mongodb: true
+            unifi_restore_verify_mongodb: true
+            unifi_restore_verify_http: true
+            unifi_restore_health_url: http://127.0.0.1:18443/
+            unifi_restore_mongodb_host: 127.0.0.1
+            unifi_restore_mongodb_port: "{{ unifi_mock_mongodb_port }}"
+            unifi_restore_service_stop_pause: 0
+            unifi_restore_method: automated
+            unifi_mongodb_shell_binary: /usr/local/bin/mongosh
+            unifi_mongodb_restore_binary: /usr/local/bin/mongorestore
+            unifi_mongodb_dump_binary: /usr/local/bin/mongodump
+      rescue:
+        - name: Mark UniFi scaffold rescue failure as observed
+          ansible.builtin.set_fact:
+            unifi_rescue_failure_observed: true
+
+    - name: Find generated safety backup after scaffold rescue
+      ansible.builtin.find:
+        paths: "{{ unifi_archive_root }}"
+        patterns: "pre-restore-*"
+        file_type: directory
+      register: unifi_rescue_safety_backups
+
+    - name: Set scaffold rescue safety backup path
+      ansible.builtin.set_fact:
+        unifi_rescue_safety_backup_path: "{{ (unifi_rescue_safety_backups.files | sort(attribute='mtime') | last).path }}"
+      when: (unifi_rescue_safety_backups.matched | default(0) | int) > 0
+
+    - name: Check scaffold rescue safety backup payload
+      ansible.builtin.stat:
+        path: "{{ unifi_rescue_safety_backup_path }}/data/system.properties"
+      register: unifi_rescue_safety_backup_payload
+      when: unifi_rescue_safety_backup_path is defined
+
+    - name: Read UniFi marker after scaffold rescue
+      ansible.builtin.slurp:
+        path: /usr/lib/unifi/data/system.properties
+      register: unifi_rescue_marker
+
+    - name: Read UniFi Traefik config after scaffold rescue
+      ansible.builtin.slurp:
+        path: /etc/traefik/dynamic/unifi.yml
+      register: unifi_rescue_traefik
+
+    - name: Read mocked mongodump log after scaffold rescue
+      ansible.builtin.slurp:
+        path: /tmp/mock-unifi-mongo/mongodump.log
+      register: unifi_rescue_mongodump_log
+
+    - name: Assert UniFi scaffold rescue replayed the safety snapshot
+      ansible.builtin.assert:
+        that:
+          - unifi_rescue_failure_observed | default(false) | bool
+          - unifi_rescue_safety_backup_path is defined
+          - unifi_rescue_safety_backup_payload.stat.exists
+          - "'marker=pre-failure' in (unifi_rescue_marker.content | b64decode)"
+          - "'pre-failure-unifi.example.test' in (unifi_rescue_traefik.content | b64decode)"
+          - "'--archive=/tmp/unifi-verify-mongo.archive' in (unifi_rescue_mongodump_log.content | b64decode)"
+          - unifi_restore_service_status.status.ActiveState == 'active'
+          - unifi_restore_http.status == 200
+        fail_msg: "UniFi scaffold rescue did not restore and verify the safety snapshot."
+
+    - name: Record UniFi scaffold rescue coverage marker
+      ansible.builtin.copy:
+        dest: /tmp/unifi-rescue.ok
+        mode: "0644"
+        content: "{{ unifi_rescue_safety_backup_path }}\n"
+
     - name: Break UniFi state before rollback exercise
       ansible.builtin.copy:
         dest: "{{ item.dest }}"
@@ -173,8 +289,14 @@
         unifi_restore_http:
           status: 599
 
+    - name: Clear scaffold caller path fact before direct rollback exercise
+      ansible.builtin.set_fact:
+        restore_pilot_internal_effective_caller_role_path: null
+
     - name: Exercise UniFi rollback task with safety snapshot
-      ansible.builtin.import_tasks: ../../tasks/rollback.yml
+      ansible.builtin.include_role:
+        name: unifi_restore
+        tasks_from: rollback
       vars:
         unifi_safety_backup_path: "{{ unifi_safety_snapshot }}"
         unifi_restore_include_mongodb: true
@@ -182,7 +304,7 @@
         unifi_service_name: unifi.service
         unifi_data_path: /usr/lib/unifi/data
         unifi_restore_mongodb_host: 127.0.0.1
-        unifi_restore_mongodb_port: 27017
+        unifi_restore_mongodb_port: "{{ unifi_mock_mongodb_port }}"
         unifi_restore_mongodb_database: unifi
         unifi_restore_mongodb_username: ""
         unifi_restore_mongodb_password: ""

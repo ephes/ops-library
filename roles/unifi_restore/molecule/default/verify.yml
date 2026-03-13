@@ -10,8 +10,10 @@
         path: "{{ item }}"
       loop:
         - /tmp/unifi-dry-run.ok
+        - /tmp/unifi-version.ok
         - /tmp/unifi-latest.ok
         - /tmp/unifi-mongodb.ok
+        - /tmp/unifi-rescue.ok
         - /tmp/unifi-rollback.ok
       register: unifi_markers
 

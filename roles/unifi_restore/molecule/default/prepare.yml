@@ -9,10 +9,15 @@
     unifi_snapshot_root: /tmp/unifi-snapshots
     unifi_old_snapshot: "{{ unifi_snapshot_root }}/unifi-old"
     unifi_latest_snapshot: "{{ unifi_snapshot_root }}/unifi-latest"
+    unifi_failure_snapshot: "{{ unifi_snapshot_root }}/unifi-failure"
     unifi_safety_snapshot: /tmp/unifi-safety-snapshot
     unifi_mock_mongo_dir: /tmp/mock-unifi-mongo
     unifi_old_archive: "{{ unifi_archive_root }}/unifi-old.tar.gz"
     unifi_latest_archive: "{{ unifi_archive_root }}/unifi-latest.tar.gz"
+    unifi_failure_archive: "{{ unifi_archive_root }}/unifi-failure.tar.gz"
+    unifi_dummy_package_version: "8.1.99"
+    unifi_dummy_package_build_root: /tmp/unifi-package-build
+    unifi_dummy_package_path: "/tmp/unifi_{{ unifi_dummy_package_version }}_all.deb"
     unifi_snapshot_unit: |
       [Unit]
       Description=Mock UniFi
@@ -22,6 +27,18 @@
       Type=simple
       ExecStart=/usr/bin/python3 /usr/local/bin/mock-unifi-server
       Restart=always
+
+      [Install]
+      WantedBy=multi-user.target
+    unifi_failure_snapshot_unit: |
+      [Unit]
+      Description=Mock UniFi Failure Fixture
+      After=network.target
+
+      [Service]
+      Type=simple
+      ExecStart=/bin/sleep 3600
+      Restart=no
 
       [Install]
       WantedBy=multi-user.target
@@ -40,6 +57,52 @@
         state: present
         update_cache: true
         cache_valid_time: 3600
+
+    - name: Create dummy UniFi package build directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ unifi_dummy_package_build_root }}"
+        - "{{ unifi_dummy_package_build_root }}/DEBIAN"
+        - "{{ unifi_dummy_package_build_root }}/usr/share/doc/unifi"
+
+    - name: Write dummy UniFi package control metadata
+      ansible.builtin.copy:
+        dest: "{{ unifi_dummy_package_build_root }}/DEBIAN/control"
+        mode: "0644"
+        content: |
+          Package: unifi
+          Version: {{ unifi_dummy_package_version }}
+          Section: net
+          Priority: optional
+          Architecture: all
+          Maintainer: Molecule Fixture <molecule@example.invalid>
+          Description: Dummy UniFi package for Molecule version checks
+
+    - name: Write dummy UniFi package payload
+      ansible.builtin.copy:
+        dest: "{{ unifi_dummy_package_build_root }}/usr/share/doc/unifi/README"
+        mode: "0644"
+        content: "Dummy UniFi package for Molecule fixture coverage.\n"
+
+    - name: Build dummy UniFi package
+      ansible.builtin.command:
+        argv:
+          - dpkg-deb
+          - --build
+          - "{{ unifi_dummy_package_build_root }}"
+          - "{{ unifi_dummy_package_path }}"
+      changed_when: true
+
+    - name: Install dummy UniFi package
+      ansible.builtin.command:
+        argv:
+          - dpkg
+          - -i
+          - "{{ unifi_dummy_package_path }}"
+      changed_when: true
 
     - name: Ensure UniFi group exists
       ansible.builtin.group:
@@ -80,6 +143,7 @@
       loop:
         - { dest: "/usr/lib/unifi/data/system.properties", owner: "unifi", group: "unifi", mode: "0644", content: "marker=baseline\n" }
         - { dest: "/usr/lib/unifi/data/db/WiredTiger", owner: "unifi", group: "unifi", mode: "0644", content: "baseline-db\n" }
+        - { dest: "/usr/lib/unifi/data/keystore", owner: "unifi", group: "unifi", mode: "0644", content: "baseline-keystore\n" }
         - { dest: "/etc/traefik/dynamic/unifi.yml", mode: "0644", content: "http:\n  routers: {}\n" }
 
     - name: Install mock MongoDB helper binaries
@@ -112,9 +176,25 @@
             import sys
             from pathlib import Path
 
+            args = sys.argv[1:]
+            db_name = "unifi"
             target = Path("/tmp/mock-unifi-mongo/mongodump.log")
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(" ".join(sys.argv[1:]) + "\n")
+            target.write_text(" ".join(args) + "\n")
+
+            for arg in args:
+                if arg.startswith("--db="):
+                    db_name = arg.split("=", 1)[1]
+
+            for arg in args:
+                if arg.startswith("--out="):
+                    dump_dir = Path(arg.split("=", 1)[1]) / db_name
+                    dump_dir.mkdir(parents=True, exist_ok=True)
+                    (dump_dir / "collections.bson").write_text("mock-dump\n")
+                if arg.startswith("--archive="):
+                    archive_path = Path(arg.split("=", 1)[1])
+                    archive_path.parent.mkdir(parents=True, exist_ok=True)
+                    archive_path.write_text("mock-archive\n")
 
     - name: Install mock UniFi HTTP helper
       ansible.builtin.copy:
@@ -159,18 +239,28 @@
       loop:
         - "{{ unifi_old_snapshot }}"
         - "{{ unifi_old_snapshot }}/data"
+        - "{{ unifi_old_snapshot }}/data/db"
         - "{{ unifi_old_snapshot }}/database"
         - "{{ unifi_old_snapshot }}/database/unifi"
         - "{{ unifi_old_snapshot }}/systemd"
         - "{{ unifi_old_snapshot }}/traefik"
         - "{{ unifi_latest_snapshot }}"
         - "{{ unifi_latest_snapshot }}/data"
+        - "{{ unifi_latest_snapshot }}/data/db"
         - "{{ unifi_latest_snapshot }}/database"
         - "{{ unifi_latest_snapshot }}/database/unifi"
         - "{{ unifi_latest_snapshot }}/systemd"
         - "{{ unifi_latest_snapshot }}/traefik"
+        - "{{ unifi_failure_snapshot }}"
+        - "{{ unifi_failure_snapshot }}/data"
+        - "{{ unifi_failure_snapshot }}/data/db"
+        - "{{ unifi_failure_snapshot }}/database"
+        - "{{ unifi_failure_snapshot }}/database/unifi"
+        - "{{ unifi_failure_snapshot }}/systemd"
+        - "{{ unifi_failure_snapshot }}/traefik"
         - "{{ unifi_safety_snapshot }}"
         - "{{ unifi_safety_snapshot }}/data"
+        - "{{ unifi_safety_snapshot }}/data/db"
         - "{{ unifi_safety_snapshot }}/database"
         - "{{ unifi_safety_snapshot }}/database/unifi"
         - "{{ unifi_safety_snapshot }}/systemd"
@@ -184,6 +274,7 @@
       loop:
         - { dest: "{{ unifi_old_snapshot }}/metadata.yml", mode: "0644", content: "unifi_version: 8.0.0\n" }
         - { dest: "{{ unifi_old_snapshot }}/data/system.properties", mode: "0644", content: "marker=old\n" }
+        - { dest: "{{ unifi_old_snapshot }}/data/db/WiredTiger", mode: "0644", content: "old-db\n" }
         - { dest: "{{ unifi_old_snapshot }}/database/unifi/collections.bson", mode: "0644", content: "old-mongo\n" }
         - { dest: "{{ unifi_old_snapshot }}/systemd/unifi.service", mode: "0644", content: "{{ unifi_snapshot_unit }}" }
         - { dest: "{{ unifi_old_snapshot }}/traefik/unifi.yml", mode: "0644", content: "http:\n  routers:\n    unifi:\n      rule: Host(`old-unifi.example.test`)\n" }
@@ -196,9 +287,23 @@
       loop:
         - { dest: "{{ unifi_latest_snapshot }}/metadata.yml", mode: "0644", content: "unifi_version: 8.1.0\n" }
         - { dest: "{{ unifi_latest_snapshot }}/data/system.properties", mode: "0644", content: "marker=latest\n" }
+        - { dest: "{{ unifi_latest_snapshot }}/data/db/WiredTiger", mode: "0644", content: "latest-db\n" }
         - { dest: "{{ unifi_latest_snapshot }}/database/unifi/collections.bson", mode: "0644", content: "latest-mongo\n" }
         - { dest: "{{ unifi_latest_snapshot }}/systemd/unifi.service", mode: "0644", content: "{{ unifi_snapshot_unit }}" }
         - { dest: "{{ unifi_latest_snapshot }}/traefik/unifi.yml", mode: "0644", content: "http:\n  routers:\n    unifi:\n      rule: Host(`latest-unifi.example.test`)\n" }
+
+    - name: Seed failure UniFi snapshot payload
+      ansible.builtin.copy:
+        dest: "{{ item.dest }}"
+        mode: "{{ item.mode }}"
+        content: "{{ item.content }}"
+      loop:
+        - { dest: "{{ unifi_failure_snapshot }}/metadata.yml", mode: "0644", content: "unifi_version: 8.1.2\n" }
+        - { dest: "{{ unifi_failure_snapshot }}/data/system.properties", mode: "0644", content: "marker=failure\n" }
+        - { dest: "{{ unifi_failure_snapshot }}/data/db/WiredTiger", mode: "0644", content: "failure-db\n" }
+        - { dest: "{{ unifi_failure_snapshot }}/database/unifi/collections.bson", mode: "0644", content: "failure-mongo\n" }
+        - { dest: "{{ unifi_failure_snapshot }}/systemd/unifi.service", mode: "0644", content: "{{ unifi_failure_snapshot_unit }}" }
+        - { dest: "{{ unifi_failure_snapshot }}/traefik/unifi.yml", mode: "0644", content: "http:\n  routers:\n    unifi:\n      rule: Host(`failure-unifi.example.test`)\n" }
 
     - name: Seed UniFi rollback safety snapshot payload
       ansible.builtin.copy:
@@ -208,6 +313,7 @@
       loop:
         - { dest: "{{ unifi_safety_snapshot }}/metadata.yml", mode: "0644", content: "unifi_version: 8.1.1\n" }
         - { dest: "{{ unifi_safety_snapshot }}/data/system.properties", mode: "0644", content: "marker=rollback\n" }
+        - { dest: "{{ unifi_safety_snapshot }}/data/db/WiredTiger", mode: "0644", content: "rollback-db\n" }
         - { dest: "{{ unifi_safety_snapshot }}/database/unifi/collections.bson", mode: "0644", content: "rollback-mongo\n" }
         - { dest: "{{ unifi_safety_snapshot }}/systemd/unifi.service", mode: "0644", content: "{{ unifi_snapshot_unit }}" }
         - { dest: "{{ unifi_safety_snapshot }}/traefik/unifi.yml", mode: "0644", content: "http:\n  routers:\n    unifi:\n      rule: Host(`rollback-unifi.example.test`)\n" }
@@ -224,6 +330,7 @@
       loop:
         - "{{ unifi_old_snapshot }}"
         - "{{ unifi_latest_snapshot }}"
+        - "{{ unifi_failure_snapshot }}"
         - "{{ unifi_safety_snapshot }}"
       changed_when: true
 
@@ -235,6 +342,7 @@
       loop:
         - { path: "{{ unifi_old_snapshot }}", dest: "{{ unifi_old_archive }}" }
         - { path: "{{ unifi_latest_snapshot }}", dest: "{{ unifi_latest_archive }}" }
+        - { path: "{{ unifi_failure_snapshot }}", dest: "{{ unifi_failure_archive }}" }
 
     - name: Set archive timestamps for latest selection test
       ansible.builtin.command:
@@ -246,4 +354,5 @@
       loop:
         - { path: "{{ unifi_old_archive }}", timestamp: "202603120101.00" }
         - { path: "{{ unifi_latest_archive }}", timestamp: "202603120102.00" }
+        - { path: "{{ unifi_failure_archive }}", timestamp: "202603120059.00" }
       changed_when: true

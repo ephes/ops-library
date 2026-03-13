@@ -6,6 +6,7 @@
     unifi_backup_prefix: "{{ unifi_restore_safety_backup_prefix }}"
     unifi_backup_fetch_local: false
     unifi_backup_create_archive: false
+    unifi_backup_required_packages: "{{ unifi_restore_required_packages }}"
     unifi_mongodb_host: "{{ unifi_restore_mongodb_host }}"
     unifi_mongodb_port: "{{ unifi_restore_mongodb_port }}"
     unifi_mongodb_database: "{{ unifi_restore_mongodb_database }}"

@@ -91,7 +91,7 @@ just molecule-test unifi_restore
 ```
 
 The scenario covers latest and explicit archive resolution, validation-only
-dry-run behavior, mocked MongoDB restore replay, post-restore health
-verification, and targeted rollback replay from a seeded filesystem + MongoDB
-safety snapshot. The Molecule fixture still skips package-aware UniFi version
-compatibility checks; that precondition needs a dedicated package-backed test.
+dry-run behavior, package-backed UniFi version compatibility checks via the
+real `dpkg-query` path, mocked MongoDB restore replay, scaffold rescue ->
+rollback orchestration, and targeted rollback replay from a seeded filesystem +
+MongoDB safety snapshot with post-rollback verification.

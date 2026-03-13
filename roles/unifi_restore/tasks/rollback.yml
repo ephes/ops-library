@@ -145,4 +145,8 @@
     state: started
 
 - name: Verify UniFi service health after rollback
-  ansible.builtin.include_tasks: verify.yml
+  ansible.builtin.include_tasks: >-
+    {{
+      (restore_pilot_internal_effective_caller_role_path | default(role_path, true))
+      ~ '/tasks/verify.yml'
+    }}
