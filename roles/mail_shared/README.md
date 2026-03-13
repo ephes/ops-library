@@ -1,28 +1,35 @@
 # mail_shared
 
-Shared variables and defaults for the mail infrastructure roles.
+Shared variables and documentation-oriented defaults for the mail infrastructure roles.
 
 ## Overview
 
-This role provides common configuration variables used across all mail-related roles:
+This role provides a consolidated cross-role variable surface for the mail stack:
 
 - `mail_relay_deploy` - Edge Postfix relay
 - `mail_backend_deploy` - Backend Postfix + Dovecot
 - `mail_spam_deploy` - rspamd spam filtering
 - `mail_backup` / `mail_restore` - Backup operations
 
+## Current repo reality
+
+This role is intentionally documentation-first rather than auto-wired:
+
+- the mail lifecycle roles do **not** currently declare `local.ops_library.mail_shared` in `meta/main.yml`
+- sibling roles keep their own role-local defaults such as `mail_backend_*`, `mail_relay_*`, `mail_backup_*`, and `mail_restore_*`
+- include this role explicitly only if you want the consolidated `mail_*` defaults defined in `defaults/main.yml`
+
 ## Usage
 
-Include this role as a dependency or import its defaults in your playbook:
+Include this role explicitly when you want its consolidated defaults surface:
 
 ```yaml
 - hosts: mail_servers
   roles:
     - role: local.ops_library.mail_shared
-    - role: local.ops_library.mail_backend_deploy
 ```
 
-Or access variables directly after including defaults:
+Or access the defaults file directly:
 
 ```yaml
 vars_files:

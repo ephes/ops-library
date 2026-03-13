@@ -22,9 +22,71 @@ Service roles that need specific Python versions rely on `uv` to install and man
 (for example `wagtail_deploy`, `homeassistant_deploy`, `fastdeploy_deploy`). Prefer `uv` instead of
 system Python builds; set `uv_version` and the role-specific `*_python_version` variables as needed.
 
+## Role Taxonomy
+
+`ops-library` ships three different role surfaces. Keeping those categories separate is part of the
+current refactoring contract:
+
+| Surface | Naming pattern | Intended use |
+|----------|----------------|--------------|
+| Public lifecycle entrypoints | `*_deploy`, `*_backup`, `*_restore`, `*_remove`, `*_install`, `*_register` | Stable consumer-facing roles used from `ops-control` and other playbooks. |
+| Shared-defaults roles | `*_shared` | Shared variable and fact surfaces for sibling lifecycle roles. Usually consumed through role dependencies, not called directly by operators. |
+| Internal helpers | `*_internal` and helper task libraries | Narrow implementation detail for other roles. Not part of the public compatibility contract. |
+
+Retained shared-defaults roles are:
+`homelab_shared`, `jellyfin_shared`, `mail_shared`, `mastodon_shared`, `metube_shared`,
+`navidrome_shared`, `postfixadmin_shared`, `snappymail_shared`, `tailscale_shared`,
+`takahe_shared`, and `vaultwarden_shared`.
+
+Two important exceptions:
+
+- `minio_shared` is intentionally **not** a shared-defaults role. It is an internal helper task
+  library used by MinIO backup/restore flows for `mc` environment setup.
+- `vaultwarden_shared` is intentionally partial. Today `vaultwarden_backup` and
+  `vaultwarden_restore` depend on it, while `vaultwarden_deploy` and `vaultwarden_remove` keep
+  their own role-local defaults.
+
+`mail_shared` is also intentionally documentation-first rather than auto-wired: the mail lifecycle
+roles keep their own role-local defaults and do not currently declare `mail_shared` in
+`meta/main.yml`.
+
+## Backup And Restore Direction
+
+Echoport is now the primary backup/restore orchestrator for much of the collection. Dedicated
+`*_backup` and `*_restore` roles still exist, but they no longer all mean the same thing:
+
+- `primary`: the dedicated role family is still the main public operator path.
+- `exception`: the service is intentionally outside the default Echoport migration path
+  (`mail_*`, `minio_*`).
+- `ad-hoc only`: keep the dedicated role callable for break-glass or manual use, but do not treat
+  it as the default operator workflow.
+- `deprecated`: keep the role for compatibility while Echoport is the preferred operator path.
+
+Examples of Echoport-first or Echoport-only services already documented in this repo include
+`archive`, `openclaw`, and the dedicated `echoport_backup` registration surface. Service READMEs
+should say which path is primary instead of implying that every service still follows the older
+controller-local `~/backups/...` pattern.
+
+## Restore Pilot Boundary
+
+The current shared restore pilot boundary is intentionally narrow:
+
+- public pilot roles: `fastdeploy_restore`, `unifi_restore`
+- internal helper: `restore_pilot_internal`
+
+That helper is only for the repo-proven host-local scaffold. Delayed roles such as
+`homeassistant_restore`, `paperless_restore`, `vaultwarden_restore`, `minio_restore`,
+`nyxmon_restore`, and the hybrid `minecraft_java_restore` remain outside that scaffold for now.
+
+When the helper resolves `latest` archives, exclusion regexes are treated as soft preferences: if
+every discovered artifact matches an exclusion, the helper falls back to the unfiltered archive
+list instead of failing outright.
+
 ## Available Roles
 
-The table below links each published role to its dedicated documentation. Refer to the role README for full variable reference, workflows, and examples.
+The table below highlights major public entrypoints with dedicated documentation. Refer to the role
+README for full variable reference, workflows, and examples. Shared-defaults roles and internal
+helpers are documented separately in the taxonomy section above.
 
 Some roles under `roles/` are intentionally internal helper surfaces rather than
 published service entrypoints. Keep those helpers narrowly scoped, document them
@@ -54,9 +116,11 @@ consumer repos depend on.
 | Infrastructure | [`traefik_deploy`](roles/traefik_deploy/README.md) | Deploy Traefik reverse proxy with Let's Encrypt (auto-detects platform, version upgrades). |
 | Infrastructure | [`tailscale_deploy`](roles/tailscale_deploy/README.md) | Install Tailscale from the official repo and join tailnet with auth key or manual mode (accept-dns defaults to false). |
 | Infrastructure | [`bind_authoritative_deploy`](roles/bind_authoritative_deploy/README.md) | Deploy authoritative BIND 9 with managed configs and zone files. |
+| Infrastructure | [`echoport_backup`](roles/echoport_backup/README.md) | Register centralized Echoport backup/restore runners with FastDeploy. |
 | Service deployment | [`fastdeploy_deploy`](roles/fastdeploy_deploy/README.md) | Deploy the FastDeploy platform (database, uv, frontend build, systemd, Traefik). |
 | Service deployment | [`nyxmon_deploy`](roles/nyxmon_deploy/README.md) | Deploy Nyxmon (Django app, monitoring agent, Telegram integration). |
 | Service deployment | [`archive_deploy`](roles/archive_deploy/README.md) | Deploy the Archive Django service with SQLite, systemd, Traefik, and admin bootstrap. |
+| Service deployment | [`echoport_deploy`](roles/echoport_deploy/README.md) | Deploy the Echoport Django application and its scheduler/cleanup jobs. |
 | Service deployment | [`logyard_deploy`](roles/logyard_deploy/README.md) | Deploy Logyard core runtime (Loki, shared Grafana datasource wiring, retention, and Nyxmon-facing health endpoint). |
 | Service deployment | [`logyard_ingress_deploy`](roles/logyard_ingress_deploy/README.md) | Expose Logyard Loki through an internal-only Traefik route for trusted LAN/Tailscale producers. |
 | Service deployment | [`graphyard_deploy`](roles/graphyard_deploy/README.md) | Deploy Graphyard core app/runtime (source sync, uv env, migrate/collectstatic, systemd web+agent, health checks). |

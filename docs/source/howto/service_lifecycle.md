@@ -4,8 +4,8 @@ This guide explains how to add a brand-new service to the ops-library/ops-contro
 
 ```{admonition} Document meta
 :class: tip
-**Last updated:** 2026-03-12  
-**Version:** 1.3 (bump this when the checklist materially changes)  
+**Last updated:** 2026-03-13<br>
+**Version:** 1.4 (bump this when the checklist materially changes)<br>
 **Feedback:** open a GitHub issue in `ops-library` or mention it in the ops-control stand-up notes so we can track improvements.
 ```
 
@@ -61,21 +61,32 @@ Follow this sequence for every service.
    - List `required_secrets` (even if empty) so `just create-secrets` knows which values to prompt for.
    - Specify overrides if a lifecycle uses a non-standard role name (see the `redis` example which uses `redis_install` instead of `<slug>_deploy`).
 3. Create an encrypted secrets file in `ops-control/secrets/<env>/<service>.yml` so automation has a home for credentials from day one.
-4. Confirm defaults such as `backup_root_prefix` in `services-metadata.yml` align with your service needs (`/opt/backups/<service>/` on remote hosts and `~/backups/<service>/` locally are the common pattern).
+4. Confirm defaults such as `backup_root_prefix` in `services-metadata.yml` only when the service actually keeps a dedicated backup role. Do not assume every new service still uses the older controller-local `~/backups/<service>/` pattern; Echoport is now the primary backup/restore path for many services.
 
-#### Lifecycle exception: centralized backup/restore orchestration
+#### Choose the backup/restore disposition first
 
-Some services are intentionally backed up and restored via a centralized orchestrator such as Echoport instead of `<service>_backup` / `<service>_restore` roles.
+Before creating `<service>_backup` and `<service>_restore`, decide which public disposition the service should use:
 
-If you use this exception:
+- `primary`: dedicated roles remain the main public operator path
+- `exception`: intentionally outside the default Echoport migration path
+- `ad-hoc only`: keep callable for break-glass or manual use, but not the default workflow
+- `deprecated`: retain only for compatibility while Echoport is the preferred path
 
-1. Document the exception in the service spec/PRD and the operator runbook (include the exact command path operators must use).
-2. Do not advertise unsupported capabilities in `services-metadata.yml`. If there is no `<service>_backup` or `<service>_restore` role, do not list `backup`/`restore` capabilities.
-3. Provide equivalent restore-drill evidence and operator commands in the runbook (for example: manual backup trigger, restore command, and post-restore health checks).
+For new services, default to the smallest truthful surface:
+
+1. If Echoport is the intended operator path, do not create `<service>_backup` / `<service>_restore` roles just to satisfy naming symmetry.
+2. If the service is an approved exception (today the clearest public examples are `mail_*` and `minio_*`), document why the dedicated lifecycle remains outside the normal Echoport path.
+3. If no dedicated role exists, do not advertise unsupported `backup` / `restore` capabilities in `services-metadata.yml`.
+4. Document the exact operator path in the service spec and runbook, including restore-drill evidence and post-restore verification commands.
 
 ### 2. Create service roles inside ops-library
 
-For each advertised capability add a role under `roles/<service>_<action>/`. Re-use shared snippets (templated configs, facts, path calculations) by putting them in `roles/<service>_shared/` and including that role where needed. Offer both rsync (local dev) and git (production) deployment modes whenever the codebase lives in git. If you use a centralized backup/restore exception, omit backup/restore roles and document the alternate flow.
+For each advertised capability add a role under `roles/<service>_<action>/`. Re-use shared snippets carefully:
+
+- use `roles/<service>_shared/` only when you are creating a real shared-defaults or shared-facts surface for sibling lifecycle roles
+- use a narrow internal helper role or documented task library when the reuse is implementation-only
+
+Offer both rsync (local dev) and git (production) deployment modes whenever the codebase lives in git. If Echoport is the truthful primary backup/restore path, omit dedicated backup/restore roles and document the alternate flow.
 
 - **rsync mode** is ideal for hacking on a role locally (`just deploy-one <service> dev`). It pushes whatever is under `{{ service_repo_path }}`.
 - **git mode** is for production/staging where FastDeploy or CI clones a clean tag/branch and reduces drift.
@@ -88,12 +99,14 @@ For each advertised capability add a role under `roles/<service>_<action>/`. Re-
 
 #### Backup role
 
+- Only create a dedicated backup role when the service disposition is still `primary`, `exception`, or a deliberately retained `ad-hoc only` path.
 - Dumps all state (databases, media, config) to `{{ backup_root_prefix }}/<service>/`. `backup_root_prefix` defaults to `/opt/backups` via metadata but can be overridden per host.
 - Writes manifest files so restore can verify archives.
 - Supports optional local fetch (rsync/scp) triggered by ops-control `just backup <service>`.
 
 #### Restore role
 
+- Only create a dedicated restore role when it remains a real supported public surface for that service.
 - Validates archives/manifests and performs safety snapshots before destructive actions.
 - Restores files/databases and brings services back online.
 - Exposes `restore-check` mode for dry runs when feasible.
@@ -115,11 +128,17 @@ archive/snapshot validation plus the shared `block`/`rescue`/`always`
 orchestration only. Callers still own service-specific safety backup, restore,
 verification, rollback, and cleanup logic.
 
+If that helper supports `latest` archive exclusions, treat them as soft
+preferences rather than hard filters. If all discovered artifacts match the
+exclusion list, the helper should fall back to the unfiltered candidates instead
+of failing immediately.
+
 Do not force other restore roles into this shape just because they also have multiple task files. The following remain intentionally outside the pilot scaffold:
 
 - controller-fallback variants: `homeassistant_restore`, `paperless_restore`
 - object-storage exception: `minio_restore`
 - incomplete scaffold: `nyxmon_restore`
+- hybrid split restore: `minecraft_java_restore`
 - controller-local or mail-adjacent narrow restores: `vaultwarden_restore`, `mail_restore`, `postfixadmin_restore`, `snappymail_restore`
 
 Do not treat that helper as a generic restore framework. Delayed roles stay out
@@ -133,11 +152,14 @@ of scope until they prove the same boundary in code and validation.
 #### Optional roles
 
 - `*_register` roles wire FastDeploy runners for ongoing maintenance.
-- `*_shared` roles encapsulate tasks (e.g., path calculations, templates) that other lifecycle roles import via `include_role`.
+- `*_shared` roles should be real shared-defaults or shared-facts surfaces for sibling lifecycle roles.
 - Narrow internal helper roles are acceptable when multiple public roles share
   the same implementation detail but the public entrypoints must stay stable.
   Document the helper at the role level and keep the abstraction intentionally
   small.
+
+`minio_shared` is the current example of a documented helper task library that
+does not pretend to be a shared-defaults surface.
 
 #### Role dependencies and shared infrastructure
 
@@ -177,7 +199,7 @@ of scope until they prove the same boundary in code and validation.
   - `just backup <service>`
   - `just restore <service> [archive]`
   - `just remove-one <service>`
-- If backup/restore is centralized (Echoport exception), explicitly document that `just backup <service>` / `just restore <service>` are not the operator path for that service and link the runbook commands instead.
+- If backup/restore is centralized through Echoport or another orchestrator, explicitly document that `just backup <service>` / `just restore <service>` are not the primary operator path for that service and link the runbook commands instead.
 - Update ops-control docs/runbooks so operators know about the new service.
 
 ### 6. Publish and validate
@@ -197,7 +219,7 @@ of scope until they prove the same boundary in code and validation.
 - **Hard-coded paths:** use variables (`backup_root_prefix`, `<service>_home`, `fastdeploy_services_root`, etc.) so roles stay portable.
 - **Untested restore flows:** a backup without a tested restore is not complete; always add at least one restore test.
 - **ops-control gaps:** ensure every capability exposed in metadata has matching `just` recipes and playbooks before calling the service “done”.
-- **Capability drift under exceptions:** if backup/restore is handled by Echoport (or another centralized plane), do not leave stale `backup`/`restore` capabilities in metadata.
+- **Capability drift under dispositions:** if backup/restore is handled by Echoport (or another centralized plane), do not leave stale `backup`/`restore` capabilities in metadata or README language that implies the dedicated roles are still primary.
 - **docs-build not run:** skipping the docs build is the fastest way to ship broken navigation. Run it every time.
 
 ## Getting This Guide In Front of Contributors

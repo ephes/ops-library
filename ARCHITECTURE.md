@@ -4,15 +4,19 @@
 `ops-library` packages homelab automation that can safely live in a public repository. It provides reusable Ansible content (collection namespace `local.ops_library`) for private control repos such as `ops-control`. The collection focuses on three core patterns:
 - **Platform building blocks** – bootstrap roles for Python, uv, Ansible, and SOPS.
 - **Service deployment roles** – encapsulated deployment logic for self-hosted services (FastDeploy, Nyxmon, etc.), with strict separation between public logic and private secrets.
-- **Service registration roles** – patterns for registering services with FastDeploy for remote execution (e.g., apt upgrades).
+- **Service registration/orchestration roles** – patterns for registering services with FastDeploy or Echoport for remote execution.
 
 ## High-Level Structure
 ```
 ops-library/
 ├── roles/                # First-class Ansible roles shipped in the collection
 │   ├── *_deploy/         # Service deployment roles (FastDeploy, Nyxmon)
+│   ├── *_backup/         # Dedicated backup roles when a service still keeps one
+│   ├── *_restore/        # Dedicated restore roles when a service still keeps one
 │   ├── *_remove/         # Service removal roles
 │   ├── *_register/       # FastDeploy registration roles
+│   ├── *_shared/         # Shared-defaults surfaces for sibling lifecycle roles
+│   ├── *_internal/       # Internal helper roles
 │   └── *_install/        # Platform bootstrap roles
 ├── docs/, examples/      # Human documentation and sample usage
 ├── tests/, test_runner   # Focused integration tests for roles
@@ -29,42 +33,74 @@ ops-library/
 4. **Deployment Methods**: Support both `rsync` (development) and `git` (production) deployment patterns
 5. **Fail-Fast Validation**: Roles validate all required variables and secrets before execution using assert tasks
 
-## Roles
+## Role Taxonomy
 
-Roles are the primary surface area. They fall into distinct categories:
+Roles are the primary surface area, but they no longer form one flat category.
 
-| Category | Roles | Purpose |
-|----------|-------|---------|
-| **Bootstrap** | `ansible_install`, `uv_install`, `sops_dependencies` | Prepare controller or target hosts with required tooling |
-| **Service Deployment** | `fastdeploy_deploy`, `nyxmon_deploy` | Deploy application services with full lifecycle management |
-| **Service Removal** | `fastdeploy_remove`, `nyxmon_remove` | Complete removal of services for testing or migration |
-| **Service Registration** | `apt_upgrade_register`, `fastdeploy_register_service` | Register services with FastDeploy for remote execution |
-| **Testing** | `test_dummy` | Example service demonstrating deployment patterns |
+| Surface | Examples | Contract |
+|----------|----------|----------|
+| **Public lifecycle entrypoints** | `fastdeploy_deploy`, `unifi_restore`, `tailscale_backup`, `apt_upgrade_register`, `uv_install` | Stable role names that consumer repos are expected to call directly. |
+| **Shared-defaults roles** | `homelab_shared`, `jellyfin_shared`, `mail_shared`, `postfixadmin_shared`, `vaultwarden_shared` | Shared variable and fact surfaces for sibling lifecycle roles. Usually loaded by `meta/main.yml` dependencies rather than by operators. |
+| **Internal helpers** | `webapp_deploy_internal`, `restore_pilot_internal`, `minio_shared` | Narrow implementation details for other roles. Not part of the public compatibility contract. |
 
-Each role follows standard Ansible structure (`defaults/`, `tasks/`, `templates/`, `handlers/`, optional `meta/`). Sensitive or environment-specific values are never hard-coded.
+Each role still follows standard Ansible structure (`defaults/`, `tasks/`,
+`templates/`, `handlers/`, optional `meta/`). Sensitive or environment-specific
+values are never hard-coded.
+
+### Shared-Defaults Roles
+
+Most retained `*_shared` roles are real shared-defaults surfaces:
+
+- `homelab_shared`
+- `jellyfin_shared`
+- `mail_shared`
+- `mastodon_shared`
+- `metube_shared`
+- `navidrome_shared`
+- `postfixadmin_shared`
+- `snappymail_shared`
+- `tailscale_shared`
+- `takahe_shared`
+- `vaultwarden_shared`
+
+Repo-specific nuances matter here:
+
+- `mail_shared` is a documented defaults surface, but its sibling mail roles do
+  not currently auto-include it through `meta/main.yml`. Those roles still own
+  their role-local defaults with `mail_backend_*`, `mail_relay_*`,
+  `mail_backup_*`, and `mail_restore_*` prefixes.
+- `vaultwarden_shared` is intentionally partial. `vaultwarden_backup` and
+  `vaultwarden_restore` depend on it today; `vaultwarden_deploy` and
+  `vaultwarden_remove` keep their own role-local defaults.
+- `homelab_shared` also exports the `homelab_paths` fact for sibling lifecycle
+  roles.
+
+Shared-defaults roles should stay small and explicit. They exist to centralize
+stable variables/facts for sibling roles, not to hide major orchestration.
 
 ### Internal Helper Surfaces
 
-Most consumer repos should depend only on the public service entrypoint roles
-such as `fastdeploy_deploy` or `wagtail_deploy`. When multiple public roles
-share a small, stable implementation detail, `ops-library` may add an internal
-helper role to hold that duplicated plumbing while keeping the public entrypoint
-unchanged.
+When multiple public roles share a small, stable implementation detail,
+`ops-library` may add an internal helper role or task library while keeping the
+public entrypoint unchanged.
 
-Current examples:
+Current helper surfaces:
 
 - `webapp_deploy_internal` centralizes the narrow single-unit systemd and
-  Traefik rendering steps shared by the Wave 1 and Wave 2 web application
+  Traefik rendering steps shared by the Wave 1 and Wave 2 web-application
   deploy refactors.
 - `restore_pilot_internal` centralizes the narrow restore pilot scaffold shared
   by `fastdeploy_restore` and `unifi_restore`: host-local archive/snapshot
   validation plus the `block`/`rescue`/`always` orchestration that still calls
   back into role-owned `validate`, `prepare`, `restore`, `verify`, `rollback`,
   and `cleanup` task files.
+- `minio_shared` is an internal helper task library, not a shared-defaults
+  role. It currently exposes `tasks/mc_host_env.yml` for MinIO backup/restore
+  flows that need consistent `MC_HOST_*` environment construction.
 
-Internal helper roles are not the public compatibility contract. Keep them
-small, document them at the role level, and prefer preserving the existing
-public role names and behavior over expanding helper abstraction.
+Internal helpers are not the public compatibility contract. Keep them small,
+document them at the role level, and prefer preserving existing public role
+names and behavior over expanding helper abstraction.
 
 ## Packaging Model
 - `galaxy.yml` defines the collection metadata (namespace `local`, name `ops_library`, dependencies on `community.general` and `ansible.posix`).
@@ -77,16 +113,45 @@ public role names and behavior over expanding helper abstraction.
 - `README_TESTING.md` and `TESTING.md` document expectations for contributors (pytest harness, Molecule-style checks, etc.).
 - {doc}`Service Lifecycle Guide <howto/service_lifecycle>` captures the checklist for adding or refactoring lifecycle roles and should stay aligned with these architecture notes.
 
+## Echoport And Role Dispositions
+
+Echoport is now the primary backup/restore orchestrator for many services in the
+collection. That means dedicated `*_backup` and `*_restore` roles are no longer
+one uniform category.
+
+Current public disposition terms:
+
+- `primary`: the dedicated role family is still the main public operator path
+- `exception`: explicitly outside the default Echoport migration path
+- `ad-hoc only`: keep callable for break-glass or manual use, but not the
+  preferred operator workflow
+- `deprecated`: retained for compatibility while Echoport is the preferred path
+
+Important current examples:
+
+- `mail_*` and `minio_*` are explicit exceptions.
+- `archive` and `openclaw` are Echoport-first services with no dedicated public
+  `*_backup` / `*_restore` roles.
+- Some families split by action: for example `fastdeploy_backup` is deprecated
+  while `fastdeploy_restore` remains ad-hoc only, and the same pattern applies
+  to `unifi_*` and `homelab_*`.
+- `vaultwarden_*`, `homeassistant_*`, `nyxmon_*`, and `paperless_*` dedicated
+  backup/restore roles are deprecated in this model.
+
+Top-level docs and role READMEs should say which path is primary instead of
+implicitly treating the older controller-local `~/backups/...` model as the
+default for every service.
+
 ## Restore Scaffold Boundary
 
-Wave 3 established the restore pilot boundary, and Wave 4 extracts the shared
-internal helper role `restore_pilot_internal` from that existing code. The
-pilot scaffold remains intentionally narrow:
+The restore pilot boundary remains intentionally narrow even after the pilot
+validation work. `restore_pilot_internal` only covers the repo-proven host-local
+scaffold used by:
 
 - `fastdeploy_restore`
 - `unifi_restore`
 
-These two roles are the Wave 4 extraction candidates because they already share the same repo-proven shape:
+These two roles share the same repo-proven shape:
 
 - host-local archive resolution under a remote backup root
 - split restore phases (`validate`, `restore`, `verify`, `cleanup`) plus one preparatory safety phase (`safety_backup` or `prepare`)
@@ -98,6 +163,10 @@ This boundary is about present structure, not idealized abstraction.
 `restore_pilot_internal` is intentionally limited to the two proven host-local
 pilots. It is not a generic restore framework for delayed roles.
 
+When the helper resolves `latest` archives, exclusion regexes are treated as
+soft preferences. If every discovered archive matches the exclusion list, the
+helper falls back to the unfiltered archive list instead of failing outright.
+
 ### Delayed Restore Roles
 
 The following restore roles remain outside that scaffold on purpose:
@@ -107,6 +176,7 @@ The following restore roles remain outside that scaffold on purpose:
 - `vaultwarden_restore`: monolithic and controller-local by design
 - `minio_restore`: extended multi-phase exception for object-storage recovery
 - `nyxmon_restore`: incomplete scaffold; no rollback phase and its `local_cache` story is still unfinished
+- `minecraft_java_restore`: hybrid multi-file restore split (`resolve_archive`, `stop_service`, `restore_data`, `start_service`), but not the pilot scaffold pattern
 - `mail_restore`, `postfixadmin_restore`, `snappymail_restore`: mail-adjacent narrow restores with their own established flows
 
 Wave 3 documents these roles rather than refactoring them. Their differences are meaningful enough that treating them as pilot inputs now would make the first shared extraction less safe, not more representative.
