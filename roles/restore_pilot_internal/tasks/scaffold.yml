@@ -1,0 +1,75 @@
+---
+- name: scaffold | Resolve caller role path
+  ansible.builtin.set_fact:
+    restore_pilot_internal_effective_caller_role_path: >-
+      {{
+        restore_pilot_internal_caller_role_path
+        | default((ansible_parent_role_paths | default([])) | first, true)
+      }}
+
+- name: scaffold | Initialize restore context
+  ansible.builtin.set_fact:
+    "{{ item.key }}": "{{ item.value }}"
+  loop: "{{ restore_pilot_internal_initial_facts | dict2items }}"
+  vars:
+    restore_pilot_internal_initial_facts: >-
+      {{
+        {
+          restore_pilot_internal_timestamp_var: ansible_date_time.iso8601_basic_short,
+          restore_pilot_internal_operation_successful_var: false
+        }
+        | combine(restore_pilot_internal_extra_init_facts | default({}), recursive=True)
+      }}
+
+- block:
+    - name: scaffold | Validate restore inputs
+      ansible.builtin.include_tasks: >-
+        {{ restore_pilot_internal_effective_caller_role_path }}/tasks/{{ restore_pilot_internal_validate_tasks_file }}
+
+    - name: scaffold | Run caller prepare phase
+      ansible.builtin.include_tasks: >-
+        {{ restore_pilot_internal_effective_caller_role_path }}/tasks/{{ restore_pilot_internal_prepare_tasks_file }}
+      when:
+        - (restore_pilot_internal_prepare_tasks_file | default('') | length) > 0
+        - restore_pilot_internal_prepare_enabled | default(true) | bool
+
+    - name: scaffold | Run caller restore phase
+      ansible.builtin.include_tasks: >-
+        {{ restore_pilot_internal_effective_caller_role_path }}/tasks/{{ restore_pilot_internal_restore_tasks_file }}
+      when: restore_pilot_internal_restore_enabled | default(true) | bool
+
+    - name: scaffold | Run caller verify phase
+      ansible.builtin.include_tasks: >-
+        {{ restore_pilot_internal_effective_caller_role_path }}/tasks/{{ restore_pilot_internal_verify_tasks_file }}
+      when: restore_pilot_internal_verify_enabled | default(true) | bool
+
+    - name: scaffold | Mark restore successful
+      ansible.builtin.set_fact:
+        "{{ item.key }}": "{{ item.value }}"
+      loop: "{{ restore_pilot_internal_success_facts | dict2items }}"
+      vars:
+        restore_pilot_internal_success_facts: >-
+          {{
+            {restore_pilot_internal_operation_successful_var: true}
+            | combine(restore_pilot_internal_success_extra_facts | default({}), recursive=True)
+          }}
+  rescue:
+    - name: scaffold | Run caller rollback phase
+      ansible.builtin.include_tasks: >-
+        {{ restore_pilot_internal_effective_caller_role_path }}/tasks/{{ restore_pilot_internal_rollback_tasks_file }}
+      when:
+        - (restore_pilot_internal_rollback_tasks_file | default('') | length) > 0
+        - restore_pilot_internal_rollback_enabled | default(true) | bool
+
+    - name: scaffold | Re-raise restore failure
+      ansible.builtin.fail:
+        msg: >-
+          {{
+            restore_pilot_internal_rescue_fail_message
+            | default('Restore failed. See prior log output for details.')
+          }}
+      when: restore_pilot_internal_fail_after_rescue | default(true) | bool
+  always:
+    - name: scaffold | Run caller cleanup phase
+      ansible.builtin.include_tasks: >-
+        {{ restore_pilot_internal_effective_caller_role_path }}/tasks/{{ restore_pilot_internal_cleanup_tasks_file }}

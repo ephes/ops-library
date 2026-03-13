@@ -7,6 +7,12 @@ Restores a UniFi Network Application from a snapshot created by `unifi_backup`. 
 
 This role is one of the two Wave 3 restore pilots. It shares the current host-local restore scaffold with `fastdeploy_restore`; controller-fallback, controller-local, and exception restores remain intentionally outside that scaffold.
 
+Wave 4 keeps this public role entrypoint unchanged while moving the shared
+pilot scaffold into the internal helper role
+`local.ops_library.restore_pilot_internal`. UniFi still owns its
+service-specific safety backup wiring, MongoDB/filesystem restore logic,
+version-compatibility checks, verification, and rollback behavior.
+
 ## Features
 
 - Validates archive availability (`latest` selection supported) and required tooling.

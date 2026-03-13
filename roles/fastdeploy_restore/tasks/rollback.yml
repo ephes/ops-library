@@ -28,13 +28,10 @@
 
     - name: "Parse safety snapshot metadata"
       ansible.builtin.set_fact:
-        fastdeploy_restore_safety_metadata_decoded: "{{ fastdeploy_restore_safety_metadata.content | b64decode | from_yaml }}"
+        fastdeploy_restore_metadata: "{{ fastdeploy_restore_safety_metadata.content | b64decode | from_yaml }}"
 
     - name: "Update metadata-derived facts for rollback"
-      ansible.builtin.set_fact:
-        fastdeploy_restore_snapshot_services_expected: "{{ (fastdeploy_restore_safety_metadata_decoded.services | default({})).get('count', 0) }}"
-        fastdeploy_restore_snapshot_includes_database: "{{ (fastdeploy_restore_safety_metadata_decoded.components.database | default(true)) | bool }}"
-        fastdeploy_restore_snapshot_includes_workspace: "{{ (fastdeploy_restore_safety_metadata_decoded.components.deploy_workspace | default(false)) | bool }}"
+      ansible.builtin.include_tasks: metadata_facts.yml
 
     - ansible.builtin.include_tasks: restore.yml
     - ansible.builtin.include_tasks: verify.yml
@@ -49,9 +46,3 @@
   ansible.builtin.set_fact:
     fastdeploy_restore_snapshot_dir: "{{ fastdeploy_restore_primary_snapshot_dir | default(fastdeploy_restore_snapshot_dir) }}"
   when: fastdeploy_restore_can_rollback
-
-- name: "Fail restore process"
-  ansible.builtin.fail:
-    msg: >-
-      FastDeploy restore failed{{ fastdeploy_restore_can_rollback | ternary(' (rollback attempted)', '') }}.
-      Check prior log output for details.

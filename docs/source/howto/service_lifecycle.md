@@ -100,11 +100,20 @@ For each advertised capability add a role under `roles/<service>_<action>/`. Re-
 
 ##### Restore pilot scaffold
 
-Use the Wave 3 restore pilot scaffold only when the role actually matches the existing host-local pattern in this repo. Today that means `fastdeploy_restore` and `unifi_restore`, which both:
+Use the Wave 3/Wave 4 restore pilot scaffold only when the role actually
+matches the existing host-local pattern in this repo. Today that means
+`fastdeploy_restore` and `unifi_restore`, which both:
 
 - resolve archives on the target host
-- split validation, destructive restore, health verification, and cleanup into separate task files
+- split validation, destructive restore, health verification, and cleanup into
+  separate task files
 - keep rollback logic inside the role instead of depending on controller-local staging
+
+Wave 4 extracts the shared parts of that scaffold into the internal helper role
+`local.ops_library.restore_pilot_internal`. The helper covers host-local
+archive/snapshot validation plus the shared `block`/`rescue`/`always`
+orchestration only. Callers still own service-specific safety backup, restore,
+verification, rollback, and cleanup logic.
 
 Do not force other restore roles into this shape just because they also have multiple task files. The following remain intentionally outside the pilot scaffold:
 
@@ -113,7 +122,8 @@ Do not force other restore roles into this shape just because they also have mul
 - incomplete scaffold: `nyxmon_restore`
 - controller-local or mail-adjacent narrow restores: `vaultwarden_restore`, `mail_restore`, `postfixadmin_restore`, `snappymail_restore`
 
-Wave 3 stops at documenting that boundary and adding executable coverage. Shared restore helpers belong to the follow-on extraction wave, not this groundwork slice.
+Do not treat that helper as a generic restore framework. Delayed roles stay out
+of scope until they prove the same boundary in code and validation.
 
 #### Remove role
 

@@ -1,0 +1,6 @@
+---
+- name: main | Reject direct role execution without tasks_from
+  ansible.builtin.fail:
+    msg: >-
+      local.ops_library.restore_pilot_internal is an internal helper role.
+      Include it with tasks_from (for example: scaffold or host_local_validate).

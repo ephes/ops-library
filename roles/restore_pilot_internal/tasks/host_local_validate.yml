@@ -1,0 +1,206 @@
+---
+- name: host_local_validate | Resolve latest archive selection
+  when: restore_pilot_internal_archive == 'latest'
+  block:
+    - name: host_local_validate | Discover available archives
+      ansible.builtin.find:
+        paths: "{{ restore_pilot_internal_archive_search_root }}"
+        patterns: "{{ restore_pilot_internal_archive_patterns | default(['*.tar.gz', '*.tar.zst']) }}"
+        recurse: false
+        file_type: file
+      register: restore_pilot_internal_available_archives
+
+    - name: host_local_validate | Filter latest archive exclusions
+      ansible.builtin.set_fact:
+        restore_pilot_internal_filtered_archives: >-
+          {{
+            (
+              restore_pilot_internal_available_archives.files
+              | rejectattr(
+                  'path',
+                  'search',
+                  restore_pilot_internal_latest_exclude_regex | default('__no_exclude__')
+                )
+              | list
+            )
+            if (restore_pilot_internal_latest_exclude_regex | default('') | length > 0)
+            else restore_pilot_internal_available_archives.files
+          }}
+
+    - name: host_local_validate | Fail when no archives are available
+      ansible.builtin.fail:
+        msg: "No {{ restore_pilot_internal_role_label }} archives found under {{ restore_pilot_internal_archive_search_root }}"
+      when: restore_pilot_internal_available_archives.files | length == 0
+
+    - name: host_local_validate | Select effective latest archive candidates
+      ansible.builtin.set_fact:
+        restore_pilot_internal_candidate_archives: >-
+          {{
+            (restore_pilot_internal_filtered_archives | length > 0)
+            | ternary(restore_pilot_internal_filtered_archives, restore_pilot_internal_available_archives.files)
+          }}
+
+    - name: host_local_validate | Select newest archive
+      ansible.builtin.set_fact:
+        "{{ restore_pilot_internal_resolved_artifact_path_var }}": "{{ (restore_pilot_internal_candidate_archives | sort(attribute='mtime', reverse=true))[0].path }}"
+
+- name: host_local_validate | Resolve explicit archive selection
+  when: restore_pilot_internal_archive != 'latest'
+  block:
+    - name: host_local_validate | Build explicit artifact candidate paths
+      ansible.builtin.set_fact:
+        restore_pilot_internal_candidate_paths: >-
+          {{
+            [
+              restore_pilot_internal_archive,
+              restore_pilot_internal_archive_search_root ~ '/' ~ restore_pilot_internal_archive,
+              restore_pilot_internal_archive_search_root ~ '/' ~ restore_pilot_internal_archive ~ '.tar.gz',
+              restore_pilot_internal_archive_search_root ~ '/' ~ restore_pilot_internal_archive ~ '.tar.zst'
+            ] | unique
+          }}
+
+    - name: host_local_validate | Probe explicit artifact candidate paths
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ restore_pilot_internal_candidate_paths }}"
+      register: restore_pilot_internal_candidate_stats
+
+    - name: host_local_validate | Pick first existing artifact candidate
+      ansible.builtin.set_fact:
+        "{{ restore_pilot_internal_resolved_artifact_path_var }}": "{{ (restore_pilot_internal_candidate_stats.results | selectattr('stat.exists') | map(attribute='stat.path') | list)[0] }}"
+      when: (restore_pilot_internal_candidate_stats.results | selectattr('stat.exists') | list) | length > 0
+
+    - name: host_local_validate | Fail when explicit artifact was not found
+      ansible.builtin.fail:
+        msg: >-
+          Unable to locate {{ restore_pilot_internal_role_label }} restore artifact "{{ restore_pilot_internal_archive }}".
+          Checked: {{ restore_pilot_internal_candidate_paths | join(', ') }}
+      when: (lookup('vars', restore_pilot_internal_resolved_artifact_path_var, default='') | length) == 0
+
+- name: host_local_validate | Normalize resolved artifact path
+  ansible.builtin.set_fact:
+    restore_pilot_internal_resolved_artifact_path_value: "{{ lookup('vars', restore_pilot_internal_resolved_artifact_path_var, default='') | string | trim }}"
+
+- name: host_local_validate | Evaluate archive suffix
+  ansible.builtin.set_fact:
+    restore_pilot_internal_resolved_is_archive_value: >-
+      {{
+        (
+          restore_pilot_internal_resolved_artifact_path_value
+          | regex_search('[.]tar[.](gz|zst)$')
+        ) is not none
+      }}
+
+- name: host_local_validate | Determine whether resolved artifact is an archive
+  ansible.builtin.set_fact:
+    "{{ restore_pilot_internal_resolved_is_archive_var | default('restore_pilot_internal_resolved_is_archive') }}": "{{ restore_pilot_internal_resolved_is_archive_value | bool }}"
+
+- name: host_local_validate | Reset staging directory before extraction
+  ansible.builtin.file:
+    path: "{{ restore_pilot_internal_stage_dir }}"
+    state: absent
+  when:
+    - restore_pilot_internal_stage_reset | default(false) | bool
+    - restore_pilot_internal_resolved_is_archive_value | bool
+
+- name: host_local_validate | Ensure staging directory exists
+  ansible.builtin.file:
+    path: "{{ restore_pilot_internal_stage_dir }}"
+    state: directory
+    owner: "{{ restore_pilot_internal_stage_owner | default(omit) }}"
+    group: "{{ restore_pilot_internal_stage_group | default(omit) }}"
+    mode: "{{ restore_pilot_internal_stage_mode | default('0750') }}"
+  when: restore_pilot_internal_resolved_is_archive_value | bool
+
+- name: host_local_validate | Extract archive into staging directory
+  ansible.builtin.command:
+    cmd: >-
+      tar -C "{{ restore_pilot_internal_stage_dir }}"
+      -xf "{{ lookup('vars', restore_pilot_internal_resolved_artifact_path_var, default='') }}"
+  when: restore_pilot_internal_resolved_is_archive_value | bool
+
+- name: host_local_validate | Set initial snapshot directory facts
+  ansible.builtin.set_fact:
+    "{{ restore_pilot_internal_snapshot_dir_var }}": >-
+      {{
+        restore_pilot_internal_resolved_is_archive_value
+        | ternary(
+            restore_pilot_internal_stage_dir ~ '/' ~ (
+              lookup('vars', restore_pilot_internal_resolved_artifact_path_var, default='')
+              | basename
+              | regex_replace('[.]tar[.](gz|zst)$', '')
+            ),
+            lookup('vars', restore_pilot_internal_resolved_artifact_path_var, default='')
+          )
+      }}
+    "{{ restore_pilot_internal_extracted_archive_var | default('restore_pilot_internal_extracted_archive') }}": "{{ restore_pilot_internal_resolved_is_archive_value | bool }}"
+
+- name: host_local_validate | Locate metadata file in extracted archive
+  ansible.builtin.find:
+    paths: "{{ restore_pilot_internal_stage_dir }}"
+    patterns: metadata.yml
+    recurse: true
+    file_type: file
+  register: restore_pilot_internal_metadata_candidates
+  when: restore_pilot_internal_resolved_is_archive_value | bool
+
+- name: host_local_validate | Set snapshot directory from metadata location
+  ansible.builtin.set_fact:
+    "{{ restore_pilot_internal_snapshot_dir_var }}": "{{ restore_pilot_internal_metadata_candidates.files[0].path | dirname }}"
+  when:
+    - restore_pilot_internal_resolved_is_archive_value | bool
+    - restore_pilot_internal_metadata_candidates.matched | default(0) | int > 0
+
+- name: host_local_validate | Verify snapshot directory exists
+  ansible.builtin.stat:
+    path: "{{ lookup('vars', restore_pilot_internal_snapshot_dir_var, default='') }}"
+  register: restore_pilot_internal_snapshot_stat
+
+- name: host_local_validate | Assert snapshot directory is present
+  ansible.builtin.assert:
+    that:
+      - restore_pilot_internal_snapshot_stat.stat.exists | default(false)
+      - restore_pilot_internal_snapshot_stat.stat.isdir | default(false)
+    fail_msg: "Snapshot directory {{ lookup('vars', restore_pilot_internal_snapshot_dir_var, default='') }} does not exist."
+
+- name: host_local_validate | Verify metadata file exists
+  ansible.builtin.stat:
+    path: "{{ lookup('vars', restore_pilot_internal_snapshot_dir_var, default='') }}/metadata.yml"
+  register: restore_pilot_internal_metadata_stat
+
+- name: host_local_validate | Assert metadata file is present
+  ansible.builtin.fail:
+    msg: "metadata.yml not found in snapshot {{ lookup('vars', restore_pilot_internal_snapshot_dir_var, default='') }}"
+  when: not restore_pilot_internal_metadata_stat.stat.exists
+
+- name: host_local_validate | Load snapshot metadata
+  ansible.builtin.slurp:
+    src: "{{ lookup('vars', restore_pilot_internal_snapshot_dir_var, default='') }}/metadata.yml"
+  register: restore_pilot_internal_metadata_file
+
+- name: host_local_validate | Set metadata fact
+  ansible.builtin.set_fact:
+    "{{ restore_pilot_internal_metadata_var }}": "{{ restore_pilot_internal_metadata_file.content | b64decode | from_yaml }}"
+
+- name: host_local_validate | Stat checksum manifest
+  ansible.builtin.stat:
+    path: "{{ lookup('vars', restore_pilot_internal_snapshot_dir_var, default='') }}/manifest.sha256"
+  register: restore_pilot_internal_manifest_stat
+
+- name: host_local_validate | Validate checksums
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cd "{{ lookup('vars', restore_pilot_internal_snapshot_dir_var, default='') }}"
+    sha256sum --check manifest.sha256
+  args:
+    executable: /bin/bash
+  when:
+    - restore_pilot_internal_validate_checksums | bool
+    - restore_pilot_internal_manifest_stat.stat.exists
+
+- name: host_local_validate | Fail when checksum validation requested but manifest missing
+  ansible.builtin.fail:
+    msg: "Checksum validation enabled, but manifest.sha256 is missing in {{ lookup('vars', restore_pilot_internal_snapshot_dir_var, default='') }}"
+  when:
+    - restore_pilot_internal_validate_checksums | bool
+    - not restore_pilot_internal_manifest_stat.stat.exists

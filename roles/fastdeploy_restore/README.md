@@ -4,6 +4,12 @@ Restore a FastDeploy instance from a snapshot produced by `fastdeploy_backup`. T
 
 This role is one of the two Wave 3 restore pilots. It defines the current host-local restore scaffold together with `unifi_restore`; controller-fallback, controller-local, and exception restores remain outside that scaffold for now.
 
+Wave 4 keeps this public role entrypoint unchanged while moving the shared
+pilot scaffold into the internal helper role
+`local.ops_library.restore_pilot_internal`. FastDeploy still owns its
+service-specific safety backup wiring, PostgreSQL/filesystem restore steps,
+metadata-derived facts, verification, and rollback behavior.
+
 ## Features
 
 - Accepts explicit archive/directory paths or `latest` (auto-select newest `.tar.gz`/`.tar.zst` under `/opt/backups/fastdeploy`).

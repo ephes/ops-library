@@ -51,11 +51,16 @@ share a small, stable implementation detail, `ops-library` may add an internal
 helper role to hold that duplicated plumbing while keeping the public entrypoint
 unchanged.
 
-Current example:
+Current examples:
 
 - `webapp_deploy_internal` centralizes the narrow single-unit systemd and
   Traefik rendering steps shared by the Wave 1 and Wave 2 web application
   deploy refactors.
+- `restore_pilot_internal` centralizes the narrow restore pilot scaffold shared
+  by `fastdeploy_restore` and `unifi_restore`: host-local archive/snapshot
+  validation plus the `block`/`rescue`/`always` orchestration that still calls
+  back into role-owned `validate`, `prepare`, `restore`, `verify`, `rollback`,
+  and `cleanup` task files.
 
 Internal helper roles are not the public compatibility contract. Keep them
 small, document them at the role level, and prefer preserving the existing
@@ -74,8 +79,9 @@ public role names and behavior over expanding helper abstraction.
 
 ## Restore Scaffold Boundary
 
-Wave 3 establishes a restore pilot boundary before any shared restore helper is extracted.
-The current pilot scaffold is intentionally narrow:
+Wave 3 established the restore pilot boundary, and Wave 4 extracts the shared
+internal helper role `restore_pilot_internal` from that existing code. The
+pilot scaffold remains intentionally narrow:
 
 - `fastdeploy_restore`
 - `unifi_restore`
@@ -88,7 +94,9 @@ These two roles are the Wave 4 extraction candidates because they already share 
 - metadata and manifest validation before destructive steps
 - post-restore health checks that stay on the target host
 
-This boundary is about present structure, not idealized abstraction. `ops-library` does not yet ship a generic restore helper role, and Wave 3 deliberately stops short of inventing one.
+This boundary is about present structure, not idealized abstraction.
+`restore_pilot_internal` is intentionally limited to the two proven host-local
+pilots. It is not a generic restore framework for delayed roles.
 
 ### Delayed Restore Roles
 
