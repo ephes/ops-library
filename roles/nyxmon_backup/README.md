@@ -2,6 +2,12 @@
 
 Creates timestamped Nyxmon snapshots under `/opt/backups/nyxmon` and fetches the compressed archive back to the control machine by default.
 
+## Disposition
+
+`nyxmon_backup` is `deprecated`. Echoport is the preferred operator path for
+routine Nyxmon backups. This role is retained for compatibility with existing
+playbooks and legacy/manual workflows.
+
 ## Features
 
 - Validates site, media, static, logs, `.env`, systemd, Traefik, and database paths before running.

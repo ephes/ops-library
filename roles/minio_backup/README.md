@@ -2,6 +2,13 @@
 
 Create a cold snapshot of a single-node MinIO deployment including IAM/bucket metadata, object data, and all supporting configuration. Snapshots live under `/opt/backups/minio/<prefix>-<timestamp>` and can optionally be archived/fetched to the controller.
 
+## Disposition
+
+`minio_backup` is an `exception`. This family is intentionally outside the
+default Echoport deprecation path because object-storage recovery semantics and
+`minio_offsite_replication` are service-specific. Keep using this role when you
+need the dedicated MinIO backup workflow.
+
 ## What the role does
 
 - Verifies MinIO binaries, service health, credentials, and data directories before touching the filesystem.

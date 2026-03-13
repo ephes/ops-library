@@ -2,6 +2,12 @@
 
 Create disaster recovery backups of a Minecraft Java Edition server.
 
+## Disposition
+
+`minecraft_java_backup` is `ad-hoc only`. Echoport is the preferred operator
+path for routine Minecraft Java backups. This role remains callable for
+break-glass or manual use, but it is not the default operator workflow.
+
 ## Description
 
 This role creates Tier 2 (disaster recovery) backups of the Minecraft server, including:

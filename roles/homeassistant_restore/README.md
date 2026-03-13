@@ -2,6 +2,12 @@
 
 Role that restores a Home Assistant Core deployment from backups produced by `homeassistant_backup`.
 
+## Disposition
+
+`homeassistant_restore` is `deprecated`. Echoport is the preferred operator
+path for routine Home Assistant restores. This role is retained for
+compatibility with existing playbooks and legacy/manual workflows.
+
 ## Features
 
 - Resolves backup archives by explicit path or automatically selects the latest archive on the target host.

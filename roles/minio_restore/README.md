@@ -2,6 +2,13 @@
 
 Rehydrate a single-node MinIO deployment from a snapshot produced by `minio_backup`. The role handles archive discovery/upload, checksum validation, safety backups, data/config restoration, and post-restore verification.
 
+## Disposition
+
+`minio_restore` is an `exception`. This family is intentionally outside the
+default Echoport deprecation path because object-storage recovery semantics and
+`minio_offsite_replication` are service-specific. Keep using this role when you
+need the dedicated MinIO restore workflow.
+
 ## What the role does
 
 - Resolves the requested archive (`latest` by default) from `/opt/backups/minio`, or uploads one from the controller cache. When `minio_restore_prefer_latest_directory` is true, the newest extracted snapshot directory is used before falling back to archives.

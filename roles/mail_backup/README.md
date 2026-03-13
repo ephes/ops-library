@@ -2,6 +2,13 @@
 
 Create backups of mail server data and configuration.
 
+## Disposition
+
+`mail_backup` is an `exception`. This family is intentionally outside the
+default Echoport deprecation path because mail disaster recovery follows its
+own dedicated workflow, including `mail_offsite_replication`. Keep using this
+role when you need the mail-specific backup surface.
+
 ## Overview
 
 This role creates comprehensive backups of:

@@ -2,6 +2,13 @@
 
 Restores the SnappyMail data directory from a backup archive or pre-extracted directory.
 
+## Disposition
+
+`snappymail_restore` is `ad-hoc only`. Echoport is the preferred operator path
+for routine SnappyMail recovery work. This narrow mail-adjacent role remains
+callable for manual exceptions and compatibility, but it is not the default
+operator workflow and should not be treated as an auto-removal candidate.
+
 ## Variables
 
 - `snappymail_restore_source` (required): Path to the archive (`.tar.gz` or `.tar.zst`) or directory.

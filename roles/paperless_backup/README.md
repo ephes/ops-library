@@ -2,6 +2,12 @@
 
 Create a full Paperless-ngx snapshot (application exporter + PostgreSQL + storage/config files) under `/opt/backups/paperless/<prefix>-<timestamp>` and optionally pull a compressed archive back to the control host.
 
+## Disposition
+
+`paperless_backup` is `deprecated`. Echoport is the preferred operator path for
+routine Paperless backups. This role is retained for compatibility with
+existing playbooks and legacy/manual workflows.
+
 ## What it does
 
 - Verifies all critical Paperless paths (virtualenv, `.env`, media/data mounts, optional consume/export/logs directories).

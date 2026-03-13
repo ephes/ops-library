@@ -2,6 +2,12 @@
 
 Restore a Paperless-ngx instance from an archive created by the `paperless_backup` role (or a matching manual snapshot). The role unpacks the requested backup, validates metadata and checksums, optionally captures a pre-restore safety snapshot, stops all Paperless services, restores PostgreSQL plus media/data/configuration files (or runs `document_importer` when available), and finally restarts the services with optional HTTP + PostgreSQL health checks. If the verification phase fails, the captured safety snapshot is replayed automatically as a rollback.
 
+## Disposition
+
+`paperless_restore` is `deprecated`. Echoport is the preferred operator path
+for routine Paperless restores. This role is retained for compatibility with
+existing playbooks and legacy/manual workflows.
+
 ## Capabilities
 
 - Locate a specific archive (or automatically pick the newest artifact under `/opt/backups/paperless`).

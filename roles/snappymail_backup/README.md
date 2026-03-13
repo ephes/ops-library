@@ -2,6 +2,13 @@
 
 Creates a lightweight archive of the SnappyMail data directory (config, address book, logs) without touching IMAP mail storage.
 
+## Disposition
+
+`snappymail_backup` is `ad-hoc only`. Echoport is the preferred operator path
+for routine SnappyMail recovery work. This narrow mail-adjacent role remains
+callable for manual exceptions and compatibility, but it is not the default
+operator workflow and should not be treated as an auto-removal candidate.
+
 ## Variables
 
 - `snappymail_data_dir` (from `snappymail_shared`): Data directory to snapshot.

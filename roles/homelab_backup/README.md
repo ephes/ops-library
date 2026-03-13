@@ -2,6 +2,12 @@
 
 `homelab_backup` snapshots the SQLite database, media, static files, environment file, and supporting configs for the Homelab service. It follows the same `/opt/backups/<service>/<prefix>-<timestamp>` layout used by other ops-library roles so ops-control can reuse common playbooks and `just backup homelab`.
 
+## Disposition
+
+`homelab_backup` is `deprecated`. Echoport is the preferred operator path for
+routine Homelab backups. This role is retained for compatibility with existing
+playbooks and legacy/manual workflows.
+
 ## Features
 
 - Hot SQLite backups using `sqlite3 .backup` with automatic fallback to an offline snapshot

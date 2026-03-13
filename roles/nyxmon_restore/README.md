@@ -2,6 +2,12 @@
 
 Restores a Nyxmon deployment from archives produced by `nyxmon_backup`.
 
+## Disposition
+
+`nyxmon_restore` is `deprecated`. Echoport is the preferred operator path for
+routine Nyxmon restores. This role is retained for compatibility with existing
+playbooks and legacy/manual workflows.
+
 ## Features
 
 - Automatically selects the latest archive (or a named archive) under `/opt/backups/nyxmon`.

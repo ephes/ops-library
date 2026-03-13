@@ -2,6 +2,12 @@
 
 Create backups of Vaultwarden password manager data.
 
+## Disposition
+
+`vaultwarden_backup` is `deprecated`. Echoport is the preferred operator path
+for routine Vaultwarden backups. This role is retained for compatibility with
+existing playbooks and legacy/manual workflows.
+
 ## Quick Start
 
 ```yaml

@@ -2,6 +2,12 @@
 
 Restore a Minecraft Java Edition server from a backup archive.
 
+## Disposition
+
+`minecraft_java_restore` is `ad-hoc only`. Echoport is the preferred operator
+path for routine Minecraft Java restores. This role remains callable for
+break-glass or manual use, but it is not the default operator workflow.
+
 ## Description
 
 This role restores the Minecraft server from a Tier 2 backup archive:

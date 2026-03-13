@@ -5,6 +5,12 @@ Restores a UniFi Network Application from a snapshot created by `unifi_backup`. 
 1. **Automated** (default): drops/restores the MongoDB database, rsyncs the data directory, reapplies systemd/Traefik files, and verifies service health.
 2. **Manual .unf prep**: extracts the most recent `.unf` file to `/tmp/unifi-restore.unf` so an administrator can import it via the UniFi web UI. Cleanup removes the file automatically once the run finishes.
 
+## Disposition
+
+`unifi_restore` is `ad-hoc only`. Echoport is the preferred operator path for
+routine UniFi restores. This role remains callable for break-glass or manual
+recovery and compatibility, but it is not the default operator workflow.
+
 This role is one of the two Wave 3 restore pilots. It shares the current host-local restore scaffold with `fastdeploy_restore`; controller-fallback, controller-local, and exception restores remain intentionally outside that scaffold.
 
 Wave 4 keeps this public role entrypoint unchanged while moving the shared

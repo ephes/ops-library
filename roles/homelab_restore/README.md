@@ -2,6 +2,12 @@
 
 `homelab_restore` rehydrates a Homelab deployment from archives produced by `homelab_backup`. It validates metadata/manifests, creates an optional safety snapshot, restores database/files/configuration, and restarts the service with post-restore checks.
 
+## Disposition
+
+`homelab_restore` is `ad-hoc only`. Echoport is the preferred operator path
+for routine Homelab restores. This role remains callable for break-glass or
+manual recovery and compatibility, but it is not the default operator workflow.
+
 ## Features
 
 - Archive discovery (`homelab_restore_archive: latest` finds newest tarball)

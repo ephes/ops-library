@@ -2,6 +2,13 @@
 
 Restore mail server from backup.
 
+## Disposition
+
+`mail_restore` is an `exception`. This family is intentionally outside the
+default Echoport deprecation path because mail disaster recovery follows its
+own dedicated workflow, including `mail_offsite_replication`. Keep using this
+role when you need the mail-specific restore surface.
+
 ## Overview
 
 This role restores mail server data from a backup created by `mail_backup`:

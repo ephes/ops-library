@@ -6,6 +6,13 @@ Backup PostfixAdmin configuration and admin-specific database tables.
 
 This role creates backups of PostfixAdmin's configuration and admin data. Core mail tables (`domain`, `mailbox`, `alias`, `alias_domain`) are backed up by the `mail_backup` role - this role only backs up PostfixAdmin UI-specific data.
 
+## Disposition
+
+`postfixadmin_backup` is `ad-hoc only`. Echoport is the preferred operator path
+for routine PostfixAdmin recovery work. This narrow mail-adjacent role remains
+callable for manual exceptions and compatibility, but it is not the default
+operator workflow and should not be treated as an auto-removal candidate.
+
 ## What Gets Backed Up
 
 1. **Configuration File**

@@ -2,6 +2,12 @@
 
 Creates a consistent on-host backup for the UniFi Network Application, combining a MongoDB dump, file snapshots, and metadata that document how to restore the archive.
 
+## Disposition
+
+`unifi_backup` is `deprecated`. Echoport is the preferred operator path for
+routine UniFi backups. This role is retained for compatibility with existing
+playbooks and legacy/manual workflows.
+
 ## Features
 
 - Validates the UniFi installation paths and required binaries (`mongodump`, `mongo`, `rsync`, `tar`).

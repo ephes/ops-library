@@ -2,6 +2,12 @@
 
 Ansible role that creates an on-host backup of a Home Assistant Core deployment.
 
+## Disposition
+
+`homeassistant_backup` is `deprecated`. Echoport is the preferred operator path
+for routine Home Assistant backups. This role is retained for compatibility
+with existing playbooks and legacy/manual workflows.
+
 ## Features
 
 - Validates key paths (config, data, logs, systemd unit, Traefik dynamic file).

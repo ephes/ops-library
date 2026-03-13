@@ -2,6 +2,12 @@
 
 Create a complete FastDeploy snapshot (database, services tree, deploy-runner artifacts, system integration files, and metadata) under `/opt/backups/fastdeploy/<prefix>-<timestamp>` and optionally fetch an archive back to the controller.
 
+## Disposition
+
+`fastdeploy_backup` is `deprecated`. Echoport is the preferred operator path for
+routine FastDeploy backups. This role is retained for compatibility with
+existing playbooks and legacy/manual workflows.
+
 ## What it does
 
 - Validates required FastDeploy and deploy-user paths (site, `.env`, `services/`, `/home/deploy/runners`) before copying data.

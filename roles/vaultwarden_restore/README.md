@@ -2,6 +2,12 @@
 
 Restore Vaultwarden password manager from a backup archive.
 
+## Disposition
+
+`vaultwarden_restore` is `deprecated`. Echoport is the preferred operator path
+for routine Vaultwarden restores. This role is retained for compatibility with
+existing playbooks and legacy/manual workflows.
+
 ## Quick Start
 
 ```yaml

@@ -2,6 +2,14 @@
 
 Restore PostfixAdmin configuration and admin tables from backup.
 
+## Disposition
+
+`postfixadmin_restore` is `ad-hoc only`. Echoport is the preferred operator
+path for routine PostfixAdmin recovery work. This narrow mail-adjacent role
+remains callable for manual exceptions and compatibility, but it is not the
+default operator workflow and should not be treated as an auto-removal
+candidate.
+
 ## Overview
 
 This role restores PostfixAdmin's configuration and admin data from a backup created by `postfixadmin_backup`. It restores:

@@ -2,6 +2,12 @@
 
 Restore a FastDeploy instance from a snapshot produced by `fastdeploy_backup`. The role locates the requested artifact, verifies metadata (and optional checksums), optionally captures a safety snapshot before touching the host, restores PostgreSQL plus FastDeploy/deploy-user files, and performs layered health checks (systemd, HTTP endpoint, database query). A rollback path replays the safety snapshot automatically when verification fails.
 
+## Disposition
+
+`fastdeploy_restore` is `ad-hoc only`. Echoport is the preferred operator path
+for routine FastDeploy restores. This role remains callable for break-glass or
+manual recovery and compatibility, but it is not the default operator workflow.
+
 This role is one of the two Wave 3 restore pilots. It defines the current host-local restore scaffold together with `unifi_restore`; controller-fallback, controller-local, and exception restores remain outside that scaffold for now.
 
 Wave 4 keeps this public role entrypoint unchanged while moving the shared
