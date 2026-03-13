@@ -16,7 +16,7 @@ version-compatibility checks, verification, and rollback behavior.
 ## Features
 
 - Validates archive availability (`latest` selection supported) and required tooling.
-- Optionally creates a pre-restore safety backup (via `unifi_backup`) and can roll back automatically if verification fails.
+- Optionally creates a pre-restore safety backup (via `unifi_backup`) and can roll back automatically if verification fails, replaying the MongoDB safety snapshot when MongoDB restore support is enabled and available before rerunning service verification.
 - Extracts the archive into a staging directory, validates `manifest.sha256`, and checks UniFi major version compatibility.
 - Provides MongoDB restore + rsync of the UniFi data directory or prepares a `.unf` for manual import.
 - Copies system integration files (systemd unit, Traefik config) and reloads `systemd`.
@@ -39,6 +39,7 @@ unifi_restore_create_safety_backup: true
 unifi_restore_method: automated                      # or manual-unf-prep
 unifi_restore_validate_checksums: true
 unifi_restore_check_version_compatibility: true
+unifi_restore_dry_run: false
 unifi_restore_health_url: https://controller.example.com/
 unifi_restore_staging_dir: /tmp/unifi-restore
 unifi_restore_service_stop_pause: 10
@@ -75,13 +76,22 @@ To prepare a manual `.unf` import instead:
 
 The play reports where `/tmp/unifi-restore.unf` was placed so you can upload it via the UniFi UI before cleanup removes the file.
 
+## Dry-run mode
+
+Set `unifi_restore_dry_run: true` to validate artifact selection, metadata,
+checksums, and optional version compatibility without creating a safety backup
+or applying restore/verify phases.
+
 ## Validation harness
 
-Wave 3 adds a focused Molecule scenario for this role:
+Wave 4 extends the focused Molecule scenario for this role:
 
 ```bash
 just molecule-test unifi_restore
 ```
 
-The scenario covers archive resolution, post-restore health verification, and targeted rollback replay from a seeded safety snapshot. The role currently has no separate executable dry-run path inside the Molecule harness, so validation-only coverage remains specific to `fastdeploy_restore`.
-The Molecule fixture also skips package-aware UniFi version compatibility checks; that precondition still needs a dedicated package-backed test if Wave 4 or later changes that logic.
+The scenario covers latest and explicit archive resolution, validation-only
+dry-run behavior, mocked MongoDB restore replay, post-restore health
+verification, and targeted rollback replay from a seeded filesystem + MongoDB
+safety snapshot. The Molecule fixture still skips package-aware UniFi version
+compatibility checks; that precondition needs a dedicated package-backed test.

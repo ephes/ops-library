@@ -9,6 +9,100 @@
     name: "{{ unifi_service_name }}"
     state: stopped
 
+- block:
+    - name: "mongodb rollback | Determine safety backup dump directory"
+      ansible.builtin.set_fact:
+        unifi_rollback_mongodb_dump_dir: "{{ unifi_safety_backup_path }}/database/{{ unifi_restore_mongodb_database }}"
+
+    - name: "mongodb rollback | Check for MongoDB dump directory"
+      ansible.builtin.stat:
+        path: "{{ unifi_rollback_mongodb_dump_dir }}"
+      register: unifi_rollback_mongodb_dump_stat
+
+    - name: "mongodb rollback | Set MongoDB dump availability fact"
+      ansible.builtin.set_fact:
+        unifi_rollback_mongodb_dump_available: >-
+          {{
+            unifi_rollback_mongodb_dump_stat.stat.exists | default(false)
+            and unifi_rollback_mongodb_dump_stat.stat.isdir | default(false)
+          }}
+
+    - name: "mongodb rollback | Warn if safety snapshot MongoDB dump is missing"
+      ansible.builtin.debug:
+        msg: >-
+          MongoDB safety snapshot not found at {{ unifi_rollback_mongodb_dump_dir }}.
+          Skipping MongoDB rollback replay.
+      when: not unifi_rollback_mongodb_dump_available
+
+    - name: "mongodb rollback | Build drop database command"
+      ansible.builtin.set_fact:
+        unifi_rollback_mongodb_drop_args: >-
+          {{
+            [
+              unifi_mongodb_shell_binary,
+              '--host=' ~ unifi_restore_mongodb_host,
+              '--port=' ~ (unifi_restore_mongodb_port | string),
+              '--quiet',
+              '--eval=db.getSiblingDB("' ~ unifi_restore_mongodb_database ~ '").dropDatabase()'
+            ]
+            + (((unifi_restore_mongodb_username | default('', true) | length) > 0)
+                | ternary(['--username=' ~ unifi_restore_mongodb_username], []))
+            + (((unifi_restore_mongodb_password | default('', true) | length) > 0)
+                | ternary(['--password=' ~ unifi_restore_mongodb_password], []))
+            + (((unifi_restore_mongodb_auth_db | default('', true) | length) > 0)
+                | ternary(['--authenticationDatabase=' ~ unifi_restore_mongodb_auth_db], []))
+          }}
+      when:
+        - unifi_rollback_mongodb_dump_available
+        - unifi_restore_mongodb_drop_database | bool
+      no_log: "{{ unifi_restore_mongodb_password | default('', true) | length > 0 }}"
+
+    - name: "mongodb rollback | Drop existing MongoDB database"
+      ansible.builtin.command:
+        argv: "{{ unifi_rollback_mongodb_drop_args }}"
+      register: unifi_rollback_mongodb_drop_result
+      changed_when: true
+      when:
+        - unifi_rollback_mongodb_dump_available
+        - unifi_restore_mongodb_drop_database | bool
+      no_log: "{{ unifi_restore_mongodb_password | default('', true) | length > 0 }}"
+
+    - name: "mongodb rollback | Build mongorestore command arguments"
+      ansible.builtin.set_fact:
+        unifi_rollback_mongorestore_args: >-
+          {{
+            [
+              unifi_mongodb_restore_binary,
+              '--host=' ~ unifi_restore_mongodb_host,
+              '--port=' ~ (unifi_restore_mongodb_port | string),
+              '--db=' ~ unifi_restore_mongodb_database,
+              '--dir=' ~ unifi_rollback_mongodb_dump_dir
+            ]
+            + (((unifi_restore_mongodb_username | default('', true) | length) > 0)
+                | ternary(['--username=' ~ unifi_restore_mongodb_username], []))
+            + (((unifi_restore_mongodb_password | default('', true) | length) > 0)
+                | ternary(['--password=' ~ unifi_restore_mongodb_password], []))
+            + (((unifi_restore_mongodb_auth_db | default('', true) | length) > 0)
+                | ternary(['--authenticationDatabase=' ~ unifi_restore_mongodb_auth_db], []))
+            + ((unifi_restore_use_mongorestore_drop_flag | bool)
+                | ternary(['--drop'], []))
+          }}
+      when: unifi_rollback_mongodb_dump_available
+      no_log: "{{ unifi_restore_mongodb_password | default('', true) | length > 0 }}"
+
+    - name: "mongodb rollback | Restore MongoDB database from safety snapshot"
+      ansible.builtin.command:
+        argv: "{{ unifi_rollback_mongorestore_args }}"
+      register: unifi_rollback_mongorestore_result
+      changed_when: true
+      retries: 3
+      delay: 5
+      until: unifi_rollback_mongorestore_result.rc == 0
+      when: unifi_rollback_mongodb_dump_available
+      no_log: "{{ unifi_restore_mongodb_password | default('', true) | length > 0 }}"
+
+  when: unifi_restore_include_mongodb | bool
+
 - name: Restore UniFi data directory from safety backup
   ansible.builtin.command:
     cmd: >
@@ -49,3 +143,6 @@
   ansible.builtin.systemd:
     name: "{{ unifi_service_name }}"
     state: started
+
+- name: Verify UniFi service health after rollback
+  ansible.builtin.include_tasks: verify.yml

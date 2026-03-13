@@ -30,11 +30,19 @@
       ansible.builtin.set_fact:
         fastdeploy_restore_metadata: "{{ fastdeploy_restore_safety_metadata.content | b64decode | from_yaml }}"
 
-    - name: "Update metadata-derived facts for rollback"
-      ansible.builtin.include_tasks: metadata_facts.yml
+    - name: "Resolve FastDeploy rollback task path"
+      ansible.builtin.set_fact:
+        fastdeploy_restore_effective_role_path: >-
+          {{
+            fastdeploy_restore_role_path
+            | default(restore_pilot_internal_effective_caller_role_path | default(role_path), true)
+          }}
 
-    - ansible.builtin.include_tasks: restore.yml
-    - ansible.builtin.include_tasks: verify.yml
+    - name: "Update metadata-derived facts for rollback"
+      ansible.builtin.include_tasks: "{{ fastdeploy_restore_effective_role_path }}/tasks/metadata_facts.yml"
+
+    - ansible.builtin.include_tasks: "{{ fastdeploy_restore_effective_role_path }}/tasks/restore.yml"
+    - ansible.builtin.include_tasks: "{{ fastdeploy_restore_effective_role_path }}/tasks/verify.yml"
 
     - name: "Mark rollback executed"
       ansible.builtin.set_fact:

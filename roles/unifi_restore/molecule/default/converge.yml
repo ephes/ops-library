@@ -7,9 +7,54 @@
   vars:
     unifi_archive_root: /opt/backups/unifi
     unifi_latest_archive: "{{ unifi_archive_root }}/unifi-latest.tar.gz"
+    unifi_old_archive: "{{ unifi_archive_root }}/unifi-old.tar.gz"
     unifi_safety_snapshot: /tmp/unifi-safety-snapshot
 
   tasks:
+    - name: Run UniFi dry-run validation using latest archive
+      ansible.builtin.include_role:
+        name: unifi_restore
+      vars:
+        unifi_restore_archive: latest
+        unifi_restore_archive_search_root: "{{ unifi_archive_root }}"
+        unifi_restore_required_packages: []
+        unifi_restore_check_version_compatibility: false
+        unifi_restore_dry_run: true
+        unifi_restore_create_safety_backup: true
+        unifi_restore_include_mongodb: true
+        unifi_restore_verify_mongodb: true
+        unifi_restore_verify_http: true
+        unifi_restore_health_url: http://127.0.0.1:18443/
+        unifi_restore_service_stop_pause: 0
+        unifi_restore_method: automated
+        unifi_mongodb_shell_binary: /usr/local/bin/mongosh
+        unifi_mongodb_restore_binary: /usr/local/bin/mongorestore
+        unifi_mongodb_dump_binary: /usr/local/bin/mongodump
+
+    - name: Read baseline UniFi marker after dry run
+      ansible.builtin.slurp:
+        path: /usr/lib/unifi/data/system.properties
+      register: unifi_dry_run_marker
+
+    - name: Assert UniFi dry run stayed validation-only
+      ansible.builtin.assert:
+        that:
+          - unifi_restore_archive_path == unifi_latest_archive
+          - "'marker=baseline' in (unifi_dry_run_marker.content | b64decode)"
+        fail_msg: "UniFi dry run did not stay validation-only."
+
+    - name: Assert UniFi dry-run staging directory was cleaned up
+      ansible.builtin.stat:
+        path: /tmp/unifi-restore
+      register: unifi_dry_run_stage
+
+    - name: Record UniFi dry-run coverage marker
+      ansible.builtin.copy:
+        dest: /tmp/unifi-dry-run.ok
+        mode: "0644"
+        content: "{{ unifi_restore_archive_path }}\n"
+      when: not unifi_dry_run_stage.stat.exists
+
     - name: Run UniFi restore against latest archive
       ansible.builtin.include_role:
         name: unifi_restore
@@ -44,6 +89,64 @@
         mode: "0644"
         content: "{{ unifi_restore_archive_path }}\n"
 
+    - name: Reset mock MongoDB logs before MongoDB restore coverage
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/mock-unifi-mongo/mongosh.log
+        - /tmp/mock-unifi-mongo/mongorestore.log
+        - /tmp/mock-unifi-mongo/mongodump.log
+
+    - name: Run UniFi restore against explicit archive with mocked MongoDB restore
+      ansible.builtin.include_role:
+        name: unifi_restore
+      vars:
+        unifi_restore_archive: unifi-old.tar.gz
+        unifi_restore_archive_search_root: "{{ unifi_archive_root }}"
+        unifi_restore_required_packages: []
+        unifi_restore_check_version_compatibility: false
+        unifi_restore_dry_run: false
+        unifi_restore_create_safety_backup: false
+        unifi_restore_include_mongodb: true
+        unifi_restore_verify_mongodb: false
+        unifi_restore_verify_http: true
+        unifi_restore_health_url: http://127.0.0.1:18443/
+        unifi_restore_service_stop_pause: 0
+        unifi_restore_method: automated
+        unifi_mongodb_shell_binary: /usr/local/bin/mongosh
+        unifi_mongodb_restore_binary: /usr/local/bin/mongorestore
+
+    - name: Read UniFi marker after MongoDB restore coverage
+      ansible.builtin.slurp:
+        path: /usr/lib/unifi/data/system.properties
+      register: unifi_mongodb_marker
+
+    - name: Read mocked mongosh log
+      ansible.builtin.slurp:
+        path: /tmp/mock-unifi-mongo/mongosh.log
+      register: unifi_mongosh_log
+
+    - name: Read mocked mongorestore log
+      ansible.builtin.slurp:
+        path: /tmp/mock-unifi-mongo/mongorestore.log
+      register: unifi_mongorestore_log
+
+    - name: Assert explicit archive restore exercised MongoDB path
+      ansible.builtin.assert:
+        that:
+          - unifi_restore_archive_path == unifi_old_archive
+          - "'marker=old' in (unifi_mongodb_marker.content | b64decode)"
+          - "'dropDatabase()' in (unifi_mongosh_log.content | b64decode)"
+          - "'--dir=/tmp/unifi-restore/unifi-old/database/unifi' in (unifi_mongorestore_log.content | b64decode)"
+        fail_msg: "UniFi MongoDB restore coverage did not exercise the expected restore path."
+
+    - name: Record UniFi MongoDB restore coverage marker
+      ansible.builtin.copy:
+        dest: /tmp/unifi-mongodb.ok
+        mode: "0644"
+        content: "{{ unifi_restore_archive_path }}\n"
+
     - name: Break UniFi state before rollback exercise
       ansible.builtin.copy:
         dest: "{{ item.dest }}"
@@ -53,24 +156,76 @@
         - { dest: "/usr/lib/unifi/data/system.properties", mode: "0644", content: "marker=broken\n" }
         - { dest: "/etc/traefik/dynamic/unifi.yml", mode: "0644", content: "http:\n  routers:\n    unifi:\n      rule: Host(`broken.example.test`)\n" }
 
+    - name: Reset mock MongoDB logs before rollback exercise
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/mock-unifi-mongo/mongosh.log
+        - /tmp/mock-unifi-mongo/mongorestore.log
+        - /tmp/mock-unifi-mongo/mongodump.log
+
+    - name: Seed UniFi rollback verification sentinels
+      ansible.builtin.set_fact:
+        unifi_restore_service_status:
+          status:
+            ActiveState: sentinel
+        unifi_restore_http:
+          status: 599
+
     - name: Exercise UniFi rollback task with safety snapshot
       ansible.builtin.import_tasks: ../../tasks/rollback.yml
       vars:
         unifi_safety_backup_path: "{{ unifi_safety_snapshot }}"
+        unifi_restore_include_mongodb: true
         unifi_restore_rsync_binary: rsync
         unifi_service_name: unifi.service
         unifi_data_path: /usr/lib/unifi/data
+        unifi_restore_mongodb_host: 127.0.0.1
+        unifi_restore_mongodb_port: 27017
+        unifi_restore_mongodb_database: unifi
+        unifi_restore_mongodb_username: ""
+        unifi_restore_mongodb_password: ""
+        unifi_restore_mongodb_auth_db: admin
+        unifi_restore_mongodb_drop_database: true
+        unifi_restore_use_mongorestore_drop_flag: false
+        unifi_restore_verify_mongodb: true
+        unifi_restore_verify_http: true
+        unifi_restore_health_url: http://127.0.0.1:18443/
+        unifi_mongodb_shell_binary: /usr/local/bin/mongosh
+        unifi_mongodb_restore_binary: /usr/local/bin/mongorestore
+        unifi_mongodb_dump_binary: /usr/local/bin/mongodump
 
     - name: Read UniFi marker after rollback
       ansible.builtin.slurp:
         path: /usr/lib/unifi/data/system.properties
       register: unifi_rollback_marker
 
+    - name: Read mocked mongosh log after rollback
+      ansible.builtin.slurp:
+        path: /tmp/mock-unifi-mongo/mongosh.log
+      register: unifi_rollback_mongosh_log
+
+    - name: Read mocked mongorestore log after rollback
+      ansible.builtin.slurp:
+        path: /tmp/mock-unifi-mongo/mongorestore.log
+      register: unifi_rollback_mongorestore_log
+
+    - name: Read mocked mongodump log after rollback
+      ansible.builtin.slurp:
+        path: /tmp/mock-unifi-mongo/mongodump.log
+      register: unifi_rollback_mongodump_log
+
     - name: Assert UniFi rollback restored safety snapshot
       ansible.builtin.assert:
         that:
           - "'marker=rollback' in (unifi_rollback_marker.content | b64decode)"
-        fail_msg: "UniFi rollback did not restore the safety snapshot."
+          - "'dropDatabase()' in (unifi_rollback_mongosh_log.content | b64decode)"
+          - "'--dir=/tmp/unifi-safety-snapshot/database/unifi' in (unifi_rollback_mongorestore_log.content | b64decode)"
+          - "'--archive=/tmp/unifi-verify-mongo.archive' in (unifi_rollback_mongodump_log.content | b64decode)"
+          - unifi_restore_service_status.status.ActiveState == 'active'
+          - unifi_restore_http.status == 200
+        fail_msg: "UniFi rollback did not replay the expected safety snapshot state."
 
     - name: Record UniFi rollback coverage marker
       ansible.builtin.copy:

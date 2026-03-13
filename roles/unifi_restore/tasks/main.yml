@@ -8,9 +8,13 @@
     restore_pilot_internal_operation_successful_var: unifi_restore_operation_successful
     restore_pilot_internal_validate_tasks_file: validate.yml
     restore_pilot_internal_prepare_tasks_file: prepare.yml
+    restore_pilot_internal_prepare_enabled: "{{ (not unifi_restore_dry_run) and (unifi_restore_create_safety_backup | bool) }}"
     restore_pilot_internal_restore_tasks_file: restore.yml
+    restore_pilot_internal_restore_enabled: "{{ not unifi_restore_dry_run }}"
     restore_pilot_internal_verify_tasks_file: verify.yml
+    restore_pilot_internal_verify_enabled: "{{ not unifi_restore_dry_run }}"
     restore_pilot_internal_rollback_tasks_file: rollback.yml
-    restore_pilot_internal_rollback_enabled: "{{ (unifi_restore_rollback_on_failure | bool) and (unifi_restore_create_safety_backup | bool) }}"
+    restore_pilot_internal_rollback_enabled: >-
+      {{ (not unifi_restore_dry_run) and (unifi_restore_rollback_on_failure | bool) and (unifi_restore_create_safety_backup | bool) }}
     restore_pilot_internal_rescue_fail_message: "UniFi restore failed. See above for rollback details."
     restore_pilot_internal_cleanup_tasks_file: cleanup.yml

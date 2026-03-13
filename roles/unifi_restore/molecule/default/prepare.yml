@@ -10,6 +10,7 @@
     unifi_old_snapshot: "{{ unifi_snapshot_root }}/unifi-old"
     unifi_latest_snapshot: "{{ unifi_snapshot_root }}/unifi-latest"
     unifi_safety_snapshot: /tmp/unifi-safety-snapshot
+    unifi_mock_mongo_dir: /tmp/mock-unifi-mongo
     unifi_old_archive: "{{ unifi_archive_root }}/unifi-old.tar.gz"
     unifi_latest_archive: "{{ unifi_archive_root }}/unifi-latest.tar.gz"
     unifi_snapshot_unit: |
@@ -65,7 +66,9 @@
         - { path: "{{ unifi_archive_root }}", mode: "0755" }
         - { path: "{{ unifi_snapshot_root }}", mode: "0755" }
         - { path: "/usr/lib/unifi/data", owner: "unifi", group: "unifi", mode: "0755" }
+        - { path: "/usr/lib/unifi/data/db", owner: "unifi", group: "unifi", mode: "0755" }
         - { path: "/etc/traefik/dynamic", mode: "0755" }
+        - { path: "{{ unifi_mock_mongo_dir }}", mode: "0755" }
 
     - name: Seed baseline UniFi data
       ansible.builtin.copy:
@@ -76,7 +79,42 @@
         content: "{{ item.content }}"
       loop:
         - { dest: "/usr/lib/unifi/data/system.properties", owner: "unifi", group: "unifi", mode: "0644", content: "marker=baseline\n" }
+        - { dest: "/usr/lib/unifi/data/db/WiredTiger", owner: "unifi", group: "unifi", mode: "0644", content: "baseline-db\n" }
         - { dest: "/etc/traefik/dynamic/unifi.yml", mode: "0644", content: "http:\n  routers: {}\n" }
+
+    - name: Install mock MongoDB helper binaries
+      ansible.builtin.copy:
+        dest: "{{ item.dest }}"
+        mode: "0755"
+        content: "{{ item.content }}"
+      loop:
+        - dest: /usr/local/bin/mongosh
+          content: |
+            #!/usr/bin/env python3
+            import sys
+            from pathlib import Path
+
+            target = Path("/tmp/mock-unifi-mongo/mongosh.log")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(" ".join(sys.argv[1:]) + "\n")
+        - dest: /usr/local/bin/mongorestore
+          content: |
+            #!/usr/bin/env python3
+            import sys
+            from pathlib import Path
+
+            target = Path("/tmp/mock-unifi-mongo/mongorestore.log")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(" ".join(sys.argv[1:]) + "\n")
+        - dest: /usr/local/bin/mongodump
+          content: |
+            #!/usr/bin/env python3
+            import sys
+            from pathlib import Path
+
+            target = Path("/tmp/mock-unifi-mongo/mongodump.log")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(" ".join(sys.argv[1:]) + "\n")
 
     - name: Install mock UniFi HTTP helper
       ansible.builtin.copy:
@@ -121,14 +159,20 @@
       loop:
         - "{{ unifi_old_snapshot }}"
         - "{{ unifi_old_snapshot }}/data"
+        - "{{ unifi_old_snapshot }}/database"
+        - "{{ unifi_old_snapshot }}/database/unifi"
         - "{{ unifi_old_snapshot }}/systemd"
         - "{{ unifi_old_snapshot }}/traefik"
         - "{{ unifi_latest_snapshot }}"
         - "{{ unifi_latest_snapshot }}/data"
+        - "{{ unifi_latest_snapshot }}/database"
+        - "{{ unifi_latest_snapshot }}/database/unifi"
         - "{{ unifi_latest_snapshot }}/systemd"
         - "{{ unifi_latest_snapshot }}/traefik"
         - "{{ unifi_safety_snapshot }}"
         - "{{ unifi_safety_snapshot }}/data"
+        - "{{ unifi_safety_snapshot }}/database"
+        - "{{ unifi_safety_snapshot }}/database/unifi"
         - "{{ unifi_safety_snapshot }}/systemd"
         - "{{ unifi_safety_snapshot }}/traefik"
 
@@ -140,6 +184,7 @@
       loop:
         - { dest: "{{ unifi_old_snapshot }}/metadata.yml", mode: "0644", content: "unifi_version: 8.0.0\n" }
         - { dest: "{{ unifi_old_snapshot }}/data/system.properties", mode: "0644", content: "marker=old\n" }
+        - { dest: "{{ unifi_old_snapshot }}/database/unifi/collections.bson", mode: "0644", content: "old-mongo\n" }
         - { dest: "{{ unifi_old_snapshot }}/systemd/unifi.service", mode: "0644", content: "{{ unifi_snapshot_unit }}" }
         - { dest: "{{ unifi_old_snapshot }}/traefik/unifi.yml", mode: "0644", content: "http:\n  routers:\n    unifi:\n      rule: Host(`old-unifi.example.test`)\n" }
 
@@ -151,6 +196,7 @@
       loop:
         - { dest: "{{ unifi_latest_snapshot }}/metadata.yml", mode: "0644", content: "unifi_version: 8.1.0\n" }
         - { dest: "{{ unifi_latest_snapshot }}/data/system.properties", mode: "0644", content: "marker=latest\n" }
+        - { dest: "{{ unifi_latest_snapshot }}/database/unifi/collections.bson", mode: "0644", content: "latest-mongo\n" }
         - { dest: "{{ unifi_latest_snapshot }}/systemd/unifi.service", mode: "0644", content: "{{ unifi_snapshot_unit }}" }
         - { dest: "{{ unifi_latest_snapshot }}/traefik/unifi.yml", mode: "0644", content: "http:\n  routers:\n    unifi:\n      rule: Host(`latest-unifi.example.test`)\n" }
 
@@ -162,6 +208,7 @@
       loop:
         - { dest: "{{ unifi_safety_snapshot }}/metadata.yml", mode: "0644", content: "unifi_version: 8.1.1\n" }
         - { dest: "{{ unifi_safety_snapshot }}/data/system.properties", mode: "0644", content: "marker=rollback\n" }
+        - { dest: "{{ unifi_safety_snapshot }}/database/unifi/collections.bson", mode: "0644", content: "rollback-mongo\n" }
         - { dest: "{{ unifi_safety_snapshot }}/systemd/unifi.service", mode: "0644", content: "{{ unifi_snapshot_unit }}" }
         - { dest: "{{ unifi_safety_snapshot }}/traefik/unifi.yml", mode: "0644", content: "http:\n  routers:\n    unifi:\n      rule: Host(`rollback-unifi.example.test`)\n" }
 

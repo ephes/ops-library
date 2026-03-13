@@ -48,3 +48,4 @@ fastdeploy_restore_psql_binary: "psql"
 
 # Rollback
 fastdeploy_restore_allow_rollback: true
+fastdeploy_restore_role_path: ""

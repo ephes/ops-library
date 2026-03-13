@@ -14,6 +14,9 @@ Current helper task entrypoints:
 - `host_local_validate.yml`: resolve a host-local restore artifact, extract it
   into a staging directory when needed, load `metadata.yml`, and optionally
   validate `manifest.sha256`
+  When `latest` archive exclusions are configured, they are soft preferences:
+  if every discovered archive matches the exclusion regex, the helper falls
+  back to the unfiltered archive list instead of failing outright.
 
 The caller remains responsible for:
 

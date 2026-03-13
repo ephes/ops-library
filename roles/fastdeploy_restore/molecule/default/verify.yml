@@ -10,6 +10,7 @@
         path: "{{ item }}"
       loop:
         - /tmp/fastdeploy-dry-run.ok
+        - /tmp/fastdeploy-rescue.ok
         - /tmp/fastdeploy-rollback.ok
       register: fastdeploy_markers
 

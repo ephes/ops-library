@@ -8,9 +8,11 @@
     fastdeploy_archive_root: /opt/backups/fastdeploy
     fastdeploy_snapshot_root: /tmp/fastdeploy-snapshots
     fastdeploy_success_snapshot: "{{ fastdeploy_snapshot_root }}/fastdeploy-success"
+    fastdeploy_failure_snapshot: "{{ fastdeploy_snapshot_root }}/fastdeploy-failure"
     fastdeploy_latest_snapshot: "{{ fastdeploy_snapshot_root }}/fastdeploy-latest"
     fastdeploy_safety_snapshot: /tmp/fastdeploy-safety-snapshot
     fastdeploy_success_archive: "{{ fastdeploy_archive_root }}/fastdeploy-success.tar.gz"
+    fastdeploy_failure_archive: "{{ fastdeploy_archive_root }}/fastdeploy-failure.tar.gz"
     fastdeploy_latest_archive: "{{ fastdeploy_archive_root }}/fastdeploy-latest.tar.gz"
     fastdeploy_snapshot_unit: |
       [Unit]
@@ -99,6 +101,20 @@
         mode: "0755"
         content: "{{ item.content }}"
       loop:
+        - dest: /usr/local/bin/pg_dump
+          content: |
+            #!/usr/bin/env python3
+            import sys
+            from pathlib import Path
+
+            db_name = "fastdeploy"
+            for candidate in sys.argv[1:]:
+              if not candidate.startswith("-"):
+                db_name = candidate
+
+            db_path = Path("/tmp/mock-fastdeploy-db") / f"{db_name}.sql"
+            if db_path.exists():
+              sys.stdout.write(db_path.read_text())
         - dest: /usr/local/bin/dropdb
           content: |
             #!/bin/sh
@@ -213,6 +229,16 @@
         - "{{ fastdeploy_success_snapshot }}/systemd"
         - "{{ fastdeploy_success_snapshot }}/traefik"
         - "{{ fastdeploy_success_snapshot }}/sudoers"
+        - "{{ fastdeploy_failure_snapshot }}"
+        - "{{ fastdeploy_failure_snapshot }}/database"
+        - "{{ fastdeploy_failure_snapshot }}/services/service-a"
+        - "{{ fastdeploy_failure_snapshot }}/services/service-b"
+        - "{{ fastdeploy_failure_snapshot }}/deploy_runners"
+        - "{{ fastdeploy_failure_snapshot }}/deploy_workspace"
+        - "{{ fastdeploy_failure_snapshot }}/config"
+        - "{{ fastdeploy_failure_snapshot }}/systemd"
+        - "{{ fastdeploy_failure_snapshot }}/traefik"
+        - "{{ fastdeploy_failure_snapshot }}/sudoers"
         - "{{ fastdeploy_latest_snapshot }}"
         - "{{ fastdeploy_latest_snapshot }}/database"
         - "{{ fastdeploy_latest_snapshot }}/services/service-a"
@@ -267,6 +293,23 @@
         - { dest: "{{ fastdeploy_latest_snapshot }}/traefik/fastdeploy.yml", mode: "0644", content: "http:\n  routers:\n    fastdeploy:\n      rule: Host(`latest.example.test`)\n" }
         - { dest: "{{ fastdeploy_latest_snapshot }}/sudoers/fastdeploy_restore", mode: "0440", content: "fastdeploy ALL=(ALL) NOPASSWD: /usr/bin/systemctl\n" }
 
+    - name: Seed rescue-failure snapshot payload
+      ansible.builtin.copy:
+        dest: "{{ item.dest }}"
+        mode: "{{ item.mode }}"
+        content: "{{ item.content }}"
+      loop:
+        - { dest: "{{ fastdeploy_failure_snapshot }}/metadata.yml", mode: "0644", content: "components:\n  database: true\n  deploy_workspace: true\nservices:\n  count: 7\n" }
+        - { dest: "{{ fastdeploy_failure_snapshot }}/database/fastdeploy.sql", mode: "0644", content: "-- service-count: 2\nINSERT INTO services_service VALUES ('service-a');\nINSERT INTO services_service VALUES ('service-b');\n" }
+        - { dest: "{{ fastdeploy_failure_snapshot }}/services/service-a/config.txt", mode: "0644", content: "service-a-failure\n" }
+        - { dest: "{{ fastdeploy_failure_snapshot }}/services/service-b/config.txt", mode: "0644", content: "service-b-failure\n" }
+        - { dest: "{{ fastdeploy_failure_snapshot }}/deploy_runners/runner.sh", mode: "0755", content: "#!/bin/sh\necho failure-runner\n" }
+        - { dest: "{{ fastdeploy_failure_snapshot }}/deploy_workspace/workspace.txt", mode: "0644", content: "failure-workspace\n" }
+        - { dest: "{{ fastdeploy_failure_snapshot }}/config/fastdeploy.env", mode: "0644", content: "RESTORE_MARKER=failure\n" }
+        - { dest: "{{ fastdeploy_failure_snapshot }}/systemd/fastdeploy.service", mode: "0644", content: "{{ fastdeploy_snapshot_unit }}" }
+        - { dest: "{{ fastdeploy_failure_snapshot }}/traefik/fastdeploy.yml", mode: "0644", content: "http:\n  routers:\n    fastdeploy:\n      rule: Host(`failure.example.test`)\n" }
+        - { dest: "{{ fastdeploy_failure_snapshot }}/sudoers/fastdeploy_restore", mode: "0440", content: "fastdeploy ALL=(ALL) NOPASSWD: /usr/bin/systemctl\n" }
+
     - name: Seed rollback safety snapshot payload
       ansible.builtin.copy:
         dest: "{{ item.dest }}"
@@ -294,6 +337,7 @@
         executable: /bin/bash
       loop:
         - "{{ fastdeploy_success_snapshot }}"
+        - "{{ fastdeploy_failure_snapshot }}"
         - "{{ fastdeploy_latest_snapshot }}"
         - "{{ fastdeploy_safety_snapshot }}"
       changed_when: true
@@ -305,6 +349,7 @@
         format: gz
       loop:
         - { path: "{{ fastdeploy_success_snapshot }}", dest: "{{ fastdeploy_success_archive }}" }
+        - { path: "{{ fastdeploy_failure_snapshot }}", dest: "{{ fastdeploy_failure_archive }}" }
         - { path: "{{ fastdeploy_latest_snapshot }}", dest: "{{ fastdeploy_latest_archive }}" }
 
     - name: Set archive timestamps for latest selection test
@@ -316,5 +361,6 @@
           - "{{ item.path }}"
       loop:
         - { path: "{{ fastdeploy_success_archive }}", timestamp: "202603120101.00" }
+        - { path: "{{ fastdeploy_failure_archive }}", timestamp: "202603120101.30" }
         - { path: "{{ fastdeploy_latest_archive }}", timestamp: "202603120102.00" }
       changed_when: true

@@ -74,13 +74,18 @@ Set `fastdeploy_restore_dry_run: true` to validate the archive (metadata + check
 
 ## Validation harness
 
-Wave 3 adds a focused Molecule scenario for this role:
+Wave 4 extends the focused Molecule scenario for this role:
 
 ```bash
 just molecule-test fastdeploy_restore
 ```
 
-The scenario covers archive resolution, validation-only dry-run behavior, post-restore health verification, and targeted rollback replay using a seeded safety snapshot. It does not yet prove the full `fastdeploy_backup` integration path inside Molecule.
+The scenario covers archive resolution, validation-only dry-run behavior,
+post-restore health verification, direct rollback replay using a seeded safety
+snapshot, and an end-to-end scaffold failure path that proves `main.yml`
+`rescue` triggers rollback after a real verification failure. It still uses a
+Molecule fixture instead of the full production `fastdeploy_backup`
+integration.
 
 ## Requirements
 
@@ -91,3 +96,8 @@ The scenario covers archive resolution, validation-only dry-run behavior, post-r
 ## Rollback
 
 When verification fails and `fastdeploy_restore_create_safety_backup` is enabled, the role replays the captured safety snapshot automatically. If both the restore and rollback fail, the role surfaces an explicit error so manual intervention can begin immediately.
+
+Normal `include_role` usage should leave rollback task resolution alone. The
+internal `fastdeploy_restore_role_path` default exists only for direct
+`tasks/rollback.yml` imports in test or orchestration code that need to pin the
+task source explicitly.
