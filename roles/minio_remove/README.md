@@ -57,4 +57,4 @@ ansible-playbook -i inventory playbooks/remove-minio.yml \
 
 ## License
 
-See [LICENSE](../../LICENSE)
+MIT

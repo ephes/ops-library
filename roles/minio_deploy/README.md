@@ -122,7 +122,7 @@ Deploys MinIO object storage server as a hardened systemd service with optional 
 | `minio_tls_enable` | `false` | Enable TLS |
 | `minio_bootstrap_with_mc` | `false` | Enable bucket/policy bootstrap |
 
-See [defaults/main.yml](defaults/main.yml) for complete list.
+See `defaults/main.yml` for the complete list.
 
 ## Version Pinning & Checksums
 
@@ -318,7 +318,7 @@ Note: MinIO requires at least 4 drives for erasure coding.
 
 ## License
 
-See [LICENSE](../../LICENSE)
+MIT
 
 ## Author
 

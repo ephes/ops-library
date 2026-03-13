@@ -100,7 +100,7 @@ just test-role ollama_remove
 ## Changelog
 
 - **1.0.0** (2026-01-17): Initial release
-- See [CHANGELOG.md](../../CHANGELOG.md) for full history
+- See [CHANGELOG.md](https://github.com/ephes/ops-library/blob/main/CHANGELOG.md) for full history
 
 ## License
 

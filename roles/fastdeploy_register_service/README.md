@@ -184,7 +184,7 @@ The role sets up everything needed for fastDeploy to deploy a service using ops-
 - Configures sudoers rules for secure execution
 - Registers the service with fastDeploy's API
 
-## Security Model
+## Ops-Control Execution Flow
 
 ```
 fastDeploy (runs as 'fastdeploy' user)
@@ -215,18 +215,14 @@ After running this role, the following structure is created:
 └── services/nyxmon/config.json      # Service definition
 ```
 
-## Role Variables
+## Compatibility Inputs
 
-### Required Variables
-
-```yaml
-service_name: nyxmon                 # Name of the service to register
-fd_sops_age_key_contents: "..."      # SOPS age key for decryption
-```
-
-### Optional Variables
+Existing playbooks often set these values directly:
 
 ```yaml
+service_name: nyxmon                 # Feeds the default fd_service_name alias
+fd_sops_age_key_contents: "..."      # Provide when the runner needs local SOPS decryption
+
 # FastDeploy paths
 fd_fastdeploy_root: "/path/to/your/fastdeploy"
 fd_fastdeploy_user: "fastdeploy"
@@ -264,7 +260,7 @@ fd_api_token: "your-bearer-token"
         name: local.ops_library.fastdeploy_register_service
 ```
 
-## Usage
+## Manual Registration Steps
 
 1. **Install the role** in your ops-library collection
 2. **Configure variables** in your playbook or group_vars

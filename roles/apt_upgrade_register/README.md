@@ -252,7 +252,7 @@ If ansible is in a venv, set `apt_upgrade_ansible_venv` to the venv path.
 ## Changelog
 
 - **1.0.0** (2024-09-22): Initial release with SSH key management
-- See [CHANGELOG.md](../../CHANGELOG.md) for full history
+- See [CHANGELOG.md](https://github.com/ephes/ops-library/blob/main/CHANGELOG.md) for full history
 
 ## License
 
