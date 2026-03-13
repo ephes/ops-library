@@ -146,6 +146,36 @@ dns_split_tailscale_ipv6_networks:
   - "fd7a:115c:a1e0::/48"
 ```
 
+### Local DNS Records
+
+Local records are served authoritatively by Unbound before forwarded zones. Use them for critical hostnames inside forwarded domains when router or DHCP registration is unreliable.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `dns_local_records` | `[]` | List of static DNS records served directly by Unbound |
+
+Each local record entry supports:
+
+| Key | Required | Description |
+|-----|----------|-------------|
+| `name` | Yes | Fully-qualified hostname (e.g., `"macmini.fritz.box"`) |
+| `type` | Yes | DNS record type (e.g., `"A"`, `"AAAA"`) |
+| `value` | Yes | Record value |
+
+**Example - Pin a critical host inside a forwarded router zone:**
+
+```yaml
+dns_local_records:
+  - name: "macmini.fritz.box"
+    type: "A"
+    value: "192.168.178.94"
+```
+
+Notes:
+- Use leaf hostnames like `macmini.fritz.box`, not zone apex names like `fritz.box`.
+- A local record whose `name` exactly matches a forwarded zone apex would shadow the forwarded zone.
+- Supported record types are `A`, `AAAA`, `CNAME`, `TXT`, `MX`, `PTR`, and `SRV`.
+
 ### Local Resolver Management
 
 | Variable | Default | Description |

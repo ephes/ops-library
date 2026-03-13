@@ -27,6 +27,10 @@ network:
       dhcp4-overrides:
 {{ iface.dhcp4_overrides | to_nice_yaml | indent(8, true) }}
 {% endif %}
+{% if iface.dhcp6_overrides is defined %}
+      dhcp6-overrides:
+{{ iface.dhcp6_overrides | to_nice_yaml | indent(8, true) }}
+{% endif %}
 {% if iface.routes is defined and iface.routes | length > 0 %}
       routes:
 {% for route in iface.routes %}
@@ -51,5 +55,9 @@ network:
           - {{ ns_search }}
 {% endfor %}
 {% endif %}
+{% endif %}
+{% if iface.networkmanager is defined %}
+      networkmanager:
+{{ iface.networkmanager | to_nice_yaml | indent(8, true) }}
 {% endif %}
 {% endfor %}

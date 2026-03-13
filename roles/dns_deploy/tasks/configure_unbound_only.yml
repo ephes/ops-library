@@ -109,6 +109,53 @@
     label: "{{ item.name | default('unnamed') }}"
   when: dns_forward_zones | length > 0
 
+- name: Validate local records variable type
+  assert:
+    that:
+      - dns_local_records is defined
+      - dns_local_records is iterable
+      - dns_local_records is sequence
+      - dns_local_records is not string
+      - dns_local_records is not mapping
+    fail_msg: "dns_local_records must be a list, got {{ dns_local_records | type_debug }}"
+    quiet: true
+
+- name: Validate local record entries
+  assert:
+    that:
+      - item is mapping
+      - item.name is defined and item.name | length > 0
+      - item.type is defined and item.type | length > 0
+      - item.type | upper in ['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'PTR', 'SRV']
+      - item.value is defined and item.value | length > 0
+      - item.name | lower not in (dns_forward_zones | map(attribute='name') | map('lower') | list)
+    fail_msg: >-
+      Local record entry must be a dict with 'name', 'type', and 'value';
+      supported types are A, AAAA, CNAME, TXT, MX, PTR, SRV; and record names
+      must not exactly match a forwarded zone apex.
+    quiet: true
+  loop: "{{ dns_local_records }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"
+  when: dns_local_records | length > 0
+
+- name: Validate local records do not contain duplicate name/type pairs
+  vars:
+    dns_local_record_keys: >-
+      {{
+        dns_local_records
+        | map(attribute='name')
+        | zip(dns_local_records | map(attribute='type') | map('upper'))
+        | map('join', '|')
+        | list
+      }}
+  assert:
+    that:
+      - dns_local_record_keys | length == (dns_local_record_keys | unique | length)
+    fail_msg: "dns_local_records must not contain duplicate name/type combinations"
+    quiet: true
+  when: dns_local_records | length > 0
+
 - name: Configure Unbound forward zones
   template:
     src: unbound-forward-zones.conf.j2
@@ -124,6 +171,23 @@
     path: "{{ dns_unbound_config_dir }}/05-forward-zones.conf"
     state: absent
   when: dns_forward_zones | length == 0
+  notify: restart unbound
+
+- name: Configure Unbound local records
+  template:
+    src: unbound-local-records.conf.j2
+    dest: "{{ dns_unbound_config_dir }}/06-local-records.conf"
+    owner: root
+    group: root
+    mode: '0644'
+  when: dns_local_records | length > 0
+  notify: restart unbound
+
+- name: Remove local records config when not needed
+  file:
+    path: "{{ dns_unbound_config_dir }}/06-local-records.conf"
+    state: absent
+  when: dns_local_records | length == 0
   notify: restart unbound
 
 - name: Create allowlist configuration

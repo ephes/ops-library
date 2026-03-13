@@ -22,6 +22,9 @@ netplan_config_interfaces:
     dhcp6: false
     dhcp4_overrides:
       use-routes: false
+    networkmanager:
+      passthrough:
+        ipv4.dhcp-hostname: "server1"
     routes:
       - to: default
         via: 192.168.178.1
@@ -51,3 +54,5 @@ netplan_config_apply: true
 ## Notes
 - Debian/Ubuntu only.
 - Applying netplan can briefly interrupt SSH sessions.
+- Interface entries may include raw `dhcp4_overrides`, `dhcp6_overrides`, and
+  `networkmanager` mappings when backend-specific settings are required.
