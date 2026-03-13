@@ -50,6 +50,14 @@ myst_heading_anchors = 3  # Auto-generate anchors for h1, h2, h3
 templates_path = ['_templates']
 exclude_patterns = []
 
+# The testing/changelog docs are rendered via lightweight include wrapper pages.
+# autosectionlabel currently re-registers those included headings and emits
+# duplicate-label warnings even though the docs render correctly.
+suppress_warnings = [
+    'autosectionlabel.changelog',
+    'autosectionlabel.testing',
+]
+
 # -- Options for HTML output ---------------------------------------------------
 
 html_theme = 'furo'

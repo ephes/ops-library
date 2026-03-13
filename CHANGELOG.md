@@ -64,7 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   describe the landed deploy/restore helper boundaries as complete work and
   frame remaining items as normal follow-up maintenance instead of pending
   refactor waves
-- `nyxmon_restore` now mirrors the Home Assistant structure (validate/prepare/restore/verify/cleanup), adds block/rescue rollback, conditional restores, handler flush, and health checks
+- `nyxmon_restore` now mirrors the Home Assistant structure (validate/prepare/restore/verify/cleanup), keeps cleanup in a top-level block/always flow, adds restore-phase block/rescue rollback, conditional restores, handler flush, and health checks
 - `nyxmon_deploy` systemd service now launches Granian instead of Gunicorn to match the upstream project
 - `ollama_install` stops any Homebrew-managed Ollama service by default, stops conflicting user-level `ollama serve` processes, and ensures the launchd service is running
 - Updated README.md with prominent link to ReadTheDocs

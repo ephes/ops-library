@@ -15,7 +15,7 @@ playbooks and legacy/manual workflows.
 - Creates a safety snapshot of `/home/nyxmon/site` before applying changes for quick manual rollback.
 - Stops both `nyxmon.service` and `nyxmon-monitor.service`, restores SQLite/database/config/media/logs, and optionally systemd + Traefik files.
 - Restarts services, runs Django + SQLite checks, and probes the HTTP endpoint before cleaning up staging/safety directories.
-- Wraps restore operations in a block/rescue so failures automatically roll back to the safety snapshot.
+- Uses a top-level block/always flow for cleanup, while the restore phase itself uses block/rescue to reapply the safety snapshot on failure.
 
 ## Requirements
 
