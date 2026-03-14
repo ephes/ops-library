@@ -19,6 +19,7 @@ fd_deploy_shell: "/bin/bash"
 fd_runner_dir: "{{ fd_deploy_home }}/runners/{{ fd_service_name }}"
 fd_runner_script: "{{ fd_runner_dir }}/deploy.py"
 fd_runner_config_path: "{{ fd_runner_dir }}/deploy-config.json"
+fd_runner_secret_config_path: "{{ fd_runner_dir }}/deploy-secrets.json"
 fd_ops_control_dir: "{{ fd_deploy_home }}/ops-control"
 fd_workspace_dir: "{{ fd_deploy_home }}/_workspace"
 
@@ -66,3 +67,6 @@ fd_runner_content: ""
 # Optional private runner config payload written for the deploy user only.
 # Prefer ansible.extra_vars_from_sops for secrets so deploy-config.json can stay non-secret.
 fd_runner_config: {}
+
+# Optional deploy-user-only secret runner payload written outside deploy-config.json.
+fd_runner_secret_config: {}

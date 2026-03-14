@@ -15,6 +15,8 @@ Register a service runner with FastDeploy so the FastDeploy UI/API can trigger a
 - renders an owner-only runner to `/home/deploy/runners/<service>/deploy.py`
 - optionally writes a deploy-user-only runner config payload to
   `/home/deploy/runners/<service>/deploy-config.json`
+- optionally writes a separate deploy-user-only secret runner payload to
+  `/home/deploy/runners/<service>/deploy-secrets.json`
 - copies that runner into `/home/fastdeploy/site/services/<service>/deploy.py` with owner-only
   permissions
 - writes `/home/fastdeploy/site/services/<service>/config.json`
@@ -43,6 +45,7 @@ registration patterns such as `apt_upgrade_register`.
 ├── .config/sops/age/keys.txt
 ├── ops-control/
 ├── runners/<service>/deploy-config.json
+├── runners/<service>/deploy-secrets.json
 ├── runners/<service>/deploy.py
 └── _workspace/
 
@@ -54,11 +57,14 @@ Security notes:
 - `/home/deploy/runners/<service>/deploy.py` is written `0700` and owned by `deploy`.
 - `/home/deploy/runners/<service>/deploy-config.json` is written `0600` and owned by `deploy` when
   `fd_runner_config` is provided.
+- `/home/deploy/runners/<service>/deploy-secrets.json` is written `0600` and owned by `deploy`
+  when `fd_runner_secret_config` is provided.
 - `/home/fastdeploy/site/services/<service>/deploy.py` is written `0700` and owned by `fastdeploy`.
 - `/home/deploy/runners/<service>/` and `/home/deploy/.ssh/` are created `0700`.
-- Prefer `fd_runner_config` for secret-bearing runner-time data. The default runner reads that
-  private payload at execution time and writes any `ansible.extra_vars` values to a transient
-  `0600` temp file instead of embedding them in the runner source or `ansible-playbook` argv.
+- Keep `fd_runner_config` non-secret when possible. The default runner reads that private payload at
+  execution time, merges it with `fd_runner_secret_config` if present, and writes any
+  `ansible.extra_vars` values to a transient `0600` temp file instead of embedding them in the
+  runner source or `ansible-playbook` argv.
 - Prefer `ansible.extra_vars_from_sops` inside `fd_runner_config` when the runner can decrypt
   staged SOPS files at execution time. That keeps decrypted values out of long-lived runner config
   files while still feeding them to Ansible through the same transient temp file path.
@@ -79,6 +85,7 @@ fd_deploy_user: deploy
 fd_deploy_home: "/home/{{ fd_deploy_user }}"
 fd_runner_script: "{{ fd_deploy_home }}/runners/{{ fd_service_name }}/deploy.py"
 fd_runner_config_path: "{{ fd_deploy_home }}/runners/{{ fd_service_name }}/deploy-config.json"
+fd_runner_secret_config_path: "{{ fd_deploy_home }}/runners/{{ fd_service_name }}/deploy-secrets.json"
 fd_sudoers_file: "/etc/sudoers.d/fastdeploy_{{ fd_service_name }}"
 
 fd_ops_control_method: rsync
@@ -92,6 +99,7 @@ fd_sync_services: true
 fd_sops_age_key_contents: ""
 fd_runner_content: ""
 fd_runner_config: {}
+fd_runner_secret_config: {}
 ```
 
 Notes:
@@ -99,7 +107,10 @@ Notes:
 - `fd_service_name` defaults to `service_name` and is required.
 - `fd_runner_content` overrides the default `deploy.py.j2` template.
 - `fd_runner_config` writes a deploy-user-only JSON payload next to the runner. The default template
-  merges that static payload with any runtime `DEPLOY_CONFIG_FILE`/`--config` data from FastDeploy.
+  merges that static payload with `fd_runner_secret_config` and any runtime
+  `DEPLOY_CONFIG_FILE`/`--config` data from FastDeploy.
+- `fd_runner_secret_config` writes a separate deploy-user-only JSON payload for secrets that must
+  stay out of `deploy-config.json` but still need to persist across deployments.
 - `fd_runner_config.ansible.extra_vars_from_sops` accepts a list of runtime secret sources. Each
   entry must define `path` plus a `vars` map of destination extra-var names to SOPS key paths. A
   mapping value can be either a string key path or an object with `path` and optional `default`.
@@ -130,6 +141,10 @@ Notes:
                   nyxmon_secret_key: django_secret_key
           verify:
             systemd_service: nyxmon
+        fd_runner_secret_config:
+          ansible:
+            extra_vars:
+              nyxmon_runtime_secret: "{{ nyxmon_runtime_secret }}"
         fd_api_token: "{{ fastdeploy_api_token }}"
 ```
 
@@ -141,7 +156,7 @@ Notes:
    - `rsync`: uses the pre-synced checkout already placed at `/home/deploy/ops-control`
    - `git`: clones or refreshes a checkout in `/home/deploy/_workspace/ops-control`
 4. The runner installs Ansible collections when `collections/requirements.yml` exists.
-5. The runner merges the private `deploy-config.json` payload with any runtime FastDeploy config
+5. The runner merges `deploy-config.json`, `deploy-secrets.json`, and any runtime FastDeploy config
    file, if present.
 6. The runner resolves any `ansible.extra_vars_from_sops` entries at execution time using
    `sops -d --output-type json`, relative to the staged `ops-control` workspace unless absolute

@@ -19,6 +19,7 @@ os.environ['PYTHONUNBUFFERED'] = '1'
 
 
 STATIC_CONFIG_FILE = "{{ fd_runner_config_path }}"
+SECRET_CONFIG_FILE = "{{ fd_runner_secret_config_path }}"
 _CONFIG_CACHE = None
 _CONFIG_LOADED = False
 _MISSING = object()
@@ -50,7 +51,10 @@ def load_json_file(config_file: Optional[str]) -> Dict[str, Any]:
 
 
 def deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
-    """Merge nested dictionaries with override values taking precedence."""
+    """Merge nested dictionaries with override values taking precedence.
+
+    Non-dict values, including lists, are replaced wholesale rather than merged.
+    """
     merged = dict(base)
     for key, value in override.items():
         if isinstance(value, dict) and isinstance(merged.get(key), dict):
@@ -61,17 +65,29 @@ def deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]
 
 
 def read_config_file() -> Optional[Dict[str, Any]]:
-    """Read deployment configuration from static and runtime secure files."""
-    static_config = load_json_file(STATIC_CONFIG_FILE)
+    """Read deployment configuration from static, secret, and runtime secure files."""
+    merged_config: Dict[str, Any] = {}
+    loaded_paths: set[str] = set()
+
+    for config_file in (STATIC_CONFIG_FILE, SECRET_CONFIG_FILE):
+        if not config_file:
+            continue
+        path = Path(config_file)
+        if not path.exists():
+            continue
+        loaded_paths.add(str(path.resolve()))
+        merged_config = deep_merge(merged_config, load_json_file(config_file))
+
     runtime_config_file = get_runtime_config_path()
+    runtime_config = {}
+    if runtime_config_file:
+        runtime_path = Path(runtime_config_file)
+        if not runtime_path.exists():
+            runtime_config = {}
+        elif str(runtime_path.resolve()) not in loaded_paths:
+            runtime_config = load_json_file(runtime_config_file)
 
-    if runtime_config_file == STATIC_CONFIG_FILE:
-        runtime_config = static_config
-        static_config = {}
-    else:
-        runtime_config = load_json_file(runtime_config_file)
-
-    merged_config = deep_merge(static_config, runtime_config)
+    merged_config = deep_merge(merged_config, runtime_config)
     return merged_config or None
 
 

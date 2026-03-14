@@ -13,8 +13,6 @@
     fd_ops_control_ref: main
     fd_ansible_playbook_bin: /usr/local/bin/mock-ansible-playbook
     fd_ansible_galaxy_bin: /usr/local/bin/mock-ansible-galaxy
-    fd_sops_age_key_contents: |
-      AGE-SECRET-KEY-1MOLECULEEXAMPLE000000000000000000000000000000000000
     fd_runner_config:
       context:
         env:
@@ -32,6 +30,10 @@
                 path: basic_auth_user
                 default: admin
               molecule_secret_password: basic_auth_password
+    fd_runner_secret_config:
+      ansible:
+        extra_vars:
+          molecule_secret_from_file: runner-config-secret-file
     fd_sync_services: false
 
   pre_tasks:

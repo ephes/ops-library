@@ -9,6 +9,7 @@
     fd_service_dir: "/home/fastdeploy/site/services/{{ fd_test_service_name }}"
     fd_runner_path: "/home/deploy/runners/{{ fd_test_service_name }}/deploy.py"
     fd_runner_config_path: "/home/deploy/runners/{{ fd_test_service_name }}/deploy-config.json"
+    fd_runner_secret_path: "/home/deploy/runners/{{ fd_test_service_name }}/deploy-secrets.json"
     fd_fastdeploy_runner_path: "{{ fd_service_dir }}/deploy.py"
     fd_sops_key_path: /home/deploy/.config/sops/age/keys.txt
     fd_sudoers_path: "/etc/sudoers.d/fastdeploy_{{ fd_test_service_name }}"
@@ -59,8 +60,8 @@
         - "{{ fd_service_dir }}/config.json"
         - "{{ fd_runner_path }}"
         - "{{ fd_runner_config_path }}"
+        - "{{ fd_runner_secret_path }}"
         - "{{ fd_fastdeploy_runner_path }}"
-        - "{{ fd_sops_key_path }}"
         - "{{ fd_sudoers_path }}"
 
     - name: Verify | Check runner and private directory metadata
@@ -103,6 +104,11 @@
         path: "{{ fd_runner_config_path }}"
       register: fd_runner_config_raw
 
+    - name: Verify | Read private runner secret config
+      ansible.builtin.slurp:
+        path: "{{ fd_runner_secret_path }}"
+      register: fd_runner_secret_raw
+
     - name: Verify | Read sudoers file
       ansible.builtin.slurp:
         path: "{{ fd_sudoers_path }}"
@@ -124,13 +130,16 @@
           - "'OPS_CONTROL_METHOD' in (fd_runner_copies.results[0].content | b64decode)"
           - "'file:///srv/ops-control-fixture' in (fd_runner_copies.results[0].content | b64decode)"
           - "'runner-config-secret' not in (fd_runner_copies.results[0].content | b64decode)"
+          - "'runner-config-secret-file' not in (fd_runner_copies.results[0].content | b64decode)"
           - "'runner-config-secret' not in (fd_runner_config_raw.content | b64decode)"
           - "'runner-config-password' not in (fd_runner_config_raw.content | b64decode)"
+          - "'runner-config-secret-file' not in (fd_runner_config_raw.content | b64decode)"
           - "'secrets/prod/app.yml' in (fd_runner_config_raw.content | b64decode)"
           - "'extra_vars_from_sops' in (fd_runner_config_raw.content | b64decode)"
+          - "'runner-config-secret-file' in (fd_runner_secret_raw.content | b64decode)"
           - "'fastdeploy ALL=(deploy) NOPASSWD: /home/deploy/runners/molecule_fastdeploy/deploy.py' in (fd_sudoers_raw.content | b64decode)"
           - "'deploy ALL=(root) NOPASSWD: ALL' in (fd_sudoers_raw.content | b64decode)"
-          - fd_sops_key_stat.stat.mode == '0600'
+          - not fd_sops_key_stat.stat.exists
           - fd_private_paths.results[0].stat.mode == '0700'
           - fd_private_paths.results[1].stat.mode == '0700'
           - fd_private_paths.results[2].stat.mode == '0700'
@@ -138,6 +147,9 @@
           - fd_registered_files.results[2].stat.mode == '0600'
           - fd_registered_files.results[2].stat.pw_name == 'deploy'
           - fd_registered_files.results[2].stat.gr_name == 'deploy'
+          - fd_registered_files.results[3].stat.mode == '0600'
+          - fd_registered_files.results[3].stat.pw_name == 'deploy'
+          - fd_registered_files.results[3].stat.gr_name == 'deploy'
         fail_msg: "FastDeploy registration outputs did not match the expected current role behavior."
 
     - name: Verify | Remove stale transient extra vars files
@@ -210,8 +222,10 @@
           - "'Molecule fixture playbook' in (fd_cloned_playbook.content | b64decode)"
           - "'-i /home/deploy/_workspace/ops-control/inventories/prod/hosts.yml /home/deploy/_workspace/ops-control/playbooks/site.yml -l localhost --extra-vars filter=molecule_config_filter --become --become-user root -v --extra-vars ansible_connection=local --extra-vars @/tmp/fastdeploy-extra-vars-' in (fd_mock_playbook_log.content | b64decode | trim)"
           - "'runner-config-secret' not in (fd_mock_playbook_log.content | b64decode | trim)"
+          - "'runner-config-secret-file' not in (fd_mock_playbook_log.content | b64decode | trim)"
           - fd_mock_extra_vars.release_channel == 'stable'
           - fd_mock_extra_vars.molecule_secret == 'runner-config-secret'
+          - fd_mock_extra_vars.molecule_secret_from_file == 'runner-config-secret-file'
           - fd_mock_extra_vars.molecule_secret_password == 'runner-config-password'
           - fd_mock_extra_vars.molecule_optional_user == 'admin'
           - fd_remaining_extra_vars_files.matched == 0
@@ -222,7 +236,7 @@
         gather_subset:
           - min
 
-    - name: Verify | Reapply role without runner config payload
+    - name: Verify | Reapply role without runner payloads
       ansible.builtin.include_role:
         name: fastdeploy_register_service
       vars:
@@ -237,9 +251,8 @@
         fd_ops_control_ref: main
         fd_ansible_playbook_bin: /usr/local/bin/mock-ansible-playbook
         fd_ansible_galaxy_bin: /usr/local/bin/mock-ansible-galaxy
-        fd_sops_age_key_contents: |
-          AGE-SECRET-KEY-1MOLECULEEXAMPLE000000000000000000000000000000000000
         fd_runner_config: {}
+        fd_runner_secret_config: {}
         fd_sync_services: false
 
     - name: Verify | Check runner config file removed when unset
@@ -247,8 +260,14 @@
         path: "{{ fd_runner_config_path }}"
       register: fd_runner_config_removed
 
-    - name: Verify | Assert runner config cleanup path
+    - name: Verify | Check runner secret config file removed when unset
+      ansible.builtin.stat:
+        path: "{{ fd_runner_secret_path }}"
+      register: fd_runner_secret_removed
+
+    - name: Verify | Assert runner payload cleanup path
       ansible.builtin.assert:
         that:
           - not fd_runner_config_removed.stat.exists
-        fail_msg: "Runner config file should be removed when fd_runner_config is unset."
+          - not fd_runner_secret_removed.stat.exists
+        fail_msg: "Runner payload files should be removed when their config vars are unset."

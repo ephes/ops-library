@@ -50,6 +50,7 @@
     owner: "{{ fd_deploy_user }}"
     group: "{{ fd_deploy_group }}"
     mode: "0700"
+  when: fd_sops_age_key_contents | length > 0
 
 - name: Install SOPS age key
   copy:
@@ -59,6 +60,12 @@
     group: "{{ fd_deploy_group }}"
     mode: "0600"
   when: fd_sops_age_key_contents | length > 0
+
+- name: Remove SOPS age key when not configured
+  file:
+    path: "{{ fd_sops_age_key_path }}"
+    state: absent
+  when: fd_sops_age_key_contents | length == 0
 
 - name: Validate local ops-control path is provided for rsync method
   assert:
@@ -99,6 +106,12 @@
     state: absent
   when: fd_runner_config | length == 0
 
+- name: Remove runner secret config file when not configured
+  file:
+    path: "{{ fd_runner_secret_config_path }}"
+    state: absent
+  when: fd_runner_secret_config | length == 0
+
 - name: Deploy private runner config payload
   copy:
     content: "{{ fd_runner_config | to_nice_json }}"
@@ -107,6 +120,16 @@
     group: "{{ fd_deploy_group }}"
     mode: "0600"
   when: fd_runner_config | length > 0
+  no_log: true
+
+- name: Deploy private runner secret payload
+  copy:
+    content: "{{ fd_runner_secret_config | to_nice_json }}"
+    dest: "{{ fd_runner_secret_config_path }}"
+    owner: "{{ fd_deploy_user }}"
+    group: "{{ fd_deploy_group }}"
+    mode: "0600"
+  when: fd_runner_secret_config | length > 0
   no_log: true
 
 - name: Deploy custom runner script
