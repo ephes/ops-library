@@ -15,6 +15,13 @@
     fd_ansible_galaxy_bin: /usr/local/bin/mock-ansible-galaxy
     fd_sops_age_key_contents: |
       AGE-SECRET-KEY-1MOLECULEEXAMPLE000000000000000000000000000000000000
+    fd_runner_config:
+      context:
+        env:
+          FILTER: molecule_config_filter
+      ansible:
+        extra_vars:
+          molecule_secret: runner-config-secret
     fd_sync_services: false
 
   pre_tasks:
@@ -64,6 +71,14 @@
           #!/bin/sh
           set -eu
           printf '%s\n' "$*" > /tmp/mock-ansible-playbook.log
+          : > /tmp/mock-ansible-extra-vars.log
+          previous_arg=""
+          for arg in "$@"; do
+            if [ "$previous_arg" = "--extra-vars" ] && [ "${arg#@}" != "$arg" ] && [ -f "${arg#@}" ]; then
+              cat "${arg#@}" > /tmp/mock-ansible-extra-vars.log
+            fi
+            previous_arg="$arg"
+          done
           printf 'PLAY [localhost]\n'
           printf 'TASK [Molecule fixture task]\n'
           printf 'changed: [localhost]\n'

@@ -8,8 +8,9 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 
@@ -17,26 +18,83 @@ from urllib.error import URLError
 os.environ['PYTHONUNBUFFERED'] = '1'
 
 
-def read_config_file() -> Optional[Dict]:
-    """Read deployment configuration from secure file if available."""
-    # Check for config file path in environment or command line
+STATIC_CONFIG_FILE = "{{ fd_runner_config_path }}"
+_CONFIG_CACHE = None
+_CONFIG_LOADED = False
+
+
+def get_runtime_config_path() -> Optional[str]:
+    """Return the FastDeploy runtime config file path if provided."""
     config_file = os.environ.get("DEPLOY_CONFIG_FILE")
-    
-    # Also check command line arguments for --config
+
     if "--config" in sys.argv:
         idx = sys.argv.index("--config")
         if idx + 1 < len(sys.argv):
             config_file = sys.argv[idx + 1]
-    
+
+    return config_file
+
+
+def load_json_file(config_file: Optional[str]) -> Dict[str, Any]:
+    """Load a JSON config file if it exists."""
     if not config_file or not Path(config_file).exists():
-        return None
-    
+        return {}
+
     try:
-        with open(config_file, 'r') as f:
+        with open(config_file, "r") as f:
             return json.load(f)
     except Exception as e:
-        print(f"Failed to read config file: {e}", file=sys.stderr)
-        return None
+        print(f"Failed to read config file {config_file}: {e}", file=sys.stderr)
+        return {}
+
+
+def deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge nested dictionaries with override values taking precedence."""
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def read_config_file() -> Optional[Dict[str, Any]]:
+    """Read deployment configuration from static and runtime secure files."""
+    static_config = load_json_file(STATIC_CONFIG_FILE)
+    runtime_config_file = get_runtime_config_path()
+
+    if runtime_config_file == STATIC_CONFIG_FILE:
+        runtime_config = static_config
+        static_config = {}
+    else:
+        runtime_config = load_json_file(runtime_config_file)
+
+    merged_config = deep_merge(static_config, runtime_config)
+    return merged_config or None
+
+
+def get_cached_config() -> Optional[Dict[str, Any]]:
+    """Read deployment configuration once and reuse it for the current process."""
+    global _CONFIG_CACHE, _CONFIG_LOADED
+
+    if not _CONFIG_LOADED:
+        _CONFIG_CACHE = read_config_file()
+        _CONFIG_LOADED = True
+
+    return _CONFIG_CACHE
+
+
+def resolve_path(path_value: str, workspace: Path) -> str:
+    """Resolve relative paths against the workspace, preserving inventory literals."""
+    if path_value.endswith(","):
+        return path_value
+
+    path = Path(path_value)
+    if path.is_absolute():
+        return str(path)
+
+    return str(workspace / path)
 
 
 # STDOUT JSON helpers (primary communication channel)
@@ -94,7 +152,7 @@ def update_step(name: str, state: str, message: str = "") -> None:
     output_step(name, state, message)
     
     # Secondary channel: HTTP API (best-effort)
-    config = read_config_file()
+    config = get_cached_config()
     if config:
         token = config.get("access_token", "")
         steps_url = config.get("steps_url", "")
@@ -124,7 +182,7 @@ def finish_deployment(status: str = "success", message: str = None) -> None:
     finish_stdout(status, message or f"Deployment {status}")
     
     # Secondary channel: HTTP API (best-effort)
-    config = read_config_file()
+    config = get_cached_config()
     if config:
         token = config.get("access_token", "")
         finish_url = config.get("deployment_finish_url", "")
@@ -162,7 +220,7 @@ def main() -> int:
     update_step("init", "running", "Starting deployment")
     
     # Try to read from secure config file first
-    config = read_config_file()
+    config = get_cached_config()
     
     if config:
         # Use configuration from secure file
@@ -177,7 +235,10 @@ def main() -> int:
             context = json.loads(context_raw)
         except json.JSONDecodeError:
             context = {}
-    
+
+    ansible_config = config.get("ansible", {}) if config else {}
+    verify_config = config.get("verify", {}) if config else {}
+
     update_step("init", "success", "Configuration loaded")
     
     # Get configuration from context or defaults
@@ -192,10 +253,15 @@ def main() -> int:
     ANSIBLE_PLAYBOOK = cenv.get("ANSIBLE_PLAYBOOK", "{{ fd_ansible_playbook_bin }}")
     ANSIBLE_GALAXY = cenv.get("ANSIBLE_GALAXY", "{{ fd_ansible_galaxy_bin }}")
     SOPS_AGE_KEY_FILE = cenv.get("SOPS_AGE_KEY_FILE", "{{ fd_sops_age_key_path }}")
-    ANSIBLE_CONFIG = cenv.get("ANSIBLE_CONFIG", "{{ fd_ansible_config }}")
+    DEFAULT_ANSIBLE_CONFIG = "{{ fd_ansible_config }}"
+    ANSIBLE_CONFIG = cenv.get("ANSIBLE_CONFIG", DEFAULT_ANSIBLE_CONFIG)
+    PLAYBOOK_PATH = ansible_config.get("playbook", "")
+    INVENTORY_PATH = ansible_config.get("inventory", "")
+    ANSIBLE_CONNECTION = ansible_config.get("connection", "")
+    ANSIBLE_EXTRA_VARS = ansible_config.get("extra_vars", {})
+    VERIFY_SYSTEMD_SERVICE = verify_config.get("systemd_service", "{{ fd_service_name }}")
     
     # Paths
-    deploy_home = Path("{{ fd_deploy_home }}")
     ops_control_dir = Path("{{ fd_ops_control_remote_path }}")
     
     # Step 1: Prepare
@@ -270,29 +336,70 @@ def main() -> int:
     
     # Step 3: Ansible - Run the deployment with detailed task reporting
     update_step("ansible", "running", f"Starting deployment of {FILTER}")
-    
+
+    if ANSIBLE_EXTRA_VARS and not isinstance(ANSIBLE_EXTRA_VARS, dict):
+        update_step("ansible", "failure", "ansible.extra_vars must be a JSON object")
+        finish_deployment("failure", "ansible.extra_vars must be a JSON object")
+        return 1
+
+    extra_vars_file_path = None
+    inventory_arg = str(workspace / "inventories" / "prod" / "hosts.yml")
+    if INVENTORY_PATH:
+        inventory_arg = resolve_path(INVENTORY_PATH, workspace)
+
+    playbook_arg = str(workspace / "playbooks" / "site.yml")
+    if PLAYBOOK_PATH:
+        playbook_arg = resolve_path(PLAYBOOK_PATH, workspace)
+
+    if OPS_CONTROL_METHOD == "git" and ANSIBLE_CONFIG == DEFAULT_ANSIBLE_CONFIG:
+        ANSIBLE_CONFIG = str(workspace / "ansible.cfg")
+
     # Prepare environment
     env = os.environ.copy()
     env["SOPS_AGE_KEY_FILE"] = SOPS_AGE_KEY_FILE
     env["ANSIBLE_CONFIG"] = ANSIBLE_CONFIG
     
     # Build ansible-playbook command with verbose output for parsing
-    cmd = [
-        ANSIBLE_PLAYBOOK,
-        "-i", str(workspace / "inventories" / "prod" / "hosts.yml"),
-        str(workspace / "playbooks" / "site.yml"),
-        "-l", LIMIT,
+    cmd = [ANSIBLE_PLAYBOOK, "-i", inventory_arg]
+    if ANSIBLE_CONNECTION:
+        if inventory_arg.endswith(","):
+            cmd.extend(["-c", ANSIBLE_CONNECTION])
+
+    cmd.append(playbook_arg)
+
+    if LIMIT:
+        cmd.extend(["-l", LIMIT])
+
+    cmd.extend([
         "--extra-vars", f"filter={FILTER}",
-        "--extra-vars", "ansible_connection=local",
         "--become",
         "--become-user", "root",
         "-v"  # Verbose output for better task visibility
-    ]
+    ])
+
+    if ANSIBLE_CONNECTION:
+        cmd.extend(["--extra-vars", f"ansible_connection={ANSIBLE_CONNECTION}"])
+    else:
+        cmd.extend(["--extra-vars", "ansible_connection=local"])
+
+    if ANSIBLE_EXTRA_VARS:
+        # NamedTemporaryFile creates a private 0600 file on CPython/POSIX.
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            prefix="fastdeploy-extra-vars-",
+            suffix=".json",
+            delete=False,
+        ) as extra_vars_file:
+            json.dump(ANSIBLE_EXTRA_VARS, extra_vars_file)
+            extra_vars_file.write("\n")
+            extra_vars_file_path = extra_vars_file.name
+        cmd.extend(["--extra-vars", f"@{extra_vars_file_path}"])
     
     # Run ansible with output parsing
     try:
         process = subprocess.Popen(
             cmd,
+            cwd=str(workspace),
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -367,18 +474,26 @@ def main() -> int:
         update_step("ansible", "failure", f"Failed to run ansible: {str(e)}")
         finish_deployment("failure", f"Ansible execution error: {str(e)}")
         return 1
+    finally:
+        if extra_vars_file_path and Path(extra_vars_file_path).exists():
+            Path(extra_vars_file_path).unlink()
     
     # Step 4: Verify - Check service status
     update_step("verify", "running", "Checking service status")
-    
-    # Check if the service is running (adjust service name as needed)
-    service_name = "{{ fd_service_name }}.service"
-    rc = run_command(["systemctl", "is-active", "--quiet", service_name])
-    
-    if rc == 0:
-        update_step("verify", "success", f"{service_name} is active")
+
+    if VERIFY_SYSTEMD_SERVICE:
+        service_name = VERIFY_SYSTEMD_SERVICE
+        if not service_name.endswith(".service"):
+            service_name = f"{service_name}.service"
+
+        rc = run_command(["systemctl", "is-active", "--quiet", service_name])
+
+        if rc == 0:
+            update_step("verify", "success", f"{service_name} is active")
+        else:
+            update_step("verify", "warning", f"{service_name} is not active (might be expected)")
     else:
-        update_step("verify", "warning", f"{service_name} is not active (might be expected)")
+        update_step("verify", "success", "Verification skipped")
     
     # Mark deployment as finished successfully
     finish_deployment("success", f"Deployment of {{ fd_service_name }} completed successfully")

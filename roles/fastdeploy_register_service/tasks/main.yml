@@ -93,6 +93,22 @@
     recurse: yes
   when: fd_ops_control_method == "rsync"
 
+- name: Remove runner config file when not configured
+  file:
+    path: "{{ fd_runner_config_path }}"
+    state: absent
+  when: fd_runner_config | length == 0
+
+- name: Deploy private runner config payload
+  copy:
+    content: "{{ fd_runner_config | to_nice_json }}"
+    dest: "{{ fd_runner_config_path }}"
+    owner: "{{ fd_deploy_user }}"
+    group: "{{ fd_deploy_group }}"
+    mode: "0600"
+  when: fd_runner_config | length > 0
+  no_log: true
+
 - name: Deploy custom runner script
   copy:
     content: "{{ fd_runner_content }}"
