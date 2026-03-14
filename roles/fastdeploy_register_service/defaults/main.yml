@@ -64,5 +64,5 @@ fd_sudoers_file: "/etc/sudoers.d/fastdeploy_{{ fd_service_name }}"
 fd_runner_content: ""
 
 # Optional private runner config payload written for the deploy user only.
-# Use this for secret-bearing runtime data that should not be rendered into the runner source.
+# Prefer ansible.extra_vars_from_sops for secrets so deploy-config.json can stay non-secret.
 fd_runner_config: {}

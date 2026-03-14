@@ -124,7 +124,10 @@
           - "'OPS_CONTROL_METHOD' in (fd_runner_copies.results[0].content | b64decode)"
           - "'file:///srv/ops-control-fixture' in (fd_runner_copies.results[0].content | b64decode)"
           - "'runner-config-secret' not in (fd_runner_copies.results[0].content | b64decode)"
-          - "'runner-config-secret' in (fd_runner_config_raw.content | b64decode)"
+          - "'runner-config-secret' not in (fd_runner_config_raw.content | b64decode)"
+          - "'runner-config-password' not in (fd_runner_config_raw.content | b64decode)"
+          - "'secrets/prod/app.yml' in (fd_runner_config_raw.content | b64decode)"
+          - "'extra_vars_from_sops' in (fd_runner_config_raw.content | b64decode)"
           - "'fastdeploy ALL=(deploy) NOPASSWD: /home/deploy/runners/molecule_fastdeploy/deploy.py' in (fd_sudoers_raw.content | b64decode)"
           - "'deploy ALL=(root) NOPASSWD: ALL' in (fd_sudoers_raw.content | b64decode)"
           - fd_sops_key_stat.stat.mode == '0600'
@@ -180,6 +183,10 @@
         path: /tmp/mock-ansible-extra-vars.log
       register: fd_mock_extra_vars_log
 
+    - name: Verify | Parse mock ansible extra vars log
+      ansible.builtin.set_fact:
+        fd_mock_extra_vars: "{{ fd_mock_extra_vars_log.content | b64decode | from_json }}"
+
     - name: Verify | Check transient extra vars cleanup
       ansible.builtin.find:
         paths: /tmp
@@ -203,7 +210,10 @@
           - "'Molecule fixture playbook' in (fd_cloned_playbook.content | b64decode)"
           - "'-i /home/deploy/_workspace/ops-control/inventories/prod/hosts.yml /home/deploy/_workspace/ops-control/playbooks/site.yml -l localhost --extra-vars filter=molecule_config_filter --become --become-user root -v --extra-vars ansible_connection=local --extra-vars @/tmp/fastdeploy-extra-vars-' in (fd_mock_playbook_log.content | b64decode | trim)"
           - "'runner-config-secret' not in (fd_mock_playbook_log.content | b64decode | trim)"
-          - "'runner-config-secret' in (fd_mock_extra_vars_log.content | b64decode | trim)"
+          - fd_mock_extra_vars.release_channel == 'stable'
+          - fd_mock_extra_vars.molecule_secret == 'runner-config-secret'
+          - fd_mock_extra_vars.molecule_secret_password == 'runner-config-password'
+          - fd_mock_extra_vars.molecule_optional_user == 'admin'
           - fd_remaining_extra_vars_files.matched == 0
         fail_msg: "Registered FastDeploy runner did not execute through the expected sudo/Ansible path."
 

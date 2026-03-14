@@ -59,6 +59,9 @@ Security notes:
 - Prefer `fd_runner_config` for secret-bearing runner-time data. The default runner reads that
   private payload at execution time and writes any `ansible.extra_vars` values to a transient
   `0600` temp file instead of embedding them in the runner source or `ansible-playbook` argv.
+- Prefer `ansible.extra_vars_from_sops` inside `fd_runner_config` when the runner can decrypt
+  staged SOPS files at execution time. That keeps decrypted values out of long-lived runner config
+  files while still feeding them to Ansible through the same transient temp file path.
 
 ## Key Variables
 
@@ -97,6 +100,9 @@ Notes:
 - `fd_runner_content` overrides the default `deploy.py.j2` template.
 - `fd_runner_config` writes a deploy-user-only JSON payload next to the runner. The default template
   merges that static payload with any runtime `DEPLOY_CONFIG_FILE`/`--config` data from FastDeploy.
+- `fd_runner_config.ansible.extra_vars_from_sops` accepts a list of runtime secret sources. Each
+  entry must define `path` plus a `vars` map of destination extra-var names to SOPS key paths. A
+  mapping value can be either a string key path or an object with `path` and optional `default`.
 - `fd_ops_control_local_path` is required when `fd_ops_control_method == "rsync"`.
 - If `fd_api_token` is empty, the service sync call is skipped.
 
@@ -118,6 +124,10 @@ Notes:
           ansible:
             extra_vars:
               release_channel: stable
+            extra_vars_from_sops:
+              - path: secrets/prod/nyxmon.yml
+                vars:
+                  nyxmon_secret_key: django_secret_key
           verify:
             systemd_service: nyxmon
         fd_api_token: "{{ fastdeploy_api_token }}"
@@ -133,13 +143,16 @@ Notes:
 4. The runner installs Ansible collections when `collections/requirements.yml` exists.
 5. The runner merges the private `deploy-config.json` payload with any runtime FastDeploy config
    file, if present.
-6. The runner executes:
+6. The runner resolves any `ansible.extra_vars_from_sops` entries at execution time using
+   `sops -d --output-type json`, relative to the staged `ops-control` workspace unless absolute
+   paths are provided.
+7. The runner executes:
 
 ```text
 ansible-playbook -i inventories/prod/hosts.yml playbooks/site.yml -l localhost --extra-vars filter=<service> --become --become-user root
 ```
 
-7. Progress is emitted as NDJSON on stdout. If FastDeploy supplied callback URLs and a token, the
+8. Progress is emitted as NDJSON on stdout. If FastDeploy supplied callback URLs and a token, the
    runner also sends best-effort HTTP updates.
 
 ## Validation

@@ -21,7 +21,17 @@
           FILTER: molecule_config_filter
       ansible:
         extra_vars:
-          molecule_secret: runner-config-secret
+          release_channel: stable
+        extra_vars_from_sops:
+          - path: secrets/prod/app.yml
+            vars:
+              molecule_secret: app_secret
+          - path: secrets/prod/traefik.yml
+            vars:
+              molecule_optional_user:
+                path: basic_auth_user
+                default: admin
+              molecule_secret_password: basic_auth_password
     fd_sync_services: false
 
   pre_tasks:
@@ -92,6 +102,19 @@
           set -eu
           printf '%s\n' "$*" > /tmp/mock-ansible-galaxy.log
 
+    - name: Install mock sops binary
+      ansible.builtin.copy:
+        dest: /usr/local/bin/sops
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          set -eu
+          if [ "$#" -ne 4 ] || [ "$1" != "-d" ] || [ "$2" != "--output-type" ] || [ "$3" != "json" ]; then
+            echo "unexpected invocation: $*" >&2
+            exit 1
+          fi
+          cat "$4"
+
     - name: Create git fixture directories
       ansible.builtin.file:
         path: "{{ item }}"
@@ -103,6 +126,7 @@
         - /srv/ops-control-fixture
         - /srv/ops-control-fixture/inventories/prod
         - /srv/ops-control-fixture/playbooks
+        - /srv/ops-control-fixture/secrets/prod
 
     - name: Seed git fixture repository files
       ansible.builtin.copy:
@@ -115,6 +139,8 @@
         - { src: "ansible.cfg", mode: "0644" }
         - { src: "inventories/prod/hosts.yml", mode: "0644" }
         - { src: "playbooks/site.yml", mode: "0644" }
+        - { src: "secrets/prod/app.yml", mode: "0600" }
+        - { src: "secrets/prod/traefik.yml", mode: "0600" }
 
     - name: Initialize git fixture repository
       become_user: deploy

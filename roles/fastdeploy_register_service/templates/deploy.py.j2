@@ -21,6 +21,7 @@ os.environ['PYTHONUNBUFFERED'] = '1'
 STATIC_CONFIG_FILE = "{{ fd_runner_config_path }}"
 _CONFIG_CACHE = None
 _CONFIG_LOADED = False
+_MISSING = object()
 
 
 def get_runtime_config_path() -> Optional[str]:
@@ -95,6 +96,122 @@ def resolve_path(path_value: str, workspace: Path) -> str:
         return str(path)
 
     return str(workspace / path)
+
+
+def lookup_nested_value(data: Dict[str, Any], key_path: str) -> Any:
+    """Resolve dotted key paths in decrypted SOPS data."""
+    current: Any = data
+    for part in key_path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            raise KeyError(key_path)
+        current = current[part]
+    return current
+
+
+def decrypt_sops_file(path_value: str, env: Dict[str, str]) -> Dict[str, Any]:
+    """Decrypt a SOPS file into a JSON object without logging secret contents."""
+    working_directory = str(Path(path_value).resolve().parent)
+    try:
+        result = subprocess.run(
+            ["sops", "-d", "--output-type", "json", path_value],
+            cwd=working_directory,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("sops binary not found on PATH") from exc
+
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or f"exit code {result.returncode}"
+        raise RuntimeError(f"Failed to decrypt {path_value}: {detail}")
+
+    try:
+        decrypted = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Decrypted SOPS output for {path_value} was not valid JSON") from exc
+
+    if not isinstance(decrypted, dict):
+        raise RuntimeError(f"Decrypted SOPS output for {path_value} must be a JSON object")
+
+    return decrypted
+
+
+def resolve_sops_var_mapping(
+    decrypted_data: Dict[str, Any],
+    mapping_spec: Any,
+    secret_path: str,
+    destination_var: str,
+) -> Any:
+    """Resolve one destination variable from a decrypted SOPS payload."""
+    default_value = _MISSING
+
+    if isinstance(mapping_spec, str):
+        source_path = mapping_spec
+    elif isinstance(mapping_spec, dict):
+        source_path = mapping_spec.get("path")
+        if "default" in mapping_spec:
+            default_value = mapping_spec["default"]
+    else:
+        raise RuntimeError(
+            f"Invalid mapping for ansible.extra_vars_from_sops.{destination_var}; "
+            "expected a string or object"
+        )
+
+    if not isinstance(source_path, str) or not source_path:
+        raise RuntimeError(
+            f"Missing path for ansible.extra_vars_from_sops.{destination_var} in {secret_path}"
+        )
+
+    try:
+        return lookup_nested_value(decrypted_data, source_path)
+    except KeyError as exc:
+        if default_value is not _MISSING:
+            return default_value
+        raise RuntimeError(
+            f"Missing required key '{source_path}' in decrypted SOPS file {secret_path} "
+            f"for extra var {destination_var}"
+        ) from exc
+
+
+def resolve_ansible_extra_vars_from_sops(
+    secret_sources: Any,
+    workspace: Path,
+    env: Dict[str, str],
+) -> Dict[str, Any]:
+    """Resolve runtime-only Ansible extra vars from SOPS-backed secret files."""
+    if not secret_sources:
+        return {}
+
+    if not isinstance(secret_sources, list):
+        raise RuntimeError("ansible.extra_vars_from_sops must be a JSON array")
+
+    resolved: Dict[str, Any] = {}
+    for secret_source in secret_sources:
+        if not isinstance(secret_source, dict):
+            raise RuntimeError("Entries in ansible.extra_vars_from_sops must be JSON objects")
+
+        source_path = secret_source.get("path")
+        source_vars = secret_source.get("vars")
+        if not isinstance(source_path, str) or not source_path:
+            raise RuntimeError("Each ansible.extra_vars_from_sops entry requires a non-empty path")
+        if not isinstance(source_vars, dict) or not source_vars:
+            raise RuntimeError(
+                f"ansible.extra_vars_from_sops entry for {source_path} must define a non-empty vars object"
+            )
+
+        resolved_path = resolve_path(source_path, workspace)
+        decrypted_data = decrypt_sops_file(resolved_path, env)
+        for destination_var, mapping_spec in source_vars.items():
+            resolved[destination_var] = resolve_sops_var_mapping(
+                decrypted_data,
+                mapping_spec,
+                resolved_path,
+                destination_var,
+            )
+
+    return resolved
 
 
 # STDOUT JSON helpers (primary communication channel)
@@ -259,6 +376,7 @@ def main() -> int:
     INVENTORY_PATH = ansible_config.get("inventory", "")
     ANSIBLE_CONNECTION = ansible_config.get("connection", "")
     ANSIBLE_EXTRA_VARS = ansible_config.get("extra_vars", {})
+    ANSIBLE_EXTRA_VARS_FROM_SOPS = ansible_config.get("extra_vars_from_sops", [])
     VERIFY_SYSTEMD_SERVICE = verify_config.get("systemd_service", "{{ fd_service_name }}")
     
     # Paths
@@ -382,7 +500,22 @@ def main() -> int:
     else:
         cmd.extend(["--extra-vars", "ansible_connection=local"])
 
-    if ANSIBLE_EXTRA_VARS:
+    try:
+        RESOLVED_ANSIBLE_EXTRA_VARS = deep_merge(
+            ANSIBLE_EXTRA_VARS,
+            resolve_ansible_extra_vars_from_sops(ANSIBLE_EXTRA_VARS_FROM_SOPS, workspace, env),
+        )
+    except Exception as e:
+        update_step("ansible", "failure", f"Failed to resolve runtime SOPS extra vars: {str(e)}")
+        finish_deployment("failure", f"Failed to resolve runtime SOPS extra vars: {str(e)}")
+        return 1
+
+    if RESOLVED_ANSIBLE_EXTRA_VARS and not isinstance(RESOLVED_ANSIBLE_EXTRA_VARS, dict):
+        update_step("ansible", "failure", "Merged ansible extra vars must be a JSON object")
+        finish_deployment("failure", "Merged ansible extra vars must be a JSON object")
+        return 1
+
+    if RESOLVED_ANSIBLE_EXTRA_VARS:
         # NamedTemporaryFile creates a private 0600 file on CPython/POSIX.
         with tempfile.NamedTemporaryFile(
             mode="w",
@@ -390,7 +523,7 @@ def main() -> int:
             suffix=".json",
             delete=False,
         ) as extra_vars_file:
-            json.dump(ANSIBLE_EXTRA_VARS, extra_vars_file)
+            json.dump(RESOLVED_ANSIBLE_EXTRA_VARS, extra_vars_file)
             extra_vars_file.write("\n")
             extra_vars_file_path = extra_vars_file.name
         cmd.extend(["--extra-vars", f"@{extra_vars_file_path}"])
