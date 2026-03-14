@@ -81,6 +81,27 @@
   become_flags: "-i"
   when: voxhelm_whispercpp_brew_list.rc != 0
 
+- name: runtime | Check WhisperKit CLI Homebrew package
+  ansible.builtin.command: "{{ voxhelm_brew_bin_resolved }} list --versions whisperkit-cli"
+  register: voxhelm_whisperkit_brew_list
+  changed_when: false
+  failed_when: false
+  become: "{{ voxhelm_brew_user_resolved | length > 0 }}"
+  become_user: "{{ voxhelm_brew_user_resolved | default(omit) }}"
+  become_flags: "-i"
+  when: voxhelm_whisperkit_enabled | bool
+
+- name: runtime | Install WhisperKit CLI via Homebrew
+  ansible.builtin.command: "{{ voxhelm_brew_bin_resolved }} install whisperkit-cli"
+  register: voxhelm_whisperkit_brew_install
+  changed_when: voxhelm_whisperkit_brew_install.rc == 0
+  become: "{{ voxhelm_brew_user_resolved | length > 0 }}"
+  become_user: "{{ voxhelm_brew_user_resolved | default(omit) }}"
+  become_flags: "-i"
+  when:
+    - voxhelm_whisperkit_enabled | bool
+    - voxhelm_whisperkit_brew_list.rc != 0
+
 - name: runtime | Check whisper.cpp model path
   ansible.builtin.stat:
     path: "{{ voxhelm_model_cache_dir }}/{{ voxhelm_whispercpp_model }}"

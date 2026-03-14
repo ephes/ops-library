@@ -18,6 +18,7 @@ voxhelm_log_dir: "/var/log/voxhelm"
 voxhelm_start_script_path: "{{ voxhelm_app_dir }}/start.sh"
 voxhelm_worker_script_path: "{{ voxhelm_app_dir }}/worker.sh"
 voxhelm_wyoming_stt_script_path: "{{ voxhelm_app_dir }}/wyoming-stt.sh"
+voxhelm_whisperkit_script_path: "{{ voxhelm_app_dir }}/whisperkit.sh"
 
 voxhelm_uv_bin: "/usr/local/bin/uv"
 voxhelm_bind_host: "0.0.0.0"
@@ -90,6 +91,21 @@ voxhelm_whispercpp_model: "ggml-large-v3.bin"
 voxhelm_whispercpp_model_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{{ voxhelm_whispercpp_model }}"
 voxhelm_whispercpp_bin: "/opt/homebrew/bin/whisper-cli"
 voxhelm_whispercpp_processors: 4
+voxhelm_whisperkit_enabled: false
+voxhelm_whisperkit_cli_bin: "/opt/homebrew/bin/whisperkit-cli"
+voxhelm_whisperkit_host: "127.0.0.1"
+voxhelm_whisperkit_port: 50060
+voxhelm_whisperkit_base_url: "http://127.0.0.1:{{ voxhelm_whisperkit_port }}/v1"
+voxhelm_whisperkit_model: "large-v3-v20240930"
+voxhelm_whisperkit_audio_encoder_compute_units: "cpuAndGPU"
+voxhelm_whisperkit_text_decoder_compute_units: "cpuAndGPU"
+voxhelm_whisperkit_concurrent_worker_count: 8
+voxhelm_whisperkit_chunking_strategy: "vad"
+voxhelm_whisperkit_timeout_seconds: 900
+voxhelm_whisperkit_label: "de.wersdoerfer.voxhelm-whisperkit"
+voxhelm_whisperkit_plist_path: "/Library/LaunchDaemons/{{ voxhelm_whisperkit_label }}.plist"
+voxhelm_whisperkit_stdout_log: "{{ voxhelm_log_dir }}/voxhelm-whisperkit.log"
+voxhelm_whisperkit_stderr_log: "{{ voxhelm_log_dir }}/voxhelm-whisperkit.err.log"
 voxhelm_brew_bin: ""
 voxhelm_brew_user: ""
 voxhelm_brew_update: false

@@ -46,3 +46,33 @@
     timeout: "{{ (voxhelm_healthcheck_retries | int) * (voxhelm_healthcheck_delay | int) }}"
   changed_when: false
   when: voxhelm_wyoming_stt_enabled | bool
+
+- name: health | Wait for Voxhelm WhisperKit launchd unit to report running
+  ansible.builtin.command: "launchctl print system/{{ voxhelm_whisperkit_label }}"
+  register: voxhelm_whisperkit_healthcheck
+  retries: "{{ voxhelm_healthcheck_retries }}"
+  delay: "{{ voxhelm_healthcheck_delay }}"
+  until:
+    - voxhelm_whisperkit_healthcheck.rc == 0
+    - "'state = running' in (voxhelm_whisperkit_healthcheck.stdout | default(''))"
+  changed_when: false
+  when: voxhelm_whisperkit_enabled | bool
+
+- name: health | Wait for Voxhelm WhisperKit health endpoint
+  ansible.builtin.uri:
+    url: >-
+      http://{{
+        (voxhelm_whisperkit_host in ['0.0.0.0', '::'])
+        | ternary('127.0.0.1', voxhelm_whisperkit_host)
+      }}:{{ voxhelm_whisperkit_port }}/health
+    method: GET
+    status_code: 200
+    return_content: true
+  register: voxhelm_whisperkit_http_healthcheck
+  retries: "{{ voxhelm_healthcheck_retries }}"
+  delay: "{{ voxhelm_healthcheck_delay }}"
+  until:
+    - voxhelm_whisperkit_http_healthcheck.status == 200
+    - (voxhelm_whisperkit_http_healthcheck.json.status | default('')) == 'ok'
+  changed_when: false
+  when: voxhelm_whisperkit_enabled | bool

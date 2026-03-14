@@ -90,3 +90,38 @@
   when:
     - voxhelm_wyoming_stt_enabled | bool
     - voxhelm_launchd_manage_state | bool
+
+- name: launchd | Render Voxhelm WhisperKit plist
+  ansible.builtin.template:
+    src: voxhelm.launchd.plist.j2
+    dest: "{{ voxhelm_whisperkit_plist_path }}"
+    owner: root
+    group: wheel
+    mode: "0644"
+  vars:
+    voxhelm_launchd_label: "{{ voxhelm_whisperkit_label }}"
+    voxhelm_start_script_path: "{{ voxhelm_whisperkit_script_path }}"
+    voxhelm_launchd_stdout_log: "{{ voxhelm_whisperkit_stdout_log }}"
+    voxhelm_launchd_stderr_log: "{{ voxhelm_whisperkit_stderr_log }}"
+  register: voxhelm_whisperkit_launchd_template
+  when: voxhelm_whisperkit_enabled | bool
+
+- name: launchd | Manage Voxhelm WhisperKit launchd state
+  ansible.builtin.include_tasks: manage_launchd_unit.yml
+  vars:
+    voxhelm_launchd_label: "{{ voxhelm_whisperkit_label }}"
+    voxhelm_launchd_plist_path: "{{ voxhelm_whisperkit_plist_path }}"
+    voxhelm_start_script_path: "{{ voxhelm_whisperkit_script_path }}"
+    voxhelm_launchd_stdout_log: "{{ voxhelm_whisperkit_stdout_log }}"
+    voxhelm_launchd_stderr_log: "{{ voxhelm_whisperkit_stderr_log }}"
+    voxhelm_launchd_template_changed: "{{ voxhelm_whisperkit_launchd_template.changed }}"
+    voxhelm_launchd_force_restart: >-
+      {{
+        voxhelm_source_sync.changed
+        or voxhelm_uv_sync.changed
+        or voxhelm_env_template.changed
+        or (voxhelm_whisperkit_script_template.changed | default(false))
+      }}
+  when:
+    - voxhelm_whisperkit_enabled | bool
+    - voxhelm_launchd_manage_state | bool

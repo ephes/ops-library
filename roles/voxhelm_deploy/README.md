@@ -16,6 +16,7 @@ Current default runtime:
 - one `uvicorn` HTTP API process
 - one Django Tasks `db_worker` process
 - one Wyoming STT/TTS sidecar process on port `10300`
+- optional WhisperKit local-server sidecar on port `50060` when explicitly enabled
 - `whisper.cpp` as the default STT backend on `studio`, with `mlx-whisper` as fallback
 - `mlx-whisper` as the default Wyoming STT backend for short interactive speech
 - `piper` as the default TTS backend on `studio`
@@ -52,6 +53,17 @@ voxhelm_mlx_model: "mlx-community/whisper-large-v3-mlx"
 voxhelm_whispercpp_model: "ggml-large-v3.bin"
 voxhelm_whispercpp_bin: "/opt/homebrew/bin/whisper-cli"
 voxhelm_whispercpp_processors: 4
+voxhelm_whisperkit_enabled: false
+voxhelm_whisperkit_cli_bin: "/opt/homebrew/bin/whisperkit-cli"
+voxhelm_whisperkit_host: "127.0.0.1"
+voxhelm_whisperkit_port: 50060
+voxhelm_whisperkit_base_url: "http://127.0.0.1:50060/v1"
+voxhelm_whisperkit_model: "large-v3-v20240930"
+voxhelm_whisperkit_audio_encoder_compute_units: "cpuAndGPU"
+voxhelm_whisperkit_text_decoder_compute_units: "cpuAndGPU"
+voxhelm_whisperkit_concurrent_worker_count: 8
+voxhelm_whisperkit_chunking_strategy: "vad"
+voxhelm_whisperkit_timeout_seconds: 900
 voxhelm_stt_debug_logging: false
 voxhelm_model_cache_dir: "/opt/apps/voxhelm/site/var/models"
 voxhelm_piper_voice_dir: "/opt/apps/voxhelm/site/var/piper"
@@ -116,6 +128,17 @@ For the full list, see `defaults/main.yml`.
 - `voxhelm_wyoming_stt_model`, `voxhelm_wyoming_stt_language`, and
   `voxhelm_wyoming_stt_prompt` can be used to pin the interactive listener to a
   specific model, language, or prompt without changing the main HTTP/batch lane.
+- `voxhelm_whisperkit_enabled` installs `whisperkit-cli`, renders a dedicated
+  launchd unit, and exposes the backend to Voxhelm's accepted-model surface.
+  Leave it `false` unless you explicitly want the experimental backend on
+  `studio`.
+- `voxhelm_whisperkit_model`, compute-unit knobs, worker count, and chunking
+  strategy map directly to `whisperkit-cli serve` so the tuned `studio`
+  configuration can be preserved in deploy config rather than in ad-hoc shell
+  history.
+- WhisperKit remains non-default on purpose. The benchmark re-evaluation showed
+  it is competitive on `studio`, but the tuned long-form run still logged a
+  Metal GPU recovery error.
 - `voxhelm_wyoming_stt_normalize_transcript` trims a small set of leading
   filler words such as `okay` / `und` from Wyoming transcripts before they are
   returned to Home Assistant. This is enabled by default because the built-in

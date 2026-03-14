@@ -26,3 +26,5 @@
     - "{{ voxhelm_launchd_stderr_log }}"
     - "{{ voxhelm_worker_stdout_log }}"
     - "{{ voxhelm_worker_stderr_log }}"
+    - "{{ voxhelm_whisperkit_stdout_log }}"
+    - "{{ voxhelm_whisperkit_stderr_log }}"
