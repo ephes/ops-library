@@ -1,26 +1,29 @@
 ---
 # Initialize FastDeploy application
 
-- name: Create initial admin user
-  ansible.builtin.shell:
-    cmd: |
-      export INITIAL_USER_NAME='{{ fastdeploy_initial_user }}'
-      export INITIAL_PASSWORD_HASH='{{ fastdeploy_initial_password_hash }}'
-      export DATABASE_URL='postgresql+asyncpg://{{ fastdeploy_postgres_user }}:{{ fastdeploy_postgres_password }}@{{ fastdeploy_postgres_host }}/{{ fastdeploy_postgres_database }}'
-      export SECRET_KEY='{{ fastdeploy_secret_key }}'
-      export PRODUCTION='true'
-      {{ fastdeploy_venv_bin }}/python commands.py createuser
+- name: initialize | Create initial admin user
+  ansible.builtin.command:
+    cmd: "{{ fastdeploy_venv_bin }}/python commands.py createuser"
     chdir: "{{ fastdeploy_site_path }}"
-  become: true
+  environment:
+    INITIAL_USER_NAME: "{{ fastdeploy_initial_user }}"
+    INITIAL_PASSWORD_HASH: "{{ fastdeploy_initial_password_hash }}"
+    DATABASE_URL: "postgresql+asyncpg://{{ fastdeploy_postgres_user }}:{{ fastdeploy_postgres_password }}@{{ fastdeploy_postgres_host }}/{{ fastdeploy_postgres_database }}"
+    SECRET_KEY: "{{ fastdeploy_secret_key }}"
+    PRODUCTION: "true"
+  become: "{{ fastdeploy_initialize_become | default(true) }}"
   become_user: "{{ fastdeploy_user }}"
   register: create_user_result
-  failed_when: 
-    - create_user_result.rc != 0
-    - '"duplicate key" not in create_user_result.stderr'
-  changed_when: '"User created" in create_user_result.stdout'
+  failed_when: >-
+    (create_user_result.rc != 0 or
+    'failed to create user' in (create_user_result.stdout | lower) or
+    'failed to create user' in (create_user_result.stderr | lower)) and
+    'duplicate key' not in ((create_user_result.stdout ~ ' ' ~ create_user_result.stderr) | lower)
+  changed_when: "'created:' in (create_user_result.stdout | lower)"
+  no_log: true
   when: fastdeploy_create_initial_user
 
-- name: Sync services from filesystem
+- name: initialize | Sync services from filesystem
   ansible.builtin.command:
     cmd: "{{ fastdeploy_venv_bin }}/python commands.py syncservices"
     chdir: "{{ fastdeploy_site_path }}"
@@ -28,7 +31,7 @@
     DATABASE_URL: "postgresql+asyncpg://{{ fastdeploy_postgres_user }}:{{ fastdeploy_postgres_password }}@{{ fastdeploy_postgres_host }}/{{ fastdeploy_postgres_database }}"
     SECRET_KEY: "{{ fastdeploy_secret_key }}"
     PRODUCTION: "true"
-  become: true
+  become: "{{ fastdeploy_initialize_become | default(true) }}"
   become_user: "{{ fastdeploy_user }}"
   register: sync_result
   changed_when: '"services synced" in sync_result.stdout'

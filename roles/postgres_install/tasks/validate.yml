@@ -1,25 +1,25 @@
 ---
-- name: Validate PostgreSQL version format
+- name: validate | Validate PostgreSQL version format
   ansible.builtin.assert:
     that:
       - (postgres_install_version | string) is match('^\\d+$')
     fail_msg: "postgres_install_version must be a numeric major version (e.g., '17')"
 
-- name: Validate PostgreSQL port
+- name: validate | Validate PostgreSQL port
   ansible.builtin.assert:
     that:
       - postgres_install_port | int > 0
       - postgres_install_port | int < 65536
     fail_msg: "postgres_install_port must be between 1 and 65535"
 
-- name: Validate database and user inputs
+- name: validate | Validate database and user inputs
   ansible.builtin.assert:
     that:
       - postgres_install_databases is iterable
       - postgres_install_users is iterable
     fail_msg: "postgres_install_databases and postgres_install_users must be lists"
 
-- name: Ensure databases have names
+- name: validate | Ensure databases have names
   ansible.builtin.assert:
     that:
       - item.name is defined
@@ -29,7 +29,7 @@
   loop_control:
     label: "{{ item.name | default('undefined') }}"
 
-- name: Validate database owners exist in user list
+- name: validate | Validate database owners exist in user list
   ansible.builtin.assert:
     that:
       - item.owner in valid_owners
@@ -40,7 +40,7 @@
   loop_control:
     label: "{{ item.name }}"
 
-- name: Ensure users have names
+- name: validate | Ensure users have names
   ansible.builtin.assert:
     that:
       - item.name is defined
@@ -49,3 +49,4 @@
   loop: "{{ postgres_install_users }}"
   loop_control:
     label: "{{ item.name | default('undefined') }}"
+  no_log: "{{ postgres_install_redact_password_changes and (item.password | default('') | length > 0) }}"

@@ -1,19 +1,20 @@
-- name: Verify PostgreSQL cluster is initialized
+---
+- name: databases | Verify PostgreSQL cluster is initialized
   ansible.builtin.stat:
     path: "{{ postgres_install_config_dir }}/postgresql.conf"
   register: postgres_install_cluster_stat
   become: true
 
-- name: Ensure PostgreSQL cluster exists
+- name: databases | Ensure PostgreSQL cluster exists
   ansible.builtin.fail:
     msg: "PostgreSQL cluster not initialized at {{ postgres_install_config_dir }}. Install/initialize the cluster before managing databases."
   when: not postgres_install_cluster_stat.stat.exists
 
-- name: Build PostgreSQL admin environment
+- name: databases | Build PostgreSQL admin environment
   ansible.builtin.set_fact:
     postgres_install_admin_env: "{{ {'PGPASSWORD': postgres_install_admin_password} if postgres_install_admin_password | default('') | length > 0 else {} }}"
 
-- name: Ensure PostgreSQL users exist
+- name: databases | Ensure PostgreSQL users exist
   community.postgresql.postgresql_user:
     name: "{{ item.name }}"
     password: "{{ item.password | default(omit) }}"
@@ -28,7 +29,7 @@
     label: "{{ item.name }}"
   no_log: "{{ postgres_install_redact_password_changes and (item.password | default('') | length > 0) }}"
 
-- name: Ensure PostgreSQL databases exist
+- name: databases | Ensure PostgreSQL databases exist
   community.postgresql.postgresql_db:
     name: "{{ item.name }}"
     owner: "{{ item.owner | default(omit) }}"
@@ -44,7 +45,7 @@
   loop_control:
     label: "{{ item.name }}"
 
-- name: Ensure public schema owners match database owners
+- name: databases | Ensure public schema owners match database owners
   community.postgresql.postgresql_query:
     db: "{{ item.name }}"
     query: >-
@@ -59,7 +60,7 @@
   loop_control:
     label: "{{ item.name }}"
 
-- name: Ensure PostgreSQL extensions are installed
+- name: databases | Ensure PostgreSQL extensions are installed
   community.postgresql.postgresql_ext:
     name: "{{ item.name }}"
     db: "{{ item.database }}"

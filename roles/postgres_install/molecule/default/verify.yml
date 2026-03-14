@@ -13,9 +13,11 @@
     postgres_conf_d_file: "/etc/postgresql/{{ postgres_install_version }}/{{ postgres_install_cluster_name }}/conf.d/{{ postgres_install_conf_d_filename }}"
     verify_db: molecule_db
     verify_role: molecule
+    postgres_redaction_secret: "postgres-redaction-secret"
+    molecule_roles_path: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/..:{{ lookup('env', 'HOME') }}/.ansible/roles:/etc/ansible/roles"
 
   tasks:
-    - name: Verify | PostgreSQL service is active
+    - name: Verify | PostgreSQL service is active  # noqa command-instead-of-module
       ansible.builtin.command: systemctl is-active {{ postgres_service }}
       register: pg_service_status
       changed_when: false
@@ -27,7 +29,7 @@
           - pg_service_status.stdout | trim == "active"
         fail_msg: "PostgreSQL service not active"
 
-    - name: Verify | Cluster service is active
+    - name: Verify | Cluster service is active  # noqa command-instead-of-module
       ansible.builtin.command: systemctl is-active {{ postgres_cluster_service }}
       register: pg_cluster_status
       changed_when: false
@@ -88,3 +90,66 @@
           - pg_connect.rc == 0
           - pg_connect.stdout | length > 0
         fail_msg: "Connection to {{ verify_db }} failed"
+
+    - name: Verify | Exercise postgres redaction regression
+      block:
+        - name: Verify | Create nested playbook for redaction regression
+          ansible.builtin.tempfile:
+            state: file
+            suffix: .yml
+          register: postgres_redaction_playbook
+          become: false
+          delegate_to: localhost
+
+        - name: Verify | Write nested playbook for redaction regression
+          ansible.builtin.copy:
+            dest: "{{ postgres_redaction_playbook.path }}"
+            mode: "0600"
+            content: |
+              ---
+              - hosts: localhost
+                gather_facts: false
+                connection: local
+                tasks:
+                  - name: Trigger redacted postgres validation failure
+                    ansible.builtin.include_role:
+                      name: postgres_install
+                      tasks_from: validate.yml
+                    vars:
+                      postgres_install_redact_password_changes: true
+                      postgres_install_databases: []
+                      postgres_install_users:
+                        - password: "{{ postgres_redaction_secret }}"
+          become: false
+          delegate_to: localhost
+
+        - name: Verify | Run nested postgres redaction regression
+          ansible.builtin.command:
+            argv:
+              - ansible-playbook
+              - -i
+              - localhost,
+              - "{{ postgres_redaction_playbook.path }}"
+          environment:
+            ANSIBLE_ROLES_PATH: "{{ molecule_roles_path }}"
+          register: postgres_redaction_run
+          changed_when: false
+          failed_when: false
+          become: false
+          delegate_to: localhost
+
+        - name: Verify | Assert postgres validation output is redacted
+          ansible.builtin.assert:
+            that:
+              - postgres_redaction_run.rc != 0
+              - "'censored' in (postgres_redaction_run.stdout ~ postgres_redaction_run.stderr)"
+              - postgres_redaction_secret not in (postgres_redaction_run.stdout ~ postgres_redaction_run.stderr)
+            fail_msg: "postgres_install validation output exposed secret-bearing data"
+      always:
+        - name: Verify | Remove postgres redaction playbook
+          ansible.builtin.file:
+            path: "{{ postgres_redaction_playbook.path }}"
+            state: absent
+          when: postgres_redaction_playbook is defined
+          become: false
+          delegate_to: localhost

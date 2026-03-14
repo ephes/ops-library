@@ -71,6 +71,7 @@ postgres_install_extensions: []
 #     state: present
 
 # Logging / debugging
+# Redact password-bearing user validation and change output from Ansible logs.
 postgres_install_redact_password_changes: true
 
 # Service management

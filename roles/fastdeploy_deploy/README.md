@@ -103,6 +103,14 @@ fastdeploy_postgres_repo_key_url: https://www.postgresql.org/media/keys/ACCC4CF8
 
 The dependency ensures the `fastdeploy_postgres_database` and `fastdeploy_postgres_user` are created before the application runs migrations.
 
+### Runtime output hardening
+
+The role keeps the normal `syncservices` progress visible, but it intentionally censors the
+`Create initial admin user` task in Ansible output. The upstream `commands.py createuser` flow can
+emit password-hash and database-error context on failure or duplicate-user runs, so the role runs it
+via `command` + environment variables and hides the task result to avoid leaking those values during
+FastDeploy-triggered self-deployments.
+
 ### Traefik Dual Router Authentication
 
 The role implements a dual router pattern for security:

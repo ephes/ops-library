@@ -36,8 +36,9 @@ Full list in `defaults/main.yml`. Key knobs:
 | `postgres_install_databases` | `[]` | Databases to create (name/owner/encoding/locale) |
 | `postgres_install_users` | `[]` | Roles to create (name/password/flags) |
 | `postgres_install_extensions` | `[]` | Extensions to enable per database |
+| `postgres_install_redact_password_changes` | `true` | Censor password-bearing user validation/change output in Ansible logs |
 
-> Provide passwords via SOPS/Ansible Vault and avoid committing plaintext secrets. The role redacts password changes automatically.
+> Provide passwords via SOPS/Ansible Vault and avoid committing plaintext secrets. The role redacts password-bearing user validation and change output automatically.
 > The `postgres_install_users[].encrypted` flag controls whether the provided password is pre-hashed; leave it unset/false for plaintext values that PostgreSQL should hash itself (SCRAM by default).
 
 ### pg_hba.conf rules

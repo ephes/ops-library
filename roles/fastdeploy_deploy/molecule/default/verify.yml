@@ -10,6 +10,10 @@
     fastdeploy_service_unit: /etc/systemd/system/fastdeploy.service
     fastdeploy_traefik_config: /etc/traefik/dynamic/fastdeploy.yml
     fastdeploy_venv_python: "{{ fastdeploy_site_path }}/.venv/bin/python"
+    fastdeploy_initialize_tasks_path: "{{ playbook_dir }}/../../tasks/initialize.yml"
+    fastdeploy_redaction_password_hash: "hash-secret-sentinel"
+    fastdeploy_redaction_db_password: "db-secret-sentinel"
+    fastdeploy_redaction_secret_key: "app-secret-sentinel"
 
   tasks:
     - name: Verify | Site directory exists
@@ -67,3 +71,219 @@
         that:
           - venv_python.stat.exists
         fail_msg: "FastDeploy venv python missing at {{ fastdeploy_venv_python }}"
+
+    - name: Verify | Exercise FastDeploy redaction regression
+      block:
+        - name: Verify | Create stub site for redaction regression
+          ansible.builtin.tempfile:
+            state: directory
+            suffix: fastdeploy-redaction
+          register: fastdeploy_redaction_site
+          become: false
+          delegate_to: localhost
+
+        - name: Verify | Create stub virtualenv bin directory
+          ansible.builtin.file:
+            path: "{{ fastdeploy_redaction_site.path }}/.venv/bin"
+            state: directory
+            mode: "0755"
+          become: false
+          delegate_to: localhost
+
+        - name: Verify | Link stub python binary
+          ansible.builtin.file:
+            src: "{{ ansible_playbook_python }}"
+            dest: "{{ fastdeploy_redaction_site.path }}/.venv/bin/python"
+            state: link
+          become: false
+          delegate_to: localhost
+
+        - name: Verify | Write stub FastDeploy command runner
+          ansible.builtin.copy:
+            dest: "{{ fastdeploy_redaction_site.path }}/commands.py"
+            mode: "0755"
+            content: |
+              import pathlib
+              import os
+              import sys
+
+              cwd = pathlib.Path.cwd()
+
+              if len(sys.argv) > 1 and sys.argv[1] == "createuser":
+                  if os.environ["INITIAL_USER_NAME"] == "test-admin":
+                      (cwd / "createuser-message-marker").write_text("message-path\n")
+                      sys.stderr.write("failed to create user test-admin\n")
+                      sys.stderr.write(f"hash={os.environ['INITIAL_PASSWORD_HASH']}\n")
+                      sys.stderr.write(f"database={os.environ['DATABASE_URL']}\n")
+                      sys.stderr.write(f"secret={os.environ['SECRET_KEY']}\n")
+                      sys.exit(0)
+
+                  if os.environ["INITIAL_USER_NAME"] == "test-admin-rc":
+                      (cwd / "createuser-rc-marker").write_text("rc-path\n")
+                      sys.stderr.write("unexpected import error\n")
+                      sys.exit(1)
+
+              if len(sys.argv) > 1 and sys.argv[1] == "syncservices":
+                  print("services synced")
+                  sys.exit(0)
+
+              raise SystemExit(f"unexpected args: {sys.argv}")
+          become: false
+          delegate_to: localhost
+
+        - name: Verify | Create nested playbook for FastDeploy message redaction regression
+          ansible.builtin.tempfile:
+            state: file
+            suffix: .yml
+          register: fastdeploy_redaction_message_playbook
+          become: false
+          delegate_to: localhost
+
+        - name: Verify | Write nested playbook for FastDeploy message redaction regression
+          ansible.builtin.copy:
+            dest: "{{ fastdeploy_redaction_message_playbook.path }}"
+            mode: "0600"
+            content: |
+              ---
+              - hosts: localhost
+                gather_facts: false
+                connection: local
+                tasks:
+                  - name: Trigger redacted FastDeploy initialize failure from message path
+                    ansible.builtin.include_tasks: "{{ fastdeploy_initialize_tasks_path }}"
+                    vars:
+                      fastdeploy_user: "{{ lookup('env', 'USER') | default(lookup('env', 'LOGNAME'), true) }}"
+                      fastdeploy_initialize_become: false
+                      fastdeploy_site_path: "{{ fastdeploy_redaction_site.path }}"
+                      fastdeploy_venv_bin: "{{ fastdeploy_redaction_site.path }}/.venv/bin"
+                      fastdeploy_initial_user: "test-admin"
+                      fastdeploy_initial_password_hash: "{{ fastdeploy_redaction_password_hash }}"
+                      fastdeploy_postgres_user: "fastdeploy"
+                      fastdeploy_postgres_password: "{{ fastdeploy_redaction_db_password }}"
+                      fastdeploy_postgres_host: "localhost"
+                      fastdeploy_postgres_database: "fastdeploy"
+                      fastdeploy_secret_key: "{{ fastdeploy_redaction_secret_key }}"
+                      fastdeploy_create_initial_user: true
+                      fastdeploy_sync_services: false
+          become: false
+          delegate_to: localhost
+
+        - name: Verify | Run nested FastDeploy message redaction regression
+          ansible.builtin.command:
+            argv:
+              - ansible-playbook
+              - -i
+              - localhost,
+              - "{{ fastdeploy_redaction_message_playbook.path }}"
+          register: fastdeploy_redaction_message_run
+          changed_when: false
+          failed_when: false
+          become: false
+          delegate_to: localhost
+
+        - name: Verify | Stat FastDeploy message marker
+          ansible.builtin.stat:
+            path: "{{ fastdeploy_redaction_site.path }}/createuser-message-marker"
+          register: fastdeploy_message_marker
+          become: false
+          delegate_to: localhost
+
+        - name: Verify | Assert FastDeploy initialize output is redacted for message path
+          ansible.builtin.assert:
+            that:
+              - fastdeploy_redaction_message_run.rc != 0
+              - "'censored' in (fastdeploy_redaction_message_run.stdout ~ fastdeploy_redaction_message_run.stderr)"
+              - fastdeploy_redaction_password_hash not in (fastdeploy_redaction_message_run.stdout ~ fastdeploy_redaction_message_run.stderr)
+              - fastdeploy_redaction_db_password not in (fastdeploy_redaction_message_run.stdout ~ fastdeploy_redaction_message_run.stderr)
+              - fastdeploy_redaction_secret_key not in (fastdeploy_redaction_message_run.stdout ~ fastdeploy_redaction_message_run.stderr)
+              - fastdeploy_message_marker.stat.exists
+            fail_msg: "fastdeploy_deploy initialize output exposed secret-bearing data on message path"
+
+        - name: Verify | Create nested playbook for FastDeploy rc redaction regression
+          ansible.builtin.tempfile:
+            state: file
+            suffix: .yml
+          register: fastdeploy_redaction_rc_playbook
+          become: false
+          delegate_to: localhost
+
+        - name: Verify | Write nested playbook for FastDeploy rc redaction regression
+          ansible.builtin.copy:
+            dest: "{{ fastdeploy_redaction_rc_playbook.path }}"
+            mode: "0600"
+            content: |
+              ---
+              - hosts: localhost
+                gather_facts: false
+                connection: local
+                tasks:
+                  - name: Trigger redacted FastDeploy initialize failure from rc path
+                    ansible.builtin.include_tasks: "{{ fastdeploy_initialize_tasks_path }}"
+                    vars:
+                      fastdeploy_user: "{{ lookup('env', 'USER') | default(lookup('env', 'LOGNAME'), true) }}"
+                      fastdeploy_initialize_become: false
+                      fastdeploy_site_path: "{{ fastdeploy_redaction_site.path }}"
+                      fastdeploy_venv_bin: "{{ fastdeploy_redaction_site.path }}/.venv/bin"
+                      fastdeploy_initial_user: "test-admin-rc"
+                      fastdeploy_initial_password_hash: "{{ fastdeploy_redaction_password_hash }}"
+                      fastdeploy_postgres_user: "fastdeploy"
+                      fastdeploy_postgres_password: "{{ fastdeploy_redaction_db_password }}"
+                      fastdeploy_postgres_host: "localhost"
+                      fastdeploy_postgres_database: "fastdeploy"
+                      fastdeploy_secret_key: "{{ fastdeploy_redaction_secret_key }}"
+                      fastdeploy_create_initial_user: true
+                      fastdeploy_sync_services: false
+          become: false
+          delegate_to: localhost
+
+        - name: Verify | Run nested FastDeploy rc redaction regression
+          ansible.builtin.command:
+            argv:
+              - ansible-playbook
+              - -i
+              - localhost,
+              - "{{ fastdeploy_redaction_rc_playbook.path }}"
+          register: fastdeploy_redaction_rc_run
+          changed_when: false
+          failed_when: false
+          become: false
+          delegate_to: localhost
+
+        - name: Verify | Stat FastDeploy rc marker
+          ansible.builtin.stat:
+            path: "{{ fastdeploy_redaction_site.path }}/createuser-rc-marker"
+          register: fastdeploy_rc_marker
+          become: false
+          delegate_to: localhost
+
+        - name: Verify | Assert FastDeploy initialize fails on rc path
+          ansible.builtin.assert:
+            that:
+              - fastdeploy_redaction_rc_run.rc != 0
+              - "'censored' in (fastdeploy_redaction_rc_run.stdout ~ fastdeploy_redaction_rc_run.stderr)"
+              - fastdeploy_rc_marker.stat.exists
+            fail_msg: "fastdeploy_deploy initialize rc failure path was not handled safely"
+      always:
+        - name: Verify | Remove FastDeploy message redaction playbook
+          ansible.builtin.file:
+            path: "{{ fastdeploy_redaction_message_playbook.path }}"
+            state: absent
+          when: fastdeploy_redaction_message_playbook is defined
+          become: false
+          delegate_to: localhost
+
+        - name: Verify | Remove FastDeploy rc redaction playbook
+          ansible.builtin.file:
+            path: "{{ fastdeploy_redaction_rc_playbook.path }}"
+            state: absent
+          when: fastdeploy_redaction_rc_playbook is defined
+          become: false
+          delegate_to: localhost
+
+        - name: Verify | Remove FastDeploy redaction site
+          ansible.builtin.file:
+            path: "{{ fastdeploy_redaction_site.path }}"
+            state: absent
+          when: fastdeploy_redaction_site is defined
+          become: false
+          delegate_to: localhost
