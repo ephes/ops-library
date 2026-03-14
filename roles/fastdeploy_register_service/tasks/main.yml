@@ -21,7 +21,7 @@
     groups: "{{ fd_fastdeploy_user }}"
     append: yes
 
-- name: Create required directories for deploy user
+- name: Create shared directories for deploy user
   file:
     path: "{{ item }}"
     state: directory
@@ -30,8 +30,17 @@
     mode: "0755"
   loop:
     - "{{ fd_deploy_home }}/runners"
-    - "{{ fd_runner_dir }}"
     - "{{ fd_workspace_dir }}"
+
+- name: Create private directories for deploy user
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ fd_deploy_user }}"
+    group: "{{ fd_deploy_group }}"
+    mode: "0700"
+  loop:
+    - "{{ fd_runner_dir }}"
     - "{{ fd_deploy_home }}/.ssh"
 
 - name: Create SOPS key directory
@@ -90,7 +99,7 @@
     dest: "{{ fd_runner_script }}"
     owner: "{{ fd_deploy_user }}"
     group: "{{ fd_deploy_group }}"
-    mode: "0755"
+    mode: "0700"
   when: fd_runner_content | length > 0
 
 - name: Deploy default runner script template
@@ -99,7 +108,7 @@
     dest: "{{ fd_runner_script }}"
     owner: "{{ fd_deploy_user }}"
     group: "{{ fd_deploy_group }}"
-    mode: "0755"
+    mode: "0700"
   when: fd_runner_content | length == 0
 
 - name: Create fastDeploy service directory
@@ -116,7 +125,7 @@
     dest: "{{ fd_service_config_dir }}/deploy.py"
     owner: "{{ fd_fastdeploy_user }}"
     group: "{{ fd_fastdeploy_user }}"
-    mode: "0755"
+    mode: "0700"
     remote_src: yes
 
 - name: Create service config.json
@@ -144,10 +153,10 @@
       # Allow fastdeploy user to run the deployment script as deploy user
       # NOTE: Environment variables removed for security - using secure config files instead
       {{ fd_fastdeploy_user }} ALL=({{ fd_deploy_user }}) NOPASSWD: {{ fd_runner_script }}
-      
+
       # Allow deploy user to run ansible commands as root (needed for deployments)
       {{ fd_deploy_user }} ALL=(root) NOPASSWD: ALL
-      
+
       # NOTE: env_keep removed for security - deployment config passed via secure files
       # Previously used: Defaults!{{ fd_runner_script }} env_keep += "ACCESS_TOKEN STEPS_URL DEPLOYMENT_FINISH_URL CONTEXT SSH_AUTH_SOCK"
     dest: "{{ fd_sudoers_file }}"
@@ -170,7 +179,7 @@
 - name: Display sync result
   debug:
     msg: "Service sync result: {{ sync_result.json | default('No response') }}"
-  when: 
+  when:
     - sync_result is defined
     - sync_result is not skipped
     - sync_result.status is defined

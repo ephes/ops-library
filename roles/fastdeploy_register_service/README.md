@@ -12,8 +12,9 @@ Register a service runner with FastDeploy so the FastDeploy UI/API can trigger a
 - prepares `ops-control` for the runner:
   - `rsync`: syncs to `/home/deploy/ops-control`
   - `git`: clones or refreshes `/home/deploy/_workspace/ops-control`
-- renders the runner to `/home/deploy/runners/<service>/deploy.py`
-- copies that runner into `/home/fastdeploy/site/services/<service>/deploy.py`
+- renders an owner-only runner to `/home/deploy/runners/<service>/deploy.py`
+- copies that runner into `/home/fastdeploy/site/services/<service>/deploy.py` with owner-only
+  permissions
 - writes `/home/fastdeploy/site/services/<service>/config.json`
 - installs `/etc/sudoers.d/fastdeploy_<service>`
 - optionally calls `POST <fd_api_base>/services/sync`
@@ -44,6 +45,14 @@ registration patterns such as `apt_upgrade_register`.
 
 /etc/sudoers.d/fastdeploy_<service>
 ```
+
+Security notes:
+
+- `/home/deploy/runners/<service>/deploy.py` is written `0700` and owned by `deploy`.
+- `/home/fastdeploy/site/services/<service>/deploy.py` is written `0700` and owned by `fastdeploy`.
+- `/home/deploy/runners/<service>/` and `/home/deploy/.ssh/` are created `0700`.
+- These tighter modes matter because custom runner content or rendered template defaults may embed
+  deployment secrets or API credentials.
 
 ## Key Variables
 

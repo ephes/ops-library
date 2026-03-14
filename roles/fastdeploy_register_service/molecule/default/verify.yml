@@ -61,6 +61,16 @@
         - "{{ fd_sops_key_path }}"
         - "{{ fd_sudoers_path }}"
 
+    - name: Verify | Check runner and private directory metadata
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: fd_private_paths
+      loop:
+        - "/home/deploy/runners/{{ fd_test_service_name }}"
+        - "{{ fd_runner_path }}"
+        - "{{ fd_fastdeploy_runner_path }}"
+        - "/home/deploy/.ssh"
+
     - name: Verify | Assert registered files exist
       ansible.builtin.assert:
         that:
@@ -109,6 +119,10 @@
           - "'fastdeploy ALL=(deploy) NOPASSWD: /home/deploy/runners/molecule_fastdeploy/deploy.py' in (fd_sudoers_raw.content | b64decode)"
           - "'deploy ALL=(root) NOPASSWD: ALL' in (fd_sudoers_raw.content | b64decode)"
           - fd_sops_key_stat.stat.mode == '0600'
+          - fd_private_paths.results[0].stat.mode == '0700'
+          - fd_private_paths.results[1].stat.mode == '0700'
+          - fd_private_paths.results[2].stat.mode == '0700'
+          - fd_private_paths.results[3].stat.mode == '0700'
         fail_msg: "FastDeploy registration outputs did not match the expected current role behavior."
 
     - name: Verify | Write runner config fixture
@@ -123,6 +137,7 @@
           }
 
     - name: Verify | Execute runner through fastdeploy sudo boundary
+      become: true
       become_user: fastdeploy
       ansible.builtin.command:
         cmd: "sudo -n -u deploy {{ fd_runner_path }} --config {{ fd_runner_config_path }}"
