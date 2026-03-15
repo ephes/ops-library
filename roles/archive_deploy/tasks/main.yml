@@ -13,6 +13,15 @@
       - archive_admin_password | length > 0
       - archive_admin_password != "CHANGEME"
       - archive_traefik_host | length > 0
+      - archive_media_storage_backend in [
+          "django.core.files.storage.FileSystemStorage",
+          "storages.backends.s3.S3Storage",
+        ]
+      - archive_media_storage_backend != "django.core.files.storage.FileSystemStorage" or archive_media_storage_location | length > 0
+      - archive_media_storage_backend != "storages.backends.s3.S3Storage" or archive_media_storage_bucket_name | length > 0
+      - archive_media_storage_backend != "storages.backends.s3.S3Storage" or archive_media_storage_endpoint_url | length > 0
+      - archive_media_storage_backend != "storages.backends.s3.S3Storage" or archive_media_storage_access_key_id | length > 0
+      - archive_media_storage_backend != "storages.backends.s3.S3Storage" or archive_media_storage_secret_access_key | length > 0
     fail_msg: "archive_deploy requires real Django/API/admin/summary secrets and a valid host/site URL."
 
 - name: Validate rsync source path

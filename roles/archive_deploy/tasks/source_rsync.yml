@@ -31,6 +31,7 @@
       - "--exclude=.mypy_cache"
       - "--exclude=.env"
       - "--exclude=db.sqlite3"
+      - "--exclude=archive-media/"
       - "--exclude=staticfiles/"
       - "--exclude=src/django/gunicorn.ctl"
       - "--omit-dir-times"

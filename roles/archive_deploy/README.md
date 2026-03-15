@@ -67,6 +67,12 @@ archive_summary_api_base: "https://api.openai.com/v1"
 archive_summary_model: "gpt-4o-mini"
 archive_transcription_api_base: "https://api.openai.com/v1"
 archive_transcription_model: "gpt-4o-mini-transcribe"
+archive_media_storage_backend: "storages.backends.s3.S3Storage"
+archive_media_storage_bucket_name: "archive-media"
+archive_media_storage_endpoint_url: "http://127.0.0.1:9001"
+archive_media_storage_access_key_id: "archive-media"
+archive_media_storage_secret_access_key: "long-random-secret"
+archive_media_storage_addressing_style: "path"
 ```
 
 ## Example
@@ -86,6 +92,13 @@ archive_transcription_model: "gpt-4o-mini-transcribe"
         archive_transcription_api_key: "{{ archive_secrets.transcription_api_key | default(archive_secrets.summary_api_key) }}"
         archive_transcription_api_base: "{{ archive_secrets.transcription_api_base | default(archive_secrets.summary_api_base) }}"
         archive_transcription_model: "{{ archive_secrets.transcription_model | default('gpt-4o-mini-transcribe') }}"
+        archive_media_storage_backend: "{{ archive_secrets.media_storage_backend | default('storages.backends.s3.S3Storage') }}"
+        archive_media_storage_bucket_name: "{{ archive_secrets.media_storage_bucket_name }}"
+        archive_media_storage_endpoint_url: "{{ archive_secrets.media_storage_endpoint_url }}"
+        archive_media_storage_region_name: "{{ archive_secrets.media_storage_region_name | default('') }}"
+        archive_media_storage_access_key_id: "{{ archive_secrets.media_storage_access_key_id }}"
+        archive_media_storage_secret_access_key: "{{ archive_secrets.media_storage_secret_access_key }}"
+        archive_media_storage_addressing_style: "{{ archive_secrets.media_storage_addressing_style | default('path') }}"
         archive_admin_username: "{{ archive_secrets.admin_username }}"
         archive_admin_password: "{{ archive_secrets.admin_password }}"
         archive_traefik_host: "archive.home.xn--wersdrfer-47a.de"
@@ -96,3 +109,7 @@ archive_transcription_model: "gpt-4o-mini-transcribe"
           - "https://archive.home.xn--wersdrfer-47a.de"
         archive_metadata_worker_interval: 10
 ```
+
+When `archive_deploy_method: rsync`, the role excludes `archive-media/`, `db.sqlite3`, and
+other runtime state from the sync/delete set. That keeps a fallback local media tree from
+being deleted during redeploys even when the environment has already migrated to MinIO/S3.

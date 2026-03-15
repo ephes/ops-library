@@ -22,6 +22,7 @@ archive_metadata_worker_interval: 10
 archive_metadata_worker_limit: 10
 archive_metadata_request_timeout: 15
 archive_summary_request_timeout: 60
+archive_transcription_request_timeout: 300
 archive_python_version: "3.12"
 
 archive_django_settings_module: "config.settings.production"
@@ -35,6 +36,18 @@ archive_api_token: "CHANGEME"
 archive_summary_api_key: "CHANGEME"
 archive_summary_api_base: "https://api.openai.com/v1"
 archive_summary_model: "gpt-4o-mini"
+archive_transcription_api_key: "{{ archive_summary_api_key }}"
+archive_transcription_api_base: "{{ archive_summary_api_base }}"
+archive_transcription_model: "gpt-4o-mini-transcribe"
+archive_media_storage_backend: "django.core.files.storage.FileSystemStorage"
+archive_media_storage_location: "{{ archive_site_path }}/archive-media"
+archive_media_storage_base_url: ""
+archive_media_storage_bucket_name: ""
+archive_media_storage_endpoint_url: ""
+archive_media_storage_region_name: ""
+archive_media_storage_access_key_id: ""
+archive_media_storage_secret_access_key: ""
+archive_media_storage_addressing_style: "path"
 archive_admin_username: "archive"
 archive_admin_password: "CHANGEME"
 archive_admin_email: ""
