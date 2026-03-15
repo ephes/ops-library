@@ -52,7 +52,7 @@
     fastdeploy_postgres_repo_enabled: false
     fastdeploy_basic_auth_enabled: false
     fastdeploy_traefik_enabled: true
-    fastdeploy_build_frontend: false
+    fastdeploy_build_frontend: true
 
   roles:
     - role: fastdeploy_deploy

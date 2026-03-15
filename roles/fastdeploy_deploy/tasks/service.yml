@@ -9,6 +9,3 @@
     webapp_deploy_internal_service_template_src: "templates/fastdeploy.service.j2"
     webapp_deploy_internal_service_unit_dest: "/etc/systemd/system/{{ fastdeploy_service_name }}.service"
     webapp_deploy_internal_service_name: "{{ fastdeploy_service_name }}"
-    webapp_deploy_internal_service_notify_handlers:
-      - reload systemd
-      - restart fastdeploy

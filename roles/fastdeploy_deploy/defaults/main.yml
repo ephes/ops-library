@@ -73,6 +73,23 @@ fastdeploy_service_name: fastdeploy
 fastdeploy_service_restart_on_failure: true
 fastdeploy_service_restart_sec: 5
 
+# Deploy rollout behavior
+fastdeploy_rollout_restart_enabled: true
+fastdeploy_rollout_validation_enabled: true
+fastdeploy_rollout_validation_base_url: "http://127.0.0.1:{{ fastdeploy_app_port }}"
+fastdeploy_rollout_validation_path: "/users/me"
+fastdeploy_rollout_validation_user: "{{ fastdeploy_initial_user }}"
+fastdeploy_rollout_validation_token_algorithm: "HS256"
+fastdeploy_rollout_validation_token_ttl_seconds: 300
+fastdeploy_rollout_validation_retries: 15
+fastdeploy_rollout_validation_delay: 2
+fastdeploy_rollout_validation_status_codes:
+  - 200
+  - 401
+  - 500
+  - 502
+  - 503
+
 # Traefik integration
 fastdeploy_traefik_enabled: true
 fastdeploy_traefik_host: "{{ fastdeploy_api_url | regex_replace('^https?://', '') }}"

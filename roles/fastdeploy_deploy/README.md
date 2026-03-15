@@ -12,6 +12,8 @@ This role deploys FastDeploy, a web-based platform for managing service deployme
 - Traefik reverse proxy integration
 - Initial admin user creation
 - Service synchronization from filesystem
+- Explicit post-deploy rollout of `fastdeploy.service`
+- DB-backed post-restart validation against the running FastDeploy process
 
 ## Requirements
 
@@ -77,9 +79,34 @@ fastdeploy_postgres_user: "fastdeploy"
 fastdeploy_build_frontend: true
 fastdeploy_create_initial_user: true
 fastdeploy_sync_services: true
+
+# Rollout controls
+fastdeploy_rollout_restart_enabled: true
+fastdeploy_rollout_validation_enabled: true
+fastdeploy_rollout_validation_user: "{{ fastdeploy_initial_user }}"
 ```
 
 For a complete list of variables, see `defaults/main.yml`.
+
+### Rollout behavior
+
+Every successful role run is treated as a rollout of the live FastDeploy service:
+
+- the role explicitly restarts `fastdeploy.service` near the end of the deploy flow
+- it does not rely on incidental handler notifications from unit-file changes
+- after the restart, it validates the running process with an authenticated localhost request to
+  `/users/me`
+
+That validation is DB-backed and secret-backed in the running service process:
+
+- FastDeploy must accept a JWT signed with the configured `SECRET_KEY`
+- FastDeploy must successfully load the referenced user from the database
+
+This catches the stale-process class of failures where code, config, or rotated DB credentials were
+updated on disk but the long-running FastDeploy process did not pick them up.
+
+If you disable initial-user creation or want validation to target a different existing account, set
+`fastdeploy_rollout_validation_user` accordingly.
 
 ### PostgreSQL Provisioning
 
@@ -150,7 +177,7 @@ This role automatically depends on `local.ops_library.postgres_install` to insta
 The deploy helper extraction keeps the public role entrypoint unchanged while
 moving the duplicated systemd and Traefik plumbing into the internal helper
 role `local.ops_library.webapp_deploy_internal`. FastDeploy still owns its
-role-specific validation, environment setup, templates, handlers, and
+role-specific validation, environment setup, templates, and
 application initialization flow. The remaining `user.yml`, `source_*`, and
 `python.yml` steps are intentionally still local to this role because the
 comparison with `nyxmon_deploy` did not show a narrower stable primitive yet.
@@ -242,8 +269,7 @@ If deployments fail, check:
 
 This role provides the following handlers:
 
-- `restart fastdeploy` - Restarts the FastDeploy systemd service
-- `reload systemd` - Reloads systemd daemon configuration
+- `restart traefik` - Restarts Traefik when the FastDeploy dynamic config changes
 
 ## Tags
 

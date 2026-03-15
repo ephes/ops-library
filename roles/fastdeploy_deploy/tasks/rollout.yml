@@ -1,0 +1,73 @@
+---
+# Treat every successful deploy as a rollout of the running FastDeploy process.
+
+- name: rollout | Assert validation settings are usable
+  ansible.builtin.assert:
+    that:
+      - not fastdeploy_rollout_validation_enabled or (fastdeploy_rollout_validation_user | trim | length) > 0
+      - not fastdeploy_rollout_validation_enabled or (fastdeploy_rollout_validation_base_url | trim | length) > 0
+      - not fastdeploy_rollout_validation_enabled or (fastdeploy_rollout_validation_path | trim | length) > 0
+    fail_msg: >
+      FastDeploy rollout validation is enabled, but the validation user or URL settings are empty.
+
+- name: rollout | Restart FastDeploy service
+  ansible.builtin.systemd:
+    name: "{{ fastdeploy_service_name }}"
+    state: restarted
+    enabled: true
+  when: fastdeploy_rollout_restart_enabled
+
+- name: rollout | Wait for FastDeploy listener
+  ansible.builtin.wait_for:
+    host: "{{ fastdeploy_app_host }}"
+    port: "{{ fastdeploy_app_port }}"
+    timeout: "{{ fastdeploy_rollout_validation_retries * fastdeploy_rollout_validation_delay }}"
+  when:
+    - fastdeploy_rollout_restart_enabled
+    - fastdeploy_rollout_validation_enabled
+
+- name: rollout | Mint FastDeploy validation token
+  ansible.builtin.command:
+    argv:
+      - "{{ fastdeploy_venv_bin }}/python"
+      - -c
+      - |
+        import time
+        from jose import jwt
+
+        print(
+            jwt.encode(
+                {
+                    "user": {{ fastdeploy_rollout_validation_user | to_json }},
+                    "type": "user",
+                    "exp": int(time.time()) + {{ fastdeploy_rollout_validation_token_ttl_seconds }},
+                },
+                {{ fastdeploy_secret_key | to_json }},
+                algorithm={{ fastdeploy_rollout_validation_token_algorithm | to_json }},
+            )
+        )
+  register: fastdeploy_rollout_validation_token
+  changed_when: false
+  become: true
+  become_user: "{{ fastdeploy_user }}"
+  no_log: true
+  when: fastdeploy_rollout_validation_enabled
+
+- name: rollout | Validate FastDeploy DB-backed auth after restart
+  ansible.builtin.uri:
+    url: "{{ fastdeploy_rollout_validation_base_url }}{{ fastdeploy_rollout_validation_path }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ fastdeploy_rollout_validation_token.stdout }}"
+    status_code: "{{ fastdeploy_rollout_validation_status_codes }}"
+    return_content: true
+  register: fastdeploy_rollout_validation_response
+  changed_when: false
+  until: >-
+    fastdeploy_rollout_validation_response.status == 200 and
+    (fastdeploy_rollout_validation_response.json is defined) and
+    (fastdeploy_rollout_validation_response.json.name | default('')) == fastdeploy_rollout_validation_user
+  retries: "{{ fastdeploy_rollout_validation_retries }}"
+  delay: "{{ fastdeploy_rollout_validation_delay }}"
+  no_log: true
+  when: fastdeploy_rollout_validation_enabled

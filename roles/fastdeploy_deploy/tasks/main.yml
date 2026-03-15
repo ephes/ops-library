@@ -76,3 +76,6 @@
 - name: Setup Traefik routing
   include_tasks: traefik.yml
   when: fastdeploy_traefik_enabled
+
+- name: Roll out FastDeploy runtime
+  include_tasks: rollout.yml
