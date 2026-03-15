@@ -8,7 +8,9 @@
     owner: "{{ wagtail_user }}"
     group: "{{ wagtail_group }}"
     mode: "0600"
-  notify: restart wagtail
+  notify:
+    - restart wagtail
+    - restart wagtail db worker
 
 - name: django | Run Django migrations
   ansible.builtin.shell: |

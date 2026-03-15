@@ -66,6 +66,10 @@ wagtail_django_settings_module: "config.settings.production"
 wagtail_admin_url: "hidden_admin/"
 wagtail_env_extra:
   INDIEWEB_ME_URL: "https://example.com/user/"
+wagtail_db_worker_enabled: false
+wagtail_db_worker_backend: "default"
+wagtail_db_worker_queue_name: ""
+wagtail_db_worker_interval_seconds: 5
 ```
 
 ### Static Assets
@@ -84,6 +88,20 @@ wagtail_staticfiles_required_paths:
   - "staticfiles/cast_vue/manifest.json"
   - "staticfiles/cast_vue/manifest.json.gz"
 ```
+
+### Optional Django Tasks Worker
+
+```yaml
+wagtail_db_worker_enabled: true
+wagtail_db_worker_backend: "cast_transcripts"
+wagtail_db_worker_queue_name: ""
+wagtail_db_worker_interval_seconds: 5
+wagtail_db_worker_extra_args: ""
+```
+
+When enabled, the role installs a second systemd unit named
+`{{ wagtail_service_name }}-db-worker.service` that runs `manage.py db_worker`
+with the configured backend alias.
 
 ### PostgreSQL Provisioning
 
@@ -171,6 +189,7 @@ templates, and handlers.
 
 - `reload systemd`
 - `restart wagtail`
+- `restart wagtail db worker`
 
 ## Testing
 

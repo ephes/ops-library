@@ -1,0 +1,119 @@
+---
+# Test playbook for wagtail_deploy role templates
+# Run with: ansible-playbook tests/test_wagtail_deploy.yml -i tests/inventory/test.yml
+
+- name: Test Wagtail Deploy Role Templates
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/wagtail_deploy"
+    rendered_service: "/tmp/test-wagtail.service"
+    rendered_worker: "/tmp/test-wagtail-db-worker.service"
+    rendered_worker_with_args: "/tmp/test-wagtail-db-worker-with-args.service"
+
+  tasks:
+    - name: Load role defaults
+      ansible.builtin.include_vars:
+        file: "{{ role_path }}/defaults/main.yml"
+        name: wagtail_defaults
+
+    - name: Assert db_worker is opt-in by default
+      ansible.builtin.assert:
+        that:
+          - wagtail_defaults.wagtail_db_worker_enabled == false
+          - wagtail_defaults.wagtail_db_worker_backend == "default"
+
+    - name: Render Wagtail web service template
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/wagtail.service.j2"
+        dest: "{{ rendered_service }}"
+      vars:
+        wagtail_service_name: "python-podcast"
+        wagtail_systemd_unit_name: "python-podcast"
+        wagtail_user: "python-podcast"
+        wagtail_group: "python-podcast"
+        wagtail_site_path: "/home/python-podcast/site"
+        wagtail_env_path: "/home/python-podcast/site/.env"
+        wagtail_django_settings_module: "config.settings.production"
+        wagtail_venv_bin: "/home/python-podcast/site/.venv/bin"
+        wagtail_app_host: "127.0.0.1"
+        wagtail_app_port: 10014
+        wagtail_gunicorn_workers: 4
+        wagtail_gunicorn_timeout: 600
+        wagtail_gunicorn_extra_args: ""
+        wagtail_wsgi_module: "config.wsgi"
+        wagtail_cache_dir: "/home/python-podcast/site/cache"
+
+    - name: Render Wagtail db_worker service template
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/wagtail-db-worker.service.j2"
+        dest: "{{ rendered_worker }}"
+      vars:
+        wagtail_service_name: "python-podcast"
+        wagtail_user: "python-podcast"
+        wagtail_group: "python-podcast"
+        wagtail_site_path: "/home/python-podcast/site"
+        wagtail_env_path: "/home/python-podcast/site/.env"
+        wagtail_django_settings_module: "config.settings.production"
+        wagtail_python: "/home/python-podcast/site/.venv/bin/python"
+        wagtail_manage_py: "/home/python-podcast/site/manage.py"
+        wagtail_db_worker_backend: "cast_transcripts"
+        wagtail_db_worker_queue_name: ""
+        wagtail_db_worker_interval_seconds: 5
+        wagtail_db_worker_extra_args: ""
+        wagtail_cache_dir: "/home/python-podcast/site/cache"
+
+    - name: Render Wagtail db_worker service template with queue and extra args
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/wagtail-db-worker.service.j2"
+        dest: "{{ rendered_worker_with_args }}"
+      vars:
+        wagtail_service_name: "python-podcast"
+        wagtail_user: "python-podcast"
+        wagtail_group: "python-podcast"
+        wagtail_site_path: "/home/python-podcast/site"
+        wagtail_env_path: "/home/python-podcast/site/.env"
+        wagtail_django_settings_module: "config.settings.production"
+        wagtail_python: "/home/python-podcast/site/.venv/bin/python"
+        wagtail_manage_py: "/home/python-podcast/site/manage.py"
+        wagtail_db_worker_backend: "cast_transcripts"
+        wagtail_db_worker_queue_name: "transcripts"
+        wagtail_db_worker_interval_seconds: 5
+        wagtail_db_worker_extra_args: "--verbose"
+        wagtail_cache_dir: "/home/python-podcast/site/cache"
+
+    - name: Read rendered services
+      ansible.builtin.slurp:
+        path: "{{ item }}"
+      loop:
+        - "{{ rendered_service }}"
+        - "{{ rendered_worker }}"
+        - "{{ rendered_worker_with_args }}"
+      register: rendered_files
+
+    - name: Assert rendered services include web and worker commands
+      ansible.builtin.assert:
+        that:
+          - "'gunicorn' in rendered_service_text"
+          - "'config.wsgi:application' in rendered_service_text"
+          - "'manage.py db_worker' in rendered_worker_text"
+          - "'--backend cast_transcripts' in rendered_worker_text"
+          - "'--interval 5' in rendered_worker_text"
+          - "'EnvironmentFile=/home/python-podcast/site/.env' in rendered_worker_text"
+          - "'--queue-name transcripts' in rendered_worker_with_args_text"
+          - "'--verbose' in rendered_worker_with_args_text"
+      vars:
+        rendered_service_text: "{{ rendered_files.results[0].content | b64decode }}"
+        rendered_worker_text: "{{ rendered_files.results[1].content | b64decode }}"
+        rendered_worker_with_args_text: "{{ rendered_files.results[2].content | b64decode }}"
+
+    - name: Clean up rendered services
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ rendered_service }}"
+        - "{{ rendered_worker }}"
+        - "{{ rendered_worker_with_args }}"

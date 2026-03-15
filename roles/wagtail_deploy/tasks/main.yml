@@ -71,6 +71,13 @@
     fail_msg: "wagtail_git_repo must be set when using git deployment"
   when: wagtail_deploy_method == "git"
 
+- name: main | Validate db_worker requirements
+  ansible.builtin.assert:
+    that:
+      - wagtail_db_worker_backend | length > 0
+    fail_msg: "wagtail_db_worker_backend must be set when wagtail_db_worker_enabled is true"
+  when: wagtail_db_worker_enabled | bool
+
 - name: main | Provision PostgreSQL database and user
   ansible.builtin.include_tasks: postgres.yml
 

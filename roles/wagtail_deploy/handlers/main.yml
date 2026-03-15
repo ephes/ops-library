@@ -10,3 +10,9 @@
   ansible.builtin.systemd:
     name: "{{ wagtail_service_name }}"
     state: restarted
+
+- name: restart wagtail db worker
+  ansible.builtin.systemd:
+    name: "{{ wagtail_db_worker_unit_name }}"
+    state: restarted
+  when: wagtail_db_worker_enabled | bool

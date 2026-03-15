@@ -12,3 +12,41 @@
     webapp_deploy_internal_service_notify_handlers:
       - reload systemd
       - restart wagtail
+
+- name: service | Render and enable db_worker systemd unit
+  ansible.builtin.include_role:
+    name: local.ops_library.webapp_deploy_internal
+    tasks_from: systemd_service
+  vars:
+    webapp_deploy_internal_service_template_src: "templates/wagtail-db-worker.service.j2"
+    webapp_deploy_internal_service_unit_dest: "{{ wagtail_db_worker_unit_path }}"
+    webapp_deploy_internal_service_name: "{{ wagtail_db_worker_unit_name }}"
+    webapp_deploy_internal_service_notify_handlers:
+      - reload systemd
+      - restart wagtail db worker
+  when: wagtail_db_worker_enabled | bool
+
+- name: service | Check for stale db_worker unit
+  ansible.builtin.stat:
+    path: "{{ wagtail_db_worker_unit_path }}"
+  register: wagtail_db_worker_unit_stat
+  when: not wagtail_db_worker_enabled | bool
+
+- name: service | Stop and disable stale db_worker service
+  ansible.builtin.systemd:
+    name: "{{ wagtail_db_worker_unit_name }}"
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  when:
+    - not wagtail_db_worker_enabled | bool
+    - wagtail_db_worker_unit_stat.stat.exists
+
+- name: service | Remove stale db_worker unit file
+  ansible.builtin.file:
+    path: "{{ wagtail_db_worker_unit_path }}"
+    state: absent
+  notify: reload systemd
+  when:
+    - not wagtail_db_worker_enabled | bool
+    - wagtail_db_worker_unit_stat.stat.exists
