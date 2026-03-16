@@ -13,3 +13,22 @@
     PATH: "{{ voxhelm_launchd_path }}"
   register: voxhelm_migrate
   changed_when: "'Applying ' in (voxhelm_migrate.stdout | default(''))"
+
+- name: database | Create or update bootstrap operator account
+  ansible.builtin.shell: |
+    set -euo pipefail
+    set -a
+    source {{ (voxhelm_config_dir ~ '/voxhelm.env') | quote }}
+    set +a
+    .venv/bin/python manage.py bootstrap_operator
+  args:
+    chdir: "{{ voxhelm_app_dir }}"
+    executable: /bin/bash
+  environment:
+    PATH: "{{ voxhelm_launchd_path }}"
+    VOXHELM_BOOTSTRAP_OPERATOR_USERNAME: "{{ voxhelm_bootstrap_operator_username }}"
+    VOXHELM_BOOTSTRAP_OPERATOR_EMAIL: "{{ voxhelm_bootstrap_operator_email }}"
+    VOXHELM_BOOTSTRAP_OPERATOR_PASSWORD: "{{ voxhelm_bootstrap_operator_password }}"
+  register: voxhelm_bootstrap_operator
+  changed_when: false
+  no_log: true

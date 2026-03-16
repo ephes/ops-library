@@ -38,9 +38,15 @@ Current default runtime:
 voxhelm_source_path: "/Users/jochen/projects/voxhelm"
 voxhelm_django_secret_key: "replace-me"
 voxhelm_bearer_tokens_env: "archive=replace-me"
+voxhelm_bootstrap_operator_username: "jochen"
+voxhelm_bootstrap_operator_password: "replace-me"
 ```
 
 ## Optional Variables
+
+`voxhelm_bootstrap_operator_email` is optional and may be empty. The bootstrap
+username and password are required at deploy time even though they also appear
+in `defaults/main.yml` with sentinel placeholders.
 
 ```yaml
 voxhelm_app_port: 8787
@@ -90,6 +96,9 @@ voxhelm_wyoming_stt_normalize_transcript: true
 voxhelm_lane_scheduler_enabled: true
 voxhelm_lane_scheduler_dir: "/opt/apps/voxhelm/site/var/lane-scheduler"
 voxhelm_lane_scheduler_stale_seconds: 1800
+voxhelm_bootstrap_operator_username: "CHANGEME"
+voxhelm_bootstrap_operator_email: ""
+voxhelm_bootstrap_operator_password: "CHANGEME"
 voxhelm_allowed_hosts:
   - "studio.tailde2ec.ts.net"
   - "studio"
@@ -115,7 +124,17 @@ For the full list, see `defaults/main.yml`.
         voxhelm_source_path: "/Users/jochen/projects/voxhelm"
         voxhelm_django_secret_key: "{{ service_secrets.django_secret_key }}"
         voxhelm_bearer_tokens_env: "archive={{ service_secrets.api_token_archive }}"
+        voxhelm_bootstrap_operator_username: "{{ service_secrets.bootstrap_operator_username }}"
+        voxhelm_bootstrap_operator_email: "{{ service_secrets.bootstrap_operator_email }}"
+        voxhelm_bootstrap_operator_password: "{{ service_secrets.bootstrap_operator_password }}"
 ```
+
+## Bootstrap Operator
+
+- The role runs `python manage.py bootstrap_operator` after migrations on every deploy.
+- Bootstrap credentials should come from the private control repo, typically `ops-control/secrets/prod/voxhelm.yml`.
+- The in-app command is idempotent: first deploy creates the operator, later deploys update the matching account's password, email, `is_staff`, and `is_active` fields.
+- The role passes credentials as task-scoped environment variables for that one-shot command and does not persist the operator password in `voxhelm.env`.
 
 ## Wyoming STT Notes
 

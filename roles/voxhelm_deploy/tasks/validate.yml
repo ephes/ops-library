@@ -13,6 +13,10 @@
       - voxhelm_django_secret_key != "CHANGEME"
       - voxhelm_bearer_tokens_env | trim | length > 0
       - "'CHANGEME' not in voxhelm_bearer_tokens_env"
+      - voxhelm_bootstrap_operator_username | trim | length > 0
+      - voxhelm_bootstrap_operator_username != "CHANGEME"
+      - voxhelm_bootstrap_operator_password | trim | length > 0
+      - voxhelm_bootstrap_operator_password != "CHANGEME"
       - voxhelm_app_port | int > 0
       - voxhelm_uv_bin | trim | length > 0
       - voxhelm_tts_backend | trim | length > 0
@@ -20,4 +24,5 @@
       - voxhelm_piper_default_voice | trim | length > 0
     fail_msg: >-
       Voxhelm deployment is missing required configuration. Check source path,
-      Django secret key, bearer token config, port, uv binary path, and Piper voice config.
+      Django secret key, bearer token config, bootstrap operator credentials,
+      port, uv binary path, and Piper voice config.

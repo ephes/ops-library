@@ -81,6 +81,9 @@ voxhelm_artifact_s3_force_path_style: true
 
 voxhelm_django_secret_key: "CHANGEME"
 voxhelm_bearer_tokens_env: "CHANGEME"
+voxhelm_bootstrap_operator_username: "CHANGEME"
+voxhelm_bootstrap_operator_email: ""
+voxhelm_bootstrap_operator_password: "CHANGEME"
 voxhelm_allowed_hosts:
   - "studio.tailde2ec.ts.net"
   - "studio"
