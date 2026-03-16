@@ -125,6 +125,14 @@ mail_backend_recipient_delimiter: "-"
 mail_backend_submission_rate_limit: 100
 
 # =============================================================================
+# SMTPUTF8
+# =============================================================================
+
+# Keep disabled: the local LMTP delivery path (Dovecot) is ASCII/punycode only.
+# IDN senders are handled at the edge relay via recipient_canonical rewrites.
+mail_backend_smtputf8_enable: false
+
+# =============================================================================
 # Logging
 # =============================================================================
 
