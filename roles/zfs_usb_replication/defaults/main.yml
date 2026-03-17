@@ -45,12 +45,16 @@ zfs_usb_replication_key_path: "/root/.zfs-key-vault"
 zfs_usb_replication_default_args:
   - "--no-rollback"
 
+# Abort partial receive helper (shared with zfs_syncoid_replication role)
+zfs_usb_replication_abort_partial_receive_script_path: "/usr/local/bin/zfs-syncoid-abort-partial-receive.sh"
+
 # Replication jobs (REQUIRED)
 # Each job supports:
 # - source (string)
 # - target (string)
 # - recursive (bool)
 # - readonly (bool)
+# - abort_partial_receive (bool, default false) - abort any partial zfs receive on the target before sync
 # - extra_args (list)
 zfs_usb_replication_jobs: []
 

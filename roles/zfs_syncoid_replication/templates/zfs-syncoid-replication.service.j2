@@ -19,6 +19,9 @@ TimeoutStartSec={{ zfs_syncoid_replication_timeout_sec }}
 {% if job.force_delete | default(false) %}{% set _ = args.append('--force-delete') %}{% endif %}
 {% for arg in default_args %}{% set _ = args.append(arg) %}{% endfor %}
 {% for arg in job.extra_args | default([]) %}{% set _ = args.append(arg) %}{% endfor %}
+{% if job.abort_partial_receive | default(false) %}
+ExecStartPre={{ zfs_syncoid_replication_abort_partial_receive_script_path }} "{{ job.target }}" "{{ job.recursive | default(false) | bool | ternary('true', 'false') }}"
+{% endif %}
 {% if job.prune_conflicting_snapshots | default(false) %}
 ExecStartPre={{ zfs_syncoid_replication_prune_script_path }} "{{ job.source }}" "{{ job.target }}" "{{ job.recursive | default(false) | bool | ternary('true', 'false') }}" "{{ job.prune_target_only_snapshots | default(false) | bool | ternary('true', 'false') }}"
 {% endif %}

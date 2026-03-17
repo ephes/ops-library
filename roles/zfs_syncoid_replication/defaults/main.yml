@@ -26,10 +26,15 @@ zfs_syncoid_replication_default_args:
 
 # Replication jobs (REQUIRED)
 # Each job supports:
-# - source (string)
-# - target (string)
-# - recursive (bool)
-# - readonly (bool)
+# - source (string, required)
+# - target (string, required)
+# - recursive (bool, default false)
+# - readonly (bool, default false)
+# - force_delete (bool, default false) - pass --force-delete to syncoid
+# - no_rollback (bool) - set to false to remove --no-rollback for this job
+# - prune_conflicting_snapshots (bool, default false) - run preflight GUID conflict cleanup
+# - prune_target_only_snapshots (bool, default false) - also prune target-only snapshots newer than last common
+# - abort_partial_receive (bool, default false) - abort any partial zfs receive on the target before sync
 # - extra_args (list)
 zfs_syncoid_replication_jobs: []
 
@@ -49,3 +54,6 @@ zfs_syncoid_replication_spindown_sleep_sec: 60
 
 # Optional prune helper for conflicting snapshots
 zfs_syncoid_replication_prune_script_path: "/usr/local/bin/zfs-syncoid-prune-conflicts.sh"
+
+# Abort partial receive helper
+zfs_syncoid_replication_abort_partial_receive_script_path: "/usr/local/bin/zfs-syncoid-abort-partial-receive.sh"

@@ -17,6 +17,10 @@ Schedules local ZFS replication jobs using syncoid, with optional mail alerts an
 - `zfs_syncoid_replication_spindown_devices` - devices to spin down after success.
 - `readonly: true` in a job uses `--recvoptions="o readonly=on"` so target datasets stay read-only
   without property toggling between runs.
+- `abort_partial_receive: true` in a job aborts any leftover partial ZFS receive on the target
+  (recursively for recursive jobs) before syncing. Prevents stuck states after transient failures.
+- `prune_conflicting_snapshots: true` runs a preflight cleanup that destroys target snapshots with
+  mismatched GUIDs.
 
 Example usage:
 
@@ -30,4 +34,6 @@ Example usage:
           - source: fast/general
             target: tank/replica/fast/general
             readonly: true
+            prune_conflicting_snapshots: true
+            abort_partial_receive: true
 ```

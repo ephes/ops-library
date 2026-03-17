@@ -73,6 +73,13 @@ zfs mount -a
 {% if zfs_usb_replication_identifier | default('') | length > 0 %}{% set _ = args.append('--identifier="' ~ zfs_usb_replication_identifier ~ '"') %}{% endif %}
 {% for arg in zfs_usb_replication_default_args %}{% set _ = args.append(arg) %}{% endfor %}
 {% for arg in job.extra_args | default([]) %}{% set _ = args.append(arg) %}{% endfor %}
+{% if job.abort_partial_receive | default(false) %}
+if [[ -x "{{ zfs_usb_replication_abort_partial_receive_script_path }}" ]]; then
+  "{{ zfs_usb_replication_abort_partial_receive_script_path }}" "{{ job.target }}" "{{ job.recursive | default(false) | bool | ternary('true', 'false') }}"
+else
+  logger -t "${log_tag}" "WARNING: abort-partial-receive script not found at {{ zfs_usb_replication_abort_partial_receive_script_path }}"
+fi
+{% endif %}
 logger -t "${log_tag}" "Running syncoid: {{ job.source }} -> {{ job.target }}"
 "${syncoid_bin}" {{ (args + [job.source, job.target]) | join(' ') }}
 {% endfor %}

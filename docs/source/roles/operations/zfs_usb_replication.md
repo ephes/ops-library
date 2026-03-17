@@ -24,6 +24,9 @@ Runs syncoid replication to a USB-attached ZFS pool on a schedule, skipping clea
   without property toggling between runs.
 - `zfs_usb_replication_set_canmount_off_for_readonly_recursive_targets` - defaults to `true`.
 - `zfs_usb_replication_exportfs_lock_dir` - defaults to `/etc/exports.d`.
+- `abort_partial_receive: true` in a job aborts any leftover partial ZFS receive on the target
+  (recursively for recursive jobs) before syncing. Uses the shared abort script from
+  `zfs_syncoid_replication`.
 
 Example usage:
 
@@ -42,4 +45,5 @@ Example usage:
             target: vault/replica/fast
             recursive: true
             readonly: true
+            abort_partial_receive: true
 ```

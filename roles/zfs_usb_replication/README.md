@@ -32,7 +32,12 @@ zfs_usb_replication_jobs:
     target: vault/replica/fast
     recursive: true
     readonly: true
+    abort_partial_receive: false
 ```
+
+`abort_partial_receive: true` aborts any leftover partial receive on the target dataset (and
+descendants for recursive jobs) before running syncoid. Uses the shared abort script installed
+by `zfs_syncoid_replication`. Default is `false`.
 
 ### Common
 
@@ -80,7 +85,9 @@ For the full list, see `defaults/main.yml`.
 
 ## Dependencies
 
-None.
+- When `abort_partial_receive: true` is set on any job, the shared abort script from `zfs_syncoid_replication`
+  must be installed on the host (at `zfs_usb_replication_abort_partial_receive_script_path`). If the script is
+  absent, the job logs a warning and continues without aborting partial receives.
 
 ## Example Playbook
 
@@ -100,6 +107,7 @@ None.
             target: vault/replica/fast
             recursive: true
             readonly: true
+            abort_partial_receive: true
         zfs_usb_replication_alert_email: root
 ```
 
@@ -120,6 +128,7 @@ just test-role zfs_usb_replication
 
 ## Changelog
 
+- **1.1.0** (2026-03-17): Added `abort_partial_receive` job option to self-heal stuck partial ZFS receives (uses shared script from `zfs_syncoid_replication`)
 - **1.0.3** (2026-03-01): Hardened readonly recursive USB runs by auto-setting `canmount=off` on existing target parents and ensuring `/etc/exports.d` exists before `zfs mount -a`
 - **1.0.2** (2026-01-30): Added force-export and spindown support for USB replication runs
 - **1.0.1** (2026-01-29): Added `zfs_usb_replication_identifier` to avoid syncoid snapshot name collisions

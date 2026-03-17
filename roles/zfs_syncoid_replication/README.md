@@ -30,6 +30,7 @@ zfs_syncoid_replication_jobs:
     no_rollback: true
     prune_conflicting_snapshots: false
     prune_target_only_snapshots: false
+    abort_partial_receive: false
     extra_args:
       - "--no-rollback"
 ```
@@ -40,8 +41,16 @@ would otherwise block incremental receives.
 syncoid to roll back the target to the most recent common snapshot.
 `prune_conflicting_snapshots: true` runs a local preflight cleanup that destroys target
 snapshots whose GUIDs do not match the source (or do not exist on the source).
-`prune_target_only_snapshots: true` (only used with `prune_conflicting_snapshots`) also removes
-snapshots that exist only on the target. Default is false for safety.
+`prune_target_only_snapshots: true` (only used with `prune_conflicting_snapshots`) removes
+target-only snapshots that are **newer than the most recent common snapshot**. Older
+target-only snapshots are preserved — they may be needed by downstream replication chains
+(e.g. USB offsite sync) as common-snapshot anchors. Default is false for safety.
+`abort_partial_receive: true` runs `zfs receive -A` on the target dataset (and all
+descendants for recursive jobs) before each sync to abort any leftover partial receive
+from a previous failed run. This prevents "most recent snapshot does not match incremental
+source" errors after transient failures. Default is `false` to preserve syncoid's normal
+resumable-receive behaviour; enable explicitly when the target is a replica that may be
+modified by other replication chains (e.g. USB offsite sync).
 
 ### Common
 
@@ -85,12 +94,8 @@ None.
           - source: fast/timemachine
             target: tank/replica/fast/timemachine
             readonly: true
-            force_delete: false
-            no_rollback: true
-            prune_conflicting_snapshots: false
-            prune_target_only_snapshots: false
-            extra_args:
-              - "--no-rollback"
+            prune_conflicting_snapshots: true
+            abort_partial_receive: true
         zfs_syncoid_replication_on_calendar: "02:00"
         zfs_syncoid_replication_alert_email: "root"
         zfs_syncoid_replication_spindown_devices:
@@ -115,6 +120,7 @@ just test-role zfs_syncoid_replication
 
 ## Changelog
 
+- **1.1.0** (2026-03-17): Added `abort_partial_receive` job option to self-heal stuck partial ZFS receives. Rewrote prune-conflicts script with per-dataset processing, recursive support, and safer target-only pruning (only newer than last common snapshot).
 - **1.0.0** (2026-01-18): Initial release
 
 ## License
