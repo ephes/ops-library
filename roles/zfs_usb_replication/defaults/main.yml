@@ -54,6 +54,8 @@ zfs_usb_replication_abort_partial_receive_script_path: "/usr/local/bin/zfs-synco
 # - target (string)
 # - recursive (bool)
 # - readonly (bool)
+# - force_delete (bool, default false) - pass --force-delete to syncoid
+# - no_rollback (bool) - set to false to remove --no-rollback for this job
 # - abort_partial_receive (bool, default false) - abort any partial zfs receive on the target before sync
 # - extra_args (list)
 zfs_usb_replication_jobs: []

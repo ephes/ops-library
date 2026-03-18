@@ -20,6 +20,9 @@ The endpoint adds staleness metadata (`meta.age_seconds`) based on JSON file mti
 When quiet-hours skipping is enabled, the collector reuses cached local snapshot
 metadata and updates `age_seconds`/`age_hours` without issuing fresh `zfs list`
 probes against sleeping replica pools.
+For timer-triggered oneshot services, the collector also treats a non-zero
+`ExecMainStatus` as unhealthy even if someone clears the unit's failed state
+with `systemctl reset-failed`.
 
 ## Design
 

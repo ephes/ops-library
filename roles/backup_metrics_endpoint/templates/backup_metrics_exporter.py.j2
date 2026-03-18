@@ -251,11 +251,18 @@ def _unit_ok(unit: dict[str, Any], required: bool) -> tuple[bool, list[str]]:
                 issues.append("service_missing")
         else:
             active_state = service.get("active_state")
+            exec_main_status = service.get("exec_main_status")
             if active_state == "failed":
                 issues.append("service_failed")
             result = service.get("result")
             if result and result not in ("success", "exit-code", "done", "") and active_state != "active":
                 issues.append(f"service_result_{result}")
+            if (
+                exec_main_status is not None
+                and exec_main_status != 0
+                and active_state not in ("active", "failed")
+            ):
+                issues.append(f"service_exit_status_{exec_main_status}")
 
     return len(issues) == 0, issues
 

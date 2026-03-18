@@ -44,6 +44,11 @@
           - job.source | length > 0
           - job.target is defined
           - job.target | length > 0
+          - job.recursive is not defined or job.recursive is boolean
+          - job.readonly is not defined or job.readonly is boolean
+          - job.force_delete is not defined or job.force_delete is boolean
+          - job.no_rollback is not defined or job.no_rollback is boolean
+          - job.abort_partial_receive is not defined or job.abort_partial_receive is boolean
         fail_msg: "Each zfs_usb_replication job requires source and target"
       loop: "{{ zfs_usb_replication_jobs }}"
       loop_control:

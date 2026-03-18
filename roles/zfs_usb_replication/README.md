@@ -32,9 +32,16 @@ zfs_usb_replication_jobs:
     target: vault/replica/fast
     recursive: true
     readonly: true
+    force_delete: false
+    no_rollback: true
     abort_partial_receive: false
 ```
 
+`force_delete: true` adds `--force-delete` so syncoid can remove target-only snapshots that
+would otherwise block incremental receives.
+`no_rollback: false` removes `--no-rollback` from the default args for that job, allowing
+syncoid to roll back the offsite target to the most recent common snapshot when the replica
+has drifted since the last successful run.
 `abort_partial_receive: true` aborts any leftover partial receive on the target dataset (and
 descendants for recursive jobs) before running syncoid. Uses the shared abort script installed
 by `zfs_syncoid_replication`. Default is `false`.
@@ -107,6 +114,7 @@ For the full list, see `defaults/main.yml`.
             target: vault/replica/fast
             recursive: true
             readonly: true
+            no_rollback: false
             abort_partial_receive: true
         zfs_usb_replication_alert_email: root
 ```
@@ -128,6 +136,7 @@ just test-role zfs_usb_replication
 
 ## Changelog
 
+- **1.2.0** (2026-03-18): Added per-job `no_rollback` and `force_delete` controls so offsite USB replicas can auto-heal target drift the same way the primary syncoid role can.
 - **1.1.0** (2026-03-17): Added `abort_partial_receive` job option to self-heal stuck partial ZFS receives (uses shared script from `zfs_syncoid_replication`)
 - **1.0.3** (2026-03-01): Hardened readonly recursive USB runs by auto-setting `canmount=off` on existing target parents and ensuring `/etc/exports.d` exists before `zfs mount -a`
 - **1.0.2** (2026-01-30): Added force-export and spindown support for USB replication runs
