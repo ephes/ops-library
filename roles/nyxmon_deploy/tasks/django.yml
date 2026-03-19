@@ -8,7 +8,9 @@
     owner: "{{ nyxmon_user }}"
     group: "{{ nyxmon_group }}"
     mode: '0600'
-  notify: restart nyxmon
+  notify:
+    - restart nyxmon
+    - restart nyxmon-monitor
 
 - name: Run Django migrations
   django_manage:

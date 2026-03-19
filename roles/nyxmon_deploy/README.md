@@ -43,8 +43,13 @@ Set these only when Nyxmon should create OpsGate tickets directly:
 ```yaml
 nyxmon_opsgate_submit_base_url: "http://studio.tailde2ec.ts.net:8711"
 nyxmon_opsgate_submit_token: "{{ opsgate_secrets.submit_token_nyxmon }}"
-nyxmon_opsgate_approval_base_url: "http://studio.tailde2ec.ts.net:8711"
+nyxmon_opsgate_approval_base_url: "https://opsgate.home.xn--wersdrfer-47a.de"
 ```
+
+The submit URL may stay on the direct internal OpsGate API endpoint, but the
+approval URL should point at the operator-facing ingress. The role restarts both
+`nyxmon.service` and `nyxmon-monitor.service` when `.env` changes so the
+long-running alert worker does not keep stale OpsGate link settings.
 
 ### Common Configuration
 
