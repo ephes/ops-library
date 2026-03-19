@@ -1,20 +1,21 @@
 ---
 # Deploy Nyxmon source code using git
 
-- name: Install git
+- name: source_git | Install git
   package:
     name: git
     state: present
 
-- name: Clone or update repository
+- name: source_git | Clone or update repository
   git:
     repo: "{{ nyxmon_git_repo }}"
     dest: "{{ nyxmon_site_path }}"
     version: "{{ nyxmon_git_version }}"
     force: true
+  become: true
   become_user: "{{ nyxmon_user }}"
   register: git_result
 
-- name: Debug git result
+- name: source_git | Debug git result
   debug:
     msg: "Repository updated: {{ git_result.changed }}"

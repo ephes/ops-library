@@ -1,7 +1,7 @@
 ---
 # Configure Django application
 
-- name: Create environment file for Django
+- name: django | Create environment file for Django
   template:
     src: nyxmon.env.j2
     dest: "{{ nyxmon_site_path }}/.env"
@@ -12,7 +12,7 @@
     - restart nyxmon
     - restart nyxmon-monitor
 
-- name: Run Django migrations
+- name: django | Run Django migrations
   django_manage:
     command: migrate
     app_path: "{{ nyxmon_django_path }}"
@@ -25,10 +25,11 @@
     DJANGO_ADMIN_URL: "{{ nyxmon_django_admin_url }}"
     TELEGRAM_BOT_TOKEN: "{{ nyxmon_telegram_bot_token }}"
     TELEGRAM_CHAT_ID: "{{ nyxmon_telegram_chat_id }}"
+  become: true
   become_user: "{{ nyxmon_user }}"
   when: not nyxmon_skip_django_manage | default(false)
 
-- name: Collect static files
+- name: django | Collect static files
   django_manage:
     command: collectstatic
     app_path: "{{ nyxmon_django_path }}"
@@ -41,5 +42,6 @@
     DJANGO_ADMIN_URL: "{{ nyxmon_django_admin_url }}"
     TELEGRAM_BOT_TOKEN: "{{ nyxmon_telegram_bot_token }}"
     TELEGRAM_CHAT_ID: "{{ nyxmon_telegram_chat_id }}"
+  become: true
   become_user: "{{ nyxmon_user }}"
   when: not nyxmon_skip_django_manage | default(false)

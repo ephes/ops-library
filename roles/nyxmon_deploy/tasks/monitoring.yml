@@ -1,7 +1,7 @@
 ---
 # Setup monitoring for Nyxmon
 
-- name: Create monitoring service file
+- name: monitoring | Create monitoring service file
   template:
     src: nyxmon-monitor.service.j2
     dest: /etc/systemd/system/nyxmon-monitor.service
@@ -12,7 +12,7 @@
     - reload systemd
     - restart nyxmon-monitor
 
-- name: Enable and start monitoring service
+- name: monitoring | Enable and start monitoring service
   systemd:
     name: nyxmon-monitor
     enabled: true

@@ -1,12 +1,12 @@
 ---
 # Setup Python environment for Nyxmon
 
-- name: Ensure uv binary is installed
+- name: python | Ensure uv binary is installed
   ansible.builtin.import_role:
     name: uv_install
   when: nyxmon_use_uv
 
-- name: Ensure Python and pip are installed
+- name: python | Ensure Python and pip are installed
   package:
     name:
       - python3
@@ -15,11 +15,11 @@
     state: present
   when: not nyxmon_use_uv
 
-- name: Determine Django project path
+- name: python | Determine Django project path
   set_fact:
     nyxmon_django_path: "{{ nyxmon_site_path }}"
 
-- name: Ensure pyproject.toml exists when using source copy
+- name: python | Ensure pyproject.toml exists when using source copy
   stat:
     path: "{{ nyxmon_site_path }}/pyproject.toml"
   register: nyxmon_pyproject
@@ -27,7 +27,7 @@
     - nyxmon_use_uv
     - nyxmon_use_source_pyproject
 
-- name: Fail if pyproject.toml is missing
+- name: python | Fail if pyproject.toml is missing
   fail:
     msg: "pyproject.toml was not found at {{ nyxmon_site_path }}. Set nyxmon_use_source_pyproject=false or ensure the file is synced."
   when:
@@ -35,7 +35,7 @@
     - nyxmon_use_source_pyproject
     - not nyxmon_pyproject.stat.exists
 
-- name: Ensure pyproject.toml ownership and mode
+- name: python | Ensure pyproject.toml ownership and mode
   file:
     path: "{{ nyxmon_site_path }}/pyproject.toml"
     owner: "{{ nyxmon_user }}"
@@ -45,7 +45,7 @@
     - nyxmon_use_uv
     - nyxmon_use_source_pyproject
 
-- name: Create pyproject.toml for site from template
+- name: python | Create pyproject.toml for site from template
   template:
     src: pyproject.toml.j2
     dest: "{{ nyxmon_site_path }}/pyproject.toml"
@@ -56,34 +56,35 @@
     - nyxmon_use_uv
     - not nyxmon_use_source_pyproject
 
-- name: Remove stale uv.lock before syncing
+- name: python | Remove stale uv.lock before syncing
   file:
     path: "{{ nyxmon_site_path }}/uv.lock"
     state: absent
   when: nyxmon_use_uv
 
-- name: Build uv sync command arguments
+- name: python | Build uv sync command arguments
   set_fact:
     nyxmon_uv_sync_cmd: >-
       uv sync --no-default-groups --no-dev{{ '' if nyxmon_use_source_pyproject else ' --upgrade-package nyxmon' }}
   when: nyxmon_use_uv
 
-- name: Test if venv Python is usable
+- name: python | Test if venv Python is usable
   command: "{{ nyxmon_venv_path }}/bin/python --version"
   register: venv_python_test
+  become: true
   become_user: "{{ nyxmon_user }}"
   failed_when: false
   changed_when: false
   when: nyxmon_use_uv
 
-- name: Extract current venv Python version
+- name: python | Extract current venv Python version
   set_fact:
     venv_python_current: "{{ venv_python_test.stdout | regex_replace('^Python (\\d+\\.\\d+).*$', '\\1') }}"
   when:
     - nyxmon_use_uv
     - venv_python_test.rc == 0
 
-- name: Remove broken venv if Python is not usable
+- name: python | Remove broken venv if Python is not usable
   file:
     path: "{{ nyxmon_venv_path }}"
     state: absent
@@ -91,7 +92,7 @@
     - nyxmon_use_uv
     - venv_python_test.rc != 0
 
-- name: Remove venv if Python version doesn't match
+- name: python | Remove venv if Python version doesn't match
   file:
     path: "{{ nyxmon_venv_path }}"
     state: absent
@@ -101,20 +102,21 @@
     - venv_python_current is defined
     - venv_python_current != nyxmon_python_version
 
-- name: Create virtual environment using uv
+- name: python | Create virtual environment using uv
   command: uv venv --python {{ nyxmon_python_version }} {{ nyxmon_venv_path }}
   args:
     creates: "{{ nyxmon_venv_path }}/bin/python"
+  become: true
   become_user: "{{ nyxmon_user }}"
   when: nyxmon_use_uv
 
-- name: Check if venv symlink exists
+- name: python | Check if venv symlink exists
   stat:
     path: "{{ nyxmon_site_path }}/venv"
   register: venv_link
   when: nyxmon_use_uv
 
-- name: Create venv symlink to .venv
+- name: python | Create venv symlink to .venv
   file:
     src: "{{ nyxmon_venv_path }}"
     dest: "{{ nyxmon_site_path }}/venv"
@@ -124,27 +126,30 @@
     force: true  # Replace if exists with wrong owner
   when: nyxmon_use_uv
 
-- name: Create virtual environment using venv
+- name: python | Create virtual environment using venv
   command: python3 -m venv {{ nyxmon_venv_path }}
   args:
     creates: "{{ nyxmon_venv_path }}/bin/python"
+  become: true
   become_user: "{{ nyxmon_user }}"
   when: not nyxmon_use_uv
 
-- name: Install dependencies using uv
+- name: python | Install dependencies using uv
   command: "{{ nyxmon_uv_sync_cmd }}"
   args:
     chdir: "{{ nyxmon_django_path }}"
   environment:
     VIRTUAL_ENV: "{{ nyxmon_venv_path }}"
+  become: true
   become_user: "{{ nyxmon_user }}"
   when: nyxmon_use_uv
   register: uv_sync
 
-- name: Install dependencies using pip
+- name: python | Install dependencies using pip
   pip:
     requirements: "{{ nyxmon_django_path }}/requirements.txt"
     virtualenv: "{{ nyxmon_venv_path }}"
     state: present
+  become: true
   become_user: "{{ nyxmon_user }}"
   when: not nyxmon_use_uv

@@ -1,19 +1,19 @@
 ---
 # Deploy Nyxmon source code using rsync
 
-- name: Ensure source directory exists
+- name: source_rsync | Ensure source directory exists
   delegate_to: localhost
   stat:
     path: "{{ nyxmon_source_path }}"
   register: source_dir
   become: false
 
-- name: Fail if source directory doesn't exist
+- name: source_rsync | Fail if source directory doesn't exist
   fail:
     msg: "Source directory {{ nyxmon_source_path }} does not exist"
   when: not source_dir.stat.exists or not source_dir.stat.isdir
 
-- name: Build list of required source paths
+- name: source_rsync | Build list of required source paths
   set_fact:
     nyxmon_required_source_paths: >-
       {{ ['src/django/']
@@ -23,7 +23,7 @@
   delegate_to: localhost
   become: false
 
-- name: Validate required source paths exist
+- name: source_rsync | Validate required source paths exist
   stat:
     path: "{{ nyxmon_source_path }}/{{ item }}"
   register: nyxmon_source_path_stats
@@ -33,7 +33,7 @@
   loop_control:
     label: "{{ item }}"
 
-- name: Fail if required source paths are missing
+- name: source_rsync | Fail if required source paths are missing
   assert:
     that: item.stat.exists
     fail_msg: "Missing required path for rsync deployment: {{ item.invocation.module_args.path }}"
@@ -41,7 +41,7 @@
   loop_control:
     label: "{{ item.invocation.module_args.path }}"
 
-- name: Ensure parent directories exist for additional sources
+- name: source_rsync | Ensure parent directories exist for additional sources
   file:
     path: "{{ (nyxmon_site_path ~ '/' ~ item) | regex_replace('/+$', '') | dirname }}"
     state: directory
@@ -55,7 +55,7 @@
     - nyxmon_rsync_additional_paths is defined
     - nyxmon_rsync_additional_paths | length > 0
 
-- name: Ensure destination directories exist for additional sources
+- name: source_rsync | Ensure destination directories exist for additional sources
   file:
     path: "{{ (nyxmon_site_path ~ '/' ~ item) | regex_replace('/+$', '') }}"
     state: directory
@@ -69,7 +69,7 @@
     - nyxmon_rsync_additional_paths is defined
     - nyxmon_rsync_additional_paths | length > 0
 
-- name: Sync Django source code to target
+- name: source_rsync | Sync Django source code to target
   ansible.posix.synchronize:
     src: "{{ nyxmon_source_path }}/src/django/"
     dest: "{{ nyxmon_site_path }}/"
@@ -93,7 +93,7 @@
   become: false
   delegate_to: localhost
 
-- name: Sync additional Nyxmon source directories
+- name: source_rsync | Sync additional Nyxmon source directories
   ansible.posix.synchronize:
     src: "{{ nyxmon_source_path }}/{{ item }}"
     dest: "{{ nyxmon_site_path }}/{{ item }}"
@@ -119,7 +119,7 @@
     - nyxmon_rsync_additional_paths is defined
     - nyxmon_rsync_additional_paths | length > 0
 
-- name: Copy pyproject.toml from source
+- name: source_rsync | Copy pyproject.toml from source
   copy:
     src: "{{ nyxmon_source_path }}/pyproject.toml"
     dest: "{{ nyxmon_site_path }}/pyproject.toml"
@@ -129,7 +129,7 @@
   when:
     - nyxmon_use_source_pyproject
 
-- name: Copy extra files from source
+- name: source_rsync | Copy extra files from source
   copy:
     src: "{{ nyxmon_source_path }}/{{ item }}"
     dest: "{{ nyxmon_site_path }}/{{ item }}"
@@ -143,7 +143,7 @@
     - nyxmon_rsync_extra_files is defined
     - nyxmon_rsync_extra_files | length > 0
 
-- name: Set ownership for synced files
+- name: source_rsync | Set ownership for synced files
   file:
     path: "{{ nyxmon_site_path }}"
     owner: "{{ nyxmon_user }}"
