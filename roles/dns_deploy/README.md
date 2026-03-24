@@ -66,6 +66,16 @@ Unbound handles everything:
 | `dns_local_domain_punycode` | `"home.example.com"` | IDN encoded version |
 | `dns_local_ip` | `{{ ansible_default_ipv4.address }}` | IP for wildcard resolution |
 
+### Unbound Behavior
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `dns_unbound_serve_expired` | `false` | Serve stale cached answers during upstream outages |
+| `dns_unbound_serve_expired_ttl` | `86400` | Maximum age of stale entries served to clients |
+| `dns_unbound_serve_expired_reply_ttl` | `30` | TTL returned to clients for stale answers |
+
+When `dns_unbound_serve_expired` is enabled, Unbound can keep answering from cache during brief upstream failures instead of immediately returning `SERVFAIL` for expired records.
+
 ### Split-DNS Configuration
 
 | Variable | Default | Description |
@@ -132,10 +142,13 @@ dns_forward_zones:
       - "1.0.0.1"
       - "8.8.8.8"
       - "8.8.4.4"
+    forward_first: true
   - name: "fritz.box"
     forward_addrs:
       - "192.168.178.1"
 ```
+
+For the root zone `.`, `forward_first: true` lets Unbound fall back to direct recursion if the configured forwarders are unavailable but general internet connectivity still works. Keep `forward_first: false` for private-only forwarded zones like `fritz.box` or `tailde2ec.ts.net`.
 
 **Example - LAN/Tailscale IPv6 view mapping:**
 

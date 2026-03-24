@@ -49,6 +49,11 @@ server:
     val-clean-additional: yes
     val-permissive-mode: no
     val-log-level: 1
+{% if dns_unbound_serve_expired | bool %}
+    serve-expired: yes
+    serve-expired-ttl: {{ dns_unbound_serve_expired_ttl }}
+    serve-expired-reply-ttl: {{ dns_unbound_serve_expired_reply_ttl }}
+{% endif %}
 
     # Logging
     verbosity: 1
