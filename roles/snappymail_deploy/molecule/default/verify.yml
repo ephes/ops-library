@@ -8,8 +8,14 @@
     snappymail_traefik_enabled: false
     snappymail_healthcheck_enabled: false
     snappymail_listen_port: 8088
+    snappymail_imap_host: "imap.home.xn--wersdrfer-47a.de"
+    snappymail_imap_port: 993
+    snappymail_smtp_host: "smtp.home.xn--wersdrfer-47a.de"
+    snappymail_smtp_port: 587
     snappymail_domains:
       - "example.test"
+    snappymail_remove_domains:
+      - "legacy.test"
     snappymail_backup_root: "/tmp/snappymail-backups"
   pre_tasks:
     - name: Ensure Ansible remote tmp exists
@@ -91,6 +97,98 @@
         that:
           - snappymail_app_ini.stat.exists
         fail_msg: "SnappyMail application.ini missing after restore"
+
+    - name: Verify default domain json exists
+      ansible.builtin.stat:
+        path: "{{ snappymail_data_dir }}/_data_/_default_/domains/default.json"
+      register: snappymail_default_domain_json
+
+    - name: Assert default domain json exists
+      ansible.builtin.assert:
+        that:
+          - snappymail_default_domain_json.stat.exists
+        fail_msg: "SnappyMail default domain json missing after restore"
+
+    - name: Verify legacy default domain ini is absent
+      ansible.builtin.stat:
+        path: "{{ snappymail_data_dir }}/_data_/_default_/domains/default.ini"
+      register: snappymail_default_domain_ini
+
+    - name: Assert legacy default domain ini is absent
+      ansible.builtin.assert:
+        that:
+          - not snappymail_default_domain_ini.stat.exists
+        fail_msg: "Legacy SnappyMail default domain ini still present after redeploy"
+
+    - name: Read default domain json
+      ansible.builtin.slurp:
+        src: "{{ snappymail_data_dir }}/_data_/_default_/domains/default.json"
+      register: snappymail_default_domain_json_content
+
+    - name: Assert default domain json uses configured IMAPS host
+      ansible.builtin.assert:
+        that:
+          - "(snappymail_default_domain_json_content.content | b64decode | from_json).IMAP.host == snappymail_imap_host"
+          - "(snappymail_default_domain_json_content.content | b64decode | from_json).IMAP.port == snappymail_imap_port"
+          - "(snappymail_default_domain_json_content.content | b64decode | from_json).SMTP.host == snappymail_smtp_host"
+          - "(snappymail_default_domain_json_content.content | b64decode | from_json).SMTP.port == snappymail_smtp_port"
+        fail_msg: "SnappyMail default domain json does not contain the configured IMAP/SMTP endpoints"
+
+    - name: Verify managed per-domain json exists
+      ansible.builtin.stat:
+        path: "{{ snappymail_data_dir }}/_data_/_default_/domains/{{ snappymail_domains[0] }}.json"
+      register: snappymail_managed_domain_json
+
+    - name: Assert managed per-domain json exists
+      ansible.builtin.assert:
+        that:
+          - snappymail_managed_domain_json.stat.exists
+        fail_msg: "Managed SnappyMail per-domain json missing after redeploy"
+
+    - name: Read managed per-domain json
+      ansible.builtin.slurp:
+        src: "{{ snappymail_data_dir }}/_data_/_default_/domains/{{ snappymail_domains[0] }}.json"
+      register: snappymail_managed_domain_json_content
+
+    - name: Assert managed per-domain json uses configured endpoints
+      ansible.builtin.assert:
+        that:
+          - "(snappymail_managed_domain_json_content.content | b64decode | from_json).IMAP.host == snappymail_imap_host"
+          - "(snappymail_managed_domain_json_content.content | b64decode | from_json).SMTP.host == snappymail_smtp_host"
+        fail_msg: "Managed SnappyMail per-domain json does not contain the configured endpoints"
+
+    - name: Verify legacy per-domain ini is absent
+      ansible.builtin.stat:
+        path: "{{ snappymail_data_dir }}/_data_/_default_/domains/{{ snappymail_domains[0] }}.ini"
+      register: snappymail_managed_domain_ini
+
+    - name: Assert legacy per-domain ini is absent
+      ansible.builtin.assert:
+        that:
+          - not snappymail_managed_domain_ini.stat.exists
+        fail_msg: "Legacy SnappyMail per-domain ini still present after redeploy"
+
+    - name: Verify obsolete domain json is absent
+      ansible.builtin.stat:
+        path: "{{ snappymail_data_dir }}/_data_/_default_/domains/{{ snappymail_remove_domains[0] }}.json"
+      register: snappymail_removed_domain_json
+
+    - name: Assert obsolete domain json is absent
+      ansible.builtin.assert:
+        that:
+          - not snappymail_removed_domain_json.stat.exists
+        fail_msg: "Obsolete SnappyMail domain json still present after redeploy"
+
+    - name: Verify obsolete domain ini is absent
+      ansible.builtin.stat:
+        path: "{{ snappymail_data_dir }}/_data_/_default_/domains/{{ snappymail_remove_domains[0] }}.ini"
+      register: snappymail_removed_domain_ini
+
+    - name: Assert obsolete domain ini is absent
+      ansible.builtin.assert:
+        that:
+          - not snappymail_removed_domain_ini.stat.exists
+        fail_msg: "Obsolete SnappyMail domain ini still present after redeploy"
 
     - name: Verify nginx site exists
       ansible.builtin.stat:

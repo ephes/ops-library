@@ -6,7 +6,7 @@ Deploys [SnappyMail](https://snappymail.eu/) as a PHP-FPM application behind ngi
 - Installs a pinned SnappyMail release from the upstream tarball with required PHP extensions.
 - Moves the `data/` directory to a persistent path (default `/mnt/cryptdata/snappymail`) and wires `include.php` to use it.
 - Creates a dedicated PHP-FPM pool and nginx vhost bound to `127.0.0.1:{{ snappymail_listen_port }}` (no ports exposed publicly).
-- Configures the admin account and default domain settings for IMAP/SMTP against Dovecot/Postfix.
+- Configures the admin account and managed SnappyMail domain JSON files for IMAP/SMTP against Dovecot/Postfix.
 - Renders Traefik dynamic config for HTTPS exposure using the existing wildcard certificate and optional cert resolver.
 - Health check that fails the run if the login page is not reachable locally.
 
@@ -33,6 +33,8 @@ Deploys [SnappyMail](https://snappymail.eu/) as a PHP-FPM application behind ngi
         snappymail_data_dir: "/mnt/cryptdata/snappymail"
         snappymail_domains:
           - "xn--wersdrfer-47a.de"
+        snappymail_remove_domains:
+          - "macmini"
 ```
 
 ## Key Variables
@@ -44,11 +46,12 @@ Deploys [SnappyMail](https://snappymail.eu/) as a PHP-FPM application behind ngi
 | `snappymail_data_dir` | `/mnt/cryptdata/snappymail` | Persistent data path mounted outside the web root. |
 | `snappymail_imap_host` / `snappymail_imap_port` | `imap.home.xn--wersdrfer-47a.de` / `993` | IMAP endpoint SnappyMail should use. |
 | `snappymail_smtp_host` / `snappymail_smtp_port` | `smtp.home.xn--wersdrfer-47a.de` / `587` | SMTP endpoint SnappyMail should use. |
-| `snappymail_domains` | `[]` | Optional list of domains to pre-create under `domains/` (fallback stays `default.ini`). |
+| `snappymail_domains` | `[]` | Optional list of domains to manage under `domains/` in addition to `default.json`. |
+| `snappymail_remove_domains` | `[]` | Optional list of obsolete domain override basenames to delete from the persistent `domains/` directory. |
 | `snappymail_version` | `2.38.2` | SnappyMail version to install (pinned). |
 | `snappymail_php_version` | auto | PHP minor version for the FPM pool; auto-detected from `php` CLI when empty. |
 
-See `defaults/main.yml` and `snappymail_shared/defaults/main.yml` for the full variable reference.
+See `defaults/main.yml` and `snappymail_shared/defaults/main.yml` for the full variable reference. The role renders `default.json` and `<domain>.json` files so SnappyMail prefers the managed JSON definitions over any legacy `.ini` overrides in the persistent data directory. It also removes matching legacy `.ini` files for managed domains, and `snappymail_remove_domains` cleans up both obsolete `.json` and `.ini` basenames from the persistent `domains/` directory.
 
 ## Known Issues
 

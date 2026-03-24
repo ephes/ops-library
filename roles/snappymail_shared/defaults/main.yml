@@ -50,7 +50,6 @@ snappymail_smtp_security: TLS   # TLS == STARTTLS | SSL | NONE
 snappymail_smtp_auth: true
 snappymail_smtp_short_login: false
 snappymail_smtp_set_sender: false
-snappymail_smtp_auth_plain_line: false
 
 snappymail_sieve_enabled: false
 snappymail_sieve_host: "{{ snappymail_imap_host }}"

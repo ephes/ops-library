@@ -19,5 +19,7 @@ snappymail_disable_default_nginx_site: true
 snappymail_nginx_site_path: /etc/nginx/sites-available/snappymail
 snappymail_nginx_enabled_path: /etc/nginx/sites-enabled/snappymail
 
+snappymail_remove_domains: []
+
 snappymail_service_enabled: true
 snappymail_service_state: started

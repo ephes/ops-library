@@ -80,8 +80,8 @@
 
 - name: Configure default domain settings
   ansible.builtin.template:
-    src: domain-default.ini.j2
-    dest: "{{ snappymail_domains_dir }}/default.ini"
+    src: domain-default.json.j2
+    dest: "{{ snappymail_domains_dir }}/default.json"
     owner: "{{ snappymail_user }}"
     group: "{{ snappymail_group }}"
     mode: "0640"
@@ -90,15 +90,57 @@
   tags:
     - molecule-idempotence-notest
 
+- name: Remove legacy default domain ini
+  ansible.builtin.file:
+    path: "{{ snappymail_domains_dir }}/default.ini"
+    state: absent
+  notify: restart php-fpm
+  changed_when: false
+  tags:
+    - molecule-idempotence-notest
+
 - name: Configure per-domain settings
   ansible.builtin.template:
-    src: domain.ini.j2
-    dest: "{{ snappymail_domains_dir }}/{{ item }}.ini"
+    src: domain.json.j2
+    dest: "{{ snappymail_domains_dir }}/{{ item }}.json"
     owner: "{{ snappymail_user }}"
     group: "{{ snappymail_group }}"
     mode: "0640"
   loop: "{{ snappymail_domains }}"
   when: snappymail_domains | length > 0
+  notify: restart php-fpm
+  changed_when: false
+  tags:
+    - molecule-idempotence-notest
+
+- name: Remove legacy per-domain ini files
+  ansible.builtin.file:
+    path: "{{ snappymail_domains_dir }}/{{ item }}.ini"
+    state: absent
+  loop: "{{ snappymail_domains }}"
+  when: snappymail_domains | length > 0
+  notify: restart php-fpm
+  changed_when: false
+  tags:
+    - molecule-idempotence-notest
+
+- name: Remove obsolete domain json files
+  ansible.builtin.file:
+    path: "{{ snappymail_domains_dir }}/{{ item }}.json"
+    state: absent
+  loop: "{{ snappymail_remove_domains }}"
+  when: snappymail_remove_domains | length > 0
+  notify: restart php-fpm
+  changed_when: false
+  tags:
+    - molecule-idempotence-notest
+
+- name: Remove obsolete domain ini files
+  ansible.builtin.file:
+    path: "{{ snappymail_domains_dir }}/{{ item }}.ini"
+    state: absent
+  loop: "{{ snappymail_remove_domains }}"
+  when: snappymail_remove_domains | length > 0
   notify: restart php-fpm
   changed_when: false
   tags:

@@ -1,0 +1,57 @@
+---
+- name: Prepare SnappyMail migration fixtures
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Ensure Ansible remote tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+
+    - name: Seed legacy SnappyMail domain directory
+      ansible.builtin.file:
+        path: /opt/snappymail-data/_data_/_default_/domains
+        state: directory
+        mode: "0750"
+
+    - name: Seed legacy default domain ini
+      ansible.builtin.copy:
+        dest: /opt/snappymail-data/_data_/_default_/domains/default.ini
+        content: |
+          [imap]
+          host = localhost
+          port = 143
+        mode: "0640"
+
+    - name: Seed legacy managed domain ini
+      ansible.builtin.copy:
+        dest: /opt/snappymail-data/_data_/_default_/domains/example.test.ini
+        content: |
+          [imap]
+          host = localhost
+          port = 143
+        mode: "0640"
+
+    - name: Seed obsolete SnappyMail domain ini
+      ansible.builtin.copy:
+        dest: /opt/snappymail-data/_data_/_default_/domains/legacy.test.ini
+        content: |
+          [imap]
+          host = legacy.local
+          port = 143
+        mode: "0640"
+
+    - name: Seed obsolete SnappyMail domain json
+      ansible.builtin.copy:
+        dest: /opt/snappymail-data/_data_/_default_/domains/legacy.test.json
+        content: |
+          {
+            "IMAP": {
+              "host": "localhost",
+              "port": 143
+            }
+          }
+        mode: "0640"
