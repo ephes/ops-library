@@ -11,6 +11,12 @@ nyxmon_site_path: "{{ nyxmon_home }}/site"
 nyxmon_venv_path: "{{ nyxmon_site_path }}/.venv"
 nyxmon_venv_bin: "{{ nyxmon_venv_path }}/bin"
 nyxmon_cache_dir: "{{ nyxmon_site_path }}/cache"
+nyxmon_django_path: >-
+  {{
+    nyxmon_site_path
+    if nyxmon_deploy_method == 'rsync'
+    else (nyxmon_site_path ~ '/' ~ nyxmon_git_subdirectory)
+  }}
 
 # Deployment method
 nyxmon_deploy_method: rsync  # Options: rsync, git
@@ -82,7 +88,7 @@ nyxmon_internal_ip_ranges:
 
 # Monitoring
 nyxmon_monitoring_enabled: true
-nyxmon_monitoring_service_name: nyxmon_monitor
+nyxmon_monitoring_service_name: nyxmon-monitor
 
 # Python package management
 nyxmon_use_uv: true  # Use uv for package management

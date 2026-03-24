@@ -62,13 +62,15 @@
     nyxmon_use_uv: true
     nyxmon_python_version: "3.12"
     nyxmon_django_path: "{{ nyxmon_site_path }}/src/django"
-    nyxmon_skip_django_manage: true
     nyxmon_django_secret_key: "molecule-nyxmon-secret-key"
     nyxmon_telegram_bot_token: "molecule-telegram-token"
     nyxmon_telegram_chat_id: "123456"
+    nyxmon_opsgate_submit_base_url: "http://opsgate-api.internal:8711"
+    nyxmon_opsgate_submit_token: "molecule-opsgate-submit-token"
+    nyxmon_opsgate_approval_base_url: "https://opsgate.example.test"
     nyxmon_basic_auth_enabled: false
     nyxmon_traefik_enabled: true
-    nyxmon_monitoring_enabled: false
+    nyxmon_monitoring_enabled: true
 
   roles:
     - role: nyxmon_deploy

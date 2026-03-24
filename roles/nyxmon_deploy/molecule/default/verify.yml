@@ -8,8 +8,12 @@
     nyxmon_site_path: /home/nyxmon/site
     nyxmon_env_path: "{{ nyxmon_site_path }}/.env"
     nyxmon_service_unit: /etc/systemd/system/nyxmon.service
+    nyxmon_monitoring_service_name: nyxmon-monitor
+    nyxmon_monitoring_service_unit: "/etc/systemd/system/{{ nyxmon_monitoring_service_name }}.service"
     nyxmon_traefik_config: /etc/traefik/dynamic/nyxmon.yml
     nyxmon_venv_python: "{{ nyxmon_site_path }}/.venv/bin/python"
+    nyxmon_opsgate_submit_base_url: "http://opsgate-api.internal:8711"
+    nyxmon_opsgate_approval_base_url: "https://opsgate.example.test"
 
   tasks:
     - name: Verify | Site directory exists
@@ -56,6 +60,46 @@
         that:
           - nyxmon_traefik.stat.exists
         fail_msg: "Nyxmon Traefik config missing at {{ nyxmon_traefik_config }}"
+
+    - name: Verify | Monitoring service unit exists
+      ansible.builtin.stat:
+        path: "{{ nyxmon_monitoring_service_unit }}"
+      register: nyxmon_monitor_unit
+
+    - name: Verify | Assert monitoring service unit exists
+      ansible.builtin.assert:
+        that:
+          - nyxmon_monitor_unit.stat.exists
+        fail_msg: "Nyxmon monitoring unit missing at {{ nyxmon_monitoring_service_unit }}"
+
+    - name: Verify | Read Nyxmon env file
+      ansible.builtin.slurp:
+        src: "{{ nyxmon_env_path }}"
+      register: nyxmon_env_content
+
+    - name: Verify | Assert OpsGate env wiring rendered
+      ansible.builtin.assert:
+        that:
+          - nyxmon_env_text is regex('(?m)^OPSGATE_SUBMIT_BASE_URL=' ~ (nyxmon_opsgate_submit_base_url | regex_escape) ~ '$')
+          - nyxmon_env_text is regex('(?m)^OPSGATE_APPROVAL_BASE_URL=' ~ (nyxmon_opsgate_approval_base_url | regex_escape) ~ '$')
+        fail_msg: "Nyxmon .env is missing the expected OpsGate URLs"
+      vars:
+        nyxmon_env_text: "{{ nyxmon_env_content.content | b64decode }}"
+
+    - name: Verify | Check monitoring service active
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-active
+          - "{{ nyxmon_monitoring_service_name }}"
+      changed_when: false
+      register: nyxmon_monitor_service_state
+
+    - name: Verify | Assert monitoring service is active
+      ansible.builtin.assert:
+        that:
+          - nyxmon_monitor_service_state.stdout | trim == "active"
+        fail_msg: "{{ nyxmon_monitoring_service_name }}.service is not active in Molecule verify"
 
     - name: Verify | Virtualenv python exists
       ansible.builtin.stat:

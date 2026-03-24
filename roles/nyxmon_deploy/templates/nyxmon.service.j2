@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=exec
 User={{ nyxmon_user }}
 Group={{ nyxmon_group }}
-WorkingDirectory={{ nyxmon_site_path }}
+WorkingDirectory={{ nyxmon_django_path }}
 EnvironmentFile={{ nyxmon_site_path }}/.env
 
 ExecStart={{ nyxmon_venv_bin }}/granian \

@@ -15,10 +15,6 @@
     state: present
   when: not nyxmon_use_uv
 
-- name: python | Determine Django project path
-  set_fact:
-    nyxmon_django_path: "{{ nyxmon_site_path }}"
-
 - name: python | Ensure pyproject.toml exists when using source copy
   stat:
     path: "{{ nyxmon_site_path }}/pyproject.toml"

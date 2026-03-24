@@ -51,6 +51,20 @@ approval URL should point at the operator-facing ingress. The role restarts both
 `nyxmon.service` and `nyxmon-monitor.service` when `.env` changes so the
 long-running alert worker does not keep stale OpsGate link settings.
 
+When monitoring and OpsGate ticket creation are both enabled, the role also runs
+a post-deploy smoke check that:
+
+- asserts the rendered `.env` contains the expected submit and approval URLs
+- reads the live `nyxmon-monitor.service` process env from `/proc/<pid>/environ`
+
+The deploy fails if the running worker still holds stale OpsGate URL values, so a
+regression back to the direct Studio/Tailscale approval link is caught during
+deployment validation instead of after an alert fires.
+
+The monitoring worker unit name defaults to `nyxmon-monitor` and can be
+overridden with `nyxmon_monitoring_service_name` if a host needs a different
+systemd unit name.
+
 ### Common Configuration
 
 ```yaml
@@ -210,7 +224,7 @@ The role creates the following structure on the target system:
 The role manages these systemd services:
 
 - `nyxmon.service` - Main Django application (granian WSGI server)
-- `nyxmon-monitor.service` - Monitoring service (if enabled)
+- `nyxmon-monitor.service` - Monitoring service (if enabled; configurable via `nyxmon_monitoring_service_name`)
 
 ## Commands
 

@@ -95,3 +95,13 @@
 - name: Setup monitoring
   include_tasks: monitoring.yml
   when: nyxmon_monitoring_enabled
+
+- name: main | Flush handlers before OpsGate smoke validation
+  meta: flush_handlers
+
+- name: main | Validate live nyxmon-monitor OpsGate settings
+  include_tasks: validate_opsgate_smoke.yml
+  when:
+    - nyxmon_monitoring_enabled
+    - (nyxmon_opsgate_submit_base_url | trim | length) > 0
+    - (nyxmon_opsgate_submit_token | trim | length) > 0

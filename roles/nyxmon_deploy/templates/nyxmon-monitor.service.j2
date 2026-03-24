@@ -7,10 +7,10 @@ Wants=network-online.target
 Type=exec
 User={{ nyxmon_user }}
 Group={{ nyxmon_group }}
-WorkingDirectory={{ nyxmon_site_path }}
+WorkingDirectory={{ nyxmon_django_path }}
 EnvironmentFile={{ nyxmon_site_path }}/.env
 
-ExecStart={{ nyxmon_venv_bin }}/start-agent --db {{ nyxmon_site_path }}/db.sqlite3 --enable-telegram
+ExecStart={{ nyxmon_venv_bin }}/start-agent --db {{ nyxmon_django_path }}/db.sqlite3 --enable-telegram
 
 Restart=always
 RestartSec=30

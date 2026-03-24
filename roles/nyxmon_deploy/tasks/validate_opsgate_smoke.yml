@@ -1,0 +1,86 @@
+---
+# Validate that nyxmon-monitor is running with the current OpsGate settings.
+
+- name: validate_opsgate_smoke | Read rendered Nyxmon env file
+  ansible.builtin.slurp:
+    path: "{{ nyxmon_site_path }}/.env"
+  register: nyxmon_opsgate_env_file
+
+- name: validate_opsgate_smoke | Assert rendered OpsGate env values
+  ansible.builtin.assert:
+    that:
+      - nyxmon_opsgate_env_text is regex('(?m)^OPSGATE_SUBMIT_BASE_URL=' ~ (nyxmon_opsgate_submit_base_url | regex_escape) ~ '$')
+      - nyxmon_opsgate_env_text is regex('(?m)^OPSGATE_APPROVAL_BASE_URL=' ~ (nyxmon_opsgate_approval_base_url | regex_escape) ~ '$')
+    fail_msg: |-
+      Nyxmon rendered an unexpected OpsGate config in {{ nyxmon_site_path }}/.env.
+      Expected OPSGATE_SUBMIT_BASE_URL={{ nyxmon_opsgate_submit_base_url }}
+      Expected OPSGATE_APPROVAL_BASE_URL={{ nyxmon_opsgate_approval_base_url }}
+  vars:
+    nyxmon_opsgate_env_text: "{{ nyxmon_opsgate_env_file.content | b64decode }}"
+
+- name: validate_opsgate_smoke | Check nyxmon-monitor service state
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - "{{ nyxmon_monitoring_service_name | regex_replace('\\.service$', '') }}"
+  changed_when: false
+  failed_when: false
+  retries: 10
+  delay: 3
+  until: nyxmon_monitor_service_state.stdout | trim == "active"
+  register: nyxmon_monitor_service_state
+
+- name: validate_opsgate_smoke | Assert nyxmon-monitor service is active
+  ansible.builtin.assert:
+    that:
+      - nyxmon_monitor_service_state.stdout | trim == "active"
+    fail_msg: >-
+      {{ nyxmon_monitoring_service_name | regex_replace('\\.service$', '') }}.service is not active after deploy. systemctl is-active returned
+      {{ nyxmon_monitor_service_state.stdout | default('') | trim }}.
+
+- name: validate_opsgate_smoke | Read nyxmon-monitor main PID
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - show
+      - --property=MainPID
+      - --value
+      - "{{ nyxmon_monitoring_service_name | regex_replace('\\.service$', '') }}"
+  changed_when: false
+  register: nyxmon_monitor_main_pid
+
+- name: validate_opsgate_smoke | Assert nyxmon-monitor main PID is running
+  ansible.builtin.assert:
+    that:
+      - (nyxmon_monitor_main_pid.stdout | trim | int) > 0
+    fail_msg: >-
+      {{ nyxmon_monitoring_service_name | regex_replace('\\.service$', '') }}.service has no running main PID after deploy.
+
+- name: validate_opsgate_smoke | Read nyxmon-monitor live process environment
+  ansible.builtin.slurp:
+    path: "/proc/{{ nyxmon_monitor_main_pid.stdout | trim }}/environ"
+  register: nyxmon_monitor_process_environ
+
+- name: validate_opsgate_smoke | Parse nyxmon-monitor live process environment
+  ansible.builtin.set_fact:
+    nyxmon_monitor_process_env_map: >-
+      {%- set ns = namespace(data={}) -%}
+      {%- for entry in (nyxmon_monitor_process_environ.content | b64decode).split('\u0000') if entry | length > 0 and '=' in entry -%}
+      {%- set pair = entry.split('=', 1) -%}
+      {%- set _ = ns.data.update({pair[0]: pair[1]}) -%}
+      {%- endfor -%}
+      {{ ns.data }}
+
+- name: validate_opsgate_smoke | Assert live nyxmon-monitor OpsGate env values
+  ansible.builtin.assert:
+    that:
+      - nyxmon_monitor_process_env_map.OPSGATE_SUBMIT_BASE_URL | default('') == nyxmon_opsgate_submit_base_url
+      - nyxmon_monitor_process_env_map.OPSGATE_APPROVAL_BASE_URL | default('') == nyxmon_opsgate_approval_base_url
+    fail_msg: |-
+      nyxmon-monitor is running with stale OpsGate env values.
+      PID={{ nyxmon_monitor_main_pid.stdout | trim }}
+      Expected OPSGATE_SUBMIT_BASE_URL={{ nyxmon_opsgate_submit_base_url }}
+      Live OPSGATE_SUBMIT_BASE_URL={{ nyxmon_monitor_process_env_map.OPSGATE_SUBMIT_BASE_URL | default('MISSING') }}
+      Expected OPSGATE_APPROVAL_BASE_URL={{ nyxmon_opsgate_approval_base_url }}
+      Live OPSGATE_APPROVAL_BASE_URL={{ nyxmon_monitor_process_env_map.OPSGATE_APPROVAL_BASE_URL | default('MISSING') }}

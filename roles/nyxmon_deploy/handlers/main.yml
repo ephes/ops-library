@@ -13,7 +13,7 @@
 
 - name: restart nyxmon-monitor
   systemd:
-    name: nyxmon-monitor
+    name: "{{ nyxmon_monitoring_service_name | regex_replace('\\.service$', '') }}"
     state: restarted
   when:
     - nyxmon_monitoring_enabled

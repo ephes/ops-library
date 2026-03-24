@@ -4,7 +4,7 @@
 - name: monitoring | Create monitoring service file
   template:
     src: nyxmon-monitor.service.j2
-    dest: /etc/systemd/system/nyxmon-monitor.service
+    dest: "/etc/systemd/system/{{ nyxmon_monitoring_service_name | regex_replace('\\.service$', '') }}.service"
     owner: root
     group: root
     mode: '0644'
@@ -14,7 +14,7 @@
 
 - name: monitoring | Enable and start monitoring service
   systemd:
-    name: nyxmon-monitor
+    name: "{{ nyxmon_monitoring_service_name | regex_replace('\\.service$', '') }}"
     enabled: true
     state: started
     daemon_reload: true
