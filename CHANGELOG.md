@@ -64,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   describe the landed deploy/restore helper boundaries as complete work and
   frame remaining items as normal follow-up maintenance instead of pending
   refactor waves
+- `dns_deploy` now exposes optional Unbound `serve-expired` controls and documents `forward_first` guidance for the root zone so resolver failover behavior is explicit
 - `nyxmon_restore` now mirrors the Home Assistant structure (validate/prepare/restore/verify/cleanup), keeps cleanup in a top-level block/always flow, adds restore-phase block/rescue rollback, conditional restores, handler flush, and health checks
 - `nyxmon_deploy` systemd service now launches Granian instead of Gunicorn to match the upstream project
 - `ollama_install` stops any Homebrew-managed Ollama service by default, stops conflicting user-level `ollama serve` processes, and ensures the launchd service is running
@@ -78,7 +79,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `redis_install` enables config validation by default to catch syntax and runtime issues before service restarts
 - `nyxmon_deploy` and `homelab_deploy` switch from Granian to Gunicorn and gained configurable Python version management (defaulting to 3.13)
 - `nyxmon_deploy` now enforces the same dual-router authentication policy as other public services, including validation and hashed credentials
+- `nyxmon_deploy` now flushes handlers and smoke-validates the live monitoring worker's OpsGate submit and approval URLs so stale approval-link wiring fails during deploy
 - DNS deployment/removal flows hardened with improved resolver management, legacy `unbound_only` port detection, and safer variable validation
+- `snappymail_deploy` now writes managed domain configs as `.json`, removes conflicting legacy `.ini` files, and supports `snappymail_remove_domains` cleanup for stale domain overrides
 - `open_webui_deploy` documentation now calls out the `studio.tailde2ec.ts.net` hostname, Traefik config path/basic auth wiring, and ops-control preflight bypass flag
 - `open_webui_remove` now defaults to non-destructive options and supports removing compose/env files separately from the site directory
 - `zfs_usb_replication` gained optional syncoid identifiers, force-export, and spindown hooks to prevent snapshot collisions and park disks after USB runs
