@@ -1,0 +1,48 @@
+---
+- name: Test headless mode helper role metadata
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/headless_mode"
+
+  tasks:
+    - name: Verify helper role files exist
+      block:
+        - name: Check defaults file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/defaults/main.yml"
+          register: defaults_file
+
+        - name: Check tasks file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/tasks/main.yml"
+          register: tasks_file
+
+        - name: Check README file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/README.md"
+          register: readme_file
+
+        - name: Assert helper role files exist
+          ansible.builtin.assert:
+            that:
+              - defaults_file.stat.exists
+              - tasks_file.stat.exists
+              - readme_file.stat.exists
+
+    - name: Validate defaults are populated
+      block:
+        - name: Load defaults
+          ansible.builtin.include_vars:
+            file: "{{ role_path }}/defaults/main.yml"
+            name: headless_mode_defaults
+
+        - name: Assert default headless mode settings
+          ansible.builtin.assert:
+            that:
+              - headless_mode_defaults.headless_mode_default_target == "multi-user.target"
+              - headless_mode_defaults.headless_mode_display_manager_service == ""
+              - headless_mode_defaults.headless_mode_disable_services == []
+              - headless_mode_defaults.headless_mode_apply_now | bool

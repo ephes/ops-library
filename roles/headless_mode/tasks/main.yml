@@ -1,0 +1,54 @@
+---
+- name: Validate systemd-managed host
+  ansible.builtin.assert:
+    that:
+      - ansible_service_mgr == "systemd"
+    fail_msg: "headless_mode requires a systemd-managed host."
+
+- name: Validate headless mode inputs
+  ansible.builtin.assert:
+    that:
+      - headless_mode_default_target is string
+      - headless_mode_default_target | length > 0
+      - headless_mode_default_target is regex('^[A-Za-z0-9_.@-]+\\.target$')
+      - headless_mode_display_manager_service is string
+      - headless_mode_disable_services is iterable
+      - headless_mode_apply_now is boolean
+      - headless_mode_disable_services | select('string') | list | length == headless_mode_disable_services | length
+      - headless_mode_disable_services | reject('equalto', '') | list | length == headless_mode_disable_services | length
+    fail_msg: >-
+      headless_mode_default_target must be a non-empty *.target unit,
+      headless_mode_display_manager_service must be a string,
+      headless_mode_disable_services must be a list of non-empty strings,
+      and headless_mode_apply_now must be boolean.
+
+- name: Record current default target
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - get-default
+  register: headless_mode_current_default_target
+  changed_when: false
+
+- name: Set default boot target
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - set-default
+      - "{{ headless_mode_default_target }}"
+  when: headless_mode_current_default_target.stdout != headless_mode_default_target
+
+- name: Disable and stop display manager service
+  ansible.builtin.systemd_service:
+    name: "{{ headless_mode_display_manager_service }}"
+    enabled: false
+    state: "{{ 'stopped' if headless_mode_apply_now else omit }}"
+  when: headless_mode_display_manager_service | length > 0
+
+- name: Disable and stop additional graphical services
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: false
+    state: "{{ 'stopped' if headless_mode_apply_now else omit }}"
+  loop: "{{ headless_mode_disable_services }}"
+  when: headless_mode_disable_services | length > 0

@@ -1,0 +1,15 @@
+---
+# Persist the host's default boot target as a non-graphical server target.
+headless_mode_default_target: "multi-user.target"
+
+# Optional display manager service alias/unit to disable and stop immediately.
+# Examples: "gdm3", "lightdm", "sddm"
+headless_mode_display_manager_service: ""
+
+# Additional systemd service units to disable and stop when switching the host
+# into headless mode.
+headless_mode_disable_services: []
+
+# Apply the service state immediately on the running host. Set to false if you
+# only want the change to take effect after a later reboot.
+headless_mode_apply_now: true
