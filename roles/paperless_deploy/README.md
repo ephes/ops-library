@@ -29,6 +29,8 @@ Deploy [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) on bare m
 | `paperless_secret_key` | Django secret key (**required via secrets**) | `"CHANGEME"` |
 | `paperless_postgres_password` | DB password (**required via secrets**) | `"CHANGEME"` |
 | `paperless_admin_user/email/password` | Admin bootstrap user | `admin / admin@example.com / "CHANGEME"` |
+| `paperless_existing_superusers` | Existing Paperless users to promote to superuser | `[]` |
+| `paperless_existing_superusers_strict` | Fail when a listed existing superuser is missing | `false` |
 | `paperless_scanner_password` | Scanner SFTP password | `"CHANGEME"` |
 | `paperless_redis_password` | Redis password (empty = no auth) | `""` |
 | `paperless_force_reinstall` | Force uv/pip reinstall even if marker exists | `false` |
@@ -76,6 +78,18 @@ paperless_redis_requirepass_enabled: true
 ```
 
 The `.env` template automatically emits either `redis://localhost:6379/0` (no auth) or `redis://:password@localhost:6379/0`.
+
+## Managing Additional Superusers
+
+The role bootstraps `paperless_admin_user` when `paperless_manage_superuser` is enabled. To promote existing Paperless accounts to full administrators without managing their passwords in Ansible, set `paperless_existing_superusers`:
+
+```yaml
+paperless_existing_superusers:
+  - jochen
+  - katharina
+```
+
+Listed users are promoted to active staff superusers if they already exist in Paperless. Missing users are skipped by default so clean installs do not fail before those accounts are created; set `paperless_existing_superusers_strict: true` if deployment should fail when a configured username is absent.
 
 ## Troubleshooting
 

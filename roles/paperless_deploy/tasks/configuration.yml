@@ -54,6 +54,55 @@
   when: paperless_manage_superuser
   no_log: true
 
+- name: Promote configured existing Paperless users to superuser
+  ansible.builtin.shell: |
+    set -a
+    . {{ paperless_env_file }}
+    set +a
+    {{ paperless_python_bin }} manage.py shell <<'EOF'
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    strict = {{ 'True' if paperless_existing_superusers_strict | bool else 'False' }}
+    usernames = {{ paperless_existing_superusers | to_json }}
+    missing = []
+
+    for username in usernames:
+        user = User.objects.filter(username=username).first()
+        if user is None:
+            missing.append(username)
+            continue
+
+        changed = False
+        if not user.is_active:
+            user.is_active = True
+            changed = True
+        if not user.is_staff:
+            user.is_staff = True
+            changed = True
+        if not user.is_superuser:
+            user.is_superuser = True
+            changed = True
+
+        if changed:
+            user.save(update_fields=["is_active", "is_staff", "is_superuser"])
+
+    if missing and strict:
+        raise SystemExit(
+            "Configured Paperless users do not exist: " + ", ".join(missing),
+        )
+
+    if missing and not strict:
+        print("Skipped missing Paperless users: " + ", ".join(missing))
+    EOF
+  args:
+    chdir: "{{ paperless_manage_dir }}"
+    executable: /bin/bash
+  become: true
+  become_user: "{{ paperless_username }}"
+  when: paperless_existing_superusers | length > 0
+  no_log: true
+
 - name: Collect static files
   ansible.builtin.shell: |
     set -a

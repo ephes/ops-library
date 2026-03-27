@@ -56,6 +56,8 @@ paperless_admin_user: admin
 paperless_admin_password: "CHANGEME"
 paperless_admin_email: admin@example.com
 paperless_manage_superuser: true
+paperless_existing_superusers: []
+paperless_existing_superusers_strict: false
 
 # OCR / processing
 paperless_ocr_language: eng+deu
@@ -138,7 +140,6 @@ paperless_install_prereq_packages:
   - python3-passlib
 paperless_system_packages:
   - build-essential
-  - default-libmysqlclient-dev
   - pkg-config
   - imagemagick
   - unpaper

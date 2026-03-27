@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Update your Ansible installation before upgrading
 
 ### Added
+- `paperless_deploy` can now promote existing Paperless users to active staff superusers during deploy via `paperless_existing_superusers`
 - Takahe lifecycle roles: `takahe_shared`, `takahe_deploy`, `takahe_backup`, `takahe_restore`, and `takahe_remove` with systemd services, nginx caching/accel proxy, Traefik routing, and PostgreSQL provisioning
 - Mastodon lifecycle roles: `mastodon_shared`, `mastodon_deploy`, `mastodon_backup`, `mastodon_restore`, `mastodon_maintenance`, and `mastodon_remove` with rbenv+nvm runtimes, systemd services, Traefik routing, and backup/restore tooling
 - `open_webui_deploy` and `open_webui_remove` roles to run Open WebUI via Docker Compose with Traefik routing, persistent storage, and optional basic auth
@@ -76,6 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `uv_install` detects alternate uv installations, relinks to newer binaries automatically, and enables `uv_update_existing` by default to keep hosts current
 - `fastdeploy_deploy` implements Traefik's dual-router pattern with IP-based allow lists, bcrypt-hashed basic auth, security headers, and compression middleware
 - Paperless roles now support Python 3.14 and include an optional ocrmypdf patch to keep OCR workflows unblocked
+- `paperless_deploy` no longer installs `default-libmysqlclient-dev`, avoiding apt conflicts with MariaDB development packages on Ubuntu 24.04 when using the PostgreSQL backend
 - `redis_install` enables config validation by default to catch syntax and runtime issues before service restarts
 - `nyxmon_deploy` and `homelab_deploy` switch from Granian to Gunicorn and gained configurable Python version management (defaulting to 3.13)
 - `nyxmon_deploy` now enforces the same dual-router authentication policy as other public services, including validation and hashed credentials
