@@ -9,6 +9,7 @@ http:
         - {{ ep }}
 {% endfor %}
       middlewares:
+        - {{ wagtail_service_name }}-redirect-www
         - {{ wagtail_service_name }}-headers
         - {{ wagtail_service_name }}-gzip
 {% for middleware in wagtail_traefik_middlewares %}
@@ -50,6 +51,12 @@ http:
       redirectScheme:
         scheme: https
         permanent: true
+
+    {{ wagtail_service_name }}-redirect-www:
+      redirectRegex:
+        regex: "^https?://www\\.(.*)"
+        replacement: "https://${1}"
+        permanent: false
 
   services:
     {{ wagtail_service_name }}:
