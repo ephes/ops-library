@@ -28,10 +28,25 @@
             path: "{{ role_path }}/tasks/influx_retention.yml"
           register: influx_retention_file
 
+        - name: Check runtime tasks file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/tasks/runtime.yml"
+          register: runtime_tasks_file
+
         - name: Check role README file
           ansible.builtin.stat:
             path: "{{ role_path }}/README.md"
           register: readme_file
+
+        - name: Check compose template file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/templates/docker-compose.yml.j2"
+          register: compose_template_file
+
+        - name: Check runtime service template file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/templates/graphyard-runtime.service.j2"
+          register: runtime_service_template_file
 
         - name: Assert required files exist
           ansible.builtin.assert:
@@ -39,7 +54,10 @@
               - defaults_file.stat.exists
               - tasks_file.stat.exists
               - influx_retention_file.stat.exists
+              - runtime_tasks_file.stat.exists
               - readme_file.stat.exists
+              - compose_template_file.stat.exists
+              - runtime_service_template_file.stat.exists
 
     - name: Validate defaults are safe
       block:
@@ -65,10 +83,23 @@
               - graphyard_deploy_defaults.graphyard_influx_token == "CHANGEME"
               - graphyard_deploy_defaults.graphyard_influx_retention_apply == false
               - graphyard_deploy_defaults.graphyard_influx_bucket_retention == "0s"
+              - graphyard_deploy_defaults.graphyard_runtime_enabled == true
+              - graphyard_deploy_defaults.graphyard_runtime_service_name == "graphyard-runtime"
+              - graphyard_deploy_defaults.graphyard_compose_project_name == "graphyard-runtime"
+              - graphyard_deploy_defaults.graphyard_docker_network_name == "graphyard-monitoring"
+              - graphyard_deploy_defaults.graphyard_influx_image == "influxdb:2.7"
               - graphyard_deploy_defaults.graphyard_influx_container_name == "graphyard-influxdb"
+              - graphyard_deploy_defaults.graphyard_influx_data_dir == "/var/lib/graphyard/influxdb2"
+              - graphyard_deploy_defaults.graphyard_influx_config_dir == "/var/lib/graphyard/influxdb2-config"
+              - graphyard_deploy_defaults.graphyard_grafana_image == "grafana/grafana-oss"
+              - graphyard_deploy_defaults.graphyard_grafana_container_name == "graphyard-grafana"
+              - graphyard_deploy_defaults.graphyard_grafana_data_dir == "/var/lib/graphyard/grafana"
+              - graphyard_deploy_defaults.graphyard_grafana_admin_password == "CHANGEME"
+              - graphyard_deploy_defaults.graphyard_grafana_influx_username == "grafana"
+              - graphyard_deploy_defaults.graphyard_grafana_influx_password == "CHANGEME"
               - graphyard_sample_retention_seconds == 15552000
 
-    - name: Validate retention tasks are wired into the role
+    - name: Validate runtime and retention tasks are wired into the role
       block:
         - name: Read main tasks file
           ansible.builtin.slurp:
@@ -80,11 +111,38 @@
             path: "{{ role_path }}/tasks/influx_retention.yml"
           register: retention_tasks_content
 
-        - name: Assert expected retention enforcement steps are present
+        - name: Read runtime tasks file
+          ansible.builtin.slurp:
+            path: "{{ role_path }}/tasks/runtime.yml"
+          register: runtime_tasks_content
+
+        - name: Read compose template file
+          ansible.builtin.slurp:
+            path: "{{ role_path }}/templates/docker-compose.yml.j2"
+          register: compose_template_content
+
+        - name: Read runtime service template file
+          ansible.builtin.slurp:
+            path: "{{ role_path }}/templates/graphyard-runtime.service.j2"
+          register: runtime_service_template_content
+
+        - name: Assert expected runtime and retention enforcement steps are present
           ansible.builtin.assert:
             that:
+              - "'import_tasks: runtime.yml' in main_tasks_text"
+              - "'graphyard_runtime_enabled | bool' in main_tasks_text"
               - "'import_tasks: influx_retention.yml' in main_tasks_text"
               - "'graphyard_influx_retention_apply | bool' in main_tasks_text"
+              - "'docker network' in runtime_tasks_text"
+              - "'Remove unmanaged Graphyard dependency containers before compose takeover' in runtime_tasks_text"
+              - "'graphyard-runtime.service' in runtime_service_template_text"
+              - "'docker compose -p' in runtime_service_template_text"
+              - "'graphyard-influxdb' in compose_template_text"
+              - "'graphyard-grafana' in compose_template_text"
+              - "'restart: unless-stopped' in compose_template_text"
+              - "'graphyard-monitoring' in compose_template_text"
+              - "'influx v1 auth create' in runtime_tasks_text"
+              - "'SHOW+DATABASES' in runtime_tasks_text"
               - "'community.general.to_time_unit(' in retention_tasks_text"
               - "'graphyard_influx_container_running' in retention_tasks_text"
               - "'State.Running' in retention_tasks_text"
@@ -96,3 +154,6 @@
           vars:
             main_tasks_text: "{{ main_tasks_content.content | b64decode }}"
             retention_tasks_text: "{{ retention_tasks_content.content | b64decode }}"
+            runtime_tasks_text: "{{ runtime_tasks_content.content | b64decode }}"
+            compose_template_text: "{{ compose_template_content.content | b64decode }}"
+            runtime_service_template_text: "{{ runtime_service_template_content.content | b64decode }}"

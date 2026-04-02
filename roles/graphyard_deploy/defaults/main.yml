@@ -67,10 +67,49 @@ graphyard_influx_timeout_ms: 10000
 graphyard_influx_retention_apply: false
 # Influx interprets 0s as infinite retention.
 graphyard_influx_bucket_retention: "0s"
+
+# Graphyard dependency runtime (InfluxDB + Grafana)
+graphyard_runtime_enabled: true
+graphyard_runtime_service_name: "graphyard-runtime"
+graphyard_compose_project_name: "graphyard-runtime"
+graphyard_compose_path: "{{ graphyard_home }}/docker-compose.yml"
+graphyard_docker_network_name: "graphyard-monitoring"
+graphyard_runtime_migrate_unmanaged_containers: true
+
+graphyard_influx_image: "influxdb:2.7"
 graphyard_influx_container_name: "graphyard-influxdb"
+graphyard_influx_host_bind_address: "127.0.0.1"
+graphyard_influx_host_port: 8086
+graphyard_influx_container_port: 8086
+graphyard_influx_data_dir: "/var/lib/graphyard/influxdb2"
+graphyard_influx_config_dir: "/var/lib/graphyard/influxdb2-config"
+graphyard_influx_init_username: "graphyard_admin"
+graphyard_influx_init_password: "{{ graphyard_influx_token }}"
+graphyard_influx_init_admin_token: "{{ graphyard_influx_token }}"
+graphyard_influx_data_dir_owner: "1000"
+graphyard_influx_data_dir_group: "0"
+graphyard_influx_config_dir_owner: "1000"
+graphyard_influx_config_dir_group: "0"
 
 # Grafana base URL for Graphyard UI links
 graphyard_grafana_base_url: ""
+graphyard_grafana_image: "grafana/grafana-oss"
+graphyard_grafana_container_name: "graphyard-grafana"
+graphyard_grafana_host_bind_address: "127.0.0.1"
+graphyard_grafana_host_port: 3300
+graphyard_grafana_container_port: 3000
+graphyard_grafana_data_dir: "/var/lib/graphyard/grafana"
+graphyard_grafana_data_dir_owner: "472"
+graphyard_grafana_data_dir_group: "472"
+graphyard_grafana_provisioning_path: "{{ graphyard_site_path }}/deploy/grafana/provisioning"
+graphyard_grafana_dashboards_path: "{{ graphyard_site_path }}/deploy/grafana/dashboards"
+graphyard_grafana_admin_user: "admin"
+graphyard_grafana_admin_password: "CHANGEME"
+graphyard_grafana_allow_sign_up: false
+graphyard_grafana_default_home_dashboard_path: "/etc/grafana/provisioning/dashboards-json/overview/graphyard-home.json"
+graphyard_grafana_influx_username: "grafana"
+graphyard_grafana_influx_password: "CHANGEME"
+graphyard_grafana_influx_database: "{{ graphyard_influx_bucket }}"
 
 # Agent and health settings
 graphyard_metric_collection_interval_seconds: 60

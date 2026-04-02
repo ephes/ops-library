@@ -1,18 +1,25 @@
 # graphyard_deploy
 
-Deploys the core Graphyard Django application and runtime services (`graphyard-web`, `graphyard-agent`) on Ubuntu/Debian hosts.
+Deploys the Graphyard production stack on Ubuntu/Debian hosts, including the
+core Django runtime plus automation-owned InfluxDB and Grafana containers.
 
 ## What This Role Does
 
 - Creates/maintains the `graphyard` user and app directories.
 - Deploys Graphyard source via `rsync` (default) or `git`.
+- Installs Docker Engine + Compose when the dependency runtime is enabled.
+- Creates/owns the Graphyard Docker Compose runtime for:
+  - `graphyard-influxdb`
+  - `graphyard-grafana`
+- Renders and enables `graphyard-runtime.service` to supervise the dependency runtime.
 - Creates a uv-managed virtual environment and syncs runtime dependencies.
 - Renders `/etc/graphyard/graphyard.env`.
 - Runs `manage.py migrate` and `manage.py collectstatic --noinput`.
 - Optionally renders and applies declarative `MetricCollectionSpec` definitions.
-- Optionally enforces retention on the existing InfluxDB bucket through the local
+- Optionally enforces retention on the managed InfluxDB bucket through the local
   `graphyard-influxdb` container CLI.
 - Renders and enables systemd units:
+  - `graphyard-runtime.service`
   - `graphyard-web.service`
   - `graphyard-agent.service`
 - Verifies deploy health via `GET /v1/health` on localhost.
@@ -37,6 +44,11 @@ Deploys the core Graphyard Django application and runtime services (`graphyard-w
 | `graphyard_env_path` | `/etc/graphyard/graphyard.env` | Environment file consumed by systemd units |
 | `graphyard_django_secret_key` | `CHANGEME` | Required, must be overridden |
 | `graphyard_influx_token` | `CHANGEME` | Required when `graphyard_influx_token_required=true` |
+| `graphyard_runtime_enabled` | `true` | Manage InfluxDB/Grafana via Docker Compose + systemd |
+| `graphyard_runtime_service_name` | `graphyard-runtime` | Dependency runtime unit name |
+| `graphyard_compose_path` | `{{ graphyard_home }}/docker-compose.yml` | Managed compose file path |
+| `graphyard_docker_network_name` | `graphyard-monitoring` | Shared external Docker network used by Grafana, InfluxDB, and Logyard |
+| `graphyard_influx_image` | `influxdb:2.7` | Production InfluxDB image |
 | `graphyard_metric_collection_specs_apply` | `false` | Render/apply declarative metric specs via `manage.py apply_metric_collection_specs` |
 | `graphyard_metric_collection_specs_prune` | `false` | Pass `--prune` so DB specs omitted from the rendered file are deleted by `name` |
 | `graphyard_metric_collection_specs_path` | `/etc/graphyard/metric-collection-specs.json` | Rendered JSON file path for declarative specs |
@@ -44,6 +56,13 @@ Deploys the core Graphyard Django application and runtime services (`graphyard-w
 | `graphyard_influx_retention_apply` | `false` | Inspect/update the existing InfluxDB bucket retention during deploy |
 | `graphyard_influx_bucket_retention` | `0s` | Desired retention duration for `graphyard_influx_bucket` (for example `180d`) |
 | `graphyard_influx_container_name` | `graphyard-influxdb` | Container used for `influx bucket list/update` |
+| `graphyard_influx_data_dir` | `/var/lib/graphyard/influxdb2` | Persistent InfluxDB engine data path |
+| `graphyard_influx_config_dir` | `/var/lib/graphyard/influxdb2-config` | Persistent InfluxDB config/init path |
+| `graphyard_grafana_image` | `grafana/grafana-oss` | Production Grafana image |
+| `graphyard_grafana_container_name` | `graphyard-grafana` | Stable Grafana container name |
+| `graphyard_grafana_data_dir` | `/var/lib/graphyard/grafana` | Persistent Grafana data path |
+| `graphyard_grafana_admin_password` | `CHANGEME` | Required when `graphyard_runtime_enabled=true`; used for first-boot Grafana init |
+| `graphyard_grafana_influx_password` | `CHANGEME` | Required when `graphyard_runtime_enabled=true`; used for Grafana's InfluxDB v1 datasource auth |
 | `graphyard_web_bind_host` | `127.0.0.1` | Web bind host |
 | `graphyard_web_bind_port` | `8051` | Web bind port |
 | `graphyard_web_workers` | `1` | Keep conservative for SQLite profile |
@@ -65,6 +84,8 @@ See `defaults/main.yml` for the full variable set.
         graphyard_source_path: /Users/jochen/projects/graphyard
         graphyard_django_secret_key: "{{ graphyard_secrets.django_secret_key }}"
         graphyard_influx_token: "{{ graphyard_secrets.influx_token }}"
+        graphyard_grafana_admin_password: "{{ graphyard_secrets.grafana_admin_password }}"
+        graphyard_grafana_influx_password: "{{ graphyard_secrets.grafana_influx_password }}"
         graphyard_influx_retention_apply: true
         graphyard_influx_bucket_retention: 180d
         graphyard_django_allowed_hosts:
@@ -74,6 +95,7 @@ See `defaults/main.yml` for the full variable set.
         graphyard_django_csrf_trusted_origins:
           - https://graphyard.home.xn--wersdrfer-47a.de
         graphyard_grafana_base_url: https://grafana.home.xn--wersdrfer-47a.de
+        graphyard_docker_network_name: graphyard-monitoring
         graphyard_metric_collection_specs_apply: true
         graphyard_metric_collection_specs_prune: true
         graphyard_metric_collection_specs:
@@ -90,10 +112,17 @@ See `defaults/main.yml` for the full variable set.
 
 ## Notes
 
-- This role deploys only the Graphyard core app/runtime.
+- This role now owns the Graphyard production dependency runtime as well as the
+  app/systemd layer.
 - Vector producer and Traefik ingress stay in separate roles:
   - `graphyard_vector_deploy`
   - `graphyard_ingress_deploy`
+- The dependency runtime keeps the production container names, loopback ports,
+  bind-mounted data paths, and shared `graphyard-monitoring` network stable so
+  auth bootstrap, backups, Logyard, and ingress continue to work.
+- When pre-existing manual dependency containers are found without the expected
+  Compose labels, the role removes them and recreates them under the managed
+  `graphyard-runtime.service` boundary.
 - The current deploy helper boundary intentionally leaves `tasks/service.yml`
   inline. Graphyard renders and manages two distinct systemd units, and there
   is not yet a second caller that justifies a shared internal multi-unit helper.
@@ -109,3 +138,6 @@ See `defaults/main.yml` for the full variable set.
 - The underlying management command refuses `--prune` when the desired file is empty, which protects against accidental full deletion from a broken render.
 - Retention enforcement updates the existing bucket in place; it does not create rollup buckets or
   rewrite Grafana to query alternate storage.
+- On first boot against an empty InfluxDB state directory, the role also creates
+  the Grafana-facing InfluxDB v1 auth expected by the provisioned InfluxQL
+  datasource.

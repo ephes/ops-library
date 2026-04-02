@@ -1,7 +1,9 @@
 [Unit]
 Description=graphyard agent (HA polling + condition evaluation)
-After=network-online.target
+After=network-online.target{% if graphyard_runtime_enabled | bool %} {{ graphyard_runtime_service_name }}.service{% endif %}
 Wants=network-online.target
+{% if graphyard_runtime_enabled | bool %}Requires={{ graphyard_runtime_service_name }}.service
+{% endif %}
 
 [Service]
 Type=simple

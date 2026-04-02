@@ -17,10 +17,41 @@
           graphyard_influx_token != "CHANGEME" and
           graphyard_influx_token != "replace-me"
         )
+      - not graphyard_runtime_enabled | bool or graphyard_runtime_service_name | length > 0
+      - not graphyard_runtime_enabled | bool or graphyard_compose_project_name | length > 0
+      - not graphyard_runtime_enabled | bool or graphyard_compose_path | length > 0
+      - not graphyard_runtime_enabled | bool or graphyard_docker_network_name | length > 0
+      - not graphyard_runtime_enabled | bool or graphyard_influx_image | length > 0
+      - not graphyard_runtime_enabled | bool or graphyard_influx_container_name | length > 0
+      - not graphyard_runtime_enabled | bool or graphyard_influx_data_dir | length > 0
+      - not graphyard_runtime_enabled | bool or graphyard_influx_config_dir | length > 0
+      - not graphyard_runtime_enabled | bool or graphyard_influx_init_username | length > 0
+      - not graphyard_runtime_enabled | bool or graphyard_influx_init_password | length > 0
+      - not graphyard_runtime_enabled | bool or graphyard_influx_init_admin_token | length > 0
+      - not graphyard_runtime_enabled | bool or graphyard_grafana_image | length > 0
+      - not graphyard_runtime_enabled | bool or graphyard_grafana_container_name | length > 0
+      - not graphyard_runtime_enabled | bool or graphyard_grafana_data_dir | length > 0
+      - not graphyard_runtime_enabled | bool or graphyard_grafana_provisioning_path | length > 0
+      - not graphyard_runtime_enabled | bool or graphyard_grafana_dashboards_path | length > 0
+      - not graphyard_runtime_enabled | bool or graphyard_grafana_admin_user | length > 0
+      - not graphyard_runtime_enabled | bool or (
+          graphyard_grafana_admin_password is defined and
+          graphyard_grafana_admin_password | length > 0 and
+          graphyard_grafana_admin_password != "CHANGEME" and
+          graphyard_grafana_admin_password != "replace-me"
+        )
+      - not graphyard_runtime_enabled | bool or graphyard_grafana_influx_username | length > 0
+      - not graphyard_runtime_enabled | bool or (
+          graphyard_grafana_influx_password is defined and
+          graphyard_grafana_influx_password | length > 0 and
+          graphyard_grafana_influx_password != "CHANGEME" and
+          graphyard_grafana_influx_password != "replace-me"
+        )
     fail_msg: >-
       Invalid Graphyard deploy configuration. Ensure deploy_method is one of rsync/git,
-      graphyard_django_secret_key is set, and graphyard_influx_token is set when
-      graphyard_influx_token_required=true.
+      graphyard_django_secret_key is set, graphyard_influx_token is set when
+      graphyard_influx_token_required=true, and dependency runtime settings are valid
+      when graphyard_runtime_enabled=true.
 
 - name: main | Validate rsync-specific requirements
   ansible.builtin.assert:
@@ -35,6 +66,15 @@
 
 - name: main | Sync Graphyard source code
   ansible.builtin.include_tasks: "source_{{ graphyard_deploy_method }}.yml"
+
+- name: main | Ensure Docker Engine + Compose are available for Graphyard runtime
+  ansible.builtin.import_role:
+    name: local.ops_library.docker_install
+  when: graphyard_runtime_enabled | bool
+
+- name: main | Configure Graphyard dependency runtime
+  ansible.builtin.import_tasks: runtime.yml
+  when: graphyard_runtime_enabled | bool
 
 - name: main | Prepare Python runtime and dependencies
   ansible.builtin.import_tasks: python.yml

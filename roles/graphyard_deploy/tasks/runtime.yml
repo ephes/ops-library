@@ -1,0 +1,247 @@
+---
+- name: runtime | Ensure Graphyard state directories exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "/var/lib/graphyard"
+      owner: "root"
+      group: "root"
+      mode: "0755"
+    - path: "{{ graphyard_influx_data_dir }}"
+      owner: "{{ graphyard_influx_data_dir_owner }}"
+      group: "{{ graphyard_influx_data_dir_group }}"
+      mode: "0755"
+    - path: "{{ graphyard_influx_config_dir }}"
+      owner: "{{ graphyard_influx_config_dir_owner }}"
+      group: "{{ graphyard_influx_config_dir_group }}"
+      mode: "0775"
+    - path: "{{ graphyard_grafana_data_dir }}"
+      owner: "{{ graphyard_grafana_data_dir_owner }}"
+      group: "{{ graphyard_grafana_data_dir_group }}"
+      mode: "0755"
+
+- name: runtime | Check Grafana provisioning path
+  ansible.builtin.stat:
+    path: "{{ graphyard_grafana_provisioning_path }}"
+  register: graphyard_grafana_provisioning_path_stat
+
+- name: runtime | Check Grafana dashboards path
+  ansible.builtin.stat:
+    path: "{{ graphyard_grafana_dashboards_path }}"
+  register: graphyard_grafana_dashboards_path_stat
+
+- name: runtime | Assert Grafana provisioning assets exist
+  ansible.builtin.assert:
+    that:
+      - graphyard_grafana_provisioning_path_stat.stat.exists
+      - graphyard_grafana_provisioning_path_stat.stat.isdir
+      - graphyard_grafana_dashboards_path_stat.stat.exists
+      - graphyard_grafana_dashboards_path_stat.stat.isdir
+    fail_msg: >-
+      Graphyard Grafana provisioning assets are missing. Ensure the Graphyard source
+      has been synced before starting the dependency runtime.
+
+- name: runtime | Ensure Graphyard monitoring network exists
+  ansible.builtin.command:
+    argv:
+      - docker
+      - network
+      - inspect
+      - "{{ graphyard_docker_network_name }}"
+  register: graphyard_runtime_network_inspect
+  changed_when: false
+  failed_when: false
+
+- name: runtime | Create Graphyard monitoring network when missing
+  ansible.builtin.command:
+    argv:
+      - docker
+      - network
+      - create
+      - "{{ graphyard_docker_network_name }}"
+  when: graphyard_runtime_network_inspect.rc != 0
+
+- name: runtime | Inspect existing Graphyard dependency containers
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{ if .Config.Labels }}{{ index .Config.Labels \"com.docker.compose.project\" }}|{{ index .Config.Labels \"com.docker.compose.service\" }}{{ end }}' }}"
+      - "{{ item.container }}"
+  loop:
+    - container: "{{ graphyard_influx_container_name }}"
+      service: "influxdb"
+    - container: "{{ graphyard_grafana_container_name }}"
+      service: "grafana"
+  loop_control:
+    label: "{{ item.container }}"
+  register: graphyard_runtime_container_labels
+  changed_when: false
+  failed_when: false
+
+- name: runtime | Remove unmanaged Graphyard dependency containers before compose takeover
+  ansible.builtin.command:
+    argv:
+      - docker
+      - rm
+      - -f
+      - "{{ item.item.container }}"
+  loop: "{{ graphyard_runtime_container_labels.results }}"
+  loop_control:
+    label: "{{ item.item.container }}"
+  register: graphyard_runtime_removed_unmanaged_containers
+  when:
+    - graphyard_runtime_migrate_unmanaged_containers | bool
+    - item.rc == 0
+    - (item.stdout | trim) != (graphyard_compose_project_name ~ "|" ~ item.item.service)
+
+- name: runtime | Render Graphyard compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ graphyard_compose_path }}"
+    owner: root
+    group: root
+    mode: "0640"
+  register: graphyard_runtime_compose_template
+
+- name: runtime | Render Graphyard runtime systemd service
+  ansible.builtin.template:
+    src: graphyard-runtime.service.j2
+    dest: "/etc/systemd/system/{{ graphyard_runtime_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  register: graphyard_runtime_service_template
+
+- name: runtime | Ensure Graphyard runtime systemd service is enabled and started
+  ansible.builtin.systemd:
+    name: "{{ graphyard_runtime_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: runtime | Restart Graphyard runtime when compose takeover or config changed
+  ansible.builtin.systemd:
+    name: "{{ graphyard_runtime_service_name }}"
+    state: restarted
+    daemon_reload: true
+  when: >-
+    graphyard_runtime_compose_template.changed
+    or graphyard_runtime_service_template.changed
+    or (
+      graphyard_runtime_removed_unmanaged_containers is defined
+      and (graphyard_runtime_removed_unmanaged_containers.results | default([]) | selectattr('changed') | list | length) > 0
+    )
+
+- name: runtime | Wait for InfluxDB API
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - "{{ graphyard_influx_container_name }}"
+      - influx
+      - ping
+  register: graphyard_runtime_influx_ping
+  changed_when: false
+  retries: 20
+  delay: 3
+  until: graphyard_runtime_influx_ping.rc == 0
+
+- name: runtime | Check whether Grafana InfluxDB v1 auth already works
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - -e
+      - "GRAPHYARD_INFLUX_USER={{ graphyard_grafana_influx_username }}"
+      - -e
+      - "GRAPHYARD_INFLUX_PASSWORD={{ graphyard_grafana_influx_password }}"
+      - "{{ graphyard_influx_container_name }}"
+      - sh
+      - -lc
+      - >-
+        curl -fsS --max-time 5
+        -u "$GRAPHYARD_INFLUX_USER:$GRAPHYARD_INFLUX_PASSWORD"
+        'http://127.0.0.1:8086/query?q=SHOW+DATABASES'
+        >/dev/null
+  register: graphyard_runtime_grafana_influx_auth_check
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: runtime | Inspect current Graphyard bucket for Grafana v1 auth bootstrap
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - "{{ graphyard_influx_container_name }}"
+      - influx
+      - bucket
+      - list
+      - --name
+      - "{{ graphyard_influx_bucket }}"
+      - --json
+  register: graphyard_runtime_bucket_list
+  changed_when: false
+  when: graphyard_runtime_grafana_influx_auth_check.rc != 0
+
+- name: runtime | Parse Graphyard bucket metadata for Grafana v1 auth bootstrap
+  ansible.builtin.set_fact:
+    graphyard_runtime_bucket_rows: "{{ graphyard_runtime_bucket_list.stdout | from_json }}"
+  when: graphyard_runtime_grafana_influx_auth_check.rc != 0
+
+- name: runtime | Assert Graphyard bucket exists for Grafana v1 auth bootstrap
+  ansible.builtin.assert:
+    that:
+      - graphyard_runtime_bucket_rows | length == 1
+    fail_msg: >-
+      Expected exactly one Graphyard InfluxDB bucket named {{ graphyard_influx_bucket }}
+      before creating Grafana v1 auth, found {{ graphyard_runtime_bucket_rows | length }}.
+  when: graphyard_runtime_grafana_influx_auth_check.rc != 0
+
+- name: runtime | Create Grafana InfluxDB v1 auth when missing
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - -e
+      - "GRAPHYARD_INFLUX_USER={{ graphyard_grafana_influx_username }}"
+      - -e
+      - "GRAPHYARD_INFLUX_PASSWORD={{ graphyard_grafana_influx_password }}"
+      - "{{ graphyard_influx_container_name }}"
+      - sh
+      - -lc
+      - >-
+        influx v1 auth create
+        --username "$GRAPHYARD_INFLUX_USER"
+        --password "$GRAPHYARD_INFLUX_PASSWORD"
+        --org {{ graphyard_influx_org | quote }}
+        --read-bucket {{ graphyard_runtime_bucket_rows[0].id | quote }}
+        --write-bucket {{ graphyard_runtime_bucket_rows[0].id | quote }}
+  when: graphyard_runtime_grafana_influx_auth_check.rc != 0
+  no_log: true
+
+- name: runtime | Verify Grafana InfluxDB v1 auth after bootstrap
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - -e
+      - "GRAPHYARD_INFLUX_USER={{ graphyard_grafana_influx_username }}"
+      - -e
+      - "GRAPHYARD_INFLUX_PASSWORD={{ graphyard_grafana_influx_password }}"
+      - "{{ graphyard_influx_container_name }}"
+      - sh
+      - -lc
+      - >-
+        curl -fsS --max-time 5
+        -u "$GRAPHYARD_INFLUX_USER:$GRAPHYARD_INFLUX_PASSWORD"
+        'http://127.0.0.1:8086/query?q=SHOW+DATABASES'
+        >/dev/null
+  changed_when: false
+  no_log: true
