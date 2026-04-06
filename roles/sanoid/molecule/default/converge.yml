@@ -13,9 +13,18 @@
         daily: 30
         weekly: 8
         monthly: 12
+      bulk:
+        autosnap: "yes"
+        autoprune: "yes"
+        hourly: 0
+        daily: 7
+        weekly: 4
+        monthly: 3
     sanoid_datasets:
       - name: tank/photos
         template: precious
+      - name: tank/media
+        template: bulk
 
   roles:
     - role: sanoid

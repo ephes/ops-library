@@ -91,6 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `openclaw_deploy` synthetic canary collection now sets explicit collector `TimeoutStartSec=600`, keeps dedicated canary session-id routing, and preserves stable canary metadata keys (`agent`, `timeout_seconds`, `session_id`) in payload defaults
 
 ### Fixed
+- `sanoid` now renders dataset `use_template` values using the bare template name expected by Sanoid instead of the literal section header, restoring per-dataset retention and pruning behavior for roles like Fractal Time Machine backups
 - Home Assistant presence automations now include the default file to prevent missing automation imports after deployment
 - `dns_remove` cleans up DDNS units reliably and no longer crashes on undefined variables during selective removal
 - `unifi_restore` now re-imports MongoDB dumps, honors host/port overrides, and ships with sane defaults so UniFi logins and controller state survive a remove/deploy/restore cycle

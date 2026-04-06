@@ -13,6 +13,7 @@ Installs and configures `sanoid` for ZFS snapshot automation.
 - `sanoid_templates` (mapping): Template definitions used by datasets.
 - `sanoid_datasets` (list): Dataset policies that reference templates.
   - Optional per-dataset key `sanoid_skip: true` to omit an entry from `sanoid.conf`.
+  - `template` must reference the bare template name, for example `timemachine`.
 
 ### Common
 
@@ -40,4 +41,14 @@ sanoid_datasets:
     template: timemachine
   - name: tank/photos
     template: precious
+```
+
+This renders Sanoid sections like:
+
+```ini
+[template_timemachine]
+daily = 7
+
+[fast/timemachine]
+use_template = timemachine
 ```

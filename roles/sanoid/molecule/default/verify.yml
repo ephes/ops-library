@@ -16,6 +16,23 @@
           - sanoid_conf.stat.exists
           - sanoid_conf.stat.size > 0
 
+    - name: Verify | read sanoid.conf
+      ansible.builtin.slurp:
+        path: /etc/sanoid/sanoid.conf
+      register: sanoid_conf_content
+
+    - name: Verify | assert template references use bare names
+      ansible.builtin.assert:
+        that:
+          - "'[template_precious]' in sanoid_conf_text"
+          - "'[template_bulk]' in sanoid_conf_text"
+          - "'use_template = precious' in sanoid_conf_text"
+          - "'use_template = bulk' in sanoid_conf_text"
+          - "'use_template = template_precious' not in sanoid_conf_text"
+          - "'use_template = template_bulk' not in sanoid_conf_text"
+      vars:
+        sanoid_conf_text: "{{ sanoid_conf_content.content | b64decode }}"
+
     - name: Verify | timer is enabled
       ansible.builtin.command: systemctl is-enabled sanoid-ops-library.timer
       register: timer_enabled
