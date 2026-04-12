@@ -14,3 +14,7 @@ netplan_config_cleanup_files: []
 
 # Apply netplan immediately after writing config.
 netplan_config_apply: true
+
+# Reconfigure interfaces with networkctl after apply. Useful to recover
+# networkd-managed links that are stuck in a failed state after a bad route.
+netplan_config_reconfigure_interfaces: false

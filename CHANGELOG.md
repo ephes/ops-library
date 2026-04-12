@@ -62,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit tests for OpenClaw metrics collector canary behavior and schema invariants (`tests/unit/test_openclaw_metrics_collector.py`)
 
 ### Changed
+- `netplan_config` now rejects interfaces that combine `dhcp4: true` with a manual IPv4 default route, documents DHCP-backed hosts to use DHCP-managed default routes, and offers an optional post-apply `networkctl reconfigure` recovery pass for `networkd` hosts stuck in a failed link state
 - Closed out the refactor documentation pass so top-level docs and role READMEs
   describe the landed deploy/restore helper boundaries as complete work and
   frame remaining items as normal follow-up maintenance instead of pending

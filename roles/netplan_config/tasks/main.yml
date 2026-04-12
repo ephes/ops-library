@@ -24,6 +24,23 @@
     fail_msg: "Each netplan_config_interfaces entry needs name and dhcp4/dhcp6/addresses."
   loop: "{{ netplan_config_interfaces }}"
 
+- name: Reject DHCP interfaces with manual default routes
+  ansible.builtin.assert:
+    that:
+      - not (
+          (item.dhcp4 | default(false) | bool) and
+          (
+            item.routes | default([]) | selectattr('to', 'defined')
+            | map(attribute='to') | intersect(['default', '0.0.0.0/0'])
+            | list | length
+          ) > 0
+        )
+    fail_msg: >-
+      Interface {{ item.name }} mixes dhcp4=true with a manual IPv4 default route.
+      Netplan can merge DHCP lease gateway state with the rendered config and reject the duplicate route.
+      Prefer DHCP-managed default routes, or switch the interface to static addressing/routing-policy.
+  loop: "{{ netplan_config_interfaces }}"
+
 - name: Ensure netplan config directory exists
   ansible.builtin.file:
     path: /etc/netplan
@@ -46,3 +63,19 @@
     group: root
     mode: "0600"
   notify: "Apply netplan"
+
+- name: Flush netplan handlers before interface reconfigure
+  ansible.builtin.meta: flush_handlers
+  when:
+    - netplan_config_apply | bool
+    - netplan_config_reconfigure_interfaces | bool
+    - netplan_config_renderer | lower == "networkd"
+
+- name: Reconfigure networkd-managed interfaces after apply
+  ansible.builtin.command: "networkctl reconfigure {{ item.name }}"
+  loop: "{{ netplan_config_interfaces }}"
+  when:
+    - netplan_config_apply | bool
+    - netplan_config_reconfigure_interfaces | bool
+    - netplan_config_renderer | lower == "networkd"
+  changed_when: false

@@ -1,0 +1,124 @@
+---
+- name: Test netplan_config validation guards
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    invalid_netplan_interfaces_default:
+      - name: enp1s0f1
+        dhcp4: true
+        routes:
+          - to: default
+            via: 192.168.178.1
+    invalid_netplan_interfaces_cidr:
+      - name: enp1s0f1
+        dhcp4: true
+        routes:
+          - to: 0.0.0.0/0
+            via: 192.168.178.1
+    valid_netplan_interfaces:
+      - name: enp1s0f1
+        dhcp4: true
+        dhcp6: false
+        nameservers:
+          addresses:
+            - 192.168.178.1
+            - 1.1.1.1
+
+  tasks:
+    - name: Verify DHCP plus manual default route is rejected
+      block:
+        - name: Include netplan_config tasks with invalid interface
+          ansible.builtin.include_tasks:
+            file: "{{ playbook_dir }}/../roles/netplan_config/tasks/main.yml"
+          vars:
+            ansible_os_family: Debian
+            netplan_config_interfaces: "{{ invalid_netplan_interfaces_default }}"
+            netplan_config_cleanup_files: []
+            netplan_config_apply: false
+
+        - name: Fail when invalid route combination is accepted
+          ansible.builtin.fail:
+            msg: "netplan_config accepted dhcp4=true with manual IPv4 default route form default"
+      rescue:
+        - name: Assert failure message explains the rejected combination
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result is defined
+              - >-
+                'mixes dhcp4=true with a manual IPv4 default route' in
+                (
+                  ansible_failed_result.msg | default('') ~ ' ' ~
+                  (
+                    ansible_failed_result.results | default([])
+                    | map(attribute='msg') | list | join(' ')
+                  )
+                )
+
+    - name: Verify DHCP plus CIDR default route is rejected
+      block:
+        - name: Include netplan_config tasks with invalid CIDR route form
+          ansible.builtin.include_tasks:
+            file: "{{ playbook_dir }}/../roles/netplan_config/tasks/main.yml"
+          vars:
+            ansible_os_family: Debian
+            netplan_config_interfaces: "{{ invalid_netplan_interfaces_cidr }}"
+            netplan_config_cleanup_files: []
+            netplan_config_apply: false
+
+        - name: Fail when invalid CIDR route combination is accepted
+          ansible.builtin.fail:
+            msg: "netplan_config accepted dhcp4=true with manual IPv4 default route form cidr"
+      rescue:
+        - name: Assert failure message explains the rejected CIDR combination
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result is defined
+              - >-
+                'mixes dhcp4=true with a manual IPv4 default route' in
+                (
+                  ansible_failed_result.msg | default('') ~ ' ' ~
+                  (
+                    ansible_failed_result.results | default([])
+                    | map(attribute='msg') | list | join(' ')
+                  )
+                )
+
+    - name: Verify DHCP-only config is not rejected by the guard
+      block:
+        - name: Include netplan_config tasks with valid DHCP-only config
+          ansible.builtin.include_tasks:
+            file: "{{ playbook_dir }}/../roles/netplan_config/tasks/main.yml"
+          vars:
+            ansible_os_family: Debian
+            netplan_config_interfaces: "{{ valid_netplan_interfaces }}"
+            netplan_config_cleanup_files: []
+            netplan_config_apply: false
+
+        - name: Fail when localhost test unexpectedly reaches the end of the role
+          ansible.builtin.fail:
+            msg: "Expected localhost test to stop at filesystem permission boundary"
+      rescue:
+        - name: Assert valid config passed guard and only failed on localhost filesystem access
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result is defined
+              - >-
+                'mixes dhcp4=true with a manual IPv4 default route' not in
+                (
+                  ansible_failed_result.msg | default('') ~ ' ' ~
+                  (
+                    ansible_failed_result.results | default([])
+                    | map(attribute='msg') | list | join(' ')
+                  )
+                )
+              - >-
+                '/etc/netplan' in
+                (
+                  ansible_failed_result.msg | default('') ~ ' ' ~
+                  (
+                    ansible_failed_result.results | default([])
+                    | map(attribute='msg') | list | join(' ')
+                  )
+                )
