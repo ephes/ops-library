@@ -5,7 +5,7 @@ Deploy Unbound DNS with split-horizon views and ad blocking for homelab environm
 ## Features
 
 - **Split-horizon DNS**: Different responses for LAN vs Tailscale clients
-- **Ad blocking**: Via customizable blocklists (hosts format)
+- **Ad blocking**: Via customizable blocklists (hosts and AdGuard syntax)
 - **Wildcard DNS**: For Traefik-backed services (`*.home.example.com`)
 - **Custom DNS entries**: Service-specific overrides
 - **IDN/Punycode support**: For domains with special characters
@@ -73,8 +73,14 @@ Unbound handles everything:
 | `dns_unbound_serve_expired` | `false` | Serve stale cached answers during upstream outages |
 | `dns_unbound_serve_expired_ttl` | `86400` | Maximum age of stale entries served to clients |
 | `dns_unbound_serve_expired_reply_ttl` | `30` | TTL returned to clients for stale answers |
+| `dns_unbound_serve_expired_ttl_reset` | `false` | Keep stale entries eligible during repeated upstream refresh failures |
+| `dns_unbound_serve_expired_client_timeout` | `0` | Optional RFC 8767 delay before replying with stale data |
+| `dns_unbound_prefetch` | `false` | Refresh hot cache entries before expiry to reduce outage misses |
+| `dns_unbound_prefetch_key` | `false` | Prefetch DNSKEY material to reduce DNSSEC latency for hot names |
+| `dns_unbound_num_queries_per_thread` | `0` | Override recursion queue depth per thread (0 keeps Unbound's default) |
+| `dns_unbound_disable_distro_resolvconf_integration` | `true` | Disable Ubuntu's Unbound/resolvconf helper when the role manages `/etc/resolv.conf` |
 
-When `dns_unbound_serve_expired` is enabled, Unbound can keep answering from cache during brief upstream failures instead of immediately returning `SERVFAIL` for expired records.
+When `dns_unbound_serve_expired` is enabled, Unbound can keep answering from cache during brief upstream failures instead of immediately returning `SERVFAIL` for expired records. This is still partial protection: uncached names, newer RR types such as `HTTPS`, or overloaded recursion queues can still fail during a WAN outage. For outage-prone links, pair stale serving with `dns_unbound_prefetch`, `dns_unbound_serve_expired_ttl_reset`, and a larger `dns_unbound_num_queries_per_thread`.
 
 ### Split-DNS Configuration
 
@@ -95,6 +101,8 @@ When `dns_unbound_serve_expired` is enabled, Unbound can keep answering from cac
 | `dns_blocklists_enabled` | `true` | Enable ad blocking |
 | `dns_blocklists` | See defaults | List of blocklist URLs |
 | `dns_allowlist` | `["github.com", ...]` | Domains never to block |
+
+Supported upstream blocklist formats are hosts-style entries (for example `0.0.0.0 example.com`) and AdGuard-style rules (for example `||example.com^`). Plain one-domain-per-line feeds are not parsed by the generated updater script.
 
 ### Forward Zones Configuration
 
@@ -231,6 +239,7 @@ Unbound uses view-based configuration to return different IPs based on client so
 1. Blocklists are downloaded and converted to Unbound format
 2. Systemd timer updates blocklists daily
 3. Allowlist ensures critical domains are never blocked
+4. Mixed hosts-style and AdGuard-style lists are accepted, and one failed download no longer aborts the whole refresh
 
 ### Wildcard Resolution
 
@@ -281,6 +290,10 @@ dig @192.168.1.5 doubleclick.net
 dig @192.168.1.5 google.com +dnssec
 # Should show AD flag for authenticated data
 
+# Inspect stale-serving and recursion headroom after an upstream outage
+sudo unbound-control stats_noreset | egrep 'total.num.expired|total.requestlist.max|total.requestlist.exceeded'
+# Useful when clients reported SERVFAIL during a WAN reconnect
+
 # Test DDNS (when enabled)
 sudo systemctl status ddns-update.timer
 # Should be active and show next trigger time
@@ -319,6 +332,12 @@ For Tailscale clients to use this DNS:
 - Verify domain not in allowlist
 - Force update: `sudo systemctl start unbound-blocklist.service`
 
+### Brief WAN outages still cause some SERVFAILs
+- Check whether the failing name was already cached: `sudo unbound-control dump_cache | rg 'example.com'`
+- Inspect stale-serving and queue stats: `sudo unbound-control stats_noreset | egrep 'total.num.expired|total.requestlist.exceeded'`
+- Remember that `serve-expired` only helps for cached data; uncached names and some `HTTPS`/`SVCB` lookups can still fail during DSL reconnects
+- Enable `dns_unbound_prefetch`, `dns_unbound_serve_expired_ttl_reset`, and tune `dns_unbound_num_queries_per_thread` on outage-prone links
+
 ### Service not resolving
 - Check Unbound config: `sudo unbound-checkconf`
 - View logs: `sudo journalctl -u unbound -f`
@@ -346,6 +365,7 @@ For Tailscale clients to use this DNS:
   - `00-base.conf` - Base Unbound settings
   - `05-forward-zones.conf` - Forward zone configuration (when `dns_forward_zones` is set)
   - `10-split-dns.conf` - Split-horizon views
+- `/etc/default/unbound` - Distro helper toggles; the role disables resolvconf integration here by default
 - `/var/lib/unbound/` - Blocklists and data
 - `/usr/local/bin/update-blocklists.sh` - Blocklist update script
 - `/etc/systemd/system/unbound-blocklist.*` - Update timer and service

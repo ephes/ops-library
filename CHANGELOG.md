@@ -62,6 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit tests for OpenClaw metrics collector canary behavior and schema invariants (`tests/unit/test_openclaw_metrics_collector.py`)
 
 ### Changed
+- `dns_deploy` now supports Unbound cache prefetch, stale-TTL reset, optional RFC 8767 timeout tuning, recursion queue sizing, and disables Ubuntu's legacy resolvconf helper when the role manages `/etc/resolv.conf`
+- `dns_deploy` blocklist refreshes now tolerate individual download failures, understand both hosts-style and AdGuard-style lists, and document the limits of `serve-expired` during WAN reconnects
 - `netplan_config` now rejects interfaces that combine `dhcp4: true` with a manual IPv4 default route, documents DHCP-backed hosts to use DHCP-managed default routes, and offers an optional post-apply `networkctl reconfigure` recovery pass for `networkd` hosts stuck in a failed link state
 - Closed out the refactor documentation pass so top-level docs and role READMEs
   describe the landed deploy/restore helper boundaries as complete work and
@@ -92,6 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `openclaw_deploy` synthetic canary collection now sets explicit collector `TimeoutStartSec=600`, keeps dedicated canary session-id routing, and preserves stable canary metadata keys (`agent`, `timeout_seconds`, `session_id`) in payload defaults
 
 ### Fixed
+- `dns_deploy` now points its default AdGuard DNS filter source at the maintained upstream URL, avoiding daily blocklist refresh failures from the retired GitHub raw path
 - `sanoid` now renders dataset `use_template` values using the bare template name expected by Sanoid instead of the literal section header, restoring per-dataset retention and pruning behavior for roles like Fractal Time Machine backups
 - Home Assistant presence automations now include the default file to prevent missing automation imports after deployment
 - `dns_remove` cleans up DDNS units reliably and no longer crashes on undefined variables during selective removal

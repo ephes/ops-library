@@ -30,11 +30,16 @@ server:
 
     # Performance
     num-threads: {{ ansible_processor_vcpus | default(2) }}
+{% if dns_unbound_num_queries_per_thread | int > 0 %}
+    num-queries-per-thread: {{ dns_unbound_num_queries_per_thread | int }}
+{% endif %}
     cache-min-ttl: 3600
     cache-max-ttl: 86400
     cache-max-negative-ttl: 3600
     msg-cache-size: 128m
     rrset-cache-size: 256m
+    prefetch: {{ 'yes' if dns_unbound_prefetch | bool else 'no' }}
+    prefetch-key: {{ 'yes' if dns_unbound_prefetch_key | bool else 'no' }}
 
     # Security
     hide-identity: yes
@@ -53,6 +58,10 @@ server:
     serve-expired: yes
     serve-expired-ttl: {{ dns_unbound_serve_expired_ttl }}
     serve-expired-reply-ttl: {{ dns_unbound_serve_expired_reply_ttl }}
+    serve-expired-ttl-reset: {{ 'yes' if dns_unbound_serve_expired_ttl_reset | bool else 'no' }}
+{% if dns_unbound_serve_expired_client_timeout | int > 0 %}
+    serve-expired-client-timeout: {{ dns_unbound_serve_expired_client_timeout | int }}
+{% endif %}
 {% endif %}
 
     # Logging

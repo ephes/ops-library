@@ -8,6 +8,55 @@ BLOCKLIST_DIR="{{ dns_unbound_blocklist_dir }}"
 BLOCKLIST_FILE="${BLOCKLIST_DIR}/blocklist.conf"
 BLOCKLIST_TEMP="${BLOCKLIST_DIR}/blocklist.conf.tmp"
 BLOCKLIST_BACKUP="${BLOCKLIST_DIR}/blocklist.conf.backup"
+SOURCE_TEMP="$(mktemp)"
+
+cleanup() {
+    rm -f "${SOURCE_TEMP}"
+}
+
+trap cleanup EXIT
+
+append_domains_from_url() {
+    local url="$1"
+    local label="$2"
+
+    echo "Downloading ${label}..."
+    if ! curl -fsSL "${url}" -o "${SOURCE_TEMP}"; then
+        echo "WARNING: Failed to download ${url}; keeping existing entries from other sources" >&2
+        return 0
+    fi
+
+    awk '
+      function emit(domain) {
+        gsub(/\r/, "", domain)
+        sub(/\.$/, "", domain)
+        if (domain == "" || domain == "localhost" || domain == "0.0.0.0" || domain == "127.0.0.1") {
+          return
+        }
+        if (domain ~ /^[*A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$/) {
+          print domain
+        }
+      }
+
+      /^[[:space:]]*($|!|#)/ { next }
+
+      $1 ~ /^(0\.0\.0\.0|127\.0\.0\.1)$/ && NF >= 2 {
+        emit($2)
+        next
+      }
+
+      /^\|\|/ {
+        domain = $0
+        sub(/^\|\|/, "", domain)
+        sub(/\^.*/, "", domain)
+        emit(domain)
+        next
+      }
+    ' "${SOURCE_TEMP}" | while read -r domain; do
+        [ -n "${domain}" ] || continue
+        echo "local-zone: \"${domain}\" always_nxdomain" >> "${BLOCKLIST_TEMP}"
+    done
+}
 
 # Ensure directory exists
 mkdir -p "${BLOCKLIST_DIR}"
@@ -18,21 +67,10 @@ mkdir -p "${BLOCKLIST_DIR}"
 # Download and process blocklists
 {% for blocklist in dns_blocklists %}
 {% if blocklist is string %}
-echo "Downloading {{ blocklist | basename }}..."
-curl -sSL "{{ blocklist }}" | \
+append_domains_from_url "{{ blocklist }}" "{{ blocklist | basename }}"
 {% else %}
-echo "Downloading {{ blocklist.url | default(blocklist) | basename }}..."
-curl -sSL "{{ blocklist.url | default(blocklist) }}" | \
+append_domains_from_url "{{ blocklist.url | default(blocklist) }}" "{{ blocklist.url | default(blocklist) | basename }}"
 {% endif %}
-  grep -E '^(0\.0\.0\.0|127\.0\.0\.1)' | \
-  awk '{print $2}' | \
-  grep -v '^localhost$' | \
-  grep -v '^0\.0\.0\.0$' | \
-  grep -v '^127\.0\.0\.1$' | \
-  sort -u | \
-  while read domain; do
-    echo "local-zone: \"${domain}\" always_nxdomain" >> "${BLOCKLIST_TEMP}"
-  done
 {% endfor %}
 
 # Add custom blocked domains
