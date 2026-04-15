@@ -22,6 +22,11 @@
     rsync_opts: "{{ mastodon_rsync_exclude_opts }}"
   delegate_to: localhost
   become: false
+  notify:
+    - restart mastodon-web
+    - restart mastodon-sidekiq
+    - restart mastodon-streaming
+    - clear mastodon cache
 
 - name: Ensure correct ownership of synced files
   ansible.builtin.file:

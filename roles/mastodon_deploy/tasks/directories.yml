@@ -32,6 +32,7 @@
   loop:
     - "{{ mastodon_nginx_log_dir }}"
     - "{{ mastodon_nginx_run_dir }}"
+    - "{{ mastodon_nginx_body_temp_path }}"
   when: mastodon_nginx_enabled | bool
 
 - name: Ensure Mastodon nginx cache directories exist

@@ -171,6 +171,7 @@ mastodon_nginx_cache_zone_size: "20m"
 mastodon_nginx_cache_inactive: "14d"
 mastodon_nginx_cache_size: "1g"
 mastodon_nginx_temp_path: "{{ mastodon_nginx_cache_path }}/temp"
+mastodon_nginx_body_temp_path: /var/lib/mastodon-nginx/body
 mastodon_nginx_run_dir: /run/mastodon-nginx
 mastodon_nginx_pid_file: "{{ mastodon_nginx_run_dir }}/nginx.pid"
 mastodon_nginx_access_log: "{{ mastodon_nginx_log_dir }}/access.log"

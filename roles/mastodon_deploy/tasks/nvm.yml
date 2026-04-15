@@ -44,18 +44,19 @@
         (mastodon_node_version | length > 0)
         | ternary(mastodon_node_version, (mastodon_node_version_slurp.content | default('') | b64decode | trim))
       }}
-    mastodon_node_version_normalized: >-
-      {{
-        (mastodon_node_version | length > 0)
-        | ternary(mastodon_node_version, (mastodon_node_version_slurp.content | default('') | b64decode | trim))
-        | regex_replace('^v', '')
-        | regex_replace('^(\\d+\\.\\d+)$', '\\1.0')
-      }}
 
-- name: Check installed Node version
-  ansible.builtin.stat:
-    path: "{{ mastodon_nvm_dir }}/versions/node/v{{ mastodon_node_version_normalized }}"
-  register: mastodon_node_version_stat
+- name: Resolve installed Node version via nvm
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export NVM_DIR="{{ mastodon_nvm_dir }}"
+    . "{{ mastodon_nvm_dir }}/nvm.sh"
+    nvm version "{{ mastodon_node_version_effective }}"
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ mastodon_user }}"
+  register: mastodon_node_version_resolved
+  changed_when: false
 
 - name: Install Node via nvm
   ansible.builtin.shell: |
@@ -68,9 +69,32 @@
     executable: /bin/bash
   become: true
   become_user: "{{ mastodon_user }}"
-  when: not mastodon_node_version_stat.stat.exists
+  when: mastodon_node_version_resolved.stdout | trim == 'N/A'
+  notify:
+    - restart mastodon-web
+    - restart mastodon-sidekiq
+    - restart mastodon-streaming
+    - clear mastodon cache
+
+- name: Resolve effective installed Node version
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export NVM_DIR="{{ mastodon_nvm_dir }}"
+    . "{{ mastodon_nvm_dir }}/nvm.sh"
+    nvm version "{{ mastodon_node_version_effective }}"
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ mastodon_user }}"
+  register: mastodon_node_version_current
+  changed_when: false
+
+- name: Fail when nvm did not resolve the requested Node version
+  ansible.builtin.fail:
+    msg: "Could not resolve installed Node version for {{ mastodon_node_version_effective }} via nvm"
+  when: mastodon_node_version_current.stdout | trim == 'N/A'
 
 - name: Set runtime path facts
   ansible.builtin.set_fact:
-    mastodon_node_bin_path: "{{ mastodon_nvm_dir }}/versions/node/v{{ mastodon_node_version_normalized }}/bin"
-    mastodon_runtime_path: "{{ mastodon_nvm_dir }}/versions/node/v{{ mastodon_node_version_normalized }}/bin:{{ mastodon_rbenv_root }}/bin:{{ mastodon_rbenv_root }}/shims:/usr/local/bin:/usr/bin:/bin"
+    mastodon_node_bin_path: "{{ mastodon_nvm_dir }}/versions/node/v{{ mastodon_node_version_current.stdout | trim | regex_replace('^v', '') }}/bin"
+    mastodon_runtime_path: "{{ mastodon_nvm_dir }}/versions/node/v{{ mastodon_node_version_current.stdout | trim | regex_replace('^v', '') }}/bin:{{ mastodon_rbenv_root }}/bin:{{ mastodon_rbenv_root }}/shims:/usr/local/bin:/usr/bin:/bin"

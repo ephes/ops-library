@@ -95,6 +95,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `openclaw_deploy` synthetic canary collection now sets explicit collector `TimeoutStartSec=600`, keeps dedicated canary session-id routing, and preserves stable canary metadata keys (`agent`, `timeout_seconds`, `session_id`) in payload defaults
 
 ### Fixed
+- `mastodon_deploy` now resolves the concrete Node version path from `nvm version` instead of guessing an `nvm` directory name from `.nvmrc`, fixing deploys where values like `24.10` install under `v24.10.0` and otherwise break `yarn` during asset precompile
+- `mastodon_deploy` now clears Rails cache after source, runtime, dependency, migration, or asset-build changes so stale cached instance metadata does not survive Mastodon upgrades in Redis after the services restart
+- `mastodon_deploy` now restarts the web, Sidekiq, and streaming services when source, runtime, dependency, migration, or asset-build tasks change, so upgrades and recovery reruns do not leave long-running processes serving the previous release until a manual restart
 - `dns_deploy` now points its default AdGuard DNS filter source at the maintained upstream URL, avoiding daily blocklist refresh failures from the retired GitHub raw path
 - `sanoid` now renders dataset `use_template` values using the bare template name expected by Sanoid instead of the literal section header, restoring per-dataset retention and pruning behavior for roles like Fractal Time Machine backups
 - Home Assistant presence automations now include the default file to prevent missing automation imports after deployment

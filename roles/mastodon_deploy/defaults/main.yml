@@ -7,6 +7,7 @@ mastodon_bundle_install: true
 mastodon_yarn_install: true
 mastodon_yarn_use_corepack: true
 mastodon_yarn_global_install: false
+mastodon_clear_rails_cache_on_deploy: true
 
 mastodon_bundle_deployment: false
 
@@ -14,6 +15,10 @@ mastodon_service_enabled: true
 mastodon_service_state: started
 
 mastodon_maintenance_enabled: true
+
+# Keep nginx temp-path defaults available inside the deploy role even when
+# Ansible does not surface newly added dependency defaults during templating.
+mastodon_nginx_body_temp_path: /var/lib/mastodon-nginx/body
 
 mastodon_runtime_chown_paths:
   - "{{ mastodon_media_path }}"

@@ -28,3 +28,8 @@
     executable: /bin/bash
   become: true
   become_user: "{{ mastodon_user }}"
+  notify:
+    - restart mastodon-web
+    - restart mastodon-sidekiq
+    - restart mastodon-streaming
+    - clear mastodon cache

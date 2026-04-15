@@ -81,6 +81,7 @@ mastodon_nginx_enabled: true
 mastodon_nginx_port: 10044
 mastodon_nginx_cache_enabled: false
 mastodon_runtime_chown_recursive: false
+mastodon_clear_rails_cache_on_deploy: true
 ```
 
 The role keeps ownership in sync for runtime directories listed in
@@ -104,7 +105,9 @@ nginx listens on `127.0.0.1:{{ mastodon_nginx_port }}` and serves static assets 
 proxying app traffic to Puma and the streaming service. Traefik routes to nginx when `mastodon_nginx_enabled: true`.
 Set `mastodon_nginx_user`/`mastodon_nginx_group` to run as root if you want to match the legacy host setup.
 Enable proxy caching for `/system/` by setting `mastodon_nginx_cache_enabled: true`. nginx logs are rotated via
-`{{ mastodon_nginx_logrotate_path }}` when `mastodon_nginx_logrotate_enabled: true`.
+`{{ mastodon_nginx_logrotate_path }}` when `mastodon_nginx_logrotate_enabled: true`. POST request bodies (media
+uploads, federation inbox) are buffered via `client_body_temp_path` at `{{ mastodon_nginx_body_temp_path }}`
+(default `/var/lib/mastodon-nginx/body`), owned by the nginx service user.
 
 ## SMTP validation
 
@@ -121,6 +124,10 @@ Node 20.19+; confirm via release notes).
 Set `mastodon_ruby_build_update: false` if you need to pin the ruby-build plugin to its current revision.
 
 See `defaults/main.yml` and `roles/mastodon_shared/defaults/main.yml` for the full variable reference.
+
+When source, runtime, dependency, migration, or asset-build tasks change, the role clears Rails cache by default
+before the post-deploy health check. This avoids stale cached instance metadata surviving in Redis across
+upgrades. Set `mastodon_clear_rails_cache_on_deploy: false` if you need to keep warm caches during deploys.
 
 ## Yarn / Corepack
 
@@ -174,9 +181,11 @@ to keep them running.
 ## Handlers
 
 - `reload systemd`
+- `clear mastodon cache`
 - `restart mastodon-web`
 - `restart mastodon-sidekiq`
 - `restart mastodon-streaming`
+- `restart mastodon-nginx`
 - `reload traefik`
 
 ## Testing

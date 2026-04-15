@@ -9,6 +9,8 @@ events {
 }
 
 http {
+    client_body_temp_path {{ mastodon_nginx_body_temp_path }};
+
     sendfile on;
     tcp_nopush on;
     types_hash_max_size 2048;

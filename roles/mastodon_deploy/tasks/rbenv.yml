@@ -66,6 +66,11 @@
   environment:
     RBENV_ROOT: "{{ mastodon_rbenv_root }}"
     RUBY_CONFIGURE_OPTS: "{{ mastodon_ruby_configure_opts }}"
+  notify:
+    - restart mastodon-web
+    - restart mastodon-sidekiq
+    - restart mastodon-streaming
+    - clear mastodon cache
 
 - name: Set rbenv global version
   ansible.builtin.command:

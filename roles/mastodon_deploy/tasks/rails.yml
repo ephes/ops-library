@@ -16,6 +16,11 @@
   become: true
   become_user: "{{ mastodon_user }}"
   when: mastodon_run_migrations | bool
+  notify:
+    - restart mastodon-web
+    - restart mastodon-sidekiq
+    - restart mastodon-streaming
+    - clear mastodon cache
 
 - name: Precompile Mastodon assets
   ansible.builtin.shell: |
@@ -34,3 +39,8 @@
   become: true
   become_user: "{{ mastodon_user }}"
   when: mastodon_precompile_assets | bool
+  notify:
+    - restart mastodon-web
+    - restart mastodon-sidekiq
+    - restart mastodon-streaming
+    - clear mastodon cache

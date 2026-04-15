@@ -3,6 +3,24 @@
   ansible.builtin.systemd:
     daemon_reload: true
 
+- name: clear mastodon cache
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export RBENV_ROOT="{{ mastodon_rbenv_root }}"
+    export RBENV_VERSION="{{ mastodon_ruby_version_effective }}"
+    export NVM_DIR="{{ mastodon_nvm_dir }}"
+    export PATH="{{ mastodon_runtime_path }}"
+    set -a
+    . "{{ mastodon_env_file }}"
+    set +a
+    cd "{{ mastodon_site_path }}"
+    bin/tootctl cache clear
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ mastodon_user }}"
+  when: mastodon_clear_rails_cache_on_deploy | bool
+
 - name: restart mastodon-web
   ansible.builtin.systemd:
     name: "{{ mastodon_web_service_name }}"

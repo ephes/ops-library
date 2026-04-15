@@ -40,6 +40,11 @@
   become: true
   become_user: "{{ mastodon_user }}"
   register: mastodon_git_result
+  notify:
+    - restart mastodon-web
+    - restart mastodon-sidekiq
+    - restart mastodon-streaming
+    - clear mastodon cache
 
 - name: Ensure correct ownership of repository
   ansible.builtin.file:

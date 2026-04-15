@@ -4,6 +4,7 @@
     set -euo pipefail
     export NVM_DIR="{{ mastodon_nvm_dir }}"
     . "{{ mastodon_nvm_dir }}/nvm.sh"
+    nvm use "{{ mastodon_node_version_effective }}" >/dev/null
     corepack enable
   args:
     executable: /bin/bash
@@ -17,6 +18,7 @@
     set -euo pipefail
     export NVM_DIR="{{ mastodon_nvm_dir }}"
     . "{{ mastodon_nvm_dir }}/nvm.sh"
+    nvm use "{{ mastodon_node_version_effective }}" >/dev/null
     npm install -g yarn
   args:
     executable: /bin/bash
@@ -31,9 +33,15 @@
     set -euo pipefail
     export NVM_DIR="{{ mastodon_nvm_dir }}"
     . "{{ mastodon_nvm_dir }}/nvm.sh"
+    nvm use "{{ mastodon_node_version_effective }}" >/dev/null
     cd "{{ mastodon_site_path }}"
     yarn install {{ mastodon_yarn_flags }}
   args:
     executable: /bin/bash
   become: true
   become_user: "{{ mastodon_user }}"
+  notify:
+    - restart mastodon-web
+    - restart mastodon-sidekiq
+    - restart mastodon-streaming
+    - clear mastodon cache
