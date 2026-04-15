@@ -115,7 +115,9 @@ that do not send email.
 
 By default, the role reads `.ruby-version` and `.nvmrc` from the Mastodon repository. If you override
 `mastodon_ruby_version` or `mastodon_node_version`, make sure they meet the upstream requirements for
-your Mastodon release (for example, v4.5.3 requires Ruby 3.2+ and Node 20.19+; confirm via release notes).
+your Mastodon release. For example, Mastodon v4.5.8 ships `.ruby-version` `3.4.7` and `.nvmrc` `24.10`;
+if you override them, make sure they still meet the upstream minimums for that release (Ruby 3.2+ and
+Node 20.19+; confirm via release notes).
 Set `mastodon_ruby_build_update: false` if you need to pin the ruby-build plugin to its current revision.
 
 See `defaults/main.yml` and `roles/mastodon_shared/defaults/main.yml` for the full variable reference.
