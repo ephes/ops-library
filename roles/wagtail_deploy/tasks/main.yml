@@ -75,7 +75,8 @@
   ansible.builtin.assert:
     that:
       - wagtail_db_worker_backend | length > 0
-    fail_msg: "wagtail_db_worker_backend must be set when wagtail_db_worker_enabled is true"
+      - wagtail_db_worker_id | length > 0
+    fail_msg: "wagtail_db_worker_backend and wagtail_db_worker_id must be set when wagtail_db_worker_enabled is true"
   when: wagtail_db_worker_enabled | bool
 
 - name: main | Provision PostgreSQL database and user
@@ -86,6 +87,14 @@
 
 - name: main | Deploy source code
   ansible.builtin.include_tasks: "source_{{ wagtail_deploy_method }}.yml"
+
+- name: main | Ensure runtime cache directory exists after source deploy
+  ansible.builtin.file:
+    path: "{{ wagtail_cache_dir }}"
+    state: directory
+    owner: "{{ wagtail_user }}"
+    group: "{{ wagtail_group }}"
+    mode: "0755"
 
 - name: main | Setup Python environment
   ansible.builtin.include_tasks: python.yml

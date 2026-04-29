@@ -14,7 +14,8 @@ Environment="DJANGO_SETTINGS_MODULE={{ wagtail_django_settings_module }}"
 EnvironmentFile={{ wagtail_env_path }}
 
 ExecStart={{ wagtail_python }} {{ wagtail_manage_py }} db_worker \
-  --backend {{ wagtail_db_worker_backend }}{% if wagtail_db_worker_queue_name | length > 0 %} \
+  --backend {{ wagtail_db_worker_backend }} \
+  --worker-id {{ wagtail_db_worker_id }}{% if wagtail_db_worker_queue_name | length > 0 %} \
   --queue-name {{ wagtail_db_worker_queue_name }}{% endif %} \
   --interval {{ wagtail_db_worker_interval_seconds }}{% if wagtail_db_worker_extra_args | length > 0 %} \
   {{ wagtail_db_worker_extra_args }}{% endif %}

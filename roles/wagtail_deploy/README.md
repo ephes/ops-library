@@ -45,7 +45,8 @@ wagtail_rsync_excludes_extra:
   - "notebooks"
 ```
 
-Default rsync excludes include `{{ wagtail_project_slug }}/media`, `backups`, `databases`, and `.venv`.
+Default rsync excludes include `{{ wagtail_project_slug }}/media`, `backups`, `/cache`, `databases`, and `.venv`.
+The role also recreates `wagtail_cache_dir` after source deployment so Django's file-based cache remains writable.
 
 ### Git Deployment
 
@@ -68,6 +69,7 @@ wagtail_env_extra:
   INDIEWEB_ME_URL: "https://example.com/user/"
 wagtail_db_worker_enabled: false
 wagtail_db_worker_backend: "default"
+wagtail_db_worker_id: "{{ wagtail_db_worker_unit_name }}"
 wagtail_db_worker_queue_name: ""
 wagtail_db_worker_interval_seconds: 5
 ```
@@ -94,6 +96,7 @@ wagtail_staticfiles_required_paths:
 ```yaml
 wagtail_db_worker_enabled: true
 wagtail_db_worker_backend: "cast_transcripts"
+wagtail_db_worker_id: "homepage-transcripts"
 wagtail_db_worker_queue_name: ""
 wagtail_db_worker_interval_seconds: 5
 wagtail_db_worker_extra_args: ""
@@ -101,7 +104,7 @@ wagtail_db_worker_extra_args: ""
 
 When enabled, the role installs a second systemd unit named
 `{{ wagtail_service_name }}-db-worker.service` that runs `manage.py db_worker`
-with the configured backend alias.
+with the configured backend alias and stable worker id.
 
 ### PostgreSQL Provisioning
 

@@ -12,6 +12,7 @@
     rendered_service: "/tmp/test-wagtail.service"
     rendered_worker: "/tmp/test-wagtail-db-worker.service"
     rendered_worker_with_args: "/tmp/test-wagtail-db-worker-with-args.service"
+    wagtail_project_slug: "python-podcast"
 
   tasks:
     - name: Load role defaults
@@ -24,6 +25,7 @@
         that:
           - wagtail_defaults.wagtail_db_worker_enabled == false
           - wagtail_defaults.wagtail_db_worker_backend == "default"
+          - "'/cache' in wagtail_defaults.wagtail_rsync_excludes"
 
     - name: Render Wagtail web service template
       ansible.builtin.template:
@@ -60,6 +62,7 @@
         wagtail_python: "/home/python-podcast/site/.venv/bin/python"
         wagtail_manage_py: "/home/python-podcast/site/manage.py"
         wagtail_db_worker_backend: "cast_transcripts"
+        wagtail_db_worker_id: "python-podcast-transcripts"
         wagtail_db_worker_queue_name: ""
         wagtail_db_worker_interval_seconds: 5
         wagtail_db_worker_extra_args: ""
@@ -79,6 +82,7 @@
         wagtail_python: "/home/python-podcast/site/.venv/bin/python"
         wagtail_manage_py: "/home/python-podcast/site/manage.py"
         wagtail_db_worker_backend: "cast_transcripts"
+        wagtail_db_worker_id: "python-podcast-transcripts"
         wagtail_db_worker_queue_name: "transcripts"
         wagtail_db_worker_interval_seconds: 5
         wagtail_db_worker_extra_args: "--verbose"
@@ -100,6 +104,7 @@
           - "'config.wsgi:application' in rendered_service_text"
           - "'manage.py db_worker' in rendered_worker_text"
           - "'--backend cast_transcripts' in rendered_worker_text"
+          - "'--worker-id python-podcast-transcripts' in rendered_worker_text"
           - "'--interval 5' in rendered_worker_text"
           - "'EnvironmentFile=/home/python-podcast/site/.env' in rendered_worker_text"
           - "'--queue-name transcripts' in rendered_worker_with_args_text"

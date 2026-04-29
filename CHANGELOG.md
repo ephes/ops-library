@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Update your Ansible installation before upgrading
 
 ### Added
+- `wagtail_deploy` now supports a stable `wagtail_db_worker_id` and passes it to Django Tasks `db_worker --worker-id`, allowing each deployed site to run a distinct database-backed task worker
 - `wagtail_deploy` now includes a `redirect-www` Traefik middleware that strips the `www.` prefix via regex redirect (302), applied unconditionally to the HTTPS router
 - `headless_mode` role to persist hosts on a non-graphical systemd target and disable running display-manager services without requiring a reboot
 - `paperless_deploy` can now promote existing Paperless users to active staff superusers during deploy via `paperless_existing_superusers`
@@ -95,6 +96,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `openclaw_deploy` synthetic canary collection now sets explicit collector `TimeoutStartSec=600`, keeps dedicated canary session-id routing, and preserves stable canary metadata keys (`agent`, `timeout_seconds`, `session_id`) in payload defaults
 
 ### Fixed
+- `wagtail_deploy` now protects the top-level `/cache` directory from rsync deletion and recreates `wagtail_cache_dir` after source deployment, preventing Django file-based cache failures like the python-podcast feed incident
 - `mastodon_deploy` now resolves the concrete Node version path from `nvm version` instead of guessing an `nvm` directory name from `.nvmrc`, fixing deploys where values like `24.10` install under `v24.10.0` and otherwise break `yarn` during asset precompile
 - `mastodon_deploy` now clears Rails cache after source, runtime, dependency, migration, or asset-build changes so stale cached instance metadata does not survive Mastodon upgrades in Redis after the services restart
 - `mastodon_deploy` now restarts the web, Sidekiq, and streaming services when source, runtime, dependency, migration, or asset-build tasks change, so upgrades and recovery reruns do not leave long-running processes serving the previous release until a manual restart

@@ -24,6 +24,7 @@ wagtail_rsync_excludes_extra: []
 wagtail_rsync_excludes:
   - "{{ wagtail_project_slug }}/media"
   - "backups"
+  - "/cache"
   - "databases"
   - ".venv"
   - ".git"
@@ -98,6 +99,7 @@ wagtail_db_worker_enabled: false
 wagtail_db_worker_unit_name: "{{ wagtail_service_name }}-db-worker"
 wagtail_db_worker_unit_path: "/etc/systemd/system/{{ wagtail_db_worker_unit_name }}.service"
 wagtail_db_worker_backend: "default"
+wagtail_db_worker_id: "{{ wagtail_db_worker_unit_name }}"
 wagtail_db_worker_queue_name: ""
 wagtail_db_worker_interval_seconds: 5
 wagtail_db_worker_extra_args: ""
