@@ -9,6 +9,9 @@ Deploys Vector on a producer host and ships journald logs to Logyard/Loki.
 - normalizes logs into a compact JSON payload
 - keeps Loki labels low-cardinality and stable
 - uses disk buffering and explicit retry settings
+- disables Vector's Loki sink startup health check by default so transient Logyard/Loki
+  errors do not prevent the producer from booting; runtime delivery still uses retries
+  and disk buffering
 - writes a shared Vector config directory under `/etc/vector/config.d/`
 - stores the Logyard pipeline in its own fragment so it can coexist with other Vector-managed services on the same host
 - validates the full staged config directory before replacing the live fragment
@@ -41,6 +44,7 @@ logyard_vector_source_type: "journald"
 logyard_vector_include_units: []
 logyard_vector_exclude_units: []
 logyard_vector_current_boot_only: false
+logyard_vector_healthcheck_enabled: false
 ```
 
 ## Example Playbook
@@ -65,3 +69,7 @@ journalctl -u vector -n 100 --no-pager
 vector validate --config-dir /etc/vector/config.d
 ls /etc/vector/config.d
 ```
+
+Use `vector validate --skip-healthchecks --config-dir /etc/vector/config.d` when
+checking producer config syntax/topology without requiring the remote Logyard/Loki
+endpoint to be healthy at that moment.

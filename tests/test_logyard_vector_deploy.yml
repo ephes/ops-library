@@ -54,6 +54,7 @@
               - logyard_vector_defaults.logyard_vector_config_dir == "/etc/vector/config.d"
               - logyard_vector_defaults.logyard_vector_batch_max_events == 200
               - logyard_vector_defaults.logyard_vector_source_type == "journald"
+              - logyard_vector_defaults.logyard_vector_healthcheck_enabled == false
 
     - name: Validate template renders expected fields
       block:
@@ -80,6 +81,7 @@
             logyard_vector_batch_max_events: 200
             logyard_vector_batch_timeout_secs: 5
             logyard_vector_buffer_max_size: 268435488
+            logyard_vector_healthcheck_enabled: false
 
         - name: Read rendered template
           ansible.builtin.slurp:
@@ -96,9 +98,46 @@
               - "'\"host\": \"macmini\"' in rendered_text"
               - "'ssh.service' in rendered_text"
               - "'labels:' in rendered_text"
+              - rendered_yaml.sinks.logyard_loki.healthcheck.enabled == false
               - "'data_dir:' not in rendered_text"
           vars:
             rendered_text: "{{ rendered_file.content | b64decode }}"
+            rendered_yaml: "{{ rendered_text | from_yaml }}"
+
+        - name: Render template with Logyard sink healthcheck enabled
+          ansible.builtin.template:
+            src: "{{ role_path }}/templates/vector.yaml.j2"
+            dest: "{{ rendered_config }}"
+          vars:
+            logyard_vector_data_dir: /var/lib/vector
+            logyard_vector_current_boot_only: false
+            logyard_vector_include_units: []
+            logyard_vector_exclude_units: []
+            logyard_vector_include_matches: []
+            logyard_vector_host_id: macmini
+            logyard_vector_environment: prod
+            logyard_vector_source_type: journald
+            logyard_vector_ingest_endpoint: https://logyard.home.xn--wersdrfer-47a.de
+            logyard_vector_http_timeout_secs: 15
+            logyard_vector_request_concurrency: 1
+            logyard_vector_retry_initial_backoff_secs: 1
+            logyard_vector_retry_max_duration_secs: 3600
+            logyard_vector_batch_max_events: 200
+            logyard_vector_batch_timeout_secs: 5
+            logyard_vector_buffer_max_size: 268435488
+            logyard_vector_healthcheck_enabled: true
+
+        - name: Read rendered template with Logyard sink healthcheck enabled
+          ansible.builtin.slurp:
+            path: "{{ rendered_config }}"
+          register: rendered_enabled_file
+
+        - name: Assert Logyard sink healthcheck opt-in renders under Loki sink
+          ansible.builtin.assert:
+            that:
+              - rendered_enabled_yaml.sinks.logyard_loki.healthcheck.enabled == true
+          vars:
+            rendered_enabled_yaml: "{{ rendered_enabled_file.content | b64decode | from_yaml }}"
 
     - name: Clean up rendered test file
       ansible.builtin.file:

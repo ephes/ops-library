@@ -128,3 +128,6 @@ sinks:
     buffer:
       type: disk
       max_size: {{ logyard_vector_buffer_max_size }}
+    # Startup must not depend on transient Logyard/Loki availability.
+    healthcheck:
+      enabled: {{ logyard_vector_healthcheck_enabled | ternary('true', 'false') }}

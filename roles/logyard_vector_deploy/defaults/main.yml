@@ -35,3 +35,4 @@ logyard_vector_retry_max_duration_secs: 3600
 logyard_vector_batch_timeout_secs: 5
 logyard_vector_batch_max_events: 200
 logyard_vector_buffer_max_size: 268435488
+logyard_vector_healthcheck_enabled: false

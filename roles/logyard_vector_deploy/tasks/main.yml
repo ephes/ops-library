@@ -142,10 +142,13 @@
             mode: "0644"
 
         - name: Validate staged Vector configuration directory
+          # Skip remote sink health checks here so transient Logyard/Loki outages,
+          # or health checks from co-located fragments, cannot block config deploy.
           ansible.builtin.command:
             argv:
               - vector
               - validate
+              - --skip-healthchecks
               - --config-dir
               - "{{ logyard_vector_validation_dir.path }}"
           changed_when: false
