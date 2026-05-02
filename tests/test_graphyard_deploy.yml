@@ -126,6 +126,16 @@
             path: "{{ role_path }}/templates/graphyard-runtime.service.j2"
           register: runtime_service_template_content
 
+        - name: Read agent service template file
+          ansible.builtin.slurp:
+            path: "{{ role_path }}/templates/graphyard-agent.service.j2"
+          register: agent_service_template_content
+
+        - name: Read web service template file
+          ansible.builtin.slurp:
+            path: "{{ role_path }}/templates/graphyard-web.service.j2"
+          register: web_service_template_content
+
         - name: Assert expected runtime and retention enforcement steps are present
           ansible.builtin.assert:
             that:
@@ -133,14 +143,15 @@
               - "'graphyard_runtime_enabled | bool' in main_tasks_text"
               - "'import_tasks: influx_retention.yml' in main_tasks_text"
               - "'graphyard_influx_retention_apply | bool' in main_tasks_text"
-              - "'docker network' in runtime_tasks_text"
+              - "'runtime | Ensure Graphyard monitoring network exists' in runtime_tasks_text"
+              - "'runtime | Create Graphyard monitoring network when missing' in runtime_tasks_text"
               - "'Remove unmanaged Graphyard dependency containers before compose takeover' in runtime_tasks_text"
-              - "'graphyard-runtime.service' in runtime_service_template_text"
+              - "'Graphyard dependency runtime' in runtime_service_template_text"
               - "'docker compose -p' in runtime_service_template_text"
-              - "'graphyard-influxdb' in compose_template_text"
-              - "'graphyard-grafana' in compose_template_text"
+              - "'graphyard_influx_container_name' in compose_template_text"
+              - "'graphyard_grafana_container_name' in compose_template_text"
               - "'restart: unless-stopped' in compose_template_text"
-              - "'graphyard-monitoring' in compose_template_text"
+              - "'graphyard_docker_network_name' in compose_template_text"
               - "'influx v1 auth create' in runtime_tasks_text"
               - "'SHOW+DATABASES' in runtime_tasks_text"
               - "'community.general.to_time_unit(' in retention_tasks_text"
@@ -151,9 +162,37 @@
               - "'graphyard_influx_bucket_update' in retention_tasks_text"
               - "'--retention' in retention_tasks_text"
               - "'Expected exactly one InfluxDB bucket named' in retention_tasks_text"
+              - "('After=network-online.target' ~ '{' ~ '% if') not in agent_service_template_text"
+              - "('After=network.target' ~ '{' ~ '% if') not in web_service_template_text"
           vars:
             main_tasks_text: "{{ main_tasks_content.content | b64decode }}"
             retention_tasks_text: "{{ retention_tasks_content.content | b64decode }}"
             runtime_tasks_text: "{{ runtime_tasks_content.content | b64decode }}"
             compose_template_text: "{{ compose_template_content.content | b64decode }}"
             runtime_service_template_text: "{{ runtime_service_template_content.content | b64decode }}"
+            agent_service_template_text: "{{ agent_service_template_content.content | b64decode }}"
+            web_service_template_text: "{{ web_service_template_content.content | b64decode }}"
+
+    - name: Validate systemd unit templates keep dependency directives separate
+      block:
+        - name: Load graphyard defaults for template rendering
+          ansible.builtin.include_vars:
+            file: "{{ role_path }}/defaults/main.yml"
+
+        - name: Render service units with runtime enabled
+          ansible.builtin.set_fact:
+            graphyard_agent_unit_runtime_enabled: "{{ lookup('ansible.builtin.template', role_path + '/templates/graphyard-agent.service.j2') }}"
+            graphyard_web_unit_runtime_enabled: "{{ lookup('ansible.builtin.template', role_path + '/templates/graphyard-web.service.j2') }}"
+          vars:
+            graphyard_runtime_enabled: true
+            graphyard_runtime_service_name: graphyard-runtime
+
+        - name: Assert runtime-enabled unit directives are not joined
+          ansible.builtin.assert:
+            that:
+              - "'After=network-online.target graphyard-runtime.service\nWants=network-online.target' in graphyard_agent_unit_runtime_enabled"
+              - "'Wants=network-online.target\nRequires=graphyard-runtime.service' in graphyard_agent_unit_runtime_enabled"
+              - "'graphyard-runtime.serviceWants=' not in graphyard_agent_unit_runtime_enabled"
+              - "'graphyard-runtime.serviceRequires=' not in graphyard_agent_unit_runtime_enabled"
+              - "'After=network.target graphyard-runtime.service\nRequires=graphyard-runtime.service' in graphyard_web_unit_runtime_enabled"
+              - "'graphyard-runtime.serviceRequires=' not in graphyard_web_unit_runtime_enabled"

@@ -1,8 +1,7 @@
 [Unit]
 Description=graphyard web application
-After=network.target{% if graphyard_runtime_enabled | bool %} {{ graphyard_runtime_service_name }}.service{% endif %}
-{% if graphyard_runtime_enabled | bool %}Requires={{ graphyard_runtime_service_name }}.service
-{% endif %}
+After=network.target{{ (" " ~ graphyard_runtime_service_name ~ ".service") if (graphyard_runtime_enabled | bool) else "" }}
+{{ ("Requires=" ~ graphyard_runtime_service_name ~ ".service") if (graphyard_runtime_enabled | bool) else "" }}
 
 [Service]
 Type=simple
