@@ -8,7 +8,7 @@ Installs the UniFi Network Application on the macmini controller (or any Debian/
 - Creates the `unifi` unix user, directory layout, cache path, and version-pinned UniFi `.deb` download/install logic.
 - Ships a hardened custom systemd service that injects Mongo URI + JVM tuning via environment variables to avoid `system.properties` corruption.
 - Emits a Traefik dynamic configuration file (and optional static entrypoint tweak) that matches the production router/service layout.
-- Opens the canonical UniFi ports with `ufw` and optionally seeds a read-only Home Assistant account inside Mongo/UniFi.
+- Opens the canonical UniFi ports with `ufw` and optionally reconciles a read-only Home Assistant account inside Mongo/UniFi.
 
 ## Key Variables
 
@@ -23,8 +23,8 @@ All tunables live in `defaults/main.yml`. The highlights:
 | `unifi_external_domain` | `home.xn--wersdrfer-47a.de` | External domain used in the Traefik router + debug output. |
 | `unifi_traefik_enabled` | `true` | Toggle Traefik dynamic file management. |
 | `unifi_manage_firewall` | `true` | When true, open the standard UniFi TCP/UDP ports via `ufw`. |
-| `unifi_create_homeassistant_user` | `false` | Generate + seed a read-only UniFi admin for Home Assistant integration. |
-| `unifi_homeassistant_password` | `""` | Optional pre-defined HA password. Leave empty to auto-generate and store under `unifi_homeassistant_password_store`. |
+| `unifi_create_homeassistant_user` | `false` | Generate or reconcile a read-only UniFi admin for Home Assistant integration. |
+| `unifi_homeassistant_password` | `""` | Optional pre-defined HA password. Leave empty to auto-generate and store under `unifi_homeassistant_password_store`; when set, existing user password hashes are updated to match. |
 | `unifi_mongodb_repo_distribution_override` | `""` | Force the MongoDB apt codename (defaults to detected release, fallback `noble` if unsupported). |
 
 Review the defaults file for Traefik entrypoints, MongoDB repo release, logrotate script paths, and controller URLs.

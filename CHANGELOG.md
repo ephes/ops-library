@@ -64,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit tests for OpenClaw metrics collector canary behavior and schema invariants (`tests/unit/test_openclaw_metrics_collector.py`)
 
 ### Changed
+- `unifi_deploy` now reconciles the Home Assistant UniFi admin when it already exists, including password hash drift and missing readonly site privileges.
 - `dns_deploy` now supports Unbound cache prefetch, stale-TTL reset, optional RFC 8767 timeout tuning, recursion queue sizing, and disables Ubuntu's legacy resolvconf helper when the role manages `/etc/resolv.conf`
 - `dns_deploy` blocklist refreshes now tolerate individual download failures, understand both hosts-style and AdGuard-style lists, and document the limits of `serve-expired` during WAN reconnects
 - `netplan_config` now rejects interfaces that combine `dhcp4: true` with a manual IPv4 default route, documents DHCP-backed hosts to use DHCP-managed default routes, and offers an optional post-apply `networkctl reconfigure` recovery pass for `networkd` hosts stuck in a failed link state

@@ -1,7 +1,9 @@
 use('{{ unifi_mongodb_database }}');
 var existing = db.admin.findOne({name: "{{ unifi_homeassistant_username }}"});
+var changed = false;
+var now = Date.now();
+
 if (!existing) {
-  var now = Date.now();
   db.admin.insertOne({
     "email": "{{ unifi_homeassistant_username }}@local",
     "name": "{{ unifi_homeassistant_username }}",
@@ -9,21 +11,46 @@ if (!existing) {
     "time_created": NumberLong(now.toString()),
     "x_shadow": "{{ unifi_homeassistant_password_hash.stdout | trim }}"
   });
+  changed = true;
+} else if (existing.x_shadow !== "{{ unifi_homeassistant_password_hash.stdout | trim }}") {
+  db.admin.updateOne(
+    {"_id": existing._id},
+    {
+      "$set": {
+        "email": existing.email || "{{ unifi_homeassistant_username }}@local",
+        "last_site_name": existing.last_site_name || "default",
+        "x_shadow": "{{ unifi_homeassistant_password_hash.stdout | trim }}"
+      }
+    }
+  );
+  changed = true;
+}
 
-  var haUser = db.admin.findOne({name: "{{ unifi_homeassistant_username }}"});
-  var defaultSite = db.site.findOne({name: "default"});
+var haUser = db.admin.findOne({name: "{{ unifi_homeassistant_username }}"});
+var defaultSite = db.site.findOne({name: "default"});
 
-  if (haUser && defaultSite) {
+if (haUser && defaultSite) {
+  var existingPrivilege = db.privilege.findOne({
+    "admin_id": haUser._id,
+    "site_id": defaultSite._id
+  });
+  if (!existingPrivilege) {
     db.privilege.insertOne({
       "admin_id": haUser._id,
       "site_id": defaultSite._id,
       "role": "readonly",
       "permissions": []
     });
-    print("Home Assistant user created successfully");
-  } else {
-    print("Error: Could not find UniFi user or site");
+    changed = true;
+  } else if (existingPrivilege.role !== "readonly") {
+    db.privilege.updateOne(
+      {"_id": existingPrivilege._id},
+      {"$set": {"role": "readonly", "permissions": []}}
+    );
+    changed = true;
   }
 } else {
-  print("Home Assistant user already exists");
+  print("STATUS=error missing_unifi_user_or_site");
 }
+
+print("STATUS=ok changed=" + changed);

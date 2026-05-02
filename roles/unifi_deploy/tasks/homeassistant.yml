@@ -18,16 +18,6 @@
     msg: "Set unifi_homeassistant_password or allow generation."
   when: unifi_homeassistant_password_effective | length == 0
 
-- name: "homeassistant | Hash password for MongoDB"
-  ansible.builtin.shell: |
-    set -o pipefail
-    echo -n "{{ unifi_homeassistant_password_effective }}" | mkpasswd -m sha-512 --stdin
-  args:
-    executable: /bin/bash
-  register: unifi_homeassistant_password_hash
-  changed_when: false
-  no_log: true
-
 - name: "homeassistant | Probe for default site"
   ansible.builtin.shell: |
     mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} \
@@ -49,7 +39,8 @@
       Complete the UniFi setup wizard once, then rerun deploy-one unifi to finish the integration.
   when: not unifi_homeassistant_default_site_present | bool
 
-- block:
+- when: unifi_homeassistant_default_site_present | bool
+  block:
     - name: "homeassistant | Wait for default site"
       ansible.builtin.shell: |
         mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} \
@@ -59,6 +50,36 @@
       until: unifi_homeassistant_site_check.rc == 0
       retries: "{{ unifi_homeassistant_wait_retries }}"
       delay: "{{ unifi_homeassistant_wait_delay }}"
+      changed_when: false
+      no_log: true
+
+    - name: "homeassistant | Read existing user password hash"
+      ansible.builtin.shell: |
+        mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} \
+          -u "{{ unifi_mongodb_user }}" -p "{{ unifi_mongodb_password }}" --authenticationDatabase admin \
+          {{ unifi_mongodb_database }} --eval \
+          "const u = db.admin.findOne({name: '{{ unifi_homeassistant_username }}'}); print(u && u.x_shadow ? u.x_shadow : '')"
+      register: unifi_homeassistant_existing_hash
+      changed_when: false
+      no_log: true
+
+    - name: "homeassistant | Hash password for MongoDB"
+      ansible.builtin.shell: |
+        set -o pipefail
+        existing_hash="$(printf '%s\n' "$UNIFI_HOMEASSISTANT_EXISTING_HASH" | awk '/^\$6\$/ { candidate = $0 } END { print candidate }')"
+        if [[ "$existing_hash" =~ ^\$6\$rounds=([0-9]+)\$([^\$]+)\$ ]]; then
+          printf '%s' "$UNIFI_HOMEASSISTANT_PASSWORD" | mkpasswd -m sha-512 -R "${BASH_REMATCH[1]}" -S "${BASH_REMATCH[2]}" --stdin
+        elif [[ "$existing_hash" =~ ^\$6\$([^\$]+)\$ ]]; then
+          printf '%s' "$UNIFI_HOMEASSISTANT_PASSWORD" | mkpasswd -m sha-512 -S "${BASH_REMATCH[1]}" --stdin
+        else
+          printf '%s' "$UNIFI_HOMEASSISTANT_PASSWORD" | mkpasswd -m sha-512 --stdin
+        fi
+      args:
+        executable: /bin/bash
+      environment:
+        UNIFI_HOMEASSISTANT_EXISTING_HASH: "{{ unifi_homeassistant_existing_hash.stdout | default('') }}"
+        UNIFI_HOMEASSISTANT_PASSWORD: "{{ unifi_homeassistant_password_effective }}"
+      register: unifi_homeassistant_password_hash
       changed_when: false
       no_log: true
 
@@ -77,8 +98,8 @@
           -u "{{ unifi_mongodb_user }}" -p "{{ unifi_mongodb_password }}" --authenticationDatabase admin \
           < /tmp/unifi-mongo-ha-user.js
       register: unifi_homeassistant_user
-      changed_when: "'successfully' in unifi_homeassistant_user.stdout.lower()"
-      failed_when: "'Error' in unifi_homeassistant_user.stdout"
+      changed_when: "'changed=true' in unifi_homeassistant_user.stdout.lower()"
+      failed_when: "'STATUS=error' in unifi_homeassistant_user.stdout"
       no_log: true
 
     - name: "homeassistant | Remove Mongo script"
@@ -94,4 +115,3 @@
         group: "{{ unifi_group }}"
         mode: "0600"
       no_log: true
-  when: unifi_homeassistant_default_site_present | bool
