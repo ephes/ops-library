@@ -1,0 +1,17 @@
+---
+- name: validate | Validate core Zellij ingress settings
+  ansible.builtin.assert:
+    that:
+      - zellij_ingress_redirect_target | length > 0
+    fail_msg: "zellij_ingress_redirect_target is required (e.g. https://studio.tailde2ec.ts.net/)."
+
+- name: validate | Validate Traefik settings when enabled
+  ansible.builtin.assert:
+    that:
+      - zellij_ingress_traefik_host | length > 0
+      - zellij_ingress_traefik_config_path | length > 0
+      - zellij_ingress_allowed_ip_ranges | length > 0
+    fail_msg: >-
+      zellij_ingress_traefik_host, zellij_ingress_traefik_config_path, and
+      zellij_ingress_allowed_ip_ranges are required when Traefik is enabled.
+  when: zellij_ingress_traefik_enabled | bool

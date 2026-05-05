@@ -1,0 +1,20 @@
+---
+# Private redirect-only ingress for Zellij web client via Traefik on the edge host.
+# Zellij refuses to bind to non-loopback addresses without a TLS cert, so the
+# real endpoint is fronted by Tailscale Serve on the backend host. This role
+# only emits a Traefik dynamic config that 302-redirects a friendly host name
+# (e.g. zellij.home...) to the Tailscale Serve URL.
+
+zellij_ingress_traefik_enabled: true
+zellij_ingress_traefik_host: ""
+zellij_ingress_redirect_target: ""
+zellij_ingress_traefik_entrypoints:
+  - web-secure
+zellij_ingress_traefik_cert_resolver: ""
+zellij_ingress_traefik_config_path: "/etc/traefik/dynamic/zellij.yml"
+
+zellij_ingress_allowed_ip_ranges:
+  - "127.0.0.1/32"
+  - "::1/128"
+  - "100.64.0.0/10"
+  - "fd7a:115c:a1e0::/48"

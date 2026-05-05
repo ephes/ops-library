@@ -1,0 +1,11 @@
+---
+galaxy_info:
+  author: Jochen Wersdörfer
+  description: Redirect-only Traefik ingress for Zellij web client (Tailscale Serve backend).
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - all
+dependencies: []
