@@ -1,9 +1,9 @@
 # zellij_ingress_deploy
 
-Drop a Traefik dynamic config on the edge host that 302-redirects a friendly
-host name (e.g. `zellij.home.xn--wersdrfer-47a.de`) to a fixed target URL —
-typically a Tailscale Serve endpoint that fronts a `zellij web` instance bound
-to `127.0.0.1` on a backend host.
+Drop a Traefik dynamic config on the edge host that issues a temporary redirect
+from a friendly host name (e.g. `zellij.home.xn--wersdrfer-47a.de`) to a fixed
+target URL — typically a Tailscale Serve endpoint that fronts a `zellij web`
+instance bound to `127.0.0.1` on a backend host.
 
 ## Why a Redirect-Only Ingress?
 
@@ -18,8 +18,8 @@ real Tailscale Serve URL.
 - A Traefik dynamic config file (`/etc/traefik/dynamic/zellij.yml` by default)
 - One HTTPS router and one HTTP router on the configured host name
 - A `redirectRegex` middleware sending all requests to the target URL
-- A no-op backend service (Traefik requires routers to reference a service,
-  but the middleware short-circuits before it is hit)
+  (uses Traefik's built-in `noop@internal` service since the middleware
+  short-circuits before any backend is hit)
 
 ## Important Defaults
 

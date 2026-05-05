@@ -10,7 +10,7 @@ http:
 {% endfor %}
       middlewares:
         - zellij-redirect-target
-      service: zellij-noop
+      service: noop@internal
 {% if zellij_ingress_traefik_cert_resolver | default('') | length > 0 %}
       tls:
         certResolver: {{ zellij_ingress_traefik_cert_resolver }}
@@ -24,7 +24,7 @@ http:
         - web
       middlewares:
         - zellij-redirect-target
-      service: zellij-noop
+      service: noop@internal
 
   middlewares:
     zellij-redirect-target:
@@ -32,12 +32,3 @@ http:
         regex: ".*"
         replacement: "{{ zellij_ingress_redirect_target }}"
         permanent: false
-
-  services:
-    # Dummy backend - the redirectRegex middleware short-circuits the response
-    # before the service is reached, but Traefik still requires routers to
-    # reference a service.
-    zellij-noop:
-      loadBalancer:
-        servers:
-          - url: "http://127.0.0.1:1"

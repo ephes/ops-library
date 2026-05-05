@@ -40,6 +40,7 @@ mail_relay_deploy
 certbot_dns_deploy
 voxhelm_deploy
 voxhelm_ingress_deploy
+zellij_ingress_deploy
 ```
 
 These roles handle the complete deployment lifecycle including:

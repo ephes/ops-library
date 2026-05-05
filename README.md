@@ -186,6 +186,7 @@ consumer repos depend on.
 | Bootstrap | [`ollama_install`](roles/ollama_install/README.md) | Install Ollama on macOS via Homebrew and manage a launchd service. |
 | Bootstrap | [`voxhelm_deploy`](roles/voxhelm_deploy/README.md) | Deploy Voxhelm on macOS with `uv`, Uvicorn, and a launchd-managed synchronous transcription API. |
 | Bootstrap | [`voxhelm_ingress_deploy`](roles/voxhelm_ingress_deploy/README.md) | Expose Voxhelm over private HTTPS via Traefik on the edge host while proxying to the macOS backend over Tailscale. |
+| Bootstrap | [`zellij_ingress_deploy`](roles/zellij_ingress_deploy/README.md) | Drop a Traefik dynamic config that temporarily redirects a friendly host name to a Tailscale Serve URL fronting `zellij web` on a backend host. |
 | Bootstrap | [`uv_install`](roles/uv_install/README.md) | Install uv for Python environment management. |
 | Bootstrap | [`sops_dependencies`](roles/sops_dependencies/README.md) | Install age/SOPS prerequisites. |
 | Testing/demo | [`test_dummy`](roles/test_dummy/README.md) | Demonstration service for developing and testing runners. |
