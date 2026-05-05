@@ -1,0 +1,26 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Ensure Ansible remote tmp exists
+      ansible.builtin.file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0700"
+
+  vars:
+    os_apt_maintenance_host_id: molecule
+    os_apt_maintenance_update_cache: false
+    os_apt_maintenance_dist_upgrade: false
+    os_apt_maintenance_autoremove: false
+    os_apt_maintenance_autoclean: false
+    os_apt_maintenance_endpoint_enabled: true
+    os_apt_maintenance_endpoint_bind: 127.0.0.1
+    os_apt_maintenance_endpoint_auth_user: nyxmon
+    os_apt_maintenance_endpoint_auth_password: molecule-apt-maintenance-password
+    os_apt_maintenance_endpoint_ip_allow: []
+
+  roles:
+    - role: os_apt_maintenance

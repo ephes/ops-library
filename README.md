@@ -162,6 +162,7 @@ consumer repos depend on.
 | Service operations | [`mastodon_maintenance`](roles/mastodon_maintenance/README.md) | Run Mastodon tootctl maintenance commands (media cleanup, cache pruning). |
 | Service operations | [`minio_offsite_replication`](roles/minio_offsite_replication/README.md) | Pull MinIO backup archives from a remote source into offsite storage via systemd timer + rsync/SSH. |
 | Service operations | [`mail_offsite_replication`](roles/mail_offsite_replication/README.md) | Pull maildir + staged DB/config artifacts into a single offsite ZFS dataset via rsync/SSH with post-sync snapshots. |
+| Service operations | [`os_apt_maintenance`](roles/os_apt_maintenance/README.md) | Run host-local apt update/dist-upgrade/autoremove/autoclean via systemd timer with durable state and optional Nyxmon endpoint. |
 | Service removal | [`fastdeploy_remove`](roles/fastdeploy_remove/README.md) | Remove FastDeploy and related resources safely. |
 | Service removal | [`nyxmon_remove`](roles/nyxmon_remove/README.md) | Remove Nyxmon while preserving data as needed. |
 | Service removal | [`homeassistant_remove`](roles/homeassistant_remove/README.md) | Tear down Home Assistant (service, config, user) with confirmation guards. |

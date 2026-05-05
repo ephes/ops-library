@@ -1,0 +1,80 @@
+---
+- name: Verify os_apt_maintenance deployment
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    os_apt_maintenance_state_file: /var/lib/os-apt-maintenance/state.json
+    os_apt_maintenance_endpoint_url: "http://127.0.0.1:9106/.well-known/os-apt-maintenance"
+    os_apt_maintenance_endpoint_auth_user: nyxmon
+    os_apt_maintenance_endpoint_auth_password: molecule-apt-maintenance-password
+
+  tasks:
+    - name: Verify | State file exists
+      ansible.builtin.stat:
+        path: "{{ os_apt_maintenance_state_file }}"
+      register: _state_file
+
+    - name: Verify | Assert state file exists
+      ansible.builtin.assert:
+        that:
+          - _state_file.stat.exists
+          - _state_file.stat.isreg
+        fail_msg: "State file missing at {{ os_apt_maintenance_state_file }}"
+
+    - name: Verify | Timer is active
+      ansible.builtin.command: systemctl is-active os-apt-maintenance.timer
+      register: _timer_active
+      changed_when: false
+
+    - name: Verify | Assert timer active
+      ansible.builtin.assert:
+        that:
+          - _timer_active.stdout | trim == "active"
+        fail_msg: "os-apt-maintenance.timer is not active"
+
+    - name: Verify | Endpoint is active
+      ansible.builtin.command: systemctl is-active os-apt-maintenance-endpoint
+      register: _endpoint_active
+      changed_when: false
+
+    - name: Verify | Assert endpoint active
+      ansible.builtin.assert:
+        that:
+          - _endpoint_active.stdout | trim == "active"
+        fail_msg: "os-apt-maintenance-endpoint is not active"
+
+    - name: Verify | Endpoint requires auth
+      ansible.builtin.uri:
+        url: "{{ os_apt_maintenance_endpoint_url }}"
+        method: GET
+        status_code: 401
+
+    - name: Verify | Endpoint returns JSON with auth
+      ansible.builtin.uri:
+        url: "{{ os_apt_maintenance_endpoint_url }}"
+        method: GET
+        url_username: "{{ os_apt_maintenance_endpoint_auth_user }}"
+        url_password: "{{ os_apt_maintenance_endpoint_auth_password }}"
+        force_basic_auth: true
+        return_content: true
+        status_code: 200
+      register: _endpoint_response
+
+    - name: Verify | Parse endpoint JSON
+      ansible.builtin.set_fact:
+        _endpoint_json: "{{ _endpoint_response.content | from_json }}"
+
+    - name: Verify | Assert state schema
+      ansible.builtin.assert:
+        that:
+          - _endpoint_json.schema_version == 1
+          - _endpoint_json.host_id == "molecule"
+          - _endpoint_json.last_status == "never_run"
+          - _endpoint_json.reboot_required is boolean
+          - _endpoint_json.steps.update_cache.attempted == false
+          - _endpoint_json.summary.last_run_ok == false
+          - _endpoint_json.summary.last_success_fresh == false
+          - _endpoint_json.meta.age_seconds is number
+        fail_msg: "Endpoint JSON missing expected os apt maintenance fields"

@@ -1,0 +1,14 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart os-apt-maintenance-timer
+  ansible.builtin.systemd:
+    name: "{{ os_apt_maintenance_service_name }}.timer"
+    state: restarted
+
+- name: restart os-apt-maintenance-endpoint
+  ansible.builtin.systemd:
+    name: "{{ os_apt_maintenance_endpoint_service_name }}"
+    state: restarted

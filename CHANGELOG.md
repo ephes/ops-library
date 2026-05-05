@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Update your Ansible installation before upgrading
 
 ### Added
+- `os_apt_maintenance` role for host-local apt update/dist-upgrade/autoremove/autoclean timers with durable JSON state and an optional authenticated Nyxmon endpoint.
 - `wagtail_deploy` now supports a stable `wagtail_db_worker_id` and passes it to Django Tasks `db_worker --worker-id`, allowing each deployed site to run a distinct database-backed task worker
 - `wagtail_deploy` now includes a `redirect-www` Traefik middleware that strips the `www.` prefix via regex redirect (302), applied unconditionally to the HTTPS router
 - `headless_mode` role to persist hosts on a non-graphical systemd target and disable running display-manager services without requiring a reboot

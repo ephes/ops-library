@@ -1,0 +1,217 @@
+---
+- name: Skip os_apt_maintenance when disabled
+  ansible.builtin.debug:
+    msg: "os_apt_maintenance role skipped (os_apt_maintenance_enabled=false)."
+  when: not os_apt_maintenance_enabled | bool
+
+- name: Deploy os_apt_maintenance
+  when: os_apt_maintenance_enabled | bool
+  block:
+    - name: Validate apt maintenance variables
+      ansible.builtin.assert:
+        that:
+          - os_apt_maintenance_host_id is defined
+          - os_apt_maintenance_host_id | length > 0
+          - os_apt_maintenance_state_dir is defined
+          - os_apt_maintenance_state_dir | length > 0
+          - os_apt_maintenance_state_file is defined
+          - os_apt_maintenance_state_file | length > 0
+          - os_apt_maintenance_script_path is defined
+          - os_apt_maintenance_script_path | length > 0
+          - os_apt_maintenance_timer_on_calendar is defined
+          - os_apt_maintenance_timer_on_calendar | length > 0
+          - os_apt_maintenance_command_timeout | int > 0
+        fail_msg: "Invalid os_apt_maintenance configuration."
+
+    - name: Validate endpoint auth variables
+      ansible.builtin.assert:
+        that:
+          - os_apt_maintenance_endpoint_auth_user is defined
+          - os_apt_maintenance_endpoint_auth_user != "CHANGE_ME"
+          - os_apt_maintenance_endpoint_auth_user | length > 0
+          - os_apt_maintenance_endpoint_auth_password is defined
+          - os_apt_maintenance_endpoint_auth_password != "CHANGE_ME"
+          - os_apt_maintenance_endpoint_auth_password | length > 0
+        fail_msg: |
+          os_apt_maintenance endpoint auth values are missing or still set to CHANGE_ME.
+          Set os_apt_maintenance_endpoint_auth_user/password before enabling the endpoint.
+      when: os_apt_maintenance_endpoint_enabled | bool
+
+    - name: Install apt maintenance dependencies
+      ansible.builtin.package:
+        name: "{{ os_apt_maintenance_packages }}"
+        state: present
+
+    - name: Install endpoint dependencies
+      ansible.builtin.package:
+        name: "{{ os_apt_maintenance_endpoint_packages }}"
+        state: present
+      when: os_apt_maintenance_endpoint_enabled | bool
+
+    - name: Create endpoint system group
+      ansible.builtin.group:
+        name: "{{ os_apt_maintenance_endpoint_group }}"
+        system: true
+        state: present
+      when: os_apt_maintenance_endpoint_enabled | bool
+
+    - name: Create endpoint system user
+      ansible.builtin.user:
+        name: "{{ os_apt_maintenance_endpoint_user }}"
+        group: "{{ os_apt_maintenance_endpoint_group }}"
+        shell: /usr/sbin/nologin
+        create_home: false
+        system: true
+        state: present
+      when: os_apt_maintenance_endpoint_enabled | bool
+
+    - name: Ensure apt maintenance state directory exists
+      ansible.builtin.file:
+        path: "{{ os_apt_maintenance_state_dir }}"
+        state: directory
+        owner: root
+        group: "{{ os_apt_maintenance_endpoint_group if os_apt_maintenance_endpoint_enabled | bool else 'root' }}"
+        mode: "{{ '0750' if os_apt_maintenance_endpoint_enabled | bool else '0755' }}"
+
+    - name: Ensure endpoint htpasswd directory exists
+      ansible.builtin.file:
+        path: "{{ os_apt_maintenance_endpoint_htpasswd_dir }}"
+        state: directory
+        owner: root
+        group: "{{ os_apt_maintenance_endpoint_group }}"
+        mode: "0750"
+      when: os_apt_maintenance_endpoint_enabled | bool
+
+    - name: Deploy apt maintenance runner
+      ansible.builtin.template:
+        src: os_apt_maintenance.py.j2
+        dest: "{{ os_apt_maintenance_script_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+      register: _os_apt_maintenance_runner
+
+    - name: Deploy apt maintenance service unit
+      ansible.builtin.template:
+        src: os-apt-maintenance.service.j2
+        dest: "/etc/systemd/system/{{ os_apt_maintenance_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+
+    - name: Deploy apt maintenance timer unit
+      ansible.builtin.template:
+        src: os-apt-maintenance.timer.j2
+        dest: "/etc/systemd/system/{{ os_apt_maintenance_service_name }}.timer"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart os-apt-maintenance-timer
+
+    - name: Deploy apt maintenance HTTP server
+      ansible.builtin.template:
+        src: os_apt_maintenance_httpd.py.j2
+        dest: "{{ os_apt_maintenance_endpoint_server_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+      notify: restart os-apt-maintenance-endpoint
+      when: os_apt_maintenance_endpoint_enabled | bool
+
+    - name: Verify existing endpoint htpasswd credentials
+      ansible.builtin.command: >-
+        htpasswd -viB {{ os_apt_maintenance_endpoint_htpasswd_path }}
+        {{ os_apt_maintenance_endpoint_auth_user }}
+      args:
+        stdin: "{{ os_apt_maintenance_endpoint_auth_password }}"
+      register: _os_apt_maintenance_htpasswd_verify
+      changed_when: false
+      failed_when: false
+      no_log: true
+      when: os_apt_maintenance_endpoint_enabled | bool
+
+    - name: Generate endpoint htpasswd entry
+      ansible.builtin.command: "htpasswd -niB {{ os_apt_maintenance_endpoint_auth_user }}"
+      args:
+        stdin: "{{ os_apt_maintenance_endpoint_auth_password }}"
+      register: _os_apt_maintenance_htpasswd_entry
+      changed_when: false
+      no_log: true
+      when:
+        - os_apt_maintenance_endpoint_enabled | bool
+        - _os_apt_maintenance_htpasswd_verify.rc != 0
+
+    - name: Write endpoint htpasswd file
+      ansible.builtin.copy:
+        dest: "{{ os_apt_maintenance_endpoint_htpasswd_path }}"
+        content: "{{ _os_apt_maintenance_htpasswd_entry.stdout }}\n"
+        owner: root
+        group: "{{ os_apt_maintenance_endpoint_group }}"
+        mode: "0640"
+      notify: restart os-apt-maintenance-endpoint
+      no_log: true
+      when:
+        - os_apt_maintenance_endpoint_enabled | bool
+        - _os_apt_maintenance_htpasswd_verify.rc != 0
+
+    - name: Deploy apt maintenance endpoint service unit
+      ansible.builtin.template:
+        src: os-apt-maintenance-endpoint.service.j2
+        dest: "/etc/systemd/system/{{ os_apt_maintenance_endpoint_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart os-apt-maintenance-endpoint
+      when: os_apt_maintenance_endpoint_enabled | bool
+
+    - name: Flush handlers to ensure systemd sees apt maintenance units
+      ansible.builtin.meta: flush_handlers
+
+    - name: Check whether apt maintenance state exists
+      ansible.builtin.stat:
+        path: "{{ os_apt_maintenance_state_file }}"
+      register: _os_apt_maintenance_state
+
+    - name: Initialize apt maintenance state file without running apt
+      ansible.builtin.command: "{{ os_apt_maintenance_script_path }} --init-state"
+      changed_when: not _os_apt_maintenance_state.stat.exists
+      when: not _os_apt_maintenance_state.stat.exists
+
+    - name: Run apt maintenance once on deploy when requested
+      ansible.builtin.systemd:
+        name: "{{ os_apt_maintenance_service_name }}.service"
+        state: started
+      when: >-
+        os_apt_maintenance_run_on_deploy | bool
+        or (
+          os_apt_maintenance_run_on_first_deploy | bool
+          and not _os_apt_maintenance_state.stat.exists
+        )
+
+    - name: Ensure apt maintenance state permissions for endpoint
+      ansible.builtin.file:
+        path: "{{ os_apt_maintenance_state_file }}"
+        owner: root
+        group: "{{ os_apt_maintenance_endpoint_group if os_apt_maintenance_endpoint_enabled | bool else 'root' }}"
+        mode: "{{ '0640' if os_apt_maintenance_endpoint_enabled | bool else '0644' }}"
+
+    - name: Ensure apt maintenance timer is enabled and started
+      ansible.builtin.systemd:
+        name: "{{ os_apt_maintenance_service_name }}.timer"
+        enabled: "{{ os_apt_maintenance_timer_enabled | bool }}"
+        state: "{{ os_apt_maintenance_timer_state }}"
+        daemon_reload: true
+
+    - name: Ensure apt maintenance endpoint is enabled and running
+      ansible.builtin.systemd:
+        name: "{{ os_apt_maintenance_endpoint_service_name }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+      when: os_apt_maintenance_endpoint_enabled | bool
