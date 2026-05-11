@@ -15,8 +15,11 @@ paperless_install_marker: "{{ paperless_site_root }}/.paperless-installed-{{ pap
 paperless_force_reinstall: false
 
 # Release / runtime
-paperless_version: "2.18.2"
+paperless_version: "2.20.15"
 paperless_release_url: "https://github.com/paperless-ngx/paperless-ngx/releases/download/v{{ paperless_version }}/paperless-ngx-v{{ paperless_version }}.tar.xz"
+paperless_release_checksums:
+  "2.20.15": "sha256:e9bfb6ec0425e5e72a85f64811829167b6c22753f83e325b95d5068393073bf6"
+paperless_release_checksum: "{{ paperless_release_checksums[paperless_version] | default('') }}"
 paperless_release_archive: "{{ paperless_site_root }}/paperless-ngx-v{{ paperless_version }}.tar.xz"
 paperless_release_dir: "{{ paperless_site_root }}/paperless-ngx-v{{ paperless_version }}"
 paperless_manage_dir: "{{ paperless_current_symlink }}/src"

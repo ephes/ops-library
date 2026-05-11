@@ -16,13 +16,14 @@ Deploy [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) on bare m
 - `/mnt/cryptdata` (or whatever `paperless_external_storage_root | dirname` is set to) must be mounted before running the role. Set `paperless_verify_storage_mount: false` to skip the assertion (not recommended).
 - SOPS secrets (see below) must provide non-`CHANGEME` values for the Django secret key, database password, admin password, and scanner password. `paperless_secret_key` must be at least 50 characters.
 - Redis must be deployed first via `redis_install`; `paperless_deploy` only consumes the configured instance.
-- The host needs outbound internet access the first time (to download the release tarball, uv packages, NLTK datasets, and the PostgreSQL apt key). Subsequent runs reuse the install marker unless `paperless_force_reinstall` is set.
+- The host needs outbound internet access the first time (to download the release tarball, uv packages, NLTK datasets, and the PostgreSQL apt key). Subsequent runs reuse the per-version install marker unless `paperless_force_reinstall` is set.
 
 ## Key Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `paperless_version` | Paperless-ngx release to install | `2.18.2` |
+| `paperless_version` | Paperless-ngx release to install | `2.20.15` |
+| `paperless_release_checksum` | Optional checksum passed to `get_url` for the release archive; known releases are looked up from `paperless_release_checksums` | `sha256:e9bfb6...` |
 | `paperless_external_storage_root` | Path to encrypted storage mount | `/mnt/cryptdata/paperless` |
 | `paperless_postgres_version` | PostgreSQL major version | `17` |
 | `paperless_postgres_repo_enabled` | Add the official PGDG repo | `true` |
@@ -102,8 +103,9 @@ Listed users are promoted to active staff superusers if they already exist in Pa
 ## Migration Notes
 
 - The `paperless_current_symlink` replaces version-specific directories and keeps backups/restores path-stable (`/home/paperless/site/paperless-ngx/src`).
+- Deployments restart Paperless services before the health check when the current release symlink or Python package install changes, so long-running processes do not keep serving the previous release.
 - After migrating from the legacy repository, keep the old host around until `paperless_backup` archives created via ops-control have been tested with `paperless_restore`.
-- When upgrading Paperless: bump `paperless_version`, `paperless_release_url`, and run with `paperless_force_reinstall: true` to rebuild the uv environment; verify services, then clear the marker file if necessary.
+- When upgrading Paperless: bump `paperless_version` and add the upstream release asset checksum to `paperless_release_checksums` when available. A new version automatically uses a new install marker, so dependencies are rebuilt on first deploy; use `paperless_force_reinstall: true` only to repair or refresh an existing marker.
 
 ## TODO
 

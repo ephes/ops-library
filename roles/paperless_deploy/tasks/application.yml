@@ -3,6 +3,7 @@
   ansible.builtin.get_url:
     url: "{{ paperless_release_url }}"
     dest: "{{ paperless_release_archive }}"
+    checksum: "{{ paperless_release_checksum if paperless_release_checksum | length > 0 else omit }}"
     owner: "{{ paperless_username }}"
     group: "{{ paperless_group }}"
     mode: "0644"
@@ -54,6 +55,7 @@
     owner: "{{ paperless_username }}"
     group: "{{ paperless_group }}"
     force: true
+  register: paperless_current_symlink_result
   become: true
 
 - name: Detect existing Paperless installation
@@ -70,6 +72,7 @@
     chdir: "{{ paperless_site_root }}"
   become: true
   become_user: "{{ paperless_username }}"
+  register: paperless_package_install_result
   when: paperless_force_reinstall or not paperless_install_marker_stat.stat.exists
 
 - name: Install supporting Python packages
@@ -80,6 +83,7 @@
     chdir: "{{ paperless_site_root }}"
   become: true
   become_user: "{{ paperless_username }}"
+  register: paperless_supporting_packages_install_result
   when: paperless_uv_extra_packages | length > 0
         and (paperless_force_reinstall or not paperless_install_marker_stat.stat.exists)
 
@@ -91,8 +95,20 @@
     chdir: "{{ paperless_site_root }}"
   become: true
   become_user: "{{ paperless_username }}"
+  register: paperless_fido2_install_result
   when: paperless_fido2_pin_version | length > 0
         and (paperless_force_reinstall or not paperless_install_marker_stat.stat.exists)
+
+- name: Track whether Paperless services need restart
+  ansible.builtin.set_fact:
+    paperless_restart_required: >-
+      {{
+        paperless_restart_required | default(false) | bool
+        or paperless_current_symlink_result is changed
+        or paperless_package_install_result is changed
+        or paperless_supporting_packages_install_result is changed
+        or paperless_fido2_install_result is changed
+      }}
 
 - name: Ensure NLTK data directory exists
   ansible.builtin.file:

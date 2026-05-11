@@ -13,7 +13,7 @@
   ansible.builtin.systemd:
     name: "{{ item }}"
     enabled: true
-    state: started
+    state: "{{ (paperless_restart_required | default(false) | bool) | ternary('restarted', 'started') }}"
     daemon_reload: true
   loop: "{{ paperless_service_units }}"
   become: true
