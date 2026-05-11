@@ -27,6 +27,7 @@
   ansible.builtin.assert:
     that:
       - homeassistant_matter_server_storage_path | length > 0
+      - homeassistant_matter_server_virtualenv_path | length > 0
       - homeassistant_matter_server_chip_factory_dir | length > 0
       - homeassistant_matter_server_port | int > 0
       - homeassistant_python_version is version('3.12', '>=')

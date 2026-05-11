@@ -68,3 +68,11 @@
     - >-
         homeassistant_manage_assist_pipeline_stt_engine
         or homeassistant_manage_assist_pipeline_tts_engine
+
+- name: "Apply pending handlers before final Matter server validation"
+  ansible.builtin.meta: flush_handlers
+  when: homeassistant_manage_matter_server | bool
+
+- name: "Validate Matter server after Home Assistant requirements"
+  ansible.builtin.import_tasks: matter_server_postcheck.yml
+  when: homeassistant_manage_matter_server | bool

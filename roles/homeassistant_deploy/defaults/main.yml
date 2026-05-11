@@ -18,10 +18,11 @@ homeassistant_uv_version: latest
 homeassistant_uv_update_existing: true
 homeassistant_uv_force_reinstall: false
 homeassistant_uv_path: "{{ homeassistant_uv_install_dir }}/uv"
-homeassistant_python_version: "3.13.7"
+homeassistant_python_version: "3.14.2"
 homeassistant_virtualenv_path: "{{ homeassistant_site_path }}/.venv"
 homeassistant_virtualenv_link: "{{ homeassistant_site_path }}/venv"
 homeassistant_package_spec: "homeassistant"
+homeassistant_extra_package_specs: []
 homeassistant_force_reinstall: false
 homeassistant_virtualenv_version_file: "{{ homeassistant_virtualenv_path }}/.ansible-python-version"
 
@@ -36,6 +37,8 @@ homeassistant_host: "0.0.0.0"
 # Matter server (optional)
 homeassistant_manage_matter_server: false
 homeassistant_matter_server_package_spec: "python-matter-server[server]"
+homeassistant_matter_server_virtualenv_path: "{{ homeassistant_site_path }}/.venv-matter-server"
+homeassistant_matter_server_virtualenv_version_file: "{{ homeassistant_matter_server_virtualenv_path }}/.ansible-python-version"
 homeassistant_matter_server_service_name: matter-server
 homeassistant_matter_server_service_enabled: true
 homeassistant_matter_server_service_state: started
@@ -91,6 +94,7 @@ homeassistant_manage_configuration: false
 homeassistant_manage_secrets: false
 homeassistant_manage_includes: false
 homeassistant_overwrite_config: false
+homeassistant_remove_legacy_met_weather_yaml: false
 homeassistant_manage_unifi_password: true
 
 # Location / recorder defaults (safe placeholders – override per environment)
@@ -121,6 +125,7 @@ homeassistant_additional_packages:
   - libffi-dev
   - libssl-dev
   - libjpeg-dev
+  - libturbojpeg
   - zlib1g-dev
   - autoconf
   - libopenjp2-7

@@ -24,14 +24,91 @@
     group: "{{ homeassistant_group }}"
     mode: "0755"
 
+- name: "Check existing Matter server virtualenv Python binary"
+  ansible.builtin.stat:
+    path: "{{ homeassistant_matter_server_virtualenv_path }}/bin/python"
+  register: _ha_matter_venv_python_stat
+
+- name: "Detect current Matter server virtualenv Python version"
+  ansible.builtin.command:
+    cmd: "{{ homeassistant_matter_server_virtualenv_path }}/bin/python --version"
+  register: _ha_matter_current_python_version
+  changed_when: false
+  failed_when: false
+  when: _ha_matter_venv_python_stat.stat.exists
+
+- name: "Check current Matter server virtualenv pip availability"
+  ansible.builtin.command:
+    cmd: "{{ homeassistant_matter_server_virtualenv_path }}/bin/python -m pip --version"
+  register: _ha_matter_current_pip_check
+  changed_when: false
+  failed_when: false
+  when: _ha_matter_venv_python_stat.stat.exists
+
+- name: "Set Matter server Python version mismatch fact"
+  ansible.builtin.set_fact:
+    _ha_matter_python_mismatch: "{{ (_ha_matter_current_python_version.stdout | default('')).split()[1] != homeassistant_python_version }}"
+  when:
+    - _ha_matter_venv_python_stat.stat.exists
+    - _ha_matter_current_python_version.stdout is defined
+
+- name: "Set Matter server virtualenv replacement fact"
+  ansible.builtin.set_fact:
+    _ha_replace_matter_virtualenv: >-
+      {{
+        homeassistant_force_reinstall | bool
+        or not _ha_matter_venv_python_stat.stat.exists
+        or (_ha_matter_python_mismatch | default(false))
+        or ((_ha_matter_current_pip_check.rc | default(0)) != 0)
+      }}
+
+- name: "Check existing Matter server systemd unit"
+  ansible.builtin.stat:
+    path: "{{ homeassistant_matter_server_systemd_unit_path }}"
+  register: _ha_matter_server_systemd_unit_stat
+  when:
+    - _ha_replace_matter_virtualenv | bool
+    - _ha_matter_venv_python_stat.stat.exists
+
+- name: "Stop Matter server before replacing Matter server virtualenv"
+  ansible.builtin.systemd:
+    name: "{{ homeassistant_matter_server_service_name }}"
+    state: stopped
+  when:
+    - _ha_replace_matter_virtualenv | bool
+    - _ha_matter_venv_python_stat.stat.exists
+    - _ha_matter_server_systemd_unit_stat.stat.exists is defined
+    - _ha_matter_server_systemd_unit_stat.stat.exists
+
+- name: "Remove existing Matter server virtualenv when forced or Python version changed"
+  ansible.builtin.file:
+    path: "{{ homeassistant_matter_server_virtualenv_path }}"
+    state: absent
+  when: _ha_replace_matter_virtualenv | bool
+
+- name: "Create Matter server uv virtualenv"
+  ansible.builtin.command:
+    cmd: "{{ homeassistant_uv_path }} venv --seed --python {{ _ha_python_executable }} {{ homeassistant_matter_server_virtualenv_path }}"
+    chdir: "{{ homeassistant_site_path }}"
+    creates: "{{ homeassistant_matter_server_virtualenv_path }}"
+  become_user: "{{ homeassistant_user }}"
+
+- name: "Record Matter server virtualenv Python version"
+  ansible.builtin.copy:
+    dest: "{{ homeassistant_matter_server_virtualenv_version_file }}"
+    content: "{{ homeassistant_python_version }}\n"
+    owner: "{{ homeassistant_user }}"
+    group: "{{ homeassistant_group }}"
+    mode: "0644"
+
 - name: "Check if Matter server binary exists"
   ansible.builtin.stat:
-    path: "{{ homeassistant_virtualenv_path }}/bin/matter-server"
+    path: "{{ homeassistant_matter_server_virtualenv_path }}/bin/matter-server"
   register: _ha_matter_binary
 
 - name: "Check Matter server chip dependency"
   ansible.builtin.command:
-    cmd: "{{ homeassistant_virtualenv_path }}/bin/python -c 'import chip.exceptions'"
+    cmd: "{{ homeassistant_matter_server_virtualenv_path }}/bin/python -c 'import chip.exceptions'"
   register: _ha_matter_chip_check
   changed_when: false
   failed_when: false
@@ -39,12 +116,14 @@
 
 - name: "Set Matter server dependency status"
   ansible.builtin.set_fact:
-    _ha_matter_chip_ok: "{{ _ha_matter_chip_check.rc == 0 }}"
-  when: _ha_matter_chip_check is defined
+    _ha_matter_chip_ok: "{{ (_ha_matter_chip_check.rc | default(1)) == 0 }}"
+  when:
+    - _ha_matter_chip_check is defined
+    - not (_ha_matter_chip_check.skipped | default(false))
 
 - name: "Read installed Matter server version"
   ansible.builtin.command:
-    cmd: "{{ homeassistant_virtualenv_path }}/bin/python -m pip show python-matter-server"
+    cmd: "{{ homeassistant_matter_server_virtualenv_path }}/bin/python -m pip show python-matter-server"
   register: _ha_matter_version
   changed_when: false
   failed_when: false
@@ -70,9 +149,21 @@
     _ha_matter_version_mismatch: >-
       {{ (_ha_matter_desired_version | length > 0) and (_ha_matter_installed_version | default('')) != _ha_matter_desired_version }}
 
+- name: "Ensure Matter server virtualenv ownership before install"
+  ansible.builtin.file:
+    path: "{{ homeassistant_matter_server_virtualenv_path }}"
+    state: directory
+    owner: "{{ homeassistant_user }}"
+    group: "{{ homeassistant_group }}"
+    recurse: true
+  when: homeassistant_force_reinstall | bool
+        or not _ha_matter_binary.stat.exists
+        or (_ha_matter_version_mismatch | default(false))
+        or not (_ha_matter_chip_ok | default(true))
+
 - name: "Install Matter server via uv pip"
   ansible.builtin.command:
-    cmd: "{{ homeassistant_uv_path }} pip install --python {{ homeassistant_virtualenv_path }} {{ homeassistant_matter_server_package_spec }}"
+    cmd: "{{ homeassistant_uv_path }} pip install --python {{ homeassistant_matter_server_virtualenv_path }} {{ homeassistant_matter_server_package_spec }}"
     chdir: "{{ homeassistant_site_path }}"
   become_user: "{{ homeassistant_user }}"
   when: homeassistant_force_reinstall | bool

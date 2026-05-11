@@ -5,9 +5,12 @@ Ansible role that installs and configures a Home Assistant Core instance on bare
 ## Features
 
 - Creates the `homeassistant` unix user, directory layout, and Zigbee/Matter udev rule.
-- Provisions a Python 3.13 virtualenv via `uv` and installs the `homeassistant` package (optional force-reinstall flag).
+- Provisions a seeded Python 3.14 virtualenv via `uv` and installs the `homeassistant` package (optional force-reinstall flag).
+- Can install host-specific Home Assistant integration Python requirements before service startup.
+- Stops Home Assistant and Matter server before replacing virtualenvs on Python changes, missing pip, force reinstalls, or legacy Matter package cleanup.
 - Templated systemd service and Traefik dynamic configuration (single-router layout matching production).
 - Optional Matter server install + systemd unit for the Home Assistant Matter integration (`ws://localhost:5580/ws`).
+- Validates the Matter server after Home Assistant starts so Home Assistant integration requirements cannot leave the shared virtualenv with incompatible Matter server files.
 - Optional Matter integration provisioning via the Home Assistant config entry API.
 - Optional OpenThread Border Router (OTBR) integration provisioning via the Home Assistant config entry API.
 - Optional Wyoming integration provisioning via the Home Assistant config entry API.
@@ -25,15 +28,18 @@ All tunables live in `defaults/main.yml`; the most important ones are listed bel
 | `homeassistant_site_path` | `/home/homeassistant/site` | Root directory for code/config/logs |
 | `homeassistant_manage_uv` | `true` | Run the `uv_install` helper before provisioning Python so `/usr/local/bin/uv` stays current |
 | `homeassistant_uv_path` | `/usr/local/bin/uv` | Path to the `uv` binary used for venv + pip (updated automatically when `homeassistant_manage_uv: true`) |
-| `homeassistant_python_version` | `3.13.7` | Interpreter version requested from uv |
-| `homeassistant_package_spec` | `homeassistant` | Pip spec (`homeassistant==2024.9.3`, etc.) |
+| `homeassistant_python_version` | `3.14.2` | Interpreter version requested from uv |
+| `homeassistant_package_spec` | `homeassistant` | Pip spec (`homeassistant==<version>`, etc.) |
+| `homeassistant_extra_package_specs` | `[]` | Additional pip specs to install into the Home Assistant virtualenv before startup; pin and maintain these per host when an integration's manifest requirements are not installed early enough by Home Assistant |
 | `homeassistant_manage_configuration` | `false` | When `true`, template `configuration.yaml` (only overwrite when `homeassistant_overwrite_config: true`) |
 | `homeassistant_manage_secrets` | `false` | Template `secrets.yaml` using UniFi password sources |
 | `homeassistant_manage_includes` | `false` | Manage include files defined in `homeassistant_include_files` |
 | `homeassistant_overwrite_config` | `false` | Force re-render of configs/includes even if files exist |
+| `homeassistant_remove_legacy_met_weather_yaml` | `false` | Remove the legacy role-generated `weather: platform: met` YAML block, which current Home Assistant versions reject; only applies when `homeassistant_manage_configuration: true` |
 | `homeassistant_unifi_password_source` | `file` | `file`, `generate`, or `variable` password discovery |
 | `homeassistant_manage_matter_server` | `false` | Install and manage the Matter server systemd unit |
 | `homeassistant_matter_server_package_spec` | `python-matter-server[server]` | Pip spec for the Matter server package |
+| `homeassistant_matter_server_virtualenv_path` | `{{ homeassistant_site_path }}/.venv-matter-server` | Dedicated uv virtualenv for the Matter server |
 | `homeassistant_matter_server_service_name` | `matter-server` | Systemd service name for the Matter server |
 | `homeassistant_matter_server_service_enabled` | `true` | Enable the Matter server service |
 | `homeassistant_matter_server_service_state` | `started` | Desired Matter server service state |
@@ -117,6 +123,7 @@ See the defaults file for recorder, logger, timezone, and UniFi integration sett
 - The role expects `uv` to be preinstalled (handled elsewhere in ops-library). It will fail fast if the binary is missing.
 - The Matter server path is best-effort only: upstream supports HAOS add-ons, and non-HAOS installs are explicitly unsupported.
 - Matter/Thread traffic depends on IPv6 link-local multicast and correct Router Advertisement handling on the host network.
+- `homeassistant_extra_package_specs` is intentionally host-specific. Use it only for integration requirements that must be present before Home Assistant startup; keep pins aligned with the selected `homeassistant_package_spec` and revalidate them on each Home Assistant upgrade.
 - When `homeassistant_manage_matter_integration: true`, the role provisions the Matter config entry via the Home Assistant API using `homeassistant_matter_integration_url`. Otherwise, configure the integration via the UI.
 - When `homeassistant_manage_otbr_integration: true`, the role provisions the OTBR config entry via the Home Assistant API using `homeassistant_otbr_integration_url`. Otherwise, configure the integration via the UI.
 - When `homeassistant_manage_wyoming_integration: true`, the role provisions the Wyoming config entry via the Home Assistant API using `homeassistant_wyoming_host` and `homeassistant_wyoming_port`.
@@ -127,3 +134,4 @@ See the defaults file for recorder, logger, timezone, and UniFi integration sett
 - The API token must be a long-lived Home Assistant access token with admin permissions; validation fails if it is missing, too short, or a placeholder like `CHANGE_ME`.
 - The server does not require a Bluetooth adapter by default because HA uses the Companion app for commissioning.
 - When enabling the Matter server, keep Python >= 3.12 and use `python-matter-server[server]` so native dependencies are installed.
+- The Matter server runs in a dedicated virtualenv so its `matter_server` package namespace cannot overwrite Home Assistant's `matter-python-client` files.

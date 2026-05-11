@@ -4,10 +4,13 @@ Deploys Home Assistant Core on bare metal/VM hosts using `uv`-managed Python env
 
 ## Features
 
-- Creates the `homeassistant` user, directory tree, Zigbee/Matter udev rule, and uv virtualenv.
+- Creates the `homeassistant` user, directory tree, Zigbee/Matter udev rule, and seeded uv virtualenvs.
 - Installs Home Assistant via `uv pip` with optional version pinning (`homeassistant_package_spec`).
+- Installs optional host-specific integration requirements (`homeassistant_extra_package_specs`) before Home Assistant starts.
+- Stops Home Assistant and Matter server before replacing their virtualenvs on Python changes or force reinstalls.
 - Templates systemd/Traefik files and manages handlers for reloads/restarts.
 - Optional Matter server install + systemd unit for the Home Assistant Matter integration.
+- Runs the Matter server in a dedicated virtualenv and validates both Home Assistant Matter imports and Matter server imports after handlers run.
 - Optional Matter integration provisioning via the Home Assistant config entry API.
 - Optional management of `configuration.yaml`, `secrets.yaml`, and include files with overwrite guards.
 - UniFi password discovery supports file, generated, or SOPS-provided secrets.
@@ -17,10 +20,13 @@ Deploys Home Assistant Core on bare metal/VM hosts using `uv`-managed Python env
 
 - `homeassistant_manage_configuration` / `homeassistant_overwrite_config` – control templating of `configuration.yaml`.
 - `homeassistant_manage_includes` – manage include files like `automations.yaml`.
-- `homeassistant_package_spec` – pip spec (e.g. `homeassistant==2025.1.0`).
+- `homeassistant_package_spec` – pip spec (for example `homeassistant==<version>`).
+- `homeassistant_extra_package_specs` – additional pip specs for integrations whose manifest requirements must be present at startup; pin and maintain these per host.
+- `homeassistant_remove_legacy_met_weather_yaml` – remove the old role-generated `weather: platform: met` YAML block when `homeassistant_manage_configuration: true`.
 - `homeassistant_manage_uv` – run the shared `uv_install` helper before provisioning Python (keeps `/usr/local/bin/uv` current).
 - `homeassistant_manage_matter_server` – install the Matter server package and systemd unit.
-- `homeassistant_matter_server_package_spec` – pip spec (e.g. `python-matter-server[server]==2.1.1`).
+- `homeassistant_matter_server_package_spec` – pip spec (for example `python-matter-server[server]==<version>`).
+- `homeassistant_matter_server_virtualenv_path` – dedicated uv virtualenv for the Matter server.
 - `homeassistant_matter_server_chip_factory_dir` – directory for Matter SDK factory data (`chip_factory.ini`).
 - `homeassistant_manage_matter_integration` – provision the Matter config entry via the Home Assistant API.
 - `homeassistant_matter_integration_url` – WebSocket URL used for the Matter integration.
@@ -51,7 +57,7 @@ After the first automation run, set `homeassistant_overwrite_config: false` (def
 
 ## Matter server
 
-Enable the Matter Server alongside Home Assistant by setting `homeassistant_manage_matter_server: true`. The service runs locally and is intended for the Home Assistant Matter integration.
+Enable the Matter Server alongside Home Assistant by setting `homeassistant_manage_matter_server: true`. The service runs locally from its own uv virtualenv and is intended for the Home Assistant Matter integration.
 
 ```yaml
 homeassistant_manage_matter_server: true
@@ -86,3 +92,4 @@ Operational notes:
 - Non-HAOS Matter Server deployments are unsupported by upstream and are best-effort.
 - IPv6 link-local multicast and Router Advertisement handling must be correct for Matter/Thread traffic.
 - The server does not require a Bluetooth adapter by default because Home Assistant uses the Companion app for commissioning.
+- `homeassistant_extra_package_specs` is host-specific upgrade debt. Use it only when Home Assistant does not install integration manifest requirements early enough for this uv-managed deployment, keep the pins compatible with the selected Home Assistant version, and revalidate them on every Home Assistant upgrade.
