@@ -283,6 +283,100 @@
       when: _openclaw_patched_config != _openclaw_existing_config
       notify: restart openclaw
 
+- name: config | Normalize legacy Telegram streaming aliases
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import json
+        import os
+        import sys
+        from pathlib import Path
+
+        path = Path(sys.argv[1])
+        valid_modes = {"off", "partial", "block", "progress"}
+        changed = False
+
+        def resolve_mode(value):
+            if value is True:
+                return "partial"
+            if value is False:
+                return "off"
+            if isinstance(value, str):
+                normalized = value.strip().lower()
+                if normalized in valid_modes:
+                    return normalized
+            return "partial"
+
+        def ensure_dict(value):
+            return value if isinstance(value, dict) else {}
+
+        def normalize_entry(entry):
+            entry_changed = False
+            if not isinstance(entry, dict):
+                return False
+
+            raw_streaming = entry.get("streaming")
+            raw_stream_mode = entry.get("streamMode")
+            streaming = ensure_dict(raw_streaming).copy()
+
+            if raw_stream_mode is not None and "mode" not in streaming:
+                streaming["mode"] = resolve_mode(raw_stream_mode)
+                entry_changed = True
+            elif raw_streaming is not None and not isinstance(raw_streaming, dict):
+                streaming["mode"] = resolve_mode(raw_streaming)
+                entry_changed = True
+
+            if "streamMode" in entry:
+                entry.pop("streamMode", None)
+                entry_changed = True
+
+            if "chunkMode" in entry and "chunkMode" not in streaming:
+                streaming["chunkMode"] = entry.pop("chunkMode")
+                entry_changed = True
+
+            block = ensure_dict(streaming.get("block")).copy()
+            if "blockStreaming" in entry and "enabled" not in block:
+                block["enabled"] = entry.pop("blockStreaming")
+                entry_changed = True
+            if "blockStreamingCoalesce" in entry and "coalesce" not in block:
+                block["coalesce"] = entry.pop("blockStreamingCoalesce")
+                entry_changed = True
+            if block:
+                streaming["block"] = block
+
+            preview = ensure_dict(streaming.get("preview")).copy()
+            if "draftChunk" in entry and "chunk" not in preview:
+                preview["chunk"] = entry.pop("draftChunk")
+                entry_changed = True
+            if preview:
+                streaming["preview"] = preview
+
+            if entry_changed:
+                entry["streaming"] = streaming
+            return entry_changed
+
+        data = json.loads(path.read_text(encoding="utf-8"))
+        telegram = ensure_dict(ensure_dict(data.get("channels")).get("telegram"))
+        changed = normalize_entry(telegram) or changed
+
+        accounts = ensure_dict(telegram.get("accounts"))
+        for account in accounts.values():
+            changed = normalize_entry(account) or changed
+
+        if changed:
+            path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            os.chmod(path, int(sys.argv[2], 8))
+
+        print(json.dumps({"changed": changed}))
+      - "{{ openclaw_data_dir }}/openclaw.json"
+      - "{{ openclaw_gateway_config_mode }}"
+  register: _openclaw_telegram_streaming_normalize
+  changed_when: >-
+    (_openclaw_telegram_streaming_normalize.stdout | default('') | from_json).changed | default(false)
+  notify: restart openclaw
+
 - name: config | Render SOUL.md (system prompt)
   ansible.builtin.copy:
     content: "{{ openclaw_reply_system_prompt }}"

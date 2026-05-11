@@ -23,10 +23,10 @@
 
 - name: session_state | Render managed slash-skill manifest
   ansible.builtin.copy:
+    # Bump the manifest version when reset semantics change and existing sessions should be re-rotated.
     content: >-
       {{
         {
-          # Bump this when reset semantics change and existing sessions should be re-rotated.
           "version": 2,
           "managed_slash_skills": _openclaw_managed_slash_skills
         }

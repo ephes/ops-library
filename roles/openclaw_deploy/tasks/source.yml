@@ -4,5 +4,7 @@
     repo: "{{ openclaw_repo_url }}"
     dest: "{{ openclaw_build_dir }}"
     version: "{{ openclaw_version }}"
+    depth: "{{ openclaw_git_depth }}"
+    single_branch: "{{ openclaw_git_single_branch | bool }}"
     force: true
   register: openclaw_source_result

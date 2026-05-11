@@ -22,7 +22,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
   roles:
     - role: local.ops_library.openclaw_deploy
       vars:
-        openclaw_version: "v2026.3.8"
+        openclaw_version: "v2026.5.7"
         openclaw_data_dir: "/mnt/cryptdata/openclaw/data"
         openclaw_gateway_token: "{{ sops_secrets.gateway_token }}"
         openclaw_anthropic_api_key: "{{ sops_secrets.anthropic_api_key }}"
@@ -55,7 +55,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 
 | Variable | Description |
 |----------|-------------|
-| `openclaw_version` | Git tag to checkout and build (e.g. `v2026.2.21`) |
+| `openclaw_version` | Git tag to checkout and build (e.g. `v2026.5.7`) |
 | `openclaw_gateway_token` | Gateway authentication token |
 | `openclaw_anthropic_api_key` | Anthropic API key for AI replies |
 
@@ -110,6 +110,8 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `openclaw_git_depth` | `1` | Shallow checkout depth for the tag-pinned upstream source |
+| `openclaw_git_single_branch` | `true` | Limit source checkout to the requested tag/branch instead of all upstream refs |
 | `openclaw_image_name` | `openclaw` | Docker image name |
 | `openclaw_image_tag` | `{{ openclaw_version }}` | Docker image tag |
 | `openclaw_force_rebuild` | `false` | Force Docker image rebuild even if image exists |
@@ -504,7 +506,7 @@ For a complete list, see `defaults/main.yml`.
 
 ## Gateway Configuration
 
-The role seeds `openclaw.json` into the data directory on first deploy. By default, it builds the config from individual `openclaw_telegram_*` variables with explicit plugin control (unused channels like WhatsApp are disabled). Once seeded, the config is not overwritten on subsequent deploys — set `openclaw_force_config: true` to re-render.
+The role seeds `openclaw.json` into the data directory on first deploy. By default, it builds the config from individual `openclaw_telegram_*` variables with explicit plugin control (unused channels like WhatsApp are disabled). Once seeded, the config is not overwritten on subsequent deploys — set `openclaw_force_config: true` to re-render. Existing configs are still patched for role-managed plugin entries and legacy Telegram streaming aliases required by newer OpenClaw schemas.
 
 To provide a full custom config, set `openclaw_gateway_config`:
 

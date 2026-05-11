@@ -144,6 +144,30 @@ def canary_expected_match(observed_text: str, expected_text: str) -> bool:
     return any(line.strip() == expected for line in observed.splitlines())
 
 
+def resolve_telegram_probe_ok(health_json: dict[str, Any]) -> bool:
+    telegram = (health_json.get("channels") or {}).get("telegram", {})
+    if not isinstance(telegram, dict):
+        return False
+
+    if bool(telegram.get("running")) and bool(telegram.get("connected")):
+        return True
+
+    accounts = telegram.get("accounts")
+    if isinstance(accounts, dict) and any(
+        isinstance(account, dict)
+        and bool(account.get("running"))
+        and bool(account.get("connected"))
+        for account in accounts.values()
+    ):
+        return True
+
+    probe = telegram.get("probe")
+    if isinstance(probe, dict) and "ok" in probe:
+        return bool(probe.get("ok"))
+
+    return False
+
+
 def default_canary_state() -> dict[str, Any]:
     return {
         "last_run": {
@@ -642,13 +666,7 @@ def main() -> int:
     try:
         health_json = run_json_command(health_cmd, args.command_timeout)
         openclaw["health"]["ok"] = bool(health_json.get("ok"))
-        telegram_probe = (
-            (health_json.get("channels") or {})
-            .get("telegram", {})
-            .get("probe", {})
-            .get("ok")
-        )
-        openclaw["health"]["telegram_probe_ok"] = bool(telegram_probe)
+        openclaw["health"]["telegram_probe_ok"] = resolve_telegram_probe_ok(health_json)
     except Exception as err:  # noqa: BLE001
         openclaw["collector_ok"] = False
         openclaw["collector_errors"].append(str(err))

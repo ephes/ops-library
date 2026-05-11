@@ -67,3 +67,69 @@ def test_build_payload_includes_stable_canary_metadata_keys():
     assert canary["agent"] is None
     assert canary["timeout_seconds"] == 0
     assert canary["session_id"] == ""
+
+
+def test_resolve_telegram_probe_ok_legacy_probe_shape():
+    assert collector.resolve_telegram_probe_ok(
+        {"channels": {"telegram": {"probe": {"ok": True}}}},
+    )
+
+
+def test_resolve_telegram_probe_ok_current_connected_shape():
+    assert collector.resolve_telegram_probe_ok(
+        {"channels": {"telegram": {"running": True, "connected": True}}},
+    )
+
+
+def test_resolve_telegram_probe_ok_current_account_connected_shape():
+    assert collector.resolve_telegram_probe_ok(
+        {
+            "channels": {
+                "telegram": {
+                    "running": True,
+                    "accounts": {
+                        "default": {"running": True, "connected": True},
+                    },
+                },
+            },
+        },
+    )
+
+
+def test_resolve_telegram_probe_ok_prefers_current_shape_over_stale_probe():
+    assert collector.resolve_telegram_probe_ok(
+        {
+            "channels": {
+                "telegram": {
+                    "running": True,
+                    "connected": True,
+                    "probe": {"ok": False},
+                },
+            },
+        },
+    )
+
+
+def test_resolve_telegram_probe_ok_rejects_disconnected_channel():
+    assert not collector.resolve_telegram_probe_ok(
+        {"channels": {"telegram": {"running": True, "connected": False}}},
+    )
+
+
+def test_resolve_telegram_probe_ok_rejects_disconnected_accounts():
+    assert not collector.resolve_telegram_probe_ok(
+        {
+            "channels": {
+                "telegram": {
+                    "running": True,
+                    "accounts": {
+                        "default": {"running": True, "connected": False},
+                    },
+                },
+            },
+        },
+    )
+
+
+def test_resolve_telegram_probe_ok_rejects_missing_channels():
+    assert not collector.resolve_telegram_probe_ok({})
