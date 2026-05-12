@@ -1,30 +1,65 @@
 ---
 # Install rspamd packages
 
-- name: Install gnupg for apt key management
+- name: packages | Ensure apt transport dependencies are installed
   ansible.builtin.apt:
-    name: gnupg
+    name:
+      - ca-certificates
+      - gnupg
     state: present
     update_cache: true
 
-- name: Add rspamd repository key
-  ansible.builtin.apt_key:
-    url: https://rspamd.com/apt-stable/gpg.key
-    state: present
+- name: packages | Ensure apt keyring directory exists
+  ansible.builtin.file:
+    path: "{{ mail_spam_rspamd_repo_keyring | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
 
-- name: Add rspamd repository
+- name: packages | Install rspamd repository key
+  ansible.builtin.get_url:
+    url: "{{ mail_spam_rspamd_repo_key_url }}"
+    dest: "{{ mail_spam_rspamd_repo_keyring }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: packages | Remove legacy unscoped rspamd repository
+  ansible.builtin.lineinfile:
+    path: /etc/apt/sources.list.d/rspamd.list
+    regexp: "^deb\\s+{{ mail_spam_rspamd_legacy_repo_url | regex_escape() }}\\s+{{ ansible_distribution_release }}\\s+main$"
+    state: absent
+  when: mail_spam_rspamd_legacy_repo_url != mail_spam_rspamd_repo_url
+
+- name: packages | Add rspamd repository
   ansible.builtin.apt_repository:
-    repo: "deb http://rspamd.com/apt-stable/ {{ ansible_distribution_release }} main"
+    repo: "deb [signed-by={{ mail_spam_rspamd_repo_keyring }}] {{ mail_spam_rspamd_repo_url }} {{ ansible_distribution_release }} main"
     state: present
     filename: rspamd
 
-- name: Install rspamd packages
+- name: packages | Check legacy rspamd apt-key entry
+  ansible.builtin.command:
+    cmd: apt-key list --keyid-format=long
+  register: _mail_spam_rspamd_legacy_key_list
+  changed_when: false
+  failed_when: false
+  when: mail_spam_rspamd_cleanup_legacy_key | bool
+
+- name: packages | Remove legacy rspamd apt-key entry
+  ansible.builtin.command:
+    cmd: "apt-key del {{ mail_spam_rspamd_repo_legacy_key_id }}"
+  when:
+    - mail_spam_rspamd_cleanup_legacy_key | bool
+    - _mail_spam_rspamd_legacy_key_list.stdout is search(mail_spam_rspamd_repo_legacy_key_id)
+
+- name: packages | Install rspamd packages
   ansible.builtin.apt:
     name: "{{ mail_spam_packages }}"
     state: present
     update_cache: true
 
-- name: Ensure Redis is installed for rspamd
+- name: packages | Ensure Redis is installed for rspamd
   ansible.builtin.apt:
     name: redis-server
     state: present

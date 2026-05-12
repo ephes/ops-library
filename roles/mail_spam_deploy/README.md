@@ -57,6 +57,17 @@ This role deploys rspamd on the mail backend for spam filtering:
 | `mail_spam_rewrite_subject_score` | `8` | Score to rewrite subject |
 | `mail_spam_subject_prefix` | `[SPAM]` | Subject prefix for spam |
 
+### Package Repository
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `mail_spam_rspamd_repo_url` | `https://rspamd.com/apt-stable/` | Rspamd APT repository URL |
+| `mail_spam_rspamd_legacy_repo_url` | `http://rspamd.com/apt-stable/` | Legacy unscoped Rspamd source line to remove during migration |
+| `mail_spam_rspamd_repo_key_url` | `https://rspamd.com/apt-stable/gpg.key` | Rspamd repository signing key URL |
+| `mail_spam_rspamd_repo_keyring` | `/etc/apt/keyrings/rspamd.asc` | Scoped keyring used by the Rspamd APT source |
+| `mail_spam_rspamd_repo_legacy_key_id` | `BF21E25E` | Legacy global apt-key ID to remove during migration |
+| `mail_spam_rspamd_cleanup_legacy_key` | `true` | Remove the old global apt-key entry after installing the scoped keyring |
+
 ## Example Playbook
 
 ```yaml

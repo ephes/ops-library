@@ -74,5 +74,12 @@ mail_spam_override_config_path: "/etc/rspamd/override.d"
 # Package Management
 # =============================================================================
 
+mail_spam_rspamd_repo_url: "https://rspamd.com/apt-stable/"
+mail_spam_rspamd_legacy_repo_url: "http://rspamd.com/apt-stable/"
+mail_spam_rspamd_repo_key_url: "https://rspamd.com/apt-stable/gpg.key"
+mail_spam_rspamd_repo_keyring: "/etc/apt/keyrings/rspamd.asc"
+mail_spam_rspamd_repo_legacy_key_id: "BF21E25E"
+mail_spam_rspamd_cleanup_legacy_key: true
+
 mail_spam_packages:
   - rspamd

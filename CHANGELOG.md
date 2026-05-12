@@ -108,6 +108,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `openclaw_deploy` synthetic canary collection now sets explicit collector `TimeoutStartSec=600`, keeps dedicated canary session-id routing, and preserves stable canary metadata keys (`agent`, `timeout_seconds`, `session_id`) in payload defaults
 
 ### Fixed
+- `mail_spam_deploy` now configures the Rspamd APT repository with a scoped `signed-by` keyring and removes the legacy global apt-key entry, avoiding apt-key deprecation warnings on Ubuntu 24.04.
 - `mastodon_backup` now restarts Mastodon services after failed backup payload capture, preventing `pg_dump` or media-copy failures from leaving services stopped.
 - `mastodon_restore` now makes the staged database dump path traversable by the restore OS user before running `pg_restore`, while keeping the default peer-auth restore user.
 - `wagtail_deploy` now protects the top-level `/cache` directory from rsync deletion and recreates `wagtail_cache_dir` after source deployment, preventing Django file-based cache failures like the python-podcast feed incident

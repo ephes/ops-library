@@ -6,21 +6,21 @@
 # If chroot is disabled, this still works but adds an unnecessary path hop.
 
 # Group membership must be set up BEFORE socket directory is used
-- name: Add postfix to rspamd group (required for socket access)
+- name: config | Add postfix to rspamd group (required for socket access)
   ansible.builtin.user:
     name: postfix
     groups: _rspamd
     append: true
   notify: Restart postfix
 
-- name: Verify postfix is in _rspamd group
+- name: config | Verify postfix is in _rspamd group
   ansible.builtin.command:
     cmd: id -nG postfix
   register: postfix_groups
   changed_when: false
   failed_when: "'_rspamd' not in (postfix_groups.stdout | split())"
 
-- name: Ensure rspamd config directories exist
+- name: config | Ensure rspamd config directories exist
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
@@ -31,7 +31,7 @@
     - "{{ mail_spam_local_config_path }}"
     - "{{ mail_spam_override_config_path }}"
 
-- name: Create rspamd milter socket directory inside Postfix chroot
+- name: config | Create rspamd milter socket directory inside Postfix chroot
   ansible.builtin.file:
     path: "{{ mail_spam_milter_socket_dir }}"
     state: directory
@@ -39,7 +39,7 @@
     group: postfix
     mode: "0750"
 
-- name: Configure Redis
+- name: config | Configure Redis
   ansible.builtin.template:
     src: local.d/redis.conf.j2
     dest: "{{ mail_spam_local_config_path }}/redis.conf"
@@ -49,7 +49,7 @@
   notify: Restart rspamd
   when: mail_spam_redis_enabled
 
-- name: Configure worker-normal
+- name: config | Configure worker-normal
   ansible.builtin.template:
     src: local.d/worker-normal.inc.j2
     dest: "{{ mail_spam_local_config_path }}/worker-normal.inc"
@@ -58,7 +58,7 @@
     mode: "0644"
   notify: Restart rspamd
 
-- name: Configure worker-proxy (milter)
+- name: config | Configure worker-proxy (milter)
   ansible.builtin.template:
     src: local.d/worker-proxy.inc.j2
     dest: "{{ mail_spam_local_config_path }}/worker-proxy.inc"
@@ -67,7 +67,7 @@
     mode: "0644"
   notify: Restart rspamd
 
-- name: Generate rspamd web UI password hash
+- name: config | Generate rspamd web UI password hash
   ansible.builtin.command:
     cmd: rspamadm pw -p "{{ mail_spam_web_password }}"
   register: rspamadm_pw_result
@@ -78,7 +78,7 @@
     - mail_spam_web_password is defined
     - mail_spam_web_password | length > 0
 
-- name: Set rspamd web password hash fact
+- name: config | Set rspamd web password hash fact
   ansible.builtin.set_fact:
     mail_spam_web_password_hash: "{{ rspamadm_pw_result.stdout }}"
   when:
@@ -86,7 +86,7 @@
     - rspamadm_pw_result is defined
     - rspamadm_pw_result.stdout is defined
 
-- name: Configure worker-controller (web UI)
+- name: config | Configure worker-controller (web UI)
   ansible.builtin.template:
     src: local.d/worker-controller.inc.j2
     dest: "{{ mail_spam_local_config_path }}/worker-controller.inc"
@@ -96,7 +96,7 @@
   notify: Restart rspamd
   when: mail_spam_web_enabled
 
-- name: Configure actions
+- name: config | Configure actions
   ansible.builtin.template:
     src: local.d/actions.conf.j2
     dest: "{{ mail_spam_local_config_path }}/actions.conf"
@@ -105,7 +105,7 @@
     mode: "0644"
   notify: Restart rspamd
 
-- name: Configure milter headers
+- name: config | Configure milter headers
   ansible.builtin.template:
     src: local.d/milter_headers.conf.j2
     dest: "{{ mail_spam_local_config_path }}/milter_headers.conf"
@@ -114,7 +114,7 @@
     mode: "0644"
   notify: Restart rspamd
 
-- name: Configure classifier-bayes
+- name: config | Configure classifier-bayes
   ansible.builtin.template:
     src: local.d/classifier-bayes.conf.j2
     dest: "{{ mail_spam_local_config_path }}/classifier-bayes.conf"
