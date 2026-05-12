@@ -115,6 +115,12 @@ When the HTTP endpoint is enabled, it adds request-time `meta` and `summary` fie
 - `$.meta.state_file_fresh == true`
 - `$.reboot_required == false` as warning or critical, depending on operator policy
 
+The endpoint reports `$.reboot_required` from the live `/var/run/reboot-required`
+marker at request time, so a successful operator reboot clears the monitoring
+warning immediately even if the durable state file was last written before the
+reboot. The previous state-file value is exposed as
+`$.meta.state_reboot_required` for debugging.
+
 During an active run, `$.summary.currently_running` is `true`. `last_run_ok` remains true while
 the previous successful run is still fresh, so monitoring does not page during normal apt work.
 

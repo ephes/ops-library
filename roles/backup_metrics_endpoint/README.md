@@ -9,6 +9,11 @@ This role deploys two components:
 1. `backup-metrics-collector.timer` runs every `backup_metrics_endpoint_timer_interval` seconds.
 2. `backup-metrics-endpoint.service` serves the collected JSON at `/.well-known/backup` (configurable).
 
+The collector timer schedules its first run relative to timer activation and
+subsequent runs relative to the previous collector completion. This keeps the
+collector moving after reboot or service restart even when the host comes up
+after the boot-relative delay has already elapsed.
+
 The collector gathers:
 - systemd timer/service state for configured backup/health units (`backup_metrics_endpoint_units`, e.g. `sanoid`, `syncoid`, MinIO replica/lag units)
 - latest snapshot recency for configured local replica datasets
@@ -44,7 +49,7 @@ with `systemctl reset-failed`.
 | `backup_metrics_endpoint_auth_user` | `CHANGE_ME` | Basic auth user |
 | `backup_metrics_endpoint_auth_password` | `CHANGE_ME` | Basic auth password |
 | `backup_metrics_endpoint_timer_interval` | `300` | Collector interval in seconds |
-| `backup_metrics_endpoint_timer_on_boot_sec` | `30` | Initial timer delay after boot |
+| `backup_metrics_endpoint_timer_on_boot_sec` | `30` | Initial delay after timer activation, effectively post-boot for boot-enabled timers |
 | `backup_metrics_endpoint_timer_randomized_delay_sec` | `15` | Jitter added to each timer run |
 | `backup_metrics_endpoint_zfs_timeout` | `45` | Timeout per `zfs list` probe |
 | `backup_metrics_endpoint_zfs_retries` | `1` | Retry count for probe timeouts |

@@ -73,6 +73,7 @@
           - _endpoint_json.host_id == "molecule"
           - _endpoint_json.last_status == "never_run"
           - _endpoint_json.reboot_required is boolean
+          - _endpoint_json.meta.state_reboot_required is boolean
           - _endpoint_json.steps.update_cache.attempted == false
           - _endpoint_json.summary.last_run_ok == false
           - _endpoint_json.summary.last_success_fresh == false

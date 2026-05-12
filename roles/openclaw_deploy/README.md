@@ -548,6 +548,9 @@ When `openclaw_metrics_endpoint_enabled: true`:
 - an unprivileged HTTP server (`{{ openclaw_metrics_endpoint_service_name }}`) serves the JSON with basic auth at:
   - `http://{{ openclaw_metrics_endpoint_bind }}:{{ openclaw_metrics_endpoint_port }}{{ openclaw_metrics_endpoint_path }}`
 - response includes `meta.age_seconds` to detect stale collector output.
+- the collector timer schedules from timer activation and from collector
+  completion, so post-reboot timer activation cannot leave the unit in an
+  elapsed state with no next run.
 - collector runs that execute the synthetic canary can take longer than one timer tick (`openclaw_metrics_endpoint_timer_interval`); systemd oneshot does not overlap runs.
 - optional synthetic canary mode executes a real `agent --json` turn at a conservative cadence and stores:
   - uses a dedicated canary session id (`probe-openclaw-canary` by default)
