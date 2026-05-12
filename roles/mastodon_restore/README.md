@@ -30,6 +30,10 @@ Restores Mastodon from archives produced by `mastodon_backup`, including databas
 | `mastodon_restore_cleanup` | `true` | Remove staging directory after restore. |
 | `mastodon_restore_postgres_become_user` | `postgres` | Postgres OS user for running restore commands. |
 
+Restore keeps `mastodon_restore_postgres_become_user` defaulting to `postgres` so `dropdb`, `createdb`, and
+`pg_restore` continue to work with peer-authenticated local PostgreSQL setups. The role makes the staged database
+dump path traversable by that OS user before invoking `pg_restore`.
+
 See `defaults/main.yml` and `roles/mastodon_shared/defaults/main.yml` for the full reference.
 
 ## Dependencies

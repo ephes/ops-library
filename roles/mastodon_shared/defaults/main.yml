@@ -220,11 +220,13 @@ mastodon_backup_include_traefik: true
 mastodon_backup_include_nginx: true
 mastodon_backup_generate_manifest: true
 mastodon_backup_use_delete: true
+mastodon_backup_media_rsync_excludes:
+  - /cache/***
 mastodon_backup_retain: 7
 mastodon_backup_postgres_dump_binary: pg_dump
 mastodon_backup_postgres_format: custom
 mastodon_backup_postgres_compress: 9
-mastodon_backup_postgres_become_user: "{{ mastodon_postgres_become_user }}"
+mastodon_backup_postgres_become_user: "{{ mastodon_backup_owner }}"
 mastodon_backup_postgres_host: "{{ mastodon_postgres_host }}"
 mastodon_backup_postgres_port: "{{ mastodon_postgres_port }}"
 mastodon_backup_postgres_database: "{{ mastodon_postgres_database }}"
