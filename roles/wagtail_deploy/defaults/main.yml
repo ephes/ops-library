@@ -23,6 +23,8 @@ wagtail_rsync_delete: true
 wagtail_rsync_excludes_extra: []
 wagtail_rsync_excludes:
   - "{{ wagtail_project_slug }}/media"
+  - ".env"
+  - "/staticfiles"
   - "backups"
   - "/cache"
   - "databases"

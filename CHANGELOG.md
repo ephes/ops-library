@@ -66,6 +66,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `zed` role scrub timers can optionally wait for completion and run a post-scrub spindown hook
 - Unit tests for OpenClaw metrics collector canary behavior and schema invariants (`tests/unit/test_openclaw_metrics_collector.py`)
 
+### Fixed
+- `wagtail_deploy` rsync deployments now exclude the managed `.env` file and collected `/staticfiles` directory, preventing failed deploys from clobbering runtime secrets or deleting WhiteNoise assets before `collectstatic` runs.
+
 ### Changed
 - `os_apt_maintenance` endpoint responses now derive `$.reboot_required` from the live `/var/run/reboot-required` marker so monitoring clears immediately after a successful reboot.
 - `mastodon_backup` now excludes Mastodon's refetchable `public/system/cache` subtree from local media backups by default and records the media exclude list in backup manifests.

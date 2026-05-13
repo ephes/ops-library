@@ -45,7 +45,8 @@ wagtail_rsync_excludes_extra:
   - "notebooks"
 ```
 
-Default rsync excludes include `{{ wagtail_project_slug }}/media`, `backups`, `/cache`, `databases`, and `.venv`.
+Default rsync excludes include `{{ wagtail_project_slug }}/media`, `.env`, `/staticfiles`, `backups`, `/cache`, `databases`, and `.venv`.
+The `.env` and `/staticfiles` exclusions keep rsync from clobbering managed runtime files or deleting collected assets before `collectstatic` can repopulate them.
 The role also recreates `wagtail_cache_dir` after source deployment so Django's file-based cache remains writable.
 
 ### Git Deployment
