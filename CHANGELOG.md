@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Update your Ansible installation before upgrading
 
 ### Added
+- `nyxmon_storage_exporter` now caches successful ZFS pool samples and reuses them during quiet-hours pool skips, keeping capacity JSON paths stable for monitoring while marking cached values explicitly.
 - `os_apt_maintenance` endpoint responses now expose `$.meta.state_reboot_required` so operators can inspect the reboot-required value from the durable state file separately from the live marker.
 - `os_apt_maintenance` role for host-local apt update/dist-upgrade/autoremove/autoclean timers with durable JSON state and an optional authenticated Nyxmon endpoint.
 - `wagtail_deploy` now supports a stable `wagtail_db_worker_id` and passes it to Django Tasks `db_worker --worker-id`, allowing each deployed site to run a distinct database-backed task worker

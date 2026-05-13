@@ -26,6 +26,7 @@ nyxmon_storage_exporter_quiet_hours_spindown_enabled: false
 nyxmon_storage_exporter_quiet_hours_spindown_script: ""
 nyxmon_storage_exporter_quiet_hours_spindown_min_interval_sec: 300
 nyxmon_storage_exporter_quiet_hours_spindown_state_file: "/run/nyxmon-storage-metrics-spindown.ts"
+nyxmon_storage_exporter_pool_cache_path: "/var/lib/nyxmon-storage-metrics/pool-cache.json"
 
 # Input inventory
 nyxmon_storage_exporter_pools: []

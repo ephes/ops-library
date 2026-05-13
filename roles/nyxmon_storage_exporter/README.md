@@ -74,6 +74,7 @@ Each filesystem in `nyxmon_storage_exporter_filesystems` must have:
 | `nyxmon_storage_exporter_quiet_hours_spindown_script` | `""` | Absolute path to executable spindown script used by quiet-hours hook |
 | `nyxmon_storage_exporter_quiet_hours_spindown_min_interval_sec` | `300` | Minimum seconds between quiet-hours spindown hook runs |
 | `nyxmon_storage_exporter_quiet_hours_spindown_state_file` | `/run/nyxmon-storage-metrics-spindown.ts` | State file storing last quiet-hours spindown hook run timestamp |
+| `nyxmon_storage_exporter_pool_cache_path` | `/var/lib/nyxmon-storage-metrics/pool-cache.json` | Last-known cache for successful ZFS pool samples used when quiet-hours pool probes are skipped |
 
 See `defaults/main.yml` for the full list.
 
@@ -117,6 +118,20 @@ nyxmon_storage_exporter_quiet_hours_spindown_enabled: true
 nyxmon_storage_exporter_quiet_hours_spindown_script: /usr/local/bin/zfs-usb-spindown.sh
 nyxmon_storage_exporter_quiet_hours_spindown_min_interval_sec: 300
 ```
+
+When quiet hours skip a configured pool and a previous successful sample exists,
+the exporter returns the last-known pool metrics instead of removing metric
+paths such as `$.pools.tank.cap_ratio`. Cached pool payloads keep `health`,
+`size`, `alloc`, `free`, `cap_ratio`, and related fields, and add:
+
+- `skipped: true`
+- `reason: "quiet_hours"`
+- `cached: true`
+- `cache_timestamp`
+- `cache_age_seconds`
+
+If no previous successful sample exists, the exporter preserves the existing
+skip-only payload: `{"skipped": true, "reason": "quiet_hours"}`.
 
 ## Nyxmon Threshold Configuration
 
@@ -171,7 +186,8 @@ The script outputs JSON with disk temperatures, health status, pool information,
       "alloc_bytes": 7906263,
       "free_bytes": 11984617446441,
       "cap_ratio": 0.0,
-      "last_scrub_age_days": 0.5
+      "last_scrub_age_days": 0.5,
+      "cached": false
     }
   },
   "filesystems": [

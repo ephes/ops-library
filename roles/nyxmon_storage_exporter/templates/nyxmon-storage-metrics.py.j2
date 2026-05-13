@@ -23,6 +23,7 @@ QUIET_SPINDOWN_ENABLED = {{ nyxmon_storage_exporter_quiet_hours_spindown_enabled
 QUIET_SPINDOWN_SCRIPT = "{{ nyxmon_storage_exporter_quiet_hours_spindown_script | default('') }}"
 QUIET_SPINDOWN_MIN_INTERVAL_SEC = {{ nyxmon_storage_exporter_quiet_hours_spindown_min_interval_sec | default(300) | int }}
 QUIET_SPINDOWN_STATE_FILE = "{{ nyxmon_storage_exporter_quiet_hours_spindown_state_file | default('/run/nyxmon-storage-metrics-spindown.ts') }}"
+POOL_CACHE_PATH = "{{ nyxmon_storage_exporter_pool_cache_path | default('/var/lib/nyxmon-storage-metrics/pool-cache.json') }}"
 
 
 def _run(argv: list[str]) -> subprocess.CompletedProcess[str]:
@@ -102,19 +103,92 @@ def _parse_percent_ratio(value: str) -> float | None:
     return float(match.group(1)) / 100.0
 
 
+def _read_json_file(path: str) -> dict[str, Any]:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_json_file(path: str, data: dict[str, Any]) -> bool:
+    try:
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        tmp = f"{path}.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, sort_keys=True)
+            f.write("\n")
+        os.replace(tmp, path)
+        return True
+    except OSError:
+        return False
+
+
+def _pool_cache_sample(pool_payload: dict[str, Any]) -> dict[str, Any]:
+    cache_metadata_keys = {
+        "cached",
+        "cache_age_seconds",
+        "cache_timestamp",
+        "cache_write_error",
+        "reason",
+        "skipped",
+    }
+    return {
+        key: value
+        for key, value in pool_payload.items()
+        if key not in cache_metadata_keys
+    }
+
+
+def _cached_pool_payload(name: str, pool_cache: dict[str, Any], now_ts: int) -> dict[str, Any] | None:
+    pools_cache = pool_cache.get("pools")
+    if not isinstance(pools_cache, dict):
+        return None
+    entry = pools_cache.get(name)
+    if not isinstance(entry, dict):
+        return None
+    sample = entry.get("sample")
+    cache_ts = entry.get("ts")
+    if not isinstance(sample, dict) or not isinstance(cache_ts, int):
+        return None
+
+    payload = dict(sample)
+    payload["skipped"] = True
+    payload["reason"] = "quiet_hours"
+    payload["cached"] = True
+    payload["cache_timestamp"] = cache_ts
+    payload["cache_age_seconds"] = max(0, now_ts - cache_ts)
+    return payload
+
+
 def _zpool_list(pools: list[str], skip_pools: set[str]) -> dict[str, dict[str, Any]]:
     if not pools:
-        if skip_pools:
-            return {}
         result = _run(["zpool", "list", "-H", "-o", "name,health,size,alloc,free,cap"])
         if result.returncode != 0:
             return {"_error": {"error": result.stderr.strip() or "zpool list failed"}}
         pools = [line.split()[0] for line in result.stdout.splitlines() if line.split()]
 
+    now_ts = _now_ts()
+    pool_cache = _read_json_file(POOL_CACHE_PATH)
+    pools_cache = pool_cache.get("pools")
+    if not isinstance(pools_cache, dict):
+        pools_cache = {}
+        pool_cache["pools"] = pools_cache
+    cache_changed = False
+    cache_write_error = False
+
     payload: dict[str, dict[str, Any]] = {}
     for name in pools:
         if name in skip_pools:
-            payload[name] = {"skipped": True, "reason": "quiet_hours"}
+            cached_payload = _cached_pool_payload(name, pool_cache, now_ts)
+            payload[name] = (
+                cached_payload
+                if cached_payload is not None
+                else {"skipped": True, "reason": "quiet_hours"}
+            )
             continue
         result = _run(["zpool", "list", "-H", "-o", "name,health,size,alloc,free,cap", name])
         if result.returncode != 0:
@@ -156,6 +230,17 @@ def _zpool_list(pools: list[str], skip_pools: set[str]) -> dict[str, dict[str, A
             )
         else:
             payload[name]["status_error"] = status.stderr.strip()
+
+        payload[name]["cached"] = False
+        pools_cache[name] = {"ts": now_ts, "sample": _pool_cache_sample(payload[name])}
+        cache_changed = True
+
+    if cache_changed:
+        cache_write_error = not _write_json_file(POOL_CACHE_PATH, pool_cache)
+    if cache_write_error:
+        for pool_payload in payload.values():
+            if not pool_payload.get("skipped") and "error" not in pool_payload:
+                pool_payload["cache_write_error"] = True
 
     return payload
 

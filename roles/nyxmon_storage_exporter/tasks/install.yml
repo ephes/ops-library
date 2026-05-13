@@ -4,6 +4,14 @@
     name: "{{ nyxmon_storage_exporter_packages }}"
     state: present
 
+- name: install | Ensure pool cache directory exists
+  ansible.builtin.file:
+    path: "{{ nyxmon_storage_exporter_pool_cache_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: install | Install nyxmon storage metrics exporter script
   ansible.builtin.template:
     src: nyxmon-storage-metrics.py.j2
