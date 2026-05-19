@@ -67,6 +67,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit tests for OpenClaw metrics collector canary behavior and schema invariants (`tests/unit/test_openclaw_metrics_collector.py`)
 
 ### Fixed
+- Deploy roles now build stat assertion labels and error messages from the
+  original loop item instead of registered result invocation metadata,
+  restoring compatibility with newer ansible-core controllers.
+- Collection metadata now declares the documented ansible-core 2.20+ runtime
+  requirement.
 - `wagtail_deploy` rsync deployments now exclude the managed `.env` file and collected `/staticfiles` directory, preventing failed deploys from clobbering runtime secrets or deleting WhiteNoise assets before `collectstatic` runs.
 
 ### Changed

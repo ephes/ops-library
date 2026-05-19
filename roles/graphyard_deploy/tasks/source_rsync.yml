@@ -29,10 +29,10 @@
   ansible.builtin.assert:
     that:
       - item.stat.exists
-    fail_msg: "Missing required path for rsync deployment: {{ item.invocation.module_args.path }}"
+    fail_msg: "Missing required path for rsync deployment: {{ graphyard_source_path }}/{{ item.item }}"
   loop: "{{ graphyard_source_path_stats.results }}"
   loop_control:
-    label: "{{ item.invocation.module_args.path }}"
+    label: "{{ graphyard_source_path }}/{{ item.item }}"
 
 - name: source_rsync | Sync Graphyard project to target (controller push)
   ansible.posix.synchronize:

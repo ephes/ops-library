@@ -36,10 +36,10 @@
 - name: Fail if required source paths are missing
   assert:
     that: item.stat.exists
-    fail_msg: "Missing required path for rsync deployment: {{ item.invocation.module_args.path }}"
+    fail_msg: "Missing required path for rsync deployment: {{ echoport_source_path }}/{{ item.item }}"
   loop: "{{ echoport_source_path_stats.results }}"
   loop_control:
-    label: "{{ item.invocation.module_args.path }}"
+    label: "{{ echoport_source_path }}/{{ item.item }}"
 
 - name: Ensure parent directories exist for additional sources
   file:
