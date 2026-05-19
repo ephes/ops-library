@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Update your Ansible installation before upgrading
 
 ### Added
+- `voxhelm_deploy` now supports production pyannote speaker diarization wiring,
+  including optional `uv sync --extra diarization` installation, protected
+  Hugging Face token env rendering, and validation when the backend is enabled.
 - `nyxmon_storage_exporter` now caches successful ZFS pool samples and reuses them during quiet-hours pool skips, keeping capacity JSON paths stable for monitoring while marking cached values explicitly.
 - `os_apt_maintenance` endpoint responses now expose `$.meta.state_reboot_required` so operators can inspect the reboot-required value from the durable state file separately from the live marker.
 - `os_apt_maintenance` role for host-local apt update/dist-upgrade/autoremove/autoclean timers with durable JSON state and an optional authenticated Nyxmon endpoint.

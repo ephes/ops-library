@@ -5,11 +5,11 @@ Deploy Voxhelm on macOS using `uv`, `uvicorn`, and a launchd `LaunchDaemon`.
 ## Description
 
 This role deploys the Voxhelm service to the `studio` Mac Studio. It syncs the
-local source tree, installs dependencies with `uv sync --frozen --no-dev`,
-renders a shell environment file, applies Django migrations, creates launcher
-scripts for the HTTP API and the Django Tasks worker, installs launchd plists,
-and verifies both the HTTP health endpoint and worker launchd state locally on
-the target host.
+local source tree, installs dependencies with `uv sync --frozen --no-dev`
+plus configured optional extras, renders a shell environment file, applies
+Django migrations, creates launcher scripts for the HTTP API and the Django
+Tasks worker, installs launchd plists, and verifies both the HTTP health
+endpoint and worker launchd state locally on the target host.
 
 Current default runtime:
 
@@ -21,6 +21,7 @@ Current default runtime:
 - `mlx-whisper` as the default Wyoming STT backend for short interactive speech
 - `piper` as the default TTS backend on `studio`
 - host-wide lane scheduling enabled by default for local inference on `studio`
+- speaker diarization disabled by default, with optional pyannote support
 - bearer-token authentication via environment variables
 - filesystem artifact storage by default, with S3/MinIO-compatible env vars available
 - no Traefik dependency; the service binds directly on the configured port
@@ -29,6 +30,8 @@ Current default runtime:
 
 - macOS target host
 - `uv` installed on the target host
+- Hugging Face token and accepted pyannote model access when
+  `voxhelm_diarization_backend: "pyannote"`
 - Ansible collection:
   - `ansible.posix`
 
@@ -71,6 +74,10 @@ voxhelm_whisperkit_concurrent_worker_count: 8
 voxhelm_whisperkit_chunking_strategy: "vad"
 voxhelm_whisperkit_timeout_seconds: 900
 voxhelm_stt_debug_logging: false
+voxhelm_diarization_backend: "none"
+voxhelm_pyannote_model: "pyannote/speaker-diarization-3.1"
+voxhelm_huggingface_token: ""
+voxhelm_uv_extras: []
 voxhelm_model_cache_dir: "/opt/apps/voxhelm/site/var/models"
 voxhelm_piper_voice_dir: "/opt/apps/voxhelm/site/var/piper"
 voxhelm_piper_voices:
@@ -127,6 +134,9 @@ For the full list, see `defaults/main.yml`.
         voxhelm_bootstrap_operator_username: "{{ service_secrets.bootstrap_operator_username }}"
         voxhelm_bootstrap_operator_email: "{{ service_secrets.bootstrap_operator_email }}"
         voxhelm_bootstrap_operator_password: "{{ service_secrets.bootstrap_operator_password }}"
+        voxhelm_diarization_backend: "pyannote"
+        voxhelm_pyannote_model: "pyannote/speaker-diarization-3.1"
+        voxhelm_huggingface_token: "{{ service_secrets.huggingface_token }}"
 ```
 
 ## Bootstrap Operator
@@ -135,6 +145,27 @@ For the full list, see `defaults/main.yml`.
 - Bootstrap credentials should come from the private control repo, typically `ops-control/secrets/prod/voxhelm.yml`.
 - The in-app command is idempotent: first deploy creates the operator, later deploys update the matching account's password, email, `is_staff`, and `is_active` fields.
 - The role passes credentials as task-scoped environment variables for that one-shot command and does not persist the operator password in `voxhelm.env`.
+
+## Speaker Diarization Notes
+
+- `voxhelm_diarization_backend` defaults to `none`; requested diarization jobs
+  fail clearly unless a backend is configured.
+- Setting `voxhelm_diarization_backend: "pyannote"` makes the role install the
+  Voxhelm optional dependency extra with `uv sync --frozen --no-dev --extra diarization`.
+- The role renders `VOXHELM_DIARIZATION_BACKEND`, `VOXHELM_PYANNOTE_MODEL`,
+  `VOXHELM_HUGGINGFACE_TOKEN`, and `HF_TOKEN` into `/etc/voxhelm/voxhelm.env`.
+  The env file remains `root:wheel` and `0640`, and the template task uses
+  `no_log: true`.
+- The HTTP API, Django Tasks worker, and Wyoming sidecar all source the same
+  env file through their launcher scripts. The Hugging Face token is not written
+  directly into launchd plist files.
+- The token should come from encrypted private control-repo secrets, not from
+  this public collection.
+- Accept Hugging Face access for `pyannote/speaker-diarization-3.1`,
+  `pyannote/speaker-diarization-community-1`, and any gated dependency reported
+  by pyannote before first production use.
+- The first diarization run downloads model weights and can take time. Long
+  podcast episodes are expensive; use batch jobs and inspect the worker logs.
 
 ## Wyoming STT Notes
 

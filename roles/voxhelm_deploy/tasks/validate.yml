@@ -26,3 +26,27 @@
       Voxhelm deployment is missing required configuration. Check source path,
       Django secret key, bearer token config, bootstrap operator credentials,
       port, uv binary path, and Piper voice config.
+
+- name: validate | Normalize diarization backend
+  ansible.builtin.set_fact:
+    voxhelm_diarization_backend_normalized: "{{ voxhelm_diarization_backend | string | trim | lower }}"
+
+- name: validate | Ensure diarization backend is supported
+  ansible.builtin.assert:
+    that:
+      - voxhelm_diarization_backend_normalized in ["none", "pyannote"]
+    fail_msg: >-
+      Unsupported Voxhelm diarization backend '{{ voxhelm_diarization_backend }}'.
+      Supported values: none, pyannote.
+
+- name: validate | Ensure pyannote diarization secrets are configured
+  ansible.builtin.assert:
+    that:
+      - voxhelm_pyannote_model | string | trim | length > 0
+      - voxhelm_huggingface_token | string | trim | length > 0
+      - voxhelm_huggingface_token != "CHANGEME"
+    fail_msg: >-
+      Voxhelm pyannote diarization is enabled, but the pyannote model or
+      Hugging Face token is missing. Set voxhelm_pyannote_model and pass
+      voxhelm_huggingface_token from encrypted ops secrets.
+  when: voxhelm_diarization_backend_normalized == "pyannote"
