@@ -15,6 +15,9 @@
   become: true
   become_user: "{{ wagtail_user }}"
   register: wagtail_git_result
+  notify:
+    - restart wagtail
+    - restart wagtail db worker
 
 - name: source_git | Report git update status
   ansible.builtin.debug:

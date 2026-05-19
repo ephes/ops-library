@@ -50,6 +50,9 @@
     rsync_opts: "{{ wagtail_rsync_exclude_args }}"
   delegate_to: localhost
   become: false
+  notify:
+    - restart wagtail
+    - restart wagtail db worker
 
 - name: source_rsync | Set ownership for synced files
   ansible.builtin.file:

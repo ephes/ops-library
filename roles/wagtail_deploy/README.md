@@ -73,7 +73,10 @@ wagtail_db_worker_backend: "default"
 wagtail_db_worker_id: "{{ wagtail_db_worker_unit_name }}"
 wagtail_db_worker_queue_name: ""
 wagtail_db_worker_interval_seconds: 5
+wagtail_service_restart_on_change: true
 ```
+
+When `wagtail_service_restart_on_change` is enabled, source updates, dependency updates, environment changes, and systemd unit changes restart the Wagtail service. If the optional db worker is enabled, those changes restart the worker as well.
 
 ### Static Assets
 

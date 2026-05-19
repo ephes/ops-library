@@ -111,3 +111,6 @@
   become_user: "{{ wagtail_user }}"
   register: wagtail_uv_sync
   changed_when: "'Installed' in wagtail_uv_sync.stdout or 'Updated' in wagtail_uv_sync.stdout"
+  notify:
+    - restart wagtail
+    - restart wagtail db worker
