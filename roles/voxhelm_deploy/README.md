@@ -74,8 +74,10 @@ voxhelm_whisperkit_concurrent_worker_count: 8
 voxhelm_whisperkit_chunking_strategy: "vad"
 voxhelm_whisperkit_timeout_seconds: 900
 voxhelm_stt_debug_logging: false
+voxhelm_python_version: "3.14.5"
 voxhelm_diarization_backend: "none"
 voxhelm_pyannote_model: "pyannote/speaker-diarization-3.1"
+voxhelm_pyannote_device: "auto"
 voxhelm_huggingface_token: ""
 voxhelm_uv_extras: []
 voxhelm_model_cache_dir: "/opt/apps/voxhelm/site/var/models"
@@ -150,10 +152,13 @@ For the full list, see `defaults/main.yml`.
 
 - `voxhelm_diarization_backend` defaults to `none`; requested diarization jobs
   fail clearly unless a backend is configured.
+- The role creates `.venv` with a uv-managed `voxhelm_python_version` interpreter
+  instead of the host's Homebrew Python. If an existing virtualenv points at a
+  different base executable, the role recreates it before running `uv sync`.
 - Setting `voxhelm_diarization_backend: "pyannote"` makes the role install the
   Voxhelm optional dependency extra with `uv sync --frozen --no-dev --extra diarization`.
 - The role renders `VOXHELM_DIARIZATION_BACKEND`, `VOXHELM_PYANNOTE_MODEL`,
-  `VOXHELM_HUGGINGFACE_TOKEN`, and `HF_TOKEN` into `/etc/voxhelm/voxhelm.env`.
+  `VOXHELM_PYANNOTE_DEVICE`, `VOXHELM_HUGGINGFACE_TOKEN`, and `HF_TOKEN` into `/etc/voxhelm/voxhelm.env`.
   The env file remains `root:wheel` and `0640`, and the template task uses
   `no_log: true`.
 - The HTTP API, Django Tasks worker, and Wyoming sidecar all source the same

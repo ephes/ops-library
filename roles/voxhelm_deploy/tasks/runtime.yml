@@ -154,6 +154,88 @@
     - not (voxhelm_whispercpp_model_stat.stat.exists | default(false))
     - voxhelm_whispercpp_model_tmp is defined
 
+- name: runtime | Check for requested uv-managed Python version
+  ansible.builtin.command:
+    argv:
+      - "{{ voxhelm_uv_bin }}"
+      - python
+      - find
+      - --managed-python
+      - --no-project
+      - --resolve-links
+      - "{{ voxhelm_python_version }}"
+  register: voxhelm_uv_python_find
+  environment:
+    PATH: "{{ voxhelm_launchd_path }}"
+  changed_when: false
+  failed_when: false
+
+- name: runtime | Install requested uv-managed Python version
+  ansible.builtin.command:
+    argv:
+      - "{{ voxhelm_uv_bin }}"
+      - python
+      - install
+      - "{{ voxhelm_python_version }}"
+  environment:
+    PATH: "{{ voxhelm_launchd_path }}"
+  when: voxhelm_uv_python_find.rc != 0
+
+- name: runtime | Resolve requested uv-managed Python executable
+  ansible.builtin.command:
+    argv:
+      - "{{ voxhelm_uv_bin }}"
+      - python
+      - find
+      - --managed-python
+      - --no-project
+      - --resolve-links
+      - "{{ voxhelm_python_version }}"
+  register: voxhelm_uv_python_executable
+  environment:
+    PATH: "{{ voxhelm_launchd_path }}"
+  changed_when: false
+
+- name: runtime | Check existing Voxhelm virtualenv Python
+  ansible.builtin.stat:
+    path: "{{ voxhelm_app_dir }}/.venv/bin/python"
+  register: voxhelm_venv_python_stat
+
+- name: runtime | Detect existing Voxhelm virtualenv base executable
+  ansible.builtin.command:
+    argv:
+      - "{{ voxhelm_app_dir }}/.venv/bin/python"
+      - -c
+      - "import sys; print(getattr(sys, '_base_executable', sys.executable))"
+  register: voxhelm_venv_base_executable
+  changed_when: false
+  failed_when: false
+  when: voxhelm_venv_python_stat.stat.exists | default(false)
+
+- name: runtime | Remove virtualenv when it is not using uv-managed Python
+  ansible.builtin.file:
+    path: "{{ voxhelm_app_dir }}/.venv"
+    state: absent
+  when:
+    - voxhelm_venv_python_stat.stat.exists | default(false)
+    - >-
+      (voxhelm_venv_base_executable.stdout | default('') | trim)
+      != (voxhelm_uv_python_executable.stdout | trim)
+
+- name: runtime | Create Voxhelm virtualenv with uv-managed Python
+  ansible.builtin.command:
+    argv:
+      - "{{ voxhelm_uv_bin }}"
+      - venv
+      - --python
+      - "{{ voxhelm_uv_python_executable.stdout | trim }}"
+      - "{{ voxhelm_app_dir }}/.venv"
+    chdir: "{{ voxhelm_app_dir }}"
+    creates: "{{ voxhelm_app_dir }}/.venv/bin/python"
+  environment:
+    PATH: "{{ voxhelm_launchd_path }}"
+  register: voxhelm_venv_create
+
 - name: runtime | Resolve uv sync arguments for Voxhelm
   ansible.builtin.import_tasks: uv_sync_args.yml
 
@@ -163,6 +245,8 @@
     chdir: "{{ voxhelm_app_dir }}"
   environment:
     PATH: "{{ voxhelm_launchd_path }}"
+    VIRTUAL_ENV: "{{ voxhelm_app_dir }}/.venv"
+    UV_PROJECT_ENVIRONMENT: "{{ voxhelm_app_dir }}/.venv"
   register: voxhelm_uv_sync
   changed_when: >-
     'Installed' in ((voxhelm_uv_sync.stdout | default('')) ~ (voxhelm_uv_sync.stderr | default('')))

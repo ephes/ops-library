@@ -15,6 +15,7 @@
     voxhelm_launchd_force_restart: >-
       {{
         voxhelm_source_sync.changed
+        or (voxhelm_venv_create.changed | default(false))
         or voxhelm_uv_sync.changed
         or voxhelm_env_template.changed
         or voxhelm_start_script_template.changed
@@ -48,6 +49,7 @@
     voxhelm_launchd_force_restart: >-
       {{
         voxhelm_source_sync.changed
+        or (voxhelm_venv_create.changed | default(false))
         or voxhelm_uv_sync.changed
         or voxhelm_env_template.changed
         or (voxhelm_worker_script_template.changed | default(false))
@@ -83,6 +85,7 @@
     voxhelm_launchd_force_restart: >-
       {{
         voxhelm_source_sync.changed
+        or (voxhelm_venv_create.changed | default(false))
         or voxhelm_uv_sync.changed
         or voxhelm_env_template.changed
         or (voxhelm_wyoming_stt_script_template.changed | default(false))
@@ -118,6 +121,7 @@
     voxhelm_launchd_force_restart: >-
       {{
         voxhelm_source_sync.changed
+        or (voxhelm_venv_create.changed | default(false))
         or voxhelm_uv_sync.changed
         or voxhelm_env_template.changed
         or (voxhelm_whisperkit_script_template.changed | default(false))

@@ -21,6 +21,7 @@ voxhelm_wyoming_stt_script_path: "{{ voxhelm_app_dir }}/wyoming-stt.sh"
 voxhelm_whisperkit_script_path: "{{ voxhelm_app_dir }}/whisperkit.sh"
 
 voxhelm_uv_bin: "/usr/local/bin/uv"
+voxhelm_python_version: "3.14.5"
 voxhelm_bind_host: "0.0.0.0"
 voxhelm_app_port: 8787
 voxhelm_uvicorn_log_level: "info"
@@ -44,6 +45,7 @@ voxhelm_stt_fallback_backend: "mlx"
 voxhelm_stt_debug_logging: false
 voxhelm_diarization_backend: "none"
 voxhelm_pyannote_model: "pyannote/speaker-diarization-3.1"
+voxhelm_pyannote_device: "auto"
 voxhelm_huggingface_token: ""
 voxhelm_uv_extras: []
 voxhelm_tts_backend: "piper"

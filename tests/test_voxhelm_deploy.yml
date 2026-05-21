@@ -24,6 +24,7 @@
         that:
           - "'db.sqlite3' in voxhelm_sync_excludes"
           - "'var' in voxhelm_sync_excludes"
+          - "voxhelm_python_version == '3.14.5'"
 
     - name: Resolve uv sync args without diarization
       ansible.builtin.include_tasks: "{{ role_path }}/tasks/uv_sync_args.yml"
@@ -98,6 +99,7 @@
           - "'VOXHELM_STT_DEBUG_LOGGING=' in rendered_env_text"
           - "'VOXHELM_DIARIZATION_BACKEND=pyannote' in rendered_env_text"
           - "'VOXHELM_PYANNOTE_MODEL=pyannote/speaker-diarization-3.1' in rendered_env_text"
+          - "'VOXHELM_PYANNOTE_DEVICE=auto' in rendered_env_text"
           - "'VOXHELM_HUGGINGFACE_TOKEN=hf_test' in rendered_env_text"
           - "'HF_TOKEN=hf_test' in rendered_env_text"
           - "'VOXHELM_WYOMING_STT_PORT=' in rendered_env_text"
