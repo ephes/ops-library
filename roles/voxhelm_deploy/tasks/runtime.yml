@@ -154,37 +154,8 @@
     - not (voxhelm_whispercpp_model_stat.stat.exists | default(false))
     - voxhelm_whispercpp_model_tmp is defined
 
-- name: runtime | Resolve uv extras for Voxhelm
-  ansible.builtin.set_fact:
-    voxhelm_uv_extras_resolved: >-
-      {{
-        (
-          voxhelm_uv_extras
-          + (
-            ['diarization']
-            if (voxhelm_diarization_backend | string | trim | lower) == 'pyannote'
-            else []
-          )
-        ) | unique | list
-      }}
-
-- name: runtime | Initialize uv extra arguments for Voxhelm
-  ansible.builtin.set_fact:
-    voxhelm_uv_extra_args_resolved: []
-
-- name: runtime | Resolve uv extra arguments for Voxhelm
-  ansible.builtin.set_fact:
-    voxhelm_uv_extra_args_resolved: >-
-      {{ voxhelm_uv_extra_args_resolved + ['--extra', item] }}
-  loop: "{{ voxhelm_uv_extras_resolved }}"
-
 - name: runtime | Resolve uv sync arguments for Voxhelm
-  ansible.builtin.set_fact:
-    voxhelm_uv_sync_args: >-
-      {{
-        ['sync', '--frozen', '--no-dev']
-        + (voxhelm_uv_extra_args_resolved | default([]))
-      }}
+  ansible.builtin.import_tasks: uv_sync_args.yml
 
 - name: runtime | Sync Voxhelm dependencies with uv
   ansible.builtin.command:

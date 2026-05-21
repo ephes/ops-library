@@ -25,6 +25,30 @@
           - "'db.sqlite3' in voxhelm_sync_excludes"
           - "'var' in voxhelm_sync_excludes"
 
+    - name: Resolve uv sync args without diarization
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/uv_sync_args.yml"
+      vars:
+        voxhelm_diarization_backend: "none"
+
+    - name: Assert uv sync args omit diarization extra when backend is disabled
+      ansible.builtin.assert:
+        that:
+          - voxhelm_uv_extras_resolved == []
+          - voxhelm_uv_extra_args_resolved == []
+          - voxhelm_uv_sync_args == ['sync', '--frozen', '--no-dev']
+
+    - name: Resolve uv sync args with pyannote diarization
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/uv_sync_args.yml"
+      vars:
+        voxhelm_diarization_backend: "pyannote"
+
+    - name: Assert uv sync args include diarization extra for pyannote
+      ansible.builtin.assert:
+        that:
+          - voxhelm_uv_extras_resolved == ['diarization']
+          - voxhelm_uv_extra_args_resolved == ['--extra', 'diarization']
+          - voxhelm_uv_sync_args == ['sync', '--frozen', '--no-dev', '--extra', 'diarization']
+
     - name: Set template test values
       ansible.builtin.set_fact:
         voxhelm_django_secret_key: "test-secret"
