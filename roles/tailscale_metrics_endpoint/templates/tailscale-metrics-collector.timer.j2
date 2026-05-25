@@ -1,0 +1,12 @@
+[Unit]
+Description=Collect Tailscale metrics every {{ tailscale_metrics_endpoint_timer_interval }} seconds
+
+[Timer]
+OnBootSec={{ tailscale_metrics_endpoint_timer_on_boot_sec }}
+OnUnitActiveSec={{ tailscale_metrics_endpoint_timer_interval }}
+AccuracySec={{ tailscale_metrics_endpoint_timer_accuracy_sec }}
+RandomizedDelaySec={{ tailscale_metrics_endpoint_timer_randomized_delay_sec }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

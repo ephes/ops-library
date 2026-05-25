@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Update your Ansible installation before upgrading
 
 ### Added
+- `tailscale_metrics_endpoint` role to expose authenticated Tailscale login
+  state and node-key expiry JSON for Nyxmon monitoring.
 - `voxhelm_deploy` now supports production pyannote speaker diarization wiring,
   including optional `uv sync --extra diarization` installation, protected
   Hugging Face token env rendering, and validation when the backend is enabled.

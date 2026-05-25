@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""Collect Tailscale login state and node-key expiry metrics."""
+from __future__ import annotations
+
+import json
+import socket
+import subprocess
+import sys
+from datetime import datetime, timezone
+from typing import Any
+
+
+TAILSCALE_BIN = "{{ tailscale_metrics_endpoint_tailscale_bin }}"
+WARNING_DAYS = {{ tailscale_metrics_endpoint_warning_days | int }}
+CRITICAL_DAYS = {{ tailscale_metrics_endpoint_critical_days | int }}
+
+
+def parse_tailscale_time(value: str | None) -> datetime | None:
+    if not value or value.startswith("0001-01-01T"):
+        return None
+    normalized = value.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(normalized).astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def run_status() -> tuple[int, dict[str, Any], str]:
+    try:
+        completed = subprocess.run(
+            [TAILSCALE_BIN, "status", "--json"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        return -1, {}, "tailscale status --json timed out after 15 seconds"
+    except OSError as err:
+        return -1, {}, f"tailscale status --json failed: {err}"
+
+    try:
+        payload = json.loads(completed.stdout or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    return completed.returncode, payload, completed.stderr.strip()
+
+
+def main() -> int:
+    now = datetime.now(timezone.utc)
+    status_rc, status, stderr = run_status()
+    self_node = status.get("Self") or {}
+    key_expiry = self_node.get("KeyExpiry")
+    key_expiry_dt = parse_tailscale_time(key_expiry)
+    key_expiry_epoch = int(key_expiry_dt.timestamp()) if key_expiry_dt else None
+    seconds_until_key_expiry = (
+        int((key_expiry_dt - now).total_seconds()) if key_expiry_dt else None
+    )
+    days_until_key_expiry = (
+        seconds_until_key_expiry / 86400 if seconds_until_key_expiry is not None else None
+    )
+
+    backend_state = status.get("BackendState", "unknown")
+    key_expiry_disabled = key_expiry_dt is None and backend_state == "Running"
+    expired = bool(self_node.get("Expired")) or (
+        seconds_until_key_expiry is not None and seconds_until_key_expiry <= 0
+    )
+    warning_seconds = WARNING_DAYS * 86400
+    critical_seconds = CRITICAL_DAYS * 86400
+    key_expiry_warning_ok = key_expiry_disabled or (
+        seconds_until_key_expiry is not None and seconds_until_key_expiry > warning_seconds
+    )
+    key_expiry_critical_ok = key_expiry_disabled or (
+        seconds_until_key_expiry is not None and seconds_until_key_expiry > critical_seconds
+    )
+    backend_running = backend_state == "Running"
+
+    payload: dict[str, Any] = {
+        "hostname": socket.gethostname(),
+        "timestamp": now.isoformat(),
+        "timestamp_epoch": int(now.timestamp()),
+        "tailscale": {
+            "status_rc": status_rc,
+            "status_stderr": stderr,
+            "backend_state": backend_state,
+            "have_node_key": bool(status.get("HaveNodeKey")),
+            "magic_dns_suffix": status.get("MagicDNSSuffix"),
+            "tailnet": (status.get("CurrentTailnet") or {}).get("Name"),
+            "self": {
+                "hostname": self_node.get("HostName"),
+                "dns_name": self_node.get("DNSName"),
+                "tailscale_ips": self_node.get("TailscaleIPs") or [],
+                "online": bool(self_node.get("Online")),
+                "active": bool(self_node.get("Active")),
+                "in_engine": bool(self_node.get("InEngine")),
+                "expired": expired,
+                "key_expiry": key_expiry,
+                "key_expiry_epoch": key_expiry_epoch,
+                "seconds_until_key_expiry": seconds_until_key_expiry,
+                "days_until_key_expiry": days_until_key_expiry,
+                "key_expiry_disabled": key_expiry_disabled,
+            },
+        },
+        "thresholds": {
+            "warning_days": WARNING_DAYS,
+            "critical_days": CRITICAL_DAYS,
+        },
+        "summary": {
+            "backend_running": backend_running,
+            "key_expiry_disabled": key_expiry_disabled,
+            "key_expiry_present": key_expiry_dt is not None,
+            "key_expired": expired,
+            "key_expiry_warning_ok": key_expiry_warning_ok,
+            "key_expiry_critical_ok": key_expiry_critical_ok,
+            "overall_ok": backend_running and key_expiry_critical_ok and not expired,
+        },
+    }
+
+    print(json.dumps(payload, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

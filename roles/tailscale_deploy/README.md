@@ -67,3 +67,4 @@ tailscale_repo_list_file: /etc/apt/sources.list.d/tailscale.list
 
 - If Tailscale is the only management path, perform initial bootstrap via LAN/console or preinstall Tailscale manually, then switch to automated deploys.
 - When rotating auth keys or reusing an existing node key, set `tailscale_manual_up: true`.
+- Server nodes should either have key expiry disabled in the Tailscale admin console or be monitored with `tailscale_metrics_endpoint` so Nyxmon alerts before `BackendState` reaches `NeedsLogin`.

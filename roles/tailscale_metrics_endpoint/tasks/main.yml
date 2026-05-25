@@ -1,0 +1,172 @@
+---
+- name: Skip tailscale_metrics_endpoint when disabled
+  ansible.builtin.debug:
+    msg: "tailscale_metrics_endpoint role skipped (tailscale_metrics_endpoint_enabled=false)."
+  when: not tailscale_metrics_endpoint_enabled | bool
+
+- name: Deploy Tailscale metrics endpoint
+  when: tailscale_metrics_endpoint_enabled | bool
+  block:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - tailscale_metrics_endpoint_auth_user is defined
+          - tailscale_metrics_endpoint_auth_user != "CHANGE_ME"
+          - tailscale_metrics_endpoint_auth_user | length > 0
+          - tailscale_metrics_endpoint_auth_password is defined
+          - tailscale_metrics_endpoint_auth_password != "CHANGE_ME"
+          - tailscale_metrics_endpoint_auth_password | length > 0
+          - tailscale_metrics_endpoint_warning_days | int > 0
+          - tailscale_metrics_endpoint_critical_days | int > 0
+          - tailscale_metrics_endpoint_warning_days | int >= tailscale_metrics_endpoint_critical_days | int
+        fail_msg: >-
+          tailscale_metrics_endpoint auth values or thresholds are invalid.
+          Set auth user/password and keep warning_days >= critical_days > 0.
+
+    - name: Validate tailscale binary exists
+      ansible.builtin.stat:
+        path: "{{ tailscale_metrics_endpoint_tailscale_bin }}"
+      register: _tailscale_metrics_bin_stat
+
+    - name: Fail if tailscale binary not found
+      ansible.builtin.fail:
+        msg: "Tailscale binary not found at {{ tailscale_metrics_endpoint_tailscale_bin }}."
+      when: not _tailscale_metrics_bin_stat.stat.exists
+
+    - name: Install dependencies for Tailscale metrics endpoint
+      ansible.builtin.package:
+        name: "{{ tailscale_metrics_endpoint_packages }}"
+        state: present
+
+    - name: Create metrics system group
+      ansible.builtin.group:
+        name: "{{ tailscale_metrics_endpoint_group }}"
+        system: true
+        state: present
+
+    - name: Create metrics system user
+      ansible.builtin.user:
+        name: "{{ tailscale_metrics_endpoint_user }}"
+        group: "{{ tailscale_metrics_endpoint_group }}"
+        shell: /usr/sbin/nologin
+        create_home: false
+        system: true
+        state: present
+
+    - name: Ensure data directory exists
+      ansible.builtin.file:
+        path: "{{ tailscale_metrics_endpoint_data_dir }}"
+        state: directory
+        owner: root
+        group: "{{ tailscale_metrics_endpoint_group }}"
+        mode: "0750"
+
+    - name: Ensure htpasswd directory exists
+      ansible.builtin.file:
+        path: "{{ tailscale_metrics_endpoint_htpasswd_dir }}"
+        state: directory
+        owner: root
+        group: "{{ tailscale_metrics_endpoint_group }}"
+        mode: "0750"
+
+    - name: Deploy Tailscale metrics exporter
+      ansible.builtin.template:
+        src: tailscale_metrics_exporter.py.j2
+        dest: "{{ tailscale_metrics_endpoint_exporter_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Deploy HTTP server script
+      ansible.builtin.template:
+        src: tailscale_metrics_httpd.py.j2
+        dest: "{{ tailscale_metrics_endpoint_server_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+      notify: restart tailscale-metrics-endpoint
+
+    - name: Verify existing htpasswd credentials
+      ansible.builtin.command: >-
+        htpasswd -viB {{ tailscale_metrics_endpoint_htpasswd_path }} {{ tailscale_metrics_endpoint_auth_user }}
+      args:
+        stdin: "{{ tailscale_metrics_endpoint_auth_password }}"
+      register: _tailscale_metrics_htpasswd_verify
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Generate htpasswd entry
+      ansible.builtin.command: "htpasswd -niB {{ tailscale_metrics_endpoint_auth_user }}"
+      args:
+        stdin: "{{ tailscale_metrics_endpoint_auth_password }}"
+      register: _tailscale_metrics_htpasswd_entry
+      changed_when: false
+      when: _tailscale_metrics_htpasswd_verify.rc != 0
+      no_log: true
+
+    - name: Write htpasswd file
+      ansible.builtin.copy:
+        dest: "{{ tailscale_metrics_endpoint_htpasswd_path }}"
+        content: "{{ _tailscale_metrics_htpasswd_entry.stdout }}\n"
+        owner: root
+        group: "{{ tailscale_metrics_endpoint_group }}"
+        mode: "0640"
+      notify: restart tailscale-metrics-endpoint
+      when: _tailscale_metrics_htpasswd_verify.rc != 0
+      no_log: true
+
+    - name: Create collector service unit
+      ansible.builtin.template:
+        src: tailscale-metrics-collector.service.j2
+        dest: "/etc/systemd/system/{{ tailscale_metrics_endpoint_timer_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+
+    - name: Create collector timer unit
+      ansible.builtin.template:
+        src: tailscale-metrics-collector.timer.j2
+        dest: "/etc/systemd/system/{{ tailscale_metrics_endpoint_timer_name }}.timer"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart tailscale-metrics-collector-timer
+
+    - name: Create HTTP server service unit
+      ansible.builtin.template:
+        src: tailscale-metrics-endpoint.service.j2
+        dest: "/etc/systemd/system/{{ tailscale_metrics_endpoint_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart tailscale-metrics-endpoint
+
+    - name: Flush handlers to ensure units are registered
+      ansible.builtin.meta: flush_handlers
+
+    - name: Run collector once to create initial metrics file
+      ansible.builtin.systemd:
+        name: "{{ tailscale_metrics_endpoint_timer_name }}.service"
+        state: started
+      changed_when: false
+
+    - name: Ensure collector timer is enabled and started
+      ansible.builtin.systemd:
+        name: "{{ tailscale_metrics_endpoint_timer_name }}.timer"
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Ensure HTTP server is enabled and running
+      ansible.builtin.systemd:
+        name: "{{ tailscale_metrics_endpoint_service_name }}"
+        enabled: true
+        state: started
+        daemon_reload: true

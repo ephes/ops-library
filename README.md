@@ -115,6 +115,7 @@ consumer repos depend on.
 | Infrastructure | [`encrypted_volume_prepare`](roles/encrypted_volume_prepare/README.md) | Prepare and mount a LUKS data volume with UUID checks, keyfile unlock, and boot-time wiring (crypttab/fstab). |
 | Infrastructure | [`traefik_deploy`](roles/traefik_deploy/README.md) | Deploy Traefik reverse proxy with Let's Encrypt (auto-detects platform, version upgrades). |
 | Infrastructure | [`tailscale_deploy`](roles/tailscale_deploy/README.md) | Install Tailscale from the official repo and join tailnet with auth key or manual mode (accept-dns defaults to false). |
+| Monitoring | [`tailscale_metrics_endpoint`](roles/tailscale_metrics_endpoint/README.md) | Expose Tailscale login state and node-key expiry as authenticated JSON for Nyxmon (`/.well-known/tailscale`). |
 | Infrastructure | [`bind_authoritative_deploy`](roles/bind_authoritative_deploy/README.md) | Deploy authoritative BIND 9 with managed configs and zone files. |
 | Infrastructure | [`echoport_backup`](roles/echoport_backup/README.md) | Register centralized Echoport backup/restore runners with FastDeploy. |
 | Service deployment | [`fastdeploy_deploy`](roles/fastdeploy_deploy/README.md) | Deploy the FastDeploy platform (database, uv, frontend build, systemd, Traefik). |
