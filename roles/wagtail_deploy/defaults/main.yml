@@ -128,5 +128,9 @@ wagtail_staticfiles_required_paths: []
 # wagtail_mailgun_sender_domain: ""
 # wagtail_django_server_email: ""
 
+# Optional: point Anymail at a Mailgun-compatible relay (e.g. https://mailgun.home.xn--wersdrfer-47a.de/v3).
+# Empty string falls back to Anymail's default https://api.mailgun.net/v3.
+wagtail_mailgun_api_url: ""
+
 # Additional env values
 wagtail_env_extra: {}
