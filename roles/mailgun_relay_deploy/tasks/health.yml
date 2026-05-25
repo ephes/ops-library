@@ -1,0 +1,36 @@
+---
+- name: health | Wait for mailgun-relay bind port
+  ansible.builtin.wait_for:
+    host: "{{ mailgun_relay_bind_host }}"
+    port: "{{ mailgun_relay_bind_port }}"
+    timeout: "{{ mailgun_relay_healthcheck_retries * mailgun_relay_healthcheck_delay_seconds }}"
+
+- name: health | Query mailgun-relay health endpoint
+  ansible.builtin.uri:
+    url: "{{ mailgun_relay_healthcheck_url }}"
+    method: GET
+    status_code: 200
+    timeout: "{{ mailgun_relay_healthcheck_timeout_seconds }}"
+  register: mailgun_relay_health_response
+  retries: "{{ mailgun_relay_healthcheck_retries }}"
+  delay: "{{ mailgun_relay_healthcheck_delay_seconds }}"
+  until: mailgun_relay_health_response.status == 200
+
+- name: health | Validate health payload status value
+  ansible.builtin.assert:
+    that:
+      - mailgun_relay_health_response.json is defined
+      - mailgun_relay_health_response.json.status == "ok"
+      - mailgun_relay_health_response.json.version is defined
+    fail_msg: "mailgun-relay health endpoint returned an unexpected payload"
+
+- name: health | Collect service facts
+  ansible.builtin.service_facts:
+
+- name: health | Verify mailgun-relay service is active
+  ansible.builtin.assert:
+    that:
+      - (ansible_facts.services.get(mailgun_relay_service_name ~ '.service', {}).get('state')) == 'running'
+    fail_msg: >-
+      mailgun-relay service is not active:
+      state={{ ansible_facts.services.get(mailgun_relay_service_name ~ '.service', {}).get('state', 'missing') }}

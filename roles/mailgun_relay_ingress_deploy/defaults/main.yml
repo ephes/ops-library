@@ -1,0 +1,22 @@
+---
+# mailgun_relay_ingress_deploy defaults
+#
+# Renders a Traefik dynamic-config YAML for the mailgun-relay backend.
+# This role does not own basic auth: the relay enforces its own HTTP Basic
+# (the Mailgun-style `api:<token>` scheme). Traefik just terminates TLS and
+# proxies the request body unchanged.
+
+mailgun_relay_ingress_enabled: false
+
+# Traefik dynamic config destination (matches existing patterns on macmini)
+mailgun_relay_ingress_traefik_config_path: "/etc/traefik/dynamic/mailgun-relay.yml"
+mailgun_relay_ingress_traefik_cert_resolver: ""
+
+# Public host (use punycode for IDN)
+mailgun_relay_ingress_host: "mailgun.home.xn--wersdrfer-47a.de"
+
+# Backend URL the FastAPI service listens on
+mailgun_relay_ingress_backend_url: "http://127.0.0.1:8085"
+
+# Body limit at the edge (matches max_body_bytes in the service; defaults to 25 MiB)
+mailgun_relay_ingress_max_request_body_bytes: 26214400

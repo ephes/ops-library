@@ -1,0 +1,52 @@
+---
+- name: source_rsync | Ensure source directory exists
+  ansible.builtin.stat:
+    path: "{{ mailgun_relay_source_path }}"
+  register: mailgun_relay_source_dir
+  delegate_to: localhost
+  become: false
+
+- name: source_rsync | Fail when source directory is missing
+  ansible.builtin.fail:
+    msg: "Source directory {{ mailgun_relay_source_path }} does not exist"
+  when: not mailgun_relay_source_dir.stat.exists or not mailgun_relay_source_dir.stat.isdir
+
+- name: source_rsync | Validate required source paths exist
+  ansible.builtin.stat:
+    path: "{{ mailgun_relay_source_path }}/{{ item }}"
+  register: mailgun_relay_source_path_stats
+  delegate_to: localhost
+  become: false
+  loop:
+    - src/mailgun_relay
+    - pyproject.toml
+    - uv.lock
+  loop_control:
+    label: "{{ item }}"
+
+- name: source_rsync | Fail when required source paths are missing
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+    fail_msg: "Missing required path for rsync deployment: {{ mailgun_relay_source_path }}/{{ item.item }}"
+  loop: "{{ mailgun_relay_source_path_stats.results }}"
+  loop_control:
+    label: "{{ mailgun_relay_source_path }}/{{ item.item }}"
+
+- name: source_rsync | Sync mailgun-relay project to target (controller push)
+  ansible.posix.synchronize:
+    src: "{{ mailgun_relay_source_path }}/"
+    dest: "{{ mailgun_relay_site_path }}/"
+    delete: true
+    rsync_opts: "{{ mailgun_relay_rsync_excludes | map('regex_replace', '^(.*)$', '--exclude=\\1') | list }}"
+  delegate_to: localhost
+  become: false
+  notify:
+    - restart mailgun-relay
+
+- name: source_rsync | Ensure ownership for synced files
+  ansible.builtin.file:
+    path: "{{ mailgun_relay_site_path }}"
+    owner: "{{ mailgun_relay_user }}"
+    group: "{{ mailgun_relay_group }}"
+    recurse: true

@@ -1,0 +1,79 @@
+---
+# mailgun_relay_deploy defaults
+#
+# This role deploys the mailgun-relay FastAPI service. It does not own the
+# reverse-proxy ingress; pair it with `mailgun_relay_ingress_deploy` on the
+# host that terminates TLS (typically Traefik).
+
+# Toggle role execution
+mailgun_relay_enabled: true
+
+# Service user / paths
+mailgun_relay_user: "mailgun-relay"
+mailgun_relay_group: "{{ mailgun_relay_user }}"
+mailgun_relay_home: "/opt/apps/mailgun-relay"
+mailgun_relay_site_path: "{{ mailgun_relay_home }}/site"
+mailgun_relay_venv_path: "{{ mailgun_relay_site_path }}/.venv"
+mailgun_relay_venv_bin: "{{ mailgun_relay_venv_path }}/bin"
+mailgun_relay_env_dir: "/etc/mailgun-relay"
+mailgun_relay_env_path: "{{ mailgun_relay_env_dir }}/mailgun-relay.env"
+mailgun_relay_secrets_path: "{{ mailgun_relay_env_dir }}/secrets.yml"
+
+# Source deployment
+mailgun_relay_deploy_method: rsync  # Options: rsync, git
+mailgun_relay_source_path: ""  # REQUIRED when method=rsync
+mailgun_relay_git_repo: "https://github.com/ephes/mailgun-relay.git"
+mailgun_relay_git_version: "main"
+mailgun_relay_rsync_excludes:
+  - ".git/"
+  - ".venv/"
+  - "__pycache__/"
+  - "*.pyc"
+  - ".pytest_cache/"
+  - ".mypy_cache/"
+  - ".ruff_cache/"
+  - "dist/"
+  - "build/"
+  - ".env"
+  - ".env.local"
+
+# Python runtime + uv sync arguments
+mailgun_relay_python_version: "3.12"
+mailgun_relay_uv_sync_args: "--no-default-groups --no-dev"
+
+# Systemd unit
+mailgun_relay_service_name: "mailgun-relay"
+
+# Service runtime config (non-secret)
+mailgun_relay_bind_host: "127.0.0.1"
+mailgun_relay_bind_port: 8085
+mailgun_relay_public_host: "mailgun.home.xn--wersdrfer-47a.de"
+mailgun_relay_log_level: "INFO"
+
+# SMTP submission target (defaults to the home mail backend)
+mailgun_relay_smtp_host: "smtp.home.xn--wersdrfer-47a.de"
+mailgun_relay_smtp_port: 587
+mailgun_relay_smtp_starttls: true
+mailgun_relay_smtp_timeout_s: 30
+
+# Limits (per-token rate limiting belongs at the reverse proxy)
+mailgun_relay_max_body_bytes: 26214400      # 25 MiB
+mailgun_relay_max_attachments: 10
+mailgun_relay_max_attachment_bytes: 10485760  # 10 MiB
+mailgun_relay_max_recipients: 100
+mailgun_relay_max_header_value_length: 998
+
+# Secrets — all REQUIRED via ops-control (CHANGEME values are rejected).
+# Each token entry must include: label, token_sha256 (sha256 hex), mailgun_domains,
+# allowed_from_domains, and optionally allowed_from_addresses.
+mailgun_relay_smtp_username: "CHANGEME"
+mailgun_relay_smtp_password: "CHANGEME"
+mailgun_relay_envelope_sender: "CHANGEME"
+mailgun_relay_tokens: []
+
+# Health verification
+mailgun_relay_healthcheck_enabled: true
+mailgun_relay_healthcheck_retries: 20
+mailgun_relay_healthcheck_delay_seconds: 1
+mailgun_relay_healthcheck_timeout_seconds: 5
+mailgun_relay_healthcheck_url: "http://{{ mailgun_relay_bind_host }}:{{ mailgun_relay_bind_port }}/health"

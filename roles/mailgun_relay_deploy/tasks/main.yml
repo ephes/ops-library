@@ -1,0 +1,75 @@
+---
+- name: main | Skip role when disabled
+  ansible.builtin.meta: end_host
+  when: not mailgun_relay_enabled | bool
+
+- name: main | Validate required variables
+  ansible.builtin.assert:
+    that:
+      - mailgun_relay_deploy_method in ["rsync", "git"]
+      - mailgun_relay_smtp_username is defined
+      - mailgun_relay_smtp_username | length > 0
+      - mailgun_relay_smtp_username != "CHANGEME"
+      - mailgun_relay_smtp_password is defined
+      - mailgun_relay_smtp_password | length > 0
+      - mailgun_relay_smtp_password != "CHANGEME"
+      - mailgun_relay_envelope_sender is defined
+      - mailgun_relay_envelope_sender | length > 0
+      - mailgun_relay_envelope_sender != "CHANGEME"
+      - mailgun_relay_tokens is defined
+      - mailgun_relay_tokens | length > 0
+      - mailgun_relay_public_host | length > 0
+      - mailgun_relay_smtp_host | length > 0
+    fail_msg: >-
+      mailgun_relay_deploy: required variables missing. Set smtp_username,
+      smtp_password, envelope_sender, and at least one entry in mailgun_relay_tokens
+      from ops-control SOPS secrets. CHANGEME placeholders are rejected.
+
+- name: main | Validate every token entry has the required shape
+  ansible.builtin.assert:
+    that:
+      - item.label is defined
+      - item.label | length > 0
+      - item.token_sha256 is defined
+      - item.token_sha256 | length == 64
+      - item.token_sha256 is match("^[0-9a-fA-F]{64}$")
+      - item.mailgun_domains is defined
+      - item.mailgun_domains | length > 0
+      - item.allowed_from_domains is defined
+      - item.allowed_from_domains | length > 0
+    fail_msg: >-
+      mailgun_relay token entry malformed: {{ item }}. Each token must have
+      label, token_sha256 (64-hex sha256), mailgun_domains, allowed_from_domains.
+  loop: "{{ mailgun_relay_tokens }}"
+  loop_control:
+    label: "{{ item.label | default('<no-label>') }}"
+
+- name: main | Validate rsync-specific requirements
+  ansible.builtin.assert:
+    that:
+      - mailgun_relay_source_path is defined
+      - mailgun_relay_source_path | length > 0
+    fail_msg: "mailgun_relay_source_path must be set when mailgun_relay_deploy_method=rsync"
+  when: mailgun_relay_deploy_method == "rsync"
+
+- name: main | Ensure service user and directories
+  ansible.builtin.import_tasks: user.yml
+
+- name: main | Sync mailgun-relay source code
+  ansible.builtin.include_tasks: "source_{{ mailgun_relay_deploy_method }}.yml"
+
+- name: main | Prepare Python runtime and dependencies
+  ansible.builtin.import_tasks: python.yml
+
+- name: main | Render env and secrets files
+  ansible.builtin.import_tasks: config.yml
+
+- name: main | Configure and start systemd service
+  ansible.builtin.import_tasks: service.yml
+
+- name: main | Apply handlers before health verification
+  ansible.builtin.meta: flush_handlers
+
+- name: main | Verify health endpoint
+  ansible.builtin.import_tasks: health.yml
+  when: mailgun_relay_healthcheck_enabled | bool

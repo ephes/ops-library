@@ -1,0 +1,23 @@
+[Unit]
+Description=mailgun-relay (Mailgun-API-compatible SMTP relay)
+After=network.target
+
+[Service]
+Type=simple
+User={{ mailgun_relay_user }}
+Group={{ mailgun_relay_group }}
+WorkingDirectory={{ mailgun_relay_site_path }}
+EnvironmentFile={{ mailgun_relay_env_path }}
+ExecStart={{ mailgun_relay_venv_bin }}/python -m mailgun_relay
+Restart=on-failure
+RestartSec=2
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ReadWritePaths=
+
+[Install]
+WantedBy=multi-user.target

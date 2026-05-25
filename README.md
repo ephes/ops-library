@@ -136,6 +136,8 @@ consumer repos depend on.
 | Service deployment | [`open_webui_venv_deploy`](roles/open_webui_venv_deploy/README.md) | Deploy Open WebUI (uv + venv) with systemd, Traefik routing, and optional basic auth. |
 | Service deployment | [`mail_backend_deploy`](roles/mail_backend_deploy/README.md) | Deploy mail backend with Postfix, Dovecot, OpenDKIM, and PostgreSQL virtual users/domains. |
 | Service deployment | [`mail_relay_deploy`](roles/mail_relay_deploy/README.md) | Deploy Postfix edge relay with greylisting, TLS termination, and backend routing. |
+| Service deployment | [`mailgun_relay_deploy`](roles/mailgun_relay_deploy/README.md) | Deploy the mailgun-relay FastAPI service (Mailgun-API-compatible HTTP→SMTP adapter for django-anymail clients). |
+| Service deployment | [`mailgun_relay_ingress_deploy`](roles/mailgun_relay_ingress_deploy/README.md) | Render Traefik dynamic config exposing mailgun-relay behind HTTPS. |
 | Service deployment | [`snappymail_deploy`](roles/snappymail_deploy/README.md) | Deploy SnappyMail webmail via PHP-FPM + nginx with Traefik exposure and IMAP/SMTP defaults. |
 | Service deployment | [`takahe_deploy`](roles/takahe_deploy/README.md) | Deploy Takahe with systemd, nginx cache/accel proxying, and Traefik exposure. |
 | Service deployment | [`wagtail_deploy`](roles/wagtail_deploy/README.md) | Deploy Wagtail Django sites with uv, systemd, and Traefik routing. |

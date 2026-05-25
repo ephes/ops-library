@@ -1,0 +1,35 @@
+---
+- name: user | Ensure mailgun-relay group exists
+  ansible.builtin.group:
+    name: "{{ mailgun_relay_group }}"
+    state: present
+
+- name: user | Ensure mailgun-relay user exists
+  ansible.builtin.user:
+    name: "{{ mailgun_relay_user }}"
+    group: "{{ mailgun_relay_group }}"
+    home: "{{ mailgun_relay_home }}"
+    shell: /usr/sbin/nologin
+    create_home: true
+    state: present
+
+- name: user | Create application directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ mailgun_relay_home }}"
+      owner: "{{ mailgun_relay_user }}"
+      group: "{{ mailgun_relay_group }}"
+      mode: "0755"
+    - path: "{{ mailgun_relay_site_path }}"
+      owner: "{{ mailgun_relay_user }}"
+      group: "{{ mailgun_relay_group }}"
+      mode: "0755"
+    - path: "{{ mailgun_relay_env_dir }}"
+      owner: root
+      group: "{{ mailgun_relay_group }}"
+      mode: "0750"

@@ -1,0 +1,9 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart mailgun-relay
+  ansible.builtin.systemd:
+    name: "{{ mailgun_relay_service_name }}"
+    state: restarted

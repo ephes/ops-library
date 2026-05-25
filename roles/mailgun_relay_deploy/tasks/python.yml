@@ -1,0 +1,43 @@
+---
+- name: python | Ensure uv is installed
+  ansible.builtin.import_role:
+    name: uv_install
+
+- name: python | Validate pyproject and lock files are present
+  ansible.builtin.stat:
+    path: "{{ mailgun_relay_site_path }}/{{ item }}"
+  register: mailgun_relay_python_project_files
+  loop:
+    - pyproject.toml
+    - uv.lock
+
+- name: python | Fail when required project files are missing
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+    fail_msg: "Missing required file at {{ mailgun_relay_site_path }}/{{ item.item }}"
+  loop: "{{ mailgun_relay_python_project_files.results }}"
+  loop_control:
+    label: "{{ mailgun_relay_site_path }}/{{ item.item }}"
+
+- name: python | Create virtual environment
+  ansible.builtin.command:
+    cmd: "uv venv --python {{ mailgun_relay_python_version }} {{ mailgun_relay_venv_path }}"
+  args:
+    creates: "{{ mailgun_relay_venv_bin }}/python"
+  become: true
+  become_user: "{{ mailgun_relay_user }}"
+
+- name: python | Sync runtime dependencies with uv
+  ansible.builtin.command:
+    cmd: "uv sync {{ mailgun_relay_uv_sync_args }}"
+  args:
+    chdir: "{{ mailgun_relay_site_path }}"
+  environment:
+    UV_PROJECT_ENVIRONMENT: "{{ mailgun_relay_venv_path }}"
+  become: true
+  become_user: "{{ mailgun_relay_user }}"
+  register: mailgun_relay_uv_sync_result
+  changed_when: "'Installed' in mailgun_relay_uv_sync_result.stdout or 'Updated' in mailgun_relay_uv_sync_result.stdout"
+  notify:
+    - restart mailgun-relay

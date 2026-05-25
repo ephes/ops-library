@@ -1,0 +1,21 @@
+---
+- name: config | Render env file (non-secret runtime config)
+  ansible.builtin.template:
+    src: mailgun-relay.env.j2
+    dest: "{{ mailgun_relay_env_path }}"
+    owner: root
+    group: "{{ mailgun_relay_group }}"
+    mode: "0640"
+  notify:
+    - restart mailgun-relay
+
+- name: config | Render secrets file (SMTP creds + token policies)
+  ansible.builtin.template:
+    src: secrets.yml.j2
+    dest: "{{ mailgun_relay_secrets_path }}"
+    owner: root
+    group: "{{ mailgun_relay_group }}"
+    mode: "0640"
+  notify:
+    - restart mailgun-relay
+  no_log: true

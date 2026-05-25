@@ -1,0 +1,24 @@
+---
+- name: Skip mailgun_relay_ingress_deploy when disabled
+  ansible.builtin.debug:
+    msg: "mailgun_relay_ingress_deploy skipped (mailgun_relay_ingress_enabled=false)."
+  when: not mailgun_relay_ingress_enabled | bool
+
+- name: Configure mailgun-relay ingress
+  when: mailgun_relay_ingress_enabled | bool
+  block:
+    - name: Validate required ingress variables
+      ansible.builtin.assert:
+        that:
+          - mailgun_relay_ingress_host | length > 0
+          - mailgun_relay_ingress_backend_url | length > 0
+        fail_msg: "mailgun_relay_ingress_host and backend_url are required when ingress is enabled."
+
+    - name: Render Traefik dynamic config for mailgun-relay
+      ansible.builtin.template:
+        src: traefik-mailgun-relay.yml.j2
+        dest: "{{ mailgun_relay_ingress_traefik_config_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      # Traefik file provider hot-reloads; no service restart needed.

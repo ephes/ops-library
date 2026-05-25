@@ -1,0 +1,18 @@
+---
+- name: service | Render mailgun-relay systemd unit
+  ansible.builtin.template:
+    src: mailgun-relay.service.j2
+    dest: "/etc/systemd/system/{{ mailgun_relay_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart mailgun-relay
+
+- name: service | Enable and start mailgun-relay
+  ansible.builtin.systemd:
+    name: "{{ mailgun_relay_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true

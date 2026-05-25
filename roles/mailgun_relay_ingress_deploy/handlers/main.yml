@@ -1,0 +1,2 @@
+---
+# Traefik file provider auto-reloads dynamic config. No handlers needed.

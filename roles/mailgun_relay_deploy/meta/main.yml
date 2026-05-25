@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  role_name: mailgun_relay_deploy
+  author: Jochen Wersdörfer
+  description: Deploy the mailgun-relay FastAPI service (Mailgun-API-compatible SMTP relay).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+
+dependencies: []

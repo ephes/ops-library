@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  role_name: mailgun_relay_ingress_deploy
+  author: Jochen Wersdörfer
+  description: Render Traefik dynamic config for the mailgun-relay backend.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+
+dependencies: []
