@@ -38,7 +38,7 @@ mailgun_relay_rsync_excludes:
   - ".env.local"
 
 # Python runtime + uv sync arguments
-mailgun_relay_python_version: "3.12"
+mailgun_relay_python_version: "3.14"
 mailgun_relay_uv_sync_args: "--no-default-groups --no-dev"
 
 # Systemd unit
