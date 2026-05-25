@@ -45,7 +45,7 @@ expose the service publicly behind TLS.
 | `mailgun_relay_secrets_path` | `{{ env_dir }}/secrets.yml` | secrets, 0640 root:mailgun-relay |
 | `mailgun_relay_deploy_method` | `rsync` | `rsync` or `git` |
 | `mailgun_relay_source_path` | `""` | REQUIRED when method=rsync |
-| `mailgun_relay_python_version` | `3.12` | |
+| `mailgun_relay_python_version` | `3.14` | |
 | `mailgun_relay_bind_host` | `127.0.0.1` | loopback by default; reverse proxy fronts it |
 | `mailgun_relay_bind_port` | `8085` | |
 | `mailgun_relay_public_host` | `mailgun.home.xn--wersdrfer-47a.de` | punycode |

@@ -38,11 +38,14 @@
       - item.allowed_from_domains is defined
       - item.allowed_from_domains | length > 0
     fail_msg: >-
-      mailgun_relay token entry malformed: {{ item }}. Each token must have
-      label, token_sha256 (64-hex sha256), mailgun_domains, allowed_from_domains.
+      mailgun_relay token entry for label {{ item.label | default('<no-label>') }}
+      is malformed. Each token must have label, token_sha256 (64-hex sha256),
+      mailgun_domains, allowed_from_domains. (Value omitted from this message
+      because token_sha256 is sensitive.)
   loop: "{{ mailgun_relay_tokens }}"
   loop_control:
     label: "{{ item.label | default('<no-label>') }}"
+  no_log: true
 
 - name: main | Validate rsync-specific requirements
   ansible.builtin.assert:
