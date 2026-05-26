@@ -68,6 +68,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dynamic DNS support in `dns_deploy`, adding an opt-in LiveDNS updater with dedicated service accounts, timers, and IPv4/IPv6 support
 - UniFi lifecycle roles: `unifi_deploy`, `unifi_backup`, `unifi_restore`, and `unifi_remove` (Mongo-auth aware, Traefik/HA integration, Justfile wiring, docs)
 - Navidrome lifecycle roles: `navidrome_deploy`, `navidrome_backup`, `navidrome_restore`, and `navidrome_remove` (systemd binary install, Traefik basic auth, rescan timer, backup/restore tooling)
+
+### Changed
+- `tailscale_metrics_endpoint` now defaults node-key expiry alerts to warning
+  inside 3 days and critical inside 1 day.
 - `zed` role scrub timers can optionally wait for completion and run a post-scrub spindown hook
 - Unit tests for OpenClaw metrics collector canary behavior and schema invariants (`tests/unit/test_openclaw_metrics_collector.py`)
 

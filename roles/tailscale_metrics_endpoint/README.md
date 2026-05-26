@@ -23,8 +23,8 @@ The role targets Debian/Ubuntu hosts and installs `apache2-utils` for `htpasswd`
 | `tailscale_metrics_endpoint_auth_user` | `CHANGE_ME` | Basic auth username |
 | `tailscale_metrics_endpoint_auth_password` | `CHANGE_ME` | Basic auth password |
 | `tailscale_metrics_endpoint_packages` | `python3`, `apache2-utils` | Runtime packages installed by the role |
-| `tailscale_metrics_endpoint_warning_days` | `45` | Warning threshold for remaining key lifetime |
-| `tailscale_metrics_endpoint_critical_days` | `14` | Critical threshold for remaining key lifetime |
+| `tailscale_metrics_endpoint_warning_days` | `3` | Warning threshold for remaining key lifetime |
+| `tailscale_metrics_endpoint_critical_days` | `1` | Critical threshold for remaining key lifetime |
 | `tailscale_metrics_endpoint_timer_interval` | `300` | Collector interval in seconds |
 
 ## Response Shape
