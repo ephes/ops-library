@@ -21,7 +21,9 @@
     that:
       - mailgun_relay_health_response.json is defined
       - mailgun_relay_health_response.json.status == "ok"
-      - mailgun_relay_health_response.json.version is defined
+      # /health intentionally does not expose the service version to callers
+      # (the router has no path restriction, so this endpoint is reachable).
+      - "'version' not in mailgun_relay_health_response.json"
     fail_msg: "mailgun-relay health endpoint returned an unexpected payload"
 
 - name: health | Collect service facts
