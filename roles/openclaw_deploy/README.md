@@ -552,6 +552,10 @@ When `openclaw_metrics_endpoint_enabled: true`:
   completion, so post-reboot timer activation cannot leave the unit in an
   elapsed state with no next run.
 - collector runs that execute the synthetic canary can take longer than one timer tick (`openclaw_metrics_endpoint_timer_interval`); systemd oneshot does not overlap runs.
+- `$.openclaw.collector_ok` means the collector executed and parsed required
+  metrics inputs. A nonzero `health --json` result with parseable JSON is still
+  collected so warning-class health sub-signals, such as Telegram Bot API probe
+  failures, do not masquerade as collector failures.
 - optional synthetic canary mode executes a real `agent --json` turn at a conservative cadence and stores:
   - uses a dedicated canary session id (`probe-openclaw-canary` by default)
   - passes `--timeout` to the OpenClaw CLI and keeps a short outer subprocess grace window
@@ -564,7 +568,7 @@ When `openclaw_metrics_endpoint_enabled: true`:
 Designed for Nyxmon `json-metrics` checks, for example:
 
 - `$.openclaw.collector_ok == true`
-- `$.openclaw.health.ok == true`
+- `$.openclaw.health.telegram_probe_ok == true` (warning)
 - `$.openclaw.channels.telegram.running == true`
 - `$.openclaw.calendar.auth.has_repeated_failures == false`
 - `$.openclaw.calendar.auth.has_recent_failures == false`

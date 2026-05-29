@@ -76,6 +76,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit tests for OpenClaw metrics collector canary behavior and schema invariants (`tests/unit/test_openclaw_metrics_collector.py`)
 
 ### Fixed
+- `openclaw_deploy` metrics collector now treats parseable nonzero
+  `health --json` output as collected health data, so transient Telegram probe
+  failures do not set `collector_ok=false`.
 - Deploy roles now build stat assertion labels and error messages from the
   original loop item instead of registered result invocation metadata,
   restoring compatibility with newer ansible-core controllers.

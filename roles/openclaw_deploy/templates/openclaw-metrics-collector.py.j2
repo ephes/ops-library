@@ -35,7 +35,11 @@ def parse_json_output(raw_stdout: str, command: list[str]) -> dict[str, Any]:
         raise RuntimeError(f"invalid JSON from {' '.join(command)}")
 
 
-def run_json_command(command: list[str], timeout: int) -> dict[str, Any]:
+def run_json_command(
+    command: list[str],
+    timeout: int,
+    allow_nonzero_json: bool = False,
+) -> dict[str, Any]:
     completed = subprocess.run(
         command,
         check=False,
@@ -44,6 +48,15 @@ def run_json_command(command: list[str], timeout: int) -> dict[str, Any]:
         timeout=timeout,
     )
     if completed.returncode != 0:
+        if allow_nonzero_json:
+            try:
+                return parse_json_output(completed.stdout, command)
+            except RuntimeError as err:
+                stderr = (completed.stderr or "").strip()
+                raise RuntimeError(
+                    f"command failed rc={completed.returncode} and JSON was unusable: "
+                    f"{' '.join(command)}: {err}: {stderr}"
+                ) from err
         stderr = (completed.stderr or "").strip()
         raise RuntimeError(
             f"command failed rc={completed.returncode}: {' '.join(command)}: {stderr}"
@@ -664,7 +677,11 @@ def main() -> int:
     ]
 
     try:
-        health_json = run_json_command(health_cmd, args.command_timeout)
+        health_json = run_json_command(
+            health_cmd,
+            args.command_timeout,
+            allow_nonzero_json=True,
+        )
         openclaw["health"]["ok"] = bool(health_json.get("ok"))
         openclaw["health"]["telegram_probe_ok"] = resolve_telegram_probe_ok(health_json)
     except Exception as err:  # noqa: BLE001
