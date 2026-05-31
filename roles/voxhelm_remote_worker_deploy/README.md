@@ -26,6 +26,7 @@ voxhelm_remote_worker_package_extras:
 voxhelm_remote_worker_force_install: false
 voxhelm_remote_worker_launcher_path: "/etc/voxhelm-remote-worker/worker-launcher.sh"
 voxhelm_remote_worker_id: "atlas"
+voxhelm_remote_worker_allowed_url_hosts: []
 voxhelm_remote_worker_whispercpp_model_source: ""
 voxhelm_remote_worker_artifact_backend: "s3"
 voxhelm_remote_worker_diarization_backend: "pyannote"
@@ -35,6 +36,10 @@ voxhelm_remote_worker_diarization_backend: "pyannote"
 `voxhelm_remote_worker_token`, S3 credentials, and the Hugging Face token must
 come from the private control repo or encrypted secrets. Do not put those values
 in ops-library.
+
+`voxhelm_remote_worker_allowed_url_hosts` must include the same media hosts that
+the control plane accepts for URL jobs; workers re-validate claim input before
+downloading media.
 
 Set `voxhelm_remote_worker_whispercpp_model_source` when a host already has the
 configured whisper.cpp model elsewhere. The role links that file into the

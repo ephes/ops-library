@@ -17,6 +17,8 @@
       - voxhelm_remote_worker_id | string | trim | length > 0
       - voxhelm_remote_worker_token | string | trim | length > 0
       - voxhelm_remote_worker_token != "CHANGEME"
+      - voxhelm_remote_worker_allowed_url_hosts is sequence
+      - voxhelm_remote_worker_allowed_url_hosts is not string
       - voxhelm_remote_worker_uv_bin | string | trim | length > 0
       - voxhelm_remote_worker_python_version | string | trim | length > 0
       - voxhelm_remote_worker_public_index_url == "https://pypi.org/simple"

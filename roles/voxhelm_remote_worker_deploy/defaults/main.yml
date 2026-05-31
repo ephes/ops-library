@@ -29,6 +29,7 @@ voxhelm_remote_worker_base_url: ""
 voxhelm_remote_worker_id: "atlas"
 voxhelm_remote_worker_token: "CHANGEME"
 voxhelm_remote_worker_hostname: "{{ inventory_hostname }}"
+voxhelm_remote_worker_allowed_url_hosts: []
 voxhelm_remote_worker_poll_seconds: 5
 voxhelm_remote_worker_http_timeout_seconds: 60
 voxhelm_remote_worker_heartbeat_interval_seconds: 60
