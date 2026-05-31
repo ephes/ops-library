@@ -31,6 +31,9 @@
       - voxhelm_remote_worker_heartbeat_interval_seconds | int > 0
       - voxhelm_remote_worker_log_level in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
       - voxhelm_remote_worker_launcher_path | string | trim | length > 0
+      - voxhelm_remote_worker_caffeinate_bin | string | trim | length > 0
+      - voxhelm_remote_worker_caffeinate_args is sequence
+      - voxhelm_remote_worker_caffeinate_args is not string
       - voxhelm_remote_worker_artifact_backend | string | trim | lower == "s3"
       - voxhelm_remote_worker_artifact_bucket | string | trim | length > 0
       - voxhelm_remote_worker_artifact_s3_endpoint_url | string | trim | length > 0

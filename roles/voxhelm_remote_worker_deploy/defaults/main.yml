@@ -35,6 +35,14 @@ voxhelm_remote_worker_http_timeout_seconds: 60
 voxhelm_remote_worker_heartbeat_interval_seconds: 60
 voxhelm_remote_worker_log_level: "INFO"
 
+voxhelm_remote_worker_caffeinate_enabled: true
+voxhelm_remote_worker_caffeinate_bin: "/usr/bin/caffeinate"
+voxhelm_remote_worker_caffeinate_args:
+  - "-d"
+  - "-i"
+  - "-m"
+  - "-s"
+
 voxhelm_remote_worker_launchd_label: "de.wersdoerfer.voxhelm-remote-worker"
 voxhelm_remote_worker_launchd_plist_path: "/Library/LaunchDaemons/{{ voxhelm_remote_worker_launchd_label }}.plist"
 voxhelm_remote_worker_launchd_keepalive: true
