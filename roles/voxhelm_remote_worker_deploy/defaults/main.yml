@@ -13,6 +13,7 @@ voxhelm_remote_worker_log_dir: "/var/log/voxhelm-remote-worker"
 voxhelm_remote_worker_stdout_log: "{{ voxhelm_remote_worker_log_dir }}/worker.log"
 voxhelm_remote_worker_stderr_log: "{{ voxhelm_remote_worker_log_dir }}/worker.err.log"
 voxhelm_remote_worker_install_transcript_path: "{{ voxhelm_remote_worker_log_dir }}/install-transcript.log"
+voxhelm_remote_worker_launcher_path: "{{ voxhelm_remote_worker_config_dir }}/worker-launcher.sh"
 
 voxhelm_remote_worker_uv_bin: "/usr/local/bin/uv"
 voxhelm_remote_worker_python_version: "3.14.5"
@@ -50,6 +51,7 @@ voxhelm_remote_worker_stt_backend: "mlx"
 voxhelm_remote_worker_stt_fallback_backend: "whispercpp"
 voxhelm_remote_worker_mlx_model: "mlx-community/whisper-large-v3-mlx"
 voxhelm_remote_worker_whispercpp_model: "ggml-large-v3.bin"
+voxhelm_remote_worker_whispercpp_model_source: ""
 voxhelm_remote_worker_whispercpp_bin: "/opt/homebrew/bin/whisper-cli"
 voxhelm_remote_worker_whispercpp_processors: 4
 voxhelm_remote_worker_whisperkit_enabled: false

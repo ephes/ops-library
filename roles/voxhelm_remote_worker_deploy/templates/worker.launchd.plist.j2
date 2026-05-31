@@ -7,19 +7,8 @@
 
     <key>ProgramArguments</key>
     <array>
-      <string>{{ voxhelm_remote_worker_binary_path | e }}</string>
-      <string>--env-file</string>
-      <string>{{ voxhelm_remote_worker_env_file | e }}</string>
-      <string>--hostname</string>
-      <string>{{ voxhelm_remote_worker_hostname | e }}</string>
-      <string>--poll-seconds</string>
-      <string>{{ voxhelm_remote_worker_poll_seconds | int }}</string>
-      <string>--http-timeout-seconds</string>
-      <string>{{ voxhelm_remote_worker_http_timeout_seconds | int }}</string>
-      <string>--heartbeat-interval-seconds</string>
-      <string>{{ voxhelm_remote_worker_heartbeat_interval_seconds | int }}</string>
-      <string>--log-level</string>
-      <string>{{ voxhelm_remote_worker_log_level | e }}</string>
+      <string>/bin/sh</string>
+      <string>{{ voxhelm_remote_worker_launcher_path | e }}</string>
     </array>
 
     <key>EnvironmentVariables</key>

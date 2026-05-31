@@ -28,6 +28,7 @@
       - voxhelm_remote_worker_http_timeout_seconds | int > 0
       - voxhelm_remote_worker_heartbeat_interval_seconds | int > 0
       - voxhelm_remote_worker_log_level in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+      - voxhelm_remote_worker_launcher_path | string | trim | length > 0
       - voxhelm_remote_worker_artifact_backend | string | trim | lower == "s3"
       - voxhelm_remote_worker_artifact_bucket | string | trim | length > 0
       - voxhelm_remote_worker_artifact_s3_endpoint_url | string | trim | length > 0
@@ -187,13 +188,51 @@
   ansible.builtin.file:
     path: "{{ item }}"
     state: touch
-    owner: root
-    group: wheel
+    owner: "{{ voxhelm_remote_worker_service_user }}"
+    group: "{{ voxhelm_remote_worker_service_group }}"
     mode: "0644"
   loop:
     - "{{ voxhelm_remote_worker_stdout_log }}"
     - "{{ voxhelm_remote_worker_stderr_log }}"
   when: voxhelm_remote_worker_enabled | bool
+
+- name: runtime | Check configured whisper.cpp model source
+  ansible.builtin.stat:
+    path: "{{ voxhelm_remote_worker_whispercpp_model_source }}"
+  register: voxhelm_remote_worker_whispercpp_model_source_stat
+  when:
+    - voxhelm_remote_worker_enabled | bool
+    - voxhelm_remote_worker_whispercpp_model_source | string | trim | length > 0
+
+- name: runtime | Validate configured whisper.cpp model source
+  ansible.builtin.assert:
+    that:
+      - voxhelm_remote_worker_whispercpp_model_source_stat.stat.exists | default(false)
+    fail_msg: >-
+      voxhelm_remote_worker_whispercpp_model_source is configured but does not
+      exist on the target host.
+  when:
+    - voxhelm_remote_worker_enabled | bool
+    - voxhelm_remote_worker_whispercpp_model_source | string | trim | length > 0
+
+- name: runtime | Check worker whisper.cpp model cache entry
+  ansible.builtin.stat:
+    path: "{{ voxhelm_remote_worker_model_cache_dir }}/{{ voxhelm_remote_worker_whispercpp_model }}"
+    follow: false
+  register: voxhelm_remote_worker_whispercpp_model_cache_stat
+  when:
+    - voxhelm_remote_worker_enabled | bool
+    - voxhelm_remote_worker_whispercpp_model_source | string | trim | length > 0
+
+- name: runtime | Link configured whisper.cpp model into worker cache
+  ansible.builtin.file:
+    src: "{{ voxhelm_remote_worker_whispercpp_model_source }}"
+    dest: "{{ voxhelm_remote_worker_model_cache_dir }}/{{ voxhelm_remote_worker_whispercpp_model }}"
+    state: link
+  when:
+    - voxhelm_remote_worker_enabled | bool
+    - voxhelm_remote_worker_whispercpp_model_source | string | trim | length > 0
+    - not (voxhelm_remote_worker_whispercpp_model_cache_stat.stat.exists | default(false))
 
 - name: runtime | Resolve public PyPI package spec
   ansible.builtin.import_tasks: package_spec.yml
@@ -304,6 +343,16 @@
   no_log: true
   when: voxhelm_remote_worker_enabled | bool
 
+- name: config | Render Voxhelm remote worker launchd launcher
+  ansible.builtin.template:
+    src: worker-launcher.sh.j2
+    dest: "{{ voxhelm_remote_worker_launcher_path }}"
+    owner: root
+    group: "{{ voxhelm_remote_worker_service_group }}"
+    mode: "0755"
+  register: voxhelm_remote_worker_launcher_template
+  when: voxhelm_remote_worker_enabled | bool
+
 - name: launchd | Render Voxhelm remote worker plist
   ansible.builtin.template:
     src: worker.launchd.plist.j2
@@ -362,6 +411,7 @@
     - >-
       voxhelm_remote_worker_launchd_template.changed
       or voxhelm_remote_worker_env_template.changed
+      or (voxhelm_remote_worker_launcher_template.changed | default(false))
       or (voxhelm_remote_worker_install.changed | default(false))
       or voxhelm_remote_worker_launchd_status.rc != 0
       or 'state = running' not in (voxhelm_remote_worker_launchd_status.stdout | default(''))

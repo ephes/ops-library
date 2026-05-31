@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+exec {{ voxhelm_remote_worker_binary_path | quote }} \
+  --env-file {{ voxhelm_remote_worker_env_file | quote }} \
+  --hostname {{ voxhelm_remote_worker_hostname | quote }} \
+  --poll-seconds {{ voxhelm_remote_worker_poll_seconds | int }} \
+  --http-timeout-seconds {{ voxhelm_remote_worker_http_timeout_seconds | int }} \
+  --heartbeat-interval-seconds {{ voxhelm_remote_worker_heartbeat_interval_seconds | int }} \
+  --log-level {{ voxhelm_remote_worker_log_level | quote }}
