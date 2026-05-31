@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  author: Jochen Wersdoerfer
+  description: Deploy the Voxhelm remote transcription worker from public PyPI on macOS
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: macOS
+      versions:
+        - all
+  galaxy_tags:
+    - macos
+    - launchd
+    - transcription
+    - voxhelm
+dependencies: []

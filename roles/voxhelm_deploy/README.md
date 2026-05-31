@@ -161,6 +161,11 @@ For the full list, see `defaults/main.yml`.
   `VOXHELM_PYANNOTE_DEVICE`, `VOXHELM_HUGGINGFACE_TOKEN`, and `HF_TOKEN` into `/etc/voxhelm/voxhelm.env`.
   The env file remains `root:wheel` and `0640`, and the template task uses
   `no_log: true`.
+- The role also renders the transcription execution mode. The default
+  `voxhelm_transcription_execution_mode: django_tasks` preserves local studio
+  execution. Setting `voxhelm_transcription_execution_mode: remote_pull`
+  requires `voxhelm_worker_tokens_env` and complete S3 artifact settings so
+  remote workers can claim jobs and upload attempt-scoped artifacts.
 - The HTTP API, Django Tasks worker, and Wyoming sidecar all source the same
   env file through their launcher scripts. The Hugging Face token is not written
   directly into launchd plist files.

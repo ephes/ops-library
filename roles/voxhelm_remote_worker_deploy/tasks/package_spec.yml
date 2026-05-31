@@ -1,0 +1,32 @@
+---
+- name: package_spec | Resolve package extras spec for public PyPI install
+  ansible.builtin.set_fact:
+    voxhelm_remote_worker_package_extras_spec: >-
+      {{
+        (voxhelm_remote_worker_package_extras | length > 0)
+        | ternary('[' ~ (voxhelm_remote_worker_package_extras | join(',')) ~ ']', '')
+      }}
+  when: voxhelm_remote_worker_enabled | bool
+
+- name: package_spec | Resolve package spec for public PyPI install
+  ansible.builtin.set_fact:
+    voxhelm_remote_worker_package_spec: >-
+      {{ voxhelm_remote_worker_package_name }}{{ voxhelm_remote_worker_package_extras_spec }}=={{ voxhelm_remote_worker_package_version }}
+  when: voxhelm_remote_worker_enabled | bool
+
+- name: package_spec | Resolve public PyPI install command
+  ansible.builtin.set_fact:
+    voxhelm_remote_worker_install_argv: >-
+      {{
+        [voxhelm_remote_worker_uv_bin, 'tool', 'install']
+        + (['--force'] if (voxhelm_remote_worker_force_install | bool) else [])
+        + [
+          '--python',
+          voxhelm_remote_worker_python_version,
+          '--default-index',
+          voxhelm_remote_worker_public_index_url,
+          '--no-sources',
+          voxhelm_remote_worker_package_spec,
+        ]
+      }}
+  when: voxhelm_remote_worker_enabled | bool

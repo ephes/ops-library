@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Update your Ansible installation before upgrading
 
 ### Added
+- `voxhelm_deploy` can now put transcription jobs into `remote_pull` mode with
+  validated worker-token and shared S3 artifact settings, while
+  `voxhelm_remote_worker_deploy` installs a pinned public-PyPI
+  `voxhelm[diarization]` worker on macOS and runs it under launchd.
+- `voxhelm_ingress_deploy` now blocks `/v1/internal` by default at the Traefik
+  edge, with an explicit separate allowlist for deliberately private worker
+  routes.
 - `tailscale_metrics_endpoint` role to expose authenticated Tailscale login
   state and node-key expiry JSON for Nyxmon monitoring.
 - `voxhelm_deploy` now supports production pyannote speaker diarization wiring,

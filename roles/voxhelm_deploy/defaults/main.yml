@@ -27,6 +27,11 @@ voxhelm_app_port: 8787
 voxhelm_uvicorn_log_level: "info"
 voxhelm_task_backend: "django_tasks_db.backend.DatabaseBackend"
 voxhelm_task_queue: "default"
+voxhelm_transcription_execution_mode: "django_tasks"
+voxhelm_worker_tokens_env: ""
+voxhelm_remote_worker_lease_seconds: 1800
+voxhelm_remote_worker_poll_seconds: 5
+voxhelm_remote_worker_max_attempts: 3
 voxhelm_worker_enabled: true
 voxhelm_worker_interval_seconds: 1
 voxhelm_worker_label: "de.wersdoerfer.voxhelm-worker"

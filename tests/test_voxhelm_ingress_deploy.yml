@@ -55,13 +55,16 @@
               - voxhelm_ingress_traefik_host == ""
               - voxhelm_ingress_backend_url == ""
               - voxhelm_ingress_allowed_ip_ranges | length > 0
+              - voxhelm_ingress_internal_api_enabled == false
+              - voxhelm_ingress_internal_api_allowed_ip_ranges | length == 0
+              - voxhelm_ingress_internal_api_block_ip_ranges | length > 0
 
     - name: Validate template renders expected routers and backend
       block:
         - name: Set test values for template rendering
           ansible.builtin.set_fact:
             voxhelm_ingress_traefik_host: "voxhelm.home.xn--wersdrfer-47a.de"
-            voxhelm_ingress_backend_url: "http://studio.tailde2ec.ts.net:8787"
+            voxhelm_ingress_backend_url: "http://voxhelm-backend.example.test:8787"
             voxhelm_ingress_traefik_cert_resolver: ""
             voxhelm_ingress_allowed_ip_ranges:
               - "100.64.0.0/10"
@@ -83,13 +86,57 @@
           ansible.builtin.assert:
             that:
               - "'voxhelm-secure:' in rendered_text"
+              - "'voxhelm-internal-api:' in rendered_text"
+              - "'Path(`/v1/internal`) || PathPrefix(`/v1/internal/`)' in rendered_text"
+              - "'priority: 200' in rendered_text"
+              - "'voxhelm-internal-api-block:' in rendered_text"
+              - "'255.255.255.255/32' in rendered_text"
               - "'voxhelm-http:' in rendered_text"
               - "'voxhelm.home.xn--wersdrfer-47a.de' in rendered_text"
               - "'X-Forwarded-Host: \"voxhelm.home.xn--wersdrfer-47a.de\"' in rendered_text"
               - "'redirectScheme:' in rendered_text"
-              - "'url: \"http://studio.tailde2ec.ts.net:8787\"' in rendered_text"
+              - "'url: \"http://voxhelm-backend.example.test:8787\"' in rendered_text"
           vars:
             rendered_text: "{{ rendered_file.content | b64decode }}"
+
+    - name: Validate worker-internal API route can be deliberately allowlisted
+      block:
+        - name: Set test values for internal route rendering
+          ansible.builtin.set_fact:
+            voxhelm_ingress_traefik_host: "voxhelm.home.xn--wersdrfer-47a.de"
+            voxhelm_ingress_backend_url: "http://voxhelm-backend.example.test:8787"
+            voxhelm_ingress_traefik_cert_resolver: ""
+            voxhelm_ingress_allowed_ip_ranges:
+              - "100.64.0.0/10"
+            voxhelm_ingress_traefik_entrypoints:
+              - web-secure
+            voxhelm_ingress_internal_api_enabled: true
+            voxhelm_ingress_internal_api_allowed_ip_ranges:
+              - "100.90.1.12/32"
+
+        - name: Render template with internal worker route enabled
+          ansible.builtin.template:
+            src: "{{ role_path }}/templates/voxhelm-traefik.yml.j2"
+            dest: "{{ rendered_config }}"
+
+        - name: Read rendered worker-internal template
+          ansible.builtin.slurp:
+            path: "{{ rendered_config }}"
+          register: rendered_worker_internal_file
+
+        - name: Assert worker-internal route uses its dedicated allowlist
+          ansible.builtin.assert:
+            that:
+              - "'voxhelm-internal-api-allowlist:' in rendered_text"
+              - "'100.90.1.12/32' in rendered_text"
+              - "'voxhelm-internal-api-block:' not in rendered_text"
+              - "'255.255.255.255/32' not in rendered_text"
+              - >-
+                rendered_yaml.http.routers['voxhelm-internal-api'].middlewares
+                == ['voxhelm-internal-api-allowlist', 'voxhelm-headers', 'voxhelm-gzip']
+          vars:
+            rendered_text: "{{ rendered_worker_internal_file.content | b64decode }}"
+            rendered_yaml: "{{ rendered_text | from_yaml }}"
 
     - name: Clean up rendered test file
       ansible.builtin.file:

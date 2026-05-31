@@ -1,5 +1,5 @@
 ---
-- name: runtime | Resolve uv extras for Voxhelm
+- name: uv_sync_args | Resolve uv extras for Voxhelm
   ansible.builtin.set_fact:
     voxhelm_uv_extras_resolved: >-
       {{
@@ -13,17 +13,17 @@
         ) | unique | list
       }}
 
-- name: runtime | Initialize uv extra arguments for Voxhelm
+- name: uv_sync_args | Initialize uv extra arguments for Voxhelm
   ansible.builtin.set_fact:
     voxhelm_uv_extra_args_resolved: []
 
-- name: runtime | Resolve uv extra arguments for Voxhelm
+- name: uv_sync_args | Resolve uv extra arguments for Voxhelm
   ansible.builtin.set_fact:
     voxhelm_uv_extra_args_resolved: >-
       {{ voxhelm_uv_extra_args_resolved + ['--extra', item] }}
   loop: "{{ voxhelm_uv_extras_resolved }}"
 
-- name: runtime | Resolve uv sync arguments for Voxhelm
+- name: uv_sync_args | Resolve uv sync arguments for Voxhelm
   ansible.builtin.set_fact:
     voxhelm_uv_sync_args: >-
       {{

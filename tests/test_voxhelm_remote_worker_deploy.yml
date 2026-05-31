@@ -1,0 +1,133 @@
+---
+# Test playbook for voxhelm_remote_worker_deploy role templates
+# Run with: ansible-playbook tests/test_voxhelm_remote_worker_deploy.yml -i tests/inventory/test.yml
+
+- name: Test Voxhelm Remote Worker Deploy Role Components
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/voxhelm_remote_worker_deploy"
+    rendered_env: "/tmp/test-voxhelm-remote-worker.env"
+    rendered_plist: "/tmp/test-voxhelm-remote-worker.plist"
+
+  tasks:
+    - name: Verify role files exist
+      block:
+        - name: Check defaults file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/defaults/main.yml"
+          register: defaults_file
+
+        - name: Check tasks file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/tasks/main.yml"
+          register: tasks_file
+
+        - name: Check package spec tasks file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/tasks/package_spec.yml"
+          register: package_spec_tasks_file
+
+        - name: Check environment template
+          ansible.builtin.stat:
+            path: "{{ role_path }}/templates/worker.env.j2"
+          register: env_template_file
+
+        - name: Check launchd template
+          ansible.builtin.stat:
+            path: "{{ role_path }}/templates/worker.launchd.plist.j2"
+          register: launchd_template_file
+
+        - name: Assert required files exist
+          ansible.builtin.assert:
+            that:
+              - defaults_file.stat.exists
+              - tasks_file.stat.exists
+              - package_spec_tasks_file.stat.exists
+              - env_template_file.stat.exists
+              - launchd_template_file.stat.exists
+
+    - name: Load role defaults
+      ansible.builtin.include_vars:
+        file: "{{ role_path }}/defaults/main.yml"
+
+    - name: Assert public PyPI install defaults
+      ansible.builtin.assert:
+        that:
+          - voxhelm_remote_worker_public_index_url == "https://pypi.org/simple"
+          - voxhelm_remote_worker_package_name == "voxhelm"
+          - voxhelm_remote_worker_package_version == "0.1.0"
+          - "'diarization' in voxhelm_remote_worker_package_extras"
+          - voxhelm_remote_worker_force_install == false
+          - voxhelm_remote_worker_artifact_backend == "s3"
+
+    - name: Set template test values
+      ansible.builtin.set_fact:
+        voxhelm_remote_worker_service_user: "jochen"
+        voxhelm_remote_worker_service_group: "staff"
+        voxhelm_remote_worker_service_home: "/Users/jochen"
+        voxhelm_remote_worker_work_dir: "/Users/jochen/Library/Application Support/voxhelm-remote-worker"
+        voxhelm_remote_worker_base_url: "http://voxhelm-control.example.test:8787"
+        voxhelm_remote_worker_token: "atlas-token"
+        voxhelm_remote_worker_huggingface_token: "hf_test"
+        voxhelm_remote_worker_artifact_s3_endpoint_url: "https://s3.home.example"
+        voxhelm_remote_worker_artifact_s3_access_key_id: "s3-key"
+        voxhelm_remote_worker_artifact_s3_secret_access_key: "s3-secret"
+
+    - name: Resolve package spec from role task
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/package_spec.yml"
+
+    - name: Assert package spec resolves to pinned public PyPI package
+      ansible.builtin.assert:
+        that:
+          - voxhelm_remote_worker_package_spec == "voxhelm[diarization]==0.1.0"
+          - "'--default-index' in voxhelm_remote_worker_install_argv"
+          - "'https://pypi.org/simple' in voxhelm_remote_worker_install_argv"
+          - "'--no-sources' in voxhelm_remote_worker_install_argv"
+          - "'--force' not in voxhelm_remote_worker_install_argv"
+
+    - name: Render environment template
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/worker.env.j2"
+        dest: "{{ rendered_env }}"
+
+    - name: Render launchd template
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/worker.launchd.plist.j2"
+        dest: "{{ rendered_plist }}"
+
+    - name: Read rendered files
+      ansible.builtin.slurp:
+        path: "{{ item }}"
+      loop:
+        - "{{ rendered_env }}"
+        - "{{ rendered_plist }}"
+      register: rendered_files
+
+    - name: Assert rendered remote worker config
+      ansible.builtin.assert:
+        that:
+          - "'VOXHELM_WORKER_BASE_URL=http://voxhelm-control.example.test:8787' in rendered_env_text"
+          - "'VOXHELM_WORKER_ID=atlas' in rendered_env_text"
+          - "'VOXHELM_WORKER_TOKEN=atlas-token' in rendered_env_text"
+          - "'VOXHELM_DIARIZATION_BACKEND=pyannote' in rendered_env_text"
+          - "'VOXHELM_HUGGINGFACE_TOKEN=hf_test' in rendered_env_text"
+          - "'VOXHELM_ARTIFACT_BACKEND=s3' in rendered_env_text"
+          - "'VOXHELM_ARTIFACT_S3_ENDPOINT_URL=https://s3.home.example' in rendered_env_text"
+          - "'<string>/Users/jochen/.local/bin/voxhelm-remote-worker</string>' in rendered_plist_text"
+          - "'<string>--env-file</string>' in rendered_plist_text"
+          - "'<string>/etc/voxhelm-remote-worker/worker.env</string>' in rendered_plist_text"
+          - "'<key>PYTHONUNBUFFERED</key>' in rendered_plist_text"
+      vars:
+        rendered_env_text: "{{ rendered_files.results[0].content | b64decode }}"
+        rendered_plist_text: "{{ rendered_files.results[1].content | b64decode }}"
+
+    - name: Clean up rendered files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ rendered_env }}"
+        - "{{ rendered_plist }}"

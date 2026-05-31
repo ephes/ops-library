@@ -15,3 +15,10 @@ voxhelm_ingress_allowed_ip_ranges:
   - "::1/128"
   - "100.64.0.0/10"
   - "fd7a:115c:a1e0::/48"
+
+# Worker control-plane routes must not ride the normal producer/operator
+# ingress. Enable this only for a deliberately private worker route.
+voxhelm_ingress_internal_api_enabled: false
+voxhelm_ingress_internal_api_allowed_ip_ranges: []
+voxhelm_ingress_internal_api_block_ip_ranges:
+  - "255.255.255.255/32"

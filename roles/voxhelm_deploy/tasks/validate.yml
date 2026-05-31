@@ -27,6 +27,36 @@
       Django secret key, bearer token config, bootstrap operator credentials,
       port, uv binary path, and Piper voice config.
 
+- name: validate | Normalize transcription execution mode
+  ansible.builtin.set_fact:
+    voxhelm_transcription_execution_mode_normalized: "{{ voxhelm_transcription_execution_mode | string | trim | lower }}"
+
+- name: validate | Ensure transcription execution mode is supported
+  ansible.builtin.assert:
+    that:
+      - voxhelm_transcription_execution_mode_normalized in ["django_tasks", "remote_pull"]
+      - voxhelm_remote_worker_lease_seconds | int > 0
+      - voxhelm_remote_worker_poll_seconds | int > 0
+      - voxhelm_remote_worker_max_attempts | int > 0
+    fail_msg: >-
+      Voxhelm transcription execution mode must be django_tasks or remote_pull,
+      and remote worker lease/poll/max-attempt settings must be positive.
+
+- name: validate | Ensure remote-pull transcription is claimable and cross-host safe
+  ansible.builtin.assert:
+    that:
+      - voxhelm_worker_tokens_env | string | trim | length > 0
+      - "'CHANGEME' not in voxhelm_worker_tokens_env"
+      - voxhelm_artifact_backend | string | trim | lower == "s3"
+      - voxhelm_artifact_bucket | string | trim | length > 0
+      - voxhelm_artifact_s3_endpoint_url | string | trim | length > 0
+      - voxhelm_artifact_s3_access_key_id | string | trim | length > 0
+      - voxhelm_artifact_s3_secret_access_key | string | trim | length > 0
+    fail_msg: >-
+      Voxhelm remote_pull mode requires at least one worker token and complete
+      shared S3 artifact configuration.
+  when: voxhelm_transcription_execution_mode_normalized == "remote_pull"
+
 - name: validate | Normalize diarization backend
   ansible.builtin.set_fact:
     voxhelm_diarization_backend_normalized: "{{ voxhelm_diarization_backend | string | trim | lower }}"

@@ -15,3 +15,25 @@
       voxhelm_ingress_traefik_host, voxhelm_ingress_traefik_config_path, and
       voxhelm_ingress_allowed_ip_ranges are required when Traefik is enabled.
   when: voxhelm_ingress_traefik_enabled | bool
+
+- name: validate | Ensure worker-internal API route is explicitly scoped
+  ansible.builtin.assert:
+    that:
+      - voxhelm_ingress_internal_api_allowed_ip_ranges | length > 0
+    fail_msg: >-
+      voxhelm_ingress_internal_api_allowed_ip_ranges is required when
+      voxhelm_ingress_internal_api_enabled=true.
+  when:
+    - voxhelm_ingress_traefik_enabled | bool
+    - voxhelm_ingress_internal_api_enabled | bool
+
+- name: validate | Ensure disabled worker-internal API route has a block range
+  ansible.builtin.assert:
+    that:
+      - voxhelm_ingress_internal_api_block_ip_ranges | length > 0
+    fail_msg: >-
+      voxhelm_ingress_internal_api_block_ip_ranges must contain at least one
+      impossible source range when voxhelm_ingress_internal_api_enabled=false.
+  when:
+    - voxhelm_ingress_traefik_enabled | bool
+    - not (voxhelm_ingress_internal_api_enabled | bool)

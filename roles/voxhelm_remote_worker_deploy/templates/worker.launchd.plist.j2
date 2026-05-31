@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>{{ voxhelm_remote_worker_launchd_label | e }}</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>{{ voxhelm_remote_worker_binary_path | e }}</string>
+      <string>--env-file</string>
+      <string>{{ voxhelm_remote_worker_env_file | e }}</string>
+      <string>--hostname</string>
+      <string>{{ voxhelm_remote_worker_hostname | e }}</string>
+      <string>--poll-seconds</string>
+      <string>{{ voxhelm_remote_worker_poll_seconds | int }}</string>
+      <string>--http-timeout-seconds</string>
+      <string>{{ voxhelm_remote_worker_http_timeout_seconds | int }}</string>
+      <string>--heartbeat-interval-seconds</string>
+      <string>{{ voxhelm_remote_worker_heartbeat_interval_seconds | int }}</string>
+      <string>--log-level</string>
+      <string>{{ voxhelm_remote_worker_log_level | e }}</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>PATH</key>
+      <string>{{ voxhelm_remote_worker_launchd_path | e }}</string>
+      <key>PYTHONUNBUFFERED</key>
+      <string>1</string>
+    </dict>
+
+    <key>UserName</key>
+    <string>{{ voxhelm_remote_worker_service_user | e }}</string>
+    <key>GroupName</key>
+    <string>{{ voxhelm_remote_worker_service_group | e }}</string>
+    <key>WorkingDirectory</key>
+    <string>{{ voxhelm_remote_worker_work_dir | e }}</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+{% if voxhelm_remote_worker_launchd_keepalive | bool %}
+    <true/>
+{% else %}
+    <false/>
+{% endif %}
+
+    <key>StandardOutPath</key>
+    <string>{{ voxhelm_remote_worker_stdout_log | e }}</string>
+    <key>StandardErrorPath</key>
+    <string>{{ voxhelm_remote_worker_stderr_log | e }}</string>
+  </dict>
+</plist>
