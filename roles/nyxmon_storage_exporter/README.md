@@ -150,6 +150,10 @@ The output includes a `disks_by_name` object keyed by disk name, which provides 
 | `$.pools.fast.last_scrub_age_days` | `<` | `14` | warning | scrub recency |
 | `$.ecc.loaded` | `==` | `true` | warning | ECC module loaded |
 
+During an active or paused scrub, `last_scrub_age_days` is calculated from the
+running scrub's start timestamp; after completion, it is calculated from the
+completed scrub timestamp reported by `zpool status`.
+
 ### Alternative: Index-Based JSONPaths
 
 You can also use array indices (e.g., `$.disks.0.ok`), but **the order matches `nyxmon_storage_exporter_disks`** and thresholds must be updated if you reorder disks.

@@ -51,7 +51,7 @@ def _parse_zpool_scan_ts(zpool_status_output: str) -> int | None:
 
     Handles both:
     - Completed scrubs: "scan: scrub repaired 0B in 00:00:01 ... on Sun Dec 14 07:24:50 2025"
-    - In-progress scrubs: "scan: scrub in progress since Sun Dec 14 07:24:50 2025"
+    - In-progress or paused scrubs: "scan: scrub in progress since Sun Dec 14 07:24:50 2025"
     """
     import time
 
@@ -59,8 +59,11 @@ def _parse_zpool_scan_ts(zpool_status_output: str) -> int | None:
         line = line.strip()
         if not line.startswith("scan:"):
             continue
-        # Try "on <date>" first (completed scrub), then "since <date>" (in progress)
-        match = re.search(r"on (.*)$", line) or re.search(r"since (.*)$", line)
+        match = (
+            re.search(r"\bscrub (?:in progress|paused) since (.*)$", line)
+            or re.search(r"\bscrub .* with .* errors on (.*)$", line)
+            or re.search(r"\bscrub .* on (.*)$", line)
+        )
         if not match:
             continue
         raw = match.group(1).strip()

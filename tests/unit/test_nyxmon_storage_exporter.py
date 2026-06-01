@@ -1,4 +1,6 @@
 import json
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +54,11 @@ def _load_exporter_namespace(tmp_path: Path) -> dict[str, Any]:
     namespace: dict[str, Any] = {"__name__": "nyxmon_storage_exporter_test"}
     exec(compile(rendered, str(TEMPLATE_PATH), "exec"), namespace)
     return namespace
+
+
+def _local_timestamp(value: str) -> int:
+    dt = datetime.strptime(value, "%a %b %d %H:%M:%S %Y")
+    return int(time.mktime(dt.timetuple()))
 
 
 def test_zpool_list_uses_cached_pool_metrics_for_skipped_pool(tmp_path: Path) -> None:
@@ -170,6 +177,9 @@ def test_zpool_list_writes_successful_pool_sample_to_cache(tmp_path: Path) -> No
 
     assert payload["tank"]["cached"] is False
     assert payload["tank"]["cap_ratio"] == 0.9
+    assert payload["tank"]["last_scrub_ts"] == _local_timestamp(
+        "Sun Dec 14 07:24:50 2025"
+    )
 
     cache = json.loads((tmp_path / "pool-cache.json").read_text(encoding="utf-8"))
     sample = cache["pools"]["tank"]["sample"]
@@ -183,6 +193,47 @@ def test_zpool_list_writes_successful_pool_sample_to_cache(tmp_path: Path) -> No
         "reason",
         "skipped",
     }.intersection(sample)
+
+
+def test_zpool_list_parses_active_scrub_timestamp(tmp_path: Path) -> None:
+    namespace = _load_exporter_namespace(tmp_path)
+
+    for scan_line in [
+        "  scan: scrub in progress since Mon Jun  1 02:59:51 2026\n",
+        "  scan: scrub paused since Mon Jun  1 02:59:51 2026\n",
+    ]:
+
+        def fake_run(argv: list[str]) -> Any:
+            if argv[:5] == [
+                "zpool",
+                "list",
+                "-H",
+                "-o",
+                "name,health,size,alloc,free,cap",
+            ]:
+                return namespace["subprocess"].CompletedProcess(
+                    args=argv,
+                    returncode=0,
+                    stdout="fast\tONLINE\t7.27T\t4.50T\t2.76T\t62%\n",
+                    stderr="",
+                )
+            if argv == ["zpool", "status", "fast"]:
+                return namespace["subprocess"].CompletedProcess(
+                    args=argv,
+                    returncode=0,
+                    stdout=scan_line,
+                    stderr="",
+                )
+            raise AssertionError(f"unexpected command: {argv}")
+
+        namespace["_run"] = fake_run
+
+        payload = namespace["_zpool_list"](["fast"], set())
+
+        assert payload["fast"]["last_scrub_ts"] == _local_timestamp(
+            "Mon Jun  1 02:59:51 2026"
+        )
+        assert payload["fast"]["last_scrub_age_days"] is not None
 
 
 def test_zpool_list_marks_successful_pool_when_cache_write_fails(

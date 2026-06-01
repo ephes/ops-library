@@ -79,6 +79,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `openclaw_deploy` metrics collector now treats parseable nonzero
   `health --json` output as collected health data, so transient Telegram probe
   failures do not set `collector_ok=false`.
+- `nyxmon_storage_exporter` now parses in-progress and paused ZFS scrub
+  timestamps without confusing the weekday `Mon` for a completed-scrub `on`
+  marker, avoiding false scrub-age warnings while a pool is actively scrubbing.
 - Deploy roles now build stat assertion labels and error messages from the
   original loop item instead of registered result invocation metadata,
   restoring compatibility with newer ansible-core controllers.
