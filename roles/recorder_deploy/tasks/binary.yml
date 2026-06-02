@@ -1,0 +1,9 @@
+---
+- name: Install recorder binary from the control node
+  ansible.builtin.copy:
+    src: "{{ recorder_binary_src }}"
+    dest: "{{ recorder_bin_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: restart recorder

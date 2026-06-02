@@ -1,0 +1,10 @@
+---
+- name: Render recorder environment file
+  ansible.builtin.template:
+    src: recorder.env.j2
+    dest: "{{ recorder_env_path }}"
+    owner: root
+    group: "{{ recorder_group }}"
+    mode: "0640"
+  no_log: true
+  notify: restart recorder

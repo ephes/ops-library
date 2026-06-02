@@ -1,0 +1,31 @@
+---
+- name: Validate recorder binary source
+  ansible.builtin.assert:
+    that:
+      - recorder_binary_src | length > 0
+    fail_msg: >-
+      recorder_binary_src must point at the locally cross-compiled Linux/amd64
+      recorderd binary (the playbook builds it before invoking this role).
+
+- name: Stat recorder binary source on the control node
+  ansible.builtin.stat:
+    path: "{{ recorder_binary_src }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: recorder_binary_src_stat
+
+- name: Verify recorder binary source exists
+  ansible.builtin.assert:
+    that:
+      - recorder_binary_src_stat.stat.exists
+      - recorder_binary_src_stat.stat.isreg
+    fail_msg: "recorder_binary_src {{ recorder_binary_src }} not found on the control node."
+
+- name: Validate recorder configuration inputs
+  ansible.builtin.assert:
+    that:
+      - recorder_public_url | length > 0
+      - recorder_port | int > 0
+      - (not recorder_traefik_enabled) or (recorder_traefik_host | length > 0)
+    fail_msg: "recorder_public_url, recorder_port, and (when Traefik is enabled) recorder_traefik_host are required."

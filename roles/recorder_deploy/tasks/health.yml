@@ -1,0 +1,24 @@
+---
+- name: Wait for recorder port to be open
+  ansible.builtin.wait_for:
+    host: "{{ recorder_listen_address }}"
+    port: "{{ recorder_port }}"
+    timeout: "{{ recorder_healthcheck_timeout }}"
+    state: started
+
+- name: Perform recorder HTTP health check
+  ansible.builtin.uri:
+    url: "{{ recorder_healthcheck_url }}"
+    status_code: [200]
+    return_content: true
+    timeout: "{{ recorder_healthcheck_timeout }}"
+  register: recorder_healthcheck_result
+  retries: "{{ recorder_healthcheck_retries }}"
+  delay: 2
+  until: recorder_healthcheck_result.status == 200
+
+- name: Assert recorder health payload
+  ansible.builtin.assert:
+    that:
+      - recorder_healthcheck_result.json.status | default('') == 'ok'
+    fail_msg: "recorder /health did not return status=ok"

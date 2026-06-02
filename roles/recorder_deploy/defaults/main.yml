@@ -1,0 +1,62 @@
+---
+# recorder_deploy defaults (public-safe; secrets are passed by the playbook)
+
+# Service identity
+recorder_user: recorder
+recorder_group: recorder
+recorder_service_name: recorder
+
+# Filesystem layout
+recorder_install_dir: /opt/recorder
+recorder_bin_path: "{{ recorder_install_dir }}/recorderd"
+recorder_data_dir: /var/lib/recorder
+recorder_config_dir: /etc/recorder
+recorder_env_path: "{{ recorder_config_dir }}/recorder.env"
+
+# The locally cross-compiled Linux/amd64 binary on the control node. The playbook
+# builds this before invoking the role and points the role at it.
+recorder_binary_src: ""
+
+# HTTP bind (Traefik terminates TLS and proxies here). Loopback only.
+recorder_listen_address: "127.0.0.1"
+recorder_port: 10015
+
+# Public URL + Traefik vhost (punycode form of recorder.home.wersdörfer.de)
+recorder_public_url: "https://recorder.home.xn--wersdrfer-47a.de"
+recorder_traefik_enabled: true
+recorder_traefik_host: "recorder.home.xn--wersdrfer-47a.de"
+recorder_traefik_entrypoints: ["web-secure"]
+recorder_traefik_cert_resolver: ""   # empty -> use the loaded wildcard cert (tls: {})
+recorder_traefik_config_path: /etc/traefik/dynamic/recorder.yml
+
+# Optional bearer token guarding host (dashboard) endpoints. Empty = open.
+recorder_host_token: ""
+
+# Object storage (MinIO). When endpoint is empty the binary falls back to a local
+# filesystem store under the data dir (not recommended in production).
+recorder_s3_endpoint: ""
+recorder_s3_bucket: "recorder"
+recorder_s3_access_key: ""
+recorder_s3_secret_key: ""
+recorder_s3_use_ssl: false
+
+# LiveKit live path. When key/secret are empty the live call + fallback are
+# disabled and only the local-master path runs.
+recorder_livekit_url: ""
+recorder_livekit_api_key: ""
+recorder_livekit_api_secret: ""
+recorder_live_room_prefix: "rec-"
+
+# systemd
+recorder_service_enabled: true
+recorder_service_state: started
+recorder_systemd_nofile: 65536
+
+# Health check
+recorder_healthcheck_enabled: true
+recorder_healthcheck_url: "http://{{ recorder_listen_address }}:{{ recorder_port }}/health"
+recorder_healthcheck_timeout: 30
+recorder_healthcheck_retries: 10
+
+recorder_deploy_packages:
+  - ca-certificates

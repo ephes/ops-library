@@ -1,0 +1,7 @@
+---
+- name: Ensure recorder service is enabled and running
+  ansible.builtin.systemd:
+    name: "{{ recorder_service_name }}"
+    enabled: "{{ recorder_service_enabled }}"
+    state: "{{ recorder_service_state }}"
+    daemon_reload: true

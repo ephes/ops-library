@@ -1,0 +1,14 @@
+---
+- name: Ensure recorder group exists
+  ansible.builtin.group:
+    name: "{{ recorder_group }}"
+    system: true
+
+- name: Ensure recorder user exists
+  ansible.builtin.user:
+    name: "{{ recorder_user }}"
+    group: "{{ recorder_group }}"
+    home: "{{ recorder_data_dir }}"
+    create_home: false
+    shell: /usr/sbin/nologin
+    system: true

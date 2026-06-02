@@ -1,0 +1,11 @@
+---
+- name: Install recorder systemd unit
+  ansible.builtin.template:
+    src: recorder.service.j2
+    dest: "/etc/systemd/system/{{ recorder_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart recorder

@@ -1,0 +1,24 @@
+---
+- name: Ensure recorder install directory exists
+  ansible.builtin.file:
+    path: "{{ recorder_install_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure recorder config directory exists
+  ansible.builtin.file:
+    path: "{{ recorder_config_dir }}"
+    state: directory
+    owner: root
+    group: "{{ recorder_group }}"
+    mode: "0750"
+
+- name: Ensure recorder data directory exists
+  ansible.builtin.file:
+    path: "{{ recorder_data_dir }}"
+    state: directory
+    owner: "{{ recorder_user }}"
+    group: "{{ recorder_group }}"
+    mode: "0750"
