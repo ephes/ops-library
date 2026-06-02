@@ -29,8 +29,18 @@ recorder_traefik_entrypoints: ["web-secure"]
 recorder_traefik_cert_resolver: ""   # empty -> use the loaded wildcard cert (tls: {})
 recorder_traefik_config_path: /etc/traefik/dynamic/recorder.yml
 
-# Optional bearer token guarding host (dashboard) endpoints. Empty = open.
+# Optional shared admin token (interim, ADR 0010). Empty = no admin token.
 recorder_host_token: ""
+
+# Host accounts (ADR 0010). Setting the session secret enables sign-up/login.
+recorder_session_secret: ""
+recorder_allow_registration: true
+
+# Email verification via the mailgun-relay. Setting the token enables it.
+recorder_mail_api_url: "https://mailgun.home.xn--wersdrfer-47a.de"
+recorder_mail_domain: "mg.wersdoerfer.de"
+recorder_mail_token: ""
+recorder_mail_from: "Recorder <recorder@wersdoerfer.de>"
 
 # Object storage (MinIO). When endpoint is empty the binary falls back to a local
 # filesystem store under the data dir (not recommended in production).
