@@ -1,0 +1,16 @@
+---
+- name: directories | Ensure LiveKit site directory exists
+  ansible.builtin.file:
+    path: "{{ livekit_site_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: directories | Ensure LiveKit config directory exists
+  ansible.builtin.file:
+    path: "{{ livekit_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"

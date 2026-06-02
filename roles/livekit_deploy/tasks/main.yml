@@ -1,0 +1,26 @@
+---
+- name: main | Validate required variables
+  ansible.builtin.import_tasks: validate.yml
+
+- name: main | Ensure LiveKit directories exist
+  ansible.builtin.import_tasks: directories.yml
+
+- name: main | Render LiveKit config files
+  ansible.builtin.import_tasks: config.yml
+
+- name: main | Render LiveKit Docker Compose file
+  ansible.builtin.import_tasks: compose.yml
+
+- name: main | Configure LiveKit systemd service
+  ansible.builtin.import_tasks: systemd.yml
+
+- name: main | Configure Traefik reverse proxy
+  ansible.builtin.import_tasks: traefik.yml
+  when: livekit_traefik_enabled | bool
+
+- name: main | Apply pending handlers before health checks
+  ansible.builtin.meta: flush_handlers
+
+- name: main | Run LiveKit health check
+  ansible.builtin.import_tasks: health.yml
+  when: livekit_healthcheck_enabled | bool

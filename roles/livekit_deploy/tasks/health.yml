@@ -1,0 +1,17 @@
+---
+- name: health | Wait for LiveKit HTTP port to open
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ livekit_http_port }}"
+    delay: "{{ livekit_healthcheck_delay }}"
+    timeout: "{{ livekit_healthcheck_timeout }}"
+
+- name: health | Verify LiveKit HTTP endpoint responds
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ livekit_http_port }}/"
+    method: GET
+    status_code: 200
+  register: livekit_health_result
+  retries: 5
+  delay: 3
+  until: livekit_health_result.status == 200

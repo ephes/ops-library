@@ -1,0 +1,53 @@
+---
+# Identity
+livekit_service_name: livekit
+
+# Images
+livekit_server_image: livekit/livekit-server
+livekit_server_tag: v1.12.0
+
+livekit_egress_image: livekit/egress
+livekit_egress_tag: v1.13.0
+
+# Directories
+livekit_site_dir: /opt/livekit
+livekit_config_dir: /etc/livekit
+
+# Networking — LiveKit HTTP API / signalling port
+livekit_http_port: 7880
+
+# RTC ports (UDP/TCP for WebRTC media)
+livekit_rtc_tcp_port: 7881
+livekit_rtc_port_range_start: 50000
+livekit_rtc_port_range_end: 50100
+
+# Node LAN IP (REQUIRED — used in rtc.node_ip so clients receive a reachable ICE candidate)
+livekit_node_ip: ""  # REQUIRED e.g. "192.168.178.94"
+
+# API credentials (REQUIRED)
+livekit_api_key: ""    # REQUIRED
+livekit_api_secret: "" # REQUIRED
+
+# Webhook
+livekit_webhook_url: "https://recorder.home.xn--wersdrfer-47a.de/api/livekit/webhook"
+
+# S3 / MinIO storage for egress recordings (REQUIRED)
+livekit_s3_access_key: "" # REQUIRED
+livekit_s3_secret_key: "" # REQUIRED
+livekit_s3_endpoint: "http://127.0.0.1:9001"
+livekit_s3_bucket: recorder
+
+# Traefik reverse proxy
+livekit_traefik_enabled: true
+livekit_traefik_config_path: /etc/traefik/dynamic/livekit.yml
+livekit_traefik_host: "livekit.home.xn--wersdrfer-47a.de"  # REQUIRED when traefik enabled
+
+# Feature flags
+livekit_healthcheck_enabled: true
+
+# Health check
+livekit_healthcheck_timeout: 60
+livekit_healthcheck_delay: 3
+
+# Redis auth (host Redis requires a password)
+livekit_redis_password: ""

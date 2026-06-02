@@ -1,0 +1,9 @@
+---
+- name: compose | Render LiveKit Docker Compose file
+  ansible.builtin.template:
+    src: livekit-compose.yml.j2
+    dest: "{{ livekit_site_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart livekit

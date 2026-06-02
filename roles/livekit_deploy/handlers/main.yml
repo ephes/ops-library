@@ -1,0 +1,19 @@
+---
+- name: Reload systemd for livekit
+  listen: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Restart livekit
+  listen: restart livekit
+  ansible.builtin.systemd:
+    name: "{{ livekit_service_name }}"
+    state: restarted
+    enabled: true
+    daemon_reload: true
+
+- name: Reload traefik for livekit
+  listen: reload traefik
+  ansible.builtin.systemd:
+    name: traefik
+    state: restarted

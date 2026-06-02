@@ -1,0 +1,19 @@
+---
+- name: config | Render livekit.yaml
+  ansible.builtin.template:
+    src: livekit.yaml.j2
+    dest: "{{ livekit_config_dir }}/livekit.yaml"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: restart livekit
+
+- name: config | Render egress.yaml
+  ansible.builtin.template:
+    src: egress.yaml.j2
+    dest: "{{ livekit_config_dir }}/egress.yaml"
+    owner: root
+    group: root
+    # The egress container runs as a non-root user and must read this file.
+    mode: "0644"
+  notify: restart livekit
