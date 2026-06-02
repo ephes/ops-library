@@ -53,6 +53,10 @@ recorder_s3_use_ssl: false
 # LiveKit live path. When key/secret are empty the live call + fallback are
 # disabled and only the local-master path runs.
 recorder_livekit_url: ""
+# Server-side LiveKit HTTP API (twirp) the controller calls. Set deliberately so
+# it is not left to the binary's compiled-in default; LiveKit normally listens on
+# the same host's loopback HTTP port.
+recorder_livekit_host_url: "http://127.0.0.1:7880"
 recorder_livekit_api_key: ""
 recorder_livekit_api_secret: ""
 recorder_live_room_prefix: "rec-"
