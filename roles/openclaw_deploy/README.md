@@ -141,7 +141,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 | `openclaw_metrics_endpoint_remove_data_on_disable` | `false` | Remove `openclaw_metrics_endpoint_data_dir` when endpoint is disabled |
 | `openclaw_metrics_endpoint_synthetic_canary_enabled` | `false` | Enable synthetic real agent-turn canary collection in metrics payload |
 | `openclaw_metrics_endpoint_synthetic_canary_agent` | `main` | Optional agent id for canary command; leave empty to route by `session_id` only |
-| `openclaw_metrics_endpoint_synthetic_canary_session_id` | `probe-openclaw-canary` | Dedicated session id used for canary turns to avoid lock contention with regular sessions |
+| `openclaw_metrics_endpoint_synthetic_canary_session_id` | `probe-openclaw-canary` | Session id prefix used for stateless canary attempts; each due run appends epoch/attempt suffixes to avoid context growth and lock contention |
 | `openclaw_metrics_endpoint_synthetic_canary_message` | `Reply exactly: OPENCLAW_CANARY_OK` | Deterministic prompt for canary request |
 | `openclaw_metrics_endpoint_synthetic_canary_expected_text` | `OPENCLAW_CANARY_OK` | Expected canary marker text (success when present as a standalone trimmed line) |
 | `openclaw_metrics_endpoint_synthetic_canary_interval` | `1800` | Minimum seconds between canary executions (collector cycles in between use cached result) |
@@ -149,6 +149,8 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 | `openclaw_metrics_endpoint_synthetic_canary_max_attempts` | `2` | Max attempts per due canary run |
 | `openclaw_metrics_endpoint_synthetic_canary_retry_delay_seconds` | `5` | Delay between failed canary attempts |
 | `openclaw_metrics_endpoint_synthetic_canary_state_path` | `{{ openclaw_metrics_endpoint_data_dir }}/openclaw-canary-state.json` | Local state file for last canary result |
+| `openclaw_metrics_endpoint_synthetic_canary_sessions_dir` | `{{ openclaw_data_dir }}/agents/main/sessions` | Host OpenClaw sessions directory used to clean generated canary session files |
+| `openclaw_metrics_endpoint_synthetic_canary_session_retention_seconds` | `86400` | Seconds to retain generated canary session/trajectory files; set `0` to disable cleanup |
 | `openclaw_metrics_endpoint_synthetic_canary_output_max_chars` | `256` | Max response chars persisted from canary output |
 
 ### Mail Skill (`/mail`): IMAP Read + SMTP Send
@@ -556,11 +558,16 @@ When `openclaw_metrics_endpoint_enabled: true`:
   metrics inputs. A nonzero `health --json` result with parseable JSON is still
   collected so warning-class health sub-signals, such as Telegram Bot API probe
   failures, do not masquerade as collector failures.
-- optional synthetic canary mode executes a real `agent --json` turn at a conservative cadence and stores:
-  - uses a dedicated canary session id (`probe-openclaw-canary` by default)
+- optional synthetic canary mode executes a real `agent --json` liveness turn at a conservative cadence and stores:
+  - uses a dedicated canary session id prefix (`probe-openclaw-canary` by default)
+  - appends epoch/attempt suffixes to each due canary attempt so stale canary history cannot grow the prompt or leave retry attempts contending on an abandoned session lock
+  - removes generated canary session and trajectory files after `openclaw_metrics_endpoint_synthetic_canary_session_retention_seconds`
+  - treats files beginning with the configured canary prefix as generated canary artifacts; do not create long-lived manual sessions under that prefix
+  - does not edit OpenClaw's lightweight `sessions.json` index; old canary index entries may remain after backing session files are removed
   - passes `--timeout` to the OpenClaw CLI and keeps a short outer subprocess grace window
   - `$.openclaw.synthetic.canary.last_run.ok`
   - `$.openclaw.synthetic.canary.last_run.expected_match`
+  - `$.openclaw.synthetic.canary.last_run.session_id`
   - `$.openclaw.synthetic.canary.last_success_epoch`
   - `$.openclaw.synthetic.canary.last_success_age_seconds`
   - `last_success_age_seconds` is always numeric (`2147483647` sentinel when there is no successful run yet)

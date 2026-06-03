@@ -104,6 +104,7 @@
           - openclaw_metrics_endpoint_synthetic_canary_message | trim | length > 0
           - openclaw_metrics_endpoint_synthetic_canary_expected_text | trim | length > 0
           - openclaw_metrics_endpoint_synthetic_canary_state_path | length > 0
+          - openclaw_metrics_endpoint_synthetic_canary_sessions_dir | length > 0
           - openclaw_metrics_endpoint_synthetic_canary_interval | int >= 300
           - openclaw_metrics_endpoint_synthetic_canary_timeout | int > 0
           - openclaw_metrics_endpoint_synthetic_canary_timeout | int <= 120
@@ -111,11 +112,12 @@
           - openclaw_metrics_endpoint_synthetic_canary_max_attempts | int <= 3
           - openclaw_metrics_endpoint_synthetic_canary_retry_delay_seconds | int >= 0
           - openclaw_metrics_endpoint_synthetic_canary_retry_delay_seconds | int <= 60
+          - openclaw_metrics_endpoint_synthetic_canary_session_retention_seconds | int >= 0
           - openclaw_metrics_endpoint_synthetic_canary_output_max_chars | int >= 32
         fail_msg: >-
           Invalid synthetic canary configuration.
-          Expected non-empty session-id/message/expected-text/state-path and bounded
-          interval/timeout/retry values.
+          Expected non-empty session-id/message/expected-text/state paths and bounded
+          interval/timeout/retry/retention values.
       when: openclaw_metrics_endpoint_synthetic_canary_enabled | bool
 
     - name: metrics | Install dependencies

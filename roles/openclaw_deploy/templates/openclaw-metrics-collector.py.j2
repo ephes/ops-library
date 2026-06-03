@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from pathlib import Path
 import socket
 import subprocess
 import sys
@@ -123,6 +124,7 @@ def build_payload() -> dict[str, Any]:
                         "attempts": 0,
                         "duration_ms": None,
                         "status": "never",
+                        "session_id": None,
                         "provider": None,
                         "model": None,
                         "output_text": "",
@@ -191,6 +193,7 @@ def default_canary_state() -> dict[str, Any]:
             "attempts": 0,
             "duration_ms": None,
             "status": "never",
+            "session_id": None,
             "provider": None,
             "model": None,
             "output_text": "",
@@ -239,6 +242,52 @@ def save_json_atomic(path: str, payload: dict[str, Any], mode: int | None = None
     os.replace(tmp_path, path)
     if mode is not None:
         os.chmod(path, mode)
+
+
+def build_canary_attempt_session_id(base_session_id: str, epoch: int, attempt: int) -> str:
+    base = (base_session_id or "").strip() or "probe-openclaw-canary"
+    return f"{base}-{int(epoch)}-a{max(1, int(attempt))}"
+
+
+def canary_session_file_matches(name: str, base_session_id: str) -> bool:
+    base = (base_session_id or "").strip()
+    if not base:
+        return False
+    return name == base or name.startswith(f"{base}.") or name.startswith(f"{base}-")
+
+
+def cleanup_synthetic_canary_sessions(
+    sessions_dir: str,
+    base_session_id: str,
+    retention_seconds: int,
+    now_epoch: int | None = None,
+) -> int:
+    if not sessions_dir or retention_seconds <= 0:
+        return 0
+
+    root = Path(sessions_dir)
+    if not root.is_dir():
+        return 0
+
+    now = int(time.time()) if now_epoch is None else int(now_epoch)
+    removed = 0
+    for item in root.iterdir():
+        if not item.is_file():
+            continue
+        if not canary_session_file_matches(item.name, base_session_id):
+            continue
+        try:
+            age_seconds = now - int(item.stat().st_mtime)
+        except OSError:
+            continue
+        if age_seconds < retention_seconds:
+            continue
+        try:
+            item.unlink()
+            removed += 1
+        except OSError:
+            continue
+    return removed
 
 
 def apply_calendar_auth_health(args: argparse.Namespace, payload: dict[str, Any]) -> None:
@@ -421,6 +470,11 @@ def run_synthetic_canary(args: argparse.Namespace, payload: dict[str, Any]) -> N
         for attempt in range(1, max_attempts + 1):
             started_epoch = int(time.time())
             started_monotonic = time.monotonic()
+            attempt_session_id = build_canary_attempt_session_id(
+                canary_session_id,
+                started_epoch,
+                attempt,
+            )
             cmd = [
                 "docker",
                 "exec",
@@ -434,7 +488,7 @@ def run_synthetic_canary(args: argparse.Namespace, payload: dict[str, Any]) -> N
             cmd.extend(
                 [
                     "--session-id",
-                    canary_session_id,
+                    attempt_session_id,
                     "--message",
                     args.synthetic_canary_message,
                     "--timeout",
@@ -473,6 +527,7 @@ def run_synthetic_canary(args: argparse.Namespace, payload: dict[str, Any]) -> N
                     "attempts": attempt,
                     "duration_ms": duration_ms,
                     "status": status or "unknown",
+                    "session_id": attempt_session_id,
                     "provider": agent_meta.get("provider"),
                     "model": agent_meta.get("model"),
                     "output_text": clip_text(
@@ -489,6 +544,7 @@ def run_synthetic_canary(args: argparse.Namespace, payload: dict[str, Any]) -> N
                     "attempts": attempt,
                     "duration_ms": int((time.monotonic() - started_monotonic) * 1000),
                     "status": "error",
+                    "session_id": attempt_session_id,
                     "provider": None,
                     "model": None,
                     "output_text": "",
@@ -506,6 +562,11 @@ def run_synthetic_canary(args: argparse.Namespace, payload: dict[str, Any]) -> N
             state["last_success_epoch"] = run_result["epoch"]
 
         save_json_atomic(args.synthetic_canary_state_path, state, mode=0o640)
+        cleanup_synthetic_canary_sessions(
+            args.synthetic_canary_sessions_dir,
+            canary_session_id,
+            int(args.synthetic_canary_session_retention_seconds),
+        )
         canary["cached"] = False
     else:
         run_result = state.get("last_run") or default_canary_state()["last_run"]
@@ -525,6 +586,7 @@ def run_synthetic_canary(args: argparse.Namespace, payload: dict[str, Any]) -> N
     )
     canary["next_due_epoch"] = next_due_epoch
     canary["next_due_in_seconds"] = max(0, next_due_epoch - now_epoch)
+    canary["due"] = canary["next_due_in_seconds"] == 0
 
 
 def main() -> int:
@@ -641,6 +703,17 @@ def main() -> int:
         help="Path to synthetic canary state cache",
     )
     parser.add_argument(
+        "--synthetic-canary-sessions-dir",
+        default={{ openclaw_metrics_endpoint_synthetic_canary_sessions_dir | to_json }},
+        help="Host path to OpenClaw session files for canary cleanup",
+    )
+    parser.add_argument(
+        "--synthetic-canary-session-retention-seconds",
+        type=int,
+        default={{ openclaw_metrics_endpoint_synthetic_canary_session_retention_seconds }},
+        help="Seconds to retain generated canary session files; <=0 disables cleanup",
+    )
+    parser.add_argument(
         "--synthetic-canary-output-max-chars",
         type=int,
         default={{ openclaw_metrics_endpoint_synthetic_canary_output_max_chars }},
@@ -726,6 +799,7 @@ def main() -> int:
             "attempts": 0,
             "duration_ms": None,
             "status": "error",
+            "session_id": None,
             "provider": None,
             "model": None,
             "output_text": "",

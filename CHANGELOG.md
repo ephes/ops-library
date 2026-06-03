@@ -83,6 +83,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit tests for OpenClaw metrics collector canary behavior and schema invariants (`tests/unit/test_openclaw_metrics_collector.py`)
 
 ### Fixed
+- `openclaw_deploy` synthetic canaries now use fresh per-attempt session ids
+  derived from the configured canary prefix and clean up generated canary
+  session files after a bounded retention window, preventing reused canary
+  history from causing context overflow, malformed markers, and retry lock
+  contention.
 - `openclaw_deploy` metrics collector now treats parseable nonzero
   `health --json` output as collected health data, so transient Telegram probe
   failures do not set `collector_ok=false`.
