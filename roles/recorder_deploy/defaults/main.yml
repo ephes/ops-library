@@ -32,9 +32,12 @@ recorder_traefik_config_path: /etc/traefik/dynamic/recorder.yml
 # Optional shared admin token (interim, ADR 0010). Empty = no admin token.
 recorder_host_token: ""
 
-# Host accounts (ADR 0010). Setting the session secret enables sign-up/login.
+# Host accounts (ADR 0010/0011). Setting the session secret enables accounts;
+# it is mandatory for the binary to boot (no open/no-auth mode). Self sign-up is
+# closed: admins add users. recorder_admin_emails seeds/forces operator admins
+# (comma-separated) and is required so the first RBAC deploy has a reachable admin.
 recorder_session_secret: ""
-recorder_allow_registration: true
+recorder_admin_emails: ""
 
 # Email verification via the mailgun-relay. Setting the token enables it.
 recorder_mail_api_url: "https://mailgun.home.xn--wersdrfer-47a.de"
