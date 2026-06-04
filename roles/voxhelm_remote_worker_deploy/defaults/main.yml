@@ -38,7 +38,6 @@ voxhelm_remote_worker_log_level: "INFO"
 voxhelm_remote_worker_caffeinate_enabled: true
 voxhelm_remote_worker_caffeinate_bin: "/usr/bin/caffeinate"
 voxhelm_remote_worker_caffeinate_args:
-  - "-d"
   - "-i"
   - "-m"
   - "-s"

@@ -29,7 +29,6 @@ voxhelm_remote_worker_id: "atlas"
 voxhelm_remote_worker_allowed_url_hosts: []
 voxhelm_remote_worker_caffeinate_enabled: true
 voxhelm_remote_worker_caffeinate_args:
-  - "-d"
   - "-i"
   - "-m"
   - "-s"
@@ -47,10 +46,11 @@ in ops-library.
 the control plane accepts for URL jobs; workers re-validate claim input before
 downloading media.
 
-The launcher wraps the worker with `caffeinate -dims` by default so unattended
-macOS hosts do not idle-sleep, display-sleep, or spin down disks during long
-Metal/CPU transcription and diarization jobs. Override
-`voxhelm_remote_worker_caffeinate_args` if a host should allow display sleep.
+The launcher wraps the worker with `caffeinate -ims` by default so unattended
+macOS hosts do not idle-sleep or spin down disks during long Metal/CPU
+transcription and diarization jobs, while still allowing the display to sleep.
+Add `-d` to `voxhelm_remote_worker_caffeinate_args` only on hosts whose displays
+must remain awake.
 
 Set `voxhelm_remote_worker_whispercpp_model_source` when a host already has the
 configured whisper.cpp model elsewhere. The role links that file into the

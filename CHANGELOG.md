@@ -77,6 +77,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Navidrome lifecycle roles: `navidrome_deploy`, `navidrome_backup`, `navidrome_restore`, and `navidrome_remove` (systemd binary install, Traefik basic auth, rescan timer, backup/restore tooling)
 
 ### Changed
+- `voxhelm_remote_worker_deploy` now defaults to `caffeinate -ims` so macOS
+  remote workers stay awake during long jobs while allowing display sleep.
 - `tailscale_metrics_endpoint` now defaults node-key expiry alerts to warning
   inside 3 days and critical inside 1 day.
 - `zed` role scrub timers can optionally wait for completion and run a post-scrub spindown hook
