@@ -59,6 +59,8 @@ mail_relay_sasl_password: "CHANGEME"  # Set via SOPS
 | `mail_relay_hostname` | `mail.wersdoerfer.de` | Hostname (must match PTR) |
 | `mail_relay_mydomain` | `wersdoerfer.de` | Mail domain |
 | `mail_relay_backend_port` | `25` | Backend relay port |
+| `mail_relay_inet_protocols` | `all` | Postfix address families to use/listen on (`all`, `ipv4`, or `ipv6`) |
+| `mail_relay_smtp_address_preference` | `any` | Postfix outbound address-family preference (`any`, `ipv4`, or `ipv6`); this prefers but does not hard-disable fallback |
 | `mail_relay_smtputf8_enable` | `false` | Advertise SMTPUTF8 support (`false` recommended for current backend LMTP compatibility) |
 
 ### TLS
@@ -76,6 +78,7 @@ mail_relay_sasl_password: "CHANGEME"  # Set via SOPS
 |----------|---------|-------------|
 | `mail_relay_greylisting_enabled` | `true` | Enable postgrey |
 | `mail_relay_greylisting_delay` | `300` | Delay in seconds |
+| `mail_relay_postgrey_whitelist_clients_extra` | `[]` | Extra IPs/domains to add to `/etc/postgrey/whitelist_clients` |
 
 ### Rate Limiting
 
@@ -164,6 +167,7 @@ mail.wersdoerfer.de.    AAAA    2a01:4f8:a0:82dc::2
 
 ; PTR record (set at hosting provider)
 ; 213.239.212.206 → mail.wersdoerfer.de
+; 2a01:4f8:a0:82dc::2 → mail.wersdoerfer.de (or set mail_relay_inet_protocols: ipv4)
 ```
 
 ## Troubleshooting

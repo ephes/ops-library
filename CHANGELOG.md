@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Update your Ansible installation before upgrading
 
 ### Added
+- `mail_relay_deploy` now supports
+  `mail_relay_postgrey_whitelist_clients_extra` for managed postgrey whitelist
+  entries in addition to the role defaults.
 - `voxhelm_deploy` can now put transcription jobs into `remote_pull` mode with
   validated worker-token and shared S3 artifact settings, while
   `voxhelm_remote_worker_deploy` installs a pinned public-PyPI
@@ -77,6 +80,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Navidrome lifecycle roles: `navidrome_deploy`, `navidrome_backup`, `navidrome_restore`, and `navidrome_remove` (systemd binary install, Traefik basic auth, rescan timer, backup/restore tooling)
 
 ### Changed
+- `mail_relay_deploy` now documents IPv4-only relay mode and exposes
+  `mail_relay_smtp_address_preference` so deployments can avoid or de-prioritize
+  IPv6 while PTR/forward DNS is not aligned for outbound delivery.
 - `voxhelm_remote_worker_deploy` now defaults to `caffeinate -ims` so macOS
   remote workers stay awake during long jobs while allowing display sleep.
 - `tailscale_metrics_endpoint` now defaults node-key expiry alerts to warning

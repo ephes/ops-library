@@ -10,11 +10,19 @@
       - mail_relay_backend_host | length > 0
       - mail_relay_sasl_password is defined
       - mail_relay_sasl_password | length > 0
+      - mail_relay_inet_protocols in ['all', 'ipv4', 'ipv6']
+      - mail_relay_smtp_address_preference in ['any', 'ipv4', 'ipv6']
+      - mail_relay_postgrey_whitelist_clients_extra is iterable
+      - mail_relay_postgrey_whitelist_clients_extra is not string
+      - mail_relay_postgrey_whitelist_clients_extra is not mapping
     fail_msg: |
       Required variables not set:
       - mail_relay_domains: List of domains to accept mail for
       - mail_relay_backend_host: Backend server to relay inbound mail to
       - mail_relay_sasl_password: Password for backend SMTP AUTH
+      - mail_relay_inet_protocols: one of all, ipv4, ipv6
+      - mail_relay_smtp_address_preference: one of any, ipv4, ipv6
+      - mail_relay_postgrey_whitelist_clients_extra: list of extra postgrey whitelist clients
 
 - name: Validate recipient rewrite entries
   ansible.builtin.assert:

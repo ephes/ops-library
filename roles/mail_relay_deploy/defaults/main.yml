@@ -47,6 +47,10 @@ mail_relay_backend_port: 25
 mail_relay_inet_interfaces: "all"
 mail_relay_inet_protocols: "all"
 
+# Outbound address-family preference for remote SMTP delivery.
+# Use "ipv4" when IPv6 reverse/forward DNS is not aligned with mail_relay_hostname.
+mail_relay_smtp_address_preference: "any"
+
 # Networks trusted for relay (localhost only - backend uses SMTP AUTH)
 mail_relay_mynetworks:
   - "127.0.0.0/8"
@@ -85,6 +89,7 @@ mail_relay_greylisting_port: 10024  # Port for postgrey (10023 often used by oth
 mail_relay_greylisting_delay: 300  # seconds
 mail_relay_greylisting_max_age: 35  # days
 mail_relay_greylisting_retry_window: 48  # hours
+mail_relay_postgrey_whitelist_clients_extra: []
 
 # =============================================================================
 # SMTP Submission (port 587) for backend outbound

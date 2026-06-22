@@ -1,7 +1,7 @@
 ---
 # Configure Postfix as relay
 
-- name: Create Postfix main.cf
+- name: postfix | Create Postfix main.cf
   ansible.builtin.template:
     src: main.cf.j2
     dest: /etc/postfix/main.cf
@@ -10,7 +10,7 @@
     mode: "0644"
   notify: Restart postfix
 
-- name: Create Postfix master.cf
+- name: postfix | Create Postfix master.cf
   ansible.builtin.template:
     src: master.cf.j2
     dest: /etc/postfix/master.cf
@@ -19,7 +19,7 @@
     mode: "0644"
   notify: Restart postfix
 
-- name: Ensure Postfix directories exist
+- name: postfix | Ensure Postfix directories exist
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory

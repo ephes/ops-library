@@ -18,3 +18,10 @@ amazonaws.com
 
 # Backend server (should never be greylisted)
 {{ mail_relay_backend_host }}
+
+{% if mail_relay_postgrey_whitelist_clients_extra | length > 0 %}
+# Extra managed whitelist clients
+{% for client in mail_relay_postgrey_whitelist_clients_extra %}
+{{ client }}
+{% endfor %}
+{% endif %}
