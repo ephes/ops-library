@@ -22,7 +22,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
   roles:
     - role: local.ops_library.openclaw_deploy
       vars:
-        openclaw_version: "v2026.5.7"
+        openclaw_version: "v2026.6.10"
         openclaw_data_dir: "/mnt/cryptdata/openclaw/data"
         openclaw_gateway_token: "{{ sops_secrets.gateway_token }}"
         openclaw_anthropic_api_key: "{{ sops_secrets.anthropic_api_key }}"
@@ -55,7 +55,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 
 | Variable | Description |
 |----------|-------------|
-| `openclaw_version` | Git tag to checkout and build (e.g. `v2026.5.7`) |
+| `openclaw_version` | Git tag to checkout and build (e.g. `v2026.6.10`) |
 | `openclaw_gateway_token` | Gateway authentication token |
 | `openclaw_anthropic_api_key` | Anthropic API key for AI replies |
 

@@ -4,7 +4,7 @@
     that:
       - openclaw_version | length > 0
     fail_msg: >-
-      openclaw_version is required (e.g. "v2026.5.7"). Set it in the playbook or inventory.
+      openclaw_version is required (e.g. "v2026.6.10"). Set it in the playbook or inventory.
 
 - name: validate | Core OpenClaw settings
   ansible.builtin.assert:

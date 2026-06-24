@@ -117,7 +117,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `openclaw_deploy` now renders the managed slash-skill session manifest without invalid inline Jinja comments.
 - `openclaw_deploy` now normalizes legacy Telegram streaming aliases in persisted gateway configs before restarting newer OpenClaw releases.
 - `openclaw_deploy` metrics collector now recognizes the current OpenClaw Telegram health shape (`running`/`connected`) when deriving `telegram_probe_ok`.
-- `openclaw_deploy` documentation now uses upstream stable `v2026.5.7` in examples and validation hints.
+- `openclaw_deploy` documentation now uses upstream stable `v2026.6.10` in examples and validation hints.
 - `paperless_deploy` now defaults to Paperless-ngx 2.20.15 and supports checksum verification for known upstream release archives.
 - `paperless_deploy` now restarts Paperless services before health checks when a release symlink or package install changes, preventing upgraded deployments from leaving old worker processes serving the previous release.
 - `homeassistant_deploy` now supports Home Assistant 2026.5 on Python 3.14, installs host-specific integration requirements before startup, removes legacy MET weather YAML when requested, and isolates the Matter Server in its own virtualenv to avoid Matter package namespace collisions.
