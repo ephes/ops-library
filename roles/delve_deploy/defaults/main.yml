@@ -37,6 +37,13 @@ delve_session_secret: ""
 # Interim static dogfood token. Empty disables the dogfoodGrant path.
 delve_dogfood_token: ""
 
+# Operator admin dashboard (Operator Admin Dashboard spec). Comma-separated
+# operator emails seeded as admins; empty disables the /admin surface entirely.
+# Seeded operators start with no usable password — activate them on the host with
+# `delved admin activation-token --email <addr>` (single-use token, printed to the
+# operator TTY, never logged). An email is not a secret, so this is a plain var.
+delve_admin_emails: ""
+
 # Sign in with Apple. Setting the client id (app bundle id / Services ID) enables
 # POST /v1/accounts/apple; empty keeps it disabled (tolerant dev).
 delve_apple_client_id: ""
