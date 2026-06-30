@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: delve_deploy
+  namespace: local
+  author: ops-library
+  description: >-
+    Deploy the Delve backend service (a single static Go binary, delved) as a
+    systemd unit behind Traefik, with SQLite for state. Models on recorder_deploy
+    but with no frontend/object-store/live path: it hosts the accounts,
+    entitlements, StoreKit, and Discovery modules (ADR 0012). Installs a locally
+    cross-compiled Linux/amd64 binary rather than an upstream release.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Debian
+      versions: [bookworm]
+    - name: Ubuntu
+      versions: [jammy, noble]
+  galaxy_tags: [delve, accounts, entitlements, go, systemd, traefik, sqlite]
+dependencies: []

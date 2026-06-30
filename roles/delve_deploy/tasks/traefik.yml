@@ -1,0 +1,17 @@
+---
+- name: Ensure Traefik dynamic config directory exists
+  ansible.builtin.file:
+    path: "{{ delve_traefik_config_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Render Traefik configuration for delve
+  ansible.builtin.template:
+    src: delve-traefik.yml.j2
+    dest: "{{ delve_traefik_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload traefik

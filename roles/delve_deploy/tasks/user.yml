@@ -1,0 +1,14 @@
+---
+- name: Ensure delve group exists
+  ansible.builtin.group:
+    name: "{{ delve_group }}"
+    system: true
+
+- name: Ensure delve user exists
+  ansible.builtin.user:
+    name: "{{ delve_user }}"
+    group: "{{ delve_group }}"
+    home: "{{ delve_data_dir }}"
+    create_home: false
+    shell: /usr/sbin/nologin
+    system: true

@@ -1,0 +1,32 @@
+---
+- name: Validate delve inputs
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Install delve dependencies
+  ansible.builtin.import_tasks: packages.yml
+
+- name: Ensure delve user and group exist
+  ansible.builtin.import_tasks: user.yml
+
+- name: Create delve directories
+  ansible.builtin.import_tasks: directories.yml
+
+- name: Install delve binary
+  ansible.builtin.import_tasks: binary.yml
+
+- name: Render delve environment file
+  ansible.builtin.import_tasks: config.yml
+
+- name: Install delve systemd unit
+  ansible.builtin.import_tasks: systemd.yml
+
+- name: Configure Traefik exposure
+  ansible.builtin.import_tasks: traefik.yml
+  when: delve_traefik_enabled | bool
+
+- name: Ensure delve service state
+  ansible.builtin.import_tasks: service.yml
+
+- name: Run delve health check
+  ansible.builtin.import_tasks: health.yml
+  when: delve_healthcheck_enabled | bool

@@ -1,0 +1,11 @@
+---
+- name: Install delve systemd unit
+  ansible.builtin.template:
+    src: delve.service.j2
+    dest: "/etc/systemd/system/{{ delve_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart delve

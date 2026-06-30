@@ -1,0 +1,9 @@
+---
+- name: Install delve binary from the control node
+  ansible.builtin.copy:
+    src: "{{ delve_binary_src }}"
+    dest: "{{ delve_bin_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: restart delve

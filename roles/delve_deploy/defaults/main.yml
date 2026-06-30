@@ -1,0 +1,65 @@
+---
+# delve_deploy defaults (public-safe; secrets are passed by the playbook)
+
+# Service identity
+delve_user: delve
+delve_group: delve
+delve_service_name: delve
+
+# Filesystem layout
+delve_install_dir: /opt/delve
+delve_bin_path: "{{ delve_install_dir }}/delved"
+delve_data_dir: /var/lib/delve
+delve_config_dir: /etc/delve
+delve_env_path: "{{ delve_config_dir }}/delve.env"
+
+# The locally cross-compiled Linux/amd64 binary on the control node. The playbook
+# builds this before invoking the role and points the role at it.
+delve_binary_src: ""
+
+# HTTP bind (Traefik terminates TLS and proxies here). Loopback only.
+# 10026 avoids the homelab's used ports (10024 postgrey, 10025 takahe-nginx, ...).
+delve_listen_address: "127.0.0.1"
+delve_port: 10026
+
+# Public URL + Traefik vhost (punycode form of delve.home.wersdörfer.de)
+delve_public_url: "https://delve.home.xn--wersdrfer-47a.de"
+delve_traefik_enabled: true
+delve_traefik_host: "delve.home.xn--wersdrfer-47a.de"
+delve_traefik_entrypoints: ["web-secure"]
+delve_traefik_cert_resolver: ""   # empty -> use the loaded wildcard cert (tls: {})
+delve_traefik_config_path: /etc/traefik/dynamic/delve.yml
+
+# Session HMAC secret (ADR 0012). Mandatory: the binary refuses to boot without a
+# >=16 char secret, since it makes session tokens forgeable.
+delve_session_secret: ""
+
+# Interim static dogfood token. Empty disables the dogfoodGrant path.
+delve_dogfood_token: ""
+
+# Sign in with Apple. Setting the client id (app bundle id / Services ID) enables
+# POST /v1/accounts/apple; empty keeps it disabled (tolerant dev).
+delve_apple_client_id: ""
+
+# StoreKit. Set the root-certs PATH (a PEM file on the host) to enable the
+# endpoint; bundle id + product ids are then required by the binary at startup.
+delve_storekit_root_certs_path: ""
+delve_storekit_bundle_id: ""
+delve_storekit_product_ids: ""
+
+# Deployment environment marker (DELVE_ENV). Empty = production behavior.
+delve_env: ""
+
+# systemd
+delve_service_enabled: true
+delve_service_state: started
+delve_systemd_nofile: 65536
+
+# Health check
+delve_healthcheck_enabled: true
+delve_healthcheck_url: "http://{{ delve_listen_address }}:{{ delve_port }}/health"
+delve_healthcheck_timeout: 30
+delve_healthcheck_retries: 10
+
+delve_deploy_packages:
+  - ca-certificates

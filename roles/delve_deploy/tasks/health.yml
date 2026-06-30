@@ -1,0 +1,24 @@
+---
+- name: Wait for delve port to be open
+  ansible.builtin.wait_for:
+    host: "{{ delve_listen_address }}"
+    port: "{{ delve_port }}"
+    timeout: "{{ delve_healthcheck_timeout }}"
+    state: started
+
+- name: Perform delve HTTP health check
+  ansible.builtin.uri:
+    url: "{{ delve_healthcheck_url }}"
+    status_code: [200]
+    return_content: true
+    timeout: "{{ delve_healthcheck_timeout }}"
+  register: delve_healthcheck_result
+  retries: "{{ delve_healthcheck_retries }}"
+  delay: 2
+  until: delve_healthcheck_result.status == 200
+
+- name: Assert delve health payload
+  ansible.builtin.assert:
+    that:
+      - delve_healthcheck_result.json.status | default('') == 'ok'
+    fail_msg: "delve /health did not return status=ok"

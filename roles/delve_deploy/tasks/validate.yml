@@ -1,0 +1,44 @@
+---
+- name: Validate delve binary source
+  ansible.builtin.assert:
+    that:
+      - delve_binary_src | length > 0
+    fail_msg: >-
+      delve_binary_src must point at the locally cross-compiled Linux/amd64
+      delved binary (the playbook builds it before invoking this role).
+
+- name: Stat delve binary source on the control node
+  ansible.builtin.stat:
+    path: "{{ delve_binary_src }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: delve_binary_src_stat
+
+- name: Verify delve binary source exists
+  ansible.builtin.assert:
+    that:
+      - delve_binary_src_stat.stat.exists
+      - delve_binary_src_stat.stat.isreg
+    fail_msg: "delve_binary_src {{ delve_binary_src }} not found on the control node."
+
+- name: Validate delve configuration inputs
+  ansible.builtin.assert:
+    that:
+      - delve_public_url | length > 0
+      - delve_port | int > 0
+      - (not delve_traefik_enabled) or (delve_traefik_host | length > 0)
+      - delve_session_secret | length >= 16
+    fail_msg: >-
+      delve_public_url, delve_port, a >=16 char delve_session_secret, and (when
+      Traefik is enabled) delve_traefik_host are required.
+
+- name: Validate StoreKit configuration is complete when enabled
+  ansible.builtin.assert:
+    that:
+      - (delve_storekit_root_certs_path | length == 0) or
+        (delve_storekit_bundle_id | length > 0 and delve_storekit_product_ids | length > 0)
+    fail_msg: >-
+      When delve_storekit_root_certs_path is set, delve_storekit_bundle_id and
+      delve_storekit_product_ids are also required (the binary refuses to boot
+      otherwise).
