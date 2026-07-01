@@ -37,8 +37,10 @@
   ansible.builtin.assert:
     that:
       - (delve_storekit_root_certs_path | length == 0) or
-        (delve_storekit_bundle_id | length > 0 and delve_storekit_product_ids | length > 0)
+        (delve_storekit_bundle_id | length > 0 and
+         delve_storekit_product_ids | length > 0 and
+         delve_storekit_root_certs_src | length > 0)
     fail_msg: >-
-      When delve_storekit_root_certs_path is set, delve_storekit_bundle_id and
-      delve_storekit_product_ids are also required (the binary refuses to boot
-      otherwise).
+      When delve_storekit_root_certs_path is set, delve_storekit_bundle_id,
+      delve_storekit_product_ids, and delve_storekit_root_certs_src are also
+      required (the binary refuses to boot without the bundle id/product ids).

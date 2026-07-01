@@ -17,10 +17,12 @@ the control node rather than an upstream release.
 1. Creates a system user/group (`delve`) and the install, config, and data dirs
    (`/opt/delve`, `/etc/delve`, `/var/lib/delve`).
 2. Installs the cross-compiled `delved` binary to `/opt/delve/delved`.
-3. Renders `/etc/delve/delve.env` (mode 0640, `no_log`) from the passed config.
-4. Installs a hardened systemd unit and (optionally) a Traefik dynamic route for
+3. Installs the bundled public Apple StoreKit root certificate PEM when StoreKit
+   verification is enabled.
+4. Renders `/etc/delve/delve.env` (mode 0640, `no_log`) from the passed config.
+5. Installs a hardened systemd unit and (optionally) a Traefik dynamic route for
    the public host.
-5. Enables/starts the service and runs a loopback `/health` check.
+6. Enables/starts the service and runs a loopback `/health` check.
 
 ## Required variables
 
@@ -37,9 +39,11 @@ the control node rather than an upstream release.
 - `delve_dogfood_token` — enables the interim `dogfoodGrant` path.
 - `delve_apple_client_id` — enables `POST /v1/accounts/apple` (the app bundle id).
 - `delve_storekit_root_certs_path` + `delve_storekit_bundle_id` +
-  `delve_storekit_product_ids` — enable StoreKit verification. The certs path must
-  point at a PEM file on the host; when the path is set, the bundle id and product
-  ids are required (validated, and enforced by the binary at startup).
+  `delve_storekit_product_ids` — enable StoreKit verification. When the certs
+  path is set, the role copies its bundled public Apple Root CA - G3 PEM to that
+  path; the bundle id and product ids are required (validated, and enforced by
+  the binary at startup). Override `delve_storekit_root_certs_src` only if the
+  control repo supplies a different PEM bundle.
 
 See `defaults/main.yml` for the full list. Secrets are passed by the playbook
 (`ops-control/playbooks/delve/deploy.yml`), never defaulted here.

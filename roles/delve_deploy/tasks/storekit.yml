@@ -1,0 +1,10 @@
+---
+- name: Install StoreKit Apple root certificate bundle
+  ansible.builtin.copy:
+    src: "{{ delve_storekit_root_certs_src }}"
+    dest: "{{ delve_storekit_root_certs_path }}"
+    owner: root
+    group: "{{ delve_group }}"
+    mode: "0644"
+  when: delve_storekit_root_certs_path | length > 0
+  notify: restart delve

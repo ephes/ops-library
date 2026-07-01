@@ -14,6 +14,9 @@
 - name: Install delve binary
   ansible.builtin.import_tasks: binary.yml
 
+- name: Install StoreKit root certificate bundle
+  ansible.builtin.import_tasks: storekit.yml
+
 - name: Render delve environment file
   ansible.builtin.import_tasks: config.yml
 

@@ -50,7 +50,10 @@ delve_apple_client_id: ""
 
 # StoreKit. Set the root-certs PATH (a PEM file on the host) to enable the
 # endpoint; bundle id + product ids are then required by the binary at startup.
+# The public Apple Root CA - G3 bundle ships with this role and is copied to the
+# configured path when StoreKit is enabled.
 delve_storekit_root_certs_path: ""
+delve_storekit_root_certs_src: "apple-storekit-root-certs.pem"
 delve_storekit_bundle_id: ""
 delve_storekit_product_ids: ""
 

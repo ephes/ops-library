@@ -36,6 +36,7 @@ molecule/*/.molecule/
 # Secrets
 *.key
 *.pem
+!roles/delve_deploy/files/apple-storekit-root-certs.pem
 *.crt
 .secrets.baseline
 secrets/
