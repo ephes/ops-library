@@ -1,0 +1,69 @@
+---
+# Default values for heis_deploy role
+
+heis_service_name: "heis"
+
+# Deployment user
+heis_user: "heis"
+heis_group: "heis"
+heis_home: "/home/{{ heis_user }}"
+
+# Paths
+heis_site_path: "{{ heis_home }}/site"
+heis_venv_path: "{{ heis_site_path }}/.venv"
+heis_venv_bin: "{{ heis_venv_path }}/bin"
+heis_cache_dir: "{{ heis_site_path }}/cache"
+heis_env_file: "{{ heis_site_path }}/.env"
+heis_systemd_unit_path: "/etc/systemd/system/{{ heis_user }}.service"
+heis_fish_config_dir: "{{ heis_home }}/.config/fish"
+heis_fish_config_path: "{{ heis_fish_config_dir }}/config.fish"
+
+# Source (required)
+# heis_source_path: "/path/to/heis"
+
+# Python/uv
+heis_use_uv: true
+heis_uv_path: "/usr/local/bin/uv"
+heis_python_version: "python3.13"
+
+# App config
+heis_app_port: 10020
+heis_gunicorn_workers: 4
+heis_gunicorn_timeout: 3600
+heis_django_settings_module: "config.settings.production"
+heis_django_admin_url: "hidden_admin/"
+heis_django_allowed_hosts: "{{ heis_fqdn }},localhost"
+heis_django_cache_location: "{{ heis_cache_dir }}"
+heis_wagtailadmin_base_url: "https://{{ heis_fqdn }}"
+heis_serve_media: false
+
+# Secrets (required)
+# heis_django_secret_key: ""
+
+# Optional admin bootstrap
+# heis_admin_username: ""
+# heis_admin_email: ""
+# heis_admin_password: ""
+
+# Traefik
+heis_traefik_enabled: true
+heis_traefik_config_dir: "/etc/traefik/dynamic"
+heis_traefik_config_path: "{{ heis_traefik_config_dir }}/{{ heis_user }}.traefik.yml"
+
+# Host configuration (required)
+# heis_fqdn: "heis-adler.de"
+# heis_traefik_host_rule: "Host(`heis-adler.de`) || Host(`www.heis-adler.de`)"
+
+# Rsync
+heis_rsync_excludes:
+  - "media"
+  - "backups"
+  - ".venv"
+  - "venv"
+  - ".git"
+  - "__pycache__"
+  - "*.pyc"
+  - ".pytest_cache"
+  - ".mypy_cache"
+  - "node_modules"
+  - "heis-buehne-bilder.zip"

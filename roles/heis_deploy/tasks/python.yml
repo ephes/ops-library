@@ -1,0 +1,71 @@
+---
+# Setup Python environment for Heis
+
+- name: Ensure uv binary is installed
+  ansible.builtin.import_role:
+    name: uv_install
+  when: heis_use_uv
+
+- name: Ensure Python and pip are installed
+  package:
+    name:
+      - python3
+      - python3-pip
+      - python3-venv
+    state: present
+  when: not heis_use_uv
+
+- name: Determine Django project path
+  set_fact:
+    heis_django_path: "{{ heis_site_path }}"
+
+- name: Create virtual environment using uv
+  command: "{{ heis_uv_path }} venv --python {{ heis_python_version }} {{ heis_venv_path }}"
+  args:
+    creates: "{{ heis_venv_path }}/bin/python"
+  become: true
+  become_user: "{{ heis_user }}"
+  when: heis_use_uv
+
+- name: Check if venv symlink exists
+  stat:
+    path: "{{ heis_site_path }}/venv"
+  register: heis_venv_link
+  when: heis_use_uv
+
+- name: Create venv symlink to .venv
+  file:
+    src: "{{ heis_venv_path }}"
+    dest: "{{ heis_site_path }}/venv"
+    state: link
+    owner: "{{ heis_user }}"
+    group: "{{ heis_group }}"
+    force: true
+  when: heis_use_uv
+
+- name: Create virtual environment using venv
+  command: python3 -m venv {{ heis_venv_path }}
+  args:
+    creates: "{{ heis_venv_path }}/bin/python"
+  become: true
+  become_user: "{{ heis_user }}"
+  when: not heis_use_uv
+
+- name: Install dependencies using uv
+  command: "{{ heis_uv_path }} sync --no-dev"
+  args:
+    chdir: "{{ heis_django_path }}"
+  environment:
+    VIRTUAL_ENV: "{{ heis_venv_path }}"
+  become: true
+  become_user: "{{ heis_user }}"
+  when: heis_use_uv
+
+- name: Install dependencies using pip
+  pip:
+    requirements: "{{ heis_django_path }}/requirements.txt"
+    virtualenv: "{{ heis_venv_path }}"
+    state: present
+  become: true
+  become_user: "{{ heis_user }}"
+  when: not heis_use_uv

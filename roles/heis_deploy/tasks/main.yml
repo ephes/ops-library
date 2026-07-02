@@ -1,0 +1,70 @@
+---
+# Heis deployment main tasks
+
+- name: Validate secret variables
+  assert:
+    that:
+      - heis_django_secret_key is defined
+      - heis_django_secret_key != ""
+      - heis_django_secret_key != "CHANGEME"
+    fail_msg: "heis_django_secret_key must be set to a non-placeholder value."
+  no_log: true
+
+- name: Validate required variables
+  assert:
+    that:
+      - heis_source_path is defined
+      - heis_source_path != ""
+      - heis_fqdn is defined
+      - heis_fqdn != ""
+      - heis_traefik_host_rule is defined
+      - heis_traefik_host_rule != ""
+      - heis_django_admin_url is defined
+      - heis_django_admin_url != ""
+      - heis_django_admin_url != "CHANGEME"
+      - heis_app_port | int > 0
+    fail_msg: |
+      SECURITY ERROR: Required variables are missing or contain placeholder values!
+
+      The following variables MUST be properly configured:
+      - heis_source_path: {{ heis_source_path | default('NOT SET') }}
+      - heis_fqdn: {{ heis_fqdn | default('NOT SET') }}
+      - heis_traefik_host_rule: {{ heis_traefik_host_rule | default('NOT SET') }}
+      - heis_django_admin_url: {{ heis_django_admin_url | default('NOT SET') }}
+
+      Placeholder or development values are NOT allowed in production.
+      Please update the heis secrets (e.g. secrets/prod/heis.yml or
+      secrets/staging/heis.yml) with real values using:
+      SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt sops secrets/<env>/heis.yml
+
+- name: Validate admin bootstrap variables
+  assert:
+    that:
+      - heis_admin_username | default('') != ""
+      - heis_admin_username | default('') != "CHANGEME"
+      - heis_admin_password | default('') != ""
+      - heis_admin_password | default('') != "CHANGEME"
+      - heis_admin_password | default('') != "CHANGE_ME"
+    fail_msg: "heis_admin_username and heis_admin_password must be set for admin bootstrap."
+  when:
+    - heis_admin_username is defined or heis_admin_password is defined
+  no_log: true
+
+- name: Setup user and directories
+  include_tasks: user.yml
+
+- name: Deploy source code
+  include_tasks: source_rsync.yml
+
+- name: Setup Python environment
+  include_tasks: python.yml
+
+- name: Configure Django application
+  include_tasks: django.yml
+
+- name: Setup systemd service
+  include_tasks: service.yml
+
+- name: Configure Traefik
+  include_tasks: traefik.yml
+  when: heis_traefik_enabled

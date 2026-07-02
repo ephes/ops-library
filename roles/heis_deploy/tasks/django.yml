@@ -1,0 +1,113 @@
+---
+# Configure Django application
+
+- name: Create environment file for Django
+  template:
+    src: heis.env.j2
+    dest: "{{ heis_env_file }}"
+    owner: "{{ heis_user }}"
+    group: "{{ heis_group }}"
+    mode: '0600'
+  notify: restart heis
+  no_log: true
+
+- name: Run Django migrations
+  shell: |
+    set -a
+    . {{ heis_env_file | quote }}
+    set +a
+    {{ heis_venv_bin }}/python manage.py migrate
+  args:
+    chdir: "{{ heis_site_path }}"
+    executable: /bin/bash
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ heis_django_settings_module }}"
+  become: true
+  become_user: "{{ heis_user }}"
+  register: heis_migrate_result
+  changed_when: "'No migrations to apply' not in heis_migrate_result.stdout"
+
+- name: Ensure default Wagtail pages exist
+  shell: |
+    set -a
+    . {{ heis_env_file | quote }}
+    set +a
+    {{ heis_venv_bin }}/python manage.py setup_default_pages --hostname {{ heis_fqdn | quote }}
+  args:
+    chdir: "{{ heis_site_path }}"
+    executable: /bin/bash
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ heis_django_settings_module }}"
+  become: true
+  become_user: "{{ heis_user }}"
+  register: heis_setup_pages_result
+  changed_when: "'Created' in heis_setup_pages_result.stdout or 'Removing' in heis_setup_pages_result.stdout"
+
+- name: Seed homepage content
+  shell: |
+    set -a
+    . {{ heis_env_file | quote }}
+    set +a
+    {{ heis_venv_bin }}/python manage.py seed_home_content
+  args:
+    chdir: "{{ heis_site_path }}"
+    executable: /bin/bash
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ heis_django_settings_module }}"
+  become: true
+  become_user: "{{ heis_user }}"
+  register: heis_seed_home_result
+  changed_when: "'gefüllt' in heis_seed_home_result.stdout or 'angelegt' in heis_seed_home_result.stdout or 'importiert' in heis_seed_home_result.stdout"
+
+- name: Seed subpage content and chrome defaults
+  shell: |
+    set -a
+    . {{ heis_env_file | quote }}
+    set +a
+    {{ heis_venv_bin }}/python manage.py seed_subpages_content
+  args:
+    chdir: "{{ heis_site_path }}"
+    executable: /bin/bash
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ heis_django_settings_module }}"
+  become: true
+  become_user: "{{ heis_user }}"
+  register: heis_seed_subpages_result
+  changed_when: "'angelegt' in heis_seed_subpages_result.stdout or 'gesetzt' in heis_seed_subpages_result.stdout or 'Gefüllte Felder: 0' not in heis_seed_subpages_result.stdout"
+
+- name: Collect static files
+  shell: |
+    set -a
+    . {{ heis_env_file | quote }}
+    set +a
+    {{ heis_venv_bin }}/python manage.py collectstatic --noinput
+  args:
+    chdir: "{{ heis_site_path }}"
+    executable: /bin/bash
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ heis_django_settings_module }}"
+  become: true
+  become_user: "{{ heis_user }}"
+  register: heis_collectstatic_result
+  changed_when: "'0 static files copied' not in heis_collectstatic_result.stdout"
+
+- name: Ensure admin user exists
+  shell: |
+    set -a
+    . {{ heis_env_file | quote }}
+    set +a
+    {{ heis_venv_bin }}/python manage.py ensure_superuser
+  args:
+    chdir: "{{ heis_site_path }}"
+    executable: /bin/bash
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ heis_django_settings_module }}"
+    ADMIN_USERNAME: "{{ heis_admin_username }}"
+    ADMIN_EMAIL: "{{ heis_admin_email | default('') }}"
+    ADMIN_PASSWORD: "{{ heis_admin_password }}"
+  become: true
+  become_user: "{{ heis_user }}"
+  when:
+    - heis_admin_username is defined
+    - heis_admin_password is defined
+  no_log: true

@@ -1,0 +1,31 @@
+---
+# Deploy Heis source code using rsync
+
+- name: Ensure source directory exists
+  delegate_to: localhost
+  stat:
+    path: "{{ heis_source_path }}"
+  register: heis_source_dir
+  become: false
+
+- name: Fail if source directory doesn't exist
+  fail:
+    msg: "Source directory {{ heis_source_path }} does not exist"
+  when: not heis_source_dir.stat.exists or not heis_source_dir.stat.isdir
+
+- name: Sync Heis source code to target
+  ansible.posix.synchronize:
+    src: "{{ heis_source_path }}/"
+    dest: "{{ heis_site_path }}/"
+    delete: false
+    rsync_opts: "{{ heis_rsync_excludes | map('regex_replace', '^(.*)$', '--exclude=\\1') | list }}"
+  become: false
+  delegate_to: localhost
+  notify: restart heis
+
+- name: Set ownership for synced files
+  file:
+    path: "{{ heis_site_path }}"
+    owner: "{{ heis_user }}"
+    group: "{{ heis_group }}"
+    recurse: true

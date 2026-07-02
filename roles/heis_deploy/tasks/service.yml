@@ -1,0 +1,29 @@
+---
+# Setup systemd service for Heis
+
+- name: Create gunicorn start script
+  template:
+    src: gunicorn.sh.j2
+    dest: "{{ heis_site_path }}/gunicorn.sh"
+    owner: "{{ heis_user }}"
+    group: "{{ heis_group }}"
+    mode: '0755'
+  notify: restart heis
+
+- name: Create systemd service file
+  template:
+    src: systemd.service.j2
+    dest: "{{ heis_systemd_unit_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - reload systemd
+    - restart heis
+
+- name: Enable and start heis service
+  systemd:
+    name: "{{ heis_user }}"
+    enabled: true
+    state: started
+    daemon_reload: true

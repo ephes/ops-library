@@ -1,0 +1,59 @@
+---
+# Setup user and directories for Heis
+
+- name: Ensure heis group exists
+  group:
+    name: "{{ heis_group }}"
+    state: present
+
+- name: Check if heis user exists
+  getent:
+    database: passwd
+    key: "{{ heis_user }}"
+  register: heis_user_check
+  failed_when: false
+
+- name: Ensure heis user exists
+  user:
+    name: "{{ heis_user }}"
+    group: "{{ heis_group }}"
+    home: "{{ heis_home }}"
+    shell: /usr/bin/fish
+    state: present
+    move_home: false
+  when: heis_user_check.failed
+
+- name: Ensure heis user is in correct group
+  user:
+    name: "{{ heis_user }}"
+    groups: "{{ heis_group }}"
+    append: true
+  when: not heis_user_check.failed
+
+- name: Create application directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ heis_user }}"
+    group: "{{ heis_group }}"
+    mode: '0755'
+  loop:
+    - "{{ heis_home }}"
+    - "{{ heis_site_path }}"
+    - "{{ heis_cache_dir }}"
+
+- name: Create fish config directory
+  file:
+    path: "{{ heis_fish_config_dir }}"
+    state: directory
+    owner: "{{ heis_user }}"
+    group: "{{ heis_group }}"
+    mode: '0755'
+
+- name: Create fish config
+  template:
+    src: user_config.fish.j2
+    dest: "{{ heis_fish_config_path }}"
+    owner: "{{ heis_user }}"
+    group: "{{ heis_group }}"
+    mode: '0644'
