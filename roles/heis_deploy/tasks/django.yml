@@ -32,7 +32,7 @@
     set -a
     . {{ heis_env_file | quote }}
     set +a
-    {{ heis_venv_bin }}/python manage.py setup_default_pages --hostname {{ heis_fqdn | quote }}
+    {{ heis_venv_bin }}/python manage.py setup_default_pages --hostname {{ heis_fqdn | quote }} --port 443
   args:
     chdir: "{{ heis_site_path }}"
     executable: /bin/bash
