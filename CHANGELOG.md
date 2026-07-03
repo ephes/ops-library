@@ -95,6 +95,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit tests for OpenClaw metrics collector canary behavior and schema invariants (`tests/unit/test_openclaw_metrics_collector.py`)
 
 ### Fixed
+- `daybook_sessions_deploy` now uses an explicit boolean assertion for the S3
+  session path check, keeping the role compatible with stricter Ansible
+  conditional validation during real macOS deploys.
 - `openclaw_deploy` synthetic canaries now use fresh per-attempt session ids
   derived from the configured canary prefix and clean up generated canary
   session files after a bounded retention window, preventing reused canary

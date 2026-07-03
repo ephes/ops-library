@@ -35,7 +35,7 @@
       - daybook_sessions_launchd_path | string | trim | length > 0
       - daybook_sessions_brew_packages is sequence
       - daybook_sessions_brew_packages is not string
-      - daybook_sessions_path | string | trim | regex_search('^s3://')
+      - (daybook_sessions_path | string | trim | regex_search('^s3://')) is not none
       - daybook_sessions_aws_endpoint_url_s3 | string | trim | length > 0
       - daybook_sessions_aws_endpoint_url_s3 != "CHANGEME"
       - daybook_sessions_aws_access_key_id | string | trim | length > 0
