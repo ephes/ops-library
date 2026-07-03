@@ -206,6 +206,7 @@
     accept_hostkey: true
   become: true
   become_user: "{{ daybook_sessions_service_user }}"
+  become_flags: "-i"
   register: daybook_sessions_source_checkout
   when: daybook_sessions_enabled | bool
 

@@ -98,6 +98,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `daybook_sessions_deploy` now uses an explicit boolean assertion for the S3
   session path check, keeping the role compatible with stricter Ansible
   conditional validation during real macOS deploys.
+- `daybook_sessions_deploy` now runs the Daybook checkout update under a login
+  shell for the service user, avoiding macOS sudo current-directory failures.
 - `openclaw_deploy` synthetic canaries now use fresh per-attempt session ids
   derived from the configured canary prefix and clean up generated canary
   session files after a bounded retention window, preventing reused canary
