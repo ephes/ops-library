@@ -16,6 +16,7 @@
       - daybook_sessions_repo_url | string | trim | length > 0
       - daybook_sessions_repo_ref | string | trim | length > 0
       - daybook_sessions_repo_ref != "CHANGEME"
+      - daybook_sessions_repo_update | type_debug == 'bool'
       - daybook_sessions_checkout_path | string | trim | length > 0
       - daybook_sessions_config_dir | string | trim | length > 0
       - daybook_sessions_env_file | string | trim | length > 0
@@ -203,6 +204,7 @@
     dest: "{{ daybook_sessions_checkout_path }}"
     version: "{{ daybook_sessions_repo_ref }}"
     force: "{{ daybook_sessions_checkout_force | bool }}"
+    update: "{{ daybook_sessions_repo_update | bool }}"
     accept_hostkey: true
   become: true
   become_user: "{{ daybook_sessions_service_user }}"

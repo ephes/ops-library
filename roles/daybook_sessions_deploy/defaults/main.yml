@@ -11,6 +11,7 @@ daybook_sessions_repo_url: "https://github.com/ephes/daybook.git"
 daybook_sessions_repo_ref: "CHANGEME"
 daybook_sessions_checkout_path: "{{ daybook_sessions_service_home }}/projects/daybook"
 daybook_sessions_checkout_force: true
+daybook_sessions_repo_update: true
 
 daybook_sessions_config_dir: "/etc/daybook-sessions"
 daybook_sessions_env_file: "{{ daybook_sessions_config_dir }}/sessions.env"

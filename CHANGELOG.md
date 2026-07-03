@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pinned Daybook checkout, sync it with `uv`, install `trufflehog`, and run
   `daybook sessions ship` as a periodic launchd job using
   private-control-repo supplied MinIO credentials.
+- `daybook_sessions_deploy` can skip git remote fetches for private,
+  pre-staged Daybook checkouts while still checking out a pinned ref.
 - `mail_relay_deploy` now supports
   `mail_relay_postgrey_whitelist_clients_extra` for managed postgrey whitelist
   entries in addition to the role defaults.

@@ -32,6 +32,7 @@ skip sessions that were already shipped manually.
 daybook_sessions_repo_url: "https://github.com/ephes/daybook.git"
 daybook_sessions_repo_ref: "CHANGEME"
 daybook_sessions_checkout_path: "{{ daybook_sessions_service_home }}/projects/daybook"
+daybook_sessions_repo_update: true
 daybook_sessions_path: "s3://agent-sessions"
 daybook_sessions_schedule_interval_seconds: 1800
 daybook_sessions_launchd_label: "de.wersdoerfer.daybook.sessions"
@@ -51,6 +52,11 @@ These values must be supplied by the private control repo:
 
 Use a dedicated least-privilege MinIO account scoped to the
 `agent-sessions` bucket. Do not pass the MinIO admin key to this role.
+
+Set `daybook_sessions_repo_update: false` only when the private control repo has
+pre-staged the checkout on the target and `daybook_sessions_repo_ref` pins a
+commit that is already present there. The role still validates and checks out
+that pinned ref, but it will not fetch from the remote.
 
 ## Redaction Notes
 

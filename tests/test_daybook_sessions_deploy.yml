@@ -59,6 +59,7 @@
         that:
           - daybook_sessions_repo_url == "https://github.com/ephes/daybook.git"
           - daybook_sessions_repo_ref == "CHANGEME"
+          - daybook_sessions_repo_update | bool
           - daybook_sessions_path == "s3://agent-sessions"
           - daybook_sessions_schedule_interval_seconds == 1800
           - "'trufflehog' in daybook_sessions_brew_packages"
