@@ -1,0 +1,137 @@
+---
+# Test playbook for daybook_sessions_deploy role templates
+# Run with: ansible-playbook tests/test_daybook_sessions_deploy.yml -i tests/inventory/test.yml
+
+- name: Test Daybook Sessions Deploy Role Components
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/daybook_sessions_deploy"
+    rendered_env: "/tmp/test-daybook-sessions.env"
+    rendered_launcher: "/tmp/test-daybook-sessions-launcher.sh"
+    rendered_plist: "/tmp/test-daybook-sessions.plist"
+
+  tasks:
+    - name: Verify role files exist
+      block:
+        - name: Check defaults file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/defaults/main.yml"
+          register: defaults_file
+
+        - name: Check tasks file
+          ansible.builtin.stat:
+            path: "{{ role_path }}/tasks/main.yml"
+          register: tasks_file
+
+        - name: Check environment template
+          ansible.builtin.stat:
+            path: "{{ role_path }}/templates/sessions.env.j2"
+          register: env_template_file
+
+        - name: Check launchd template
+          ansible.builtin.stat:
+            path: "{{ role_path }}/templates/sessions.launchd.plist.j2"
+          register: launchd_template_file
+
+        - name: Check launcher template
+          ansible.builtin.stat:
+            path: "{{ role_path }}/templates/ship-sessions.sh.j2"
+          register: launcher_template_file
+
+        - name: Assert required files exist
+          ansible.builtin.assert:
+            that:
+              - defaults_file.stat.exists
+              - tasks_file.stat.exists
+              - env_template_file.stat.exists
+              - launchd_template_file.stat.exists
+              - launcher_template_file.stat.exists
+
+    - name: Load role defaults
+      ansible.builtin.include_vars:
+        file: "{{ role_path }}/defaults/main.yml"
+
+    - name: Assert safe public defaults
+      ansible.builtin.assert:
+        that:
+          - daybook_sessions_repo_url == "https://github.com/ephes/daybook.git"
+          - daybook_sessions_repo_ref == "CHANGEME"
+          - daybook_sessions_path == "s3://agent-sessions"
+          - daybook_sessions_schedule_interval_seconds == 1800
+          - "'trufflehog' in daybook_sessions_brew_packages"
+          - daybook_sessions_aws_access_key_id == "CHANGEME"
+          - daybook_sessions_aws_secret_access_key == "CHANGEME"
+
+    - name: Set template test values
+      ansible.builtin.set_fact:
+        daybook_sessions_service_user: "jochen"
+        daybook_sessions_service_group: "staff"
+        daybook_sessions_service_home: "/Users/jochen"
+        daybook_sessions_repo_ref: "main"
+        daybook_sessions_checkout_path: "/Users/jochen/projects/daybook"
+        daybook_sessions_env_file: "/etc/daybook-sessions/sessions.env"
+        daybook_sessions_launcher_path: "/etc/daybook-sessions/ship-sessions.sh"
+        daybook_sessions_state_path: "/Users/jochen/.daybook/sessions-shipped.json"
+        daybook_sessions_uv_bin: "/usr/local/bin/uv"
+        daybook_sessions_aws_endpoint_url_s3: "https://s3.home.example"
+        daybook_sessions_aws_access_key_id: "session-key"
+        daybook_sessions_aws_secret_access_key: "session-secret"
+        daybook_sessions_redact_files:
+          - "/Users/jochen/projects/daybook/.envrc"
+          - "/Users/jochen/projects/ops-control/.envrc"
+
+    - name: Render environment template
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/sessions.env.j2"
+        dest: "{{ rendered_env }}"
+
+    - name: Render launcher template
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/ship-sessions.sh.j2"
+        dest: "{{ rendered_launcher }}"
+
+    - name: Render launchd template
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/sessions.launchd.plist.j2"
+        dest: "{{ rendered_plist }}"
+
+    - name: Read rendered files
+      ansible.builtin.slurp:
+        path: "{{ item }}"
+      loop:
+        - "{{ rendered_env }}"
+        - "{{ rendered_launcher }}"
+        - "{{ rendered_plist }}"
+      register: rendered_files
+
+    - name: Assert rendered Daybook sessions config
+      ansible.builtin.assert:
+        that:
+          - "'DAYBOOK_SESSIONS_PATH=s3://agent-sessions' in rendered_env_text"
+          - "'DAYBOOK_SESSIONS_STATE=/Users/jochen/.daybook/sessions-shipped.json' in rendered_env_text"
+          - "'DAYBOOK_REDACT_FILES=/Users/jochen/projects/daybook/.envrc:/Users/jochen/projects/ops-control/.envrc' in rendered_env_text"
+          - "'AWS_ENDPOINT_URL_S3=https://s3.home.example' in rendered_env_text"
+          - "'AWS_ACCESS_KEY_ID=session-key' in rendered_env_text"
+          - "'AWS_SECRET_ACCESS_KEY=session-secret' in rendered_env_text"
+          - rendered_launcher_text is search('set -a')
+          - rendered_launcher_text is search('/usr/local/bin/uv run --frozen --no-dev daybook sessions ship')
+          - "'<string>de.wersdoerfer.daybook.sessions</string>' in rendered_plist_text"
+          - "'<key>StartInterval</key>' in rendered_plist_text"
+          - "'<integer>1800</integer>' in rendered_plist_text"
+          - "'<string>/etc/daybook-sessions/ship-sessions.sh</string>' in rendered_plist_text"
+      vars:
+        rendered_env_text: "{{ rendered_files.results[0].content | b64decode }}"
+        rendered_launcher_text: "{{ rendered_files.results[1].content | b64decode }}"
+        rendered_plist_text: "{{ rendered_files.results[2].content | b64decode }}"
+
+    - name: Clean up rendered files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ rendered_env }}"
+        - "{{ rendered_launcher }}"
+        - "{{ rendered_plist }}"

@@ -187,6 +187,7 @@ consumer repos depend on.
 | Bootstrap | [`dpkg_arch_remove`](roles/dpkg_arch_remove/README.md) | Remove foreign dpkg architectures (defaults to i386) and optionally purge packages. |
 | Bootstrap | [`opsgate_deploy`](roles/opsgate_deploy/README.md) | Deploy OpsGate on macOS with split users (`control_service_user` + `ops`), launchd-managed API/runner processes, and tmux runner wiring. |
 | Bootstrap | [`opsgate_ingress_deploy`](roles/opsgate_ingress_deploy/README.md) | Expose OpsGate over private HTTPS via Traefik on the edge host while proxying to the macOS backend over Tailscale. |
+| Bootstrap | [`daybook_sessions_deploy`](roles/daybook_sessions_deploy/README.md) | Run Daybook session shipping on macOS as a periodic launchd job with SOPS-supplied MinIO credentials. |
 | Bootstrap | [`ollama_install`](roles/ollama_install/README.md) | Install Ollama on macOS via Homebrew and manage a launchd service. |
 | Bootstrap | [`voxhelm_deploy`](roles/voxhelm_deploy/README.md) | Deploy Voxhelm on macOS with `uv`, Uvicorn, and a launchd-managed synchronous transcription API. |
 | Bootstrap | [`voxhelm_ingress_deploy`](roles/voxhelm_ingress_deploy/README.md) | Expose Voxhelm over private HTTPS via Traefik on the edge host while proxying to the macOS backend over Tailscale. |

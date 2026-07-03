@@ -1,0 +1,318 @@
+---
+- name: validate | Ensure Daybook sessions target is macOS
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] == 'Darwin'
+    fail_msg: "daybook_sessions_deploy only supports macOS targets."
+  when: daybook_sessions_enabled | bool
+
+- name: validate | Ensure required Daybook sessions variables are configured
+  ansible.builtin.assert:
+    that:
+      - daybook_sessions_service_user | string | trim | length > 0
+      - daybook_sessions_service_user != "CHANGEME"
+      - daybook_sessions_service_group | string | trim | length > 0
+      - daybook_sessions_service_home | string | trim | length > 0
+      - daybook_sessions_repo_url | string | trim | length > 0
+      - daybook_sessions_repo_ref | string | trim | length > 0
+      - daybook_sessions_repo_ref != "CHANGEME"
+      - daybook_sessions_checkout_path | string | trim | length > 0
+      - daybook_sessions_config_dir | string | trim | length > 0
+      - daybook_sessions_env_file | string | trim | length > 0
+      - daybook_sessions_launcher_path | string | trim | length > 0
+      - daybook_sessions_log_dir | string | trim | length > 0
+      - daybook_sessions_stdout_log | string | trim | length > 0
+      - daybook_sessions_stderr_log | string | trim | length > 0
+      - daybook_sessions_state_path | string | trim | length > 0
+      - daybook_sessions_uv_install_dir | string | trim | length > 0
+      - daybook_sessions_uv_bin | string | trim | length > 0
+      - daybook_sessions_python_version | string | trim | length > 0
+      - daybook_sessions_uv_sync_args is sequence
+      - daybook_sessions_uv_sync_args is not string
+      - daybook_sessions_launchd_label | string | trim | length > 0
+      - daybook_sessions_launchd_plist_path | string | trim | length > 0
+      - daybook_sessions_schedule_interval_seconds | int > 0
+      - daybook_sessions_launchd_path | string | trim | length > 0
+      - daybook_sessions_brew_packages is sequence
+      - daybook_sessions_brew_packages is not string
+      - daybook_sessions_path | string | trim | regex_search('^s3://')
+      - daybook_sessions_aws_endpoint_url_s3 | string | trim | length > 0
+      - daybook_sessions_aws_endpoint_url_s3 != "CHANGEME"
+      - daybook_sessions_aws_access_key_id | string | trim | length > 0
+      - daybook_sessions_aws_access_key_id != "CHANGEME"
+      - daybook_sessions_aws_secret_access_key | string | trim | length > 0
+      - daybook_sessions_aws_secret_access_key != "CHANGEME"
+      - daybook_sessions_aws_region | string | trim | length > 0
+      - daybook_sessions_aws_default_region | string | trim | length > 0
+      - daybook_sessions_redact_files is sequence
+      - daybook_sessions_redact_files is not string
+      - daybook_sessions_remove_legacy_runner_paths is sequence
+      - daybook_sessions_remove_legacy_runner_paths is not string
+    fail_msg: >-
+      Daybook sessions deployment is missing required configuration. Supply a
+      service user, pinned daybook checkout ref, S3 session path, and
+      least-privilege MinIO credentials from the private control repo.
+  when: daybook_sessions_enabled | bool
+
+- name: runtime | Ensure uv is installed
+  ansible.builtin.include_role:
+    name: local.ops_library.uv_install
+  vars:
+    uv_install_dir: "{{ daybook_sessions_uv_install_dir }}"
+    uv_install_group: "{{ 'wheel' if ansible_facts.os_family == 'Darwin' else 'root' }}"
+  when: daybook_sessions_enabled | bool
+
+- name: runtime | Check Homebrew at /opt/homebrew/bin/brew
+  ansible.builtin.stat:
+    path: /opt/homebrew/bin/brew
+  register: daybook_sessions_brew_opt
+  when: daybook_sessions_enabled | bool
+
+- name: runtime | Check Homebrew at /usr/local/bin/brew
+  ansible.builtin.stat:
+    path: /usr/local/bin/brew
+  register: daybook_sessions_brew_usr
+  when:
+    - daybook_sessions_enabled | bool
+    - not (daybook_sessions_brew_opt.stat.exists | default(false))
+
+- name: runtime | Resolve Homebrew binary path
+  ansible.builtin.set_fact:
+    daybook_sessions_brew_bin_resolved: >-
+      {{
+        (daybook_sessions_brew_bin | length > 0)
+        | ternary(
+          daybook_sessions_brew_bin,
+          (
+            (daybook_sessions_brew_opt.stat.exists | default(false))
+            | ternary('/opt/homebrew/bin/brew', '/usr/local/bin/brew')
+          )
+        )
+      }}
+  when: daybook_sessions_enabled | bool
+
+- name: runtime | Stat resolved Homebrew binary
+  ansible.builtin.stat:
+    path: "{{ daybook_sessions_brew_bin_resolved }}"
+  register: daybook_sessions_brew_bin_stat
+  when: daybook_sessions_enabled | bool
+
+- name: runtime | Validate Homebrew binary and owner
+  ansible.builtin.assert:
+    that:
+      - daybook_sessions_brew_bin_resolved | length > 0
+      - daybook_sessions_brew_bin_stat.stat.exists | default(false)
+      - daybook_sessions_brew_user | length > 0 or ansible_user_id != 'root'
+    fail_msg: >-
+      Homebrew binary not found, or daybook_sessions_brew_user is missing while
+      Ansible is running as root.
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_brew_packages | length > 0
+
+- name: runtime | Update Homebrew formulae
+  ansible.builtin.command: "{{ daybook_sessions_brew_bin_resolved }} update"
+  register: daybook_sessions_brew_update_result
+  changed_when: "'Already up-to-date' not in (daybook_sessions_brew_update_result.stdout | default(''))"
+  become: "{{ daybook_sessions_brew_user | length > 0 }}"
+  become_user: "{{ daybook_sessions_brew_user | default(omit) }}"
+  become_flags: "-i"
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_brew_packages | length > 0
+    - daybook_sessions_brew_update | bool
+
+- name: runtime | Check required Homebrew packages
+  ansible.builtin.command: "{{ daybook_sessions_brew_bin_resolved }} list --versions {{ item }}"
+  register: daybook_sessions_brew_package_checks
+  changed_when: false
+  failed_when: false
+  loop: "{{ daybook_sessions_brew_packages }}"
+  become: "{{ daybook_sessions_brew_user | length > 0 }}"
+  become_user: "{{ daybook_sessions_brew_user | default(omit) }}"
+  become_flags: "-i"
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_brew_packages | length > 0
+
+- name: runtime | Install missing Homebrew packages
+  ansible.builtin.command: "{{ daybook_sessions_brew_bin_resolved }} install {{ item.item }}"
+  register: daybook_sessions_brew_install
+  changed_when: daybook_sessions_brew_install.rc == 0
+  loop: "{{ daybook_sessions_brew_package_checks.results | default([]) }}"
+  become: "{{ daybook_sessions_brew_user | length > 0 }}"
+  become_user: "{{ daybook_sessions_brew_user | default(omit) }}"
+  become_flags: "-i"
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_brew_packages | length > 0
+    - item.rc != 0
+
+- name: runtime | Ensure Daybook sessions service user exists
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/id
+      - -u
+      - "{{ daybook_sessions_service_user }}"
+  changed_when: false
+  when: daybook_sessions_enabled | bool
+
+- name: runtime | Ensure Daybook sessions directories exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ daybook_sessions_config_dir }}"
+      owner: root
+      group: wheel
+      mode: "0755"
+    - path: "{{ daybook_sessions_log_dir }}"
+      owner: root
+      group: wheel
+      mode: "0755"
+    - path: "{{ daybook_sessions_state_path | dirname }}"
+      owner: "{{ daybook_sessions_service_user }}"
+      group: "{{ daybook_sessions_service_group }}"
+      mode: "0750"
+    - path: "{{ daybook_sessions_checkout_path | dirname }}"
+      owner: "{{ daybook_sessions_service_user }}"
+      group: "{{ daybook_sessions_service_group }}"
+      mode: "0755"
+  when: daybook_sessions_enabled | bool
+
+- name: runtime | Ensure launchd log files exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: touch
+    owner: "{{ daybook_sessions_service_user }}"
+    group: "{{ daybook_sessions_service_group }}"
+    mode: "0644"
+  loop:
+    - "{{ daybook_sessions_stdout_log }}"
+    - "{{ daybook_sessions_stderr_log }}"
+  when: daybook_sessions_enabled | bool
+
+- name: source | Clone or update Daybook checkout
+  ansible.builtin.git:
+    repo: "{{ daybook_sessions_repo_url }}"
+    dest: "{{ daybook_sessions_checkout_path }}"
+    version: "{{ daybook_sessions_repo_ref }}"
+    force: "{{ daybook_sessions_checkout_force | bool }}"
+    accept_hostkey: true
+  become: true
+  become_user: "{{ daybook_sessions_service_user }}"
+  register: daybook_sessions_source_checkout
+  when: daybook_sessions_enabled | bool
+
+- name: runtime | Sync Daybook dependencies with uv
+  ansible.builtin.command:
+    argv: "{{ [daybook_sessions_uv_bin] + daybook_sessions_uv_sync_args }}"
+    chdir: "{{ daybook_sessions_checkout_path }}"
+  environment:
+    PATH: "{{ daybook_sessions_launchd_path }}"
+    UV_PROJECT_ENVIRONMENT: "{{ daybook_sessions_checkout_path }}/.venv"
+  become: true
+  become_user: "{{ daybook_sessions_service_user }}"
+  become_flags: "-i"
+  register: daybook_sessions_uv_sync
+  changed_when: >-
+    'Installed' in ((daybook_sessions_uv_sync.stdout | default('')) ~ (daybook_sessions_uv_sync.stderr | default('')))
+    or 'Prepared' in ((daybook_sessions_uv_sync.stdout | default('')) ~ (daybook_sessions_uv_sync.stderr | default('')))
+    or 'Removed' in ((daybook_sessions_uv_sync.stdout | default('')) ~ (daybook_sessions_uv_sync.stderr | default('')))
+    or 'Uninstalled' in ((daybook_sessions_uv_sync.stdout | default('')) ~ (daybook_sessions_uv_sync.stderr | default('')))
+    or 'Built' in ((daybook_sessions_uv_sync.stdout | default('')) ~ (daybook_sessions_uv_sync.stderr | default('')))
+  when: daybook_sessions_enabled | bool
+
+- name: cleanup | Remove legacy by-hand Daybook session runner
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ daybook_sessions_remove_legacy_runner_paths }}"
+  when: daybook_sessions_enabled | bool
+
+- name: config | Render Daybook sessions environment file
+  ansible.builtin.template:
+    src: sessions.env.j2
+    dest: "{{ daybook_sessions_env_file }}"
+    owner: "{{ daybook_sessions_service_user }}"
+    group: "{{ daybook_sessions_service_group }}"
+    mode: "0600"
+  register: daybook_sessions_env_template
+  no_log: true
+  when: daybook_sessions_enabled | bool
+
+- name: config | Render Daybook sessions launchd launcher
+  ansible.builtin.template:
+    src: ship-sessions.sh.j2
+    dest: "{{ daybook_sessions_launcher_path }}"
+    owner: root
+    group: wheel
+    mode: "0755"
+  register: daybook_sessions_launcher_template
+  when: daybook_sessions_enabled | bool
+
+- name: launchd | Render Daybook sessions plist
+  ansible.builtin.template:
+    src: sessions.launchd.plist.j2
+    dest: "{{ daybook_sessions_launchd_plist_path }}"
+    owner: root
+    group: wheel
+    mode: "0644"
+  register: daybook_sessions_launchd_template
+  when: daybook_sessions_enabled | bool
+
+- name: launchd | Check Daybook sessions launchd unit status
+  ansible.builtin.command: "launchctl print system/{{ daybook_sessions_launchd_label }}"
+  register: daybook_sessions_launchd_status
+  changed_when: false
+  failed_when: false
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_launchd_manage_state | bool
+
+- name: launchd | Unload existing Daybook sessions unit before bootstrap
+  ansible.builtin.command: "launchctl bootout system {{ daybook_sessions_launchd_plist_path }}"
+  changed_when: false
+  failed_when: false
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_launchd_manage_state | bool
+    - daybook_sessions_launchd_template.changed
+    - daybook_sessions_launchd_status.rc == 0
+
+- name: launchd | Bootstrap Daybook sessions unit
+  ansible.builtin.command: "launchctl bootstrap system {{ daybook_sessions_launchd_plist_path }}"
+  register: daybook_sessions_launchd_bootstrap
+  changed_when: daybook_sessions_launchd_bootstrap.rc == 0
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_launchd_manage_state | bool
+    - daybook_sessions_launchd_template.changed or daybook_sessions_launchd_status.rc != 0
+
+- name: launchd | Enable Daybook sessions unit
+  ansible.builtin.command: "launchctl enable system/{{ daybook_sessions_launchd_label }}"
+  register: daybook_sessions_launchd_enable
+  changed_when: daybook_sessions_launchd_enable.rc == 0
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_launchd_manage_state | bool
+    - daybook_sessions_launchd_template.changed or daybook_sessions_launchd_status.rc != 0
+
+- name: launchd | Kickstart Daybook sessions unit after deploy changes
+  ansible.builtin.command: "launchctl kickstart -k system/{{ daybook_sessions_launchd_label }}"
+  register: daybook_sessions_launchd_kickstart
+  changed_when: daybook_sessions_launchd_kickstart.rc == 0
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_launchd_manage_state | bool
+    - daybook_sessions_launchd_start_service | bool
+    - >-
+      daybook_sessions_launchd_template.changed
+      or daybook_sessions_env_template.changed
+      or daybook_sessions_launcher_template.changed
+      or daybook_sessions_source_checkout.changed
+      or daybook_sessions_uv_sync.changed
+      or daybook_sessions_launchd_status.rc != 0

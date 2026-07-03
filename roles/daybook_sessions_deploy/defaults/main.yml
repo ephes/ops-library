@@ -1,0 +1,56 @@
+---
+# Deploy the Daybook agent-session shipper as a periodic macOS launchd job.
+
+daybook_sessions_enabled: true
+
+daybook_sessions_service_user: "CHANGEME"
+daybook_sessions_service_group: "staff"
+daybook_sessions_service_home: "/Users/{{ daybook_sessions_service_user }}"
+
+daybook_sessions_repo_url: "https://github.com/ephes/daybook.git"
+daybook_sessions_repo_ref: "CHANGEME"
+daybook_sessions_checkout_path: "{{ daybook_sessions_service_home }}/projects/daybook"
+daybook_sessions_checkout_force: true
+
+daybook_sessions_config_dir: "/etc/daybook-sessions"
+daybook_sessions_env_file: "{{ daybook_sessions_config_dir }}/sessions.env"
+daybook_sessions_launcher_path: "{{ daybook_sessions_config_dir }}/ship-sessions.sh"
+daybook_sessions_log_dir: "/var/log/daybook-sessions"
+daybook_sessions_stdout_log: "{{ daybook_sessions_log_dir }}/ship.log"
+daybook_sessions_stderr_log: "{{ daybook_sessions_log_dir }}/ship.err.log"
+daybook_sessions_state_path: "{{ daybook_sessions_service_home }}/.daybook/sessions-shipped.json"
+
+daybook_sessions_uv_install_dir: "/usr/local/bin"
+daybook_sessions_uv_bin: "{{ daybook_sessions_uv_install_dir }}/uv"
+daybook_sessions_python_version: "3.14"
+daybook_sessions_uv_sync_args:
+  - sync
+  - --frozen
+  - --no-dev
+  - --python
+  - "{{ daybook_sessions_python_version }}"
+
+daybook_sessions_launchd_label: "de.wersdoerfer.daybook.sessions"
+daybook_sessions_launchd_plist_path: "/Library/LaunchDaemons/{{ daybook_sessions_launchd_label }}.plist"
+daybook_sessions_launchd_manage_state: true
+daybook_sessions_launchd_start_service: true
+daybook_sessions_launchd_run_at_load: true
+daybook_sessions_schedule_interval_seconds: 1800
+daybook_sessions_launchd_path: "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+daybook_sessions_brew_bin: ""
+daybook_sessions_brew_user: ""
+daybook_sessions_brew_update: false
+daybook_sessions_brew_packages:
+  - "trufflehog"
+
+daybook_sessions_path: "s3://agent-sessions"
+daybook_sessions_aws_endpoint_url_s3: "CHANGEME"
+daybook_sessions_aws_access_key_id: "CHANGEME"
+daybook_sessions_aws_secret_access_key: "CHANGEME"
+daybook_sessions_aws_region: "us-east-1"
+daybook_sessions_aws_default_region: "{{ daybook_sessions_aws_region }}"
+daybook_sessions_redact_files: []
+
+daybook_sessions_remove_legacy_runner_paths:
+  - "{{ daybook_sessions_service_home }}/daybook-ship.sh"
