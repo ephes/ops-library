@@ -17,9 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Update your Ansible installation before upgrading
 
 ### Added
-- `daybook_sessions_deploy` role to install a pinned Daybook checkout on macOS,
-  sync it with `uv`, install `trufflehog`, and run `daybook sessions ship` as a
-  periodic launchd job using private-control-repo supplied MinIO credentials.
+- `daybook_sessions_deploy` role to validate a macOS `uv` runtime, install a
+  pinned Daybook checkout, sync it with `uv`, install `trufflehog`, and run
+  `daybook sessions ship` as a periodic launchd job using
+  private-control-repo supplied MinIO credentials.
 - `mail_relay_deploy` now supports
   `mail_relay_postgrey_whitelist_clients_extra` for managed postgrey whitelist
   entries in addition to the role defaults.

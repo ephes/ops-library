@@ -1,9 +1,10 @@
 # daybook_sessions_deploy
 
 Deploy the Daybook agent-session shipper on macOS as a periodic `launchd`
-`LaunchDaemon`. The role keeps a pinned Daybook checkout on the target, runs
-`uv sync`, installs the `trufflehog` Homebrew package, renders a secret
-environment file, and schedules `daybook sessions ship`.
+`LaunchDaemon`. The role validates an existing `uv` binary, keeps a pinned
+Daybook checkout on the target, runs `uv sync`, installs the `trufflehog`
+Homebrew package, renders a secret environment file, and schedules
+`daybook sessions ship`.
 
 Run the role with facts enabled. It validates the macOS target, rejects
 placeholder credentials, and expects real MinIO credentials to come from a
@@ -12,7 +13,7 @@ private control repo such as ops-control SOPS.
 ## What This Role Manages
 
 - a pinned Daybook source checkout
-- `uv` installed through `local.ops_library.uv_install`
+- an existing `uv` binary at `daybook_sessions_uv_bin`
 - the `trufflehog` Homebrew package
 - `/etc/daybook-sessions/sessions.env`
 - `/etc/daybook-sessions/ship-sessions.sh`

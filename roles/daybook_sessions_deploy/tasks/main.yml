@@ -54,12 +54,14 @@
       least-privilege MinIO credentials from the private control repo.
   when: daybook_sessions_enabled | bool
 
-- name: runtime | Ensure uv is installed
-  ansible.builtin.include_role:
-    name: local.ops_library.uv_install
-  vars:
-    uv_install_dir: "{{ daybook_sessions_uv_install_dir }}"
-    uv_install_group: "{{ 'wheel' if ansible_facts.os_family == 'Darwin' else 'root' }}"
+- name: runtime | Ensure uv is available
+  ansible.builtin.command:
+    argv:
+      - "{{ daybook_sessions_uv_bin }}"
+      - --version
+  environment:
+    PATH: "{{ daybook_sessions_launchd_path }}"
+  changed_when: false
   when: daybook_sessions_enabled | bool
 
 - name: runtime | Check Homebrew at /opt/homebrew/bin/brew
