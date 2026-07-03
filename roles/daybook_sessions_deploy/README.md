@@ -36,6 +36,7 @@ daybook_sessions_repo_update: true
 daybook_sessions_path: "s3://agent-sessions"
 daybook_sessions_schedule_interval_seconds: 1800
 daybook_sessions_launchd_label: "de.wersdoerfer.daybook.sessions"
+daybook_sessions_launchd_scope: "system"
 daybook_sessions_state_path: "{{ daybook_sessions_service_home }}/.daybook/sessions-shipped.json"
 daybook_sessions_brew_packages:
   - "trufflehog"
@@ -57,6 +58,26 @@ Set `daybook_sessions_repo_update: false` only when the private control repo has
 pre-staged the checkout on the target and `daybook_sessions_repo_ref` pins a
 commit that is already present there. The role still validates and checks out
 that pinned ref, but it will not fetch from the remote.
+
+## Launchd Scope
+
+The default `daybook_sessions_launchd_scope: "system"` installs a LaunchDaemon
+under `/Library/LaunchDaemons` and runs as `daybook_sessions_service_user`.
+Use `daybook_sessions_launchd_scope: "user"` for laptops or hosts where the
+control repo deploys as the logged-in service user without passwordless sudo.
+In user mode, override the managed paths to user-writable locations, for
+example:
+
+```yaml
+daybook_sessions_launchd_scope: "user"
+daybook_sessions_config_dir: "/Users/jochen/.config/daybook-sessions"
+daybook_sessions_env_file: "/Users/jochen/.config/daybook-sessions/sessions.env"
+daybook_sessions_launcher_path: "/Users/jochen/.config/daybook-sessions/ship-sessions.sh"
+daybook_sessions_log_dir: "/Users/jochen/Library/Logs/daybook-sessions"
+daybook_sessions_stdout_log: "/Users/jochen/Library/Logs/daybook-sessions/ship.log"
+daybook_sessions_stderr_log: "/Users/jochen/Library/Logs/daybook-sessions/ship.err.log"
+daybook_sessions_launchd_plist_path: "/Users/jochen/Library/LaunchAgents/de.wersdoerfer.daybook.sessions.plist"
+```
 
 ## Redaction Notes
 

@@ -32,6 +32,7 @@ daybook_sessions_uv_sync_args:
   - "{{ daybook_sessions_python_version }}"
 
 daybook_sessions_launchd_label: "de.wersdoerfer.daybook.sessions"
+daybook_sessions_launchd_scope: "system"
 daybook_sessions_launchd_plist_path: "/Library/LaunchDaemons/{{ daybook_sessions_launchd_label }}.plist"
 daybook_sessions_launchd_manage_state: true
 daybook_sessions_launchd_start_service: true

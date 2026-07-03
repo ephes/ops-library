@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   private-control-repo supplied MinIO credentials.
 - `daybook_sessions_deploy` can skip git remote fetches for private,
   pre-staged Daybook checkouts while still checking out a pinned ref.
+- `daybook_sessions_deploy` now supports user LaunchAgent installs for
+  laptop-style macOS hosts that do not expose passwordless sudo or root SSH.
 - `mail_relay_deploy` now supports
   `mail_relay_postgrey_whitelist_clients_extra` for managed postgrey whitelist
   entries in addition to the role defaults.

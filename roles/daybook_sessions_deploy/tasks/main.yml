@@ -31,6 +31,7 @@
       - daybook_sessions_uv_sync_args is sequence
       - daybook_sessions_uv_sync_args is not string
       - daybook_sessions_launchd_label | string | trim | length > 0
+      - daybook_sessions_launchd_scope in ['system', 'user']
       - daybook_sessions_launchd_plist_path | string | trim | length > 0
       - daybook_sessions_schedule_interval_seconds | int > 0
       - daybook_sessions_launchd_path | string | trim | length > 0
@@ -169,12 +170,16 @@
     mode: "{{ item.mode }}"
   loop:
     - path: "{{ daybook_sessions_config_dir }}"
-      owner: root
-      group: wheel
+      owner: "{{ (daybook_sessions_launchd_scope == 'system') | ternary('root', daybook_sessions_service_user) }}"
+      group: "{{ (daybook_sessions_launchd_scope == 'system') | ternary('wheel', daybook_sessions_service_group) }}"
       mode: "0755"
     - path: "{{ daybook_sessions_log_dir }}"
-      owner: root
-      group: wheel
+      owner: "{{ (daybook_sessions_launchd_scope == 'system') | ternary('root', daybook_sessions_service_user) }}"
+      group: "{{ (daybook_sessions_launchd_scope == 'system') | ternary('wheel', daybook_sessions_service_group) }}"
+      mode: "0755"
+    - path: "{{ daybook_sessions_launchd_plist_path | dirname }}"
+      owner: "{{ (daybook_sessions_launchd_scope == 'system') | ternary('root', daybook_sessions_service_user) }}"
+      group: "{{ (daybook_sessions_launchd_scope == 'system') | ternary('wheel', daybook_sessions_service_group) }}"
       mode: "0755"
     - path: "{{ daybook_sessions_state_path | dirname }}"
       owner: "{{ daybook_sessions_service_user }}"
@@ -206,7 +211,7 @@
     force: "{{ daybook_sessions_checkout_force | bool }}"
     update: "{{ daybook_sessions_repo_update | bool }}"
     accept_hostkey: true
-  become: true
+  become: "{{ ansible_user_id != daybook_sessions_service_user }}"
   become_user: "{{ daybook_sessions_service_user }}"
   become_flags: "-i"
   register: daybook_sessions_source_checkout
@@ -219,7 +224,7 @@
   environment:
     PATH: "{{ daybook_sessions_launchd_path }}"
     UV_PROJECT_ENVIRONMENT: "{{ daybook_sessions_checkout_path }}/.venv"
-  become: true
+  become: "{{ ansible_user_id != daybook_sessions_service_user }}"
   become_user: "{{ daybook_sessions_service_user }}"
   become_flags: "-i"
   register: daybook_sessions_uv_sync
@@ -253,8 +258,8 @@
   ansible.builtin.template:
     src: ship-sessions.sh.j2
     dest: "{{ daybook_sessions_launcher_path }}"
-    owner: root
-    group: wheel
+    owner: "{{ (daybook_sessions_launchd_scope == 'system') | ternary('root', daybook_sessions_service_user) }}"
+    group: "{{ (daybook_sessions_launchd_scope == 'system') | ternary('wheel', daybook_sessions_service_group) }}"
     mode: "0755"
   register: daybook_sessions_launcher_template
   when: daybook_sessions_enabled | bool
@@ -263,14 +268,43 @@
   ansible.builtin.template:
     src: sessions.launchd.plist.j2
     dest: "{{ daybook_sessions_launchd_plist_path }}"
-    owner: root
-    group: wheel
+    owner: "{{ (daybook_sessions_launchd_scope == 'system') | ternary('root', daybook_sessions_service_user) }}"
+    group: "{{ (daybook_sessions_launchd_scope == 'system') | ternary('wheel', daybook_sessions_service_group) }}"
     mode: "0644"
   register: daybook_sessions_launchd_template
   when: daybook_sessions_enabled | bool
 
+- name: launchd | Resolve service user uid for user LaunchAgent
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/id
+      - -u
+      - "{{ daybook_sessions_service_user }}"
+  register: daybook_sessions_service_uid
+  changed_when: false
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_launchd_manage_state | bool
+    - daybook_sessions_launchd_scope == 'user'
+
+- name: launchd | Resolve Daybook sessions system launchd domain
+  ansible.builtin.set_fact:
+    daybook_sessions_launchd_domain: system
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_launchd_manage_state | bool
+    - daybook_sessions_launchd_scope == 'system'
+
+- name: launchd | Resolve Daybook sessions user launchd domain
+  ansible.builtin.set_fact:
+    daybook_sessions_launchd_domain: "gui/{{ daybook_sessions_service_uid.stdout }}"
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_launchd_manage_state | bool
+    - daybook_sessions_launchd_scope == 'user'
+
 - name: launchd | Check Daybook sessions launchd unit status
-  ansible.builtin.command: "launchctl print system/{{ daybook_sessions_launchd_label }}"
+  ansible.builtin.command: "launchctl print {{ daybook_sessions_launchd_domain }}/{{ daybook_sessions_launchd_label }}"
   register: daybook_sessions_launchd_status
   changed_when: false
   failed_when: false
@@ -279,7 +313,7 @@
     - daybook_sessions_launchd_manage_state | bool
 
 - name: launchd | Unload existing Daybook sessions unit before bootstrap
-  ansible.builtin.command: "launchctl bootout system {{ daybook_sessions_launchd_plist_path }}"
+  ansible.builtin.command: "launchctl bootout {{ daybook_sessions_launchd_domain }} {{ daybook_sessions_launchd_plist_path }}"
   changed_when: false
   failed_when: false
   when:
@@ -289,7 +323,7 @@
     - daybook_sessions_launchd_status.rc == 0
 
 - name: launchd | Bootstrap Daybook sessions unit
-  ansible.builtin.command: "launchctl bootstrap system {{ daybook_sessions_launchd_plist_path }}"
+  ansible.builtin.command: "launchctl bootstrap {{ daybook_sessions_launchd_domain }} {{ daybook_sessions_launchd_plist_path }}"
   register: daybook_sessions_launchd_bootstrap
   changed_when: daybook_sessions_launchd_bootstrap.rc == 0
   when:
@@ -298,7 +332,7 @@
     - daybook_sessions_launchd_template.changed or daybook_sessions_launchd_status.rc != 0
 
 - name: launchd | Enable Daybook sessions unit
-  ansible.builtin.command: "launchctl enable system/{{ daybook_sessions_launchd_label }}"
+  ansible.builtin.command: "launchctl enable {{ daybook_sessions_launchd_domain }}/{{ daybook_sessions_launchd_label }}"
   register: daybook_sessions_launchd_enable
   changed_when: daybook_sessions_launchd_enable.rc == 0
   when:
@@ -307,7 +341,7 @@
     - daybook_sessions_launchd_template.changed or daybook_sessions_launchd_status.rc != 0
 
 - name: launchd | Kickstart Daybook sessions unit after deploy changes
-  ansible.builtin.command: "launchctl kickstart -k system/{{ daybook_sessions_launchd_label }}"
+  ansible.builtin.command: "launchctl kickstart -k {{ daybook_sessions_launchd_domain }}/{{ daybook_sessions_launchd_label }}"
   register: daybook_sessions_launchd_kickstart
   changed_when: daybook_sessions_launchd_kickstart.rc == 0
   when:

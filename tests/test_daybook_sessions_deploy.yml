@@ -12,6 +12,7 @@
     rendered_env: "/tmp/test-daybook-sessions.env"
     rendered_launcher: "/tmp/test-daybook-sessions-launcher.sh"
     rendered_plist: "/tmp/test-daybook-sessions.plist"
+    rendered_user_plist: "/tmp/test-daybook-sessions-user.plist"
 
   tasks:
     - name: Verify role files exist
@@ -60,6 +61,7 @@
           - daybook_sessions_repo_url == "https://github.com/ephes/daybook.git"
           - daybook_sessions_repo_ref == "CHANGEME"
           - daybook_sessions_repo_update | bool
+          - daybook_sessions_launchd_scope == "system"
           - daybook_sessions_path == "s3://agent-sessions"
           - daybook_sessions_schedule_interval_seconds == 1800
           - "'trufflehog' in daybook_sessions_brew_packages"
@@ -123,10 +125,34 @@
           - "'<key>StartInterval</key>' in rendered_plist_text"
           - "'<integer>1800</integer>' in rendered_plist_text"
           - "'<string>/etc/daybook-sessions/ship-sessions.sh</string>' in rendered_plist_text"
+          - "'<key>UserName</key>' in rendered_plist_text"
       vars:
         rendered_env_text: "{{ rendered_files.results[0].content | b64decode }}"
         rendered_launcher_text: "{{ rendered_files.results[1].content | b64decode }}"
         rendered_plist_text: "{{ rendered_files.results[2].content | b64decode }}"
+
+    - name: Switch template values to user LaunchAgent mode
+      ansible.builtin.set_fact:
+        daybook_sessions_launchd_scope: "user"
+
+    - name: Render user LaunchAgent template
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/sessions.launchd.plist.j2"
+        dest: "{{ rendered_user_plist }}"
+
+    - name: Read rendered user LaunchAgent
+      ansible.builtin.slurp:
+        path: "{{ rendered_user_plist }}"
+      register: rendered_user_plist_file
+
+    - name: Assert rendered user LaunchAgent omits service account keys
+      ansible.builtin.assert:
+        that:
+          - "'<key>UserName</key>' not in rendered_user_plist_text"
+          - "'<key>GroupName</key>' not in rendered_user_plist_text"
+          - "'<string>/etc/daybook-sessions/ship-sessions.sh</string>' in rendered_user_plist_text"
+      vars:
+        rendered_user_plist_text: "{{ rendered_user_plist_file.content | b64decode }}"
 
     - name: Clean up rendered files
       ansible.builtin.file:
@@ -136,3 +162,4 @@
         - "{{ rendered_env }}"
         - "{{ rendered_launcher }}"
         - "{{ rendered_plist }}"
+        - "{{ rendered_user_plist }}"

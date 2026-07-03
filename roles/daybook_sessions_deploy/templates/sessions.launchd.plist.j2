@@ -15,14 +15,16 @@
     <dict>
       <key>PATH</key>
       <string>{{ daybook_sessions_launchd_path | e }}</string>
-      <key>PYTHONUNBUFFERED</key>
-      <string>1</string>
+    <key>PYTHONUNBUFFERED</key>
+    <string>1</string>
     </dict>
 
+{% if daybook_sessions_launchd_scope == 'system' %}
     <key>UserName</key>
     <string>{{ daybook_sessions_service_user | e }}</string>
     <key>GroupName</key>
     <string>{{ daybook_sessions_service_group | e }}</string>
+{% endif %}
     <key>WorkingDirectory</key>
     <string>{{ daybook_sessions_checkout_path | e }}</string>
 
