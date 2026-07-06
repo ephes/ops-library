@@ -1,0 +1,36 @@
+---
+- name: python | Ensure runtime packages are installed
+  ansible.builtin.package:
+    name:
+      - python3
+      - python3-venv
+      - sqlite3
+      - rsync
+    state: present
+
+- name: python | Ensure uv is available
+  ansible.builtin.import_role:
+    name: uv_install
+
+- name: python | Ensure chesslab virtual environment exists
+  ansible.builtin.command:
+    cmd: "uv venv --python {{ chesslab_python_version }} {{ chesslab_venv_path }}"
+  args:
+    creates: "{{ chesslab_venv_path }}/bin/python"
+  become: true
+  become_user: "{{ chesslab_user }}"
+
+- name: python | Install chesslab dependencies
+  ansible.builtin.command:
+    cmd: "uv sync --no-dev"
+  args:
+    chdir: "{{ chesslab_site_path }}"
+  register: chesslab_uv_sync_result
+  changed_when:
+    - "'Installed ' in chesslab_uv_sync_result.stdout or 'Uninstalled ' in chesslab_uv_sync_result.stdout"
+  environment:
+    VIRTUAL_ENV: "{{ chesslab_venv_path }}"
+  become: true
+  become_user: "{{ chesslab_user }}"
+  notify:
+    - restart chesslab

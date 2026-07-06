@@ -1,0 +1,48 @@
+---
+- name: source_rsync | Ensure chesslab source path exists locally
+  ansible.builtin.stat:
+    path: "{{ chesslab_source_path }}"
+  delegate_to: localhost
+  become: false
+  register: chesslab_source_dir
+
+- name: source_rsync | Fail when chesslab source path is missing
+  ansible.builtin.assert:
+    that:
+      - chesslab_source_dir.stat.exists
+      - chesslab_source_dir.stat.isdir
+    fail_msg: "chesslab source path {{ chesslab_source_path }} does not exist"
+
+- name: source_rsync | Sync chesslab repository contents
+  ansible.posix.synchronize:
+    src: "{{ chesslab_source_path }}/"
+    dest: "{{ chesslab_site_path }}/"
+    delete: true
+    owner: false
+    group: false
+    perms: false
+    rsync_path: "sudo rsync"
+    rsync_opts:
+      - "--exclude=.git"
+      - "--exclude=.venv"
+      - "--exclude=__pycache__"
+      - "--exclude=*.pyc"
+      - "--exclude=.pytest_cache"
+      - "--exclude=.ruff_cache"
+      - "--exclude=.mypy_cache"
+      - "--exclude=.env"
+      - "--exclude=chess.db"
+      - "--exclude=*.db"
+      - "--exclude=*.db-*"
+      - "--omit-dir-times"
+  delegate_to: localhost
+  become: false
+  notify:
+    - restart chesslab
+
+- name: source_rsync | Set ownership on chesslab site
+  ansible.builtin.file:
+    path: "{{ chesslab_site_path }}"
+    owner: "{{ chesslab_user }}"
+    group: "{{ chesslab_group }}"
+    recurse: true

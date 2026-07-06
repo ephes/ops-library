@@ -1,0 +1,37 @@
+---
+chesslab_user: chesslab
+chesslab_group: "{{ chesslab_user }}"
+chesslab_home: /home/chesslab
+chesslab_site_path: "{{ chesslab_home }}/site"
+chesslab_data_path: "{{ chesslab_home }}/data"
+chesslab_db_path: "{{ chesslab_data_path }}/chess.db"
+chesslab_venv_path: "{{ chesslab_site_path }}/.venv"
+chesslab_venv_bin: "{{ chesslab_venv_path }}/bin"
+chesslab_env_path: "{{ chesslab_site_path }}/.env"
+
+chesslab_deploy_method: rsync
+chesslab_source_path: ""
+chesslab_python_version: "3.14"
+
+chesslab_app_host: "127.0.0.1"
+chesslab_app_port: 10019
+chesslab_workers: 2
+chesslab_owner: ephes_w
+chesslab_limit: ""
+chesslab_login_user: "{{ chesslab_owner }}"
+chesslab_login_password: "CHANGEME"
+chesslab_session_secret: "CHANGEME"
+
+chesslab_traefik_enabled: true
+chesslab_traefik_host: "chess.example.com"
+chesslab_traefik_cert_resolver: ""
+chesslab_traefik_middlewares: []
+chesslab_basic_auth_enabled: true
+chesslab_basic_auth_user: admin
+chesslab_basic_auth_password: "CHANGEME"
+chesslab_internal_ip_ranges:
+  - "127.0.0.1/32"
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"
+  - "192.168.0.0/16"
+  - "100.64.0.0/10"

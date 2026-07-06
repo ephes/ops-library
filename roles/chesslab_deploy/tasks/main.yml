@@ -1,0 +1,74 @@
+---
+- name: Validate chesslab configuration
+  ansible.builtin.assert:
+    that:
+      - chesslab_deploy_method in ["rsync"]
+      - chesslab_source_path | length > 0
+      - chesslab_owner | length > 0
+      - chesslab_login_user | length > 0
+      - chesslab_login_password | length > 0
+      - chesslab_login_password != "CHANGEME"
+      - chesslab_session_secret | length > 20
+      - chesslab_session_secret != "CHANGEME"
+    fail_msg: "chesslab_deploy requires source path, owner, login password, and session secret."
+
+- name: Validate chesslab Traefik configuration
+  ansible.builtin.assert:
+    that:
+      - chesslab_traefik_host | length > 0
+      - not chesslab_basic_auth_enabled or (
+          chesslab_basic_auth_password | length > 0 and
+          chesslab_basic_auth_password != "CHANGEME"
+        )
+    fail_msg: "chesslab Traefik routing requires a host and, when enabled, a non-default basic auth password."
+  when: chesslab_traefik_enabled | bool
+
+- name: Setup chesslab user and directories
+  ansible.builtin.include_tasks: user.yml
+
+- name: Verify chesslab database is available to service user
+  become: true
+  become_user: "{{ chesslab_user }}"
+  ansible.builtin.command:
+    argv:
+      - test
+      - -f
+      - "{{ chesslab_db_path }}"
+      - -a
+      - -r
+      - "{{ chesslab_db_path }}"
+      - -a
+      - -w
+      - "{{ chesslab_db_path }}"
+  changed_when: false
+
+- name: Deploy chesslab source
+  ansible.builtin.include_tasks: source_rsync.yml
+
+- name: Setup Python environment
+  ansible.builtin.include_tasks: python.yml
+
+- name: Configure chesslab environment
+  ansible.builtin.include_tasks: env.yml
+
+- name: Configure chesslab service
+  ansible.builtin.include_tasks: service.yml
+
+- name: Configure Traefik
+  ansible.builtin.include_tasks: traefik.yml
+  when: chesslab_traefik_enabled | bool
+
+- name: Apply pending chesslab handlers before health check
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify chesslab application health
+  ansible.builtin.uri:
+    url: "http://{{ chesslab_app_host }}:{{ chesslab_app_port }}/healthz"
+    status_code: 200
+    return_content: true
+  register: chesslab_healthcheck
+  retries: 20
+  delay: 3
+  until:
+    - chesslab_healthcheck.status == 200
+    - chesslab_healthcheck.json.ok | default(false) | bool

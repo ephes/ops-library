@@ -1,0 +1,26 @@
+---
+- name: user | Ensure chesslab group exists
+  ansible.builtin.group:
+    name: "{{ chesslab_group }}"
+    state: present
+
+- name: user | Ensure chesslab user exists
+  ansible.builtin.user:
+    name: "{{ chesslab_user }}"
+    group: "{{ chesslab_group }}"
+    home: "{{ chesslab_home }}"
+    shell: /usr/sbin/nologin
+    create_home: true
+    system: true
+
+- name: user | Ensure chesslab directories exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner | default(chesslab_user) }}"
+    group: "{{ item.group | default(chesslab_group) }}"
+    mode: "{{ item.mode | default('0755') }}"
+  loop:
+    - { path: "{{ chesslab_home }}" }
+    - { path: "{{ chesslab_site_path }}" }
+    - { path: "{{ chesslab_data_path }}" }
