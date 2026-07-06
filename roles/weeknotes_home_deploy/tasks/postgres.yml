@@ -1,0 +1,13 @@
+---
+- name: postgres | Ensure PostgreSQL service, database, and user exist
+  ansible.builtin.include_role:
+    name: local.ops_library.postgres_install
+  vars:
+    postgres_install_version: "{{ weeknotes_home_postgres_version }}"
+    postgres_install_admin_user: "{{ weeknotes_home_postgres_become_user }}"
+    postgres_install_databases:
+      - name: "{{ weeknotes_home_postgres_database }}"
+        owner: "{{ weeknotes_home_postgres_user }}"
+    postgres_install_users:
+      - name: "{{ weeknotes_home_postgres_user }}"
+        password: "{{ weeknotes_home_postgres_password }}"

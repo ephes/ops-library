@@ -1,0 +1,10 @@
+---
+- name: traefik | Render Traefik config
+  ansible.builtin.include_role:
+    name: local.ops_library.webapp_deploy_internal
+    tasks_from: traefik_config
+  vars:
+    webapp_deploy_internal_traefik_template_src: "templates/weeknotes-home.traefik.yml.j2"
+    webapp_deploy_internal_traefik_dest: "{{ weeknotes_home_traefik_config_path }}"
+    webapp_deploy_internal_traefik_notify_handlers:
+      - reload traefik

@@ -1,0 +1,68 @@
+---
+- name: main | Validate weeknotes.home configuration
+  ansible.builtin.assert:
+    that:
+      - weeknotes_home_service_name | length > 0
+      - weeknotes_home_deploy_method in ["rsync", "git"]
+      - weeknotes_home_app_port | int > 0
+      - weeknotes_home_django_secret_key | length > 20
+      - weeknotes_home_django_secret_key != "CHANGEME"
+      - weeknotes_home_postgres_password | length > 0
+      - weeknotes_home_postgres_password != "CHANGEME"
+      - weeknotes_home_postgres_database | length > 0
+      - weeknotes_home_postgres_user | length > 0
+      - weeknotes_home_traefik_host | length > 0
+    fail_msg: "weeknotes_home_deploy requires real Django/PostgreSQL secrets and a valid host."
+
+- name: main | Validate rsync source path
+  ansible.builtin.assert:
+    that:
+      - weeknotes_home_source_path | length > 0
+      - weeknotes_home_source_path != "/"
+    fail_msg: "weeknotes_home_source_path must be set when weeknotes_home_deploy_method=rsync"
+  when: weeknotes_home_deploy_method == "rsync"
+
+- name: main | Provision PostgreSQL database
+  ansible.builtin.include_tasks: postgres.yml
+
+- name: main | Setup user and directories
+  ansible.builtin.include_tasks: user.yml
+
+- name: main | Deploy source
+  ansible.builtin.include_tasks: "source_{{ weeknotes_home_deploy_method }}.yml"
+
+- name: main | Ensure runtime directories exist after source deploy
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ weeknotes_home_user }}"
+    group: "{{ weeknotes_home_group }}"
+    mode: "0755"
+  loop:
+    - "{{ weeknotes_home_cache_dir }}"
+    - "{{ weeknotes_home_static_root }}"
+
+- name: main | Setup Python environment
+  ansible.builtin.include_tasks: python.yml
+
+- name: main | Configure Django
+  ansible.builtin.include_tasks: django.yml
+
+- name: main | Configure systemd service
+  ansible.builtin.include_tasks: service.yml
+
+- name: main | Configure Traefik
+  ansible.builtin.include_tasks: traefik.yml
+  when: weeknotes_home_traefik_enabled | bool
+
+- name: main | Apply pending handlers before health check
+  ansible.builtin.meta: flush_handlers
+
+- name: main | Verify weeknotes.home health
+  ansible.builtin.uri:
+    url: "http://{{ weeknotes_home_app_host }}:{{ weeknotes_home_app_port }}/healthz"
+    status_code: 200
+  register: weeknotes_home_healthcheck
+  retries: 20
+  delay: 3
+  until: weeknotes_home_healthcheck.status == 200

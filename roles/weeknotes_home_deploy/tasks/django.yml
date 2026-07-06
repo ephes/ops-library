@@ -1,0 +1,60 @@
+---
+- name: django | Render environment file
+  ansible.builtin.template:
+    src: weeknotes-home.env.j2
+    dest: "{{ weeknotes_home_env_path }}"
+    owner: "{{ weeknotes_home_user }}"
+    group: "{{ weeknotes_home_group }}"
+    mode: "0600"
+  no_log: true
+  notify: restart weeknotes home
+
+- name: django | Run migrations
+  ansible.builtin.command:
+    argv:
+      - "{{ weeknotes_home_venv_bin }}/python"
+      - "{{ weeknotes_home_manage_py }}"
+      - migrate
+      - --noinput
+  args:
+    chdir: "{{ weeknotes_home_service_path }}"
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ weeknotes_home_django_settings_module }}"
+    DJANGO_SECRET_KEY: "{{ weeknotes_home_django_secret_key }}"
+    DJANGO_DEBUG: "{{ weeknotes_home_django_debug | lower }}"
+    DJANGO_ALLOWED_HOSTS: "{{ weeknotes_home_django_allowed_hosts | join(',') }}"
+    DJANGO_CSRF_TRUSTED_ORIGINS: "{{ weeknotes_home_django_csrf_trusted_origins | join(',') }}"
+    DJANGO_STATIC_ROOT: "{{ weeknotes_home_static_root }}"
+    DJANGO_DB_CONN_MAX_AGE: "{{ weeknotes_home_django_db_conn_max_age }}"
+    DATABASE_URL: "{{ weeknotes_home_database_url }}"
+  become: true
+  become_user: "{{ weeknotes_home_user }}"
+  register: weeknotes_home_migrate
+  changed_when: "'No migrations to apply' not in weeknotes_home_migrate.stdout"
+  no_log: true
+  when: weeknotes_home_run_migrations | bool
+
+- name: django | Collect static files
+  ansible.builtin.command:
+    argv:
+      - "{{ weeknotes_home_venv_bin }}/python"
+      - "{{ weeknotes_home_manage_py }}"
+      - collectstatic
+      - --noinput
+  args:
+    chdir: "{{ weeknotes_home_service_path }}"
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ weeknotes_home_django_settings_module }}"
+    DJANGO_SECRET_KEY: "{{ weeknotes_home_django_secret_key }}"
+    DJANGO_DEBUG: "{{ weeknotes_home_django_debug | lower }}"
+    DJANGO_ALLOWED_HOSTS: "{{ weeknotes_home_django_allowed_hosts | join(',') }}"
+    DJANGO_CSRF_TRUSTED_ORIGINS: "{{ weeknotes_home_django_csrf_trusted_origins | join(',') }}"
+    DJANGO_STATIC_ROOT: "{{ weeknotes_home_static_root }}"
+    DJANGO_DB_CONN_MAX_AGE: "{{ weeknotes_home_django_db_conn_max_age }}"
+    DATABASE_URL: "{{ weeknotes_home_database_url }}"
+  become: true
+  become_user: "{{ weeknotes_home_user }}"
+  register: weeknotes_home_collectstatic_result
+  changed_when: "'0 static files copied' not in weeknotes_home_collectstatic_result.stdout"
+  no_log: true
+  when: weeknotes_home_collectstatic | bool

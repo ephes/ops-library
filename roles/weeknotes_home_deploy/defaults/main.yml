@@ -1,0 +1,61 @@
+---
+weeknotes_home_service_name: weeknotes-home
+weeknotes_home_user: weeknotes-home
+weeknotes_home_group: "{{ weeknotes_home_user }}"
+weeknotes_home_home: "/home/{{ weeknotes_home_user }}"
+weeknotes_home_site_path: "{{ weeknotes_home_home }}/site"
+weeknotes_home_service_path: "{{ weeknotes_home_site_path }}/services/weeknotes_home"
+weeknotes_home_manage_py: "{{ weeknotes_home_service_path }}/manage.py"
+weeknotes_home_env_path: "{{ weeknotes_home_site_path }}/.env.weeknotes-home"
+weeknotes_home_venv_path: "{{ weeknotes_home_site_path }}/.venv-weeknotes-home"
+weeknotes_home_venv_bin: "{{ weeknotes_home_venv_path }}/bin"
+weeknotes_home_cache_dir: "{{ weeknotes_home_site_path }}/cache/weeknotes-home"
+weeknotes_home_static_root: "{{ weeknotes_home_site_path }}/static/weeknotes-home"
+
+weeknotes_home_deploy_method: rsync
+weeknotes_home_source_path: ""
+weeknotes_home_rsync_delete: true
+weeknotes_home_git_repo: "https://github.com/ephes/daybook.git"
+weeknotes_home_git_version: main
+
+weeknotes_home_python_version: "3.14"
+weeknotes_home_uv_path: "/usr/local/bin/uv"
+
+weeknotes_home_app_host: "127.0.0.1"
+weeknotes_home_app_port: 10062
+weeknotes_home_gunicorn_workers: 2
+weeknotes_home_gunicorn_timeout: 120
+weeknotes_home_wsgi_module: "weeknotes_home.wsgi:application"
+
+weeknotes_home_django_settings_module: "weeknotes_home.settings"
+weeknotes_home_django_secret_key: "CHANGEME"
+weeknotes_home_django_debug: false
+weeknotes_home_django_allowed_hosts:
+  - "127.0.0.1"
+  - "localhost"
+  - "{{ weeknotes_home_traefik_host }}"
+weeknotes_home_django_csrf_trusted_origins: []
+weeknotes_home_django_db_conn_max_age: 60
+
+weeknotes_home_postgres_version: "17"
+weeknotes_home_postgres_host: "localhost"
+weeknotes_home_postgres_port: 5432
+weeknotes_home_postgres_database: "weeknotes_home"
+weeknotes_home_postgres_user: "weeknotes_home"
+weeknotes_home_postgres_password: "CHANGEME"
+weeknotes_home_database_url: "postgres://{{ weeknotes_home_postgres_user | urlencode | replace('/', '%2F') }}:{{ weeknotes_home_postgres_password | urlencode | replace('/', '%2F') }}@{{ weeknotes_home_postgres_host }}:{{ weeknotes_home_postgres_port }}/{{ weeknotes_home_postgres_database | urlencode | replace('/', '%2F') }}"
+weeknotes_home_postgres_become_user: postgres
+
+weeknotes_home_traefik_enabled: true
+weeknotes_home_traefik_host: "weeknotes.home.example.com"
+weeknotes_home_traefik_entrypoints:
+  - web-secure
+weeknotes_home_traefik_cert_resolver: ""
+weeknotes_home_traefik_middlewares: []
+weeknotes_home_traefik_config_path: "/etc/traefik/dynamic/{{ weeknotes_home_service_name }}.yml"
+
+weeknotes_home_systemd_unit_name: "{{ weeknotes_home_service_name }}"
+weeknotes_home_systemd_unit_path: "/etc/systemd/system/{{ weeknotes_home_systemd_unit_name }}.service"
+weeknotes_home_service_restart_on_change: true
+weeknotes_home_run_migrations: true
+weeknotes_home_collectstatic: true

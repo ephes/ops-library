@@ -1,0 +1,121 @@
+---
+# Test playbook for weeknotes_home_deploy role templates.
+
+- name: Test weeknotes_home_deploy role components
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/weeknotes_home_deploy"
+    rendered_env: "/tmp/test-weeknotes-home.env"
+    rendered_service: "/tmp/test-weeknotes-home.service"
+    rendered_traefik: "/tmp/test-weeknotes-home.traefik.yml"
+
+  tasks:
+    - name: Load role defaults
+      ansible.builtin.include_vars:
+        file: "{{ role_path }}/defaults/main.yml"
+
+    - name: Assert safe public defaults
+      ansible.builtin.assert:
+        that:
+          - weeknotes_home_service_name == "weeknotes-home"
+          - weeknotes_home_deploy_method == "rsync"
+          - weeknotes_home_source_path == ""
+          - weeknotes_home_git_repo == "https://github.com/ephes/daybook.git"
+          - weeknotes_home_django_secret_key == "CHANGEME"
+          - weeknotes_home_postgres_password == "CHANGEME"
+          - weeknotes_home_postgres_database == "weeknotes_home"
+          - weeknotes_home_app_port == 10062
+          - weeknotes_home_traefik_enabled | bool
+          - weeknotes_home_traefik_host in weeknotes_home_django_allowed_hosts
+
+    - name: Set template test values
+      ansible.builtin.set_fact:
+        weeknotes_home_service_name: "weeknotes-home"
+        weeknotes_home_user: "weeknotes-home"
+        weeknotes_home_group: "weeknotes-home"
+        weeknotes_home_home: "/home/weeknotes-home"
+        weeknotes_home_site_path: "/home/weeknotes-home/site"
+        weeknotes_home_service_path: "/home/weeknotes-home/site/services/weeknotes_home"
+        weeknotes_home_env_path: "/home/weeknotes-home/site/.env.weeknotes-home"
+        weeknotes_home_venv_bin: "/home/weeknotes-home/site/.venv-weeknotes-home/bin"
+        weeknotes_home_cache_dir: "/home/weeknotes-home/site/cache/weeknotes-home"
+        weeknotes_home_static_root: "/home/weeknotes-home/site/static/weeknotes-home"
+        weeknotes_home_django_settings_module: "weeknotes_home.settings"
+        weeknotes_home_django_secret_key: "test secret # dollar$ amp& end"
+        weeknotes_home_django_debug: false
+        weeknotes_home_django_allowed_hosts:
+          - "weeknotes.home.example"
+          - "127.0.0.1"
+        weeknotes_home_django_csrf_trusted_origins:
+          - "https://weeknotes.home.example"
+        weeknotes_home_django_db_conn_max_age: 60
+        weeknotes_home_postgres_user: "weeknotes_home"
+        weeknotes_home_postgres_password: "postgres secret # dollar$ amp& slash/ quote\" end"
+        weeknotes_home_postgres_host: "localhost"
+        weeknotes_home_postgres_port: 5432
+        weeknotes_home_postgres_database: "weeknotes_home"
+        weeknotes_home_database_url: "postgres://weeknotes_home:postgres%20secret%20%23%20dollar%24%20amp%26%20slash%2F%20quote%22%20end@localhost:5432/weeknotes_home"
+        weeknotes_home_app_host: "127.0.0.1"
+        weeknotes_home_app_port: 10062
+        weeknotes_home_gunicorn_workers: 2
+        weeknotes_home_gunicorn_timeout: 120
+        weeknotes_home_wsgi_module: "weeknotes_home.wsgi:application"
+        weeknotes_home_traefik_host: "weeknotes.home.example"
+        weeknotes_home_traefik_entrypoints:
+          - web-secure
+        weeknotes_home_traefik_cert_resolver: ""
+        weeknotes_home_traefik_middlewares: []
+
+    - name: Render environment template
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/weeknotes-home.env.j2"
+        dest: "{{ rendered_env }}"
+
+    - name: Render systemd template
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/weeknotes-home.service.j2"
+        dest: "{{ rendered_service }}"
+
+    - name: Render Traefik template
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/weeknotes-home.traefik.yml.j2"
+        dest: "{{ rendered_traefik }}"
+
+    - name: Read rendered files
+      ansible.builtin.slurp:
+        path: "{{ item }}"
+      loop:
+        - "{{ rendered_env }}"
+        - "{{ rendered_service }}"
+        - "{{ rendered_traefik }}"
+      register: rendered_files
+
+    - name: Assert rendered weeknotes.home config
+      ansible.builtin.assert:
+        that:
+          - "'DJANGO_SETTINGS_MODULE=\"weeknotes_home.settings\"' in rendered_env_text"
+          - "'DJANGO_SECRET_KEY=\"test secret # dollar$ amp& end\"' in rendered_env_text"
+          - "'DJANGO_ALLOWED_HOSTS=\"weeknotes.home.example,127.0.0.1\"' in rendered_env_text"
+          - "'DATABASE_URL=\"postgres://weeknotes_home:postgres%20secret%20%23%20dollar%24%20amp%26%20slash%2F%20quote%22%20end@localhost:5432/weeknotes_home\"' in rendered_env_text"
+          - "'WorkingDirectory=/home/weeknotes-home/site/services/weeknotes_home' in rendered_service_text"
+          - "'gunicorn' in rendered_service_text"
+          - "'weeknotes_home.wsgi:application' in rendered_service_text"
+          - "'ReadWritePaths=/home/weeknotes-home /home/weeknotes-home/site/cache/weeknotes-home /home/weeknotes-home/site/static/weeknotes-home' in rendered_service_text"
+          - "'Host(`weeknotes.home.example`)' in rendered_traefik_text"
+          - "'http://127.0.0.1:10062' in rendered_traefik_text"
+      vars:
+        rendered_env_text: "{{ rendered_files.results[0].content | b64decode }}"
+        rendered_service_text: "{{ rendered_files.results[1].content | b64decode }}"
+        rendered_traefik_text: "{{ rendered_files.results[2].content | b64decode }}"
+
+    - name: Clean up rendered files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ rendered_env }}"
+        - "{{ rendered_service }}"
+        - "{{ rendered_traefik }}"

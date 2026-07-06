@@ -1,0 +1,27 @@
+---
+- name: user | Ensure service group exists
+  ansible.builtin.group:
+    name: "{{ weeknotes_home_group }}"
+    state: present
+
+- name: user | Ensure service user exists
+  ansible.builtin.user:
+    name: "{{ weeknotes_home_user }}"
+    group: "{{ weeknotes_home_group }}"
+    home: "{{ weeknotes_home_home }}"
+    shell: /bin/bash
+    system: true
+    create_home: true
+    state: present
+
+- name: user | Ensure service directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ weeknotes_home_user }}"
+    group: "{{ weeknotes_home_group }}"
+    mode: "0755"
+  loop:
+    - "{{ weeknotes_home_home }}"
+    - "{{ weeknotes_home_site_path }}"
+  when: item != weeknotes_home_site_path or weeknotes_home_deploy_method == "rsync"

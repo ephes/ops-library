@@ -1,0 +1,70 @@
+---
+- name: source_rsync | Ensure source path exists locally
+  ansible.builtin.stat:
+    path: "{{ weeknotes_home_source_path }}"
+  delegate_to: localhost
+  become: false
+  register: weeknotes_home_source_dir
+
+- name: source_rsync | Assert source path is a daybook checkout
+  ansible.builtin.assert:
+    that:
+      - weeknotes_home_source_dir.stat.exists
+      - weeknotes_home_source_dir.stat.isdir
+    fail_msg: "weeknotes_home_source_path {{ weeknotes_home_source_path }} does not exist"
+
+- name: source_rsync | Validate required source files
+  ansible.builtin.stat:
+    path: "{{ weeknotes_home_source_path }}/{{ item }}"
+  delegate_to: localhost
+  become: false
+  register: weeknotes_home_required_source_stats
+  loop:
+    - pyproject.toml
+    - uv.lock
+    - services/weeknotes_home/manage.py
+    - src/daybook/cli.py
+
+- name: source_rsync | Assert required source files exist
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+    fail_msg: "Missing required daybook source path: {{ item.item }}"
+  loop: "{{ weeknotes_home_required_source_stats.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: source_rsync | Sync daybook repository
+  ansible.posix.synchronize:
+    src: "{{ weeknotes_home_source_path }}/"
+    dest: "{{ weeknotes_home_site_path }}/"
+    delete: "{{ weeknotes_home_rsync_delete | bool }}"
+    owner: false
+    group: false
+    perms: false
+    rsync_path: "sudo rsync"
+    rsync_opts:
+      - "--exclude=.git"
+      - "--exclude=.venv"
+      - "--exclude=/.venv-weeknotes-home"
+      - "--exclude=.envrc"
+      - "--exclude=/.env.weeknotes-home"
+      - "--exclude=.cache"
+      - "--exclude=/cache"
+      - "--exclude=/static"
+      - "--exclude=/site"
+      - "--exclude=services/weeknotes_home/db.sqlite3"
+      - "--exclude=services/weeknotes_home/staticfiles"
+      - "--exclude=__pycache__"
+      - "--exclude=*.pyc"
+      - "--omit-dir-times"
+  delegate_to: localhost
+  become: false
+  notify: restart weeknotes home
+
+- name: source_rsync | Set ownership on synced site
+  ansible.builtin.file:
+    path: "{{ weeknotes_home_site_path }}"
+    owner: "{{ weeknotes_home_user }}"
+    group: "{{ weeknotes_home_group }}"
+    recurse: true

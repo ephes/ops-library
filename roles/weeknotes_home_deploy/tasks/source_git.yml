@@ -1,0 +1,16 @@
+---
+- name: source_git | Install git
+  ansible.builtin.package:
+    name: git
+    state: present
+
+- name: source_git | Checkout daybook repository
+  ansible.builtin.git:
+    repo: "{{ weeknotes_home_git_repo }}"
+    dest: "{{ weeknotes_home_site_path }}"
+    version: "{{ weeknotes_home_git_version }}"
+    force: true
+    accept_hostkey: true
+  become: true
+  become_user: "{{ weeknotes_home_user }}"
+  notify: restart weeknotes home

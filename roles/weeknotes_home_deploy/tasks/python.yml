@@ -1,0 +1,49 @@
+---
+- name: python | Ensure uv is installed
+  ansible.builtin.import_role:
+    name: local.ops_library.uv_install
+  vars:
+    uv_install_dir: "{{ weeknotes_home_uv_path | dirname }}"
+
+- name: python | Install requested Python with uv
+  ansible.builtin.command:
+    argv:
+      - "{{ weeknotes_home_uv_path }}"
+      - python
+      - install
+      - "{{ weeknotes_home_python_version }}"
+  become: true
+  become_user: "{{ weeknotes_home_user }}"
+  changed_when: false
+
+- name: python | Create virtual environment
+  ansible.builtin.command:
+    argv:
+      - "{{ weeknotes_home_uv_path }}"
+      - venv
+      - --python
+      - "{{ weeknotes_home_python_version }}"
+      - "{{ weeknotes_home_venv_path }}"
+  args:
+    creates: "{{ weeknotes_home_venv_path }}/bin/python"
+  become: true
+  become_user: "{{ weeknotes_home_user }}"
+
+- name: python | Install weeknotes.home dependencies
+  ansible.builtin.command:
+    argv:
+      - "{{ weeknotes_home_uv_path }}"
+      - sync
+      - --frozen
+      - --group
+      - weeknotes-home
+  args:
+    chdir: "{{ weeknotes_home_site_path }}"
+  environment:
+    VIRTUAL_ENV: "{{ weeknotes_home_venv_path }}"
+    UV_PROJECT_ENVIRONMENT: "{{ weeknotes_home_venv_path }}"
+  become: true
+  become_user: "{{ weeknotes_home_user }}"
+  register: weeknotes_home_uv_sync
+  changed_when: "'Installed' in weeknotes_home_uv_sync.stdout or 'Updated' in weeknotes_home_uv_sync.stdout"
+  notify: restart weeknotes home

@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Update your Ansible installation before upgrading
 
 ### Added
+- `weeknotes_home_deploy` role to deploy daybook's `weeknotes.home` Django
+  steering-comments service with PostgreSQL provisioning, uv-managed
+  dependencies, systemd/gunicorn, Traefik routing, and a `/healthz` check.
 - `daybook_sessions_deploy` role to validate a macOS `uv` runtime, install a
   pinned Daybook checkout, sync it with `uv`, install `trufflehog`, and run
   `daybook sessions ship` as a periodic launchd job using
