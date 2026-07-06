@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `weeknotes_home_deploy` role to deploy daybook's `weeknotes.home` Django
   steering-comments service with PostgreSQL provisioning, uv-managed
   dependencies, systemd/gunicorn, Traefik routing, and a `/healthz` check.
+- `weeknotes_home_deploy` can render a `WEEKNOTES_HOME_CAST_BASE_URL`
+  environment setting so the service can link delivered drafts back to
+  django-cast edit and preview pages.
 - `daybook_sessions_deploy` role to validate a macOS `uv` runtime, install a
   pinned Daybook checkout, sync it with `uv`, install `trufflehog`, and run
   `daybook sessions ship` as a periodic launchd job using

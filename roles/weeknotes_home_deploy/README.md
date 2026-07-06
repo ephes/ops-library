@@ -25,6 +25,7 @@ Traefik route, and verifies `/healthz`.
     weeknotes_home_django_secret_key: "{{ service_secrets.django_secret_key }}"
     weeknotes_home_postgres_password: "{{ service_secrets.postgres_password }}"
     weeknotes_home_traefik_host: weeknotes.home.wersdoerfer.de
+    weeknotes_home_cast_base_url: https://wersdoerfer.de
 ```
 
 ## Key Variables
@@ -36,6 +37,8 @@ Traefik route, and verifies `/healthz`.
   mode.
 - `weeknotes_home_django_secret_key`: required secret.
 - `weeknotes_home_postgres_password`: required database user password.
+- `weeknotes_home_cast_base_url`: optional public django-cast origin used to
+  render edit and preview links for delivered drafts.
 - `weeknotes_home_traefik_host`: internal hostname routed to the service.
 - `weeknotes_home_app_port`: local gunicorn port, default `10062`.
 

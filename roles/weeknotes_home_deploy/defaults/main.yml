@@ -36,6 +36,7 @@ weeknotes_home_django_allowed_hosts:
   - "{{ weeknotes_home_traefik_host }}"
 weeknotes_home_django_csrf_trusted_origins: []
 weeknotes_home_django_db_conn_max_age: 60
+weeknotes_home_cast_base_url: ""
 
 weeknotes_home_postgres_version: "17"
 weeknotes_home_postgres_host: "localhost"
