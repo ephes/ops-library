@@ -4,15 +4,10 @@
     that:
       - chesslab_deploy_method in ["rsync"]
       - chesslab_source_path | length > 0
-      - chesslab_owner | length > 0
-      - chesslab_users | length > 0 or (
-          chesslab_login_user | length > 0 and
-          chesslab_login_password | length > 0 and
-          chesslab_login_password != "CHANGEME"
-        )
-      - chesslab_session_secret | length > 20
-      - chesslab_session_secret != "CHANGEME"
-    fail_msg: "chesslab_deploy requires source path, owner, configured users or login password, and session secret."
+      - chesslab_django_secret_key | length > 20
+      - chesslab_django_secret_key != "CHANGEME"
+      - chesslab_users | length > 0
+    fail_msg: "chesslab_deploy requires source path, Django secret key, and at least one configured Django app user."
 
 - name: Validate chesslab users
   ansible.builtin.assert:
@@ -66,6 +61,9 @@
 
 - name: Configure chesslab environment
   ansible.builtin.include_tasks: env.yml
+
+- name: Configure chesslab Django database and users
+  ansible.builtin.include_tasks: django.yml
 
 - name: Configure chesslab service
   ansible.builtin.include_tasks: service.yml

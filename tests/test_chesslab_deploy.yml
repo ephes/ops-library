@@ -1,0 +1,93 @@
+---
+- name: Test chesslab_deploy role templates
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/chesslab_deploy"
+    rendered_env: "/tmp/test-chesslab.env"
+    rendered_service: "/tmp/test-chesslab.service"
+
+  tasks:
+    - name: Load role defaults
+      ansible.builtin.include_vars:
+        file: "{{ role_path }}/defaults/main.yml"
+
+    - name: Assert Django defaults
+      ansible.builtin.assert:
+        that:
+          - chesslab_python_version == "3.14"
+          - chesslab_wsgi_module == "chesslab.djangoapp.wsgi:application"
+          - chesslab_django_settings_module == "chesslab.djangoapp.settings"
+          - chesslab_django_secret_key == "CHANGEME"
+          - chesslab_run_migrations | bool
+
+    - name: Set template test values
+      ansible.builtin.set_fact:
+        chesslab_user: chesslab
+        chesslab_group: chesslab
+        chesslab_home: /home/chesslab
+        chesslab_site_path: /home/chesslab/site
+        chesslab_data_path: /home/chesslab/data
+        chesslab_db_path: /home/chesslab/data/chess.db
+        chesslab_venv_bin: /home/chesslab/site/.venv/bin
+        chesslab_env_path: /home/chesslab/site/.env
+        chesslab_app_host: "127.0.0.1"
+        chesslab_app_port: 10019
+        chesslab_workers: 2
+        chesslab_wsgi_module: "chesslab.djangoapp.wsgi:application"
+        chesslab_django_settings_module: "chesslab.djangoapp.settings"
+        chesslab_django_secret_key: "test secret # dollar$ quote\" end"
+        chesslab_django_debug: false
+        chesslab_django_allowed_hosts:
+          - "chess.home.example"
+          - "127.0.0.1"
+        chesslab_django_csrf_trusted_origins:
+          - "https://chess.home.example"
+        chesslab_secure_cookies: true
+        chesslab_limit: "20"
+
+    - name: Render environment template
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/chesslab.env.j2"
+        dest: "{{ rendered_env }}"
+
+    - name: Render systemd template
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/chesslab.service.j2"
+        dest: "{{ rendered_service }}"
+
+    - name: Read rendered files
+      ansible.builtin.slurp:
+        path: "{{ item }}"
+      loop:
+        - "{{ rendered_env }}"
+        - "{{ rendered_service }}"
+      register: rendered_files
+
+    - name: Assert rendered Chesslab config
+      ansible.builtin.assert:
+        that:
+          - "'DJANGO_SETTINGS_MODULE=\"chesslab.djangoapp.settings\"' in rendered_env_text"
+          - "'CHESSLAB_SECRET_KEY=\"test secret # dollar$ quote' in rendered_env_text"
+          - "'\\\\\" end\"' in rendered_env_text"
+          - "'CHESSLAB_DB_PATH=\"/home/chesslab/data/chess.db\"' in rendered_env_text"
+          - "'CHESSLAB_ALLOWED_HOSTS=\"chess.home.example,127.0.0.1\"' in rendered_env_text"
+          - "'CHESSLAB_CSRF_TRUSTED_ORIGINS=\"https://chess.home.example\"' in rendered_env_text"
+          - "'CHESSLAB_SECURE_COOKIES=\"true\"' in rendered_env_text"
+          - "'CHESSLAB_TRAINER_LIMIT=\"20\"' in rendered_env_text"
+          - "'granian' in rendered_service_text"
+          - "'chesslab.djangoapp.wsgi:application' in rendered_service_text"
+          - "'chesslab.webapp:application' not in rendered_service_text"
+      vars:
+        rendered_env_text: "{{ rendered_files.results[0].content | b64decode }}"
+        rendered_service_text: "{{ rendered_files.results[1].content | b64decode }}"
+
+    - name: Clean up rendered files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ rendered_env }}"
+        - "{{ rendered_service }}"

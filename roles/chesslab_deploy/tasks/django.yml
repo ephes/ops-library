@@ -1,0 +1,57 @@
+---
+- name: django | Run database migrations
+  ansible.builtin.command:
+    argv:
+      - "{{ chesslab_venv_bin }}/python"
+      - -m
+      - django
+      - migrate
+      - --noinput
+  args:
+    chdir: "{{ chesslab_site_path }}"
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ chesslab_django_settings_module }}"
+    CHESSLAB_SECRET_KEY: "{{ chesslab_django_secret_key }}"
+    CHESSLAB_DEBUG: "{{ chesslab_django_debug | lower }}"
+    CHESSLAB_DB_PATH: "{{ chesslab_db_path }}"
+    CHESSLAB_ALLOWED_HOSTS: "{{ chesslab_django_allowed_hosts | join(',') }}"
+    CHESSLAB_CSRF_TRUSTED_ORIGINS: "{{ chesslab_django_csrf_trusted_origins | join(',') }}"
+    CHESSLAB_SECURE_COOKIES: "{{ chesslab_secure_cookies | lower }}"
+    CHESSLAB_TRAINER_LIMIT: "{{ chesslab_limit }}"
+  become: true
+  become_user: "{{ chesslab_user }}"
+  register: chesslab_django_migrate_result
+  changed_when: "'No migrations to apply' not in chesslab_django_migrate_result.stdout"
+  no_log: true
+  when: chesslab_run_migrations | bool
+
+- name: django | Ensure Django app users exist
+  ansible.builtin.command:
+    argv:
+      - "{{ chesslab_venv_bin }}/chesslab"
+      - django
+      - ensure_admin
+      - --username
+      - "{{ item.username }}"
+      - --lichess-username
+      - "{{ item.owner | default(item.lichess_username) }}"
+  args:
+    chdir: "{{ chesslab_site_path }}"
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ chesslab_django_settings_module }}"
+    CHESSLAB_SECRET_KEY: "{{ chesslab_django_secret_key }}"
+    CHESSLAB_DEBUG: "{{ chesslab_django_debug | lower }}"
+    CHESSLAB_DB_PATH: "{{ chesslab_db_path }}"
+    CHESSLAB_ALLOWED_HOSTS: "{{ chesslab_django_allowed_hosts | join(',') }}"
+    CHESSLAB_CSRF_TRUSTED_ORIGINS: "{{ chesslab_django_csrf_trusted_origins | join(',') }}"
+    CHESSLAB_SECURE_COOKIES: "{{ chesslab_secure_cookies | lower }}"
+    CHESSLAB_TRAINER_LIMIT: "{{ chesslab_limit }}"
+    CHESSLAB_ADMIN_PASSWORD: "{{ item.password }}"
+  become: true
+  become_user: "{{ chesslab_user }}"
+  loop: "{{ chesslab_users }}"
+  changed_when: >
+    'created' in chesslab_ensure_admin_result.stdout or
+    'updated' in chesslab_ensure_admin_result.stdout
+  register: chesslab_ensure_admin_result
+  no_log: true
