@@ -18,6 +18,7 @@ chesslab_app_port: 10019
 chesslab_workers: 2
 chesslab_owner: ephes_w
 chesslab_limit: ""
+chesslab_users: []
 chesslab_login_user: "{{ chesslab_owner }}"
 chesslab_login_password: "CHANGEME"
 chesslab_session_secret: "CHANGEME"

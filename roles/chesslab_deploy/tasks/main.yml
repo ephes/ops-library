@@ -5,12 +5,28 @@
       - chesslab_deploy_method in ["rsync"]
       - chesslab_source_path | length > 0
       - chesslab_owner | length > 0
-      - chesslab_login_user | length > 0
-      - chesslab_login_password | length > 0
-      - chesslab_login_password != "CHANGEME"
+      - chesslab_users | length > 0 or (
+          chesslab_login_user | length > 0 and
+          chesslab_login_password | length > 0 and
+          chesslab_login_password != "CHANGEME"
+        )
       - chesslab_session_secret | length > 20
       - chesslab_session_secret != "CHANGEME"
-    fail_msg: "chesslab_deploy requires source path, owner, login password, and session secret."
+    fail_msg: "chesslab_deploy requires source path, owner, configured users or login password, and session secret."
+
+- name: Validate chesslab users
+  ansible.builtin.assert:
+    that:
+      - item.username is defined
+      - item.username | length > 0
+      - item.password is defined
+      - item.password | length > 0
+      - item.owner is defined or item.lichess_username is defined
+      - (item.owner | default(item.lichess_username | default(''))) | length > 0
+    fail_msg: "Each chesslab user requires username, password, and owner or lichess_username."
+  loop: "{{ chesslab_users }}"
+  no_log: true
+  when: chesslab_users | length > 0
 
 - name: Validate chesslab Traefik configuration
   ansible.builtin.assert:
