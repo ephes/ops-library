@@ -1,0 +1,25 @@
+---
+# Test playbook for marina_deploy role defaults
+# Run with: ansible-playbook tests/test_marina_deploy.yml -i tests/inventory/test.yml
+
+- name: Test Marina Deploy Role Defaults
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/marina_deploy"
+
+  tasks:
+    - name: Load role defaults
+      ansible.builtin.include_vars:
+        file: "{{ role_path }}/defaults/main.yml"
+
+    - name: Assert rsync excludes protect runtime state
+      ansible.builtin.assert:
+        that:
+          - "'db.sqlite3' in marina_rsync_excludes"
+          - "'db.sqlite3-wal' in marina_rsync_excludes"
+          - "'db.sqlite3-shm' in marina_rsync_excludes"
+          - "'*.sqlite3' in marina_rsync_excludes"
+          - "'media' in marina_rsync_excludes"

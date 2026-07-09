@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `marina_deploy` now excludes SQLite database and WAL/SHM runtime files from
+  source rsync, preventing staging deploys from overwriting live Wagtail content
+  with a controller-local `db.sqlite3`.
+
 ### Breaking Changes
 - **Python 3.14+ required** - Dropped support for Python 3.8–3.13
   - Supports Python 3.14 (N-2 policy currently aligns with the latest stable release)
