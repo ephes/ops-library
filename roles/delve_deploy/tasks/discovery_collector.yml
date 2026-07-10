@@ -1,0 +1,27 @@
+---
+- name: discovery_collector | Install Delve Discovery collector oneshot unit
+  ansible.builtin.template:
+    src: delve-discovery-collect.service.j2
+    dest: "/etc/systemd/system/{{ delve_discovery_collector_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+
+- name: discovery_collector | Install Delve Discovery collector timer unit
+  ansible.builtin.template:
+    src: delve-discovery-collect.timer.j2
+    dest: "/etc/systemd/system/{{ delve_discovery_collector_service_name }}.timer"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+
+- name: discovery_collector | Ensure Delve Discovery collector timer state
+  ansible.builtin.systemd:
+    name: "{{ delve_discovery_collector_service_name }}.timer"
+    enabled: "{{ delve_discovery_collector_timer_enabled }}"
+    state: "{{ delve_discovery_collector_timer_state if delve_discovery_collector_timer_enabled | bool else 'stopped' }}"
+    daemon_reload: true

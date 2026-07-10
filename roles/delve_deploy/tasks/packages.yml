@@ -1,5 +1,5 @@
 ---
-- name: Ensure delve runtime packages are present
+- name: packages | Ensure delve runtime packages are present
   ansible.builtin.apt:
     name: "{{ delve_deploy_packages }}"
     state: present

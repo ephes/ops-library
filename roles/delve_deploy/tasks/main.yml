@@ -23,6 +23,9 @@
 - name: Install delve systemd unit
   ansible.builtin.import_tasks: systemd.yml
 
+- name: Install Discovery collector oneshot and timer
+  ansible.builtin.import_tasks: discovery_collector.yml
+
 - name: Configure Traefik exposure
   ansible.builtin.import_tasks: traefik.yml
   when: delve_traefik_enabled | bool

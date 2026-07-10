@@ -1,5 +1,5 @@
 ---
-- name: Ensure delve service is enabled and running
+- name: service | Ensure delve service is enabled and running
   ansible.builtin.systemd:
     name: "{{ delve_service_name }}"
     enabled: "{{ delve_service_enabled }}"

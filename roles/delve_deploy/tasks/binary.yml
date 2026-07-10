@@ -1,5 +1,5 @@
 ---
-- name: Install delve binary from the control node
+- name: binary | Install delve binary from the control node
   ansible.builtin.copy:
     src: "{{ delve_binary_src }}"
     dest: "{{ delve_bin_path }}"

@@ -1,5 +1,5 @@
 ---
-- name: Ensure delve install directory exists
+- name: directories | Ensure delve install directory exists
   ansible.builtin.file:
     path: "{{ delve_install_dir }}"
     state: directory
@@ -7,7 +7,7 @@
     group: root
     mode: "0755"
 
-- name: Ensure delve config directory exists
+- name: directories | Ensure delve config directory exists
   ansible.builtin.file:
     path: "{{ delve_config_dir }}"
     state: directory
@@ -15,7 +15,7 @@
     group: "{{ delve_group }}"
     mode: "0750"
 
-- name: Ensure delve data directory exists
+- name: directories | Ensure delve data directory exists
   ansible.builtin.file:
     path: "{{ delve_data_dir }}"
     state: directory

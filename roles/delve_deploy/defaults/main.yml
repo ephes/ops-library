@@ -60,6 +60,24 @@ delve_storekit_product_ids: ""
 # Deployment environment marker (DELVE_ENV). Empty = production behavior.
 delve_env: ""
 
+# Discovery reviewed RSS collector. Disabled by default in the public role; the
+# private control repo enables it only for environments with reviewed feed packs.
+delve_discovery_collector_timer_enabled: false
+delve_discovery_collector_timer_state: started
+delve_discovery_collector_service_name: "{{ delve_service_name }}-discovery-collect"
+delve_discovery_collector_calendar: "*-*-* 03,15:17:00" # 12h cadence, conservative 6-24h range
+delve_discovery_collector_randomized_delay_sec: 3600
+
+# Minimum 2 keeps the 100-source/30s fetch envelope below the 35m systemd timeout.
+delve_discovery_collector_concurrency: 2
+delve_discovery_poll_interval_seconds: 43200
+delve_discovery_poll_jitter_seconds: 3600
+delve_discovery_episode_ttl_seconds: 7776000 # 90 days
+delve_discovery_max_items_per_feed: 100
+# Bound one collect invocation so the default 55m app lock and 35m systemd
+# timeout stay coherent even when every fetch reaches the 30s whole-request cap.
+delve_discovery_max_sources_per_run: 100
+
 # systemd
 delve_service_enabled: true
 delve_service_state: started

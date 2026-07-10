@@ -1,10 +1,10 @@
 ---
-- name: Ensure delve group exists
+- name: user | Ensure delve group exists
   ansible.builtin.group:
     name: "{{ delve_group }}"
     system: true
 
-- name: Ensure delve user exists
+- name: user | Ensure delve user exists
   ansible.builtin.user:
     name: "{{ delve_user }}"
     group: "{{ delve_group }}"

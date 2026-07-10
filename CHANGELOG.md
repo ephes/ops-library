@@ -42,6 +42,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `zfs_usb_replication` can now apply guarded pre-sync age retention to managed
   target-only snapshots while preserving every source-present common anchor and
   waiting for asynchronous ZFS frees before receiving new data.
+- `delve_deploy` now installs an optional service-owned Discovery reviewed RSS
+  collector oneshot/timer, passes bounded non-secret collector defaults including
+  a 100-source run cap and 2-8 concurrency range, and documents the rollout
+  boundary (no feed-pack seeding in the public role).
 - `mail_relay_deploy` now supports
   `mail_relay_postgrey_whitelist_clients_extra` for managed postgrey whitelist
   entries in addition to the role defaults.

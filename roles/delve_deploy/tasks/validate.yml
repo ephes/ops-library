@@ -1,5 +1,5 @@
 ---
-- name: Validate delve binary source
+- name: validate | Validate delve binary source
   ansible.builtin.assert:
     that:
       - delve_binary_src | length > 0
@@ -7,7 +7,7 @@
       delve_binary_src must point at the locally cross-compiled Linux/amd64
       delved binary (the playbook builds it before invoking this role).
 
-- name: Stat delve binary source on the control node
+- name: validate | Stat delve binary source on the control node
   ansible.builtin.stat:
     path: "{{ delve_binary_src }}"
   delegate_to: localhost
@@ -15,14 +15,14 @@
   run_once: true
   register: delve_binary_src_stat
 
-- name: Verify delve binary source exists
+- name: validate | Verify delve binary source exists
   ansible.builtin.assert:
     that:
       - delve_binary_src_stat.stat.exists
       - delve_binary_src_stat.stat.isreg
     fail_msg: "delve_binary_src {{ delve_binary_src }} not found on the control node."
 
-- name: Validate delve configuration inputs
+- name: validate | Validate delve configuration inputs
   ansible.builtin.assert:
     that:
       - delve_public_url | length > 0
@@ -33,7 +33,24 @@
       delve_public_url, delve_port, a >=16 char delve_session_secret, and (when
       Traefik is enabled) delve_traefik_host are required.
 
-- name: Validate StoreKit configuration is complete when enabled
+- name: validate | Validate Delve Discovery collector configuration
+  ansible.builtin.assert:
+    that:
+      - delve_discovery_collector_concurrency | int >= 2
+      - delve_discovery_collector_concurrency | int <= 8
+      - delve_discovery_poll_interval_seconds | int >= 21600
+      - delve_discovery_poll_interval_seconds | int <= 86400
+      - delve_discovery_poll_jitter_seconds | int >= 0
+      - delve_discovery_episode_ttl_seconds | int > 0
+      - delve_discovery_max_items_per_feed | int > 0
+      - delve_discovery_max_items_per_feed | int <= 500
+      - delve_discovery_max_sources_per_run | int > 0
+      - delve_discovery_max_sources_per_run | int <= 100
+    fail_msg: >-
+      Delve Discovery collector values must be bounded: cadence 6-24h,
+      concurrency 2-8, positive TTL, max items/feed <=500, and max sources/run <=100.
+
+- name: validate | Validate StoreKit configuration is complete when enabled
   ansible.builtin.assert:
     that:
       - (delve_storekit_root_certs_path | length == 0) or

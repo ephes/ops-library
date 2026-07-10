@@ -1,5 +1,5 @@
 ---
-- name: Render delve environment file
+- name: config | Render delve environment file
   ansible.builtin.template:
     src: delve.env.j2
     dest: "{{ delve_env_path }}"
