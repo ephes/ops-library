@@ -20,6 +20,18 @@
           backup_metrics_endpoint auth values are missing or still set to CHANGE_ME.
           Set backup_metrics_endpoint_auth_user/password via ops-control vault before enabling.
 
+    - name: Validate USB health thresholds
+      ansible.builtin.assert:
+        that:
+          - backup_metrics_endpoint_usb_capacity_warning_ratio | float > 0
+          - backup_metrics_endpoint_usb_capacity_warning_ratio | float < 1
+          - backup_metrics_endpoint_usb_capacity_critical_ratio | float > backup_metrics_endpoint_usb_capacity_warning_ratio | float
+          - backup_metrics_endpoint_usb_capacity_critical_ratio | float <= 1
+          - backup_metrics_endpoint_usb_protection_max_age_hours | float >= 0
+        fail_msg: >-
+          USB capacity ratios must satisfy 0 < warning < critical <= 1 and
+          protection_max_age_hours must be non-negative.
+
     - name: Install dependencies for backup metrics endpoint
       ansible.builtin.package:
         name: "{{ backup_metrics_endpoint_packages }}"
@@ -55,6 +67,15 @@
         owner: root
         group: "{{ backup_metrics_endpoint_group }}"
         mode: "0750"
+
+    - name: Deploy USB replication health module
+      ansible.builtin.copy:
+        src: backup_metrics_usb_health.py
+        dest: "{{ backup_metrics_endpoint_usb_health_module_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      register: _backup_usb_health_module
 
     - name: Deploy backup metrics exporter script
       ansible.builtin.template:
@@ -147,7 +168,10 @@
       ansible.builtin.systemd:
         name: "{{ backup_metrics_endpoint_timer_name }}.service"
         state: started
-      when: (not _backup_metrics_json_stat.stat.exists) or (_backup_exporter_script is changed)
+      when: >-
+        (not _backup_metrics_json_stat.stat.exists)
+        or (_backup_exporter_script is changed)
+        or (_backup_usb_health_module is changed)
 
     - name: Ensure collector timer is enabled and started
       ansible.builtin.systemd:

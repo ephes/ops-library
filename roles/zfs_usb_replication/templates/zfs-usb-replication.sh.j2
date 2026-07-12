@@ -9,8 +9,32 @@ syncoid_bin="{{ zfs_usb_replication_syncoid_path }}"
 force_export="{{ zfs_usb_replication_force_export | bool | ternary('true', 'false') }}"
 spindown_enabled="{{ zfs_usb_replication_spindown_enabled | bool | ternary('true', 'false') }}"
 spindown_script="{{ zfs_usb_replication_spindown_script_path }}"
+state_path="{{ zfs_usb_replication_state_path }}"
+state_writer="{{ zfs_usb_replication_state_writer_path }}"
+retention_script="{{ zfs_usb_replication_retention_script_path }}"
 exportfs_lock_dir="{{ zfs_usb_replication_exportfs_lock_dir }}"
 set_canmount_off_for_readonly_recursive_targets="{{ zfs_usb_replication_set_canmount_off_for_readonly_recursive_targets | bool | ternary('true', 'false') }}"
+
+write_state() {
+  local result="$1"
+  local exit_code="$2"
+  shift 2
+  if [[ -x "${state_writer}" ]]; then
+    if ! "${state_writer}" \
+      --state-path "${state_path}" \
+      --result "${result}" \
+      --exit-code "${exit_code}" \
+      --device-path "${device}" \
+      --pool "${pool}" \
+      "$@"; then
+      logger -t "${log_tag}" "Failed to persist USB replication state (${result})"
+      return 1
+    fi
+  else
+    logger -t "${log_tag}" "USB replication state writer not executable: ${state_writer}"
+    return 1
+  fi
+}
 
 if [[ -z "${device}" || -z "${pool}" ]]; then
   logger -t "${log_tag}" "Missing device or pool configuration; aborting."
@@ -19,26 +43,63 @@ fi
 
 if [[ ! -e "${device}" ]]; then
   logger -t "${log_tag}" "USB device ${device} not present; skipping replication."
+  write_state "skipped_absent" 0
   exit 0
 fi
 
 pool_preexisting=false
+finish() {
+  local exit_code=$?
+  local -a usage_args=()
+  local export_failed=false
+  trap - EXIT
+  if zpool list -H -o name 2>/dev/null | grep -qx "${pool}"; then
+    local usage_line
+    usage_line=$(zpool list -Hp -o size,alloc,free "${pool}" 2>/dev/null || true)
+    if [[ -n "${usage_line}" ]]; then
+      local size_bytes alloc_bytes free_bytes
+      IFS=$'\t' read -r size_bytes alloc_bytes free_bytes <<< "${usage_line}"
+      if [[ "${size_bytes}" =~ ^[0-9]+$ && "${alloc_bytes}" =~ ^[0-9]+$ && "${free_bytes}" =~ ^[0-9]+$ ]]; then
+        usage_args=(
+          --size-bytes "${size_bytes}"
+          --alloc-bytes "${alloc_bytes}"
+          --free-bytes "${free_bytes}"
+        )
+      fi
+    fi
+  fi
+  if ! zpool list -H -o name 2>/dev/null | grep -qx "${pool}"; then
+    :
+  elif [[ "${pool_preexisting}" == "true" && "${force_export}" != "true" ]]; then
+    :
+  else
+    logger -t "${log_tag}" "Exporting pool ${pool}"
+    zfs unmount -r "${pool}" >/dev/null 2>&1 || true
+    if ! zpool export "${pool}" >/dev/null 2>&1; then
+      export_failed=true
+      logger -t "${log_tag}" "Failed to export pool ${pool}"
+    fi
+  fi
+  if [[ "${export_failed}" == "true" && ${exit_code} -eq 0 ]]; then
+    exit_code=1
+  fi
+  if [[ ${exit_code} -eq 0 ]]; then
+    if ! write_state "success" 0 "${usage_args[@]}"; then
+      exit_code=1
+    fi
+  else
+    write_state "failed" "${exit_code}" "${usage_args[@]}" || true
+  fi
+  exit "${exit_code}"
+}
+trap finish EXIT
+
 if zpool list -H -o name | grep -qx "${pool}"; then
   pool_preexisting=true
 else
   logger -t "${log_tag}" "Importing pool ${pool} from ${device}"
   zpool import -d "$(dirname "${device}")" -o cachefile=none "${pool}"
 fi
-
-cleanup() {
-  if [[ "${pool_preexisting}" == "true" && "${force_export}" != "true" ]]; then
-    return
-  fi
-  logger -t "${log_tag}" "Exporting pool ${pool}"
-  zfs unmount -r "${pool}" >/dev/null 2>&1 || true
-  zpool export "${pool}" >/dev/null 2>&1 || true
-}
-trap cleanup EXIT
 
 keystatus=$(zfs get -H -o value keystatus "${pool}" 2>/dev/null || echo "")
 if [[ "${keystatus}" != "available" ]]; then
@@ -65,6 +126,22 @@ if [[ "${set_canmount_off_for_readonly_recursive_targets}" == "true" ]]; then
 fi
 
 zfs mount -a
+
+{% for retention in zfs_usb_replication_snapshot_retention %}
+logger -t "${log_tag}" "Applying snapshot retention: {{ retention.target }} ({{ retention.keep_days }} days)"
+"${retention_script}" \
+  --source "{{ retention.source }}" \
+  --target "{{ retention.target }}" \
+  --keep-days "{{ retention.keep_days }}"{% for prefix in retention.prefixes %} \
+  --prefix "{{ prefix }}"{% endfor %}
+{% endfor %}
+{% if zfs_usb_replication_wait_for_async_destroy | bool %}
+freeing_bytes=$(zpool get -Hp -o value freeing "${pool}" 2>/dev/null || echo 0)
+if [[ "${freeing_bytes}" =~ ^[0-9]+$ && ${freeing_bytes} -gt 0 ]]; then
+  logger -t "${log_tag}" "Waiting for ${freeing_bytes} bytes of asynchronous frees on ${pool}"
+  zpool wait -t free "${pool}"
+fi
+{% endif %}
 
 {% for job in zfs_usb_replication_jobs %}
 {% set args = [] %}

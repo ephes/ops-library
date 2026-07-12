@@ -20,6 +20,7 @@ The collector gathers:
 - latest snapshot recency for USB datasets (when USB pool is imported)
 - optional file/archive freshness checks (`backup_metrics_endpoint_file_backups`, e.g. MinIO lag marker and offsite fallback marker)
 - USB pool/device context (enabled/imported/device-present) plus last-known USB pool utilization cached from the last time the pool was imported
+- policy-aware `usb_replication` health derived from durable drive-present attempt state, cached capacity thresholds, and optional protection freshness
 
 The endpoint adds staleness metadata (`meta.age_seconds`) based on JSON file mtime.
 When quiet-hours skipping is enabled, the collector reuses cached local snapshot
@@ -68,6 +69,10 @@ with `systemctl reset-failed`.
 | `backup_metrics_endpoint_usb_enabled` | `false` | whether USB offsite is expected |
 | `backup_metrics_endpoint_usb_pool` | `vault` | USB pool name |
 | `backup_metrics_endpoint_usb_device` | `""` | optional `/dev/disk/by-id/...` path |
+| `backup_metrics_endpoint_usb_replication_status_path` | `/var/lib/zfs-usb-replication/status.json` | Durable state written by `zfs_usb_replication` |
+| `backup_metrics_endpoint_usb_capacity_warning_ratio` | `0.90` | Warning threshold for last-known USB utilization |
+| `backup_metrics_endpoint_usb_capacity_critical_ratio` | `0.95` | Critical threshold for last-known USB utilization |
+| `backup_metrics_endpoint_usb_protection_max_age_hours` | `0` | Maximum last-success age; `0` disables freshness enforcement |
 | `backup_metrics_endpoint_usb_datasets` | `vault/...` defaults | USB replica datasets to check |
 | `backup_metrics_endpoint_file_backups` | `[]` | Optional archive/file freshness checks (`id`, `path`, `glob`, `max_age_hours`, `required`, `enabled`) |
 
@@ -179,7 +184,7 @@ with `systemctl reset-failed`.
     "usb_snapshots_ok": null,
     "usb_state": "offline",
     "usb_pool_offline": true,
-    "overall_ok": true
+    "overall_ok": false
   },
   "units": {
     "sanoid": {"ok": true, "timer": {"active_state": "active"}, "service": {"result": "success"}}
@@ -200,9 +205,29 @@ with `systemctl reset-failed`.
     "last_known_observed_iso": "2026-03-09T04:30:00+00:00",
     "state": "offline",
     "state_code": 1
+  },
+  "usb_replication": {
+    "ok": false,
+    "issues": ["last_present_attempt_not_successful", "capacity_critical_or_unknown"],
+    "last_present_attempt_ok": false,
+    "last_present_attempt_result": "failed",
+    "last_success_at": "2026-03-01T04:30:00+00:00",
+    "last_success_age_hours": 204.0,
+    "protection_max_age_hours": 1080.0,
+    "protection_fresh": true,
+    "capacity_warning_ok": false,
+    "capacity_critical_ok": false
   }
 }
 ```
+
+`usb_replication.ok` is a stable critical gate for consumers such as Nyxmon.
+An exported pool and an absent rotation disk are not failures by themselves.
+The `zfs_usb_replication` state writer preserves the last drive-present result
+when a later scheduled run cleanly skips because the drive is absent, preventing
+that skip from concealing an unresolved replication failure.
+It also persists a pool-utilization sample immediately before export; this
+durable sample takes precedence over the exporter's older cache.
 
 ## Validation
 

@@ -8,10 +8,21 @@ This role installs `syncoid` (via the `sanoid` package), writes a USB replicatio
 service + timer. The script checks for the configured USB device path, imports the ZFS pool when present,
 loads the encryption key from a key file, runs the configured syncoid jobs, and exports the pool afterwards.
 If the USB device is absent, the run logs a clean skip and exits successfully.
+Every attempt is also recorded in `/var/lib/zfs-usb-replication/status.json`.
+Missing-device skips update `last_attempt_*` while preserving
+`last_present_attempt_*` and `last_success_at`, so monitoring can distinguish a
+normal offsite rotation from an unresolved failure while a drive was attached.
+Drive-present attempts also sample pool size, allocation, and free space before
+export, so capacity alerting does not depend on a collector racing the temporary
+pool import window.
 When `readonly: true` is set on a job, the script passes `--recvoptions="o readonly=on"` so the target
 datasets are created/updated as read-only without toggling properties between runs.
 For `recursive: true` + `readonly: true` jobs, the script auto-sets `canmount=off` on existing target
 parent datasets before `zfs mount -a` so read-only parents do not block child mountpoint creation.
+Optional pre-sync retention policies prune old managed target-only snapshots
+before replication. A policy refuses to prune without a common source/target
+snapshot with the same name and ZFS GUID, and never removes snapshots that still
+exist on the source.
 
 ## Requirements
 
@@ -54,6 +65,12 @@ zfs_usb_replication_alert_email: "root"
 zfs_usb_replication_key_path: "/root/.zfs-key-vault"
 zfs_usb_replication_identifier: "usb"
 zfs_usb_replication_force_export: true
+zfs_usb_replication_state_path: /var/lib/zfs-usb-replication/status.json
+zfs_usb_replication_snapshot_retention:
+  - source: tank/replica/fast/timemachine
+    target: vault/replica/fast/timemachine
+    keep_days: 60
+    prefixes: [autosnap_, syncoid_fractal_, syncoid_usb_]
 ```
 
 Runtime mount safeguards:
@@ -72,6 +89,12 @@ zfs_usb_replication_spindown_devices:
 
 Notes:
 - `zfs_usb_replication_force_export: true` exports the USB pool after each run, even on failure.
+- `zfs_usb_replication_state_path` stores durable host-local history for monitoring; do not place it on the removable pool.
+- `zfs_usb_replication_snapshot_retention` runs before syncoid. Only snapshots
+  older than `keep_days`, matching a configured prefix, and absent from the
+  source are eligible. Manual/unmatched snapshots and all common anchors remain.
+- `zfs_usb_replication_wait_for_async_destroy: true` waits for ZFS deferred frees
+  to finish before starting the next receive.
 - `zfs_usb_replication_spindown_pool` should be the HDD pool (the USB job reads from this pool).
 - Spindown is invoked only after a successful replication run.
 

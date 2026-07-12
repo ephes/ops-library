@@ -31,6 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pre-staged Daybook checkouts while still checking out a pinned ref.
 - `daybook_sessions_deploy` now supports user LaunchAgent installs for
   laptop-style macOS hosts that do not expose passwordless sudo or root SSH.
+- `zfs_usb_replication` now persists drive-present success/failure separately
+  from clean missing-drive skips, and `backup_metrics_endpoint` exposes stable
+  policy-aware USB attempt, capacity, and protection-freshness health for alerting.
+- `zfs_usb_replication` can now apply guarded pre-sync age retention to managed
+  target-only snapshots while preserving every source-present common anchor and
+  waiting for asynchronous ZFS frees before receiving new data.
 - `mail_relay_deploy` now supports
   `mail_relay_postgrey_whitelist_clients_extra` for managed postgrey whitelist
   entries in addition to the role defaults.

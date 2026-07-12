@@ -55,6 +55,30 @@
         loop_var: job
         label: "{{ job.source | default('missing') }} -> {{ job.target | default('missing') }}"
 
+    - name: Validate snapshot retention policies
+      ansible.builtin.assert:
+        that:
+          - retention.source is defined
+          - retention.source | length > 0
+          - retention.target is defined
+          - retention.target | length > 0
+          - retention.keep_days is defined
+          - retention.keep_days | int >= 1
+          - retention.prefixes is defined
+          - retention.prefixes is sequence
+          - retention.prefixes is not string
+          - retention.prefixes | length > 0
+          - >-
+            (retention.prefixes | select('string') | reject('equalto', '') |
+            list | length) == (retention.prefixes | length)
+        fail_msg: >-
+          Each retention policy requires source, target, keep_days >= 1, and a
+          non-empty prefixes list.
+      loop: "{{ zfs_usb_replication_snapshot_retention }}"
+      loop_control:
+        loop_var: retention
+        label: "{{ retention.source | default('missing') }} -> {{ retention.target | default('missing') }}"
+
     - name: Validate key material
       ansible.builtin.assert:
         that:
@@ -86,6 +110,31 @@
       ansible.builtin.package:
         name: "{{ zfs_usb_replication_packages }}"
         state: present
+
+    - name: Ensure USB replication state directory exists
+      ansible.builtin.file:
+        path: "{{ zfs_usb_replication_state_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install USB replication state writer
+      ansible.builtin.copy:
+        src: zfs_usb_replication_state.py
+        dest: "{{ zfs_usb_replication_state_writer_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install USB snapshot retention helper
+      ansible.builtin.copy:
+        src: zfs_usb_snapshot_retention.py
+        dest: "{{ zfs_usb_replication_retention_script_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+      when: zfs_usb_replication_snapshot_retention | length > 0
 
     - name: Ensure key directory exists
       ansible.builtin.file:

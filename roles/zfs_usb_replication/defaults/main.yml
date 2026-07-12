@@ -15,6 +15,19 @@ zfs_usb_replication_syncoid_path: "/usr/sbin/syncoid"
 zfs_usb_replication_service_name: "zfs-usb-replication"
 zfs_usb_replication_timer_name: "zfs-usb-replication"
 
+# Durable host-local attempt state consumed by backup monitoring. Missing-drive
+# skips update the latest attempt but preserve the last drive-present result.
+zfs_usb_replication_state_dir: "/var/lib/zfs-usb-replication"
+zfs_usb_replication_state_path: "{{ zfs_usb_replication_state_dir }}/status.json"
+zfs_usb_replication_state_writer_path: "/usr/local/bin/zfs_usb_replication_state.py"
+
+# Optional pre-sync retention policies. Each policy prunes only target snapshots
+# older than keep_days whose names match a managed prefix and no longer exist on
+# the source. Pruning refuses to run without at least one common snapshot.
+zfs_usb_replication_snapshot_retention: []
+zfs_usb_replication_retention_script_path: "/usr/local/bin/zfs_usb_snapshot_retention.py"
+zfs_usb_replication_wait_for_async_destroy: true
+
 # Schedule
 zfs_usb_replication_on_calendar: "Sun 04:00"
 zfs_usb_replication_randomized_delay_sec: "30m"

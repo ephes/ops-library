@@ -10,12 +10,22 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+from backup_metrics_usb_health import (
+    build_usb_replication_health,
+    load_replication_state,
+    select_usb_usage,
+)
+
 UNITS = json.loads(r'''{{ backup_metrics_endpoint_units | to_json }}''')
 LOCAL_DATASETS = json.loads(r'''{{ backup_metrics_endpoint_local_datasets | to_json }}''')
 USB_DATASETS = json.loads(r'''{{ backup_metrics_endpoint_usb_datasets | to_json }}''')
 USB_ENABLED = {{ backup_metrics_endpoint_usb_enabled | bool | ternary('True', 'False') }}
 USB_POOL = {{ backup_metrics_endpoint_usb_pool | to_json }}
 USB_DEVICE = {{ backup_metrics_endpoint_usb_device | to_json }}
+USB_REPLICATION_STATUS_PATH = {{ backup_metrics_endpoint_usb_replication_status_path | to_json }}
+USB_CAPACITY_WARNING_RATIO = {{ backup_metrics_endpoint_usb_capacity_warning_ratio | float }}
+USB_CAPACITY_CRITICAL_RATIO = {{ backup_metrics_endpoint_usb_capacity_critical_ratio | float }}
+USB_PROTECTION_MAX_AGE_HOURS = {{ backup_metrics_endpoint_usb_protection_max_age_hours | float }}
 FILE_BACKUPS = json.loads(r'''{{ backup_metrics_endpoint_file_backups | default([]) | to_json }}''')
 SYSTEMCTL_TIMEOUT = {{ backup_metrics_endpoint_systemctl_timeout | int }}
 ZFS_TIMEOUT = {{ backup_metrics_endpoint_zfs_timeout | int }}
@@ -631,6 +641,7 @@ def main() -> int:
             "last_known_observed_epoch": None,
             "last_known_observed_iso": None,
         },
+        "usb_replication": {},
         "summary": {},
     }
 
@@ -683,6 +694,7 @@ def main() -> int:
         payload["usb"]["device_present_value"] = 1 if payload["usb"]["device_present"] else 0
 
     usb_enabled = bool(USB_ENABLED)
+    usb_live_usage_observed = False
     if not usb_enabled:
         for dataset in USB_DATASETS:
             payload["snapshots"]["usb"].append(
@@ -719,6 +731,7 @@ def main() -> int:
         else:
             usage = _pool_usage(USB_POOL)
             if usage.get("ok"):
+                usb_live_usage_observed = True
                 payload["usb"]["last_known_used_ratio"] = usage["used_ratio"]
                 payload["usb"]["last_known_size_bytes"] = usage["size_bytes"]
                 payload["usb"]["last_known_alloc_bytes"] = usage["alloc_bytes"]
@@ -772,10 +785,36 @@ def main() -> int:
     usb_pool_offline = usb_state == "offline"
     payload["usb"]["state"] = usb_state
     payload["usb"]["state_code"] = {"disabled": 0, "offline": 1, "online": 2}[usb_state]
+
+    usb_replication_state, usb_replication_state_error = load_replication_state(
+        USB_REPLICATION_STATUS_PATH
+    )
+    payload["usb"].update(
+        select_usb_usage(
+            payload["usb"],
+            usb_replication_state,
+            live_observed=usb_live_usage_observed,
+        )
+    )
+    syncoid_usb_unit = payload["units"].get("syncoid_usb", {})
+    syncoid_usb_ok = syncoid_usb_unit.get("ok")
+    payload["usb_replication"] = build_usb_replication_health(
+        enabled=usb_enabled,
+        device_present=payload["usb"].get("device_present"),
+        unit_ok=syncoid_usb_ok if isinstance(syncoid_usb_ok, bool) else None,
+        state=usb_replication_state,
+        state_error=usb_replication_state_error,
+        selected_usage=payload["usb"],
+        warning_ratio=USB_CAPACITY_WARNING_RATIO,
+        critical_ratio=USB_CAPACITY_CRITICAL_RATIO,
+        protection_max_age_hours=USB_PROTECTION_MAX_AGE_HOURS,
+        now_epoch=now_epoch,
+    )
     overall_ok = (
         required_units_ok
         and local_snapshots_ok
         and (usb_snapshots_ok in (None, True))
+        and payload["usb_replication"]["ok"]
         and required_file_backups_ok
     )
     payload["summary"] = {
@@ -786,6 +825,7 @@ def main() -> int:
         "usb_snapshots_ok": usb_snapshots_ok,
         "usb_state": usb_state,
         "usb_pool_offline": usb_pool_offline,
+        "usb_replication_ok": payload["usb_replication"]["ok"],
         "overall_ok": overall_ok,
     }
 
