@@ -23,6 +23,14 @@ archive_metadata_worker_limit: 10
 archive_metadata_request_timeout: 15
 archive_summary_request_timeout: 60
 archive_transcription_request_timeout: 300
+archive_quote_classifier_enabled: true
+archive_quote_classifier_limit: 25
+archive_quote_classifier_since_days: 14
+archive_quote_classifier_timeout: 30
+archive_quote_classifier_on_calendar:
+  - "*-*-* 07:15:00"
+  - "*-*-* 19:15:00"
+archive_quote_classifier_randomized_delay_seconds: 900
 archive_python_version: "3.12"
 
 archive_django_settings_module: "config.settings.production"

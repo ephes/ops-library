@@ -9,6 +9,7 @@ This role covers the deployed Archive MVP through the current Milestone 6 slice:
 - Django migrations and static collection
 - admin/editor bootstrap user
 - systemd web service plus enrichment worker
+- twice-daily quote-classifier systemd timer for recent unprocessed items
 - public Traefik ingress
 - automatic service restart when app source, environment, or dependency state changes
 
@@ -63,6 +64,10 @@ archive_metadata_worker_limit: 10
 archive_metadata_request_timeout: 15
 archive_summary_request_timeout: 60
 archive_transcription_request_timeout: 300
+archive_quote_classifier_enabled: true
+archive_quote_classifier_on_calendar:
+  - "*-*-* 07:15:00"
+  - "*-*-* 19:15:00"
 archive_summary_api_base: "https://api.openai.com/v1"
 archive_summary_model: "gpt-4o-mini"
 archive_transcription_api_base: "https://api.openai.com/v1"

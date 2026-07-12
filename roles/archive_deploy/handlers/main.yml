@@ -13,6 +13,13 @@
     name: archive-metadata-worker
     state: restarted
 
+- name: restart archive quote classifier timer
+  ansible.builtin.systemd:
+    name: archive-quote-classifier.timer
+    state: restarted
+    daemon_reload: true
+  when: archive_quote_classifier_enabled | bool
+
 - name: reload traefik
   ansible.builtin.systemd:
     name: traefik

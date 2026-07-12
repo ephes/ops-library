@@ -1,0 +1,13 @@
+[Unit]
+Description=Run Archive quote classifier twice daily
+
+[Timer]
+{% for calendar in archive_quote_classifier_on_calendar %}
+OnCalendar={{ calendar }}
+{% endfor %}
+Persistent=true
+RandomizedDelaySec={{ archive_quote_classifier_randomized_delay_seconds }}
+Unit=archive-quote-classifier.service
+
+[Install]
+WantedBy=timers.target

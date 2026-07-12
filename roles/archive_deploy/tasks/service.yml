@@ -22,6 +22,27 @@
     - reload systemd
     - restart archive metadata worker
 
+- name: service | Render archive quote classifier systemd service
+  ansible.builtin.template:
+    src: archive-quote-classifier.service.j2
+    dest: /etc/systemd/system/archive-quote-classifier.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+
+- name: service | Render archive quote classifier systemd timer
+  ansible.builtin.template:
+    src: archive-quote-classifier.timer.j2
+    dest: /etc/systemd/system/archive-quote-classifier.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart archive quote classifier timer
+
 - name: service | Enable and start archive service
   ansible.builtin.systemd:
     name: archive
@@ -35,3 +56,19 @@
     enabled: true
     state: started
     daemon_reload: true
+
+- name: service | Enable and start archive quote classifier timer
+  ansible.builtin.systemd:
+    name: archive-quote-classifier.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: archive_quote_classifier_enabled | bool
+
+- name: service | Disable archive quote classifier timer
+  ansible.builtin.systemd:
+    name: archive-quote-classifier.timer
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  when: not (archive_quote_classifier_enabled | bool)
