@@ -64,7 +64,7 @@ archive_metadata_worker_limit: 10
 archive_metadata_request_timeout: 15
 archive_summary_request_timeout: 60
 archive_transcription_request_timeout: 300
-archive_quote_classifier_enabled: true
+archive_quote_classifier_enabled: false
 archive_quote_classifier_on_calendar:
   - "*-*-* 07:15:00"
   - "*-*-* 19:15:00"
