@@ -48,8 +48,16 @@ if [[ ! -e "${device}" ]]; then
 fi
 
 pool_preexisting=false
+signal_exit_code=0
+handle_signal() {
+  signal_exit_code="$1"
+  exit "${signal_exit_code}"
+}
 finish() {
   local exit_code=$?
+  if [[ ${signal_exit_code} -ne 0 ]]; then
+    exit_code=${signal_exit_code}
+  fi
   local -a usage_args=()
   local export_failed=false
   trap - EXIT
@@ -93,6 +101,9 @@ finish() {
   exit "${exit_code}"
 }
 trap finish EXIT
+trap 'handle_signal 129' HUP
+trap 'handle_signal 130' INT
+trap 'handle_signal 143' TERM
 
 if zpool list -H -o name | grep -qx "${pool}"; then
   pool_preexisting=true
@@ -129,11 +140,7 @@ zfs mount -a
 
 {% for retention in zfs_usb_replication_snapshot_retention %}
 logger -t "${log_tag}" "Applying snapshot retention: {{ retention.target }} ({{ retention.keep_days }} days)"
-"${retention_script}" \
-  --source "{{ retention.source }}" \
-  --target "{{ retention.target }}" \
-  --keep-days "{{ retention.keep_days }}"{% for prefix in retention.prefixes %} \
-  --prefix "{{ prefix }}"{% endfor %}
+"${retention_script}" --source "{{ retention.source }}" --target "{{ retention.target }}" --keep-days "{{ retention.keep_days }}"{% for prefix in retention.prefixes %} --prefix "{{ prefix }}"{% endfor %}{{ '\n' }}
 {% endfor %}
 {% if zfs_usb_replication_wait_for_async_destroy | bool %}
 freeing_bytes=$(zpool get -Hp -o value freeing "${pool}" 2>/dev/null || echo 0)

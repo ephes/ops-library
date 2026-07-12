@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import signal
 import shutil
 import subprocess
+import time
 
 from jinja2 import Environment, FileSystemLoader
 
@@ -12,9 +14,18 @@ from jinja2 import Environment, FileSystemLoader
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def _render_script(tmp_path: Path) -> Path:
+def _render_script(
+    tmp_path: Path,
+    *,
+    snapshot_retention: list[dict[str, object]] | None = None,
+    wait_for_async_destroy: bool = False,
+) -> Path:
     template_dir = ROOT / "roles/zfs_usb_replication/templates"
-    environment = Environment(loader=FileSystemLoader(template_dir))
+    environment = Environment(
+        loader=FileSystemLoader(template_dir),
+        trim_blocks=True,
+        lstrip_blocks=True,
+    )
     environment.filters["bool"] = bool
     environment.filters["ternary"] = lambda value, yes, no: yes if value else no
     template = environment.get_template("zfs-usb-replication.sh.j2")
@@ -41,9 +52,9 @@ def _render_script(tmp_path: Path) -> Path:
             zfs_usb_replication_state_writer_path=str(state_writer),
             zfs_usb_replication_exportfs_lock_dir=str(tmp_path / "exports.d"),
             zfs_usb_replication_set_canmount_off_for_readonly_recursive_targets=False,
-            zfs_usb_replication_snapshot_retention=[],
+            zfs_usb_replication_snapshot_retention=snapshot_retention or [],
             zfs_usb_replication_retention_script_path="/bin/true",
-            zfs_usb_replication_wait_for_async_destroy=False,
+            zfs_usb_replication_wait_for_async_destroy=wait_for_async_destroy,
             zfs_usb_replication_jobs=[],
         ),
         encoding="utf-8",
@@ -80,6 +91,12 @@ if [[ "$1" == "get" ]]; then
   exit 0
 fi
 if [[ "$1" == "mount" ]]; then
+  if [[ -n "${FAKE_REPLICATION_MARKER:-}" ]]; then
+    touch "${FAKE_REPLICATION_MARKER}"
+  fi
+  if [[ -n "${FAKE_REPLICATION_SLEEP:-}" ]]; then
+    sleep "${FAKE_REPLICATION_SLEEP}"
+  fi
   exit "${FAKE_REPLICATION_RC:-0}"
 fi
 exit 0
@@ -121,3 +138,69 @@ def test_export_failure_preserves_original_replication_error(tmp_path: Path) -> 
     assert result.returncode == 7
     assert state["last_present_attempt_result"] == "failed"
     assert state["last_present_attempt_exit_code"] == 7
+
+
+def test_retention_command_does_not_consume_async_free_assignment(tmp_path: Path) -> None:
+    script = _render_script(
+        tmp_path,
+        snapshot_retention=[
+            {
+                "source": "tank/source",
+                "target": "vault/target",
+                "keep_days": 60,
+                "prefixes": ["autosnap_", "syncoid_usb_"],
+            },
+            {
+                "source": "tank/second",
+                "target": "vault/second",
+                "keep_days": 30,
+                "prefixes": ["managed_"],
+            },
+        ],
+        wait_for_async_destroy=True,
+    )
+    lines = script.read_text(encoding="utf-8").splitlines()
+
+    retention_line = next(line for line in lines if ' --source "tank/source"' in line)
+    freeing_index = next(i for i, line in enumerate(lines) if line.startswith("freeing_bytes="))
+    assert retention_line.endswith('--prefix "syncoid_usb_"')
+    assert lines.index(retention_line) < freeing_index
+    assert any(line.startswith('"${retention_script}" --source "tank/second"') for line in lines)
+    assert not any("syncoid_usb_\"logger" in line for line in lines)
+    subprocess.run(["bash", "-n", script], check=True)
+
+
+def test_termination_records_failed_present_attempt(tmp_path: Path) -> None:
+    script = _render_script(tmp_path)
+    bin_dir = _fake_commands(tmp_path)
+    environment = os.environ.copy()
+    marker = tmp_path / "mount-started"
+    environment.update(
+        {
+            "PATH": f"{bin_dir}:{environment['PATH']}",
+            "FAKE_REPLICATION_RC": "0",
+            "FAKE_EXPORT_RC": "0",
+            "FAKE_REPLICATION_SLEEP": "30",
+            "FAKE_REPLICATION_MARKER": str(marker),
+        }
+    )
+    process = subprocess.Popen(
+        [script],
+        env=environment,
+        start_new_session=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    for _ in range(50):
+        if marker.exists():
+            break
+        time.sleep(0.05)
+    assert marker.exists()
+    os.killpg(process.pid, signal.SIGTERM)
+    process.communicate(timeout=5)
+    state = json.loads((tmp_path / "status.json").read_text(encoding="utf-8"))
+
+    assert process.returncode == 143
+    assert state["last_present_attempt_result"] == "failed"
+    assert state["last_present_attempt_exit_code"] == 143
