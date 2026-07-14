@@ -22,7 +22,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
   roles:
     - role: local.ops_library.openclaw_deploy
       vars:
-        openclaw_version: "v2026.6.10"
+        openclaw_version: "v2026.6.11"
         openclaw_data_dir: "/mnt/cryptdata/openclaw/data"
         openclaw_gateway_token: "{{ sops_secrets.gateway_token }}"
         openclaw_anthropic_api_key: "{{ sops_secrets.anthropic_api_key }}"
@@ -55,7 +55,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 
 | Variable | Description |
 |----------|-------------|
-| `openclaw_version` | Git tag to checkout and build (e.g. `v2026.6.10`) |
+| `openclaw_version` | Git tag to checkout and build (e.g. `v2026.6.11`) |
 | `openclaw_gateway_token` | Gateway authentication token |
 | `openclaw_anthropic_api_key` | Anthropic API key for AI replies |
 
@@ -105,6 +105,34 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 |----------|---------|-------------|
 | `openclaw_agent_model_primary` | `""` | Optional default model (`provider/model`) patched to `agents.defaults.model.primary` |
 | `openclaw_agent_model_fallbacks` | `[]` | Optional ordered fallback list (`provider/model` entries) patched to `agents.defaults.model.fallbacks` |
+| `openclaw_openai_auth_order` | `[]` | Optional ordered canonical OpenAI auth profiles patched to `auth.order.openai`; use an OAuth-only list such as `["openai:default"]` to require ChatGPT/Codex subscription auth for agent turns |
+| `openclaw_codex_plugin_enabled` | `false` | Install, enable, and allow the official `@openclaw/codex` app-server runtime plugin, pinned to the configured OpenClaw version |
+| `openclaw_codex_plugin_id` | `codex` | Plugin registry ID used for inspection and managed config |
+| `openclaw_codex_plugin_package` | `@openclaw/codex` | Official npm package installed through OpenClaw's persistent plugin registry |
+| `openclaw_codex_plugin_version` | OpenClaw version without leading `v` | Exact plugin version; override only when upstream does not publish the plugin in release lockstep |
+
+For subscription-backed OpenAI agent turns, enable the official Codex plugin, configure a canonical
+`openai/<model>` primary, and list the OAuth profile before any optional API-key backup:
+
+```yaml
+openclaw_codex_plugin_enabled: true
+openclaw_agent_model_primary: "openai/gpt-5.5"
+openclaw_openai_auth_order:
+  - "openai:default"
+```
+
+The OAuth login itself remains persistent runtime state and is intentionally not stored in
+this public role. Run `openclaw models auth login --provider openai --device-code` on the
+deployed host, then verify with `openclaw models auth list --provider openai`.
+
+Plugin package reconciliation and installed-version verification require a real deployment
+and are skipped in Ansible check mode. Check mode still reports the managed gateway-config
+changes that enable and allow the plugin.
+
+When `openclaw_gateway_config` supplies a complete raw config override, it must include the
+`codex` entry in both `plugins.entries` (enabled) and `plugins.allow`; individual managed
+config patches are intentionally bypassed for raw overrides, while package reconciliation
+still runs when `openclaw_codex_plugin_enabled` is true.
 
 ### Build Configuration
 

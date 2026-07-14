@@ -22,6 +22,12 @@
 - name: main | Render OpenClaw environment file
   ansible.builtin.import_tasks: env.yml
 
+- name: main | Install the official Codex runtime plugin
+  ansible.builtin.import_tasks: plugins.yml
+  when:
+    - openclaw_codex_plugin_enabled | bool
+    - not ansible_check_mode
+
 - name: main | Render gateway config
   ansible.builtin.import_tasks: config.yml
 

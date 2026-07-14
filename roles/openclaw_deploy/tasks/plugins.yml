@@ -1,0 +1,119 @@
+---
+- name: plugins | Inspect installed Codex plugin
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --user
+      - "1000:1000"
+      - --env-file
+      - "{{ openclaw_site_dir }}/.env"
+      - --volume
+      - "{{ openclaw_data_dir }}:/home/node/.openclaw"
+      - --entrypoint
+      - node
+      - "{{ openclaw_image_name }}:{{ openclaw_image_tag }}"
+      - dist/index.js
+      - plugins
+      - inspect
+      - "{{ openclaw_codex_plugin_id }}"
+      - --json
+  register: openclaw_codex_plugin_inspect
+  changed_when: false
+  failed_when: false
+
+- name: plugins | Resolve installed Codex plugin version
+  ansible.builtin.set_fact:
+    _openclaw_codex_plugin_installed_version: >-
+      {{
+        (
+          (openclaw_codex_plugin_inspect.stdout | from_json).get(
+            'install', {}
+          ).get('version', '')
+        )
+        if (
+          openclaw_codex_plugin_inspect.rc == 0
+          and (openclaw_codex_plugin_inspect.stdout | trim | length > 0)
+        )
+        else ''
+      }}
+
+- name: plugins | Install configured official Codex plugin release
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --user
+      - "1000:1000"
+      - --env-file
+      - "{{ openclaw_site_dir }}/.env"
+      - --volume
+      - "{{ openclaw_data_dir }}:/home/node/.openclaw"
+      - --entrypoint
+      - node
+      - "{{ openclaw_image_name }}:{{ openclaw_image_tag }}"
+      - dist/index.js
+      - plugins
+      - install
+      - --force
+      - --pin
+      - "{{ openclaw_codex_plugin_package }}@{{ openclaw_codex_plugin_version }}"
+  register: openclaw_codex_plugin_install
+  changed_when: true
+  when: >-
+    (_openclaw_codex_plugin_installed_version | trim)
+    != (openclaw_codex_plugin_version | trim)
+  notify: restart openclaw
+
+- name: plugins | Inspect Codex plugin after reconciliation
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --user
+      - "1000:1000"
+      - --env-file
+      - "{{ openclaw_site_dir }}/.env"
+      - --volume
+      - "{{ openclaw_data_dir }}:/home/node/.openclaw"
+      - --entrypoint
+      - node
+      - "{{ openclaw_image_name }}:{{ openclaw_image_tag }}"
+      - dist/index.js
+      - plugins
+      - inspect
+      - "{{ openclaw_codex_plugin_id }}"
+      - --json
+  register: openclaw_codex_plugin_verify
+  changed_when: false
+
+- name: plugins | Validate Codex plugin inspection output
+  ansible.builtin.assert:
+    that:
+      - openclaw_codex_plugin_verify.stdout | trim | length > 0
+      - (openclaw_codex_plugin_verify.stdout | trim) is regex('^\{')
+    fail_msg: >-
+      Codex plugin inspection did not return a JSON object on stdout.
+
+- name: plugins | Parse reconciled Codex plugin metadata
+  ansible.builtin.set_fact:
+    _openclaw_codex_plugin_verified: "{{ openclaw_codex_plugin_verify.stdout | from_json }}"
+
+- name: plugins | Verify installed Codex plugin identity and version
+  ansible.builtin.assert:
+    that:
+      - >-
+        _openclaw_codex_plugin_verified.get('plugin', {}).get('id', '')
+        == openclaw_codex_plugin_id
+      - >-
+        _openclaw_codex_plugin_verified.get('install', {}).get('resolvedName', '')
+        == openclaw_codex_plugin_package
+      - >-
+        _openclaw_codex_plugin_verified.get('install', {}).get('version', '')
+        == (openclaw_codex_plugin_version | trim)
+    fail_msg: >-
+      Installed {{ openclaw_codex_plugin_package }} identity or version does not
+      match the configured Codex plugin settings.

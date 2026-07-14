@@ -15,6 +15,16 @@
         | combine(
             (
               {
+                openclaw_codex_plugin_id: { "enabled": true }
+              }
+              if (openclaw_codex_plugin_enabled | bool)
+              else {}
+            ),
+            recursive=True
+          )
+        | combine(
+            (
+              {
                 openclaw_opsgate_extension_id: {
                   "enabled": true
                 }
@@ -33,9 +43,13 @@
       }}
     _openclaw_managed_plugin_allow: >-
       {{
-        [openclaw_opsgate_extension_id]
-        if (openclaw_opsgate_enabled | bool)
-        else []
+        (
+          ([openclaw_codex_plugin_id] if (openclaw_codex_plugin_enabled | bool) else [])
+          +
+          ([openclaw_opsgate_extension_id] if (openclaw_opsgate_enabled | bool) else [])
+        )
+        | unique
+        | list
       }}
 
 - name: config | Build gateway config from individual variables
@@ -104,6 +118,22 @@
     - openclaw_gateway_config | length == 0
     - openclaw_agent_model_primary | trim | length > 0
 
+- name: config | Build optional OpenAI auth-order patch
+  ansible.builtin.set_fact:
+    _openclaw_openai_auth_order_patch: >-
+      {{
+        {
+          "auth": {
+            "order": {
+              "openai": openclaw_openai_auth_order | map('trim') | list
+            }
+          }
+        }
+      }}
+  when:
+    - openclaw_gateway_config | length == 0
+    - openclaw_openai_auth_order | length > 0
+
 - name: config | Build gateway config from individual variables
   ansible.builtin.set_fact:
     _openclaw_built_config: >-
@@ -124,7 +154,18 @@
             (
               {
                 "plugins": {
-                  "allow": _openclaw_managed_plugin_allow,
+                  "allow": _openclaw_managed_plugin_allow
+                }
+              }
+              if (_openclaw_managed_plugin_allow | length > 0)
+              else {}
+            ),
+            recursive=True
+          )
+        | combine(
+            (
+              {
+                "plugins": {
                   "load": {
                     "paths": _openclaw_managed_plugin_load_paths
                   }
@@ -137,6 +178,7 @@
           )
         | combine(_openclaw_gateway_access_patch, recursive=True)
         | combine(_openclaw_model_policy_patch | default({}), recursive=True)
+        | combine(_openclaw_openai_auth_order_patch | default({}), recursive=True)
       }}
   when: openclaw_gateway_config | length == 0
 
@@ -267,6 +309,7 @@
                 recursive=True
               )
             | combine(_openclaw_model_policy_patch | default({}), recursive=True)
+            | combine(_openclaw_openai_auth_order_patch | default({}), recursive=True)
           }}
 
     - name: config | Merge runtime config patch

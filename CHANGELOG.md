@@ -123,6 +123,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Navidrome lifecycle roles: `navidrome_deploy`, `navidrome_backup`, `navidrome_restore`, and `navidrome_remove` (systemd binary install, Traefik basic auth, rescan timer, backup/restore tooling)
 
 ### Changed
+- `openclaw_deploy` now installs the official Codex app-server plugin at the
+  OpenClaw-matching release and supports an
+  explicit canonical `auth.order.openai` profile list so deployments can require
+  ChatGPT/Codex subscription OAuth for OpenAI agent turns without silently
+  falling back to API-key billing. Documentation examples now use upstream
+  stable `v2026.6.11`.
 - `mail_relay_deploy` now documents IPv4-only relay mode and exposes
   `mail_relay_smtp_address_preference` so deployments can avoid or de-prioritize
   IPv6 while PTR/forward DNS is not aligned for outbound delivery.

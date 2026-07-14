@@ -4,7 +4,7 @@
     that:
       - openclaw_version | length > 0
     fail_msg: >-
-      openclaw_version is required (e.g. "v2026.6.10"). Set it in the playbook or inventory.
+      openclaw_version is required (e.g. "v2026.6.11"). Set it in the playbook or inventory.
 
 - name: validate | Core OpenClaw settings
   ansible.builtin.assert:
@@ -125,6 +125,43 @@
     fail_msg: >-
       openclaw_agent_model_primary must be in provider/model format.
   when: openclaw_agent_model_primary | trim | length > 0
+
+- name: validate | Optional OpenAI auth order shape
+  ansible.builtin.assert:
+    that:
+      - openclaw_openai_auth_order is sequence
+      - openclaw_openai_auth_order is not string
+      - >-
+        (
+          openclaw_openai_auth_order
+          | map('trim')
+          | reject('equalto', '')
+          | unique
+          | list
+          | length
+        ) == (openclaw_openai_auth_order | length)
+    fail_msg: >-
+      openclaw_openai_auth_order must be a unique list of non-empty canonical OpenAI profile IDs.
+
+- name: validate | Optional OpenAI auth order entries
+  ansible.builtin.assert:
+    that:
+      - (item | trim) is regex('^openai:[^\s]+$')
+    fail_msg: >-
+      Each openclaw_openai_auth_order entry must use the canonical openai:<profile> format.
+      Invalid entry: {{ item }}
+  loop: "{{ openclaw_openai_auth_order }}"
+  when: openclaw_openai_auth_order | length > 0
+
+- name: validate | Codex plugin settings
+  ansible.builtin.assert:
+    that:
+      - openclaw_codex_plugin_id is regex('^[A-Za-z0-9][A-Za-z0-9._-]*$')
+      - openclaw_codex_plugin_package | trim | length > 0
+      - openclaw_codex_plugin_version is regex('^[0-9A-Za-z][0-9A-Za-z._+-]*$')
+    fail_msg: >-
+      Codex plugin id, package, and version must be non-empty npm-compatible values.
+  when: openclaw_codex_plugin_enabled | bool
 
 - name: validate | Telegram bot token when Telegram is enabled
   ansible.builtin.assert:
