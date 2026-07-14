@@ -1,0 +1,33 @@
+---
+# Test playbook for heis_deploy role defaults.
+# Run with: ansible-playbook tests/test_heis_deploy.yml -i tests/inventory/test.yml
+
+- name: Validate heis_deploy persistent-data defaults
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - "{{ playbook_dir }}/../roles/heis_deploy/defaults/main.yml"
+  tasks:
+    - name: Assert required deployment packages are declared
+      ansible.builtin.assert:
+        that:
+          - "'fish' in heis_prerequisite_packages"
+          - "'rsync' in heis_prerequisite_packages"
+          - "'sqlite3' in heis_prerequisite_packages"
+
+    - name: Assert persistent runtime data is excluded from source sync
+      ansible.builtin.assert:
+        that:
+          - "'db.sqlite3' in heis_rsync_excludes"
+          - "'db.sqlite3-wal' in heis_rsync_excludes"
+          - "'db.sqlite3-shm' in heis_rsync_excludes"
+          - "'*.sqlite3' in heis_rsync_excludes"
+          - "'media' in heis_rsync_excludes"
+          - "'backups' in heis_rsync_excludes"
+
+    - name: Assert content initialization remains explicitly configurable
+      ansible.builtin.assert:
+        that:
+          - heis_setup_default_pages is boolean
+          - heis_seed_content is boolean

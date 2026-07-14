@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `marina_deploy` now excludes SQLite database and WAL/SHM runtime files from
   source rsync, preventing staging deploys from overwriting live Wagtail content
   with a controller-local `db.sqlite3`.
+- `heis_deploy` now installs its host-side prerequisites and excludes SQLite
+  database/WAL/SHM files from source rsync so code deploys preserve production
+  content alongside the already-persistent media directory; page setup and
+  content seeding can now be disabled independently for production, and
+  optional canonical-host redirects support production alias domains.
 
 ### Breaking Changes
 - **Python 3.14+ required** - Dropped support for Python 3.8–3.13
@@ -22,6 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Update your Ansible installation before upgrading
 
 ### Added
+- `heis_production_backup.py.j2`, a locked service-owned Echoport/FastDeploy
+  runner for remote SQLite plus media backup and restore of a dedicated Heis
+  production host. It uses exact immutable remote targets, bounded subprocesses,
+  systemd restart watchdogs, short host-local backup snapshots, and automatic
+  DB/media safety rollback for restores. Watchdogs remain armed until every
+  service is proven active; restore runs migrations and requires an exact local
+  HTTP 200 through Django's HTTPS proxy path before accepting the new data.
 - `weeknotes_home_deploy` role to deploy daybook's `weeknotes.home` Django
   steering-comments service with PostgreSQL provisioning, uv-managed
   dependencies, systemd/gunicorn, Traefik routing, and a `/healthz` check.

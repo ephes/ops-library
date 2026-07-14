@@ -42,6 +42,7 @@
   become_user: "{{ heis_user }}"
   register: heis_setup_pages_result
   changed_when: "'Created' in heis_setup_pages_result.stdout or 'Removing' in heis_setup_pages_result.stdout"
+  when: heis_setup_default_pages | bool
 
 - name: Seed homepage content
   shell: |
@@ -57,7 +58,11 @@
   become: true
   become_user: "{{ heis_user }}"
   register: heis_seed_home_result
-  changed_when: "'gefüllt' in heis_seed_home_result.stdout or 'angelegt' in heis_seed_home_result.stdout or 'importiert' in heis_seed_home_result.stdout"
+  changed_when: >-
+    'gefüllt' in heis_seed_home_result.stdout
+    or 'angelegt' in heis_seed_home_result.stdout
+    or 'importiert' in heis_seed_home_result.stdout
+  when: heis_seed_content | bool
 
 - name: Seed subpage content and chrome defaults
   shell: |
@@ -73,7 +78,11 @@
   become: true
   become_user: "{{ heis_user }}"
   register: heis_seed_subpages_result
-  changed_when: "'angelegt' in heis_seed_subpages_result.stdout or 'gesetzt' in heis_seed_subpages_result.stdout or 'Gefüllte Felder: 0' not in heis_seed_subpages_result.stdout"
+  changed_when: >-
+    'angelegt' in heis_seed_subpages_result.stdout
+    or 'gesetzt' in heis_seed_subpages_result.stdout
+    or 'Gefüllte Felder: 0' not in heis_seed_subpages_result.stdout
+  when: heis_seed_content | bool
 
 - name: Collect static files
   shell: |

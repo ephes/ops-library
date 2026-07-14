@@ -26,6 +26,12 @@ heis_use_uv: true
 heis_uv_path: "/usr/local/bin/uv"
 heis_python_version: "python3.13"
 
+# Host-side runtime prerequisites
+heis_prerequisite_packages:
+  - fish
+  - rsync
+  - sqlite3
+
 # App config
 heis_app_port: 10020
 heis_gunicorn_workers: 4
@@ -36,6 +42,8 @@ heis_django_allowed_hosts: "{{ heis_fqdn }},localhost"
 heis_django_cache_location: "{{ heis_cache_dir }}"
 heis_wagtailadmin_base_url: "https://{{ heis_fqdn }}"
 heis_serve_media: false
+heis_setup_default_pages: true
+heis_seed_content: true
 
 # Secrets (required)
 # heis_django_secret_key: ""
@@ -49,6 +57,8 @@ heis_serve_media: false
 heis_traefik_enabled: true
 heis_traefik_config_dir: "/etc/traefik/dynamic"
 heis_traefik_config_path: "{{ heis_traefik_config_dir }}/{{ heis_user }}.traefik.yml"
+heis_traefik_canonical_redirect_regex: ""
+heis_traefik_canonical_redirect_replacement: ""
 
 # Host configuration (required)
 # heis_fqdn: "heis-adler.de"
@@ -56,6 +66,12 @@ heis_traefik_config_path: "{{ heis_traefik_config_dir }}/{{ heis_user }}.traefik
 
 # Rsync
 heis_rsync_excludes:
+  - "db.sqlite3"
+  - "db.sqlite3-wal"
+  - "db.sqlite3-shm"
+  - "*.sqlite3"
+  - "*.sqlite3-wal"
+  - "*.sqlite3-shm"
   - "media"
   - "backups"
   - ".venv"

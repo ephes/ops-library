@@ -50,6 +50,12 @@
     - heis_admin_username is defined or heis_admin_password is defined
   no_log: true
 
+- name: Install deployment prerequisites
+  ansible.builtin.package:
+    name: "{{ heis_prerequisite_packages }}"
+    state: present
+  when: heis_prerequisite_packages | length > 0
+
 - name: Setup user and directories
   include_tasks: user.yml
 

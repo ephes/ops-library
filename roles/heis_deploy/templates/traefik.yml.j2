@@ -19,6 +19,9 @@ http:
         - csrf
         - sslHeaders
         - gzip-compress
+{% if heis_traefik_canonical_redirect_regex | length > 0 %}
+        - redirect-canonical-host
+{% endif %}
         - redirect-www
       service: {{ heis_fqdn }}
       tls:
@@ -44,6 +47,13 @@ http:
         regex: "^https?://www\\.(.+)"
         replacement: "https://${1}"
         permanent: false
+{% if heis_traefik_canonical_redirect_regex | length > 0 %}
+    redirect-canonical-host:
+      redirectRegex:
+        regex: '{{ heis_traefik_canonical_redirect_regex }}'
+        replacement: '{{ heis_traefik_canonical_redirect_replacement }}'
+        permanent: true
+{% endif %}
 
   services:
     {{ heis_fqdn }}:
