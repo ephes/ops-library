@@ -24,6 +24,8 @@ uses different package names.
 heis_source_path: "/path/to/heis"
 heis_fqdn: "heis-adler.de"
 heis_traefik_host_rule: "Host(`heis-adler.de`) || Host(`www.heis-adler.de`)"
+# Optional: restrict TLS/ACME names while retaining a broader HTTP router.
+heis_traefik_tls_host_rule: "{{ heis_traefik_host_rule }}"
 heis_django_secret_key: "..."
 ```
 
@@ -83,6 +85,7 @@ Wagtail or an explicit promotion workflow.
     heis_source_path: "/Users/jochen/projects/heis"
     heis_fqdn: "heis-adler.de"
     heis_traefik_host_rule: "Host(`heis-adler.de`) || Host(`www.heis-adler.de`)"
+    heis_traefik_tls_host_rule: "{{ heis_traefik_host_rule }}"
     heis_django_secret_key: "{{ service_secrets.django_secret_key }}"
   roles:
     - role: local.ops_library.uv_install

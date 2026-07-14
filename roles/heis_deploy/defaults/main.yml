@@ -57,6 +57,7 @@ heis_seed_content: true
 heis_traefik_enabled: true
 heis_traefik_config_dir: "/etc/traefik/dynamic"
 heis_traefik_config_path: "{{ heis_traefik_config_dir }}/{{ heis_user }}.traefik.yml"
+heis_traefik_tls_host_rule: "{{ heis_traefik_host_rule }}"
 heis_traefik_canonical_redirect_regex: ""
 heis_traefik_canonical_redirect_replacement: ""
 

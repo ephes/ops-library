@@ -11,7 +11,7 @@ http:
       service: {{ heis_fqdn }}
 
     {{ heis_fqdn }}-secure-router:
-      rule: "{{ heis_traefik_host_rule }}"
+      rule: "{{ heis_traefik_tls_host_rule }}"
 
       entryPoints:
         - web-secure

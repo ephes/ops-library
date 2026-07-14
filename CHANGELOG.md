@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   content alongside the already-persistent media directory; page setup and
   content seeding can now be disabled independently for production, and
   optional canonical-host redirects support production alias domains.
+  HTTP and TLS routers can now use separate host rules so an alias with pending
+  DNS does not block ACME certificates for otherwise valid production names.
 
 ### Breaking Changes
 - **Python 3.14+ required** - Dropped support for Python 3.8–3.13
