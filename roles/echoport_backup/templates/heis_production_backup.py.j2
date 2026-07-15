@@ -151,7 +151,9 @@ def ssh(
     """Execute command on remote host via SSH."""
     _validate_ssh_identifier(remote_host, "remote_host")
     _validate_ssh_identifier(remote_user, "remote_user")
-    full_cmd = f"ssh {SSH_OPTS} {remote_user}@{remote_host} {cmd}"
+    full_cmd = (
+        f"ssh {SSH_OPTS} {remote_user}@{remote_host} {shlex.quote(cmd)}"
+    )
     print(f"[SSH] {cmd}", file=sys.stderr)
     result = subprocess.run(
         full_cmd,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import shlex
 import subprocess
 import types
 import unittest
@@ -113,6 +114,23 @@ class HeisProductionBackupSafetyTests(unittest.TestCase):
             self.runner.ssh("152.53.158.41", "root", "/usr/bin/true")
         self.assertEqual(
             run.call_args.kwargs["timeout"], self.runner.COMMAND_TIMEOUT_SECONDS
+        )
+
+    def test_ssh_quotes_compound_remote_command_as_one_argument(self) -> None:
+        completed = subprocess.CompletedProcess([], 0, "", "")
+        remote_command = (
+            "rm -rf /home/heis/backup-snapshots/test && "
+            "install -d -m 0700 /home/heis/backup-snapshots/test"
+        )
+        with mock.patch.object(
+            self.runner.subprocess, "run", return_value=completed
+        ) as run:
+            self.runner.ssh("152.53.158.41", "root", remote_command)
+
+        self.assertEqual(
+            run.call_args.args[0],
+            f"ssh {self.runner.SSH_OPTS} root@152.53.158.41 "
+            f"{shlex.quote(remote_command)}",
         )
 
     def test_partial_stop_failure_leaves_restart_watchdog_armed(self) -> None:
