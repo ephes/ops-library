@@ -8,7 +8,11 @@
       - paperless_admin_password is defined and paperless_admin_password != "CHANGEME"
       - paperless_scanner_enabled | bool == false or paperless_scanner_password != "CHANGEME"
       - paperless_version is defined and paperless_version | length > 0
-    fail_msg: "Set all CHANGEME variables (secret key, DB/admin/scanner passwords, version) before running paperless_deploy."
+      - paperless_release_checksum | string is regex('^sha256:[a-f0-9]{64}$')
+    fail_msg: >-
+      Set all CHANGEME variables (secret key, DB/admin/scanner passwords, version)
+      and provide a sha256 checksum for the selected Paperless release before
+      running paperless_deploy.
 
 - name: Validate Redis configuration
   ansible.builtin.assert:

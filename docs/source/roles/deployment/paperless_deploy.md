@@ -6,7 +6,7 @@ Deploy [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) using uv-
 
 - Creates the `paperless` system user, directory layout, and storage symlinks
 - Installs prerequisite packages plus Redis/PostgreSQL via `redis_install`/`postgres_install`
-- Manages uv virtualenvs, checksum-verified release artifacts, and NLTK dataset downloads
+- Manages uv virtualenvs, requires SHA-256-verified release artifacts, stages extraction before switching the stable release symlink, and downloads NLTK datasets
 - Renders `.env`, gunicorn config, systemd units, Traefik dynamic config, and scanner SSH drop-ins
 - Performs health checks (`systemctl` + HTTP `/api/`) before finishing
 

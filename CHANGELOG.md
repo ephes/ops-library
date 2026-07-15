@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Heis production Echoport runner now quotes compound remote SSH commands
   as a single argument, preventing operators such as `&&` from executing on
   the macmini backup runner instead of the production host.
+- `paperless_deploy` now rejects missing or malformed release checksums and
+  extracts new releases into a staging directory before switching the stable
+  application symlink, preserving the working release if extraction fails.
 - `marina_deploy` now excludes SQLite database and WAL/SHM runtime files from
   source rsync, preventing staging deploys from overwriting live Wagtail content
   with a controller-local `db.sqlite3`.

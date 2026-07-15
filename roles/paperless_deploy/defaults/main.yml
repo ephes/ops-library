@@ -22,6 +22,7 @@ paperless_release_checksums:
 paperless_release_checksum: "{{ paperless_release_checksums[paperless_version] | default('') }}"
 paperless_release_archive: "{{ paperless_site_root }}/paperless-ngx-v{{ paperless_version }}.tar.xz"
 paperless_release_dir: "{{ paperless_site_root }}/paperless-ngx-v{{ paperless_version }}"
+paperless_release_staging_dir: "{{ paperless_site_root }}/.paperless-ngx-v{{ paperless_version }}-extract"
 paperless_manage_dir: "{{ paperless_current_symlink }}/src"
 paperless_python_version: "3.14"
 paperless_python_major_minor: "{{ paperless_python_version | regex_search('^(\\d+\\.\\d+)') | default(paperless_python_version, true) }}"

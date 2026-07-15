@@ -3,7 +3,7 @@
   ansible.builtin.get_url:
     url: "{{ paperless_release_url }}"
     dest: "{{ paperless_release_archive }}"
-    checksum: "{{ paperless_release_checksum if paperless_release_checksum | length > 0 else omit }}"
+    checksum: "{{ paperless_release_checksum }}"
     owner: "{{ paperless_username }}"
     group: "{{ paperless_group }}"
     mode: "0644"
@@ -26,26 +26,51 @@
 - name: Extract Paperless release
   when: not paperless_release_dir_stat.stat.exists
   block:
-    - name: Remove existing Paperless current path
+    - name: Remove stale Paperless release staging directory
       ansible.builtin.file:
-        path: "{{ paperless_current_symlink }}"
+        path: "{{ paperless_release_staging_dir }}"
         state: absent
       become: true
-      when: paperless_current_path_stat.stat.exists
+
+    - name: Create Paperless release staging directory
+      ansible.builtin.file:
+        path: "{{ paperless_release_staging_dir }}"
+        state: directory
+        owner: "{{ paperless_username }}"
+        group: "{{ paperless_group }}"
+        mode: "0755"
+      become: true
 
     - name: Unarchive release tarball
       ansible.builtin.unarchive:
         src: "{{ paperless_release_archive }}"
-        dest: "{{ paperless_site_root }}"
+        dest: "{{ paperless_release_staging_dir }}"
         remote_src: true
       become: true
       become_user: "{{ paperless_username }}"
 
     - name: Move extracted release to versioned directory
       ansible.builtin.command:
-        cmd: mv "{{ paperless_site_root }}/paperless-ngx" "{{ paperless_release_dir }}"
+        cmd: >-
+          mv "{{ paperless_release_staging_dir }}/paperless-ngx"
+          "{{ paperless_release_dir }}"
       become: true
       become_user: "{{ paperless_username }}"
+  always:
+    - name: Remove Paperless release staging directory
+      ansible.builtin.file:
+        path: "{{ paperless_release_staging_dir }}"
+        state: absent
+      become: true
+
+- name: Remove legacy non-symlink Paperless current path
+  ansible.builtin.file:
+    path: "{{ paperless_current_symlink }}"
+    state: absent
+  become: true
+  when:
+    - paperless_current_path_stat.stat.exists
+    - not paperless_current_path_stat.stat.islnk
 
 - name: Update current release symlink
   ansible.builtin.file:
