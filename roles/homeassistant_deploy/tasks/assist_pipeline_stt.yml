@@ -296,6 +296,8 @@
       - "{{ _ha_assist_pipeline_desired_stt_engine_id }}"
       - "{{ homeassistant_config_path }}/.storage/core.entity_registry"
   register: _ha_assist_pipeline_stt_entity_ready
+  become: true
+  become_user: "{{ homeassistant_user }}"
   retries: "{{ homeassistant_api_retries }}"
   delay: "{{ homeassistant_api_retry_delay }}"
   until: _ha_assist_pipeline_stt_entity_ready.rc == 0
@@ -336,6 +338,8 @@
       - -c
       - "import aiohttp"
   register: _ha_assist_pipeline_aiohttp
+  become: true
+  become_user: "{{ homeassistant_user }}"
   changed_when: false
   failed_when: false
   when:
@@ -525,6 +529,8 @@
         except Exception as exc:
             write_result("error", {"message": str(exc)})
             raise
+  become: true
+  become_user: "{{ homeassistant_user }}"
   environment:
     HA_API_URL: "{{ _ha_assist_pipeline_api_url }}"
     HA_TOKEN: "{{ homeassistant_api_token }}"
@@ -585,6 +591,7 @@
   ansible.builtin.file:
     path: "{{ _ha_assist_pipeline_result_path }}"
     state: absent
+  changed_when: false
   when:
     - _ha_assist_pipeline_needs_update | bool
     - not ansible_check_mode

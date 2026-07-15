@@ -33,6 +33,9 @@
   ansible.builtin.command:
     cmd: "{{ homeassistant_matter_server_virtualenv_path }}/bin/python --version"
   register: _ha_matter_current_python_version
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  check_mode: false
   changed_when: false
   failed_when: false
   when: _ha_matter_venv_python_stat.stat.exists
@@ -41,6 +44,9 @@
   ansible.builtin.command:
     cmd: "{{ homeassistant_matter_server_virtualenv_path }}/bin/python -m pip --version"
   register: _ha_matter_current_pip_check
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  check_mode: false
   changed_when: false
   failed_when: false
   when: _ha_matter_venv_python_stat.stat.exists
@@ -91,6 +97,7 @@
     cmd: "{{ homeassistant_uv_path }} venv --seed --python {{ _ha_python_executable }} {{ homeassistant_matter_server_virtualenv_path }}"
     chdir: "{{ homeassistant_site_path }}"
     creates: "{{ homeassistant_matter_server_virtualenv_path }}"
+  become: true
   become_user: "{{ homeassistant_user }}"
 
 - name: "Record Matter server virtualenv Python version"
@@ -101,6 +108,15 @@
     group: "{{ homeassistant_group }}"
     mode: "0644"
 
+- name: "Ensure Matter server virtualenv ownership"
+  ansible.builtin.file:
+    path: "{{ homeassistant_matter_server_virtualenv_path }}"
+    state: directory
+    owner: "{{ homeassistant_user }}"
+    group: "{{ homeassistant_group }}"
+    recurse: true
+  notify: restart matter server
+
 - name: "Check if Matter server binary exists"
   ansible.builtin.stat:
     path: "{{ homeassistant_matter_server_virtualenv_path }}/bin/matter-server"
@@ -110,6 +126,9 @@
   ansible.builtin.command:
     cmd: "{{ homeassistant_matter_server_virtualenv_path }}/bin/python -c 'import chip.exceptions'"
   register: _ha_matter_chip_check
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  check_mode: false
   changed_when: false
   failed_when: false
   when: _ha_matter_binary.stat.exists
@@ -125,6 +144,9 @@
   ansible.builtin.command:
     cmd: "{{ homeassistant_matter_server_virtualenv_path }}/bin/python -m pip show python-matter-server"
   register: _ha_matter_version
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  check_mode: false
   changed_when: false
   failed_when: false
   when: _ha_matter_binary.stat.exists
@@ -165,6 +187,7 @@
   ansible.builtin.command:
     cmd: "{{ homeassistant_uv_path }} pip install --python {{ homeassistant_matter_server_virtualenv_path }} {{ homeassistant_matter_server_package_spec }}"
     chdir: "{{ homeassistant_site_path }}"
+  become: true
   become_user: "{{ homeassistant_user }}"
   when: homeassistant_force_reinstall | bool
         or not _ha_matter_binary.stat.exists

@@ -237,6 +237,8 @@
       - -c
       - "import aiohttp"
   register: _ha_assist_pipelines_aiohttp
+  become: true
+  become_user: "{{ homeassistant_user }}"
   changed_when: false
   failed_when: false
   when: not ansible_check_mode
@@ -513,6 +515,8 @@
             with open(RESULT_PATH, "w", encoding="utf-8") as result_file:
                 json.dump({"status": "error", "message": str(exc)}, result_file)
             raise
+  become: true
+  become_user: "{{ homeassistant_user }}"
   environment:
     HA_API_URL: "{{ _ha_assist_pipelines_api_url }}"
     HA_TOKEN: "{{ homeassistant_api_token }}"
@@ -558,6 +562,7 @@
   ansible.builtin.file:
     path: "{{ _ha_assist_pipelines_result_path }}"
     state: absent
+  changed_when: false
   when:
     - not ansible_check_mode
     - _ha_assist_pipelines_result_stat.stat.exists

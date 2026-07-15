@@ -30,6 +30,8 @@
       - -c
       - "import aiohttp"
   register: _ha_area_registry_aiohttp
+  become: true
+  become_user: "{{ homeassistant_user }}"
   changed_when: false
   failed_when: false
   when: not ansible_check_mode
@@ -207,6 +209,8 @@
         except Exception as exc:
             write_result("error", {"message": str(exc)})
             raise
+  become: true
+  become_user: "{{ homeassistant_user }}"
   environment:
     HA_API_URL: "{{ _ha_area_registry_api_url }}"
     HA_TOKEN: "{{ homeassistant_api_token }}"
@@ -253,6 +257,7 @@
   ansible.builtin.file:
     path: "{{ _ha_area_registry_result_path }}"
     state: absent
+  changed_when: false
   when: not ansible_check_mode
 
 - name: "Report Home Assistant area registry update result"

@@ -84,19 +84,6 @@ person:
 # Sun tracking
 sun:
 
-# System monitor
-system_monitor:
-  process:
-    - python3
-  resources:
-    - type: disk_use_percent
-      arg: /
-    - type: memory_free
-    - type: memory_use_percent
-    - type: processor_use
-    - type: processor_temperature
-    - type: last_boot
-
 # Enable support for tracking state changes
 history:
 
@@ -132,12 +119,6 @@ zone:
 
 # Default integrations
 default_config:
-
-# Discovery
-discovery:
-  ignore:
-    - sonos
-    - samsung_tv
 
 # MQTT (optional - uncomment if you have an MQTT broker)
 # mqtt:

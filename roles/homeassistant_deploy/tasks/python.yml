@@ -3,13 +3,16 @@
   ansible.builtin.command:
     cmd: "{{ homeassistant_uv_path }} python find {{ homeassistant_python_version }}"
   register: _ha_uv_python_find
+  become: true
   become_user: "{{ homeassistant_user }}"
+  check_mode: false
   changed_when: false
   failed_when: false
 
 - name: "Install requested Python version via uv"
   ansible.builtin.command:
     cmd: "{{ homeassistant_uv_path }} python install {{ homeassistant_python_version }}"
+  become: true
   become_user: "{{ homeassistant_user }}"
   when: _ha_uv_python_find.rc != 0
 
@@ -17,7 +20,9 @@
   ansible.builtin.command:
     cmd: "{{ homeassistant_uv_path }} python find {{ homeassistant_python_version }}"
   register: _ha_python_exec_path
+  become: true
   become_user: "{{ homeassistant_user }}"
+  check_mode: false
   changed_when: false
 
 - name: "Set python executable fact"
@@ -33,6 +38,9 @@
   ansible.builtin.command:
     cmd: "{{ homeassistant_virtualenv_path }}/bin/python --version"
   register: _ha_current_python_version
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  check_mode: false
   changed_when: false
   failed_when: false
   when: _ha_venv_python_stat.stat.exists
@@ -41,6 +49,9 @@
   ansible.builtin.command:
     cmd: "{{ homeassistant_virtualenv_path }}/bin/python -m pip --version"
   register: _ha_current_pip_check
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  check_mode: false
   changed_when: false
   failed_when: false
   when: _ha_venv_python_stat.stat.exists
@@ -49,6 +60,9 @@
   ansible.builtin.command:
     cmd: "{{ homeassistant_virtualenv_path }}/bin/python -m pip show python-matter-server"
   register: _ha_legacy_matter_server_package_check
+  become: true
+  become_user: "{{ homeassistant_user }}"
+  check_mode: false
   changed_when: false
   failed_when: false
   when: _ha_venv_python_stat.stat.exists
@@ -118,6 +132,7 @@
     cmd: "{{ homeassistant_uv_path }} venv --seed --python {{ _ha_python_executable }}"
     chdir: "{{ homeassistant_site_path }}"
     creates: "{{ homeassistant_virtualenv_path }}"
+  become: true
   become_user: "{{ homeassistant_user }}"
 
 - name: "Ensure convenience symlink exists"
@@ -136,6 +151,15 @@
     group: "{{ homeassistant_group }}"
     mode: "0644"
 
+- name: "Ensure Home Assistant virtualenv ownership"
+  ansible.builtin.file:
+    path: "{{ homeassistant_virtualenv_path }}"
+    state: directory
+    owner: "{{ homeassistant_user }}"
+    group: "{{ homeassistant_group }}"
+    recurse: true
+  notify: restart homeassistant
+
 - name: "Check if Home Assistant binary exists"
   ansible.builtin.stat:
     path: "{{ homeassistant_virtualenv_path }}/bin/hass"
@@ -145,7 +169,9 @@
   ansible.builtin.command:
     cmd: "{{ homeassistant_virtualenv_path }}/bin/hass --version"
   register: _ha_current_version
+  become: true
   become_user: "{{ homeassistant_user }}"
+  check_mode: false
   changed_when: false
   failed_when: false
   when: _ha_hass_binary.stat.exists
@@ -175,6 +201,7 @@
   ansible.builtin.command:
     cmd: "{{ homeassistant_uv_path }} pip install --python {{ homeassistant_virtualenv_path }} {{ homeassistant_package_spec }}"
     chdir: "{{ homeassistant_site_path }}"
+  become: true
   become_user: "{{ homeassistant_user }}"
   when: homeassistant_force_reinstall | bool
         or not _ha_hass_binary.stat.exists
@@ -187,6 +214,7 @@
   ansible.builtin.command:
     argv: "{{ [homeassistant_uv_path, 'pip', 'install', '--python', homeassistant_virtualenv_path] + homeassistant_extra_package_specs }}"
     chdir: "{{ homeassistant_site_path }}"
+  become: true
   become_user: "{{ homeassistant_user }}"
   register: _ha_extra_package_install
   changed_when: >-
@@ -199,7 +227,9 @@
   ansible.builtin.command:
     cmd: "{{ homeassistant_virtualenv_path }}/bin/hass --version"
   register: _ha_version
+  become: true
   become_user: "{{ homeassistant_user }}"
+  check_mode: false
   changed_when: false
   failed_when: false
 

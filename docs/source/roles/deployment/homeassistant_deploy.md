@@ -7,12 +7,19 @@ Deploys Home Assistant Core on bare metal/VM hosts using `uv`-managed Python env
 - Creates the `homeassistant` user, directory tree, Zigbee/Matter udev rule, and seeded uv virtualenvs.
 - Installs Home Assistant via `uv pip` with optional version pinning (`homeassistant_package_spec`).
 - Installs optional host-specific integration requirements (`homeassistant_extra_package_specs`) before Home Assistant starts.
+- Supports check-mode preflights by running read-only virtualenv inspection
+  commands while leaving package and service changes unapplied.
+- Reconciles both virtualenvs to the service user and runs inspection/API helper
+  commands as that user so Home Assistant can install integration requirements
+  at runtime.
 - Stops Home Assistant and Matter server before replacing their virtualenvs on Python changes or force reinstalls.
 - Templates systemd/Traefik files and manages handlers for reloads/restarts.
 - Optional Matter server install + systemd unit for the Home Assistant Matter integration.
 - Runs the Matter server in a dedicated virtualenv and validates both Home Assistant Matter imports and Matter server imports after handlers run.
 - Optional Matter integration provisioning via the Home Assistant config entry API.
 - Optional management of `configuration.yaml`, `secrets.yaml`, and include files with overwrite guards.
+- Migrates obsolete role-generated `system_monitor` and `discovery` YAML blocks
+  out of existing managed configurations.
 - UniFi password discovery supports file, generated, or SOPS-provided secrets.
 - Traefik template reproduces the single-router production config (punycode domain, websocket middleware).
 

@@ -47,6 +47,37 @@
     - homeassistant_remove_legacy_met_weather_yaml | bool
     - not (homeassistant_manage_configuration | bool)
 
+- name: "Remove obsolete role-generated YAML integration blocks"
+  ansible.builtin.replace:
+    path: "{{ homeassistant_config_path }}/configuration.yaml"
+    regexp: "{{ item }}"
+    replace: ""
+    backup: true
+  loop:
+    - |-
+      (?m)^# System monitor$
+      ^system_monitor:$
+      ^  process:$
+      ^    - python3$
+      ^  resources:$
+      ^    - type: disk_use_percent$
+      ^      arg: /$
+      ^    - type: memory_free$
+      ^    - type: memory_use_percent$
+      ^    - type: processor_use$
+      ^    - type: processor_temperature$
+      ^    - type: last_boot$\n\n?
+    - |-
+      (?m)^# Discovery$
+      ^discovery:$
+      ^  ignore:$
+      ^    - sonos$
+      ^    - samsung_tv$\n\n?
+  when:
+    - homeassistant_manage_configuration | bool
+    - _ha_configuration_stat.stat.exists
+  notify: restart homeassistant
+
 - name: "Check include files"
   ansible.builtin.stat:
     path: "{{ homeassistant_config_path }}/{{ item }}"

@@ -7,6 +7,10 @@ Ansible role that installs and configures a Home Assistant Core instance on bare
 - Creates the `homeassistant` unix user, directory layout, and Zigbee/Matter udev rule.
 - Provisions a seeded Python 3.14 virtualenv via `uv` and installs the `homeassistant` package (optional force-reinstall flag).
 - Can install host-specific Home Assistant integration Python requirements before service startup.
+- Supports Ansible check-mode preflights by running version and dependency
+  inspection commands without applying package or service changes.
+- Runs virtualenv commands as the Home Assistant service user and reconciles
+  virtualenv ownership so runtime integration installs remain writable.
 - Stops Home Assistant and Matter server before replacing virtualenvs on Python changes, missing pip, force reinstalls, or legacy Matter package cleanup.
 - Templated systemd service and Traefik dynamic configuration (single-router layout matching production).
 - Optional Matter server install + systemd unit for the Home Assistant Matter integration (`ws://localhost:5580/ws`).
@@ -16,6 +20,8 @@ Ansible role that installs and configures a Home Assistant Core instance on bare
 - Optional Wyoming integration provisioning via the Home Assistant config entry API.
 - Optional area-registry updates via the Home Assistant admin WebSocket API.
 - Optional management of `configuration.yaml`, `secrets.yaml`, and include files with overwrite guards.
+- Removes obsolete `system_monitor` and `discovery` blocks previously emitted
+  by the role when it manages an existing configuration.
 - Supports UniFi presence integration credentials sourced from file, generated fallback, or provided variables.
 
 ## Key Variables

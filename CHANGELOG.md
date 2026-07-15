@@ -164,6 +164,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wagtail_deploy` rsync deployments now exclude the managed `.env` file and collected `/staticfiles` directory, preventing failed deploys from clobbering runtime secrets or deleting WhiteNoise assets before `collectstatic` runs.
 
 ### Changed
+- `homeassistant_deploy` now performs its read-only Python, Home Assistant, and
+  Matter Server inspection commands during Ansible check mode, preventing
+  upgrade preflights from failing on missing skipped-command output, and its
+  temporary API helper cleanup no longer produces false idempotency changes.
+  Virtualenv inspection and API helper commands now run as the Home Assistant
+  service user, with ownership reconciliation to prevent root-owned bytecode
+  caches from blocking runtime integration installs.
+- `homeassistant_deploy` no longer renders the removed `system_monitor` and
+  `discovery` YAML integrations and migrates the role-generated legacy blocks
+  out of existing managed configurations.
 - `os_apt_maintenance` endpoint responses now derive `$.reboot_required` from the live `/var/run/reboot-required` marker so monitoring clears immediately after a successful reboot.
 - `mastodon_backup` now excludes Mastodon's refetchable `public/system/cache` subtree from local media backups by default and records the media exclude list in backup manifests.
 - `mastodon_backup` now runs `pg_dump` as the backup owner by default so password-authenticated dumps can write into root-owned backup directories.
