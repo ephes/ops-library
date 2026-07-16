@@ -4,7 +4,9 @@ Deploy the Daybook agent-session shipper on macOS as a periodic `launchd`
 `LaunchDaemon`. The role validates an existing `uv` binary, keeps a pinned
 Daybook checkout on the target, runs `uv sync`, installs the `trufflehog`
 Homebrew package, renders a secret environment file, and schedules
-`daybook sessions ship`.
+`daybook sessions ship`. It can also install the optional Archive quote
+classifier launchd job that runs `daybook archive classify-quotes` from the same
+checkout and environment.
 
 Run the role with facts enabled. It validates the macOS target, rejects
 placeholder credentials, and expects real MinIO credentials to come from a
@@ -18,6 +20,9 @@ private control repo such as ops-control SOPS.
 - `/etc/daybook-sessions/sessions.env`
 - `/etc/daybook-sessions/ship-sessions.sh`
 - `/Library/LaunchDaemons/de.wersdoerfer.daybook.sessions.plist`
+- optional `/etc/daybook-sessions/archive-quotes.env`
+- optional `/etc/daybook-sessions/classify-archive-quotes.sh`
+- optional `/Library/LaunchDaemons/de.wersdoerfer.daybook.archive-quotes.plist`
 - launchd stdout/stderr logs under `/var/log/daybook-sessions/`
 - the default shipper watermark state path at
   `~/.daybook/sessions-shipped.json`
@@ -41,6 +46,15 @@ daybook_sessions_state_path: "{{ daybook_sessions_service_home }}/.daybook/sessi
 daybook_sessions_brew_packages:
   - "trufflehog"
 daybook_sessions_redact_files: []
+daybook_archive_quote_classifier_enabled: false
+daybook_archive_quote_classifier_state: "s3://agent-sessions/archive-quote-classifier.json"
+daybook_archive_quote_classifier_env_file: "{{ daybook_sessions_config_dir }}/archive-quotes.env"
+daybook_archive_quote_classifier_cmd: "CHANGEME"
+daybook_archive_quote_classifier_probe_enabled: true
+daybook_archive_quote_classifier_probe_prompt: "Return exactly OK."
+daybook_archive_quote_classifier_probe_timeout_seconds: 120
+daybook_archive_url: "CHANGEME"
+daybook_archive_token: "CHANGEME"
 ```
 
 These values must be supplied by the private control repo:
@@ -50,6 +64,11 @@ These values must be supplied by the private control repo:
 - `daybook_sessions_aws_endpoint_url_s3`
 - `daybook_sessions_aws_access_key_id`
 - `daybook_sessions_aws_secret_access_key`
+- `daybook_archive_url`, `daybook_archive_token`, and
+  `daybook_archive_quote_classifier_cmd` when the optional quote classifier is
+  enabled. The role probes this command by default during deploy, which verifies
+  both the executable and provider/subscription authentication before launchd is
+  enabled.
 
 Use a dedicated least-privilege MinIO account scoped to the
 `agent-sessions` bucket. Do not pass the MinIO admin key to this role.
@@ -77,6 +96,11 @@ daybook_sessions_log_dir: "/Users/jochen/Library/Logs/daybook-sessions"
 daybook_sessions_stdout_log: "/Users/jochen/Library/Logs/daybook-sessions/ship.log"
 daybook_sessions_stderr_log: "/Users/jochen/Library/Logs/daybook-sessions/ship.err.log"
 daybook_sessions_launchd_plist_path: "/Users/jochen/Library/LaunchAgents/de.wersdoerfer.daybook.sessions.plist"
+daybook_archive_quote_classifier_launcher_path: "/Users/jochen/.config/daybook-sessions/classify-archive-quotes.sh"
+daybook_archive_quote_classifier_env_file: "/Users/jochen/.config/daybook-sessions/archive-quotes.env"
+daybook_archive_quote_classifier_stdout_log: "/Users/jochen/Library/Logs/daybook-sessions/archive-quotes.log"
+daybook_archive_quote_classifier_stderr_log: "/Users/jochen/Library/Logs/daybook-sessions/archive-quotes.err.log"
+daybook_archive_quote_classifier_launchd_plist_path: "/Users/jochen/Library/LaunchAgents/de.wersdoerfer.daybook.archive-quotes.plist"
 ```
 
 ## Redaction Notes

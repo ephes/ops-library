@@ -40,6 +40,29 @@ daybook_sessions_launchd_run_at_load: true
 daybook_sessions_schedule_interval_seconds: 1800
 daybook_sessions_launchd_path: "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
+daybook_archive_quote_classifier_enabled: false
+daybook_archive_quote_classifier_launchd_label: "de.wersdoerfer.daybook.archive-quotes"
+daybook_archive_quote_classifier_launchd_plist_path: "/Library/LaunchDaemons/{{ daybook_archive_quote_classifier_launchd_label }}.plist"
+daybook_archive_quote_classifier_launcher_path: "{{ daybook_sessions_config_dir }}/classify-archive-quotes.sh"
+daybook_archive_quote_classifier_env_file: "{{ daybook_sessions_config_dir }}/archive-quotes.env"
+daybook_archive_quote_classifier_stdout_log: "{{ daybook_sessions_log_dir }}/archive-quotes.log"
+daybook_archive_quote_classifier_stderr_log: "{{ daybook_sessions_log_dir }}/archive-quotes.err.log"
+daybook_archive_quote_classifier_run_at_load: false
+daybook_archive_quote_classifier_start_calendar:
+  - Hour: 7
+    Minute: 20
+  - Hour: 19
+    Minute: 20
+daybook_archive_quote_classifier_since_days: 14
+daybook_archive_quote_classifier_limit: 25
+daybook_archive_quote_classifier_state: "s3://agent-sessions/archive-quote-classifier.json"
+daybook_archive_quote_classifier_cmd: "CHANGEME"
+daybook_archive_quote_classifier_probe_enabled: true
+daybook_archive_quote_classifier_probe_prompt: "Return exactly OK."
+daybook_archive_quote_classifier_probe_timeout_seconds: 120
+daybook_archive_url: "CHANGEME"
+daybook_archive_token: "CHANGEME"
+
 daybook_sessions_brew_bin: ""
 daybook_sessions_brew_user: ""
 daybook_sessions_brew_update: false

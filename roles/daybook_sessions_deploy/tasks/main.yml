@@ -35,6 +35,27 @@
       - daybook_sessions_launchd_plist_path | string | trim | length > 0
       - daybook_sessions_schedule_interval_seconds | int > 0
       - daybook_sessions_launchd_path | string | trim | length > 0
+      - daybook_archive_quote_classifier_enabled | type_debug == 'bool'
+      - not daybook_archive_quote_classifier_enabled or daybook_archive_quote_classifier_launchd_label | string | trim | length > 0
+      - not daybook_archive_quote_classifier_enabled or daybook_archive_quote_classifier_launchd_plist_path | string | trim | length > 0
+      - not daybook_archive_quote_classifier_enabled or daybook_archive_quote_classifier_launcher_path | string | trim | length > 0
+      - not daybook_archive_quote_classifier_enabled or daybook_archive_quote_classifier_env_file | string | trim | length > 0
+      - not daybook_archive_quote_classifier_enabled or daybook_archive_quote_classifier_stdout_log | string | trim | length > 0
+      - not daybook_archive_quote_classifier_enabled or daybook_archive_quote_classifier_stderr_log | string | trim | length > 0
+      - not daybook_archive_quote_classifier_enabled or daybook_archive_quote_classifier_start_calendar is sequence
+      - not daybook_archive_quote_classifier_enabled or daybook_archive_quote_classifier_start_calendar is not string
+      - not daybook_archive_quote_classifier_enabled or daybook_archive_quote_classifier_since_days | int > 0
+      - not daybook_archive_quote_classifier_enabled or daybook_archive_quote_classifier_limit | int > 0
+      - not daybook_archive_quote_classifier_enabled or daybook_archive_quote_classifier_state | string | trim | length > 0
+      - not daybook_archive_quote_classifier_enabled or daybook_archive_quote_classifier_cmd | string | trim | length > 0
+      - not daybook_archive_quote_classifier_enabled or daybook_archive_quote_classifier_cmd != "CHANGEME"
+      - not daybook_archive_quote_classifier_enabled or daybook_archive_quote_classifier_probe_enabled | type_debug == 'bool'
+      - not daybook_archive_quote_classifier_enabled or daybook_archive_quote_classifier_probe_prompt | string | trim | length > 0
+      - not daybook_archive_quote_classifier_enabled or daybook_archive_quote_classifier_probe_timeout_seconds | int > 0
+      - not daybook_archive_quote_classifier_enabled or daybook_archive_url | string | trim | length > 0
+      - not daybook_archive_quote_classifier_enabled or daybook_archive_url != "CHANGEME"
+      - not daybook_archive_quote_classifier_enabled or daybook_archive_token | string | trim | length > 0
+      - not daybook_archive_quote_classifier_enabled or daybook_archive_token != "CHANGEME"
       - daybook_sessions_brew_packages is sequence
       - daybook_sessions_brew_packages is not string
       - (daybook_sessions_path | string | trim | regex_search('^s3://')) is not none
@@ -191,6 +212,17 @@
       mode: "0755"
   when: daybook_sessions_enabled | bool
 
+- name: runtime | Ensure archive quote classifier launchd directory exists
+  ansible.builtin.file:
+    path: "{{ daybook_archive_quote_classifier_launchd_plist_path | dirname }}"
+    state: directory
+    owner: "{{ (daybook_sessions_launchd_scope == 'system') | ternary('root', daybook_sessions_service_user) }}"
+    group: "{{ (daybook_sessions_launchd_scope == 'system') | ternary('wheel', daybook_sessions_service_group) }}"
+    mode: "0755"
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_archive_quote_classifier_enabled | bool
+
 - name: runtime | Ensure launchd log files exist
   ansible.builtin.file:
     path: "{{ item }}"
@@ -198,9 +230,14 @@
     owner: "{{ daybook_sessions_service_user }}"
     group: "{{ daybook_sessions_service_group }}"
     mode: "0644"
-  loop:
-    - "{{ daybook_sessions_stdout_log }}"
-    - "{{ daybook_sessions_stderr_log }}"
+  loop: >-
+    {{
+      [daybook_sessions_stdout_log, daybook_sessions_stderr_log]
+      + (
+        [daybook_archive_quote_classifier_stdout_log, daybook_archive_quote_classifier_stderr_log]
+        if daybook_archive_quote_classifier_enabled else []
+      )
+    }}
   when: daybook_sessions_enabled | bool
 
 - name: source | Clone or update Daybook checkout
@@ -236,6 +273,35 @@
     or 'Built' in ((daybook_sessions_uv_sync.stdout | default('')) ~ (daybook_sessions_uv_sync.stderr | default('')))
   when: daybook_sessions_enabled | bool
 
+- name: runtime | Probe archive quote classifier command
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail &&
+      printf '%s\n' {{ daybook_archive_quote_classifier_probe_prompt | quote }} |
+      {{ daybook_archive_quote_classifier_cmd }}
+    executable: /bin/bash
+  environment:
+    PATH: "{{ daybook_sessions_launchd_path }}"
+    HOME: "{{ daybook_sessions_service_home }}"
+    USER: "{{ daybook_sessions_service_user }}"
+    LOGNAME: "{{ daybook_sessions_service_user }}"
+    XDG_CONFIG_HOME: "{{ daybook_sessions_service_home }}/.config"
+    XDG_CACHE_HOME: "{{ daybook_sessions_service_home }}/.cache"
+    XDG_DATA_HOME: "{{ daybook_sessions_service_home }}/.local/share"
+  become: "{{ ansible_user_id != daybook_sessions_service_user }}"
+  become_user: "{{ daybook_sessions_service_user }}"
+  become_flags: "-i"
+  register: daybook_archive_quote_classifier_probe
+  async: "{{ daybook_archive_quote_classifier_probe_timeout_seconds | int }}"
+  poll: 1
+  changed_when: false
+  failed_when: daybook_archive_quote_classifier_probe.rc != 0 or daybook_archive_quote_classifier_probe.stdout | trim != 'OK'
+  no_log: true
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_archive_quote_classifier_enabled | bool
+    - daybook_archive_quote_classifier_probe_enabled | bool
+
 - name: cleanup | Remove legacy by-hand Daybook session runner
   ansible.builtin.file:
     path: "{{ item }}"
@@ -253,6 +319,19 @@
   register: daybook_sessions_env_template
   no_log: true
   when: daybook_sessions_enabled | bool
+
+- name: config | Render archive quote classifier environment file
+  ansible.builtin.template:
+    src: archive-quotes.env.j2
+    dest: "{{ daybook_archive_quote_classifier_env_file }}"
+    owner: "{{ daybook_sessions_service_user }}"
+    group: "{{ daybook_sessions_service_group }}"
+    mode: "0600"
+  register: daybook_archive_quote_classifier_env_template
+  no_log: true
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_archive_quote_classifier_enabled | bool
 
 - name: config | Render Daybook sessions launchd launcher
   ansible.builtin.template:
@@ -273,6 +352,30 @@
     mode: "0644"
   register: daybook_sessions_launchd_template
   when: daybook_sessions_enabled | bool
+
+- name: config | Render archive quote classifier launchd launcher
+  ansible.builtin.template:
+    src: classify-archive-quotes.sh.j2
+    dest: "{{ daybook_archive_quote_classifier_launcher_path }}"
+    owner: "{{ (daybook_sessions_launchd_scope == 'system') | ternary('root', daybook_sessions_service_user) }}"
+    group: "{{ (daybook_sessions_launchd_scope == 'system') | ternary('wheel', daybook_sessions_service_group) }}"
+    mode: "0755"
+  register: daybook_archive_quote_classifier_launcher_template
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_archive_quote_classifier_enabled | bool
+
+- name: launchd | Render archive quote classifier plist
+  ansible.builtin.template:
+    src: archive-quotes.launchd.plist.j2
+    dest: "{{ daybook_archive_quote_classifier_launchd_plist_path }}"
+    owner: "{{ (daybook_sessions_launchd_scope == 'system') | ternary('root', daybook_sessions_service_user) }}"
+    group: "{{ (daybook_sessions_launchd_scope == 'system') | ternary('wheel', daybook_sessions_service_group) }}"
+    mode: "0644"
+  register: daybook_archive_quote_classifier_launchd_template
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_archive_quote_classifier_enabled | bool
 
 - name: launchd | Resolve service user uid for user LaunchAgent
   ansible.builtin.command:
@@ -302,6 +405,38 @@
     - daybook_sessions_enabled | bool
     - daybook_sessions_launchd_manage_state | bool
     - daybook_sessions_launchd_scope == 'user'
+
+- name: launchd | Check disabled archive quote classifier launchd unit status
+  ansible.builtin.command: "launchctl print {{ daybook_sessions_launchd_domain }}/{{ daybook_archive_quote_classifier_launchd_label }}"
+  register: daybook_archive_quote_classifier_disabled_launchd_status
+  changed_when: false
+  failed_when: false
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_launchd_manage_state | bool
+    - not (daybook_archive_quote_classifier_enabled | bool)
+
+- name: launchd | Unload disabled archive quote classifier unit
+  ansible.builtin.command: "launchctl bootout {{ daybook_sessions_launchd_domain }} {{ daybook_archive_quote_classifier_launchd_plist_path }}"
+  changed_when: false
+  failed_when: false
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_launchd_manage_state | bool
+    - not (daybook_archive_quote_classifier_enabled | bool)
+    - daybook_archive_quote_classifier_disabled_launchd_status.rc == 0
+
+- name: config | Remove disabled archive quote classifier files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ daybook_archive_quote_classifier_launchd_plist_path }}"
+    - "{{ daybook_archive_quote_classifier_launcher_path }}"
+    - "{{ daybook_archive_quote_classifier_env_file }}"
+  when:
+    - daybook_sessions_enabled | bool
+    - not (daybook_archive_quote_classifier_enabled | bool)
 
 - name: launchd | Check Daybook sessions launchd unit status
   ansible.builtin.command: "launchctl print {{ daybook_sessions_launchd_domain }}/{{ daybook_sessions_launchd_label }}"
@@ -355,3 +490,62 @@
       or daybook_sessions_source_checkout.changed
       or daybook_sessions_uv_sync.changed
       or daybook_sessions_launchd_status.rc != 0
+
+- name: launchd | Check archive quote classifier launchd unit status
+  ansible.builtin.command: "launchctl print {{ daybook_sessions_launchd_domain }}/{{ daybook_archive_quote_classifier_launchd_label }}"
+  register: daybook_archive_quote_classifier_launchd_status
+  changed_when: false
+  failed_when: false
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_launchd_manage_state | bool
+    - daybook_archive_quote_classifier_enabled | bool
+
+- name: launchd | Unload existing archive quote classifier unit before bootstrap
+  ansible.builtin.command: "launchctl bootout {{ daybook_sessions_launchd_domain }} {{ daybook_archive_quote_classifier_launchd_plist_path }}"
+  changed_when: false
+  failed_when: false
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_launchd_manage_state | bool
+    - daybook_archive_quote_classifier_enabled | bool
+    - daybook_archive_quote_classifier_launchd_template.changed
+    - daybook_archive_quote_classifier_launchd_status.rc == 0
+
+- name: launchd | Bootstrap archive quote classifier unit
+  ansible.builtin.command: "launchctl bootstrap {{ daybook_sessions_launchd_domain }} {{ daybook_archive_quote_classifier_launchd_plist_path }}"
+  register: daybook_archive_quote_classifier_launchd_bootstrap
+  changed_when: daybook_archive_quote_classifier_launchd_bootstrap.rc == 0
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_launchd_manage_state | bool
+    - daybook_archive_quote_classifier_enabled | bool
+    - daybook_archive_quote_classifier_launchd_template.changed or daybook_archive_quote_classifier_launchd_status.rc != 0
+
+- name: launchd | Enable archive quote classifier unit
+  ansible.builtin.command: "launchctl enable {{ daybook_sessions_launchd_domain }}/{{ daybook_archive_quote_classifier_launchd_label }}"
+  register: daybook_archive_quote_classifier_launchd_enable
+  changed_when: daybook_archive_quote_classifier_launchd_enable.rc == 0
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_launchd_manage_state | bool
+    - daybook_archive_quote_classifier_enabled | bool
+    - daybook_archive_quote_classifier_launchd_template.changed or daybook_archive_quote_classifier_launchd_status.rc != 0
+
+- name: launchd | Kickstart archive quote classifier unit after deploy changes
+  ansible.builtin.command: "launchctl kickstart -k {{ daybook_sessions_launchd_domain }}/{{ daybook_archive_quote_classifier_launchd_label }}"
+  register: daybook_archive_quote_classifier_launchd_kickstart
+  changed_when: daybook_archive_quote_classifier_launchd_kickstart.rc == 0
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_launchd_manage_state | bool
+    - daybook_archive_quote_classifier_enabled | bool
+    - daybook_archive_quote_classifier_run_at_load | bool
+    - >-
+      daybook_archive_quote_classifier_launchd_template.changed
+      or daybook_archive_quote_classifier_launcher_template.changed
+      or daybook_archive_quote_classifier_env_template.changed
+      or daybook_sessions_env_template.changed
+      or daybook_sessions_source_checkout.changed
+      or daybook_sessions_uv_sync.changed
+      or daybook_archive_quote_classifier_launchd_status.rc != 0
