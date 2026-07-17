@@ -1,5 +1,5 @@
 ---
-# Refresh cached OpenClaw session state when the managed slash-skill set changes.
+# Refresh cached OpenClaw session state when managed skills change.
 
 - name: session_state | Build managed slash-skill manifest
   ansible.builtin.set_fact:
@@ -21,14 +21,29 @@
         | list
       }}
 
-- name: session_state | Render managed slash-skill manifest
+- name: session_state | Build managed workspace-skill manifest
+  ansible.builtin.set_fact:
+    _openclaw_managed_workspace_skills: >-
+      {{
+        openclaw_workspace_skills
+        | map(attribute='name')
+        | map('string')
+        | map('trim')
+        | reject('equalto', '')
+        | unique
+        | sort
+        | list
+      }}
+
+- name: session_state | Render managed skills manifest
   ansible.builtin.copy:
     # Bump the manifest version when reset semantics change and existing sessions should be re-rotated.
     content: >-
       {{
         {
-          "version": 2,
-          "managed_slash_skills": _openclaw_managed_slash_skills
+          "version": 3,
+          "managed_slash_skills": _openclaw_managed_slash_skills,
+          "managed_workspace_skills": _openclaw_managed_workspace_skills
         }
         | to_nice_json
       }}{{ '\n' }}
@@ -43,7 +58,7 @@
     path: "{{ openclaw_session_state_path }}"
   register: _openclaw_session_state_stat
 
-- name: session_state | Reset session bindings when managed slash skills changed
+- name: session_state | Reset session bindings when managed skills changed
   ansible.builtin.command:
     argv:
       - python3
@@ -87,5 +102,11 @@
       | regex_search('"updated_entries"\\s*:\\s*[1-9][0-9]*')
     ) is not none
   when:
-    - _openclaw_managed_skills_manifest_write is changed
+    - >-
+      (_openclaw_managed_skills_manifest_write is changed)
+      or
+      (
+        _openclaw_workspace_skill_files_write is defined
+        and (_openclaw_workspace_skill_files_write is changed)
+      )
     - _openclaw_session_state_stat.stat.exists

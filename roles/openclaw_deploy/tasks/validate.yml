@@ -4,7 +4,7 @@
     that:
       - openclaw_version | length > 0
     fail_msg: >-
-      openclaw_version is required (e.g. "v2026.6.11"). Set it in the playbook or inventory.
+      openclaw_version is required (e.g. "v2026.7.1"). Set it in the playbook or inventory.
 
 - name: validate | Core OpenClaw settings
   ansible.builtin.assert:
@@ -21,6 +21,49 @@
       - openclaw_extra_env is mapping
       - openclaw_extra_env is not string
     fail_msg: "openclaw_extra_env must be a mapping of environment variables."
+
+- name: validate | Managed workspace skills collection
+  ansible.builtin.assert:
+    that:
+      - openclaw_workspace_skills is sequence
+      - openclaw_workspace_skills is not string
+    fail_msg: "openclaw_workspace_skills must be a list."
+
+- name: validate | Managed workspace skill entries
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - item.name is defined
+      - item.name | string is regex('^[a-z0-9][a-z0-9-]{0,63}$')
+      - item.files is defined
+      - item.files is sequence
+      - item.files is not string
+      - item.files | length > 0
+    fail_msg: >-
+      Each openclaw_workspace_skills entry requires a lowercase name containing
+      only letters, digits, and hyphens plus a non-empty files list.
+  loop: "{{ openclaw_workspace_skills }}"
+  loop_control:
+    label: "{{ item.name | default('invalid') }}"
+
+- name: validate | Managed workspace skill files
+  ansible.builtin.assert:
+    that:
+      - item.1 is mapping
+      - item.1.src is defined
+      - item.1.src | string | trim | length > 0
+      - item.1.dest is defined
+      - item.1.dest | string | trim | length > 0
+      - not (item.1.dest | string).startswith('/')
+      - "'..' not in (item.1.dest | string).split('/')"
+      - item.1.mode | default('0640') | string is regex('^0[0-7]{3}$')
+    fail_msg: >-
+      Each managed workspace skill file requires a controller-local src, a
+      relative traversal-free dest, and an optional four-digit octal mode.
+  loop: "{{ openclaw_workspace_skills | subelements('files') }}"
+  loop_control:
+    label: >-
+      {{ item.0.name | default('invalid') }}/{{ item.1.dest | default('invalid') }}
 
 - name: validate | Gateway token is set
   ansible.builtin.assert:
@@ -652,7 +695,11 @@
     that:
       - openclaw_weeknotes_backend in ['local', 's3']
       - openclaw_weeknotes_reminder_command | length > 0
-    fail_msg: "openclaw_weeknotes_backend must be either 'local' or 's3'."
+      - openclaw_weeknotes_max_payload_length | int > 0
+    fail_msg: >-
+      openclaw_weeknotes_backend must be either 'local' or 's3',
+      openclaw_weeknotes_reminder_command must not be empty, and
+      openclaw_weeknotes_max_payload_length must be positive.
   when: openclaw_weeknotes_enabled | bool
 
 - name: validate | Weeknotes S3 settings when backend is s3

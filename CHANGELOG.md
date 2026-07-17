@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- `openclaw_deploy` now accepts bounded weeknotes write payloads up to 4,000
+  characters by default, so normal long-form voice-note transcriptions are not
+  rejected by the journal handler's previous 500-character ceiling.
+- `openclaw_deploy` now installs version-pinned Codex plugins over host
+  networking, avoiding npm resolution failures on hosts where Docker's
+  transient default-bridge DNS cannot reach the configured resolver.
 - `daybook_sessions_deploy` now configures Daybook's external quote lifecycle
   JSON state alongside the unused/used Markdown locations, exposes all three to
   classifier and handoff environments, and validates distinct safe locations on
@@ -48,6 +54,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Update your Ansible installation before upgrading
 
 ### Added
+- `openclaw_deploy` can now restore source-controlled workspace skills from
+  controller-local files, including executable support scripts, while
+  preserving interactive unmanaged skills and refreshing cached session skill
+  snapshots whenever managed skill content changes.
 - `daybook_sessions_deploy` now wires the browser-backed Archive quote
   classifier with validated Obsidian lifecycle files, a Helium executable,
   headless browser timing controls, a guarded dedicated profile, locked
