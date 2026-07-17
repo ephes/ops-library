@@ -11,7 +11,7 @@ setup:
     @./setup-pre-commit.sh
 
 # Run the default contributor validation path
-test: venv test-roles test-heis-production-backup lint docs-build docs-lint
+test: venv test-roles test-daybook-sessions-deploy test-heis-production-backup lint docs-build docs-lint
     @echo ""
     @echo "✅ Validation completed!"
 
@@ -29,6 +29,10 @@ test-roles: venv
 test-role ROLE: venv
     @echo "Testing role: {{ROLE}}"
     @UV_PROJECT_ENVIRONMENT=.venv uv run ./test_roles.py {{ROLE}}
+
+test-daybook-sessions-deploy: venv
+    @echo "Testing Daybook sessions deploy behavior..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_daybook_sessions_deploy.yml
 
 test-heis-production-backup: venv
     @echo "Testing Heis production backup safety contracts..."
