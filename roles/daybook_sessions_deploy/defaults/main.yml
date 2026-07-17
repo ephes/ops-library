@@ -48,6 +48,7 @@ daybook_archive_quote_classifier_env_file: "{{ daybook_sessions_config_dir }}/ar
 daybook_archive_quote_classifier_stdout_log: "{{ daybook_sessions_log_dir }}/archive-quotes.log"
 daybook_archive_quote_classifier_stderr_log: "{{ daybook_sessions_log_dir }}/archive-quotes.err.log"
 daybook_archive_quote_classifier_run_at_load: false
+daybook_archive_quote_classifier_throttle_interval_seconds: 60
 daybook_archive_quote_classifier_start_calendar:
   - Hour: 7
     Minute: 20
@@ -62,6 +63,14 @@ daybook_archive_quote_classifier_probe_prompt: "Return exactly OK."
 daybook_archive_quote_classifier_probe_timeout_seconds: 120
 daybook_archive_url: "CHANGEME"
 daybook_archive_token: "CHANGEME"
+daybook_quotes_unused_path: "CHANGEME"
+daybook_quotes_used_path: "CHANGEME"
+daybook_archive_browser_executable: "/Applications/Helium.app/Contents/MacOS/Helium"
+daybook_archive_browser_user_data_dir: "{{ daybook_sessions_service_home }}/.daybook/archive-quote-browser"
+daybook_archive_browser_headless: true
+daybook_archive_browser_launch_timeout_seconds: 30
+daybook_archive_browser_navigation_timeout_seconds: 30
+daybook_archive_browser_render_wait_seconds: 1
 
 daybook_sessions_brew_bin: ""
 daybook_sessions_brew_user: ""

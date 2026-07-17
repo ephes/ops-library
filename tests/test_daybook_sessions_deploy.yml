@@ -16,6 +16,7 @@
     rendered_archive_env: "/tmp/test-daybook-archive-quotes.env"
     rendered_archive_launcher: "/tmp/test-daybook-archive-quotes.sh"
     rendered_archive_plist: "/tmp/test-daybook-archive-quotes.plist"
+    rendered_headed_archive_plist: "/tmp/test-daybook-archive-quotes-headed.plist"
 
   tasks:
     - name: Verify role files exist
@@ -91,6 +92,26 @@
           - not daybook_archive_quote_classifier_enabled | bool
           - daybook_archive_quote_classifier_state == "s3://agent-sessions/archive-quote-classifier.json"
           - daybook_archive_quote_classifier_probe_timeout_seconds == 120
+          - daybook_archive_quote_classifier_throttle_interval_seconds == 60
+          - daybook_quotes_unused_path == "CHANGEME"
+          - daybook_quotes_used_path == "CHANGEME"
+          - daybook_archive_browser_executable == "/Applications/Helium.app/Contents/MacOS/Helium"
+          - daybook_archive_browser_user_data_dir == "/Users/CHANGEME/.daybook/archive-quote-browser"
+          - daybook_archive_browser_headless | bool
+          - daybook_archive_browser_launch_timeout_seconds == 30
+          - daybook_archive_browser_navigation_timeout_seconds == 30
+          - daybook_archive_browser_render_wait_seconds == 1
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('Refuse an existing unmarked browser profile')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('Validate classifier filesystem access as the service user')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('Verify pinned Daybook commit exists locally for no-fetch mode')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('Check out pinned Daybook commit without fetching')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search("'status', '--porcelain', '--untracked-files=no'")
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search("'ls-files', '--others', '--exclude-standard'")
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('daybook_sessions_repo_ref.*regex_search')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('os.path.realpath')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('modification_time.*preserve')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search("daybook_archive_browser_headless or daybook_sessions_launchd_scope == 'user'")
 
     - name: Set template test values
       ansible.builtin.set_fact:
@@ -189,6 +210,14 @@
         daybook_archive_quote_classifier_launcher_path: "/etc/daybook-sessions/classify-archive-quotes.sh"
         daybook_archive_quote_classifier_stdout_log: "/var/log/daybook-sessions/archive-quotes.log"
         daybook_archive_quote_classifier_stderr_log: "/var/log/daybook-sessions/archive-quotes.err.log"
+        daybook_quotes_unused_path: "/Users/jochen/vault/Quotes Unused.md"
+        daybook_quotes_used_path: "/Users/jochen/vault/Quotes Used.md"
+        daybook_archive_browser_executable: "/Applications/Helium.app/Contents/MacOS/Helium"
+        daybook_archive_browser_user_data_dir: "/Users/jochen/.daybook/archive-quote-browser"
+        daybook_archive_browser_headless: true
+        daybook_archive_browser_launch_timeout_seconds: 35
+        daybook_archive_browser_navigation_timeout_seconds: 45
+        daybook_archive_browser_render_wait_seconds: 2
 
     - name: Render archive quote classifier environment template
       ansible.builtin.template:
@@ -226,12 +255,26 @@
           - "'DAYBOOK_ARCHIVE_URL=https://archive.home.example' in rendered_archive_env_text"
           - "'DAYBOOK_ARCHIVE_TOKEN=archive-token' in rendered_archive_env_text"
           - '"DAYBOOK_QUOTE_CLASSIFIER_CMD=''pi -p --no-tools''" in rendered_archive_env_text'
+          - '"DAYBOOK_QUOTES_UNUSED_PATH=''/Users/jochen/vault/Quotes Unused.md''" in rendered_archive_env_text'
+          - '"DAYBOOK_QUOTES_USED_PATH=''/Users/jochen/vault/Quotes Used.md''" in rendered_archive_env_text'
+          - "'DAYBOOK_ARCHIVE_BROWSER_EXECUTABLE=/Applications/Helium.app/Contents/MacOS/Helium' in rendered_archive_env_text"
+          - "'DAYBOOK_ARCHIVE_BROWSER_USER_DATA_DIR=/Users/jochen/.daybook/archive-quote-browser' in rendered_archive_env_text"
+          - "'DAYBOOK_ARCHIVE_BROWSER_HEADLESS=true' in rendered_archive_env_text"
+          - "'DAYBOOK_ARCHIVE_BROWSER_LAUNCH_TIMEOUT_SECONDS=35' in rendered_archive_env_text"
+          - "'DAYBOOK_ARCHIVE_BROWSER_NAVIGATION_TIMEOUT_SECONDS=45' in rendered_archive_env_text"
+          - "'DAYBOOK_ARCHIVE_BROWSER_RENDER_WAIT_SECONDS=2' in rendered_archive_env_text"
           - "'/etc/daybook-sessions/archive-quotes.env' in rendered_sessions_env_text"
           - rendered_archive_launcher_text is search('/usr/local/bin/uv run --frozen --no-dev daybook archive classify-quotes')
+          - rendered_archive_launcher_text is search('export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1')
           - rendered_archive_launcher_text is search('source /etc/daybook-sessions/archive-quotes.env')
           - "'<string>de.wersdoerfer.daybook.archive-quotes</string>' in rendered_archive_plist_text"
           - "'<string>/etc/daybook-sessions/classify-archive-quotes.sh</string>' in rendered_archive_plist_text"
           - "'<key>StartCalendarInterval</key>' in rendered_archive_plist_text"
+          - "'<string>Background</string>' in rendered_archive_plist_text"
+          - "'<key>LowPriorityIO</key>' in rendered_archive_plist_text"
+          - "'<key>LimitLoadToSessionType</key>' not in rendered_archive_plist_text"
+          - "'<key>ThrottleInterval</key>' in rendered_archive_plist_text"
+          - "'<integer>60</integer>' in rendered_archive_plist_text"
           - "'<key>UserName</key>' in rendered_archive_plist_text"
           - "'<key>HOME</key>' in rendered_archive_plist_text"
           - "'<string>/Users/jochen</string>' in rendered_archive_plist_text"
@@ -241,6 +284,30 @@
         rendered_sessions_env_text: "{{ rendered_archive_files.results[1].content | b64decode }}"
         rendered_archive_launcher_text: "{{ rendered_archive_files.results[2].content | b64decode }}"
         rendered_archive_plist_text: "{{ rendered_archive_files.results[3].content | b64decode }}"
+
+    - name: Switch Archive classifier to headed user LaunchAgent mode
+      ansible.builtin.set_fact:
+        daybook_sessions_launchd_scope: "user"
+        daybook_archive_browser_headless: false
+
+    - name: Render headed user Archive quote classifier launchd template
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/archive-quotes.launchd.plist.j2"
+        dest: "{{ rendered_headed_archive_plist }}"
+
+    - name: Read headed user Archive quote classifier plist
+      ansible.builtin.slurp:
+        path: "{{ rendered_headed_archive_plist }}"
+      register: rendered_headed_archive_plist_file
+
+    - name: Assert headed browser job is restricted to the Aqua GUI session
+      ansible.builtin.assert:
+        that:
+          - "'<key>LimitLoadToSessionType</key>' in rendered_headed_archive_plist_text"
+          - "'<string>Aqua</string>' in rendered_headed_archive_plist_text"
+          - "'<key>UserName</key>' not in rendered_headed_archive_plist_text"
+      vars:
+        rendered_headed_archive_plist_text: "{{ rendered_headed_archive_plist_file.content | b64decode }}"
 
     - name: Clean up rendered files
       ansible.builtin.file:
@@ -254,3 +321,4 @@
         - "{{ rendered_archive_env }}"
         - "{{ rendered_archive_launcher }}"
         - "{{ rendered_archive_plist }}"
+        - "{{ rendered_headed_archive_plist }}"

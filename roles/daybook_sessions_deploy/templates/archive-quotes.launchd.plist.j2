@@ -10,6 +10,16 @@
   </array>
   <key>WorkingDirectory</key>
   <string>{{ daybook_sessions_checkout_path | e }}</string>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+{% if not (daybook_archive_browser_headless | bool) %}
+  <key>LimitLoadToSessionType</key>
+  <string>Aqua</string>
+{% endif %}
+  <key>ThrottleInterval</key>
+  <integer>{{ daybook_archive_quote_classifier_throttle_interval_seconds | int }}</integer>
 {% if daybook_archive_quote_classifier_run_at_load | bool %}
   <key>RunAtLoad</key>
   <true/>

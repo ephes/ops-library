@@ -3,6 +3,7 @@ set -euo pipefail
 
 export PATH={{ daybook_sessions_launchd_path | quote }}
 export UV_PROJECT_ENVIRONMENT={{ (daybook_sessions_checkout_path ~ '/.venv') | quote }}
+export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 set -a
 # shellcheck disable=SC1090

@@ -23,6 +23,8 @@ private control repo such as ops-control SOPS.
 - optional `/etc/daybook-sessions/archive-quotes.env`
 - optional `/etc/daybook-sessions/classify-archive-quotes.sh`
 - optional `/Library/LaunchDaemons/de.wersdoerfer.daybook.archive-quotes.plist`
+- optional dedicated `~/.daybook/archive-quote-browser` profile directory (never
+  a user's live Helium profile)
 - launchd stdout/stderr logs under `/var/log/daybook-sessions/`
 - the default shipper watermark state path at
   `~/.daybook/sessions-shipped.json`
@@ -53,8 +55,17 @@ daybook_archive_quote_classifier_cmd: "CHANGEME"
 daybook_archive_quote_classifier_probe_enabled: true
 daybook_archive_quote_classifier_probe_prompt: "Return exactly OK."
 daybook_archive_quote_classifier_probe_timeout_seconds: 120
+daybook_archive_quote_classifier_throttle_interval_seconds: 60
 daybook_archive_url: "CHANGEME"
 daybook_archive_token: "CHANGEME"
+daybook_quotes_unused_path: "CHANGEME"
+daybook_quotes_used_path: "CHANGEME"
+daybook_archive_browser_executable: "/Applications/Helium.app/Contents/MacOS/Helium"
+daybook_archive_browser_user_data_dir: "{{ daybook_sessions_service_home }}/.daybook/archive-quote-browser"
+daybook_archive_browser_headless: true
+daybook_archive_browser_launch_timeout_seconds: 30
+daybook_archive_browser_navigation_timeout_seconds: 30
+daybook_archive_browser_render_wait_seconds: 1
 ```
 
 These values must be supplied by the private control repo:
@@ -64,19 +75,37 @@ These values must be supplied by the private control repo:
 - `daybook_sessions_aws_endpoint_url_s3`
 - `daybook_sessions_aws_access_key_id`
 - `daybook_sessions_aws_secret_access_key`
-- `daybook_archive_url`, `daybook_archive_token`, and
-  `daybook_archive_quote_classifier_cmd` when the optional quote classifier is
-  enabled. The role probes this command by default during deploy, which verifies
+- `daybook_archive_url`, `daybook_archive_token`,
+  `daybook_archive_quote_classifier_cmd`, `daybook_quotes_unused_path`, and
+  `daybook_quotes_used_path` when the optional quote classifier is enabled. The
+  role probes the classifier command by default during deploy, which verifies
   both the executable and provider/subscription authentication before launchd is
   enabled.
+
+The quote paths must resolve to distinct existing regular Markdown files; the
+files and their writable parent directories must be owned by the service user.
+The configured browser executable must be a real executable file accessible to
+that user. The browser profile must be an absent/empty directory or an already
+Daybook-marked directory directly below `~/.daybook/`; the role validates its
+real path and rejects symlinks, unsafe marker/lock files, wrong ownership, and
+non-empty unmarked profiles. Never configure or copy a normal Helium/Chromium
+user-data directory. A fresh empty dedicated profile is sufficient for public X
+pages that do not require authentication.
+
+`uv sync --frozen` installs the Python Playwright dependency from `uv.lock` with
+`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`. Daybook launches the configured Helium
+binary, so this role does not install Playwright's bundled Chromium.
 
 Use a dedicated least-privilege MinIO account scoped to the
 `agent-sessions` bucket. Do not pass the MinIO admin key to this role.
 
 Set `daybook_sessions_repo_update: false` only when the private control repo has
-pre-staged the checkout on the target and `daybook_sessions_repo_ref` pins a
-commit that is already present there. The role still validates and checks out
-that pinned ref, but it will not fetch from the remote.
+pre-staged a service-user-owned checkout on the target and
+`daybook_sessions_repo_ref` is the full 40-character commit id already present
+there. The role verifies the checkout and commit locally, always rejects
+untracked files, rejects tracked changes when force is disabled, and uses a
+local detached checkout without any remote operation. A missing checkout or
+object fails instead of cloning or fetching.
 
 ## Launchd Scope
 
@@ -84,8 +113,9 @@ The default `daybook_sessions_launchd_scope: "system"` installs a LaunchDaemon
 under `/Library/LaunchDaemons` and runs as `daybook_sessions_service_user`.
 Use `daybook_sessions_launchd_scope: "user"` for laptops or hosts where the
 control repo deploys as the logged-in service user without passwordless sudo.
-In user mode, override the managed paths to user-writable locations, for
-example:
+Headed browser mode is accepted only in this GUI LaunchAgent scope and the plist
+is restricted to an Aqua session; system LaunchDaemons must remain headless. In
+user mode, override the managed paths to user-writable locations, for example:
 
 ```yaml
 daybook_sessions_launchd_scope: "user"
@@ -109,7 +139,10 @@ daybook_archive_quote_classifier_launchd_plist_path: "/Users/jochen/Library/Laun
 `~/.aws/credentials`, `~/.envrc`, and any colon-separated
 `DAYBOOK_REDACT_FILES`. The launchd job sources the rendered environment file
 before running Daybook, so the injected MinIO credentials are present in the
-process environment and can be redacted from transcripts before upload.
+process environment and can be redacted from transcripts before upload. When
+quote classification is enabled, the role automatically adds
+`archive-quotes.env` to `DAYBOOK_REDACT_FILES`, allowing Daybook's secret-name
+harvester to redact the Archive token without logging or exposing its value.
 
 Set `daybook_sessions_redact_files` to host-local files that contain other API
 keys worth redacting, for example project `.envrc` files:
@@ -136,6 +169,10 @@ daybook_sessions_redact_files:
         daybook_sessions_aws_access_key_id: "{{ daybook_sessions_secrets.aws_access_key_id }}"
         daybook_sessions_aws_secret_access_key: "{{ daybook_sessions_secrets.aws_secret_access_key }}"
 ```
+
+The classifier job runs as a background, low-I/O launchd process with a throttle
+interval and fixed calendar schedule. The profile lock prevents overlapping
+manual and scheduled browser runs; headless mode is the safe unattended default.
 
 Verify on the target with:
 

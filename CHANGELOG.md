@@ -35,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Update your Ansible installation before upgrading
 
 ### Added
+- `daybook_sessions_deploy` now wires the browser-backed Archive quote
+  classifier with validated Obsidian lifecycle files, a Helium executable,
+  headless browser timing controls, a guarded dedicated profile, locked
+  Playwright installation without bundled Chromium, redacted environment
+  shipping, no-fetch pinned-checkout validation, real path/ownership checks,
+  and a background/throttled launchd schedule. Headed mode is restricted to an
+  Aqua user LaunchAgent.
 - `heis_production_backup.py.j2`, a locked service-owned Echoport/FastDeploy
   runner for remote SQLite plus media backup and restore of a dedicated Heis
   production host. It uses exact immutable remote targets, bounded subprocesses,
