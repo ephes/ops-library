@@ -201,6 +201,25 @@
     fail_msg: >-
       openclaw_gateway_config_mode must be a valid octal file mode string (for example "0600").
 
+- name: validate | Telegram streaming settings
+  ansible.builtin.assert:
+    that:
+      - openclaw_telegram_streaming_mode in ['off', 'partial', 'block', 'progress']
+      - openclaw_telegram_streaming_preview_command_text in ['raw', 'status']
+    fail_msg: >-
+      openclaw_telegram_streaming_mode must be off, partial, block, or progress,
+      and openclaw_telegram_streaming_preview_command_text must be raw or status.
+
+- name: validate | Direct-message session scope
+  ansible.builtin.assert:
+    that:
+      - >-
+        openclaw_session_dm_scope in
+        ['main', 'per-peer', 'per-channel-peer', 'per-account-channel-peer']
+    fail_msg: >-
+      openclaw_session_dm_scope must be main, per-peer, per-channel-peer, or
+      per-account-channel-peer.
+
 - name: validate | Gateway trusted proxies list
   ansible.builtin.assert:
     that:

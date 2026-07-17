@@ -52,12 +52,13 @@
         | list
       }}
 
-- name: config | Build gateway config from individual variables
+- name: config | Build gateway access patch
   ansible.builtin.set_fact:
     _openclaw_gateway_access_patch: >-
       {{
         {
           "gateway": {
+            "mode": "local",
             "bind": ("lan" if (openclaw_traefik_enabled | bool) else "loopback"),
             "trustedProxies": openclaw_gateway_trusted_proxies,
             "allowRealIpFallback": openclaw_gateway_allow_real_ip_fallback | bool
@@ -143,8 +144,18 @@
             "telegram": {
               "enabled": openclaw_telegram_enabled | bool,
               "dmPolicy": openclaw_telegram_dm_policy,
-              "allowFrom": openclaw_telegram_allow_from
+              "allowFrom": openclaw_telegram_allow_from,
+              "streaming": {
+                "mode": openclaw_telegram_streaming_mode,
+                "preview": {
+                  "toolProgress": openclaw_telegram_streaming_preview_tool_progress | bool,
+                  "commandText": openclaw_telegram_streaming_preview_command_text
+                }
+              }
             }
+          },
+          "session": {
+            "dmScope": openclaw_session_dm_scope
           },
           "plugins": {
             "entries": _openclaw_managed_plugin_entries
@@ -214,12 +225,27 @@
                 "plugins": {
                   "entries": _openclaw_managed_plugin_entries
                 },
+                "channels": {
+                  "telegram": {
+                    "streaming": {
+                      "mode": openclaw_telegram_streaming_mode,
+                      "preview": {
+                        "toolProgress": openclaw_telegram_streaming_preview_tool_progress | bool,
+                        "commandText": openclaw_telegram_streaming_preview_command_text
+                      }
+                    }
+                  }
+                },
+                "session": {
+                  "dmScope": openclaw_session_dm_scope
+                },
                 "gateway": {
+                  "mode": "local",
                   "bind": ("lan" if (openclaw_traefik_enabled | bool) else "loopback"),
-                "trustedProxies": openclaw_gateway_trusted_proxies,
-                "allowRealIpFallback": openclaw_gateway_allow_real_ip_fallback | bool
+                  "trustedProxies": openclaw_gateway_trusted_proxies,
+                  "allowRealIpFallback": openclaw_gateway_allow_real_ip_fallback | bool
+                }
               }
-            }
             | combine(
                 (
                   {
@@ -423,9 +449,19 @@
 - name: config | Render SOUL.md (system prompt)
   ansible.builtin.copy:
     content: "{{ openclaw_reply_system_prompt }}"
-    dest: "{{ openclaw_data_dir }}/SOUL.md"
+    dest: "{{ openclaw_agent_workspace_dir }}/SOUL.md"
     owner: "1000"
     group: "1000"
     mode: "0644"
   notify: restart openclaw
   when: openclaw_reply_system_prompt | length > 0
+
+- name: config | Render USER.md (shared user profile)
+  ansible.builtin.copy:
+    content: "{{ openclaw_user_profile }}"
+    dest: "{{ openclaw_agent_workspace_dir }}/USER.md"
+    owner: "1000"
+    group: "1000"
+    mode: "0644"
+  notify: restart openclaw
+  when: openclaw_user_profile | length > 0

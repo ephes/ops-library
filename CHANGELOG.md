@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   classifier and handoff environments, and validates distinct safe locations on
   one compatible local or S3 backend without contacting storage; browser
   executable/profile validation remains local and strict.
+- `openclaw_deploy` now writes managed `SOUL.md` and optional `USER.md` content
+  into the active agent workspace instead of the OpenClaw state-directory
+  root, can explicitly manage Telegram preview/tool-progress visibility, and
+  manages DM session scope so shared bot deployments can isolate each sender's
+  conversation history.
+- `openclaw_deploy` now preserves the required `gateway.mode: "local"` setting
+  in seeded and patched gateway configurations, preventing forced config
+  renders from leaving current OpenClaw gateways in a restart loop.
 - The Heis production Echoport runner now quotes compound remote SSH commands
   as a single argument, preventing operators such as `&&` from executing on
   the macmini backup runner instead of the production host.

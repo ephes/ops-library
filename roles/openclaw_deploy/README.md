@@ -45,6 +45,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 - The container binds to `127.0.0.1:18789` by default, with optional Traefik reverse proxy for external access. When Traefik is enabled, the bind host is validated to be loopback.
 - When Traefik is enabled, role-managed config sets `gateway.bind: "lan"` and `gateway.controlUi.allowedOrigins` to `https://<openclaw_traefik_host>` so the host-side reverse proxy can reach the gateway UI safely.
 - Role-managed gateway hardening sets explicit `gateway.trustedProxies`, disables `gateway.allowRealIpFallback`, and configures `gateway.auth.rateLimit`.
+- Role-managed gateway configuration sets `gateway.mode: "local"`, which is required by current OpenClaw releases for a locally hosted gateway.
 - Gateway config (`openclaw.json`) is seeded once on first deploy and not overwritten on subsequent runs (use `openclaw_force_config: true` to overwrite). Existing configs are patched to ensure unused plugins (WhatsApp) are explicitly disabled.
 - Logs are written to a bind-mounted log directory with automatic logrotate.
 - Optional: an authenticated loopback HTTP endpoint (`/.well-known/openclaw-health`) can be enabled for Nyxmon `json-metrics` checks.
@@ -88,6 +89,10 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 | `openclaw_telegram_bot_token` | `""` | Telegram bot token (required when enabled) |
 | `openclaw_telegram_dm_policy` | `allowlist` | DM policy: `allowlist` or `open` |
 | `openclaw_telegram_allow_from` | `[]` | Numeric Telegram user IDs for allowlist |
+| `openclaw_telegram_streaming_mode` | `partial` | Telegram preview streaming mode: `off`, `partial`, `block`, or `progress` |
+| `openclaw_telegram_streaming_preview_tool_progress` | `true` | Show tool-progress lines in Telegram preview messages |
+| `openclaw_telegram_streaming_preview_command_text` | `raw` | Tool command detail in previews: `raw` or status-only `status` |
+| `openclaw_session_dm_scope` | `main` | DM session routing; use `per-channel-peer` for a bot shared by multiple Telegram users |
 
 ### AI Configuration
 
@@ -97,7 +102,9 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 | `openclaw_openrouter_api_key` | `""` | Optional OpenRouter API key (`OPENROUTER_API_KEY`) for provider `openrouter` |
 | `openclaw_ollama_api_key` | `""` | Optional Ollama API key (`OLLAMA_API_KEY`) for provider `ollama`; when `openclaw_ollama_base_url` is set and this is empty, role injects `ollama-local` |
 | `openclaw_ollama_base_url` | `""` | Optional Ollama endpoint (`OLLAMA_BASE_URL`); must be reachable from inside the OpenClaw container |
-| `openclaw_reply_system_prompt` | `You are a concise assistant.` | System prompt for AI replies |
+| `openclaw_agent_workspace_dir` | `{{ openclaw_data_dir }}/workspace` | Persistent agent workspace containing `SOUL.md`, `USER.md`, and memory files |
+| `openclaw_reply_system_prompt` | `""` | Optional content managed in the agent workspace `SOUL.md`; empty preserves the existing file |
+| `openclaw_user_profile` | `""` | Optional content managed in the agent workspace `USER.md`; empty preserves the existing file |
 
 ### Model Routing Policy
 
@@ -536,7 +543,11 @@ For a complete list, see `defaults/main.yml`.
 
 ## Gateway Configuration
 
-The role seeds `openclaw.json` into the data directory on first deploy. By default, it builds the config from individual `openclaw_telegram_*` variables with explicit plugin control (unused channels like WhatsApp are disabled). Once seeded, the config is not overwritten on subsequent deploys — set `openclaw_force_config: true` to re-render. Existing configs are still patched for role-managed plugin entries and legacy Telegram streaming aliases required by newer OpenClaw schemas.
+The role seeds `openclaw.json` into the data directory on first deploy. By default, it builds the config from individual `openclaw_telegram_*` variables with explicit plugin control (unused channels like WhatsApp are disabled), managed Telegram preview-streaming policy, direct-message session scope, and the required local gateway mode. Once seeded, the config is not overwritten on subsequent deploys — set `openclaw_force_config: true` to re-render. Existing configs are still patched for the local gateway mode, managed Telegram streaming policy and DM session scope, role-managed plugin entries, and legacy Telegram streaming aliases required by newer OpenClaw schemas.
+
+OpenClaw's upstream `main` DM scope shares one conversation across all direct-message senders. Set `openclaw_session_dm_scope: per-channel-peer` for shared Telegram bots so each sender receives an isolated conversation history while the configured agent workspace remains shared.
+
+`openclaw_reply_system_prompt` is written to `<workspace>/SOUL.md`, not the OpenClaw state-directory root. Set `openclaw_user_profile` when the deployment should also manage `<workspace>/USER.md`; leaving it empty preserves an onboarding- or operator-maintained profile.
 
 To provide a full custom config, set `openclaw_gateway_config`:
 
