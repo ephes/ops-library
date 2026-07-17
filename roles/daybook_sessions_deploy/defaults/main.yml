@@ -66,6 +66,7 @@ daybook_archive_token: "CHANGEME"
 daybook_quotes_enabled: false
 daybook_quotes_unused_path: "CHANGEME"
 daybook_quotes_used_path: "CHANGEME"
+daybook_quote_lifecycle_state: "s3://agent-sessions/weeknotes-quote-lifecycle.json"
 daybook_archive_browser_executable: "/Applications/Helium.app/Contents/MacOS/Helium"
 daybook_archive_browser_user_data_dir: "{{ daybook_sessions_service_home }}/.daybook/archive-quote-browser"
 daybook_archive_browser_headless: true

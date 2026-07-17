@@ -96,6 +96,7 @@
           - not daybook_quotes_enabled | bool
           - daybook_quotes_unused_path == "CHANGEME"
           - daybook_quotes_used_path == "CHANGEME"
+          - daybook_quote_lifecycle_state == "s3://agent-sessions/weeknotes-quote-lifecycle.json"
           - daybook_archive_browser_executable == "/Applications/Helium.app/Contents/MacOS/Helium"
           - daybook_archive_browser_user_data_dir == "/Users/CHANGEME/.daybook/archive-quote-browser"
           - daybook_archive_browser_headless | bool
@@ -105,9 +106,12 @@
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('Refuse an existing unmarked browser profile')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('Validate classifier browser filesystem access as the service user')
-          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('exact S3 object URIs')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('one local or S3 backend')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('daybook_quote_lifecycle_state != daybook_quotes_unused_path')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('daybook_quote_lifecycle_state != daybook_quotes_used_path')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is not search('daybook_quotes_unused_path [|] dirname')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is not search('path:.*daybook_quotes_unused_path')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is not search('path:.*daybook_quote_lifecycle_state')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('Verify pinned Daybook commit exists locally for no-fetch mode')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('Check out pinned Daybook commit without fetching')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search("'status', '--porcelain', '--untracked-files=no'")
@@ -117,20 +121,72 @@
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('modification_time.*preserve')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search("daybook_archive_browser_headless or daybook_sessions_launchd_scope == 'user'")
 
-    - name: Assert quote object URI safety rules
+    - name: Assert quote lifecycle location safety rules
       ansible.builtin.assert:
         that:
-          - (canonical_quote_uri | regex_search(safe_quote_uri_pattern)) is not none
-          - (unsafe_quote_uri_query | regex_search(safe_quote_uri_pattern)) is none
-          - (unsafe_quote_uri_parent | regex_search(safe_quote_uri_pattern)) is not none
+          - (canonical_quote_uri | regex_search(safe_markdown_location_pattern)) is not none
+          - (canonical_state_uri | regex_search(safe_state_location_pattern)) is not none
+          - (canonical_local_quote | regex_search(safe_markdown_location_pattern)) is not none
+          - (canonical_local_state | regex_search(safe_state_location_pattern)) is not none
+          - (unsafe_quote_uri_query | regex_search(safe_markdown_location_pattern)) is none
+          - (unsafe_quote_uri_parent | regex_search(safe_markdown_location_pattern)) is not none
           - (unsafe_quote_uri_parent | regex_search('/[.][.]?/')) is not none
-          - (unsafe_quote_local_path | regex_search(safe_quote_uri_pattern)) is none
+          - (unsafe_state_markdown | regex_search(safe_state_location_pattern)) is none
+          - (unsafe_quote_json | regex_search(safe_markdown_location_pattern)) is none
+          - canonical_quote_uri.startswith('s3://')
+          - canonical_used_uri.startswith('s3://')
+          - canonical_state_uri.startswith('s3://')
+          - canonical_local_quote.startswith('/')
+          - canonical_local_used.startswith('/')
+          - canonical_local_state.startswith('/')
+          - not canonical_local_quote.startswith('s3://')
+          - canonical_state_uri != canonical_quote_uri
+          - canonical_state_uri != canonical_used_uri
       vars:
-        safe_quote_uri_pattern: '^s3://[a-z0-9](?:[a-z0-9.-]{1,61}[a-z0-9])?/[A-Za-z0-9_ .-]+(?:/[A-Za-z0-9_ .-]+)*[.]md$'
+        safe_markdown_location_pattern: '^(?:s3://[a-z0-9](?:[a-z0-9.-]{1,61}[a-z0-9])?)?/[A-Za-z0-9_ .-]+(?:/[A-Za-z0-9_ .-]+)*[.]md$'
+        safe_state_location_pattern: '^(?:s3://[a-z0-9](?:[a-z0-9.-]{1,61}[a-z0-9])?)?/[A-Za-z0-9_ .-]+(?:/[A-Za-z0-9_ .-]+)*[.]json$'
         canonical_quote_uri: 's3://obsidian/Arbeit/Quotes Ungenutzt.md'
+        canonical_used_uri: 's3://obsidian/Arbeit/Quotes Benutzt.md'
+        canonical_state_uri: 's3://agent-sessions/weeknotes-quote-lifecycle.json'
+        canonical_local_quote: '/Users/example/Quotes Ungenutzt.md'
+        canonical_local_used: '/Users/example/Quotes Benutzt.md'
+        canonical_local_state: '/Users/example/.daybook/weeknotes-quote-lifecycle.json'
         unsafe_quote_uri_query: 's3://obsidian/Arbeit/Quotes.md?typo=1'
         unsafe_quote_uri_parent: 's3://obsidian/Arbeit/../Quotes.md'
-        unsafe_quote_local_path: '/Users/example/Quotes.md'
+        unsafe_state_markdown: 's3://agent-sessions/weeknotes-quote-lifecycle.md'
+        unsafe_quote_json: '/Users/example/quote.json'
+
+    - name: Exercise role quote lifecycle validation cases
+      ansible.builtin.include_tasks: tasks/test_daybook_quote_validation_case.yml
+      loop:
+        - name: compatible S3 backend
+          unused: 's3://obsidian/Arbeit/Quotes Ungenutzt.md'
+          used: 's3://obsidian/Arbeit/Quotes Benutzt.md'
+          state: 's3://agent-sessions/weeknotes-quote-lifecycle.json'
+          expected_failure: 'runtime | Ensure uv is available'
+        - name: compatible local backend
+          unused: '/Users/example/Quotes Ungenutzt.md'
+          used: '/Users/example/Quotes Benutzt.md'
+          state: '/Users/example/.daybook/weeknotes-quote-lifecycle.json'
+          expected_failure: 'runtime | Ensure uv is available'
+        - name: mixed local and S3 backends
+          unused: '/Users/example/Quotes Ungenutzt.md'
+          used: '/Users/example/Quotes Benutzt.md'
+          state: 's3://agent-sessions/weeknotes-quote-lifecycle.json'
+          expected_failure: 'validate | Ensure required Daybook sessions variables are configured'
+        - name: missing lifecycle state
+          unused: 's3://obsidian/Arbeit/Quotes Ungenutzt.md'
+          used: 's3://obsidian/Arbeit/Quotes Benutzt.md'
+          state: ''
+          expected_failure: 'validate | Ensure required Daybook sessions variables are configured'
+        - name: lifecycle state collision with unused Markdown
+          unused: 's3://obsidian/Arbeit/Quotes Ungenutzt.md'
+          used: 's3://obsidian/Arbeit/Quotes Benutzt.md'
+          state: 's3://obsidian/Arbeit/Quotes Ungenutzt.md'
+          expected_failure: 'validate | Ensure required Daybook sessions variables are configured'
+      loop_control:
+        loop_var: daybook_quote_validation_case
+        label: "{{ daybook_quote_validation_case.name }}"
 
     - name: Set template test values
       ansible.builtin.set_fact:
@@ -185,6 +241,7 @@
           - "'AWS_SECRET_ACCESS_KEY=session-secret' in rendered_env_text"
           - "'DAYBOOK_QUOTES_UNUSED_PATH=' not in rendered_env_text"
           - "'DAYBOOK_QUOTES_USED_PATH=' not in rendered_env_text"
+          - "'DAYBOOK_QUOTE_LIFECYCLE_STATE=' not in rendered_env_text"
           - rendered_launcher_text is search('set -a')
           - rendered_launcher_text is search('/usr/local/bin/uv run --frozen --no-dev daybook sessions ship')
           - "'<string>de.wersdoerfer.daybook.sessions</string>' in rendered_plist_text"
@@ -241,6 +298,7 @@
         that:
           - '"DAYBOOK_QUOTES_UNUSED_PATH=''s3://obsidian/Arbeit/Quotes Ungenutzt.md''" in rendered_handoff_only_env_text'
           - '"DAYBOOK_QUOTES_USED_PATH=''s3://obsidian/Arbeit/Quotes Benutzt.md''" in rendered_handoff_only_env_text'
+          - "'DAYBOOK_QUOTE_LIFECYCLE_STATE=s3://agent-sessions/weeknotes-quote-lifecycle.json' in rendered_handoff_only_env_text"
       vars:
         rendered_handoff_only_env_text: "{{ rendered_handoff_only_env.content | b64decode }}"
 
@@ -303,8 +361,11 @@
           - '"DAYBOOK_QUOTE_CLASSIFIER_CMD=''pi -p --no-tools''" in rendered_archive_env_text'
           - '"DAYBOOK_QUOTES_UNUSED_PATH=''s3://obsidian/Arbeit/Quotes Ungenutzt.md''" in rendered_archive_env_text'
           - '"DAYBOOK_QUOTES_USED_PATH=''s3://obsidian/Arbeit/Quotes Benutzt.md''" in rendered_archive_env_text'
+          - "'DAYBOOK_QUOTE_LIFECYCLE_STATE=s3://agent-sessions/weeknotes-quote-lifecycle.json' in rendered_archive_env_text"
+          - "'DAYBOOK_QUOTE_CLASSIFIER_STATE=s3://agent-sessions/archive-quote-classifier.json' in rendered_archive_env_text"
           - '"DAYBOOK_QUOTES_UNUSED_PATH=''s3://obsidian/Arbeit/Quotes Ungenutzt.md''" in rendered_sessions_env_text'
           - '"DAYBOOK_QUOTES_USED_PATH=''s3://obsidian/Arbeit/Quotes Benutzt.md''" in rendered_sessions_env_text'
+          - "'DAYBOOK_QUOTE_LIFECYCLE_STATE=s3://agent-sessions/weeknotes-quote-lifecycle.json' in rendered_sessions_env_text"
           - "'DAYBOOK_ARCHIVE_BROWSER_EXECUTABLE=/Applications/Helium.app/Contents/MacOS/Helium' in rendered_archive_env_text"
           - "'DAYBOOK_ARCHIVE_BROWSER_USER_DATA_DIR=/Users/jochen/.daybook/archive-quote-browser' in rendered_archive_env_text"
           - "'DAYBOOK_ARCHIVE_BROWSER_HEADLESS=true' in rendered_archive_env_text"

@@ -8,10 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- `daybook_sessions_deploy` now configures the quote lifecycle with safe exact
-  S3 object URIs, exposes them to classifier and handoff environments, and no
-  longer requires machine-local quote files or parent-directory ownership;
-  browser executable/profile validation remains local and strict.
+- `daybook_sessions_deploy` now configures Daybook's external quote lifecycle
+  JSON state alongside the unused/used Markdown locations, exposes all three to
+  classifier and handoff environments, and validates distinct safe locations on
+  one compatible local or S3 backend without contacting storage; browser
+  executable/profile validation remains local and strict.
 - The Heis production Echoport runner now quotes compound remote SSH commands
   as a single argument, preventing operators such as `&&` from executing on
   the macmini backup runner instead of the production host.

@@ -65,11 +65,37 @@
       - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or daybook_quotes_unused_path != "CHANGEME"
       - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or daybook_quotes_used_path | string | trim | length > 0
       - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or daybook_quotes_used_path != "CHANGEME"
+      - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or daybook_quote_lifecycle_state | string | trim | length > 0
+      - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or daybook_quote_lifecycle_state != "CHANGEME"
       - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or daybook_quotes_unused_path != daybook_quotes_used_path
-      - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or (daybook_quotes_unused_path | string | regex_search('^s3://[a-z0-9](?:[a-z0-9.-]{1,61}[a-z0-9])?/[A-Za-z0-9_ .-]+(?:/[A-Za-z0-9_ .-]+)*[.]md$')) is not none
-      - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or (daybook_quotes_used_path | string | regex_search('^s3://[a-z0-9](?:[a-z0-9.-]{1,61}[a-z0-9])?/[A-Za-z0-9_ .-]+(?:/[A-Za-z0-9_ .-]+)*[.]md$')) is not none
+      - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or daybook_quote_lifecycle_state != daybook_quotes_unused_path
+      - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or daybook_quote_lifecycle_state != daybook_quotes_used_path
+      - >-
+        not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled)
+        or (daybook_quotes_unused_path | string | regex_search('^(?:s3://[a-z0-9](?:[a-z0-9.-]{1,61}[a-z0-9])?)?/[A-Za-z0-9_ .-]+(?:/[A-Za-z0-9_ .-]+)*[.]md$')) is not none
+      - >-
+        not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled)
+        or (daybook_quotes_used_path | string | regex_search('^(?:s3://[a-z0-9](?:[a-z0-9.-]{1,61}[a-z0-9])?)?/[A-Za-z0-9_ .-]+(?:/[A-Za-z0-9_ .-]+)*[.]md$')) is not none
+      - >-
+        not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled)
+        or (daybook_quote_lifecycle_state | string | regex_search('^(?:s3://[a-z0-9](?:[a-z0-9.-]{1,61}[a-z0-9])?)?/[A-Za-z0-9_ .-]+(?:/[A-Za-z0-9_ .-]+)*[.]json$')) is not none
+      - >-
+        not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled)
+        or (
+          (
+            (daybook_quotes_unused_path | string).startswith('s3://')
+            and (daybook_quotes_used_path | string).startswith('s3://')
+            and (daybook_quote_lifecycle_state | string).startswith('s3://')
+          )
+          or (
+            (daybook_quotes_unused_path | string).startswith('/')
+            and (daybook_quotes_used_path | string).startswith('/')
+            and (daybook_quote_lifecycle_state | string).startswith('/')
+          )
+        )
       - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or (daybook_quotes_unused_path | string | regex_search('/[.][.]?/')) is none
       - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or (daybook_quotes_used_path | string | regex_search('/[.][.]?/')) is none
+      - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or (daybook_quote_lifecycle_state | string | regex_search('/[.][.]?/')) is none
       - not daybook_archive_quote_classifier_enabled or (daybook_archive_browser_executable | string).startswith('/')
       - not daybook_archive_quote_classifier_enabled or (daybook_archive_browser_user_data_dir | string).startswith(daybook_sessions_service_home ~ '/.daybook/')
       - not daybook_archive_quote_classifier_enabled or (daybook_archive_browser_user_data_dir | dirname) == (daybook_sessions_service_home ~ '/.daybook')
@@ -100,9 +126,9 @@
       - daybook_sessions_remove_legacy_runner_paths is not string
     fail_msg: >-
       Daybook sessions deployment is missing required configuration. Supply a
-      service user, pinned daybook checkout ref, S3 session path, safe exact
-      quote object URIs when enabled, and least-privilege MinIO credentials
-      from the private control repo.
+      service user, pinned daybook checkout ref, S3 session path, three distinct
+      safe quote lifecycle locations on one local or S3 backend when enabled,
+      and least-privilege MinIO credentials from the private control repo.
   when: daybook_sessions_enabled | bool
 
 - name: validate | Validate Archive quote classifier calendar entries
@@ -278,7 +304,7 @@
       Archive quote automation requires a real browser executable (not a
       symlink) and a real dedicated browser profile below the service user's
       ~/.daybook with safe service-user-owned control files. Quote storage is
-      validated separately as exact S3 object URIs.
+      validated separately as safe local paths or exact S3 object URIs.
   when:
     - daybook_sessions_enabled | bool
     - daybook_archive_quote_classifier_enabled | bool

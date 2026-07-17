@@ -61,6 +61,7 @@ daybook_archive_token: "CHANGEME"
 daybook_quotes_enabled: false
 daybook_quotes_unused_path: "CHANGEME"
 daybook_quotes_used_path: "CHANGEME"
+daybook_quote_lifecycle_state: "s3://agent-sessions/weeknotes-quote-lifecycle.json"
 daybook_archive_browser_executable: "/Applications/Helium.app/Contents/MacOS/Helium"
 daybook_archive_browser_user_data_dir: "{{ daybook_sessions_service_home }}/.daybook/archive-quote-browser"
 daybook_archive_browser_headless: true
@@ -76,37 +77,46 @@ These values must be supplied by the private control repo:
 - `daybook_sessions_aws_endpoint_url_s3`
 - `daybook_sessions_aws_access_key_id`
 - `daybook_sessions_aws_secret_access_key`
-- `daybook_archive_url`, `daybook_archive_token`,
+- `daybook_archive_url`, `daybook_archive_token`, and
   `daybook_archive_quote_classifier_cmd` when the optional classifier is
-  enabled; and `daybook_quotes_unused_path` plus `daybook_quotes_used_path` when
-  either quote lifecycle or classification is enabled. The
-  role probes the classifier command by default during deploy, which verifies
-  both the executable and provider/subscription authentication before launchd is
+  enabled; and `daybook_quotes_unused_path` plus `daybook_quotes_used_path`
+  when either quote lifecycle or classification is enabled. The
+  `daybook_quote_lifecycle_state` default is the exact production location,
+  `s3://agent-sessions/weeknotes-quote-lifecycle.json`; override it together
+  with the Markdown paths for local or non-production lifecycles. The role
+  probes the classifier command by default during deploy, which verifies both
+  the executable and provider/subscription authentication before launchd is
   enabled.
 
-The quote settings must be distinct, safe, exact `s3://bucket/key.md` URIs.
-They are written to `sessions.env` on handoff/delivery machines and to the
-classifier environment when classification is enabled. The role deliberately
-does not stat local quote files or create object keys; Daybook reads the exact
-existing objects and fails closed if either is missing or malformed. The
-configured MinIO credentials therefore need `GetObject` and `PutObject` only
-for those two objects in addition to the existing session scope; delete remains
+The three quote lifecycle settings must be distinct locations on one backend.
+The unused and used locations must be safe absolute local `.md` paths or safe,
+exact `s3://bucket/key.md` object URIs; lifecycle state must be a safe absolute
+local `.json` path or exact `s3://bucket/key.json` URI. Mixing local and S3
+locations is rejected, as is reusing either Markdown location for state. All
+three variables are written to `sessions.env` on handoff/delivery machines and
+to the classifier environment when classification is enabled.
+
+The role deliberately does not stat local quote files, contact S3, or create
+files/object keys. Daybook reads the exact existing Markdown and JSON locations
+and fails closed if any are missing or malformed. For an S3 lifecycle, the
+configured MinIO credentials therefore need `GetObject` and `PutObject` for all
+three objects in addition to the existing session scope; delete remains
 unnecessary. The configured browser executable must be a real executable file
-accessible to that user. The browser profile must be an absent/empty directory or an already
-Daybook-marked directory directly below `~/.daybook/`; the role validates its
-real path and rejects symlinks, unsafe marker/lock files, wrong ownership, and
-non-empty unmarked profiles. Never configure or copy a normal Helium/Chromium
-user-data directory. A fresh empty dedicated profile is sufficient for public X
-pages that do not require authentication.
+accessible to that user. The browser profile must be an absent/empty directory
+or an already Daybook-marked directory directly below `~/.daybook/`; the role
+validates its real path and rejects symlinks, unsafe marker/lock files, wrong
+ownership, and non-empty unmarked profiles. Never configure or copy a normal
+Helium/Chromium user-data directory. A fresh empty dedicated profile is
+sufficient for public X pages that do not require authentication.
 
 `uv sync --frozen` installs the Python Playwright dependency from `uv.lock` with
 `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`. Daybook launches the configured Helium
 binary, so this role does not install Playwright's bundled Chromium.
 
-Use a dedicated least-privilege MinIO account scoped to the `agent-sessions`
-bucket plus exactly the two configured Obsidian quote objects. Do not grant
-quote-bucket listing/delete access and do not pass the MinIO admin key to this
-role.
+Use a dedicated least-privilege MinIO account scoped to the existing session
+objects and production lifecycle state object in `agent-sessions`, plus exactly
+the two configured Obsidian quote objects. Do not grant quote-bucket
+listing/delete access and do not pass the MinIO admin key to this role.
 
 Set `daybook_sessions_repo_update: false` only when the private control repo has
 pre-staged a service-user-owned checkout on the target and
