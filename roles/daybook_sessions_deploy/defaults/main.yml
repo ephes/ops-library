@@ -63,6 +63,7 @@ daybook_archive_quote_classifier_probe_prompt: "Return exactly OK."
 daybook_archive_quote_classifier_probe_timeout_seconds: 120
 daybook_archive_url: "CHANGEME"
 daybook_archive_token: "CHANGEME"
+daybook_quotes_enabled: false
 daybook_quotes_unused_path: "CHANGEME"
 daybook_quotes_used_path: "CHANGEME"
 daybook_archive_browser_executable: "/Applications/Helium.app/Contents/MacOS/Helium"

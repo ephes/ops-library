@@ -60,15 +60,16 @@
       - not daybook_archive_quote_classifier_enabled or daybook_archive_url != "CHANGEME"
       - not daybook_archive_quote_classifier_enabled or daybook_archive_token | string | trim | length > 0
       - not daybook_archive_quote_classifier_enabled or daybook_archive_token != "CHANGEME"
-      - not daybook_archive_quote_classifier_enabled or daybook_quotes_unused_path | string | trim | length > 0
-      - not daybook_archive_quote_classifier_enabled or daybook_quotes_unused_path != "CHANGEME"
-      - not daybook_archive_quote_classifier_enabled or daybook_quotes_used_path | string | trim | length > 0
-      - not daybook_archive_quote_classifier_enabled or daybook_quotes_used_path != "CHANGEME"
-      - not daybook_archive_quote_classifier_enabled or daybook_quotes_unused_path != daybook_quotes_used_path
-      - not daybook_archive_quote_classifier_enabled or (daybook_quotes_unused_path | string).startswith('/')
-      - not daybook_archive_quote_classifier_enabled or (daybook_quotes_used_path | string).startswith('/')
-      - not daybook_archive_quote_classifier_enabled or (daybook_quotes_unused_path | string | lower).endswith('.md')
-      - not daybook_archive_quote_classifier_enabled or (daybook_quotes_used_path | string | lower).endswith('.md')
+      - daybook_quotes_enabled | type_debug == 'bool'
+      - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or daybook_quotes_unused_path | string | trim | length > 0
+      - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or daybook_quotes_unused_path != "CHANGEME"
+      - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or daybook_quotes_used_path | string | trim | length > 0
+      - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or daybook_quotes_used_path != "CHANGEME"
+      - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or daybook_quotes_unused_path != daybook_quotes_used_path
+      - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or (daybook_quotes_unused_path | string | regex_search('^s3://[a-z0-9](?:[a-z0-9.-]{1,61}[a-z0-9])?/[A-Za-z0-9_ .-]+(?:/[A-Za-z0-9_ .-]+)*[.]md$')) is not none
+      - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or (daybook_quotes_used_path | string | regex_search('^s3://[a-z0-9](?:[a-z0-9.-]{1,61}[a-z0-9])?/[A-Za-z0-9_ .-]+(?:/[A-Za-z0-9_ .-]+)*[.]md$')) is not none
+      - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or (daybook_quotes_unused_path | string | regex_search('/[.][.]?/')) is none
+      - not (daybook_quotes_enabled or daybook_archive_quote_classifier_enabled) or (daybook_quotes_used_path | string | regex_search('/[.][.]?/')) is none
       - not daybook_archive_quote_classifier_enabled or (daybook_archive_browser_executable | string).startswith('/')
       - not daybook_archive_quote_classifier_enabled or (daybook_archive_browser_user_data_dir | string).startswith(daybook_sessions_service_home ~ '/.daybook/')
       - not daybook_archive_quote_classifier_enabled or (daybook_archive_browser_user_data_dir | dirname) == (daybook_sessions_service_home ~ '/.daybook')
@@ -99,8 +100,9 @@
       - daybook_sessions_remove_legacy_runner_paths is not string
     fail_msg: >-
       Daybook sessions deployment is missing required configuration. Supply a
-      service user, pinned daybook checkout ref, S3 session path, and
-      least-privilege MinIO credentials from the private control repo.
+      service user, pinned daybook checkout ref, S3 session path, safe exact
+      quote object URIs when enabled, and least-privilege MinIO credentials
+      from the private control repo.
   when: daybook_sessions_enabled | bool
 
 - name: validate | Validate Archive quote classifier calendar entries
@@ -232,14 +234,10 @@
     follow: false
   loop:
     - "{{ daybook_archive_browser_executable }}"
-    - "{{ daybook_quotes_unused_path }}"
-    - "{{ daybook_quotes_used_path }}"
     - "{{ daybook_archive_browser_user_data_dir }}"
     - "{{ daybook_archive_browser_user_data_dir }}/.daybook-archive-browser-profile"
     - "{{ daybook_archive_browser_user_data_dir }}/.daybook-archive-browser.lock"
     - "{{ daybook_sessions_service_home }}/.daybook"
-    - "{{ daybook_quotes_unused_path | dirname }}"
-    - "{{ daybook_quotes_used_path | dirname }}"
   register: daybook_archive_quote_classifier_path_stats
   when:
     - daybook_sessions_enabled | bool
@@ -255,8 +253,6 @@
   loop:
     - "{{ daybook_sessions_service_home }}/.daybook"
     - "{{ daybook_archive_browser_user_data_dir }}"
-    - "{{ daybook_quotes_unused_path }}"
-    - "{{ daybook_quotes_used_path }}"
   register: daybook_archive_quote_classifier_realpaths
   changed_when: false
   when:
@@ -269,36 +265,20 @@
       - daybook_archive_quote_classifier_path_stats.results[0].stat.exists | default(false)
       - daybook_archive_quote_classifier_path_stats.results[0].stat.isreg | default(false)
       - not (daybook_archive_quote_classifier_path_stats.results[0].stat.islnk | default(false))
-      - daybook_archive_quote_classifier_path_stats.results[1].stat.exists | default(false)
-      - daybook_archive_quote_classifier_path_stats.results[1].stat.isreg | default(false)
-      - not (daybook_archive_quote_classifier_path_stats.results[1].stat.islnk | default(false))
-      - daybook_archive_quote_classifier_path_stats.results[1].stat.pw_name == daybook_sessions_service_user
-      - daybook_archive_quote_classifier_path_stats.results[2].stat.exists | default(false)
-      - daybook_archive_quote_classifier_path_stats.results[2].stat.isreg | default(false)
-      - not (daybook_archive_quote_classifier_path_stats.results[2].stat.islnk | default(false))
-      - daybook_archive_quote_classifier_path_stats.results[2].stat.pw_name == daybook_sessions_service_user
-      - daybook_archive_quote_classifier_realpaths.results[2].stdout != daybook_archive_quote_classifier_realpaths.results[3].stdout
-      - daybook_archive_quote_classifier_path_stats.results[1].stat.dev != daybook_archive_quote_classifier_path_stats.results[2].stat.dev or daybook_archive_quote_classifier_path_stats.results[1].stat.inode != daybook_archive_quote_classifier_path_stats.results[2].stat.inode
-      - not (daybook_archive_quote_classifier_path_stats.results[3].stat.exists | default(false)) or daybook_archive_quote_classifier_path_stats.results[3].stat.isdir | default(false)
-      - not (daybook_archive_quote_classifier_path_stats.results[3].stat.exists | default(false)) or not (daybook_archive_quote_classifier_path_stats.results[3].stat.islnk | default(false))
-      - not (daybook_archive_quote_classifier_path_stats.results[3].stat.exists | default(false)) or daybook_archive_quote_classifier_path_stats.results[3].stat.pw_name == daybook_sessions_service_user
-      - not (daybook_archive_quote_classifier_path_stats.results[4].stat.exists | default(false)) or (daybook_archive_quote_classifier_path_stats.results[4].stat.isreg | default(false) and not (daybook_archive_quote_classifier_path_stats.results[4].stat.islnk | default(false)) and daybook_archive_quote_classifier_path_stats.results[4].stat.pw_name == daybook_sessions_service_user)
-      - not (daybook_archive_quote_classifier_path_stats.results[5].stat.exists | default(false)) or (daybook_archive_quote_classifier_path_stats.results[5].stat.isreg | default(false) and not (daybook_archive_quote_classifier_path_stats.results[5].stat.islnk | default(false)) and daybook_archive_quote_classifier_path_stats.results[5].stat.pw_name == daybook_sessions_service_user)
-      - not (daybook_archive_quote_classifier_path_stats.results[6].stat.exists | default(false)) or daybook_archive_quote_classifier_path_stats.results[6].stat.isdir | default(false)
-      - not (daybook_archive_quote_classifier_path_stats.results[6].stat.exists | default(false)) or not (daybook_archive_quote_classifier_path_stats.results[6].stat.islnk | default(false))
-      - not (daybook_archive_quote_classifier_path_stats.results[6].stat.exists | default(false)) or daybook_archive_quote_classifier_path_stats.results[6].stat.pw_name == daybook_sessions_service_user
-      - daybook_archive_quote_classifier_path_stats.results[7].stat.isdir | default(false)
-      - not (daybook_archive_quote_classifier_path_stats.results[7].stat.islnk | default(false))
-      - daybook_archive_quote_classifier_path_stats.results[7].stat.pw_name == daybook_sessions_service_user
-      - daybook_archive_quote_classifier_path_stats.results[8].stat.isdir | default(false)
-      - not (daybook_archive_quote_classifier_path_stats.results[8].stat.islnk | default(false))
-      - daybook_archive_quote_classifier_path_stats.results[8].stat.pw_name == daybook_sessions_service_user
+      - not (daybook_archive_quote_classifier_path_stats.results[1].stat.exists | default(false)) or daybook_archive_quote_classifier_path_stats.results[1].stat.isdir | default(false)
+      - not (daybook_archive_quote_classifier_path_stats.results[1].stat.exists | default(false)) or not (daybook_archive_quote_classifier_path_stats.results[1].stat.islnk | default(false))
+      - not (daybook_archive_quote_classifier_path_stats.results[1].stat.exists | default(false)) or daybook_archive_quote_classifier_path_stats.results[1].stat.pw_name == daybook_sessions_service_user
+      - not (daybook_archive_quote_classifier_path_stats.results[2].stat.exists | default(false)) or (daybook_archive_quote_classifier_path_stats.results[2].stat.isreg | default(false) and not (daybook_archive_quote_classifier_path_stats.results[2].stat.islnk | default(false)) and daybook_archive_quote_classifier_path_stats.results[2].stat.pw_name == daybook_sessions_service_user)
+      - not (daybook_archive_quote_classifier_path_stats.results[3].stat.exists | default(false)) or (daybook_archive_quote_classifier_path_stats.results[3].stat.isreg | default(false) and not (daybook_archive_quote_classifier_path_stats.results[3].stat.islnk | default(false)) and daybook_archive_quote_classifier_path_stats.results[3].stat.pw_name == daybook_sessions_service_user)
+      - not (daybook_archive_quote_classifier_path_stats.results[4].stat.exists | default(false)) or daybook_archive_quote_classifier_path_stats.results[4].stat.isdir | default(false)
+      - not (daybook_archive_quote_classifier_path_stats.results[4].stat.exists | default(false)) or not (daybook_archive_quote_classifier_path_stats.results[4].stat.islnk | default(false))
+      - not (daybook_archive_quote_classifier_path_stats.results[4].stat.exists | default(false)) or daybook_archive_quote_classifier_path_stats.results[4].stat.pw_name == daybook_sessions_service_user
       - daybook_archive_quote_classifier_realpaths.results[1].stdout.startswith(daybook_archive_quote_classifier_realpaths.results[0].stdout ~ '/')
     fail_msg: >-
-      Archive quote automation requires a real executable (not a symlink), two
-      distinct existing Obsidian Markdown files and writable parent directories
-      owned by the service user, and a real dedicated browser profile below the
-      service user's ~/.daybook with safe service-user-owned control files.
+      Archive quote automation requires a real browser executable (not a
+      symlink) and a real dedicated browser profile below the service user's
+      ~/.daybook with safe service-user-owned control files. Quote storage is
+      validated separately as exact S3 object URIs.
   when:
     - daybook_sessions_enabled | bool
     - daybook_archive_quote_classifier_enabled | bool
@@ -316,12 +296,12 @@
   when:
     - daybook_sessions_enabled | bool
     - daybook_archive_quote_classifier_enabled | bool
-    - daybook_archive_quote_classifier_path_stats.results[3].stat.exists | default(false)
+    - daybook_archive_quote_classifier_path_stats.results[1].stat.exists | default(false)
 
 - name: runtime | Refuse an existing unmarked browser profile
   ansible.builtin.assert:
     that:
-      - daybook_archive_browser_profile_contents.matched | default(0) == 0 or daybook_archive_quote_classifier_path_stats.results[4].stat.isreg | default(false)
+      - daybook_archive_browser_profile_contents.matched | default(0) == 0 or daybook_archive_quote_classifier_path_stats.results[2].stat.isreg | default(false)
     fail_msg: >-
       Refusing to use a non-empty unmarked browser profile. Configure a new
       directory below the service user's ~/.daybook; never use Helium's live
@@ -329,7 +309,7 @@
   when:
     - daybook_sessions_enabled | bool
     - daybook_archive_quote_classifier_enabled | bool
-    - daybook_archive_quote_classifier_path_stats.results[3].stat.exists | default(false)
+    - daybook_archive_quote_classifier_path_stats.results[1].stat.exists | default(false)
 
 - name: runtime | Ensure Daybook state parent for the browser profile exists
   ansible.builtin.file:
@@ -353,7 +333,7 @@
     - daybook_sessions_enabled | bool
     - daybook_archive_quote_classifier_enabled | bool
 
-- name: runtime | Validate classifier filesystem access as the service user
+- name: runtime | Validate classifier browser filesystem access as the service user
   ansible.builtin.command:
     argv:
       - /bin/test
@@ -362,22 +342,6 @@
   loop:
     - flag: -x
       path: "{{ daybook_archive_browser_executable }}"
-    - flag: -r
-      path: "{{ daybook_quotes_unused_path }}"
-    - flag: -w
-      path: "{{ daybook_quotes_unused_path }}"
-    - flag: -r
-      path: "{{ daybook_quotes_used_path }}"
-    - flag: -w
-      path: "{{ daybook_quotes_used_path }}"
-    - flag: -w
-      path: "{{ daybook_quotes_unused_path | dirname }}"
-    - flag: -x
-      path: "{{ daybook_quotes_unused_path | dirname }}"
-    - flag: -w
-      path: "{{ daybook_quotes_used_path | dirname }}"
-    - flag: -x
-      path: "{{ daybook_quotes_used_path | dirname }}"
     - flag: -r
       path: "{{ daybook_archive_browser_user_data_dir }}"
     - flag: -w

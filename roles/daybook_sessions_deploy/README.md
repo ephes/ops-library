@@ -58,6 +58,7 @@ daybook_archive_quote_classifier_probe_timeout_seconds: 120
 daybook_archive_quote_classifier_throttle_interval_seconds: 60
 daybook_archive_url: "CHANGEME"
 daybook_archive_token: "CHANGEME"
+daybook_quotes_enabled: false
 daybook_quotes_unused_path: "CHANGEME"
 daybook_quotes_used_path: "CHANGEME"
 daybook_archive_browser_executable: "/Applications/Helium.app/Contents/MacOS/Helium"
@@ -76,16 +77,22 @@ These values must be supplied by the private control repo:
 - `daybook_sessions_aws_access_key_id`
 - `daybook_sessions_aws_secret_access_key`
 - `daybook_archive_url`, `daybook_archive_token`,
-  `daybook_archive_quote_classifier_cmd`, `daybook_quotes_unused_path`, and
-  `daybook_quotes_used_path` when the optional quote classifier is enabled. The
+  `daybook_archive_quote_classifier_cmd` when the optional classifier is
+  enabled; and `daybook_quotes_unused_path` plus `daybook_quotes_used_path` when
+  either quote lifecycle or classification is enabled. The
   role probes the classifier command by default during deploy, which verifies
   both the executable and provider/subscription authentication before launchd is
   enabled.
 
-The quote paths must resolve to distinct existing regular Markdown files; the
-files and their writable parent directories must be owned by the service user.
-The configured browser executable must be a real executable file accessible to
-that user. The browser profile must be an absent/empty directory or an already
+The quote settings must be distinct, safe, exact `s3://bucket/key.md` URIs.
+They are written to `sessions.env` on handoff/delivery machines and to the
+classifier environment when classification is enabled. The role deliberately
+does not stat local quote files or create object keys; Daybook reads the exact
+existing objects and fails closed if either is missing or malformed. The
+configured MinIO credentials therefore need `GetObject` and `PutObject` only
+for those two objects in addition to the existing session scope; delete remains
+unnecessary. The configured browser executable must be a real executable file
+accessible to that user. The browser profile must be an absent/empty directory or an already
 Daybook-marked directory directly below `~/.daybook/`; the role validates its
 real path and rejects symlinks, unsafe marker/lock files, wrong ownership, and
 non-empty unmarked profiles. Never configure or copy a normal Helium/Chromium
@@ -96,8 +103,10 @@ pages that do not require authentication.
 `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`. Daybook launches the configured Helium
 binary, so this role does not install Playwright's bundled Chromium.
 
-Use a dedicated least-privilege MinIO account scoped to the
-`agent-sessions` bucket. Do not pass the MinIO admin key to this role.
+Use a dedicated least-privilege MinIO account scoped to the `agent-sessions`
+bucket plus exactly the two configured Obsidian quote objects. Do not grant
+quote-bucket listing/delete access and do not pass the MinIO admin key to this
+role.
 
 Set `daybook_sessions_repo_update: false` only when the private control repo has
 pre-staged a service-user-owned checkout on the target and

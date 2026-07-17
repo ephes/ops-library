@@ -93,6 +93,7 @@
           - daybook_archive_quote_classifier_state == "s3://agent-sessions/archive-quote-classifier.json"
           - daybook_archive_quote_classifier_probe_timeout_seconds == 120
           - daybook_archive_quote_classifier_throttle_interval_seconds == 60
+          - not daybook_quotes_enabled | bool
           - daybook_quotes_unused_path == "CHANGEME"
           - daybook_quotes_used_path == "CHANGEME"
           - daybook_archive_browser_executable == "/Applications/Helium.app/Contents/MacOS/Helium"
@@ -103,7 +104,10 @@
           - daybook_archive_browser_render_wait_seconds == 1
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('Refuse an existing unmarked browser profile')
-          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('Validate classifier filesystem access as the service user')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('Validate classifier browser filesystem access as the service user')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('exact S3 object URIs')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is not search('daybook_quotes_unused_path [|] dirname')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is not search('path:.*daybook_quotes_unused_path')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('Verify pinned Daybook commit exists locally for no-fetch mode')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('Check out pinned Daybook commit without fetching')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search("'status', '--porcelain', '--untracked-files=no'")
@@ -112,6 +116,21 @@
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('os.path.realpath')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('modification_time.*preserve')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search("daybook_archive_browser_headless or daybook_sessions_launchd_scope == 'user'")
+
+    - name: Assert quote object URI safety rules
+      ansible.builtin.assert:
+        that:
+          - (canonical_quote_uri | regex_search(safe_quote_uri_pattern)) is not none
+          - (unsafe_quote_uri_query | regex_search(safe_quote_uri_pattern)) is none
+          - (unsafe_quote_uri_parent | regex_search(safe_quote_uri_pattern)) is not none
+          - (unsafe_quote_uri_parent | regex_search('/[.][.]?/')) is not none
+          - (unsafe_quote_local_path | regex_search(safe_quote_uri_pattern)) is none
+      vars:
+        safe_quote_uri_pattern: '^s3://[a-z0-9](?:[a-z0-9.-]{1,61}[a-z0-9])?/[A-Za-z0-9_ .-]+(?:/[A-Za-z0-9_ .-]+)*[.]md$'
+        canonical_quote_uri: 's3://obsidian/Arbeit/Quotes Ungenutzt.md'
+        unsafe_quote_uri_query: 's3://obsidian/Arbeit/Quotes.md?typo=1'
+        unsafe_quote_uri_parent: 's3://obsidian/Arbeit/../Quotes.md'
+        unsafe_quote_local_path: '/Users/example/Quotes.md'
 
     - name: Set template test values
       ansible.builtin.set_fact:
@@ -164,6 +183,8 @@
           - "'AWS_ENDPOINT_URL_S3=https://s3.home.example' in rendered_env_text"
           - "'AWS_ACCESS_KEY_ID=session-key' in rendered_env_text"
           - "'AWS_SECRET_ACCESS_KEY=session-secret' in rendered_env_text"
+          - "'DAYBOOK_QUOTES_UNUSED_PATH=' not in rendered_env_text"
+          - "'DAYBOOK_QUOTES_USED_PATH=' not in rendered_env_text"
           - rendered_launcher_text is search('set -a')
           - rendered_launcher_text is search('/usr/local/bin/uv run --frozen --no-dev daybook sessions ship')
           - "'<string>de.wersdoerfer.daybook.sessions</string>' in rendered_plist_text"
@@ -199,6 +220,30 @@
       vars:
         rendered_user_plist_text: "{{ rendered_user_plist_file.content | b64decode }}"
 
+    - name: Enable quote lifecycle without the classifier
+      ansible.builtin.set_fact:
+        daybook_quotes_enabled: true
+        daybook_quotes_unused_path: "s3://obsidian/Arbeit/Quotes Ungenutzt.md"
+        daybook_quotes_used_path: "s3://obsidian/Arbeit/Quotes Benutzt.md"
+
+    - name: Render sessions environment for handoff-only quote lifecycle
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/sessions.env.j2"
+        dest: "{{ rendered_env }}"
+
+    - name: Read handoff-only sessions environment
+      ansible.builtin.slurp:
+        path: "{{ rendered_env }}"
+      register: rendered_handoff_only_env
+
+    - name: Assert handoff-only sessions environment contains canonical quotes
+      ansible.builtin.assert:
+        that:
+          - '"DAYBOOK_QUOTES_UNUSED_PATH=''s3://obsidian/Arbeit/Quotes Ungenutzt.md''" in rendered_handoff_only_env_text'
+          - '"DAYBOOK_QUOTES_USED_PATH=''s3://obsidian/Arbeit/Quotes Benutzt.md''" in rendered_handoff_only_env_text'
+      vars:
+        rendered_handoff_only_env_text: "{{ rendered_handoff_only_env.content | b64decode }}"
+
     - name: Enable archive quote classifier template values
       ansible.builtin.set_fact:
         daybook_sessions_launchd_scope: "system"
@@ -210,8 +255,9 @@
         daybook_archive_quote_classifier_launcher_path: "/etc/daybook-sessions/classify-archive-quotes.sh"
         daybook_archive_quote_classifier_stdout_log: "/var/log/daybook-sessions/archive-quotes.log"
         daybook_archive_quote_classifier_stderr_log: "/var/log/daybook-sessions/archive-quotes.err.log"
-        daybook_quotes_unused_path: "/Users/jochen/vault/Quotes Unused.md"
-        daybook_quotes_used_path: "/Users/jochen/vault/Quotes Used.md"
+        daybook_quotes_enabled: true
+        daybook_quotes_unused_path: "s3://obsidian/Arbeit/Quotes Ungenutzt.md"
+        daybook_quotes_used_path: "s3://obsidian/Arbeit/Quotes Benutzt.md"
         daybook_archive_browser_executable: "/Applications/Helium.app/Contents/MacOS/Helium"
         daybook_archive_browser_user_data_dir: "/Users/jochen/.daybook/archive-quote-browser"
         daybook_archive_browser_headless: true
@@ -255,8 +301,10 @@
           - "'DAYBOOK_ARCHIVE_URL=https://archive.home.example' in rendered_archive_env_text"
           - "'DAYBOOK_ARCHIVE_TOKEN=archive-token' in rendered_archive_env_text"
           - '"DAYBOOK_QUOTE_CLASSIFIER_CMD=''pi -p --no-tools''" in rendered_archive_env_text'
-          - '"DAYBOOK_QUOTES_UNUSED_PATH=''/Users/jochen/vault/Quotes Unused.md''" in rendered_archive_env_text'
-          - '"DAYBOOK_QUOTES_USED_PATH=''/Users/jochen/vault/Quotes Used.md''" in rendered_archive_env_text'
+          - '"DAYBOOK_QUOTES_UNUSED_PATH=''s3://obsidian/Arbeit/Quotes Ungenutzt.md''" in rendered_archive_env_text'
+          - '"DAYBOOK_QUOTES_USED_PATH=''s3://obsidian/Arbeit/Quotes Benutzt.md''" in rendered_archive_env_text'
+          - '"DAYBOOK_QUOTES_UNUSED_PATH=''s3://obsidian/Arbeit/Quotes Ungenutzt.md''" in rendered_sessions_env_text'
+          - '"DAYBOOK_QUOTES_USED_PATH=''s3://obsidian/Arbeit/Quotes Benutzt.md''" in rendered_sessions_env_text'
           - "'DAYBOOK_ARCHIVE_BROWSER_EXECUTABLE=/Applications/Helium.app/Contents/MacOS/Helium' in rendered_archive_env_text"
           - "'DAYBOOK_ARCHIVE_BROWSER_USER_DATA_DIR=/Users/jochen/.daybook/archive-quote-browser' in rendered_archive_env_text"
           - "'DAYBOOK_ARCHIVE_BROWSER_HEADLESS=true' in rendered_archive_env_text"
