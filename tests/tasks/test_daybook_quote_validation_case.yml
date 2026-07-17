@@ -1,0 +1,31 @@
+---
+- name: test_daybook_quote_validation_case | Exercise quote lifecycle validation case
+  block:
+    - name: test_daybook_quote_validation_case | Run role tasks until validation or mocked runtime failure
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/main.yml"
+      vars:
+        ansible_facts:
+          os_family: Darwin
+        daybook_sessions_service_user: test-runner
+        daybook_sessions_repo_ref: main
+        daybook_sessions_uv_bin: /usr/bin/false
+        daybook_sessions_aws_endpoint_url_s3: https://s3.test.example
+        daybook_sessions_aws_access_key_id: test-access-key
+        daybook_sessions_aws_secret_access_key: test-secret-key
+        daybook_archive_quote_classifier_enabled: false
+        daybook_quotes_enabled: true
+        daybook_quotes_unused_path: "{{ daybook_quote_validation_case.unused }}"
+        daybook_quotes_used_path: "{{ daybook_quote_validation_case.used }}"
+        daybook_quote_lifecycle_state: "{{ daybook_quote_validation_case.state }}"
+
+    - name: test_daybook_quote_validation_case | Fail if role passed the mocked runtime boundary
+      ansible.builtin.fail:
+        msg: "The validation test must stop at validation or the mocked uv runtime."
+  rescue:
+    - name: test_daybook_quote_validation_case | Assert validation stopped at the expected boundary
+      ansible.builtin.assert:
+        that:
+          - ansible_failed_task.name is search(daybook_quote_validation_case.expected_failure)
+        fail_msg: >-
+          Quote validation case {{ daybook_quote_validation_case.name }} failed
+          at unexpected task {{ ansible_failed_task.name }}.
