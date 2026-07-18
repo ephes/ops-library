@@ -75,6 +75,10 @@
   ansible.builtin.import_tasks: opsgate.yml
   when: openclaw_opsgate_enabled | bool
 
+- name: main | Deploy managed workspace skills
+  ansible.builtin.import_tasks: workspace_skills.yml
+  when: openclaw_workspace_skills | length > 0
+
 - name: main | Configure OpenClaw metrics endpoint for Nyxmon
   ansible.builtin.import_tasks: metrics.yml
 

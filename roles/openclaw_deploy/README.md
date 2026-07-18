@@ -22,7 +22,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
   roles:
     - role: local.ops_library.openclaw_deploy
       vars:
-        openclaw_version: "v2026.6.11"
+        openclaw_version: "v2026.7.1"
         openclaw_data_dir: "/mnt/cryptdata/openclaw/data"
         openclaw_gateway_token: "{{ sops_secrets.gateway_token }}"
         openclaw_anthropic_api_key: "{{ sops_secrets.anthropic_api_key }}"
@@ -45,6 +45,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 - The container binds to `127.0.0.1:18789` by default, with optional Traefik reverse proxy for external access. When Traefik is enabled, the bind host is validated to be loopback.
 - When Traefik is enabled, role-managed config sets `gateway.bind: "lan"` and `gateway.controlUi.allowedOrigins` to `https://<openclaw_traefik_host>` so the host-side reverse proxy can reach the gateway UI safely.
 - Role-managed gateway hardening sets explicit `gateway.trustedProxies`, disables `gateway.allowRealIpFallback`, and configures `gateway.auth.rateLimit`.
+- Role-managed gateway configuration sets `gateway.mode: "local"`, which is required by current OpenClaw releases for a locally hosted gateway.
 - Gateway config (`openclaw.json`) is seeded once on first deploy and not overwritten on subsequent runs (use `openclaw_force_config: true` to overwrite). Existing configs are patched to ensure unused plugins (WhatsApp) are explicitly disabled.
 - Logs are written to a bind-mounted log directory with automatic logrotate.
 - Optional: an authenticated loopback HTTP endpoint (`/.well-known/openclaw-health`) can be enabled for Nyxmon `json-metrics` checks.
@@ -55,7 +56,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 
 | Variable | Description |
 |----------|-------------|
-| `openclaw_version` | Git tag to checkout and build (e.g. `v2026.6.11`) |
+| `openclaw_version` | Git tag to checkout and build (e.g. `v2026.7.1`) |
 | `openclaw_gateway_token` | Gateway authentication token |
 | `openclaw_anthropic_api_key` | Anthropic API key for AI replies |
 
@@ -88,6 +89,10 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 | `openclaw_telegram_bot_token` | `""` | Telegram bot token (required when enabled) |
 | `openclaw_telegram_dm_policy` | `allowlist` | DM policy: `allowlist` or `open` |
 | `openclaw_telegram_allow_from` | `[]` | Numeric Telegram user IDs for allowlist |
+| `openclaw_telegram_streaming_mode` | `partial` | Telegram preview streaming mode: `off`, `partial`, `block`, or `progress` |
+| `openclaw_telegram_streaming_preview_tool_progress` | `true` | Show tool-progress lines in Telegram preview messages |
+| `openclaw_telegram_streaming_preview_command_text` | `raw` | Tool command detail in previews: `raw` or status-only `status` |
+| `openclaw_session_dm_scope` | `main` | DM session routing; use `per-channel-peer` for a bot shared by multiple Telegram users |
 
 ### AI Configuration
 
@@ -97,7 +102,31 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 | `openclaw_openrouter_api_key` | `""` | Optional OpenRouter API key (`OPENROUTER_API_KEY`) for provider `openrouter` |
 | `openclaw_ollama_api_key` | `""` | Optional Ollama API key (`OLLAMA_API_KEY`) for provider `ollama`; when `openclaw_ollama_base_url` is set and this is empty, role injects `ollama-local` |
 | `openclaw_ollama_base_url` | `""` | Optional Ollama endpoint (`OLLAMA_BASE_URL`); must be reachable from inside the OpenClaw container |
-| `openclaw_reply_system_prompt` | `You are a concise assistant.` | System prompt for AI replies |
+| `openclaw_agent_workspace_dir` | `{{ openclaw_data_dir }}/workspace` | Persistent agent workspace containing `SOUL.md`, `USER.md`, and memory files |
+| `openclaw_reply_system_prompt` | `""` | Optional content managed in the agent workspace `SOUL.md`; empty preserves the existing file |
+| `openclaw_user_profile` | `""` | Optional content managed in the agent workspace `USER.md`; empty preserves the existing file |
+| `openclaw_workspace_skills` | `[]` | Managed workspace skills; each entry declares a safe skill `name` and controller-local files copied beneath `workspace/skills/<name>` |
+
+Workspace skills created interactively through Skill Workshop already persist
+across container replacement because the complete OpenClaw data directory is a
+bind mount. Use `openclaw_workspace_skills` as the recovery/source-control layer
+for skills that must also survive host rebuilds or volume loss:
+
+```yaml
+openclaw_workspace_skills:
+  - name: daily-notes
+    files:
+      - src: "{{ playbook_dir }}/../files/openclaw/skills/daily-notes/SKILL.md"
+        dest: SKILL.md
+        mode: "0640"
+      - src: "{{ playbook_dir }}/../files/openclaw/skills/daily-notes/scripts/run.sh"
+        dest: scripts/run.sh
+        mode: "0750"
+```
+
+The role preserves unmanaged workspace skills. It refreshes cached OpenClaw
+session skill snapshots whenever the managed skill set or managed file content
+changes, so newly deployed instructions become visible to new session bindings.
 
 ### Model Routing Policy
 
@@ -116,7 +145,7 @@ For subscription-backed OpenAI agent turns, enable the official Codex plugin, co
 
 ```yaml
 openclaw_codex_plugin_enabled: true
-openclaw_agent_model_primary: "openai/gpt-5.5"
+openclaw_agent_model_primary: "openai/gpt-5.6-sol"
 openclaw_openai_auth_order:
   - "openai:default"
 ```
@@ -127,7 +156,10 @@ deployed host, then verify with `openclaw models auth list --provider openai`.
 
 Plugin package reconciliation and installed-version verification require a real deployment
 and are skipped in Ansible check mode. Check mode still reports the managed gateway-config
-changes that enable and allow the plugin.
+changes that enable and allow the plugin. Package installation uses host networking so npm
+resolution follows the deployment host instead of Docker's transient default-bridge DNS.
+This intentionally lets package install-time code reach host-local services; enable this path
+only for the official, exact-version-pinned package that the role verifies after installation.
 
 When `openclaw_gateway_config` supplies a complete raw config override, it must include the
 `codex` entry in both `plugins.entries` (enabled) and `plugins.allow`; individual managed
@@ -536,7 +568,11 @@ For a complete list, see `defaults/main.yml`.
 
 ## Gateway Configuration
 
-The role seeds `openclaw.json` into the data directory on first deploy. By default, it builds the config from individual `openclaw_telegram_*` variables with explicit plugin control (unused channels like WhatsApp are disabled). Once seeded, the config is not overwritten on subsequent deploys — set `openclaw_force_config: true` to re-render. Existing configs are still patched for role-managed plugin entries and legacy Telegram streaming aliases required by newer OpenClaw schemas.
+The role seeds `openclaw.json` into the data directory on first deploy. By default, it builds the config from individual `openclaw_telegram_*` variables with explicit plugin control (unused channels like WhatsApp are disabled), managed Telegram preview-streaming policy, direct-message session scope, and the required local gateway mode. Once seeded, the config is not overwritten on subsequent deploys — set `openclaw_force_config: true` to re-render. Existing configs are still patched for the local gateway mode, managed Telegram streaming policy and DM session scope, role-managed plugin entries, and legacy Telegram streaming aliases required by newer OpenClaw schemas.
+
+OpenClaw's upstream `main` DM scope shares one conversation across all direct-message senders. Set `openclaw_session_dm_scope: per-channel-peer` for shared Telegram bots so each sender receives an isolated conversation history while the configured agent workspace remains shared.
+
+`openclaw_reply_system_prompt` is written to `<workspace>/SOUL.md`, not the OpenClaw state-directory root. Set `openclaw_user_profile` when the deployment should also manage `<workspace>/USER.md`; leaving it empty preserves an onboarding- or operator-maintained profile.
 
 To provide a full custom config, set `openclaw_gateway_config`:
 
@@ -634,7 +670,7 @@ Commands: `/todo add`, `/todo list`, `/note add`, `/note find`, `/snooze`. A dai
 | `openclaw_weeknotes_snapshot_max_count` | `200` | Max snapshots retained per file |
 | `openclaw_weeknotes_snapshot_max_days` | `14` | Max snapshot age in days |
 | `openclaw_weeknotes_lock_timeout` | `5` | File lock timeout in seconds |
-| `openclaw_weeknotes_max_payload_length` | `500` | Max payload length for write operations |
+| `openclaw_weeknotes_max_payload_length` | `4000` | Max character length for todo and journal write operations; sized for long voice-note transcriptions while retaining a bounded payload |
 | `openclaw_weeknotes_rate_limit_writes` | `10` | Max writes per rate-limit window |
 | `openclaw_weeknotes_rate_limit_window_secs` | `600` | Rate-limit window in seconds |
 | `openclaw_weeknotes_reminder_cron` | `0 9 * * 1-5` | Cron schedule for daily reminder |

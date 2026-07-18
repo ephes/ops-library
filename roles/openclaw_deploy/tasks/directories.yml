@@ -20,6 +20,7 @@
   loop:
     - "{{ openclaw_data_dir }}"
     - "{{ openclaw_log_dir }}"
+    - "{{ openclaw_agent_workspace_dir }}"
 
 - name: directories | Ensure OpenClaw credentials directory is private
   ansible.builtin.file:
