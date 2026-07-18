@@ -25,6 +25,7 @@
           - weeknotes_home_source_path == ""
           - weeknotes_home_git_repo == "https://github.com/ephes/daybook.git"
           - weeknotes_home_django_secret_key == "CHANGEME"
+          - weeknotes_home_api_token == "CHANGEME"
           - weeknotes_home_postgres_password == "CHANGEME"
           - weeknotes_home_postgres_database == "weeknotes_home"
           - weeknotes_home_app_port == 10062
@@ -45,6 +46,7 @@
         weeknotes_home_static_root: "/home/weeknotes-home/site/static/weeknotes-home"
         weeknotes_home_django_settings_module: "weeknotes_home.settings"
         weeknotes_home_django_secret_key: "test secret # dollar$ amp& end"
+        weeknotes_home_api_token: "test-api-token-32-characters-minimum-value"
         weeknotes_home_django_debug: false
         weeknotes_home_django_allowed_hosts:
           - "weeknotes.home.example"
@@ -98,6 +100,7 @@
         that:
           - "'DJANGO_SETTINGS_MODULE=\"weeknotes_home.settings\"' in rendered_env_text"
           - "'DJANGO_SECRET_KEY=\"test secret # dollar$ amp& end\"' in rendered_env_text"
+          - "'WEEKNOTES_HOME_API_TOKEN=\"test-api-token-32-characters-minimum-value\"' in rendered_env_text"
           - "'DJANGO_ALLOWED_HOSTS=\"weeknotes.home.example,127.0.0.1\"' in rendered_env_text"
           - "'DATABASE_URL=\"postgres://weeknotes_home:postgres%20secret%20%23%20dollar%24%20amp%26%20slash%2F%20quote%22%20end@localhost:5432/weeknotes_home\"' in rendered_env_text"
           - "'WorkingDirectory=/home/weeknotes-home/site/services/weeknotes_home' in rendered_service_text"

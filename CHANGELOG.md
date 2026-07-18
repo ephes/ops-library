@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- `weeknotes_home_deploy` now requires and renders a dedicated bearer token for
+  the private steering read/fold API, allowing Macmini and the Studio reconciler
+  to share one managed secret instead of exposing those endpoints anonymously.
+
 ### Added
 - `daybook_sessions_deploy` can install a dedicated Mac Studio draft-only
   weeknotes reconcile LaunchDaemon at 07:40 and 19:40 local time. The distinct

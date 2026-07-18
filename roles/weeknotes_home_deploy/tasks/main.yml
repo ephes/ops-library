@@ -7,12 +7,13 @@
       - weeknotes_home_app_port | int > 0
       - weeknotes_home_django_secret_key | length > 20
       - weeknotes_home_django_secret_key != "CHANGEME"
+      - (weeknotes_home_api_token | string | regex_search('^[A-Za-z0-9._~-]{32,256}$')) is not none
       - weeknotes_home_postgres_password | length > 0
       - weeknotes_home_postgres_password != "CHANGEME"
       - weeknotes_home_postgres_database | length > 0
       - weeknotes_home_postgres_user | length > 0
       - weeknotes_home_traefik_host | length > 0
-    fail_msg: "weeknotes_home_deploy requires real Django/PostgreSQL secrets and a valid host."
+    fail_msg: "weeknotes_home_deploy requires real Django/PostgreSQL/API secrets and a valid host."
 
 - name: main | Validate rsync source path
   ansible.builtin.assert:
