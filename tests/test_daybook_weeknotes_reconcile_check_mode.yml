@@ -1,0 +1,243 @@
+---
+- name: Test dedicated Daybook reconcile check-mode behavior
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/daybook_sessions_deploy"
+    reconcile_check_home: "/private/tmp/daybook-weeknotes-reconcile-check-mode-{{ lookup('env', 'USER') }}"
+  tasks:
+    - name: Require this regression playbook to run in check mode
+      ansible.builtin.assert:
+        that:
+          - ansible_check_mode
+        fail_msg: "Run this playbook with --check."
+
+    - name: Load role defaults
+      ansible.builtin.include_vars:
+        file: "{{ role_path }}/defaults/main.yml"
+
+    - name: Exercise placeholder validation in check mode
+      block:
+        - name: Include unconfigured reconcile tasks
+          ansible.builtin.include_tasks: "{{ role_path }}/tasks/weeknotes_reconcile.yml"
+
+        - name: Fail if placeholders passed in check mode
+          ansible.builtin.fail:
+            msg: "Reconcile placeholders must still fail closed in check mode."
+      rescue:
+        - name: Assert check mode stopped at placeholder validation
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name is search('Validate dedicated draft-only worker configuration')
+
+    - name: Remove stale configured check-mode fixture
+      ansible.builtin.file:
+        path: "{{ reconcile_check_home }}"
+        state: absent
+      check_mode: false
+
+    - name: Create owner-only configured fixture directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0700"
+      loop:
+        - "{{ reconcile_check_home }}"
+        - "{{ reconcile_check_home }}/.config"
+        - "{{ reconcile_check_home }}/.config/daybook-weeknotes-reconcile"
+        - "{{ reconcile_check_home }}/config"
+        - "{{ reconcile_check_home }}/logs"
+      check_mode: false
+
+    - name: Create metadata-only automation auth fixture
+      ansible.builtin.copy:
+        dest: "{{ reconcile_check_home }}/.config/daybook-weeknotes-reconcile/auth.json"
+        content: "{}\n"
+        mode: "0600"
+      no_log: true
+      check_mode: false
+
+    - name: Apply configured reconcile tasks in check mode
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/weeknotes_reconcile.yml"
+      vars:
+        daybook_sessions_launchd_scope: system
+        daybook_sessions_launchd_manage_state: false
+        daybook_sessions_service_user: "{{ lookup('env', 'USER') }}"
+        daybook_sessions_service_group: "{{ lookup('pipe', 'id -gn') }}"
+        daybook_sessions_service_home: "{{ reconcile_check_home }}"
+        daybook_sessions_checkout_path: "{{ reconcile_check_home }}/checkout"
+        daybook_sessions_config_dir: "{{ reconcile_check_home }}/config"
+        daybook_sessions_log_dir: "{{ reconcile_check_home }}/logs"
+        daybook_weeknotes_reconcile_env_file: "{{ reconcile_check_home }}/config/reconcile.env"
+        daybook_weeknotes_reconcile_launcher_path: "{{ reconcile_check_home }}/config/reconcile.sh"
+        daybook_weeknotes_reconcile_stdout_log: "{{ reconcile_check_home }}/logs/reconcile.log"
+        daybook_weeknotes_reconcile_stderr_log: "{{ reconcile_check_home }}/logs/reconcile.err.log"
+        daybook_weeknotes_reconcile_pi_auth_source_root: "{{ reconcile_check_home }}/.config/daybook-weeknotes-reconcile"
+        daybook_weeknotes_reconcile_pi_auth_source: "{{ reconcile_check_home }}/.config/daybook-weeknotes-reconcile/auth.json"
+        daybook_weeknotes_reconcile_runtime_dir: "{{ reconcile_check_home }}/.daybook/weeknotes-reconcile"
+        daybook_weeknotes_reconcile_state_path: "{{ reconcile_check_home }}/.daybook/weeknotes-reconcile/state.json"
+        daybook_weeknotes_reconcile_pi_agent_dir: "{{ reconcile_check_home }}/.daybook/weeknotes-reconcile/pi-agent"
+        daybook_weeknotes_path: s3://weeknotes-test
+        daybook_archive_url: https://archive.test.example/
+        daybook_weeknotes_cast_base_url: https://cast.test.example/blogs/
+        daybook_weeknotes_cast_token: test-cast-token
+        daybook_weeknotes_home_url: https://weeknotes.test.example/
+        daybook_weeknotes_home_token: test-home-token
+        daybook_weeknotes_public_blog_id: "4"
+        daybook_weeknotes_family_blog_id: "9"
+        daybook_quotes_unused_path: s3://quotes-test/unused.md
+        daybook_quotes_used_path: s3://quotes-test/used.md
+        daybook_quote_lifecycle_state: s3://quotes-test/state.json
+
+    - name: Create symlink-escape validation fixtures
+      block:
+        - name: Create private symlink-escape fixture directories
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            mode: "0700"
+          loop:
+            - "{{ reconcile_check_home }}/.pi"
+            - "{{ reconcile_check_home }}/.daybook"
+          check_mode: false
+
+        - name: Create metadata-only global-pi-shaped auth fixture
+          ansible.builtin.copy:
+            dest: "{{ reconcile_check_home }}/.pi/auth.json"
+            content: "{}\n"
+            mode: "0600"
+          no_log: true
+          check_mode: false
+
+        - name: Create source and runtime ancestor escape symlinks
+          ansible.builtin.file:
+            src: "{{ item.src }}"
+            dest: "{{ item.dest }}"
+            state: link
+          loop:
+            - src: "{{ reconcile_check_home }}/.pi"
+              dest: "{{ reconcile_check_home }}/.config/symlink-auth"
+            - src: "{{ reconcile_check_home }}"
+              dest: "{{ reconcile_check_home }}/.daybook/symlink-runtime"
+          check_mode: false
+
+        - name: Resolve symlink-escape fixtures without reading contents
+          ansible.builtin.command:
+            argv:
+              - "{{ ansible_python_interpreter | default('/usr/bin/python3') }}"
+              - -c
+              - "import os, sys; print(os.path.realpath(sys.argv[1]))"
+              - "{{ item }}"
+          loop:
+            - "{{ reconcile_check_home }}/.config/symlink-auth"
+            - "{{ reconcile_check_home }}/.config/symlink-auth/auth.json"
+            - "{{ reconcile_check_home }}/.daybook/symlink-runtime/state.json"
+          register: reconcile_symlink_escape_realpaths
+          changed_when: false
+          check_mode: false
+
+        - name: Assert path guards observe source and runtime escapes
+          ansible.builtin.assert:
+            that:
+              - reconcile_symlink_escape_realpaths.results[0].stdout != reconcile_check_home ~ '/.config/symlink-auth'
+              - reconcile_symlink_escape_realpaths.results[1].stdout.startswith(reconcile_check_home ~ '/.pi/')
+              - reconcile_symlink_escape_realpaths.results[2].stdout != reconcile_check_home ~ '/.daybook/symlink-runtime/state.json'
+              - (reconcile_traversal_fixture | regex_search('(^|/)[.][.]($|/)')) is not none
+          vars:
+            reconcile_traversal_fixture: "{{ reconcile_check_home }}/.config/../.pi/auth.json"
+
+    - name: Inspect configured check-mode mutation targets
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ reconcile_check_home }}/.daybook/weeknotes-reconcile"
+        - "{{ reconcile_check_home }}/.daybook/weeknotes-reconcile/pi-agent"
+        - "{{ reconcile_check_home }}/.daybook/weeknotes-reconcile/pi-agent/auth.json"
+        - "{{ reconcile_check_home }}/.daybook/weeknotes-reconcile/state.json"
+        - "{{ reconcile_check_home }}/config/reconcile.env"
+        - "{{ reconcile_check_home }}/config/reconcile.sh"
+      register: reconcile_check_mode_outputs
+      check_mode: false
+
+    - name: Assert configured check mode created no managed files
+      ansible.builtin.assert:
+        that:
+          - reconcile_check_mode_outputs.results | map(attribute='stat.exists') | select('equalto', true) | length == 0
+
+    - name: Create auth seeding regression directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0700"
+      loop:
+        - "{{ reconcile_check_home }}/auth-seed-source"
+        - "{{ reconcile_check_home }}/auth-seed-agent"
+      check_mode: false
+
+    - name: Create staged and Pi-refreshed auth fixtures
+      ansible.builtin.copy:
+        dest: "{{ item.path }}"
+        content: "{{ item.content }}"
+        mode: "0600"
+      loop:
+        - path: "{{ reconcile_check_home }}/auth-seed-source/auth.json"
+          content: "staged-auth\n"
+        - path: "{{ reconcile_check_home }}/auth-seed-agent/auth.json"
+          content: "pi-refreshed-auth\n"
+      no_log: true
+      check_mode: false
+
+    - name: Reapply auth seed without overwriting Pi-refreshed state
+      ansible.builtin.include_tasks:
+        file: "{{ role_path }}/tasks/weeknotes_reconcile_auth.yml"
+        apply:
+          check_mode: false
+      vars:
+        daybook_weeknotes_reconcile_pi_auth_source: "{{ reconcile_check_home }}/auth-seed-source/auth.json"
+        daybook_weeknotes_reconcile_pi_agent_dir: "{{ reconcile_check_home }}/auth-seed-agent"
+        daybook_weeknotes_reconcile_pi_auth_rotate: false
+        daybook_sessions_service_user: "{{ lookup('env', 'USER') }}"
+        daybook_sessions_service_group: "{{ lookup('pipe', 'id -gn') }}"
+
+    - name: Read preserved Pi-refreshed auth fixture
+      ansible.builtin.slurp:
+        path: "{{ reconcile_check_home }}/auth-seed-agent/auth.json"
+      register: reconcile_preserved_auth
+      no_log: true
+      check_mode: false
+
+    - name: Assert normal reapplication preserves Pi-refreshed auth
+      ansible.builtin.assert:
+        that:
+          - (reconcile_preserved_auth.content | b64decode) == 'pi-refreshed-auth\n'
+
+    - name: Explicitly rotate managed auth from the staged source
+      ansible.builtin.include_tasks:
+        file: "{{ role_path }}/tasks/weeknotes_reconcile_auth.yml"
+        apply:
+          check_mode: false
+      vars:
+        daybook_weeknotes_reconcile_pi_auth_source: "{{ reconcile_check_home }}/auth-seed-source/auth.json"
+        daybook_weeknotes_reconcile_pi_agent_dir: "{{ reconcile_check_home }}/auth-seed-agent"
+        daybook_weeknotes_reconcile_pi_auth_rotate: true
+        daybook_sessions_service_user: "{{ lookup('env', 'USER') }}"
+        daybook_sessions_service_group: "{{ lookup('pipe', 'id -gn') }}"
+
+    - name: Read explicitly rotated auth fixture
+      ansible.builtin.slurp:
+        path: "{{ reconcile_check_home }}/auth-seed-agent/auth.json"
+      register: reconcile_rotated_auth
+      no_log: true
+      check_mode: false
+
+    - name: Assert explicit rotation replaces managed auth
+      ansible.builtin.assert:
+        that:
+          - (reconcile_rotated_auth.content | b64decode) == 'staged-auth\n'
+
+    - name: Remove configured check-mode fixture
+      ansible.builtin.file:
+        path: "{{ reconcile_check_home }}"
+        state: absent
+      check_mode: false

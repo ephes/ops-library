@@ -17,6 +17,9 @@
     rendered_archive_launcher: "/tmp/test-daybook-archive-quotes.sh"
     rendered_archive_plist: "/tmp/test-daybook-archive-quotes.plist"
     rendered_headed_archive_plist: "/tmp/test-daybook-archive-quotes-headed.plist"
+    rendered_reconcile_env: "/tmp/test-daybook-weeknotes-reconcile.env"
+    rendered_reconcile_launcher: "/tmp/test-daybook-weeknotes-reconcile.sh"
+    rendered_reconcile_plist: "/tmp/test-daybook-weeknotes-reconcile.plist"
 
   tasks:
     - name: Verify role files exist
@@ -61,6 +64,17 @@
             path: "{{ role_path }}/templates/archive-quotes.launchd.plist.j2"
           register: archive_quotes_launchd_template_file
 
+        - name: Check weeknotes reconcile task and templates
+          ansible.builtin.stat:
+            path: "{{ item }}"
+          loop:
+            - "{{ role_path }}/tasks/weeknotes_reconcile.yml"
+            - "{{ role_path }}/tasks/weeknotes_reconcile_auth.yml"
+            - "{{ role_path }}/templates/weeknotes-reconcile.env.j2"
+            - "{{ role_path }}/templates/reconcile-weeknotes.sh.j2"
+            - "{{ role_path }}/templates/weeknotes-reconcile.launchd.plist.j2"
+          register: weeknotes_reconcile_files
+
         - name: Assert required files exist
           ansible.builtin.assert:
             that:
@@ -72,6 +86,7 @@
               - archive_quotes_env_template_file.stat.exists
               - archive_quotes_launcher_template_file.stat.exists
               - archive_quotes_launchd_template_file.stat.exists
+              - weeknotes_reconcile_files.results | map(attribute='stat.exists') | select('equalto', false) | length == 0
 
     - name: Load role defaults
       ansible.builtin.include_vars:
@@ -103,6 +118,22 @@
           - daybook_archive_browser_launch_timeout_seconds == 30
           - daybook_archive_browser_navigation_timeout_seconds == 30
           - daybook_archive_browser_render_wait_seconds == 1
+          - not daybook_weeknotes_reconcile_enabled | bool
+          - not daybook_weeknotes_reconcile_launchd_enabled | bool
+          - daybook_weeknotes_reconcile_launchd_label == 'de.wersdoerfer.daybook.weeknotes-reconcile'
+          - >-
+            daybook_weeknotes_reconcile_start_calendar
+            == [{'Hour': 7, 'Minute': 40}, {'Hour': 19, 'Minute': 40}]
+          - daybook_weeknotes_reconcile_public_timeout_seconds == 1200
+          - daybook_weeknotes_reconcile_family_timeout_seconds == 1200
+          - not daybook_weeknotes_reconcile_pi_auth_rotate | bool
+          - daybook_weeknotes_reconcile_pi_auth_source == '/Users/CHANGEME/.config/daybook-weeknotes-reconcile/auth.json'
+          - daybook_weeknotes_reconcile_runtime_dir == '/Users/CHANGEME/.daybook/weeknotes-reconcile'
+          - daybook_weeknotes_reconcile_state_path == '/Users/CHANGEME/.daybook/weeknotes-reconcile/state.json'
+          - daybook_weeknotes_cast_token == 'CHANGEME'
+          - daybook_weeknotes_home_token == 'CHANGEME'
+          - daybook_weeknotes_public_blog_id == 'CHANGEME'
+          - daybook_weeknotes_family_blog_id == 'CHANGEME'
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('Refuse an existing unmarked browser profile')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('Validate classifier browser filesystem access as the service user')
@@ -120,6 +151,69 @@
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('os.path.realpath')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('modification_time.*preserve')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search("daybook_archive_browser_headless or daybook_sessions_launchd_scope == 'user'")
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('distinct positive audience')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('mode.*0700')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('mode.*0600')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile_auth.yml') is search('remote_src.*true')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile_auth.yml') is search('no_log.*true')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile_auth.yml') is search('force.*daybook_weeknotes_reconcile_pi_auth_rotate')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('Refuse auth rotation while reconcile unit is loaded')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('Persist disabled-by-default launchd state')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('not ansible_check_mode')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('check_mode.*false')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is not search('\n\\s+- kickstart')
+
+    - name: Exercise missing dedicated reconcile variable validation
+      block:
+        - name: Run dedicated reconcile tasks with safe placeholder defaults in check mode
+          ansible.builtin.include_tasks:
+            file: "{{ role_path }}/tasks/weeknotes_reconcile.yml"
+            apply:
+              check_mode: true
+
+        - name: Fail if dedicated reconcile placeholders passed validation
+          ansible.builtin.fail:
+            msg: "Dedicated reconcile CHANGEME defaults must fail closed."
+      rescue:
+        - name: Assert dedicated reconcile stopped at validation
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name is search('Validate dedicated draft-only worker configuration')
+
+    - name: Exercise valid dedicated reconcile variables without touching runtime
+      block:
+        - name: Run dedicated reconcile tasks until missing auth source guard
+          ansible.builtin.include_tasks: "{{ role_path }}/tasks/weeknotes_reconcile.yml"
+          vars:
+            daybook_sessions_launchd_scope: system
+            daybook_sessions_service_user: test-runner
+            daybook_sessions_service_group: staff
+            daybook_sessions_service_home: /Users/test-runner
+            daybook_weeknotes_reconcile_pi_auth_source_root: /Users/test-runner/.config/daybook-weeknotes-reconcile
+            daybook_weeknotes_reconcile_pi_auth_source: /Users/test-runner/.config/daybook-weeknotes-reconcile/auth.json
+            daybook_weeknotes_reconcile_runtime_dir: /Users/test-runner/.daybook/weeknotes-reconcile
+            daybook_weeknotes_reconcile_state_path: /Users/test-runner/.daybook/weeknotes-reconcile/state.json
+            daybook_weeknotes_reconcile_pi_agent_dir: /Users/test-runner/.daybook/weeknotes-reconcile/pi-agent
+            daybook_weeknotes_path: s3://weeknotes-test
+            daybook_archive_url: https://archive.test.example/
+            daybook_weeknotes_cast_base_url: https://cast.test.example/blogs/
+            daybook_weeknotes_cast_token: test-cast-token
+            daybook_weeknotes_home_url: https://weeknotes.test.example/
+            daybook_weeknotes_home_token: test-home-token
+            daybook_weeknotes_public_blog_id: "4"
+            daybook_weeknotes_family_blog_id: "9"
+            daybook_quotes_unused_path: s3://quotes-test/unused.md
+            daybook_quotes_used_path: s3://quotes-test/used.md
+            daybook_quote_lifecycle_state: s3://quotes-test/state.json
+
+        - name: Fail if missing auth source guard did not stop the test
+          ansible.builtin.fail:
+            msg: "The missing dedicated auth source must fail before filesystem mutation."
+      rescue:
+        - name: Assert valid variables reached the auth metadata guard
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name is search('Validate resolved auth and runtime containment')
 
     - name: Assert quote lifecycle location safety rules
       ansible.builtin.assert:
@@ -418,6 +512,100 @@
       vars:
         rendered_headed_archive_plist_text: "{{ rendered_headed_archive_plist_file.content | b64decode }}"
 
+    - name: Configure dedicated weeknotes reconcile template values
+      ansible.builtin.set_fact:
+        daybook_sessions_launchd_scope: system
+        daybook_weeknotes_reconcile_enabled: true
+        daybook_weeknotes_reconcile_launchd_enabled: false
+        daybook_weeknotes_reconcile_runtime_dir: /Users/jochen/.daybook/weeknotes-reconcile
+        daybook_weeknotes_reconcile_pi_agent_dir: /Users/jochen/.daybook/weeknotes-reconcile/pi-agent
+        daybook_weeknotes_reconcile_state_path: /Users/jochen/.daybook/weeknotes-reconcile/state.json
+        daybook_weeknotes_path: s3://obsidian
+        daybook_archive_url: https://archive.home.example/
+        daybook_weeknotes_cast_base_url: https://cast.example/blogs/
+        daybook_weeknotes_cast_token: cast-secret-example
+        daybook_weeknotes_home_url: https://weeknotes.home.example/
+        daybook_weeknotes_home_token: home-secret-example
+        daybook_weeknotes_public_blog_id: "4"
+        daybook_weeknotes_family_blog_id: "9"
+
+    - name: Render dedicated weeknotes reconcile files
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+      loop:
+        - src: "{{ role_path }}/templates/weeknotes-reconcile.env.j2"
+          dest: "{{ rendered_reconcile_env }}"
+        - src: "{{ role_path }}/templates/reconcile-weeknotes.sh.j2"
+          dest: "{{ rendered_reconcile_launcher }}"
+        - src: "{{ role_path }}/templates/weeknotes-reconcile.launchd.plist.j2"
+          dest: "{{ rendered_reconcile_plist }}"
+
+    - name: Re-render dedicated weeknotes reconcile files for idempotence
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+      loop:
+        - src: "{{ role_path }}/templates/weeknotes-reconcile.env.j2"
+          dest: "{{ rendered_reconcile_env }}"
+        - src: "{{ role_path }}/templates/reconcile-weeknotes.sh.j2"
+          dest: "{{ rendered_reconcile_launcher }}"
+        - src: "{{ role_path }}/templates/weeknotes-reconcile.launchd.plist.j2"
+          dest: "{{ rendered_reconcile_plist }}"
+      register: rendered_reconcile_second_application
+
+    - name: Assert second static reconcile application is idempotent
+      ansible.builtin.assert:
+        that:
+          - rendered_reconcile_second_application.results | selectattr('changed') | list | length == 0
+
+    - name: Read dedicated weeknotes reconcile files
+      ansible.builtin.slurp:
+        path: "{{ item }}"
+      loop:
+        - "{{ rendered_reconcile_env }}"
+        - "{{ rendered_reconcile_launcher }}"
+        - "{{ rendered_reconcile_plist }}"
+      register: rendered_reconcile_files
+
+    - name: Assert dedicated weeknotes reconcile contract
+      ansible.builtin.assert:
+        that:
+          - "'DAYBOOK_PI_AGENT_DIR=/Users/jochen/.daybook/weeknotes-reconcile/pi-agent' in reconcile_env_text"
+          - "'DAYBOOK_PI_PUBLIC_TIMEOUT_SECONDS=1200' in reconcile_env_text"
+          - "'DAYBOOK_PI_FAMILY_TIMEOUT_SECONDS=1200' in reconcile_env_text"
+          - "'DAYBOOK_WEEKNOTES_RECONCILE_STATE=/Users/jochen/.daybook/weeknotes-reconcile/state.json' in reconcile_env_text"
+          - "'DAYBOOK_WEEKNOTES_PATH=s3://obsidian' in reconcile_env_text"
+          - "'DAYBOOK_SESSIONS_PATH=s3://agent-sessions' in reconcile_env_text"
+          - "'DAYBOOK_ARCHIVE_TOKEN=' not in reconcile_env_text"
+          - "'DAYBOOK_CAST_TOKEN=cast-secret-example' in reconcile_env_text"
+          - "'DAYBOOK_WEEKNOTES_HOME_TOKEN=home-secret-example' in reconcile_env_text"
+          - "'DAYBOOK_WEEKNOTES_PUBLIC_BLOG_ID=4' in reconcile_env_text"
+          - "'DAYBOOK_WEEKNOTES_FAMILY_BLOG_ID=9' in reconcile_env_text"
+          - "'AWS_ENDPOINT_URL_S3=https://s3.home.example' in reconcile_env_text"
+          - reconcile_launcher_text is search('daybook weeknotes reconcile')
+          - reconcile_launcher_text is not search('publish')
+          - reconcile_launcher_text is not search('prompt')
+          - "'<string>de.wersdoerfer.daybook.weeknotes-reconcile</string>' in reconcile_plist_text"
+          - "'<string>/etc/daybook-sessions/reconcile-weeknotes.sh</string>' in reconcile_plist_text"
+          - "'<string>/Users/jochen/projects/daybook</string>' in reconcile_plist_text"
+          - "'<key>ProcessType</key>' in reconcile_plist_text"
+          - "'<string>Background</string>' in reconcile_plist_text"
+          - "'<key>RunAtLoad</key>' in reconcile_plist_text"
+          - "'<false/>' in reconcile_plist_text"
+          - "'<key>StartCalendarInterval</key>' in reconcile_plist_text"
+          - reconcile_plist_text is search('<integer>7</integer>\\s*<key>Minute</key>\\s*<integer>40</integer>')
+          - reconcile_plist_text is search('<integer>19</integer>\\s*<key>Minute</key>\\s*<integer>40</integer>')
+          - "'<key>StartInterval</key>' not in reconcile_plist_text"
+          - "'publish' not in reconcile_plist_text"
+          - "'archive-secret-example' not in reconcile_plist_text"
+          - "'cast-secret-example' not in reconcile_plist_text"
+          - "'home-secret-example' not in reconcile_plist_text"
+      vars:
+        reconcile_env_text: "{{ rendered_reconcile_files.results[0].content | b64decode }}"
+        reconcile_launcher_text: "{{ rendered_reconcile_files.results[1].content | b64decode }}"
+        reconcile_plist_text: "{{ rendered_reconcile_files.results[2].content | b64decode }}"
+
     - name: Clean up rendered files
       ansible.builtin.file:
         path: "{{ item }}"
@@ -431,3 +619,6 @@
         - "{{ rendered_archive_launcher }}"
         - "{{ rendered_archive_plist }}"
         - "{{ rendered_headed_archive_plist }}"
+        - "{{ rendered_reconcile_env }}"
+        - "{{ rendered_reconcile_launcher }}"
+        - "{{ rendered_reconcile_plist }}"

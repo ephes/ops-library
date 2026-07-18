@@ -1,7 +1,7 @@
 ---
 galaxy_info:
   author: Jochen Wersdoerfer
-  description: Deploy the Daybook agent-session shipper as a periodic macOS launchd job
+  description: Deploy Daybook session, quote, and disabled-by-default draft reconcile macOS launchd jobs
   license: MIT
   min_ansible_version: "2.15"
   platforms:

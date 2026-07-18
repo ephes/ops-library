@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `daybook_sessions_deploy` can install a dedicated Mac Studio draft-only
+  weeknotes reconcile LaunchDaemon at 07:40 and 19:40 local time. The distinct
+  unit, logs, mode-0600 environment, local state, and auth-only pi directory are
+  managed independently from session shipping and quote classification; launchd
+  activation defaults to disabled/unloaded and deployment never runs reconcile.
+  OAuth is seeded once, preserves Pi refreshes on normal reapplication, and can
+  be replaced only through explicit unloaded-unit rotation.
+
 ### Fixed
 - `daybook_sessions_deploy` now configures Daybook's external quote lifecycle
   JSON state alongside the unused/used Markdown locations, exposes all three to

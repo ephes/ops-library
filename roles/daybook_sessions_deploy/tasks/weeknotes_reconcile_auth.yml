@@ -1,0 +1,11 @@
+---
+- name: weeknotes_reconcile_auth | Seed auth without overwriting Pi refreshes
+  ansible.builtin.copy:
+    src: "{{ daybook_weeknotes_reconcile_pi_auth_source }}"
+    dest: "{{ daybook_weeknotes_reconcile_pi_agent_dir }}/auth.json"
+    remote_src: true
+    owner: "{{ daybook_sessions_service_user }}"
+    group: "{{ daybook_sessions_service_group }}"
+    mode: "0600"
+    force: "{{ daybook_weeknotes_reconcile_pi_auth_rotate | bool }}"
+  no_log: true

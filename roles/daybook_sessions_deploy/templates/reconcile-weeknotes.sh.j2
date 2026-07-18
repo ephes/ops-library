@@ -1,0 +1,14 @@
+#!/bin/bash
+set -euo pipefail
+
+export PATH={{ daybook_sessions_launchd_path | quote }}
+export UV_PROJECT_ENVIRONMENT={{ (daybook_sessions_checkout_path ~ '/.venv') | quote }}
+
+set -a
+# shellcheck disable=SC1090
+source {{ daybook_weeknotes_reconcile_env_file | quote }}
+set +a
+
+cd {{ daybook_sessions_checkout_path | quote }}
+printf '[%s] starting draft-only daybook weeknotes reconcile\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+exec {{ daybook_sessions_uv_bin | quote }} run --frozen --no-dev daybook weeknotes reconcile "$@"

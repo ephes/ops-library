@@ -6,7 +6,9 @@ Daybook checkout on the target, runs `uv sync`, installs the `trufflehog`
 Homebrew package, renders a secret environment file, and schedules
 `daybook sessions ship`. It can also install the optional Archive quote
 classifier launchd job that runs `daybook archive classify-quotes` from the same
-checkout and environment.
+checkout and environment. A separately gated Studio system LaunchDaemon can run
+the draft-only `daybook weeknotes reconcile` command at 07:40 and 19:40 local
+time. Its schedule is disabled and unloaded by default.
 
 Run the role with facts enabled. It validates the macOS target, rejects
 placeholder credentials, and expects real MinIO credentials to come from a
@@ -23,6 +25,11 @@ private control repo such as ops-control SOPS.
 - optional `/etc/daybook-sessions/archive-quotes.env`
 - optional `/etc/daybook-sessions/classify-archive-quotes.sh`
 - optional `/Library/LaunchDaemons/de.wersdoerfer.daybook.archive-quotes.plist`
+- optional `/etc/daybook-sessions/weeknotes-reconcile.env` (mode `0600`)
+- optional `/etc/daybook-sessions/reconcile-weeknotes.sh`
+- optional `/Library/LaunchDaemons/de.wersdoerfer.daybook.weeknotes-reconcile.plist`
+- optional dedicated `~/.daybook/weeknotes-reconcile/` runtime (mode `0700`),
+  with `state.json`, `.state.json.lock`, and an auth-only `pi-agent/`
 - optional dedicated `~/.daybook/archive-quote-browser` profile directory (never
   a user's live Helium profile)
 - launchd stdout/stderr logs under `/var/log/daybook-sessions/`
@@ -68,6 +75,18 @@ daybook_archive_browser_headless: true
 daybook_archive_browser_launch_timeout_seconds: 30
 daybook_archive_browser_navigation_timeout_seconds: 30
 daybook_archive_browser_render_wait_seconds: 1
+daybook_weeknotes_reconcile_enabled: false
+daybook_weeknotes_reconcile_launchd_enabled: false
+daybook_weeknotes_reconcile_launchd_label: de.wersdoerfer.daybook.weeknotes-reconcile
+daybook_weeknotes_reconcile_start_calendar:
+  - {Hour: 7, Minute: 40}
+  - {Hour: 19, Minute: 40}
+daybook_weeknotes_reconcile_runtime_dir: "{{ daybook_sessions_service_home }}/.daybook/weeknotes-reconcile"
+daybook_weeknotes_reconcile_state_path: "{{ daybook_weeknotes_reconcile_runtime_dir }}/state.json"
+daybook_weeknotes_reconcile_pi_agent_dir: "{{ daybook_weeknotes_reconcile_runtime_dir }}/pi-agent"
+daybook_weeknotes_reconcile_pi_auth_source_root: "{{ daybook_sessions_service_home }}/.config/daybook-weeknotes-reconcile"
+daybook_weeknotes_reconcile_pi_auth_source: "{{ daybook_weeknotes_reconcile_pi_auth_source_root }}/auth.json"
+daybook_weeknotes_reconcile_pi_auth_rotate: false
 ```
 
 These values must be supplied by the private control repo:
@@ -171,6 +190,103 @@ daybook_sessions_redact_files:
   - "/Users/jochen/projects/daybook/.envrc"
   - "/Users/jochen/projects/ops-control/.envrc"
 ```
+
+## Dedicated Weeknotes Reconciler
+
+Set `daybook_weeknotes_reconcile_enabled: true` to install the dedicated
+reconciler files. This requires a **system** LaunchDaemon. Installation renders
+the plist but `daybook_weeknotes_reconcile_launchd_enabled` defaults to `false`;
+the role boots out a loaded copy and persists launchd's disabled state. It never
+kickstarts or otherwise invokes reconcile during deployment. After a reviewed
+manual dry run and normal audience run, set the launchd flag to `true` to enable
+and bootstrap the calendar schedule without an immediate run. In Ansible check
+mode, read-only launchctl inspection still runs, all launchctl mutations and
+mutation-dependent filesystem postconditions are skipped, and placeholder
+validation remains fail-closed.
+
+The calendar is fixed at 07:40 and 19:40 local time, twenty minutes after the
+quote classifier's 07:20 and 19:20 runs. `StartCalendarInterval` lets launchd
+coalesce a missed occurrence after wake; there is deliberately no
+`StartInterval` catch-up loop. Daybook's non-blocking flock makes overlap a
+content-free exit-1 result, and its idempotent state/fencing handles duplicate
+calendar delivery safely. `RunAtLoad` is always false. The job is background,
+low-I/O, draft-only, and has separate stdout/stderr logs.
+
+The mode-0600 managed environment supplies these names:
+
+- `DAYBOOK_PI_AGENT_DIR`, `DAYBOOK_PI_PUBLIC_TIMEOUT_SECONDS`, and
+  `DAYBOOK_PI_FAMILY_TIMEOUT_SECONDS`
+- `DAYBOOK_WEEKNOTES_RECONCILE_STATE`, `DAYBOOK_WEEKNOTES_PATH`, and
+  `DAYBOOK_SESSIONS_PATH`
+- Archive GET URL (no Archive token), all three quote lifecycle locations, and
+  the S3 endpoint, regions, and credentials
+- django-cast base URL/token and distinct public/family blog ids
+- weeknotes.home URL/token
+
+All credential defaults are `CHANGEME` and are rejected. Values never enter the
+plist or argv; the launcher sources the owner-only file and executes exactly
+`uv run --frozen --no-dev daybook weeknotes reconcile`. It never passes a
+publish argument or prompt/content in argv.
+
+### Dedicated pi authorization precondition
+
+Provision a separate OpenAI subscription OAuth `auth.json` at the remote
+`daybook_weeknotes_reconcile_pi_auth_source` before applying the role. The source
+must be a service-user-owned, non-symlink, single-link mode-0600 regular file in
+a real service-user-owned mode-0700 dedicated source directory. The role rejects
+`..`, resolves source/runtime/state/agent paths without reading contents, rejects
+symlinked ancestors and every resolved source under `~/.pi`, and requires exact
+containment under explicit owner-only roots. On first install it seeds the
+managed file with `remote_src` under `no_log`; later normal applications preserve
+that file because Pi may have refreshed its OAuth state. The role refuses every
+destination entry other than its owned mode-0600 `auth.json`. Never use or
+modify global pi configuration or personal auth.
+
+To rotate the managed authorization, first disable and unload the exact
+reconcile unit, replace the separately staged source, and apply once with
+`daybook_weeknotes_reconcile_pi_auth_rotate=true`. Rotation fails closed while
+the unit is loaded. Return the flag to false immediately; it is never a normal
+deployment setting.
+
+### Static install and activation flow
+
+```sh
+# Install/update while forcing the new unit disabled and unloaded.
+ansible-playbook ... -e daybook_weeknotes_reconcile_enabled=true \
+  -e daybook_weeknotes_reconcile_launchd_enabled=false
+
+# On the target, as the service user; the first command has zero mutations.
+/etc/daybook-sessions/reconcile-weeknotes.sh --dry-run
+/etc/daybook-sessions/reconcile-weeknotes.sh --audience public
+/etc/daybook-sessions/reconcile-weeknotes.sh --audience family
+
+# Only after inspecting the resulting drafts, explicitly activate the timer.
+ansible-playbook ... -e daybook_weeknotes_reconcile_enabled=true \
+  -e daybook_weeknotes_reconcile_launchd_enabled=true
+```
+
+Status remains content-free:
+
+```sh
+launchctl print system/de.wersdoerfer.daybook.weeknotes-reconcile
+set -a; . /etc/daybook-sessions/weeknotes-reconcile.env; set +a
+cd /Users/USER/projects/daybook
+/opt/homebrew/bin/uv run --frozen --no-dev daybook weeknotes reconcile-status \
+  --state "$DAYBOOK_WEEKNOTES_RECONCILE_STATE"
+```
+
+A normal exit is 0. Lock contention or an audience failure returns 1 with
+Daybook's bounded, content-free JSON report; launchd exposes the last exit status.
+A safe manual rerun is the launcher with no arguments or one explicit
+`--audience`. It remains draft-only and idempotent.
+
+To roll back, first deploy with the launchd flag false, then remove only the new
+plist, launcher, environment, and its two logs if desired. Preserve the reconcile
+`~/.daybook/weeknotes-reconcile/state.json`, its `.state.json.lock`, drafts,
+quote assignments/lifecycle, and managed pi auth unless an operator separately
+rotates authorization. Reverting ops commits
+is safe after the unit is unloaded. This role does not configure log rotation;
+that matches the existing Daybook launchd jobs.
 
 ## Example
 

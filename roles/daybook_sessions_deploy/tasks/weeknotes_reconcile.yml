@@ -1,0 +1,455 @@
+---
+- name: weeknotes_reconcile | Validate dedicated draft-only worker configuration
+  ansible.builtin.assert:
+    that:
+      - daybook_sessions_launchd_scope == 'system'
+      - daybook_weeknotes_reconcile_launchd_enabled | type_debug == 'bool'
+      - daybook_weeknotes_reconcile_launchd_label == 'de.wersdoerfer.daybook.weeknotes-reconcile'
+      - daybook_weeknotes_reconcile_launchd_plist_path == '/Library/LaunchDaemons/de.wersdoerfer.daybook.weeknotes-reconcile.plist'
+      - daybook_weeknotes_reconcile_env_file | string | trim | length > 0
+      - daybook_weeknotes_reconcile_launcher_path | string | trim | length > 0
+      - daybook_weeknotes_reconcile_stdout_log | string | trim | length > 0
+      - daybook_weeknotes_reconcile_stderr_log | string | trim | length > 0
+      - >-
+        daybook_weeknotes_reconcile_start_calendar
+        == [{'Hour': 7, 'Minute': 40}, {'Hour': 19, 'Minute': 40}]
+      - daybook_weeknotes_reconcile_runtime_dir | string | trim | length > 0
+      - (daybook_weeknotes_reconcile_runtime_dir | string).startswith(daybook_sessions_service_home ~ '/.daybook/')
+      - (daybook_weeknotes_reconcile_state_path | dirname) == daybook_weeknotes_reconcile_runtime_dir
+      - (daybook_weeknotes_reconcile_state_path | basename) == 'state.json'
+      - (daybook_weeknotes_reconcile_pi_agent_dir | dirname) == daybook_weeknotes_reconcile_runtime_dir
+      - (daybook_weeknotes_reconcile_pi_agent_dir | basename) == 'pi-agent'
+      - (daybook_weeknotes_reconcile_pi_auth_source_root | string).startswith(daybook_sessions_service_home ~ '/.config/')
+      - (daybook_weeknotes_reconcile_pi_auth_source | dirname) == daybook_weeknotes_reconcile_pi_auth_source_root
+      - (daybook_weeknotes_reconcile_pi_auth_source | basename) == 'auth.json'
+      - daybook_weeknotes_reconcile_pi_auth_source != daybook_weeknotes_reconcile_pi_agent_dir ~ '/auth.json'
+      - daybook_weeknotes_reconcile_pi_auth_rotate | type_debug == 'bool'
+      - >-
+        [
+          daybook_weeknotes_reconcile_runtime_dir,
+          daybook_weeknotes_reconcile_state_path,
+          daybook_weeknotes_reconcile_pi_agent_dir,
+          daybook_weeknotes_reconcile_pi_auth_source_root,
+          daybook_weeknotes_reconcile_pi_auth_source
+        ]
+        | select('search', '(^|/)[.][.]($|/)')
+        | list
+        | length == 0
+      - daybook_weeknotes_reconcile_public_timeout_seconds | float > 0
+      - daybook_weeknotes_reconcile_family_timeout_seconds | float > 0
+      - (daybook_weeknotes_path | string | regex_search('^s3://')) is not none
+      - (daybook_archive_url | string | regex_search('^https://[^/?#]+(?:/[^?#]*)?$')) is not none
+      - daybook_archive_url != 'CHANGEME'
+      - (daybook_weeknotes_cast_base_url | string | regex_search('^https://[^/?#]+(?:/[^?#]*)?$')) is not none
+      - daybook_weeknotes_cast_base_url != 'CHANGEME'
+      - daybook_weeknotes_cast_token | string | trim | length > 0
+      - daybook_weeknotes_cast_token != 'CHANGEME'
+      - (daybook_weeknotes_home_url | string | regex_search('^https://[^/?#]+(?:/[^?#]*)?$')) is not none
+      - daybook_weeknotes_home_url != 'CHANGEME'
+      - daybook_weeknotes_home_token | string | trim | length > 0
+      - daybook_weeknotes_home_token != 'CHANGEME'
+      - (daybook_weeknotes_public_blog_id | string | regex_search('^[1-9][0-9]*$')) is not none
+      - (daybook_weeknotes_family_blog_id | string | regex_search('^[1-9][0-9]*$')) is not none
+      - (daybook_weeknotes_public_blog_id | string) != (daybook_weeknotes_family_blog_id | string)
+      - daybook_quotes_unused_path != 'CHANGEME'
+      - daybook_quotes_used_path != 'CHANGEME'
+      - daybook_quote_lifecycle_state != 'CHANGEME'
+    fail_msg: >-
+      The dedicated weeknotes reconciler needs the exact label, plist,
+      07:40/19:40 system schedule, traversal-free dedicated state/auth roots,
+      distinct positive audience blog ids, and explicitly managed locations and
+      reconcile credentials.
+  no_log: true
+
+- name: weeknotes_reconcile | Resolve auth and runtime paths without reading contents
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_python_interpreter | default('/usr/bin/python3') }}"
+      - -c
+      - "import os, sys; print(os.path.realpath(sys.argv[1]))"
+      - "{{ item }}"
+  loop:
+    - "{{ daybook_sessions_service_home }}"
+    - "{{ daybook_weeknotes_reconcile_pi_auth_source_root }}"
+    - "{{ daybook_weeknotes_reconcile_pi_auth_source }}"
+    - "{{ daybook_weeknotes_reconcile_runtime_dir }}"
+    - "{{ daybook_weeknotes_reconcile_state_path }}"
+    - "{{ daybook_weeknotes_reconcile_pi_agent_dir }}"
+    - "{{ daybook_sessions_service_home }}/.pi"
+  register: daybook_weeknotes_reconcile_realpaths
+  changed_when: false
+  check_mode: false
+
+- name: weeknotes_reconcile | Inspect dedicated auth source metadata
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    get_checksum: false
+  loop:
+    - "{{ daybook_weeknotes_reconcile_pi_auth_source_root }}"
+    - "{{ daybook_weeknotes_reconcile_pi_auth_source }}"
+  register: daybook_weeknotes_reconcile_pi_auth_source_stats
+
+- name: weeknotes_reconcile | Validate resolved auth and runtime containment
+  ansible.builtin.assert:
+    that:
+      - daybook_weeknotes_reconcile_realpaths.results[0].stdout == daybook_sessions_service_home
+      - daybook_weeknotes_reconcile_realpaths.results[1].stdout == daybook_weeknotes_reconcile_pi_auth_source_root
+      - daybook_weeknotes_reconcile_realpaths.results[2].stdout == daybook_weeknotes_reconcile_realpaths.results[1].stdout ~ '/auth.json'
+      - daybook_weeknotes_reconcile_realpaths.results[3].stdout == daybook_weeknotes_reconcile_runtime_dir
+      - daybook_weeknotes_reconcile_realpaths.results[4].stdout == daybook_weeknotes_reconcile_realpaths.results[3].stdout ~ '/state.json'
+      - daybook_weeknotes_reconcile_realpaths.results[5].stdout == daybook_weeknotes_reconcile_realpaths.results[3].stdout ~ '/pi-agent'
+      - daybook_weeknotes_reconcile_realpaths.results[2].stdout != daybook_weeknotes_reconcile_realpaths.results[6].stdout
+      - not daybook_weeknotes_reconcile_realpaths.results[2].stdout.startswith(daybook_weeknotes_reconcile_realpaths.results[6].stdout ~ '/')
+      - daybook_weeknotes_reconcile_pi_auth_source_stats.results[0].stat.exists | default(false)
+      - daybook_weeknotes_reconcile_pi_auth_source_stats.results[0].stat.isdir | default(false)
+      - not (daybook_weeknotes_reconcile_pi_auth_source_stats.results[0].stat.islnk | default(false))
+      - daybook_weeknotes_reconcile_pi_auth_source_stats.results[0].stat.pw_name == daybook_sessions_service_user
+      - daybook_weeknotes_reconcile_pi_auth_source_stats.results[0].stat.mode == '0700'
+      - daybook_weeknotes_reconcile_pi_auth_source_stats.results[1].stat.exists | default(false)
+      - daybook_weeknotes_reconcile_pi_auth_source_stats.results[1].stat.isreg | default(false)
+      - not (daybook_weeknotes_reconcile_pi_auth_source_stats.results[1].stat.islnk | default(false))
+      - daybook_weeknotes_reconcile_pi_auth_source_stats.results[1].stat.nlink | default(0) == 1
+      - daybook_weeknotes_reconcile_pi_auth_source_stats.results[1].stat.pw_name == daybook_sessions_service_user
+      - daybook_weeknotes_reconcile_pi_auth_source_stats.results[1].stat.mode == '0600'
+    fail_msg: >-
+      Dedicated reconcile paths must resolve exactly beneath their configured
+      real owner-only roots. Stage automation auth in a real service-user-owned
+      mode-0700 source directory as a single-link mode-0600 auth.json; symlinked
+      ancestors, traversal, and every resolved source under ~/.pi are forbidden.
+
+- name: weeknotes_reconcile | Inspect existing dedicated runtime objects
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    get_checksum: false
+  loop:
+    - "{{ daybook_weeknotes_reconcile_runtime_dir }}"
+    - "{{ daybook_weeknotes_reconcile_state_path }}"
+    - "{{ daybook_weeknotes_reconcile_runtime_dir }}/.state.json.lock"
+    - "{{ daybook_weeknotes_reconcile_pi_agent_dir }}"
+    - "{{ daybook_weeknotes_reconcile_pi_agent_dir }}/auth.json"
+  register: daybook_weeknotes_reconcile_existing_runtime
+
+- name: weeknotes_reconcile | Validate existing dedicated runtime metadata
+  ansible.builtin.assert:
+    that:
+      - >-
+        not (item.stat.exists | default(false))
+        or (
+          (
+            item.item in [daybook_weeknotes_reconcile_runtime_dir, daybook_weeknotes_reconcile_pi_agent_dir]
+            and (item.stat.isdir | default(false))
+            and item.stat.mode == '0700'
+          )
+          or (
+            item.item not in [daybook_weeknotes_reconcile_runtime_dir, daybook_weeknotes_reconcile_pi_agent_dir]
+            and (item.stat.isreg | default(false))
+            and item.stat.nlink | default(0) == 1
+            and item.stat.mode == '0600'
+          )
+        )
+      - not (item.stat.exists | default(false)) or not (item.stat.islnk | default(false))
+      - not (item.stat.exists | default(false)) or item.stat.pw_name == daybook_sessions_service_user
+    fail_msg: >-
+      Existing reconcile state, lock, runtime root, pi-agent directory, and auth
+      must be real, service-user-owned, private objects with no hard links.
+  loop: "{{ daybook_weeknotes_reconcile_existing_runtime.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: weeknotes_reconcile | Ensure private runtime directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ daybook_sessions_service_user }}"
+    group: "{{ daybook_sessions_service_group }}"
+    mode: "0700"
+  loop:
+    - "{{ daybook_weeknotes_reconcile_runtime_dir }}"
+    - "{{ daybook_weeknotes_reconcile_pi_agent_dir }}"
+
+- name: weeknotes_reconcile | Inspect private runtime directories after creation
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    get_checksum: false
+  loop:
+    - "{{ daybook_weeknotes_reconcile_runtime_dir }}"
+    - "{{ daybook_weeknotes_reconcile_pi_agent_dir }}"
+  register: daybook_weeknotes_reconcile_private_directories
+  when: not ansible_check_mode
+
+- name: weeknotes_reconcile | Validate created owner-only runtime directories
+  ansible.builtin.assert:
+    that:
+      - item.stat.isdir | default(false)
+      - not (item.stat.islnk | default(false))
+      - item.stat.pw_name == daybook_sessions_service_user
+      - item.stat.mode == '0700'
+    fail_msg: "Weeknotes reconcile runtime and pi-agent directories must be real, service-user-owned mode-0700 directories."
+  loop: "{{ daybook_weeknotes_reconcile_private_directories.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not ansible_check_mode
+
+- name: weeknotes_reconcile | Inspect existing dedicated pi agent directory names
+  ansible.builtin.find:
+    paths: "{{ daybook_weeknotes_reconcile_pi_agent_dir }}"
+    recurse: false
+    hidden: true
+    file_type: any
+  register: daybook_weeknotes_reconcile_pi_agent_existing
+  when: not ansible_check_mode
+
+- name: weeknotes_reconcile | Refuse unsafe files in dedicated pi agent directory
+  ansible.builtin.assert:
+    that:
+      - >-
+        daybook_weeknotes_reconcile_pi_agent_existing.files
+        | map(attribute='path')
+        | map('basename')
+        | difference(['auth.json'])
+        | length == 0
+      - >-
+        daybook_weeknotes_reconcile_pi_agent_existing.files
+        | selectattr('path', 'equalto', daybook_weeknotes_reconcile_pi_agent_dir ~ '/auth.json')
+        | rejectattr('isreg', 'equalto', true)
+        | list
+        | length == 0
+      - >-
+        daybook_weeknotes_reconcile_pi_agent_existing.files
+        | selectattr('path', 'equalto', daybook_weeknotes_reconcile_pi_agent_dir ~ '/auth.json')
+        | selectattr('islnk', 'defined')
+        | selectattr('islnk', 'equalto', true)
+        | list
+        | length == 0
+    fail_msg: >-
+      The dedicated pi agent directory may contain only a real auth.json;
+      settings, models, prompts, packages, sessions, symlinks, and fallback
+      configuration are forbidden.
+  when: not ansible_check_mode
+
+- name: weeknotes_reconcile | Check unit is unloaded before explicit auth rotation
+  ansible.builtin.command:
+    argv:
+      - launchctl
+      - print
+      - "{{ daybook_sessions_launchd_domain }}/{{ daybook_weeknotes_reconcile_launchd_label }}"
+  register: daybook_weeknotes_reconcile_auth_rotation_unit_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: daybook_weeknotes_reconcile_pi_auth_rotate | bool
+
+- name: weeknotes_reconcile | Refuse auth rotation while reconcile unit is loaded
+  ansible.builtin.assert:
+    that:
+      - daybook_weeknotes_reconcile_auth_rotation_unit_status.rc != 0
+    fail_msg: >-
+      Explicit reconcile OAuth rotation requires the exact launchd unit to be
+      disabled and unloaded first.
+  when: daybook_weeknotes_reconcile_pi_auth_rotate | bool
+
+- name: weeknotes_reconcile | Seed or explicitly rotate dedicated automation auth
+  ansible.builtin.include_tasks: weeknotes_reconcile_auth.yml
+  when:
+    - >-
+      not ansible_check_mode
+      or (daybook_weeknotes_reconcile_existing_runtime.results[3].stat.isdir | default(false))
+
+- name: weeknotes_reconcile | Inspect provisioned dedicated pi agent directory
+  ansible.builtin.find:
+    paths: "{{ daybook_weeknotes_reconcile_pi_agent_dir }}"
+    recurse: false
+    hidden: true
+    file_type: any
+  register: daybook_weeknotes_reconcile_pi_agent_provisioned
+  when: not ansible_check_mode
+
+- name: weeknotes_reconcile | Validate auth-only dedicated pi agent directory
+  ansible.builtin.assert:
+    that:
+      - daybook_weeknotes_reconcile_pi_agent_provisioned.matched == 1
+      - (daybook_weeknotes_reconcile_pi_agent_provisioned.files | first).path == daybook_weeknotes_reconcile_pi_agent_dir ~ '/auth.json'
+      - (daybook_weeknotes_reconcile_pi_agent_provisioned.files | first).isreg
+      - not ((daybook_weeknotes_reconcile_pi_agent_provisioned.files | first).islnk | default(false))
+      - (daybook_weeknotes_reconcile_pi_agent_provisioned.files | first).nlink == 1
+      - (daybook_weeknotes_reconcile_pi_agent_provisioned.files | first).pw_name == daybook_sessions_service_user
+      - (daybook_weeknotes_reconcile_pi_agent_provisioned.files | first).mode == '0600'
+    fail_msg: "Dedicated pi agent provisioning did not produce exactly one safe auth.json."
+  when: not ansible_check_mode
+
+- name: weeknotes_reconcile | Ensure separate launchd log files exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: touch
+    owner: "{{ daybook_sessions_service_user }}"
+    group: "{{ daybook_sessions_service_group }}"
+    mode: "0640"
+    modification_time: preserve
+    access_time: preserve
+  loop:
+    - "{{ daybook_weeknotes_reconcile_stdout_log }}"
+    - "{{ daybook_weeknotes_reconcile_stderr_log }}"
+
+- name: weeknotes_reconcile | Render mode-0600 managed environment
+  ansible.builtin.template:
+    src: "{{ role_path }}/templates/weeknotes-reconcile.env.j2"
+    dest: "{{ daybook_weeknotes_reconcile_env_file }}"
+    owner: "{{ daybook_sessions_service_user }}"
+    group: "{{ daybook_sessions_service_group }}"
+    mode: "0600"
+  no_log: true
+
+- name: weeknotes_reconcile | Render draft-only launcher
+  ansible.builtin.template:
+    src: "{{ role_path }}/templates/reconcile-weeknotes.sh.j2"
+    dest: "{{ daybook_weeknotes_reconcile_launcher_path }}"
+    owner: root
+    group: wheel
+    mode: "0755"
+
+- name: weeknotes_reconcile | Render launchd plist
+  ansible.builtin.template:
+    src: "{{ role_path }}/templates/weeknotes-reconcile.launchd.plist.j2"
+    dest: "{{ daybook_weeknotes_reconcile_launchd_plist_path }}"
+    owner: root
+    group: wheel
+    mode: "0644"
+  register: daybook_weeknotes_reconcile_launchd_template
+
+- name: weeknotes_reconcile | Check launchd unit status without starting it
+  ansible.builtin.command:
+    argv:
+      - launchctl
+      - print
+      - "{{ daybook_sessions_launchd_domain }}/{{ daybook_weeknotes_reconcile_launchd_label }}"
+  register: daybook_weeknotes_reconcile_launchd_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: daybook_sessions_launchd_manage_state | bool
+
+- name: weeknotes_reconcile | Inspect persistent launchd disabled state
+  ansible.builtin.command:
+    argv:
+      - launchctl
+      - print-disabled
+      - "{{ daybook_sessions_launchd_domain }}"
+  register: daybook_weeknotes_reconcile_launchd_disabled_state
+  changed_when: false
+  check_mode: false
+  when: daybook_sessions_launchd_manage_state | bool
+
+- name: weeknotes_reconcile | Unload unit while schedule is disabled
+  ansible.builtin.command:
+    argv:
+      - launchctl
+      - bootout
+      - "{{ daybook_sessions_launchd_domain }}"
+      - "{{ daybook_weeknotes_reconcile_launchd_plist_path }}"
+  changed_when: true
+  when:
+    - daybook_sessions_launchd_manage_state | bool
+    - not ansible_check_mode
+    - not (daybook_weeknotes_reconcile_launchd_enabled | bool)
+    - daybook_weeknotes_reconcile_launchd_status.rc == 0
+
+- name: weeknotes_reconcile | Persist disabled-by-default launchd state
+  ansible.builtin.command:
+    argv:
+      - launchctl
+      - disable
+      - "{{ daybook_sessions_launchd_domain }}/{{ daybook_weeknotes_reconcile_launchd_label }}"
+  changed_when: true
+  when:
+    - daybook_sessions_launchd_manage_state | bool
+    - not ansible_check_mode
+    - not (daybook_weeknotes_reconcile_launchd_enabled | bool)
+    - ('"' ~ daybook_weeknotes_reconcile_launchd_label ~ '" => true') not in daybook_weeknotes_reconcile_launchd_disabled_state.stdout
+
+- name: weeknotes_reconcile | Unload changed enabled unit before bootstrap
+  ansible.builtin.command:
+    argv:
+      - launchctl
+      - bootout
+      - "{{ daybook_sessions_launchd_domain }}"
+      - "{{ daybook_weeknotes_reconcile_launchd_plist_path }}"
+  changed_when: true
+  when:
+    - daybook_sessions_launchd_manage_state | bool
+    - not ansible_check_mode
+    - daybook_weeknotes_reconcile_launchd_enabled | bool
+    - daybook_weeknotes_reconcile_launchd_template.changed
+    - daybook_weeknotes_reconcile_launchd_status.rc == 0
+
+- name: weeknotes_reconcile | Explicitly enable scheduled launchd state
+  ansible.builtin.command:
+    argv:
+      - launchctl
+      - enable
+      - "{{ daybook_sessions_launchd_domain }}/{{ daybook_weeknotes_reconcile_launchd_label }}"
+  changed_when: true
+  when:
+    - daybook_sessions_launchd_manage_state | bool
+    - not ansible_check_mode
+    - daybook_weeknotes_reconcile_launchd_enabled | bool
+    - ('"' ~ daybook_weeknotes_reconcile_launchd_label ~ '" => true') in daybook_weeknotes_reconcile_launchd_disabled_state.stdout
+
+- name: weeknotes_reconcile | Bootstrap enabled schedule without kickstart
+  ansible.builtin.command:
+    argv:
+      - launchctl
+      - bootstrap
+      - "{{ daybook_sessions_launchd_domain }}"
+      - "{{ daybook_weeknotes_reconcile_launchd_plist_path }}"
+  changed_when: true
+  when:
+    - daybook_sessions_launchd_manage_state | bool
+    - not ansible_check_mode
+    - daybook_weeknotes_reconcile_launchd_enabled | bool
+    - daybook_weeknotes_reconcile_launchd_template.changed or daybook_weeknotes_reconcile_launchd_status.rc != 0
+
+- name: weeknotes_reconcile | Verify final launchd unit status
+  ansible.builtin.command:
+    argv:
+      - launchctl
+      - print
+      - "{{ daybook_sessions_launchd_domain }}/{{ daybook_weeknotes_reconcile_launchd_label }}"
+  register: daybook_weeknotes_reconcile_launchd_final_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - daybook_sessions_launchd_manage_state | bool
+    - not ansible_check_mode
+
+- name: weeknotes_reconcile | Verify final persistent disabled state
+  ansible.builtin.command:
+    argv:
+      - launchctl
+      - print-disabled
+      - "{{ daybook_sessions_launchd_domain }}"
+  register: daybook_weeknotes_reconcile_launchd_final_disabled_state
+  changed_when: false
+  check_mode: false
+  when:
+    - daybook_sessions_launchd_manage_state | bool
+    - not ansible_check_mode
+
+- name: weeknotes_reconcile | Assert requested launchd state converged
+  ansible.builtin.assert:
+    that:
+      - >-
+        (daybook_weeknotes_reconcile_launchd_enabled | bool)
+        | ternary(
+          daybook_weeknotes_reconcile_launchd_final_status.rc == 0
+          and ('"' ~ daybook_weeknotes_reconcile_launchd_label ~ '" => true') not in daybook_weeknotes_reconcile_launchd_final_disabled_state.stdout,
+          daybook_weeknotes_reconcile_launchd_final_status.rc != 0
+          and ('"' ~ daybook_weeknotes_reconcile_launchd_label ~ '" => true') in daybook_weeknotes_reconcile_launchd_final_disabled_state.stdout
+        )
+    fail_msg: "The dedicated reconcile unit did not converge to the requested enabled/loaded or disabled/unloaded state."
+  when:
+    - daybook_sessions_launchd_manage_state | bool
+    - not ansible_check_mode

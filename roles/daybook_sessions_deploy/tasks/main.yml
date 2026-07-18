@@ -109,6 +109,8 @@
       - not daybook_archive_quote_classifier_enabled or daybook_archive_browser_navigation_timeout_seconds | float <= 300
       - not daybook_archive_quote_classifier_enabled or daybook_archive_browser_render_wait_seconds | float >= 0
       - not daybook_archive_quote_classifier_enabled or daybook_archive_browser_render_wait_seconds | float <= 60
+      - daybook_weeknotes_reconcile_enabled | type_debug == 'bool'
+      - daybook_weeknotes_reconcile_launchd_enabled | type_debug == 'bool'
       - daybook_sessions_brew_packages is sequence
       - daybook_sessions_brew_packages is not string
       - (daybook_sessions_path | string | trim | regex_search('^s3://')) is not none
@@ -860,3 +862,9 @@
       or (daybook_sessions_no_fetch_checkout.changed | default(false))
       or daybook_sessions_uv_sync.changed
       or daybook_archive_quote_classifier_launchd_status.rc != 0
+
+- name: weeknotes reconcile | Install dedicated draft-only worker
+  ansible.builtin.include_tasks: weeknotes_reconcile.yml
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_weeknotes_reconcile_enabled | bool
