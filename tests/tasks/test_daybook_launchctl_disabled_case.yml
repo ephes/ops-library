@@ -1,0 +1,13 @@
+---
+- name: test_daybook_launchctl_disabled_case | Parse launchctl fixture
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/weeknotes_reconcile_launchd_state.yml"
+  vars:
+    daybook_weeknotes_reconcile_launchd_label: de.wersdoerfer.daybook.weeknotes-reconcile
+    daybook_weeknotes_reconcile_launchd_state_fact: "{{ item.fact }}"
+    daybook_weeknotes_reconcile_launchd_state_output: "{{ item.output }}"
+
+- name: test_daybook_launchctl_disabled_case | Assert interpreted state
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.vars', item.fact) | bool == item.expected
+    fail_msg: "Launchctl fixture {{ item.name }} did not parse as expected."

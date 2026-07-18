@@ -342,6 +342,13 @@
   check_mode: false
   when: daybook_sessions_launchd_manage_state | bool
 
+- name: weeknotes_reconcile | Interpret persistent launchd disabled state
+  ansible.builtin.include_tasks: weeknotes_reconcile_launchd_state.yml
+  vars:
+    daybook_weeknotes_reconcile_launchd_state_output: "{{ daybook_weeknotes_reconcile_launchd_disabled_state.stdout }}"
+    daybook_weeknotes_reconcile_launchd_state_fact: daybook_weeknotes_reconcile_launchd_is_disabled
+  when: daybook_sessions_launchd_manage_state | bool
+
 - name: weeknotes_reconcile | Unload unit while schedule is disabled
   ansible.builtin.command:
     argv:
@@ -367,7 +374,7 @@
     - daybook_sessions_launchd_manage_state | bool
     - not ansible_check_mode
     - not (daybook_weeknotes_reconcile_launchd_enabled | bool)
-    - ('"' ~ daybook_weeknotes_reconcile_launchd_label ~ '" => true') not in daybook_weeknotes_reconcile_launchd_disabled_state.stdout
+    - not (daybook_weeknotes_reconcile_launchd_is_disabled | bool)
 
 - name: weeknotes_reconcile | Unload changed enabled unit before bootstrap
   ansible.builtin.command:
@@ -395,7 +402,7 @@
     - daybook_sessions_launchd_manage_state | bool
     - not ansible_check_mode
     - daybook_weeknotes_reconcile_launchd_enabled | bool
-    - ('"' ~ daybook_weeknotes_reconcile_launchd_label ~ '" => true') in daybook_weeknotes_reconcile_launchd_disabled_state.stdout
+    - daybook_weeknotes_reconcile_launchd_is_disabled | bool
 
 - name: weeknotes_reconcile | Bootstrap enabled schedule without kickstart
   ansible.builtin.command:
@@ -438,6 +445,15 @@
     - daybook_sessions_launchd_manage_state | bool
     - not ansible_check_mode
 
+- name: weeknotes_reconcile | Interpret final persistent launchd disabled state
+  ansible.builtin.include_tasks: weeknotes_reconcile_launchd_state.yml
+  vars:
+    daybook_weeknotes_reconcile_launchd_state_output: "{{ daybook_weeknotes_reconcile_launchd_final_disabled_state.stdout }}"
+    daybook_weeknotes_reconcile_launchd_state_fact: daybook_weeknotes_reconcile_launchd_final_is_disabled
+  when:
+    - daybook_sessions_launchd_manage_state | bool
+    - not ansible_check_mode
+
 - name: weeknotes_reconcile | Assert requested launchd state converged
   ansible.builtin.assert:
     that:
@@ -445,9 +461,9 @@
         (daybook_weeknotes_reconcile_launchd_enabled | bool)
         | ternary(
           daybook_weeknotes_reconcile_launchd_final_status.rc == 0
-          and ('"' ~ daybook_weeknotes_reconcile_launchd_label ~ '" => true') not in daybook_weeknotes_reconcile_launchd_final_disabled_state.stdout,
+          and not (daybook_weeknotes_reconcile_launchd_final_is_disabled | bool),
           daybook_weeknotes_reconcile_launchd_final_status.rc != 0
-          and ('"' ~ daybook_weeknotes_reconcile_launchd_label ~ '" => true') in daybook_weeknotes_reconcile_launchd_final_disabled_state.stdout
+          and (daybook_weeknotes_reconcile_launchd_final_is_disabled | bool)
         )
     fail_msg: "The dedicated reconcile unit did not converge to the requested enabled/loaded or disabled/unloaded state."
   when:

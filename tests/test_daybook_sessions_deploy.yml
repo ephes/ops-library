@@ -70,6 +70,7 @@
           loop:
             - "{{ role_path }}/tasks/weeknotes_reconcile.yml"
             - "{{ role_path }}/tasks/weeknotes_reconcile_auth.yml"
+            - "{{ role_path }}/tasks/weeknotes_reconcile_launchd_state.yml"
             - "{{ role_path }}/templates/weeknotes-reconcile.env.j2"
             - "{{ role_path }}/templates/reconcile-weeknotes.sh.j2"
             - "{{ role_path }}/templates/weeknotes-reconcile.launchd.plist.j2"
@@ -159,9 +160,49 @@
           - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile_auth.yml') is search('force.*daybook_weeknotes_reconcile_pi_auth_rotate')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('Refuse auth rotation while reconcile unit is loaded')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('Persist disabled-by-default launchd state')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('Interpret persistent launchd disabled state')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('daybook_weeknotes_reconcile_launchd_final_is_disabled')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('not ansible_check_mode')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('check_mode.*false')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is not search('\n\\s+- kickstart')
+
+    - name: Exercise legacy and current launchctl disabled-state parsing
+      ansible.builtin.include_tasks: tasks/test_daybook_launchctl_disabled_case.yml
+      loop:
+        - name: initial legacy boolean disabled
+          fact: daybook_weeknotes_reconcile_launchd_is_disabled
+          output: 'disabled services = { "de.wersdoerfer.daybook.weeknotes-reconcile" => true }'
+          expected: true
+        - name: initial word-form disabled
+          fact: daybook_weeknotes_reconcile_launchd_is_disabled
+          output: 'disabled services = { "de.wersdoerfer.daybook.weeknotes-reconcile" => disabled }'
+          expected: true
+        - name: initial explicit enabled
+          fact: daybook_weeknotes_reconcile_launchd_is_disabled
+          output: 'disabled services = { "de.wersdoerfer.daybook.weeknotes-reconcile" => enabled }'
+          expected: false
+        - name: initial missing marker
+          fact: daybook_weeknotes_reconcile_launchd_is_disabled
+          output: 'disabled services = { }'
+          expected: false
+        - name: final legacy boolean disabled
+          fact: daybook_weeknotes_reconcile_launchd_final_is_disabled
+          output: 'disabled services = { "de.wersdoerfer.daybook.weeknotes-reconcile" => true }'
+          expected: true
+        - name: final word-form disabled
+          fact: daybook_weeknotes_reconcile_launchd_final_is_disabled
+          output: 'disabled services = { "de.wersdoerfer.daybook.weeknotes-reconcile" => disabled }'
+          expected: true
+        - name: final explicit enabled
+          fact: daybook_weeknotes_reconcile_launchd_final_is_disabled
+          output: 'disabled services = { "de.wersdoerfer.daybook.weeknotes-reconcile" => enabled }'
+          expected: false
+        - name: final missing marker
+          fact: daybook_weeknotes_reconcile_launchd_final_is_disabled
+          output: 'disabled services = { }'
+          expected: false
+      loop_control:
+        label: "{{ item.name }}"
 
     - name: Exercise missing dedicated reconcile variable validation
       block:

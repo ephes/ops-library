@@ -1,0 +1,10 @@
+---
+- name: weeknotes_reconcile_launchd_state | Parse persistent disabled marker
+  ansible.builtin.set_fact:
+    "{{ daybook_weeknotes_reconcile_launchd_state_fact }}": >-
+      {{
+        ('"' ~ daybook_weeknotes_reconcile_launchd_label ~ '" => true')
+        in daybook_weeknotes_reconcile_launchd_state_output
+        or ('"' ~ daybook_weeknotes_reconcile_launchd_label ~ '" => disabled')
+        in daybook_weeknotes_reconcile_launchd_state_output
+      }}

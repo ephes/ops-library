@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `daybook_sessions_deploy` now accepts both the legacy boolean and current
+  word-form `launchctl print-disabled` output when converging the dedicated
+  weeknotes reconciler, preserving the disabled-by-default install gate on
+  newer macOS releases.
+
 ### Security
 - `weeknotes_home_deploy` now requires and renders a dedicated bearer token for
   the private steering read/fold API, allowing Macmini and the Studio reconciler
