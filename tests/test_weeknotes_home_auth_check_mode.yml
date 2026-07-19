@@ -1,0 +1,39 @@
+---
+# Check-mode regression for the delegated, read-only ingress validation.
+
+- name: Test weeknotes.home authentication validation in check mode
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/weeknotes_home_deploy"
+
+  tasks:
+    - name: Load role defaults
+      ansible.builtin.include_vars:
+        file: "{{ role_path }}/defaults/main.yml"
+
+    - name: Set valid authentication fixture
+      ansible.builtin.set_fact:
+        weeknotes_home_basic_auth_user: "check-mode-admin"
+        weeknotes_home_basic_auth_password: "check-mode-printable-secret"
+        weeknotes_home_basic_auth_password_hash: ""
+        weeknotes_home_internal_ip_ranges:
+          - "192.168.178.0/24"
+          - "100.64.0.0/10"
+          - "fd7a:115c:a1e0::/48"
+
+    - name: Validate authentication fixture under check mode
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate_auth.yml"
+
+    - name: Prepare authentication hash under check mode
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/traefik_auth.yml"
+
+    - name: Assert delegated containment validation executed
+      ansible.builtin.assert:
+        that:
+          - weeknotes_home_trusted_network_validation is defined
+          - weeknotes_home_trusted_network_validation.rc == 0
+          - weeknotes_home_basic_auth_htpasswd.skipped | default(false) | bool
+          - weeknotes_home_basic_auth_password_hash == '$2y$04$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'

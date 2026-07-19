@@ -56,6 +56,20 @@ weeknotes_home_traefik_cert_resolver: ""
 weeknotes_home_traefik_middlewares: []
 weeknotes_home_traefik_config_path: "/etc/traefik/dynamic/{{ weeknotes_home_service_name }}.yml"
 
+# Public sources require the shared Traefik front-door credential. Trusted LAN
+# and Tailnet clients use the higher-priority router without Basic Auth.
+weeknotes_home_basic_auth_enabled: true
+weeknotes_home_basic_auth_user: "admin"
+weeknotes_home_basic_auth_password: ""
+weeknotes_home_basic_auth_password_hash: ""
+weeknotes_home_basic_auth_remove_header: true
+weeknotes_home_internal_ip_ranges:
+  - "192.168.0.0/16"
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"
+  - "100.64.0.0/10"
+  - "fd7a:115c:a1e0::/48"
+
 weeknotes_home_systemd_unit_name: "{{ weeknotes_home_service_name }}"
 weeknotes_home_systemd_unit_path: "/etc/systemd/system/{{ weeknotes_home_systemd_unit_name }}.service"
 weeknotes_home_service_restart_on_change: true

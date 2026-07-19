@@ -11,7 +11,7 @@ setup:
     @./setup-pre-commit.sh
 
 # Run the default contributor validation path
-test: venv test-roles test-daybook-sessions-deploy test-daybook-weeknotes-reconcile-check-mode test-heis-production-backup lint docs-build docs-lint
+test: venv test-roles test-daybook-sessions-deploy test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup lint docs-build docs-lint
     @echo ""
     @echo "✅ Validation completed!"
 
@@ -37,6 +37,11 @@ test-daybook-sessions-deploy: venv
 test-daybook-weeknotes-reconcile-check-mode: venv
     @echo "Testing configured and unconfigured Daybook reconcile check mode..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_daybook_weeknotes_reconcile_check_mode.yml --check
+
+test-weeknotes-home-deploy: venv
+    @echo "Testing weeknotes.home deployment templates and ingress validation..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_weeknotes_home_deploy.yml
+    @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_weeknotes_home_auth_check_mode.yml --check
 
 test-heis-production-backup: venv
     @echo "Testing Heis production backup safety contracts..."

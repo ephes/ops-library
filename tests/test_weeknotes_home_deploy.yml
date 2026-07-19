@@ -31,6 +31,13 @@
           - weeknotes_home_app_port == 10062
           - weeknotes_home_traefik_enabled | bool
           - weeknotes_home_traefik_host in weeknotes_home_django_allowed_hosts
+          - weeknotes_home_basic_auth_enabled | bool
+          - weeknotes_home_basic_auth_password == ""
+          - weeknotes_home_basic_auth_password_hash == ""
+          - weeknotes_home_basic_auth_remove_header | bool
+          - "'192.168.0.0/16' in weeknotes_home_internal_ip_ranges"
+          - "'100.64.0.0/10' in weeknotes_home_internal_ip_ranges"
+          - "'fd7a:115c:a1e0::/48' in weeknotes_home_internal_ip_ranges"
 
     - name: Set template test values
       ansible.builtin.set_fact:
@@ -70,6 +77,150 @@
           - web-secure
         weeknotes_home_traefik_cert_resolver: ""
         weeknotes_home_traefik_middlewares: []
+        weeknotes_home_basic_auth_enabled: true
+        weeknotes_home_basic_auth_user: "test-admin"
+        weeknotes_home_basic_auth_password: ""
+        weeknotes_home_basic_auth_password_hash: "$2y$12$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        weeknotes_home_basic_auth_remove_header: true
+        weeknotes_home_internal_ip_ranges:
+          - "192.168.0.0/16"
+          - "100.64.0.0/10"
+          - "fd7a:115c:a1e0::/48"
+
+    - name: Initialize rejected-auth validation result
+      ansible.builtin.set_fact:
+        weeknotes_home_invalid_auth_rejected: false
+
+    - name: Verify missing enabled-auth credentials are rejected
+      block:
+        - name: Exercise invalid enabled-auth validation
+          ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate_auth.yml"
+          vars:
+            weeknotes_home_basic_auth_password: ""
+            weeknotes_home_basic_auth_password_hash: ""
+      rescue:
+        - name: Record expected enabled-auth validation rejection
+          ansible.builtin.set_fact:
+            weeknotes_home_invalid_auth_rejected: true
+
+    - name: Assert missing enabled-auth credentials were rejected
+      ansible.builtin.assert:
+        that:
+          - weeknotes_home_invalid_auth_rejected | bool
+
+    - name: Initialize rejected-range validation result
+      ansible.builtin.set_fact:
+        weeknotes_home_invalid_range_rejected: false
+
+    - name: Verify unsafe or public trusted ranges are rejected
+      block:
+        - name: Exercise public trusted-range validation
+          ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate_auth.yml"
+          vars:
+            weeknotes_home_internal_ip_ranges:
+              - "0.0.0.0/0"
+      rescue:
+        - name: Record expected trusted-range validation rejection
+          ansible.builtin.set_fact:
+            weeknotes_home_invalid_range_rejected: true
+
+    - name: Assert unsafe trusted-range syntax was rejected
+      ansible.builtin.assert:
+        that:
+          - weeknotes_home_invalid_range_rejected | bool
+
+    - name: Initialize invalid-prefix validation result
+      ansible.builtin.set_fact:
+        weeknotes_home_invalid_prefix_rejected: false
+
+    - name: Verify impossible trusted-range prefixes are rejected
+      block:
+        - name: Exercise invalid trusted-range prefix validation
+          ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate_auth.yml"
+          vars:
+            weeknotes_home_internal_ip_ranges:
+              - "192.168.0.0/129"
+      rescue:
+        - name: Record expected invalid-prefix validation rejection
+          ansible.builtin.set_fact:
+            weeknotes_home_invalid_prefix_rejected: true
+
+    - name: Assert invalid trusted-range prefix was rejected
+      ansible.builtin.assert:
+        that:
+          - weeknotes_home_invalid_prefix_rejected | bool
+
+    - name: Initialize noncanonical-range validation result
+      ansible.builtin.set_fact:
+        weeknotes_home_noncanonical_range_rejected: false
+
+    - name: Verify netmask notation is rejected
+      block:
+        - name: Exercise noncanonical trusted-range validation
+          ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate_auth.yml"
+          vars:
+            weeknotes_home_internal_ip_ranges:
+              - "192.168.0.0/255.255.0.0"
+      rescue:
+        - name: Record expected noncanonical-range validation rejection
+          ansible.builtin.set_fact:
+            weeknotes_home_noncanonical_range_rejected: true
+
+    - name: Assert noncanonical trusted range was rejected
+      ansible.builtin.assert:
+        that:
+          - weeknotes_home_noncanonical_range_rejected | bool
+
+    - name: Initialize malformed-hash validation result
+      ansible.builtin.set_fact:
+        weeknotes_home_malformed_hash_rejected: false
+
+    - name: Verify plaintext cannot mask a malformed hash
+      block:
+        - name: Exercise malformed hash with valid plaintext
+          ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate_auth.yml"
+          vars:
+            weeknotes_home_basic_auth_password: "test-only-not-a-secret"
+            weeknotes_home_basic_auth_password_hash: "not-a-bcrypt-hash"
+      rescue:
+        - name: Record expected malformed-hash validation rejection
+          ansible.builtin.set_fact:
+            weeknotes_home_malformed_hash_rejected: true
+
+    - name: Assert malformed hash was rejected
+      ansible.builtin.assert:
+        that:
+          - weeknotes_home_malformed_hash_rejected | bool
+
+    - name: Initialize invalid-cost validation result
+      ansible.builtin.set_fact:
+        weeknotes_home_invalid_cost_rejected: false
+
+    - name: Verify out-of-range bcrypt cost is rejected
+      block:
+        - name: Exercise invalid bcrypt cost validation
+          ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate_auth.yml"
+          vars:
+            weeknotes_home_basic_auth_password: ""
+            weeknotes_home_basic_auth_password_hash: "$2y$99$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      rescue:
+        - name: Record expected invalid-cost validation rejection
+          ansible.builtin.set_fact:
+            weeknotes_home_invalid_cost_rejected: true
+
+    - name: Assert invalid bcrypt cost was rejected
+      ansible.builtin.assert:
+        that:
+          - weeknotes_home_invalid_cost_rejected | bool
+
+    - name: Verify a precomputed bcrypt hash is accepted
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate_auth.yml"
+
+    - name: Verify a non-placeholder plaintext password is accepted
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate_auth.yml"
+      vars:
+        weeknotes_home_basic_auth_password: "test-only-not-a-secret"
+        weeknotes_home_basic_auth_password_hash: ""
 
     - name: Render environment template
       ansible.builtin.template:
@@ -109,10 +260,24 @@
           - "'ReadWritePaths=/home/weeknotes-home /home/weeknotes-home/site/cache/weeknotes-home /home/weeknotes-home/site/static/weeknotes-home' in rendered_service_text"
           - "'Host(`weeknotes.home.example`)' in rendered_traefik_text"
           - "'http://127.0.0.1:10062' in rendered_traefik_text"
+          - rendered_traefik_config.http.routers['weeknotes-home-int'].priority == 120
+          - rendered_traefik_config.http.routers['weeknotes-home-ext'].priority == 100
+          - "'ClientIP(`192.168.0.0/16`) || ClientIP(`100.64.0.0/10`) || ClientIP(`fd7a:115c:a1e0::/48`)' in rendered_traefik_config.http.routers['weeknotes-home-int'].rule"
+          - "'ClientIP' not in rendered_traefik_config.http.routers['weeknotes-home-ext'].rule"
+          - "'weeknotes-home-auth' not in rendered_traefik_config.http.routers['weeknotes-home-int'].middlewares"
+          - "'weeknotes-home-auth' in rendered_traefik_config.http.routers['weeknotes-home-ext'].middlewares"
+          - "'weeknotes-home-headers' in rendered_traefik_config.http.routers['weeknotes-home-int'].middlewares"
+          - "'weeknotes-home-gzip' in rendered_traefik_config.http.routers['weeknotes-home-ext'].middlewares"
+          - rendered_traefik_config.http.routers['weeknotes-home-int'].tls == {}
+          - rendered_traefik_config.http.routers['weeknotes-home-ext'].service == 'weeknotes-home'
+          - rendered_traefik_config.http.middlewares['weeknotes-home-auth'].basicAuth.removeHeader | bool
+          - rendered_traefik_config.http.routers['weeknotes-home-http'].service == 'noop@internal'
+          - rendered_traefik_config.http.services['weeknotes-home'].loadBalancer.servers[0].url == 'http://127.0.0.1:10062'
       vars:
         rendered_env_text: "{{ rendered_files.results[0].content | b64decode }}"
         rendered_service_text: "{{ rendered_files.results[1].content | b64decode }}"
         rendered_traefik_text: "{{ rendered_files.results[2].content | b64decode }}"
+        rendered_traefik_config: "{{ rendered_traefik_text | from_yaml }}"
 
     - name: Clean up rendered files
       ansible.builtin.file:

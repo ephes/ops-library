@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   newer macOS releases.
 
 ### Security
+- `weeknotes_home_deploy` now protects public-source HTTPS requests with shared
+  Traefik Basic Auth while a higher-priority, validated RFC1918/Tailnet router
+  preserves Studio's independent bearer-auth API calls. The role strips Basic
+  credentials before proxying, redirects plain HTTP without reaching Django,
+  and fails closed when the front-door credential is absent or malformed.
 - `weeknotes_home_deploy` now requires and renders a dedicated bearer token for
   the private steering read/fold API, allowing Macmini and the Studio reconciler
   to share one managed secret instead of exposing those endpoints anonymously.

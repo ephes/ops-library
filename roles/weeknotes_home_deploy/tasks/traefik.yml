@@ -1,4 +1,7 @@
 ---
+- name: traefik | Prepare Basic Auth hash
+  ansible.builtin.include_tasks: traefik_auth.yml
+
 - name: traefik | Render Traefik config
   ansible.builtin.include_role:
     name: local.ops_library.webapp_deploy_internal

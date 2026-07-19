@@ -1,0 +1,46 @@
+---
+- name: traefik_auth | Install htpasswd for Basic Auth hashing
+  ansible.builtin.package:
+    name: apache2-utils
+    state: present
+  when:
+    - weeknotes_home_basic_auth_enabled | bool
+    - weeknotes_home_basic_auth_password_hash | length == 0
+    - not ansible_check_mode
+    - ansible_facts["os_family"] == "Debian"
+
+- name: traefik_auth | Generate Basic Auth bcrypt hash
+  ansible.builtin.command:
+    argv:
+      - htpasswd
+      - -nBi
+      - "{{ weeknotes_home_basic_auth_user }}"
+  args:
+    stdin: "{{ weeknotes_home_basic_auth_password }}"
+  register: weeknotes_home_basic_auth_htpasswd
+  changed_when: false
+  no_log: true
+  when:
+    - weeknotes_home_basic_auth_enabled | bool
+    - weeknotes_home_basic_auth_password_hash | length == 0
+    - not ansible_check_mode
+
+- name: traefik_auth | Set generated Basic Auth hash fact
+  ansible.builtin.set_fact:
+    weeknotes_home_basic_auth_password_hash: >-
+      {{ weeknotes_home_basic_auth_htpasswd.stdout.split(':', 1)[1] | trim }}
+  no_log: true
+  when:
+    - weeknotes_home_basic_auth_enabled | bool
+    - weeknotes_home_basic_auth_password_hash | length == 0
+    - not ansible_check_mode
+
+- name: traefik_auth | Set check-mode-only placeholder hash
+  ansible.builtin.set_fact:
+    weeknotes_home_basic_auth_password_hash: >-
+      $2y$04$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  no_log: true
+  when:
+    - weeknotes_home_basic_auth_enabled | bool
+    - weeknotes_home_basic_auth_password_hash | length == 0
+    - ansible_check_mode

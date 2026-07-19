@@ -1,0 +1,83 @@
+---
+- name: validate_auth | Validate trusted network containment
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - -c
+      - |
+        import ipaddress
+        import json
+        import sys
+
+        allowed = tuple(
+            ipaddress.ip_network(value)
+            for value in (
+                "192.168.0.0/16",
+                "10.0.0.0/8",
+                "172.16.0.0/12",
+                "100.64.0.0/10",
+                "fd7a:115c:a1e0::/48",
+            )
+        )
+        try:
+            requested = json.load(sys.stdin)
+            if not isinstance(requested, list) or not requested:
+                raise ValueError("trusted ranges must be a non-empty list")
+            networks = tuple(ipaddress.ip_network(value, strict=True) for value in requested)
+            if not all(
+                isinstance(value, str) and value == str(network)
+                for value, network in zip(requested, networks, strict=True)
+            ):
+                raise ValueError("trusted ranges must use canonical CIDR prefix notation")
+            if not all(
+                any(
+                    network.version == parent.version and network.subnet_of(parent)
+                    for parent in allowed
+                )
+                for network in networks
+            ):
+                raise ValueError("trusted range is outside approved private/Tailnet networks")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            sys.exit(1)
+  args:
+    stdin: "{{ weeknotes_home_internal_ip_ranges | to_json }}"
+  register: weeknotes_home_trusted_network_validation
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  delegate_to: localhost
+  become: false
+  when:
+    - weeknotes_home_traefik_enabled | bool
+    - weeknotes_home_basic_auth_enabled | bool
+
+- name: validate_auth | Validate enabled Traefik Basic Auth configuration
+  ansible.builtin.assert:
+    that:
+      - >-
+        (weeknotes_home_basic_auth_user
+        | regex_search('^[A-Za-z0-9._-]+\\Z')) is not none
+      - weeknotes_home_internal_ip_ranges is sequence
+      - weeknotes_home_internal_ip_ranges is not string
+      - weeknotes_home_internal_ip_ranges | length > 0
+      - weeknotes_home_trusted_network_validation.rc == 0
+      - weeknotes_home_basic_auth_remove_header | bool
+      - >-
+        (
+          weeknotes_home_basic_auth_password_hash | length == 0
+          and
+          (weeknotes_home_basic_auth_password
+          | regex_search('^[\\x20-\\x7e]+\\Z')) is not none
+          and weeknotes_home_basic_auth_password != "CHANGEME"
+        ) or (
+          weeknotes_home_basic_auth_password_hash
+          | regex_search('^\\$2[aby]\\$(0[4-9]|[12][0-9]|3[01])\\$[./A-Za-z0-9]{53}\\Z')
+        ) is not none
+    fail_msg: >-
+      Enabled weeknotes.home Basic Auth requires a non-empty username, trusted
+      RFC1918/Tailnet client ranges, Authorization-header removal, and either a
+      real password with no hash override or a valid precomputed bcrypt hash.
+  no_log: true
+  when:
+    - weeknotes_home_traefik_enabled | bool
+    - weeknotes_home_basic_auth_enabled | bool

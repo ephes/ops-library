@@ -26,6 +26,8 @@ Traefik route, and verifies `/healthz`.
     weeknotes_home_postgres_password: "{{ service_secrets.postgres_password }}"
     weeknotes_home_api_token: "{{ service_secrets.api_token }}"
     weeknotes_home_traefik_host: weeknotes.home.wersdoerfer.de
+    weeknotes_home_basic_auth_user: "{{ traefik_secrets.basic_auth_user }}"
+    weeknotes_home_basic_auth_password: "{{ traefik_secrets.basic_auth_password }}"
     weeknotes_home_cast_base_url: https://wersdoerfer.de
 ```
 
@@ -44,8 +46,43 @@ Traefik route, and verifies `/healthz`.
   credential.
 - `weeknotes_home_cast_base_url`: optional public django-cast origin used to
   render edit and preview links for delivered drafts.
-- `weeknotes_home_traefik_host`: internal hostname routed to the service.
+- `weeknotes_home_traefik_host`: hostname routed to the service.
+- `weeknotes_home_basic_auth_enabled`: defaults to `true`; enables the required
+  trusted/external dual-router boundary.
+- `weeknotes_home_basic_auth_user`, `weeknotes_home_basic_auth_password`: shared
+  Traefik front-door credentials supplied by the private control repo. The role
+  generates a bcrypt hash with `htpasswd` under `no_log`.
+- `weeknotes_home_basic_auth_password_hash`: optional precomputed bcrypt hash;
+  when set, `htpasswd` and the plaintext password are not required.
+- `weeknotes_home_internal_ip_ranges`: RFC1918 and Tailnet source ranges that
+  use the higher-priority router without Basic Auth.
 - `weeknotes_home_app_port`: local gunicorn port, default `10062`.
+
+## Traefik Security Boundary
+
+With the safe default (`weeknotes_home_basic_auth_enabled: true`), the generated
+HTTPS configuration has two routers:
+
+- priority `120`: `Host(...) && ClientIP(...)` for trusted LAN/Tailnet clients,
+  preserving unattended Studio access to the bearer-protected machine APIs;
+- priority `100`: `Host(...)` for every other source, with Basic Auth before
+  the existing headers, gzip, TLS, and backend service behavior.
+
+The Basic `Authorization` header is removed before proxying. The open-comment
+and fold APIs retain their independent bearer checks; unattended API clients
+must use the trusted router, which forwards their Bearer header unchanged. The
+external router reserves that header for Basic Auth and is intended for browser
+UI access. The HTTP router only performs a permanent HTTPS redirect via
+Traefik's `noop@internal` service and never forwards request data to Django.
+
+Disabling Basic Auth removes the source split and is only appropriate when an
+equivalent external boundary exists and the exception is documented by the
+private deployment. Trusted ranges must contain only private or explicitly
+trusted networks; never add public ISP prefixes.
+
+When the shared credential changes, the private control repo must either
+redeploy this role or include its Traefik task in the shared credential rotation
+workflow so the derived bcrypt hash is refreshed.
 
 ## Backup and Monitoring
 
