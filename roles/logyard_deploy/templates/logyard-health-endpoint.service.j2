@@ -18,6 +18,10 @@ Environment="LOGYARD_HEALTH_SELECTOR={{ logyard_health_selector | replace('\"', 
 Environment=LOGYARD_WARNING_WINDOW_SECONDS={{ logyard_health_warning_window_seconds }}
 Environment=LOGYARD_CRITICAL_WINDOW_SECONDS={{ logyard_health_critical_window_seconds }}
 Environment=LOGYARD_REQUEST_TIMEOUT_SECONDS={{ logyard_health_timeout_seconds }}
+Environment=LOGYARD_HEALTH_SYSTEMCTL_TIMEOUT_SECONDS={{ logyard_health_systemctl_timeout_seconds }}
+# Base64 so the JSON survives systemd verbatim. Environment= resolves `%` specifiers
+# and backslash escapes, either of which would corrupt a raw JSON payload.
+Environment=LOGYARD_HEALTH_UNITS_B64={{ logyard_health_units | to_json | b64encode }}
 
 [Install]
 WantedBy=multi-user.target

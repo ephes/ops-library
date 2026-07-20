@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `logyard_deploy` can report systemd unit state for log producers through the
+  health endpoint via the new `logyard_health_units` variable (default `[]`), so a
+  dead producer is detected directly instead of being inferred from ingest going
+  quiet. Each `{id, unit}` entry is published as `units.<id>` with `exists`,
+  `load_state`, `active_state`, `sub_state` and `result`. `exists` is derived from
+  `LoadState` rather than the exit code, because `systemctl show` exits 0 for units
+  that do not exist. Unit state does not feed into the top-level `status` field.
+
 ### Fixed
 
 - `logyard_vector_deploy` now renders a Loki sink that is valid under Vector 0.57's

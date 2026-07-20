@@ -89,6 +89,73 @@ Response shape includes:
 - `ingest.critical_window_entries`
 - `ingest.warning_fresh`
 - `ingest.critical_fresh`
+- `units.<id>` (only for units listed in `logyard_health_units`)
+
+### Producer unit state
+
+Ingest freshness only tells you that logs *stopped arriving*, and it cannot say so
+until the freshness window runs dry (15 minutes for the warning window, 60 for the
+critical one). `logyard_health_units` reports systemd unit state directly, so a
+dead log producer is detected on the next poll instead:
+
+```yaml
+logyard_health_units:
+  - id: vector
+    unit: vector.service
+```
+
+Each entry produces a `units.<id>` object:
+
+```json
+{
+  "units": {
+    "vector": {
+      "unit": "vector.service",
+      "exists": true,
+      "load_state": "loaded",
+      "active_state": "active",
+      "sub_state": "running",
+      "result": "success",
+      "error": null
+    }
+  }
+}
+```
+
+Notes:
+
+- The key set is stable. If the `systemctl` probe itself fails or times out, every
+  field is still present but set to `null` and `error` carries the detail. In that
+  case `exists` is `null`, not `false` — a failed query means existence is unknown,
+  not disproved. An `exists == true` assertion fails either way, which is intended.
+
+- `id` is required and **must not contain a dot**, because monitoring check paths
+  are dot-delimited — `units.vector.active_state` is addressable,
+  `units.vector.service.active_state` would be ambiguous. There is no implicit
+  fallback to the unit name, since unit names contain dots.
+- `id` and `unit` must both be strings. YAML turns `id: yes` into a boolean, which
+  is rejected rather than coerced into the key `"True"`.
+- Entries that are malformed, missing `id`/`unit`, carry a dotted or duplicate
+  `id`, or fail to parse are reported under `units_rejected` (present only when
+  non-empty) rather than dropped. A misconfigured entry is then visible in the
+  payload instead of silently monitoring nothing. Reasons: `invalid_base64`,
+  `invalid_json`, `not_a_list`, `not_an_object`, `missing_unit`, `missing_id`,
+  `id_contains_dot`, `duplicate_id`.
+- The unit list reaches the service base64-encoded (`LOGYARD_HEALTH_UNITS_B64`).
+  systemd resolves `%` specifiers and backslash escapes inside `Environment=`
+  values, so a raw JSON payload could be silently corrupted.
+- `exists` is derived from `LoadState`, not the exit code: `systemctl show` exits 0
+  even for a unit that does not exist. Assert `exists == true` alongside
+  `active_state == "active"` so a typo in the unit name fails loudly rather than
+  silently reporting `inactive` forever.
+- `units` is always present (possibly empty), so check paths have a stable shape.
+- Unit state deliberately does **not** feed into the top-level `status` field.
+  `status` describes Logyard's own ingest health; producer liveness is a separate
+  signal with its own check.
+- The endpoint runs as the unprivileged `logyard` user. `systemctl show` is a
+  read-only query and needs no elevation.
+- The default is `[]`, since the producer is not necessarily colocated with the
+  Logyard server. Set it per host.
 
 ## Example Playbook
 
