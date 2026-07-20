@@ -1,0 +1,92 @@
+---
+- name: weeknotes_reconcile_quiesce | Validate exact system unit identity
+  ansible.builtin.assert:
+    that:
+      - daybook_sessions_launchd_scope == 'system'
+      - daybook_weeknotes_reconcile_launchd_label == 'de.wersdoerfer.daybook.weeknotes-reconcile'
+      - daybook_weeknotes_reconcile_launchd_plist_path == '/Library/LaunchDaemons/de.wersdoerfer.daybook.weeknotes-reconcile.plist'
+    fail_msg: "Early reconcile quiescing is restricted to the exact managed system LaunchDaemon."
+
+- name: weeknotes_reconcile_quiesce | Inspect unit before source or environment changes
+  ansible.builtin.command:
+    argv:
+      - launchctl
+      - print
+      - "system/{{ daybook_weeknotes_reconcile_launchd_label }}"
+  register: daybook_weeknotes_quiesce_initial_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: weeknotes_reconcile_quiesce | Inspect persistent disabled state
+  ansible.builtin.command:
+    argv:
+      - launchctl
+      - print-disabled
+      - system
+  register: daybook_weeknotes_quiesce_initial_disabled
+  changed_when: false
+  check_mode: false
+
+- name: weeknotes_reconcile_quiesce | Interpret persistent disabled state
+  ansible.builtin.include_tasks: weeknotes_reconcile_launchd_state.yml
+  vars:
+    daybook_weeknotes_reconcile_launchd_state_output: "{{ daybook_weeknotes_quiesce_initial_disabled.stdout }}"
+    daybook_weeknotes_reconcile_launchd_state_fact: daybook_weeknotes_quiesce_is_disabled
+
+- name: weeknotes_reconcile_quiesce | Disable exact unit before deployment changes
+  ansible.builtin.command:
+    argv:
+      - launchctl
+      - disable
+      - "system/{{ daybook_weeknotes_reconcile_launchd_label }}"
+  changed_when: true
+  when:
+    - not ansible_check_mode
+    - not (daybook_weeknotes_quiesce_is_disabled | bool)
+
+- name: weeknotes_reconcile_quiesce | Unload exact unit before deployment changes
+  ansible.builtin.command:
+    argv:
+      - launchctl
+      - bootout
+      - system
+      - "{{ daybook_weeknotes_reconcile_launchd_plist_path }}"
+  changed_when: true
+  when:
+    - not ansible_check_mode
+    - daybook_weeknotes_quiesce_initial_status.rc == 0
+
+- name: weeknotes_reconcile_quiesce | Verify unit is unloaded
+  ansible.builtin.command:
+    argv:
+      - launchctl
+      - print
+      - "system/{{ daybook_weeknotes_reconcile_launchd_label }}"
+  register: daybook_weeknotes_quiesce_final_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: weeknotes_reconcile_quiesce | Verify unit is persistently disabled
+  ansible.builtin.command:
+    argv:
+      - launchctl
+      - print-disabled
+      - system
+  register: daybook_weeknotes_quiesce_final_disabled
+  changed_when: false
+  check_mode: false
+
+- name: weeknotes_reconcile_quiesce | Interpret final disabled state
+  ansible.builtin.include_tasks: weeknotes_reconcile_launchd_state.yml
+  vars:
+    daybook_weeknotes_reconcile_launchd_state_output: "{{ daybook_weeknotes_quiesce_final_disabled.stdout }}"
+    daybook_weeknotes_reconcile_launchd_state_fact: daybook_weeknotes_quiesce_final_is_disabled
+
+- name: weeknotes_reconcile_quiesce | Require disabled and unloaded boundary
+  ansible.builtin.assert:
+    that:
+      - daybook_weeknotes_quiesce_final_status.rc != 0
+      - daybook_weeknotes_quiesce_final_is_disabled | bool
+    fail_msg: "The exact reconcile unit must be persistently disabled and unloaded before source or configuration changes."

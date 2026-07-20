@@ -111,6 +111,7 @@
       - not daybook_archive_quote_classifier_enabled or daybook_archive_browser_render_wait_seconds | float <= 60
       - daybook_weeknotes_reconcile_enabled | type_debug == 'bool'
       - daybook_weeknotes_reconcile_launchd_enabled | type_debug == 'bool'
+      - daybook_sessions_launchd_scope != 'system' or daybook_sessions_launchd_manage_state | bool
       - daybook_sessions_brew_packages is sequence
       - daybook_sessions_brew_packages is not string
       - (daybook_sessions_path | string | trim | regex_search('^s3://')) is not none
@@ -150,6 +151,13 @@
   when:
     - daybook_sessions_enabled | bool
     - daybook_archive_quote_classifier_enabled | bool
+
+- name: weeknotes reconcile | Disable and unload before source or configuration changes
+  ansible.builtin.include_tasks: weeknotes_reconcile_quiesce.yml
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_launchd_scope == 'system'
+    - daybook_sessions_launchd_manage_state | bool
 
 - name: runtime | Ensure uv is available
   ansible.builtin.command:

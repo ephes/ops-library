@@ -1,0 +1,235 @@
+---
+- name: weeknotes_identity_operator | Validate explicit operator action
+  ansible.builtin.assert:
+    that:
+      - daybook_weeknotes_identity_operator_action in ['prepare', 'dry-run', 'apply', 'verify', 'status']
+      - (daybook_weeknotes_identity_seed_path | dirname) == daybook_weeknotes_reconcile_runtime_dir
+      - (daybook_weeknotes_identity_plan_path | dirname) == daybook_weeknotes_reconcile_runtime_dir
+      - (daybook_weeknotes_identity_attestation_path | dirname) == daybook_weeknotes_reconcile_runtime_dir
+      - (daybook_weeknotes_identity_activation_proof_path | dirname) == daybook_sessions_config_dir
+      - (daybook_weeknotes_reconcile_env_checksum_file | dirname) == daybook_sessions_config_dir
+      - (daybook_weeknotes_identity_helper_path | dirname) == daybook_sessions_config_dir
+      - (daybook_weeknotes_identity_launcher_path | dirname) == daybook_sessions_config_dir
+      - (daybook_weeknotes_identity_required_repo_ref | string | regex_search('^[0-9a-f]{40}$')) is not none
+      - daybook_sessions_checkout_path | string | length > 0
+      - >-
+        daybook_weeknotes_identity_operator_action != 'apply'
+        or daybook_weeknotes_identity_apply_confirmation
+        == 'APPLY monday-after-v1 draft identity migration'
+    fail_msg: >-
+      Identity migration is a separate explicit rail. Apply requires the exact
+      confirmation phrase and is never reachable from normal role deployment.
+
+- name: weeknotes_identity_operator | Inspect exact checkout state
+  ansible.builtin.command:
+    argv: "{{ item.argv }}"
+    chdir: "{{ daybook_sessions_checkout_path }}"
+  loop:
+    - name: revision
+      argv: [/usr/bin/git, rev-parse, HEAD]
+    - name: root
+      argv: [/usr/bin/git, rev-parse, --show-toplevel]
+    - name: status
+      argv: [/usr/bin/git, status, --porcelain=v1, --untracked-files=all]
+  loop_control:
+    label: "{{ item.name }}"
+  become: "{{ (ansible_user_id | default(lookup('env', 'USER'))) != daybook_sessions_service_user }}"
+  become_user: "{{ daybook_sessions_service_user }}"
+  become_flags: "-i"
+  register: daybook_weeknotes_identity_operator_checkout
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: weeknotes_identity_operator | Inspect installed rail metadata and checksums
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    get_checksum: true
+    checksum_algorithm: sha256
+  loop:
+    - "{{ daybook_sessions_checkout_path }}"
+    - "{{ daybook_sessions_checkout_path }}/.git"
+    - "{{ daybook_weeknotes_identity_helper_path }}"
+    - "{{ daybook_weeknotes_identity_launcher_path }}"
+    - "{{ daybook_weeknotes_reconcile_env_file }}"
+    - "{{ daybook_weeknotes_reconcile_env_checksum_file }}"
+  register: daybook_weeknotes_identity_operator_metadata
+  when: not ansible_check_mode
+
+- name: weeknotes_identity_operator | Require clean reviewed checkout and exact installed rail
+  ansible.builtin.assert:
+    that:
+      - daybook_weeknotes_identity_operator_checkout.results[0].stdout | trim == daybook_weeknotes_identity_required_repo_ref
+      - daybook_weeknotes_identity_operator_checkout.results[1].stdout | trim == daybook_sessions_checkout_path
+      - daybook_weeknotes_identity_operator_checkout.results[2].stdout | trim | length == 0
+      - daybook_weeknotes_identity_operator_metadata.results[0].stat.isdir | default(false)
+      - not (daybook_weeknotes_identity_operator_metadata.results[0].stat.islnk | default(false))
+      - daybook_weeknotes_identity_operator_metadata.results[0].stat.pw_name == daybook_sessions_service_user
+      - >-
+        (daybook_weeknotes_identity_operator_metadata.results[1].stat.isdir | default(false))
+        or (daybook_weeknotes_identity_operator_metadata.results[1].stat.isreg | default(false))
+      - not (daybook_weeknotes_identity_operator_metadata.results[1].stat.islnk | default(false))
+      - daybook_weeknotes_identity_operator_metadata.results[1].stat.pw_name == daybook_sessions_service_user
+      - daybook_weeknotes_identity_operator_metadata.results[2].stat.isreg | default(false)
+      - not (daybook_weeknotes_identity_operator_metadata.results[2].stat.islnk | default(false))
+      - daybook_weeknotes_identity_operator_metadata.results[2].stat.nlink | default(0) == 1
+      - daybook_weeknotes_identity_operator_metadata.results[2].stat.pw_name == 'root'
+      - daybook_weeknotes_identity_operator_metadata.results[2].stat.mode == '0755'
+      - >-
+        daybook_weeknotes_identity_operator_metadata.results[2].stat.checksum
+        == (lookup('ansible.builtin.template', role_path ~ '/templates/weeknotes-identity-ops.py.j2') | hash('sha256'))
+      - daybook_weeknotes_identity_operator_metadata.results[3].stat.isreg | default(false)
+      - not (daybook_weeknotes_identity_operator_metadata.results[3].stat.islnk | default(false))
+      - daybook_weeknotes_identity_operator_metadata.results[3].stat.nlink | default(0) == 1
+      - daybook_weeknotes_identity_operator_metadata.results[3].stat.pw_name == 'root'
+      - daybook_weeknotes_identity_operator_metadata.results[3].stat.mode == '0755'
+      - >-
+        daybook_weeknotes_identity_operator_metadata.results[3].stat.checksum
+        == (lookup('ansible.builtin.template', role_path ~ '/templates/weeknotes-identity-ops.sh.j2') | hash('sha256'))
+      - daybook_weeknotes_identity_operator_metadata.results[4].stat.isreg | default(false)
+      - not (daybook_weeknotes_identity_operator_metadata.results[4].stat.islnk | default(false))
+      - daybook_weeknotes_identity_operator_metadata.results[4].stat.nlink | default(0) == 1
+      - daybook_weeknotes_identity_operator_metadata.results[4].stat.pw_name == daybook_sessions_service_user
+      - daybook_weeknotes_identity_operator_metadata.results[4].stat.mode == '0600'
+      - daybook_weeknotes_identity_operator_metadata.results[5].stat.isreg | default(false)
+      - not (daybook_weeknotes_identity_operator_metadata.results[5].stat.islnk | default(false))
+      - daybook_weeknotes_identity_operator_metadata.results[5].stat.nlink | default(0) == 1
+      - daybook_weeknotes_identity_operator_metadata.results[5].stat.pw_name == 'root'
+      - daybook_weeknotes_identity_operator_metadata.results[5].stat.mode == '0644'
+    fail_msg: >-
+      Identity operations require a clean exact reviewed checkout and the exact
+      root-owned helper/launcher plus owner-only managed environment rendered by
+      the current role.
+  no_log: true
+  when: not ansible_check_mode
+
+- name: weeknotes_identity_operator | Validate exact private migration intent
+  ansible.builtin.assert:
+    that:
+      - daybook_weeknotes_identity_seed_moves is sequence
+      - daybook_weeknotes_identity_seed_moves is not string
+      - daybook_weeknotes_identity_seed_moves | length > 0
+    fail_msg: "Migration operations require the exact nonempty private content-free move seed."
+  when: daybook_weeknotes_identity_operator_action != 'status'
+
+- name: weeknotes_identity_operator | Preserve initial private migration seed
+  ansible.builtin.copy:
+    dest: "{{ daybook_weeknotes_identity_seed_path }}"
+    content: >-
+      {{
+        {
+          'schema_version': 1,
+          'identity_epoch': 'monday-after-v1',
+          'moves': daybook_weeknotes_identity_seed_moves
+        }
+        | to_nice_json
+      }}
+    owner: "{{ daybook_sessions_service_user }}"
+    group: "{{ daybook_sessions_service_group }}"
+    mode: "0600"
+    force: false
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - daybook_weeknotes_identity_operator_action == 'prepare'
+
+- name: weeknotes_identity_operator | Inspect preserved private seed
+  ansible.builtin.stat:
+    path: "{{ daybook_weeknotes_identity_seed_path }}"
+    follow: false
+    get_checksum: false
+  register: daybook_weeknotes_identity_seed_metadata
+  when:
+    - not ansible_check_mode
+    - daybook_weeknotes_identity_operator_action != 'status'
+
+- name: weeknotes_identity_operator | Read preserved private seed for exact comparison
+  ansible.builtin.slurp:
+    path: "{{ daybook_weeknotes_identity_seed_path }}"
+  register: daybook_weeknotes_identity_seed_contents
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - daybook_weeknotes_identity_operator_action != 'status'
+
+- name: weeknotes_identity_operator | Bind runtime seed to private control intent
+  ansible.builtin.assert:
+    that:
+      - daybook_weeknotes_identity_seed_metadata.stat.isreg | default(false)
+      - not (daybook_weeknotes_identity_seed_metadata.stat.islnk | default(false))
+      - daybook_weeknotes_identity_seed_metadata.stat.nlink | default(0) == 1
+      - daybook_weeknotes_identity_seed_metadata.stat.pw_name == daybook_sessions_service_user
+      - daybook_weeknotes_identity_seed_metadata.stat.mode == '0600'
+      - >-
+        (daybook_weeknotes_identity_seed_contents.content | b64decode | from_json)
+        == {
+          'schema_version': 1,
+          'identity_epoch': 'monday-after-v1',
+          'moves': daybook_weeknotes_identity_seed_moves
+        }
+    fail_msg: "The preserved runtime seed differs from the exact private migration intent."
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - daybook_weeknotes_identity_operator_action != 'status'
+
+- name: weeknotes_identity_operator | Run explicit content-free operator action
+  ansible.builtin.command:
+    argv:
+      - "{{ daybook_weeknotes_identity_launcher_path }}"
+      - "{{ daybook_weeknotes_identity_operator_action }}"
+  become: "{{ (ansible_user_id | default(lookup('env', 'USER'))) != daybook_sessions_service_user }}"
+  become_user: "{{ daybook_sessions_service_user }}"
+  become_flags: "-i"
+  register: daybook_weeknotes_identity_operator_result
+  changed_when: >-
+    (
+      daybook_weeknotes_identity_operator_action == 'prepare'
+      and (daybook_weeknotes_identity_operator_result.stdout | from_json).status == 'plan_prepared'
+    )
+    or (
+      daybook_weeknotes_identity_operator_action == 'apply'
+      and (
+        (daybook_weeknotes_identity_operator_result.stdout | from_json).moves
+        | selectattr('result', 'equalto', 'moved')
+        | list
+        | length
+      ) > 0
+    )
+  when: not ansible_check_mode
+
+- name: weeknotes_identity_operator | Verify exact intent and attestation after apply
+  ansible.builtin.command:
+    argv:
+      - "{{ daybook_weeknotes_identity_launcher_path }}"
+      - verify
+  become: "{{ (ansible_user_id | default(lookup('env', 'USER'))) != daybook_sessions_service_user }}"
+  become_user: "{{ daybook_sessions_service_user }}"
+  become_flags: "-i"
+  register: daybook_weeknotes_identity_apply_verification
+  changed_when: false
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - daybook_weeknotes_identity_operator_action == 'apply'
+
+- name: weeknotes_identity_operator | Write root-controlled activation proof after verified apply
+  ansible.builtin.copy:
+    dest: "{{ daybook_weeknotes_identity_activation_proof_path }}"
+    content: >-
+      {{
+        {
+          'schema_version': 1,
+          'identity_epoch': 'monday-after-v1',
+          'plan_hash': (daybook_weeknotes_identity_apply_verification.stdout | from_json).plan_hash,
+          'daybook_repo_ref': daybook_weeknotes_identity_required_repo_ref
+        }
+        | to_nice_json
+      }}
+    owner: root
+    group: wheel
+    mode: "0600"
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - daybook_weeknotes_identity_operator_action == 'apply'

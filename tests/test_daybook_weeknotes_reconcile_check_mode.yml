@@ -86,6 +86,7 @@
         daybook_weeknotes_home_token: test-home-token
         daybook_weeknotes_public_blog_id: "4"
         daybook_weeknotes_family_blog_id: "9"
+        daybook_weeknotes_public_repositories_json: '{"example":"https://github.com/example/example"}'
         daybook_quotes_unused_path: s3://quotes-test/unused.md
         daybook_quotes_used_path: s3://quotes-test/used.md
         daybook_quote_lifecycle_state: s3://quotes-test/state.json
@@ -156,7 +157,14 @@
         - "{{ reconcile_check_home }}/.daybook/weeknotes-reconcile/pi-agent/auth.json"
         - "{{ reconcile_check_home }}/.daybook/weeknotes-reconcile/state.json"
         - "{{ reconcile_check_home }}/config/reconcile.env"
+        - "{{ reconcile_check_home }}/config/weeknotes-reconcile.env.sha256"
         - "{{ reconcile_check_home }}/config/reconcile.sh"
+        - "{{ reconcile_check_home }}/config/weeknotes-identity-ops.py"
+        - "{{ reconcile_check_home }}/config/weeknotes-identity-ops.sh"
+        - "{{ reconcile_check_home }}/config/weeknotes-identity-activation-proof.json"
+        - "{{ reconcile_check_home }}/.daybook/weeknotes-reconcile/identity-migration-seed.json"
+        - "{{ reconcile_check_home }}/.daybook/weeknotes-reconcile/identity-migration-plan.json"
+        - "{{ reconcile_check_home }}/.daybook/weeknotes-reconcile/identity-migration-attestation.json"
       register: reconcile_check_mode_outputs
       check_mode: false
 
@@ -164,6 +172,28 @@
       ansible.builtin.assert:
         that:
           - reconcile_check_mode_outputs.results | map(attribute='stat.exists') | select('equalto', true) | length == 0
+
+    - name: Validate explicit apply rail without executing it in check mode
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/weeknotes_identity_operator.yml"
+      vars:
+        daybook_sessions_service_user: "{{ lookup('env', 'USER') }}"
+        daybook_sessions_service_group: "{{ lookup('pipe', 'id -gn') }}"
+        daybook_sessions_config_dir: "{{ reconcile_check_home }}/config"
+        daybook_sessions_checkout_path: "{{ reconcile_check_home }}/checkout"
+        daybook_weeknotes_identity_required_repo_ref: faf48834a65e86aaec70311883661f286644766c
+        daybook_weeknotes_reconcile_runtime_dir: "{{ reconcile_check_home }}/.daybook/weeknotes-reconcile"
+        daybook_weeknotes_reconcile_state_path: "{{ reconcile_check_home }}/.daybook/weeknotes-reconcile/state.json"
+        daybook_weeknotes_identity_seed_path: "{{ reconcile_check_home }}/.daybook/weeknotes-reconcile/identity-migration-seed.json"
+        daybook_weeknotes_identity_plan_path: "{{ reconcile_check_home }}/.daybook/weeknotes-reconcile/identity-migration-plan.json"
+        daybook_weeknotes_identity_attestation_path: "{{ reconcile_check_home }}/.daybook/weeknotes-reconcile/identity-migration-attestation.json"
+        daybook_weeknotes_identity_activation_proof_path: "{{ reconcile_check_home }}/config/weeknotes-identity-activation-proof.json"
+        daybook_weeknotes_identity_helper_path: "{{ reconcile_check_home }}/config/weeknotes-identity-ops.py"
+        daybook_weeknotes_identity_launcher_path: "{{ reconcile_check_home }}/config/weeknotes-identity-ops.sh"
+        daybook_weeknotes_reconcile_env_file: "{{ reconcile_check_home }}/config/reconcile.env"
+        daybook_weeknotes_identity_operator_action: apply
+        daybook_weeknotes_identity_apply_confirmation: APPLY monday-after-v1 draft identity migration
+        daybook_weeknotes_identity_seed_moves:
+          - {week: 2026-W30, audience: public, blog_id: 4, post_id: 8, expected_revision_id: 10, from_title: Weeknotes, from_slug: weeknotes}
 
     - name: Create auth seeding regression directories
       ansible.builtin.file:

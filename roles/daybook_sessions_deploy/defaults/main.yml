@@ -81,6 +81,7 @@ daybook_weeknotes_reconcile_launchd_enabled: false
 daybook_weeknotes_reconcile_launchd_label: "de.wersdoerfer.daybook.weeknotes-reconcile"
 daybook_weeknotes_reconcile_launchd_plist_path: "/Library/LaunchDaemons/{{ daybook_weeknotes_reconcile_launchd_label }}.plist"
 daybook_weeknotes_reconcile_env_file: "{{ daybook_sessions_config_dir }}/weeknotes-reconcile.env"
+daybook_weeknotes_reconcile_env_checksum_file: "{{ daybook_sessions_config_dir }}/weeknotes-reconcile.env.sha256"
 daybook_weeknotes_reconcile_launcher_path: "{{ daybook_sessions_config_dir }}/reconcile-weeknotes.sh"
 daybook_weeknotes_reconcile_stdout_log: "{{ daybook_sessions_log_dir }}/weeknotes-reconcile.log"
 daybook_weeknotes_reconcile_stderr_log: "{{ daybook_sessions_log_dir }}/weeknotes-reconcile.err.log"
@@ -100,6 +101,29 @@ daybook_weeknotes_reconcile_pi_auth_source: "{{ daybook_weeknotes_reconcile_pi_a
 daybook_weeknotes_reconcile_pi_auth_rotate: false
 daybook_weeknotes_reconcile_public_timeout_seconds: 1200
 daybook_weeknotes_reconcile_family_timeout_seconds: 1200
+
+# Public authoring fails closed without a private-control supplied, nonempty
+# alias -> canonical public GitHub repository mapping. This value is kept only
+# in the owner-readable reconcile environment, never in launchd argv or logs.
+daybook_weeknotes_public_repositories_json: "CHANGEME"
+
+# The Monday-after identity epoch is deliberately absent on ordinary installs.
+# Requesting it is accepted only after the exact private plan and its Daybook
+# attestation pass metadata and semantic verification.
+daybook_weeknotes_post_identity_epoch: ""
+daybook_weeknotes_identity_required_repo_ref: ""
+daybook_weeknotes_identity_seed_path: "{{ daybook_weeknotes_reconcile_runtime_dir }}/identity-migration-seed.json"
+daybook_weeknotes_identity_plan_path: "{{ daybook_weeknotes_reconcile_runtime_dir }}/identity-migration-plan.json"
+daybook_weeknotes_identity_attestation_path: "{{ daybook_weeknotes_reconcile_runtime_dir }}/identity-migration-attestation.json"
+daybook_weeknotes_identity_activation_proof_path: "{{ daybook_sessions_config_dir }}/weeknotes-identity-activation-proof.json"
+daybook_weeknotes_identity_helper_path: "{{ daybook_sessions_config_dir }}/weeknotes-identity-ops.py"
+daybook_weeknotes_identity_launcher_path: "{{ daybook_sessions_config_dir }}/weeknotes-identity-ops.sh"
+
+# Used only through tasks_from=weeknotes_identity_operator. The normal role
+# deployment never executes migration commands.
+daybook_weeknotes_identity_operator_action: ""
+daybook_weeknotes_identity_apply_confirmation: ""
+daybook_weeknotes_identity_seed_moves: []
 
 daybook_weeknotes_path: "CHANGEME"
 daybook_weeknotes_cast_base_url: "CHANGEME"

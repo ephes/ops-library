@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `daybook_sessions_deploy` now manages a strict private-control supplied public
+  repository policy and a content-free identity-migration operator rail. The
+  rail prepares an owner-only crash-durable no-replace plan from exact draft GETs, preserves
+  that plan across partial reruns, runs Daybook's separate dry-run/apply paths,
+  and verifies the resulting attestation without exposing post content,
+  credentials, or policy in argv/logs.
+
+### Security
+
+- The Monday-after weeknote identity epoch now defaults absent and can render
+  only when a clean pinned checkout verifies the exact private seed, mode-0600
+  plan/attestation, and root-owned activation proof. Deploy and operator paths
+  disable/unload before mutation and verify the exact installed rail; the
+  scheduled launcher rechecks exact HEAD/root/cleanliness and uses an isolated
+  frozen environment; both launchers verify the environment against a
+  root-controlled checksum before sourcing it. Ordinary role deployment rejects activation; only a
+  same-play fresh apply plus dedicated activation task can enable. All system
+  deployments require managed launchd state and quiesce the exact unit before
+  shared mutation; ordinary
+  installs remain disabled/unloaded and cannot PATCH
+  django-cast. Identity recovery requires django-cast commit `80b80928` and its
+  content-free `previous_revision_id` contract.
+
+### Added
+
 - `logyard_deploy` can report systemd unit state for log producers through the
   health endpoint via the new `logyard_health_units` variable (default `[]`), so a
   dead producer is detected directly instead of being inferred from ingest going

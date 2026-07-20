@@ -7,6 +7,7 @@
         ansible_facts:
           os_family: Darwin
         daybook_sessions_service_user: test-runner
+        daybook_sessions_launchd_scope: user
         daybook_sessions_repo_ref: main
         daybook_sessions_uv_bin: /usr/bin/false
         daybook_sessions_aws_endpoint_url_s3: https://s3.test.example

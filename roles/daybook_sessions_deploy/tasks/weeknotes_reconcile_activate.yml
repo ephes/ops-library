@@ -1,0 +1,147 @@
+---
+- name: weeknotes_reconcile_activate | Require fresh same-run verified apply
+  ansible.builtin.assert:
+    that:
+      - daybook_weeknotes_identity_operator_action == 'apply'
+      - daybook_weeknotes_identity_apply_verification is defined
+      - daybook_weeknotes_identity_apply_verification.rc == 0
+      - (daybook_weeknotes_identity_apply_verification.stdout | from_json).status == 'attestation_verified'
+      - daybook_weeknotes_post_identity_epoch == 'monday-after-v1'
+      - daybook_sessions_launchd_scope == 'system'
+      - daybook_weeknotes_reconcile_launchd_label == 'de.wersdoerfer.daybook.weeknotes-reconcile'
+      - daybook_weeknotes_reconcile_launchd_plist_path == '/Library/LaunchDaemons/de.wersdoerfer.daybook.weeknotes-reconcile.plist'
+    fail_msg: "Activation requires a fresh verified apply in this same Ansible play."
+  no_log: true
+
+- name: weeknotes_reconcile_activate | Inspect installed activation artifacts
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    get_checksum: false
+  loop:
+    - "{{ daybook_weeknotes_reconcile_env_file }}"
+    - "{{ daybook_weeknotes_reconcile_launchd_plist_path }}"
+    - "{{ daybook_weeknotes_reconcile_launcher_path }}"
+    - "{{ daybook_weeknotes_identity_activation_proof_path }}"
+    - "{{ daybook_weeknotes_reconcile_env_checksum_file }}"
+  register: daybook_weeknotes_activation_artifacts
+
+- name: weeknotes_reconcile_activate | Require safe installed activation artifacts
+  ansible.builtin.assert:
+    that:
+      - item.stat.isreg | default(false)
+      - not (item.stat.islnk | default(false))
+      - item.stat.nlink | default(0) == 1
+      - >-
+        item.stat.pw_name
+        == (
+          daybook_sessions_service_user
+          if item.item == daybook_weeknotes_reconcile_env_file
+          else 'root'
+        )
+      - >-
+        item.stat.mode
+        == (
+          '0600'
+          if item.item in [daybook_weeknotes_reconcile_env_file, daybook_weeknotes_identity_activation_proof_path]
+          else (
+            '0644'
+            if item.item in [daybook_weeknotes_reconcile_launchd_plist_path, daybook_weeknotes_reconcile_env_checksum_file]
+            else '0755'
+          )
+        )
+    fail_msg: "Activation artifacts must be exact-owner, single-link regular files with managed modes."
+  loop: "{{ daybook_weeknotes_activation_artifacts.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: weeknotes_reconcile_activate | Read epoch environment and root proof
+  ansible.builtin.slurp:
+    path: "{{ item }}"
+  loop:
+    - "{{ daybook_weeknotes_reconcile_env_file }}"
+    - "{{ daybook_weeknotes_identity_activation_proof_path }}"
+  register: daybook_weeknotes_activation_contents
+  no_log: true
+
+- name: weeknotes_reconcile_activate | Bind activation to installed epoch and fresh plan proof
+  ansible.builtin.assert:
+    that:
+      - >-
+        'DAYBOOK_WEEKNOTES_POST_IDENTITY_EPOCH=monday-after-v1'
+        in (daybook_weeknotes_activation_contents.results[0].content | b64decode).splitlines()
+      - >-
+        (daybook_weeknotes_activation_contents.results[1].content | b64decode | from_json)
+        == {
+          'schema_version': 1,
+          'identity_epoch': 'monday-after-v1',
+          'plan_hash': (daybook_weeknotes_identity_apply_verification.stdout | from_json).plan_hash,
+          'daybook_repo_ref': daybook_weeknotes_identity_required_repo_ref
+        }
+    fail_msg: "Installed epoch or root proof is not bound to this same-run verified apply."
+  no_log: true
+
+- name: weeknotes_reconcile_activate | Require unit remains unloaded before activation
+  ansible.builtin.command:
+    argv: [launchctl, print, "system/{{ daybook_weeknotes_reconcile_launchd_label }}"]
+  register: daybook_weeknotes_activation_initial_status
+  changed_when: false
+  failed_when: false
+
+- name: weeknotes_reconcile_activate | Inspect persistent disabled state before activation
+  ansible.builtin.command:
+    argv: [launchctl, print-disabled, system]
+  register: daybook_weeknotes_activation_initial_disabled
+  changed_when: false
+
+- name: weeknotes_reconcile_activate | Interpret initial disabled state
+  ansible.builtin.include_tasks: weeknotes_reconcile_launchd_state.yml
+  vars:
+    daybook_weeknotes_reconcile_launchd_state_output: "{{ daybook_weeknotes_activation_initial_disabled.stdout }}"
+    daybook_weeknotes_reconcile_launchd_state_fact: daybook_weeknotes_activation_is_disabled
+
+- name: weeknotes_reconcile_activate | Require disabled and unloaded precondition
+  ansible.builtin.assert:
+    that:
+      - daybook_weeknotes_activation_initial_status.rc != 0
+      - daybook_weeknotes_activation_is_disabled | bool
+    fail_msg: "The reconcile unit must remain disabled and unloaded through the fresh apply."
+
+- name: weeknotes_reconcile_activate | Enable exact schedule without kickstart
+  ansible.builtin.command:
+    argv: [launchctl, enable, "system/{{ daybook_weeknotes_reconcile_launchd_label }}"]
+  changed_when: true
+
+- name: weeknotes_reconcile_activate | Bootstrap exact schedule without immediate run
+  ansible.builtin.command:
+    argv:
+      - launchctl
+      - bootstrap
+      - system
+      - "{{ daybook_weeknotes_reconcile_launchd_plist_path }}"
+  changed_when: true
+
+- name: weeknotes_reconcile_activate | Verify enabled schedule is loaded
+  ansible.builtin.command:
+    argv: [launchctl, print, "system/{{ daybook_weeknotes_reconcile_launchd_label }}"]
+  register: daybook_weeknotes_activation_final_status
+  changed_when: false
+
+- name: weeknotes_reconcile_activate | Verify persistent enabled state
+  ansible.builtin.command:
+    argv: [launchctl, print-disabled, system]
+  register: daybook_weeknotes_activation_final_disabled
+  changed_when: false
+
+- name: weeknotes_reconcile_activate | Interpret final disabled state
+  ansible.builtin.include_tasks: weeknotes_reconcile_launchd_state.yml
+  vars:
+    daybook_weeknotes_reconcile_launchd_state_output: "{{ daybook_weeknotes_activation_final_disabled.stdout }}"
+    daybook_weeknotes_reconcile_launchd_state_fact: daybook_weeknotes_activation_final_is_disabled
+
+- name: weeknotes_reconcile_activate | Require exact enabled and loaded result
+  ansible.builtin.assert:
+    that:
+      - daybook_weeknotes_activation_final_status.rc == 0
+      - not (daybook_weeknotes_activation_final_is_disabled | bool)
+    fail_msg: "The reconcile unit did not converge to enabled and loaded."

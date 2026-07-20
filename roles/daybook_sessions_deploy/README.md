@@ -26,7 +26,10 @@ private control repo such as ops-control SOPS.
 - optional `/etc/daybook-sessions/classify-archive-quotes.sh`
 - optional `/Library/LaunchDaemons/de.wersdoerfer.daybook.archive-quotes.plist`
 - optional `/etc/daybook-sessions/weeknotes-reconcile.env` (mode `0600`)
+- optional root-owned `/etc/daybook-sessions/weeknotes-reconcile.env.sha256`
 - optional `/etc/daybook-sessions/reconcile-weeknotes.sh`
+- optional `/etc/daybook-sessions/weeknotes-identity-ops.py` and
+  `/etc/daybook-sessions/weeknotes-identity-ops.sh` content-free operator rail
 - optional `/Library/LaunchDaemons/de.wersdoerfer.daybook.weeknotes-reconcile.plist`
 - optional dedicated `~/.daybook/weeknotes-reconcile/` runtime (mode `0700`),
   with `state.json`, `.state.json.lock`, and an auth-only `pi-agent/`
@@ -87,6 +90,14 @@ daybook_weeknotes_reconcile_pi_agent_dir: "{{ daybook_weeknotes_reconcile_runtim
 daybook_weeknotes_reconcile_pi_auth_source_root: "{{ daybook_sessions_service_home }}/.config/daybook-weeknotes-reconcile"
 daybook_weeknotes_reconcile_pi_auth_source: "{{ daybook_weeknotes_reconcile_pi_auth_source_root }}/auth.json"
 daybook_weeknotes_reconcile_pi_auth_rotate: false
+daybook_weeknotes_public_repositories_json: "CHANGEME"
+daybook_weeknotes_post_identity_epoch: ""
+daybook_weeknotes_identity_required_repo_ref: ""
+daybook_weeknotes_identity_seed_moves: []
+daybook_weeknotes_identity_seed_path: "{{ daybook_weeknotes_reconcile_runtime_dir }}/identity-migration-seed.json"
+daybook_weeknotes_identity_plan_path: "{{ daybook_weeknotes_reconcile_runtime_dir }}/identity-migration-plan.json"
+daybook_weeknotes_identity_attestation_path: "{{ daybook_weeknotes_reconcile_runtime_dir }}/identity-migration-attestation.json"
+daybook_weeknotes_identity_activation_proof_path: "{{ daybook_sessions_config_dir }}/weeknotes-identity-activation-proof.json"
 ```
 
 These values must be supplied by the private control repo:
@@ -197,8 +208,10 @@ Set `daybook_weeknotes_reconcile_enabled: true` to install the dedicated
 reconciler files. This requires a **system** LaunchDaemon. Installation renders
 the plist but `daybook_weeknotes_reconcile_launchd_enabled` defaults to `false`;
 the role boots out a loaded copy and persists launchd's disabled state. It never
-kickstarts or otherwise invokes reconcile during deployment. After a reviewed
-manual dry run and normal audience run, set the launchd flag to `true` to enable
+kickstarts or otherwise invokes reconcile during deployment. Ordinary role
+deployment rejects a true launchd flag. After reviewed migration and draft
+inspection, private control must perform a fresh idempotent apply and then
+include `tasks_from: weeknotes_reconcile_activate` in that same play to enable
 and bootstrap the calendar schedule without an immediate run. In Ansible check
 mode, read-only launchctl inspection still runs, all launchctl mutations and
 mutation-dependent filesystem postconditions are skipped, and placeholder
@@ -222,11 +235,67 @@ The mode-0600 managed environment supplies these names:
   the S3 endpoint, regions, and credentials
 - django-cast base URL/token and distinct public/family blog ids
 - weeknotes.home URL/token
+- the strict nonempty `DAYBOOK_WEEKNOTES_PUBLIC_REPOSITORIES_JSON` mapping
+- `DAYBOOK_WEEKNOTES_POST_IDENTITY_EPOCH=monday-after-v1` only after the exact
+  private plan/attestation gate has passed
 
-All credential defaults are `CHANGEME` and are rejected. Values never enter the
-plist or argv; the launcher sources the owner-only file and executes exactly
-`uv run --frozen --no-dev daybook weeknotes reconcile`. It never passes a
+All credential and public-policy defaults are `CHANGEME` and are rejected.
+Policy and credential values never enter logs, the plist, or argv; the launcher
+sources the owner-only file and executes exactly
+`uv run --isolated --frozen --no-dev --no-config daybook weeknotes reconcile`.
+It never passes a
 publish argument or prompt/content in argv.
+
+The public policy is an editorial allowlist supplied by private control. Daybook
+validates it as a strict, nonempty alias-to-canonical-GitHub mapping from the
+process environment. The public collection contains no environment-specific
+aliases or repository URLs.
+
+### Attested identity epoch and operator rail
+
+The epoch default is empty, and ordinary role deployment rejects every request
+to enable the schedule, so a code install cannot gather corrected
+Monday-after identities. Before any source, dependency, or configuration
+mutation, the role disables and unloads the exact reconcile LaunchDaemon.
+Requesting `monday-after-v1` additionally requires a clean exact pinned Daybook
+checkout, the exact private control seed, matching service-user-owned mode-0600
+seed/plan/attestation files, and a root-owned mode-0600 activation proof binding
+their plan hash to that Daybook revision. The installed helper and launcher must
+match the current root-owned templates. Only then is the epoch rendered or the
+schedule allowed to activate. Private control must perform a fresh idempotent
+apply and include `tasks_from: weeknotes_reconcile_activate` in the same play;
+that task binds the freshly verified plan hash to the installed epoch before it
+enables and bootstraps without kickstart.
+
+The installed operator launcher sources the existing mode-0600 reconcile
+environment and exposes only fixed `prepare`, `dry-run`, `apply`, `verify`, and
+`status` actions. It never accepts IDs, credentials, policy, post content, or
+arbitrary command arguments. Preparation reads a private content-free seed,
+GETs only those exact posts, verifies draft/live/parent/revision/old identity and
+the `previous_revision_id` response contract, computes Daybook's protected-field
+hash in memory, and publishes the mode-0600 plan through a fsynced temporary
+file and atomic no-replace hard link. A crash after the durable link is safely
+completed on retry; a partial file never occupies the final path. It never
+prints bodies or metadata. If a plan already exists it must match the
+seed and is reused without GET regeneration, preserving crash recovery after a
+partial migration.
+
+Operator actions and the scheduled launcher require the exact clean
+service-owned checkout, an isolated frozen uv environment, and byte-identical
+root-owned rail files. Both root-owned launchers verify the owner-readable
+environment against a root-controlled SHA-256 manifest before sourcing it. Normal role
+deployment only installs this rail; it never invokes it. Private
+control must call `tasks_from: weeknotes_identity_operator` for one explicit
+action. Apply additionally requires the exact confirmation phrase
+`APPLY monday-after-v1 draft identity migration`. Dry-run is Daybook's
+zero-mutation migration mode; apply is a separate command and holds the existing
+reconcile flock. No action publishes.
+
+django-cast commit `80b80928` is a hard prerequisite. Its editor response adds
+the content-free, page-local `previous_revision_id` that lets Daybook prove an
+already-renamed post is exactly one page revision after the planned source. A
+later edit fails that proof; global revision IDs must never be decremented or
+assumed consecutive.
 
 ### Dedicated pi authorization precondition
 
@@ -248,21 +317,26 @@ reconcile unit, replace the separately staged source, and apply once with
 the unit is loaded. Return the flag to false immediately; it is never a normal
 deployment setting.
 
-### Static install and activation flow
+### Static install, migration, epoch, and activation flow
 
 ```sh
 # Install/update while forcing the new unit disabled and unloaded.
 ansible-playbook ... -e daybook_weeknotes_reconcile_enabled=true \
   -e daybook_weeknotes_reconcile_launchd_enabled=false
 
-# On the target, as the service user; the first command has zero mutations.
-/etc/daybook-sessions/reconcile-weeknotes.sh --dry-run
-/etc/daybook-sessions/reconcile-weeknotes.sh --audience public
-/etc/daybook-sessions/reconcile-weeknotes.sh --audience family
+# Through a separate private operator playbook/tasks_from invocation:
+# prepare -> dry-run -> explicit apply -> verify -> idempotent apply.
+# The original runtime plan is retained and reused after partial progress.
 
-# Only after inspecting the resulting drafts, explicitly activate the timer.
+# Install the epoch while still disabled. The role verifies the exact
+# plan/attestation and pinned ref before rendering it.
 ansible-playbook ... -e daybook_weeknotes_reconcile_enabled=true \
-  -e daybook_weeknotes_reconcile_launchd_enabled=true
+  -e daybook_weeknotes_reconcile_launchd_enabled=false \
+  -e daybook_weeknotes_post_identity_epoch=monday-after-v1
+
+# Only after independent inspection, use a private activation play that runs a
+# fresh apply and then includes tasks_from=weeknotes_reconcile_activate in that
+# same play. The normal role rejects launchd_enabled=true.
 ```
 
 Status remains content-free:
@@ -271,7 +345,8 @@ Status remains content-free:
 launchctl print system/de.wersdoerfer.daybook.weeknotes-reconcile
 set -a; . /etc/daybook-sessions/weeknotes-reconcile.env; set +a
 cd /Users/USER/projects/daybook
-/opt/homebrew/bin/uv run --frozen --no-dev daybook weeknotes reconcile-status \
+/opt/homebrew/bin/uv run --isolated --frozen --no-dev --no-config \
+  daybook weeknotes reconcile-status \
   --state "$DAYBOOK_WEEKNOTES_RECONCILE_STATE"
 ```
 
@@ -280,7 +355,10 @@ Daybook's bounded, content-free JSON report; launchd exposes the last exit statu
 A safe manual rerun is the launcher with no arguments or one explicit
 `--audience`. It remains draft-only and idempotent.
 
-To roll back, first deploy with the launchd flag false, then remove only the new
+To roll back, first deploy with the launchd flag false and the identity epoch
+empty. Preserve the runtime seed, plan, attestation, root activation proof,
+state, lock, drafts, quotes,
+and comments so interrupted work remains recoverable. Then remove only the new
 plist, launcher, environment, and its two logs if desired. Preserve the reconcile
 `~/.daybook/weeknotes-reconcile/state.json`, its `.state.json.lock`, drafts,
 quote assignments/lifecycle, and managed pi auth unless an operator separately

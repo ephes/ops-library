@@ -20,6 +20,8 @@
     rendered_reconcile_env: "/tmp/test-daybook-weeknotes-reconcile.env"
     rendered_reconcile_launcher: "/tmp/test-daybook-weeknotes-reconcile.sh"
     rendered_reconcile_plist: "/tmp/test-daybook-weeknotes-reconcile.plist"
+    rendered_identity_helper: "/tmp/test-daybook-weeknotes-identity-ops.py"
+    rendered_identity_launcher: "/tmp/test-daybook-weeknotes-identity-ops.sh"
 
   tasks:
     - name: Verify role files exist
@@ -74,6 +76,11 @@
             - "{{ role_path }}/templates/weeknotes-reconcile.env.j2"
             - "{{ role_path }}/templates/reconcile-weeknotes.sh.j2"
             - "{{ role_path }}/templates/weeknotes-reconcile.launchd.plist.j2"
+            - "{{ role_path }}/templates/weeknotes-identity-ops.py.j2"
+            - "{{ role_path }}/templates/weeknotes-identity-ops.sh.j2"
+            - "{{ role_path }}/tasks/weeknotes_identity_operator.yml"
+            - "{{ role_path }}/tasks/weeknotes_reconcile_quiesce.yml"
+            - "{{ role_path }}/tasks/weeknotes_reconcile_activate.yml"
           register: weeknotes_reconcile_files
 
         - name: Assert required files exist
@@ -135,6 +142,10 @@
           - daybook_weeknotes_home_token == 'CHANGEME'
           - daybook_weeknotes_public_blog_id == 'CHANGEME'
           - daybook_weeknotes_family_blog_id == 'CHANGEME'
+          - daybook_weeknotes_public_repositories_json == 'CHANGEME'
+          - daybook_weeknotes_post_identity_epoch == ''
+          - daybook_weeknotes_identity_required_repo_ref == ''
+          - daybook_weeknotes_identity_seed_moves | length == 0
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('Refuse an existing unmarked browser profile')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('Validate classifier browser filesystem access as the service user')
@@ -151,6 +162,7 @@
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('daybook_sessions_repo_ref.*regex_search')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('os.path.realpath')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('modification_time.*preserve')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is not search('weeknotes_identity_operator')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search("daybook_archive_browser_headless or daybook_sessions_launchd_scope == 'user'")
           - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('distinct positive audience')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('mode.*0700')
@@ -165,6 +177,18 @@
           - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('not ansible_check_mode')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('check_mode.*false')
           - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is not search('\n\\s+- kickstart')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('Fail closed on unsafe identity gate files')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('item.stat.nlink')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search("item.stat.mode == '0600'")
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_identity_operator.yml') is search('APPLY monday-after-v1 draft identity migration')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_identity_operator.yml') is search('Require clean reviewed checkout and exact installed rail')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('Disable and unload before source or configuration changes')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search("daybook_sessions_launchd_scope != 'system' or daybook_sessions_launchd_manage_state")
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('root activation proof')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('Bind preserved seed to exact private control intent')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_identity_operator.yml') is search('force[:] false')
+          - lookup('ansible.builtin.file', role_path ~ '/templates/weeknotes-identity-ops.sh.j2') is not search('publish')
+          - lookup('ansible.builtin.file', role_path ~ '/templates/weeknotes-identity-ops.py.j2') is search('existing_plan_reused')
 
     - name: Exercise legacy and current launchctl disabled-state parsing
       ansible.builtin.include_tasks: tasks/test_daybook_launchctl_disabled_case.yml
@@ -243,6 +267,7 @@
             daybook_weeknotes_home_token: test-home-token
             daybook_weeknotes_public_blog_id: "4"
             daybook_weeknotes_family_blog_id: "9"
+            daybook_weeknotes_public_repositories_json: '{"example":"https://github.com/example/example"}'
             daybook_quotes_unused_path: s3://quotes-test/unused.md
             daybook_quotes_used_path: s3://quotes-test/used.md
             daybook_quote_lifecycle_state: s3://quotes-test/state.json
@@ -569,6 +594,9 @@
         daybook_weeknotes_home_token: home-secret-example
         daybook_weeknotes_public_blog_id: "4"
         daybook_weeknotes_family_blog_id: "9"
+        daybook_weeknotes_public_repositories_json: '{"example":"https://github.com/example/example"}'
+        daybook_weeknotes_post_identity_epoch: ""
+        daybook_weeknotes_identity_attestation_verified: false
 
     - name: Render dedicated weeknotes reconcile files
       ansible.builtin.template:
@@ -581,6 +609,10 @@
           dest: "{{ rendered_reconcile_launcher }}"
         - src: "{{ role_path }}/templates/weeknotes-reconcile.launchd.plist.j2"
           dest: "{{ rendered_reconcile_plist }}"
+        - src: "{{ role_path }}/templates/weeknotes-identity-ops.py.j2"
+          dest: "{{ rendered_identity_helper }}"
+        - src: "{{ role_path }}/templates/weeknotes-identity-ops.sh.j2"
+          dest: "{{ rendered_identity_launcher }}"
 
     - name: Re-render dedicated weeknotes reconcile files for idempotence
       ansible.builtin.template:
@@ -593,6 +625,10 @@
           dest: "{{ rendered_reconcile_launcher }}"
         - src: "{{ role_path }}/templates/weeknotes-reconcile.launchd.plist.j2"
           dest: "{{ rendered_reconcile_plist }}"
+        - src: "{{ role_path }}/templates/weeknotes-identity-ops.py.j2"
+          dest: "{{ rendered_identity_helper }}"
+        - src: "{{ role_path }}/templates/weeknotes-identity-ops.sh.j2"
+          dest: "{{ rendered_identity_launcher }}"
       register: rendered_reconcile_second_application
 
     - name: Assert second static reconcile application is idempotent
@@ -607,6 +643,8 @@
         - "{{ rendered_reconcile_env }}"
         - "{{ rendered_reconcile_launcher }}"
         - "{{ rendered_reconcile_plist }}"
+        - "{{ rendered_identity_helper }}"
+        - "{{ rendered_identity_launcher }}"
       register: rendered_reconcile_files
 
     - name: Assert dedicated weeknotes reconcile contract
@@ -623,8 +661,14 @@
           - "'DAYBOOK_WEEKNOTES_HOME_TOKEN=home-secret-example' in reconcile_env_text"
           - "'DAYBOOK_WEEKNOTES_PUBLIC_BLOG_ID=4' in reconcile_env_text"
           - "'DAYBOOK_WEEKNOTES_FAMILY_BLOG_ID=9' in reconcile_env_text"
+          - '"DAYBOOK_WEEKNOTES_PUBLIC_REPOSITORIES_JSON=''{\"example\":\"https://github.com/example/example\"}''" in reconcile_env_text'
+          - "'DAYBOOK_WEEKNOTES_POST_IDENTITY_EPOCH=' not in reconcile_env_text"
           - "'AWS_ENDPOINT_URL_S3=https://s3.home.example' in reconcile_env_text"
           - reconcile_launcher_text is search('daybook weeknotes reconcile')
+          - reconcile_launcher_text is search('git rev-parse HEAD')
+          - reconcile_launcher_text is search('status --porcelain=v1 --untracked-files=all')
+          - reconcile_launcher_text is search('run --isolated --frozen --no-dev --no-config')
+          - reconcile_launcher_text is search('shasum -a 256 -c')
           - reconcile_launcher_text is not search('publish')
           - reconcile_launcher_text is not search('prompt')
           - "'<string>de.wersdoerfer.daybook.weeknotes-reconcile</string>' in reconcile_plist_text"
@@ -642,10 +686,42 @@
           - "'archive-secret-example' not in reconcile_plist_text"
           - "'cast-secret-example' not in reconcile_plist_text"
           - "'home-secret-example' not in reconcile_plist_text"
+          - identity_helper_text is search('protected_post_fields_hash')
+          - identity_helper_text is search('O_EXCL')
+          - identity_helper_text is search('def verify[(]seed_path')
+          - identity_helper_text is search('_recover_completed_link_at')
+          - identity_launcher_text is search('source /etc/daybook-sessions/weeknotes-reconcile.env')
+          - identity_launcher_text is search('migrate-identities')
+          - identity_launcher_text is search('run --isolated --frozen --no-dev')
+          - identity_launcher_text is search('shasum -a 256 -c')
+          - identity_launcher_text is search('case "\\$\\{1:-\\}"')
+          - identity_launcher_text is not search('publish')
       vars:
         reconcile_env_text: "{{ rendered_reconcile_files.results[0].content | b64decode }}"
         reconcile_launcher_text: "{{ rendered_reconcile_files.results[1].content | b64decode }}"
         reconcile_plist_text: "{{ rendered_reconcile_files.results[2].content | b64decode }}"
+        identity_helper_text: "{{ rendered_reconcile_files.results[3].content | b64decode }}"
+        identity_launcher_text: "{{ rendered_reconcile_files.results[4].content | b64decode }}"
+
+    - name: Open synthetic attestation gate for template test
+      ansible.builtin.set_fact:
+        daybook_weeknotes_post_identity_epoch: monday-after-v1
+        daybook_weeknotes_identity_attestation_verified: true
+
+    - name: Render attested reconcile environment
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/weeknotes-reconcile.env.j2"
+        dest: "{{ rendered_reconcile_env }}"
+
+    - name: Read attested reconcile environment
+      ansible.builtin.slurp:
+        path: "{{ rendered_reconcile_env }}"
+      register: rendered_attested_reconcile_env
+
+    - name: Assert epoch renders only behind verified attestation fact
+      ansible.builtin.assert:
+        that:
+          - "'DAYBOOK_WEEKNOTES_POST_IDENTITY_EPOCH=monday-after-v1' in (rendered_attested_reconcile_env.content | b64decode)"
 
     - name: Clean up rendered files
       ansible.builtin.file:
@@ -663,3 +739,5 @@
         - "{{ rendered_reconcile_env }}"
         - "{{ rendered_reconcile_launcher }}"
         - "{{ rendered_reconcile_plist }}"
+        - "{{ rendered_identity_helper }}"
+        - "{{ rendered_identity_launcher }}"

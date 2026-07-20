@@ -7,6 +7,7 @@
       - daybook_weeknotes_reconcile_launchd_label == 'de.wersdoerfer.daybook.weeknotes-reconcile'
       - daybook_weeknotes_reconcile_launchd_plist_path == '/Library/LaunchDaemons/de.wersdoerfer.daybook.weeknotes-reconcile.plist'
       - daybook_weeknotes_reconcile_env_file | string | trim | length > 0
+      - (daybook_weeknotes_reconcile_env_checksum_file | dirname) == daybook_sessions_config_dir
       - daybook_weeknotes_reconcile_launcher_path | string | trim | length > 0
       - daybook_weeknotes_reconcile_stdout_log | string | trim | length > 0
       - daybook_weeknotes_reconcile_stderr_log | string | trim | length > 0
@@ -30,13 +31,43 @@
           daybook_weeknotes_reconcile_state_path,
           daybook_weeknotes_reconcile_pi_agent_dir,
           daybook_weeknotes_reconcile_pi_auth_source_root,
-          daybook_weeknotes_reconcile_pi_auth_source
+          daybook_weeknotes_reconcile_pi_auth_source,
+          daybook_weeknotes_reconcile_env_checksum_file,
+          daybook_weeknotes_identity_seed_path,
+          daybook_weeknotes_identity_plan_path,
+          daybook_weeknotes_identity_attestation_path,
+          daybook_weeknotes_identity_activation_proof_path,
+          daybook_weeknotes_identity_helper_path,
+          daybook_weeknotes_identity_launcher_path
         ]
         | select('search', '(^|/)[.][.]($|/)')
         | list
         | length == 0
       - daybook_weeknotes_reconcile_public_timeout_seconds | float > 0
       - daybook_weeknotes_reconcile_family_timeout_seconds | float > 0
+      - daybook_weeknotes_public_repositories_json | string | trim | length > 0
+      - daybook_weeknotes_public_repositories_json != 'CHANGEME'
+      - (daybook_weeknotes_public_repositories_json | from_json) is mapping
+      - (daybook_weeknotes_public_repositories_json | from_json) | length > 0
+      - daybook_weeknotes_post_identity_epoch in ['', 'monday-after-v1']
+      - not (daybook_weeknotes_reconcile_launchd_enabled | bool)
+      - >-
+        daybook_weeknotes_post_identity_epoch == ''
+        or (
+          daybook_weeknotes_identity_required_repo_ref | string
+          | regex_search('^[0-9a-f]{40}$')
+        ) is not none
+      - >-
+        daybook_weeknotes_post_identity_epoch == ''
+        or daybook_weeknotes_identity_required_repo_ref == daybook_sessions_repo_ref
+      - (daybook_weeknotes_identity_seed_path | dirname) == daybook_weeknotes_reconcile_runtime_dir
+      - (daybook_weeknotes_identity_plan_path | dirname) == daybook_weeknotes_reconcile_runtime_dir
+      - (daybook_weeknotes_identity_attestation_path | dirname) == daybook_weeknotes_reconcile_runtime_dir
+      - (daybook_weeknotes_identity_activation_proof_path | dirname) == daybook_sessions_config_dir
+      - daybook_weeknotes_identity_seed_path != daybook_weeknotes_identity_plan_path
+      - daybook_weeknotes_identity_plan_path != daybook_weeknotes_identity_attestation_path
+      - (daybook_weeknotes_identity_helper_path | dirname) == daybook_sessions_config_dir
+      - (daybook_weeknotes_identity_launcher_path | dirname) == daybook_sessions_config_dir
       - (daybook_weeknotes_path | string | regex_search('^s3://')) is not none
       - (daybook_archive_url | string | regex_search('^https://[^/?#]+(?:/[^?#]*)?$')) is not none
       - daybook_archive_url != 'CHANGEME'
@@ -58,7 +89,9 @@
       The dedicated weeknotes reconciler needs the exact label, plist,
       07:40/19:40 system schedule, traversal-free dedicated state/auth roots,
       distinct positive audience blog ids, and explicitly managed locations and
-      reconcile credentials.
+      reconcile credentials. Public repository policy is mandatory. Schedule
+      activation is available only through the dedicated same-run activation
+      task after a fresh apply; ordinary role deployment must remain disabled.
   no_log: true
 
 - name: weeknotes_reconcile | Resolve auth and runtime paths without reading contents
@@ -293,6 +326,234 @@
     - "{{ daybook_weeknotes_reconcile_stdout_log }}"
     - "{{ daybook_weeknotes_reconcile_stderr_log }}"
 
+- name: weeknotes_reconcile | Inspect exact Daybook checkout before installing reconcile
+  ansible.builtin.command:
+    argv: "{{ item.argv }}"
+    chdir: "{{ daybook_sessions_checkout_path }}"
+  loop:
+    - {name: revision, argv: [/usr/bin/git, rev-parse, HEAD]}
+    - {name: root, argv: [/usr/bin/git, rev-parse, --show-toplevel]}
+    - {name: status, argv: [/usr/bin/git, status, --porcelain=v1, --untracked-files=all]}
+  loop_control:
+    label: "{{ item.name }}"
+  become: "{{ (ansible_user_id | default(lookup('env', 'USER'))) != daybook_sessions_service_user }}"
+  become_user: "{{ daybook_sessions_service_user }}"
+  become_flags: "-i"
+  register: daybook_weeknotes_reconcile_checkout
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: weeknotes_reconcile | Require exact clean reviewed Daybook checkout
+  ansible.builtin.assert:
+    that:
+      - daybook_weeknotes_reconcile_checkout.results[0].stdout | trim == daybook_sessions_repo_ref
+      - daybook_weeknotes_reconcile_checkout.results[1].stdout | trim == daybook_sessions_checkout_path
+      - daybook_weeknotes_reconcile_checkout.results[2].stdout | trim | length == 0
+    fail_msg: "Reconcile installation requires the exact clean reviewed Daybook checkout."
+  when: not ansible_check_mode
+
+- name: weeknotes_reconcile | Validate public repository policy with pinned Daybook
+  ansible.builtin.command:
+    argv:
+      - "{{ daybook_sessions_uv_bin }}"
+      - run
+      - --isolated
+      - --frozen
+      - --no-dev
+      - python
+      - -c
+      - >-
+        import os;
+        from daybook.weeknotes_privacy import public_repository_policy_from_env;
+        public_repository_policy_from_env(os.environ)
+  args:
+    chdir: "{{ daybook_sessions_checkout_path }}"
+  environment:
+    DAYBOOK_WEEKNOTES_PUBLIC_REPOSITORIES_JSON: "{{ daybook_weeknotes_public_repositories_json }}"
+    UV_PROJECT_ENVIRONMENT: "{{ daybook_sessions_checkout_path }}/.venv"
+  become: "{{ (ansible_user_id | default(lookup('env', 'USER'))) != daybook_sessions_service_user }}"
+  become_user: "{{ daybook_sessions_service_user }}"
+  become_flags: "-i"
+  changed_when: false
+  no_log: true
+  when: not ansible_check_mode
+
+- name: weeknotes_reconcile | Render content-free identity migration helper
+  ansible.builtin.template:
+    src: "{{ role_path }}/templates/weeknotes-identity-ops.py.j2"
+    dest: "{{ daybook_weeknotes_identity_helper_path }}"
+    owner: root
+    group: wheel
+    mode: "0755"
+
+- name: weeknotes_reconcile | Render identity migration launcher
+  ansible.builtin.template:
+    src: "{{ role_path }}/templates/weeknotes-identity-ops.sh.j2"
+    dest: "{{ daybook_weeknotes_identity_launcher_path }}"
+    owner: root
+    group: wheel
+    mode: "0755"
+
+- name: weeknotes_reconcile | Inspect rendered root-controlled identity rail
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    get_checksum: true
+    checksum_algorithm: sha256
+  loop:
+    - "{{ daybook_weeknotes_identity_helper_path }}"
+    - "{{ daybook_weeknotes_identity_launcher_path }}"
+  register: daybook_weeknotes_identity_rail_stats
+  when: not ansible_check_mode
+
+- name: weeknotes_reconcile | Require exact rendered root-controlled identity rail
+  ansible.builtin.assert:
+    that:
+      - item.stat.isreg | default(false)
+      - not (item.stat.islnk | default(false))
+      - item.stat.nlink | default(0) == 1
+      - item.stat.pw_name == 'root'
+      - item.stat.mode == '0755'
+      - >-
+        item.stat.checksum
+        == (
+          lookup(
+            'ansible.builtin.template',
+            role_path ~ '/templates/'
+            ~ ('weeknotes-identity-ops.py.j2' if item.item == daybook_weeknotes_identity_helper_path else 'weeknotes-identity-ops.sh.j2')
+          ) | hash('sha256')
+        )
+    fail_msg: "Installed identity helper and launcher must exactly match the current root-owned role templates."
+  loop: "{{ daybook_weeknotes_identity_rail_stats.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  no_log: true
+  when: not ansible_check_mode
+
+- name: weeknotes_reconcile | Default identity attestation gate to closed
+  ansible.builtin.set_fact:
+    daybook_weeknotes_identity_attestation_verified: false
+
+- name: weeknotes_reconcile | Require exact private intent for requested identity epoch
+  ansible.builtin.assert:
+    that:
+      - daybook_weeknotes_identity_seed_moves is sequence
+      - daybook_weeknotes_identity_seed_moves is not string
+      - daybook_weeknotes_identity_seed_moves | length > 0
+    fail_msg: "Epoch installation requires the exact nonempty private migration intent."
+  no_log: true
+  when: daybook_weeknotes_post_identity_epoch == 'monday-after-v1'
+
+- name: weeknotes_reconcile | Inspect requested identity gate metadata
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    get_checksum: false
+  loop:
+    - "{{ daybook_weeknotes_identity_seed_path }}"
+    - "{{ daybook_weeknotes_identity_plan_path }}"
+    - "{{ daybook_weeknotes_identity_attestation_path }}"
+    - "{{ daybook_weeknotes_identity_activation_proof_path }}"
+  register: daybook_weeknotes_identity_gate_stats
+  when: daybook_weeknotes_post_identity_epoch == 'monday-after-v1'
+
+- name: weeknotes_reconcile | Fail closed on unsafe identity gate files
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists | default(false)
+      - item.stat.isreg | default(false)
+      - not (item.stat.islnk | default(false))
+      - item.stat.nlink | default(0) == 1
+      - >-
+        item.stat.pw_name
+        == ('root' if item.item == daybook_weeknotes_identity_activation_proof_path else daybook_sessions_service_user)
+      - item.stat.mode == '0600'
+    fail_msg: >-
+      Epoch installation requires exact mode-0600, non-symlink, single-link
+      seed, plan, attestation, and root-owned activation proof.
+  loop: "{{ daybook_weeknotes_identity_gate_stats.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: daybook_weeknotes_post_identity_epoch == 'monday-after-v1'
+
+- name: weeknotes_reconcile | Read private seed and root activation proof
+  ansible.builtin.slurp:
+    path: "{{ item }}"
+  loop:
+    - "{{ daybook_weeknotes_identity_seed_path }}"
+    - "{{ daybook_weeknotes_identity_activation_proof_path }}"
+  register: daybook_weeknotes_identity_gate_contents
+  no_log: true
+  when: daybook_weeknotes_post_identity_epoch == 'monday-after-v1'
+
+- name: weeknotes_reconcile | Bind preserved seed to exact private control intent
+  ansible.builtin.assert:
+    that:
+      - >-
+        (daybook_weeknotes_identity_gate_contents.results[0].content | b64decode | from_json)
+        == {
+          'schema_version': 1,
+          'identity_epoch': 'monday-after-v1',
+          'moves': daybook_weeknotes_identity_seed_moves
+        }
+    fail_msg: "The preserved migration seed differs from the private deployment intent."
+  no_log: true
+  when: daybook_weeknotes_post_identity_epoch == 'monday-after-v1'
+
+- name: weeknotes_reconcile | Verify exact identity seed, plan, and attestation with pinned Daybook
+  ansible.builtin.command:
+    argv:
+      - "{{ daybook_sessions_uv_bin }}"
+      - run
+      - --isolated
+      - --frozen
+      - --no-dev
+      - python
+      - "{{ daybook_weeknotes_identity_helper_path }}"
+      - verify
+      - "{{ daybook_weeknotes_identity_seed_path }}"
+      - "{{ daybook_weeknotes_identity_plan_path }}"
+      - "{{ daybook_weeknotes_identity_attestation_path }}"
+  args:
+    chdir: "{{ daybook_sessions_checkout_path }}"
+  environment:
+    UV_PROJECT_ENVIRONMENT: ""
+  become: "{{ (ansible_user_id | default(lookup('env', 'USER'))) != daybook_sessions_service_user }}"
+  become_user: "{{ daybook_sessions_service_user }}"
+  become_flags: "-i"
+  register: daybook_weeknotes_identity_attestation_verification
+  changed_when: false
+  check_mode: false
+  when: daybook_weeknotes_post_identity_epoch == 'monday-after-v1'
+
+- name: weeknotes_reconcile | Validate root activation proof against verified plan
+  ansible.builtin.assert:
+    that:
+      - >-
+        (daybook_weeknotes_identity_gate_contents.results[1].content | b64decode | from_json)
+        == {
+          'schema_version': 1,
+          'identity_epoch': 'monday-after-v1',
+          'plan_hash': (daybook_weeknotes_identity_attestation_verification.stdout | from_json).plan_hash,
+          'daybook_repo_ref': daybook_weeknotes_identity_required_repo_ref
+        }
+    fail_msg: "The root activation proof does not bind this exact plan and Daybook revision."
+  no_log: true
+  when: daybook_weeknotes_post_identity_epoch == 'monday-after-v1'
+
+- name: weeknotes_reconcile | Open identity epoch gate after exact verification
+  ansible.builtin.set_fact:
+    daybook_weeknotes_identity_attestation_verified: true
+  when:
+    - daybook_weeknotes_post_identity_epoch == 'monday-after-v1'
+    - daybook_weeknotes_identity_attestation_verification.rc == 0
+
+- name: weeknotes_reconcile | Require verified epoch before schedule activation
+  ansible.builtin.assert:
+    that:
+      - not (daybook_weeknotes_reconcile_launchd_enabled | bool) or daybook_weeknotes_identity_attestation_verified | bool
+    fail_msg: "The reconcile schedule cannot be enabled without the exact verified identity attestation."
+
 - name: weeknotes_reconcile | Render mode-0600 managed environment
   ansible.builtin.template:
     src: "{{ role_path }}/templates/weeknotes-reconcile.env.j2"
@@ -301,6 +562,26 @@
     group: "{{ daybook_sessions_service_group }}"
     mode: "0600"
   no_log: true
+
+- name: weeknotes_reconcile | Inspect rendered managed environment checksum
+  ansible.builtin.stat:
+    path: "{{ daybook_weeknotes_reconcile_env_file }}"
+    follow: false
+    get_checksum: true
+    checksum_algorithm: sha256
+  register: daybook_weeknotes_reconcile_env_metadata
+  no_log: true
+  when: not ansible_check_mode
+
+- name: weeknotes_reconcile | Render root-controlled environment checksum manifest
+  ansible.builtin.copy:
+    dest: "{{ daybook_weeknotes_reconcile_env_checksum_file }}"
+    content: "{{ daybook_weeknotes_reconcile_env_metadata.stat.checksum }}  {{ daybook_weeknotes_reconcile_env_file }}\n"
+    owner: root
+    group: wheel
+    mode: "0644"
+  no_log: true
+  when: not ansible_check_mode
 
 - name: weeknotes_reconcile | Render draft-only launcher
   ansible.builtin.template:
