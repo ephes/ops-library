@@ -110,12 +110,32 @@ sinks:
     endpoint: {{ logyard_vector_ingest_endpoint | to_json }}
     encoding:
       codec: json
+    # host/source_type/environment are Ansible-time constants (the remap below sets
+    # them from the same variables), so they are emitted as static literals rather
+    # than Vector templates. Values are unchanged; this only shrinks the set of
+    # fields subject to Vector's template confinement to the two genuinely
+    # per-event labels.
     labels:
-      host: "{{ '{{ host }}' }}"
+      host: {{ logyard_vector_host_id | to_json }}
+      source_type: {{ logyard_vector_source_type | to_json }}
+      environment: {{ logyard_vector_environment | to_json }}
+{% if logyard_vector_allow_unconfined_label_templates | bool %}
       service: "{{ '{{ service }}' }}"
-      source_type: "{{ '{{ source_type }}' }}"
-      environment: "{{ '{{ environment }}' }}"
       level: "{{ '{{ level }}' }}"
+{% endif %}
+{% if (logyard_vector_allow_unconfined_label_templates | bool) and (logyard_vector_supports_template_confinement | bool) %}
+    # Vector 0.57 added template confinement: a templated value must have a literal
+    # static prefix or the sink is rejected at startup (exit 78/CONFIG). Loki label
+    # values cannot take a prefix without changing the label values themselves,
+    # which would break existing selectors and dashboards, so opt out explicitly.
+    # Remaining exposure is `service` and `level` only: `level` is a fixed enum
+    # produced by the remap, and `service` derives from the journald unit or
+    # SYSLOG_IDENTIFIER. These are Loki label values, not filesystem paths, so the
+    # path-traversal case the confinement guard targets does not apply here; the
+    # residual risk is label cardinality from a local process spoofing
+    # SYSLOG_IDENTIFIER.
+    dangerously_allow_unconfined_template_resolution: true
+{% endif %}
     remove_label_fields: false
     request:
       timeout_secs: {{ logyard_vector_http_timeout_secs }}

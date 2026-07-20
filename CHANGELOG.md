@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `logyard_vector_deploy` now renders a Loki sink that is valid under Vector 0.57's
+  template confinement rules. Vector 0.57 rejects templated sink values without a
+  literal static prefix, which made `vector.service` fail `ExecStartPre` with
+  `exit 78/CONFIG` after an unattended upgrade from 0.56, silently stopping both
+  journald log ingest and host-metric delivery from the same Vector instance. The
+  constant `host`, `source_type`, and `environment` labels are now emitted as static
+  literals, and the new `logyard_vector_allow_unconfined_label_templates` variable
+  (default `true`) sets `dangerously_allow_unconfined_template_resolution` for the
+  remaining per-event `service` and `level` labels. Label values are unchanged, so
+  existing Loki selectors and dashboards keep working.
 - `daybook_sessions_deploy` now accepts both the legacy boolean and current
   word-form `launchctl print-disabled` output when converging the dedicated
   weeknotes reconciler, preserving the disabled-by-default install gate on

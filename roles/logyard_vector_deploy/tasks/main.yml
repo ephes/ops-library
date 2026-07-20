@@ -32,6 +32,42 @@
         vector_apt_install_repo_keyring_path: "{{ logyard_vector_repo_keyring_path }}"
         vector_apt_install_repo_list_file: "{{ logyard_vector_repo_list_file }}"
 
+    - name: Read installed Vector version
+      ansible.builtin.command:
+        argv:
+          - vector
+          - --version
+      changed_when: false
+      # Read-only probe, so run it under --check too. It is allowed to fail: under
+      # --check the package role has not actually installed or upgraded Vector, so
+      # on a fresh host there is no binary to query. A failed or unparseable probe
+      # falls back to the configured default below. Note that a check-mode run on a
+      # host still pending a Vector upgrade reports the currently installed version,
+      # so it can render a different config than the subsequent real run.
+      check_mode: false
+      failed_when: false
+      register: logyard_vector_version_probe
+
+    # Template confinement (and the option that opts out of it) only exist from
+    # Vector 0.57.0 onward. Emitting the option on an older Vector would be an
+    # unknown sink field and fail validation, so gate it on the detected version.
+    # If the version cannot be parsed, keep the configured default rather than
+    # guessing a version.
+    - name: Record whether installed Vector enforces template confinement
+      ansible.builtin.set_fact:
+        logyard_vector_supports_template_confinement: >-
+          {{
+            (logyard_vector_detected_version is version('0.57.0', '>='))
+            if logyard_vector_detected_version
+            else logyard_vector_supports_template_confinement
+          }}
+      vars:
+        logyard_vector_detected_version: >-
+          {{
+            logyard_vector_version_probe.stdout | default('', true)
+            | regex_search('[0-9]+\.[0-9]+\.[0-9]+') | default('', true)
+          }}
+
     - name: Ensure Vector data directory exists
       ansible.builtin.file:
         path: "{{ logyard_vector_data_dir }}"

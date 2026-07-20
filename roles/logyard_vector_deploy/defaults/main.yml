@@ -36,3 +36,28 @@ logyard_vector_batch_timeout_secs: 5
 logyard_vector_batch_max_events: 200
 logyard_vector_buffer_max_size: 268435488
 logyard_vector_healthcheck_enabled: false
+
+# Vector >= 0.57 rejects templated sink values that have no literal static prefix.
+# The `service` and `level` Loki labels are per-event and cannot carry a prefix
+# without changing the label values, so the confinement check is opted out of.
+#
+# When true (default): `service` and `level` are emitted as per-event Loki labels,
+# and the confinement opt-out is set on Vector >= 0.57.
+# When false: `service` and `level` are omitted from the Loki label set entirely,
+# leaving only static labels. They remain available in the JSON log payload. This
+# needs no opt-out and is valid on every Vector version.
+logyard_vector_allow_unconfined_label_templates: true
+
+# Overridden by the role from the installed `vector --version`. Only used to decide
+# whether the confinement opt-out option is understood by the running Vector.
+#
+# This value is only consulted when the probe cannot determine a version, which in a
+# real run cannot happen (the probe runs after the package role has installed
+# Vector). It applies to check-mode runs against a host with no Vector installed.
+# There is no universally safe fallback: `true` renders an unknown option on
+# Vector < 0.57, while `false` renders unconfined templates that Vector >= 0.57
+# rejects. `true` is chosen because the role installs unpinned from the `vector-0`
+# apt channel, so an undetermined host is far more likely to be new than to predate
+# 0.57. Either way the role validates the staged config directory before replacing
+# the live fragment, so a wrong guess fails the deploy instead of the running service.
+logyard_vector_supports_template_confinement: true
