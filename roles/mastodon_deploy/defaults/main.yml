@@ -56,6 +56,10 @@ mastodon_system_packages:
   - libidn11-dev
   - libicu-dev
   - libjpeg-dev
+  # Mastodon 4.6 dropped ImageMagick support and requires libvips for media
+  # processing. imagemagick is retained for now so older refs stay deployable.
+  - libvips-dev
+  - libvips-tools
   - imagemagick
   - ffmpeg
   - pkg-config

@@ -57,6 +57,9 @@
   become_user: "{{ mastodon_user }}"
   register: mastodon_node_version_resolved
   changed_when: false
+  # `nvm version` exits 3 and prints N/A when the version is not installed yet,
+  # which is the normal case on a Node upgrade. Let the N/A gate below handle it.
+  failed_when: false
 
 - name: Install Node via nvm
   ansible.builtin.shell: |
@@ -88,11 +91,21 @@
   become_user: "{{ mastodon_user }}"
   register: mastodon_node_version_current
   changed_when: false
+  # Same as above: let the explicit fail task below report the problem instead
+  # of aborting here with a bare rc=3.
+  failed_when: false
 
 - name: Fail when nvm did not resolve the requested Node version
   ansible.builtin.fail:
-    msg: "Could not resolve installed Node version for {{ mastodon_node_version_effective }} via nvm"
-  when: mastodon_node_version_current.stdout | trim == 'N/A'
+    msg: >-
+      Could not resolve installed Node version for {{ mastodon_node_version_effective }} via nvm
+      (rc={{ mastodon_node_version_current.rc }},
+      stdout={{ mastodon_node_version_current.stdout | trim }},
+      stderr={{ mastodon_node_version_current.stderr | trim }})
+  when: >-
+    mastodon_node_version_current.rc != 0
+    or mastodon_node_version_current.stdout | trim == 'N/A'
+    or mastodon_node_version_current.stdout | trim | length == 0
 
 - name: Set runtime path facts
   ansible.builtin.set_fact:

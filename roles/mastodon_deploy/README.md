@@ -118,16 +118,30 @@ that do not send email.
 
 By default, the role reads `.ruby-version` and `.nvmrc` from the Mastodon repository. If you override
 `mastodon_ruby_version` or `mastodon_node_version`, make sure they meet the upstream requirements for
-your Mastodon release. For example, Mastodon v4.5.9 ships `.ruby-version` `3.4.7` and `.nvmrc` `24.10`;
-if you override them, make sure they still meet the upstream minimums for that release (Ruby 3.2+ and
-Node 20.19+; confirm via release notes).
+your Mastodon release. For example, Mastodon v4.6.3 ships `.ruby-version` `4.0.5` and `.nvmrc` `24.17`;
+if you override them, make sure they still meet the upstream minimums for that release (Ruby 3.3+ and
+Node 22+ as of 4.6; confirm via release notes).
 Set `mastodon_ruby_build_update: false` if you need to pin the ruby-build plugin to its current revision.
+
+Because the version is read from the tag, upgrading Mastodon can change the Ruby or Node version. When it
+does, rbenv compiles the new Ruby from source (tens of minutes) and every native gem is rebuilt into a
+fresh `vendor/bundle/ruby/<abi>/` tree. The previous Ruby install and gem tree are left in place, so budget
+disk accordingly. Upgrading v4.5.9 to v4.6.3 crosses a Ruby major (3.4.7 to 4.0.5).
 
 See `defaults/main.yml` and `roles/mastodon_shared/defaults/main.yml` for the full variable reference.
 
 When source, runtime, dependency, migration, or asset-build tasks change, the role clears Rails cache by default
 before the post-deploy health check. This avoids stale cached instance metadata surviving in Redis across
 upgrades. Set `mastodon_clear_rails_cache_on_deploy: false` if you need to keep warm caches during deploys.
+
+## Media processing
+
+Mastodon 4.6 dropped ImageMagick support and requires libvips, so `mastodon_system_packages` installs
+`libvips-dev` and `libvips-tools`. `imagemagick` is still installed as well so that pre-4.6 refs remain
+deployable; it can be dropped once no host deploys a ref older than 4.6. Mastodon 4.6 also requires
+FFmpeg 5.1+. The distribution `ffmpeg` package meets that minimum on Debian 12 (5.1.x) and Ubuntu 24.04
+(6.1.x), but note that on Ubuntu `ffmpeg` lives in `universe`, which receives only best-effort security
+support — track FFmpeg CVEs separately there rather than assuming `apt upgrade` covers them.
 
 ## Yarn / Corepack
 

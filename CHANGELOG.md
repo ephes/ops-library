@@ -9,12 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `mastodon_deploy` now installs `libvips-dev` and `libvips-tools`. Mastodon 4.6
+  dropped ImageMagick support and requires libvips for media processing.
+  `imagemagick` is retained so refs older than 4.6 stay deployable.
+
 - `daybook_sessions_deploy` now manages a strict private-control supplied public
   repository policy and a content-free identity-migration operator rail. The
   rail prepares an owner-only crash-durable no-replace plan from exact draft GETs, preserves
   that plan across partial reruns, runs Daybook's separate dry-run/apply paths,
   and verifies the resulting attestation without exposing post content,
   credentials, or policy in argv/logs.
+
+### Fixed
+
+- `mastodon_deploy` no longer aborts when the Node version changes between
+  deploys. `nvm version` exits 3 and prints `N/A` for a version that is not
+  installed yet, which failed the resolve task before the install task's `N/A`
+  gate could run, making the gate unreachable. Both resolve tasks now use
+  `failed_when: false`, and the follow-up check reports rc/stdout/stderr instead
+  of passing an empty result through to the runtime path facts.
 
 ### Security
 
