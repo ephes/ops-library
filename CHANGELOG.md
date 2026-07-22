@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `homeassistant_deploy` gained an optional Custom Conversation bridge
+  (`homeassistant_custom_conversation_enabled`, default `false`). It installs the
+  pinned, checksum-verified `michelle-avery/custom-conversation` component
+  (v1.6.1) into `custom_components/`, restarts Home Assistant before running the
+  config flow, and provisions the `custom_conversation` config entry idempotently
+  against an OpenAI-compatible Chat Completions endpoint (new vars:
+  `_version`, `_sha256`, `_provider`, `_base_url`, `_api_key`, `_model`,
+  `_instructions`, `_request_timeout`, `_canary_text`). The role owns the domain:
+  zero entries → create, one → update data/options in place (base-URL and token
+  changes included), more than one → hard fail; disabling removes the entry and
+  its stored token. Every token-carrying task runs with `no_log: true`. The
+  resolved `conversation.*` entity is gated on registry presence, a
+  non-`unavailable` state, and a `conversation/process` canary, and Assist
+  pipelines can reference it through the new
+  `conversation_engine: "auto:custom_conversation"` token (falling back to
+  `conversation.home_assistant` with a warning when the bridge is disabled).
+  Provisioning is fully desired-state: clearing
+  `homeassistant_custom_conversation_instructions` back to `""` restores the
+  component's default prompt (and stays idempotent afterwards), and create,
+  update, and remove of the config entry are reflected in the task's Ansible
+  changed status. The component validates credentials with a best-effort
+  `GET <base_url>/models`, so a Chat-Completions-only endpoint that does not
+  serve `/models` (e.g. the OpenClaw gateway) works without a compatibility
+  proxy.
+
+- `openclaw_deploy` gained `openclaw_gateway_http_chat_completions_enabled`
+  (default `false`) to toggle the gateway's OpenAI-compatible Chat Completions
+  endpoint (`gateway.http.endpoints.chatCompletions.enabled`). The flag is
+  written explicitly on both config paths — the individual-variables build and
+  the runtime patch applied to an existing/supplied config — so an explicit
+  `false` overrides a stale `true` already present in a supplied config instead
+  of leaving the endpoint enabled.
+
 - `mastodon_deploy` now installs `libvips-dev` and `libvips-tools`. Mastodon 4.6
   dropped ImageMagick support and requires libvips for media processing.
   `imagemagick` is retained so refs older than 4.6 stay deployable.
@@ -21,6 +54,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   credentials, or policy in argv/logs.
 
 ### Fixed
+
+- `homeassistant_deploy` Custom Conversation provisioning: the config-flow
+  helper no longer rewrites a loopback `homeassistant_api_url` to the default
+  route IP before driving the flow. That rewrite discarded a configured scheme,
+  port, or path and broke Home Assistant instances bound only to loopback or
+  fronted by a localhost TLS/reverse proxy; the validated `homeassistant_api_url`
+  is now used verbatim (matching the Wyoming integration). A helper failure now
+  surfaces the sanitized diagnostic it wrote to its result file via a block
+  `rescue`, instead of aborting on the `no_log` command task and leaving the
+  operator with a censored failure. The reconfigure flow request drops the inert
+  top-level `source` field and starts the flow the way Home Assistant's own
+  Reconfigure button does (integration domain as handler plus the existing
+  `entry_id`, which the config REST view promotes to a reconfigure context).
 
 - `mastodon_deploy` no longer aborts when the Node version changes between
   deploys. `nvm version` exits 3 and prints `N/A` for a version that is not

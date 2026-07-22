@@ -129,6 +129,24 @@
           | length
         ) > 0
 
+- name: "Warn when auto:custom_conversation falls back to the default agent"
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: an Assist pipeline requests conversation_engine
+      'auto:custom_conversation' but the Custom Conversation bridge is not
+      enabled or did not resolve to a live conversation entity. Falling back to
+      conversation.home_assistant for those pipelines.
+  when:
+    - >-
+        (
+          homeassistant_assist_pipelines
+          | selectattr('conversation_engine', 'defined')
+          | selectattr('conversation_engine', 'equalto', 'auto:custom_conversation')
+          | list
+          | length
+        ) > 0
+    - (_ha_custom_conversation_entity_id | default('', true)) | length == 0
+
 - name: "Build desired Assist pipeline definitions"
   ansible.builtin.set_fact:
     _ha_assist_pipelines_desired: "{{ _ha_assist_pipelines_desired + [_ha_assist_pipeline_definition] }}"
@@ -140,7 +158,18 @@
           'id': item.id | default('', true),
           'name': item.name,
           'language': item.language,
-          'conversation_engine': item.conversation_engine | default('conversation.home_assistant', true),
+          'conversation_engine': (
+            (_ha_custom_conversation_entity_id | default('', true))
+            if (
+              (item.conversation_engine | default('')) == 'auto:custom_conversation'
+              and (_ha_custom_conversation_entity_id | default('', true)) | length > 0
+            )
+            else (
+              'conversation.home_assistant'
+              if (item.conversation_engine | default('')) == 'auto:custom_conversation'
+              else (item.conversation_engine | default('conversation.home_assistant', true))
+            )
+          ),
           'conversation_language': item.conversation_language | default(item.language, true),
           'stt_engine': item.stt_engine_id | default(_ha_assist_default_stt_engine_id, true),
           'stt_language': item.stt_language | default(item.language, true),

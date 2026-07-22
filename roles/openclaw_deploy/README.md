@@ -80,6 +80,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 | `openclaw_gateway_auth_rate_limit_window_ms` | `60000` | Rate-limit window in ms |
 | `openclaw_gateway_auth_rate_limit_lockout_ms` | `300000` | Lockout duration in ms after threshold |
 | `openclaw_gateway_auth_rate_limit_exempt_loopback` | `true` | Exempt loopback clients from auth rate limiting |
+| `openclaw_gateway_http_chat_completions_enabled` | `false` | Controls `gateway.http.endpoints.chatCompletions.enabled` (OpenAI-compatible Chat Completions surface). Written explicitly in both states so an explicit `false` overrides a stale `true` in a supplied config |
 
 ### Telegram Channel
 
@@ -569,6 +570,8 @@ For a complete list, see `defaults/main.yml`.
 ## Gateway Configuration
 
 The role seeds `openclaw.json` into the data directory on first deploy. By default, it builds the config from individual `openclaw_telegram_*` variables with explicit plugin control (unused channels like WhatsApp are disabled), managed Telegram preview-streaming policy, direct-message session scope, and the required local gateway mode. Once seeded, the config is not overwritten on subsequent deploys — set `openclaw_force_config: true` to re-render. Existing configs are still patched for the local gateway mode, managed Telegram streaming policy and DM session scope, role-managed plugin entries, and legacy Telegram streaming aliases required by newer OpenClaw schemas.
+
+The OpenAI-compatible Chat Completions endpoint (`gateway.http.endpoints.chatCompletions`) is disabled by default upstream. Set `openclaw_gateway_http_chat_completions_enabled: true` to expose it on the existing gateway port for OpenAI-compatible clients (e.g. a Home Assistant conversation bridge). The flag's value is written explicitly on both config paths — the individual-variables build and the runtime patch applied to an existing/supplied config — so an explicit `false` reliably overrides a stale `true` already present in a supplied config rather than silently leaving it enabled.
 
 OpenClaw's upstream `main` DM scope shares one conversation across all direct-message senders. Set `openclaw_session_dm_scope: per-channel-peer` for shared Telegram bots so each sender receives an isolated conversation history while the configured agent workspace remains shared.
 

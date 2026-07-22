@@ -75,6 +75,33 @@ homeassistant_manage_wyoming_integration: false
 homeassistant_wyoming_host: ""
 homeassistant_wyoming_port: 10300
 
+# Custom Conversation integration (HA config entry + pinned custom component)
+# Bridges Home Assistant Assist to an OpenAI-compatible Chat Completions endpoint
+# (e.g. the OpenClaw gateway) via the michelle-avery/custom-conversation component.
+# Feature is fully off unless homeassistant_custom_conversation_enabled is true.
+homeassistant_custom_conversation_enabled: false
+homeassistant_custom_conversation_version: "1.6.1"
+# sha256 of the pinned GitHub release tarball
+# https://github.com/michelle-avery/custom-conversation/archive/refs/tags/<version>.tar.gz
+homeassistant_custom_conversation_sha256: "6397258af29908ffed7b0eaa79c332ddce7000cb9b9faec5e3bf0e399c020382"
+homeassistant_custom_conversation_download_url: >-
+  https://github.com/michelle-avery/custom-conversation/archive/refs/tags/{{ homeassistant_custom_conversation_version }}.tar.gz
+# LiteLLM provider key the component routes through. "openai" selects the
+# OpenAI-compatible path (supports a custom base URL), which is what the
+# OpenClaw gateway Chat Completions endpoint speaks.
+homeassistant_custom_conversation_provider: "openai"
+homeassistant_custom_conversation_base_url: ""
+homeassistant_custom_conversation_api_key: ""
+homeassistant_custom_conversation_model: ""
+homeassistant_custom_conversation_instructions: ""
+# Reserved: custom-conversation 1.6.1 exposes no per-request timeout field
+# (it delegates to LiteLLM's default, which already exceeds 60s). Kept for
+# forward-compatibility; currently not wired to any component setting.
+homeassistant_custom_conversation_request_timeout: 60
+# Canary prompt used to prove the resolved conversation agent actually answers
+# before Assist pipelines are pointed at it.
+homeassistant_custom_conversation_canary_text: "Reply with the single word OK."
+
 # Assist pipeline STT selection
 homeassistant_manage_assist_pipeline_stt_engine: false
 homeassistant_manage_assist_pipeline_tts_engine: false

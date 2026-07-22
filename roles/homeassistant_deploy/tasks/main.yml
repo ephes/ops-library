@@ -57,6 +57,22 @@
   ansible.builtin.import_tasks: wyoming_integration.yml
   when: homeassistant_manage_wyoming_integration
 
+- name: "Install Custom Conversation custom component"
+  ansible.builtin.import_tasks: custom_conversation_component.yml
+  when: homeassistant_custom_conversation_enabled | bool
+
+- name: "Restart Home Assistant before the Custom Conversation config flow"
+  ansible.builtin.meta: flush_handlers
+  when: homeassistant_custom_conversation_enabled | bool
+
+- name: "Force Home Assistant API re-check after Custom Conversation restart"
+  ansible.builtin.set_fact:
+    _ha_api_ready_once: false
+  when: homeassistant_custom_conversation_enabled | bool
+
+- name: "Provision Custom Conversation integration"
+  ansible.builtin.import_tasks: custom_conversation_integration.yml
+
 - name: "Manage Assist pipelines"
   ansible.builtin.import_tasks: assist_pipelines.yml
   when: homeassistant_assist_pipelines | length > 0
