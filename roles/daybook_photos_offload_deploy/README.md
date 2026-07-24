@@ -16,8 +16,9 @@ Every role run first probes the user's GUI domain, then disables and unloads
 the exact service before changing the checkout, environment, launcher, or
 plist. The initial probe is nonfatal so both quiescence operations are
 still attempted; the role then requires a healthy GUI domain, a successful
-persistent-state query, the disabled flag, and launchd's exact absent-service
-result. It remains quiesced on a failed install. A separate reviewed
+persistent-state query, the exact label's disabled state (supporting macOS's
+`disabled` spelling and the legacy boolean spelling), and launchd's exact
+absent-service result. It remains quiesced on a failed install. A separate reviewed
 control-repository action must set
 `daybook_photos_offload_launchd_enabled: true`; only after every deployment
 check succeeds does that action enable and bootstrap the agent. The role never

@@ -151,8 +151,14 @@
       {{
         daybook_photos_offload_launchd_disabled.rc == 0
         and (
-          ('"' ~ daybook_photos_offload_launchd_label ~ '" => true')
-          in daybook_photos_offload_launchd_disabled.stdout
+          (
+            ('"' ~ daybook_photos_offload_launchd_label ~ '" => disabled')
+            in daybook_photos_offload_launchd_disabled.stdout
+          )
+          or (
+            ('"' ~ daybook_photos_offload_launchd_label ~ '" => true')
+            in daybook_photos_offload_launchd_disabled.stdout
+          )
         )
       }}
   when:
@@ -236,7 +242,15 @@
     that:
       - daybook_photos_offload_quiesced_domain.rc == 0
       - daybook_photos_offload_quiesced_disabled.rc == 0
-      - ('"' ~ daybook_photos_offload_launchd_label ~ '" => true') in daybook_photos_offload_quiesced_disabled.stdout
+      - >-
+        (
+          ('"' ~ daybook_photos_offload_launchd_label ~ '" => disabled')
+          in daybook_photos_offload_quiesced_disabled.stdout
+        )
+        or (
+          ('"' ~ daybook_photos_offload_launchd_label ~ '" => true')
+          in daybook_photos_offload_quiesced_disabled.stdout
+        )
       - daybook_photos_offload_quiesced_print.rc == 113
       - >-
         (
@@ -1735,6 +1749,7 @@
         that:
           - daybook_photos_offload_enabled_domain.rc == 0
           - daybook_photos_offload_enabled_disabled.rc == 0
+          - ('"' ~ daybook_photos_offload_launchd_label ~ '" => disabled') not in daybook_photos_offload_enabled_disabled.stdout
           - ('"' ~ daybook_photos_offload_launchd_label ~ '" => true') not in daybook_photos_offload_enabled_disabled.stdout
           - daybook_photos_offload_enabled_print.rc == 0
         fail_msg: "Explicit Photos offload activation did not converge."
@@ -1798,7 +1813,15 @@
         that:
           - daybook_photos_offload_rescue_domain.rc == 0
           - daybook_photos_offload_rescue_disabled.rc == 0
-          - ('"' ~ daybook_photos_offload_launchd_label ~ '" => true') in daybook_photos_offload_rescue_disabled.stdout
+          - >-
+            (
+              ('"' ~ daybook_photos_offload_launchd_label ~ '" => disabled')
+              in daybook_photos_offload_rescue_disabled.stdout
+            )
+            or (
+              ('"' ~ daybook_photos_offload_launchd_label ~ '" => true')
+              in daybook_photos_offload_rescue_disabled.stdout
+            )
           - daybook_photos_offload_rescue_print.rc == 113
           - >-
             (
@@ -1865,8 +1888,14 @@
       - daybook_photos_offload_final_domain.rc == 0
       - daybook_photos_offload_final_disabled.rc == 0
       - >-
-        ('"' ~ daybook_photos_offload_launchd_label ~ '" => true')
-        in daybook_photos_offload_final_disabled.stdout
+        (
+          ('"' ~ daybook_photos_offload_launchd_label ~ '" => disabled')
+          in daybook_photos_offload_final_disabled.stdout
+        )
+        or (
+          ('"' ~ daybook_photos_offload_launchd_label ~ '" => true')
+          in daybook_photos_offload_final_disabled.stdout
+        )
       - daybook_photos_offload_final_print.rc == 113
       - >-
         (

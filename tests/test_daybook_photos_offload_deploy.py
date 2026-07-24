@@ -208,6 +208,8 @@ class DaybookPhotosOffloadDeployTests(unittest.TestCase):
     def test_absence_checks_require_expected_launchctl_result(self):
         tasks = self.text("roles/daybook_photos_offload_deploy/tasks/main.yml")
 
+        self.assertGreaterEqual(tasks.count("=> disabled"), 5)
+        self.assertGreaterEqual(tasks.count("=> true"), 4)
         self.assertIn("daybook_photos_offload_quiesced_print.rc == 113", tasks)
         self.assertIn("daybook_photos_offload_rescue_print.rc == 113", tasks)
         self.assertIn("daybook_photos_offload_final_print.rc == 113", tasks)
