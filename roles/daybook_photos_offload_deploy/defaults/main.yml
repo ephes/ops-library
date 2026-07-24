@@ -7,6 +7,9 @@ daybook_photos_offload_launchd_enabled: false
 daybook_photos_offload_service_user: "CHANGEME"
 daybook_photos_offload_service_group: "staff"
 daybook_photos_offload_service_home: "/Users/{{ daybook_photos_offload_service_user }}"
+# macOS sudo otherwise retains root's inaccessible working directory when
+# Ansible switches to the logged-in Photos user.
+ansible_become_flags: "-H -i"
 
 daybook_photos_offload_repo_url: "https://github.com/ephes/daybook.git"
 daybook_photos_offload_checkout_path: "/Library/Application Support/Daybook/photos-offload/daybook"

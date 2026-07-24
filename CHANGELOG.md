@@ -36,7 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   aggregate-only scheduled output, uses a root-owned exact checkout plus a
   checkout-local sanitized uv environment, rejects unsafe Git state and path
   substitutions, supports an exact-pin isolated controller Git bundle for
-  private source, fails closed during activation, and runs at 08:10 and 20:10
+  private source, uses a login-style macOS service-user transition, fails
+  closed during activation, and runs at 08:10 and 20:10
   without mounting Fractal or mutating Photos.
 
 - `homeassistant_deploy` gained an optional Custom Conversation bridge

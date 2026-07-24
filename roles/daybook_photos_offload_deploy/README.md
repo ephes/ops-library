@@ -96,7 +96,9 @@ same attempt-both-then-verify ordering.
 
 Because Photos access and later PhotoKit/TCC work belong to the logged-in user,
 this is an Aqua user LaunchAgent, not a system LaunchDaemon. Deployment requires
-that user's GUI launchd domain to exist.
+that user's GUI launchd domain to exist. Service-user Ansible tasks use a macOS
+login-style sudo transition (`-H -i`) so module startup does not inherit root's
+inaccessible working directory.
 
 ## Example
 

@@ -17,6 +17,8 @@ class DaybookPhotosOffloadDeployTests(unittest.TestCase):
 
         self.assertIn("daybook_photos_offload_launchd_enabled: false", defaults)
         self.assertIn("/Library/LaunchAgents/", defaults)
+        self.assertIn('ansible_become_flags: "-H -i"', defaults)
+        self.assertIn("ansible_become_flags == '-H -i'", tasks)
         self.assertIn("launchctl", tasks)
         self.assertIn("gui/{{ daybook_photos_offload_uid.stdout | trim }}", tasks)
         self.assertIn(
