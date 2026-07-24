@@ -57,11 +57,14 @@ paths are created and rendered only as the service user.
 
 The launcher verifies the exact clean commit and real checkout-local
 environment on every run, then invokes
-`daybook photos offload-reconcile --summary-only` with uv configuration and
-environment inheritance disabled. `uv run --frozen` verifies/synchronizes the
-dedicated environment against the pinned lock before execution. All launcher,
-Git, uv, and Daybook diagnostics are suppressed; a failed run emits one stable
-generic error. Scheduled output therefore contains only status,
+`daybook photos offload-reconcile --summary-only` through the environment's
+Python with a fixed root-owned `src` import path and environment inheritance
+disabled. Deployment uses `uv sync --frozen --no-install-project`: dependencies
+are locked in the owner-only environment without asking the service user to
+write editable-install metadata into the protected source checkout. Bytecode
+writes into that checkout are disabled. All launcher, Git, uv, and Daybook
+diagnostics are suppressed; a failed run emits one stable generic error.
+Scheduled output therefore contains only status,
 `state_changed`, and aggregate counts, or that generic failure—no Photos UUIDs,
 proposal ids, filenames, or paths. The owner-only ledger retains the detailed
 identities required by later reviewed slices.

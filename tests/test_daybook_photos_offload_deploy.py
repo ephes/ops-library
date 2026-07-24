@@ -48,12 +48,15 @@ class DaybookPhotosOffloadDeployTests(unittest.TestCase):
         self.assertIn("/usr/bin/git -C", launcher)
         self.assertIn("rev-parse HEAD", launcher)
         self.assertIn("status --porcelain=v1 --untracked-files=all", launcher)
-        self.assertIn("--frozen", launcher)
-        self.assertIn("--no-dev", launcher)
-        self.assertIn("--no-config", launcher)
-        self.assertNotIn("--no-sync", launcher)
         self.assertIn("/usr/bin/env -i", launcher)
-        self.assertIn("UV_PROJECT_ENVIRONMENT=", launcher)
+        self.assertNotIn("uv run", launcher)
+        self.assertIn("PYTHONDONTWRITEBYTECODE=1", launcher)
+        self.assertIn("PYTHONPATH=", launcher)
+        self.assertIn("/bin/python", launcher)
+        self.assertIn(
+            "from daybook.cli import main; raise SystemExit(main())",
+            launcher,
+        )
         self.assertIn("GIT_CONFIG_GLOBAL=/dev/null", launcher)
         self.assertIn("GIT_CONFIG_SYSTEM=/dev/null", launcher)
         self.assertIn("safe.directory=", launcher)
@@ -78,6 +81,15 @@ class DaybookPhotosOffloadDeployTests(unittest.TestCase):
         self.assertIn("--summary-only", launcher)
         self.assertNotIn("offload-discover", launcher)
         self.assertNotIn("/Volumes/", launcher)
+
+        tasks = self.text("roles/daybook_photos_offload_deploy/tasks/main.yml")
+        sync = tasks.split(
+            "runtime | Synchronize pinned Daybook runtime in an empty environment", 1
+        )[1].split("\n- name:", 1)[0]
+        self.assertIn("- --frozen", sync)
+        self.assertIn("- --no-dev", sync)
+        self.assertIn("- --no-config", sync)
+        self.assertIn("- --no-install-project", sync)
 
     def test_plist_is_aqua_twice_daily_and_never_run_at_load(self):
         plist = self.text(

@@ -50,12 +50,11 @@ printf '[%s] starting read-only Photos offload reconcile\n' "$(date -u '+%Y-%m-%
   USER={{ daybook_photos_offload_service_user | quote }} \
   LOGNAME={{ daybook_photos_offload_service_user | quote }} \
   PATH={{ daybook_photos_offload_path | quote }} \
-  UV_PROJECT_ENVIRONMENT=.venv \
-  {{ daybook_photos_offload_uv_bin | quote }} run \
-  --frozen \
-  --no-dev \
-  --no-config \
-  daybook photos offload-reconcile \
+  PYTHONDONTWRITEBYTECODE=1 \
+  PYTHONPATH={{ (daybook_photos_offload_checkout_path ~ '/src') | quote }} \
+  {{ (daybook_photos_offload_venv_path ~ '/bin/python') | quote }} \
+  -c 'from daybook.cli import main; raise SystemExit(main())' \
+  photos offload-reconcile \
   --library {{ daybook_photos_offload_library_path | quote }} \
   --state {{ daybook_photos_offload_state_path | quote }} \
   --readiness-timeout-seconds {{ daybook_photos_offload_readiness_timeout_seconds | int }} \

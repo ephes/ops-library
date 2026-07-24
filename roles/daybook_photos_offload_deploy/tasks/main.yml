@@ -1560,6 +1560,7 @@
       - --frozen
       - --no-config
       - --no-dev
+      - --no-install-project
       - --python
       - "{{ daybook_photos_offload_python_version }}"
   args:
