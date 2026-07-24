@@ -1,0 +1,75 @@
+---
+- name: Test Daybook Photos environment-link safety
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    fixture_root: /private/tmp/daybook-photos-offload-link-safety
+    checkout_path: "{{ fixture_root }}/checkout"
+    venv_path: "{{ checkout_path }}/.venv"
+    symlink_target_path: "{{ fixture_root }}/symlink-target"
+    hardlink_target_path: "{{ fixture_root }}/hardlink-target"
+  tasks:
+    - name: Remove stale symlink-safety fixture
+      ansible.builtin.file:
+        path: "{{ fixture_root }}"
+        state: absent
+
+    - name: Create symlink-safety fixture directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0700"
+      loop:
+        - "{{ checkout_path }}"
+        - "{{ venv_path }}"
+
+    - name: Create writable external targets
+      ansible.builtin.copy:
+        dest: "{{ item }}"
+        content: external
+        mode: "0666"
+      loop:
+        - "{{ symlink_target_path }}"
+        - "{{ hardlink_target_path }}"
+
+    - name: Link virtual environment content to external target
+      ansible.builtin.file:
+        src: "{{ symlink_target_path }}"
+        dest: "{{ venv_path }}/external-link"
+        state: link
+
+    - name: Hard-link virtual environment content to external target
+      ansible.builtin.file:
+        src: "{{ hardlink_target_path }}"
+        dest: "{{ venv_path }}/external-hardlink"
+        state: hard
+
+    - name: Manage only the virtual environment directory entry
+      ansible.builtin.file:
+        path: "{{ venv_path }}"
+        state: directory
+        mode: "0700"
+        follow: false
+
+    - name: Inspect external targets after environment entry management
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+      loop:
+        - "{{ symlink_target_path }}"
+        - "{{ hardlink_target_path }}"
+      register: external_targets_after
+
+    - name: Require external targets to remain untouched
+      ansible.builtin.assert:
+        that:
+          - item.stat.isreg
+          - item.stat.mode == '0666'
+        fail_msg: "Environment entry management traversed a .venv link."
+      loop: "{{ external_targets_after.results }}"
+
+    - name: Remove symlink-safety fixture
+      ansible.builtin.file:
+        path: "{{ fixture_root }}"
+        state: absent

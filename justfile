@@ -11,7 +11,7 @@ setup:
     @./setup-pre-commit.sh
 
 # Run the default contributor validation path
-test: venv test-roles test-daybook-sessions-deploy test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup lint docs-build docs-lint
+test: venv test-roles test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup lint docs-build docs-lint
     @echo ""
     @echo "✅ Validation completed!"
 
@@ -33,6 +33,14 @@ test-role ROLE: venv
 test-daybook-sessions-deploy: venv
     @echo "Testing Daybook sessions deploy behavior..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_daybook_sessions_deploy.yml
+
+test-daybook-photos-offload-deploy: venv
+    @echo "Testing Daybook Photos offload deploy contracts..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_daybook_photos_offload_deploy
+
+test-daybook-photos-offload-symlink-safety: venv
+    @echo "Testing Daybook Photos environment link safety..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_daybook_photos_offload_symlink_safety.yml
 
 test-daybook-weeknotes-reconcile-check-mode: venv
     @echo "Testing configured and unconfigured Daybook reconcile check mode..."

@@ -30,6 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and a language mapped to a `kokoro-*` voice cannot diverge from Kokoro
   enablement.
 
+- Added `daybook_photos_offload_deploy`, a quiesce-first macOS Aqua user
+  LaunchAgent for the pinned, clean-checkout Daybook Photos discovery
+  reconciler. It owns private runtime state and owner-only private logs, emits
+  aggregate-only scheduled output, uses a root-owned exact checkout plus a
+  checkout-local sanitized uv environment, rejects unsafe Git state and path
+  substitutions, fails closed during activation, and runs at 08:10 and 20:10
+  without mounting Fractal or mutating Photos.
+
 - `homeassistant_deploy` gained an optional Custom Conversation bridge
   (`homeassistant_custom_conversation_enabled`, default `false`). It installs the
   pinned, checksum-verified `michelle-avery/custom-conversation` component

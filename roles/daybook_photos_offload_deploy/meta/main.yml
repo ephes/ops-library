@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  author: Jochen Wersdoerfer
+  description: Install the read-only Daybook Photos offload reconciler as a macOS user LaunchAgent
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: macOS
+      versions:
+        - all
+  galaxy_tags:
+    - daybook
+    - launchd
+    - macos
+    - photos
+dependencies: []

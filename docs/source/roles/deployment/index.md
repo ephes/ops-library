@@ -8,6 +8,7 @@ Roles for deploying and configuring services.
 fastdeploy_deploy
 fastdeploy_self_deploy
 daybook_sessions_deploy
+daybook_photos_offload_deploy
 weeknotes_home_deploy
 nyxmon_deploy
 logyard_deploy
