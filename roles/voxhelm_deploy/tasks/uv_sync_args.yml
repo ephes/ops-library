@@ -10,6 +10,8 @@
             if (voxhelm_diarization_backend | string | trim | lower) == 'pyannote'
             else []
           )
+          + (['kokoro'] if voxhelm_tts_kokoro_enabled | bool else [])
+          + (['routing'] if voxhelm_tts_language_routing_enabled | bool else [])
         ) | unique | list
       }}
 

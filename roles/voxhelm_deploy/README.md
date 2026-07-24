@@ -20,6 +20,8 @@ Current default runtime:
 - `whisper.cpp` as the default STT backend on `studio`, with `mlx-whisper` as fallback
 - `mlx-whisper` as the default Wyoming STT backend for short interactive speech
 - `piper` as the default TTS backend on `studio`
+- optional Kokoro ONNX TTS backend and automatic de/en language routing, both
+  disabled by default
 - host-wide lane scheduling enabled by default for local inference on `studio`
 - speaker diarization disabled by default, with optional pyannote support
 - bearer-token authentication via environment variables
@@ -91,6 +93,25 @@ voxhelm_piper_language_voices:
   en_US: "en_US-lessac-medium"
   de: "de_DE-thorsten-high"
   de_DE: "de_DE-thorsten-high"
+voxhelm_tts_kokoro_enabled: false
+voxhelm_tts_language_routing_enabled: false
+voxhelm_kokoro_model_dir: "/opt/apps/voxhelm/site/var/kokoro"
+voxhelm_kokoro_models:
+  kokoro-af_heart:
+    model_file: "kokoro-v1.0.onnx"
+    voicepack_file: "voices-v1.0.bin"
+    voicepack_key: "af_heart"
+    phoneme_language: "en-us"
+  kokoro-martin:
+    model_file: "kokoro-martin.onnx"
+    voicepack_file: "voices-martin.npz"
+    voicepack_key: "martin"
+    phoneme_language: "de"
+voxhelm_kokoro_default_voice: ""
+voxhelm_tts_language_voices:
+  de: "kokoro-martin"
+  en: "kokoro-af_heart"
+voxhelm_espeak_library: "/opt/homebrew/lib/libespeak-ng.dylib"
 voxhelm_wyoming_stt_enabled: true
 voxhelm_wyoming_stt_host: "0.0.0.0"
 voxhelm_wyoming_stt_port: 10300
@@ -226,6 +247,47 @@ For the full list, see `defaults/main.yml`.
   enabled.
 - The role verifies the sidecar by checking the launchd unit state and waiting
   for the configured TCP port to listen locally on the target host.
+
+## Kokoro TTS and Language Routing Notes
+
+- The optional Kokoro ONNX TTS backend adds an English voice (`kokoro-af_heart`,
+  official Kokoro v1.0) and a German fine-tune (`kokoro-martin`) alongside Piper.
+  It is disabled by default; Piper stays installed as the fallback and rollback
+  path.
+- `voxhelm_tts_kokoro_enabled` is the single flag that gates BOTH the `kokoro` uv
+  extra and Kokoro model registration. When it is `false`, `uv sync` omits the
+  extra AND the env template renders no `VOXHELM_KOKORO_*` variables, so Kokoro
+  voices are never advertised in Wyoming `describe` nor dispatchable. `validate.yml`
+  asserts these two cannot diverge (a language mapped to a `kokoro-*` voice fails
+  fast unless Kokoro is enabled and the voice is configured).
+- When enabled, the role installs `espeak-ng` via Homebrew (Kokoro phonemizes both
+  languages through espeak-ng) and downloads the checksum-pinned model artifacts
+  into `voxhelm_kokoro_model_dir`. Downloads use `get_url` with a `sha256` checksum,
+  so they are idempotent and integrity-verified — an already-present, matching file
+  is not re-fetched. The int8 official model (`kokoro-v1.0.int8.onnx`) is
+  provisioned alongside the full model so the latency fallback is a config-only
+  switch.
+- `voxhelm_kokoro_models` maps a registry voice key (convention `kokoro-<voicepack_key>`)
+  to `model_file`, `voicepack_file`, `voicepack_key` (the embedding selected inside
+  the pack), and `phoneme_language` (espeak language, e.g. `en-us` / `de`). It is
+  rendered into `VOXHELM_KOKORO_MODELS` in the compact
+  `voice_key=model:voicepack:voicepack_key:language` encoding that voxhelm parses.
+  Every referenced `model_file`/`voicepack_file` must appear in
+  `voxhelm_kokoro_artifacts` (validated).
+- `voxhelm_kokoro_default_voice` is optional; when set it must be a configured model
+  key. `voxhelm_espeak_library` overrides the libespeak-ng shared library and
+  defaults to the Homebrew dylib at `/opt/homebrew/lib/libespeak-ng.dylib`.
+- `voxhelm_tts_language_routing_enabled` gates the `routing` uv extra
+  (`lingua-language-detector`) and renders `VOXHELM_TTS_LANGUAGE_ROUTING`. When on,
+  `voxhelm_tts_language_voices` (rendered into `VOXHELM_TTS_LANGUAGE_VOICES`) maps a
+  detected language to a registry voice across all backends; outgoing TTS text is
+  language-detected and the mapped voice overrides the pipeline-pinned voice.
+  Routing is independently toggleable from Kokoro, but mapping a language to a
+  `kokoro-*` voice requires Kokoro enabled.
+- Rollback is config-only and order matters: set
+  `voxhelm_tts_language_routing_enabled: false` first to stop automatic Kokoro use
+  (HA pipeline voices are Piper voices), then
+  `voxhelm_tts_kokoro_enabled: false` to remove Kokoro voices entirely.
 
 ## License
 

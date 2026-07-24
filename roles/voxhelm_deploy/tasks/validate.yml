@@ -80,3 +80,87 @@
       Hugging Face token is missing. Set voxhelm_pyannote_model and pass
       voxhelm_huggingface_token from encrypted ops secrets.
   when: voxhelm_diarization_backend_normalized == "pyannote"
+
+- name: validate | Ensure Kokoro models are configured when Kokoro is enabled
+  ansible.builtin.assert:
+    that:
+      - voxhelm_kokoro_models | length > 0
+    fail_msg: >-
+      voxhelm_tts_kokoro_enabled is true but voxhelm_kokoro_models is empty.
+      Configure at least one voice-key entry or disable Kokoro.
+  when: voxhelm_tts_kokoro_enabled | bool
+
+- name: validate | Ensure every Kokoro model entry has the required fields
+  ansible.builtin.assert:
+    that:
+      - item.value.model_file | default('') | string | trim | length > 0
+      - item.value.voicepack_file | default('') | string | trim | length > 0
+      - item.value.voicepack_key | default('') | string | trim | length > 0
+      - item.value.phoneme_language | default('') | string | trim | length > 0
+    fail_msg: >-
+      Kokoro model '{{ item.key }}' must set model_file, voicepack_file,
+      voicepack_key, and phoneme_language.
+    quiet: true
+  loop: "{{ voxhelm_kokoro_models | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: voxhelm_tts_kokoro_enabled | bool
+
+- name: validate | Collect provisioned Kokoro artifact filenames
+  ansible.builtin.set_fact:
+    voxhelm_kokoro_artifact_dests: "{{ voxhelm_kokoro_artifacts | map(attribute='dest') | list }}"
+  when: voxhelm_tts_kokoro_enabled | bool
+
+- name: validate | Ensure Kokoro model files are provisioned as artifacts
+  ansible.builtin.assert:
+    that:
+      - item.value.model_file in voxhelm_kokoro_artifact_dests
+      - item.value.voicepack_file in voxhelm_kokoro_artifact_dests
+    fail_msg: >-
+      Kokoro model '{{ item.key }}' references files
+      ('{{ item.value.model_file }}', '{{ item.value.voicepack_file }}') that are
+      not provisioned by voxhelm_kokoro_artifacts. Add them to the artifact list
+      so the deploy downloads and checksum-verifies them.
+    quiet: true
+  loop: "{{ voxhelm_kokoro_models | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: voxhelm_tts_kokoro_enabled | bool
+
+- name: validate | Ensure Kokoro default voice is a configured model
+  ansible.builtin.assert:
+    that:
+      - voxhelm_kokoro_default_voice in (voxhelm_kokoro_models.keys() | list)
+    fail_msg: >-
+      voxhelm_kokoro_default_voice '{{ voxhelm_kokoro_default_voice }}' is not a
+      configured voxhelm_kokoro_models key.
+  when:
+    - voxhelm_tts_kokoro_enabled | bool
+    - voxhelm_kokoro_default_voice | trim | length > 0
+
+- name: validate | Ensure the language map is configured when routing is enabled
+  ansible.builtin.assert:
+    that:
+      - voxhelm_tts_language_voices | length > 0
+    fail_msg: >-
+      voxhelm_tts_language_routing_enabled is true but voxhelm_tts_language_voices
+      is empty. Map at least one language to a registry voice or disable routing.
+  when: voxhelm_tts_language_routing_enabled | bool
+
+- name: validate | Ensure routed Kokoro voices cannot diverge from Kokoro enablement
+  ansible.builtin.assert:
+    that:
+      - not (item.value.startswith('kokoro-')) or (voxhelm_tts_kokoro_enabled | bool)
+      - >-
+        not (item.value.startswith('kokoro-'))
+        or (item.value in (voxhelm_kokoro_models.keys() | list))
+    fail_msg: >-
+      Language '{{ item.key }}' maps to Kokoro voice '{{ item.value }}', but that
+      voice is not a configured, Kokoro-enabled model. Set
+      voxhelm_tts_kokoro_enabled and add '{{ item.value }}' to
+      voxhelm_kokoro_models, or map the language to a Piper voice.
+    quiet: true
+  loop: "{{ voxhelm_tts_language_voices | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: voxhelm_tts_language_routing_enabled | bool

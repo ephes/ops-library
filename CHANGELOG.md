@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `voxhelm_deploy` gained an optional Kokoro ONNX TTS backend and automatic
+  de/en language routing, both disabled by default and independently toggleable
+  (`voxhelm_tts_kokoro_enabled`, `voxhelm_tts_language_routing_enabled`, both
+  `false`). Enabling Kokoro installs `espeak-ng` via Homebrew and downloads the
+  checksum-pinned model artifacts (`voxhelm_kokoro_artifacts`: official Kokoro
+  v1.0 full + int8, `voices-v1.0.bin`, and the German "Martin" fine-tune) into
+  `voxhelm_kokoro_model_dir` with idempotent, `sha256`-verified `get_url`
+  downloads. The single enable flag gates BOTH the `kokoro` uv extra and Kokoro
+  model registration: when `false`, the env template renders no `VOXHELM_KOKORO_*`
+  variables, so Kokoro voices are neither advertised nor dispatchable.
+  `voxhelm_kokoro_models` (voice-key → `model_file`/`voicepack_file`/
+  `voicepack_key`/`phoneme_language`) renders into `VOXHELM_KOKORO_MODELS`, with
+  optional `voxhelm_kokoro_default_voice` and `voxhelm_espeak_library`
+  (default `/opt/homebrew/lib/libespeak-ng.dylib`). Routing gates the `routing`
+  uv extra and renders `VOXHELM_TTS_LANGUAGE_ROUTING` /
+  `VOXHELM_TTS_LANGUAGE_VOICES` (`voxhelm_tts_language_voices`). `validate.yml`
+  asserts models are configured and complete when Kokoro is enabled, referenced
+  files are provisioned as artifacts, a set default voice is a configured key,
+  and a language mapped to a `kokoro-*` voice cannot diverge from Kokoro
+  enablement.
+
 - `homeassistant_deploy` gained an optional Custom Conversation bridge
   (`homeassistant_custom_conversation_enabled`, default `false`). It installs the
   pinned, checksum-verified `michelle-avery/custom-conversation` component
