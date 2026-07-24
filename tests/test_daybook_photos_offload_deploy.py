@@ -25,7 +25,7 @@ class DaybookPhotosOffloadDeployTests(unittest.TestCase):
         )
         self.assertLess(
             tasks.index("quiesce | Disable Photos offload"),
-            tasks.index("source | Materialize exact Daybook Photos checkout"),
+            tasks.index("source | Materialize exact detached Daybook Photos revision"),
         )
         self.assertLess(
             tasks.index("quiesce | Boot out the exact loaded Photos offload service"),
@@ -110,9 +110,78 @@ class DaybookPhotosOffloadDeployTests(unittest.TestCase):
             defaults,
         )
         self.assertIn(
+            'daybook_photos_offload_repo_bundle_path: '
+            '"{{ daybook_photos_offload_checkout_path | dirname }}/source.bundle"',
+            defaults,
+        )
+        self.assertIn(
+            'daybook_photos_offload_repo_bundle_src: "CHANGEME"',
+            defaults,
+        )
+        validation = tasks.split(
+            "validate | Ensure required Photos offload variables are safe", 1
+        )[1].split("validate | Reject traversal", 1)[0]
+        self.assertIn(
+            "daybook_photos_offload_repo_url == "
+            "daybook_photos_offload_repo_bundle_path",
+            validation,
+        )
+        self.assertIn(
+            "daybook_photos_offload_repo_bundle_src != 'CHANGEME'",
+            validation,
+        )
+        self.assertIn(
+            "Install controller-verified Photos offload source bundle",
+            tasks,
+        )
+        self.assertNotIn("ansible.builtin.git:", tasks)
+        self.assertIn("Clone protected Daybook Photos bundle without checkout", tasks)
+        clone_start = tasks.index("Clone protected Daybook Photos bundle without checkout")
+        clone_end = tasks.index("\n- name:", clone_start)
+        self.assertIn("- --branch\n      - main", tasks[clone_start:clone_end])
+        self.assertIn("Fetch exact protected Daybook Photos bundle update", tasks)
+        fetch_start = tasks.index("Fetch exact protected Daybook Photos bundle update")
+        fetch_end = tasks.index("\n- name:", fetch_start)
+        self.assertIn("changed_when: false", tasks[fetch_start:fetch_end])
+        self.assertIn("GIT_CONFIG_GLOBAL=/dev/null", tasks)
+        self.assertIn("GIT_CONFIG_SYSTEM=/dev/null", tasks)
+        self.assertIn("GIT_TERMINAL_PROMPT=0", tasks)
+        for mutation in (
+            "Clone protected Daybook Photos bundle without checkout",
+            "Fetch exact protected Daybook Photos bundle update",
+            "Materialize exact detached Daybook Photos revision",
+        ):
+            start = tasks.index(mutation)
+            next_task = tasks.find("\n- name:", start)
+            block = tasks[start : next_task if next_task != -1 else None]
+            self.assertIn("not ansible_check_mode", block)
+        bundle_install = tasks.split(
+            "Install controller-verified Photos offload source bundle", 1
+        )[1].split("Remove ACLs from managed Photos offload source bundle", 1)[0]
+        self.assertIn("not ansible_check_mode", bundle_install)
+        self.assertIn("Require exact managed Photos offload source bundle", tasks)
+        self.assertLess(
+            tasks.index("Require exact managed Photos offload source bundle"),
+            tasks.index("Materialize exact detached Daybook Photos revision"),
+        )
+        self.assertIn(
             "Write root-only Photos offload checkout trust attestation",
             tasks,
         )
+        self.assertIn(
+            "Reject unsafe trust attestation and require it for a pre-existing checkout",
+            tasks,
+        )
+        self.assertIn(
+            "Require exact protected written Photos offload trust attestation",
+            tasks,
+        )
+        written_attestation = tasks.split(
+            "Require exact protected written Photos offload trust attestation", 1
+        )[1].split("\n- name:", 1)[0]
+        self.assertIn("stat.nlink", written_attestation)
+        self.assertIn("stat.mode == '0600'", written_attestation)
+        self.assertIn("stdout_lines | length == 1", written_attestation)
         self.assertIn(
             "daybook_photos_offload_launchd_manage_state | bool",
             tasks.split(
@@ -142,7 +211,7 @@ class DaybookPhotosOffloadDeployTests(unittest.TestCase):
         )
         self.assertLess(
             tasks.index("Inspect pre-existing Photos offload Git identity"),
-            tasks.index("Materialize exact Daybook Photos checkout"),
+            tasks.index("Materialize exact detached Daybook Photos revision"),
         )
         self.assertLess(
             tasks.index("Recheck checkout components before runtime synchronization"),
@@ -273,6 +342,22 @@ class DaybookPhotosOffloadDeployTests(unittest.TestCase):
         disable_end = tasks.index("\n- name:", disable_start)
         self.assertNotIn("check_mode: false", tasks[disable_start:disable_end])
         self.assertIn("failed_when: false", tasks[disable_start:disable_end])
+        for mutation in (
+            "Ensure protected Daybook Photos checkout ancestors exist",
+            "Protect the checkout root from service-user replacement",
+            "Protect Git metadata root from service-user replacement",
+            "Ensure checkout-local Photos offload environment exists",
+            "Write root-only Photos offload checkout trust attestation",
+            "Ensure private Photos offload directories exist",
+            "Ensure user LaunchAgents directory exists",
+            "Ensure private Photos offload logs exist",
+            "Render Photos offload launcher",
+            "Render Photos offload user LaunchAgent",
+        ):
+            start = tasks.index(mutation)
+            next_task = tasks.find("\n- name:", start)
+            block = tasks[start : next_task if next_task != -1 else None]
+            self.assertIn("not ansible_check_mode", block)
 
     def test_role_does_not_mutate_photos_or_fractal(self):
         tasks = self.text("roles/daybook_photos_offload_deploy/tasks/main.yml")

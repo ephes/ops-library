@@ -20,6 +20,13 @@
       - >-
         daybook_photos_offload_checkout_attestation_path
         == (daybook_photos_offload_checkout_path | dirname) ~ '/managed-v1'
+      - >-
+        daybook_photos_offload_repo_bundle_path
+        == (daybook_photos_offload_checkout_path | dirname) ~ '/source.bundle'
+      - >-
+        (daybook_photos_offload_repo_bundle_src | string).startswith('/')
+      - daybook_photos_offload_repo_bundle_src != 'CHANGEME'
+      - daybook_photos_offload_repo_url == daybook_photos_offload_repo_bundle_path
       - (daybook_photos_offload_repo_ref | string | regex_search('^[0-9a-f]{40}$')) is not none
       - (daybook_photos_offload_uv_bin | string).startswith('/')
       - daybook_photos_offload_python_version | string | trim | length > 0
@@ -63,6 +70,7 @@
     - "{{ daybook_photos_offload_service_home }}"
     - "{{ daybook_photos_offload_checkout_path }}"
     - "{{ daybook_photos_offload_checkout_attestation_path }}"
+    - "{{ daybook_photos_offload_repo_bundle_path }}"
     - "{{ daybook_photos_offload_venv_path }}"
     - "{{ daybook_photos_offload_uv_bin }}"
     - "{{ daybook_photos_offload_library_path }}"
@@ -297,7 +305,9 @@
   loop:
     - /Library/Application Support/Daybook
     - "{{ daybook_photos_offload_checkout_path | dirname }}"
-  when: daybook_photos_offload_enabled | bool
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
 
 - name: source | Remove ACLs from managed checkout ancestors
   ansible.builtin.command:
@@ -395,6 +405,7 @@
   check_mode: false
   loop:
     - "{{ daybook_photos_offload_checkout_path | dirname }}"
+    - "{{ daybook_photos_offload_repo_bundle_path }}"
     - "{{ daybook_photos_offload_checkout_path }}"
     - "{{ daybook_photos_offload_checkout_path }}/.git"
     - "{{ daybook_photos_offload_venv_path }}"
@@ -408,6 +419,98 @@
     - "{{ daybook_photos_offload_stderr_log }}"
     - "{{ daybook_photos_offload_launchd_plist_path }}"
   when: daybook_photos_offload_enabled | bool
+
+- name: source | Inspect managed Photos offload source bundle before writing
+  ansible.builtin.stat:
+    path: "{{ daybook_photos_offload_repo_bundle_path }}"
+    follow: false
+  register: daybook_photos_offload_repo_bundle_before
+  check_mode: false
+  when:
+    - daybook_photos_offload_enabled | bool
+    - daybook_photos_offload_repo_bundle_src | string | length > 0
+
+- name: source | Reject a substituted managed Photos offload source bundle
+  ansible.builtin.assert:
+    that:
+      - >-
+        not (daybook_photos_offload_repo_bundle_before.stat.exists | default(false))
+        or (daybook_photos_offload_repo_bundle_before.stat.isreg | default(false))
+      - >-
+        not (daybook_photos_offload_repo_bundle_before.stat.exists | default(false))
+        or not (daybook_photos_offload_repo_bundle_before.stat.islnk | default(false))
+      - >-
+        not (daybook_photos_offload_repo_bundle_before.stat.exists | default(false))
+        or (daybook_photos_offload_repo_bundle_before.stat.nlink | default(0) == 1)
+    fail_msg: "The managed Photos offload source bundle must be a single-link regular file."
+  when:
+    - daybook_photos_offload_enabled | bool
+    - daybook_photos_offload_repo_bundle_src | string | length > 0
+
+- name: source | Install controller-verified Photos offload source bundle
+  ansible.builtin.copy:
+    src: "{{ daybook_photos_offload_repo_bundle_src }}"
+    dest: "{{ daybook_photos_offload_repo_bundle_path }}"
+    owner: root
+    group: "{{ daybook_photos_offload_system_group }}"
+    mode: "0600"
+    follow: false
+  when:
+    - daybook_photos_offload_enabled | bool
+    - daybook_photos_offload_repo_bundle_src | string | length > 0
+    - not ansible_check_mode
+
+- name: source | Remove ACLs from managed Photos offload source bundle
+  ansible.builtin.command:
+    argv:
+      - /bin/chmod
+      - -N
+      - "{{ daybook_photos_offload_repo_bundle_path }}"
+  changed_when: false
+  when:
+    - daybook_photos_offload_enabled | bool
+    - daybook_photos_offload_repo_bundle_src | string | length > 0
+    - not ansible_check_mode
+
+- name: source | Inspect managed Photos offload source bundle after writing
+  ansible.builtin.stat:
+    path: "{{ daybook_photos_offload_repo_bundle_path }}"
+    follow: false
+  register: daybook_photos_offload_repo_bundle_after
+  check_mode: false
+  when:
+    - daybook_photos_offload_enabled | bool
+    - daybook_photos_offload_repo_bundle_src | string | length > 0
+    - not ansible_check_mode
+
+- name: source | Inspect ACLs on managed Photos offload source bundle
+  ansible.builtin.command:
+    argv:
+      - /bin/ls
+      - -le
+      - "{{ daybook_photos_offload_repo_bundle_path }}"
+  register: daybook_photos_offload_repo_bundle_acl
+  changed_when: false
+  check_mode: false
+  when:
+    - daybook_photos_offload_enabled | bool
+    - daybook_photos_offload_repo_bundle_src | string | length > 0
+    - not ansible_check_mode
+
+- name: source | Require exact managed Photos offload source bundle
+  ansible.builtin.assert:
+    that:
+      - daybook_photos_offload_repo_bundle_after.stat.isreg | default(false)
+      - not (daybook_photos_offload_repo_bundle_after.stat.islnk | default(false))
+      - daybook_photos_offload_repo_bundle_after.stat.nlink | default(0) == 1
+      - daybook_photos_offload_repo_bundle_after.stat.pw_name == 'root'
+      - daybook_photos_offload_repo_bundle_after.stat.mode == '0600'
+      - daybook_photos_offload_repo_bundle_acl.stdout_lines | length == 1
+    fail_msg: "The managed Photos offload source bundle must be protected and ACL-free."
+  when:
+    - daybook_photos_offload_enabled | bool
+    - daybook_photos_offload_repo_bundle_src | string | length > 0
+    - not ansible_check_mode
 
 - name: validate | Inspect pre-existing Photos offload checkout
   ansible.builtin.stat:
@@ -469,20 +572,31 @@
   check_mode: false
   when: daybook_photos_offload_enabled | bool
 
-- name: validate | Require trust attestation for a pre-existing checkout
+- name: validate | Reject unsafe trust attestation and require it for a pre-existing checkout
   ansible.builtin.assert:
     that:
-      - daybook_photos_offload_attestation_before.stat.isreg | default(false)
-      - not (daybook_photos_offload_attestation_before.stat.islnk | default(false))
-      - daybook_photos_offload_attestation_before.stat.nlink | default(0) == 1
-      - daybook_photos_offload_attestation_before.stat.pw_name == 'root'
-      - daybook_photos_offload_attestation_before.stat.mode == '0600'
+      - >-
+        not (daybook_photos_offload_checkout_before.stat.exists | default(false))
+        or (daybook_photos_offload_attestation_before.stat.exists | default(false))
+      - >-
+        not (daybook_photos_offload_attestation_before.stat.exists | default(false))
+        or (daybook_photos_offload_attestation_before.stat.isreg | default(false))
+      - >-
+        not (daybook_photos_offload_attestation_before.stat.exists | default(false))
+        or not (daybook_photos_offload_attestation_before.stat.islnk | default(false))
+      - >-
+        not (daybook_photos_offload_attestation_before.stat.exists | default(false))
+        or (daybook_photos_offload_attestation_before.stat.nlink | default(0) == 1)
+      - >-
+        not (daybook_photos_offload_attestation_before.stat.exists | default(false))
+        or daybook_photos_offload_attestation_before.stat.pw_name == 'root'
+      - >-
+        not (daybook_photos_offload_attestation_before.stat.exists | default(false))
+        or daybook_photos_offload_attestation_before.stat.mode == '0600'
     fail_msg: >-
       A pre-existing Photos offload checkout is accepted only with the
       root-only trust attestation created by this role.
-  when:
-    - daybook_photos_offload_enabled | bool
-    - daybook_photos_offload_checkout_before.stat.exists | default(false)
+  when: daybook_photos_offload_enabled | bool
 
 - name: validate | Inspect ACLs on Photos offload checkout trust attestation
   ansible.builtin.command:
@@ -495,7 +609,7 @@
   check_mode: false
   when:
     - daybook_photos_offload_enabled | bool
-    - daybook_photos_offload_checkout_before.stat.exists | default(false)
+    - daybook_photos_offload_attestation_before.stat.exists | default(false)
 
 - name: validate | Reject ACLs on Photos offload checkout trust attestation
   ansible.builtin.assert:
@@ -504,7 +618,7 @@
     fail_msg: "The Photos offload checkout trust attestation must not carry ACLs."
   when:
     - daybook_photos_offload_enabled | bool
-    - daybook_photos_offload_checkout_before.stat.exists | default(false)
+    - daybook_photos_offload_attestation_before.stat.exists | default(false)
 
 - name: validate | Read pre-existing Photos offload checkout trust attestation
   ansible.builtin.slurp:
@@ -513,7 +627,7 @@
   check_mode: false
   when:
     - daybook_photos_offload_enabled | bool
-    - daybook_photos_offload_checkout_before.stat.exists | default(false)
+    - daybook_photos_offload_attestation_before.stat.exists | default(false)
 
 - name: validate | Require exact Photos offload checkout trust attestation
   ansible.builtin.assert:
@@ -524,7 +638,7 @@
     fail_msg: "The Photos offload checkout trust attestation is invalid."
   when:
     - daybook_photos_offload_enabled | bool
-    - daybook_photos_offload_checkout_before.stat.exists | default(false)
+    - daybook_photos_offload_attestation_before.stat.exists | default(false)
 
 - name: validate | Verify attested pre-existing protected checkout content
   ansible.builtin.command:
@@ -795,24 +909,109 @@
     - daybook_photos_offload_enabled | bool
     - daybook_photos_offload_venv_before.stat.exists | default(false)
 
-- name: source | Materialize exact Daybook Photos checkout
-  ansible.builtin.git:
-    repo: "{{ daybook_photos_offload_repo_url }}"
-    dest: "{{ daybook_photos_offload_checkout_path }}"
-    version: "{{ daybook_photos_offload_repo_ref }}"
-    update: true
-    force: false
-  environment:
-    HOME: /var/root
-    GIT_CONFIG_NOSYSTEM: "1"
-    GIT_CONFIG_GLOBAL: /dev/null
-    GIT_CONFIG_COUNT: "2"
-    GIT_CONFIG_KEY_0: core.hooksPath
-    GIT_CONFIG_VALUE_0: /dev/null
-    GIT_CONFIG_KEY_1: core.fsmonitor
-    GIT_CONFIG_VALUE_1: "false"
-    GIT_TERMINAL_PROMPT: "0"
-  when: daybook_photos_offload_enabled | bool
+- name: source | Clone protected Daybook Photos bundle without checkout
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/env
+      - -i
+      - HOME=/var/root
+      - "PATH={{ daybook_photos_offload_path }}"
+      - GIT_CONFIG_GLOBAL=/dev/null
+      - GIT_CONFIG_SYSTEM=/dev/null
+      - GIT_TERMINAL_PROMPT=0
+      - /usr/bin/git
+      - -c
+      - core.hooksPath=/dev/null
+      - -c
+      - core.fsmonitor=false
+      - clone
+      - --no-checkout
+      - --branch
+      - main
+      - "{{ daybook_photos_offload_repo_bundle_path }}"
+      - "{{ daybook_photos_offload_checkout_path }}"
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
+    - not (daybook_photos_offload_checkout_before.stat.exists | default(false))
+
+- name: source | Fetch exact protected Daybook Photos bundle update
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/env
+      - -i
+      - HOME=/var/root
+      - "PATH={{ daybook_photos_offload_path }}"
+      - GIT_CONFIG_GLOBAL=/dev/null
+      - GIT_CONFIG_SYSTEM=/dev/null
+      - GIT_TERMINAL_PROMPT=0
+      - /usr/bin/git
+      - -C
+      - "{{ daybook_photos_offload_checkout_path }}"
+      - -c
+      - core.hooksPath=/dev/null
+      - -c
+      - core.fsmonitor=false
+      - fetch
+      - --no-tags
+      - --force
+      - origin
+      - refs/heads/main
+  changed_when: false
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
+    - daybook_photos_offload_checkout_before.stat.exists | default(false)
+
+- name: source | Read fetched Daybook Photos checkout revision
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/env
+      - -i
+      - HOME=/var/root
+      - "PATH={{ daybook_photos_offload_path }}"
+      - GIT_CONFIG_GLOBAL=/dev/null
+      - GIT_CONFIG_SYSTEM=/dev/null
+      - /usr/bin/git
+      - -C
+      - "{{ daybook_photos_offload_checkout_path }}"
+      - -c
+      - core.fsmonitor=false
+      - rev-parse
+      - HEAD
+  register: daybook_photos_offload_fetched_head
+  changed_when: false
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
+
+- name: source | Materialize exact detached Daybook Photos revision
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/env
+      - -i
+      - HOME=/var/root
+      - "PATH={{ daybook_photos_offload_path }}"
+      - GIT_CONFIG_GLOBAL=/dev/null
+      - GIT_CONFIG_SYSTEM=/dev/null
+      - GIT_TERMINAL_PROMPT=0
+      - /usr/bin/git
+      - -C
+      - "{{ daybook_photos_offload_checkout_path }}"
+      - -c
+      - core.hooksPath=/dev/null
+      - -c
+      - core.fsmonitor=false
+      - checkout
+      - --detach
+      - "{{ daybook_photos_offload_repo_ref }}"
+  changed_when: >-
+    not (daybook_photos_offload_checkout_before.stat.exists | default(false))
+    or (daybook_photos_offload_fetched_head.stdout | trim)
+       != daybook_photos_offload_repo_ref
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
 
 - name: source | Recheck checkout components before runtime synchronization
   ansible.builtin.command:
@@ -847,7 +1046,9 @@
     owner: root
     group: "{{ daybook_photos_offload_system_group }}"
     mode: "0755"
-  when: daybook_photos_offload_enabled | bool
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
 
 - name: source | Protect Git metadata root from service-user replacement
   ansible.builtin.file:
@@ -856,7 +1057,9 @@
     owner: root
     group: "{{ daybook_photos_offload_system_group }}"
     mode: "0755"
-  when: daybook_photos_offload_enabled | bool
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
 
 - name: runtime | Ensure checkout-local Photos offload environment exists
   ansible.builtin.file:
@@ -866,7 +1069,9 @@
     group: "{{ daybook_photos_offload_service_group }}"
     mode: "0700"
     follow: false
-  when: daybook_photos_offload_enabled | bool
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
 
 - name: source | Verify every protected checkout descendant
   ansible.builtin.command:
@@ -940,7 +1145,58 @@
     group: "{{ daybook_photos_offload_system_group }}"
     mode: "0600"
     follow: false
-  when: daybook_photos_offload_enabled | bool
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
+
+- name: source | Inspect written Photos offload checkout trust attestation
+  ansible.builtin.stat:
+    path: "{{ daybook_photos_offload_checkout_attestation_path }}"
+    follow: false
+  register: daybook_photos_offload_attestation_after
+  check_mode: false
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
+
+- name: source | Inspect ACLs on written Photos offload checkout trust attestation
+  ansible.builtin.command:
+    argv:
+      - /bin/ls
+      - -le
+      - "{{ daybook_photos_offload_checkout_attestation_path }}"
+  register: daybook_photos_offload_attestation_acl_after
+  changed_when: false
+  check_mode: false
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
+
+- name: source | Read written Photos offload checkout trust attestation
+  ansible.builtin.slurp:
+    path: "{{ daybook_photos_offload_checkout_attestation_path }}"
+  register: daybook_photos_offload_attestation_content_after
+  check_mode: false
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
+
+- name: source | Require exact protected written Photos offload trust attestation
+  ansible.builtin.assert:
+    that:
+      - daybook_photos_offload_attestation_after.stat.isreg | default(false)
+      - not (daybook_photos_offload_attestation_after.stat.islnk | default(false))
+      - daybook_photos_offload_attestation_after.stat.nlink | default(0) == 1
+      - daybook_photos_offload_attestation_after.stat.pw_name == 'root'
+      - daybook_photos_offload_attestation_after.stat.mode == '0600'
+      - daybook_photos_offload_attestation_acl_after.stdout_lines | length == 1
+      - >-
+        (daybook_photos_offload_attestation_content_after.content | b64decode)
+        == 'daybook-photos-offload-root-checkout-v1' ~ '\n'
+    fail_msg: "The written Photos offload checkout trust attestation is unsafe."
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
 
 - name: runtime | Inspect Photos offload environment after checkout update
   ansible.builtin.stat:
@@ -1373,7 +1629,9 @@
     - "{{ daybook_photos_offload_config_dir }}"
   become: true
   become_user: "{{ daybook_photos_offload_service_user }}"
-  when: daybook_photos_offload_enabled | bool
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
 
 - name: runtime | Remove inherited ACLs from private Photos offload directories
   ansible.builtin.command:
@@ -1428,7 +1686,9 @@
     mode: "0755"
   become: true
   become_user: "{{ daybook_photos_offload_service_user }}"
-  when: daybook_photos_offload_enabled | bool
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
 
 - name: runtime | Remove inherited ACLs from user LaunchAgents directory
   ansible.builtin.command:
@@ -1502,7 +1762,9 @@
     - "{{ daybook_photos_offload_stderr_log }}"
   become: true
   become_user: "{{ daybook_photos_offload_service_user }}"
-  when: daybook_photos_offload_enabled | bool
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
 
 - name: runtime | Remove ACLs from private Photos offload logs
   ansible.builtin.command:
@@ -1555,7 +1817,9 @@
     mode: "0700"
   become: true
   become_user: "{{ daybook_photos_offload_service_user }}"
-  when: daybook_photos_offload_enabled | bool
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
 
 - name: config | Render Photos offload user LaunchAgent
   ansible.builtin.template:
@@ -1566,7 +1830,9 @@
     mode: "0644"
   become: true
   become_user: "{{ daybook_photos_offload_service_user }}"
-  when: daybook_photos_offload_enabled | bool
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
 
 - name: config | Remove ACLs from Photos offload executable configuration
   ansible.builtin.command:

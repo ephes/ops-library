@@ -6,6 +6,16 @@ an exact 40-character commit, synchronizes a checkout-local frozen runtime in
 an empty environment, and schedules aggregate discovery reconciliation at
 08:10 and 20:10 local time.
 
+The controller must provide
+`daybook_photos_offload_repo_bundle_src`. The role installs that bundle as an
+ACL-free root-owned mode-0600 file inside the protected checkout parent and
+uses its fixed remote path as `daybook_photos_offload_repo_url`. Whitespace-safe
+sanitized Git commands clone or fetch that bundle directly and preserve its raw
+path as the exact admitted origin; check mode never probes the bundle. Bundle
+preparation may use an isolated synthetic `main` ref for the exact reviewed
+commit, so deployment does not depend on the controller's moving branch head.
+replacement happens only after quiescence and full ancestor/path validation.
+
 The default is deliberately disabled:
 
 ```yaml
@@ -69,11 +79,14 @@ ignored content outside `.venv`, and the intended origin before Git may update
 them. Unattested pre-existing checkouts fail closed rather than being hardened
 with privileged recursion. Git hooks, includes, fsmonitor, global/system
 configuration, external diff/text conversion, and prompting are disabled.
+The root trust attestation is admitted before writing and reverified afterward
+for exact content, ownership, mode, link count, and absence of ACLs.
 Checkout and `.venv` paths are checked again after Git and before uv can mutate
 the environment. Read-only
 identity, git, and launchctl probes
-execute in Ansible check mode when their targets exist; state-changing commands
-remain skipped.
+execute in Ansible check mode when their targets exist; managed file and
+directory writes remain skipped, so a first-run check does not depend on
+simulated parent creation.
 
 Activation is guarded by a fail-closed Ansible block. If enable, bootstrap, or
 the final state checks fail, its rescue disables and boots out the exact
