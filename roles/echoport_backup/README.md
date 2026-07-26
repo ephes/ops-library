@@ -115,7 +115,13 @@ must be down for that window, not just the web service:
 - `AUX_SERVICE_NAMES` lists additional units to stop and start, defaulting to
   `<service>-db-worker` (the Django Tasks worker deployed by `wagtail_deploy`).
   Override per service with `<prefix>_aux_service_names`, e.g.
-  `homepage_prod_db_backup_aux_service_names`.
+  `homepage_prod_db_backup_aux_service_names`. The register playbooks are not
+  consistent about the `.service` suffix on `<prefix>_service_name` — the
+  production-DB ones pass `homepage.service`, the staging ones pass `homepage` —
+  so the suffix is stripped before `-db-worker` is appended.
+- A failed probe raises rather than reporting the unit absent. Reading a
+  transient SSH error as "no such unit" would silently skip the very protection
+  this adds.
 - Auxiliary units are probed with `systemctl show --property=LoadState` and
   skipped when not present, so a site without a worker restores unchanged.
 - Units are started in the order they were stopped, and only removed from the

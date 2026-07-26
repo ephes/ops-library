@@ -51,8 +51,10 @@ SERVICE_NAME = "{{ pp_staging_backup_service_name | default('python-podcast') }}
 # The Django Tasks db_worker polls its task table every few seconds, so leaving
 # it running while the database is dropped and recreated makes it crash with
 # "relation ... does not exist" and take a systemd restart to recover.
+# SERVICE_NAME may be given with or without a .service suffix, so strip it
+# before deriving the worker unit name.
 # Units that do not exist on the restore host are skipped.
-AUX_SERVICE_NAMES = {{ pp_staging_backup_aux_service_names | default([(pp_staging_backup_service_name | default('python-podcast')) ~ '-db-worker']) | to_json }}
+AUX_SERVICE_NAMES = {{ pp_staging_backup_aux_service_names | default([((pp_staging_backup_service_name | default('python-podcast')) | regex_replace('\\.service$', '')) ~ '-db-worker']) | to_json }}
 
 
 def read_config_file() -> Optional[Dict]:

@@ -99,7 +99,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_locked()` inside the same already-aborted transaction. Auxiliary units are
   configurable via `<prefix>_aux_service_names` and default to
   `<service>-db-worker`; units that do not exist on the restore host are skipped,
-  so sites without a worker are unaffected.
+  so sites without a worker are unaffected. A trailing `.service` is stripped
+  from the configured service name first, because the production-DB register
+  playbooks pass `homepage.service` while the staging ones pass `homepage`.
+  A failed probe raises instead of reporting the unit absent, so a transient SSH
+  error cannot silently skip the guard.
 
 - `wagtail_restore` gained the same protection: `wagtail_restore_extra_systemd_units`
   (default: the `wagtail_deploy` db_worker unit when `wagtail_db_worker_enabled`
