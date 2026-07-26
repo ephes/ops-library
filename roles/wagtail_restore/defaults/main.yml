@@ -32,6 +32,15 @@ wagtail_restore_update_index: false
 # Systemd
 wagtail_restore_systemd_unit_name: "{{ wagtail_service_name }}"
 
+# Auxiliary units stopped for the duration of the restore and started again
+# afterwards. The Django Tasks db_worker polls its task table every few seconds,
+# so leaving it running while the database is dropped and recreated makes it
+# crash with "relation ... does not exist".
+# Mirrors the naming used by the wagtail_deploy role.
+wagtail_db_worker_enabled: false
+wagtail_db_worker_unit_name: "{{ wagtail_service_name }}-db-worker"
+wagtail_restore_extra_systemd_units: "{{ [wagtail_db_worker_unit_name] if wagtail_db_worker_enabled | bool else [] }}"
+
 # PostgreSQL configuration
 wagtail_restore_postgres_database: "{{ wagtail_service_name }}"
 wagtail_restore_postgres_user: "{{ wagtail_service_name }}"

@@ -37,6 +37,17 @@ wagtail_mailgun_sender_domain: "..."
 wagtail_django_server_email: "..."
 ```
 
+### Sentry Environment
+
+```yaml
+wagtail_django_sentry_environment: "production"  # set to "staging" on staging hosts
+```
+
+Rendered as both `DJANGO_SENTRY_ENVIRONMENT` and `SENTRY_ENVIRONMENT`. Staging
+deployments usually share `config.settings.production`, and the Sentry SDK tags
+events `production` whenever no environment is given — so without this, staging
+incidents are indistinguishable from real production ones.
+
 ### Rsync Deployment
 
 ```yaml

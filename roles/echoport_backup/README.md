@@ -103,6 +103,30 @@ Operational tradeoff:
   - HTTP: `http://127.0.0.1:10030/api/schema/view/` -> `200`
   - DB query: `SELECT COUNT(*) FROM paperless_applicationconfiguration;`
 
+## Homepage / Python Podcast Template Notes
+
+`templates/homepage_production_db_backup.py.j2`, `templates/homepage_staging_backup.py.j2`,
+`templates/python_podcast_production_db_backup.py.j2` and
+`templates/python_podcast_staging_backup.py.j2` restore a PostgreSQL dump by
+dropping and recreating the target database. Every process holding a connection
+must be down for that window, not just the web service:
+
+- `SERVICE_NAME` is always stopped before the drop and started after `pg_restore`.
+- `AUX_SERVICE_NAMES` lists additional units to stop and start, defaulting to
+  `<service>-db-worker` (the Django Tasks worker deployed by `wagtail_deploy`).
+  Override per service with `<prefix>_aux_service_names`, e.g.
+  `homepage_prod_db_backup_aux_service_names`.
+- Auxiliary units are probed with `systemctl show --property=LoadState` and
+  skipped when not present, so a site without a worker restores unchanged.
+- Units are started in the order they were stopped, and only removed from the
+  pending list once actually started, so the `finally` block retries the rest.
+
+A worker left running during the drop crashes with
+`relation "django_tasks_database_dbtaskresult" does not exist`, which reaches
+Sentry as the misleading `current transaction is aborted, commands ignored until
+end of transaction block` — `django_tasks_db` retries the query inside the same
+already-aborted transaction.
+
 ## Graphyard Template Notes
 
 `templates/graphyard_backup.py.j2` is the service-owned same-host runner for Graphyard:

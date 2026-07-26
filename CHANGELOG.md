@@ -87,6 +87,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `echoport_backup` restore runners for `homepage` and `python_podcast` (both the
+  production-DB and staging variants) now stop the Django Tasks `db_worker` unit
+  alongside the web service before dropping the database, and start it again
+  afterwards. Previously only `SERVICE_NAME` was stopped, so the worker kept
+  polling its task table every 5 seconds straight through `dropdb`/`createdb`,
+  crashed with `relation "django_tasks_database_dbtaskresult" does not exist`,
+  and needed a systemd restart to recover. The crash surfaced in Sentry as the
+  misleading `InternalError: current transaction is aborted, commands ignored
+  until end of transaction block`, because `django_tasks_db`'s `@retry()` re-runs
+  `get_locked()` inside the same already-aborted transaction. Auxiliary units are
+  configurable via `<prefix>_aux_service_names` and default to
+  `<service>-db-worker`; units that do not exist on the restore host are skipped,
+  so sites without a worker are unaffected.
+
+- `wagtail_restore` gained the same protection: `wagtail_restore_extra_systemd_units`
+  (default: the `wagtail_deploy` db_worker unit when `wagtail_db_worker_enabled`
+  is true, otherwise empty) is stopped before the drop and started after
+  migrations complete.
+
+- `wagtail_deploy` now renders `DJANGO_SENTRY_ENVIRONMENT` / `SENTRY_ENVIRONMENT`
+  from the new `wagtail_django_sentry_environment` variable (default
+  `production`). Staging deployments share `config.settings.production`, and the
+  Sentry SDK labels everything `production` when no environment is given, so
+  staging incidents were indistinguishable from real production ones.
+
 - `homeassistant_deploy` Custom Conversation provisioning: the config-flow
   helper no longer rewrites a loopback `homeassistant_api_url` to the default
   route IP before driving the flow. That rewrite discarded a configured scheme,

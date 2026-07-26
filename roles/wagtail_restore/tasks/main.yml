@@ -105,6 +105,17 @@
 
 - when: not wagtail_restore_dry_run | bool
   block:
+    # Auxiliary units are stopped first, and deliberately not failed_when: false.
+    # They are opt-in, so a unit that will not stop means the restore would drop
+    # the database while it still holds a connection. Going first means such a
+    # failure aborts with the database untouched and the web service still up.
+    - name: Stop auxiliary Wagtail units before restore
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+      loop: "{{ wagtail_restore_extra_systemd_units }}"
+      when: wagtail_restore_stop_service | bool
+
     - name: Stop Wagtail service before restore
       ansible.builtin.systemd:
         name: "{{ wagtail_restore_systemd_unit_name }}"
@@ -227,6 +238,43 @@
         state: "{{ wagtail_restore_restart | bool | ternary('restarted', 'started') }}"
         daemon_reload: true
       failed_when: false
+
+    # Run state only - enablement is owned by wagtail_deploy, and a restore that
+    # leaves a worker down must not report success. Gated on the same condition as
+    # the stop above, so a worker this run did not stop is left exactly as it was.
+    - name: Start auxiliary Wagtail units after restore
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: "{{ wagtail_restore_restart | bool | ternary('restarted', 'started') }}"
+      loop: "{{ wagtail_restore_extra_systemd_units }}"
+      when: wagtail_restore_stop_service | bool
+
+  rescue:
+    # Best effort: never leave the site or its workers down because the restore
+    # failed. These must not mask the original failure, hence failed_when: false
+    # followed by an explicit re-raise.
+    - name: Restart Wagtail service after failed restore
+      ansible.builtin.systemd:
+        name: "{{ wagtail_restore_systemd_unit_name }}"
+        state: started
+      failed_when: false
+      when: wagtail_restore_stop_service | bool
+
+    - name: Restart auxiliary Wagtail units after failed restore
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+      loop: "{{ wagtail_restore_extra_systemd_units }}"
+      failed_when: false
+      when: wagtail_restore_stop_service | bool
+
+    - name: Re-raise the restore failure
+      ansible.builtin.fail:
+        msg: >-
+          Wagtail restore failed at '{{ ansible_failed_task.name | default('unknown task') }}'.
+          Services were restarted best-effort; the database may be in a partially
+          restored state.
+
 - name: Cleanup restore staging directory
   ansible.builtin.file:
     path: "{{ wagtail_restore_staging_dir }}"

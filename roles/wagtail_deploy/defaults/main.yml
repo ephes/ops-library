@@ -128,6 +128,11 @@ wagtail_staticfiles_required_paths: []
 # wagtail_mailgun_sender_domain: ""
 # wagtail_django_server_email: ""
 
+# Sentry environment tag. Staging deployments use the same settings module as
+# production, so this has to be set per deployment - the Sentry SDK defaults to
+# "production" whenever no environment is given.
+wagtail_django_sentry_environment: "production"
+
 # Optional: point Anymail at a Mailgun-compatible relay (e.g. https://mailgun.home.xn--wersdrfer-47a.de/v3).
 # Empty string falls back to Anymail's default https://api.mailgun.net/v3.
 wagtail_mailgun_api_url: ""

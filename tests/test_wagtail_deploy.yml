@@ -12,7 +12,30 @@
     rendered_service: "/tmp/test-wagtail.service"
     rendered_worker: "/tmp/test-wagtail-db-worker.service"
     rendered_worker_with_args: "/tmp/test-wagtail-db-worker-with-args.service"
+    rendered_env: "/tmp/test-wagtail.env"
+    rendered_env_staging: "/tmp/test-wagtail-staging.env"
     wagtail_project_slug: "python-podcast"
+    # Shared inputs for the wagtail.env.j2 renders below. Task-level vars in the
+    # service-template tasks override these where the names overlap.
+    wagtail_django_secret_key: "test-secret"
+    wagtail_admin_url: "hidden_admin/"
+    wagtail_django_allowed_hosts: "example.com"
+    wagtail_django_cache_location: "/home/python-podcast/site/cache"
+    wagtail_postgres_user: "python-podcast"
+    wagtail_postgres_password: "test-pw"
+    wagtail_postgres_host: "localhost"
+    wagtail_postgres_port: 5432
+    wagtail_postgres_database: "python-podcast"
+    wagtail_django_aws_access_key_id: "key"
+    wagtail_django_aws_secret_access_key: "secret"
+    wagtail_django_aws_storage_bucket_name: "bucket"
+    wagtail_cloudfront_domain: "cdn.example.com"
+    wagtail_django_sentry_dsn: "https://example@sentry.invalid/1"
+    wagtail_django_mailgun_api_key: "mg-key"
+    wagtail_mailgun_sender_domain: "mg.example.com"
+    wagtail_mailgun_api_url: ""
+    wagtail_django_server_email: "noreply@example.com"
+    wagtail_env_extra: {}
 
   tasks:
     - name: Load role defaults
@@ -26,6 +49,14 @@
           - wagtail_defaults.wagtail_db_worker_enabled == false
           - wagtail_defaults.wagtail_db_worker_backend == "default"
           - "'/cache' in wagtail_defaults.wagtail_rsync_excludes"
+
+    - name: Assert Sentry environment defaults to production
+      ansible.builtin.assert:
+        that:
+          - wagtail_defaults.wagtail_django_sentry_environment == "production"
+        fail_msg: >-
+          wagtail_django_sentry_environment must default to production so
+          existing production deployments keep their Sentry environment tag.
 
     - name: Render Wagtail web service template
       ansible.builtin.template:
@@ -88,6 +119,22 @@
         wagtail_db_worker_extra_args: "--verbose"
         wagtail_cache_dir: "/home/python-podcast/site/cache"
 
+    - name: Render Wagtail env file with the default Sentry environment
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/wagtail.env.j2"
+        dest: "{{ rendered_env }}"
+      vars:
+        wagtail_django_settings_module: "config.settings.production"
+        wagtail_django_sentry_environment: "{{ wagtail_defaults.wagtail_django_sentry_environment }}"
+
+    - name: Render Wagtail env file for a staging deployment
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/wagtail.env.j2"
+        dest: "{{ rendered_env_staging }}"
+      vars:
+        wagtail_django_settings_module: "config.settings.production"
+        wagtail_django_sentry_environment: "staging"
+
     - name: Read rendered services
       ansible.builtin.slurp:
         path: "{{ item }}"
@@ -95,6 +142,8 @@
         - "{{ rendered_service }}"
         - "{{ rendered_worker }}"
         - "{{ rendered_worker_with_args }}"
+        - "{{ rendered_env }}"
+        - "{{ rendered_env_staging }}"
       register: rendered_files
 
     - name: Assert rendered services include web and worker commands
@@ -114,6 +163,21 @@
         rendered_worker_text: "{{ rendered_files.results[1].content | b64decode }}"
         rendered_worker_with_args_text: "{{ rendered_files.results[2].content | b64decode }}"
 
+    - name: Assert env file carries an explicit Sentry environment
+      ansible.builtin.assert:
+        that:
+          - "'DJANGO_SENTRY_ENVIRONMENT=\"production\"' in rendered_env_text"
+          - "'SENTRY_ENVIRONMENT=\"production\"' in rendered_env_text"
+          - "'DJANGO_SENTRY_ENVIRONMENT=\"staging\"' in rendered_env_staging_text"
+          - "'SENTRY_ENVIRONMENT=\"staging\"' in rendered_env_staging_text"
+        fail_msg: >-
+          The env file must state the Sentry environment explicitly. Staging
+          shares config.settings.production, and the Sentry SDK tags events
+          "production" whenever no environment is supplied.
+      vars:
+        rendered_env_text: "{{ rendered_files.results[3].content | b64decode }}"
+        rendered_env_staging_text: "{{ rendered_files.results[4].content | b64decode }}"
+
     - name: Clean up rendered services
       ansible.builtin.file:
         path: "{{ item }}"
@@ -122,3 +186,5 @@
         - "{{ rendered_service }}"
         - "{{ rendered_worker }}"
         - "{{ rendered_worker_with_args }}"
+        - "{{ rendered_env }}"
+        - "{{ rendered_env_staging }}"

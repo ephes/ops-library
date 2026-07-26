@@ -48,6 +48,13 @@ DB_NAME = "{{ pp_prod_db_backup_db_name | default('python-podcast') }}"
 DB_USER = "{{ pp_prod_db_backup_db_user | default('python-podcast') }}"
 SERVICE_NAME = "{{ pp_prod_db_backup_service_name | default('python-podcast') }}"
 
+# Auxiliary units stopped for the duration of a restore, alongside SERVICE_NAME.
+# The Django Tasks db_worker polls its task table every few seconds, so leaving
+# it running while the database is dropped and recreated makes it crash with
+# "relation ... does not exist" and take a systemd restart to recover.
+# Units that do not exist on the restore host are skipped.
+AUX_SERVICE_NAMES = {{ pp_prod_db_backup_aux_service_names | default([(pp_prod_db_backup_service_name | default('python-podcast')) ~ '-db-worker']) | to_json }}
+
 
 def read_config_file() -> Optional[Dict]:
     """Read deployment configuration from secure file if available."""
@@ -151,6 +158,48 @@ def ssh(
             result.returncode, full_cmd, result.stdout, result.stderr
         )
     return result
+
+
+def remote_unit_exists(remote_host: str, remote_user: str, unit: str) -> bool:
+    """
+    Return True when systemd knows the given unit on the remote host.
+
+    Only an explicit LoadState of "not-found" counts as absent. A failed probe
+    raises instead of reporting absence: reading a transient SSH or systemctl
+    error as "no such unit" would silently skip stopping a worker and let the
+    drop run while it still holds a connection - exactly the failure this
+    guard exists to prevent.
+    """
+    result = ssh(
+        remote_host,
+        remote_user,
+        f"systemctl show --property=LoadState --value {shlex.quote(unit)}",
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Could not determine systemd state of {unit}: "
+            f"{result.stderr.strip() or f'exit {result.returncode}'}"
+        )
+    return result.stdout.strip() != "not-found"
+
+
+def resolve_restore_units(remote_host: str, remote_user: str) -> list:
+    """
+    Units to stop before, and start after, the destructive restore steps.
+
+    SERVICE_NAME is always included. Auxiliary units are included only when they
+    exist on the restore host, so a site without a db_worker restores unchanged.
+    """
+    units = [SERVICE_NAME]
+    for unit in AUX_SERVICE_NAMES:
+        if unit == SERVICE_NAME or unit in units:
+            continue
+        if remote_unit_exists(remote_host, remote_user, unit):
+            units.append(unit)
+        else:
+            print(f"[INFO] Skipping unknown unit: {unit}", file=sys.stderr)
+    return units
 
 
 def scp_from_remote(
@@ -462,10 +511,10 @@ def restore(
     2. Verify checksum (hard-fail on mismatch)
     3. Extract with safety validation
     4. SCP dump to staging
-    5. Stop service
+    5. Stop service and auxiliary units (db_worker)
     6. Drop/recreate database
     7. pg_restore
-    8. Start service
+    8. Start service and auxiliary units
     9. Post-check SQL connectivity
     10. Cleanup
 
@@ -476,7 +525,7 @@ def restore(
 
     # Create isolated temp directory for this run
     work_dir = Path(tempfile.mkdtemp(prefix="pp-restore-", dir=TEMP_DIR if Path(TEMP_DIR).exists() else None))
-    service_stopped = False
+    stopped_services = []
     restore_success = False
     result_data = {}
 
@@ -562,12 +611,15 @@ def restore(
             finish_stdout("failure", "Dump upload failed")
             return 1
 
-        # Stop service
-        emit_step("stop_service", "running", f"Stopping {SERVICE_NAME}")
+        # Stop service and auxiliary units. Everything that talks to the database
+        # must be down before the drop, otherwise it crashes mid-restore.
+        restore_units = resolve_restore_units(RESTORE_HOST, REMOTE_USER)
+        emit_step("stop_service", "running", f"Stopping {', '.join(restore_units)}")
         try:
-            ssh(RESTORE_HOST, REMOTE_USER, f"systemctl stop {shlex.quote(SERVICE_NAME)}")
-            service_stopped = True
-            emit_step("stop_service", "success", f"Stopped {SERVICE_NAME}")
+            for unit in restore_units:
+                ssh(RESTORE_HOST, REMOTE_USER, f"systemctl stop {shlex.quote(unit)}")
+                stopped_services.append(unit)
+            emit_step("stop_service", "success", f"Stopped {', '.join(restore_units)}")
         except subprocess.CalledProcessError as e:
             emit_step("stop_service", "failure", f"Failed to stop service: {e.stderr}")
             emit_result(success=False, error=f"Failed to stop service: {e.stderr}")
@@ -610,12 +662,15 @@ def restore(
             finish_stdout("failure", "Database restore failed")
             return 1
 
-        # Start service
-        emit_step("start_service", "running", f"Starting {SERVICE_NAME}")
+        # Start service and auxiliary units again, in the order they were stopped.
+        # Units are only dropped from stopped_services once actually started, so
+        # the finally block retries whatever is left behind.
+        emit_step("start_service", "running", f"Starting {', '.join(stopped_services)}")
         try:
-            ssh(RESTORE_HOST, REMOTE_USER, f"systemctl start {shlex.quote(SERVICE_NAME)}")
-            service_stopped = False
-            emit_step("start_service", "success", f"Started {SERVICE_NAME}")
+            while stopped_services:
+                ssh(RESTORE_HOST, REMOTE_USER, f"systemctl start {shlex.quote(stopped_services[0])}")
+                stopped_services.pop(0)
+            emit_step("start_service", "success", f"Started {', '.join(restore_units)}")
         except subprocess.CalledProcessError as e:
             emit_step("start_service", "failure", f"Failed to start service: {e.stderr}")
             emit_result(success=False, error=f"Restore succeeded but service start failed: {e.stderr}")
@@ -653,14 +708,16 @@ def restore(
         finish_stdout("failure", f"Unexpected error: {e}")
         return 1
     finally:
-        # Best-effort service restart if still stopped
-        if service_stopped:
-            emit_step("start_service", "running", f"Best-effort restart of {SERVICE_NAME}")
-            try:
-                ssh(RESTORE_HOST, REMOTE_USER, f"systemctl start {shlex.quote(SERVICE_NAME)}")
-                emit_step("start_service", "success", f"Started {SERVICE_NAME}")
-            except subprocess.CalledProcessError as e:
-                emit_step("start_service", "failure", f"Failed to restart service: {e.stderr}")
+        # Best-effort restart of anything still stopped
+        if stopped_services:
+            emit_step("start_service", "running", f"Best-effort restart of {', '.join(stopped_services)}")
+            for unit in list(stopped_services):
+                try:
+                    ssh(RESTORE_HOST, REMOTE_USER, f"systemctl start {shlex.quote(unit)}")
+                    stopped_services.remove(unit)
+                    emit_step("start_service", "success", f"Started {unit}")
+                except subprocess.CalledProcessError as e:
+                    emit_step("start_service", "failure", f"Failed to restart {unit}: {e.stderr}")
 
         # Clean up remote dump
         emit_step("cleanup", "running", "Cleaning up temporary files")
