@@ -6,7 +6,8 @@ The role writes a single Traefik dynamic file containing a high-priority router
 for the Vaultwarden host, fronted by an `ipAllowList` middleware. Sources outside
 the allow list get `403` before reaching Vaultwarden; sources inside it pass
 through to the normal service, which is what gives an operator a verification
-path during the freeze. Removing the file ends the freeze, because Traefik
+path during the freeze. One router covers everything including live sync, since
+Vaultwarden serves `/notifications/hub` on its main port. Removing the file ends the freeze, because Traefik
 watches the dynamic directory.
 
 ## Why a separate file
@@ -42,7 +43,6 @@ unacceptable surprise. It also does not restart Traefik.
 | `vaultwarden_maintenance_archived_router_filename` | `vaultwarden.yml` | the file the backup archives; never written here |
 | `vaultwarden_maintenance_traefik_entrypoint` | `web-secure` | must match the deploy role's entrypoint |
 | `vaultwarden_maintenance_router_priority` | `100000` | must beat the deploy role's routers, whose priority is their rule length |
-| `vaultwarden_maintenance_websocket_enabled` | `true` | mirror the websocket router so allow-listed clients keep live sync |
 | `vaultwarden_maintenance_settle_seconds` | `5` | wait for Traefik to load a changed configuration before probing |
 | `vaultwarden_maintenance_allow_source_ranges` | loopback | who may still reach Vaultwarden during the freeze |
 | `vaultwarden_maintenance_verify_external` | `true` | probe the public endpoint |
@@ -51,7 +51,7 @@ unacceptable surprise. It also does not restart Traefik.
 | `vaultwarden_maintenance_accept_unverified_denial` | `false` | required acknowledgement when it is not |
 | `vaultwarden_maintenance_denied_status` | `403` | expected status while denied |
 | `vaultwarden_maintenance_reachable_status` | `[200, 302]` | expected status once restored |
-| `vaultwarden_maintenance_loopback_ports` | `[8000, 3012]` | ports checked for non-loopback listeners |
+| `vaultwarden_maintenance_loopback_ports` | `[8000]` | ports checked for non-loopback listeners |
 
 ## Verification
 

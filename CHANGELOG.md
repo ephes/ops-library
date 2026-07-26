@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `vaultwarden_deploy` no longer renders a separate Traefik WebSocket router and
+  service pointing at `WEBSOCKET_PORT`. Upstream Vaultwarden removed the
+  standalone WebSocket listener and serves live sync at `/notifications/hub` on
+  the main Rocket port, so that router pointed at a port nothing listened on —
+  and because its rule was longer than the main router's, it won on priority and
+  answered `502` for every live-sync request. `WEBSOCKET_ADDRESS` and
+  `WEBSOCKET_PORT` are gone from the env template and
+  `vaultwarden_websocket_port` from the defaults; `vaultwarden_websocket_enabled`
+  remains and still gates `WEBSOCKET_ENABLED`.
+
 ### Added
 
 - New `vaultwarden_maintenance` role: an ingress deny switch for a maintenance
@@ -14,7 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Traefik router fronted by an `ipAllowList` middleware, so sources outside the
   allow list get `403` while allowed sources still reach Vaultwarden — which is
   what gives an operator a verification path during a freeze. `absent` removes
-  the file; Traefik watches the dynamic directory, so no restart is needed.
+  the file; Traefik watches the dynamic directory, so no restart is needed. One
+  router covers live sync too, since Vaultwarden serves it on the main port.
   The role owns **only** the file named by `vaultwarden_maintenance_filename`
   and refuses to run if that name equals
   `vaultwarden_maintenance_archived_router_filename`. Both are plain filenames,

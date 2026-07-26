@@ -44,9 +44,10 @@ vaultwarden_domain: "CHANGEME"  # e.g., https://vault.home.wersdörfer.de
 vaultwarden_rocket_address: "127.0.0.1"
 vaultwarden_rocket_port: 8000
 
-# WebSocket support (required for live sync)
+# Live sync. Vaultwarden serves /notifications/hub on the main Rocket port; the
+# standalone WebSocket listener was removed upstream, so there is no separate
+# port to configure or proxy.
 vaultwarden_websocket_enabled: true
-vaultwarden_websocket_port: 3012
 
 # Registration and invitations
 vaultwarden_signups_allowed: false

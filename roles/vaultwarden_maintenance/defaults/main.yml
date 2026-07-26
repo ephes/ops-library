@@ -24,10 +24,6 @@ vaultwarden_maintenance_archived_router_filename: "vaultwarden.yml"
 
 vaultwarden_maintenance_traefik_entrypoint: "web-secure"
 
-# Mirror the deploy role's websocket router so an allow-listed operator keeps
-# live sync while the freeze is on. Set false only if the deploy role has
-# vaultwarden_websocket_enabled false.
-vaultwarden_maintenance_websocket_enabled: true
 
 # Must beat the deploy role's routers, whose default priority is their rule
 # length. The websocket router has the longest rule.
@@ -62,6 +58,7 @@ vaultwarden_maintenance_verify_delay: 5
 vaultwarden_maintenance_validate_certs: true
 
 # Local check that nothing bypasses Traefik while ingress is denied.
+# Vaultwarden serves live sync on the main Rocket port; there is no separate
+# WebSocket listener to check.
 vaultwarden_maintenance_loopback_ports:
   - 8000
-  - 3012

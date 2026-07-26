@@ -5,6 +5,9 @@
 {{ '#' }} without reloading Traefik, so a deny state stored there would be silently
 {{ '#' }} reinstated by any restore taken from a backup made during a freeze.
 {{ '#' }}
+{{ '#' }} One router is enough: Vaultwarden serves live sync (/notifications/hub)
+{{ '#' }} on its main Rocket port, so there is no second backend to route to.
+{{ '#' }}
 {{ '#' }} Removing this file ends the freeze; Traefik watches the directory.
 
 http:
@@ -18,22 +21,6 @@ http:
         - vaultwarden-maintenance-deny
       service: vaultwarden
       tls: {}
-
-{% if vaultwarden_maintenance_websocket_enabled %}
-    {{ '#' }} Mirrors the deploy role's websocket router so an allow-listed
-    {{ '#' }} operator keeps live sync during the freeze; without it the
-    {{ '#' }} Host-only router above would swallow /notifications/hub and send it
-    {{ '#' }} to the HTTP service.
-    vaultwarden-maintenance-ws:
-      rule: "Host(`{{ vaultwarden_maintenance_hostname }}`) && Path(`/notifications/hub`)"
-      priority: {{ vaultwarden_maintenance_router_priority + 1 }}
-      entryPoints:
-        - {{ vaultwarden_maintenance_traefik_entrypoint }}
-      middlewares:
-        - vaultwarden-maintenance-deny
-      service: vaultwarden-ws
-      tls: {}
-{% endif %}
 
   middlewares:
     vaultwarden-maintenance-deny:

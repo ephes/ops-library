@@ -72,8 +72,6 @@
       value: "{{ vaultwarden_maintenance_accept_unverified_denial }}"
     - key: vaultwarden_maintenance_validate_certs
       value: "{{ vaultwarden_maintenance_validate_certs }}"
-    - key: vaultwarden_maintenance_websocket_enabled
-      value: "{{ vaultwarden_maintenance_websocket_enabled }}"
   loop_control:
     label: "{{ item.key }}"
 

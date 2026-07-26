@@ -50,7 +50,6 @@ This role installs Vaultwarden using pre-built `.deb` packages from [vaultwarden
 | `vaultwarden_rocket_address` | `127.0.0.1` | Bind address |
 | `vaultwarden_rocket_port` | `8000` | HTTP port |
 | `vaultwarden_websocket_enabled` | `true` | Enable WebSocket for live sync |
-| `vaultwarden_websocket_port` | `3012` | WebSocket port |
 | `vaultwarden_signups_allowed` | `false` | Allow public registration |
 | `vaultwarden_invitations_allowed` | `true` | Allow user invitations |
 | `vaultwarden_smtp_host` | `""` | SMTP server for emails |

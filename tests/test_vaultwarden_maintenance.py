@@ -33,7 +33,6 @@ def render_router(**overrides: object) -> dict:
         "vaultwarden_maintenance_router_priority": 100000,
         "vaultwarden_maintenance_traefik_entrypoint": "web-secure",
         "vaultwarden_maintenance_allow_source_ranges": ALLOW_RANGES,
-        "vaultwarden_maintenance_websocket_enabled": True,
     }
     context.update(overrides)
     rendered = environment.get_template(
@@ -113,30 +112,18 @@ class RouterContractTests(unittest.TestCase):
         router = self.router["http"]["routers"]["vaultwarden-maintenance"]
         self.assertEqual(router["service"], "vaultwarden")
 
-    def test_allow_listed_clients_keep_websocket_live_sync(self) -> None:
-        # Without a mirrored websocket router the Host-only router above would
-        # swallow /notifications/hub and send it to the HTTP service.
+    def test_one_router_covers_live_sync_too(self) -> None:
+        # Vaultwarden serves /notifications/hub on the main port, so a separate
+        # websocket router would only point at a listener that no longer exists.
         routers = self.router["http"]["routers"]
-        websocket = routers["vaultwarden-maintenance-ws"]
-        self.assertEqual(websocket["service"], "vaultwarden-ws")
-        self.assertIn("/notifications/hub", websocket["rule"])
-        self.assertGreater(
-            websocket["priority"], routers["vaultwarden-maintenance"]["priority"]
-        )
-        self.assertEqual(websocket["middlewares"], ["vaultwarden-maintenance-deny"])
-
-    def test_websocket_router_can_be_disabled(self) -> None:
-        router = render_router(vaultwarden_maintenance_websocket_enabled=False)
-        self.assertNotIn(
-            "vaultwarden-maintenance-ws", router["http"]["routers"]
-        )
+        self.assertEqual(set(routers), {"vaultwarden-maintenance"})
+        self.assertEqual(routers["vaultwarden-maintenance"]["service"], "vaultwarden")
 
     def test_router_declares_no_service_or_middleware_of_the_deploy_role(self) -> None:
         # Redefining the deploy role's objects would make the merged Traefik
         # configuration order-dependent.
         self.assertEqual(
-            set(self.router["http"]["routers"]),
-            {"vaultwarden-maintenance", "vaultwarden-maintenance-ws"},
+            set(self.router["http"]["routers"]), {"vaultwarden-maintenance"}
         )
         self.assertEqual(
             set(self.router["http"]["middlewares"]), {"vaultwarden-maintenance-deny"}
