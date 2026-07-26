@@ -18,6 +18,25 @@ vaultwarden_debian_codename: "{{ ansible_distribution_release }}"
 # Apt repository URL
 vaultwarden_apt_repo_url: "https://vaultwarden-deb.pages.dev"
 
+# Package version pinning.
+#
+# Empty means "track whatever the repository currently offers", which is the
+# historical behaviour. Set both to an exact deb version, and set
+# vaultwarden_packages_hold, when the installed version is part of a contract:
+# a client-compatibility pilot, a migration window, or any period where an
+# unrelated deploy run must not be able to upgrade and restart Vaultwarden.
+#
+# Read the current values with:
+#   dpkg-query -W -f='${Package} ${Version}\n' vaultwarden vaultwarden-web-vault
+vaultwarden_package_version: ""
+vaultwarden_web_vault_package_version: ""
+
+# Apt hold ownership. Unmanaged by default (~), so an externally applied hold
+# survives an ordinary deploy run untouched. Set true to mark both packages
+# hold, or false to explicitly release a hold this role placed earlier; either
+# value means "this role now owns the selection".
+vaultwarden_packages_hold: ~
+
 # Domain (REQUIRED - must be set)
 vaultwarden_domain: "CHANGEME"  # e.g., https://vault.home.wersdörfer.de
 

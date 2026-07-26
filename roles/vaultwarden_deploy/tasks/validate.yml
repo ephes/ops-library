@@ -28,6 +28,41 @@
     msg: "Admin panel is DISABLED (vaultwarden_admin_enabled=false)"
   when: not (vaultwarden_admin_enabled | bool)
 
+- name: validate | Validate package version pins look like deb versions
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item | length == 0 or item is match('^[A-Za-z0-9][A-Za-z0-9.+:~-]*$')
+    fail_msg: >-
+      Package version pins must be exact deb versions such as 1.34.1-1, not
+      ranges or expressions. Got: {{ item }}
+  loop:
+    - "{{ vaultwarden_package_version }}"
+    - "{{ vaultwarden_web_vault_package_version }}"
+
+# `| bool` coerces an unrecognised value such as "ture" to false, which would
+# silently release both holds. Fail instead.
+- name: validate | Validate the apt hold flag is a real boolean or unmanaged
+  ansible.builtin.assert:
+    that:
+      - vaultwarden_packages_hold is none
+        or vaultwarden_packages_hold is boolean
+    fail_msg: >-
+      vaultwarden_packages_hold must be true, false, or ~ (unmanaged). Got:
+      {{ vaultwarden_packages_hold }}
+
+# allow_change_held_packages applies to the whole apt invocation, so a mixed pin
+# would let dependency resolution move the other held package. Both or neither.
+- name: validate | Require both package versions to be pinned together
+  ansible.builtin.assert:
+    that:
+      - (vaultwarden_package_version | length > 0)
+        == (vaultwarden_web_vault_package_version | length > 0)
+    fail_msg: >-
+      Pin vaultwarden_package_version and vaultwarden_web_vault_package_version
+      together or not at all. Pinning one alone would still permit apt to move
+      the other held package while resolving dependencies.
+
 - name: validate | Validate SMTP configuration if host is set
   ansible.builtin.assert:
     that:

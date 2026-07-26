@@ -1,0 +1,148 @@
+---
+# Refuse to run at all unless the switch is safe by construction.
+
+- name: validate | Validate maintenance state
+  ansible.builtin.assert:
+    that:
+      - vaultwarden_maintenance_state in ['present', 'absent']
+    fail_msg: "vaultwarden_maintenance_state must be 'present' or 'absent'"
+
+- name: validate | Validate domain is configured
+  ansible.builtin.assert:
+    that:
+      - vaultwarden_domain is defined
+      - vaultwarden_domain != "CHANGEME"
+      - vaultwarden_domain | length > 0
+    fail_msg: "vaultwarden_domain must be set to the deployed Vaultwarden URL"
+
+# The probe URL is built from the validated parts below rather than from the
+# raw value, so an accepted path can never send the verification probe at an
+# unrelated endpoint.
+- name: validate | Refuse a domain that is not a bare https host URL
+  ansible.builtin.assert:
+    that:
+      - vaultwarden_domain is match('(?i)^https://[A-Za-z0-9.:-]+/?$')
+    fail_msg: >-
+      vaultwarden_domain must be https://host with no path, port, query, or
+      credentials. The maintenance router always terminates TLS on
+      {{ vaultwarden_maintenance_traefik_entrypoint }}, so an http:// probe
+      would test a redirect rather than the maintenance rule.
+      Got: {{ vaultwarden_domain }}
+
+- name: validate | Derive hostname from the Vaultwarden URL
+  ansible.builtin.set_fact:
+    vaultwarden_maintenance_hostname: >-
+      {{ vaultwarden_domain
+         | regex_replace('(?i)^https?://', '')
+         | regex_replace('/.*$', '')
+         | trim }}
+
+# A Host rule that does not match is a freeze that silently denies nothing, so
+# anything the deploy role's own derivation would render differently — an
+# explicit port, a path, a non-hostname — is refused rather than normalised.
+- name: validate | Refuse a domain that does not yield a bare hostname
+  ansible.builtin.assert:
+    that:
+      - vaultwarden_maintenance_hostname is match(
+          '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$')
+    fail_msg: >-
+      vaultwarden_domain must yield a bare lowercase hostname; got
+      '{{ vaultwarden_maintenance_hostname }}'. An explicit port, a path, or a
+      mixed-case host would render a Traefik Host rule that matches nothing, so
+      the freeze would deny nothing while appearing to be applied.
+
+- name: validate | Build the verification probe URL from the validated parts
+  ansible.builtin.set_fact:
+    vaultwarden_maintenance_probe_url: >-
+      {{ 'https://' ~ vaultwarden_maintenance_hostname ~ '/alive' }}
+
+# `| bool` turns an unrecognised value such as "ture" into false, which would
+# silently skip a safety-critical check instead of failing.
+- name: validate | Validate boolean switches are real booleans
+  ansible.builtin.assert:
+    that:
+      - item.value is boolean
+    fail_msg: "{{ item.key }} must be true or false. Got: {{ item.value }}"
+  loop:
+    - key: vaultwarden_maintenance_verify_external
+      value: "{{ vaultwarden_maintenance_verify_external }}"
+    - key: vaultwarden_maintenance_probe_expects_denial
+      value: "{{ vaultwarden_maintenance_probe_expects_denial }}"
+    - key: vaultwarden_maintenance_accept_unverified_denial
+      value: "{{ vaultwarden_maintenance_accept_unverified_denial }}"
+    - key: vaultwarden_maintenance_validate_certs
+      value: "{{ vaultwarden_maintenance_validate_certs }}"
+    - key: vaultwarden_maintenance_websocket_enabled
+      value: "{{ vaultwarden_maintenance_websocket_enabled }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+# An empty list would run the socket inspection and its assertions zero times,
+# letting a run report success without performing the check at all.
+- name: validate | Require at least one port for the listener check
+  ansible.builtin.assert:
+    that:
+      - vaultwarden_maintenance_loopback_ports | length > 0
+    fail_msg: >-
+      vaultwarden_maintenance_loopback_ports must list at least one port;
+      otherwise the non-loopback listener verification silently does nothing.
+
+# Filenames only. Refusing separators and dot segments here is what makes the
+# comparison below a real guard rather than a string coincidence: no caller
+# value can normalise into a different path.
+- name: validate | Refuse anything but a plain .yml filename
+  ansible.builtin.assert:
+    that:
+      - item is match('^[A-Za-z0-9][A-Za-z0-9._-]*\\.yml$')
+      - "'/' not in item"
+      - "'..' not in item"
+    fail_msg: >-
+      Expected a plain .yml filename inside
+      {{ vaultwarden_maintenance_dynamic_dir }}, got: {{ item }}
+  loop:
+    - "{{ vaultwarden_maintenance_filename | trim }}"
+    - "{{ vaultwarden_maintenance_archived_router_filename | trim }}"
+
+# The single most important guard in this role.
+- name: validate | Refuse to write the router file the Echoport backup archives
+  ansible.builtin.assert:
+    that:
+      - (vaultwarden_maintenance_filename | trim)
+        != (vaultwarden_maintenance_archived_router_filename | trim)
+    fail_msg: >-
+      vaultwarden_maintenance_filename must not be the router file archived by
+      the Echoport Vaultwarden backup
+      ({{ vaultwarden_maintenance_archived_router_filename }}). A restore would
+      write that file back without reloading Traefik and silently reinstate the
+      deny state while every health check passes.
+
+- name: validate | Build the maintenance file path
+  ansible.builtin.set_fact:
+    vaultwarden_maintenance_file_resolved: >-
+      {{ [vaultwarden_maintenance_dynamic_dir,
+          vaultwarden_maintenance_filename | trim] | path_join }}
+
+# A run whose only probe sits inside the allow list cannot observe the denial,
+# so it must not be able to report a verified freeze by accident.
+- name: validate | Refuse an unobservable freeze
+  ansible.builtin.assert:
+    that:
+      - vaultwarden_maintenance_probe_expects_denial | bool
+        or vaultwarden_maintenance_accept_unverified_denial | bool
+    fail_msg: >-
+      The probe vantage point is declared to be inside the allow list, so this
+      run cannot observe the denial itself. Probe from a host outside
+      vaultwarden_maintenance_allow_source_ranges, or set
+      vaultwarden_maintenance_accept_unverified_denial=true and record why the
+      freeze was accepted without a denied-vantage observation.
+  when:
+    - vaultwarden_maintenance_state == 'present'
+    - vaultwarden_maintenance_verify_external | bool
+
+- name: validate | Validate at least one allowed source range
+  ansible.builtin.assert:
+    that:
+      - vaultwarden_maintenance_allow_source_ranges | length > 0
+    fail_msg: >-
+      At least one allowed source range is required; an empty list would also
+      lock out the operator's own verification path.

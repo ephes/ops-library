@@ -1,0 +1,28 @@
+---
+galaxy_info:
+  role_name: vaultwarden_maintenance
+  author: ops-library
+  description: >-
+    Deny or restore Vaultwarden ingress at Traefik for a maintenance window,
+    using a dynamic file the Echoport backup does not archive.
+  license: MIT
+  min_ansible_version: "2.14"
+
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+        - trixie
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+
+  galaxy_tags:
+    - vaultwarden
+    - traefik
+    - maintenance
+    - backup
+
+dependencies: []

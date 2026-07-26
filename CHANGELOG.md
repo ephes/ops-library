@@ -9,6 +9,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- New `vaultwarden_maintenance` role: an ingress deny switch for a maintenance
+  window. `vaultwarden_maintenance_state: present` writes a high-priority
+  Traefik router fronted by an `ipAllowList` middleware, so sources outside the
+  allow list get `403` while allowed sources still reach Vaultwarden — which is
+  what gives an operator a verification path during a freeze. `absent` removes
+  the file; Traefik watches the dynamic directory, so no restart is needed.
+  The role owns **only** the file named by `vaultwarden_maintenance_filename`
+  and refuses to run if that name equals
+  `vaultwarden_maintenance_archived_router_filename`. Both are plain filenames,
+  never paths, so no caller value can normalise into the archived router file.
+  That guard is load-bearing: the Echoport Vaultwarden backup archives the deploy role's
+  router file and its restore writes it back without reloading Traefik while
+  gating only on a loopback health check, so a deny state stored there would be
+  silently reinstated by any restore from a backup taken during a freeze. Every
+  run verifies the result — no non-loopback listener on the Vaultwarden ports,
+  plus an external probe expecting `403` while frozen and a reachable status once
+  restored. The role deliberately contains no package, repository, or service
+  tasks and defines no handlers.
+- `vaultwarden_deploy` can now pin and hold its packages:
+  `vaultwarden_package_version`, `vaultwarden_web_vault_package_version`, and
+  `vaultwarden_packages_hold`. Versions default to empty and the hold defaults
+  to unmanaged (`~`), so existing behaviour is unchanged and an externally
+  applied hold survives an ordinary deploy run untouched. Both versions must be pinned
+  together or not at all, because the apt flag that permits moving a held
+  package applies to the whole invocation. When pinned, apt is permitted to move
+  the held packages directly rather than the
+  role unholding and re-holding around the install: there is no window for a
+  concurrent apt process, no spurious change report when the pinned version is
+  already installed, and no check-mode failure from simulating an install
+  against a still-held package. Because the hold itself can only be applied
+  after the install, the role then reads the installed versions back and fails
+  if they are not the requested pins. The role also reports the
+  installed deb versions, which is the value a compatibility or migration gate
+  has to record per host.
+
 - `voxhelm_deploy` gained an optional Kokoro ONNX TTS backend and automatic
   de/en language routing, both disabled by default and independently toggleable
   (`voxhelm_tts_kokoro_enabled`, `voxhelm_tts_language_routing_enabled`, both

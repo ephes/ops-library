@@ -1,14 +1,111 @@
 ---
 # Install Vaultwarden packages
 
-- name: packages | Install Vaultwarden packages
-  ansible.builtin.apt:
-    name:
+- name: packages | Resolve package specifications and pin state
+  ansible.builtin.set_fact:
+    vaultwarden_package_names:
       - vaultwarden
       - vaultwarden-web-vault
+    vaultwarden_package_specs:
+      - >-
+        vaultwarden{{
+          ('=' ~ vaultwarden_package_version)
+          if vaultwarden_package_version | length > 0 else ''
+        }}
+      - >-
+        vaultwarden-web-vault{{
+          ('=' ~ vaultwarden_web_vault_package_version)
+          if vaultwarden_web_vault_package_version | length > 0 else ''
+        }}
+    vaultwarden_packages_pinned: >-
+      {{ (vaultwarden_package_version | length > 0)
+         or (vaultwarden_web_vault_package_version | length > 0) }}
+
+# apt is permitted to move a held package only when an exact version was asked
+# for. That lets the hold stay in place across the install: no unhold/re-hold
+# window, no spurious change report when the pinned version is already
+# installed, and no check-mode failure from simulating an install against a
+# still-held package. The read-back below covers the remaining gap, where the
+# hold is being applied for the first time.
+- name: packages | Install Vaultwarden packages
+  ansible.builtin.apt:
+    name: "{{ vaultwarden_package_specs }}"
     state: present
+    allow_downgrade: "{{ vaultwarden_packages_pinned | bool }}"
+    allow_change_held_packages: "{{ vaultwarden_packages_pinned | bool }}"
   notify: restart vaultwarden
   when: not vaultwarden_skip_install | default(false)
+
+# Unmanaged by default, so an externally applied hold survives an ordinary
+# deploy run. Set the flag to true or false only to take ownership of it.
+- name: packages | Converge apt hold state
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: "{{ 'hold' if vaultwarden_packages_hold | bool else 'install' }}"
+  loop: "{{ vaultwarden_package_names }}"
+  when:
+    - not vaultwarden_skip_install | default(false)
+    - vaultwarden_packages_hold is not none
+
+- name: packages | Read installed package versions
+  ansible.builtin.command:
+    argv:
+      - dpkg-query
+      - -W
+      - -f=${Package} ${Version}\n
+      - vaultwarden
+      - vaultwarden-web-vault
+  register: vaultwarden_installed_versions
+  changed_when: false
+  check_mode: false
+  when:
+    - not vaultwarden_skip_install | default(false)
+    - not ansible_check_mode
+
+# Non-secret, and the exact strings a compatibility or migration gate has to
+# record for both the production and the isolated host.
+- name: packages | Report installed package versions
+  ansible.builtin.debug:
+    msg: "{{ vaultwarden_installed_versions.stdout_lines | default([]) }}"
+  when:
+    - not vaultwarden_skip_install | default(false)
+    - not ansible_check_mode
+
+# The report is the value a compatibility or migration gate records, so an empty
+# or partial list must fail rather than be printed as if it were the answer.
+- name: packages | Require a version for every managed package
+  ansible.builtin.assert:
+    that:
+      - vaultwarden_installed_versions.stdout_lines | length
+        == vaultwarden_package_names | length
+    fail_msg: >-
+      dpkg-query did not report a version for every managed package. Got:
+      {{ vaultwarden_installed_versions.stdout_lines | default([]) }}
+  when:
+    - not vaultwarden_skip_install | default(false)
+    - not ansible_check_mode
+
+# The hold can only be applied after the install, so a concurrent apt process
+# could in principle upgrade in between and leave the wrong version held. Read
+# the truth back once the hold is in place and fail loudly, rather than leaving
+# the host quietly pinned to something nobody asked for.
+- name: packages | Verify the held versions are the requested pins
+  ansible.builtin.assert:
+    that:
+      - >-
+        ('vaultwarden ' ~ vaultwarden_package_version)
+        in vaultwarden_installed_versions.stdout_lines
+      - >-
+        ('vaultwarden-web-vault ' ~ vaultwarden_web_vault_package_version)
+        in vaultwarden_installed_versions.stdout_lines
+    fail_msg: >-
+      Installed versions do not match the requested pins; something changed the
+      packages between the install and the hold. Installed:
+      {{ vaultwarden_installed_versions.stdout_lines | default([]) }}
+  when:
+    - not vaultwarden_skip_install | default(false)
+    - vaultwarden_packages_pinned | bool
+    - not ansible_check_mode
 
 - name: packages | Ensure Vaultwarden data directory exists
   ansible.builtin.file:

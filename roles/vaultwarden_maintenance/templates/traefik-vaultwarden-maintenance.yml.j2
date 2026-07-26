@@ -1,0 +1,44 @@
+{{ '#' }} Managed by Ansible - Vaultwarden maintenance (ingress deny) switch.
+{{ '#' }}
+{{ '#' }} Deliberately a SEPARATE dynamic file from vaultwarden.yml. The Echoport
+{{ '#' }} Vaultwarden backup archives that other file and its restore writes it back
+{{ '#' }} without reloading Traefik, so a deny state stored there would be silently
+{{ '#' }} reinstated by any restore taken from a backup made during a freeze.
+{{ '#' }}
+{{ '#' }} Removing this file ends the freeze; Traefik watches the directory.
+
+http:
+  routers:
+    vaultwarden-maintenance:
+      rule: "Host(`{{ vaultwarden_maintenance_hostname }}`)"
+      priority: {{ vaultwarden_maintenance_router_priority }}
+      entryPoints:
+        - {{ vaultwarden_maintenance_traefik_entrypoint }}
+      middlewares:
+        - vaultwarden-maintenance-deny
+      service: vaultwarden
+      tls: {}
+
+{% if vaultwarden_maintenance_websocket_enabled %}
+    {{ '#' }} Mirrors the deploy role's websocket router so an allow-listed
+    {{ '#' }} operator keeps live sync during the freeze; without it the
+    {{ '#' }} Host-only router above would swallow /notifications/hub and send it
+    {{ '#' }} to the HTTP service.
+    vaultwarden-maintenance-ws:
+      rule: "Host(`{{ vaultwarden_maintenance_hostname }}`) && Path(`/notifications/hub`)"
+      priority: {{ vaultwarden_maintenance_router_priority + 1 }}
+      entryPoints:
+        - {{ vaultwarden_maintenance_traefik_entrypoint }}
+      middlewares:
+        - vaultwarden-maintenance-deny
+      service: vaultwarden-ws
+      tls: {}
+{% endif %}
+
+  middlewares:
+    vaultwarden-maintenance-deny:
+      ipAllowList:
+        sourceRange:
+{% for source_range in vaultwarden_maintenance_allow_source_ranges %}
+          - "{{ source_range }}"
+{% endfor %}

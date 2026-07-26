@@ -1,0 +1,92 @@
+---
+# Verify the ingress state actually matches the declaration.
+
+- name: verify | Inspect listening sockets on the Vaultwarden ports
+  ansible.builtin.command:
+    argv:
+      - ss
+      - -H
+      - -ltn
+      - "sport = :{{ item }}"
+  register: vaultwarden_maintenance_sockets
+  changed_when: false
+  check_mode: false
+  loop: "{{ vaultwarden_maintenance_loopback_ports }}"
+
+# Denial at Traefik only implies unreachability while nothing else is listening
+# on a routable address.
+- name: verify | Fail if Vaultwarden listens anywhere but loopback
+  ansible.builtin.assert:
+    that:
+      - >-
+        item.stdout_lines
+        | reject('search', '\\s(127\\.0\\.0\\.1|\\[::1\\]):' ~ item.item ~ '\\s')
+        | list | length == 0
+    fail_msg: >-
+      Port {{ item.item }} has a non-loopback listener, so denying ingress at
+      Traefik does not prove Vaultwarden is unreachable.
+  loop: "{{ vaultwarden_maintenance_sockets.results }}"
+  loop_control:
+    label: "port {{ item.item }}"
+
+# Traefik's file watcher is asynchronous, so a probe fired immediately after a
+# change can still be answered by the previous router.
+- name: verify | Let Traefik load the changed configuration
+  ansible.builtin.wait_for:
+    timeout: "{{ vaultwarden_maintenance_settle_seconds }}"
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  when:
+    - vaultwarden_maintenance_verify_external | bool
+    - (vaultwarden_maintenance_applied.changed | default(false))
+      or (vaultwarden_maintenance_removed.changed | default(false))
+    - not ansible_check_mode
+
+# Denied while frozen, unless the prober is deliberately inside the allow list,
+# in which case a reachable status is the correct expectation and the denial was
+# acknowledged as unobserved during validation.
+- name: verify | Resolve the expected probe status
+  ansible.builtin.set_fact:
+    vaultwarden_maintenance_expected_status: >-
+      {{ [vaultwarden_maintenance_denied_status]
+         if (vaultwarden_maintenance_state == 'present'
+             and vaultwarden_maintenance_probe_expects_denial | bool)
+         else vaultwarden_maintenance_reachable_status }}
+
+- name: verify | Probe the public endpoint from the declared vantage point
+  ansible.builtin.uri:
+    url: "{{ vaultwarden_maintenance_probe_url }}"
+    method: GET
+    status_code: "{{ vaultwarden_maintenance_expected_status }}"
+    validate_certs: "{{ vaultwarden_maintenance_validate_certs }}"
+  register: vaultwarden_maintenance_probe
+  until: vaultwarden_maintenance_probe is succeeded
+  retries: "{{ vaultwarden_maintenance_verify_retries }}"
+  delay: "{{ vaultwarden_maintenance_verify_delay }}"
+  delegate_to: "{{ vaultwarden_maintenance_probe_delegate }}"
+  become: false
+  check_mode: false
+  when:
+    - vaultwarden_maintenance_verify_external | bool
+    # Check mode leaves the ingress unchanged, so probing for the requested
+    # state would fail on a pending change rather than preview it.
+    - not vaultwarden_maintenance_pending_change | bool
+
+- name: verify | Report verified ingress state
+  ansible.builtin.debug:
+    msg: >-
+      Vaultwarden ingress is
+      {{ 'DENIED (maintenance)' if vaultwarden_maintenance_state == 'present'
+         else 'REACHABLE (normal)' }};
+      external probe from {{ vaultwarden_maintenance_probe_delegate }}
+      {{ 'SKIPPED - check mode left the change unapplied, so NOTHING was verified'
+         if vaultwarden_maintenance_pending_change | bool
+         else ('SKIPPED - the state is NOT externally verified'
+               if not vaultwarden_maintenance_verify_external | bool
+               else ('confirmed reachability'
+                     if vaultwarden_maintenance_state == 'absent'
+                     else ('observed the denial'
+                           if vaultwarden_maintenance_probe_expects_denial | bool
+                           else 'ran from an ALLOWED vantage point and did NOT '
+                                'observe the denial'))) }}

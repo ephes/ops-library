@@ -1,0 +1,43 @@
+---
+# Turn the Vaultwarden ingress deny switch on or off.
+#
+# This role deliberately contains no package, service, or repository tasks. It
+# is used inside a maintenance window, where an unrelated apt upgrade or service
+# restart would be an unacceptable surprise.
+
+- name: main | Validate maintenance configuration
+  ansible.builtin.import_tasks: validate.yml
+
+- name: main | Apply the Traefik deny router
+  ansible.builtin.template:
+    src: traefik-vaultwarden-maintenance.yml.j2
+    dest: "{{ vaultwarden_maintenance_file_resolved }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: vaultwarden_maintenance_applied
+  when: vaultwarden_maintenance_state == 'present'
+
+- name: main | Remove the Traefik deny router
+  ansible.builtin.file:
+    path: "{{ vaultwarden_maintenance_file_resolved }}"
+    state: absent
+  register: vaultwarden_maintenance_removed
+  when: vaultwarden_maintenance_state == 'absent'
+
+# Content counts, not just existence: an existing file whose hostname, allow
+# list, entrypoint, or priority changed is still a pending change, and probing
+# against the unapplied configuration would prove nothing.
+- name: main | Resolve whether check mode left a change unapplied
+  ansible.builtin.set_fact:
+    vaultwarden_maintenance_pending_change: >-
+      {{ ansible_check_mode
+         and ((vaultwarden_maintenance_applied.changed | default(false))
+              or (vaultwarden_maintenance_removed.changed | default(false))) }}
+
+# Traefik's file provider watches the dynamic directory, so writing or removing
+# the file is enough. The role does not restart Traefik: a restart during a
+# maintenance window is risk without benefit, and the verification below proves
+# the change took effect.
+- name: main | Verify the resulting ingress state
+  ansible.builtin.import_tasks: verify.yml

@@ -1,0 +1,67 @@
+---
+# Vaultwarden maintenance (ingress deny) switch defaults
+
+# present  -> external clients are denied at Traefik
+# absent   -> normal ingress
+vaultwarden_maintenance_state: "absent"
+
+# Required. Same value the deploy role uses; the hostname is derived from it.
+vaultwarden_domain: "CHANGEME"
+
+vaultwarden_maintenance_dynamic_dir: "/etc/traefik/dynamic"
+
+# The switch writes its own dynamic file and never touches the router file the
+# deploy role owns. That separation is load-bearing, not cosmetic: the Echoport
+# Vaultwarden backup archives the deploy role's router file and its restore
+# writes that file back without reloading Traefik, gating only on a loopback
+# health check. Maintenance state stored there would be silently reinstated by
+# any restore taken from a backup made during a freeze, leaving a service that
+# passes every health check while every client is denied.
+# Bare filenames, not paths: the role builds the full paths itself, so no
+# caller-supplied string can normalise into the archived router file.
+vaultwarden_maintenance_filename: "vaultwarden-maintenance.yml"
+vaultwarden_maintenance_archived_router_filename: "vaultwarden.yml"
+
+vaultwarden_maintenance_traefik_entrypoint: "web-secure"
+
+# Mirror the deploy role's websocket router so an allow-listed operator keeps
+# live sync while the freeze is on. Set false only if the deploy role has
+# vaultwarden_websocket_enabled false.
+vaultwarden_maintenance_websocket_enabled: true
+
+# Must beat the deploy role's routers, whose default priority is their rule
+# length. The websocket router has the longest rule.
+vaultwarden_maintenance_router_priority: 100000
+
+# Who may still reach Vaultwarden while the freeze is on. Loopback only by
+# default. Widen this deliberately, and record it, when a batch needs an
+# authorized operator path during denial.
+vaultwarden_maintenance_allow_source_ranges:
+  - "127.0.0.1/32"
+  - "::1/128"
+
+# Verification. A freeze that is not externally verified is not a freeze.
+vaultwarden_maintenance_verify_external: true
+
+# Where the external probe runs from, and whether that vantage point is expected
+# to be denied while the freeze is on. Set the second to false only when the
+# prober is deliberately inside the allow list; the run then proves the operator
+# path works but cannot itself observe the denial, which requires an explicit
+# acknowledgement below.
+vaultwarden_maintenance_probe_delegate: "localhost"
+vaultwarden_maintenance_probe_expects_denial: true
+vaultwarden_maintenance_accept_unverified_denial: false
+
+vaultwarden_maintenance_denied_status: 403
+vaultwarden_maintenance_reachable_status: [200, 302]
+# Seconds to let Traefik's file watcher load a changed configuration before
+# probing. Without it the probe can pass against the previous router.
+vaultwarden_maintenance_settle_seconds: 5
+vaultwarden_maintenance_verify_retries: 12
+vaultwarden_maintenance_verify_delay: 5
+vaultwarden_maintenance_validate_certs: true
+
+# Local check that nothing bypasses Traefik while ingress is denied.
+vaultwarden_maintenance_loopback_ports:
+  - 8000
+  - 3012
