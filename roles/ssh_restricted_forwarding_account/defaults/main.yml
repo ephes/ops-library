@@ -1,0 +1,48 @@
+---
+ops_library_documentation_category: infrastructure
+ssh_restricted_forwarding_account_enabled: true
+ssh_restricted_forwarding_account_state: present
+# Present and absent operations for the same account share this stable server-side lock.
+ssh_restricted_forwarding_account_transaction_lock: >-
+  /run/lock/ssh-restricted-forwarding-{{ ssh_restricted_forwarding_account_user }}.lock
+ssh_restricted_forwarding_account_lock_timeout: 300
+# Every mutating lifecycle workflow supplies a durable monotonic generation and token.
+ssh_restricted_forwarding_account_fence_generation: 0
+ssh_restricted_forwarding_account_fence_token: "CHANGEME"
+ssh_restricted_forwarding_account_fence_path: >-
+  /var/lib/ssh-restricted-forwarding/{{ ssh_restricted_forwarding_account_user }}.fence.json
+# A durable unreleased marker survives lock-holder death. Its root-only stable
+# credential is fsynced first, so recovery does not depend on the ephemeral ready file.
+ssh_restricted_forwarding_account_transaction_marker: >-
+  /var/lib/ssh-restricted-forwarding/{{ ssh_restricted_forwarding_account_user }}.transaction.json
+ssh_restricted_forwarding_account_recovery_credential_path: >-
+  /var/lib/ssh-restricted-forwarding/{{ ssh_restricted_forwarding_account_user }}.recovery.json
+# Root-only durable UID/GID contract written by a successful present transaction.
+ssh_restricted_forwarding_account_contract_path: >-
+  /var/lib/ssh-restricted-forwarding/{{ ssh_restricted_forwarding_account_user }}.account.json
+ssh_restricted_forwarding_account_recover_stale_transaction: false
+ssh_restricted_forwarding_account_recovery_token: ""
+ssh_restricted_forwarding_account_user: "CHANGEME"
+ssh_restricted_forwarding_account_group: "{{ ssh_restricted_forwarding_account_user }}"
+ssh_restricted_forwarding_account_home: "/home/{{ ssh_restricted_forwarding_account_user }}"
+ssh_restricted_forwarding_account_shell: /usr/sbin/nologin
+ssh_restricted_forwarding_account_allowed_shells:
+  - /usr/sbin/nologin
+  - /bin/false
+  - /usr/bin/false
+# Deliberately unusable SHA-512 hash; authentication policy separately disables passwords.
+ssh_restricted_forwarding_account_password_hash: >-
+  $6$sshforwarding$/ov1ikDl/3M663HsBLSSlY1XU1yDOXo1qhO/iu6gxqduC0guulJ9wPxz2bjQvkOLPf2kBfLkQzc1XL/uOJSFD.
+ssh_restricted_forwarding_account_public_key: "CHANGEME"
+ssh_restricted_forwarding_account_key_comment: "restricted-forwarding"
+ssh_restricted_forwarding_account_source: ""
+ssh_restricted_forwarding_account_permit_host: "CHANGEME"
+ssh_restricted_forwarding_account_permit_port: 443
+ssh_restricted_forwarding_account_sshd_dropin: >-
+  /etc/ssh/sshd_config.d/90-{{ ssh_restricted_forwarding_account_user }}-forwarding.conf
+ssh_restricted_forwarding_account_sshd_config: /etc/ssh/sshd_config
+ssh_restricted_forwarding_account_sshd_binary: /usr/sbin/sshd
+ssh_restricted_forwarding_account_ssh_service: ssh
+# Optional argv list used instead of the service module, primarily for deterministic
+# reload fault injection. Production should normally keep this empty.
+ssh_restricted_forwarding_account_reload_command: []

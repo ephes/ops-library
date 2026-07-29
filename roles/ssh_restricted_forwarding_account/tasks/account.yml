@@ -1,0 +1,1022 @@
+---
+- name: account | Validate restricted forwarding account configuration
+  ansible.builtin.assert:
+    that:
+      - ssh_restricted_forwarding_account_enabled | type_debug == 'bool'
+      - ssh_restricted_forwarding_account_state in ['present', 'absent']
+      - ssh_restricted_forwarding_account_user is match('^[a-z_][a-z0-9_-]{0,30}$')
+      - ssh_restricted_forwarding_account_user not in ['CHANGEME', 'root']
+      - ssh_restricted_forwarding_account_group == ssh_restricted_forwarding_account_user
+      - ssh_restricted_forwarding_account_home == '/home/' ~ ssh_restricted_forwarding_account_user
+      - ssh_restricted_forwarding_account_shell in ssh_restricted_forwarding_account_allowed_shells
+      - ssh_restricted_forwarding_account_shell is match('^/[A-Za-z0-9_./-]+$')
+      - ssh_restricted_forwarding_account_key_comment is match('^[A-Za-z0-9][A-Za-z0-9._@+-]{0,127}$')
+      - >-
+        ssh_restricted_forwarding_account_state == 'absent'
+        or ssh_restricted_forwarding_account_public_key
+        is match('^ssh-ed25519 [A-Za-z0-9+/]+={0,3}$')
+      - >-
+        ssh_restricted_forwarding_account_permit_host
+        is match('^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$')
+      - ssh_restricted_forwarding_account_permit_host != 'CHANGEME'
+      - ssh_restricted_forwarding_account_permit_port | int >= 1
+      - ssh_restricted_forwarding_account_permit_port | int <= 65535
+      - >-
+        ssh_restricted_forwarding_account_source | trim | length == 0
+        or ssh_restricted_forwarding_account_source
+        is match('^[A-Fa-f0-9:.]+(?:/[0-9]{1,3})?(?:,[A-Fa-f0-9:.]+(?:/[0-9]{1,3})?)*$')
+      - >-
+        ssh_restricted_forwarding_account_sshd_dropin
+        is match('^/etc/ssh/sshd_config[.]d/[A-Za-z0-9][A-Za-z0-9_.-]*[.]conf$')
+      - ssh_restricted_forwarding_account_sshd_config == '/etc/ssh/sshd_config'
+      - ssh_restricted_forwarding_account_sshd_binary is match('^/[A-Za-z0-9_./-]+$')
+      - ssh_restricted_forwarding_account_reload_command | type_debug == 'list'
+      - >-
+        ssh_restricted_forwarding_account_reload_command | length == 0
+        or ssh_restricted_forwarding_account_reload_command[0]
+        is match('^/[A-Za-z0-9_./-]+$')
+      - ssh_restricted_forwarding_account_password_hash is match('^[$]6[$][A-Za-z0-9./]+[$][A-Za-z0-9./]+$')
+    fail_msg: >-
+      Configure one explicit account, an exact two-field Ed25519 key, conservative
+      comment/source values, an allowlisted no-login shell, and an immediate-child .conf
+      path under exactly /etc/ssh/sshd_config.d.
+    quiet: true
+  no_log: true
+  when: ssh_restricted_forwarding_account_enabled | bool
+
+- name: account | Verify allowlisted no-login executable
+  ansible.builtin.stat:
+    path: "{{ ssh_restricted_forwarding_account_shell }}"
+    follow: false
+  register: ssh_restricted_forwarding_account_shell_file
+  check_mode: false
+  when:
+    - ssh_restricted_forwarding_account_enabled | bool
+    - ssh_restricted_forwarding_account_state == 'present'
+
+- name: account | Require an ordinary executable no-login shell
+  ansible.builtin.assert:
+    that:
+      - ssh_restricted_forwarding_account_shell_file.stat.isreg | default(false)
+      - ssh_restricted_forwarding_account_shell_file.stat.executable | default(false)
+    fail_msg: The configured allowlisted no-login shell must be an ordinary executable.
+  when:
+    - ssh_restricted_forwarding_account_enabled | bool
+    - ssh_restricted_forwarding_account_state == 'present'
+
+- name: account | Inspect prior forwarding sshd drop-in
+  ansible.builtin.stat:
+    path: "{{ ssh_restricted_forwarding_account_sshd_dropin }}"
+    follow: false
+  register: ssh_restricted_forwarding_account_dropin_before
+  check_mode: false
+  when: ssh_restricted_forwarding_account_enabled | bool
+
+- name: account | Refuse a substituted sshd drop-in
+  ansible.builtin.assert:
+    that:
+      - >-
+        not (ssh_restricted_forwarding_account_dropin_before.stat.exists | default(false))
+        or (
+          ssh_restricted_forwarding_account_dropin_before.stat.isreg | default(false)
+          and not (ssh_restricted_forwarding_account_dropin_before.stat.islnk | default(false))
+          and ssh_restricted_forwarding_account_dropin_before.stat.nlink | default(0) == 1
+          and ssh_restricted_forwarding_account_dropin_before.stat.pw_name == 'root'
+          and ssh_restricted_forwarding_account_dropin_before.stat.gr_name == 'root'
+          and ssh_restricted_forwarding_account_dropin_before.stat.mode == '0644'
+        )
+    fail_msg: >-
+      The managed forwarding sshd drop-in pre-state must be an ordinary single-link
+      root:root 0644 file. Timestamps, ACLs, and xattrs are outside rollback semantics.
+    quiet: true
+  when: ssh_restricted_forwarding_account_enabled | bool
+
+- name: account | Read managed prior forwarding sshd drop-in bytes for rollback
+  ansible.builtin.slurp:
+    path: "{{ ssh_restricted_forwarding_account_sshd_dropin }}"
+  register: ssh_restricted_forwarding_account_dropin_backup
+  no_log: true
+  check_mode: false
+  when:
+    - ssh_restricted_forwarding_account_enabled | bool
+    - ssh_restricted_forwarding_account_dropin_before.stat.exists | default(false)
+
+- name: account | Inspect durable managed account identity contract
+  ansible.builtin.stat:
+    path: "{{ ssh_restricted_forwarding_account_contract_path }}"
+    follow: false
+  register: ssh_restricted_forwarding_account_contract_before
+  check_mode: false
+  when: ssh_restricted_forwarding_account_enabled | bool
+
+- name: account | Refuse a substituted managed account identity contract
+  ansible.builtin.assert:
+    that:
+      - >-
+        not (ssh_restricted_forwarding_account_contract_before.stat.exists | default(false))
+        or (
+          ssh_restricted_forwarding_account_contract_before.stat.isreg | default(false)
+          and not (ssh_restricted_forwarding_account_contract_before.stat.islnk | default(false))
+          and ssh_restricted_forwarding_account_contract_before.stat.nlink | default(0) == 1
+          and ssh_restricted_forwarding_account_contract_before.stat.pw_name == 'root'
+          and ssh_restricted_forwarding_account_contract_before.stat.gr_name == 'root'
+          and ssh_restricted_forwarding_account_contract_before.stat.mode == '0600'
+        )
+    fail_msg: >-
+      The durable managed account identity contract must be an ordinary single-link
+      root:root 0600 file.
+    quiet: true
+  when: ssh_restricted_forwarding_account_enabled | bool
+
+- name: account | Read prior managed account identity contract for rollback
+  ansible.builtin.slurp:
+    path: "{{ ssh_restricted_forwarding_account_contract_path }}"
+  register: ssh_restricted_forwarding_account_contract_backup
+  no_log: true
+  check_mode: false
+  when:
+    - ssh_restricted_forwarding_account_enabled | bool
+    - ssh_restricted_forwarding_account_contract_before.stat.exists | default(false)
+
+- name: account | Capture pre-mutation effective sshd policy
+  ansible.builtin.command:
+    argv:
+      - "{{ ssh_restricted_forwarding_account_sshd_binary }}"
+      - -T
+      - -f
+      - "{{ ssh_restricted_forwarding_account_sshd_config }}"
+      - -C
+      - >-
+        user={{ ssh_restricted_forwarding_account_user }},host=localhost,addr=127.0.0.1
+  register: ssh_restricted_forwarding_account_effective_before
+  changed_when: false
+  check_mode: false
+  when: ssh_restricted_forwarding_account_enabled | bool
+
+- name: account | Provision restricted forwarding account transactionally
+  when:
+    - ssh_restricted_forwarding_account_enabled | bool
+    - ssh_restricted_forwarding_account_state == 'present'
+  block:
+    - name: account | Create temporary complete sshd candidate tree
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: restricted-forwarding-sshd-
+      register: ssh_restricted_forwarding_account_candidate
+      changed_when: false
+      check_mode: false
+
+    - name: account | Validate candidate before account mutation
+      block:
+        - name: account | Allocate proposed policy outside the candidate tree
+          ansible.builtin.tempfile:
+            state: file
+            prefix: restricted-forwarding-policy-
+          register: ssh_restricted_forwarding_account_rendered_policy
+          changed_when: false
+          check_mode: false
+
+        - name: account | Render proposed forwarding policy into isolated input
+          ansible.builtin.template:
+            src: sshd-forwarding.conf.j2
+            dest: "{{ ssh_restricted_forwarding_account_rendered_policy.path }}"
+            owner: root
+            group: root
+            mode: "0600"
+          changed_when: false
+          check_mode: false
+
+        - name: account | Copy and rewrite SSH configuration with no-follow descriptors
+          ansible.builtin.script:
+            cmd: >-
+              manage_sshd_candidate.py --action prepare
+              --source /etc/ssh
+              --candidate {{ ssh_restricted_forwarding_account_candidate.path | quote }}
+            executable: /usr/bin/python3
+          changed_when: false
+          check_mode: false
+
+        - name: account | Install proposed policy through an attested candidate target
+          ansible.builtin.script:
+            cmd: >-
+              manage_sshd_candidate.py --action install
+              --candidate {{ ssh_restricted_forwarding_account_candidate.path | quote }}
+              --rendered {{ ssh_restricted_forwarding_account_rendered_policy.path | quote }}
+              --target sshd_config.d/{{ ssh_restricted_forwarding_account_sshd_dropin | basename | quote }}
+            executable: /usr/bin/python3
+          changed_when: false
+          check_mode: false
+
+        - name: account | Validate complete proposed sshd configuration
+          ansible.builtin.command:
+            argv:
+              - "{{ ssh_restricted_forwarding_account_sshd_binary }}"
+              - -t
+              - -f
+              - "{{ ssh_restricted_forwarding_account_candidate.path }}/sshd_config"
+          changed_when: false
+          check_mode: false
+
+        - name: account | Validate proposed effective forwarding policy
+          ansible.builtin.command:
+            argv:
+              - "{{ ssh_restricted_forwarding_account_sshd_binary }}"
+              - -T
+              - -f
+              - "{{ ssh_restricted_forwarding_account_candidate.path }}/sshd_config"
+              - -C
+              - >-
+                user={{ ssh_restricted_forwarding_account_user }},host=localhost,addr=127.0.0.1
+          register: ssh_restricted_forwarding_account_candidate_effective
+          changed_when: false
+          check_mode: false
+
+        - name: account | Require candidate local-forward-only effective policy
+          ansible.builtin.assert:
+            that:
+              - "'allowtcpforwarding local' in ssh_restricted_forwarding_account_candidate_effective.stdout"
+              - >-
+                ('permitopen ' ~ ssh_restricted_forwarding_account_permit_host ~ ':'
+                ~ (ssh_restricted_forwarding_account_permit_port | string))
+                in ssh_restricted_forwarding_account_candidate_effective.stdout
+              - "'permitlisten none' in ssh_restricted_forwarding_account_candidate_effective.stdout"
+              - "'passwordauthentication no' in ssh_restricted_forwarding_account_candidate_effective.stdout"
+              - "'kbdinteractiveauthentication no' in ssh_restricted_forwarding_account_candidate_effective.stdout"
+
+        - name: account | Report validated non-mutating check
+          ansible.builtin.debug:
+            msg: >-
+              Candidate forwarding policy validated before account/key mutation;
+              check mode changes neither account files nor sshd.
+          when: ansible_check_mode
+
+        - name: account | Capture prior account and key transaction state
+          when: not ansible_check_mode
+          block:
+            - name: account | Read prior passwd entry
+              ansible.builtin.command:
+                argv: [/usr/bin/getent, passwd, "{{ ssh_restricted_forwarding_account_user }}"]
+              register: ssh_restricted_forwarding_account_passwd_before
+              changed_when: false
+              failed_when: ssh_restricted_forwarding_account_passwd_before.rc not in [0, 2]
+              no_log: true
+
+            - name: account | Read prior configured group entry
+              ansible.builtin.command:
+                argv: [/usr/bin/getent, group, "{{ ssh_restricted_forwarding_account_group }}"]
+              register: ssh_restricted_forwarding_account_group_before
+              changed_when: false
+              failed_when: ssh_restricted_forwarding_account_group_before.rc not in [0, 2]
+              no_log: true
+
+            - name: account | Record prior account existence and passwd fields
+              ansible.builtin.set_fact:
+                ssh_restricted_forwarding_account_user_existed: >-
+                  {{ ssh_restricted_forwarding_account_passwd_before.rc == 0 }}
+                ssh_restricted_forwarding_account_group_existed: >-
+                  {{ ssh_restricted_forwarding_account_group_before.rc == 0 }}
+                ssh_restricted_forwarding_account_passwd_fields: >-
+                  {{ ssh_restricted_forwarding_account_passwd_before.stdout.split(':') }}
+              no_log: true
+
+            - name: account | Read prior shadow entry
+              ansible.builtin.command:
+                argv: [/usr/bin/getent, shadow, "{{ ssh_restricted_forwarding_account_user }}"]
+              register: ssh_restricted_forwarding_account_shadow_before
+              changed_when: false
+              no_log: true
+              when: ssh_restricted_forwarding_account_user_existed | bool
+
+            - name: account | Read prior primary group entry
+              ansible.builtin.command:
+                argv:
+                  - /usr/bin/getent
+                  - group
+                  - "{{ ssh_restricted_forwarding_account_passwd_fields[3] }}"
+              register: ssh_restricted_forwarding_account_primary_group_before
+              changed_when: false
+              no_log: true
+              when: ssh_restricted_forwarding_account_user_existed | bool
+
+            - name: account | Record prior shadow and primary group fields
+              ansible.builtin.set_fact:
+                ssh_restricted_forwarding_account_shadow_fields: >-
+                  {{ ssh_restricted_forwarding_account_shadow_before.stdout.split(':') }}
+                ssh_restricted_forwarding_account_primary_group: >-
+                  {{ ssh_restricted_forwarding_account_primary_group_before.stdout.split(':')[0] }}
+              no_log: true
+              when: ssh_restricted_forwarding_account_user_existed | bool
+
+            - name: account | Require exactly restorable prior account records
+              ansible.builtin.assert:
+                that:
+                  - not (ssh_restricted_forwarding_account_user_existed | bool) or ssh_restricted_forwarding_account_passwd_fields | length == 7
+                  - not (ssh_restricted_forwarding_account_user_existed | bool) or ssh_restricted_forwarding_account_shadow_fields | length == 9
+                  - not (ssh_restricted_forwarding_account_user_existed | bool) or ssh_restricted_forwarding_account_shadow_fields[2] is match('^$|^[0-9]+$')
+                  - not (ssh_restricted_forwarding_account_user_existed | bool) or ssh_restricted_forwarding_account_shadow_fields[3] is match('^$|^[0-9]+$')
+                  - not (ssh_restricted_forwarding_account_user_existed | bool) or ssh_restricted_forwarding_account_shadow_fields[4] is match('^$|^[0-9]+$')
+                  - not (ssh_restricted_forwarding_account_user_existed | bool) or ssh_restricted_forwarding_account_shadow_fields[5] is match('^$|^[0-9]+$')
+                  - not (ssh_restricted_forwarding_account_user_existed | bool) or ssh_restricted_forwarding_account_shadow_fields[6] is match('^$|^[0-9]+$')
+                  - not (ssh_restricted_forwarding_account_user_existed | bool) or ssh_restricted_forwarding_account_shadow_fields[7] is match('^$|^[0-9]+$')
+                  - not (ssh_restricted_forwarding_account_user_existed | bool) or ssh_restricted_forwarding_account_shadow_fields[8] == ''
+                fail_msg: Existing account records cannot be restored exactly; refusing mutation.
+                quiet: true
+              no_log: true
+
+            - name: account | Inspect prior managed home hierarchy and key
+              ansible.builtin.stat:
+                path: "{{ item }}"
+                follow: false
+              loop:
+                - "{{ ssh_restricted_forwarding_account_home }}"
+                - "{{ ssh_restricted_forwarding_account_home }}/.ssh"
+                - "{{ ssh_restricted_forwarding_account_home }}/.ssh/authorized_keys"
+              register: ssh_restricted_forwarding_account_paths_before
+              check_mode: false
+
+            - name: account | Require canonical managed home and key pre-state
+              ansible.builtin.assert:
+                that:
+                  - >-
+                    not ssh_restricted_forwarding_account_paths_before.results[0].stat.exists
+                    or (ssh_restricted_forwarding_account_user_existed | bool
+                        and ssh_restricted_forwarding_account_paths_before.results[0].stat.isdir
+                        and not ssh_restricted_forwarding_account_paths_before.results[0].stat.islnk
+                        and ssh_restricted_forwarding_account_paths_before.results[0].stat.pw_name
+                            == ssh_restricted_forwarding_account_user
+                        and ssh_restricted_forwarding_account_paths_before.results[0].stat.gr_name
+                            == ssh_restricted_forwarding_account_group
+                        and ssh_restricted_forwarding_account_paths_before.results[0].stat.mode == '0700')
+                  - >-
+                    not ssh_restricted_forwarding_account_paths_before.results[1].stat.exists
+                    or (ssh_restricted_forwarding_account_user_existed | bool
+                        and ssh_restricted_forwarding_account_paths_before.results[1].stat.isdir
+                        and not ssh_restricted_forwarding_account_paths_before.results[1].stat.islnk
+                        and ssh_restricted_forwarding_account_paths_before.results[1].stat.pw_name
+                            == ssh_restricted_forwarding_account_user
+                        and ssh_restricted_forwarding_account_paths_before.results[1].stat.gr_name
+                            == ssh_restricted_forwarding_account_group
+                        and ssh_restricted_forwarding_account_paths_before.results[1].stat.mode == '0700')
+                  - >-
+                    not ssh_restricted_forwarding_account_paths_before.results[2].stat.exists
+                    or (ssh_restricted_forwarding_account_user_existed | bool
+                        and ssh_restricted_forwarding_account_paths_before.results[2].stat.isreg
+                        and not ssh_restricted_forwarding_account_paths_before.results[2].stat.islnk
+                        and ssh_restricted_forwarding_account_paths_before.results[2].stat.nlink == 1
+                        and ssh_restricted_forwarding_account_paths_before.results[2].stat.pw_name
+                            == ssh_restricted_forwarding_account_user
+                        and ssh_restricted_forwarding_account_paths_before.results[2].stat.gr_name
+                            == ssh_restricted_forwarding_account_group
+                        and ssh_restricted_forwarding_account_paths_before.results[2].stat.mode == '0600')
+                fail_msg: >-
+                  Existing managed paths must use canonical ownership and modes: home
+                  0700, .ssh 0700, and an ordinary single-link authorized_keys 0600.
+                  Rollback restores managed bytes and canonical metadata only; timestamps,
+                  ACLs, and xattrs are not preserved or promised.
+
+            - name: account | Read managed prior authorized key bytes for rollback
+              ansible.builtin.slurp:
+                path: "{{ ssh_restricted_forwarding_account_home }}/.ssh/authorized_keys"
+              register: ssh_restricted_forwarding_account_authorized_keys_backup
+              no_log: true
+              check_mode: false
+              when: ssh_restricted_forwarding_account_paths_before.results[2].stat.exists
+
+            - name: account | Reattest holder and fencing immediately before provisioning mutation
+              ansible.builtin.command:
+                argv:
+                  - /usr/bin/python3
+                  - "{{ ssh_restricted_forwarding_account_lock_control.path }}/hold_transaction_lock.py"
+                  - --action
+                  - check
+                  - --marker
+                  - "{{ ssh_restricted_forwarding_account_transaction_marker }}"
+                  - --fence
+                  - "{{ ssh_restricted_forwarding_account_fence_path }}"
+                  - --generation
+                  - "{{ ssh_restricted_forwarding_account_fence_generation | string }}"
+                  - --fencing-token
+                  - "{{ ssh_restricted_forwarding_account_fence_token }}"
+              changed_when: false
+              no_log: true
+              when: not ansible_check_mode
+
+            - name: account | Mutate account, key, and policy as one transaction
+              block:
+                - name: account | Ensure dedicated forwarding group exists
+                  ansible.builtin.group:
+                    name: "{{ ssh_restricted_forwarding_account_group }}"
+                    system: true
+                    state: present
+
+                - name: account | Ensure dedicated non-locked forwarding account exists
+                  ansible.builtin.user:
+                    name: "{{ ssh_restricted_forwarding_account_user }}"
+                    group: "{{ ssh_restricted_forwarding_account_group }}"
+                    home: "{{ ssh_restricted_forwarding_account_home }}"
+                    create_home: true
+                    system: true
+                    shell: "{{ ssh_restricted_forwarding_account_shell }}"
+                    password: "{{ ssh_restricted_forwarding_account_password_hash }}"
+                    password_lock: false
+                    update_password: always
+                    state: present
+                  no_log: true
+
+                - name: account | Ensure dedicated home has canonical metadata
+                  ansible.builtin.file:
+                    path: "{{ ssh_restricted_forwarding_account_home }}"
+                    state: directory
+                    owner: "{{ ssh_restricted_forwarding_account_user }}"
+                    group: "{{ ssh_restricted_forwarding_account_group }}"
+                    mode: "0700"
+
+                - name: account | Ensure dedicated SSH directory exists
+                  ansible.builtin.file:
+                    path: "{{ ssh_restricted_forwarding_account_home }}/.ssh"
+                    state: directory
+                    owner: "{{ ssh_restricted_forwarding_account_user }}"
+                    group: "{{ ssh_restricted_forwarding_account_group }}"
+                    mode: "0700"
+
+                - name: account | Install the single restricted forwarding key
+                  ansible.builtin.template:
+                    src: authorized_keys.j2
+                    dest: "{{ ssh_restricted_forwarding_account_home }}/.ssh/authorized_keys"
+                    owner: "{{ ssh_restricted_forwarding_account_user }}"
+                    group: "{{ ssh_restricted_forwarding_account_group }}"
+                    mode: "0600"
+                    validate: /bin/test -s %s
+                  no_log: true
+                  diff: false
+
+                - name: account | Persist the exact managed UID and GID contract
+                  ansible.builtin.script:
+                    cmd: >-
+                      manage_account_home.py --action record
+                      --user {{ ssh_restricted_forwarding_account_user | quote }}
+                      --group {{ ssh_restricted_forwarding_account_group | quote }}
+                      --home {{ ssh_restricted_forwarding_account_home | quote }}
+                      --shell {{ ssh_restricted_forwarding_account_shell | quote }}
+                      --contract {{ ssh_restricted_forwarding_account_contract_path | quote }}
+                    executable: /usr/bin/python3
+                  register: ssh_restricted_forwarding_account_recorded_contract
+                  changed_when: >-
+                    (ssh_restricted_forwarding_account_recorded_contract.stdout
+                     | default('{"status":""}', true) | from_json).status == 'recorded'
+                  check_mode: false
+
+                - name: account | Atomically install validated forwarding policy
+                  ansible.builtin.copy:
+                    remote_src: true
+                    src: "{{ ssh_restricted_forwarding_account_candidate.path }}/sshd_config.d/{{ ssh_restricted_forwarding_account_sshd_dropin | basename }}"
+                    dest: "{{ ssh_restricted_forwarding_account_sshd_dropin }}"
+                    owner: root
+                    group: root
+                    mode: "0644"
+                  register: ssh_restricted_forwarding_account_dropin
+
+                - name: account | Validate complete installed sshd configuration before reload  # noqa: no-handler
+                  ansible.builtin.command:
+                    argv:
+                      - "{{ ssh_restricted_forwarding_account_sshd_binary }}"
+                      - -t
+                      - -f
+                      - "{{ ssh_restricted_forwarding_account_sshd_config }}"
+                  changed_when: false
+                  when: ssh_restricted_forwarding_account_dropin.changed
+
+                - name: account | Reload validated sshd configuration with service  # noqa: no-handler
+                  ansible.builtin.service:
+                    name: "{{ ssh_restricted_forwarding_account_ssh_service }}"
+                    state: reloaded
+                  when:
+                    - ssh_restricted_forwarding_account_dropin.changed
+                    - ssh_restricted_forwarding_account_reload_command | length == 0
+
+                - name: account | Reload validated sshd configuration with explicit command  # noqa: no-handler
+                  ansible.builtin.command:
+                    argv: "{{ ssh_restricted_forwarding_account_reload_command }}"
+                  changed_when: true
+                  when:
+                    - ssh_restricted_forwarding_account_dropin.changed
+                    - ssh_restricted_forwarding_account_reload_command | length > 0
+
+                - name: account | Reattest holder and fencing after provisioning mutations
+                  ansible.builtin.command:
+                    argv:
+                      - /usr/bin/python3
+                      - "{{ ssh_restricted_forwarding_account_lock_control.path }}/hold_transaction_lock.py"
+                      - --action
+                      - check
+                      - --marker
+                      - "{{ ssh_restricted_forwarding_account_transaction_marker }}"
+                      - --fence
+                      - "{{ ssh_restricted_forwarding_account_fence_path }}"
+                      - --generation
+                      - "{{ ssh_restricted_forwarding_account_fence_generation | string }}"
+                      - --fencing-token
+                      - "{{ ssh_restricted_forwarding_account_fence_token }}"
+                  changed_when: false
+                  no_log: true
+
+              rescue:
+                - name: account | Restore exact prior account properties
+                  ansible.builtin.user:
+                    name: "{{ ssh_restricted_forwarding_account_user }}"
+                    uid: "{{ ssh_restricted_forwarding_account_passwd_fields[2] }}"
+                    group: "{{ ssh_restricted_forwarding_account_primary_group }}"
+                    comment: "{{ ssh_restricted_forwarding_account_passwd_fields[4] }}"
+                    home: "{{ ssh_restricted_forwarding_account_passwd_fields[5] }}"
+                    shell: "{{ ssh_restricted_forwarding_account_passwd_fields[6] }}"
+                    password: "{{ ssh_restricted_forwarding_account_shadow_fields[1] }}"
+                    update_password: always
+                    create_home: false
+                    state: present
+                  no_log: true
+                  when: ssh_restricted_forwarding_account_user_existed | bool
+
+                - name: account | Restore exact prior shadow aging fields
+                  ansible.builtin.command:
+                    argv:
+                      - /usr/bin/chage
+                      - -d
+                      - "{{ ssh_restricted_forwarding_account_shadow_fields[2] | default('-1', true) }}"
+                      - -m
+                      - "{{ ssh_restricted_forwarding_account_shadow_fields[3] | default('-1', true) }}"
+                      - -M
+                      - "{{ ssh_restricted_forwarding_account_shadow_fields[4] | default('-1', true) }}"
+                      - -W
+                      - "{{ ssh_restricted_forwarding_account_shadow_fields[5] | default('-1', true) }}"
+                      - -I
+                      - "{{ ssh_restricted_forwarding_account_shadow_fields[6] | default('-1', true) }}"
+                      - -E
+                      - "{{ ssh_restricted_forwarding_account_shadow_fields[7] | default('-1', true) }}"
+                      - "{{ ssh_restricted_forwarding_account_user }}"
+                  changed_when: true
+                  no_log: true
+                  when: ssh_restricted_forwarding_account_user_existed | bool
+
+                - name: account | Remove failed newly created account without deleting prior paths
+                  ansible.builtin.user:
+                    name: "{{ ssh_restricted_forwarding_account_user }}"
+                    state: absent
+                    remove: false
+                    force: true
+                  no_log: true
+                  when: not (ssh_restricted_forwarding_account_user_existed | bool)
+
+                - name: account | Remove failed newly created forwarding group
+                  ansible.builtin.group:
+                    name: "{{ ssh_restricted_forwarding_account_group }}"
+                    state: absent
+                  when: not (ssh_restricted_forwarding_account_group_existed | bool)
+
+                - name: account | Restore managed home canonical metadata
+                  ansible.builtin.file:
+                    path: "{{ ssh_restricted_forwarding_account_home }}"
+                    state: directory
+                    owner: "{{ ssh_restricted_forwarding_account_user }}"
+                    group: "{{ ssh_restricted_forwarding_account_group }}"
+                    mode: "0700"
+                  when: ssh_restricted_forwarding_account_paths_before.results[0].stat.exists
+
+                - name: account | Restore managed SSH directory canonical metadata
+                  ansible.builtin.file:
+                    path: "{{ ssh_restricted_forwarding_account_home }}/.ssh"
+                    state: directory
+                    owner: "{{ ssh_restricted_forwarding_account_user }}"
+                    group: "{{ ssh_restricted_forwarding_account_group }}"
+                    mode: "0700"
+                  when: ssh_restricted_forwarding_account_paths_before.results[1].stat.exists
+
+                - name: account | Restore managed prior authorized key bytes and canonical metadata
+                  ansible.builtin.copy:
+                    dest: "{{ ssh_restricted_forwarding_account_home }}/.ssh/authorized_keys"
+                    content: "{{ ssh_restricted_forwarding_account_authorized_keys_backup.content | b64decode }}"
+                    owner: "{{ ssh_restricted_forwarding_account_user }}"
+                    group: "{{ ssh_restricted_forwarding_account_group }}"
+                    mode: "0600"
+                  no_log: true
+                  diff: false
+                  when: ssh_restricted_forwarding_account_paths_before.results[2].stat.exists
+
+                - name: account | Restore prior authorized keys absence
+                  ansible.builtin.file:
+                    path: "{{ ssh_restricted_forwarding_account_home }}/.ssh/authorized_keys"
+                    state: absent
+                  when:
+                    - ssh_restricted_forwarding_account_paths_before.results[1].stat.exists
+                    - not ssh_restricted_forwarding_account_paths_before.results[2].stat.exists
+
+                - name: account | Restore prior SSH directory absence
+                  ansible.builtin.file:
+                    path: "{{ ssh_restricted_forwarding_account_home }}/.ssh"
+                    state: absent
+                  when: not ssh_restricted_forwarding_account_paths_before.results[1].stat.exists
+
+                - name: account | Restore prior managed home absence
+                  ansible.builtin.file:
+                    path: "{{ ssh_restricted_forwarding_account_home }}"
+                    state: absent
+                  when: not ssh_restricted_forwarding_account_paths_before.results[0].stat.exists
+
+                - name: account | Restore prior managed account identity contract
+                  ansible.builtin.copy:
+                    dest: "{{ ssh_restricted_forwarding_account_contract_path }}"
+                    content: "{{ ssh_restricted_forwarding_account_contract_backup.content | b64decode }}"
+                    owner: root
+                    group: root
+                    mode: "0600"
+                  no_log: true
+                  diff: false
+                  when: ssh_restricted_forwarding_account_contract_before.stat.exists | default(false)
+
+                - name: account | Restore prior managed account identity contract absence
+                  ansible.builtin.file:
+                    path: "{{ ssh_restricted_forwarding_account_contract_path }}"
+                    state: absent
+                  when: not (ssh_restricted_forwarding_account_contract_before.stat.exists | default(false))
+
+                - name: account | Restore managed prior forwarding sshd drop-in bytes and canonical metadata
+                  ansible.builtin.copy:
+                    dest: "{{ ssh_restricted_forwarding_account_sshd_dropin }}"
+                    content: "{{ ssh_restricted_forwarding_account_dropin_backup.content | b64decode }}"
+                    owner: root
+                    group: root
+                    mode: "0644"
+                  no_log: true
+                  diff: false
+                  when: ssh_restricted_forwarding_account_dropin_before.stat.exists | default(false)
+
+                - name: account | Restore prior forwarding sshd drop-in absence
+                  ansible.builtin.file:
+                    path: "{{ ssh_restricted_forwarding_account_sshd_dropin }}"
+                    state: absent
+                  when: not (ssh_restricted_forwarding_account_dropin_before.stat.exists | default(false))
+
+                - name: account | Validate restored complete sshd configuration
+                  ansible.builtin.command:
+                    argv:
+                      - "{{ ssh_restricted_forwarding_account_sshd_binary }}"
+                      - -t
+                      - -f
+                      - "{{ ssh_restricted_forwarding_account_sshd_config }}"
+                  changed_when: false
+
+                - name: account | Initialize restored service reload result
+                  ansible.builtin.set_fact:
+                    ssh_restricted_forwarding_account_restore_service_reload_failed: false
+
+                - name: account | Attempt restored sshd reload with service
+                  when: ssh_restricted_forwarding_account_reload_command | length == 0
+                  block:
+                    - name: account | Request restored policy service reload
+                      ansible.builtin.service:
+                        name: "{{ ssh_restricted_forwarding_account_ssh_service }}"
+                        state: reloaded
+                  rescue:
+                    - name: account | Record restored policy service reload failure
+                      ansible.builtin.set_fact:
+                        ssh_restricted_forwarding_account_restore_service_reload_failed: true
+
+                - name: account | Attempt restored sshd reload with explicit command
+                  ansible.builtin.command:
+                    argv: "{{ ssh_restricted_forwarding_account_reload_command }}"
+                  register: ssh_restricted_forwarding_account_restore_command_reload
+                  changed_when: true
+                  failed_when: false
+                  when: ssh_restricted_forwarding_account_reload_command | length > 0
+
+                - name: account | Read effective restored on-disk sshd policy
+                  ansible.builtin.command:
+                    argv:
+                      - "{{ ssh_restricted_forwarding_account_sshd_binary }}"
+                      - -T
+                      - -f
+                      - "{{ ssh_restricted_forwarding_account_sshd_config }}"
+                      - -C
+                      - >-
+                        user={{ ssh_restricted_forwarding_account_user }},host=localhost,addr=127.0.0.1
+                  register: ssh_restricted_forwarding_account_effective_after_rollback
+                  changed_when: false
+
+                - name: account | Attest restored sshd policy activation
+                  ansible.builtin.set_fact:
+                    ssh_restricted_forwarding_account_rollback_reload_failed: >-
+                      {{
+                        (ssh_restricted_forwarding_account_reload_command | length == 0
+                         and ssh_restricted_forwarding_account_restore_service_reload_failed | bool)
+                        or
+                        (ssh_restricted_forwarding_account_reload_command | length > 0
+                         and ssh_restricted_forwarding_account_restore_command_reload.rc | default(1) != 0)
+                      }}
+                    ssh_restricted_forwarding_account_rollback_policy_matches: >-
+                      {{
+                        ssh_restricted_forwarding_account_effective_after_rollback.stdout
+                        == ssh_restricted_forwarding_account_effective_before.stdout
+                      }}
+
+                - name: account | Report fail-closed transactional update recovery state
+                  ansible.builtin.fail:
+                    msg: >-
+                      {% if ssh_restricted_forwarding_account_rollback_reload_failed | bool
+                            or not (ssh_restricted_forwarding_account_rollback_policy_matches | bool) %}
+                      ROLLBACK INCOMPLETE: managed prior bytes, absence state, and canonical
+                      owner/group/modes were restored, but live restored sshd policy could
+                      not be positively attested. The failed candidate may remain effective;
+                      old-key usability is NOT attested. Keep clients stopped and perform a
+                      successful validated sshd reload before recovery.
+                      {% else %}
+                      Candidate update failed. Managed prior bytes, absence state, and
+                      canonical owner/group/modes were restored; successful sshd reload and
+                      matching pre-mutation effective-policy output attest rollback activation.
+                      Timestamps, ACLs, and xattrs are outside rollback semantics.
+                      {% endif %}
+      always:
+        - name: account | Remove isolated rendered policy input
+          ansible.builtin.file:
+            path: "{{ ssh_restricted_forwarding_account_rendered_policy.path }}"
+            state: absent
+          changed_when: false
+          check_mode: false
+          when:
+            - ssh_restricted_forwarding_account_rendered_policy is defined
+            - ssh_restricted_forwarding_account_rendered_policy.path is defined
+
+        - name: account | Remove temporary complete sshd candidate tree
+          ansible.builtin.file:
+            path: "{{ ssh_restricted_forwarding_account_candidate.path }}"
+            state: absent
+          changed_when: false
+          check_mode: false
+
+- name: account | Revoke and remove restricted forwarding account
+  when:
+    - ssh_restricted_forwarding_account_enabled | bool
+    - ssh_restricted_forwarding_account_state == 'absent'
+  block:
+    - name: account | Preflight direct and nested mounts before any revocation mutation
+      ansible.builtin.script:
+        cmd: >-
+          manage_account_home.py --action attest-home-mounts
+          --user {{ ssh_restricted_forwarding_account_user | quote }}
+          --group {{ ssh_restricted_forwarding_account_group | quote }}
+          --home {{ ssh_restricted_forwarding_account_home | quote }}
+          --shell {{ ssh_restricted_forwarding_account_shell | quote }}
+          --contract {{ ssh_restricted_forwarding_account_contract_path | quote }}
+          {{ ansible_check_mode | ternary('--defer-uid-processes', '') }}
+        executable: /usr/bin/python3
+      register: ssh_restricted_forwarding_account_mount_preflight
+      changed_when: false
+      check_mode: false
+
+    - name: account | Attest exact account identity and no-follow home before revocation
+      ansible.builtin.script:
+        cmd: >-
+          manage_account_home.py --action attest
+          --user {{ ssh_restricted_forwarding_account_user | quote }}
+          --group {{ ssh_restricted_forwarding_account_group | quote }}
+          --home {{ ssh_restricted_forwarding_account_home | quote }}
+          --shell {{ ssh_restricted_forwarding_account_shell | quote }}
+          --contract {{ ssh_restricted_forwarding_account_contract_path | quote }}
+          {{ ansible_check_mode | ternary('--defer-uid-processes', '') }}
+        executable: /usr/bin/python3
+      register: ssh_restricted_forwarding_account_identity_attestation
+      changed_when: false
+      check_mode: false
+
+    - name: account | Parse exact account identity attestation
+      ansible.builtin.set_fact:
+        ssh_restricted_forwarding_account_identity_result: >-
+          {{ ssh_restricted_forwarding_account_identity_attestation.stdout | from_json }}
+
+    - name: account | Report contracted-UID processes as a deferred check-mode gate
+      ansible.builtin.debug:
+        msg: >-
+          Contracted-UID processes {{
+          ssh_restricted_forwarding_account_identity_result.deferred_uid_processes
+          }} remain because check mode intentionally does not shut down the healthy
+          tunnel. This is a deferred post-shutdown gate. Every real absent transaction
+          rescans under the stable server lock and fails closed until the processes
+          have exited.
+      when:
+        - ansible_check_mode
+        - >-
+          ssh_restricted_forwarding_account_identity_result.deferred_uid_processes
+          | length > 0
+
+    - name: account | Reattest holder and fencing immediately before revocation mutation
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ ssh_restricted_forwarding_account_lock_control.path }}/hold_transaction_lock.py"
+          - --action
+          - check
+          - --marker
+          - "{{ ssh_restricted_forwarding_account_transaction_marker }}"
+          - --fence
+          - "{{ ssh_restricted_forwarding_account_fence_path }}"
+          - --generation
+          - "{{ ssh_restricted_forwarding_account_fence_generation | string }}"
+          - --fencing-token
+          - "{{ ssh_restricted_forwarding_account_fence_token }}"
+      changed_when: false
+      no_log: true
+      when: not ansible_check_mode
+
+    - name: account | Remove policy, validate, and reload before deleting account
+      when: ssh_restricted_forwarding_account_dropin_before.stat.exists | default(false)
+      block:
+        - name: account | Remove forwarding sshd policy
+          ansible.builtin.file:
+            path: "{{ ssh_restricted_forwarding_account_sshd_dropin }}"
+            state: absent
+          register: ssh_restricted_forwarding_account_removed_policy
+
+        - name: account | Validate complete sshd configuration after revocation
+          ansible.builtin.command:
+            argv:
+              - "{{ ssh_restricted_forwarding_account_sshd_binary }}"
+              - -t
+              - -f
+              - "{{ ssh_restricted_forwarding_account_sshd_config }}"
+          changed_when: false
+          when:
+            - not ansible_check_mode
+            - ssh_restricted_forwarding_account_removed_policy.changed
+
+        - name: account | Reload sshd after validated revocation with service
+          ansible.builtin.service:
+            name: "{{ ssh_restricted_forwarding_account_ssh_service }}"
+            state: reloaded
+          when:
+            - not ansible_check_mode
+            - ssh_restricted_forwarding_account_removed_policy.changed
+            - ssh_restricted_forwarding_account_reload_command | length == 0
+
+        - name: account | Reload sshd after validated revocation with explicit command
+          ansible.builtin.command:
+            argv: "{{ ssh_restricted_forwarding_account_reload_command }}"
+          changed_when: true
+          when:
+            - not ansible_check_mode
+            - ssh_restricted_forwarding_account_removed_policy.changed
+            - ssh_restricted_forwarding_account_reload_command | length > 0
+      rescue:
+        - name: account | Restore forwarding policy after failed revocation
+          ansible.builtin.copy:
+            dest: "{{ ssh_restricted_forwarding_account_sshd_dropin }}"
+            content: "{{ ssh_restricted_forwarding_account_dropin_backup.content | b64decode }}"
+            owner: root
+            group: root
+            mode: "0644"
+          no_log: true
+          diff: false
+
+        - name: account | Validate restored forwarding policy
+          ansible.builtin.command:
+            argv:
+              - "{{ ssh_restricted_forwarding_account_sshd_binary }}"
+              - -t
+              - -f
+              - "{{ ssh_restricted_forwarding_account_sshd_config }}"
+          changed_when: false
+
+        - name: account | Initialize revocation rollback reload result
+          ansible.builtin.set_fact:
+            ssh_restricted_forwarding_account_revocation_restore_reload_failed: false
+
+        - name: account | Attempt revocation rollback reload with service
+          when: ssh_restricted_forwarding_account_reload_command | length == 0
+          block:
+            - name: account | Request restored revocation policy service reload
+              ansible.builtin.service:
+                name: "{{ ssh_restricted_forwarding_account_ssh_service }}"
+                state: reloaded
+          rescue:
+            - name: account | Record revocation rollback service reload failure
+              ansible.builtin.set_fact:
+                ssh_restricted_forwarding_account_revocation_restore_reload_failed: true
+
+        - name: account | Attempt revocation rollback reload with explicit command
+          ansible.builtin.command:
+            argv: "{{ ssh_restricted_forwarding_account_reload_command }}"
+          register: ssh_restricted_forwarding_account_revocation_restore_command
+          changed_when: true
+          failed_when: false
+          when: ssh_restricted_forwarding_account_reload_command | length > 0
+
+        - name: account | Read effective restored revocation policy
+          ansible.builtin.command:
+            argv:
+              - "{{ ssh_restricted_forwarding_account_sshd_binary }}"
+              - -T
+              - -f
+              - "{{ ssh_restricted_forwarding_account_sshd_config }}"
+              - -C
+              - >-
+                user={{ ssh_restricted_forwarding_account_user }},host=localhost,addr=127.0.0.1
+          register: ssh_restricted_forwarding_account_revocation_effective_after
+          changed_when: false
+
+        - name: account | Refuse account deletion after revocation failure
+          ansible.builtin.fail:
+            msg: >-
+              {% if ssh_restricted_forwarding_account_revocation_restore_reload_failed | bool
+                    or (ssh_restricted_forwarding_account_reload_command | length > 0
+                        and ssh_restricted_forwarding_account_revocation_restore_command.rc | default(1) != 0)
+                    or ssh_restricted_forwarding_account_revocation_effective_after.stdout
+                       != ssh_restricted_forwarding_account_effective_before.stdout %}
+              REVOCATION ROLLBACK INCOMPLETE: managed prior policy bytes and canonical
+              metadata are restored, but live restored policy is not attested. Preserve
+              the account and keep clients stopped until a validated reload succeeds.
+              {% else %}
+              SSH policy revocation failed; managed prior policy bytes and canonical
+              metadata were restored, reloaded successfully, and effective policy matched.
+              The account was preserved. Timestamps, ACLs, and xattrs are not promised.
+              {% endif %}
+
+    - name: account | Reattest holder and fencing after policy revocation
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ ssh_restricted_forwarding_account_lock_control.path }}/hold_transaction_lock.py"
+          - --action
+          - check
+          - --marker
+          - "{{ ssh_restricted_forwarding_account_transaction_marker }}"
+          - --fence
+          - "{{ ssh_restricted_forwarding_account_fence_path }}"
+          - --generation
+          - "{{ ssh_restricted_forwarding_account_fence_generation | string }}"
+          - --fencing-token
+          - "{{ ssh_restricted_forwarding_account_fence_token }}"
+      changed_when: false
+      no_log: true
+      when: not ansible_check_mode
+
+    - name: account | Remove dedicated forwarding account without recursive deletion
+      ansible.builtin.user:
+        name: "{{ ssh_restricted_forwarding_account_user }}"
+        state: absent
+        remove: false
+        force: false
+
+    - name: account | Remove only the descriptor-attested canonical managed home
+      ansible.builtin.script:
+        cmd: >-
+          manage_account_home.py --action remove-home
+          --user {{ ssh_restricted_forwarding_account_user | quote }}
+          --group {{ ssh_restricted_forwarding_account_group | quote }}
+          --home {{ ssh_restricted_forwarding_account_home | quote }}
+          --shell {{ ssh_restricted_forwarding_account_shell | quote }}
+          --contract {{ ssh_restricted_forwarding_account_contract_path | quote }}
+        executable: /usr/bin/python3
+      register: ssh_restricted_forwarding_account_removed_home
+      changed_when: >-
+        (ssh_restricted_forwarding_account_removed_home.stdout
+         | default('{"status":""}', true) | from_json).status == 'home-removed'
+      check_mode: false
+      when: not ansible_check_mode
+
+    - name: account | Reattest holder and fencing before group deletion
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ ssh_restricted_forwarding_account_lock_control.path }}/hold_transaction_lock.py"
+          - --action
+          - check
+          - --marker
+          - "{{ ssh_restricted_forwarding_account_transaction_marker }}"
+          - --fence
+          - "{{ ssh_restricted_forwarding_account_fence_path }}"
+          - --generation
+          - "{{ ssh_restricted_forwarding_account_fence_generation | string }}"
+          - --fencing-token
+          - "{{ ssh_restricted_forwarding_account_fence_token }}"
+      changed_when: false
+      no_log: true
+      when: not ansible_check_mode
+
+    - name: account | Remove dedicated forwarding group
+      ansible.builtin.group:
+        name: "{{ ssh_restricted_forwarding_account_group }}"
+        state: absent
+
+    - name: account | Remove identity contract only after all managed remnants are absent
+      ansible.builtin.script:
+        cmd: >-
+          manage_account_home.py --action remove-contract
+          --user {{ ssh_restricted_forwarding_account_user | quote }}
+          --group {{ ssh_restricted_forwarding_account_group | quote }}
+          --home {{ ssh_restricted_forwarding_account_home | quote }}
+          --shell {{ ssh_restricted_forwarding_account_shell | quote }}
+          --contract {{ ssh_restricted_forwarding_account_contract_path | quote }}
+        executable: /usr/bin/python3
+      register: ssh_restricted_forwarding_account_removed_contract
+      changed_when: >-
+        (ssh_restricted_forwarding_account_removed_contract.stdout
+         | default('{"status":""}', true) | from_json).status == 'contract-removed'
+      check_mode: false
+      when: not ansible_check_mode

@@ -1,0 +1,59 @@
+---
+- name: Converge restricted SSH forwarding roles
+  hosts: all
+  become: true
+  roles:
+    - role: ssh_forwarding_identity
+      vars:
+        ssh_forwarding_identity_become: false
+        ssh_forwarding_identity_user: root
+        ssh_forwarding_identity_group: root
+        ssh_forwarding_identity_home: /root
+        ssh_forwarding_identity_path: /root/.ssh/molecule-forwarding
+        ssh_forwarding_identity_comment: molecule-forwarding
+    - role: ssh_restricted_forwarding_account
+      vars:
+        ssh_restricted_forwarding_account_user: molecule_forward
+        ssh_restricted_forwarding_account_public_key: "{{ ssh_forwarding_identity_public_key }}"
+        ssh_restricted_forwarding_account_key_comment: molecule-forwarding
+        ssh_restricted_forwarding_account_permit_host: 127.0.0.1
+        ssh_restricted_forwarding_account_permit_port: 18443
+        ssh_restricted_forwarding_account_sshd_dropin: /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+        ssh_restricted_forwarding_account_fence_generation: 1
+        ssh_restricted_forwarding_account_fence_token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+  post_tasks:
+    - name: Exercise absent identity only during Molecule check action
+      ansible.builtin.include_role:
+        name: ssh_forwarding_identity
+      vars:
+        ssh_forwarding_identity_user: root
+        ssh_forwarding_identity_group: root
+        ssh_forwarding_identity_home: /root
+        ssh_forwarding_identity_path: /root/.ssh/molecule-missing-check-key
+        ssh_forwarding_identity_comment: molecule-check
+      when: ansible_check_mode
+
+    - name: Inspect ephemeral and managed check-mode identity paths
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+      loop:
+        - /root/.ssh/molecule-missing-check-key
+        - /root/.ssh/molecule-missing-check-key.pub
+      register: ssh_forwarding_identity_check_paths
+      changed_when: false
+      check_mode: false
+      when: ansible_check_mode
+
+    - name: Require ephemeral public check material without persisted identity
+      ansible.builtin.assert:
+        that:
+          - ssh_forwarding_identity_key_available
+          - >-
+            ssh_forwarding_identity_public_key
+            is match('^ssh-ed25519 [A-Za-z0-9+/]+={0,3}$')
+          - >-
+            ssh_forwarding_identity_check_paths.results
+            | map(attribute='stat.exists') | select('equalto', true) | list | length == 0
+      when: ansible_check_mode

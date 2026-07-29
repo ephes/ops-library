@@ -1,0 +1,57 @@
+---
+- name: identity | Validate forwarding identity configuration
+  ansible.builtin.assert:
+    that:
+      - ssh_forwarding_identity_enabled | type_debug == 'bool'
+      - ssh_forwarding_identity_become | type_debug == 'bool'
+      - ssh_forwarding_identity_state in ['present', 'absent']
+      - ssh_forwarding_identity_user is match('^[A-Za-z_][A-Za-z0-9_-]{0,63}$')
+      - ssh_forwarding_identity_user != 'CHANGEME'
+      - ssh_forwarding_identity_group is match('^[A-Za-z_][A-Za-z0-9_-]{0,63}$')
+      - ssh_forwarding_identity_home is match('^/[A-Za-z0-9_. /-]+$')
+      - ssh_forwarding_identity_path.startswith(ssh_forwarding_identity_home ~ '/')
+      - not ssh_forwarding_identity_path.endswith('.pub')
+      - ssh_forwarding_identity_comment is match('^[A-Za-z0-9][A-Za-z0-9._@+-]{0,127}$')
+      - ssh_forwarding_identity_keygen is match('^/[A-Za-z0-9_./-]+$')
+      - ssh_forwarding_identity_removal_confirm | type_debug == 'bool'
+      - ssh_forwarding_identity_state == 'present' or ssh_forwarding_identity_removal_confirm | bool
+      - "'.' not in ssh_forwarding_identity_home.split('/')"
+      - "'..' not in ssh_forwarding_identity_home.split('/')"
+      - "'.' not in ssh_forwarding_identity_path.split('/')"
+      - "'..' not in ssh_forwarding_identity_path.split('/')"
+    fail_msg: >-
+      Forwarding identities require safe single-line owner/path/comment values; removal
+      additionally requires ssh_forwarding_identity_removal_confirm=true.
+    quiet: true
+  when: ssh_forwarding_identity_enabled | bool
+
+- name: identity | Manage identity through pinned no-follow directory descriptors
+  ansible.builtin.script:
+    cmd: >-
+      manage_forwarding_identity.py
+      --state {{ ssh_forwarding_identity_state | quote }}
+      --home {{ ssh_forwarding_identity_home | quote }}
+      --path {{ ssh_forwarding_identity_path | quote }}
+      --user {{ ssh_forwarding_identity_user | quote }}
+      --group {{ ssh_forwarding_identity_group | quote }}
+      --comment {{ ssh_forwarding_identity_comment | quote }}
+      --keygen {{ ssh_forwarding_identity_keygen | quote }}
+      {{ '--check' if ansible_check_mode else '' }}
+  become: "{{ ssh_forwarding_identity_become | bool }}"
+  register: ssh_forwarding_identity_managed
+  changed_when: >-
+    not ansible_check_mode
+    and (ssh_forwarding_identity_managed.stdout | from_json).changed | bool
+  check_mode: false
+  no_log: true
+  when: ssh_forwarding_identity_enabled | bool
+
+- name: identity | Publish only derived public identity material
+  ansible.builtin.set_fact:
+    ssh_forwarding_identity_public_key: >-
+      {{ (ssh_forwarding_identity_managed.stdout | from_json).public_key }}
+    ssh_forwarding_identity_key_available: true
+  no_log: true
+  when:
+    - ssh_forwarding_identity_enabled | bool
+    - ssh_forwarding_identity_state == 'present'

@@ -110,6 +110,8 @@ consumer repos depend on.
 | Monitoring | [`backup_metrics_endpoint`](roles/backup_metrics_endpoint/README.md) | Expose backup-job + replication freshness signals as authenticated JSON for Nyxmon (`/.well-known/backup`). |
 | Infrastructure | [`mail_relay_client`](roles/mail_relay_client/README.md) | Configure a minimal Postfix setup for relaying outbound alert mail via a smarthost. |
 | Infrastructure | [`ssh_authorized_keys_manage`](roles/ssh_authorized_keys_manage/README.md) | Manage `~/.ssh` and the full `authorized_keys` file for an arbitrary target account, including `root`. |
+| Infrastructure | [`ssh_forwarding_identity`](roles/ssh_forwarding_identity/README.md) | Provision a non-rotating, passphrase-free Ed25519 identity for unattended forwarding. |
+| Infrastructure | [`ssh_restricted_forwarding_account`](roles/ssh_restricted_forwarding_account/README.md) | Provision a dedicated OpenSSH account restricted to local forwarding toward one host and port. |
 | File sharing | [`samba_timemachine`](roles/samba_timemachine/README.md) | Configure Samba Time Machine share with vfs_fruit and conf.d snippet wiring. |
 | File sharing | [`samba_share`](roles/samba_share/README.md) | Configure generic Samba shares via conf.d snippets and user provisioning. |
 | Infrastructure | [`encrypted_volume_prepare`](roles/encrypted_volume_prepare/README.md) | Prepare and mount a LUKS data volume with UUID checks, keyfile unlock, and boot-time wiring (crypttab/fstab). |

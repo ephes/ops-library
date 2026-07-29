@@ -1,0 +1,13 @@
+---
+- name: Check absent state while the real restricted SSH connection remains active
+  hosts: all
+  gather_facts: false
+  become: true
+  roles:
+    - role: ssh_restricted_forwarding_account
+      vars:
+        ssh_restricted_forwarding_account_state: absent
+        ssh_restricted_forwarding_account_user: molecule_forward
+        ssh_restricted_forwarding_account_permit_host: 127.0.0.1
+        ssh_restricted_forwarding_account_permit_port: 18443
+        ssh_restricted_forwarding_account_sshd_dropin: /etc/ssh/sshd_config.d/90-molecule-forwarding.conf

@@ -9,6 +9,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `ssh_forwarding_identity` now keeps the exact original null-identity creation intent
+  authoritative when restarting an absent-companion creation. It reattests that binding and
+  both canonical/staging names before allocation, after allocation durability, after binding,
+  after canonical publication, and through every intent-retirement fsync. Check mode repeats
+  the same absent-companion attestation immediately before returning its snapshot-only plan;
+  canonical or staging creation/substitution at any boundary is preserved and fails closed.
+- `ssh_forwarding_identity` creation reconciliation now treats a null-identity intent as
+  authority only when both its canonical and named staging private-key entries are absent.
+  Canonical-only, staging-only, and same- or different-content dual-entry snapshots are
+  preserved unchanged and fail closed in check and real mode without key derivation or
+  public-key publication.
+- `ssh_forwarding_identity` now separates crash-recovery inspection from mutation so
+  present-state check mode can validate a recoverable creation intent/staging key and derive
+  its prospective public key without any rename, exchange, quarantine, intent persistence,
+  or directory fsync. Authenticated cleanup keeps descriptor authority for the quarantined
+  inode and requires the original private, public, or creation-intent canonical name to stay
+  absent immediately after exclusive rename and after every retirement fsync; concurrent
+  recreations are preserved and fail closed.
+- `ssh_forwarding_identity` now retains public-key and creation-intent publication
+  descriptors and exact bytes through old-name retirement, then reattests the canonical
+  inode, descriptor identity, and bytes after cleanup's final directory fsync. Creation
+  reconciliation carries the original exact `RegularBinding` through every update and
+  clear; updates return the replacement binding, and no transition fresh-reads a different
+  valid intent as authority. Canonical substitution immediately before update or clear,
+  and public-key/intent substitution during retirement cleanup, are preserved fail closed.
+- `ssh_forwarding_identity` absent-state cleanup now carries the full inode identity returned
+  with each exact validated private/public byte sequence into quarantine cleanup. It never
+  authorizes removal from a fresh pathname stat, so substitution between read and cleanup is
+  preserved and rejected.
+- `ssh_forwarding_identity` cleanup/removal now pins the exact validated inode across a
+  descriptor-relative exclusive source-to-quarantine transition, fsyncs, and reattests the
+  moved descriptor/path identity including durable `st_ctime_ns` records. A precreated
+  target or post-verification source swap fails closed; because no portable exact-handle
+  unlink is available, authenticated quarantines are retained instead of risking
+  verify-then-pathname-unlink.
+- `ssh_forwarding_identity` now inspects canonical private/public keys, creation intent,
+  and recovery staging state only through nonblocking, close-on-exec, no-follow descriptors,
+  with immediate regular/single-link/owner/mode and stable descriptor/path identity checks.
+  FIFOs, sockets, devices, directories, hard links, and replacements fail promptly. Private
+  key and creation-intent publication now use descriptor-relative exclusive rename rather
+  than hard links, eliminating link-count-two crash states while preserving exclusive,
+  non-rotating restart recovery.
+- `ssh_forwarding_identity` now creates a first private key through a random
+  descriptor-relative staging name and durable owner-only creation intent. It uses an
+  EINTR-aware write-all loop, rejects zero progress, fsyncs and read-verifies the complete
+  key, re-derives Ed25519 public material, binds the exact staging inode, and installs the
+  canonical name exclusively before parent-directory fsync. Restart completes only a
+  bound, content-verified staging inode; an unbound or replaced temporary and any partial
+  canonical key are preserved fail closed. Controlled partial/zero/`ENOSPC` failures clean
+  only the exact attested temporary, while existing canonical keys remain non-rotating.
+- `ssh_restricted_forwarding_account` now records a root-only UID/GID identity
+  contract and attests exact passwd, primary-group, shell, canonical home, ownership,
+  and no-follow hierarchy state before absent-state policy or account mutation. Partial
+  removal resumes reject recycled UID/GID names, always scan the contracted UID, and fail
+  closed on unreadable process state until home and contract are gone. Linux `statx` mount
+  IDs now pin `/home` before accepting the managed home, so bind/tmpfs filesystems mounted
+  directly at the canonical home are refused and preserved alongside same-device bind mounts,
+  tmpfs, and other nested filesystems. The IDs now preflight the complete tree under the
+  stable absent transaction lock before sshd policy, authorization, passwd, contract, home,
+  or content mutation, and are rechecked during traversal. Actual absent-transaction
+  Molecule cases prove direct and nested mounts preserve every managed remnant. Real absent
+  runs retain mandatory contracted-UID process scanning; read-only check mode reports
+  active restricted sshd processes as a deferred post-shutdown gate because it intentionally
+  does not boot out the healthy client. The role removes accounts without recursive
+  `userdel` and descriptor-removes only the pinned canonical managed home, preserving
+  drifted or repurposed accounts and unrelated data.
 - `vaultwarden_deploy` no longer renders a separate Traefik WebSocket router and
   service pointing at `WEBSOCKET_PORT`. Upstream Vaultwarden removed the
   standalone WebSocket listener and serves live sync at `/notifications/hub` on
@@ -21,6 +87,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added `ssh_forwarding_identity` and `ssh_restricted_forwarding_account` for
+  unattended, non-rotating Ed25519 forwarding identities and dedicated Linux
+  accounts constrained to one local-forward destination. The server role uses
+  restricted authorized-key options plus a validated sshd `Match User` block,
+  validates candidate policy before mutation, accepts only canonical managed-file
+  pre-state, and restores managed bytes, absence state, and canonical metadata after
+  failed validation or reload. Rollback activation now requires a successful restored
+  reload plus matching effective-policy attestation; timestamps, ACLs, and xattrs are
+  explicitly outside rollback semantics. Present and absent account operations now
+  share a non-expiring, explicitly authenticated server transaction holder, a durable
+  unreleased marker that survives holder death, and monotonic fencing state that rejects
+  obsolete workflows before mutation/finalization. The account-derived root-only recovery
+  credential is now file- and directory-fsynced before marker publication, survives `/tmp`
+  loss/reboot, remains recoverable across every takeover power-loss boundary, and is removed
+  durably with the marker after authenticated release. Stale recovery authenticates that
+  stable credential, attests holder death, and advances fencing. Candidate sshd
+  construction rejects source symlinks and mutates only descriptor-attested temporary-tree
+  targets. Identity
+  management traverses every component from `/` through pinned `O_NOFOLLOW|O_DIRECTORY`
+  descriptors and keeps parent creation plus key writes descriptor-relative, preventing
+  ancestor/parent symlink substitution from redirecting mutation. It never manages root
+  authorized keys.
 - New `vaultwarden_maintenance` role: an ingress deny switch for a maintenance
   window. `vaultwarden_maintenance_state: present` writes a high-priority
   Traefik router fronted by an `ipAllowList` middleware, so sources outside the

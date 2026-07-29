@@ -1,0 +1,21 @@
+# Managed by Ansible - local.ops_library.ssh_restricted_forwarding_account
+Match User {{ ssh_restricted_forwarding_account_user }}
+    AuthenticationMethods publickey
+    PubkeyAuthentication yes
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    PermitEmptyPasswords no
+    AllowTcpForwarding local
+    AllowStreamLocalForwarding no
+    PermitTunnel no
+    PermitOpen {{ ssh_restricted_forwarding_account_permit_host }}:{{ ssh_restricted_forwarding_account_permit_port | int }}
+    PermitListen none
+    GatewayPorts no
+    AllowAgentForwarding no
+    X11Forwarding no
+    PermitTTY no
+    PermitUserRC no
+    MaxSessions 0
+    ForceCommand {{ ssh_restricted_forwarding_account_shell }}
+
+Match all

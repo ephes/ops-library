@@ -1,0 +1,275 @@
+---
+- name: account | Validate stable server transaction and fencing configuration
+  ansible.builtin.assert:
+    that:
+      - >-
+        ssh_restricted_forwarding_account_transaction_lock
+        == ('/run/lock/ssh-restricted-forwarding-'
+            ~ ssh_restricted_forwarding_account_user ~ '.lock')
+      - ssh_restricted_forwarding_account_lock_timeout | int >= 1
+      - ssh_restricted_forwarding_account_lock_timeout | int <= 3600
+      - >-
+        ssh_restricted_forwarding_account_fence_path
+        == ('/var/lib/ssh-restricted-forwarding/'
+            ~ ssh_restricted_forwarding_account_user ~ '.fence.json')
+      - >-
+        ssh_restricted_forwarding_account_transaction_marker
+        == ('/var/lib/ssh-restricted-forwarding/'
+            ~ ssh_restricted_forwarding_account_user ~ '.transaction.json')
+      - >-
+        ssh_restricted_forwarding_account_recovery_credential_path
+        == ('/var/lib/ssh-restricted-forwarding/'
+            ~ ssh_restricted_forwarding_account_user ~ '.recovery.json')
+      - >-
+        ssh_restricted_forwarding_account_contract_path
+        == ('/var/lib/ssh-restricted-forwarding/'
+            ~ ssh_restricted_forwarding_account_user ~ '.account.json')
+      - ssh_restricted_forwarding_account_recover_stale_transaction | type_debug == 'bool'
+      - >-
+        not (ssh_restricted_forwarding_account_recover_stale_transaction | bool)
+        or ssh_restricted_forwarding_account_recovery_token
+           is match('^[0-9a-f]{64}$')
+      - >-
+        ansible_check_mode
+        or ssh_restricted_forwarding_account_fence_generation | int >= 1
+      - >-
+        ansible_check_mode
+        or ssh_restricted_forwarding_account_fence_token
+           is match('^[0-9a-f]{32,128}$')
+    fail_msg: >-
+      The account-derived server lock/fence paths are fixed. Mutating workflows must
+      supply a positive monotonic generation and opaque fencing token.
+    quiet: true
+  no_log: true
+  when: ssh_restricted_forwarding_account_enabled | bool
+
+- name: account | Run present or absent as one server-locked fenced transaction
+  when:
+    - ssh_restricted_forwarding_account_enabled | bool
+    - not ansible_check_mode
+  block:
+    - name: account | Create root-only durable transaction state directory
+      ansible.builtin.file:
+        path: /var/lib/ssh-restricted-forwarding
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: account | Create ephemeral private transaction lock control directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: ssh-forwarding-transaction-
+      register: ssh_restricted_forwarding_account_lock_control
+      changed_when: false
+      check_mode: false
+
+    - name: account | Generate one authenticated lock release token
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - import secrets; print(secrets.token_hex(32))
+      register: ssh_restricted_forwarding_account_lock_release
+      changed_when: false
+      check_mode: false
+      no_log: true
+
+    - name: account | Install ephemeral transaction helpers
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ ssh_restricted_forwarding_account_lock_control.path }}/{{ item }}"
+        owner: root
+        group: root
+        mode: "0700"
+      loop:
+        - hold_transaction_lock.py
+        - manage_fence.py
+      changed_when: false
+      check_mode: false
+
+    - name: account | Start stable server transaction lock holder
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ ssh_restricted_forwarding_account_lock_control.path }}/hold_transaction_lock.py"
+          - --lock
+          - "{{ ssh_restricted_forwarding_account_transaction_lock }}"
+          - --ready
+          - "{{ ssh_restricted_forwarding_account_lock_control.path }}/ready"
+          - --release
+          - "{{ ssh_restricted_forwarding_account_lock_control.path }}/release"
+          - --timeout
+          - "{{ ssh_restricted_forwarding_account_lock_timeout | string }}"
+          - --release-token
+          - "{{ ssh_restricted_forwarding_account_lock_release.stdout }}"
+          - --marker
+          - "{{ ssh_restricted_forwarding_account_transaction_marker }}"
+          - --credential
+          - "{{ ssh_restricted_forwarding_account_recovery_credential_path }}"
+          - --fence
+          - "{{ ssh_restricted_forwarding_account_fence_path }}"
+          - --generation
+          - "{{ ssh_restricted_forwarding_account_fence_generation | string }}"
+          - --fencing-token
+          - "{{ ssh_restricted_forwarding_account_fence_token }}"
+          - --recover-mode
+          - "{{ (ssh_restricted_forwarding_account_recover_stale_transaction | bool) | ternary('true', 'false') }}"
+          - --recovery-token
+          - "{{ ssh_restricted_forwarding_account_recovery_token }}"
+      # Effectively unbounded: the holder never treats acquisition timeout as a lease.
+      # Authenticated explicit release below is the only normal unlock path.
+      async: 2147483647
+      poll: 0
+      register: ssh_restricted_forwarding_account_lock_job
+      changed_when: false
+      check_mode: false
+      no_log: true
+
+    - name: account | Wait for exclusive server transaction lock acquisition
+      ansible.builtin.wait_for:
+        path: "{{ ssh_restricted_forwarding_account_lock_control.path }}/ready"
+        state: present
+        timeout: "{{ (ssh_restricted_forwarding_account_lock_timeout | int) + 3 }}"
+      check_mode: false
+
+    - name: account | Reattest durable holder and claimed fencing before transaction
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ ssh_restricted_forwarding_account_lock_control.path }}/hold_transaction_lock.py"
+          - --action
+          - check
+          - --marker
+          - "{{ ssh_restricted_forwarding_account_transaction_marker }}"
+          - --fence
+          - "{{ ssh_restricted_forwarding_account_fence_path }}"
+          - --generation
+          - "{{ ssh_restricted_forwarding_account_fence_generation | string }}"
+          - --fencing-token
+          - "{{ ssh_restricted_forwarding_account_fence_token }}"
+      changed_when: false
+      check_mode: false
+      no_log: true
+
+    - name: account | Claim monotonic server fencing ownership under transaction lock
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ ssh_restricted_forwarding_account_lock_control.path }}/manage_fence.py"
+          - --action
+          - claim
+          - --path
+          - "{{ ssh_restricted_forwarding_account_fence_path }}"
+          - --generation
+          - "{{ ssh_restricted_forwarding_account_fence_generation | string }}"
+          - --token
+          - "{{ ssh_restricted_forwarding_account_fence_token }}"
+      changed_when: false
+      check_mode: false
+      no_log: true
+
+    - name: account | Execute the complete forwarding account transaction under lock
+      ansible.builtin.include_tasks: account.yml
+
+    - name: account | Reattest holder liveness and fencing before successful finalization
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ ssh_restricted_forwarding_account_lock_control.path }}/hold_transaction_lock.py"
+          - --action
+          - check
+          - --marker
+          - "{{ ssh_restricted_forwarding_account_transaction_marker }}"
+          - --fence
+          - "{{ ssh_restricted_forwarding_account_fence_path }}"
+          - --generation
+          - "{{ ssh_restricted_forwarding_account_fence_generation | string }}"
+          - --fencing-token
+          - "{{ ssh_restricted_forwarding_account_fence_token }}"
+      changed_when: false
+      check_mode: false
+      no_log: true
+  always:
+    - name: account | Authentically signal server transaction lock release
+      ansible.builtin.copy:
+        dest: "{{ ssh_restricted_forwarding_account_lock_control.path }}/release"
+        content: "{{ ssh_restricted_forwarding_account_lock_release.stdout }}\n"
+        owner: root
+        group: root
+        mode: "0600"
+      changed_when: false
+      check_mode: false
+      no_log: true
+      when:
+        - ssh_restricted_forwarding_account_lock_control is defined
+        - ssh_restricted_forwarding_account_lock_control.path is defined
+        - ssh_restricted_forwarding_account_lock_release is defined
+        - ssh_restricted_forwarding_account_lock_release.stdout is defined
+
+    - name: account | Wait for server transaction lock holder exit
+      ansible.builtin.async_status:
+        jid: "{{ ssh_restricted_forwarding_account_lock_job.ansible_job_id }}"
+      register: ssh_restricted_forwarding_account_lock_exit
+      until: ssh_restricted_forwarding_account_lock_exit.finished | bool
+      retries: 25
+      delay: 1
+      failed_when: false
+      changed_when: false
+      check_mode: false
+      when:
+        - ssh_restricted_forwarding_account_lock_job is defined
+        - ssh_restricted_forwarding_account_lock_job.ansible_job_id is defined
+
+    - name: account | Inspect durable transaction marker after release attempt
+      ansible.builtin.stat:
+        path: "{{ ssh_restricted_forwarding_account_transaction_marker }}"
+        follow: false
+      register: ssh_restricted_forwarding_account_marker_after_release
+      changed_when: false
+      check_mode: false
+      when:
+        - ssh_restricted_forwarding_account_lock_control is defined
+        - ssh_restricted_forwarding_account_lock_control.path is defined
+
+    - name: account | Remove completed lock holder async record
+      ansible.builtin.async_status:
+        jid: "{{ ssh_restricted_forwarding_account_lock_job.ansible_job_id }}"
+        mode: cleanup
+      changed_when: false
+      check_mode: false
+      when:
+        - ssh_restricted_forwarding_account_lock_job is defined
+        - ssh_restricted_forwarding_account_lock_job.ansible_job_id is defined
+        - ssh_restricted_forwarding_account_lock_exit.finished | default(false) | bool
+
+    - name: account | Remove ephemeral transaction lock control directory after holder exit
+      ansible.builtin.file:
+        path: "{{ ssh_restricted_forwarding_account_lock_control.path }}"
+        state: absent
+      changed_when: false
+      check_mode: false
+      when:
+        - ssh_restricted_forwarding_account_lock_control is defined
+        - ssh_restricted_forwarding_account_lock_control.path is defined
+        - >-
+          ssh_restricted_forwarding_account_lock_job is not defined
+          or (ssh_restricted_forwarding_account_lock_exit.finished | default(false) | bool)
+
+    - name: account | Fail closed when durable transaction marker remains unreleased
+      ansible.builtin.fail:
+        msg: >-
+          The server transaction holder ended without authenticated durable release.
+          The unreleased marker and stable root-only recovery credential were preserved.
+          Recover only with that credential's matching token, positive stale-holder
+          attestation, and a higher fencing generation. The ephemeral control directory
+          is not recovery state and may be removed after holder death.
+      when:
+        - ssh_restricted_forwarding_account_marker_after_release is defined
+        - ssh_restricted_forwarding_account_marker_after_release.stat.exists | default(false)
+
+- name: account | Run read-only candidate checks without creating a stable lock or fence
+  ansible.builtin.include_tasks: account.yml
+  when:
+    - ssh_restricted_forwarding_account_enabled | bool
+    - ansible_check_mode

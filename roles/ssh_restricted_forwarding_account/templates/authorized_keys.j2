@@ -1,0 +1,2 @@
+# Managed by Ansible - local.ops_library.ssh_restricted_forwarding_account
+{{ ('from="' ~ ssh_restricted_forwarding_account_source ~ '",') if (ssh_restricted_forwarding_account_source | trim) else '' }}restrict,port-forwarding,command="{{ ssh_restricted_forwarding_account_shell }}",permitopen="{{ ssh_restricted_forwarding_account_permit_host }}:{{ ssh_restricted_forwarding_account_permit_port | int }}" {{ ssh_restricted_forwarding_account_public_key | trim }} {{ ssh_restricted_forwarding_account_key_comment | trim }}

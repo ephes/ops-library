@@ -11,6 +11,7 @@ removal/index
 operations/index
 registration/index
 bootstrap/index
+infrastructure/index
 testing/index
 ```
 
@@ -35,6 +36,11 @@ Register services with FastDeploy for remote execution. Details live in the {doc
 ### Bootstrap Roles
 
 Install required tools and dependencies. Consult the {doc}`bootstrap role index <bootstrap/index>` for Ansible, uv, SOPS, PostgreSQL, Redis, etc.
+
+### Infrastructure Roles
+
+Security-sensitive host building blocks, including restricted SSH forwarding, live in
+the {doc}`infrastructure role index <infrastructure/index>`.
 
 ### Testing Roles
 

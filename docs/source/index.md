@@ -37,6 +37,7 @@ The ops-library collection provides reusable Ansible roles organized by category
 - **{doc}`Operations Roles <roles/operations/index>`** - Backup and restore production data
 - **{doc}`Registration Roles <roles/registration/index>`** - Register services with FastDeploy
 - **{doc}`Bootstrap Roles <roles/bootstrap/index>`** - Install required tools and dependencies
+- **{doc}`Infrastructure Roles <roles/infrastructure/index>`** - Secure host and access-control building blocks
 - **{doc}`Testing Roles <roles/testing/index>`** - Development and testing utilities
 
 See the {doc}`complete role catalog <roles/index>` for details on each role.

@@ -11,7 +11,7 @@ setup:
     @./setup-pre-commit.sh
 
 # Run the default contributor validation path
-test: venv test-roles test-vaultwarden-maintenance test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup lint docs-build docs-lint
+test: venv test-roles test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup lint docs-build docs-lint
     @echo ""
     @echo "✅ Validation completed!"
 
@@ -29,6 +29,14 @@ test-roles: venv
 test-role ROLE: venv
     @echo "Testing role: {{ROLE}}"
     @UV_PROJECT_ENVIRONMENT=.venv uv run ./test_roles.py {{ROLE}}
+
+test-ssh-forwarding-roles: venv
+    @echo "Testing restricted SSH forwarding roles..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_ssh_forwarding_roles
+
+test-ssh-forwarding-integration: venv
+    @echo "Testing restricted forwarding against an isolated real sshd..."
+    @just molecule-test ssh_restricted_forwarding_account
 
 test-vaultwarden-maintenance: venv
     @echo "Testing Vaultwarden maintenance switch and package pinning contracts..."

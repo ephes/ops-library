@@ -1,0 +1,1377 @@
+---
+- name: Verify real restricted OpenSSH behavior
+  hosts: all
+  become: true
+  vars:
+    ssh_restricted_forwarding_account_fence_generation: 1
+    ssh_restricted_forwarding_account_fence_token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    ssh_options:
+      - -p
+      - "2222"
+      - -i
+      - /root/.ssh/molecule-forwarding
+      - -o
+      - IdentitiesOnly=yes
+      - -o
+      - StrictHostKeyChecking=no
+      - -o
+      - UserKnownHostsFile=/dev/null
+      - -o
+      - BatchMode=yes
+      - -o
+      - ConnectTimeout=5
+  tasks:
+    - name: Inspect durable transaction state after normal authenticated release
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+      loop:
+        - /var/lib/ssh-restricted-forwarding
+        - /var/lib/ssh-restricted-forwarding/molecule_forward.transaction.json
+        - /var/lib/ssh-restricted-forwarding/molecule_forward.recovery.json
+      register: durable_transaction_state
+
+    - name: Require root-only state directory and durable marker credential cleanup
+      ansible.builtin.assert:
+        that:
+          - durable_transaction_state.results[0].stat.isdir
+          - durable_transaction_state.results[0].stat.pw_name == 'root'
+          - durable_transaction_state.results[0].stat.mode == '0700'
+          - not durable_transaction_state.results[1].stat.exists
+          - not durable_transaction_state.results[2].stat.exists
+
+    - name: Derive test public key
+      ansible.builtin.command:
+        argv: [/usr/bin/ssh-keygen, -y, -f, /root/.ssh/molecule-forwarding]
+      register: molecule_public_key
+      changed_when: false
+      no_log: true
+
+    - name: Read effective Match policy
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/sshd
+          - -T
+          - -C
+          - user=molecule_forward,host=localhost,addr=127.0.0.1
+      register: effective_sshd
+      changed_when: false
+
+    - name: Require effective forwarding-only policy
+      ansible.builtin.assert:
+        that:
+          - "'authenticationmethods publickey' in effective_sshd.stdout"
+          - "'passwordauthentication no' in effective_sshd.stdout"
+          - "'kbdinteractiveauthentication no' in effective_sshd.stdout"
+          - "'allowtcpforwarding local' in effective_sshd.stdout"
+          - "'permitopen 127.0.0.1:18443' in effective_sshd.stdout"
+          - "'permitlisten none' in effective_sshd.stdout"
+          - "'allowstreamlocalforwarding no' in effective_sshd.stdout"
+          - "'gatewayports no' in effective_sshd.stdout"
+          - "'allowagentforwarding no' in effective_sshd.stdout"
+          - "'x11forwarding no' in effective_sshd.stdout"
+          - "'permittty no' in effective_sshd.stdout"
+          - "'permituserrc no' in effective_sshd.stdout"
+          - "'maxsessions 0' in effective_sshd.stdout"
+
+    - name: Read forwarding account shadow state
+      ansible.builtin.command:
+        argv: [/usr/bin/getent, shadow, molecule_forward]
+      register: forwarding_shadow
+      changed_when: false
+      no_log: true
+
+    - name: Prove forwarding account is not password-locked
+      ansible.builtin.assert:
+        that:
+          - forwarding_shadow.stdout.split(':')[1].startswith('$6$')
+      no_log: true
+
+    - name: Start sole permitted destination server
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, -m, http.server, "18443", --bind, 127.0.0.1]
+      async: 3600
+      poll: 0
+      changed_when: true
+
+    - name: Wait for permitted destination
+      ansible.builtin.uri:
+        url: http://127.0.0.1:18443/
+        status_code: 200
+      register: destination_ready
+      retries: 20
+      delay: 1
+      until: destination_ready.status == 200
+
+    - name: Authenticate key and establish permitted local forwarding
+      ansible.builtin.command:
+        argv: >-
+          {{ ['/usr/bin/ssh'] + ssh_options +
+          ['-o', 'ControlMaster=yes', '-o', 'ControlPath=/tmp/molecule-forward-control',
+          '-fNT', '-L', '127.0.0.1:19443:127.0.0.1:18443',
+          'molecule_forward@127.0.0.1'] }}
+      changed_when: true
+
+    - name: Prove bytes traverse the permitted destination
+      ansible.builtin.uri:
+        url: http://127.0.0.1:19443/
+        status_code: 200
+
+    - name: Exercise real CLI check mode while restricted connection is active
+      ansible.builtin.command:
+        argv:
+          - "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/../../.venv/bin/ansible-playbook"
+          - --inventory
+          - "{{ lookup('ansible.builtin.env', 'MOLECULE_INVENTORY_FILE') }}"
+          - --check
+          - "{{ playbook_dir }}/check-active.yml"
+      environment:
+        ANSIBLE_ROLES_PATH: >-
+          {{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/..
+        ANSIBLE_ALLOW_BROKEN_CONDITIONALS: "1"
+      register: active_removal_check
+      changed_when: false
+      delegate_to: localhost
+      become: false
+
+    - name: Reprove active forwarding after the read-only removal check
+      ansible.builtin.uri:
+        url: http://127.0.0.1:19443/
+        status_code: 200
+
+    - name: Inspect server state preserved by active-tunnel check mode
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+      loop:
+        - /home/molecule_forward/.ssh/authorized_keys
+        - /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+        - /var/lib/ssh-restricted-forwarding/molecule_forward.account.json
+      register: active_check_mode_survivors
+
+    - name: Require check mode to defer the process gate without mutation
+      ansible.builtin.assert:
+        that:
+          - >-
+            active_check_mode_survivors.results
+            | map(attribute='stat.isreg') | select('equalto', true) | list | length == 3
+          - "'Contracted-UID processes' in active_removal_check.stdout"
+          - "'deferred post-shutdown gate' in active_removal_check.stdout"
+
+    - name: Reject shell or exec session
+      ansible.builtin.command:
+        argv: "{{ ['/usr/bin/ssh'] + ssh_options + ['molecule_forward@127.0.0.1', 'true'] }}"
+      register: rejected_session
+      changed_when: false
+      failed_when: rejected_session.rc == 0
+
+    - name: Reject subsystem session
+      ansible.builtin.command:
+        argv: "{{ ['/usr/bin/ssh'] + ssh_options + ['-s', 'molecule_forward@127.0.0.1', 'sftp'] }}"
+      register: rejected_subsystem
+      changed_when: false
+      failed_when: rejected_subsystem.rc == 0
+
+    - name: Reject remote forwarding
+      ansible.builtin.command:
+        argv: >-
+          {{ ['/usr/bin/ssh'] + ssh_options + ['-o', 'ExitOnForwardFailure=yes',
+          '-NT', '-R', '127.0.0.1:20443:127.0.0.1:18443',
+          'molecule_forward@127.0.0.1'] }}
+      register: rejected_remote
+      changed_when: false
+      failed_when: rejected_remote.rc == 0
+
+    - name: Start alternate prohibited local destination request
+      ansible.builtin.command:
+        argv: >-
+          {{ ['/usr/bin/ssh'] + ssh_options +
+          ['-o', 'ControlMaster=yes', '-o', 'ControlPath=/tmp/molecule-rejected-control',
+          '-fNT', '-L', '127.0.0.1:19444:127.0.0.1:18444',
+          'molecule_forward@127.0.0.1'] }}
+      changed_when: true
+
+    - name: Reject traffic to alternate local-forward destination
+      ansible.builtin.uri:
+        url: http://127.0.0.1:19444/
+        status_code: 200
+        timeout: 2
+      register: rejected_alternate
+      failed_when: rejected_alternate.status | default(-1) == 200
+
+    - name: Close controlled SSH test processes
+      ansible.builtin.command:
+        argv: >-
+          {{ ['/usr/bin/ssh'] + ssh_options + ['-o', 'ControlPath=' ~ item,
+          '-O', 'exit', 'molecule_forward@127.0.0.1'] }}
+      loop:
+        - /tmp/molecule-forward-control
+        - /tmp/molecule-rejected-control
+      changed_when: true
+
+    - name: Exercise traversal rejection before root writes
+      block:
+        - name: Attempt traversal drop-in
+          ansible.builtin.include_role:
+            name: ssh_restricted_forwarding_account
+          vars:
+            ssh_restricted_forwarding_account_state: absent
+            ssh_restricted_forwarding_account_user: molecule_forward
+            ssh_restricted_forwarding_account_permit_host: 127.0.0.1
+            ssh_restricted_forwarding_account_sshd_dropin: /etc/ssh/sshd_config.d/../../tmp/escaped.conf
+        - name: Fail if traversal was accepted
+          ansible.builtin.fail:
+            msg: Traversal input was accepted
+      rescue:
+        - name: Record traversal rejection
+          ansible.builtin.set_fact:
+            traversal_rejected: true
+
+    - name: Require traversal rejection without escaped write
+      ansible.builtin.assert:
+        that:
+          - traversal_rejected | default(false)
+          - not lookup('ansible.builtin.fileglob', '/tmp/escaped.conf')
+
+    - name: Exercise public-key option injection rejection
+      block:
+        - name: Attempt injected public key
+          ansible.builtin.include_role:
+            name: ssh_restricted_forwarding_account
+          vars:
+            ssh_restricted_forwarding_account_user: molecule_forward
+            ssh_restricted_forwarding_account_public_key: "ssh-ed25519 AAAATEST command=bad"
+            ssh_restricted_forwarding_account_permit_host: 127.0.0.1
+        - ansible.builtin.fail:
+            msg: Injected public key was accepted
+      rescue:
+        - ansible.builtin.set_fact:
+            key_injection_rejected: true
+
+    - name: Exercise comment newline injection rejection
+      block:
+        - name: Attempt injected key comment
+          ansible.builtin.include_role:
+            name: ssh_restricted_forwarding_account
+          vars:
+            ssh_restricted_forwarding_account_user: molecule_forward
+            ssh_restricted_forwarding_account_public_key: "{{ molecule_public_key.stdout.split()[:2] | join(' ') }}"
+            ssh_restricted_forwarding_account_key_comment: "bad\ncomment"
+            ssh_restricted_forwarding_account_permit_host: 127.0.0.1
+        - ansible.builtin.fail:
+            msg: Injected key comment was accepted
+      rescue:
+        - ansible.builtin.set_fact:
+            comment_injection_rejected: true
+
+    - name: Exercise shell argument injection rejection
+      block:
+        - name: Attempt injected no-login shell
+          ansible.builtin.include_role:
+            name: ssh_restricted_forwarding_account
+          vars:
+            ssh_restricted_forwarding_account_user: molecule_forward
+            ssh_restricted_forwarding_account_public_key: "{{ molecule_public_key.stdout.split()[:2] | join(' ') }}"
+            ssh_restricted_forwarding_account_shell: /usr/sbin/nologin -c
+            ssh_restricted_forwarding_account_permit_host: 127.0.0.1
+        - ansible.builtin.fail:
+            msg: Injected shell was accepted
+      rescue:
+        - ansible.builtin.set_fact:
+            shell_injection_rejected: true
+
+    - name: Require injection rejection coverage
+      ansible.builtin.assert:
+        that:
+          - key_injection_rejected | default(false)
+          - comment_injection_rejected | default(false)
+          - shell_injection_rejected | default(false)
+
+    - name: Prepare symlinked identity parent target
+      block:
+        - name: Create identity parent test directories
+          ansible.builtin.file:
+            path: "{{ item.path }}"
+            state: directory
+            owner: root
+            group: root
+            mode: "{{ item.mode }}"
+          loop:
+            - path: /tmp/molecule-identity-home
+              mode: "0700"
+            - path: /tmp/molecule-identity-target
+              mode: "0751"
+
+        - name: Install identity parent target marker
+          ansible.builtin.copy:
+            dest: /tmp/molecule-identity-target/marker
+            content: "must remain untouched\n"
+            owner: root
+            group: root
+            mode: "0640"
+
+        - name: Link configured SSH parent to the protected target
+          ansible.builtin.file:
+            src: /tmp/molecule-identity-target
+            dest: /tmp/molecule-identity-home/.ssh
+            state: link
+
+        - name: Capture symlink target metadata and contents
+          ansible.builtin.stat:
+            path: "{{ item }}"
+            follow: false
+            checksum_algorithm: sha256
+          loop:
+            - /tmp/molecule-identity-target
+            - /tmp/molecule-identity-target/marker
+          register: identity_symlink_target_before
+
+    - name: Exercise symlinked identity parent rejection before mutation
+      block:
+        - name: Attempt identity generation through a symlinked parent
+          ansible.builtin.include_role:
+            name: ssh_forwarding_identity
+          vars:
+            ssh_forwarding_identity_user: root
+            ssh_forwarding_identity_group: root
+            ssh_forwarding_identity_home: /tmp/molecule-identity-home
+            ssh_forwarding_identity_path: /tmp/molecule-identity-home/.ssh/forwarding
+            ssh_forwarding_identity_comment: molecule-symlink-rejection
+        - name: Fail if symlinked identity parent was accepted
+          ansible.builtin.fail:
+            msg: Symlinked identity parent was accepted
+      rescue:
+        - name: Record symlinked identity parent rejection
+          ansible.builtin.set_fact:
+            identity_parent_symlink_rejected: true
+
+    - name: Recapture symlink target metadata and contents
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+        checksum_algorithm: sha256
+      loop:
+        - /tmp/molecule-identity-target
+        - /tmp/molecule-identity-target/marker
+        - /tmp/molecule-identity-target/forwarding
+        - /tmp/molecule-identity-target/forwarding.pub
+      register: identity_symlink_target_after
+
+    - name: Prove symlink target contents and metadata were untouched
+      ansible.builtin.assert:
+        that:
+          - identity_parent_symlink_rejected | default(false)
+          - not identity_symlink_target_after.results[2].stat.exists
+          - not identity_symlink_target_after.results[3].stat.exists
+          - >-
+            identity_symlink_target_after.results[0].stat.mode
+            == identity_symlink_target_before.results[0].stat.mode
+          - >-
+            identity_symlink_target_after.results[0].stat.uid
+            == identity_symlink_target_before.results[0].stat.uid
+          - >-
+            identity_symlink_target_after.results[0].stat.gid
+            == identity_symlink_target_before.results[0].stat.gid
+          - >-
+            identity_symlink_target_after.results[0].stat.mtime
+            == identity_symlink_target_before.results[0].stat.mtime
+          - >-
+            identity_symlink_target_after.results[1].stat.checksum
+            == identity_symlink_target_before.results[1].stat.checksum
+          - >-
+            identity_symlink_target_after.results[1].stat.mode
+            == identity_symlink_target_before.results[1].stat.mode
+
+    - name: Capture managed key checksum before metadata rejection test
+      ansible.builtin.stat:
+        path: /home/molecule_forward/.ssh/authorized_keys
+        checksum_algorithm: sha256
+      register: canonical_key_before
+      no_log: true
+
+    - name: Make managed key metadata noncanonical
+      ansible.builtin.file:
+        path: /home/molecule_forward/.ssh/authorized_keys
+        mode: "0644"
+
+    - name: Exercise noncanonical managed pre-state rejection
+      block:
+        - name: Attempt update with noncanonical managed key metadata
+          ansible.builtin.include_role:
+            name: ssh_restricted_forwarding_account
+          vars:
+            ssh_restricted_forwarding_account_user: molecule_forward
+            ssh_restricted_forwarding_account_public_key: >-
+              {{ molecule_public_key.stdout.split()[:2] | join(' ') }}
+            ssh_restricted_forwarding_account_key_comment: molecule-forwarding
+            ssh_restricted_forwarding_account_permit_host: 127.0.0.1
+            ssh_restricted_forwarding_account_permit_port: 18443
+            ssh_restricted_forwarding_account_sshd_dropin: /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+        - ansible.builtin.fail:
+            msg: Noncanonical managed pre-state was accepted
+      rescue:
+        - ansible.builtin.set_fact:
+            canonical_prestate_rejected: true
+
+    - name: Restore managed key canonical mode after rejection test
+      ansible.builtin.file:
+        path: /home/molecule_forward/.ssh/authorized_keys
+        mode: "0600"
+
+    - name: Inspect managed key after metadata rejection test
+      ansible.builtin.stat:
+        path: /home/molecule_forward/.ssh/authorized_keys
+        checksum_algorithm: sha256
+      register: canonical_key_after
+      no_log: true
+
+    - name: Require metadata rejection without managed key byte mutation
+      ansible.builtin.assert:
+        that:
+          - canonical_prestate_rejected | default(false)
+          - canonical_key_after.stat.checksum == canonical_key_before.stat.checksum
+          - canonical_key_after.stat.mode == '0600'
+      no_log: true
+
+    - name: Generate failed replacement identity
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/ssh-keygen
+          - -q
+          - -t
+          - ed25519
+          - -N
+          - ""
+          - -f
+          - /root/.ssh/molecule-forwarding-replacement
+      args:
+        creates: /root/.ssh/molecule-forwarding-replacement
+      no_log: true
+
+    - name: Derive failed replacement public key
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/ssh-keygen
+          - -y
+          - -f
+          - /root/.ssh/molecule-forwarding-replacement
+      register: molecule_replacement_public_key
+      changed_when: false
+      no_log: true
+
+    - name: Capture transactional state before forced reload failure
+      block:
+        - name: Capture installed drop-in and authorized keys
+          ansible.builtin.slurp:
+            path: "{{ item }}"
+          loop:
+            - /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+            - /home/molecule_forward/.ssh/authorized_keys
+          register: transaction_files_before_rollback
+          no_log: true
+
+        - name: Capture forwarding account records
+          ansible.builtin.command:
+            argv: [/usr/bin/getent, "{{ item }}", molecule_forward]
+          loop:
+            - passwd
+            - shadow
+            - group
+          register: transaction_account_before_rollback
+          changed_when: false
+          no_log: true
+
+    - name: Reset deterministic reload fault injection state
+      ansible.builtin.file:
+        path: /run/molecule-sshd-reload-count
+        state: absent
+
+    - name: Exercise partial candidate activation and failed rollback reload
+      block:
+        - name: Attempt key and policy rotation with fault-injected reloads
+          ansible.builtin.include_role:
+            name: ssh_restricted_forwarding_account
+          vars:
+            ssh_restricted_forwarding_account_user: molecule_forward
+            ssh_restricted_forwarding_account_public_key: >-
+              {{ molecule_replacement_public_key.stdout.split()[:2] | join(' ') }}
+            ssh_restricted_forwarding_account_key_comment: molecule-forwarding-replacement
+            ssh_restricted_forwarding_account_permit_host: 127.0.0.1
+            ssh_restricted_forwarding_account_permit_port: 18444
+            ssh_restricted_forwarding_account_sshd_dropin: /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+            ssh_restricted_forwarding_account_reload_command:
+              - /usr/local/sbin/molecule-sshd-reload-fault
+        - ansible.builtin.fail:
+            msg: Fault-injected reload failure unexpectedly succeeded
+      rescue:
+        - ansible.builtin.set_fact:
+            rollback_exercised: true
+            rollback_failure_message: "{{ ansible_failed_result.msg | default('') }}"
+
+    - name: Capture transactional state after rollback
+      block:
+        - name: Read restored drop-in and authorized keys
+          ansible.builtin.slurp:
+            path: "{{ item }}"
+          loop:
+            - /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+            - /home/molecule_forward/.ssh/authorized_keys
+          register: transaction_files_after_rollback
+          no_log: true
+
+        - name: Read restored forwarding account records
+          ansible.builtin.command:
+            argv: [/usr/bin/getent, "{{ item }}", molecule_forward]
+          loop:
+            - passwd
+            - shadow
+            - group
+          register: transaction_account_after_rollback
+          changed_when: false
+          no_log: true
+
+    - name: Require managed account, key, and policy rollback
+      ansible.builtin.assert:
+        that:
+          - rollback_exercised | default(false)
+          - "'ROLLBACK INCOMPLETE' in rollback_failure_message"
+          - "'old-key usability is NOT attested' in rollback_failure_message"
+          - >-
+            transaction_files_after_rollback.results | map(attribute='content') | list
+            == transaction_files_before_rollback.results | map(attribute='content') | list
+          - >-
+            transaction_account_after_rollback.results | map(attribute='stdout') | list
+            == transaction_account_before_rollback.results | map(attribute='stdout') | list
+      no_log: true
+
+    - name: Validate complete on-disk configuration after rollback
+      ansible.builtin.command:
+        argv: [/usr/sbin/sshd, -t, -f, /etc/ssh/sshd_config]
+      changed_when: false
+
+    - name: Read reload fault invocation count
+      ansible.builtin.slurp:
+        path: /run/molecule-sshd-reload-count
+      register: rollback_reload_count
+
+    - name: Require candidate HUP and failed rollback reload were both attempted
+      ansible.builtin.assert:
+        that:
+          - rollback_reload_count.content | b64decode | trim == '2'
+
+    - name: Start prior-key forwarding while live candidate policy remains possible
+      ansible.builtin.command:
+        argv: >-
+          {{ ['/usr/bin/ssh'] + ssh_options +
+          ['-o', 'ControlMaster=yes', '-o', 'ControlPath=/tmp/molecule-unattested-control',
+          '-o', 'ExitOnForwardFailure=yes', '-fNT',
+          '-L', '127.0.0.1:19445:127.0.0.1:18443',
+          'molecule_forward@127.0.0.1'] }}
+      changed_when: true
+
+    - name: Prove restored bytes alone do not establish prior forwarding usability
+      ansible.builtin.uri:
+        url: http://127.0.0.1:19445/
+        status_code: 200
+        timeout: 2
+      register: unattested_prior_forwarding
+      failed_when: unattested_prior_forwarding.status | default(-1) == 200
+
+    - name: Close unattested prior-key forwarding process
+      ansible.builtin.command:
+        argv: >-
+          {{ ['/usr/bin/ssh'] + ssh_options +
+          ['-o', 'ControlPath=/tmp/molecule-unattested-control',
+          '-O', 'exit', 'molecule_forward@127.0.0.1'] }}
+      changed_when: true
+
+    - name: Perform operator recovery reload of restored policy
+      ansible.builtin.service:
+        name: ssh
+        state: reloaded
+
+    - name: Prove prior key authenticates after recovery reload
+      ansible.builtin.command:
+        argv: >-
+          {{ ['/usr/bin/ssh'] + ssh_options +
+          ['-o', 'ControlMaster=yes', '-o', 'ControlPath=/tmp/molecule-rollback-control',
+          '-o', 'ExitOnForwardFailure=yes', '-fNT',
+          '-L', '127.0.0.1:19445:127.0.0.1:18443',
+          'molecule_forward@127.0.0.1'] }}
+      changed_when: true
+
+    - name: Prove prior-key rollback forwarding traverses the original destination
+      ansible.builtin.uri:
+        url: http://127.0.0.1:19445/
+        status_code: 200
+
+    - name: Prove failed replacement key does not authenticate after rollback
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/ssh
+          - -p
+          - "2222"
+          - -i
+          - /root/.ssh/molecule-forwarding-replacement
+          - -o
+          - IdentitiesOnly=yes
+          - -o
+          - StrictHostKeyChecking=no
+          - -o
+          - UserKnownHostsFile=/dev/null
+          - -o
+          - BatchMode=yes
+          - -o
+          - ConnectTimeout=5
+          - -o
+          - ExitOnForwardFailure=yes
+          - -fNT
+          - -L
+          - 127.0.0.1:19446:127.0.0.1:18443
+          - molecule_forward@127.0.0.1
+      register: failed_replacement_authentication
+      changed_when: false
+      failed_when: failed_replacement_authentication.rc == 0
+      no_log: true
+
+    - name: Close prior-key rollback forwarding process
+      ansible.builtin.command:
+        argv: >-
+          {{ ['/usr/bin/ssh'] + ssh_options +
+          ['-o', 'ControlPath=/tmp/molecule-rollback-control',
+          '-O', 'exit', 'molecule_forward@127.0.0.1'] }}
+      changed_when: true
+
+    - name: Capture canonical removal identity
+      ansible.builtin.command:
+        argv: [/usr/bin/getent, passwd, molecule_forward]
+      register: canonical_removal_passwd
+      changed_when: false
+      no_log: true
+
+    - name: Create protected drift target
+      ansible.builtin.file:
+        path: /srv/molecule-protected-home
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Install protected drift marker
+      ansible.builtin.copy:
+        dest: /srv/molecule-protected-home/must-survive
+        content: "protected\n"
+        owner: root
+        group: root
+        mode: "0640"
+
+    - name: Drift passwd home to protected data
+      ansible.builtin.command:
+        argv: [/usr/sbin/usermod, -d, /srv/molecule-protected-home, molecule_forward]
+      changed_when: true
+
+    - name: Exercise drifted passwd home rejection
+      block:
+        - name: Attempt removal with drifted passwd home
+          ansible.builtin.include_role:
+            name: ssh_restricted_forwarding_account
+          vars:
+            ssh_restricted_forwarding_account_state: absent
+            ssh_restricted_forwarding_account_user: molecule_forward
+            ssh_restricted_forwarding_account_permit_host: 127.0.0.1
+            ssh_restricted_forwarding_account_sshd_dropin: /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+            ssh_restricted_forwarding_account_fence_generation: 2
+            ssh_restricted_forwarding_account_fence_token: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+        - name: Fail if drifted passwd home was removed
+          ansible.builtin.fail:
+            msg: Drifted passwd home was accepted
+      rescue:
+        - name: Record drifted passwd home rejection
+          ansible.builtin.set_fact:
+            drifted_passwd_home_rejected: true
+
+    - name: Verify protected home and account survived drift rejection
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+      loop:
+        - /srv/molecule-protected-home/must-survive
+        - /home/molecule_forward
+        - /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+      register: drifted_home_survivors
+
+    - name: Require drifted passwd home fail-closed preservation
+      ansible.builtin.assert:
+        that:
+          - drifted_passwd_home_rejected | default(false)
+          - drifted_home_survivors.results | map(attribute='stat.exists') | select('equalto', true) | list | length == 3
+
+    - name: Restore canonical passwd home
+      ansible.builtin.command:
+        argv: [/usr/sbin/usermod, -d, /home/molecule_forward, molecule_forward]
+      changed_when: true
+
+    - name: Drift forwarding shell
+      ansible.builtin.command:
+        argv: [/usr/sbin/usermod, -s, /bin/false, molecule_forward]
+      changed_when: true
+
+    - name: Exercise drifted shell rejection
+      block:
+        - name: Attempt removal with drifted shell
+          ansible.builtin.include_role:
+            name: ssh_restricted_forwarding_account
+          vars:
+            ssh_restricted_forwarding_account_state: absent
+            ssh_restricted_forwarding_account_user: molecule_forward
+            ssh_restricted_forwarding_account_permit_host: 127.0.0.1
+            ssh_restricted_forwarding_account_sshd_dropin: /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+            ssh_restricted_forwarding_account_fence_generation: 3
+            ssh_restricted_forwarding_account_fence_token: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+        - ansible.builtin.fail:
+            msg: Drifted shell was accepted
+      rescue:
+        - ansible.builtin.set_fact:
+            drifted_shell_rejected: true
+
+    - name: Require shell drift rejection and restore canonical shell
+      block:
+        - name: Inspect policy after shell drift rejection
+          ansible.builtin.stat:
+            path: /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+            follow: false
+          register: shell_drift_policy
+        - name: Require shell drift preservation
+          ansible.builtin.assert:
+            that:
+              - drifted_shell_rejected | default(false)
+              - shell_drift_policy.stat.isreg | default(false)
+        - name: Restore canonical no-login shell
+          ansible.builtin.command:
+            argv: [/usr/sbin/usermod, -s, /usr/sbin/nologin, molecule_forward]
+          changed_when: true
+
+    - name: Create alternate primary group
+      ansible.builtin.group:
+        name: molecule_drift_group
+        state: present
+
+    - name: Drift primary group
+      ansible.builtin.command:
+        argv: [/usr/sbin/usermod, -g, molecule_drift_group, molecule_forward]
+      changed_when: true
+
+    - name: Exercise drifted primary group rejection
+      block:
+        - name: Attempt removal with drifted primary group
+          ansible.builtin.include_role:
+            name: ssh_restricted_forwarding_account
+          vars:
+            ssh_restricted_forwarding_account_state: absent
+            ssh_restricted_forwarding_account_user: molecule_forward
+            ssh_restricted_forwarding_account_permit_host: 127.0.0.1
+            ssh_restricted_forwarding_account_sshd_dropin: /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+            ssh_restricted_forwarding_account_fence_generation: 4
+            ssh_restricted_forwarding_account_fence_token: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+        - ansible.builtin.fail:
+            msg: Drifted primary group was accepted
+      rescue:
+        - ansible.builtin.set_fact:
+            drifted_primary_group_rejected: true
+
+    - name: Inspect key after primary-group drift rejection
+      ansible.builtin.stat:
+        path: /home/molecule_forward/.ssh/authorized_keys
+        follow: false
+      register: primary_group_drift_key
+
+    - name: Require primary-group drift rejection
+      ansible.builtin.assert:
+        that:
+          - drifted_primary_group_rejected | default(false)
+          - primary_group_drift_key.stat.isreg | default(false)
+
+    - name: Restore canonical primary group
+      ansible.builtin.command:
+        argv: [/usr/sbin/usermod, -g, molecule_forward, molecule_forward]
+      changed_when: true
+
+    - name: Drift managed home ownership
+      ansible.builtin.file:
+        path: /home/molecule_forward
+        owner: root
+        group: root
+
+    - name: Exercise drifted home ownership rejection
+      block:
+        - name: Attempt removal with drifted home ownership
+          ansible.builtin.include_role:
+            name: ssh_restricted_forwarding_account
+          vars:
+            ssh_restricted_forwarding_account_state: absent
+            ssh_restricted_forwarding_account_user: molecule_forward
+            ssh_restricted_forwarding_account_permit_host: 127.0.0.1
+            ssh_restricted_forwarding_account_sshd_dropin: /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+            ssh_restricted_forwarding_account_fence_generation: 5
+            ssh_restricted_forwarding_account_fence_token: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+        - ansible.builtin.fail:
+            msg: Drifted home ownership was accepted
+      rescue:
+        - ansible.builtin.set_fact:
+            drifted_home_owner_rejected: true
+
+    - name: Inspect key after home ownership drift rejection
+      ansible.builtin.stat:
+        path: /home/molecule_forward/.ssh/authorized_keys
+        follow: false
+      register: home_owner_drift_key
+
+    - name: Require home ownership drift rejection
+      ansible.builtin.assert:
+        that:
+          - drifted_home_owner_rejected | default(false)
+          - home_owner_drift_key.stat.isreg | default(false)
+
+    - name: Restore canonical managed home ownership
+      ansible.builtin.file:
+        path: /home/molecule_forward
+        owner: molecule_forward
+        group: molecule_forward
+
+    - name: Substitute managed SSH hierarchy with symlink
+      block:
+        - ansible.builtin.command:
+            argv: [/usr/bin/mv, /home/molecule_forward/.ssh, /home/molecule_forward/.ssh-canonical]
+          changed_when: true
+        - ansible.builtin.file:
+            src: /srv/molecule-protected-home
+            dest: /home/molecule_forward/.ssh
+            state: link
+
+    - name: Exercise symlinked home hierarchy rejection
+      block:
+        - name: Attempt removal with symlinked SSH hierarchy
+          ansible.builtin.include_role:
+            name: ssh_restricted_forwarding_account
+          vars:
+            ssh_restricted_forwarding_account_state: absent
+            ssh_restricted_forwarding_account_user: molecule_forward
+            ssh_restricted_forwarding_account_permit_host: 127.0.0.1
+            ssh_restricted_forwarding_account_sshd_dropin: /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+            ssh_restricted_forwarding_account_fence_generation: 6
+            ssh_restricted_forwarding_account_fence_token: ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+        - ansible.builtin.fail:
+            msg: Symlinked managed SSH hierarchy was accepted
+      rescue:
+        - ansible.builtin.set_fact:
+            symlinked_home_hierarchy_rejected: true
+
+    - name: Inspect symlink rejection survivors
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+      loop:
+        - /srv/molecule-protected-home/must-survive
+        - /home/molecule_forward/.ssh-canonical/authorized_keys
+      register: symlink_rejection_survivors
+
+    - name: Require symlink hierarchy rejection without protected deletion
+      ansible.builtin.assert:
+        that:
+          - symlinked_home_hierarchy_rejected | default(false)
+          - symlink_rejection_survivors.results | map(attribute='stat.isreg') | select('equalto', true) | list | length == 2
+
+    - name: Restore canonical SSH hierarchy
+      block:
+        - ansible.builtin.file:
+            path: /home/molecule_forward/.ssh
+            state: absent
+        - ansible.builtin.command:
+            argv: [/usr/bin/mv, /home/molecule_forward/.ssh-canonical, /home/molecule_forward/.ssh]
+          changed_when: true
+
+    - name: Repurpose managed username with another UID
+      ansible.builtin.command:
+        argv: [/usr/sbin/usermod, -u, "1901", molecule_forward]
+      changed_when: true
+
+    - name: Exercise repurposed username rejection
+      block:
+        - name: Attempt removal of repurposed username
+          ansible.builtin.include_role:
+            name: ssh_restricted_forwarding_account
+          vars:
+            ssh_restricted_forwarding_account_state: absent
+            ssh_restricted_forwarding_account_user: molecule_forward
+            ssh_restricted_forwarding_account_permit_host: 127.0.0.1
+            ssh_restricted_forwarding_account_sshd_dropin: /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+            ssh_restricted_forwarding_account_fence_generation: 7
+            ssh_restricted_forwarding_account_fence_token: a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1
+        - ansible.builtin.fail:
+            msg: Repurposed username was accepted
+      rescue:
+        - ansible.builtin.set_fact:
+            repurposed_username_rejected: true
+
+    - name: Inspect repurposed username survivors
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+      loop:
+        - /home/molecule_forward/.ssh/authorized_keys
+        - /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+      register: repurposed_username_survivors
+
+    - name: Require repurposed username preservation
+      ansible.builtin.assert:
+        that:
+          - repurposed_username_rejected | default(false)
+          - repurposed_username_survivors.results | map(attribute='stat.isreg') | select('equalto', true) | list | length == 2
+
+    - name: Restore contracted account UID
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/usermod
+          - -u
+          - "{{ canonical_removal_passwd.stdout.split(':')[2] }}"
+          - molecule_forward
+      changed_when: true
+      no_log: true
+
+    - name: Attempt real tmpfs mount directly at canonical home
+      ansible.builtin.command:
+        argv: [/usr/bin/mount, -t, tmpfs, tmpfs, /home/molecule_forward]
+      register: molecule_home_tmpfs_mount
+      changed_when: molecule_home_tmpfs_mount.rc == 0
+      failed_when: false
+
+    - name: Prove canonical-home tmpfs preservation when capabilities permit
+      when: molecule_home_tmpfs_mount.rc == 0
+      block:
+        - name: Canonicalize mounted tmpfs home metadata
+          ansible.builtin.file:
+            path: /home/molecule_forward
+            state: directory
+            owner: molecule_forward
+            group: molecule_forward
+            mode: "0700"
+
+        - name: Install protected marker in canonical-home tmpfs
+          ansible.builtin.copy:
+            dest: /home/molecule_forward/must-survive-direct-tmpfs
+            content: "direct tmpfs protected\n"
+            mode: "0600"
+
+        - name: Exercise canonical-home tmpfs refusal through real absent transaction
+          block:
+            - name: Attempt absent transaction with canonical-home tmpfs
+              ansible.builtin.include_role:
+                name: ssh_restricted_forwarding_account
+              vars:
+                ssh_restricted_forwarding_account_state: absent
+                ssh_restricted_forwarding_account_user: molecule_forward
+                ssh_restricted_forwarding_account_permit_host: 127.0.0.1
+                ssh_restricted_forwarding_account_sshd_dropin: /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+                ssh_restricted_forwarding_account_fence_generation: 8
+                ssh_restricted_forwarding_account_fence_token: d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1
+            - name: Fail if canonical-home tmpfs transaction succeeded
+              ansible.builtin.fail:
+                msg: Canonical-home tmpfs was accepted
+          rescue:
+            - name: Record canonical-home tmpfs transaction refusal
+              ansible.builtin.set_fact:
+                molecule_home_tmpfs_rejected: true
+                molecule_home_tmpfs_failure_task: "{{ ansible_failed_task.name }}"
+
+        - name: Inspect canonical-home tmpfs marker after refusal
+          ansible.builtin.stat:
+            path: /home/molecule_forward/must-survive-direct-tmpfs
+          register: molecule_home_tmpfs_marker
+
+        - name: Inspect canonical-home tmpfs transaction survivors
+          ansible.builtin.stat:
+            path: "{{ item }}"
+            follow: false
+          loop:
+            - /home/molecule_forward
+            - /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+            - /var/lib/ssh-restricted-forwarding/molecule_forward.account.json
+          register: molecule_home_tmpfs_survivors
+
+        - name: Read passwd after canonical-home tmpfs refusal
+          ansible.builtin.command:
+            argv: [/usr/bin/getent, passwd, molecule_forward]
+          register: molecule_home_tmpfs_passwd
+          changed_when: false
+
+        - name: Require canonical-home tmpfs rejection before every mutation
+          ansible.builtin.assert:
+            that:
+              - molecule_home_tmpfs_rejected | default(false)
+              - >-
+                molecule_home_tmpfs_failure_task
+                == 'account | Preflight direct and nested mounts before any revocation mutation'
+              - molecule_home_tmpfs_marker.stat.isreg | default(false)
+              - >-
+                molecule_home_tmpfs_survivors.results
+                | map(attribute='stat.exists') | select('equalto', true) | list | length == 3
+              - molecule_home_tmpfs_passwd.rc == 0
+      always:
+        - name: Unmount canonical-home tmpfs fixture
+          ansible.builtin.command:
+            argv: [/usr/bin/umount, /home/molecule_forward]
+          changed_when: true
+
+    - name: Inspect original home contents after direct tmpfs refusal
+      ansible.builtin.stat:
+        path: /home/molecule_forward/.ssh/authorized_keys
+        follow: false
+      register: molecule_home_tmpfs_original_key
+      when: molecule_home_tmpfs_mount.rc == 0
+
+    - name: Require original home contents survived direct tmpfs refusal
+      ansible.builtin.assert:
+        that:
+          - molecule_home_tmpfs_original_key.stat.isreg | default(false)
+      when: molecule_home_tmpfs_mount.rc == 0
+
+    - name: Prepare canonical-home bind source
+      ansible.builtin.file:
+        path: /srv/molecule-home-bind-source
+        state: directory
+        owner: molecule_forward
+        group: molecule_forward
+        mode: "0700"
+
+    - name: Install canonical-home bind-source preservation marker
+      ansible.builtin.copy:
+        dest: /srv/molecule-home-bind-source/must-survive-direct-bind
+        content: "direct bind protected\n"
+        owner: molecule_forward
+        group: molecule_forward
+        mode: "0600"
+
+    - name: Attempt real bind mount directly at canonical home
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/mount
+          - --bind
+          - /srv/molecule-home-bind-source
+          - /home/molecule_forward
+      register: molecule_home_bind_mount
+      changed_when: molecule_home_bind_mount.rc == 0
+      failed_when: false
+
+    - name: Prove canonical-home bind preservation when capabilities permit
+      when: molecule_home_bind_mount.rc == 0
+      block:
+        - name: Exercise canonical-home bind refusal through real absent transaction
+          block:
+            - name: Attempt absent transaction with canonical-home bind mount
+              ansible.builtin.include_role:
+                name: ssh_restricted_forwarding_account
+              vars:
+                ssh_restricted_forwarding_account_state: absent
+                ssh_restricted_forwarding_account_user: molecule_forward
+                ssh_restricted_forwarding_account_permit_host: 127.0.0.1
+                ssh_restricted_forwarding_account_sshd_dropin: /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+                ssh_restricted_forwarding_account_fence_generation: 9
+                ssh_restricted_forwarding_account_fence_token: e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1
+            - name: Fail if canonical-home bind transaction succeeded
+              ansible.builtin.fail:
+                msg: Canonical-home bind mount was accepted
+          rescue:
+            - name: Record canonical-home bind transaction refusal
+              ansible.builtin.set_fact:
+                molecule_home_bind_rejected: true
+                molecule_home_bind_failure_task: "{{ ansible_failed_task.name }}"
+
+        - name: Inspect canonical-home bind marker after refusal
+          ansible.builtin.stat:
+            path: /home/molecule_forward/must-survive-direct-bind
+          register: molecule_home_bind_marker
+
+        - name: Inspect canonical-home bind transaction survivors
+          ansible.builtin.stat:
+            path: "{{ item }}"
+            follow: false
+          loop:
+            - /home/molecule_forward
+            - /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+            - /var/lib/ssh-restricted-forwarding/molecule_forward.account.json
+          register: molecule_home_bind_survivors
+
+        - name: Read passwd after canonical-home bind refusal
+          ansible.builtin.command:
+            argv: [/usr/bin/getent, passwd, molecule_forward]
+          register: molecule_home_bind_passwd
+          changed_when: false
+
+        - name: Require canonical-home bind rejection before every mutation
+          ansible.builtin.assert:
+            that:
+              - molecule_home_bind_rejected | default(false)
+              - >-
+                molecule_home_bind_failure_task
+                == 'account | Preflight direct and nested mounts before any revocation mutation'
+              - molecule_home_bind_marker.stat.isreg | default(false)
+              - >-
+                molecule_home_bind_survivors.results
+                | map(attribute='stat.exists') | select('equalto', true) | list | length == 3
+              - molecule_home_bind_passwd.rc == 0
+      always:
+        - name: Unmount canonical-home bind fixture
+          ansible.builtin.command:
+            argv: [/usr/bin/umount, /home/molecule_forward]
+          changed_when: true
+
+    - name: Inspect original home contents after direct bind refusal
+      ansible.builtin.stat:
+        path: /home/molecule_forward/.ssh/authorized_keys
+        follow: false
+      register: molecule_home_bind_original_key
+      when: molecule_home_bind_mount.rc == 0
+
+    - name: Require original home contents survived direct bind refusal
+      ansible.builtin.assert:
+        that:
+          - molecule_home_bind_original_key.stat.isreg | default(false)
+      when: molecule_home_bind_mount.rc == 0
+
+    - name: Prepare nested mount preservation fixtures
+      block:
+        - name: Create managed-home mountpoints and bind source
+          ansible.builtin.file:
+            path: "{{ item.path }}"
+            state: directory
+            owner: "{{ item.owner }}"
+            group: "{{ item.group }}"
+            mode: "{{ item.mode }}"
+          loop:
+            - path: /home/molecule_forward/molecule-tmpfs
+              owner: molecule_forward
+              group: molecule_forward
+              mode: "0700"
+            - path: /home/molecule_forward/molecule-bind
+              owner: molecule_forward
+              group: molecule_forward
+              mode: "0700"
+            - path: /srv/molecule-bind-source
+              owner: root
+              group: root
+              mode: "0750"
+
+        - name: Install bind-source preservation marker
+          ansible.builtin.copy:
+            dest: /srv/molecule-bind-source/must-survive
+            content: "bind protected\n"
+            owner: root
+            group: root
+            mode: "0640"
+
+    - name: Attempt real tmpfs mount beneath managed home
+      ansible.builtin.command:
+        argv: [/usr/bin/mount, -t, tmpfs, tmpfs, /home/molecule_forward/molecule-tmpfs]
+      register: molecule_tmpfs_mount
+      changed_when: molecule_tmpfs_mount.rc == 0
+      failed_when: false
+
+    - name: Prove real tmpfs preservation when container capabilities permit
+      when: molecule_tmpfs_mount.rc == 0
+      block:
+        - name: Install protected marker inside nested tmpfs
+          ansible.builtin.copy:
+            dest: /home/molecule_forward/molecule-tmpfs/must-survive
+            content: "tmpfs protected\n"
+            mode: "0600"
+
+        - name: Exercise nested tmpfs refusal through real absent transaction
+          block:
+            - name: Attempt absent transaction with nested tmpfs
+              ansible.builtin.include_role:
+                name: ssh_restricted_forwarding_account
+              vars:
+                ssh_restricted_forwarding_account_state: absent
+                ssh_restricted_forwarding_account_user: molecule_forward
+                ssh_restricted_forwarding_account_permit_host: 127.0.0.1
+                ssh_restricted_forwarding_account_sshd_dropin: /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+                ssh_restricted_forwarding_account_fence_generation: 10
+                ssh_restricted_forwarding_account_fence_token: f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1
+            - name: Fail if nested tmpfs transaction succeeded
+              ansible.builtin.fail:
+                msg: Nested tmpfs was accepted
+          rescue:
+            - name: Record nested tmpfs transaction refusal
+              ansible.builtin.set_fact:
+                molecule_tmpfs_rejected: true
+                molecule_tmpfs_failure_task: "{{ ansible_failed_task.name }}"
+
+        - name: Inspect protected tmpfs marker after refusal
+          ansible.builtin.stat:
+            path: /home/molecule_forward/molecule-tmpfs/must-survive
+          register: molecule_tmpfs_marker
+
+        - name: Inspect nested tmpfs transaction survivors
+          ansible.builtin.stat:
+            path: "{{ item }}"
+            follow: false
+          loop:
+            - /home/molecule_forward
+            - /home/molecule_forward/.ssh/authorized_keys
+            - /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+            - /var/lib/ssh-restricted-forwarding/molecule_forward.account.json
+          register: molecule_tmpfs_survivors
+
+        - name: Read passwd after nested tmpfs refusal
+          ansible.builtin.command:
+            argv: [/usr/bin/getent, passwd, molecule_forward]
+          register: molecule_tmpfs_passwd
+          changed_when: false
+
+        - name: Require nested tmpfs rejection before every mutation
+          ansible.builtin.assert:
+            that:
+              - molecule_tmpfs_rejected | default(false)
+              - >-
+                molecule_tmpfs_failure_task
+                == 'account | Preflight direct and nested mounts before any revocation mutation'
+              - molecule_tmpfs_marker.stat.isreg | default(false)
+              - >-
+                molecule_tmpfs_survivors.results
+                | map(attribute='stat.exists') | select('equalto', true) | list | length == 4
+              - molecule_tmpfs_passwd.rc == 0
+
+        - name: Unmount nested tmpfs fixture
+          ansible.builtin.command:
+            argv: [/usr/bin/umount, /home/molecule_forward/molecule-tmpfs]
+          changed_when: true
+
+    - name: Attempt real bind mount beneath managed home
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/mount
+          - --bind
+          - /srv/molecule-bind-source
+          - /home/molecule_forward/molecule-bind
+      register: molecule_bind_mount
+      changed_when: molecule_bind_mount.rc == 0
+      failed_when: false
+
+    - name: Prove same-device bind mount preservation when capabilities permit
+      when: molecule_bind_mount.rc == 0
+      block:
+        - name: Exercise nested bind-mount refusal through real absent transaction
+          block:
+            - name: Attempt absent transaction with nested bind mount
+              ansible.builtin.include_role:
+                name: ssh_restricted_forwarding_account
+              vars:
+                ssh_restricted_forwarding_account_state: absent
+                ssh_restricted_forwarding_account_user: molecule_forward
+                ssh_restricted_forwarding_account_permit_host: 127.0.0.1
+                ssh_restricted_forwarding_account_sshd_dropin: /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+                ssh_restricted_forwarding_account_fence_generation: 11
+                ssh_restricted_forwarding_account_fence_token: a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2
+            - name: Fail if nested bind transaction succeeded
+              ansible.builtin.fail:
+                msg: Nested bind mount was accepted
+          rescue:
+            - name: Record nested bind transaction refusal
+              ansible.builtin.set_fact:
+                molecule_bind_rejected: true
+                molecule_bind_failure_task: "{{ ansible_failed_task.name }}"
+
+        - name: Inspect protected bind marker after refusal
+          ansible.builtin.stat:
+            path: /home/molecule_forward/molecule-bind/must-survive
+          register: molecule_bind_marker
+
+        - name: Inspect nested bind transaction survivors
+          ansible.builtin.stat:
+            path: "{{ item }}"
+            follow: false
+          loop:
+            - /home/molecule_forward
+            - /home/molecule_forward/.ssh/authorized_keys
+            - /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+            - /var/lib/ssh-restricted-forwarding/molecule_forward.account.json
+          register: molecule_bind_survivors
+
+        - name: Read passwd after nested bind refusal
+          ansible.builtin.command:
+            argv: [/usr/bin/getent, passwd, molecule_forward]
+          register: molecule_bind_passwd
+          changed_when: false
+
+        - name: Require nested bind rejection before every mutation
+          ansible.builtin.assert:
+            that:
+              - molecule_bind_rejected | default(false)
+              - >-
+                molecule_bind_failure_task
+                == 'account | Preflight direct and nested mounts before any revocation mutation'
+              - molecule_bind_marker.stat.isreg | default(false)
+              - >-
+                molecule_bind_survivors.results
+                | map(attribute='stat.exists') | select('equalto', true) | list | length == 4
+              - molecule_bind_passwd.rc == 0
+
+        - name: Unmount nested bind fixture
+          ansible.builtin.command:
+            argv: [/usr/bin/umount, /home/molecule_forward/molecule-bind]
+          changed_when: true
+
+    - name: Canonically revoke and remove managed account
+      ansible.builtin.include_role:
+        name: ssh_restricted_forwarding_account
+      vars:
+        ssh_restricted_forwarding_account_state: absent
+        ssh_restricted_forwarding_account_user: molecule_forward
+        ssh_restricted_forwarding_account_permit_host: 127.0.0.1
+        ssh_restricted_forwarding_account_sshd_dropin: /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+        ssh_restricted_forwarding_account_fence_generation: 12
+        ssh_restricted_forwarding_account_fence_token: b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1
+
+    - name: Inspect canonical account removal
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+      loop:
+        - /home/molecule_forward
+        - /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+        - /var/lib/ssh-restricted-forwarding/molecule_forward.account.json
+      register: canonical_removal_paths
+
+    - name: Read removed account and group records
+      ansible.builtin.command:
+        argv: [/usr/bin/getent, "{{ item }}", molecule_forward]
+      loop:
+        - passwd
+        - group
+      register: canonical_removal_records
+      changed_when: false
+      failed_when: canonical_removal_records.rc not in [0, 2]
+
+    - name: Inspect unrelated protected marker after canonical removal
+      ansible.builtin.stat:
+        path: /srv/molecule-protected-home/must-survive
+        follow: false
+      register: protected_marker_after_removal
+
+    - name: Require canonical bounded removal
+      ansible.builtin.assert:
+        that:
+          - canonical_removal_paths.results | map(attribute='stat.exists') | select('equalto', true) | list | length == 0
+          - canonical_removal_records.results | map(attribute='rc') | select('equalto', 0) | list | length == 0
+          - protected_marker_after_removal.stat.isreg | default(false)
+
+    - name: Rerun absent state to prove idempotence
+      ansible.builtin.include_role:
+        name: ssh_restricted_forwarding_account
+      vars:
+        ssh_restricted_forwarding_account_state: absent
+        ssh_restricted_forwarding_account_user: molecule_forward
+        ssh_restricted_forwarding_account_permit_host: 127.0.0.1
+        ssh_restricted_forwarding_account_sshd_dropin: /etc/ssh/sshd_config.d/90-molecule-forwarding.conf
+        ssh_restricted_forwarding_account_fence_generation: 13
+        ssh_restricted_forwarding_account_fence_token: c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1
