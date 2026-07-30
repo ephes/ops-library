@@ -34,12 +34,13 @@ Deploys [Navidrome](https://www.navidrome.org/) as a systemd-managed service (no
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `navidrome_version` | `0.58.5` | Navidrome release to install (pinned). |
+| `navidrome_version` | `0.63.2` | Navidrome release to install (pinned). Bump `navidrome_checksums` in the same change. |
 | `navidrome_download_arch` | auto | Architecture suffix (`amd64`/`arm64`), derived from `ansible_architecture`. |
 | `navidrome_download_checksum` | per-arch | SHA256 for the selected tarball; override when bumping versions. |
 | `navidrome_music_folder` | `/mnt/cryptdata/media/music` | Path to music library (read-only). |
 | `navidrome_data_dir` | `/var/lib/navidrome` | Data/config/cache directory for Navidrome. |
 | `navidrome_external_url` | `https://music.example.com` | External base URL (used by Subsonic clients and redirects). |
+| `navidrome_enable_sharing` | `false` | Public share links (`EnableSharing`). Upstream defaults this to `true` from 0.63.0; pinned off so an upgrade does not enable it silently. |
 | `navidrome_scan_schedule` | `@every 6h` | Built-in scanner schedule (`Scanner.Schedule`). |
 | `navidrome_rescan_timer_enabled` | `false` | Install a systemd timer calling `navidrome scan`; `navidrome_rescan_full` forces full scans. |
 | `navidrome_traefik_enabled` | `true` | Render Traefik dynamic config with dual-router basic auth. |

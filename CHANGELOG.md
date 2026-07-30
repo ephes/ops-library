@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Bumped pinned upstream versions across the collection: Traefik 3.5.3 -> 3.7.9,
+  Navidrome 0.58.5 -> 0.63.2, sops 3.8.1 -> 3.13.3, age 1.1.1 -> 1.3.1, Neovim
+  0.11.6 -> 0.12.4, lazygit 0.59.0 -> 0.63.1, nvm v0.39.7 -> v0.40.6, and the
+  Python interpreter pins for `homeassistant_deploy`, `wagtail_deploy`,
+  `voxhelm_deploy`, and `voxhelm_remote_worker_deploy` to 3.14.6.
+
+  `navidrome_checksums` was updated in the same change as `navidrome_version` —
+  the map is keyed by architecture but not by version, so a version bump alone
+  would fail the download against the previous release's SHA256. The comment
+  above it now says so. Traefik's own `traefik_checksum` default is empty, but
+  ops-control pins a bare checksum for `heis` that rides on this role's
+  `traefik_version`; that is updated alongside.
+
+  Traefik 3.6/3.7 breaking changes were reviewed: the Kubernetes Gateway API and
+  CRD changes do not apply here (file provider only). Of the rest, HTTP/1 CONNECT
+  now returns 501, `basicAuth` with an empty users list makes the router 404
+  rather than 401, and StripPrefix rejects requests whose normalized path differs
+  from the stripped path. Every `basicAuth` middleware in this collection is
+  rendered inside an `enabled` guard, so none can produce an empty users list.
+
+- `navidrome_deploy` now renders `EnableSharing` explicitly, defaulting to
+  `false` via the new `navidrome_enable_sharing` variable. Navidrome 0.63.0
+  flipped the upstream default to `true`, so upgrading without this would have
+  silently started handing out public share links on a service that is otherwise
+  reachable only behind basic auth. Note that 0.60.0 also made `go-taglib` the
+  default metadata extractor, which triggers a full library rescan on first
+  start; `Scanner.Extractor` can be set back to `legacy-taglib` if that misreads
+  tags.
+
+### Fixed
+
+- `mastodon_deploy` now actually applies `mastodon_nvm_version`. The nvm checkout
+  used `ansible.builtin.git` with `update: false`, which pins the requested
+  version only on the initial clone — on a host that already had nvm, changing
+  the variable reported no change and silently kept the old tag. Bumping the pin
+  to v0.40.6 and deploying left staging on v0.39.7, with the play reporting
+  `failed=0`. The checkout now runs with `update: true`, so the pinned tag is
+  what is on disk after every run. A version pin that quietly does nothing is
+  worse than no pin, because the inventory reports a version the host is not
+  running.
+
+### Removed
+
+- `nyxmon_deploy` no longer declares `nyxmon_node_version`. It was set to `20`
+  and described as "if frontend build is needed", but nothing in the collection
+  or in ops-control ever read it — the role does not install Node at all. It
+  surfaced as an end-of-life finding (Node 20 went EOL 2026-04-30) for a runtime
+  that is never provisioned, so the fix is deletion rather than a bump.
+
 ### Added
 
 - New `systemd_unit_masks` role: masks systemd units that can never succeed on a

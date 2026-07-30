@@ -31,10 +31,10 @@ vibe_coding_install_node: true
 vibe_coding_node_major_version: "22"
 
 # Neovim (from GitHub releases — apt version is too old for LazyVim)
-vibe_coding_neovim_version: "0.11.6"
+vibe_coding_neovim_version: "0.12.4"
 
 # lazygit (required by LazyVim <leader>gg keybinding)
-vibe_coding_lazygit_version: "0.59.0"
+vibe_coding_lazygit_version: "0.63.1"
 
 # Rust toolchain (rustup) — needed by rustaceanvim / LazyVim rust extra
 vibe_coding_install_rust: true

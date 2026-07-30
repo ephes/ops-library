@@ -12,7 +12,10 @@
     repo: "{{ mastodon_nvm_repo }}"
     dest: "{{ mastodon_nvm_dir }}"
     version: "{{ mastodon_nvm_version }}"
-    update: false
+    # update: false would pin only the first clone — on a host that already has
+    # nvm, bumping mastodon_nvm_version would report changed=0 and silently keep
+    # the old tag. The version is checked out on every run so the pin is real.
+    update: true
   become: true
   become_user: "{{ mastodon_user }}"
 

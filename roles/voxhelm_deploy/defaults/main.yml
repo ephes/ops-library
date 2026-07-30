@@ -21,7 +21,7 @@ voxhelm_wyoming_stt_script_path: "{{ voxhelm_app_dir }}/wyoming-stt.sh"
 voxhelm_whisperkit_script_path: "{{ voxhelm_app_dir }}/whisperkit.sh"
 
 voxhelm_uv_bin: "/usr/local/bin/uv"
-voxhelm_python_version: "3.14.5"
+voxhelm_python_version: "3.14.6"
 voxhelm_bind_host: "0.0.0.0"
 voxhelm_app_port: 8787
 voxhelm_uvicorn_log_level: "info"

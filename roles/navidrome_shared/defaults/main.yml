@@ -29,7 +29,7 @@ navidrome_port: 4533
 navidrome_external_url: "https://music.example.com"
 
 # Version pinning (override when bumping)
-navidrome_version: "0.58.5"
+navidrome_version: "0.63.2"
 navidrome_arch_map:
   x86_64: amd64
   amd64: amd64
@@ -37,14 +37,20 @@ navidrome_arch_map:
   arm64: arm64
 navidrome_download_arch: "{{ navidrome_arch_map[ansible_architecture] | default('amd64') }}"
 navidrome_download_url: "https://github.com/navidrome/navidrome/releases/download/v{{ navidrome_version }}/navidrome_{{ navidrome_version }}_linux_{{ navidrome_download_arch }}.tar.gz"
+# Must be updated in the same change as navidrome_version.
+# From https://github.com/navidrome/navidrome/releases/download/v<version>/navidrome_checksums.txt
 navidrome_checksums:
-  amd64: "sha256:5e72431a007ff9e4a5334084d05d51665ee06afb2fcef01230ee5df5e1454497"
-  arm64: "sha256:eec1364e40372d86a73c90246a58fad753d85af429f75d429ca940b6835da44c"
+  amd64: "sha256:224c6d6fe5cc11a9c9387b97988666423de38bb5ef2e2f43ecc43d0a3dded4f0"
+  arm64: "sha256:5b74fb0eea5d48e3eb7565ea4116284232509e94431cb3756aaac2128dd50a43"
 navidrome_download_checksum: "{{ navidrome_checksums[navidrome_download_arch] | default('sha256:') }}"
 
 # Application configuration
 navidrome_log_level: info
 navidrome_enable_insights_collector: false
+# Navidrome 0.63.0 flipped the upstream default to true. Pinned to false so an
+# upgrade does not silently start handing out public share links; set to true
+# deliberately if sharing is wanted.
+navidrome_enable_sharing: false
 navidrome_enable_transcoding_config: false
 navidrome_reverse_proxy_whitelist:
   - 127.0.0.1/32

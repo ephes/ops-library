@@ -18,7 +18,7 @@ homeassistant_uv_version: latest
 homeassistant_uv_update_existing: true
 homeassistant_uv_force_reinstall: false
 homeassistant_uv_path: "{{ homeassistant_uv_install_dir }}/uv"
-homeassistant_python_version: "3.14.2"
+homeassistant_python_version: "3.14.6"
 homeassistant_virtualenv_path: "{{ homeassistant_site_path }}/.venv"
 homeassistant_virtualenv_link: "{{ homeassistant_site_path }}/venv"
 homeassistant_package_spec: "homeassistant"

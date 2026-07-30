@@ -14,8 +14,8 @@ sops_deps_age_generate_key: true  # Generate if doesn't exist
 sops_deps_install_method: "apt"  # apt, snap, or binary
 
 # Binary versions (if using binary installation)
-sops_deps_age_version: "1.1.1"
-sops_deps_sops_version: "3.8.1"
+sops_deps_age_version: "1.3.1"
+sops_deps_sops_version: "3.13.3"
 
 # Ansible collection dependencies
 sops_deps_install_ansible_collection: true
