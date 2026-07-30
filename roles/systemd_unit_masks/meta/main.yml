@@ -1,0 +1,21 @@
+---
+galaxy_info:
+  role_name: systemd_unit_masks
+  author: ops-library
+  description: >-
+    Mask systemd units that cannot work on a host, and clear any failed state
+    they left behind so `systemctl --failed` stays meaningful.
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+    - name: Debian
+      versions:
+        - bookworm
+  galaxy_tags:
+    - systemd
+    - maintenance
+
+dependencies: []

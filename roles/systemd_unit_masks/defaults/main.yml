@@ -1,0 +1,24 @@
+---
+# Units to mask, i.e. link to /dev/null so they can never be started — by the
+# boot sequence, by a dependency, or by hand. Use this for units that cannot
+# work on the host at all (hardware that is absent, a driver with no device),
+# not for units you merely want off right now: prefer `enabled: false` for
+# those, because masking also blocks deliberate manual starts.
+#
+# Each entry requires "unit"; "reason" is recommended and is only documentation.
+#   systemd_unit_masks_units:
+#     - unit: openipmi.service
+#       reason: "No BMC on this hardware; the LSB init script always fails."
+systemd_unit_masks_units: []
+
+# Units to explicitly unmask, so removing an entry above is reversible through
+# the role rather than needing a manual `systemctl unmask`.
+systemd_unit_masks_unmask: []
+
+# Stop a masked unit immediately instead of leaving it running until reboot.
+systemd_unit_masks_stop_now: true
+
+# Clear lingering "failed" state for masked units. Masking does not reset a
+# unit that already failed, so without this `systemctl --failed` keeps
+# reporting it forever, which hides genuinely new failures.
+systemd_unit_masks_reset_failed: true

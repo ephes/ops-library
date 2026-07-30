@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- New `systemd_unit_masks` role: masks systemd units that can never succeed on a
+  host (a driver init script with no matching hardware, a service for an absent
+  device) and clears any `failed` state they left behind. Masking a unit that has
+  already failed does **not** reset it, so without the reset a permanently
+  non-empty `systemctl --failed` hides genuinely new failures. Units are stopped
+  before masking, because masking a running unit leaves it running and systemd
+  then refuses to act on it. Unit names must include the type suffix — a bare
+  name silently resolves to `<name>.service`, which makes it easy to mask
+  something other than intended — and a unit listed for both masking and
+  unmasking is rejected rather than resolved by ordering. The failed-state reset
+  is conditional on `systemctl is-failed`, so repeat runs report no change.
+
 ### Fixed
 
 - `ssh_forwarding_identity` now keeps the exact original null-identity creation intent

@@ -1,0 +1,96 @@
+---
+# Mask systemd units that cannot work on this host, and clear stale failed state.
+
+- name: Ensure host is systemd-managed
+  ansible.builtin.assert:
+    that:
+      - ansible_service_mgr == "systemd"
+    fail_msg: "systemd_unit_masks requires a systemd-managed host."
+
+- name: Validate mask list shape
+  ansible.builtin.assert:
+    that:
+      - systemd_unit_masks_units is iterable
+      - systemd_unit_masks_unmask is iterable
+    fail_msg: "systemd_unit_masks_units and systemd_unit_masks_unmask must be lists."
+
+- name: Validate mask entries
+  ansible.builtin.assert:
+    that:
+      - item.unit is defined
+      - item.unit | length > 0
+      # A bare name silently resolves to <name>.service, which makes it easy to
+      # mask something other than what was intended. Require the unit suffix.
+      - item.unit is search('\.[a-z]+$')
+    fail_msg: >-
+      Each systemd_unit_masks_units entry needs "unit" including its type
+      suffix (e.g. openipmi.service), got: {{ item }}
+  loop: "{{ systemd_unit_masks_units }}"
+  loop_control:
+    label: "{{ item.unit | default('<missing>') }}"
+
+- name: Reject units listed for both mask and unmask
+  ansible.builtin.assert:
+    that:
+      - (systemd_unit_masks_units | map(attribute='unit') | list)
+        | intersect(systemd_unit_masks_unmask) | length == 0
+    fail_msg: >-
+      A unit cannot be in both systemd_unit_masks_units and
+      systemd_unit_masks_unmask.
+
+- name: Unmask units no longer meant to be masked
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    masked: false
+  loop: "{{ systemd_unit_masks_unmask }}"
+  loop_control:
+    label: "{{ item }}"
+
+# Stop before masking: masking a running unit leaves it running, and once the
+# unit is masked systemd refuses to act on it, so the stop has to happen first.
+- name: Stop units about to be masked
+  ansible.builtin.systemd_service:
+    name: "{{ item.unit }}"
+    state: stopped
+  loop: "{{ systemd_unit_masks_units }}"
+  loop_control:
+    label: "{{ item.unit }}"
+  when: systemd_unit_masks_stop_now | bool
+  failed_when: false
+
+- name: Mask units
+  ansible.builtin.systemd_service:
+    name: "{{ item.unit }}"
+    masked: true
+  loop: "{{ systemd_unit_masks_units }}"
+  loop_control:
+    label: "{{ item.unit }}{{ ' — ' ~ item.reason if item.reason is defined else '' }}"
+
+- name: Detect masked units still in failed state
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-failed
+      - "{{ item.unit }}"
+  register: systemd_unit_masks_failed_probe
+  changed_when: false
+  failed_when: false
+  loop: "{{ systemd_unit_masks_units }}"
+  loop_control:
+    label: "{{ item.unit }}"
+  when: systemd_unit_masks_reset_failed | bool
+
+- name: Clear stale failed state for masked units
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - reset-failed
+      - "{{ item.item.unit }}"
+  loop: "{{ systemd_unit_masks_failed_probe.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.unit | default('') }}"
+  when:
+    - systemd_unit_masks_reset_failed | bool
+    - item.skipped is not defined
+    - item.stdout | default('') | trim == 'failed'
+  changed_when: true

@@ -21,6 +21,7 @@ Available runbooks:
 - [MinIO Offsite Replication](https://github.com/ephes/ops-library/blob/main/roles/minio_offsite_replication/README.md)
 - [Mail Offsite Replication](https://github.com/ephes/ops-library/blob/main/roles/mail_offsite_replication/README.md)
 - [OS APT Maintenance](https://github.com/ephes/ops-library/blob/main/roles/os_apt_maintenance/README.md)
+- [systemd Unit Masks](https://github.com/ephes/ops-library/blob/main/roles/systemd_unit_masks/README.md)
 - [Navidrome Backup](https://github.com/ephes/ops-library/blob/main/roles/navidrome_backup/README.md)
 - [Navidrome Restore](https://github.com/ephes/ops-library/blob/main/roles/navidrome_restore/README.md)
 - [Takahe Backup](https://github.com/ephes/ops-library/blob/main/roles/takahe_backup/README.md)
@@ -59,6 +60,7 @@ minio_restore
 minio_offsite_replication
 mail_offsite_replication
 os_apt_maintenance
+systemd_unit_masks
 navidrome_backup
 navidrome_restore
 takahe_backup
