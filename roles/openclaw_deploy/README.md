@@ -450,6 +450,17 @@ Safety guarantees:
 - Bounded output (limit/field truncation/attribute cap) and request timeout.
 - Sanitized operational errors (no token/header leakage).
 
+Skill-level truthfulness rules (`homeassistant-skill.md.j2`):
+
+- The handler allowlist stops the *wrong write*, but not a *wrong target*. An agent asked
+  to switch a non-writable device can otherwise discover the writable domain, act on the
+  closest-sounding entity there, and report success under the name the user said.
+- The skill therefore forbids substituting entities, requires naming the entity actually
+  acted on, requires reporting `access denied` verbatim rather than retrying elsewhere, and
+  forbids treating `Changed states reported: 0` as a confirmation.
+- Discovery is no longer hardcoded to `--domain light`; an unqualified request lists all
+  allowed entities so the agent does not get steered toward whatever happens to be writable.
+
 Operational note:
 
 - OpenClaw caches skill snapshots per session. The role now invalidates cached `skillsSnapshot` entries

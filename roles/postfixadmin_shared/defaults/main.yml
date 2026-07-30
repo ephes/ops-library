@@ -11,13 +11,33 @@
 # Application Settings
 # =============================================================================
 
-postfixadmin_version: "3.3.13"
+postfixadmin_version: "4.0.5"
 postfixadmin_install_path: /opt/postfixadmin
 postfixadmin_public_path: "{{ postfixadmin_install_path }}/public"
 postfixadmin_templates_c_path: "{{ postfixadmin_install_path }}/templates_c"
 
 # Download settings
-postfixadmin_download_url: "https://github.com/postfixadmin/postfixadmin/archive/refs/tags/postfixadmin-{{ postfixadmin_version }}.tar.gz"
+#
+# 4.0 changed both the tag scheme and what has to be downloaded. Tags went from
+# `postfixadmin-3.3.13` to `v4.0.5`, and 4.0 requires composer dependencies that
+# the GitHub source archive does not contain — it aborts on a missing
+# vendor/autoload.php. Upstream now publishes self-contained release assets with
+# vendor/ bundled, so the download points at the release asset rather than the
+# source archive.
+#
+# Two builds are published per release. The php84 build carries the updated
+# spomky-labs/otphp with the two CVEs fixed in 4.0.4; php74 is the legacy build
+# and does not. Nothing in the php84 vendor tree requires more than PHP 8.1, so
+# it runs on 8.2/8.3 as well and is the right default.
+postfixadmin_release_build: php84
+postfixadmin_download_url: >-
+  https://github.com/postfixadmin/postfixadmin/releases/download/v{{ postfixadmin_version }}/postfixadmin-v{{ postfixadmin_version }}-{{ postfixadmin_release_build }}.tar.gz
+# Keyed by "<version>-<build>"; add the new entry in the same change as
+# postfixadmin_version.
+postfixadmin_download_checksums:
+  "4.0.5-php84": "sha256:88a55e04dad4f5a2b7729c696cb997ad3a5afb39e31cae1627fa024e7649d70b"
+postfixadmin_download_checksum: >-
+  {{ postfixadmin_download_checksums[postfixadmin_version ~ '-' ~ postfixadmin_release_build] | default('') }}
 postfixadmin_download_timeout: 120
 
 # =============================================================================

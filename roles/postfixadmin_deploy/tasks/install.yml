@@ -24,6 +24,7 @@
     dest: "/tmp/postfixadmin-{{ postfixadmin_version }}.tar.gz"
     timeout: "{{ postfixadmin_download_timeout }}"
     mode: "0644"
+    checksum: "{{ postfixadmin_download_checksum if postfixadmin_download_checksum | length > 0 else omit }}"
   when: >
     not postfixadmin_installed.stat.exists or
     postfixadmin_installed_version != postfixadmin_version

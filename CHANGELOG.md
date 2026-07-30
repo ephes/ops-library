@@ -9,6 +9,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Paperless-ngx 2.20.15 -> 3.0.4 and PostfixAdmin 3.3.13 -> 4.0.5, the two major
+  upgrades deferred from the previous pass. Neither is a version bump alone.
+
+  Paperless v3 requires 2.20.15 exactly as the upgrade source, which is what was
+  pinned, so the direct jump is supported. Three v3 migration items applied to
+  this deployment. `PAPERLESS_OCR_MODE=skip` no longer exists — v3 decoupled OCR
+  from archive-file generation and the upstream mapping table sends the old
+  `skip` to `auto`, so `paperless_ocr_mode` now defaults to `auto`. The
+  individual advanced database variables were replaced by a single
+  `PAPERLESS_DB_OPTIONS`, so the template emits that instead of
+  `PAPERLESS_DBSSLMODE`, fed by the new `paperless_db_options`. And v3 needs to
+  be told which proxy to trust or logins can fail with 403, so the template now
+  emits `PAPERLESS_TRUSTED_PROXIES`, defaulting to loopback because Traefik
+  fronts it there.
+
+  The rest of the v3 breaking changes were checked against the live
+  configuration and do not apply: no encryption passphrase (v3 removed document
+  encryption and would have required decrypting first), no pre/post-consume
+  scripts, no consumer polling or barcode-scanner settings, and
+  `PAPERLESS_SECRET_KEY` was already set — v3 makes it mandatory. Note that v3
+  drops task history, rebuilds the search index from Whoosh to Tantivy on first
+  start, and no longer rejects duplicate documents by default.
+
+  PostfixAdmin 4.0 changed how the software has to be fetched, not just its
+  version. Tags went from `postfixadmin-3.3.13` to `v4.0.5`, so the old URL would
+  404, and 4.0 needs composer dependencies the GitHub source archive does not
+  ship — it aborts on a missing `vendor/autoload.php`. The download now points at
+  upstream's self-contained release asset. Of the two builds published per
+  release, `php84` carries the updated spomky-labs/otphp with the two CVEs fixed
+  in 4.0.4 while `php74` does not, and nothing in the php84 vendor tree requires
+  more than PHP 8.1, so `postfixadmin_release_build` defaults to `php84`. The
+  download is now checksum-verified, which it was not before. 4.0 drops PHP 7.4
+  through 8.1 and removes the MySQL ENCRYPT hashing backend; neither bites here
+  (PHP 8.3, PostgreSQL). Schema changes are handled by the existing idempotent
+  `upgrade.php` step.
+
+### Fixed
+
+- `openclaw_deploy`: the `/homeassistant` command skill could act on the wrong device
+  and report success under the name the user asked for. Asked to switch a device
+  outside the write allowlist, the agent discovered the writable domain instead,
+  switched the closest-sounding entity there, and confirmed using the original name.
+  Observed in production: *"Mach bitte das Amaran-Licht an."* → `turn_on
+  light.strahler_tripod` → *"Das Amaran-Licht ist an."*, while the actual target
+  (`switch.wintergarten_amaran_60x_s_power`) stayed off.
+
+  The handler's allowlist was working as designed — it blocks the wrong *write*, not
+  the wrong *target*. `homeassistant-skill.md.j2` now forbids entity substitution,
+  requires naming the entity actually acted on, requires reporting `access denied`
+  verbatim instead of retrying against another entity, and forbids treating
+  `Changed states reported: 0` as a confirmation. Candidate discovery is no longer
+  hardcoded to `--domain light`, which is what steered the agent toward the writable
+  domain in the first place.
+
+  A second rule was added after the first fix was verified in production: the agent had
+  stopped substituting, but still answered *"das Amaran-Licht ist in Home Assistant
+  nicht vorhanden"* after searching only `--domain light`. The device exists as
+  `switch.wintergarten_amaran_60x_s_power`; German names a smart plug driving a lamp a
+  *Licht* regardless of its HA domain, so words in the request are not domain hints.
+  Claiming absence now requires an unfiltered `list` in the same turn.
+
+### Changed
+
 - Bumped pinned upstream versions across the collection: Traefik 3.5.3 -> 3.7.9,
   Navidrome 0.58.5 -> 0.63.2, sops 3.8.1 -> 3.13.3, age 1.1.1 -> 1.3.1, Neovim
   0.11.6 -> 0.12.4, lazygit 0.59.0 -> 0.63.1, nvm v0.39.7 -> v0.40.6, and the

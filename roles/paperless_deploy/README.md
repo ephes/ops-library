@@ -22,7 +22,7 @@ Deploy [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) on bare m
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `paperless_version` | Paperless-ngx release to install | `2.20.15` |
+| `paperless_version` | Paperless-ngx release to install. Add a matching `paperless_release_checksums` entry in the same change. | `3.0.4` |
 | `paperless_release_checksum` | Required SHA-256 checksum passed to `get_url`; known releases are looked up from `paperless_release_checksums` | `sha256:e9bfb6...` |
 | `paperless_external_storage_root` | Path to encrypted storage mount | `/mnt/cryptdata/paperless` |
 | `paperless_postgres_version` | PostgreSQL major version | `17` |

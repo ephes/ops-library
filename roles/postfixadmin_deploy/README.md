@@ -47,7 +47,7 @@ postfixadmin_admin_password_hash: "{SHA512-CRYPT}$6$..."
 
 ```yaml
 # PostfixAdmin version
-postfixadmin_version: "3.3.13"
+postfixadmin_version: "4.0.5"
 
 # Admin account email
 postfixadmin_admin_email: "admin@xn--wersdrfer-47a.de"
