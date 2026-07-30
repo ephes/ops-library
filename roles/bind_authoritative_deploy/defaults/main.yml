@@ -14,8 +14,19 @@ bind_zone_files_dir: "{{ (playbook_dir | realpath) | regex_replace('/playbooks.*
 bind_config_owner: root
 bind_config_group: bind
 bind_config_mode: "0644"
+# The account named(8) runs as. Distinct from bind_config_group: the working
+# directory must be writable by the daemon user so it can store transferred
+# zones, and a group name is not usable as an owner.
+bind_service_user: bind
 
 bind_zone_default_type: master
+# Zone types whose zone file is written by named from a zone transfer (AXFR/IXFR).
+# These zones get a `primaries { ... };` block, live in bind_working_dir and are
+# never copied from the controller. Everything else (master, primary, hint, ...)
+# keeps the controller-managed zone file behaviour.
+bind_zone_transfer_backed_types:
+  - slave
+  - secondary
 bind_zones: []
 
 bind_recursion: true
@@ -31,6 +42,19 @@ bind_dnssec_validation: auto
 
 bind_verify_enabled: true
 bind_verify_server: 127.0.0.1
+# Only these zone types are served authoritatively, so only these can be expected
+# to answer with the 'aa' flag. Types like hint (root hints), forward and stub are
+# deliberately not authoritative and must be exempt from the SOA check, otherwise
+# they burn the whole retry budget and then fail a deploy that used to succeed.
+bind_verify_zone_types:
+  - master
+  - primary
+  - slave
+  - secondary
+# Retry budget for the authoritative SOA check; a freshly configured secondary
+# may still be pulling its first zone transfer.
+bind_verify_retries: 12
+bind_verify_delay: 5
 bind_firewall_check_enabled: true
 
 bind_listen_on: []
@@ -38,3 +62,18 @@ bind_listen_on_v6:
   - any
 
 bind_extra_options: []
+
+# TSIG keys rendered as top-level `key { ... };` stanzas and included from
+# named.conf. Each entry is a mapping:
+#   name      -- key name, referenced as `key "<name>"` from a zone's primaries,
+#                allow_transfer or extra_config (also-notify) entries
+#   algorithm -- optional, defaults to hmac-sha256
+#   secret    -- base64 key material
+# The secret MUST come from an encrypted source (SOPS, ansible-vault). Never put
+# real key material in defaults, in group_vars or in any file that is not
+# encrypted. The rendered file is the only place it exists in cleartext on the
+# server, which is why it is written 0640 instead of the 0644 the rest of the
+# config uses, and why the rendering task is no_log.
+bind_tsig_keys: []
+bind_tsig_keys_file: "{{ bind_config_dir }}/named.conf.keys"
+bind_tsig_keys_mode: "0640"

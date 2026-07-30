@@ -16,6 +16,23 @@
   loop_control:
     label: "{{ item.name | default(item.file | default('unknown')) }}"
 
+- name: Validate transfer-backed zone primaries
+  ansible.builtin.assert:
+    that:
+      - item.primaries is defined
+      # A mapping also satisfies "length > 0", but acl_list would join its keys
+      # and emit silently wrong config instead of failing here.
+      - item.primaries is not mapping
+      - item.primaries is string or item.primaries is sequence
+      - item.primaries | length > 0
+    fail_msg: >-
+      Zone {{ item.name }} has type {{ item.type | default(bind_zone_default_type) }}
+      and must define a non-empty primaries list (or a single address string).
+  loop: "{{ bind_zones }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.type | default(bind_zone_default_type) in bind_zone_transfer_backed_types
+
 - name: Check zone files directory exists on controller
   ansible.builtin.stat:
     path: "{{ bind_zone_files_dir }}"
@@ -40,16 +57,38 @@
   loop_control:
     label: "{{ item.file }}"
   changed_when: false
+  when: item.type | default(bind_zone_default_type) not in bind_zone_transfer_backed_types
 
 - name: Fail when zone files are missing
   ansible.builtin.assert:
     that:
-      - bind_zone_files_stat.results | selectattr('stat.exists', 'equalto', false) | list | length == 0
+      - bind_zone_files_stat.results | rejectattr('skipped', 'defined') | selectattr('stat.exists', 'equalto', false) | list | length == 0
     fail_msg: >-
-      Missing zone files: {{ bind_zone_files_stat.results | selectattr('stat.exists', 'equalto', false) | map(attribute='item.file') | list | join(', ') }}
+      Missing zone files: {{ bind_zone_files_stat.results | rejectattr('skipped', 'defined') | selectattr('stat.exists', 'equalto', false) | map(attribute='item.file') | list | join(', ') }}
 
 - name: Validate allow-transfer ACL list
   ansible.builtin.assert:
     that:
       - bind_allow_transfer | length > 0
     fail_msg: "bind_allow_transfer must include at least one ACL entry (use 'none' to disable transfers)."
+
+- name: Validate TSIG key definitions
+  ansible.builtin.assert:
+    that:
+      - item.name is defined
+      - item.name | default('') | length > 0
+      - item.secret is defined
+      - item.secret | default('') | length > 0
+      # An unsubstituted placeholder would otherwise be rendered and served as a
+      # real key, and both peers would agree on it.
+      - item.secret | default('') | upper != 'CHANGEME'
+    fail_msg: >-
+      Each bind_tsig_keys entry must define a non-empty name and a non-empty
+      secret taken from an encrypted source (SOPS, ansible-vault), not a
+      placeholder.
+  loop: "{{ bind_tsig_keys }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"
+  # Both the loop item and any failure report carry the key material, so the
+  # whole task is silenced rather than risking a secret in Ansible output.
+  no_log: true

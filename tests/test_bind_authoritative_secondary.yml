@@ -1,0 +1,995 @@
+---
+# Test playbook for bind_authoritative_deploy transfer-backed (secondary) zones.
+#
+# Covers the Slice 1 contract:
+#   * type: slave renders a primaries block and a bind_working_dir file path
+#   * type: secondary (the BIND alias) behaves identically to type: slave
+#   * type: primary / hint / untyped keep the controller-managed zone file
+#   * validation rejects a transfer-backed zone without primaries
+#   * the existing all-master production zone list renders unchanged
+#
+# and the Slice 4 (TSIG) contract:
+#   * bind_tsig_keys renders key stanzas, defaulting to hmac-sha256
+#   * named.conf includes the keys file first, and only when keys are configured
+#   * named.conf is byte-identical to the pre-TSIG output with no keys configured
+#   * the key file is rendered 0640 (no world bits) and its task is no_log
+#   * key material never reaches a world-readable config file
+#   * validation rejects a missing, empty or placeholder secret and an empty name
+
+- name: Test bind_authoritative_deploy transfer-backed zone support
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/bind_authoritative_deploy"
+    test_tmp_dir: "/tmp/test-bind-authoritative-secondary"
+    test_zone_files_dir: "{{ test_tmp_dir }}/zones"
+    rendered_mixed: "{{ test_tmp_dir }}/mixed.named.conf.local"
+    rendered_slave: "{{ test_tmp_dir }}/slave.named.conf.local"
+    rendered_secondary: "{{ test_tmp_dir }}/secondary.named.conf.local"
+    rendered_prod: "{{ test_tmp_dir }}/prod.named.conf.local"
+
+    # Template inputs are taken from the role defaults so the test fails if a
+    # default is renamed or dropped.
+    bind_config_dir: "{{ bind_defaults.bind_config_dir }}"
+    bind_working_dir: "{{ bind_defaults.bind_working_dir }}"
+    bind_zone_default_type: "{{ bind_defaults.bind_zone_default_type }}"
+    bind_zone_transfer_backed_types: "{{ bind_defaults.bind_zone_transfer_backed_types }}"
+    bind_verify_zone_types: "{{ bind_defaults.bind_verify_zone_types }}"
+    bind_allow_transfer: "{{ bind_defaults.bind_allow_transfer }}"
+    bind_config_mode: "{{ bind_defaults.bind_config_mode }}"
+    bind_tsig_keys: "{{ bind_defaults.bind_tsig_keys }}"
+    bind_tsig_keys_file: "{{ bind_defaults.bind_tsig_keys_file }}"
+    bind_tsig_keys_mode: "{{ bind_defaults.bind_tsig_keys_mode }}"
+
+    # Obviously fake key material. Real secrets live in SOPS in ops-control and
+    # must never appear in this public repository. Still valid base64 of 32
+    # bytes: the render task now runs named-checkconf, which rejects a secret it
+    # cannot decode ("bad secret 'bad base64 encoding'"), so a placeholder that
+    # merely looks key-shaped would fail on a real deploy. Note the trailing 'Q'
+    # -- with 43 characters plus one pad, the last character's low two bits must
+    # be zero, so a run of 'B's would not decode.
+    test_tsig_keys:
+      - name: "xfer"
+        secret: "FAKEKEYFORTESTSONLYNOTREALAAAAAAAAAAAAAAAAA="
+      - name: "xfer-sha512"
+        algorithm: hmac-sha512
+        secret: "FAKEKEYFORTESTSONLYNOTREALBBBBBBBBBBBBBBBBQ="
+
+    # The single shared predicate every transfer-backed exemption must key off.
+    # config.yml and validate.yml are asserted to carry exactly these strings,
+    # and an equivalent literal is evaluated over a mixed zone list below.
+    transfer_backed_predicate: "item.type | default(bind_zone_default_type) in bind_zone_transfer_backed_types"
+    controller_managed_predicate: "item.type | default(bind_zone_default_type) not in bind_zone_transfer_backed_types"
+
+    # Flattened failure text of the most recent rescued failure; a looped assert
+    # reports through .results, a plain assert through .msg.
+    bind_validate_failure_text: >-
+      {{ ansible_failed_result.msg | default('') ~ ' ' ~
+      (
+        ansible_failed_result.results | default([])
+        | map(attribute='msg', default='') | list | join(' ')
+      ) }}
+
+    mixed_zones:
+      - name: "master.example"
+        file: "db.master.example"
+        type: master
+        allow_transfer:
+          - "203.0.113.10"
+        extra_config:
+          - "also-notify { 203.0.113.10; };"
+      - name: "primary.example"
+        file: "db.primary.example"
+        type: primary
+      - name: "hint.example"
+        file: "db.hint.example"
+        type: hint
+      - name: "default.example"
+        file: "db.default.example"
+      - name: "slave.example"
+        file: "db.slave.example"
+        type: slave
+        primaries:
+          - "203.0.113.10"
+          - '203.0.113.11 key "xfer"'
+      - name: "secondary.example"
+        file: "db.secondary.example"
+        type: secondary
+        primaries:
+          - '2001:db8::1 key "xfer"'
+      - name: "absolute.example"
+        file: "/srv/zones/db.absolute.example"
+        type: slave
+        primaries:
+          - "203.0.113.10"
+
+    # A scalar primaries value. bind_macros.acl_list has an explicit `is string`
+    # branch, so this renders verbatim rather than joining the string's
+    # characters -- matching how bind_allow_transfer and bind_recursion_acl
+    # already behave. Pinned by test because it reads like a bug on inspection.
+    scalar_primaries_zone:
+      name: "scalar.example"
+      file: "db.scalar.example"
+      type: slave
+      primaries: "203.0.113.10"
+
+    # Same zone, rendered twice with the two spellings of the same BIND type.
+    identity_zone:
+      name: "xfer.example"
+      file: "db.xfer.example"
+      primaries:
+        - "203.0.113.10"
+        - '203.0.113.11 key "xfer"'
+
+    # Zones from mixed_zones whose zone file stays controller-managed.
+    controller_managed_zone_names:
+      - master.example
+      - primary.example
+      - hint.example
+      - default.example
+
+    # Zones from mixed_zones that are not served authoritatively and so can never
+    # answer with the aa flag; the SOA verification must skip them.
+    non_authoritative_zone_names:
+      - hint.example
+
+    # Zone files that exist in the controller-side fixture directory.
+    present_zone_files:
+      - db.master.example
+      - db.primary.example
+      - db.hint.example
+      - db.default.example
+
+    # The production zone list (ops-control inventories/prod/group_vars/bind).
+    prod_zones:
+      - name: "wersdoerfer.de"
+        file: "db.wersdoerfer.de"
+        type: master
+      - name: "wersdoerfer.com"
+        file: "db.wersdoerfer.com"
+        type: master
+      - name: "opaq.de"
+        file: "db.opaq.de"
+        type: master
+      - name: "unterwachung.de"
+        file: "db.unterwachung.de"
+        type: master
+      - name: "212.239.213.in-addr.arpa"
+        file: "db.213.239.212"
+        type: master
+
+    # Byte-for-byte expectation for the production zone list. The template ends
+    # every zone block with a blank line, so the rendered file carries one more
+    # trailing newline than this block scalar keeps; that is added explicitly at
+    # the comparison site.
+    prod_expected_named_conf_local: |
+      // Managed by Ansible (bind_authoritative_deploy)
+
+      zone "wersdoerfer.de" {
+          type master;
+          file "/etc/bind/db.wersdoerfer.de";
+      };
+
+      zone "wersdoerfer.com" {
+          type master;
+          file "/etc/bind/db.wersdoerfer.com";
+      };
+
+      zone "opaq.de" {
+          type master;
+          file "/etc/bind/db.opaq.de";
+      };
+
+      zone "unterwachung.de" {
+          type master;
+          file "/etc/bind/db.unterwachung.de";
+      };
+
+      zone "212.239.213.in-addr.arpa" {
+          type master;
+          file "/etc/bind/db.213.239.212";
+      };
+
+    # Byte-for-byte expectation for named.conf with no TSIG keys configured --
+    # exactly what the role emitted before the keys include was added. Every
+    # existing caller has bind_tsig_keys empty, so this output must not move.
+    expected_named_conf_no_keys: |
+      // Managed by Ansible (bind_authoritative_deploy)
+      // If you are just adding zones, edit named.conf.local instead.
+
+      include "/etc/bind/named.conf.options";
+      include "/etc/bind/named.conf.local";
+      include "/etc/bind/named.conf.default-zones";
+
+    # Requiring address AND key needs a nested negation. A flat
+    # `{ 198.51.100.20; key "xfer"; }` is a first-match-wins list of
+    # alternatives, so it would admit a keyless request from that address and a
+    # keyed request from anywhere. Rendered verbatim, so a silent regression
+    # here degrades to the permissive form.
+    tsig_acl_zone:
+      name: "acl.example"
+      file: "db.acl.example"
+      type: master
+      allow_transfer:
+        - '!{ !{ 198.51.100.20; 2001:db8:2::20; }; any; }'
+        - 'key "xfer"'
+      extra_config:
+        - 'also-notify { 198.51.100.20 key "xfer"; };'
+
+  tasks:
+    - name: Load role defaults
+      ansible.builtin.include_vars:
+        file: "{{ role_path }}/defaults/main.yml"
+        name: bind_defaults
+
+    - name: Assert transfer-backed type allow-list defaults
+      ansible.builtin.assert:
+        that:
+          - bind_defaults.bind_zone_default_type == "master"
+          - bind_defaults.bind_zone_transfer_backed_types == ["slave", "secondary"]
+          - bind_defaults.bind_working_dir == "/var/cache/bind"
+          - bind_defaults.bind_config_dir == "/etc/bind"
+          - bind_defaults.bind_verify_retries | int > 0
+          - bind_defaults.bind_verify_delay | int > 0
+        fail_msg: "Role defaults no longer describe the transfer-backed zone contract."
+
+    - name: Create test working directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ test_tmp_dir }}"
+        - "{{ test_zone_files_dir }}"
+
+    - name: Create controller-side zone file fixtures
+      ansible.builtin.copy:
+        content: "; test fixture zone file\n"
+        dest: "{{ test_zone_files_dir }}/{{ item }}"
+        mode: "0644"
+      loop: "{{ present_zone_files }}"
+
+    - name: Render named.conf.local for a mixed zone list
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/named.conf.local.j2"
+        dest: "{{ rendered_mixed }}"
+        mode: "0644"
+      vars:
+        bind_zones: "{{ mixed_zones }}"
+
+    - name: Read rendered mixed named.conf.local
+      ansible.builtin.slurp:
+        path: "{{ rendered_mixed }}"
+      register: rendered_mixed_slurp
+
+    - name: Assert transfer-backed zones get primaries and a working-dir file path
+      ansible.builtin.assert:
+        that:
+          - "'primaries { 203.0.113.10; 203.0.113.11 key \"xfer\"; };' in rendered_mixed_text"
+          - "'file \"/var/cache/bind/db.slave.example\";' in rendered_mixed_text"
+          - "'primaries { 2001:db8::1 key \"xfer\"; };' in rendered_mixed_text"
+          - "'file \"/var/cache/bind/db.secondary.example\";' in rendered_mixed_text"
+          - "'file \"/srv/zones/db.absolute.example\";' in rendered_mixed_text"
+        fail_msg: "Transfer-backed zones did not render primaries or the working-dir file path."
+      vars:
+        rendered_mixed_text: "{{ rendered_mixed_slurp.content | b64decode }}"
+
+    - name: Assert controller-managed zone types are untouched
+      ansible.builtin.assert:
+        that:
+          - "'file \"/etc/bind/db.master.example\";' in rendered_mixed_text"
+          - "'file \"/etc/bind/db.primary.example\";' in rendered_mixed_text"
+          - "'file \"/etc/bind/db.hint.example\";' in rendered_mixed_text"
+          - "'file \"/etc/bind/db.default.example\";' in rendered_mixed_text"
+          - "'/var/cache/bind/db.primary.example' not in rendered_mixed_text"
+          - "'/var/cache/bind/db.hint.example' not in rendered_mixed_text"
+          - "'/var/cache/bind/db.default.example' not in rendered_mixed_text"
+          - "'/var/cache/bind/db.master.example' not in rendered_mixed_text"
+          # Exactly the three transfer-backed zones emit a primaries block.
+          - rendered_mixed_text | regex_findall('primaries \\{') | length == 3
+          - "'allow-transfer { 203.0.113.10; };' in rendered_mixed_text"
+          - "'also-notify { 203.0.113.10; };' in rendered_mixed_text"
+        fail_msg: "Non-transfer-backed zones changed their rendering."
+      vars:
+        rendered_mixed_text: "{{ rendered_mixed_slurp.content | b64decode }}"
+
+    - name: Render named.conf.local for a type slave zone
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/named.conf.local.j2"
+        dest: "{{ rendered_slave }}"
+        mode: "0644"
+      vars:
+        bind_zones: "{{ [identity_zone | combine({'type': 'slave'})] }}"
+
+    - name: Render named.conf.local for a type secondary zone
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/named.conf.local.j2"
+        dest: "{{ rendered_secondary }}"
+        mode: "0644"
+      vars:
+        bind_zones: "{{ [identity_zone | combine({'type': 'secondary'})] }}"
+
+    - name: Render named.conf.local for a scalar primaries value
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/named.conf.local.j2"
+        dest: "{{ test_tmp_dir }}/scalar.named.conf.local"
+        mode: "0644"
+      vars:
+        bind_zones: "{{ [scalar_primaries_zone] }}"
+
+    - name: Read the scalar primaries render
+      ansible.builtin.slurp:
+        path: "{{ test_tmp_dir }}/scalar.named.conf.local"
+      register: rendered_scalar_slurp
+
+    - name: Assert a scalar primaries value renders verbatim
+      ansible.builtin.assert:
+        that:
+          - "'primaries { 203.0.113.10; };' in rendered_scalar_text"
+          # Character-joining would produce '2; 0; 3; .; 0; ...'
+          - "'2; 0; 3;' not in rendered_scalar_text"
+        fail_msg: >-
+          A scalar primaries value must render verbatim via the acl_list string
+          branch, not be joined character by character.
+      vars:
+        rendered_scalar_text: "{{ rendered_scalar_slurp.content | b64decode }}"
+
+    - name: Read rendered slave and secondary configs
+      ansible.builtin.slurp:
+        path: "{{ item }}"
+      loop:
+        - "{{ rendered_slave }}"
+        - "{{ rendered_secondary }}"
+      register: rendered_alias_slurp
+
+    - name: Assert type secondary is treated exactly like type slave
+      ansible.builtin.assert:
+        that:
+          - "'type slave;' in rendered_slave_text"
+          - "'type secondary;' in rendered_secondary_text"
+          - >-
+            (rendered_slave_text | replace('type slave;', 'type TYPE;'))
+            == (rendered_secondary_text | replace('type secondary;', 'type TYPE;'))
+        fail_msg: "type secondary does not render identically to type slave."
+      vars:
+        rendered_slave_text: "{{ rendered_alias_slurp.results[0].content | b64decode }}"
+        rendered_secondary_text: "{{ rendered_alias_slurp.results[1].content | b64decode }}"
+
+    - name: Render named.conf.local for the production zone list
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/named.conf.local.j2"
+        dest: "{{ rendered_prod }}"
+        mode: "0644"
+      vars:
+        bind_zones: "{{ prod_zones }}"
+
+    - name: Read rendered production named.conf.local
+      ansible.builtin.slurp:
+        path: "{{ rendered_prod }}"
+      register: rendered_prod_slurp
+
+    - name: Assert the production zone list renders unchanged
+      ansible.builtin.assert:
+        that:
+          - rendered_prod_text == prod_expected_named_conf_local ~ "\n"
+        fail_msg: >-
+          Production named.conf.local changed:
+          {{ rendered_prod_text | to_json }}
+      vars:
+        rendered_prod_text: "{{ rendered_prod_slurp.content | b64decode }}"
+
+    - name: Assert the TSIG defaults keep key material out of world-readable files
+      ansible.builtin.assert:
+        that:
+          - bind_defaults.bind_tsig_keys == []
+          - bind_defaults.bind_tsig_keys_mode == "0640"
+          - bind_defaults.bind_config_mode == "0644"
+          - bind_tsig_keys_file == "/etc/bind/named.conf.keys"
+        fail_msg: >-
+          bind_tsig_keys must default to empty and the key file must be rendered
+          more restrictively than the world-readable 0644 config files.
+
+    - name: Render named.conf without TSIG keys
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/named.conf.j2"
+        dest: "{{ test_tmp_dir }}/nokeys.named.conf"
+        mode: "0644"
+
+    - name: Render named.conf with TSIG keys
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/named.conf.j2"
+        dest: "{{ test_tmp_dir }}/keys.named.conf"
+        mode: "0644"
+      vars:
+        bind_tsig_keys: "{{ test_tsig_keys }}"
+
+    - name: Render the TSIG keys file
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/named.conf.keys.j2"
+        dest: "{{ test_tmp_dir }}/named.conf.keys"
+        mode: "0640"
+      vars:
+        bind_tsig_keys: "{{ test_tsig_keys }}"
+
+    - name: Read the TSIG renders
+      ansible.builtin.slurp:
+        path: "{{ item }}"
+      loop:
+        - "{{ test_tmp_dir }}/nokeys.named.conf"
+        - "{{ test_tmp_dir }}/keys.named.conf"
+        - "{{ test_tmp_dir }}/named.conf.keys"
+      register: rendered_tsig_slurp
+
+    - name: Assert named.conf is unchanged when no TSIG keys are configured
+      ansible.builtin.assert:
+        that:
+          - rendered_nokeys_text == expected_named_conf_no_keys
+          - "'named.conf.keys' not in rendered_nokeys_text"
+        fail_msg: >-
+          named.conf changed for a caller with no TSIG keys:
+          {{ rendered_nokeys_text | to_json }}
+      vars:
+        rendered_nokeys_text: "{{ rendered_tsig_slurp.results[0].content | b64decode }}"
+
+    - name: Assert the keys include is emitted first when keys are configured
+      ansible.builtin.assert:
+        that:
+          - "'include \"/etc/bind/named.conf.keys\";' in rendered_keys_text"
+          # A key must be defined before any zone clause references it. Matched
+          # on the full include lines: 'named.conf.local' also occurs in the
+          # header comment, ahead of every include.
+          - >-
+            rendered_keys_text.index('include "/etc/bind/named.conf.keys"')
+            < rendered_keys_text.index('include "/etc/bind/named.conf.options"')
+          - >-
+            rendered_keys_text.index('include "/etc/bind/named.conf.keys"')
+            < rendered_keys_text.index('include "/etc/bind/named.conf.local"')
+        fail_msg: >-
+          named.conf must include the TSIG keys file before everything that can
+          reference a key.
+      vars:
+        rendered_keys_text: "{{ rendered_tsig_slurp.results[1].content | b64decode }}"
+
+    - name: Assert key stanzas render with the documented algorithm default
+      ansible.builtin.assert:
+        that:
+          - "'key \"xfer\" {' in rendered_keyfile_text"
+          - "'key \"xfer-sha512\" {' in rendered_keyfile_text"
+          # Omitted algorithm falls back to hmac-sha256; an explicit one wins.
+          - "'algorithm hmac-sha256;' in rendered_keyfile_text"
+          - "'algorithm hmac-sha512;' in rendered_keyfile_text"
+          - "'secret \"FAKEKEYFORTESTSONLYNOTREALAAAAAAAAAAAAAAAAA=\";' in rendered_keyfile_text"
+          - rendered_keyfile_text | regex_findall('^key ', multiline=True) | length == 2
+        fail_msg: "named.conf.keys.j2 did not render one key stanza per entry."
+      vars:
+        rendered_keyfile_text: "{{ rendered_tsig_slurp.results[2].content | b64decode }}"
+
+    - name: Render named.conf.local for a key-restricted transfer ACL
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/named.conf.local.j2"
+        dest: "{{ test_tmp_dir }}/tsig-acl.named.conf.local"
+        mode: "0644"
+      vars:
+        bind_zones: "{{ [tsig_acl_zone] }}"
+
+    - name: Read the key-restricted transfer ACL render
+      ansible.builtin.slurp:
+        path: "{{ test_tmp_dir }}/tsig-acl.named.conf.local"
+      register: rendered_tsig_acl_slurp
+
+    - name: Assert address-and-key ACLs render verbatim as a nested negation
+      ansible.builtin.assert:
+        that:
+          - >-
+            'allow-transfer { !{ !{ 198.51.100.20; 2001:db8:2::20; }; any; }; key "xfer"; };'
+            in rendered_tsig_acl_text
+          - "'also-notify { 198.51.100.20 key \"xfer\"; };' in rendered_tsig_acl_text"
+        fail_msg: >-
+          The nested-negation transfer ACL no longer renders verbatim; a flat
+          list would silently degrade to permitting address OR key.
+      vars:
+        rendered_tsig_acl_text: "{{ rendered_tsig_acl_slurp.content | b64decode }}"
+
+    - name: Read the task files that carry the shared predicate
+      ansible.builtin.slurp:
+        path: "{{ item }}"
+      loop:
+        - "{{ role_path }}/tasks/config.yml"
+        - "{{ role_path }}/tasks/validate.yml"
+        - "{{ role_path }}/tasks/verify.yml"
+        - "{{ role_path }}/tasks/main.yml"
+      register: bind_task_files
+
+    - name: Extract the transfer-backed predicates and the SOA check
+      ansible.builtin.set_fact:
+        config_tasks: "{{ bind_task_files.results[0].content | b64decode | from_yaml }}"
+        validate_tasks: "{{ bind_task_files.results[1].content | b64decode | from_yaml }}"
+        verify_tasks: "{{ bind_task_files.results[2].content | b64decode | from_yaml }}"
+        main_tasks: "{{ bind_task_files.results[3].content | b64decode | from_yaml }}"
+
+    - name: Select the tasks under test
+      ansible.builtin.set_fact:
+        install_zone_files_task: "{{ config_tasks | selectattr('name', 'equalto', 'Install zone files') | first }}"
+        stat_zone_files_task: >-
+          {{ validate_tasks | selectattr('name', 'equalto', 'Check zone files exist on controller') | first }}
+        primaries_assert_task: >-
+          {{ validate_tasks | selectattr('name', 'equalto', 'Validate transfer-backed zone primaries') | first }}
+        soa_check_task: >-
+          {{ verify_tasks | selectattr('name', 'equalto', 'Verify authoritative responses for zones') | first }}
+        tsig_render_task: "{{ config_tasks | selectattr('name', 'equalto', 'Render TSIG keys') | first }}"
+        tsig_validate_task: >-
+          {{ validate_tasks | selectattr('name', 'equalto', 'Validate TSIG key definitions') | first }}
+        render_named_conf_task: "{{ config_tasks | selectattr('name', 'equalto', 'Render named.conf') | first }}"
+
+    - name: Assert the TSIG key file is written safely
+      ansible.builtin.assert:
+        that:
+          # Never in Ansible output, the check-mode diff or the FastDeploy UI.
+          # default(false) so that deleting the key outright reports this
+          # assertion's fail_msg rather than an undefined-attribute error.
+          - tsig_render_task.no_log | default(false) | bool
+          - tsig_validate_task.no_log | default(false) | bool
+          # Compared as raw text: values slurped out of the task file stay
+          # unrendered '{{ ... }}' strings, so an equality test would compare
+          # against the already-substituted value and never match. The value
+          # those expressions resolve to is asserted separately below.
+          - "'bind_tsig_keys_file' in tsig_render_task['ansible.builtin.template'].dest"
+          - "'bind_tsig_keys_mode' in tsig_render_task['ansible.builtin.template'].mode"
+          - "'bind_config_group' in tsig_render_task['ansible.builtin.template'].group"
+          # Skipped entirely for the keyless default, so no empty file appears.
+          - "'bind_tsig_keys' in tsig_render_task.when"
+          - tsig_render_task.notify == "reload bind"
+          # named-checkconf follows the include, so the keys file has to exist
+          # by the time named.conf is validated.
+          - config_task_names.index('Render TSIG keys') < config_task_names.index('Render named.conf')
+          # default('') for the same reason as no_log above: dropping the key
+          # should report this fail_msg, not an undefined-attribute error.
+          - "'named-checkconf' in render_named_conf_task['ansible.builtin.template'].validate | default('')"
+          # Rotating a key leaves named.conf byte-identical, so named.conf's own
+          # validate never fires. Without this one, a malformed stanza would be
+          # installed and handed straight to the reload handler. Verified against
+          # BIND 9.18: named-checkconf parses a keys-only fragment happily, and
+          # rejects a secret that is not valid base64.
+          - "'named-checkconf' in tsig_render_task['ansible.builtin.template'].validate | default('')"
+        fail_msg: >-
+          The TSIG key file must be rendered no_log, at bind_tsig_keys_mode, only
+          when keys are configured, validated by named-checkconf in its own right,
+          and before named.conf is validated.
+      vars:
+        config_task_names: "{{ config_tasks | map(attribute='name') | list }}"
+
+    # Skipping the render task when the list empties would leave retired key
+    # material readable on disk while named.conf no longer includes it.
+    - name: Assert a retired keys file is removed rather than left behind
+      ansible.builtin.assert:
+        that:
+          - tsig_remove_tasks | length == 1
+          - tsig_remove_task['ansible.builtin.file'].state == "absent"
+          - "'bind_tsig_keys_file' in tsig_remove_task['ansible.builtin.file'].path"
+          - "'bind_tsig_keys' in tsig_remove_task.when"
+          - "'== 0' in tsig_remove_task.when"
+        fail_msg: >-
+          config.yml must delete bind_tsig_keys_file when bind_tsig_keys is empty,
+          otherwise a retired TSIG secret lingers on the server.
+      vars:
+        tsig_remove_tasks: >-
+          {{ config_tasks | selectattr('name', 'equalto',
+             'Remove TSIG keys file when no keys are configured') | list }}
+        tsig_remove_task: "{{ tsig_remove_tasks | first }}"
+
+    # Asserting the variable *name* above only pins the indirection; it would
+    # still pass if bind_tsig_keys_mode were changed to 0644. Resolve what the
+    # task's mode and dest expressions actually evaluate to and assert on that.
+    # The vars lookup falls back to the literal, so a hardcoded value is checked
+    # just as well as a '{{ var }}' reference.
+    - name: Assert the resolved key file mode and path are what named.conf expects
+      ansible.builtin.assert:
+        that:
+          - tsig_render_mode == "0640"
+          - tsig_render_mode == bind_tsig_keys_mode
+          # The bit that matters: no world permissions at all on key material.
+          - tsig_render_mode[-1] == "0"
+          # named runs as a member of bind_config_group and has to read it.
+          - tsig_render_mode[-2] | int >= 4
+          # Strictly tighter than the world-readable config files next to it.
+          - tsig_render_mode != bind_config_mode
+          # The task must write exactly the file named.conf includes; a mismatch
+          # would leave named refusing to start on a missing include.
+          - tsig_render_dest == bind_tsig_keys_file
+          - ('include "' ~ tsig_render_dest ~ '";') in rendered_keys_text
+        fail_msg: >-
+          The TSIG key file must be written 0640 (no world bits, group-readable)
+          to exactly the path named.conf includes; resolved mode
+          {{ tsig_render_mode }} at {{ tsig_render_dest }}.
+      vars:
+        tsig_render_options: "{{ tsig_render_task['ansible.builtin.template'] }}"
+        tsig_render_mode: >-
+          {{ lookup('ansible.builtin.vars',
+                    tsig_render_options.mode | regex_replace('[{}]', '') | trim,
+                    default=tsig_render_options.mode) }}
+        tsig_render_dest: >-
+          {{ lookup('ansible.builtin.vars',
+                    tsig_render_options.dest | regex_replace('[{}]', '') | trim,
+                    default=tsig_render_options.dest) }}
+        rendered_keys_text: "{{ rendered_tsig_slurp.results[1].content | b64decode }}"
+
+    - name: Render named.conf.local with TSIG keys configured
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/named.conf.local.j2"
+        dest: "{{ test_tmp_dir }}/tsig.named.conf.local"
+        mode: "0644"
+      vars:
+        bind_zones: "{{ mixed_zones + [tsig_acl_zone] }}"
+        bind_tsig_keys: "{{ test_tsig_keys }}"
+
+    - name: Render named.conf.options with TSIG keys configured
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/named.conf.options.j2"
+        dest: "{{ test_tmp_dir }}/tsig.named.conf.options"
+        mode: "0644"
+      vars:
+        bind_zones: "{{ mixed_zones }}"
+        bind_tsig_keys: "{{ test_tsig_keys }}"
+        # Taken from the role defaults rather than the play vars: this is the
+        # only site that renders the options template, and sourcing them here
+        # keeps the play-level var block scoped to what every other render needs.
+        bind_recursion: "{{ bind_defaults.bind_recursion }}"
+        bind_recursion_acl: "{{ bind_defaults.bind_recursion_acl }}"
+        bind_allow_query: "{{ bind_defaults.bind_allow_query }}"
+        bind_allow_query_cache: "{{ bind_defaults.bind_recursion_acl }}"
+        bind_dnssec_validation: "{{ bind_defaults.bind_dnssec_validation }}"
+        bind_listen_on: "{{ bind_defaults.bind_listen_on }}"
+        bind_listen_on_v6: "{{ bind_defaults.bind_listen_on_v6 }}"
+        bind_extra_options: "{{ bind_defaults.bind_extra_options }}"
+
+    - name: Read the world-readable configs rendered alongside TSIG keys
+      ansible.builtin.slurp:
+        path: "{{ item }}"
+      loop:
+        - "{{ test_tmp_dir }}/tsig.named.conf.local"
+        - "{{ test_tmp_dir }}/tsig.named.conf.options"
+      register: rendered_world_readable_slurp
+
+    # The whole point of the separate 0640 file: key material must exist in
+    # exactly one place. named.conf, named.conf.local and named.conf.options are
+    # all written bind_config_mode (0644), so a secret reaching any of them is a
+    # world-readable leak even though the deploy would look perfectly healthy.
+    - name: Assert key material appears only in the 0640 keys file
+      ansible.builtin.assert:
+        that:
+          - test_tsig_secrets | select('in', rendered_keyfile_text) | list | length == 2
+          - test_tsig_secrets | reject('in', world_readable_text) | list | length == 2
+          # Zones reference the key by name only.
+          - "'key \"xfer\";' in rendered_local_text"
+        fail_msg: >-
+          TSIG key material leaked into a world-readable config file rendered at
+          {{ bind_config_mode }}.
+      vars:
+        test_tsig_secrets: "{{ test_tsig_keys | map(attribute='secret') | list }}"
+        rendered_keyfile_text: "{{ rendered_tsig_slurp.results[2].content | b64decode }}"
+        rendered_local_text: "{{ rendered_world_readable_slurp.results[0].content | b64decode }}"
+        world_readable_text: >-
+          {{ (rendered_tsig_slurp.results[1].content | b64decode)
+             ~ (rendered_world_readable_slurp.results[0].content | b64decode)
+             ~ (rendered_world_readable_slurp.results[1].content | b64decode) }}
+
+    - name: Assert all exemptions key off one shared predicate
+      ansible.builtin.assert:
+        that:
+          - install_zone_files_task.when == controller_managed_predicate
+          - stat_zone_files_task.when == controller_managed_predicate
+          - primaries_assert_task.when == transfer_backed_predicate
+          # An ad-hoc "== 'slave'" comparison would silently miss type secondary.
+          - "'slave' not in install_zone_files_task.when"
+          - "'slave' not in stat_zone_files_task.when"
+          - "'slave' not in primaries_assert_task.when"
+        fail_msg: "The transfer-backed exemptions no longer share one predicate."
+
+    # The literal below must stay identical to controller_managed_predicate; the
+    # assertion above pins that string to the one used by config.yml and
+    # validate.yml, and this one exercises what the string actually decides.
+    - name: Assert the shared predicate exempts transfer-backed zones only
+      ansible.builtin.assert:
+        that:
+          - >-
+            (item.type | default(bind_zone_default_type) not in bind_zone_transfer_backed_types)
+            == (item.name in controller_managed_zone_names)
+        fail_msg: >-
+          Zone {{ item.name }} (type {{ item.type | default('<default>') }}) landed on the
+          wrong side of the transfer-backed exemption.
+      loop: "{{ mixed_zones }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Assert the SOA check is authoritative and retried
+      ansible.builtin.assert:
+        that:
+          - "'+norecurse' in soa_check_command"
+          - "'status: NOERROR' in soa_check_task.until"
+          - "'aa' in soa_check_task.until"
+          - soa_check_task.retries is defined
+          - soa_check_task.delay is defined
+          - soa_check_task.failed_when is not defined
+        fail_msg: >-
+          The SOA verification must use dig +norecurse, require both NOERROR and
+          the aa flag, and retry while a secondary is still transferring.
+      vars:
+        soa_check_command: "{{ soa_check_task['ansible.builtin.command'] }}"
+
+    # Requiring the aa flag is only correct for zones we actually serve
+    # authoritatively. Applying it to hint/forward/stub zones would burn the full
+    # retry budget and then fail a deploy that previously succeeded.
+    # Handlers otherwise fire at end of play, after verify.yml, so verification
+    # would inspect a named still running the previous config. Invisible on an
+    # established server; a hard failure on a first install.
+    - name: Assert handlers are flushed before verification runs
+      ansible.builtin.assert:
+        that:
+          - "'meta: flush_handlers' in main_text"
+          - "'import_tasks: verify.yml' in main_text"
+          - "main_text.index('meta: flush_handlers') < main_text.index('import_tasks: verify.yml')"
+        fail_msg: >-
+          tasks/main.yml must flush handlers before importing verify.yml, otherwise
+          verification inspects a named still running the previous configuration.
+      vars:
+        # Anchored on the raw text on purpose: selectattr() treats a dotted name
+        # like 'ansible.builtin.meta' as nested attribute access, so it silently
+        # matches nothing when used against FQCN task keys.
+        main_text: "{{ bind_task_files.results[3].content | b64decode }}"
+
+    - name: Assert the SOA check is scoped to authoritative zone types
+      ansible.builtin.assert:
+        that:
+          - "'bind_verify_zone_types' in (soa_check_task.when | join(' '))"
+          - "'hint' not in bind_verify_zone_types"
+          - "'forward' not in bind_verify_zone_types"
+          - "'master' in bind_verify_zone_types"
+          - "'primary' in bind_verify_zone_types"
+          - "'slave' in bind_verify_zone_types"
+          - "'secondary' in bind_verify_zone_types"
+        fail_msg: >-
+          The SOA check must skip non-authoritative zone types; a hint zone never
+          answers with the aa flag.
+
+    - name: Assert non-authoritative zone types are excluded from the SOA check
+      ansible.builtin.assert:
+        that:
+          - >-
+            (item.type | default(bind_zone_default_type) in bind_verify_zone_types)
+            == (item.name not in non_authoritative_zone_names)
+        fail_msg: >-
+          Zone {{ item.name }} (type {{ item.type | default('<default>') }}) landed on
+          the wrong side of the SOA verification scope.
+      loop: "{{ mixed_zones }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Verify a mixed zone list validates without controller-side secondary files
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate.yml"
+      vars:
+        bind_zone_files_dir: "{{ test_zone_files_dir }}"
+        bind_zones: "{{ mixed_zones }}"
+
+    - name: Initialize validation outcome flags
+      ansible.builtin.set_fact:
+        bind_missing_primaries_rejected: false
+        bind_empty_primaries_rejected: false
+        bind_missing_primary_file_rejected: false
+
+    - name: Verify a slave zone without primaries is rejected
+      block:
+        - name: Exercise validation with a slave zone missing primaries
+          ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate.yml"
+          vars:
+            bind_zone_files_dir: "{{ test_zone_files_dir }}"
+            bind_zones:
+              - name: "master.example"
+                file: "db.master.example"
+                type: master
+              - name: "slave.example"
+                file: "db.slave.example"
+                type: slave
+
+        - name: Fail when a slave zone without primaries is accepted
+          ansible.builtin.fail:
+            msg: "validate.yml accepted a type slave zone with no primaries"
+      rescue:
+        - name: Record expected missing-primaries rejection
+          ansible.builtin.set_fact:
+            bind_missing_primaries_rejected: >-
+              {{ 'must define a non-empty primaries list' in bind_validate_failure_text }}
+
+    - name: Verify a secondary zone with empty primaries is rejected
+      block:
+        - name: Exercise validation with a secondary zone with empty primaries
+          ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate.yml"
+          vars:
+            bind_zone_files_dir: "{{ test_zone_files_dir }}"
+            bind_zones:
+              - name: "secondary.example"
+                file: "db.secondary.example"
+                type: secondary
+                primaries: []
+
+        - name: Fail when a secondary zone with empty primaries is accepted
+          ansible.builtin.fail:
+            msg: "validate.yml accepted a type secondary zone with an empty primaries list"
+      rescue:
+        - name: Record expected empty-primaries rejection
+          ansible.builtin.set_fact:
+            bind_empty_primaries_rejected: >-
+              {{ 'must define a non-empty primaries list' in bind_validate_failure_text }}
+
+    - name: Verify a primary zone with a missing file is still rejected
+      block:
+        - name: Exercise validation with a missing type primary zone file
+          ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate.yml"
+          vars:
+            bind_zone_files_dir: "{{ test_zone_files_dir }}"
+            bind_zones:
+              - name: "slave.example"
+                file: "db.slave.example"
+                type: slave
+                primaries:
+                  - "203.0.113.10"
+              - name: "primary.example"
+                file: "db.missing.example"
+                type: primary
+
+        - name: Fail when a missing type primary zone file is accepted
+          ansible.builtin.fail:
+            msg: "validate.yml exempted a type primary zone from the controller-side file check"
+      rescue:
+        - name: Record expected missing-file rejection
+          ansible.builtin.set_fact:
+            bind_missing_primary_file_rejected: >-
+              {{ 'Missing zone files: db.missing.example' in bind_validate_failure_text }}
+
+    - name: Initialize TSIG validation outcome flags
+      ansible.builtin.set_fact:
+        bind_empty_tsig_secret_rejected: false
+        bind_missing_tsig_secret_rejected: false
+        bind_placeholder_tsig_secret_rejected: false
+        bind_lowercase_placeholder_tsig_secret_rejected: false
+        bind_unnamed_tsig_key_rejected: false
+        bind_valid_tsig_keys_accepted: false
+
+    # The failure reason is deliberately not asserted for these two: the task is
+    # no_log, so ansible_failed_result is censored. That censoring is the point.
+    - name: Verify a TSIG key with an empty secret is rejected
+      block:
+        - name: Exercise validation with an empty TSIG secret
+          ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate.yml"
+          vars:
+            bind_zone_files_dir: "{{ test_zone_files_dir }}"
+            bind_zones: "{{ mixed_zones }}"
+            bind_tsig_keys:
+              - name: "xfer"
+                secret: ""
+
+        - name: Fail when an empty TSIG secret is accepted
+          ansible.builtin.fail:
+            msg: "validate.yml accepted a bind_tsig_keys entry with an empty secret"
+      rescue:
+        # Keyed on the failed task's name, not on its message: the message is
+        # censored by no_log, and the deliberate fail task above would otherwise
+        # land in this same rescue and mark the check as passed.
+        - name: Record expected empty-secret rejection
+          ansible.builtin.set_fact:
+            bind_empty_tsig_secret_rejected: >-
+              {{ ansible_failed_task.name == 'Validate TSIG key definitions' }}
+
+    # Distinct from the empty-secret case: `secret: ""` is caught by the length
+    # check, a wholly absent key only by `item.secret is defined`. Dropping that
+    # condition would let this entry through and render `secret "";`.
+    - name: Verify a TSIG key with no secret at all is rejected
+      block:
+        - name: Exercise validation with a TSIG entry missing its secret
+          ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate.yml"
+          vars:
+            bind_zone_files_dir: "{{ test_zone_files_dir }}"
+            bind_zones: "{{ mixed_zones }}"
+            bind_tsig_keys:
+              - name: "xfer"
+
+        - name: Fail when a TSIG entry with no secret is accepted
+          ansible.builtin.fail:
+            msg: "validate.yml accepted a bind_tsig_keys entry with no secret key"
+      rescue:
+        - name: Record expected missing-secret rejection
+          ansible.builtin.set_fact:
+            bind_missing_tsig_secret_rejected: >-
+              {{ ansible_failed_task.name == 'Validate TSIG key definitions' }}
+
+    - name: Verify a TSIG key with no name is rejected
+      block:
+        - name: Exercise validation with an unnamed TSIG key
+          ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate.yml"
+          vars:
+            bind_zone_files_dir: "{{ test_zone_files_dir }}"
+            bind_zones: "{{ mixed_zones }}"
+            bind_tsig_keys:
+              - name: ""
+                secret: "FAKEKEYFORTESTSONLYNOTREALCCCCCCCCCCCCCCCCQ="
+
+        - name: Fail when an unnamed TSIG key is accepted
+          ansible.builtin.fail:
+            msg: "validate.yml accepted a bind_tsig_keys entry with an empty name"
+      rescue:
+        - name: Record expected unnamed-key rejection
+          ansible.builtin.set_fact:
+            bind_unnamed_tsig_key_rejected: >-
+              {{ ansible_failed_task.name == 'Validate TSIG key definitions' }}
+
+    - name: Verify a placeholder TSIG secret is rejected
+      block:
+        - name: Exercise validation with a placeholder TSIG secret
+          ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate.yml"
+          vars:
+            bind_zone_files_dir: "{{ test_zone_files_dir }}"
+            bind_zones: "{{ mixed_zones }}"
+            bind_tsig_keys:
+              - name: "xfer"
+                secret: "CHANGEME"
+        - name: Fail when a placeholder TSIG secret is accepted
+          ansible.builtin.fail:
+            msg: "validate.yml accepted a CHANGEME placeholder as TSIG key material"
+      rescue:
+        - name: Record expected placeholder-secret rejection
+          ansible.builtin.set_fact:
+            bind_placeholder_tsig_secret_rejected: >-
+              {{ ansible_failed_task.name == 'Validate TSIG key definitions' }}
+
+    # The comparison is case-folded on purpose; a plain `!= 'CHANGEME'` would
+    # wave the same placeholder through in the spelling people actually type.
+    - name: Verify a lowercase placeholder TSIG secret is rejected
+      block:
+        - name: Exercise validation with a lowercase placeholder TSIG secret
+          ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate.yml"
+          vars:
+            bind_zone_files_dir: "{{ test_zone_files_dir }}"
+            bind_zones: "{{ mixed_zones }}"
+            bind_tsig_keys:
+              - name: "xfer"
+                secret: "changeme"
+
+        - name: Fail when a lowercase placeholder TSIG secret is accepted
+          ansible.builtin.fail:
+            msg: "validate.yml accepted 'changeme' as TSIG key material"
+      rescue:
+        - name: Record expected lowercase-placeholder rejection
+          ansible.builtin.set_fact:
+            bind_lowercase_placeholder_tsig_secret_rejected: >-
+              {{ ansible_failed_task.name == 'Validate TSIG key definitions' }}
+
+    - name: Verify well-formed TSIG keys validate
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate.yml"
+      vars:
+        bind_zone_files_dir: "{{ test_zone_files_dir }}"
+        bind_zones: "{{ mixed_zones }}"
+        bind_tsig_keys: "{{ test_tsig_keys }}"
+
+    - name: Record that well-formed TSIG keys were accepted
+      ansible.builtin.set_fact:
+        bind_valid_tsig_keys_accepted: true
+
+    - name: Assert every validation failure was reported for the right reason
+      ansible.builtin.assert:
+        that:
+          - bind_missing_primaries_rejected | bool
+          - bind_empty_primaries_rejected | bool
+          - bind_missing_primary_file_rejected | bool
+          - bind_empty_tsig_secret_rejected | bool
+          - bind_missing_tsig_secret_rejected | bool
+          - bind_unnamed_tsig_key_rejected | bool
+          - bind_placeholder_tsig_secret_rejected | bool
+          - bind_lowercase_placeholder_tsig_secret_rejected | bool
+          - bind_valid_tsig_keys_accepted | bool
+        fail_msg: "validate.yml did not reject the expected transfer-backed zone definitions."
+
+    - name: Clean up test working directory
+      ansible.builtin.file:
+        path: "{{ test_tmp_dir }}"
+        state: absent

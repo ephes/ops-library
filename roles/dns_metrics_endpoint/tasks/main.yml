@@ -1,0 +1,175 @@
+---
+- name: Skip dns_metrics_endpoint when disabled
+  ansible.builtin.debug:
+    msg: "dns_metrics_endpoint role skipped (dns_metrics_endpoint_enabled=false)."
+  when: not dns_metrics_endpoint_enabled | bool
+
+- name: Deploy DNS metrics endpoint
+  when: dns_metrics_endpoint_enabled | bool
+  block:
+    - name: Validate configuration
+      ansible.builtin.import_tasks: validate.yml
+
+    - name: Install dependencies for DNS metrics endpoint
+      ansible.builtin.package:
+        name: "{{ dns_metrics_endpoint_packages }}"
+        state: present
+
+    - name: Verify dig is available
+      ansible.builtin.command: dig -v
+      register: _dns_metrics_dig_version
+      changed_when: false
+
+    - name: Create metrics system group
+      ansible.builtin.group:
+        name: "{{ dns_metrics_endpoint_group }}"
+        system: true
+        state: present
+
+    - name: Create metrics system user
+      ansible.builtin.user:
+        name: "{{ dns_metrics_endpoint_user }}"
+        group: "{{ dns_metrics_endpoint_group }}"
+        shell: /usr/sbin/nologin
+        create_home: false
+        system: true
+        state: present
+
+    - name: Ensure data directory exists
+      ansible.builtin.file:
+        path: "{{ dns_metrics_endpoint_data_dir }}"
+        state: directory
+        owner: root
+        group: "{{ dns_metrics_endpoint_group }}"
+        mode: "0750"
+
+    - name: Ensure htpasswd directory exists
+      ansible.builtin.file:
+        path: "{{ dns_metrics_endpoint_htpasswd_dir }}"
+        state: directory
+        owner: root
+        group: "{{ dns_metrics_endpoint_group }}"
+        mode: "0750"
+
+    - name: Deploy DNS metrics collector script
+      ansible.builtin.template:
+        src: dns_metrics_collector.py.j2
+        dest: "{{ dns_metrics_endpoint_collector_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+      register: _dns_collector_script
+
+    - name: Deploy HTTP server script
+      ansible.builtin.template:
+        src: dns_metrics_httpd.py.j2
+        dest: "{{ dns_metrics_endpoint_server_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+      notify: restart dns-metrics-endpoint
+
+    - name: Verify existing htpasswd credentials
+      ansible.builtin.command: >-
+        htpasswd -viB {{ dns_metrics_endpoint_htpasswd_path }} {{ dns_metrics_endpoint_auth_user }}
+      args:
+        stdin: "{{ dns_metrics_endpoint_auth_password }}"
+      register: _dns_htpasswd_verify
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Generate htpasswd entry
+      ansible.builtin.command: "htpasswd -niB {{ dns_metrics_endpoint_auth_user }}"
+      args:
+        stdin: "{{ dns_metrics_endpoint_auth_password }}"
+      register: _dns_htpasswd_entry
+      changed_when: false
+      when: _dns_htpasswd_verify.rc != 0
+      no_log: true
+
+    - name: Write htpasswd file
+      ansible.builtin.copy:
+        dest: "{{ dns_metrics_endpoint_htpasswd_path }}"
+        content: "{{ _dns_htpasswd_entry.stdout }}\n"
+        owner: root
+        group: "{{ dns_metrics_endpoint_group }}"
+        mode: "0640"
+      notify: restart dns-metrics-endpoint
+      when: _dns_htpasswd_verify.rc != 0
+      no_log: true
+
+    # Enforced independently of credential regeneration: the copy above is
+    # skipped when the password is unchanged, so a change to
+    # dns_metrics_endpoint_user/_group would otherwise leave this file owned by
+    # the old group. The endpoint runs unprivileged and reads it at startup, so
+    # that silently breaks every request with a 401.
+    - name: Enforce htpasswd file ownership and mode
+      ansible.builtin.file:
+        path: "{{ dns_metrics_endpoint_htpasswd_path }}"
+        owner: root
+        group: "{{ dns_metrics_endpoint_group }}"
+        mode: "0640"
+      notify: restart dns-metrics-endpoint
+
+    - name: Create collector service unit
+      ansible.builtin.template:
+        src: dns-metrics-collector.service.j2
+        dest: "/etc/systemd/system/{{ dns_metrics_endpoint_timer_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+
+    - name: Create collector timer unit
+      ansible.builtin.template:
+        src: dns-metrics-collector.timer.j2
+        dest: "/etc/systemd/system/{{ dns_metrics_endpoint_timer_name }}.timer"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart dns-metrics-collector-timer
+
+    - name: Create HTTP server service unit
+      ansible.builtin.template:
+        src: dns-metrics-endpoint.service.j2
+        dest: "/etc/systemd/system/{{ dns_metrics_endpoint_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart dns-metrics-endpoint
+
+    - name: Flush handlers to ensure units are registered
+      ansible.builtin.meta: flush_handlers
+
+    - name: Check whether DNS metrics JSON exists
+      ansible.builtin.stat:
+        path: "{{ dns_metrics_endpoint_json_path }}"
+      register: _dns_metrics_json_stat
+
+    - name: Run collector once to create initial metrics file
+      ansible.builtin.systemd:
+        name: "{{ dns_metrics_endpoint_timer_name }}.service"
+        state: started
+      when: >-
+        (not _dns_metrics_json_stat.stat.exists)
+        or (_dns_collector_script is changed)
+
+    - name: Ensure collector timer is enabled and started
+      ansible.builtin.systemd:
+        name: "{{ dns_metrics_endpoint_timer_name }}.timer"
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Ensure HTTP server is enabled and running
+      ansible.builtin.systemd:
+        name: "{{ dns_metrics_endpoint_service_name }}"
+        enabled: true
+        state: started
+        daemon_reload: true

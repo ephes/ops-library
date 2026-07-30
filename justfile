@@ -11,7 +11,7 @@ setup:
     @./setup-pre-commit.sh
 
 # Run the default contributor validation path
-test: venv test-roles test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup lint docs-build docs-lint
+test: venv test-roles test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup lint docs-build docs-lint
     @echo ""
     @echo "✅ Validation completed!"
 
@@ -41,6 +41,14 @@ test-ssh-forwarding-integration: venv
 test-vaultwarden-maintenance: venv
     @echo "Testing Vaultwarden maintenance switch and package pinning contracts..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_vaultwarden_maintenance
+
+test-bind-authoritative-secondary: venv
+    @echo "Testing BIND transfer-backed (secondary) zone support..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_bind_authoritative_secondary.yml
+
+test-dns-metrics-endpoint: venv
+    @echo "Testing DNS metrics endpoint validation and collector behaviour..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_dns_metrics_endpoint.yml
 
 test-daybook-sessions-deploy: venv
     @echo "Testing Daybook sessions deploy behavior..."

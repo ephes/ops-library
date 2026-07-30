@@ -210,6 +210,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `false` overrides a stale `true` already present in a supplied config instead
   of leaving the endpoint enabled.
 
+- New `dns_metrics_endpoint` role: exposes authoritative-DNS health as an authenticated
+  JSON endpoint (`/.well-known/dns`, port 9107 by default) for Nyxmon `json-metrics`
+  checks, following the `backup_metrics_endpoint` pattern — a root systemd timer
+  (`dns-metrics-collector`) writes JSON to `/var/lib/dns-metrics/dns.json` and an
+  unprivileged `dns-metrics-endpoint` service serves it with basic auth and staleness
+  metadata. It probes nameservers **by address** (so it works before and independently
+  of registrar glue) and exercises the full matrix of nameserver × address family ×
+  transport × zone: one aggregate "DNS is up" boolean hides a half-dead nameserver, and
+  a v6-only or TCP-only failure is invisible to a v4/UDP probe while still breaking real
+  resolvers (TCP is mandatory for authoritative servers per RFC 7766). SOA queries use
+  `+norecurse` and **require the `aa` flag** — a bare serial comparison can pass against
+  a server that is not authoritative at all, because a misconfigured or recursive `named`
+  can fetch the SOA from elsewhere and report a matching serial while serving nothing of
+  its own. The role also compares SOA serials per zone across all nameservers and asserts
+  that a recursion-desired query for a foreign name is `REFUSED`, catching an
+  open-resolver regression. An unreachable endpoint is reported `unknown` rather than
+  `failed` for the open-resolver probe, so one outage cannot also raise a bogus security
+  alert.
+
+  Collector-side IPv6 loss is handled honestly: the collector asks the kernel for a route
+  and a global-unicast (`2000::/3`) source address via `connect()` on an unconnected UDP
+  socket — no packets are sent, and Tailscale's ULA addresses are rejected because they
+  prove nothing about internet reachability. When `meta.collector_ipv6_capable` is false
+  the v6 results are `skipped` rather than `failed` and excluded from
+  `summary.overall_ok`, while `summary.ipv6_tested` goes false so untested v6 cannot
+  silently rot: "ns2 v6 is broken" and "I could not test v6" stay distinguishable.
+  Optional per-nameserver `families`/`transports` overrides narrow the matrix for a known
+  limitation of the collector's own vantage point; excluded cells stay visible as
+  `skipped` with a `skip_reason`.
+
+  All values a check rule needs sit at fixed, wildcard-free paths (`summary.*`, `meta.*`,
+  `nameservers.<id>.*`) because Nyxmon's path resolver supports only `$.field.subfield`
+  and list indices; `zones` is a list rather than a dict keyed by zone name, since zone
+  names contain dots and the resolver splits on dots with no escaping. Every `*_ok`
+  boolean means "nothing tested failed" and is paired with a `*_tested` flag, and
+  `overall_ok` additionally requires that something was actually tested so an all-skipped
+  run cannot look healthy. Probing uses `dig` from `bind9-dnsutils` (installed by the
+  role) rather than a new Python dependency, so the check and its manual reproduction are
+  identical; queries run concurrently and a single unreachable endpoint degrades only its
+  own result. Defaults are RFC 5737/RFC 3849 documentation placeholders — real
+  nameservers, addresses and zones come from the control repository.
+
+  Documented in `roles/dns_metrics_endpoint/README.md` (why each check exists, the
+  suggested Nyxmon rule paths, the exact `dig` commands to reproduce a red check by
+  hand, and the HTTP status codes), rendered in the role catalog under deployment roles.
+
+- `bind_authoritative_deploy` supports transfer-backed (secondary) zones. Zone types
+  listed in the new `bind_zone_transfer_backed_types` variable (default
+  `[slave, secondary]`, BIND's two names for the same thing) get a `primaries { ... };`
+  block rendered from a required non-empty per-zone `primaries` value (a list, or a single
+  address as a bare string; a mapping is rejected), resolve a relative
+  `file` against `bind_working_dir` (`/var/cache/bind`, where named may write and the
+  Debian AppArmor profile permits it), and are neither required nor copied from the
+  controller. The exemption is an explicit allow-list rather than a `!= master` test, so
+  `primary` and `hint` zones keep their controller-managed zone files; rendering the
+  existing all-`master` zone lists is byte-identical to before.
+
+- `bind_authoritative_deploy` renders TSIG keys. `bind_tsig_keys` (list of
+  `{name, algorithm, secret}`, `algorithm` defaulting to `hmac-sha256`) is written as
+  `key { ... };` stanzas to `bind_tsig_keys_file`
+  (`/etc/bind/named.conf.keys`) at `bind_tsig_keys_mode` (`0640`, root:bind) — stricter
+  than the `0644` used for the rest of the config, because a TSIG secret must not be
+  world-readable. The rendering task is `no_log: true`, so the secret reaches neither
+  Ansible output, nor the check-mode diff, nor the FastDeploy UI, and validation rejects
+  an empty or `CHANGEME` secret. `named.conf` includes the file ahead of every other
+  include so keys are defined before they are referenced; the include and the file are
+  omitted entirely while `bind_tsig_keys` is empty, keeping `named.conf` byte-identical
+  for existing callers. Key *names* are referenced from the already-verbatim
+  `primaries` / `allow_transfer` / `extra_config` entries, so no new role code is
+  needed for that side of it. Note when writing those entries that a BIND
+  address-match list is a first-match-wins list of *alternatives*:
+  `allow-transfer { 198.51.100.20; key "xfer"; };` permits a keyless transfer from
+  that address **and** permits any key holder from anywhere. Requiring address *and*
+  key needs the nested-negation idiom
+  `allow-transfer { !{ !{ 198.51.100.20; }; any; }; key "xfer"; };`, written inline —
+  a named `acl` cannot be supplied through `bind_extra_options`, whose lines render
+  inside the `options { }` block where a top-level `acl` is illegal. The role README
+  documents both, plus a worked primary/secondary example and the matching
+  `also-notify { <addr> key "xfer"; };` without which `NOTIFY` is silently dropped
+  and the secondary degrades to its SOA refresh timer. The keys file is checked with
+  `named-checkconf` in its own right — rotating a secret leaves `named.conf`
+  byte-identical, so that file's own validation never re-runs — which also means
+  `secret` must be valid base64, as `tsig-keygen` emits. Emptying `bind_tsig_keys`
+  deletes the keys file rather than leaving retired key material readable on disk.
+
+- `bind_authoritative_deploy`'s post-deploy SOA check now uses `dig +norecurse` and
+  requires the `aa` flag in addition to `status: NOERROR`, so a host running with
+  recursion enabled cannot resolve the SOA from the public internet and mask a zone that
+  failed to load. It retries `bind_verify_retries` times (default 12) with
+  `bind_verify_delay` seconds (default 5) in between so a secondary's first zone transfer
+  being in flight does not fail the run.
+
+### Fixed
+
+- `bind_authoritative_deploy` now flushes handlers before verification. Previously the
+  `reload bind` handler ran at the end of the play, i.e. after `verify.yml`, so the SOA
+  check inspected a named still serving its previous configuration. On an established
+  server this was invisible; on a first install it failed hard, with named answering a
+  root referral because none of the configured zones had been loaded yet.
+
+### Added
+
 - `mastodon_deploy` now installs `libvips-dev` and `libvips-tools`. Mastodon 4.6
   dropped ImageMagick support and requires libvips for media processing.
   `imagemagick` is retained so refs older than 4.6 stay deployable.

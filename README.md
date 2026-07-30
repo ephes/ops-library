@@ -108,6 +108,7 @@ consumer repos depend on.
 | Monitoring | [`logyard_vector_deploy`](roles/logyard_vector_deploy/README.md) | Deploy Vector journald producers for Logyard/Loki with low-cardinality labels, disk buffering, and retries. |
 | Monitoring | [`graphyard_vector_deploy`](roles/graphyard_vector_deploy/README.md) | Deploy Vector host-metrics ingest producer for Graphyard (`POST /v1/metrics`) with disk buffering and retries. |
 | Monitoring | [`backup_metrics_endpoint`](roles/backup_metrics_endpoint/README.md) | Expose backup-job + replication freshness signals as authenticated JSON for Nyxmon (`/.well-known/backup`). |
+| Monitoring | [`dns_metrics_endpoint`](roles/dns_metrics_endpoint/README.md) | Expose per-endpoint authoritative-DNS health (v4/v6, UDP/TCP, `aa` required, SOA serial agreement, open-resolver regression) as authenticated JSON for Nyxmon (`/.well-known/dns`). |
 | Infrastructure | [`mail_relay_client`](roles/mail_relay_client/README.md) | Configure a minimal Postfix setup for relaying outbound alert mail via a smarthost. |
 | Infrastructure | [`ssh_authorized_keys_manage`](roles/ssh_authorized_keys_manage/README.md) | Manage `~/.ssh` and the full `authorized_keys` file for an arbitrary target account, including `root`. |
 | Infrastructure | [`ssh_forwarding_identity`](roles/ssh_forwarding_identity/README.md) | Provision a non-rotating, passphrase-free Ed25519 identity for unattended forwarding. |
@@ -118,7 +119,7 @@ consumer repos depend on.
 | Infrastructure | [`traefik_deploy`](roles/traefik_deploy/README.md) | Deploy Traefik reverse proxy with Let's Encrypt (auto-detects platform, version upgrades). |
 | Infrastructure | [`tailscale_deploy`](roles/tailscale_deploy/README.md) | Install Tailscale from the official repo and join tailnet with auth key or manual mode (accept-dns defaults to false). |
 | Monitoring | [`tailscale_metrics_endpoint`](roles/tailscale_metrics_endpoint/README.md) | Expose Tailscale login state and node-key expiry as authenticated JSON for Nyxmon (`/.well-known/tailscale`). |
-| Infrastructure | [`bind_authoritative_deploy`](roles/bind_authoritative_deploy/README.md) | Deploy authoritative BIND 9 with managed configs and zone files. |
+| Infrastructure | [`bind_authoritative_deploy`](roles/bind_authoritative_deploy/README.md) | Deploy authoritative BIND 9 with managed configs and zone files, including transfer-backed (secondary) zones. |
 | Infrastructure | [`echoport_backup`](roles/echoport_backup/README.md) | Register centralized Echoport backup/restore runners with FastDeploy. |
 | Service deployment | [`fastdeploy_deploy`](roles/fastdeploy_deploy/README.md) | Deploy the FastDeploy platform (database, uv, frontend build, systemd, Traefik). |
 | Service deployment | [`nyxmon_deploy`](roles/nyxmon_deploy/README.md) | Deploy Nyxmon (Django app, monitoring agent, Telegram integration). |

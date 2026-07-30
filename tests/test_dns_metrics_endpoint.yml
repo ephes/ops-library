@@ -1,0 +1,430 @@
+---
+# Test playbook for dns_metrics_endpoint.
+#
+# Covers the contract that makes this check worth having:
+#   * validation rejects placeholder auth, dotted/duplicate nameserver ids,
+#     addressless nameservers, a foreign probe name that is a monitored zone,
+#     and a per-nameserver override that widens rather than narrows the matrix
+#   * the collector enumerates every nameserver x family x transport endpoint
+#   * unreachable endpoints degrade their own result and never crash the run,
+#     and never leave the document unwritten
+#   * an unreachable nameserver does NOT trip the open-resolver check
+#     (state "unknown", not "failed") - one outage must not raise a bogus
+#     security alert
+#   * a collector without usable IPv6 marks v6 endpoints "skipped", not
+#     "failed", and flips summary.ipv6_tested to false
+#   * per-nameserver transport overrides skip with a distinguishable reason
+#
+# All addresses used here are RFC 5737 / RFC 3849 documentation ranges, so the
+# test sends no traffic to anyone's real infrastructure.
+
+- name: Test dns_metrics_endpoint validation and collector behaviour
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/dns_metrics_endpoint"
+    test_tmp_dir: "/tmp/test-dns-metrics-endpoint"
+
+    # Template inputs come from the role defaults so the test fails if a default
+    # is renamed or dropped.
+    dns_metrics_endpoint_enabled: true
+    dns_metrics_endpoint_auth_user: "test-user"
+    dns_metrics_endpoint_auth_password: "test-password"
+    dns_metrics_endpoint_nameservers: "{{ dns_defaults.dns_metrics_endpoint_nameservers }}"
+    dns_metrics_endpoint_zones: "{{ dns_defaults.dns_metrics_endpoint_zones }}"
+    dns_metrics_endpoint_families: "{{ dns_defaults.dns_metrics_endpoint_families }}"
+    dns_metrics_endpoint_transports: "{{ dns_defaults.dns_metrics_endpoint_transports }}"
+    dns_metrics_endpoint_foreign_name: "{{ dns_defaults.dns_metrics_endpoint_foreign_name }}"
+    dns_metrics_endpoint_foreign_qtype: "{{ dns_defaults.dns_metrics_endpoint_foreign_qtype }}"
+    dns_metrics_endpoint_open_resolver_transport: "{{ dns_defaults.dns_metrics_endpoint_open_resolver_transport }}"
+    dns_metrics_endpoint_max_workers: "{{ dns_defaults.dns_metrics_endpoint_max_workers }}"
+    dns_metrics_endpoint_ipv6_probe_address: "{{ dns_defaults.dns_metrics_endpoint_ipv6_probe_address }}"
+    dns_metrics_endpoint_json_path: "{{ test_tmp_dir }}/dns.json"
+    dns_metrics_endpoint_htpasswd_path: "{{ test_tmp_dir }}/htpasswd"
+    dns_metrics_endpoint_port: "{{ dns_defaults.dns_metrics_endpoint_port }}"
+    dns_metrics_endpoint_path: "{{ dns_defaults.dns_metrics_endpoint_path }}"
+
+    # Keep the test fast: the placeholder addresses are unroutable, so every
+    # query has to burn its full timeout budget.
+    dns_metrics_endpoint_dig_timeout: 1
+    dns_metrics_endpoint_dig_tries: 1
+    dns_metrics_endpoint_dig_subprocess_timeout: 5
+
+    # Flattened failure text of the most recent rescued failure; a looped assert
+    # reports through .results, a plain assert through .msg.
+    dns_validate_failure_text: >-
+      {{ ansible_failed_result.msg | default('') ~ ' ' ~
+      (
+        ansible_failed_result.results | default([])
+        | map(attribute='msg', default='') | list | join(' ')
+      ) }}
+
+  tasks:
+    - name: Load role defaults
+      ansible.builtin.include_vars:
+        file: "{{ role_path }}/defaults/main.yml"
+        name: dns_defaults
+
+    - name: Create temp directory
+      ansible.builtin.file:
+        path: "{{ test_tmp_dir }}"
+        state: directory
+        mode: "0755"
+
+    # ------------------------------------------------------------------
+    # Validation
+    # ------------------------------------------------------------------
+    - name: Validation accepts the documentation defaults with real auth
+      ansible.builtin.include_role:
+        name: "{{ role_path }}"
+        tasks_from: validate
+
+    - name: Validation rejects placeholder auth
+      block:
+        - name: Run validation with CHANGE_ME auth
+          ansible.builtin.include_role:
+            name: "{{ role_path }}"
+            tasks_from: validate
+          vars:
+            dns_metrics_endpoint_auth_password: "CHANGE_ME"
+
+        - name: Fail because placeholder auth was accepted
+          ansible.builtin.fail:
+            msg: "Validation accepted a CHANGE_ME password"
+      rescue:
+        - name: Confirm the placeholder auth failure came from the assert
+          ansible.builtin.assert:
+            that:
+              - "'CHANGE_ME' in dns_validate_failure_text"
+            fail_msg: "Unexpected failure: {{ dns_validate_failure_text }}"
+
+    - name: Validation rejects a dotted nameserver id
+      block:
+        - name: Run validation with a dotted id
+          ansible.builtin.include_role:
+            name: "{{ role_path }}"
+            tasks_from: validate
+          vars:
+            dns_metrics_endpoint_nameservers:
+              - id: "ns1.example.com"
+                ipv4: "192.0.2.53"
+
+        - name: Fail because a dotted id was accepted
+          ansible.builtin.fail:
+            msg: "Validation accepted a dotted nameserver id"
+      rescue:
+        - name: Confirm the dotted id failure came from the assert
+          ansible.builtin.assert:
+            that:
+              - "'dot-free' in dns_validate_failure_text"
+            fail_msg: "Unexpected failure: {{ dns_validate_failure_text }}"
+
+    - name: Validation rejects a nameserver with no address
+      block:
+        - name: Run validation with an addressless nameserver
+          ansible.builtin.include_role:
+            name: "{{ role_path }}"
+            tasks_from: validate
+          vars:
+            dns_metrics_endpoint_nameservers:
+              - id: ns1
+                ipv4: "192.0.2.53"
+              - id: ns2
+                ipv4: ""
+
+        - name: Fail because an addressless nameserver was accepted
+          ansible.builtin.fail:
+            msg: "Validation accepted a nameserver with no address"
+      rescue:
+        - name: Confirm the addressless failure came from the assert
+          ansible.builtin.assert:
+            that:
+              - "'address' in dns_validate_failure_text"
+            fail_msg: "Unexpected failure: {{ dns_validate_failure_text }}"
+
+    - name: Validation rejects a foreign probe name that is a monitored zone
+      block:
+        - name: Run validation with foreign_name inside zones
+          ansible.builtin.include_role:
+            name: "{{ role_path }}"
+            tasks_from: validate
+          vars:
+            dns_metrics_endpoint_foreign_name: "{{ dns_metrics_endpoint_zones | first }}"
+
+        - name: Fail because a monitored zone was accepted as the foreign probe
+          ansible.builtin.fail:
+            msg: "Validation accepted a foreign probe name that is a monitored zone"
+      rescue:
+        - name: Confirm the foreign-name failure came from the assert
+          ansible.builtin.assert:
+            that:
+              - "'probe' in dns_validate_failure_text"
+            fail_msg: "Unexpected failure: {{ dns_validate_failure_text }}"
+
+    - name: Validation rejects a per-nameserver override that widens the matrix
+      block:
+        - name: Run validation with a widening transport override
+          ansible.builtin.include_role:
+            name: "{{ role_path }}"
+            tasks_from: validate
+          vars:
+            dns_metrics_endpoint_transports: ["udp"]
+            dns_metrics_endpoint_nameservers:
+              - id: ns1
+                ipv4: "192.0.2.53"
+                transports: ["udp", "tcp"]
+
+        - name: Fail because a widening override was accepted
+          ansible.builtin.fail:
+            msg: "Validation accepted a per-nameserver override that widens the matrix"
+      rescue:
+        - name: Confirm the override failure came from the assert
+          ansible.builtin.assert:
+            that:
+              - "'narrow' in dns_validate_failure_text"
+            fail_msg: "Unexpected failure: {{ dns_validate_failure_text }}"
+
+    - name: Validation rejects a subprocess guard shorter than dig's own budget
+      block:
+        - name: Run validation with too small a subprocess timeout
+          ansible.builtin.include_role:
+            name: "{{ role_path }}"
+            tasks_from: validate
+          vars:
+            dns_metrics_endpoint_dig_timeout: 5
+            dns_metrics_endpoint_dig_tries: 3
+            dns_metrics_endpoint_dig_subprocess_timeout: 5
+
+        - name: Fail because a too small subprocess timeout was accepted
+          ansible.builtin.fail:
+            msg: "Validation accepted a subprocess guard shorter than dig_timeout * dig_tries"
+      rescue:
+        - name: Confirm the timeout failure came from the assert
+          ansible.builtin.assert:
+            that:
+              - "'subprocess' in dns_validate_failure_text"
+            fail_msg: "Unexpected failure: {{ dns_validate_failure_text }}"
+
+    # ------------------------------------------------------------------
+    # Collector behaviour against unroutable documentation addresses
+    # ------------------------------------------------------------------
+    - name: Render the collector script
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/dns_metrics_collector.py.j2"
+        dest: "{{ test_tmp_dir }}/collector.py"
+        mode: "0755"
+
+    - name: Byte-compile the collector script
+      ansible.builtin.command: "python3 -m py_compile {{ test_tmp_dir }}/collector.py"
+      changed_when: false
+
+    - name: Run the collector against unreachable placeholder nameservers
+      ansible.builtin.command: "python3 {{ test_tmp_dir }}/collector.py"
+      register: dns_collector_run
+      changed_when: false
+
+    - name: Parse the collector output
+      ansible.builtin.set_fact:
+        dns_result: "{{ dns_collector_run.stdout | from_json }}"
+
+    - name: Assert unreachable endpoints degrade without crashing the collector
+      ansible.builtin.assert:
+        that:
+          # every nameserver x family x transport cell is enumerated
+          - dns_result.summary.endpoints_total == 8
+          - dns_result.endpoints | length == 8
+          - dns_result.endpoints | map(attribute='id') | unique | length == 8
+          # the collector itself survived and produced a complete document
+          - dns_result.summary.collector_ok
+          - dns_result.meta.collector_error is none
+          - dns_result.zones | length == dns_metrics_endpoint_zones | length
+          # nothing answered, so nothing may look healthy
+          - not dns_result.summary.all_endpoints_ok
+          - not dns_result.summary.overall_ok
+          - dns_result.summary.endpoints_ok == 0
+          - not dns_result.summary.all_zones_in_sync
+          - dns_result.summary.max_serial_lag == 0
+          # an outage is not a security regression
+          - dns_result.summary.no_open_resolver
+          - dns_result.summary.open_resolver_failed == 0
+          - dns_result.summary.open_resolver_unknown
+            == dns_result.summary.open_resolver_tested
+          # zone verdicts say which nameserver failed to report
+          - dns_result.zones | map(attribute='in_sync') | select | list | length == 0
+          - "'missing_serial_from:ns1,ns2' in dns_result.zones[0].reasons"
+        fail_msg: "Unexpected collector output: {{ dns_result.summary }}"
+
+    - name: Assert every failed endpoint carries a per-probe reason
+      ansible.builtin.assert:
+        that:
+          - item.state == 'failed'
+          - item.ok == false
+          - item.skip_reason is none
+          - item.zones | length == dns_metrics_endpoint_zones | length
+          - item.zones | map(attribute='ok') | select | list | length == 0
+          - item.errors | length > 0
+        fail_msg: "Endpoint {{ item.id }} did not degrade cleanly: {{ item }}"
+      loop: "{{ dns_result.endpoints | rejectattr('state', 'equalto', 'skipped') | list }}"
+      loop_control:
+        label: "{{ item.id }}"
+
+    # ------------------------------------------------------------------
+    # Collector without usable IPv6: skipped, not failed
+    # ------------------------------------------------------------------
+    - name: Render the collector script with an IPv6 probe that cannot be global
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/dns_metrics_collector.py.j2"
+        dest: "{{ test_tmp_dir }}/collector_no_v6.py"
+        mode: "0755"
+      vars:
+        # Routing towards ::1 yields a loopback source address, which is not
+        # global unicast - the same signal as a host with no IPv6 at all.
+        dns_metrics_endpoint_ipv6_probe_address: "::1"
+
+    - name: Run the collector without usable IPv6
+      ansible.builtin.command: "python3 {{ test_tmp_dir }}/collector_no_v6.py"
+      register: dns_collector_no_v6
+      changed_when: false
+
+    - name: Parse the no-IPv6 collector output
+      ansible.builtin.set_fact:
+        dns_no_v6: "{{ dns_collector_no_v6.stdout | from_json }}"
+
+    - name: Assert v6 is reported untested rather than broken
+      ansible.builtin.assert:
+        that:
+          - not dns_no_v6.meta.collector_ipv6_capable
+          - dns_no_v6.meta.collector_ipv6_detect_error is not none
+          - not dns_no_v6.summary.ipv6_tested
+          - dns_no_v6.summary.ipv6_endpoints_skipped == 4
+          - dns_no_v6.summary.endpoints_skipped == 4
+          # "could not test" is not "failed"
+          - dns_no_v6.summary.ipv6_endpoints_ok
+          - dns_no_v6.summary.endpoints_failed == 4
+          - dns_no_v6.endpoints
+            | selectattr('family', 'equalto', 'ipv6')
+            | map(attribute='skip_reason') | unique | list == ['collector_no_ipv6']
+          - dns_no_v6.endpoints
+            | selectattr('family', 'equalto', 'ipv6')
+            | map(attribute='state') | unique | list == ['skipped']
+          # and the v4 half still decides the verdict
+          - dns_no_v6.summary.ipv4_tested
+          - not dns_no_v6.summary.overall_ok
+        fail_msg: "Unexpected no-IPv6 output: {{ dns_no_v6.summary }}"
+
+    # ------------------------------------------------------------------
+    # Per-nameserver transport override
+    # ------------------------------------------------------------------
+    - name: Render the collector script with a per-nameserver transport override
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/dns_metrics_collector.py.j2"
+        dest: "{{ test_tmp_dir }}/collector_override.py"
+        mode: "0755"
+      vars:
+        dns_metrics_endpoint_nameservers:
+          - id: ns1
+            ipv4: "192.0.2.53"
+          - id: ns2
+            ipv4: "198.51.100.53"
+            transports: ["udp"]
+        dns_metrics_endpoint_families: ["ipv4"]
+
+    - name: Run the collector with a per-nameserver transport override
+      ansible.builtin.command: "python3 {{ test_tmp_dir }}/collector_override.py"
+      register: dns_collector_override
+      changed_when: false
+
+    - name: Parse the override collector output
+      ansible.builtin.set_fact:
+        dns_override: "{{ dns_collector_override.stdout | from_json }}"
+
+    - name: Assert the narrowed cell is skipped with a distinguishable reason
+      ansible.builtin.assert:
+        that:
+          - dns_override.summary.endpoints_total == 4
+          - dns_override.summary.endpoints_skipped == 1
+          - dns_override.endpoints
+            | selectattr('id', 'equalto', 'ns2-ipv4-tcp')
+            | map(attribute='skip_reason') | list == ['transport_excluded_for_nameserver']
+          - dns_override.nameservers.ns2.tcp_tested == false
+          - dns_override.nameservers.ns1.tcp_tested == true
+        fail_msg: "Unexpected override output: {{ dns_override.summary }}"
+
+    # ------------------------------------------------------------------
+    # A path that is broken only between THIS collector and one nameserver must
+    # not sit permanently red -- a check that is always red gets ignored, which
+    # costs more than a known gap. But it must stay visible by name, so the
+    # blind spot cannot silently rot into a real outage nobody notices.
+    # ------------------------------------------------------------------
+    - name: Render the collector with a declared vantage-point limitation
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/dns_metrics_collector.py.j2"
+        dest: "{{ test_tmp_dir }}/collector_limitation.py"
+        mode: "0755"
+      vars:
+        dns_metrics_endpoint_nameservers:
+          - id: ns1
+            ipv4: "192.0.2.53"
+          - id: ns2
+            ipv4: "198.51.100.53"
+        dns_metrics_endpoint_families: ["ipv4"]
+        dns_metrics_endpoint_vantage_point_limitations:
+          - id: "ns2-ipv4-tcp"
+            reason: "test: unreachable from this vantage point only"
+
+    - name: Run the collector with a declared vantage-point limitation
+      ansible.builtin.command: "python3 {{ test_tmp_dir }}/collector_limitation.py"
+      register: dns_collector_limitation
+      changed_when: false
+
+    - name: Parse the limitation collector output
+      ansible.builtin.set_fact:
+        dns_limited: "{{ dns_collector_limitation.stdout | from_json }}"
+
+    - name: Assert the limited cell is skipped, excluded from the verdict, and named
+      ansible.builtin.assert:
+        that:
+          - dns_limited.summary.endpoints_total == 4
+          - dns_limited.summary.endpoints_skipped == 1
+          # Counted AND named -- a bare count would let the gap go unnoticed.
+          - dns_limited.summary.vantage_point_limitations == 1
+          - dns_limited.summary.vantage_point_limited_endpoints == 'ns2-ipv4-tcp'
+          # Reported as skipped, never as a failure of the nameserver.
+          - dns_limited.endpoints
+            | selectattr('id', 'equalto', 'ns2-ipv4-tcp')
+            | map(attribute='state') | list == ['skipped']
+          - dns_limited.endpoints
+            | selectattr('id', 'equalto', 'ns2-ipv4-tcp')
+            | map(attribute='skip_reason') | first
+            is match('^vantage_point:')
+          - "'ns2-ipv4-tcp' not in dns_limited.summary.failed_endpoints"
+          # A partial exclusion must flip a coverage boolean. tcp_tested stays
+          # true because ns1's TCP cell ran, so without tcp_fully_tested the gap
+          # would have no boolean of its own and could go unnoticed.
+          - dns_limited.summary.tcp_tested == true
+          - dns_limited.summary.tcp_fully_tested == false
+          - dns_limited.summary.coverage_complete == false
+          - dns_limited.summary.udp_fully_tested == true
+        fail_msg: "Unexpected limitation output: {{ dns_limited.summary }}"
+
+    - name: Assert an undeclared cell is still a hard failure
+      ansible.builtin.assert:
+        that:
+          # ns1-ipv4-tcp was NOT declared, so the unreachable placeholder address
+          # must still fail. Otherwise the mechanism would mask everything.
+          - dns_limited.summary.vantage_point_limited_endpoints == 'ns2-ipv4-tcp'
+          - "'ns1' in dns_limited.summary.failed_endpoints"
+        fail_msg: >-
+          The limitation list must exempt only the ids it names:
+          {{ dns_limited.summary }}
+
+    - name: Clean up temp directory
+      ansible.builtin.file:
+        path: "{{ test_tmp_dir }}"
+        state: absent
+
+    - name: Report success
+      ansible.builtin.debug:
+        msg: "dns_metrics_endpoint tests passed"

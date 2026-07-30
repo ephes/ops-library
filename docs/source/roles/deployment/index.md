@@ -18,6 +18,8 @@ graphyard_ingress_deploy
 graphyard_auth_bootstrap_deploy
 traefik_deploy
 dns_deploy
+bind_authoritative_deploy
+dns_metrics_endpoint
 tailscale_deploy
 homelab_deploy
 homeassistant_deploy

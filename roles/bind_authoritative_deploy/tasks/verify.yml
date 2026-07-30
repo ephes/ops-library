@@ -1,14 +1,23 @@
 ---
 - name: Verify authoritative responses for zones
   ansible.builtin.command: >-
-    dig @{{ bind_verify_server }} {{ item.name }} SOA +comments
+    dig @{{ bind_verify_server }} {{ item.name }} SOA +comments +norecurse
   register: bind_verify_results
   changed_when: false
-  failed_when: "'status: NOERROR' not in bind_verify_results.stdout"
+  # +norecurse plus the 'aa' flag is what makes this a real authority check:
+  # without it a recursive resolver can answer NOERROR from the public internet
+  # while the local zone is still empty or not loaded at all.
+  until: >-
+    'status: NOERROR' in bind_verify_results.stdout
+    and bind_verify_results.stdout is search('flags:[^;]* aa[ ;]')
+  retries: "{{ bind_verify_retries }}"
+  delay: "{{ bind_verify_delay }}"
   loop: "{{ bind_zones }}"
   loop_control:
     label: "{{ item.name }}"
-  when: bind_verify_enabled
+  when:
+    - bind_verify_enabled
+    - item.type | default(bind_zone_default_type) in bind_verify_zone_types
 
 - name: Check if UFW is installed
   ansible.builtin.command: which ufw

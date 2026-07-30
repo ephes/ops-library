@@ -7,6 +7,43 @@
     group: "{{ bind_config_group }}"
     mode: '0755'
 
+- name: Ensure BIND working directory is writable by named
+  ansible.builtin.file:
+    path: "{{ bind_working_dir }}"
+    state: directory
+    owner: "{{ bind_service_user }}"
+    group: "{{ bind_config_group }}"
+    mode: '0775'
+  # Must apply default(bind_zone_default_type) exactly like every other site: a
+  # zone with no explicit type is transfer-backed whenever the default is, and
+  # would otherwise get a primaries block and a working-dir path without the
+  # directory being ensured.
+  when: bind_zones
+        | map(attribute='type', default=bind_zone_default_type)
+        | select('in', bind_zone_transfer_backed_types)
+        | list | length > 0
+
+# Rendered before named.conf so that named-checkconf, which follows the include
+# added there, finds the file already in place on a first install.
+- name: Render TSIG keys
+  ansible.builtin.template:
+    src: named.conf.keys.j2
+    dest: "{{ bind_tsig_keys_file }}"
+    owner: "{{ bind_config_owner }}"
+    group: "{{ bind_config_group }}"
+    mode: "{{ bind_tsig_keys_mode }}"
+    # Validated in its own right, not just via the include from named.conf:
+    # rotating a secret leaves named.conf byte-identical, so that task reports
+    # "ok" and its validate never runs. Without this, a malformed stanza would
+    # be installed and handed straight to the reload handler.
+    validate: "named-checkconf %s"
+  # This file is the only place the key material exists in cleartext. no_log
+  # suppresses the whole task result -- including the check-mode diff -- so the
+  # secret never reaches Ansible output or the FastDeploy UI.
+  no_log: true
+  when: bind_tsig_keys | length > 0
+  notify: reload bind
+
 - name: Render named.conf.options
   ansible.builtin.template:
     src: named.conf.options.j2
@@ -36,6 +73,7 @@
   loop: "{{ bind_zones }}"
   loop_control:
     label: "{{ item.name }}"
+  when: item.type | default(bind_zone_default_type) not in bind_zone_transfer_backed_types
   notify: reload bind
 
 - name: Render named.conf
@@ -45,5 +83,21 @@
     owner: "{{ bind_config_owner }}"
     group: "{{ bind_config_group }}"
     mode: "{{ bind_config_mode }}"
-    validate: "named-checkconf %s"
+    # named-checkconf follows the absolute include of named.conf.keys. In check
+    # mode that file is not written, so a first run with TSIG enabled would fail
+    # validation on a file the play is only pretending to create -- a false
+    # failure about work that has not happened yet. Real runs still validate.
+    validate: "{{ omit if ansible_check_mode else 'named-checkconf %s' }}"
   notify: reload bind
+
+# Retired key material must not linger, but this runs LAST on purpose. Deleting it
+# before named.conf has been rewritten without the include would, if any later
+# template failed validation, leave an on-disk config referencing a file that no
+# longer exists -- and BIND would refuse to start after the next reboot.
+- name: Remove TSIG keys file when no keys are configured
+  ansible.builtin.file:
+    path: "{{ bind_tsig_keys_file }}"
+    state: absent
+  when: bind_tsig_keys | length == 0
+  notify: reload bind
+

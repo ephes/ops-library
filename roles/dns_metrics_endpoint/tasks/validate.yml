@@ -1,0 +1,206 @@
+---
+- name: validate | Validate required variables
+  ansible.builtin.assert:
+    that:
+      - dns_metrics_endpoint_auth_user is defined
+      - dns_metrics_endpoint_auth_user != "CHANGE_ME"
+      - dns_metrics_endpoint_auth_user | length > 0
+      - dns_metrics_endpoint_auth_password is defined
+      - dns_metrics_endpoint_auth_password != "CHANGE_ME"
+      - dns_metrics_endpoint_auth_password | length > 0
+    fail_msg: |
+      dns_metrics_endpoint auth values are missing or still set to CHANGE_ME.
+      Set dns_metrics_endpoint_auth_user/password via ops-control vault before enabling.
+
+- name: validate | Validate nameserver list has ids
+  ansible.builtin.assert:
+    that:
+      - dns_metrics_endpoint_nameservers | length > 0
+      - dns_metrics_endpoint_nameservers | selectattr('id', 'defined') | list | length
+        == dns_metrics_endpoint_nameservers | length
+    fail_msg: >-
+      dns_metrics_endpoint_nameservers must be a non-empty list and every entry needs an `id`.
+
+- name: validate | Validate nameserver ids and addresses
+  ansible.builtin.assert:
+    that:
+      # ids are dot-free and unique: they appear verbatim in Nyxmon JSON paths
+      # (`$.nameservers.<id>.ok`) and Nyxmon's path resolver splits on dots.
+      - dns_metrics_endpoint_nameservers | map(attribute='id') | unique | list | length
+        == dns_metrics_endpoint_nameservers | length
+      - dns_metrics_endpoint_nameservers | map(attribute='id')
+        | select('match', '^[a-z][a-z0-9_]*$') | list | length
+        == dns_metrics_endpoint_nameservers | length
+      # every entry carries at least one non-empty address
+      - dns_metrics_endpoint_nameservers
+        | selectattr('ipv4', 'defined') | selectattr('ipv4', 'truthy')
+        | map(attribute='id') | list
+        | union(dns_metrics_endpoint_nameservers
+                | selectattr('ipv6', 'defined') | selectattr('ipv6', 'truthy')
+                | map(attribute='id') | list)
+        | length == dns_metrics_endpoint_nameservers | length
+    fail_msg: >-
+      Every dns_metrics_endpoint_nameservers entry needs a unique, dot-free lowercase `id`
+      (matching ^[a-z][a-z0-9_]*$, because ids appear in Nyxmon JSON paths and its resolver
+      splits on dots) and at least one non-empty `ipv4`/`ipv6` address.
+
+- name: validate | Validate per-nameserver family/transport overrides
+  ansible.builtin.assert:
+    that:
+      - item.families | default(dns_metrics_endpoint_families)
+        | difference(dns_metrics_endpoint_families) | length == 0
+      - item.families | default(dns_metrics_endpoint_families) | length > 0
+      - item.transports | default(dns_metrics_endpoint_transports)
+        | difference(dns_metrics_endpoint_transports) | length == 0
+      - item.transports | default(dns_metrics_endpoint_transports) | length > 0
+    fail_msg: >-
+      Nameserver '{{ item.id }}' has a families/transports override that is empty or not a
+      subset of dns_metrics_endpoint_families/dns_metrics_endpoint_transports. Per-nameserver
+      overrides may only narrow the global matrix.
+  loop: "{{ dns_metrics_endpoint_nameservers }}"
+  loop_control:
+    label: "{{ item.id }}"
+
+- name: validate | Validate probe configuration
+  ansible.builtin.assert:
+    that:
+      - dns_metrics_endpoint_zones | length > 0
+      - dns_metrics_endpoint_families | length > 0
+      - dns_metrics_endpoint_families | difference(['ipv4', 'ipv6']) | length == 0
+      - dns_metrics_endpoint_transports | length > 0
+      - dns_metrics_endpoint_transports | difference(['udp', 'tcp']) | length == 0
+      - dns_metrics_endpoint_open_resolver_transport in ['udp', 'tcp']
+      # Must also be a transport we actually probe, or every foreign probe is
+      # skipped, open_resolver_verified stays false, and overall_ok can never go
+      # true -- a permanently red check caused purely by configuration.
+      - dns_metrics_endpoint_open_resolver_transport in dns_metrics_endpoint_transports
+      - dns_metrics_endpoint_foreign_name | length > 0
+      - dns_metrics_endpoint_dig_timeout | int > 0
+      - dns_metrics_endpoint_dig_tries | int > 0
+      - dns_metrics_endpoint_max_workers | int > 0
+      - dns_metrics_endpoint_dig_subprocess_timeout | int
+        > (dns_metrics_endpoint_dig_timeout | int * dns_metrics_endpoint_dig_tries | int)
+    fail_msg: >-
+      dns_metrics_endpoint probe configuration is invalid. Zones/families/transports must be
+      non-empty (families from ipv4/ipv6, transports from udp/tcp), the open-resolver probe
+      name must not be one of the monitored zones, and
+      dns_metrics_endpoint_dig_subprocess_timeout must exceed dig_timeout * dig_tries so the
+      subprocess guard cannot fire before dig has used its own retries.
+
+
+# A declared limitation silently hides an endpoint from the verdict, so a typo in
+# an id would hide nothing while looking like it does, and a non-mapping entry
+# crashes the collector's item.get() only after deployment.
+- name: validate | Validate declared vantage-point limitations
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - item.id is defined
+      - item.id | default('') | length > 0
+      - item.id in _dns_metrics_valid_endpoint_ids
+      - item.reason | default('') | length > 0
+    fail_msg: >-
+      Invalid dns_metrics_endpoint_vantage_point_limitations entry {{ item }}.
+      Each entry must be a mapping with a non-empty reason and an id from the
+      configured matrix: {{ _dns_metrics_valid_endpoint_ids | join(', ') }}.
+      An id that matches nothing would hide nothing while appearing to.
+  loop: "{{ dns_metrics_endpoint_vantage_point_limitations }}"
+  loop_control:
+    label: "{{ (item.id | default(item)) if item is mapping else item }}"
+  vars:
+    _dns_metrics_valid_endpoint_ids: >-
+      {{ dns_metrics_endpoint_nameservers
+         | map(attribute='id')
+         | product(dns_metrics_endpoint_families)
+         | map('join', '-')
+         | product(dns_metrics_endpoint_transports)
+         | map('join', '-')
+         | list }}
+
+# String inequality is not enough. 'www.example.com', 'Example.COM' and
+# 'example.com.' all sit inside a monitored 'example.com', and the nameserver is
+# authoritative for them -- it answers instead of returning REFUSED, so the
+# open-resolver probe would alert permanently on completely correct behaviour.
+# Compared case-folded and without the trailing dot, and rejected for descendants
+# as well as exact matches.
+- name: validate | Validate the open-resolver probe name is outside every monitored zone
+  ansible.builtin.assert:
+    that:
+      - _dns_foreign != _dns_zone
+      - not _dns_foreign.endswith('.' ~ _dns_zone)
+    fail_msg: >-
+      dns_metrics_endpoint_foreign_name '{{ dns_metrics_endpoint_foreign_name }}' is
+      inside the monitored zone '{{ item }}'. The nameservers are authoritative for
+      it, so they will answer rather than REFUSE, and the open-resolver probe would
+      fail forever on correct behaviour. Pick a probe name in no monitored zone.
+  loop: "{{ dns_metrics_endpoint_zones }}"
+  loop_control:
+    label: "{{ item }}"
+  vars:
+    _dns_foreign: >-
+      {{ dns_metrics_endpoint_foreign_name | trim | lower | regex_replace('\\.$', '') }}
+    _dns_zone: >-
+      {{ item | trim | lower | regex_replace('\\.$', '') }}
+
+# Exact parsing, not regex. Every regex attempt at this leaks: 999.999.999.999,
+# 1..2.3, ":", "1::2::3", and the IPv4-mapped forms ::ffff:192.0.2.53 and
+# ::ffff:c000:235 all slip through plausible-looking patterns. Python's ipaddress
+# module is authoritative and needs no extra collection, and the controller is
+# guaranteed to have python3 because Ansible runs on it.
+#
+# An IPv4-mapped address in the ipv6 field is the failure that matters: dig answers
+# it over IPv4 while this role reports it as IPv6 coverage -- a green v6 check that
+# never sent a v6 packet.
+- name: validate | Verify nameserver addresses are literals of the declared family
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "-c"
+      - |
+        import ipaddress, json, sys
+        entries = json.loads(sys.argv[1])
+        families = json.loads(sys.argv[2])
+        errors = []
+        for entry in entries:
+            ident = entry.get("id") or "<unnamed>"
+            effective = entry.get("families") or families
+            probeable = 0
+            for key, want in (("ipv4", 4), ("ipv6", 6)):
+                value = (entry.get(key) or "").strip()
+                if not value:
+                    continue
+                try:
+                    addr = ipaddress.ip_address(value)
+                except ValueError:
+                    errors.append(f"{ident}: {key}={value!r} is not a literal IP address")
+                    continue
+                if addr.version != want:
+                    errors.append(
+                        f"{ident}: {key}={value!r} is IPv{addr.version}, not IPv{want}"
+                    )
+                    continue
+                if want == 6 and addr.ipv4_mapped is not None:
+                    errors.append(
+                        f"{ident}: ipv6={value!r} is IPv4-mapped; it would be queried "
+                        f"over IPv4 while being reported as IPv6 coverage"
+                    )
+                    continue
+                if key in effective:
+                    probeable += 1
+            if not probeable:
+                errors.append(
+                    f"{ident}: has no usable address in its effective families "
+                    f"{sorted(effective)}, so every one of its endpoints would be "
+                    f"skipped and another healthy nameserver could still make "
+                    f"overall_ok true while this one was never tested"
+                )
+        if errors:
+            print("; ".join(errors))
+            sys.exit(1)
+      - "{{ dns_metrics_endpoint_nameservers | to_json }}"
+      - "{{ dns_metrics_endpoint_families | to_json }}"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  register: _dns_addr_check
+  failed_when: _dns_addr_check.rc != 0

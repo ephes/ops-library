@@ -15,6 +15,20 @@
   ansible.builtin.import_tasks: service.yml
   when: bind_enabled
 
+# Handlers otherwise run at the end of the play, i.e. AFTER verify.yml. named
+# would then still be serving its previous configuration while we assert the new
+# one, so verification checks the wrong process state. On an existing server this
+# is invisible (the zones were already loaded); on a first install it fails hard,
+# because named is still running the packaged default config with none of our
+# zones and answers a root referral instead of an authoritative SOA.
+#
+# Guarded on bind_enabled so a disabled role is a complete no-op. Note that
+# flush_handlers is play-wide -- it also runs handlers pending from roles that
+# ran earlier in the same play -- so it must not fire when this role is off.
+- name: Apply pending BIND reloads before verifying
+  ansible.builtin.meta: flush_handlers
+  when: bind_enabled
+
 - name: Verify service and firewall
   ansible.builtin.import_tasks: verify.yml
   when:
