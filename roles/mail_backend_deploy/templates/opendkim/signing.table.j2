@@ -5,6 +5,6 @@
 # Maps sender addresses/domains to signing key names
 # Format: pattern key-name
 
-{% for domain in mail_backend_domains %}
+{% for domain in mail_backend_dkim_signing_domains %}
 *@{{ domain }}    {{ mail_backend_dkim_selector }}._domainkey.{{ domain }}
 {% endfor %}

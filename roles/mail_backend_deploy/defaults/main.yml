@@ -112,6 +112,33 @@ mail_backend_dkim_key_path: "/etc/opendkim/keys"
 mail_backend_dkim_key_bits: 2048
 
 # =============================================================================
+# Sender-only Domains
+# =============================================================================
+
+# Domains this backend must be able to SIGN and AUTHORISE as an envelope sender,
+# but must NOT host mailboxes for. Typical case: an application on another host
+# submits through this backend with `From:` in its own service subdomain.
+#
+# Each entry gets:
+#   - a DKIM keypair, plus signing.table / key.table entries, so authenticated
+#     submission carrying `From: *@<domain>` is signed;
+#   - a `domain` row with active = '0', which is what the `alias` table's foreign
+#     key needs before `mail_users_sync` can add a send-as alias for the domain.
+#
+# active = '0' is deliberate: `virtual_domains.cf` filters on active = '1', so an
+# inactive row keeps the domain out of `virtual_mailbox_domains`. The backend
+# therefore never claims to be the final destination for it, and the hosted-domain
+# set stays exactly `mail_backend_domains`.
+#
+# Sender-only domains are NOT added to `trusted.hosts`: that file is OpenDKIM's
+# InternalHosts list and matches the CONNECTING CLIENT, not the sender domain.
+# Signing for these domains happens because the submission session is SMTP
+# authenticated, which OpenDKIM already treats as origination.
+#
+# PostfixAdmin schema mode only.
+mail_backend_sender_only_domains: []
+
+# =============================================================================
 # Security Settings
 # =============================================================================
 

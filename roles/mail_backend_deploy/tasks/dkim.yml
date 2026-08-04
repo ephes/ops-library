@@ -63,7 +63,7 @@
     executable: /bin/bash
   register: dkim_key_result
   changed_when: "'CREATED' in dkim_key_result.stdout"
-  loop: "{{ mail_backend_domains }}"
+  loop: "{{ mail_backend_dkim_signing_domains }}"
 
 - name: Display DKIM public keys for DNS
   ansible.builtin.debug:
@@ -71,7 +71,7 @@
       DKIM public key for {{ item }}:
       Add this TXT record to DNS: {{ mail_backend_dkim_selector }}._domainkey.{{ item }}
       {{ lookup('file', mail_backend_dkim_key_path + '/' + item + '/' + mail_backend_dkim_selector + '.txt', errors='ignore') | default('Key file not found - check ' + mail_backend_dkim_key_path + '/' + item) }}
-  loop: "{{ mail_backend_domains }}"
+  loop: "{{ mail_backend_dkim_signing_domains }}"
   when: dkim_key_result is changed
 
 - name: Add postfix to opendkim group

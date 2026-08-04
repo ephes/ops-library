@@ -17,6 +17,33 @@
       - mail_backend_relay_host: Edge relay for outbound mail
       - mail_backend_relay_password: Password for SMTP AUTH to edge
 
+- name: Validate sender-only domains
+  ansible.builtin.assert:
+    that:
+      - mail_backend_schema_mode == 'postfixadmin'
+      - mail_backend_sender_only_domains | map('lower') | list
+        | intersect(mail_backend_domains | map('lower') | list) | length == 0
+      - mail_backend_sender_only_domains | map('lower') | list == mail_backend_sender_only_domains | list
+      - mail_backend_sender_only_domains | map('lower') | list
+        | intersect(
+            (mail_backend_postfixadmin_domain_aliases | default([]) | map(attribute='alias_domain') | map('lower') | list)
+            + (mail_backend_postfixadmin_domain_aliases | default([]) | map(attribute='target_domain') | map('lower') | list)
+          ) | length == 0
+    fail_msg: >-
+      mail_backend_sender_only_domains requires
+      mail_backend_schema_mode = 'postfixadmin' (got '{{ mail_backend_schema_mode }}'),
+      must not overlap mail_backend_domains or either side of
+      mail_backend_postfixadmin_domain_aliases, and must be lowercase.
+      A domain is either hosted or sender-only, never both -- overlap would leave the
+      `domain` row's active flag depending on task order. An alias-domain mapping would
+      defeat the guarantee differently: virtual_domain_aliases.cf resolves recipients
+      through alias_domain without consulting domain.active, so the sender-only domain
+      would still be treated as a recipient domain. Lowercase is required because
+      alias.domain is written lowercased and its foreign key onto domain.domain is
+      case sensitive, so a mixed-case entry would pass every existence check and then
+      fail when mail_users_sync inserts the send-as alias.
+  when: mail_backend_sender_only_domains | default([]) | length > 0
+
 - name: Validate PostfixAdmin domain alias mappings
   ansible.builtin.assert:
     that:

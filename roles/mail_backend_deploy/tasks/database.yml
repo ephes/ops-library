@@ -110,6 +110,104 @@
       loop: "{{ mail_backend_domains }}"
       when: mail_backend_schema_mode == 'postfixadmin'
 
+    # active = '0' keeps these out of virtual_domains.cf (which filters on
+    # active = '1'), so Postfix never treats them as local. The row exists only to
+    # satisfy alias.domain -> domain.domain, which is what a send-as alias needs.
+    # DO NOTHING, not DO UPDATE: a domain that is already hosted must never be
+    # demoted to inactive by appearing in both lists.
+    - name: Insert sender-only domains (PostfixAdmin schema)
+      community.postgresql.postgresql_query:
+        db: "{{ mail_backend_postgres_database }}"
+        query: |
+          INSERT INTO domain (domain, description, aliases, mailboxes, maxquota, quota, transport, backupmx, active, created, modified)
+          VALUES (LOWER(%(domain)s), %(description)s, 0, 0, 0, 0, '', '0', '0', NOW(), NOW())
+          ON CONFLICT (domain) DO NOTHING
+        named_args:
+          domain: "{{ item }}"
+          description: "Sender-only (no mailboxes) - managed by mail_backend_deploy"
+      become: true
+      become_user: postgres
+      loop: "{{ mail_backend_sender_only_domains }}"
+      when: mail_backend_schema_mode == 'postfixadmin'
+
+    # DO NOTHING above protects an already-hosted domain from being demoted, but it
+    # also means a pre-existing active row silently defeats the sender-only
+    # guarantee: the domain would stay in virtual_mailbox_domains and the backend
+    # would keep claiming to be its final destination. Detect that and stop.
+    - name: Check sender-only domains are not active (PostfixAdmin)
+      community.postgresql.postgresql_query:
+        db: "{{ mail_backend_postgres_database }}"
+        query: |
+          SELECT domain
+          FROM domain
+          WHERE LOWER(domain) = LOWER(%(domain)s)
+            AND active = '1'
+        named_args:
+          domain: "{{ item }}"
+      register: sender_only_active_check
+      become: true
+      become_user: postgres
+      loop: "{{ mail_backend_sender_only_domains }}"
+      when: mail_backend_schema_mode == 'postfixadmin'
+
+    # Same reasoning one table over. The variable-level assert only sees the mappings
+    # configured right now, and the role never deletes alias_domain rows, so a domain
+    # that used to be an alias domain keeps its row after being moved to
+    # mail_backend_sender_only_domains. virtual_domain_aliases.cf resolves recipients
+    # through that row without consulting domain.active, so the domain would still be
+    # a recipient domain regardless of the '0' flag.
+    - name: Check sender-only domains have no active alias-domain mapping (PostfixAdmin)
+      community.postgresql.postgresql_query:
+        db: "{{ mail_backend_postgres_database }}"
+        query: |
+          SELECT alias_domain, target_domain
+          FROM alias_domain
+          WHERE active = '1'
+            AND (
+              LOWER(alias_domain) = LOWER(%(domain)s)
+              OR LOWER(target_domain) = LOWER(%(domain)s)
+            )
+        named_args:
+          domain: "{{ item }}"
+      register: sender_only_alias_domain_check
+      become: true
+      become_user: postgres
+      loop: "{{ mail_backend_sender_only_domains }}"
+      when: mail_backend_schema_mode == 'postfixadmin'
+
+    - name: Fail when a sender-only domain has an active alias-domain mapping (PostfixAdmin)
+      ansible.builtin.fail:
+        msg: >-
+          Domain '{{ item.item }}' is listed in mail_backend_sender_only_domains but still
+          has an active alias_domain row (alias_domain
+          {{ item.query_result | map(attribute='alias_domain') | join(', ') }} ->
+          target_domain {{ item.query_result | map(attribute='target_domain') | join(', ') }}).
+          virtual_domain_aliases.cf resolves recipients through alias_domain without
+          consulting domain.active, so the backend would keep accepting mail for it.
+          Delete the alias_domain row by hand after confirming nothing depends on it -- the
+          role does not remove alias-domain mappings, so dropping the entry from
+          mail_backend_postfixadmin_domain_aliases alone is not enough.
+      loop: "{{ sender_only_alias_domain_check.results | default([]) }}"
+      when:
+        - mail_backend_schema_mode == 'postfixadmin'
+        - not (item.skipped | default(false))
+        - item.query_result | default([]) | length > 0
+
+    - name: Fail when a sender-only domain is still active (PostfixAdmin)
+      ansible.builtin.fail:
+        msg: >-
+          Domain '{{ item.item }}' is listed in mail_backend_sender_only_domains but its
+          `domain` row is active, so Postfix still treats it as a hosted virtual mailbox
+          domain. The role will not flip an existing row, because doing so could silently
+          stop delivery for a domain that really is hosted. Decide which it is: drop it
+          from mail_backend_sender_only_domains, or set active = '0' on the row by hand
+          after confirming no mailboxes depend on it.
+      loop: "{{ sender_only_active_check.results | default([]) }}"
+      when:
+        - mail_backend_schema_mode == 'postfixadmin'
+        - not (item.skipped | default(false))
+        - item.query_result | default([]) | length > 0
+
     - name: Configure domain aliases (legacy schema)
       community.postgresql.postgresql_query:
         db: "{{ mail_backend_postgres_database }}"

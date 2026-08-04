@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `mail_backend_deploy` gained `mail_backend_sender_only_domains`: domains the
+  backend signs and authorises as an envelope sender, but hosts no mailboxes for.
+
+  The motivating case is an application on another host that submits through this
+  backend with a `From:` in its own service subdomain — Mastodon sending as
+  `notifications@fedi.wersdoerfer.de`, Takahe as `noreply@fedi.python-podcast.de`.
+  Neither can rewrite its envelope sender, and submission enforces
+  `reject_sender_login_mismatch`, so each address needs an `alias` row pointing at
+  the submission mailbox. `alias.domain` is a foreign key onto `domain.domain`, so
+  the domain has to exist before the alias can — but adding it to
+  `mail_backend_domains` would make it a hosted domain, put it into
+  `virtual_mailbox_domains`, and generate `postmaster@`/`abuse@` aliases pointing at
+  a mailbox that does not exist.
+
+  A sender-only domain gets exactly two things instead: a DKIM keypair with matching
+  `signing.table` and `key.table` entries, and a `domain` row with `active = '0'`.
+  The inactive flag is the whole trick — `virtual_domains.cf` filters on
+  `active = '1'`, so Postfix never treats the domain as local while the foreign key
+  is still satisfied. The insert is `ON CONFLICT DO NOTHING` and an overlap with
+  `mail_backend_domains` is rejected up front, so an already-hosted domain can never
+  be demoted to inactive by task ordering. The converse is checked too: `DO NOTHING`
+  would otherwise let a pre-existing *active* row silently defeat the sender-only
+  guarantee, so the role reads the row back and fails rather than proceeding with a
+  domain that Postfix still treats as local. `alias_domain` rows get the same
+  treatment, both as configured and as they exist in the database:
+  `virtual_domain_aliases.cf` resolves recipients through `alias_domain` without
+  consulting `domain.active`, and the role never deletes those rows, so a stale one
+  would keep the domain accepting mail no matter what the flag says. Entries must be
+  lowercase, because
+  `alias.domain` is written lowercased against a case-sensitive foreign key and a
+  mixed-case entry would pass every case-insensitive existence check before failing
+  at alias insert time.
+
+  Sender-only domains are deliberately not added to `trusted.hosts`. That file is
+  OpenDKIM's `InternalHosts` list and matches the connecting client, not the sender
+  domain; signing happens because the submission session is SMTP authenticated,
+  which OpenDKIM already treats as origination. This was confirmed against the
+  running host rather than assumed — mail relayed in from the edge host on port 25
+  logs `not internal` / `not authenticated` and goes unsigned, while locally
+  submitted mail is signed.
+
+  PostfixAdmin schema mode only; legacy mode has no equivalent and the role fails
+  rather than silently doing nothing.
+
+- `mail_users_sync` gained a per-user `send_as` list, which writes the alias rows
+  that authorise a login to use other addresses as envelope sender. This is the
+  consumer side of `mail_backend_sender_only_domains`.
+
+  An `alias` row is also read by `virtual_alias_maps`, so a careless entry could
+  reroute somebody's incoming mail. Four things are therefore checked before any row
+  is written: PostfixAdmin mode, address shape, no address claimed by two users, and
+  no collision with an address the role already manages for a mailbox (its own
+  address, or its localpart on a `mail_users_additional_alias_domains` domain). The
+  send-as domain must already exist in the `domain` table, and the failure message
+  names `mail_backend_sender_only_domains` so the fix is obvious.
+
+  Those checks only see `mail_users_list`, so the database is checked as well: an
+  entry whose address already exists in `alias` pointing at something else is
+  refused outright. That is what catches the rows this role never created —
+  `postmaster@`/`abuse@` from `mail_backend_deploy`, a mailbox self-alias, or a
+  leftover from a user dropped from the secrets file. Taking one of those over would
+  reroute real incoming mail *and* grant its sender identity to the new login, which
+  is too much to do as a side effect of `ON CONFLICT DO UPDATE`.
+
+  Both database checks run ahead of the per-user sync loop rather than inside it.
+  They can only fail on operator error, and failing halfway through the loop would
+  leave earlier users written while a later user's `send_as` was still unvalidated.
+
+  Removing an entry does not delete the alias row; revoking an authorisation for
+  real is a manual `DELETE`. This matches how the role already treats alias-domain
+  rows.
+
 ### Changed
 
 - `takahe_deploy` lets an operator turn Django error mail off. The role used to

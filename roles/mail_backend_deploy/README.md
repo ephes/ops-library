@@ -111,6 +111,56 @@ mail_backend_relay_password: "CHANGEME"  # Set via SOPS
 | `mail_backend_dkim_selector` | `mail` | DKIM selector |
 | `mail_backend_dkim_key_bits` | `2048` | Key size |
 
+### Sender-only Domains
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `mail_backend_sender_only_domains` | `[]` | Domains the backend signs and authorises as sender, but hosts no mailboxes for |
+
+For an application that submits through this backend with `From:` in a domain the
+backend must not host — for example a Mastodon instance on another host sending as
+`notifications@fedi.example.com` — list that domain here instead of in
+`mail_backend_domains`. Each entry gets:
+
+- a DKIM keypair plus `signing.table` / `key.table` entries, so authenticated
+  submission carrying `From: *@<domain>` is signed;
+- a `domain` row with `active = '0'`, which is what the `alias` table's foreign key
+  needs before `mail_users_sync`'s `send_as` can add the envelope-sender alias.
+
+`active = '0'` is what keeps the domain out of `virtual_mailbox_domains`
+(`virtual_domains.cf` filters on `active = '1'`), so the backend never claims to be
+the final destination for it and the hosted-domain set stays exactly
+`mail_backend_domains`. Existing rows are never demoted: the insert is
+`ON CONFLICT DO NOTHING`, and listing a domain in both variables is rejected up
+front. Because `DO NOTHING` would also let a pre-existing *active* row silently
+defeat the guarantee, the role reads the row back and fails if a sender-only domain
+is active — deciding whether such a domain is really hosted is an operator call, not
+something a deploy should flip.
+
+`alias_domain` rows are checked the same way. `virtual_domain_aliases.cf` resolves
+recipients through `alias_domain` without consulting `domain.active`, and the role
+never deletes alias-domain rows, so a domain moved out of
+`mail_backend_postfixadmin_domain_aliases` into `mail_backend_sender_only_domains`
+would keep accepting mail. Both the configured mappings and the live rows are
+rejected; clearing a stale row is a manual `DELETE`.
+
+Entries must be lowercase. `alias.domain` is written lowercased and its foreign key
+onto `domain.domain` is case sensitive, so a mixed-case entry would pass every
+case-insensitive existence check and then fail when `mail_users_sync` inserts the
+send-as alias. The role rejects mixed case up front rather than letting that happen.
+
+Sender-only domains are deliberately **not** added to `trusted.hosts`. That file is
+OpenDKIM's `InternalHosts` list and matches the connecting client, not the sender
+domain; signing for these domains happens because the submission session is SMTP
+authenticated, which OpenDKIM already treats as origination.
+
+Requires `mail_backend_schema_mode: postfixadmin`.
+
+Publishing DNS is still manual — see [DKIM Setup](#dkim-setup). Until the
+`<selector>._domainkey.<domain>` TXT record is live, mail leaves with a signature
+receivers cannot verify, which is worse than no signature at all. Publish before
+pointing the application at the backend.
+
 ### Sieve
 
 | Variable | Default | Description |
@@ -232,6 +282,9 @@ mail._domainkey.wersdoerfer.de.  TXT  "v=DKIM1; k=rsa; p=<public-key>"
 
 The public key is displayed during deployment and stored at:
 `/etc/opendkim/keys/<domain>/mail.txt`
+
+This applies to `mail_backend_sender_only_domains` as well: those get keys and
+signing-table entries exactly like hosted domains do.
 
 ## Troubleshooting
 

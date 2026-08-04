@@ -7,6 +7,12 @@
 #   Maps login identity to a specific Maildir target, useful for read-only reader accounts.
 #   If the target mailbox user is also created in the same run, list that target user before
 #   the mapped reader user in mail_users_list.
+# - send_as: ["addr@other-domain"] (optional; PostfixAdmin mode only)
+#   Extra envelope-sender addresses this login may use. Rendered as alias rows pointing
+#   at the user, which is what Postfix's smtpd_sender_login_maps query reads, so
+#   reject_sender_login_mismatch accepts them on submission. Each domain must already
+#   exist in the `domain` table (see mail_backend_sender_only_domains).
+#   Removing an entry does NOT delete the alias row -- do that by hand.
 mail_users_list: []
 
 # Optional: when true, disables users present in DB but not in mail_users_list.

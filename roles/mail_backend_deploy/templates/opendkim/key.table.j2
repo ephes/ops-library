@@ -5,6 +5,6 @@
 # Maps key names to signing domains and key files
 # Format: key-name domain:selector:key-file
 
-{% for domain in mail_backend_domains %}
+{% for domain in mail_backend_dkim_signing_domains %}
 {{ mail_backend_dkim_selector }}._domainkey.{{ domain }}    {{ domain }}:{{ mail_backend_dkim_selector }}:{{ mail_backend_dkim_key_path }}/{{ domain }}/{{ mail_backend_dkim_selector }}.private
 {% endfor %}

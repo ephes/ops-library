@@ -1,0 +1,8 @@
+---
+# Derived values. These live in vars/ rather than defaults/ on purpose: they are
+# computed from the consumer's inputs and must not be overridable independently,
+# or the DKIM key files, key.table and signing.table could disagree.
+
+# Every domain OpenDKIM signs for: hosted domains plus sender-only domains.
+mail_backend_dkim_signing_domains: >-
+  {{ (mail_backend_domains | default([]) + mail_backend_sender_only_domains | default([])) | unique | list }}

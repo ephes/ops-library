@@ -45,6 +45,10 @@
   ansible.builtin.set_fact:
     user_alias_domains: "{{ mail_users_additional_alias_domains | default([]) | map('lower') | reject('equalto', user_domain) | unique | list }}"
 
+- name: Build send-as list for {{ user.email }}
+  ansible.builtin.set_fact:
+    user_send_as: "{{ user.send_as | default([]) | map('lower') | reject('equalto', user_email) | unique | list }}"
+
 - name: Get domain row for {{ user_domain }} (PostfixAdmin)
   community.postgresql.postgresql_query:
     db: "{{ mail_users_postgres_database }}"
@@ -448,6 +452,36 @@
   when:
     - mail_users_schema_mode == 'postfixadmin'
     - user_alias_domains | length > 0
+
+- name: Ensure send-as aliases for {{ user.email }} (PostfixAdmin)
+  community.postgresql.postgresql_query:
+    db: "{{ mail_users_postgres_database }}"
+    query: |
+      INSERT INTO alias (address, goto, domain, active, created, modified)
+      VALUES (
+        LOWER(%(address)s),
+        LOWER(%(goto)s),
+        LOWER(%(domain)s),
+        %(active)s,
+        NOW(),
+        NOW()
+      )
+      ON CONFLICT (address) DO UPDATE
+      SET goto = EXCLUDED.goto,
+          domain = EXCLUDED.domain,
+          active = EXCLUDED.active,
+          modified = NOW()
+    named_args:
+      address: "{{ item }}"
+      goto: "{{ user_email }}"
+      domain: "{{ item.split('@')[1] }}"
+      active: "{{ '1' if user_active | bool else '0' }}"
+  become: true
+  become_user: postgres
+  loop: "{{ user_send_as }}"
+  when:
+    - mail_users_schema_mode == 'postfixadmin'
+    - user_send_as | length > 0
 
 - name: Ensure additional alias domains for {{ user.email }} (legacy)
   community.postgresql.postgresql_query:

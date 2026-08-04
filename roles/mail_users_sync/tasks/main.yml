@@ -5,6 +5,150 @@
       - mail_users_schema_mode in ['postfixadmin', 'legacy']
     fail_msg: "mail_users_schema_mode must be 'postfixadmin' or 'legacy'"
 
+# send_as grants a login the right to use another address as envelope sender.
+# It is implemented as an alias row, because that is what Postfix's
+# smtpd_sender_login_maps query reads (SELECT goto FROM alias WHERE address = ...).
+# An alias row is also consulted by virtual_alias_maps, so a careless entry could
+# silently reroute somebody's incoming mail. Everything below exists to make that
+# impossible by accident.
+- name: Build send-as address sets
+  ansible.builtin.set_fact:
+    mail_users_send_as_all: >-
+      {{
+        mail_users_list
+        | map(attribute='send_as', default=[])
+        | flatten
+        | map('lower')
+        | list
+      }}
+    mail_users_managed_addresses: >-
+      {{
+        (mail_users_list | map(attribute='email') | map('lower') | list)
+        + (
+          mail_users_list
+          | map(attribute='email')
+          | map('lower')
+          | map('regex_replace', '@.*$', '')
+          | product(mail_users_additional_alias_domains | default([]) | map('lower') | list)
+          | map('join', '@')
+          | list
+        )
+      }}
+
+- name: Validate send-as addresses
+  ansible.builtin.assert:
+    that:
+      - mail_users_schema_mode == 'postfixadmin'
+      - mail_users_send_as_all | reject('match', '^[^@\s]+@[^@\s]+$') | list | length == 0
+      - mail_users_send_as_all | length == (mail_users_send_as_all | unique | length)
+      - mail_users_send_as_all | intersect(mail_users_managed_addresses) | length == 0
+    fail_msg: >-
+      Invalid send_as configuration. send_as requires
+      mail_users_schema_mode = 'postfixadmin' (got '{{ mail_users_schema_mode }}');
+      every entry must be a single address of the form localpart@domain; no address
+      may be claimed by two users; and no entry may collide with an address this role
+      already manages for a mailbox (its own address, or its localpart on one of
+      mail_users_additional_alias_domains) -- that would repoint a real mailbox's
+      alias at somebody else.
+      send_as entries: {{ mail_users_send_as_all | join(', ') | default('<none>', true) }}
+  when: mail_users_send_as_all | length > 0
+
+# The database checks below run here, before the per-user sync loop, rather than
+# inside it. Both of them can only fail on operator error, and failing halfway
+# through the loop would leave earlier users written while a later user's send_as
+# was still unvalidated. Everything a send_as entry needs is verified before the
+# first row of the run is touched.
+- name: Build send-as address/owner pairs
+  ansible.builtin.set_fact:
+    mail_users_send_as_pairs: >-
+      {%- set pairs = [] -%}
+      {%- for _u in mail_users_list -%}
+      {%- for _a in (_u.send_as | default([])) -%}
+      {%- set _ = pairs.append({'address': _a | lower, 'owner': _u.email | lower}) -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {{ pairs }}
+  when: mail_users_send_as_all | length > 0
+
+# Exact match on the lowercased name, not LOWER(domain) = LOWER(...): the alias row
+# is written with LOWER(domain), and alias.domain -> domain.domain is case sensitive.
+# A case-insensitive check would pass against a mixed-case row and then blow up on
+# the foreign key at insert time.
+- name: Validate send-as domains exist (PostfixAdmin)
+  community.postgresql.postgresql_query:
+    db: "{{ mail_users_postgres_database }}"
+    query: "SELECT domain FROM domain WHERE domain = LOWER(%(domain)s)"
+    named_args:
+      domain: "{{ item.address.split('@')[1] }}"
+  register: mail_users_send_as_domain_checks
+  become: true
+  become_user: postgres
+  loop: "{{ mail_users_send_as_pairs | default([]) }}"
+  loop_control:
+    label: "{{ item.address }}"
+  when: mail_users_send_as_all | length > 0
+
+- name: Fail if a send-as domain is missing (PostfixAdmin)
+  ansible.builtin.fail:
+    msg: >-
+      send_as domain '{{ item.item.address.split('@')[1] }}' for {{ item.item.owner }} is
+      not in the domain table as an exactly lowercase row. A send-as alias is a row in
+      `alias`, whose domain column is a case-sensitive foreign key onto `domain`, and the
+      alias is written lowercased. Add the domain to mail_backend_sender_only_domains
+      (or mail_backend_domains, if the backend really should host mail for it) and run
+      the mail_backend deploy first. If the row exists but is mixed case, fix its case in
+      the domain table first.
+  loop: "{{ mail_users_send_as_domain_checks.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.address | default('') }}"
+  when:
+    - not (item.skipped | default(false))
+    - item.query_result | default([]) | length == 0
+
+# The list-level checks above can only see mail_users_list. They cannot see what is
+# already in the database -- an alias created by mail_backend_deploy (postmaster@,
+# abuse@), a mailbox's self-alias, or a leftover row for a user that has since been
+# removed from the secrets file. Without this check, the ON CONFLICT DO UPDATE in
+# sync_user.yml would quietly repoint such a row: incoming mail for that address
+# would be rerouted, and its sender identity handed to the new login.
+- name: Check existing alias rows for send-as addresses (PostfixAdmin)
+  community.postgresql.postgresql_query:
+    db: "{{ mail_users_postgres_database }}"
+    query: |
+      SELECT goto
+      FROM alias
+      WHERE LOWER(address) = LOWER(%(address)s)
+    named_args:
+      address: "{{ item.address }}"
+  register: mail_users_send_as_alias_checks
+  become: true
+  become_user: postgres
+  loop: "{{ mail_users_send_as_pairs | default([]) }}"
+  loop_control:
+    label: "{{ item.address }}"
+  when: mail_users_send_as_all | length > 0
+
+# Every returned row is checked, not just the first: alias.address is a
+# case-sensitive primary key, so the case-insensitive lookup above can legitimately
+# return several rows for one address.
+- name: Fail when a send-as address is already claimed (PostfixAdmin)
+  ansible.builtin.fail:
+    msg: >-
+      send_as address '{{ item.item.address }}' for {{ item.item.owner }} already exists
+      in the alias table, pointing at
+      {{ item.query_result | map(attribute='goto') | map('lower')
+         | reject('equalto', item.item.owner) | list | join(', ') }}.
+      Taking it over would reroute that address's incoming mail and hand its sender
+      identity to a different login, so the role refuses. Drop the send_as entry, or
+      delete the conflicting alias row by hand if the takeover really is intended.
+  loop: "{{ mail_users_send_as_alias_checks.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.address | default('') }}"
+  when:
+    - not (item.skipped | default(false))
+    - item.query_result | default([]) | map(attribute='goto') | map('lower')
+      | reject('equalto', item.item.owner) | list | length > 0
+
 - name: Get existing mail users from database (PostfixAdmin)
   community.postgresql.postgresql_query:
     db: "{{ mail_users_postgres_database }}"
