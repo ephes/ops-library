@@ -89,15 +89,53 @@ mailgun_relay_tokens:
 ## Verification
 
 The role's `health.yml` waits for the bind port, calls `GET /health`, and
-checks `status == "ok"` plus the structured systemd `active` state.
+checks the structured systemd `active` state plus the exact payload contract:
+`status == "ok"` **and no `version` key**. The relay deliberately withholds its
+version from `/health` because the Traefik router in front of it has no path
+restriction, so the endpoint answers unauthenticated callers. A deploy that
+starts failing this assertion means the deployed source predates that hardening
+— check what `mailgun_relay_source_path` is actually rsyncing.
 
 ## Logging / security
 
-The service emits structured JSON logs containing only:
-`request_id, token_label, path_domain, from, recipient_count, message_id, result,
-status_code, error_class, duration_ms`. It never writes token values, the
-`Authorization` header, the SMTP password, the message body, or attachment
-content to logs.
+The service emits structured JSON logs, one object per line on stdout, which the
+unit routes to the journal under the `mailgun-relay` syslog identifier:
+
+- `event=startup`, once per process start: version, bind address, public host,
+  SMTP host/port/STARTTLS, custom-CA flag, log level, configured token
+  **labels**, and the body/recipient caps. Raising `mailgun_relay_log_level`
+  above `INFO` quietens the request records but never this one.
+- `event=request`, once per `POST /v3/{domain}/messages`: `request_id,
+  token_label, path_domain, from, recipient_count, message_id, result,
+  status_code, error_class, duration_ms`.
+
+It never writes token values or hashes, the `Authorization` header, the SMTP
+password, the message body, or attachment content to logs. `GET /health` writes
+no log line at all, so the deploy-time probe does not pollute the access log.
+
+### Reading the relay journal
+
+```bash
+journalctl -u mailgun-relay -f            # live
+journalctl -t mailgun-relay --since -7d   # by syslog identifier
+```
+
+Silence is ambiguous, and has already been misread once as a broken logging
+pipeline. Work through it in this order:
+
+1. **Is there a `startup` record for the current process?**
+   `journalctl -u mailgun-relay --since "$(systemctl show mailgun-relay -p ActiveEnterTimestamp --value)"`.
+   If yes, the logging pipeline works and the relay has simply not been asked to
+   send anything since it started — that is the normal state for a low-volume
+   relay.
+2. **Is the startup record missing along with all other history?** Check
+   journald retention on the host (`journalctl --disk-usage`,
+   `journalctl --list-boots`). A busy host can rotate the relay's records away
+   within days, which looks exactly like "the relay never logs".
+3. **Only then suspect the service.** Do *not* add `PYTHONUNBUFFERED=1` to the
+   unit as a fix: the relay logs through `logging.StreamHandler`, which flushes
+   after every record, so a block-buffered stdout pipe cannot hold its lines
+   back. The mailgun-relay repo pins this with a test.
 
 ## Troubleshooting
 

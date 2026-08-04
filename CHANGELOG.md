@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `mailgun_relay_deploy` pins where the relay's log output goes and labels it.
+  The unit now sets `StandardOutput=journal`, `StandardError=journal` and
+  `SyslogIdentifier=mailgun-relay` instead of inheriting the system defaults and
+  showing up in the journal as an anonymous `python[<pid>]` alongside every
+  other python unit on the host. `journalctl -t mailgun-relay` now works.
+
+  This came out of an investigation that concluded the relay "logs nothing to
+  journald" and blamed a block-buffered stdout pipe with no `PYTHONUNBUFFERED`.
+  That diagnosis is wrong: `logging.StreamHandler.emit` flushes the stream after
+  every record, so the relay's lines reach the journal as they are emitted. The
+  observed silence on macmini was journald retention (the unit started before
+  the oldest retained entry) plus no mail traffic in the retained window; a
+  probe request produced its access-log line in the journal immediately. The
+  unit carries a comment saying so, and the role README now documents how to
+  tell an idle relay from a broken one, so the placebo does not get added later.
+
 - Paperless-ngx 2.20.15 -> 3.0.4 and PostfixAdmin 3.3.13 -> 4.0.5, the two major
   upgrades deferred from the previous pass. Neither is a version bump alone.
 
