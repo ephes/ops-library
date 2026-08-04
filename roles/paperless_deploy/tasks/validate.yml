@@ -25,3 +25,27 @@
     that:
       - paperless_uv_binary | length > 0
     fail_msg: "paperless_uv_binary must point to the uv executable."
+
+- name: Validate content date order
+  ansible.builtin.assert:
+    that:
+      - paperless_date_order in ["DMY", "MDY", "YMD"]
+    fail_msg: "paperless_date_order must be one of DMY, MDY, YMD (got '{{ paperless_date_order }}')."
+
+# dateparser reads these using paperless_date_order, so an ISO string under a
+# non-YMD order parses to None and is dropped without warning -- the setting
+# then looks applied but ignores nothing. Fail loudly instead.
+- name: Validate ignored dates match the configured date order
+  vars:
+    # Computed once and reused below: the same regex written inline in a folded
+    # fail_msg would be escaped differently by YAML and silently match nothing.
+    paperless_iso_ignore_dates: "{{ paperless_ignore_dates | select('match', '^\\s*\\d{4}-\\d{2}-\\d{2}\\s*$') | list }}"
+  ansible.builtin.assert:
+    that:
+      - paperless_iso_ignore_dates | length == 0
+    fail_msg: >-
+      paperless_ignore_dates contains ISO-formatted (YYYY-MM-DD) entries
+      {{ paperless_iso_ignore_dates }} but paperless_date_order is
+      '{{ paperless_date_order }}'. dateparser would silently discard them.
+      Rewrite them in {{ paperless_date_order }} order (e.g. 01.02.1970 for DMY).
+  when: paperless_date_order != "YMD"

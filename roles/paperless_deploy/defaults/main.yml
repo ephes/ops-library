@@ -78,6 +78,20 @@ paperless_trusted_proxies: "127.0.0.1"
 paperless_ocr_threads: 2
 paperless_filename_format: "{{ '{{' }} created_year {{ '}}' }}/{{ '{{' }} correspondent {{ '}}' }}/{{ '{{' }} title {{ '}}' }}"
 paperless_filename_date_order: YMD
+# Order used to read dates out of document *content*. Distinct from
+# paperless_filename_date_order, which applies to filenames.
+paperless_date_order: DMY
+# Dates that must never be taken as a document's creation date, as a list of
+# date strings. Use this for dates that are printed on many documents but are
+# never the document date -- a date of birth on medical or insurance forms is
+# the usual case. When every candidate is ignored, Paperless falls back to the
+# file's mtime, i.e. the date it was scanned.
+#
+# Each entry is parsed by dateparser using paperless_date_order, so entries MUST
+# be written in that order (DMY -> "01.02.1970"). An ISO "1970-02-01" string
+# does NOT parse under DMY and is silently discarded, which is why validate.yml
+# rejects it rather than letting the setting look applied but do nothing.
+paperless_ignore_dates: []
 paperless_consumer_recursive: true
 paperless_consumer_subdirs_as_tags: true
 paperless_task_workers: 2

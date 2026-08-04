@@ -34,6 +34,8 @@ Deploy [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) on bare m
 | `paperless_existing_superusers_strict` | Fail when a listed existing superuser is missing | `false` |
 | `paperless_scanner_password` | Scanner SFTP password | `"CHANGEME"` |
 | `paperless_redis_password` | Redis password (empty = no auth) | `""` |
+| `paperless_date_order` | Order used to read dates out of document content (`DMY`/`MDY`/`YMD`) | `DMY` |
+| `paperless_ignore_dates` | Dates never to use as a document date, in `paperless_date_order` order | `[]` |
 | `paperless_force_reinstall` | Force uv/pip reinstall even if marker exists | `false` |
 | `paperless_manage_symlinks` | Control creation of site→storage symlinks | `true` |
 | `paperless_verify_storage_mount` | Assert encrypted volume mounted | `true` |
@@ -92,6 +94,25 @@ paperless_existing_superusers:
 
 Listed users are promoted to active staff superusers if they already exist in Paperless. Missing users are skipped by default so clean installs do not fail before those accounts are created; set `paperless_existing_superusers_strict: true` if deployment should fail when a configured username is absent.
 
+## Document Date Detection
+
+Paperless derives a document's date by scanning the OCR text and taking the first date it can parse. `paperless_date_order` (default `DMY`) controls how ambiguous strings are read.
+
+This goes wrong when a document carries a date that is not the document's own date. The common case is a date of birth on medical or insurance forms: if the real date is handwritten or stamped and OCRs badly, the parser falls through to the date of birth and files the document decades in the past. Because the document list sorts by date descending, the document lands at the bottom and looks like it was never ingested at all.
+
+`paperless_ignore_dates` blacklists such dates:
+
+```yaml
+paperless_ignore_dates:
+  - "01.02.1970"   # a date of birth, printed on every form from this practice
+```
+
+When every candidate date is ignored, Paperless falls back to the file's mtime — for a scanner upload, the date it was scanned. That is almost always the desired result.
+
+> **Write entries in `paperless_date_order` order.** Each entry is parsed by `dateparser` using that setting, so under the default `DMY` an ISO string like `1970-02-01` parses to nothing and is discarded silently — the setting appears applied but ignores nothing. The role asserts against this rather than letting it pass; use `01.02.1970` instead.
+
+Changing these values only affects documents ingested afterwards. Documents already filed under a wrong date keep it until corrected in the UI.
+
 ## Troubleshooting
 
 - **PostgreSQL packages fail to install**: Ensure outbound network access to `apt.postgresql.org` or disable `paperless_postgres_repo_enabled` and adjust `paperless_postgres_version` to what the distro provides.
@@ -99,6 +120,7 @@ Listed users are promoted to active staff superusers if they already exist in Pa
 - **Scanner uploads fail**: Confirm `/srv/sftp-scanner` bind mount is active (`mount | grep sftp-scanner`) and that the ACLs grant `scanner` RWX permissions on `consume/`.
 - **Redis auth errors**: Double-check the password stored in secrets matches what `redis_install` configured; the template now conditionally inserts the password exactly once.
 - **Service unhealthy**: The role waits for `systemctl is-active` and for `http://127.0.0.1:10030/api/` to return 200. Inspect `journalctl -u paperless*` if the health check keeps retrying.
+- **A scan "never arrived"**: Check whether it was ingested under a wrong date before suspecting the upload path — sort the document list by *added* rather than *created*, or grep `Creation date from parse_date` in `paperless.log`. See [Document Date Detection](#document-date-detection). Note that Paperless logs to `{{ paperless_site_root }}/logs/` and **not** to journald, so `journalctl -u paperless-consumer` is empty by design and is not evidence of a problem.
 
 ## Migration Notes
 

@@ -81,6 +81,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   real is a manual `DELETE`. This matches how the role already treats alias-domain
   rows.
 
+- `paperless_deploy` can now blacklist dates that must never be taken as a
+  document's creation date, via `paperless_ignore_dates`. `PAPERLESS_IGNORE_DATES`
+  was previously hardcoded empty in the template with no way to set it.
+
+  This addresses a real ingestion failure: a scanned medical form whose printed
+  date OCR'd to garbage fell through to the date of birth printed on the same
+  form, so the document was filed decades in the past. The document list sorts
+  by date descending, so it landed last of several hundred documents and looked
+  like it had never been ingested — the pipeline itself was healthy throughout.
+  Ignoring the date of birth makes Paperless fall back to the file's mtime, i.e.
+  the scan date.
+
+  The date order used to read dates out of document *content* is now
+  `paperless_date_order` instead of a hardcoded `DMY`, so the two settings can be
+  kept consistent. The default is unchanged.
+
+  Entries are parsed by `dateparser` using `paperless_date_order`, and an ISO
+  `1970-02-01` string does **not** parse under `DMY` — dateparser returns None
+  and the entry is dropped silently, leaving the setting looking applied while
+  ignoring nothing. `validate.yml` now rejects ISO-formatted entries under a
+  non-YMD order rather than allowing that silent no-op, and also constrains
+  `paperless_date_order` to `DMY`/`MDY`/`YMD`.
+
 ### Changed
 
 - `takahe_deploy` lets an operator turn Django error mail off. The role used to
