@@ -1,0 +1,44 @@
+---
+# Assert that takahe_deploy's validation rejects one invalid
+# takahe_error_emails value.
+#
+# The caller supplies:
+#   role_path                   - path to the takahe_deploy role
+#   takahe_invalid_case         - human-readable description of the case
+#   takahe_invalid_error_emails - the value that must be rejected
+#
+# The verdict is recorded as a fact and asserted *outside* the rescued block,
+# because a sentinel failure raised inside the block would itself be caught by
+# the rescue and the test would pass either way. The rescue also records which
+# task failed, so an unrelated assertion failure cannot masquerade as a
+# successful rejection.
+- name: "Attempt validation with {{ takahe_invalid_case }}"
+  block:
+    - name: "Run validation with {{ takahe_invalid_case }}"
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate.yml"
+      vars:
+        takahe_error_emails: "{{ takahe_invalid_error_emails }}"
+
+    - name: "Record that validation accepted {{ takahe_invalid_case }}"
+      ansible.builtin.set_fact:
+        takahe_error_emails_rejected: false
+        takahe_error_emails_failed_task: ""
+
+  rescue:
+    - name: "Record that validation rejected {{ takahe_invalid_case }}"
+      ansible.builtin.set_fact:
+        takahe_error_emails_rejected: true
+        takahe_error_emails_failed_task: "{{ ansible_failed_task.name }}"
+
+- name: "Assert validation rejected {{ takahe_invalid_case }}"
+  ansible.builtin.assert:
+    that:
+      - takahe_error_emails_rejected | bool
+      - takahe_error_emails_failed_task == 'Validate Takahe error mail recipients'
+    fail_msg: >-
+      validate.yml must reject {{ takahe_invalid_case }} in the
+      'Validate Takahe error mail recipients' task. Takahe parses
+      TAKAHE_ERROR_EMAILS as a JSON list, so a non-list value makes the service
+      fail to start; rejecting it here surfaces the mistake during the play.
+      rejected={{ takahe_error_emails_rejected }}
+      failed_task={{ takahe_error_emails_failed_task | default('<none>') }}

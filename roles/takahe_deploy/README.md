@@ -28,6 +28,9 @@ takahe_error_emails:
   - "ops@example.com"
 ```
 
+`takahe_error_emails` must be a list. See [Error mail](#error-mail) for how to
+turn error reports off.
+
 Deployment mode:
 
 ```yaml
@@ -59,6 +62,35 @@ takahe_nginx_resolver_fallback: "1.1.1.1 1.0.0.1"
 ```
 
 Note: Takahe only accepts `debug`, `development`, `production`, or `test` as its runtime environment. The role maps `takahe_environment: staging` to `production` in the generated `.env`.
+
+## Error mail
+
+`takahe_error_emails` populates `TAKAHE_ERROR_EMAILS`, which Takahe turns into
+Django's `ADMINS`. Every unhandled exception and every 5xx response then
+produces a `[Django] ERROR ...` mail.
+
+An empty list is a supported configuration meaning **do not send error mail**:
+
+```yaml
+takahe_error_emails: []
+```
+
+The role still writes `TAKAHE_ERROR_EMAILS=[]` to `.env` rather than dropping
+the key, so the disabled state is visible in the rendered file. Takahe leaves
+`ADMINS` unset when the list is empty, and Django's `mail_admins()` is a no-op
+with empty `ADMINS`, so nothing is sent and nothing is queued.
+
+This is worth using on instances whose error mail is dominated by routine
+fediverse noise. Takahe proxies remote attachments through
+`/proxy/post_attachment/...` and returns `502 Bad Gateway` whenever the remote
+instance is unreachable, which is normal operation rather than a defect, and on
+a small instance those 502 reports can be the entire outbound mail volume.
+
+The value must be a list. A bare string is rejected during validation, including
+an empty string and the `CHANGEME` placeholder: Takahe declares
+`ERROR_EMAILS: list[EmailStr] | None` in its pydantic settings and parses the
+environment variable as JSON, so a non-list value raises `SettingsError` and the
+service does not start.
 
 See `defaults/main.yml` and `roles/takahe_shared/defaults/main.yml` for the full variable reference.
 

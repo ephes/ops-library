@@ -19,8 +19,6 @@
       - takahe_email_from | length > 0
       - takahe_email_from != 'CHANGEME'
       - takahe_error_emails is defined
-      - takahe_error_emails | length > 0
-      - takahe_error_emails != 'CHANGEME'
     fail_msg: |
       SECURITY ERROR: Required Takahe settings are missing or contain placeholder values.
 
@@ -30,9 +28,39 @@
       - takahe_postgres_password
       - takahe_email_server
       - takahe_email_from
-      - takahe_error_emails (JSON list of alert recipients)
+      - takahe_error_emails (list of alert recipients, [] to disable error mail)
 
       Update the appropriate secrets file in ops-control before deploying.
+
+# An empty list is a supported, explicit configuration: it turns Django error
+# mail off. Takahe only assigns ADMINS when TAKAHE_ERROR_EMAILS parses to a
+# non-empty list, and Django's mail_admins() is a no-op with empty ADMINS.
+# What Takahe cannot survive is a non-list value: its pydantic settings model
+# declares ERROR_EMAILS as list[EmailStr] | None and parses the environment
+# variable as JSON, so a bare string (the CHANGEME placeholder, a single
+# address, or an empty string) raises SettingsError before Django starts.
+- name: Validate Takahe error mail recipients
+  ansible.builtin.assert:
+    that:
+      - takahe_error_emails is sequence
+      - takahe_error_emails is not string
+      - takahe_error_emails is not mapping
+      - "'CHANGEME' not in takahe_error_emails"
+    fail_msg: |
+      takahe_error_emails must be a list of recipient addresses.
+
+      To send Django error reports:
+
+          takahe_error_emails:
+            - "ops@example.com"
+
+      To turn error mail off entirely (a supported configuration):
+
+          takahe_error_emails: []
+
+      A bare string - including the CHANGEME placeholder and an empty string -
+      is rejected here because Takahe parses TAKAHE_ERROR_EMAILS as a JSON list
+      and would fail to start.
 
 - name: Validate Takahe Git settings
   ansible.builtin.assert:

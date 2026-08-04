@@ -1,0 +1,165 @@
+---
+# Test playbook for takahe_deploy validation and env template contracts
+# Run with: ansible-playbook -i localhost, -c local tests/test_takahe_deploy.yml
+
+- name: Test Takahe Deploy Role Error Mail Contracts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/takahe_deploy"
+    shared_defaults_path: "{{ playbook_dir }}/../roles/takahe_shared/defaults/main.yml"
+    rendered_env_with_recipients: "/tmp/test-takahe-errors-on.env"
+    rendered_env_without_recipients: "/tmp/test-takahe-errors-off.env"
+    # Minimum viable input for validate.yml; individual tasks override
+    # takahe_error_emails.
+    takahe_source_mode: git
+    takahe_source_path: ""
+    takahe_git_repo: "https://github.com/jointakahe/takahe.git"
+    takahe_domain: "takahe.example.com"
+    takahe_secret_key: "test-secret"  # pragma: allowlist secret
+    takahe_postgres_password: "test-pw"  # pragma: allowlist secret
+    takahe_email_server: "smtp://user:pass@mail.example.com:587?tls=true"  # pragma: allowlist secret
+    takahe_email_from: "Takahe <noreply@example.com>"
+    takahe_error_emails: []
+
+  tasks:
+    - name: Load shared Takahe defaults
+      ansible.builtin.include_vars:
+        file: "{{ shared_defaults_path }}"
+        name: takahe_shared_defaults
+
+    - name: Assert error mail is off by default
+      ansible.builtin.assert:
+        that:
+          - takahe_shared_defaults.takahe_error_emails == []
+        fail_msg: >-
+          takahe_error_emails must default to an empty list so a deployment
+          without an explicit recipient list does not start mailing Django
+          error reports.
+
+    - name: Accept an empty recipient list
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate.yml"
+      vars:
+        takahe_error_emails: []
+
+    - name: Accept a populated recipient list
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate.yml"
+      vars:
+        takahe_error_emails:
+          - "ops@example.com"
+
+    - name: Reject values Takahe cannot parse as a JSON list
+      ansible.builtin.include_tasks: tasks/test_takahe_error_emails_rejected.yml
+      loop:
+        - case: "the CHANGEME placeholder as a bare string"
+          value: "CHANGEME"
+        - case: "a CHANGEME entry inside the list"
+          value:
+            - "CHANGEME"
+        - case: "an empty string"
+          value: ""
+        - case: "a mapping"
+          value:
+            ops: "ops@example.com"
+      loop_control:
+        label: "{{ item.case }}"
+      vars:
+        takahe_invalid_case: "{{ item.case }}"
+        takahe_invalid_error_emails: "{{ item.value }}"
+
+    - name: Render Takahe env with error recipients
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/takahe.env.j2"
+        dest: "{{ rendered_env_with_recipients }}"
+        mode: "0600"
+      vars:
+        takahe_environment: production
+        takahe_main_domain: "takahe.example.com"
+        takahe_allowed_hosts: ["takahe.example.com"]
+        takahe_csrf_hosts: ["https://takahe.example.com"]
+        takahe_cors_hosts: []
+        takahe_use_proxy_headers: true
+        takahe_auto_admin_email: ""
+        takahe_stator_token: ""
+        takahe_vapid_public_key: ""
+        takahe_vapid_private_key: ""
+        takahe_debug: false
+        takahe_media_root: "/home/takahe/site/media"
+        takahe_media_url: "https://takahe.example.com/media/"
+        takahe_media_backend: "local://"
+        takahe_media_backend_s3_acl: "public-read"
+        takahe_caches_default: ""
+        takahe_postgres_host: localhost
+        takahe_postgres_port: 5432
+        takahe_postgres_database: takahe
+        takahe_postgres_user: takahe
+        takahe_error_emails:
+          - "ops@example.com"
+
+    - name: Render Takahe env without error recipients
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/takahe.env.j2"
+        dest: "{{ rendered_env_without_recipients }}"
+        mode: "0600"
+      vars:
+        takahe_environment: production
+        takahe_main_domain: "takahe.example.com"
+        takahe_allowed_hosts: ["takahe.example.com"]
+        takahe_csrf_hosts: ["https://takahe.example.com"]
+        takahe_cors_hosts: []
+        takahe_use_proxy_headers: true
+        takahe_auto_admin_email: ""
+        takahe_stator_token: ""
+        takahe_vapid_public_key: ""
+        takahe_vapid_private_key: ""
+        takahe_debug: false
+        takahe_media_root: "/home/takahe/site/media"
+        takahe_media_url: "https://takahe.example.com/media/"
+        takahe_media_backend: "local://"
+        takahe_media_backend_s3_acl: "public-read"
+        takahe_caches_default: ""
+        takahe_postgres_host: localhost
+        takahe_postgres_port: 5432
+        takahe_postgres_database: takahe
+        takahe_postgres_user: takahe
+        takahe_error_emails: []
+
+    - name: Read rendered env files
+      ansible.builtin.slurp:
+        src: "{{ item }}"
+      register: takahe_env_renders
+      loop:
+        - "{{ rendered_env_with_recipients }}"
+        - "{{ rendered_env_without_recipients }}"
+
+    - name: Assert recipients are emitted as a JSON list
+      ansible.builtin.assert:
+        that:
+          - "'TAKAHE_ERROR_EMAILS=[\"ops@example.com\"]' in env_with"
+        fail_msg: "takahe.env.j2 must emit configured recipients as a JSON list"
+      vars:
+        env_with: "{{ takahe_env_renders.results[0].content | b64decode }}"
+
+    - name: Assert an empty list is emitted as an empty JSON list
+      ansible.builtin.assert:
+        that:
+          # Not an empty string and not an omitted key: Takahe's pydantic
+          # settings raise SettingsError on a value it cannot JSON-decode.
+          - "'TAKAHE_ERROR_EMAILS=[]' in env_without"
+          - "'TAKAHE_ERROR_EMAILS=\"\"' not in env_without"
+        fail_msg: >-
+          takahe.env.j2 must emit TAKAHE_ERROR_EMAILS=[] when no recipients are
+          configured so Takahe starts with ADMINS unset instead of failing to
+          parse the value.
+      vars:
+        env_without: "{{ takahe_env_renders.results[1].content | b64decode }}"
+
+    - name: Remove rendered env files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ rendered_env_with_recipients }}"
+        - "{{ rendered_env_without_recipients }}"

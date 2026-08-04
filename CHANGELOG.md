@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `takahe_deploy` lets an operator turn Django error mail off. The role used to
+  assert that `takahe_error_emails` was non-empty, so "no error mail" was not a
+  configuration you could express; the only way to stop the mail was to point it
+  at an address you did not read.
+
+  An empty list is now an explicitly supported value meaning *do not send error
+  mail*, and the rendered `.env` says so. Takahe assigns `ADMINS` only when
+  `TAKAHE_ERROR_EMAILS` parses to a non-empty list, and Django's `mail_admins()`
+  is a no-op with empty `ADMINS`, so nothing is sent and nothing is queued.
+
+  The template keeps writing the key as `TAKAHE_ERROR_EMAILS=[]` instead of
+  omitting it, because the two candidate "off" spellings are not equivalent.
+  Takahe declares `ERROR_EMAILS: list[EmailStr] | None` in a pydantic v1
+  settings model, and pydantic parses a complex field's environment value as
+  JSON: an absent variable and `[]` both leave error mail off, but an empty
+  string raises `SettingsError` and the service never starts. This was verified
+  against the pydantic 1.10.17 install on the production host rather than
+  inferred. Validation was tightened to match — a bare string, including
+  `CHANGEME` and the empty string, is now rejected with a message that names the
+  supported forms, so a wrong value fails during the play instead of after the
+  restart.
+
+  This matters for `fedi.python-podcast.de`, a two-user instance whose entire
+  outbound mail volume is `502 Bad Gateway` reports from
+  `/proxy/post_attachment/...`. Takahe returns 502 there whenever the remote
+  instance holding an attachment is unreachable, which on the fediverse is
+  routine rather than a defect, so the reports carried no signal while consuming
+  a metered mail quota.
+
 - `mailgun_relay_deploy` pins where the relay's log output goes and labels it.
   The unit now sets `StandardOutput=journal`, `StandardError=journal` and
   `SyslogIdentifier=mailgun-relay` instead of inheriting the system defaults and

@@ -11,7 +11,7 @@ setup:
     @./setup-pre-commit.sh
 
 # Run the default contributor validation path
-test: venv test-roles test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup lint docs-build docs-lint
+test: venv test-roles test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup test-takahe-deploy lint docs-build docs-lint
     @echo ""
     @echo "✅ Validation completed!"
 
@@ -78,6 +78,10 @@ test-weeknotes-home-deploy: venv
 test-heis-production-backup: venv
     @echo "Testing Heis production backup safety contracts..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_heis_production_backup
+
+test-takahe-deploy: venv
+    @echo "Testing Takahe error mail validation and env rendering..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_takahe_deploy.yml
 
 # Quick syntax check for everything
 syntax-check: venv
