@@ -24,6 +24,12 @@ before replication. A policy refuses to prune without a common source/target
 snapshot with the same name and ZFS GUID, and never removes snapshots that still
 exist on the source.
 
+The role also installs an attended, read-only snapshot-file attestation helper.
+Given a closed request, it verifies that bounded files exist with exact byte
+counts and SHA-256 digests in the newest source snapshot whose preserved ZFS
+GUID also exists on a configured replica dataset. It does not run automatically
+with replication.
+
 ## Requirements
 
 - ZFS pool on the USB disk, with native encryption enabled.
@@ -70,12 +76,80 @@ zfs_usb_replication_snapshot_retention:
   - source: tank/replica/fast/timemachine
     target: vault/replica/fast/timemachine
     keep_days: 60
-    prefixes: [autosnap_, syncoid_fractal_, syncoid_usb_]
+    prefixes: [autosnap_, syncoid_primary_, syncoid_usb_]
 ```
 
 Runtime mount safeguards:
 - `zfs_usb_replication_exportfs_lock_dir` defaults to `/etc/exports.d` and is created before mounting.
 - `zfs_usb_replication_set_canmount_off_for_readonly_recursive_targets` defaults to `true`.
+
+Attestation installation:
+
+- `zfs_usb_replication_attestation_helper_path` defaults to
+  `/usr/local/sbin/zfs-snapshot-file-attestation` and is installed root-owned,
+  mode `0750`.
+- `zfs_usb_replication_attestation_dir` defaults to
+  `/var/lib/zfs-usb-replication/attestations` and is root-owned, mode `0700`.
+
+### Attended snapshot-file attestation
+
+An external control playbook owns pool import/unlock/export and must place a
+root-owned, mode-`0600` request directly in the private attestation directory.
+The source dataset must already be mounted. The replica may remain unmounted:
+the helper proves that its selected snapshot is the corresponding receive by
+matching the ZFS snapshot GUID preserved by send/receive. A request is closed,
+limited to 200 files and 1 MiB, and has this shape:
+
+```json
+{
+  "schema_version": 1,
+  "kind": "zfs_snapshot_file_replication_attestation_request",
+  "request_id": "example-request-1",
+  "created_at": "2026-01-01T12:00:00Z",
+  "source_dataset": "sourcepool/example",
+  "target_dataset": "targetpool/example",
+  "files": [
+    {
+      "id": "example-file-1",
+      "relative_path": "application/packages/example/manifest.json",
+      "expected_bytes": 1234,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ]
+}
+```
+
+The external attended caller must pin and pass the absolute `zfs` and `zpool`
+binary paths along with an exact dataset pair and a narrow allowed root:
+
+```bash
+sudo /usr/local/sbin/zfs-snapshot-file-attestation \
+  --attestation-dir /var/lib/zfs-usb-replication/attestations \
+  --request /var/lib/zfs-usb-replication/attestations/example.request.json \
+  --response /var/lib/zfs-usb-replication/attestations/example.response.json \
+  --expected-source sourcepool/example \
+  --expected-target targetpool/example \
+  --allowed-relative-root application/packages \
+  --zfs-path /usr/sbin/zfs \
+  --zpool-path /usr/sbin/zpool
+```
+
+The helper runs only fixed `zfs list/get` and `zpool get` argv under a minimal
+locale-stable environment with time and output limits. It requires distinct
+pool GUIDs, `readonly=on` and no receive resume token on the target, hashes each
+single-link regular source-snapshot file through descriptor-relative traversal,
+then re-queries both exact snapshot identities before atomically publishing a
+mode-`0600` response. A blocked response contains a closed reason code and no
+partial evidence.
+
+The evidence means only that the selected source snapshot contains those exact
+files and that a snapshot with the same preserved GUID was observed on another
+pool. It does not prove retention, an independent failure domain, drive
+detachment, transport, or physical offsite custody. Those remain separate
+policy and human-attestation decisions.
+When the requested file is a published package manifest, its exact containment
+proves that this selected source snapshot contains that publication; a snapshot
+timestamp alone would not.
 
 ### Spindown (optional)
 
@@ -159,6 +233,7 @@ just test-role zfs_usb_replication
 
 ## Changelog
 
+- **1.3.0** (2026-08-09): Added an attended, root-private, read-only snapshot-file replication attestation helper with bounded closed schemas and preserved-GUID verification.
 - **1.2.0** (2026-03-18): Added per-job `no_rollback` and `force_delete` controls so offsite USB replicas can auto-heal target drift the same way the primary syncoid role can.
 - **1.1.0** (2026-03-17): Added `abort_partial_receive` job option to self-heal stuck partial ZFS receives (uses shared script from `zfs_syncoid_replication`)
 - **1.0.3** (2026-03-01): Hardened readonly recursive USB runs by auto-setting `canmount=off` on existing target parents and ensuring `/etc/exports.d` exists before `zfs mount -a`

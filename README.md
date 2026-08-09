@@ -101,7 +101,7 @@ consumer repos depend on.
 | Storage | [`zfs_dataset`](roles/zfs_dataset/README.md) | Create/manage ZFS datasets with property support and optional macOS SMB compatibility defaults. |
 | Storage | [`sanoid`](roles/sanoid/README.md) | Configure sanoid snapshot policies and a dedicated systemd timer. |
 | Storage | [`zfs_syncoid_replication`](roles/zfs_syncoid_replication/README.md) | Schedule syncoid replication jobs with systemd timers, alerts, and optional HDD spindown hooks. |
-| Storage | [`zfs_usb_replication`](roles/zfs_usb_replication/README.md) | Replicate ZFS datasets to an encrypted USB pool with device detection and optional alerts. |
+| Storage | [`zfs_usb_replication`](roles/zfs_usb_replication/README.md) | Replicate ZFS datasets to an encrypted USB pool, with device detection, alerts, and attended read-only snapshot-file evidence. |
 | Storage | [`hdparm_tune`](roles/hdparm_tune/README.md) | Configure persistent hdparm power settings (APM/spindown) for disks. |
 | Operations | [`macos_time_machine_exclusions`](roles/macos_time_machine_exclusions/README.md) | Reapply audited user-scoped Time Machine exclusions daily without deleting client data. |
 | Infrastructure | [`netplan_config`](roles/netplan_config/README.md) | Configure persistent netplan networking. |

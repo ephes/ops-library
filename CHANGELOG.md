@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `zfs_usb_replication` now installs an attended, root-private snapshot-file
+  replication attestation helper. Closed bounded requests bind exact relative
+  paths, byte counts, and SHA-256 digests to the newest source snapshot whose
+  preserved GUID is also present on a distinct read-only replica pool. The
+  helper uses only bounded, absolute-path `zfs list/get` and `zpool get` calls,
+  descriptor-safe source-snapshot reads, post-hash snapshot re-observation, and
+  atomic mode-`0600` responses. It deliberately does not run from the scheduled
+  replication service and makes no claim about retention, independent failure
+  domains, or physical offsite custody.
+
 - Add `takahe_traefik_legacy_config_paths` and the `takahe_traefik` tag for
   opt-in legacy-route migration and routing-only updates.
 
