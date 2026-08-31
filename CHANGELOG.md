@@ -106,6 +106,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `certbot_dns_deploy` renewal-hook items now run in isolated fail-fast blocks;
+  all independent items are attempted and failures are identified and
+  propagated. Existing ordering-dependent hook lists must combine prerequisite
+  commands into one multi-line item; an `exit`-based lineage guard must be in the
+  same item as every command it gates. Downstream inventories must migrate their
+  effective lists in the same rollout.
+
 - `takahe_deploy` lets an operator turn Django error mail off. The role used to
   assert that `takahe_error_emails` was non-empty, so "no error mail" was not a
   configuration you could express; the only way to stop the mail was to point it
@@ -188,6 +195,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `upgrade.php` step.
 
 ### Fixed
+
+- Corrected the Certbot DNS hook examples and Traefik file-provider guidance:
+  rotating a certificate behind `/etc/letsencrypt/live/` does not change
+  Traefik's watched dynamic configuration. The examples now restart Traefik and
+  reload the active Ubuntu Postfix instance; inventories must adopt those
+  commands for the deployed hook to change.
 
 - `openclaw_deploy`: the `/homeassistant` command skill could act on the wrong device
   and report success under the name the user asked for. Asked to switch a device

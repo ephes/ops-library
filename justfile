@@ -11,7 +11,7 @@ setup:
     @./setup-pre-commit.sh
 
 # Run the default contributor validation path
-test: venv test-roles test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup test-takahe-deploy lint docs-build docs-lint
+test: venv test-roles test-certbot-dns-renewal-hooks test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup test-takahe-deploy lint docs-build docs-lint
     @echo ""
     @echo "✅ Validation completed!"
 
@@ -29,6 +29,10 @@ test-roles: venv
 test-role ROLE: venv
     @echo "Testing role: {{ROLE}}"
     @UV_PROJECT_ENVIRONMENT=.venv uv run ./test_roles.py {{ROLE}}
+
+test-certbot-dns-renewal-hooks: venv
+    @echo "Testing Certbot DNS renewal hook rendering and failure aggregation..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_certbot_dns_renewal_hooks
 
 test-ssh-forwarding-roles: venv
     @echo "Testing restricted SSH forwarding roles..."

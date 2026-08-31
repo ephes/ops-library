@@ -210,7 +210,16 @@ Traefik automatically watches this directory and reloads configurations.
         key_file: "/etc/letsencrypt/live/home.xn--wersdrfer-47a.de/privkey.pem"
 ```
 
-Place this under `/etc/traefik/dynamic/certificates.yml`; Traefik reloads it automatically when the cert is renewed.
+Place this under `/etc/traefik/dynamic/certificates.yml`. Traefik reloads when
+that watched configuration file changes, but Certbot only rotates the target of
+the certificate symlink. Configure `certbot_dns_renewal_hooks` in the
+`certbot_dns_deploy` role to restart Traefik after renewal; a service reload does
+not re-read the certificate files. The restart briefly interrupts proxied
+connections. Touching the watched dynamic file may provoke a provider refresh,
+but the hook records the explicit restart's status and the restart guarantees the
+certificate is re-read. A failed deploy hook requires manual remediation: some
+Certbot directory-hook runners only log a failed hook, and Certbot does not retry
+the hook after the certificate is current.
 
 ## Dual Router Authentication Pattern
 

@@ -31,10 +31,11 @@ certbot_dns_renewal_hook_path: "/etc/letsencrypt/renewal-hooks/deploy/reload-ser
 # Renewal hooks (commands run after renewal)
 certbot_dns_renewal_hooks: []
 # Example:
+# The postfix@- unit name below is specific to Debian/Ubuntu multi-instance packaging.
 # certbot_dns_renewal_hooks:
-#   - "systemctl reload postfix || true"
-#   - "systemctl reload dovecot || true"
-#   - "systemctl reload traefik || true"
+#   - "systemctl restart traefik"
+#   - "systemctl reload postfix@-"
+#   - "systemctl reload dovecot"
 
 # Package management
 certbot_dns_package_state: present
