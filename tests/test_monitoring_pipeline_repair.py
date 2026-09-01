@@ -136,6 +136,136 @@ class OsAptMaintenanceStateFilePermissionTests(unittest.TestCase):
         self.assertIn("ExecStartPre=/bin/mkdir -p /var/lib/os-apt-maintenance", unit)
 
 
+class RebootRequiredDetectionTests(unittest.TestCase):
+    """Reboot detection must not depend on an Ubuntu-only marker file.
+
+    /var/run/reboot-required is created by Ubuntu's update-notifier-common.
+    Debian never creates it, and Ubuntu hosts without that package do not
+    either. Relying on it alone reported a confident "no reboot needed" on a
+    Debian host running a 5.10 kernel with 6.1 installed - a false negative
+    indistinguishable from healthy, which is worse than having no check.
+    """
+
+    def _module(self):
+        import importlib.util
+        import tempfile
+
+        script = (
+            template_environment(APT_ROLE / "templates")
+            .get_template("os_apt_maintenance.py.j2")
+            .render(
+                os_apt_maintenance_host_id="staging",
+                os_apt_maintenance_state_dir="/var/lib/os-apt-maintenance",
+                os_apt_maintenance_state_file="/var/lib/os-apt-maintenance/state.json",
+                os_apt_maintenance_lock_file="/var/lock/os-apt-maintenance.lock",
+                os_apt_maintenance_apt_get_path="/usr/bin/apt-get",
+                os_apt_maintenance_systemctl_path="/usr/bin/systemctl",
+                os_apt_maintenance_command_timeout=1800,
+                os_apt_maintenance_freshness_max_age_seconds=1209600,
+                os_apt_maintenance_auto_reboot=False,
+                os_apt_maintenance_update_cache=True,
+                os_apt_maintenance_dist_upgrade=True,
+                os_apt_maintenance_autoremove=True,
+                os_apt_maintenance_autoclean=True,
+                os_apt_maintenance_endpoint_enabled=True,
+                os_apt_maintenance_endpoint_group="metrics",
+            )
+        )
+        with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as handle:
+            handle.write(script)
+            path = handle.name
+        spec = importlib.util.spec_from_file_location("apt_maint_under_test", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def _stale(self, module, running, dpkg_lines):
+        module.os.uname = lambda: type("U", (), {"release": running})()
+        module.run_command = lambda argv: {
+            "status": "success" if dpkg_lines is not None else "failed",
+            "stdout": "\n".join(dpkg_lines or []),
+        }
+        return module.stale_kernel()
+
+    def test_a_kernel_newer_than_the_running_one_is_a_reboot_signal(self) -> None:
+        module = self._module()
+        # The exact staging case: Debian 12 running a bullseye 5.10 kernel.
+        detail = self._stale(
+            module,
+            "5.10.0-23-amd64",
+            [
+                "linux-image-5.10.0-23-amd64 install ok installed",
+                "linux-image-6.1.0-52-amd64 install ok installed",
+            ],
+        )
+        self.assertIsNotNone(detail, "a stale kernel must be detected")
+        self.assertEqual(detail["newest_installed_kernel"], "6.1.0-52")
+
+    def test_a_current_kernel_is_not_a_reboot_signal(self) -> None:
+        module = self._module()
+        self.assertIsNone(
+            self._stale(
+                module,
+                "6.8.0-138-generic",
+                ["linux-image-6.8.0-138-generic install ok installed"],
+            )
+        )
+
+    def test_an_older_kernel_still_installed_is_not_a_signal(self) -> None:
+        module = self._module()
+        self.assertIsNone(
+            self._stale(
+                module,
+                "6.8.0-138-generic",
+                [
+                    "linux-image-6.8.0-90-generic install ok installed",
+                    "linux-image-6.8.0-138-generic install ok installed",
+                ],
+            )
+        )
+
+    def test_a_removed_but_not_purged_kernel_is_not_a_signal(self) -> None:
+        module = self._module()
+        self.assertIsNone(
+            self._stale(
+                module,
+                "5.10.0-23-amd64",
+                ["linux-image-6.1.0-52-amd64 deinstall ok config-files"],
+            ),
+            "config-files-only packages are not installed kernels",
+        )
+
+    def test_detection_fails_safe_when_dpkg_is_unavailable(self) -> None:
+        module = self._module()
+        self.assertIsNone(self._stale(module, "5.10.0-23-amd64", None))
+
+    def test_the_marker_file_alone_still_triggers_a_reboot(self) -> None:
+        """Ubuntu hosts keep their existing behaviour."""
+        module = self._module()
+        module.stale_kernel = lambda: None
+        module.REBOOT_REQUIRED_FLAG = type("P", (), {"exists": staticmethod(lambda: True)})()
+        details = module.reboot_required_details()
+        self.assertTrue(details["required"])
+        self.assertIn("reboot_required_flag", details["reasons"])
+
+    def test_the_reason_is_reported_so_operators_can_tell_them_apart(self) -> None:
+        module = self._module()
+        module.REBOOT_REQUIRED_FLAG = type("P", (), {"exists": staticmethod(lambda: False)})()
+        module.stale_kernel = lambda: {"newest_installed_kernel": "6.1.0-52"}
+        details = module.reboot_required_details()
+        self.assertTrue(details["required"])
+        self.assertEqual(details["reasons"], ["stale_kernel"])
+        self.assertFalse(details["flag_present"])
+
+    def test_the_script_no_longer_reads_the_marker_file_directly(self) -> None:
+        raw = (APT_ROLE / "templates" / "os_apt_maintenance.py.j2").read_text()
+        self.assertNotIn(
+            'Path("/var/run/reboot-required").exists()',
+            raw,
+            "every reboot decision must go through reboot_required_details()",
+        )
+
+
 class TailscaleCollectorTimerArmingTests(unittest.TestCase):
     """The collector timer must always have a next elapse."""
 

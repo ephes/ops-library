@@ -25,5 +25,15 @@
         enabled: true
         state: started
 
+    # Regression: a host can carry a dangling reference to a unit whose file is
+    # gone. service_facts reports it identically to a real failed unit, and
+    # acting on it fails with "Could not find the requested service". Reproduce
+    # it by leaving apache2 referenced-but-absent.
+    - name: Converge | Create a dangling reference to an absent unit
+      ansible.builtin.shell: |
+        systemctl start apache2.service 2>/dev/null || true
+        systemctl --failed --no-legend | grep -q apache2 || true
+      changed_when: false
+
   roles:
     - role: traefik_deploy

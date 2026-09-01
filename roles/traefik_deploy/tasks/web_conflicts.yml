@@ -3,8 +3,39 @@
 # traefik_mask_conflicting_web_services in defaults/main.yml - a stock distro
 # web-server unit left enabled races Traefik at boot and can take the whole
 # host's ingress down.
-- name: web_conflicts | Detect which conflicting web servers exist on this host
-  ansible.builtin.service_facts:
+#
+# Unit existence is probed with LoadState rather than service_facts. A host can
+# carry a dangling reference to a unit whose file is gone (a removed apache2
+# leaves `apache2.service  not-found  failed`), and service_facts reports that
+# identically to a real failed unit - same name, same `status: failed`. Acting
+# on it fails the play with "Could not find the requested service".
+- name: web_conflicts | Probe whether each conflicting unit exists  # noqa: command-instead-of-module
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - show
+      - "{{ item }}"
+      - --property=LoadState
+      - --value
+  register: traefik_conflict_loadstate
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  loop: "{{ traefik_conflicting_web_services }}"
+  loop_control:
+    label: "{{ item }}"
+  when: traefik_mask_conflicting_web_services | bool
+
+- name: web_conflicts | Select the units that are actually installed
+  ansible.builtin.set_fact:
+    traefik_present_web_services: >-
+      {{
+        traefik_conflict_loadstate.results | default([])
+        | rejectattr('skipped', 'defined')
+        | selectattr('stdout', 'defined')
+        | rejectattr('stdout', 'search', 'not-found')
+        | map(attribute='item') | list
+      }}
   when: traefik_mask_conflicting_web_services | bool
 
 - name: web_conflicts | Stop and disable conflicting web servers
@@ -12,40 +43,32 @@
     name: "{{ item }}"
     state: stopped
     enabled: false
-  loop: "{{ traefik_conflicting_web_services }}"
+  loop: "{{ traefik_present_web_services | default([]) }}"
   loop_control:
     label: "{{ item }}"
-  when:
-    - traefik_mask_conflicting_web_services | bool
-    - item in (ansible_facts.services | default({}))
+  when: traefik_mask_conflicting_web_services | bool
 
 - name: web_conflicts | Mask conflicting web servers so a package upgrade cannot re-enable them
   ansible.builtin.systemd:
     name: "{{ item }}"
     masked: true
-  loop: "{{ traefik_conflicting_web_services }}"
+  loop: "{{ traefik_present_web_services | default([]) }}"
   loop_control:
     label: "{{ item }}"
-  when:
-    - traefik_mask_conflicting_web_services | bool
-    - item in (ansible_facts.services | default({}))
+  when: traefik_mask_conflicting_web_services | bool
 
 # A unit that failed before being masked keeps its failed state indefinitely,
 # which leaves `systemctl --failed` permanently dirty and erodes it as a health
 # signal. Masked units are never started again, so the residue is pure noise.
-# noqa justification: neither `systemd` nor `systemd_service` exposes
-# `reset-failed` or `is-failed`, so `command` is the only option here.
 - name: web_conflicts | Check whether a disarmed web server is still marked failed  # noqa: command-instead-of-module
   ansible.builtin.command: "systemctl is-failed {{ item }}"
   register: traefik_conflict_failed_state
   changed_when: false
   failed_when: false
-  loop: "{{ traefik_conflicting_web_services }}"
+  loop: "{{ traefik_present_web_services | default([]) }}"
   loop_control:
     label: "{{ item }}"
-  when:
-    - traefik_mask_conflicting_web_services | bool
-    - item in (ansible_facts.services | default({}))
+  when: traefik_mask_conflicting_web_services | bool
 
 - name: web_conflicts | Clear the stale failed state of disarmed web servers
   ansible.builtin.command: "systemctl reset-failed {{ item.item }}"

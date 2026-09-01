@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `os_apt_maintenance` no longer reports "no reboot needed" on hosts where
+  Ubuntu's `/var/run/reboot-required` marker can never appear. That file comes
+  from `update-notifier-common`, which Debian does not ship and which some
+  Ubuntu hosts lack, so the check reported a confident green on a Debian 12 host
+  that had been running a bullseye `5.10` kernel with `6.1` installed for over
+  two years - a false negative indistinguishable from a healthy host. Reboot
+  state is now the OR of the marker file and a `dpkg-query`-vs-`uname`
+  comparison, and `$.reboot_required_details` reports which signal fired.
+  Existing Ubuntu behaviour is unchanged.
+- `traefik_deploy`'s conflict disarming no longer fails on a unit that systemd
+  references but whose file is gone (a removed `apache2` leaves
+  `apache2.service  not-found  failed`). `service_facts` reports such an entry
+  identically to a real failed unit, so the role tried to stop it and aborted
+  the play with "Could not find the requested service". Unit existence is now
+  probed with `LoadState`.
+
+### Fixed
+
 - `nyxmon_deploy` no longer trips `attempt to write a readonly database` during a
   source sync. Both `ansible.posix.synchronize` tasks now pass `owner: false` /
   `group: false`: `synchronize` defaults to `archive: true`, which implies

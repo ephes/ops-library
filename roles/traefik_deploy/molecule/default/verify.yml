@@ -110,3 +110,20 @@
           Traefik does not hold port {{ traefik_http_port }}.
           Listeners: {{ traefik_listeners.stdout }}
         success_msg: "Traefik holds port {{ traefik_http_port }}."
+
+    # The role must tolerate a referenced-but-absent unit rather than failing
+    # the play on it.
+    - name: Verify | Absent unit has no unit file to mask
+      ansible.builtin.command: systemctl show apache2.service --property=LoadState --value
+      register: traefik_absent_unit
+      changed_when: false
+      failed_when: false
+
+    - name: Verify | Assert the absent unit was left alone
+      ansible.builtin.assert:
+        that:
+          - "'not-found' in traefik_absent_unit.stdout"
+        fail_msg: >-
+          apache2.service unexpectedly exists; the dangling-unit case is not
+          being exercised.
+        success_msg: "Absent unit correctly skipped rather than failing the play."

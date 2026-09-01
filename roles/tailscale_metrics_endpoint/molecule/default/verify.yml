@@ -59,15 +59,33 @@
           - show
           - "{{ timer_unit }}"
           - --property=NextElapseUSecRealtime
-          - --value
+          - --property=NextElapseUSecMonotonic
+          - --property=SubState
       changed_when: false
       register: next_elapse
 
+    # Armed means EITHER anchor is set. Asserting on the realtime value alone
+    # fails a legitimately monotonic-armed timer, and also fails the transient
+    # window where systemd has the timer in `running` state because the service
+    # it triggers is executing - which is exactly the flake this scenario hit.
     - name: Verify | Assert the deployed timer is armed
       ansible.builtin.assert:
         that:
-          - next_elapse.stdout | trim | length > 0
-        fail_msg: "{{ timer_unit }} has no next elapse right after a deployment"
+          - >-
+            (
+              next_elapse.stdout
+              | regex_search('NextElapseUSecRealtime=(.*)', '\\1')
+              | default([''], true) | first | default('', true) | trim | length > 0
+            )
+            or (
+              next_elapse.stdout
+              | regex_search('NextElapseUSecMonotonic=(.*)', '\\1')
+              | default([''], true) | first | default('', true) | trim
+              not in ['', 'infinity', '0']
+            )
+        fail_msg: >-
+          {{ timer_unit }} has no next elapse (realtime or monotonic) right
+          after a deployment. Observed: {{ next_elapse.stdout | trim }}
 
     - name: Verify | Record the payload timestamp
       ansible.builtin.stat:

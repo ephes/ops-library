@@ -120,11 +120,50 @@ When the HTTP endpoint is enabled, it adds request-time `meta` and `summary` fie
 - `$.meta.state_file_fresh == true`
 - `$.reboot_required == false` as warning or critical, depending on operator policy
 
-The endpoint reports `$.reboot_required` from the live `/var/run/reboot-required`
-marker at request time, so a successful operator reboot clears the monitoring
-warning immediately even if the durable state file was last written before the
-reboot. The previous state-file value is exposed as
-`$.meta.state_reboot_required` for debugging.
+The endpoint reports `$.reboot_required` live at request time, so a successful
+operator reboot clears the monitoring warning immediately even if the durable
+state file was last written before the reboot. The previous state-file value is
+exposed as `$.meta.state_reboot_required` for debugging.
+
+### How a required reboot is detected
+
+Two independent signals, OR'd together, with the reason reported in
+`$.reboot_required_details`:
+
+| Signal | `reasons` entry | Source |
+| --- | --- | --- |
+| `/var/run/reboot-required` exists | `reboot_required_flag` | Ubuntu's `update-notifier-common` |
+| A newer kernel than the running one is installed | `stale_kernel` | `dpkg-query` vs `uname -r` |
+
+The marker file alone is **not** sufficient. It is created by
+`update-notifier-common`, which Debian does not ship by default and which is
+absent on some Ubuntu hosts too. On such a host the marker can never appear, so
+a check asserting `$.reboot_required == false` stays confidently green while the
+machine runs a kernel several releases behind the one installed - a false
+negative indistinguishable from a healthy host.
+
+This was observed in production: a Debian 12 host running a bullseye `5.10`
+kernel with `6.1` installed, monitored as green for over two years.
+
+The kernel comparison needs no extra package and behaves identically on Debian
+and Ubuntu. It only counts packages in dpkg state `installed`, so a
+removed-but-not-purged kernel left in `config-files` does not raise a false
+alarm, and it fails closed to "no signal" if `dpkg-query` is unavailable rather
+than erroring the run.
+
+`$.reboot_required_details` additionally carries `running_kernel`,
+`running_kernel_version` and `newest_installed_kernel` when the kernel signal
+fires, so an operator can tell a pending-kernel reboot from a library-triggered
+one without logging in.
+
+**Known limitation.** The kernel comparison only sees kernels installed as dpkg
+packages. A host booting a kernel installed outside dpkg - a custom build, a
+vendor kernel such as the Apple T2 series - has no `linux-image-*` packages to
+compare against, so `stale_kernel` reports no signal. That is a deliberate
+fail-safe: reporting nothing is correct behaviour for "cannot tell", and it
+avoids inventing a false warning. But it does mean **absence of a kernel signal
+on such a host is not evidence the kernel is current**, and those hosts still
+depend on the marker file alone. Track them separately.
 
 During an active run, `$.summary.currently_running` is `true`. `last_run_ok` remains true while
 the previous successful run is still fresh, so monitoring does not page during normal apt work.

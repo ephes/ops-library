@@ -220,3 +220,20 @@
         fail_msg: >-
           The endpoint did not report the failed apt run:
           {{ _failed_endpoint_response.content }}
+
+    # Reboot detection must work without Ubuntu's update-notifier-common. The
+    # container has no /var/run/reboot-required, so `reasons` proves the signal
+    # is derived rather than read from that file.
+    - name: Verify | Assert reboot detection reports its reasons
+      ansible.builtin.assert:
+        that:
+          - _failed_endpoint_json.reboot_required_details is defined
+          - _failed_endpoint_json.reboot_required_details.reasons is sequence
+          - _failed_endpoint_json.reboot_required_details.flag_present is boolean
+          - >-
+            _failed_endpoint_json.reboot_required_details.required
+            == _failed_endpoint_json.reboot_required
+        fail_msg: >-
+          reboot_required_details missing or inconsistent:
+          {{ _failed_endpoint_json.reboot_required_details | default('ABSENT') }}
+        success_msg: "Reboot detection reports a reason, not just a boolean."
