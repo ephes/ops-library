@@ -305,11 +305,18 @@ The role applies systemd security hardening:
 
 ### Prometheus Metrics
 
-Metrics are exposed on the dashboard port:
+With the dashboard enabled, metrics share the dashboard entrypoint:
 
 ```bash
 curl http://localhost:8090/metrics
 ```
+
+With the dashboard disabled, the role still defines the `traefik` entrypoint
+explicitly and binds it to `traefik_metrics_bind_address:traefik_metrics_port`
+(default `127.0.0.1:8080`). Without that definition Traefik creates the
+entrypoint implicitly on `:8080` on every interface, which exposed `/metrics`
+to the internet on a host without a firewall. Set `traefik_metrics_bind_address`
+to the Tailscale IP to scrape it from another host.
 
 Configure Prometheus to scrape:
 

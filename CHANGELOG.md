@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `traefik_deploy` no longer exposes Prometheus metrics on `:8080` on every
+  interface when the dashboard is disabled. Metrics default to the `traefik`
+  entrypoint, and when nothing defined it Traefik created it implicitly on
+  `:8080`; a host without a firewall served `/metrics` to the internet after
+  its first restart under the role. The entrypoint is now defined explicitly
+  and bound to `traefik_metrics_bind_address:traefik_metrics_port` (default
+  `127.0.0.1:8080`). Hosts with the dashboard enabled are unchanged.
 - `os_apt_maintenance`'s kernel comparison never fired. `_installed_kernel_versions()`
   read a `stdout` key from `run_command()`, which only exposes a 4000-character
   `stdout_tail`, so every host parsed an empty kernel list and the new signal

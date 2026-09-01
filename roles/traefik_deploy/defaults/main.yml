@@ -63,6 +63,11 @@ traefik_http_redirect_to_https: true
 
 # Metrics configuration
 traefik_metrics_enabled: true
+# Where /metrics listens when the dashboard is disabled. With the dashboard
+# enabled, metrics share the dashboard entrypoint (traefik_dashboard_port).
+# Without an explicit entrypoint Traefik would open :8080 on all interfaces.
+traefik_metrics_bind_address: "127.0.0.1"
+traefik_metrics_port: 8080
 
 # Force update (even if binary exists)
 traefik_force_update: false
