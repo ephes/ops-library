@@ -16,27 +16,128 @@
           - tailscale_metrics_endpoint_auth_password is defined
           - tailscale_metrics_endpoint_auth_password != "CHANGE_ME"
           - tailscale_metrics_endpoint_auth_password | length > 0
+          - tailscale_metrics_endpoint_ip_address_allow is sequence
+          - tailscale_metrics_endpoint_ip_address_allow is not string
+          - tailscale_metrics_endpoint_ip_address_allow | length > 0
+          - tailscale_metrics_endpoint_default_route_interface is string
+          - >-
+            tailscale_metrics_endpoint_default_route_interface | length == 0
+            or tailscale_metrics_endpoint_default_route_interface is match('^[A-Za-z0-9_.:-]+$')
           - tailscale_metrics_endpoint_warning_days | int > 0
           - tailscale_metrics_endpoint_critical_days | int > 0
           - tailscale_metrics_endpoint_warning_days | int >= tailscale_metrics_endpoint_critical_days | int
+          - >-
+            not (tailscale_metrics_endpoint_require_default_ipv4_route | bool)
+            or (tailscale_metrics_endpoint_default_route_interface | trim | length > 0)
         fail_msg: >-
-          tailscale_metrics_endpoint auth values or thresholds are invalid.
-          Set auth user/password and keep warning_days >= critical_days > 0.
+          tailscale_metrics_endpoint auth, allow-list, route probe, or thresholds are invalid.
+          Set auth user/password, keep warning_days >= critical_days > 0, and name
+          the default-route interface when the route probe is required.
+
+    - name: Validate IP allow-list entries
+      ansible.builtin.assert:
+        that:
+          - item is string
+          - item | trim | length > 0
+          - item == item | trim
+          - item is match('^(localhost|link-local|multicast|[0-9A-Fa-f:.]+(/[0-9]{1,3})?)$')
+          - item | trim | lower not in ['any', '0.0.0.0/0', '::/0']
+          - >-
+            '/' not in item
+            or (item.split('/') | last | int) > 0
+          - >-
+            '/' not in item
+            or (
+              (':' in item and (item.split('/') | last | int) <= 128)
+              or (':' not in item and (item.split('/') | last | int) <= 32)
+            )
+        fail_msg: >-
+          Every IPAddressAllow entry must be a single IP/CIDR or supported local
+          keyword without whitespace. Prefixes must be 1-32 for IPv4 or 1-128
+          for IPv6; world-open prefixes are forbidden.
+      loop: "{{ tailscale_metrics_endpoint_ip_address_allow }}"
+
+    - name: Validate IP allow-list networks
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - >-
+            import ipaddress, sys;
+            network = ipaddress.ip_network(sys.argv[1], strict=False);
+            minimum = 8 if network.version == 4 else 32;
+            sys.exit(0 if network.prefixlen >= minimum else 1)
+          - "{{ item }}"
+      delegate_to: localhost
+      become: false
+      check_mode: false
+      changed_when: false
+      register: _tailscale_metrics_allow_network_validation
+      failed_when: _tailscale_metrics_allow_network_validation.rc != 0
+      loop: "{{ tailscale_metrics_endpoint_ip_address_allow }}"
+      when: item not in ['localhost', 'link-local', 'multicast']
 
     - name: Validate tailscale binary exists
       ansible.builtin.stat:
         path: "{{ tailscale_metrics_endpoint_tailscale_bin }}"
       register: _tailscale_metrics_bin_stat
 
+    - name: Validate ip binary exists
+      ansible.builtin.stat:
+        path: "{{ tailscale_metrics_endpoint_ip_bin }}"
+      register: _tailscale_metrics_ip_bin_stat
+      when: tailscale_metrics_endpoint_require_default_ipv4_route | bool
+
     - name: Fail if tailscale binary not found
       ansible.builtin.fail:
         msg: "Tailscale binary not found at {{ tailscale_metrics_endpoint_tailscale_bin }}."
       when: not _tailscale_metrics_bin_stat.stat.exists
 
+    - name: Fail if ip binary not found
+      ansible.builtin.fail:
+        msg: "ip binary not found at {{ tailscale_metrics_endpoint_ip_bin }}."
+      when:
+        - tailscale_metrics_endpoint_require_default_ipv4_route | bool
+        - not _tailscale_metrics_ip_bin_stat.stat.exists
+
     - name: Install dependencies for Tailscale metrics endpoint
       ansible.builtin.package:
         name: "{{ tailscale_metrics_endpoint_packages }}"
         state: present
+
+    - name: Validate cgroup IP filter verification prerequisites
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution is defined
+          - ansible_kernel is defined
+        fail_msg: >-
+          Effective IP filter verification requires gathered distribution and
+          kernel facts. Enable gather_facts for this play.
+      when: tailscale_metrics_endpoint_require_effective_ip_filter | bool
+
+    - name: Install cgroup IP filter verification tools
+      ansible.builtin.package:
+        name: >-
+          {{
+            [
+              'linux-tools-common',
+              'linux-tools-generic',
+              'linux-tools-' ~ ansible_kernel,
+            ]
+            if ansible_distribution == 'Ubuntu'
+            else ['bpftool']
+          }}
+        state: present
+      when: tailscale_metrics_endpoint_require_effective_ip_filter | bool
+
+    - name: Validate bpftool executable
+      ansible.builtin.command:
+        argv:
+          - "{{ tailscale_metrics_endpoint_bpftool_bin }}"
+          - version
+      register: _tailscale_metrics_endpoint_bpftool_version
+      changed_when: false
+      when: tailscale_metrics_endpoint_require_effective_ip_filter | bool
 
     - name: Create metrics system group
       ansible.builtin.group:
@@ -170,3 +271,49 @@
         enabled: true
         state: started
         daemon_reload: true
+
+    - name: Flush metrics endpoint handlers before effective filter verification
+      ansible.builtin.meta: flush_handlers
+
+    - name: Read metrics endpoint control group
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - "{{ tailscale_metrics_endpoint_service_name }}.service"
+          - --property=ControlGroup
+          - --value
+      register: _tailscale_metrics_endpoint_control_group
+      changed_when: false
+      check_mode: false
+      when:
+        - tailscale_metrics_endpoint_require_effective_ip_filter | bool
+        - not ansible_check_mode
+
+    - name: Inspect effective metrics endpoint cgroup IP filters
+      ansible.builtin.command:
+        argv:
+          - "{{ tailscale_metrics_endpoint_bpftool_bin }}"
+          - cgroup
+          - show
+          - "/sys/fs/cgroup{{ _tailscale_metrics_endpoint_control_group.stdout | trim }}"
+      register: _tailscale_metrics_endpoint_cgroup_filters
+      changed_when: false
+      check_mode: false
+      when:
+        - tailscale_metrics_endpoint_require_effective_ip_filter | bool
+        - not ansible_check_mode
+
+    - name: Require effective metrics endpoint cgroup IP filters
+      ansible.builtin.assert:
+        that:
+          - _tailscale_metrics_endpoint_control_group.stdout | trim | length > 0
+          - "'cgroup_inet_ingress' in _tailscale_metrics_endpoint_cgroup_filters.stdout"
+          - "'cgroup_inet_egress' in _tailscale_metrics_endpoint_cgroup_filters.stdout"
+        fail_msg: >-
+          systemd did not attach ingress and egress cgroup-BPF IP filters to
+          {{ tailscale_metrics_endpoint_service_name }}. Refusing a potentially
+          fail-open endpoint; verify cgroup v2 and CONFIG_CGROUP_BPF support.
+      when:
+        - tailscale_metrics_endpoint_require_effective_ip_filter | bool
+        - not ansible_check_mode

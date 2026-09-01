@@ -65,6 +65,28 @@ The monitoring worker unit name defaults to `nyxmon-monitor` and can be
 overridden with `nyxmon_monitoring_service_name` if a host needs a different
 systemd unit name.
 
+Monitoring reliability defaults are rendered into the shared `.env`:
+
+```yaml
+nyxmon_notify_consecutive_failures: 1
+nyxmon_notify_repeat_failures: 12
+nyxmon_processing_lease_seconds: 900
+nyxmon_check_batch_size: 5
+```
+
+Nyxmon sends the initial alert when the consecutive-failure threshold is met,
+then sends a reminder after each configured number of additional failures.
+Checks left in `processing` beyond the lease are reclaimed by the worker and
+produce an immediate `stale_processing_lease` alert before being scheduled
+again. Keep the lease comfortably above the longest valid executor runtime; the
+role requires at least five minutes plus one minute per claimed check.
+Claims and stale recoveries are processed in bounded batches. The default of
+five adds five minutes of result-handling time to the collector deadline. The
+configured lease separately includes a five-minute execution floor plus at
+least one minute per claimed check, protecting valid in-flight work across a
+service restart. Increase the lease with the batch size when the corresponding
+throughput gain is worth a longer batch deadline.
+
 ### Common Configuration
 
 ```yaml

@@ -2205,7 +2205,7 @@ class SSHForwardingRoleTests(unittest.TestCase):
         for role in ("ssh_forwarding_identity", "ssh_restricted_forwarding_account"):
             self.assertIn(f"roles/{role}/README.md", readme)
             self.assertIn(role, changelog)
-        self.assertIn("version: 2.11.0", galaxy)
+        self.assertIn("version: 2.12.0", galaxy)
         identity_readme = self.read("roles/ssh_forwarding_identity/README.md")
         self.assertIn(
             "never rotates or removes a private key implicitly", identity_readme

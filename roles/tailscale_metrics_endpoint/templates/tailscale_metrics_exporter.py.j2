@@ -11,6 +11,10 @@ from typing import Any
 
 
 TAILSCALE_BIN = "{{ tailscale_metrics_endpoint_tailscale_bin }}"
+IP_BIN = "{{ tailscale_metrics_endpoint_ip_bin }}"
+DEFAULT_ROUTE_INTERFACE = "{{ tailscale_metrics_endpoint_default_route_interface }}"
+REQUIRE_DEFAULT_IPV4_ROUTE = {{ tailscale_metrics_endpoint_require_default_ipv4_route | bool }}
+REQUIRE_SELF_ONLINE = {{ tailscale_metrics_endpoint_require_self_online | bool }}
 WARNING_DAYS = {{ tailscale_metrics_endpoint_warning_days | int }}
 CRITICAL_DAYS = {{ tailscale_metrics_endpoint_critical_days | int }}
 
@@ -46,9 +50,34 @@ def run_status() -> tuple[int, dict[str, Any], str]:
     return completed.returncode, payload, completed.stderr.strip()
 
 
+def probe_default_ipv4_route() -> tuple[bool, str]:
+    if not REQUIRE_DEFAULT_IPV4_ROUTE:
+        return True, ""
+    try:
+        completed = subprocess.run(
+            [IP_BIN, "-4", "route", "show", "default", "dev", DEFAULT_ROUTE_INTERFACE],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "IPv4 default-route probe timed out after 5 seconds"
+    except OSError as err:
+        return False, f"IPv4 default-route probe failed: {err}"
+
+    route = completed.stdout.strip()
+    if completed.returncode != 0:
+        return False, completed.stderr.strip() or f"ip exited with {completed.returncode}"
+    if not route:
+        return False, f"no IPv4 default route on {DEFAULT_ROUTE_INTERFACE}"
+    return True, route
+
+
 def main() -> int:
     now = datetime.now(timezone.utc)
     status_rc, status, stderr = run_status()
+    default_ipv4_route_present, default_ipv4_route_detail = probe_default_ipv4_route()
     self_node = status.get("Self") or {}
     key_expiry = self_node.get("KeyExpiry")
     key_expiry_dt = parse_tailscale_time(key_expiry)
@@ -74,6 +103,7 @@ def main() -> int:
         seconds_until_key_expiry is not None and seconds_until_key_expiry > critical_seconds
     )
     backend_running = backend_state == "Running"
+    self_online = bool(self_node.get("Online"))
 
     payload: dict[str, Any] = {
         "hostname": socket.gethostname(),
@@ -101,18 +131,32 @@ def main() -> int:
                 "key_expiry_disabled": key_expiry_disabled,
             },
         },
+        "network": {
+            "default_ipv4_route_required": REQUIRE_DEFAULT_IPV4_ROUTE,
+            "default_ipv4_route_interface": DEFAULT_ROUTE_INTERFACE or None,
+            "default_ipv4_route_present": default_ipv4_route_present,
+            "default_ipv4_route_detail": default_ipv4_route_detail,
+        },
         "thresholds": {
             "warning_days": WARNING_DAYS,
             "critical_days": CRITICAL_DAYS,
         },
         "summary": {
             "backend_running": backend_running,
+            "self_online": self_online,
+            "default_ipv4_route_present": default_ipv4_route_present,
             "key_expiry_disabled": key_expiry_disabled,
             "key_expiry_present": key_expiry_dt is not None,
             "key_expired": expired,
             "key_expiry_warning_ok": key_expiry_warning_ok,
             "key_expiry_critical_ok": key_expiry_critical_ok,
-            "overall_ok": backend_running and key_expiry_critical_ok and not expired,
+            "overall_ok": (
+                backend_running
+                and (self_online or not REQUIRE_SELF_ONLINE)
+                and default_ipv4_route_present
+                and key_expiry_critical_ok
+                and not expired
+            ),
         },
     }
 

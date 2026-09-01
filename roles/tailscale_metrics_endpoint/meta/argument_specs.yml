@@ -1,0 +1,22 @@
+---
+argument_specs:
+  main:
+    short_description: Deploy an authenticated Tailscale health endpoint
+    options:
+      tailscale_metrics_endpoint_enabled:
+        type: bool
+      tailscale_metrics_endpoint_bind:
+        type: str
+      tailscale_metrics_endpoint_ip_address_allow:
+        type: list
+        elements: str
+      tailscale_metrics_endpoint_timer_interval:
+        type: int
+      tailscale_metrics_endpoint_default_route_interface:
+        type: str
+      tailscale_metrics_endpoint_require_default_ipv4_route:
+        type: bool
+      tailscale_metrics_endpoint_require_self_online:
+        type: bool
+      tailscale_metrics_endpoint_require_effective_ip_filter:
+        type: bool

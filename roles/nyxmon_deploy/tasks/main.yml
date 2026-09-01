@@ -29,6 +29,21 @@
       Please update secrets/prod/nyxmon.yml with real values using:
       SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt sops secrets/prod/nyxmon.yml
 
+- name: Validate Nyxmon reliability settings
+  assert:
+    that:
+      - nyxmon_notify_consecutive_failures | int > 0
+      - nyxmon_notify_repeat_failures | int > 0
+      - nyxmon_processing_lease_seconds | int >= 30
+      - nyxmon_check_batch_size | int >= 1
+      - nyxmon_check_batch_size | int <= 100
+      - >-
+        nyxmon_processing_lease_seconds | int
+        >= ((nyxmon_check_batch_size | int) + 5) * 60
+    fail_msg: >-
+      Nyxmon notification thresholds must be positive and the processing lease
+      must be at least five minutes plus one minute per claimed check.
+
 - name: Validate rsync-specific requirements
   assert:
     that:

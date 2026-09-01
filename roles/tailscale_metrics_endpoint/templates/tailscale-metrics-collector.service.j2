@@ -9,6 +9,7 @@ ExecStart=/bin/bash -c '{{ tailscale_metrics_endpoint_exporter_path }} > {{ tail
 
 User=root
 Group=root
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 
 ExecStartPre=/bin/mkdir -p {{ tailscale_metrics_endpoint_data_dir }}
 ExecStartPre=/bin/chown root:{{ tailscale_metrics_endpoint_group }} {{ tailscale_metrics_endpoint_data_dir }}

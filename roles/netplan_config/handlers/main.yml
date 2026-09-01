@@ -1,10 +1,72 @@
 ---
-- name: Apply netplan
+- name: Generate netplan under the route guard lock
+  ansible.builtin.command:
+    argv:
+      - flock
+      - --exclusive
+      - "/run/{{ netplan_config_route_guard_service_name }}/lock"
+      - netplan
+      - generate
+  changed_when: false
+  listen: "Apply netplan"
+  when:
+    - >-
+      (netplan_config_route_guard_enabled | default(false) | bool)
+      or (_netplan_route_guard_timer.stat.exists | default(false))
+
+- name: Generate netplan without a route guard lock
   ansible.builtin.command: netplan generate
   changed_when: false
   listen: "Apply netplan"
+  when:
+    - not (
+        (netplan_config_route_guard_enabled | default(false) | bool)
+        or (_netplan_route_guard_timer.stat.exists | default(false))
+      )
 
-- name: Apply netplan
+- name: Apply netplan under the route guard lock
+  ansible.builtin.command:
+    argv:
+      - flock
+      - --exclusive
+      - "/run/{{ netplan_config_route_guard_service_name }}/lock"
+      - netplan
+      - apply
+  listen: "Apply netplan"
+  when:
+    - netplan_config_apply | bool
+    - >-
+      (netplan_config_route_guard_enabled | default(false) | bool)
+      or (_netplan_route_guard_timer.stat.exists | default(false))
+
+- name: Apply netplan without a route guard lock
   ansible.builtin.command: netplan apply
   listen: "Apply netplan"
-  when: netplan_config_apply | bool
+  when:
+    - netplan_config_apply | bool
+    - not (
+        (netplan_config_route_guard_enabled | default(false) | bool)
+        or (_netplan_route_guard_timer.stat.exists | default(false))
+      )
+
+- name: Reload systemd for netplan route guard
+  ansible.builtin.systemd:
+    daemon_reload: true
+  listen: "Reload systemd for netplan route guard"
+
+- name: Inspect netplan route guard timer before restart
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ netplan_config_route_guard_service_name }}.timer"
+  register: _netplan_route_guard_restart_timer
+  listen: "Restart netplan route guard timer"
+  when: netplan_config_route_guard_enabled | default(false) | bool
+
+- name: Restart netplan route guard timer
+  ansible.builtin.systemd:
+    name: "{{ netplan_config_route_guard_service_name }}.timer"
+    state: restarted
+    daemon_reload: true
+  listen: "Restart netplan route guard timer"
+  when:
+    - netplan_config_route_guard_enabled | default(false) | bool
+    - _netplan_route_guard_restart_timer.stat.exists

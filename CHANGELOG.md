@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `netplan_config` can now install an optional networkd route guard that
+  reconfigures a carrier-up interface when its IPv4 default route disappears or
+  its setup state becomes failed. Managed `netplan generate`, `netplan apply`,
+  and follow-up `networkctl reconfigure` commands share the guard lock so
+  recovery commands cannot execute concurrently with those planned transitions.
+- `tailscale_metrics_endpoint` now reports `Self.Online` and an optional IPv4
+  default-route probe, with a configurable systemd IP allow-list for authenticated
+  LAN-side monitoring when the Tailscale path itself is broken. Existing
+  `summary.overall_ok` behavior stays compatible unless the new
+  `tailscale_metrics_endpoint_require_self_online` or
+  `tailscale_metrics_endpoint_require_default_ipv4_route` option is enabled;
+  route-probe errors count as an unhealthy required route. Allow-list validation
+  parses real IP networks and rejects prefixes broader than `/8` for IPv4 or
+  `/32` for IPv6, as well as out-of-range prefixes. Deployments now fail closed
+  unless `bpftool` confirms systemd attached both cgroup ingress and egress IP
+  filters to the endpoint service when fail-closed verification is enabled;
+  Ubuntu deployments install the GA-tracking `linux-tools-generic` metapackage
+  so verification survives GA kernel upgrades; HWE hosts must separately retain
+  their release-specific HWE tools metapackage. Use the option for non-Tailnet
+  binds. The collector unit also gains a new
+  address-family sandbox permitting only `AF_UNIX`, `AF_INET`, `AF_INET6`, and
+  `AF_NETLINK` (needed by the route probe).
+- `nyxmon_deploy` now renders consecutive-failure, persistent-reminder,
+  stale-processing-lease, and bounded check-batch settings into Nyxmon's worker
+  environment.
+
 - `mail_backend_deploy` gained `mail_backend_sender_only_domains`: domains the
   backend signs and authorises as an envelope sender, but hosts no mailboxes for.
 
