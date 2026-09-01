@@ -18,8 +18,10 @@ from __future__ import annotations
 import ast
 import json
 import shlex
+import subprocess
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
@@ -180,25 +182,81 @@ class RebootRequiredDetectionTests(unittest.TestCase):
         return module
 
     def _stale(self, module, running, dpkg_lines):
+        """Drive stale_kernel() against a fake dpkg-query.
+
+        The fake sits at ``subprocess.run`` - the real boundary - rather than
+        at ``run_command``. The first version of these tests faked
+        ``run_command`` with a ``stdout`` key that helper never produces, so
+        they passed while the deployed script read an empty kernel list on
+        every host. A fake must speak the contract of the thing it replaces.
+        """
         module.os.uname = lambda: type("U", (), {"release": running})()
-        module.run_command = lambda argv: {
-            "status": "success" if dpkg_lines is not None else "failed",
-            "stdout": "\n".join(dpkg_lines or []),
-        }
+
+        def fake_run(argv, **kwargs):
+            self.assertEqual(argv[0], "dpkg-query")
+            self.assertTrue(kwargs.get("capture_output"), "stdout must be captured")
+            if dpkg_lines is None:
+                raise FileNotFoundError("dpkg-query")
+            return subprocess.CompletedProcess(
+                argv, 0, stdout="\n".join(dpkg_lines) + "\n", stderr=""
+            )
+
+        module.subprocess = SimpleNamespace(
+            run=fake_run, SubprocessError=subprocess.SubprocessError
+        )
+
+        def run_command_must_not_be_used(argv):
+            raise AssertionError(
+                "the kernel list must not go through run_command(): it keeps "
+                "only a 4000-character stdout tail and exposes no 'stdout' key"
+            )
+
+        module.run_command = run_command_must_not_be_used
         return module.stale_kernel()
 
     def test_a_kernel_newer_than_the_running_one_is_a_reboot_signal(self) -> None:
         module = self._module()
-        # The exact staging case: Debian 12 running a bullseye 5.10 kernel.
+        # The exact staging case: Debian 12 running a bullseye 5.10 kernel,
+        # with dpkg-query output shaped like the real thing - metapackages,
+        # unsigned twins and removed kernels included.
         detail = self._stale(
             module,
             "5.10.0-23-amd64",
             [
+                "linux-image-4.19.0-10-amd64 deinstall ok config-files",
+                "linux-image-4.19.0-10-amd64-unsigned unknown ok not-installed",
                 "linux-image-5.10.0-23-amd64 install ok installed",
+                "linux-image-5.10.0-23-amd64-unsigned unknown ok not-installed",
                 "linux-image-6.1.0-52-amd64 install ok installed",
+                "linux-image-6.1.0-52-amd64-unsigned unknown ok not-installed",
+                "linux-image-amd64 install ok installed",
             ],
         )
         self.assertIsNotNone(detail, "a stale kernel must be detected")
+        self.assertEqual(detail["newest_installed_kernel"], "6.1.0-52")
+        self.assertEqual(detail["running_kernel_version"], "5.10.0-23")
+
+    def test_the_kernel_list_is_read_from_the_full_dpkg_output(self) -> None:
+        """Regression: a long dpkg history must not hide the installed kernel.
+
+        A host upgraded across several Debian releases lists dozens of
+        removed-but-not-purged kernels. If only a tail of the output were
+        parsed, the installed line could fall outside it and the host would
+        report no kernel signal at all.
+        """
+        module = self._module()
+        removed = [
+            f"linux-image-4.{minor}.0-{patch}-amd64 deinstall ok config-files"
+            for minor in range(9, 20)
+            for patch in range(1, 20)
+        ]
+        self.assertGreater(len("\n".join(removed)), 4000)
+        detail = self._stale(
+            module,
+            "5.10.0-23-amd64",
+            ["linux-image-6.1.0-52-amd64 install ok installed", *removed],
+        )
+        self.assertIsNotNone(detail, "the installed kernel must be seen")
         self.assertEqual(detail["newest_installed_kernel"], "6.1.0-52")
 
     def test_a_current_kernel_is_not_a_reboot_signal(self) -> None:
@@ -264,6 +322,105 @@ class RebootRequiredDetectionTests(unittest.TestCase):
             raw,
             "every reboot decision must go through reboot_required_details()",
         )
+
+
+class EndpointRebootStateTests(unittest.TestCase):
+    """The endpoint must serve the kernel signal, not just the marker file.
+
+    The endpoint re-reads /var/run/reboot-required on every request so a
+    reboot clears the warning immediately. Its first version *replaced* the
+    persisted reboot state with that live marker, which threw away the kernel
+    signal on exactly the hosts where the marker can never appear.
+    """
+
+    def _module(self):
+        import importlib.util
+        import tempfile
+
+        script = (
+            template_environment(APT_ROLE / "templates")
+            .get_template("os_apt_maintenance_httpd.py.j2")
+            .render(
+                os_apt_maintenance_freshness_max_age_seconds=1209600,
+                os_apt_maintenance_endpoint_state_max_age_seconds=1296000,
+                os_apt_maintenance_endpoint_bind="127.0.0.1",
+                os_apt_maintenance_endpoint_port=9106,
+                os_apt_maintenance_endpoint_path="/.well-known/os-apt-maintenance",
+                os_apt_maintenance_state_file="/var/lib/os-apt-maintenance/state.json",
+                os_apt_maintenance_endpoint_htpasswd_path="/etc/os-apt-maintenance-endpoint/htpasswd",
+            )
+        )
+        with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as handle:
+            handle.write(script)
+            path = handle.name
+        spec = importlib.util.spec_from_file_location("apt_httpd_under_test", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def _stale_state(self) -> dict:
+        return {
+            "reboot_required": True,
+            "reboot_required_details": {
+                "required": True,
+                "reasons": ["stale_kernel"],
+                "flag_present": False,
+                "running_kernel": "5.10.0-23-amd64",
+                "running_kernel_version": "5.10.0-23",
+                "newest_installed_kernel": "6.1.0-52",
+            },
+        }
+
+    def test_the_persisted_kernel_signal_is_served(self) -> None:
+        module = self._module()
+        details = module.reboot_state(
+            self._stale_state(), flag_present=False, running_release="5.10.0-23-amd64"
+        )
+        self.assertTrue(details["required"])
+        self.assertEqual(details["reasons"], ["stale_kernel"])
+        self.assertEqual(details["newest_installed_kernel"], "6.1.0-52")
+        self.assertFalse(details["flag_present"])
+
+    def test_a_reboot_into_the_new_kernel_clears_the_signal_at_once(self) -> None:
+        module = self._module()
+        details = module.reboot_state(
+            self._stale_state(), flag_present=False, running_release="6.1.0-52-amd64"
+        )
+        self.assertFalse(details["required"])
+        self.assertEqual(details["reasons"], [])
+        self.assertNotIn("newest_installed_kernel", details)
+
+    def test_the_live_marker_still_wins_on_its_own(self) -> None:
+        module = self._module()
+        details = module.reboot_state(
+            {"reboot_required": False}, flag_present=True, running_release="6.8.0-138-generic"
+        )
+        self.assertTrue(details["required"])
+        self.assertEqual(details["reasons"], ["reboot_required_flag"])
+
+    def test_both_signals_are_reported_together(self) -> None:
+        module = self._module()
+        details = module.reboot_state(
+            self._stale_state(), flag_present=True, running_release="5.10.0-23-amd64"
+        )
+        self.assertEqual(details["reasons"], ["reboot_required_flag", "stale_kernel"])
+
+    def test_old_state_files_without_details_keep_marker_only_behaviour(self) -> None:
+        module = self._module()
+        for legacy in ({"reboot_required": True}, {"reboot_required_details": None}, {}):
+            details = module.reboot_state(
+                legacy, flag_present=False, running_release="5.10.0-23-amd64"
+            )
+            self.assertFalse(details["required"], legacy)
+
+    def test_the_handler_serves_the_merged_state(self) -> None:
+        raw = (APT_ROLE / "templates" / "os_apt_maintenance_httpd.py.j2").read_text()
+        self.assertNotIn(
+            'reboot_required = os.path.exists("/var/run/reboot-required")',
+            raw,
+            "the served reboot state must come from reboot_state(), not the marker alone",
+        )
+        self.assertIn('data["reboot_required_details"] = reboot_details', raw)
 
 
 class TailscaleCollectorTimerArmingTests(unittest.TestCase):

@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `os_apt_maintenance`'s kernel comparison never fired. `_installed_kernel_versions()`
+  read a `stdout` key from `run_command()`, which only exposes a 4000-character
+  `stdout_tail`, so every host parsed an empty kernel list and the new signal
+  silently degraded back to the marker file alone - the same false negative it
+  was written to close. The kernel list is now read from the full `dpkg-query`
+  output directly, and the unit tests fake `subprocess.run` (the real
+  boundary) instead of `run_command()` with a shape it never produced.
+- The `os_apt_maintenance` endpoint discarded the persisted kernel signal: it
+  replaced `reboot_required` with the live marker-file check on every request,
+  so a check asserting `$.reboot_required == false` could never see
+  `stale_kernel` even once the run recorded it. The endpoint now serves the
+  live marker OR the persisted kernel signal, and drops the kernel signal as
+  soon as `uname -r` no longer matches the kernel the run observed, so a reboot
+  into the new kernel still clears the warning immediately. It also serves
+  `$.reboot_required_details` with the reasons.
 - `os_apt_maintenance` no longer reports "no reboot needed" on hosts where
   Ubuntu's `/var/run/reboot-required` marker can never appear. That file comes
   from `update-notifier-common`, which Debian does not ship and which some

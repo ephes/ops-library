@@ -156,14 +156,31 @@ than erroring the run.
 fires, so an operator can tell a pending-kernel reboot from a library-triggered
 one without logging in.
 
-**Known limitation.** The kernel comparison only sees kernels installed as dpkg
-packages. A host booting a kernel installed outside dpkg - a custom build, a
-vendor kernel such as the Apple T2 series - has no `linux-image-*` packages to
-compare against, so `stale_kernel` reports no signal. That is a deliberate
-fail-safe: reporting nothing is correct behaviour for "cannot tell", and it
-avoids inventing a false warning. But it does mean **absence of a kernel signal
-on such a host is not evidence the kernel is current**, and those hosts still
-depend on the marker file alone. Track them separately.
+The kernel comparison runs inside the maintenance run and is persisted in the
+state file, so it is only re-evaluated on the timer's cadence. The endpoint
+re-reads the marker file on every request and serves the persisted kernel
+signal for as long as `uname -r` still matches the kernel that run observed.
+A reboot into the newer kernel therefore clears both signals immediately,
+while a reboot back into the old kernel keeps the warning. State files written
+before this signal existed serve marker-only behaviour until the next run.
+
+**Known limitations.**
+
+- The comparison only sees kernels installed as dpkg packages. A host booting
+  a kernel installed outside dpkg - a custom build, a vendor kernel that was
+  not packaged - has no `linux-image-*` packages to compare against, so
+  `stale_kernel` reports no signal. That is a deliberate fail-safe: reporting
+  nothing is correct behaviour for "cannot tell", and it avoids inventing a
+  false warning. But it does mean **absence of a kernel signal on such a host
+  is not evidence the kernel is current**, and those hosts still depend on the
+  marker file alone. Track them separately.
+- The comparison has no notion of *why* an older kernel is running. A host
+  deliberately pinned to an older packaged kernel (a GRUB default pointing at
+  a known-good release while a newer one stays installed) reports
+  `stale_kernel` on every run until the pin is lifted or the newer package is
+  removed. The role does not offer an allow-list for this; the warning is the
+  truthful statement that a newer kernel is installed and not running, and
+  what to do about it is an operator decision.
 
 During an active run, `$.summary.currently_running` is `true`. `last_run_ok` remains true while
 the previous successful run is still fresh, so monitoring does not page during normal apt work.
