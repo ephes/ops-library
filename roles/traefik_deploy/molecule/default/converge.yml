@@ -9,5 +9,21 @@
     traefik_configure_firewall: false
     traefik_dashboard_firewall_open: false
 
+  pre_tasks:
+    # Reproduce the production trap before the role runs: a distro web-server
+    # package enables a stock unit that binds :80. Left alone it races Traefik
+    # at boot and can take the host's whole ingress down.
+    - name: Converge | Install a conflicting distro web server
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+        update_cache: true
+
+    - name: Converge | Ensure the stock unit is enabled and running
+      ansible.builtin.systemd:
+        name: nginx
+        enabled: true
+        state: started
+
   roles:
     - role: traefik_deploy

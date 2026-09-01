@@ -201,6 +201,12 @@
     - ansible_facts['os_family'] == "Debian"
     - ufw_check.rc == 0
 
+# Free :80/:443 before Traefik claims them. Also usable standalone against a
+# host whose Traefik is not managed by this role:
+#   include_role: {name: traefik_deploy, tasks_from: web_conflicts}
+- name: Disarm conflicting web servers
+  ansible.builtin.import_tasks: web_conflicts.yml
+
 - name: Enable and start Traefik
   ansible.builtin.systemd:
     name: traefik

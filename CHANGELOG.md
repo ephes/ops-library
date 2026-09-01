@@ -7,8 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `nyxmon_deploy` no longer trips `attempt to write a readonly database` during a
+  source sync. Both `ansible.posix.synchronize` tasks now pass `owner: false` /
+  `group: false`: `synchronize` defaults to `archive: true`, which implies
+  `-o -g` and stamped the controller's uid/gid onto the destination directory,
+  taking write access away from the service user mid-sync
+  (`SQLITE_READONLY_DIRECTORY`, because SQLite must create a journal file
+  there). `nyxmon_rsync_excludes` now also covers the `-wal`, `-shm` and
+  `-journal` sidecars and `.env`; excluding only `db.sqlite3` still let
+  `rsync --delete` remove a live journal out from under the writer.
+- `tailscale_metrics_endpoint` timer-arming probes and their assertion are now
+  skipped under `--check`. They forced `check_mode: false` while unit rendering
+  and startup remained check-mode no-ops, so a first deployment under `--check`
+  queried a nonexistent timer and failed.
+
 ### Added
 
+- `traefik_deploy` now stops, disables and masks stock distro web-server units
+  (`nginx.service`, `apache2.service`, `caddy.service`, `lighttpd.service`)
+  before starting Traefik, controlled by
+  `traefik_mask_conflicting_web_services` / `traefik_conflicting_web_services`.
+  Installing nginx - which several roles pull in as a dependency for their own
+  sidecar instance - enables a stock unit that binds `:80`; nothing disabled it,
+  so it raced Traefik for the port on every boot and could take a host's entire
+  ingress down. Masking rather than disabling is deliberate, because `apt
+  upgrade` re-enables a disabled unit and would silently re-arm the trap on
+  hosts running unattended apt maintenance. Only units already present are
+  touched, and sidecar units (`mastodon-nginx`, `takahe-nginx`) are unaffected.
+  The tasks are also includable standalone via `tasks_from: web_conflicts`, for
+  hosts whose Traefik this role does not manage.
 - `netplan_config` can now install an optional networkd route guard that
   reconfigures a carrier-up interface when its IPv4 default route disappears or
   its setup state becomes failed. Managed `netplan generate`, `netplan apply`,
@@ -34,6 +63,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `nyxmon_deploy` now renders consecutive-failure, persistent-reminder,
   stale-processing-lease, and bounded check-batch settings into Nyxmon's worker
   environment.
+- `os_apt_maintenance` gained executable coverage for the failed-run state-file
+  repair (`just test-os-apt-maintenance-failed-run`): the molecule scenario
+  points the role at an `apt-get` stub that exits 100, resets `state.json` to
+  the pre-fix `0600 root:root`, and asserts the file comes back
+  `root:<endpoint group> 0640` both through systemd and when the writer runs
+  outside systemd, with the endpoint answering HTTP 200 and `last_run_ok=false`
+  rather than 503.
+- `tailscale_metrics_endpoint` gained a molecule scenario
+  (`just test-tailscale-metrics-timer`) that reproduces a parked
+  `active (elapsed)` collector timer against real systemd, asserts the
+  deployment fails rather than accepting it, and asserts the role re-arms it
+  once it can. The scenario also watches the payload file actually get a newer
+  mtime, so "armed" is proven by the collector running rather than by the unit
+  file.
 
 - `mail_backend_deploy` gained `mail_backend_sender_only_domains`: domains the
   backend signs and authorises as an envelope sender, but hosts no mailboxes for.
@@ -132,6 +175,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `nyxmon_deploy` replaces sample-count alert reminders with elapsed-time ones.
+  `nyxmon_notify_repeat_failures` is gone and `NYXMON_NOTIFY_REPEAT_FAILURES` is
+  no longer rendered; the role now renders
+  `NYXMON_NOTIFY_REPEAT_INTERVAL_SECONDS` from
+  `nyxmon_notify_repeat_interval_seconds` (default `21600`) and
+  `NYXMON_NOTIFY_WARNING_REPEAT_INTERVAL_SECONDS` from
+  `nyxmon_notify_warning_repeat_interval_seconds` (default `86400`). A sample
+  count meant a different wall-clock cadence for every check interval — twelve
+  samples is roughly hourly for a five-minute check and roughly twelve-hourly
+  for an hourly one — which is why it cannot be translated into a duration and
+  is ignored rather than converted. Setting the old variable is not an error:
+  the role logs a deprecation notice naming both replacements and continues, so
+  an inventory can be migrated without a failed deploy.
+
+  `nyxmon_notify_consecutive_failures` now defaults to `2` instead of `1`. A
+  first-sample page for every check is what turned one wedged batch into an
+  alert storm; hosts that genuinely need first-sample paging set it per check
+  rather than globally. All five reliability settings are now validated as whole
+  numbers first and then range-checked (threshold 1..100, reminder intervals
+  60..2592000 seconds), so a typo fails the deploy instead of silently landing
+  in the worker environment.
+
 - `certbot_dns_deploy` renewal-hook items now run in isolated fail-fast blocks;
   all independent items are attempted and failures are identified and
   propagated. Existing ordering-dependent hook lists must combine prerequisite
@@ -221,6 +286,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `upgrade.php` step.
 
 ### Fixed
+
+- `os_apt_maintenance`: a failed apt run left the monitoring endpoint answering
+  HTTP 503 until the next successful run. The script writes `state.json` via
+  `tempfile.mkstemp` (0600, root) and `os.replace`, and the unit widened it back
+  to `root:<endpoint group> 0640` in `ExecStartPost=` — which systemd skips
+  entirely when `ExecStart=` exits non-zero. The endpoint user could then not
+  read the file, so a truthful `last_run_ok: false` / `reboot_required: true`
+  state was replaced by a generic 503. `atomic_write_json` now stamps the final
+  group and mode onto the open temp file descriptor before `os.replace` (best
+  effort; a permission problem there never aborts the run), and the unit's
+  fix-up moved from `ExecStartPost=` to `ExecStopPost=-`, which runs on success
+  and failure alike. The `ExecStartPre=` directory hooks are unchanged.
+- `tailscale_metrics_endpoint`: the collector timer could park permanently and
+  freeze the served payload. `OnBootSec=` and `OnUnitActiveSec=` are both
+  monotonic, so a timer unit started later in the boot than its `OnBootSec=`
+  anchor has no trigger left — `OnUnitActiveSec=` has no anchor until the
+  service has run once — and systemd leaves it `active (elapsed)` with
+  `NextElapseUSecMonotonic=infinity`. `Persistent=true` did not help because it
+  only applies to `OnCalendar=`. The endpoint kept serving the frozen snapshot,
+  so every `summary` assertion built on it stayed green while the host was
+  unmonitored. The timer template now also sets `OnActiveSec=` (anchored on the
+  timer unit's own activation) and `OnCalendar=` (new variable
+  `tailscale_metrics_endpoint_timer_on_calendar`, default `*:0/5`). Because
+  `systemd: state: started` is a no-op on an already-active timer and could not
+  repair this, the role now reads the timer's `NextElapseUSecMonotonic` and
+  `NextElapseUSecRealtime`, restarts a timer that has no future trigger, and
+  asserts the timer is armed afterwards.
+
+- `nyxmon_deploy`: a deploy could make the running collector fail with
+  `sqlite3.OperationalError: attempt to write a readonly database`. The source
+  sync ran with rsync's archive defaults, which stamp the controller's uid/gid
+  onto the *destination directory itself*. With `journal_mode=delete` SQLite has
+  to create `db.sqlite3-journal` next to the database for every write
+  transaction, so losing write permission on that directory is
+  `SQLITE_READONLY_DIRECTORY` — reported with exactly that message. The window
+  closed a few seconds later when the role's recursive `chown` ran, which is why
+  it showed up as a single failed collector iteration mid-deploy.
+
+  The sync now passes `owner: false` / `group: false` so it never re-owns the
+  destination, and the excludes moved into `nyxmon_rsync_excludes` /
+  `nyxmon_rsync_django_excludes`. The previous list excluded only `db.sqlite3`,
+  so `rsync --delete` was free to remove a live `-wal`, `-shm`, or `-journal`
+  sidecar — losing crash atomicity rather than merely failing a write. It now
+  excludes each sidecar by name plus `db.sqlite3*` and `*.sqlite3`, and `.env`,
+  which was previously deleted and recreated on every deploy so a restart landing
+  in that window would fail to start. The recursive ownership fix still walks the
+  in-tree database, which is safe: it only sets owner/group to the service user
+  the file already belongs to and never touches modes.
 
 - Corrected the Certbot DNS hook examples and Traefik file-provider guidance:
   rotating a certificate behind `/etc/letsencrypt/live/` does not change

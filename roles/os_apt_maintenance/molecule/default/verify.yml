@@ -6,6 +6,8 @@
 
   vars:
     os_apt_maintenance_state_file: /var/lib/os-apt-maintenance/state.json
+    os_apt_maintenance_endpoint_group: metrics
+    os_apt_maintenance_script_path: /usr/local/sbin/os-apt-maintenance
     os_apt_maintenance_endpoint_url: "http://127.0.0.1:9106/.well-known/os-apt-maintenance"
     os_apt_maintenance_endpoint_auth_user: nyxmon
     os_apt_maintenance_endpoint_auth_password: molecule-apt-maintenance-password
@@ -79,3 +81,142 @@
           - _endpoint_json.summary.last_success_fresh == false
           - _endpoint_json.meta.age_seconds is number
         fail_msg: "Endpoint JSON missing expected os apt maintenance fields"
+
+    # ------------------------------------------------------------------
+    # A *failed* apt run must still leave a readable state file.
+    #
+    # systemd skips ExecStartPost= entirely when ExecStart= exits non-zero.
+    # That is how a production host ended up serving HTTP 503 for two days after
+    # os-apt-maintenance.service exited 100 on update_cache: state.json was
+    # left 0600 root:root, the unprivileged endpoint could not read it, and
+    # the 503 masked the failure the run had just recorded.
+    # ------------------------------------------------------------------
+
+    - name: Verify | Install an apt-get stub that always fails
+      ansible.builtin.copy:
+        dest: /usr/local/bin/failing-apt-get
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          echo "molecule: simulated apt failure" >&2
+          exit 100
+
+    - name: Verify | Re-deploy with a failing update_cache step
+      ansible.builtin.include_role:
+        name: os_apt_maintenance
+      vars:
+        os_apt_maintenance_host_id: molecule
+        os_apt_maintenance_apt_get_path: /usr/local/bin/failing-apt-get
+        os_apt_maintenance_update_cache: true
+        os_apt_maintenance_dist_upgrade: false
+        os_apt_maintenance_autoremove: false
+        os_apt_maintenance_autoclean: false
+        os_apt_maintenance_endpoint_enabled: true
+        os_apt_maintenance_endpoint_bind: 127.0.0.1
+        os_apt_maintenance_endpoint_auth_user: nyxmon
+        os_apt_maintenance_endpoint_auth_password: molecule-apt-maintenance-password
+        os_apt_maintenance_endpoint_ip_allow: []
+
+    # Reproduce the pre-fix on-disk condition exactly, so the assertions below
+    # can only pass if the failing run really repaired it.
+    - name: Verify | Reset the state file to the unreadable pre-fix permissions
+      ansible.builtin.file:
+        path: "{{ os_apt_maintenance_state_file }}"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Verify | Run the maintenance unit and let it fail
+      ansible.builtin.command: systemctl start os-apt-maintenance.service
+      register: _failing_run
+      failed_when: false
+      changed_when: true
+
+    - name: Verify | Read the unit's exit status
+      ansible.builtin.command: systemctl show os-apt-maintenance.service -p ExecMainStatus --value
+      register: _failing_status
+      changed_when: false
+
+    - name: Verify | Stat the state file after the failed run
+      ansible.builtin.stat:
+        path: "{{ os_apt_maintenance_state_file }}"
+      register: _failed_state_file
+
+    - name: Verify | Assert the failed run left a readable state file
+      ansible.builtin.assert:
+        that:
+          - _failing_run.rc != 0
+          - _failing_status.stdout | trim == "100"
+          - _failed_state_file.stat.pw_name == "root"
+          - _failed_state_file.stat.gr_name == os_apt_maintenance_endpoint_group
+          - _failed_state_file.stat.mode == "0640"
+        fail_msg: >-
+          A failed apt run left {{ os_apt_maintenance_state_file }} as
+          {{ _failed_state_file.stat.pw_name | default('?') }}:{{
+          _failed_state_file.stat.gr_name | default('?') }}
+          {{ _failed_state_file.stat.mode | default('?') }}
+          (unit exit {{ _failing_status.stdout | default('?') | trim }}),
+          which is what made the endpoint answer 503.
+
+    # Prove the *writer* repairs the permissions on its own, independently of
+    # ExecStopPost=: run the script directly, outside systemd, so no unit
+    # directive can do it for us.
+    - name: Verify | Reset the state file permissions again
+      ansible.builtin.file:
+        path: "{{ os_apt_maintenance_state_file }}"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Verify | Run the maintenance script outside systemd
+      ansible.builtin.command: "{{ os_apt_maintenance_script_path }}"
+      register: _direct_run
+      failed_when: false
+      changed_when: true
+
+    - name: Verify | Stat the state file after the direct run
+      ansible.builtin.stat:
+        path: "{{ os_apt_maintenance_state_file }}"
+      register: _direct_state_file
+
+    - name: Verify | Assert the writer stamps the permissions itself
+      ansible.builtin.assert:
+        that:
+          - _direct_run.rc == 100
+          - _direct_state_file.stat.pw_name == "root"
+          - _direct_state_file.stat.gr_name == os_apt_maintenance_endpoint_group
+          - _direct_state_file.stat.mode == "0640"
+        fail_msg: >-
+          The maintenance script itself did not leave
+          {{ os_apt_maintenance_state_file }} readable for the endpoint group
+          after a failed run: {{ _direct_state_file.stat.pw_name | default('?') }}:{{
+          _direct_state_file.stat.gr_name | default('?') }}
+          {{ _direct_state_file.stat.mode | default('?') }}
+
+    - name: Verify | Endpoint still answers after a failed run
+      ansible.builtin.uri:
+        url: "{{ os_apt_maintenance_endpoint_url }}"
+        method: GET
+        url_username: "{{ os_apt_maintenance_endpoint_auth_user }}"
+        url_password: "{{ os_apt_maintenance_endpoint_auth_password }}"
+        force_basic_auth: true
+        return_content: true
+        status_code: 200
+      register: _failed_endpoint_response
+
+    - name: Verify | Parse the post-failure endpoint JSON
+      ansible.builtin.set_fact:
+        _failed_endpoint_json: "{{ _failed_endpoint_response.content | from_json }}"
+
+    - name: Verify | Assert the failure is reported, not hidden behind a 503
+      ansible.builtin.assert:
+        that:
+          - _failed_endpoint_json.last_status == "failed"
+          - _failed_endpoint_json.summary.last_run_ok == false
+          - _failed_endpoint_json.last_exit_code == 100
+          - _failed_endpoint_json.steps.update_cache.attempted
+          - _failed_endpoint_json.steps.update_cache.status == "failed"
+          - _failed_endpoint_json.reboot_required is boolean
+        fail_msg: >-
+          The endpoint did not report the failed apt run:
+          {{ _failed_endpoint_response.content }}

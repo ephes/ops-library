@@ -89,8 +89,14 @@ nyxmon_internal_ip_ranges:
 # Monitoring
 nyxmon_monitoring_enabled: true
 nyxmon_monitoring_service_name: nyxmon-monitor
-nyxmon_notify_consecutive_failures: 1
-nyxmon_notify_repeat_failures: 12
+# Number of consecutive non-OK samples before the first alert is sent.
+nyxmon_notify_consecutive_failures: 2
+# Elapsed time between reminders for an open error incident (seconds).
+nyxmon_notify_repeat_interval_seconds: 21600
+# Elapsed time between reminders for an open warning incident (seconds).
+nyxmon_notify_warning_repeat_interval_seconds: 86400
+# DEPRECATED: nyxmon_notify_repeat_failures (sample-count reminders) is ignored.
+# Set nyxmon_notify_repeat_interval_seconds instead.
 nyxmon_processing_lease_seconds: 900
 nyxmon_check_batch_size: 5
 
@@ -100,3 +106,31 @@ nyxmon_python_version: "3.13"  # Python version (3.14 not yet supported by uvloo
 
 # Service restart
 nyxmon_service_restart_on_change: true
+
+# Paths never copied or deleted by the rsync source sync.
+# Persistent runtime data (database, sidecars, media, generated static files,
+# the rendered environment file) must survive `rsync --delete`.
+nyxmon_rsync_excludes:
+  - ".git"
+  - ".venv"
+  - "__pycache__"
+  - "*.pyc"
+  - ".pytest_cache"
+  - ".coverage"
+  - "htmlcov"
+  - ".tox"
+  - ".mypy_cache"
+  - "node_modules"
+  - "cache"
+  - ".env"
+  - "db.sqlite3"
+  - "db.sqlite3-wal"
+  - "db.sqlite3-shm"
+  - "db.sqlite3-journal"
+  - "db.sqlite3*"
+  - "*.sqlite3"
+# Additional excludes applied only to the Django source sync
+nyxmon_rsync_django_excludes:
+  - "src/"
+  - "media/"
+  - "staticfiles/"

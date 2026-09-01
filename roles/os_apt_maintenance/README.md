@@ -21,6 +21,11 @@ The role is intentionally limited to OS package maintenance. It does not replace
 - The timer includes `RandomizedDelaySec` to avoid synchronized apt runs.
 - The runner uses a non-blocking lock file to prevent overlapping runs.
 - A failed run still writes `state.json` and preserves the previous `last_success_at`.
+- The runner stamps the endpoint-readable group and mode onto `state.json` itself,
+  on every write. systemd skips `ExecStartPost=` when `ExecStart=` exits non-zero,
+  so relying on the unit alone left a failed run's state file unreadable by the
+  endpoint user and the endpoint answering HTTP 503 - hiding the failure it had
+  just recorded. The unit's fix-up runs from `ExecStopPost=-` for the same reason.
 - Package config prompts use `--force-confold`, so unattended runs keep existing local config files.
 
 ## Variables

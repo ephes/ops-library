@@ -72,3 +72,27 @@ traefik_configure_firewall: true
 
 # Log rotation
 traefik_logrotate_days: 7
+
+# Conflicting web servers
+# Traefik owns this host's HTTP/HTTPS entrypoints. Distro web-server packages
+# ship a stock unit that is enabled by the package post-install and binds :80 -
+# and several roles pull such a package in as a dependency for their own
+# sidecar instance (e.g. mastodon_deploy / takahe_deploy run `nginx -c` with a
+# private config on a loopback port). Nothing then disables the stock unit, so
+# it sits enabled and races Traefik for :80 on every boot. Whoever binds first
+# wins; if the distro unit wins, Traefik fails and every site on the host is
+# down until someone intervenes.
+#
+# Masking rather than merely disabling is deliberate: `apt upgrade` re-enables
+# a disabled service, so on a host running unattended apt maintenance a plain
+# disable silently re-arms the trap at the next package update.
+#
+# Only units that already exist on the host are touched, so this never blocks a
+# future deliberate installation. Sidecar units (mastodon-nginx.service,
+# takahe-nginx.service, ...) are separate unit names and are never affected.
+traefik_mask_conflicting_web_services: true
+traefik_conflicting_web_services:
+  - nginx.service
+  - apache2.service
+  - caddy.service
+  - lighttpd.service

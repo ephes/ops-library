@@ -1,0 +1,58 @@
+---
+# Free :80/:443 before Traefik claims them. See the rationale on
+# traefik_mask_conflicting_web_services in defaults/main.yml - a stock distro
+# web-server unit left enabled races Traefik at boot and can take the whole
+# host's ingress down.
+- name: web_conflicts | Detect which conflicting web servers exist on this host
+  ansible.builtin.service_facts:
+  when: traefik_mask_conflicting_web_services | bool
+
+- name: web_conflicts | Stop and disable conflicting web servers
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop: "{{ traefik_conflicting_web_services }}"
+  loop_control:
+    label: "{{ item }}"
+  when:
+    - traefik_mask_conflicting_web_services | bool
+    - item in (ansible_facts.services | default({}))
+
+- name: web_conflicts | Mask conflicting web servers so a package upgrade cannot re-enable them
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    masked: true
+  loop: "{{ traefik_conflicting_web_services }}"
+  loop_control:
+    label: "{{ item }}"
+  when:
+    - traefik_mask_conflicting_web_services | bool
+    - item in (ansible_facts.services | default({}))
+
+# A unit that failed before being masked keeps its failed state indefinitely,
+# which leaves `systemctl --failed` permanently dirty and erodes it as a health
+# signal. Masked units are never started again, so the residue is pure noise.
+# noqa justification: neither `systemd` nor `systemd_service` exposes
+# `reset-failed` or `is-failed`, so `command` is the only option here.
+- name: web_conflicts | Check whether a disarmed web server is still marked failed  # noqa: command-instead-of-module
+  ansible.builtin.command: "systemctl is-failed {{ item }}"
+  register: traefik_conflict_failed_state
+  changed_when: false
+  failed_when: false
+  loop: "{{ traefik_conflicting_web_services }}"
+  loop_control:
+    label: "{{ item }}"
+  when:
+    - traefik_mask_conflicting_web_services | bool
+    - item in (ansible_facts.services | default({}))
+
+- name: web_conflicts | Clear the stale failed state of disarmed web servers
+  ansible.builtin.command: "systemctl reset-failed {{ item.item }}"
+  changed_when: true
+  loop: "{{ traefik_conflict_failed_state.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item | default('skipped') }}"
+  when:
+    - not (item.skipped | default(false))
+    - item.stdout | default('') | trim == 'failed'

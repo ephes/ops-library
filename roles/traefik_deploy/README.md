@@ -413,3 +413,40 @@ Created for homelab infrastructure automation.
 - [Traefik Documentation](https://doc.traefik.io/traefik/)
 - [Let's Encrypt](https://letsencrypt.org/)
 - [Traefik GitHub Releases](https://github.com/traefik/traefik/releases)
+
+## Conflicting web servers
+
+Traefik owns this host's HTTP/HTTPS entrypoints. Distro web-server packages ship
+a stock unit that the package post-install enables and starts on `:80`. Several
+roles pull such a package in as a dependency for their own sidecar instance
+(for example `mastodon_deploy` and `takahe_deploy` run `nginx -c <private.conf>`
+on a loopback port behind Traefik) - but nothing disables the stock unit. It
+then sits enabled and races Traefik for `:80` on every boot. Whichever binds
+first wins; if the stock unit wins, Traefik fails to start and every site on the
+host is down until an operator intervenes.
+
+This role stops, disables and **masks** those units before starting Traefik.
+Masking rather than merely disabling is deliberate: `apt upgrade` re-enables a
+disabled service, so on a host running unattended apt maintenance a plain
+disable silently re-arms the trap at the next package update.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `traefik_mask_conflicting_web_services` | `true` | Disarm conflicting web servers before starting Traefik. |
+| `traefik_conflicting_web_services` | `[nginx.service, apache2.service, caddy.service, lighttpd.service]` | Units to disarm. |
+
+Only units that already exist on the host are touched, so this never blocks a
+future deliberate installation. Sidecar units (`mastodon-nginx.service`,
+`takahe-nginx.service`, ...) have distinct unit names and are never affected.
+
+### Applying this to a host whose Traefik this role does not manage
+
+Where Traefik was installed by hand and running the full role would overwrite a
+hand-tuned configuration, apply just these tasks:
+
+```yaml
+- name: Apply the traefik_deploy conflict-disarming tasks
+  ansible.builtin.include_role:
+    name: local.ops_library.traefik_deploy
+    tasks_from: web_conflicts
+```

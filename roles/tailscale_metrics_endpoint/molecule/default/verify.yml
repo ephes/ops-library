@@ -1,0 +1,230 @@
+---
+# Executable coverage for the collector-timer arming repair.
+#
+# A production collector timer sat `active (elapsed)` with
+# NextElapseUSecMonotonic=infinity for six weeks while the endpoint kept
+# serving the frozen payload, so the two properties that matter are: a
+# deployed timer really has a next elapse, and a parked timer is detected and
+# repaired instead of being accepted by a `state: started` no-op.
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    tailscale_metrics_endpoint_enabled: true
+    tailscale_metrics_endpoint_bind: 127.0.0.1
+    tailscale_metrics_endpoint_auth_user: nyxmon
+    tailscale_metrics_endpoint_auth_password: molecule-tailscale-metrics-password
+    tailscale_metrics_endpoint_ip_address_allow:
+      - localhost
+    tailscale_metrics_endpoint_tailscale_bin: /usr/local/bin/tailscale
+    tailscale_metrics_endpoint_timer_interval: 15
+    tailscale_metrics_endpoint_timer_on_boot_sec: 5
+    tailscale_metrics_endpoint_timer_on_calendar: "*:*:0/15"
+    tailscale_metrics_endpoint_timer_accuracy_sec: 1
+    tailscale_metrics_endpoint_timer_randomized_delay_sec: 0
+    timer_unit: tailscale-metrics-collector.timer
+    payload_path: /var/lib/tailscale-metrics/tailscale.json
+    endpoint_url: "http://127.0.0.1:9107/.well-known/tailscale"
+    park_dropin: /etc/systemd/system/tailscale-metrics-collector.timer.d/park.conf
+
+  tasks:
+    # ------------------------------------------------------------------
+    # 1. The deployed timer is armed and the payload is fresh
+    # ------------------------------------------------------------------
+
+    - name: Verify | Read the unit file
+      ansible.builtin.slurp:
+        src: "/etc/systemd/system/{{ timer_unit }}"
+      register: timer_unit_raw
+
+    - name: Verify | Assert the unit carries a non-monotonic trigger
+      ansible.builtin.assert:
+        that:
+          - "'OnActiveSec=' in timer_text"
+          - "'OnCalendar=' in timer_text"
+          - "'OnBootSec=' in timer_text"
+          - "'OnUnitActiveSec=' in timer_text"
+        fail_msg: >-
+          {{ timer_unit }} has only monotonic triggers, which is the
+          configuration that parked a production collector for six weeks.
+      vars:
+        timer_text: "{{ timer_unit_raw.content | b64decode }}"
+
+    - name: Verify | Read the timer's next elapse
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - "{{ timer_unit }}"
+          - --property=NextElapseUSecRealtime
+          - --value
+      changed_when: false
+      register: next_elapse
+
+    - name: Verify | Assert the deployed timer is armed
+      ansible.builtin.assert:
+        that:
+          - next_elapse.stdout | trim | length > 0
+        fail_msg: "{{ timer_unit }} has no next elapse right after a deployment"
+
+    - name: Verify | Record the payload timestamp
+      ansible.builtin.stat:
+        path: "{{ payload_path }}"
+      register: payload_before
+
+    - name: Verify | Wait for the timer to fire again
+      ansible.builtin.wait_for:
+        path: "{{ payload_path }}"
+        timeout: 1
+      changed_when: false
+
+    - name: Verify | Watch the payload get refreshed by the timer
+      ansible.builtin.stat:
+        path: "{{ payload_path }}"
+      register: payload_after
+      until: payload_after.stat.mtime > payload_before.stat.mtime
+      retries: 20
+      delay: 5
+
+    - name: Verify | Assert the collector really runs again
+      ansible.builtin.assert:
+        that:
+          - payload_after.stat.mtime > payload_before.stat.mtime
+        fail_msg: >-
+          {{ payload_path }} was never refreshed, so the timer is armed on
+          paper only.
+
+    - name: Verify | Endpoint serves the payload
+      ansible.builtin.uri:
+        url: "{{ endpoint_url }}"
+        method: GET
+        url_username: "{{ tailscale_metrics_endpoint_auth_user }}"
+        url_password: "{{ tailscale_metrics_endpoint_auth_password }}"
+        force_basic_auth: true
+        return_content: true
+        status_code: 200
+      register: endpoint_response
+
+    - name: Verify | Assert the endpoint reports a fresh payload
+      ansible.builtin.assert:
+        that:
+          - (endpoint_response.content | from_json).meta.age_seconds is number
+          - (endpoint_response.content | from_json).meta.age_seconds < 900
+        fail_msg: "The endpoint is serving a stale payload: {{ endpoint_response.content }}"
+
+    # ------------------------------------------------------------------
+    # 2. A parked timer must fail the deployment, not pass silently
+    # ------------------------------------------------------------------
+
+    - name: Verify | Create the drop-in directory
+      ansible.builtin.file:
+        path: "{{ park_dropin | dirname }}"
+        state: directory
+        mode: "0755"
+
+    # Reproduce that state exactly: every non-monotonic trigger cleared,
+    # and the only remaining anchor already in the past.
+    - name: Verify | Park the collector timer
+      ansible.builtin.copy:
+        dest: "{{ park_dropin }}"
+        mode: "0644"
+        content: |
+          [Timer]
+          OnActiveSec=
+          OnCalendar=
+          OnUnitActiveSec=
+          OnBootSec=
+          OnBootSec=1s
+
+    - name: Verify | Restart the parked timer
+      ansible.builtin.systemd:
+        name: "{{ timer_unit }}"
+        state: restarted
+        daemon_reload: true
+
+    - name: Verify | Read the parked timer's elapse properties
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - "{{ timer_unit }}"
+          - --property=NextElapseUSecRealtime
+          - --property=NextElapseUSecMonotonic
+          - --property=SubState
+      changed_when: false
+      register: parked_properties
+
+    - name: Verify | Assert the parking reproduction actually parked the timer
+      ansible.builtin.assert:
+        that:
+          - "'NextElapseUSecRealtime=' in parked_properties.stdout_lines"
+          - "'NextElapseUSecMonotonic=infinity' in parked_properties.stdout_lines"
+        fail_msg: >-
+          The scenario failed to reproduce a parked timer, so the repair below
+          would prove nothing: {{ parked_properties.stdout }}
+
+    - name: Verify | Re-run the role against a timer that cannot be re-armed
+      block:
+        - name: Verify | Role run with the parking drop-in still in place
+          ansible.builtin.include_role:
+            name: tailscale_metrics_endpoint
+
+        - name: Verify | Record that the arming assertion did not fire
+          ansible.builtin.set_fact:
+            arming_assert_fired: false
+      rescue:
+        - name: Verify | Record that the arming assertion fired
+          ansible.builtin.set_fact:
+            arming_assert_fired: true
+            arming_assert_message: "{{ ansible_failed_result.msg | default('') }}"
+
+    - name: Verify | Assert a permanently parked timer fails the deployment
+      ansible.builtin.assert:
+        that:
+          - arming_assert_fired | bool
+          - "'no next elapse' in arming_assert_message"
+        fail_msg: >-
+          The role accepted a parked collector timer
+          (fired={{ arming_assert_fired }},
+          msg={{ arming_assert_message | default('') }})
+
+    # ------------------------------------------------------------------
+    # 3. The role re-arms a parked timer once it can
+    # ------------------------------------------------------------------
+
+    - name: Verify | Remove the parking drop-in
+      ansible.builtin.file:
+        path: "{{ park_dropin }}"
+        state: absent
+
+    - name: Verify | Re-park the timer with the real unit still loaded
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Verify | Stop the collector timer
+      ansible.builtin.systemd:
+        name: "{{ timer_unit }}"
+        state: stopped
+
+    - name: Verify | Re-run the role after the parking drop-in is gone
+      ansible.builtin.include_role:
+        name: tailscale_metrics_endpoint
+
+    - name: Verify | Read the repaired timer's next elapse
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - "{{ timer_unit }}"
+          - --property=NextElapseUSecRealtime
+          - --value
+      changed_when: false
+      register: repaired_elapse
+
+    - name: Verify | Assert the role left the timer armed
+      ansible.builtin.assert:
+        that:
+          - repaired_elapse.stdout | trim | length > 0
+        fail_msg: "{{ timer_unit }} is still unarmed after a repair run"

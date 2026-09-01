@@ -2205,7 +2205,17 @@ class SSHForwardingRoleTests(unittest.TestCase):
         for role in ("ssh_forwarding_identity", "ssh_restricted_forwarding_account"):
             self.assertIn(f"roles/{role}/README.md", readme)
             self.assertIn(role, changelog)
-        self.assertIn("version: 2.12.0", galaxy)
+        # The SSH forwarding roles shipped in 2.12.0; later releases must not
+        # regress below that, but pinning the exact version made every
+        # unrelated collection bump fail here.
+        version = next(
+            line.split(":", 1)[1].strip()
+            for line in galaxy.splitlines()
+            if line.startswith("version:")
+        )
+        self.assertGreaterEqual(
+            tuple(int(part) for part in version.split(".")), (2, 12, 0)
+        )
         identity_readme = self.read("roles/ssh_forwarding_identity/README.md")
         self.assertIn(
             "never rotates or removes a private key implicitly", identity_readme

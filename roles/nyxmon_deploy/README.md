@@ -65,27 +65,86 @@ The monitoring worker unit name defaults to `nyxmon-monitor` and can be
 overridden with `nyxmon_monitoring_service_name` if a host needs a different
 systemd unit name.
 
+### Monitoring reliability and alert policy
+
 Monitoring reliability defaults are rendered into the shared `.env`:
 
-```yaml
-nyxmon_notify_consecutive_failures: 1
-nyxmon_notify_repeat_failures: 12
-nyxmon_processing_lease_seconds: 900
-nyxmon_check_batch_size: 5
-```
+| Variable | Default | Rendered as | Meaning |
+| --- | --- | --- | --- |
+| `nyxmon_notify_consecutive_failures` | `2` | `NYXMON_NOTIFY_CONSECUTIVE_FAILURES` | Consecutive non-OK samples before the first alert (1..100) |
+| `nyxmon_notify_repeat_interval_seconds` | `21600` | `NYXMON_NOTIFY_REPEAT_INTERVAL_SECONDS` | Elapsed time between reminders for an open **error** incident (60..2592000) |
+| `nyxmon_notify_warning_repeat_interval_seconds` | `86400` | `NYXMON_NOTIFY_WARNING_REPEAT_INTERVAL_SECONDS` | Elapsed time between reminders for an open **warning** incident (60..2592000) |
+| `nyxmon_processing_lease_seconds` | `900` | `NYXMON_PROCESSING_LEASE_SECONDS` | Processing lease before a claimed check is reclaimed |
+| `nyxmon_check_batch_size` | `5` | `NYXMON_CHECK_BATCH_SIZE` | Maximum checks claimed per collector iteration (1..100) |
 
 Nyxmon sends the initial alert when the consecutive-failure threshold is met,
-then sends a reminder after each configured number of additional failures.
+then reminds on **elapsed time**, not on a sample count. Reminder cadence is
+therefore the same wall-clock interval for a five-minute check and an hourly
+one. A check that needs to page on its very first failing sample gets a
+per-check policy override in Nyxmon rather than a lower global threshold.
+
 Checks left in `processing` beyond the lease are reclaimed by the worker and
-produce an immediate `stale_processing_lease` alert before being scheduled
-again. Keep the lease comfortably above the longest valid executor runtime; the
-role requires at least five minutes plus one minute per claimed check.
-Claims and stale recoveries are processed in bounded batches. The default of
-five adds five minutes of result-handling time to the collector deadline. The
+rescheduled. Keep the lease comfortably above the longest valid executor
+runtime; the role requires at least five minutes plus one minute per claimed
+check. Claims and stale recoveries are processed in bounded batches. The default
+of five adds five minutes of result-handling time to the collector deadline. The
 configured lease separately includes a five-minute execution floor plus at
 least one minute per claimed check, protecting valid in-flight work across a
 service restart. Increase the lease with the batch size when the corresponding
 throughput gain is worth a longer batch deadline.
+
+All five settings are validated before anything is written: each must be a whole
+number, and each is range-checked. A typo fails the deploy instead of landing in
+the worker environment.
+
+#### Removed: `nyxmon_notify_repeat_failures`
+
+Reminders used to be counted in samples (`NYXMON_NOTIFY_REPEAT_FAILURES`). That
+made the reminder cadence depend on the check interval — twelve samples is
+roughly hourly for a five-minute check and roughly twelve-hourly for an hourly
+one — so a sample count cannot be translated into a duration without
+re-importing the defect. The variable is therefore **ignored, not converted**,
+and the env var is no longer rendered.
+
+Setting it is not a hard error. The role logs a deprecation notice naming both
+replacements and continues, so an inventory can be migrated without a failed
+deploy:
+
+```yaml
+# before
+nyxmon_notify_consecutive_failures: 1
+nyxmon_notify_repeat_failures: 12
+
+# after
+nyxmon_notify_consecutive_failures: 2
+nyxmon_notify_repeat_interval_seconds: 21600
+nyxmon_notify_warning_repeat_interval_seconds: 86400
+```
+
+### Database and source-sync safety
+
+The SQLite database stays where Django puts it, inside the deployed tree. The
+source sync is what has to be careful about it:
+
+- Both `ansible.posix.synchronize` tasks pass `owner: false` / `group: false`.
+  `synchronize` defaults to `archive: true`, which implies `-o -g` and stamps the
+  **controller's** uid/gid onto the destination directory. That takes write
+  access to the site directory away from the service user mid-sync, and because
+  SQLite must create a journal file in that directory it surfaces as
+  `attempt to write a readonly database` (`SQLITE_READONLY_DIRECTORY`).
+- `nyxmon_rsync_excludes` covers `db.sqlite3` **and** its `-wal`, `-shm` and
+  `-journal` sidecars, plus `.env`. Excluding only `db.sqlite3` is not enough:
+  `rsync --delete` would remove a live journal sidecar out from under the writer.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `nyxmon_rsync_excludes` | database, sidecars, `.env`, caches, VCS dirs | Never copied or deleted by the source sync. |
+| `nyxmon_rsync_django_excludes` | `src/`, `media/`, `staticfiles/` | Additional excludes for the Django sync only. |
+
+> Relocating the database onto a dedicated persistent path (e.g. `/var/lib/nyxmon`)
+> is tracked as separate work. It is deliberately **not** part of this change:
+> it carries its own migration, rollback and divergence-guard semantics that
+> warrant review on their own.
 
 ### Common Configuration
 
@@ -168,6 +227,36 @@ nyxmon_use_source_pyproject: true
 > under `nyxmon_source_path` to avoid accidentally wiping files on the remote host
 > when rsync runs with `delete: true`.
 
+The sync runs with `owner: false` and `group: false`. rsync's archive defaults
+would otherwise stamp the controller's uid/gid onto the destination directory
+itself, taking write access to the site directory away from the service user
+for the rest of the deploy. Ownership is fixed afterwards by a single recursive
+task. That is safe for a different reason than it may look: the database is
+inside the tree, but the task only sets owner/group to the service user the
+file already belongs to, and never touches modes.
+
+Exclusions are configurable and default to persistent runtime data:
+
+```yaml
+nyxmon_rsync_excludes:  # applied to every sync
+  - ".env"
+  - "db.sqlite3"
+  - "db.sqlite3-wal"
+  - "db.sqlite3-shm"
+  - "db.sqlite3-journal"
+  - "db.sqlite3*"
+  - "*.sqlite3"
+  # ... plus the usual build/VCS noise
+nyxmon_rsync_django_excludes:  # applied only to the Django source sync
+  - "src/"
+  - "media/"
+  - "staticfiles/"
+```
+
+Every SQLite sidecar is excluded by name: `rsync --delete` removing a live
+`-journal` or `-wal` file out from under a running writer costs crash
+atomicity, which is worse than a failed write.
+
 ### Switching back to PyPI-based deployments
 
 If you prefer the original "install from PyPI" mode (e.g. for production), override these variables:
@@ -236,10 +325,14 @@ The role creates the following structure on the target system:
 │   ├── src/nyxmon/       # Nyxmon package (rsync defaults)
 │   ├── src/nyxboard/     # Nyxboard package (rsync defaults)
 │   ├── .venv/            # Default uv virtual environment (nyxmon_venv_path)
-│   └── cache/            # Django cache directory
-├── logs/                 # Application logs
-└── .env                  # Environment variables
+│   ├── cache/            # Django cache directory
+│   └── .env              # Environment variables
+└── logs/                 # Application logs
 ```
+
+The SQLite database lives in the Django directory alongside the code and is
+protected from the source sync by `nyxmon_rsync_excludes` - see
+[Database and source-sync safety](#database-and-source-sync-safety).
 
 ## Services
 

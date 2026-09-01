@@ -11,7 +11,7 @@ setup:
     @./setup-pre-commit.sh
 
 # Run the default contributor validation path
-test: venv test-roles test-network-recovery test-certbot-dns-renewal-hooks test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup test-takahe-deploy lint docs-build docs-lint
+test: venv test-roles test-network-recovery test-monitoring-pipeline-repair test-os-apt-maintenance-failed-run test-tailscale-metrics-timer test-nyxmon-deploy test-certbot-dns-renewal-hooks test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup test-takahe-deploy lint docs-build docs-lint
     @echo ""
     @echo "✅ Validation completed!"
 
@@ -33,6 +33,26 @@ test-network-recovery: venv
 test-role ROLE: venv
     @echo "Testing role: {{ROLE}}"
     @UV_PROJECT_ENVIRONMENT=.venv uv run ./test_roles.py {{ROLE}}
+
+test-monitoring-pipeline-repair: venv
+    @echo "Testing apt-maintenance state permissions and Tailscale collector timer arming..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_monitoring_pipeline_repair
+
+# Drives a real failing apt run and asserts the state file stays readable for
+# the endpoint group, so a failed run reports itself instead of serving 503.
+test-os-apt-maintenance-failed-run: venv
+    @echo "Testing that a failed apt-maintenance run still serves its state..."
+    @just molecule-test os_apt_maintenance
+
+# Reproduces a parked `active (elapsed)` collector timer and asserts the role
+# detects it, refuses to accept it, and re-arms it once it can.
+test-tailscale-metrics-timer: venv
+    @echo "Testing Tailscale metrics collector timer arming against real systemd..."
+    @just molecule-test tailscale_metrics_endpoint
+
+test-nyxmon-deploy: venv
+    @echo "Testing Nyxmon rsync safety and notification policy contracts..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_nyxmon_deploy
 
 test-certbot-dns-renewal-hooks: venv
     @echo "Testing Certbot DNS renewal hook rendering and failure aggregation..."
@@ -260,6 +280,13 @@ molecule-test role:
     eval "$(just _export-docker-host)"
     export ANSIBLE_ALLOW_BROKEN_CONDITIONALS=1
     cd roles/{{role}} && uv run molecule test
+
+# Run a named molecule scenario for a specific role
+molecule-test-scenario role scenario:
+    #!/usr/bin/env bash
+    eval "$(just _export-docker-host)"
+    export ANSIBLE_ALLOW_BROKEN_CONDITIONALS=1
+    cd roles/{{role}} && uv run molecule test -s {{scenario}}
 
 # Run molecule converge (apply without destroy) for debugging
 molecule-converge role:

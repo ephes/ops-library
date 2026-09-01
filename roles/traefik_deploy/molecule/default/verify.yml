@@ -9,6 +9,7 @@
     traefik_static_config: /etc/traefik/traefik.toml
     traefik_unit_path: /etc/systemd/system/traefik.service
     traefik_acme_storage: /etc/traefik/acme/acme.json
+    traefik_http_port: 80
 
   tasks:
     - name: Verify | Traefik binary present
@@ -65,3 +66,47 @@
         that:
           - traefik_status.rc == 0
         fail_msg: "Traefik service is not active"
+
+    # The role must have taken :80 away from the stock distro unit. `disabled`
+    # is not sufficient - apt upgrades re-enable a disabled unit, so the trap
+    # would silently re-arm on a host running unattended apt maintenance.
+    - name: Verify | Read stock nginx enablement
+      ansible.builtin.command: systemctl is-enabled nginx.service
+      register: traefik_stock_nginx_enabled
+      changed_when: false
+      failed_when: false
+
+    - name: Verify | Assert the stock nginx unit is masked
+      ansible.builtin.assert:
+        that:
+          - "'masked' in traefik_stock_nginx_enabled.stdout"
+        fail_msg: >-
+          stock nginx.service is '{{ traefik_stock_nginx_enabled.stdout | trim }}',
+          expected 'masked'; it would race Traefik for :80 at boot.
+        success_msg: "Stock nginx.service is masked."
+
+    - name: Verify | Read stock nginx activity
+      ansible.builtin.command: systemctl is-active nginx.service
+      register: traefik_stock_nginx_active
+      changed_when: false
+      failed_when: false
+
+    - name: Verify | Assert the stock nginx unit is not running
+      ansible.builtin.assert:
+        that:
+          - traefik_stock_nginx_active.stdout | trim != 'active'
+        fail_msg: "stock nginx.service is still running and holding :80."
+
+    - name: Verify | Traefik owns the HTTP entrypoint
+      ansible.builtin.command: ss -lntp
+      register: traefik_listeners
+      changed_when: false
+
+    - name: Verify | Assert Traefik holds port 80
+      ansible.builtin.assert:
+        that:
+          - traefik_listeners.stdout is search(':' ~ traefik_http_port ~ '\\b.*traefik')
+        fail_msg: >-
+          Traefik does not hold port {{ traefik_http_port }}.
+          Listeners: {{ traefik_listeners.stdout }}
+        success_msg: "Traefik holds port {{ traefik_http_port }}."

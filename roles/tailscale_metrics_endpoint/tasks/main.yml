@@ -265,6 +265,122 @@
         state: started
         daemon_reload: true
 
+    # `state: started` is a no-op on a timer that is already `active` - even
+    # when that timer is `active (elapsed)` with no next elapse, which is the
+    # state a monotonic-only timer falls into when it is started after its
+    # OnBootSec= anchor has passed. In that state the collector never runs
+    # again, the payload freezes, and every `summary` assertion keeps passing
+    # against a stale snapshot. Detect it explicitly and re-arm.
+    - name: Read collector timer next monotonic elapse
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - "{{ tailscale_metrics_endpoint_timer_name }}.timer"
+          - --property=NextElapseUSecMonotonic
+          - --value
+      register: tailscale_metrics_endpoint_timer_monotonic
+      changed_when: false
+      check_mode: false
+      when: not ansible_check_mode
+
+    - name: Read collector timer next realtime elapse
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - "{{ tailscale_metrics_endpoint_timer_name }}.timer"
+          - --property=NextElapseUSecRealtime
+          - --value
+      register: tailscale_metrics_endpoint_timer_realtime
+      changed_when: false
+      check_mode: false
+      when: not ansible_check_mode
+
+    - name: Determine whether the collector timer is armed
+      when: not ansible_check_mode
+      ansible.builtin.set_fact:
+        tailscale_metrics_endpoint_timer_armed: >-
+          {{
+            (tailscale_metrics_endpoint_timer_realtime.stdout | trim | length > 0)
+            or (
+              tailscale_metrics_endpoint_timer_monotonic.stdout | trim
+              not in ['', 'infinity', '0']
+            )
+          }}
+
+    - name: Re-arm a collector timer that elapsed without a next trigger
+      ansible.builtin.systemd:
+        name: "{{ tailscale_metrics_endpoint_timer_name }}.timer"
+        state: restarted
+      when:
+        - not ansible_check_mode
+        - not (tailscale_metrics_endpoint_timer_armed | bool)
+
+    # Re-read BOTH properties and apply the same predicate used above. A timer
+    # armed only monotonically is armed; so is one systemd has momentarily put
+    # in `running` state because the collector service it triggers is executing
+    # - in that window NextElapseUSecRealtime is transiently empty. Asserting on
+    # the realtime value alone fails a healthy timer under load.
+    - name: Re-read collector timer next elapse after repair
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - "{{ tailscale_metrics_endpoint_timer_name }}.timer"
+          - --property=NextElapseUSecRealtime
+          - --property=NextElapseUSecMonotonic
+          - --property=SubState
+      register: tailscale_metrics_endpoint_timer_recheck
+      changed_when: false
+      check_mode: false
+      when: not ansible_check_mode
+      until: >-
+        (
+          tailscale_metrics_endpoint_timer_recheck.stdout
+          | regex_search('NextElapseUSecRealtime=(.*)', '\\1')
+          | default([''], true) | first | default('', true) | trim | length > 0
+        )
+        or (
+          tailscale_metrics_endpoint_timer_recheck.stdout
+          | regex_search('NextElapseUSecMonotonic=(.*)', '\\1')
+          | default([''], true) | first | default('', true) | trim
+          not in ['', 'infinity', '0']
+        )
+      retries: 5
+      delay: 2
+      # The retry only rides out the transient `running` window; the assert
+      # below is the gate. Without this, retry exhaustion fails the command
+      # task with an empty msg and the operator never sees the real reason.
+      failed_when: false
+
+    # Skipped under --check: the unit rendering and start tasks above are
+    # check-mode no-ops, so on a first deployment the timer does not exist yet
+    # and there is nothing meaningful to assert against.
+    - name: Require an armed collector timer
+      when: not ansible_check_mode
+      ansible.builtin.assert:
+        that:
+          - >-
+            (
+              tailscale_metrics_endpoint_timer_recheck.stdout
+              | regex_search('NextElapseUSecRealtime=(.*)', '\\1')
+              | default([''], true) | first | default('', true) | trim | length > 0
+            )
+            or (
+              tailscale_metrics_endpoint_timer_recheck.stdout
+              | regex_search('NextElapseUSecMonotonic=(.*)', '\\1')
+              | default([''], true) | first | default('', true) | trim
+              not in ['', 'infinity', '0']
+            )
+        fail_msg: >-
+          {{ tailscale_metrics_endpoint_timer_name }}.timer has no next elapse
+          (realtime or monotonic); the metrics payload would freeze while the
+          endpoint keeps serving it. Observed: {{
+            tailscale_metrics_endpoint_timer_recheck.stdout | trim
+          }}
+        success_msg: "Collector timer is armed with a next elapse."
+
     - name: Ensure HTTP server is enabled and running
       ansible.builtin.systemd:
         name: "{{ tailscale_metrics_endpoint_service_name }}"

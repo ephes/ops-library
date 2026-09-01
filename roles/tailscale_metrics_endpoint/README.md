@@ -66,11 +66,30 @@ prefixes no broader than `/32`.
 | `tailscale_metrics_endpoint_require_default_ipv4_route` | `false` | Require a default IPv4 route on the configured interface |
 | `tailscale_metrics_endpoint_require_self_online` | `false` | Include `Self.Online` in `summary.overall_ok`; defaults off for compatibility |
 | `tailscale_metrics_endpoint_timer_interval` | `300` | Collector interval in seconds |
+| `tailscale_metrics_endpoint_timer_on_calendar` | `*:0/5` | Wall-clock backstop for the collector timer |
 
 Allow-list CIDRs must use a nonzero prefix no larger than 32 for IPv4 or 128 for
 IPv6. World-open prefixes are rejected during role validation.
 The role argument specification also coerces timer intervals to integers and
 route/self-online requirement flags to booleans at the role boundary.
+
+### Collector timer arming
+
+`OnBootSec=` and `OnUnitActiveSec=` are both monotonic triggers. A timer unit
+started later in the boot than its `OnBootSec=` anchor has no trigger left -
+`OnUnitActiveSec=` has no anchor until the collector service has run once in
+this boot - and systemd parks it as `active (elapsed)` with
+`NextElapseUSecMonotonic=infinity`. The collector then never runs again while
+the endpoint keeps serving the frozen payload, so every `summary` assertion
+built on it stays green against a stale snapshot.
+
+The timer therefore also carries `OnActiveSec=` (anchored on the timer unit's
+own activation) and `OnCalendar=` (the only trigger type `Persistent=true`
+applies to). Because `ansible.builtin.systemd: state: started` is a no-op on an
+already-active timer and cannot repair a parked one, the role reads
+`NextElapseUSecMonotonic` and `NextElapseUSecRealtime` after starting the timer,
+restarts it when neither names a future trigger, and then asserts that the timer
+is armed.
 
 ## Response Shape
 

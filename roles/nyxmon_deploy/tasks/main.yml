@@ -29,11 +29,37 @@
       Please update secrets/prod/nyxmon.yml with real values using:
       SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt sops secrets/prod/nyxmon.yml
 
+- name: Validate Nyxmon reliability settings are whole numbers
+  assert:
+    that:
+      - item.value is not boolean
+      - (item.value | string) is match('^[0-9]+$')
+    fail_msg: >-
+      {{ item.name }} must be a non-negative whole number, got
+      {{ item.value | default('NOT SET') }}.
+  loop:
+    - name: nyxmon_notify_consecutive_failures
+      value: "{{ nyxmon_notify_consecutive_failures }}"
+    - name: nyxmon_notify_repeat_interval_seconds
+      value: "{{ nyxmon_notify_repeat_interval_seconds }}"
+    - name: nyxmon_notify_warning_repeat_interval_seconds
+      value: "{{ nyxmon_notify_warning_repeat_interval_seconds }}"
+    - name: nyxmon_processing_lease_seconds
+      value: "{{ nyxmon_processing_lease_seconds }}"
+    - name: nyxmon_check_batch_size
+      value: "{{ nyxmon_check_batch_size }}"
+  loop_control:
+    label: "{{ item.name }}"
+
 - name: Validate Nyxmon reliability settings
   assert:
     that:
-      - nyxmon_notify_consecutive_failures | int > 0
-      - nyxmon_notify_repeat_failures | int > 0
+      - nyxmon_notify_consecutive_failures | int >= 1
+      - nyxmon_notify_consecutive_failures | int <= 100
+      - nyxmon_notify_repeat_interval_seconds | int >= 60
+      - nyxmon_notify_repeat_interval_seconds | int <= 2592000
+      - nyxmon_notify_warning_repeat_interval_seconds | int >= 60
+      - nyxmon_notify_warning_repeat_interval_seconds | int <= 2592000
       - nyxmon_processing_lease_seconds | int >= 30
       - nyxmon_check_batch_size | int >= 1
       - nyxmon_check_batch_size | int <= 100
@@ -41,8 +67,20 @@
         nyxmon_processing_lease_seconds | int
         >= ((nyxmon_check_batch_size | int) + 5) * 60
     fail_msg: >-
-      Nyxmon notification thresholds must be positive and the processing lease
-      must be at least five minutes plus one minute per claimed check.
+      Nyxmon notification thresholds are out of range. The consecutive-failure
+      threshold must be 1..100, reminder intervals must be 60..2592000 seconds,
+      and the processing lease must be at least five minutes plus one minute per
+      claimed check.
+
+- name: Warn about the removed sample-count reminder variable
+  debug:
+    msg: >-
+      DEPRECATION: nyxmon_notify_repeat_failures is set but ignored. Reminder
+      cadence is elapsed-time based now, because a sample count means a
+      different wall-clock interval for every check interval. Remove the
+      variable and set nyxmon_notify_repeat_interval_seconds (errors) and
+      nyxmon_notify_warning_repeat_interval_seconds (warnings) instead.
+  when: nyxmon_notify_repeat_failures is defined
 
 - name: Validate rsync-specific requirements
   assert:

@@ -89,10 +89,14 @@
     - name: Verify | Assert reliability settings rendered
       ansible.builtin.assert:
         that:
-          - nyxmon_env_text is regex('(?m)^NYXMON_NOTIFY_CONSECUTIVE_FAILURES=1$')
-          - nyxmon_env_text is regex('(?m)^NYXMON_NOTIFY_REPEAT_FAILURES=12$')
+          - nyxmon_env_text is regex('(?m)^NYXMON_NOTIFY_CONSECUTIVE_FAILURES=2$')
+          - nyxmon_env_text is regex('(?m)^NYXMON_NOTIFY_REPEAT_INTERVAL_SECONDS=21600$')
+          - >-
+            nyxmon_env_text is
+            regex('(?m)^NYXMON_NOTIFY_WARNING_REPEAT_INTERVAL_SECONDS=86400$')
           - nyxmon_env_text is regex('(?m)^NYXMON_PROCESSING_LEASE_SECONDS=900$')
           - nyxmon_env_text is regex('(?m)^NYXMON_CHECK_BATCH_SIZE=5$')
+          - not (nyxmon_env_text is regex('(?m)^NYXMON_NOTIFY_REPEAT_FAILURES='))
         fail_msg: "Nyxmon .env is missing the expected reliability settings"
       vars:
         nyxmon_env_text: "{{ nyxmon_env_content.content | b64decode }}"
