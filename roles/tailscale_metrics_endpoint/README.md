@@ -65,6 +65,9 @@ prefixes no broader than `/32`.
 | `tailscale_metrics_endpoint_default_route_interface` | empty | Interface used by the optional IPv4 default-route probe |
 | `tailscale_metrics_endpoint_require_default_ipv4_route` | `false` | Require a default IPv4 route on the configured interface |
 | `tailscale_metrics_endpoint_require_self_online` | `false` | Include `Self.Online` in `summary.overall_ok`; defaults off for compatibility |
+| `tailscale_metrics_endpoint_mdstat_path` | `/proc/mdstat` | Linux mdraid status file read by the optional RAID probe |
+| `tailscale_metrics_endpoint_require_mdraid_healthy` | `false` | Require at least one active mdraid array and reject any member bitmap containing `_` |
+| `tailscale_metrics_endpoint_required_mdraid_arrays` | `[]` | Array names that must be present when mdraid health is required |
 | `tailscale_metrics_endpoint_timer_interval` | `300` | Collector interval in seconds |
 | `tailscale_metrics_endpoint_timer_on_calendar` | `*:0/5` | Wall-clock backstop for the collector timer |
 
@@ -99,6 +102,7 @@ is armed.
     "backend_running": true,
     "self_online": true,
     "default_ipv4_route_present": true,
+    "mdraid_healthy": true,
     "key_expiry_disabled": false,
     "key_expiry_warning_ok": true,
     "key_expiry_critical_ok": true,
@@ -117,6 +121,20 @@ is armed.
     "default_ipv4_route_present": true,
     "default_ipv4_route_detail": "default via 192.168.178.1 dev enp1s0f1"
   },
+  "storage": {
+    "mdraid_required": true,
+    "mdraid_required_arrays": ["md0", "md1"],
+    "mdraid_healthy": true,
+    "mdraid_detail": "",
+    "mdraid_arrays": [
+      {
+        "name": "md0",
+        "level": "raid1",
+        "status": "[UU]",
+        "healthy": true
+      }
+    ]
+  },
   "meta": {
     "age_seconds": 23
   }
@@ -133,6 +151,18 @@ by definition; consumers that require route evidence must also deploy with
 `tailscale_metrics_endpoint_require_default_ipv4_route: true`. `Self.Online` is
 always reported, but only affects `summary.overall_ok` when
 `tailscale_metrics_endpoint_require_self_online` is enabled.
+Set `tailscale_metrics_endpoint_require_mdraid_healthy: true` on hosts backed
+by Linux software RAID. The payload then exposes every active array under
+`storage.mdraid_arrays`, sets `summary.mdraid_healthy`, and folds that signal
+into `summary.overall_ok`. A missing `/proc/mdstat`, no active arrays, or a
+member bitmap such as `[_U]` is unhealthy. Set
+`tailscale_metrics_endpoint_required_mdraid_arrays` to the host's expected array
+names when a wholly missing array must also fail the probe. Arrays reported as
+`active (auto-read-only)`, such as an idle swap mirror, are included. Active
+non-redundant personalities such as RAID0 and linear have no member bitmap;
+they are reported with `status: null` and treated as assembled, while required
+array names still detect their disappearance. When the probe is disabled,
+`summary.mdraid_healthy` is `null` rather than an unevaluated all-clear.
 
 ## Validation
 

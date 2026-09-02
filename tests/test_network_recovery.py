@@ -12,7 +12,6 @@ from pathlib import Path
 import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -24,6 +23,7 @@ def template_environment(directory: Path) -> Environment:
     )
     environment.filters["bool"] = bool
     environment.filters["quote"] = shlex.quote
+    environment.filters["to_json"] = json.dumps
     return environment
 
 
@@ -59,8 +59,7 @@ class NetplanRouteGuardTemplateTests(unittest.TestCase):
         tasks = (ROOT / "roles/tailscale_metrics_endpoint/tasks/main.yml").read_text()
         argument_specs = yaml.safe_load(
             (
-                ROOT
-                / "roles/tailscale_metrics_endpoint/meta/argument_specs.yml"
+                ROOT / "roles/tailscale_metrics_endpoint/meta/argument_specs.yml"
             ).read_text()
         )["argument_specs"]["main"]["options"]
 
@@ -80,9 +79,9 @@ class NetplanRouteGuardTemplateTests(unittest.TestCase):
             "int",
         )
         self.assertEqual(
-            argument_specs[
-                "tailscale_metrics_endpoint_require_default_ipv4_route"
-            ]["type"],
+            argument_specs["tailscale_metrics_endpoint_require_default_ipv4_route"][
+                "type"
+            ],
             "bool",
         )
         self.assertEqual(
@@ -831,6 +830,10 @@ class TailscaleMetricsExporterTemplateTests(unittest.TestCase):
         require_route: bool,
         route_rc: int = 0,
         require_self_online: bool = True,
+        require_mdraid: bool = False,
+        required_mdraid_arrays: list[str] | None = None,
+        mdstat: str = "",
+        mdstat_filename: str = "mdstat",
     ) -> dict[str, object]:
         template_dir = ROOT / "roles/tailscale_metrics_endpoint/templates"
         with tempfile.TemporaryDirectory() as temp_dir_name:
@@ -846,6 +849,8 @@ class TailscaleMetricsExporterTemplateTests(unittest.TestCase):
                 f"#!/bin/sh\nprintf '%s\\n' {shlex.quote(route_output)}\nexit {route_rc}\n"
             )
             ip_bin.chmod(0o755)
+            mdstat_path = temp_dir / mdstat_filename
+            mdstat_path.write_text(mdstat)
 
             exporter = (
                 template_environment(template_dir)
@@ -856,6 +861,11 @@ class TailscaleMetricsExporterTemplateTests(unittest.TestCase):
                     tailscale_metrics_endpoint_default_route_interface="enp1s0f1",
                     tailscale_metrics_endpoint_require_default_ipv4_route=require_route,
                     tailscale_metrics_endpoint_require_self_online=require_self_online,
+                    tailscale_metrics_endpoint_mdstat_path=str(mdstat_path),
+                    tailscale_metrics_endpoint_require_mdraid_healthy=require_mdraid,
+                    tailscale_metrics_endpoint_required_mdraid_arrays=(
+                        required_mdraid_arrays or []
+                    ),
                     tailscale_metrics_endpoint_warning_days=3,
                     tailscale_metrics_endpoint_critical_days=1,
                 )
@@ -922,6 +932,146 @@ class TailscaleMetricsExporterTemplateTests(unittest.TestCase):
             require_self_online=True,
         )
         self.assertFalse(payload["summary"]["self_online"])
+        self.assertFalse(payload["summary"]["overall_ok"])
+
+    def test_required_mdraid_arrays_are_reported_healthy(self) -> None:
+        payload = self.run_exporter(
+            online=True,
+            route_output="",
+            require_route=False,
+            require_mdraid=True,
+            required_mdraid_arrays=["md0", "md1", "md2"],
+            mdstat="""Personalities : [raid1]
+md2 : active raid1 nvme0n1p3[0] nvme1n1p3[1]
+      465894720 blocks super 1.2 [2/2] [UU]
+
+md1 : active raid1 nvme0n1p2[0] nvme1n1p2[1]
+      523264 blocks super 1.2 [2/2] [UU]
+
+md0 : active (auto-read-only) raid1 nvme0n1p1[0] nvme1n1p1[1]
+      33520640 blocks super 1.2 [2/2] [UU]
+""",
+        )
+        self.assertTrue(payload["summary"]["mdraid_healthy"])
+        self.assertTrue(payload["summary"]["overall_ok"])
+        self.assertEqual(
+            [array["status"] for array in payload["storage"]["mdraid_arrays"]],
+            ["[UU]", "[UU]", "[UU]"],
+        )
+
+    def test_active_bitmapless_mdraid_personalities_are_not_degraded(self) -> None:
+        payload = self.run_exporter(
+            online=True,
+            route_output="",
+            require_route=False,
+            require_mdraid=True,
+            required_mdraid_arrays=["md3", "md4"],
+            mdstat="""Personalities : [raid0] [linear]
+md3 : active raid0 sda1[0] sdb1[1]
+      1047552 blocks super 1.2 512k chunks
+
+md4 : active linear sdc1[0] sdd1[1]
+      2095104 blocks super 1.2
+""",
+        )
+        self.assertTrue(payload["summary"]["mdraid_healthy"])
+        self.assertTrue(payload["summary"]["overall_ok"])
+        self.assertEqual(
+            [array["level"] for array in payload["storage"]["mdraid_arrays"]],
+            ["raid0", "linear"],
+        )
+        self.assertEqual(
+            [array["status"] for array in payload["storage"]["mdraid_arrays"]],
+            [None, None],
+        )
+
+    def test_bitmapless_redundant_mdraid_array_fails_closed(self) -> None:
+        payload = self.run_exporter(
+            online=True,
+            route_output="",
+            require_route=False,
+            require_mdraid=True,
+            required_mdraid_arrays=["md5"],
+            mdstat="""Personalities : [raid5]
+md5 : active raid5 sda1[0] sdb1[1] sdc1[2]
+      2095104 blocks super 1.2 level 5, 512k chunk
+""",
+        )
+        self.assertFalse(payload["summary"]["mdraid_healthy"])
+        self.assertFalse(payload["summary"]["overall_ok"])
+        self.assertIsNone(payload["storage"]["mdraid_arrays"][0]["status"])
+        self.assertIn("degraded mdraid arrays: md5", payload["storage"]["mdraid_detail"])
+
+    def test_mdstat_path_is_rendered_as_a_python_string_literal(self) -> None:
+        payload = self.run_exporter(
+            online=True,
+            route_output="",
+            require_route=False,
+            require_mdraid=True,
+            required_mdraid_arrays=["md0"],
+            mdstat="""Personalities : [raid1]
+md0 : active raid1 nvme0n1p1[0] nvme1n1p1[1]
+      33520640 blocks super 1.2 [2/2] [UU]
+""",
+            mdstat_filename='md"stat\\probe',
+        )
+        self.assertTrue(payload["summary"]["mdraid_healthy"])
+        self.assertTrue(payload["summary"]["overall_ok"])
+
+    def test_disabled_mdraid_probe_reports_unknown_without_failing_overall(self) -> None:
+        payload = self.run_exporter(
+            online=True,
+            route_output="",
+            require_route=False,
+            require_mdraid=False,
+        )
+        self.assertIsNone(payload["summary"]["mdraid_healthy"])
+        self.assertIsNone(payload["storage"]["mdraid_healthy"])
+        self.assertTrue(payload["summary"]["overall_ok"])
+
+    def test_missing_required_mdraid_array_controls_overall_health(self) -> None:
+        payload = self.run_exporter(
+            online=True,
+            route_output="",
+            require_route=False,
+            require_mdraid=True,
+            required_mdraid_arrays=["md0", "md1", "md2"],
+            mdstat="""Personalities : [raid1]
+md1 : active raid1 nvme0n1p2[0] nvme1n1p2[1]
+      523264 blocks super 1.2 [2/2] [UU]
+
+md0 : active raid1 nvme0n1p1[0] nvme1n1p1[1]
+      33520640 blocks super 1.2 [2/2] [UU]
+""",
+        )
+        self.assertFalse(payload["summary"]["mdraid_healthy"])
+        self.assertFalse(payload["summary"]["overall_ok"])
+        self.assertIn("missing mdraid arrays: md2", payload["storage"]["mdraid_detail"])
+
+    def test_degraded_mdraid_array_controls_overall_health(self) -> None:
+        payload = self.run_exporter(
+            online=True,
+            route_output="",
+            require_route=False,
+            require_mdraid=True,
+            mdstat="""Personalities : [raid1]
+md1 : active raid1 nvme1n1p2[1]
+      523264 blocks super 1.2 [2/1] [_U]
+""",
+        )
+        self.assertFalse(payload["summary"]["mdraid_healthy"])
+        self.assertFalse(payload["summary"]["overall_ok"])
+        self.assertEqual(payload["storage"]["mdraid_arrays"][0]["status"], "[_U]")
+
+    def test_required_mdraid_without_arrays_is_unhealthy(self) -> None:
+        payload = self.run_exporter(
+            online=True,
+            route_output="",
+            require_route=False,
+            require_mdraid=True,
+            mdstat="Personalities : [raid1]\nunused devices: <none>\n",
+        )
+        self.assertFalse(payload["summary"]["mdraid_healthy"])
         self.assertFalse(payload["summary"]["overall_ok"])
 
 

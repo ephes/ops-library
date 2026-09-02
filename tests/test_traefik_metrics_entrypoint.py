@@ -36,6 +36,32 @@ def _render(**overrides: object) -> str:
 
 
 class TraefikMetricsEntrypointTests(unittest.TestCase):
+    def test_acme_directory_is_never_temporarily_world_traversable(self) -> None:
+        tasks = yaml.safe_load((ROLE / "tasks/main.yml").read_text())
+        create_directories = next(
+            task
+            for task in tasks
+            if task.get("name") == "Create Traefik directories"
+        )
+        directory_modes = {
+            item["path"]: item["mode"] for item in create_directories["loop"]
+        }
+        self.assertEqual(directory_modes["{{ traefik_acme_dir }}"], "0700")
+        acme_directory_tasks = []
+        for task in tasks:
+            file_args = task.get("ansible.builtin.file", {})
+            if file_args.get("state") != "directory":
+                continue
+            direct_target = file_args.get("path") == "{{ traefik_acme_dir }}"
+            loop_target = any(
+                isinstance(item, dict)
+                and item.get("path") == "{{ traefik_acme_dir }}"
+                for item in task.get("loop", [])
+            )
+            if direct_target or loop_target:
+                acme_directory_tasks.append(task.get("name"))
+        self.assertEqual(acme_directory_tasks, ["Create Traefik directories"])
+
     def test_dashboard_disabled_binds_metrics_to_loopback(self) -> None:
         toml = _render(traefik_dashboard_enabled=False, traefik_metrics_enabled=True)
         self.assertIn("[entryPoints.traefik]", toml)

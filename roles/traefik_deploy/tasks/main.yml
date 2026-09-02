@@ -30,24 +30,20 @@
 
 - name: Create Traefik directories
   ansible.builtin.file:
-    path: "{{ item }}"
+    path: "{{ item.path }}"
     state: directory
     owner: root
     group: root
-    mode: '0755'
+    mode: "{{ item.mode }}"
   loop:
-    - "{{ traefik_config_dir }}"
-    - "{{ traefik_dynamic_dir }}"
-    - "{{ traefik_acme_dir }}"
-    - "{{ traefik_log_dir }}"
-
-- name: Set permissions on acme directory
-  ansible.builtin.file:
-    path: "{{ traefik_acme_dir }}"
-    state: directory
-    owner: root
-    group: root
-    mode: '0700'
+    - path: "{{ traefik_config_dir }}"
+      mode: "0755"
+    - path: "{{ traefik_dynamic_dir }}"
+      mode: "0755"
+    - path: "{{ traefik_acme_dir }}"
+      mode: "0700"
+    - path: "{{ traefik_log_dir }}"
+      mode: "0755"
 
 - name: Check if Traefik is already installed
   ansible.builtin.stat:

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `traefik_deploy` now creates its ACME directory as `0700` in the original
+  directory loop. Previously every run briefly changed it to `0755` and then
+  back to `0700`, producing false idempotency changes and momentarily making
+  the private state directory world-traversable.
 - `traefik_deploy` no longer exposes Prometheus metrics on `:8080` on every
   interface when the dashboard is disabled. Metrics default to the `traefik`
   entrypoint, and when nothing defined it Traefik created it implicitly on
@@ -65,6 +69,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `tailscale_metrics_endpoint` can now inspect `/proc/mdstat`, report each
+  active array (including `active (auto-read-only)` arrays) and its `[UU]`-style
+  member bitmap, require an explicit set of array names, and include required
+  mdraid health in `summary.overall_ok`. This closes the monitoring gap that
+  left a degraded staging `/boot` mirror unnoticed for more than three years.
+  Active bitmap-less RAID0/linear arrays are supported, and disabled probes
+  report an unknown value instead of an unevaluated healthy value.
 - `traefik_deploy` now stops, disables and masks stock distro web-server units
   (`nginx.service`, `apache2.service`, `caddy.service`, `lighttpd.service`)
   before starting Traefik, controlled by
