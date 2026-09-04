@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `wagtail_deploy` now defaults to Python 3.14.7, keeping its uv-managed
+  runtime on the latest 3.14 patch release.
 - `openclaw_deploy` can opt its selected audio-provider transport into
   private-network requests for a dedicated local audio route. The provider is
   configurable and defaults to the bundled `senseaudio` media adapter so local
