@@ -1,0 +1,117 @@
+---
+- name: upgrade_migrations | Inspect exact legacy workspace setup paths
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - "{{ openclaw_agent_workspace_dir }}/openclaw-workspace-state.json"
+    - "{{ openclaw_agent_workspace_dir }}/openclaw-workspace-state.json.doctor-importing"
+    - "{{ openclaw_agent_workspace_dir }}/.openclaw/workspace-state.json"
+    - "{{ openclaw_agent_workspace_dir }}/.openclaw/workspace-state.json.doctor-importing"
+    - "{{ openclaw_agent_workspace_dir }}.attested"
+    - "{{ openclaw_agent_workspace_dir }}.attested.doctor-importing"
+  register: _openclaw_legacy_workspace_setup_paths
+
+- name: upgrade_migrations | Inspect legacy workspace attestation directory
+  ansible.builtin.find:
+    paths: "{{ openclaw_data_dir }}/workspace-attestations"
+    patterns:
+      - "*.attested"
+      - "*.attested.doctor-importing"
+    file_type: any
+    recurse: false
+  register: _openclaw_legacy_workspace_attestations
+
+- name: upgrade_migrations | Determine whether Doctor migration is required
+  ansible.builtin.set_fact:
+    _openclaw_upgrade_migrations_ran: >-
+      {{
+        (
+          _openclaw_legacy_workspace_setup_paths.results
+          | selectattr('stat.exists', 'defined')
+          | selectattr('stat.exists')
+          | list
+          | length
+        ) > 0
+        or (_openclaw_legacy_workspace_attestations.matched | int) > 0
+      }}
+
+- name: upgrade_migrations | Inspect managed service before state migration
+  ansible.builtin.service_facts:
+  when: _openclaw_upgrade_migrations_ran | bool
+
+- name: upgrade_migrations | Stop gateway before exclusive state migration
+  ansible.builtin.systemd:
+    name: "{{ openclaw_service_name }}"
+    state: stopped
+  when:
+    - _openclaw_upgrade_migrations_ran | bool
+    - (openclaw_service_name ~ '.service') in ansible_facts.services
+
+- name: upgrade_migrations | Run supported non-interactive Doctor repair
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --network
+      - host
+      - --user
+      - "1000:1000"
+      - --env-file
+      - "{{ openclaw_site_dir }}/.env"
+      - --volume
+      - "{{ openclaw_data_dir }}:/home/node/.openclaw"
+      - --entrypoint
+      - node
+      - "{{ openclaw_image_name }}:{{ openclaw_image_tag }}"
+      - dist/index.js
+      - doctor
+      - --fix
+      - --non-interactive
+      - --yes
+  register: _openclaw_upgrade_doctor
+  changed_when: true
+  when: _openclaw_upgrade_migrations_ran | bool
+
+- name: upgrade_migrations | Reinspect exact legacy workspace setup paths
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - "{{ openclaw_agent_workspace_dir }}/openclaw-workspace-state.json"
+    - "{{ openclaw_agent_workspace_dir }}/openclaw-workspace-state.json.doctor-importing"
+    - "{{ openclaw_agent_workspace_dir }}/.openclaw/workspace-state.json"
+    - "{{ openclaw_agent_workspace_dir }}/.openclaw/workspace-state.json.doctor-importing"
+    - "{{ openclaw_agent_workspace_dir }}.attested"
+    - "{{ openclaw_agent_workspace_dir }}.attested.doctor-importing"
+  register: _openclaw_remaining_workspace_setup_paths
+  when: _openclaw_upgrade_migrations_ran | bool
+
+- name: upgrade_migrations | Reinspect legacy workspace attestation directory
+  ansible.builtin.find:
+    paths: "{{ openclaw_data_dir }}/workspace-attestations"
+    patterns:
+      - "*.attested"
+      - "*.attested.doctor-importing"
+    file_type: any
+    recurse: false
+  register: _openclaw_remaining_workspace_attestations
+  when: _openclaw_upgrade_migrations_ran | bool
+
+- name: upgrade_migrations | Require removal of runtime-blocking legacy state
+  ansible.builtin.assert:
+    that:
+      - >-
+        (
+          _openclaw_remaining_workspace_setup_paths.results
+          | selectattr('stat.exists', 'defined')
+          | selectattr('stat.exists')
+          | list
+          | length
+        ) == 0
+      - (_openclaw_remaining_workspace_attestations.matched | int) == 0
+    fail_msg: >-
+      OpenClaw Doctor returned without removing all runtime-blocking legacy
+      workspace state. Keep the gateway stopped and inspect Doctor output.
+  when: _openclaw_upgrade_migrations_ran | bool

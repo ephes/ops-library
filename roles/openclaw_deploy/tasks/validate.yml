@@ -196,6 +196,72 @@
   loop: "{{ openclaw_openai_auth_order }}"
   when: openclaw_openai_auth_order | length > 0
 
+- name: validate | Audio transcription settings
+  ansible.builtin.assert:
+    that:
+      - openclaw_gateway_config | length == 0
+      - >-
+        (openclaw_version | regex_replace('^v', ''))
+        is version('2026.9.1', '>=', version_type='semver')
+      - openclaw_audio_transcription_provider is regex('^[a-z0-9][a-z0-9._-]*$')
+      - openclaw_audio_transcription_profile_id is regex('^[A-Za-z0-9._-]+:[A-Za-z0-9._-]+$')
+      - >-
+        (openclaw_audio_transcription_profile_id | trim).startswith(
+          (openclaw_audio_transcription_provider | trim) ~ ':'
+        )
+      - openclaw_openai_auth_order | length > 0
+      - >-
+        (openclaw_audio_transcription_profile_id | trim)
+        not in (openclaw_openai_auth_order | map('trim') | list)
+    fail_msg: >-
+      Managed audio transcription requires OpenClaw v2026.9.1 or newer, the
+      role-managed gateway config, a provider-scoped profile id, and an
+      explicit OpenAI auth order that excludes the audio profile.
+  when: openclaw_audio_transcription_managed | bool
+
+- name: validate | Enabled audio transcription settings
+  ansible.builtin.assert:
+    that:
+      - openclaw_audio_transcription_managed | bool
+      - openclaw_audio_transcription_base_url is regex('^https?://')
+      - not openclaw_audio_transcription_base_url.endswith('/')
+      - openclaw_audio_transcription_model | trim | length > 0
+      - openclaw_audio_transcription_api_key is regex('^[A-Za-z0-9._~+/=-]{20,512}\Z')
+      - openclaw_audio_transcription_api_key not in ['CHANGEME', 'CHANGE_ME']
+      - openclaw_audio_transcription_api_key_env is regex('^[A-Z][A-Z0-9_]{0,127}$')
+      - openclaw_audio_transcription_api_key_env not in openclaw_extra_env
+      - openclaw_audio_transcription_api_key_env not in _openclaw_reserved_env_names
+      - openclaw_audio_transcription_timeout_seconds | int > 0
+      - openclaw_audio_transcription_timeout_seconds | int <= 3600
+    fail_msg: >-
+      Enabled audio transcription requires management, an HTTP(S) base URL
+      without a trailing slash, a model, a delimiter-safe API key, a dedicated
+      non-reserved environment name, and a timeout from 1 to 3600 seconds.
+  vars:
+    _openclaw_reserved_env_names:
+      - ANTHROPIC_API_KEY
+      - NODE_OPTIONS
+      - OLLAMA_API_KEY
+      - OLLAMA_BASE_URL
+      - OPENAI_API_KEY
+      - OPENCLAW_GATEWAY_TOKEN
+      - OPENCLAW_WEEKNOTES_S3_ACCESS_KEY
+      - OPENCLAW_WEEKNOTES_S3_BUCKET
+      - OPENCLAW_WEEKNOTES_S3_ENDPOINT
+      - OPENCLAW_WEEKNOTES_S3_MC_ALIAS
+      - OPENCLAW_WEEKNOTES_S3_MC_BIN
+      - OPENCLAW_WEEKNOTES_S3_NOTE_KEY_FORMAT
+      - OPENCLAW_WEEKNOTES_S3_PREFIX
+      - OPENCLAW_WEEKNOTES_S3_REGION
+      - OPENCLAW_WEEKNOTES_S3_SECRET_KEY
+      - OPENCLAW_WEEKNOTES_S3_TODO_CACHE_REFRESH_SECS
+      - OPENCLAW_WEEKNOTES_S3_TODO_LIST_KEY_REGEX
+      - OPENCLAW_WEEKNOTES_S3_TODO_LIST_MODE
+      - OPENROUTER_API_KEY
+      - TELEGRAM_BOT_TOKEN
+      - TZ
+  when: openclaw_audio_transcription_enabled | bool
+
 - name: validate | Codex plugin settings
   ansible.builtin.assert:
     that:

@@ -23,3 +23,79 @@
   register: openclaw_health_stable
   changed_when: false
   failed_when: openclaw_health_stable.stdout != 'true'
+
+- name: health | Determine whether Telegram readiness is required
+  ansible.builtin.set_fact:
+    _openclaw_telegram_expected_enabled: >-
+      {{
+        openclaw_gateway_config.get('channels', {}).get('telegram', {}).get('enabled', false)
+        if (openclaw_gateway_config | length > 0)
+        else (openclaw_telegram_enabled | bool)
+      }}
+
+- name: health | Wait for gateway and configured channel readiness
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import json
+        import subprocess
+        import sys
+
+        result = subprocess.run(
+            ["docker", "exec", sys.argv[1], "openclaw", "health", "--json"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            sys.stderr.write(result.stderr)
+            raise SystemExit(result.returncode)
+
+        try:
+            health = json.loads(result.stdout)
+        except (json.JSONDecodeError, TypeError) as error:
+            sys.stderr.write(f"OpenClaw health returned invalid JSON: {error}\n")
+            raise SystemExit(1)
+
+        ready = isinstance(health, dict) and health.get("ok") is True
+        if ready and sys.argv[2] == "true":
+            channels = health.get("channels")
+            telegram = channels.get("telegram") if isinstance(channels, dict) else None
+            ready = (
+                isinstance(telegram, dict)
+                and telegram.get("configured") is True
+                and telegram.get("running") is True
+                and telegram.get("connected") is True
+                and telegram.get("lastError") is None
+            )
+        if not ready:
+            sys.stderr.write("OpenClaw or its configured Telegram channel is not ready\n")
+            raise SystemExit(1)
+
+        print(json.dumps(health))
+      - "{{ openclaw_container_name }}"
+      - "{{ (_openclaw_telegram_expected_enabled | bool) | ternary('true', 'false') }}"
+  register: _openclaw_gateway_health
+  changed_when: false
+  failed_when: false
+  retries: "{{ openclaw_healthcheck_retries }}"
+  delay: "{{ openclaw_healthcheck_delay }}"
+  until: _openclaw_gateway_health.rc == 0
+
+- name: health | Parse gateway RPC health
+  ansible.builtin.set_fact:
+    _openclaw_gateway_health_json: "{{ _openclaw_gateway_health.stdout | from_json }}"
+
+- name: health | Require configured Telegram channel readiness
+  ansible.builtin.assert:
+    that:
+      - _openclaw_gateway_health_json.channels.telegram.configured | default(false) | bool
+      - _openclaw_gateway_health_json.channels.telegram.running | default(false) | bool
+      - _openclaw_gateway_health_json.channels.telegram.connected | default(false) | bool
+      - (_openclaw_gateway_health_json.channels.telegram.lastError | default(none)) is none
+    fail_msg: >-
+      OpenClaw gateway is reachable, but the configured Telegram channel is not
+      running and connected. Inspect gateway logs for migration or crash-loop
+      suppression errors.
+  when: _openclaw_telegram_expected_enabled | bool

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `openclaw_deploy` can opt its selected audio-provider transport into
+  private-network requests for a dedicated local audio route. The provider is
+  configurable and defaults to the bundled `senseaudio` media adapter so local
+  endpoint credentials stay out of the normal OpenAI agent-auth namespace. Its deploy
+  health gate now derives Telegram readiness from complete raw gateway
+  overrides as well as the role's individual channel variables. It also keeps
+  OpenClaw's internal Doctor backup directory writable by the container
+  identity.
+
 ### Fixed
 
 - `traefik_deploy` now creates its ACME directory as `0700` in the original
@@ -68,6 +79,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   queried a nonexistent timer and failed.
 
 ### Added
+
+- `openclaw_deploy` can now route voice notes to an OpenAI-compatible local
+  transcription endpoint through a dedicated, explicitly selected API-key
+  profile. The role stores only an environment SecretRef in OpenClaw's SQLite
+  auth store, preserves explicitly non-audio media models, and prevents normal
+  OAuth-backed agent turns from inheriting the transcription credential.
+- `openclaw_deploy` now migrates the pre-2026.9.1 memory-search and timestamp
+  config keys before plugin reconciliation, so in-place upgrades do not fail
+  the newer schema validation.
+- `openclaw_deploy` now detects and safely migrates v2026.9.1 legacy workspace
+  state through upstream non-interactive Doctor repair before startup, then
+  verifies gateway RPC and Telegram readiness instead of accepting a briefly
+  open port from a crash-looping container.
 
 - `tailscale_metrics_endpoint` can now inspect `/proc/mdstat`, report each
   active array (including `active (auto-read-only)` arrays) and its `[UU]`-style

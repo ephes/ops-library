@@ -22,14 +22,33 @@
 - name: main | Render OpenClaw environment file
   ansible.builtin.import_tasks: env.yml
 
+- name: main | Render gateway config
+  ansible.builtin.import_tasks: config.yml
+
 - name: main | Install the official Codex runtime plugin
   ansible.builtin.import_tasks: plugins.yml
   when:
     - openclaw_codex_plugin_enabled | bool
     - not ansible_check_mode
 
-- name: main | Render gateway config
+- name: main | Run guarded upstream upgrade migrations
+  ansible.builtin.import_tasks: upgrade_migrations.yml
+  when:
+    - openclaw_upgrade_migrations_enabled | bool
+    - not ansible_check_mode
+    - >-
+      (openclaw_version | regex_replace('^v', ''))
+      is version('2026.9.1', '>=', version_type='semver')
+
+- name: main | Reconcile config after upstream upgrade migrations
   ansible.builtin.import_tasks: config.yml
+  when: _openclaw_upgrade_migrations_ran | default(false) | bool
+
+- name: main | Configure audio transcription credentials
+  ansible.builtin.import_tasks: audio_transcription.yml
+  when:
+    - openclaw_audio_transcription_enabled | bool
+    - not ansible_check_mode
 
 - name: main | Render OpenClaw Docker Compose file
   ansible.builtin.import_tasks: compose.yml

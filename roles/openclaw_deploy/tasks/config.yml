@@ -4,6 +4,84 @@
     path: "{{ openclaw_data_dir }}/openclaw.json"
   register: openclaw_config_stat
 
+- name: config | Migrate legacy settings removed in OpenClaw 2026.9.1
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import json
+        import os
+        import sys
+        import tempfile
+        from pathlib import Path
+
+        path = Path(sys.argv[1])
+        data = json.loads(path.read_text(encoding="utf-8"))
+        changed = False
+        missing = object()
+
+        agents = data.get("agents")
+        defaults = agents.get("defaults") if isinstance(agents, dict) else None
+        legacy_memory_search = (
+            defaults.pop("memorySearch", missing)
+            if isinstance(defaults, dict)
+            else missing
+        )
+        if legacy_memory_search is not missing:
+            memory = data.setdefault("memory", {})
+            if not isinstance(memory, dict):
+                raise TypeError("memory must be an object before migrating memorySearch")
+            memory.setdefault("search", legacy_memory_search)
+            changed = True
+
+        meta = data.get("meta")
+        if isinstance(meta, dict) and "lastTouchedAt" in meta:
+            meta.pop("lastTouchedAt")
+            changed = True
+
+        if changed:
+            original_stat = path.stat()
+            temporary_fd, temporary_name = tempfile.mkstemp(
+                dir=path.parent,
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+            )
+            try:
+                with os.fdopen(temporary_fd, "w", encoding="utf-8") as handle:
+                    os.fchown(
+                        handle.fileno(), original_stat.st_uid, original_stat.st_gid
+                    )
+                    os.fchmod(handle.fileno(), original_stat.st_mode & 0o7777)
+                    handle.write(json.dumps(data, indent=2) + "\n")
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(temporary_name, path)
+                directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+            except BaseException:
+                try:
+                    os.unlink(temporary_name)
+                except FileNotFoundError:
+                    pass
+                raise
+            print("changed")
+        else:
+            print("unchanged")
+      - "{{ openclaw_data_dir }}/openclaw.json"
+  register: _openclaw_config_v2026_9_1_migration
+  changed_when: _openclaw_config_v2026_9_1_migration.stdout == 'changed'
+  when:
+    - openclaw_config_stat.stat.exists
+    - not (openclaw_force_config | bool)
+    - >-
+      (openclaw_version | regex_replace('^v', ''))
+      is version('2026.9.1', '>=', version_type='semver')
+  notify: restart openclaw
+
 - name: config | Build managed plugin patch inputs
   ansible.builtin.set_fact:
     _openclaw_managed_plugin_entries: >-
@@ -142,6 +220,79 @@
     - openclaw_gateway_config | length == 0
     - openclaw_openai_auth_order | length > 0
 
+- name: config | Build optional audio transcription patch
+  ansible.builtin.set_fact:
+    _openclaw_audio_model_entry:
+      provider: "{{ openclaw_audio_transcription_provider | trim }}"
+      model: "{{ openclaw_audio_transcription_model | trim }}"
+      profile: "{{ openclaw_audio_transcription_profile_id | trim }}"
+      baseUrl: "{{ openclaw_audio_transcription_base_url | trim }}"
+      capabilities:
+        - audio
+    _openclaw_audio_config_patch: >-
+      {{
+        (
+          {
+            "tools": {
+              "media": {
+                "models": [
+                  {
+                    "provider": openclaw_audio_transcription_provider | trim,
+                    "model": openclaw_audio_transcription_model | trim,
+                    "profile": openclaw_audio_transcription_profile_id | trim,
+                    "baseUrl": openclaw_audio_transcription_base_url | trim,
+                    "capabilities": ["audio"]
+                  }
+                ],
+                "audio": {
+                  "enabled": true,
+                  "preferredModel": (openclaw_audio_transcription_provider | trim) ~ "/" ~ (openclaw_audio_transcription_model | trim),
+                  "timeoutSeconds": openclaw_audio_transcription_timeout_seconds | int
+                }
+              }
+            }
+          }
+            | combine(
+                {
+                  "models": {
+                    "providers": dict([
+                      (
+                        openclaw_audio_transcription_provider | trim,
+                        {
+                          "baseUrl": openclaw_audio_transcription_base_url | trim,
+                          "models": [
+                            {
+                              "id": openclaw_audio_transcription_model | trim,
+                              "name": openclaw_audio_transcription_model | trim
+                            }
+                          ],
+                          "request": {
+                            "allowPrivateNetwork": openclaw_audio_transcription_allow_private_network | bool
+                          }
+                        }
+                      )
+                    ])
+                  }
+                },
+                recursive=True
+              )
+          if (openclaw_audio_transcription_enabled | bool)
+          else {
+            "tools": {
+              "media": {
+                "models": [],
+                "audio": {
+                  "enabled": false
+                }
+              }
+            }
+          }
+        )
+      }}
+  when:
+    - openclaw_gateway_config | length == 0
+    - openclaw_audio_transcription_managed | bool
+
 - name: config | Build gateway config from individual variables
   ansible.builtin.set_fact:
     _openclaw_built_config: >-
@@ -197,6 +348,7 @@
         | combine(_openclaw_gateway_access_patch, recursive=True)
         | combine(_openclaw_model_policy_patch | default({}), recursive=True)
         | combine(_openclaw_openai_auth_order_patch | default({}), recursive=True)
+        | combine(_openclaw_audio_config_patch | default({}), recursive=True)
       }}
   when: openclaw_gateway_config | length == 0
 
@@ -223,6 +375,99 @@
     - name: config | Parse existing gateway config
       ansible.builtin.set_fact:
         _openclaw_existing_config: "{{ _openclaw_existing_config_raw.content | b64decode | from_json }}"
+
+    - name: config | Initialize preserved unmanaged media models
+      ansible.builtin.set_fact:
+        _openclaw_preserved_media_models: []
+      when: openclaw_audio_transcription_managed | bool
+
+    - name: config | Preserve unmanaged media models
+      ansible.builtin.set_fact:
+        _openclaw_preserved_media_models: "{{ _openclaw_preserved_media_models + [item] }}"
+      loop: >-
+        {{
+          (
+            (
+              (_openclaw_existing_config.tools | default({})).media
+              | default({})
+            ).models
+            | default([])
+          )
+        }}
+      loop_control:
+        label: "{{ item.provider | default('unknown') }}/{{ item.model | default('unknown') }}"
+      when:
+        - openclaw_audio_transcription_managed | bool
+        - item is mapping
+        - >-
+          (
+            openclaw_audio_transcription_enabled | bool
+            and item.capabilities is defined
+            and item.capabilities is sequence
+            and item.capabilities is not string
+            and 'audio' not in item.capabilities
+          )
+          or
+          (
+            not (openclaw_audio_transcription_enabled | bool)
+            and (item.profile | default('')) != openclaw_audio_transcription_profile_id
+          )
+
+    - name: config | Build existing-config audio transcription patch
+      ansible.builtin.set_fact:
+        _openclaw_audio_runtime_patch: >-
+          {{
+            _openclaw_audio_config_patch
+            | combine(
+                (
+                  {
+                    "models": {
+                      "providers": dict([
+                        (
+                          openclaw_audio_transcription_provider | trim,
+                          {
+                            "request": {
+                              "allowPrivateNetwork": false
+                            }
+                          }
+                        )
+                      ])
+                    }
+                  }
+                  if (
+                    not (openclaw_audio_transcription_enabled | bool)
+                    and (
+                      openclaw_audio_transcription_provider | trim
+                    ) in (
+                      (
+                        (_openclaw_existing_config.models | default({})).providers
+                        | default({})
+                      )
+                      if ((_openclaw_existing_config.models | default({})) is mapping)
+                      else {}
+                    )
+                  )
+                  else {}
+                ),
+                recursive=True
+              )
+            | combine(
+                {
+                  "tools": {
+                    "media": {
+                      "models": (
+                        [_openclaw_audio_model_entry]
+                        if (openclaw_audio_transcription_enabled | bool)
+                        else []
+                      )
+                        + _openclaw_preserved_media_models
+                    }
+                  }
+                },
+                recursive=True
+              )
+          }}
+      when: openclaw_audio_transcription_managed | bool
 
     - name: config | Build runtime config patch
       ansible.builtin.set_fact:
@@ -350,6 +595,7 @@
               )
             | combine(_openclaw_model_policy_patch | default({}), recursive=True)
             | combine(_openclaw_openai_auth_order_patch | default({}), recursive=True)
+            | combine(_openclaw_audio_runtime_patch | default({}), recursive=True)
           }}
 
     - name: config | Merge runtime config patch
