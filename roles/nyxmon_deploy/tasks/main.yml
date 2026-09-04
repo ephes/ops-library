@@ -149,6 +149,9 @@
   include_tasks: monitoring.yml
   when: nyxmon_monitoring_enabled
 
+- name: Enforce SQLite credential privacy
+  include_tasks: sqlite_privacy.yml
+
 - name: main | Flush handlers before OpsGate smoke validation
   meta: flush_handlers
 

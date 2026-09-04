@@ -68,7 +68,7 @@ prefixes no broader than `/32`.
 | `tailscale_metrics_endpoint_mdstat_path` | `/proc/mdstat` | Linux mdraid status file read by the optional RAID probe |
 | `tailscale_metrics_endpoint_require_mdraid_healthy` | `false` | Require at least one active mdraid array and reject any member bitmap containing `_` |
 | `tailscale_metrics_endpoint_required_mdraid_arrays` | `[]` | Array names that must be present when mdraid health is required |
-| `tailscale_metrics_endpoint_timer_interval` | `300` | Collector interval in seconds |
+| `tailscale_metrics_endpoint_timer_interval` | `300` | Service-relative target interval; the wall-clock backstop may trigger sooner |
 | `tailscale_metrics_endpoint_timer_on_calendar` | `*:0/5` | Wall-clock backstop for the collector timer |
 
 Allow-list CIDRs must use a nonzero prefix no larger than 32 for IPv4 or 128 for
@@ -78,13 +78,12 @@ route/self-online requirement flags to booleans at the role boundary.
 
 ### Collector timer arming
 
-`OnBootSec=` and `OnUnitActiveSec=` are both monotonic triggers. A timer unit
-started later in the boot than its `OnBootSec=` anchor has no trigger left -
-`OnUnitActiveSec=` has no anchor until the collector service has run once in
-this boot - and systemd parks it as `active (elapsed)` with
-`NextElapseUSecMonotonic=infinity`. The collector then never runs again while
-the endpoint keeps serving the frozen payload, so every `summary` assertion
-built on it stays green against a stale snapshot.
+`OnBootSec=` and `OnUnitActiveSec=` are both monotonic triggers. Once the
+one-shot boot trigger has fired, missing service activation history can leave
+neither with a future elapse; systemd then parks the timer as `active
+(elapsed)` with `NextElapseUSecMonotonic=infinity`. The collector never runs
+again while the endpoint keeps serving the frozen payload, so every `summary`
+assertion built on it stays green against a stale snapshot.
 
 The timer therefore also carries `OnActiveSec=` (anchored on the timer unit's
 own activation) and `OnCalendar=` (the only trigger type `Persistent=true`

@@ -1,0 +1,82 @@
+---
+- name: sqlite_privacy | Ensure systemd drop-in directories exist
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ item }}.service.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - nyxmon
+    - "{{ nyxmon_monitoring_service_name | regex_replace('\\.service$', '') }}"
+
+- name: sqlite_privacy | Install writer umask drop-ins
+  ansible.builtin.copy:
+    content: |
+      [Service]
+      UMask=0077
+    dest: "/etc/systemd/system/{{ item }}.service.d/sqlite-privacy.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - nyxmon
+    - "{{ nyxmon_monitoring_service_name | regex_replace('\\.service$', '') }}"
+  notify:
+    - reload systemd
+    - restart nyxmon for SQLite privacy
+    - restart nyxmon-monitor for SQLite privacy
+
+- name: sqlite_privacy | Activate writer umask drop-ins
+  ansible.builtin.meta: flush_handlers
+
+- name: sqlite_privacy | Find database and sidecars
+  ansible.builtin.find:
+    paths: "{{ nyxmon_django_path }}"
+    patterns: "db.sqlite3*"
+    file_type: file
+    recurse: false
+  register: nyxmon_sqlite_files
+  when: not ansible_check_mode
+
+- name: sqlite_privacy | Require the main database
+  ansible.builtin.assert:
+    that:
+      - >-
+        nyxmon_sqlite_files.files
+        | selectattr('path', 'equalto', nyxmon_django_path ~ '/db.sqlite3')
+        | list | length == 1
+    fail_msg: "Nyxmon SQLite database is missing or ambiguous."
+  when: not ansible_check_mode
+
+- name: sqlite_privacy | Restrict database and sidecars
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: "{{ nyxmon_user }}"
+    group: "{{ nyxmon_group }}"
+    mode: "0600"
+  loop: "{{ nyxmon_sqlite_files.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when: not ansible_check_mode
+
+- name: sqlite_privacy | Re-read database and sidecar metadata
+  ansible.builtin.find:
+    paths: "{{ nyxmon_django_path }}"
+    patterns: "db.sqlite3*"
+    file_type: file
+    recurse: false
+  register: nyxmon_sqlite_files_verified
+  when: not ansible_check_mode
+
+- name: sqlite_privacy | Verify database and sidecars are private
+  ansible.builtin.assert:
+    that:
+      - item.pw_name == nyxmon_user
+      - item.gr_name == nyxmon_group
+      - item.mode == '0600'
+    fail_msg: "Nyxmon SQLite file is not private to the service account."
+  loop: "{{ nyxmon_sqlite_files_verified.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when: not ansible_check_mode

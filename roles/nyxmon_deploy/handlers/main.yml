@@ -19,6 +19,17 @@
     - nyxmon_monitoring_enabled
     - nyxmon_service_restart_on_change
 
+- name: restart nyxmon for SQLite privacy
+  ansible.builtin.systemd:
+    name: nyxmon
+    state: restarted
+
+- name: restart nyxmon-monitor for SQLite privacy
+  ansible.builtin.systemd:
+    name: "{{ nyxmon_monitoring_service_name | regex_replace('\\.service$', '') }}"
+    state: restarted
+  when: nyxmon_monitoring_enabled
+
 - name: reload traefik
   systemd:
     name: traefik

@@ -7,10 +7,11 @@ wrong threshold, so both fixes are about keeping the pipeline honest:
   ``ExecStartPost=`` to widen it.  systemd skips ``ExecStartPost=`` when
   ``ExecStart=`` fails, so every failed apt run left the monitoring endpoint
   answering ``503`` - erasing the failure it had just recorded.
-* ``tailscale_metrics_endpoint`` armed its collector with monotonic-only timer
-  triggers.  A timer started after its ``OnBootSec=`` anchor has passed parks as
-  ``active (elapsed)`` with no next elapse, freezing the payload while every
-  ``summary`` assertion built on it keeps reporting green.
+* cached metrics endpoint roles armed their collectors with triggers that could
+  leave no next elapse after a one-shot boot trigger was consumed and service
+  activation history was unavailable. The timer then remains ``active
+  (elapsed)``, freezing the payload while every ``summary`` assertion built on
+  it keeps reporting green.
 """
 
 from __future__ import annotations
@@ -42,7 +43,9 @@ def template_environment(directory: Path) -> Environment:
 
 
 APT_ROLE = ROOT / "roles/os_apt_maintenance"
+STORAGE_ROLE = ROOT / "roles/storage_metrics_endpoint"
 TAILSCALE_ROLE = ROOT / "roles/tailscale_metrics_endpoint"
+THERMAL_ROLE = ROOT / "roles/thermal_metrics_endpoint"
 
 
 class OsAptMaintenanceStateFilePermissionTests(unittest.TestCase):
@@ -455,9 +458,8 @@ class TailscaleCollectorTimerArmingTests(unittest.TestCase):
     def test_timer_has_a_wall_clock_anchor_and_an_activation_anchor(self) -> None:
         timer = self._render_timer()
 
-        # OnBootSec= alone is the defect: it is already in the past whenever the
-        # timer unit is started later in the boot, and OnUnitActiveSec= has no
-        # anchor until the service has run once.
+        # A consumed OnBootSec= trigger plus missing service activation history
+        # can leave no next elapse. The two independent anchors prevent that.
         self.assertIn("OnBootSec=45", timer)
         self.assertIn("OnActiveSec=300", timer)
         self.assertIn("OnUnitActiveSec=300", timer)
@@ -529,7 +531,16 @@ class TailscaleCollectorTimerArmingTests(unittest.TestCase):
             with self.subTest(gate=label):
                 self.assertIn("NextElapseUSecRealtime", expression)
                 self.assertIn("NextElapseUSecMonotonic", expression)
-                self.assertIn("'infinity'", expression)
+                self.assertEqual(
+                    expression.count("['', 'infinity', '0', 'n/a']"), 2
+                )
+                self.assertEqual(expression.count("| lower"), 2)
+
+        armed = self._task_named(
+            tasks, "Determine whether the collector timer is armed"
+        )["ansible.builtin.set_fact"]["tailscale_metrics_endpoint_timer_armed"]
+        self.assertEqual(armed.count("['', 'infinity', '0', 'n/a']"), 2)
+        self.assertEqual(armed.count("| lower"), 2)
         # The recheck reads both properties in one call, so it must not use
         # --value (which would strip the property names the predicate matches on).
         self.assertNotIn("--value", yaml.safe_dump(recheck))
@@ -577,6 +588,112 @@ class TailscaleCollectorTimerArmingTests(unittest.TestCase):
                     if found is not None:
                         return found
         return None
+
+
+class CachedMetricsCollectorTimerArmingTests(unittest.TestCase):
+    """Storage and thermal endpoints retain the proven Tailscale timer rails."""
+
+    CASES = (
+        (
+            STORAGE_ROLE,
+            "storage",
+            "storage-metrics-collector.timer.j2",
+        ),
+        (
+            THERMAL_ROLE,
+            "thermal",
+            "thermal-metrics-collector.timer.j2",
+        ),
+    )
+
+    def test_timers_have_activation_and_wall_clock_anchors(self) -> None:
+        for role, prefix, template_name in self.CASES:
+            with self.subTest(role=role.name):
+                defaults = yaml.safe_load((role / "defaults/main.yml").read_text())
+                context = {
+                    f"{prefix}_metrics_endpoint_timer_interval": defaults[
+                        f"{prefix}_metrics_endpoint_timer_interval"
+                    ],
+                    f"{prefix}_metrics_endpoint_timer_on_boot_sec": defaults[
+                        f"{prefix}_metrics_endpoint_timer_on_boot_sec"
+                    ],
+                    f"{prefix}_metrics_endpoint_timer_on_calendar": defaults[
+                        f"{prefix}_metrics_endpoint_timer_on_calendar"
+                    ],
+                    f"{prefix}_metrics_endpoint_timer_accuracy_sec": defaults[
+                        f"{prefix}_metrics_endpoint_timer_accuracy_sec"
+                    ],
+                    f"{prefix}_metrics_endpoint_timer_randomized_delay_sec": defaults[
+                        f"{prefix}_metrics_endpoint_timer_randomized_delay_sec"
+                    ],
+                }
+                timer = (
+                    template_environment(role / "templates")
+                    .get_template(template_name)
+                    .render(**context)
+                )
+
+                self.assertIn("OnActiveSec=300", timer)
+                self.assertIn("OnUnitActiveSec=300", timer)
+                self.assertIn("OnCalendar=*:0/5", timer)
+                self.assertIn("Persistent=true", timer)
+                self.assertLess(
+                    timer.index("OnCalendar="), timer.index("Persistent=true")
+                )
+
+    def test_roles_repair_and_reject_parked_timers(self) -> None:
+        expected_names = (
+            "Read collector timer next monotonic elapse",
+            "Read collector timer next realtime elapse",
+            "Determine whether the collector timer is armed",
+            "Re-arm a collector timer that elapsed without a next trigger",
+            "Re-read collector timer next elapse after repair",
+            "Require an armed collector timer",
+        )
+
+        for role, prefix, _template_name in self.CASES:
+            with self.subTest(role=role.name):
+                tasks = yaml.safe_load((role / "tasks/main.yml").read_text())
+                for name in expected_names:
+                    task = TailscaleCollectorTimerArmingTests._task_named(tasks, name)
+                    self.assertIsNotNone(task, f"missing task: {name}")
+                    cond = task.get("when")
+                    conds = cond if isinstance(cond, list) else [cond]
+                    self.assertIn(
+                        "not ansible_check_mode",
+                        " ".join(str(item) for item in conds),
+                    )
+
+                raw = (role / "tasks/main.yml").read_text()
+                self.assertIn("--property=NextElapseUSecMonotonic", raw)
+                self.assertIn("--property=NextElapseUSecRealtime", raw)
+                self.assertIn("state: restarted", raw)
+                self.assertIn(
+                    f"not ({prefix}_metrics_endpoint_timer_armed | bool)", raw
+                )
+
+                recheck = TailscaleCollectorTimerArmingTests._task_named(
+                    tasks, "Re-read collector timer next elapse after repair"
+                )
+                gate = TailscaleCollectorTimerArmingTests._task_named(
+                    tasks, "Require an armed collector timer"
+                )
+                for expression in (
+                    recheck["until"],
+                    " ".join(gate["ansible.builtin.assert"]["that"]),
+                ):
+                    self.assertIn("NextElapseUSecRealtime", expression)
+                    self.assertIn("NextElapseUSecMonotonic", expression)
+                    self.assertEqual(
+                        expression.count("['', 'infinity', '0', 'n/a']"), 2
+                    )
+                    self.assertEqual(expression.count("| lower"), 2)
+
+                armed = TailscaleCollectorTimerArmingTests._task_named(
+                    tasks, "Determine whether the collector timer is armed"
+                )["ansible.builtin.set_fact"][f"{prefix}_metrics_endpoint_timer_armed"]
+                self.assertEqual(armed.count("['', 'infinity', '0', 'n/a']"), 2)
+                self.assertEqual(armed.count("| lower"), 2)
 
 
 class ExecutableCoverageTests(unittest.TestCase):

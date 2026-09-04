@@ -63,9 +63,24 @@ Additionally, the systemd unit includes `IPAddressAllow=100.64.0.0/10` which res
 | `storage_metrics_endpoint_auth_user` | `CHANGE_ME` | Basic auth username |
 | `storage_metrics_endpoint_auth_password` | `CHANGE_ME` | Basic auth password (stored as bcrypt hash) |
 | `storage_metrics_endpoint_packages` | `["python3", "apache2-utils"]` | System packages for the HTTP server |
-| `storage_metrics_endpoint_timer_interval` | `300` | Seconds between metrics collection |
+| `storage_metrics_endpoint_timer_interval` | `300` | Service-relative target interval; the wall-clock backstop may trigger sooner |
 | `storage_metrics_endpoint_timer_on_boot_sec` | `30` | Initial timer delay after boot |
+| `storage_metrics_endpoint_timer_on_calendar` | `*:0/5` | Wall-clock backstop that keeps the collector scheduled after a late timer activation |
 | `storage_metrics_endpoint_timer_randomized_delay_sec` | `30` | Jitter added to each timer run |
+
+### Collector timer arming
+
+The collector timer uses activation-relative, service-relative, and wall-clock
+triggers. A consumed one-shot boot trigger combined with missing service
+activation history can otherwise leave systemd with no next elapse, parking
+the timer as `active (elapsed)` while the endpoint continues serving a frozen
+file. The independent recurring anchors also recover safely from timer state
+drift after delayed encrypted-storage startup.
+
+After deployment the role inspects both systemd next-elapse properties,
+restarts a parked timer, and fails unless either the monotonic or realtime
+schedule is armed. `OnCalendar=` is also the wall-clock trigger to which
+`Persistent=true` applies.
 
 ## Response Format
 
@@ -139,6 +154,8 @@ curl -sS -u "nyxmon:password" http://fractal.tailde2ec.ts.net:9101/.well-known/s
 
 # Check timer status
 systemctl status storage-metrics-collector.timer
+systemctl show storage-metrics-collector.timer \
+  -p SubState -p NextElapseUSecMonotonic -p NextElapseUSecRealtime
 journalctl -u storage-metrics-collector.service --since "1 hour ago"
 
 # Check HTTP server status

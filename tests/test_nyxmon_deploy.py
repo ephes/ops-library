@@ -102,6 +102,74 @@ class SourceSyncSafetyTests(unittest.TestCase):
                 self.assertIs(module["group"], False)
                 self.assertIn("nyxmon_rsync_excludes", module["rsync_opts"])
 
+    def test_database_and_sidecars_stay_private_to_nyxmon(self) -> None:
+        main_tasks = yaml.safe_load((ROLE / "tasks" / "main.yml").read_text())
+        tasks = yaml.safe_load((ROLE / "tasks" / "sqlite_privacy.yml").read_text())
+        include = next(
+            task
+            for task in main_tasks
+            if task.get("name") == "Enforce SQLite credential privacy"
+        )
+        find_task = next(
+            task
+            for task in tasks
+            if task.get("name") == "sqlite_privacy | Find database and sidecars"
+        )
+        mode_task = next(
+            task
+            for task in tasks
+            if task.get("name") == "sqlite_privacy | Restrict database and sidecars"
+        )
+        flush_index = next(
+            index
+            for index, task in enumerate(tasks)
+            if task.get("name") == "sqlite_privacy | Activate writer umask drop-ins"
+        )
+        find_index = tasks.index(find_task)
+
+        self.assertEqual(include["include_tasks"], "sqlite_privacy.yml")
+        include_index = main_tasks.index(include)
+        for predecessor in (
+            "Deploy source code",
+            "Configure Django application",
+            "Setup systemd service",
+            "Setup monitoring",
+        ):
+            predecessor_index = next(
+                index
+                for index, task in enumerate(main_tasks)
+                if task.get("name") == predecessor
+            )
+            self.assertLess(predecessor_index, include_index)
+        self.assertLess(flush_index, find_index)
+        self.assertEqual(find_task["ansible.builtin.find"]["patterns"], "db.sqlite3*")
+        self.assertIs(find_task["ansible.builtin.find"]["recurse"], False)
+        self.assertEqual(mode_task["ansible.builtin.file"]["mode"], "0600")
+        raw = (ROLE / "tasks" / "sqlite_privacy.yml").read_text()
+        self.assertEqual(raw.count("UMask=0077"), 1)
+        self.assertIn("restart nyxmon for SQLite privacy", raw)
+        self.assertIn("restart nyxmon-monitor for SQLite privacy", raw)
+        self.assertIn("item.mode == '0600'", raw)
+
+        ordered_names = [task["name"] for task in tasks]
+        for earlier, later in zip(
+            (
+                "sqlite_privacy | Install writer umask drop-ins",
+                "sqlite_privacy | Activate writer umask drop-ins",
+                "sqlite_privacy | Find database and sidecars",
+                "sqlite_privacy | Restrict database and sidecars",
+                "sqlite_privacy | Re-read database and sidecar metadata",
+            ),
+            (
+                "sqlite_privacy | Activate writer umask drop-ins",
+                "sqlite_privacy | Find database and sidecars",
+                "sqlite_privacy | Restrict database and sidecars",
+                "sqlite_privacy | Re-read database and sidecar metadata",
+                "sqlite_privacy | Verify database and sidecars are private",
+            ),
+        ):
+            self.assertLess(ordered_names.index(earlier), ordered_names.index(later))
+
     def test_exactly_one_recursive_ownership_fix_scoped_to_the_site_tree(self) -> None:
         tasks = yaml.safe_load((ROLE / "tasks" / "source_rsync.yml").read_text())
         recursive = [

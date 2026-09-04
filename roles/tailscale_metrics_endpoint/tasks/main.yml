@@ -267,10 +267,11 @@
 
     # `state: started` is a no-op on a timer that is already `active` - even
     # when that timer is `active (elapsed)` with no next elapse, which is the
-    # state a monotonic-only timer falls into when it is started after its
-    # OnBootSec= anchor has passed. In that state the collector never runs
-    # again, the payload freezes, and every `summary` assertion keeps passing
-    # against a stale snapshot. Detect it explicitly and re-arm.
+    # state a monotonic-only timer can retain after its one-shot boot trigger
+    # has fired and service activation history is unavailable. In that state
+    # the collector never runs again, the payload freezes, and every `summary`
+    # assertion keeps passing against a stale snapshot. Detect it explicitly
+    # and re-arm.
     - name: Read collector timer next monotonic elapse
       ansible.builtin.command:
         argv:
@@ -302,10 +303,13 @@
       ansible.builtin.set_fact:
         tailscale_metrics_endpoint_timer_armed: >-
           {{
-            (tailscale_metrics_endpoint_timer_realtime.stdout | trim | length > 0)
+            (
+              tailscale_metrics_endpoint_timer_realtime.stdout | trim | lower
+              not in ['', 'infinity', '0', 'n/a']
+            )
             or (
-              tailscale_metrics_endpoint_timer_monotonic.stdout | trim
-              not in ['', 'infinity', '0']
+              tailscale_metrics_endpoint_timer_monotonic.stdout | trim | lower
+              not in ['', 'infinity', '0', 'n/a']
             )
           }}
 
@@ -339,13 +343,14 @@
         (
           tailscale_metrics_endpoint_timer_recheck.stdout
           | regex_search('NextElapseUSecRealtime=(.*)', '\\1')
-          | default([''], true) | first | default('', true) | trim | length > 0
+          | default([''], true) | first | default('', true) | trim | lower
+          not in ['', 'infinity', '0', 'n/a']
         )
         or (
           tailscale_metrics_endpoint_timer_recheck.stdout
           | regex_search('NextElapseUSecMonotonic=(.*)', '\\1')
-          | default([''], true) | first | default('', true) | trim
-          not in ['', 'infinity', '0']
+          | default([''], true) | first | default('', true) | trim | lower
+          not in ['', 'infinity', '0', 'n/a']
         )
       retries: 5
       delay: 2
@@ -365,13 +370,14 @@
             (
               tailscale_metrics_endpoint_timer_recheck.stdout
               | regex_search('NextElapseUSecRealtime=(.*)', '\\1')
-              | default([''], true) | first | default('', true) | trim | length > 0
+              | default([''], true) | first | default('', true) | trim | lower
+              not in ['', 'infinity', '0', 'n/a']
             )
             or (
               tailscale_metrics_endpoint_timer_recheck.stdout
               | regex_search('NextElapseUSecMonotonic=(.*)', '\\1')
-              | default([''], true) | first | default('', true) | trim
-              not in ['', 'infinity', '0']
+              | default([''], true) | first | default('', true) | trim | lower
+              not in ['', 'infinity', '0', 'n/a']
             )
         fail_msg: >-
           {{ tailscale_metrics_endpoint_timer_name }}.timer has no next elapse

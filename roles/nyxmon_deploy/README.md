@@ -135,6 +135,11 @@ source sync is what has to be careful about it:
 - `nyxmon_rsync_excludes` covers `db.sqlite3` **and** its `-wal`, `-shm` and
   `-journal` sidecars, plus `.env`. Excluding only `db.sqlite3` is not enough:
   `rsync --delete` would remove a live journal sidecar out from under the writer.
+- The role reconciles the database and existing sidecars to mode `0600` by
+  default. Dedicated systemd drop-ins set `UMask=0077`; when those drop-ins
+  change, both writers restart independently of the general restart preference.
+  A final post-restart pass verifies that new and existing sidecars cannot expose
+  JSON-check credentials to other local accounts.
 
 | Variable | Default | Description |
 | --- | --- | --- |

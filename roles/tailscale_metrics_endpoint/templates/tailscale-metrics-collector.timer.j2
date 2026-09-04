@@ -2,15 +2,12 @@
 Description=Collect Tailscale metrics every {{ tailscale_metrics_endpoint_timer_interval }} seconds
 
 [Timer]
-# OnBootSec= and OnUnitActiveSec= are both monotonic. If the timer unit is
-# started later than OnBootSec= into the boot (an Ansible run, a manual
-# `systemctl start`, or timers.target coming up late) that trigger is already
-# in the past, and OnUnitActiveSec= has no anchor because the collector service
-# has not run in this boot. systemd then parks the timer as
-# `active (elapsed)` with `NextElapseUSecMonotonic=infinity` and it never fires
-# again - the payload freezes while every `summary` assertion built on it stays
-# confidently green. OnActiveSec= anchors on the timer unit's own activation,
-# so there is always a trigger in the future no matter when the unit starts.
+# OnBootSec= and OnUnitActiveSec= are both monotonic. Once the one-shot boot
+# trigger has fired, missing service activation history can leave neither with
+# a future elapse. systemd then parks the timer as `active (elapsed)` with
+# `NextElapseUSecMonotonic=infinity`; the payload freezes while every `summary`
+# assertion built on it stays confidently green. OnActiveSec= anchors on the
+# timer unit's own activation, providing an independent future trigger.
 OnBootSec={{ tailscale_metrics_endpoint_timer_on_boot_sec }}
 OnActiveSec={{ tailscale_metrics_endpoint_timer_interval }}
 OnUnitActiveSec={{ tailscale_metrics_endpoint_timer_interval }}
