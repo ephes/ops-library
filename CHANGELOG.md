@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added `daybook_photos_archive_sync_deploy`, a disabled-by-default macOS Aqua
+  user LaunchAgent for Daybook's one-way Nikon working-folder archive
+  reconciler. The role enforces one inventory-named writer, installs an exact
+  controller-bundled Daybook commit, rejects a dirty checkout, keeps owner-only
+  state/logs, requires Fractal to be mounted already, runs every two hours under
+  a watchdog, and separates installation from explicit activation.
+
 - `mail_backend_deploy` gained `mail_backend_sender_only_domains`: domains the
   backend signs and authorises as an envelope sender, but hosts no mailboxes for.
 

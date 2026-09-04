@@ -1,0 +1,42 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+
+cd -- {{ daybook_photos_archive_sync_checkout_path | quote }}
+[[ "$(/bin/pwd -P)" == {{ daybook_photos_archive_sync_checkout_path | quote }} ]] || {
+  echo 'archive-sync: checkout path identity changed' >&2
+  exit 78
+}
+export GIT_CONFIG_GLOBAL=/dev/null
+export GIT_CONFIG_SYSTEM=/dev/null
+[[ "$(/usr/bin/git -C . -c core.fsmonitor=false rev-parse HEAD)" == {{ daybook_photos_archive_sync_repo_ref | quote }} ]] || {
+  echo 'archive-sync: checkout is not at the pinned revision' >&2
+  exit 78
+}
+[[ -z "$(/usr/bin/git -C . -c core.fsmonitor=false status --porcelain=v1 --untracked-files=all)" ]] || {
+  echo 'archive-sync: checkout is not clean' >&2
+  exit 78
+}
+
+exec {{ daybook_photos_archive_sync_timeout_bin | quote }} \
+  --signal=TERM \
+  --kill-after=60 \
+  {{ daybook_photos_archive_sync_timeout_seconds | int }} \
+  /usr/bin/env -i \
+  HOME={{ daybook_photos_archive_sync_service_home | quote }} \
+  USER={{ daybook_photos_archive_sync_service_user | quote }} \
+  LOGNAME={{ daybook_photos_archive_sync_service_user | quote }} \
+  PATH={{ daybook_photos_archive_sync_path | quote }} \
+  PYTHONDONTWRITEBYTECODE=1 \
+  {{ (daybook_photos_archive_sync_venv_path ~ '/bin/daybook') | quote }} \
+  photos archive-sync \
+  --execute \
+  --summary-only \
+  --library {{ daybook_photos_archive_sync_library_path | quote }} \
+  --source-root {{ daybook_photos_archive_sync_source_root | quote }} \
+  --state {{ daybook_photos_archive_sync_state_path | quote }} \
+  --mount-point {{ daybook_photos_archive_sync_mount_point | quote }} \
+  --expected-smb-server {{ daybook_photos_archive_sync_expected_smb_server | quote }} \
+  --expected-smb-share {{ daybook_photos_archive_sync_expected_smb_share | quote }} \
+  --expected-writer-host {{ daybook_photos_archive_sync_expected_writer_host | quote }}{% if daybook_photos_archive_sync_use_folder_map | bool %} \
+  --folder-map {{ daybook_photos_archive_sync_folder_map_path | quote }}{% endif %}
