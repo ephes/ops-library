@@ -272,6 +272,19 @@
       Codex plugin id, package, and version must be non-empty npm-compatible values.
   when: openclaw_codex_plugin_enabled | bool
 
+- name: validate | Codex v2026.9.1 process-registration backport settings
+  ansible.builtin.assert:
+    that:
+      - openclaw_codex_plugin_enabled | bool
+      - openclaw_version == 'v2026.9.1'
+      - openclaw_codex_plugin_package == '@openclaw/codex'
+      - openclaw_codex_plugin_version == '2026.9.1'
+    fail_msg: >-
+      The Codex process-registration backport is scoped only to the official
+      @openclaw/codex 2026.9.1 package. Disable the backport when upgrading to
+      a release that contains upstream commit 26e5c2858a.
+  when: openclaw_codex_v2026_9_1_registration_backport_managed | bool
+
 - name: validate | Telegram bot token when Telegram is enabled
   ansible.builtin.assert:
     that:

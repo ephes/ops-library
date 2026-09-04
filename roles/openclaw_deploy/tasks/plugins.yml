@@ -119,3 +119,113 @@
     fail_msg: >-
       Installed {{ openclaw_codex_plugin_package }} identity or version does not
       match the configured Codex plugin settings.
+
+- name: plugins | Validate Codex backport install path
+  ansible.builtin.assert:
+    that:
+      - _openclaw_codex_plugin_verified.get('install', {}).get('installPath', '') | length > 0
+      - >-
+        _openclaw_codex_plugin_verified.get('install', {}).get('installPath', '')
+        == '/home/node/.openclaw'
+        or _openclaw_codex_plugin_verified.get('install', {}).get('installPath', '')
+        is regex('^/home/node/\.openclaw/')
+    fail_msg: >-
+      Refusing to patch a Codex plugin outside OpenClaw's persistent data root.
+  when: openclaw_codex_v2026_9_1_registration_backport_managed | bool
+
+- name: plugins | Install Codex process-registration backport helper
+  ansible.builtin.copy:
+    src: openclaw-codex-v2026.9.1-registration-backport.mjs
+    dest: "{{ openclaw_site_dir }}/openclaw-codex-v2026.9.1-registration-backport.mjs"
+    owner: root
+    group: root
+    mode: "0644"
+  when: openclaw_codex_v2026_9_1_registration_backport_managed | bool
+
+- name: plugins | Plan Codex v2026.9.1 process-registration backport
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --user
+      - "1000:1000"
+      - --volume
+      - "{{ openclaw_data_dir }}:/home/node/.openclaw"
+      - --volume
+      - "{{ openclaw_site_dir }}/openclaw-codex-v2026.9.1-registration-backport.mjs:/tmp/openclaw-codex-registration-backport.mjs:ro"
+      - --entrypoint
+      - node
+      - "{{ openclaw_image_name }}:{{ openclaw_image_tag }}"
+      - /tmp/openclaw-codex-registration-backport.mjs
+      - "{{ _openclaw_codex_plugin_verified.get('install', {}).get('installPath', '') }}"
+      - >-
+        {{
+          'apply'
+          if (openclaw_codex_v2026_9_1_registration_backport_enabled | bool)
+          else 'revert'
+        }}
+      - --check
+  register: openclaw_codex_registration_backport_plan
+  changed_when: false
+  when: openclaw_codex_v2026_9_1_registration_backport_managed | bool
+
+- name: plugins | Reconcile Codex backport while gateway is quiescent
+  when:
+    - openclaw_codex_v2026_9_1_registration_backport_managed | bool
+    - >-
+      (openclaw_codex_registration_backport_plan.stdout | from_json).changed
+      | bool
+  block:
+    - name: plugins | Check whether OpenClaw is running before backport reconciliation
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-active
+          - "{{ openclaw_service_name }}"
+      register: openclaw_codex_gateway_active
+      changed_when: false
+      failed_when: false
+
+    - name: plugins | Stop OpenClaw before backport reconciliation
+      ansible.builtin.systemd:
+        name: "{{ openclaw_service_name }}"
+        state: stopped
+      when: openclaw_codex_gateway_active.rc == 0
+
+    - name: plugins | Apply planned Codex v2026.9.1 backport state
+      ansible.builtin.command:
+        argv:
+          - docker
+          - run
+          - --rm
+          - --user
+          - "1000:1000"
+          - --volume
+          - "{{ openclaw_data_dir }}:/home/node/.openclaw"
+          - --volume
+          - "{{ openclaw_site_dir }}/openclaw-codex-v2026.9.1-registration-backport.mjs:/tmp/openclaw-codex-registration-backport.mjs:ro"
+          - --entrypoint
+          - node
+          - "{{ openclaw_image_name }}:{{ openclaw_image_tag }}"
+          - /tmp/openclaw-codex-registration-backport.mjs
+          - "{{ _openclaw_codex_plugin_verified.get('install', {}).get('installPath', '') }}"
+          - >-
+            {{
+              'apply'
+              if (openclaw_codex_v2026_9_1_registration_backport_enabled | bool)
+              else 'revert'
+            }}
+      register: openclaw_codex_registration_backport
+      changed_when: >-
+        (openclaw_codex_registration_backport.stdout | from_json).changed
+        | bool
+
+  always:
+    - name: plugins | Restore a previously running OpenClaw service
+      ansible.builtin.systemd:
+        name: "{{ openclaw_service_name }}"
+        state: started
+      when:
+        - openclaw_codex_gateway_active is defined
+        - openclaw_codex_gateway_active.rc == 0

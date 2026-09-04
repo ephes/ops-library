@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `openclaw_deploy` can apply upstream Codex fix `26e5c2858a` to the exact
+  `@openclaw/codex@2026.9.1` runtime. The backport gives app-server startup
+  process registration a shared ten-second inspection budget, preventing
+  synchronous session-snapshot reads from intermittently failing isolated
+  heartbeats. The compiled bundle is reconciled atomically with pinned pristine
+  and patched digests and fails closed on unknown artifacts.
 - `traefik_deploy` now creates its ACME directory as `0700` in the original
   directory loop. Previously every run briefly changed it to `0755` and then
   back to `0700`, producing false idempotency changes and momentarily making

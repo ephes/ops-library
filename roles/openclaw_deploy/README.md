@@ -141,6 +141,8 @@ changes, so newly deployed instructions become visible to new session bindings.
 | `openclaw_codex_plugin_id` | `codex` | Plugin registry ID used for inspection and managed config |
 | `openclaw_codex_plugin_package` | `@openclaw/codex` | Official npm package installed through OpenClaw's persistent plugin registry |
 | `openclaw_codex_plugin_version` | OpenClaw version without leading `v` | Exact plugin version; override only when upstream does not publish the plugin in release lockstep |
+| `openclaw_codex_v2026_9_1_registration_backport_managed` | `false` | Manage the exact-version upstream commit `26e5c2858a` backport for `@openclaw/codex@2026.9.1` |
+| `openclaw_codex_v2026_9_1_registration_backport_enabled` | `true` | When management is enabled, apply the backport; set false to atomically restore the pinned pristine bundle |
 
 ### Audio Transcription
 
@@ -231,6 +233,32 @@ changes that enable and allow the plugin. Package installation uses host network
 resolution follows the deployment host instead of Docker's transient default-bridge DNS.
 This intentionally lets package install-time code reach host-local services; enable this path
 only for the official, exact-version-pinned package that the role verifies after installation.
+
+`@openclaw/codex@2026.9.1` has a known startup race: a synchronous gateway
+session-snapshot read can consume most of the plugin's hard-coded two-second
+process-registration deadline, causing an otherwise healthy heartbeat to fail
+before the Codex app-server starts. Upstream commit
+[`26e5c2858a`](https://github.com/openclaw/openclaw/commit/26e5c2858a811390887f2937236dac51015f2a48)
+gives startup identity and command inspection one shared ten-second budget while
+leaving the shorter signal-containment deadline unchanged. Enable
+`openclaw_codex_v2026_9_1_registration_backport_managed` only while deploying
+the exact official `2026.9.1` plugin. Leave its separate `enabled` switch true
+to apply the fix; set it false to restore the pristine pinned bundle. The role verifies the npm identity,
+version, non-symlinked install path, pristine bundle digest, exact compiled
+patch sites, and patched digest before replacing the bundle atomically. It first
+plans the change without writing. When bytes must change, the role stops a
+running gateway, revalidates directory and file identities at each mutation
+boundary, publishes the replacement, and restores the service in an Ansible
+`always` block. This detects accidental path replacement and ensures a later
+deploy failure cannot leave stale code loaded in memory. The role assumes
+exclusive operational control of the data directory during reconciliation; it
+is not a security boundary against another uncoordinated or malicious process
+running as container uid 1000. The role checks desired state on every
+deployment, so a same-version plugin reinstall is repaired. Unknown or
+partially modified bundles fail closed.
+Disable this switch when upgrading to a release that contains the upstream fix;
+validation intentionally rejects other plugin versions while management
+remains enabled.
 
 When `openclaw_gateway_config` supplies a complete raw config override, it must include the
 `codex` entry in both `plugins.entries` (enabled) and `plugins.allow`; individual managed
