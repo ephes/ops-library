@@ -16,6 +16,7 @@ daybook_photos_archive_sync_venv_path: "{{ daybook_photos_archive_sync_checkout_
 daybook_photos_archive_sync_uv_bin: "/opt/homebrew/bin/uv"
 daybook_photos_archive_sync_timeout_bin: "/opt/homebrew/bin/timeout"
 daybook_photos_archive_sync_timeout_seconds: 5400
+daybook_photos_archive_sync_photos_access_timeout_seconds: 15
 daybook_photos_archive_sync_python_version: "3.14"
 daybook_photos_archive_sync_path: "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.0] - 2026-09-04
+
+### Fixed
+
+- The Nikon archive-sync launcher now tests `Photos.sqlite` with the exact
+  managed Python runtime under a 15-second watchdog before starting Daybook.
+  macOS can allow the same read from Terminal while blocking the launchd
+  process; that missing Full Disk Access now exits 77 with a useful error
+  instead of consuming the 90-minute job watchdog. The role's interval guard
+  now includes both watchdog kill-grace periods, so previously near-interval
+  custom timeout values fail closed during deployment.
+
+## [2.12.0] - 2026-09-04
+
 ### Added
 
 - Added `daybook_photos_archive_sync_deploy`, a disabled-by-default macOS Aqua

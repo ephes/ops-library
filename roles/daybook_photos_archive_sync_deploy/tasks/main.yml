@@ -26,7 +26,8 @@
       - daybook_photos_archive_sync_expected_writer_host | lower == inventory_hostname | lower
       - daybook_photos_archive_sync_interval_seconds | int >= 3600
       - daybook_photos_archive_sync_timeout_seconds | int > 0
-      - daybook_photos_archive_sync_timeout_seconds | int < daybook_photos_archive_sync_interval_seconds | int
+      - daybook_photos_archive_sync_photos_access_timeout_seconds | int > 0
+      - daybook_photos_archive_sync_photos_access_timeout_seconds | int + 5 + daybook_photos_archive_sync_timeout_seconds | int + 60 < daybook_photos_archive_sync_interval_seconds | int
       - daybook_photos_archive_sync_launchd_plist_path == daybook_photos_archive_sync_service_home ~ '/Library/LaunchAgents/' ~ daybook_photos_archive_sync_launchd_label ~ '.plist'
       - daybook_photos_archive_sync_launchd_enabled | type_debug == 'bool'
     fail_msg: >-
@@ -51,6 +52,9 @@
     - "{{ daybook_photos_archive_sync_config_dir }}"
     - "{{ daybook_photos_archive_sync_launcher_path }}"
     - "{{ daybook_photos_archive_sync_launchd_plist_path }}"
+    - "{{ daybook_photos_archive_sync_library_path }}"
+    - "{{ daybook_photos_archive_sync_source_root }}"
+    - "{{ daybook_photos_archive_sync_mount_point }}"
   when: daybook_photos_archive_sync_enabled | bool
 
 - name: validate | Resolve archive synchronization user id

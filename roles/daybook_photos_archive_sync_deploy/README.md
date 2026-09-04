@@ -32,6 +32,10 @@ An interrupted first `--no-checkout` clone has no Git index; the next deploy
 recognizes that role-created state, resumes the exact fetch/checkout, and then
 applies the normal clean-tree assertion.
 - A GNU `timeout` watchdog terminates runs before the next two-hour interval.
+- A short same-runtime preflight opens one byte of `Photos.sqlite` before the
+  full run. `daybook_photos_archive_sync_photos_access_timeout_seconds`
+  defaults to 15 seconds. Missing launchd Full Disk Access therefore exits 77
+  with a clear error instead of occupying the main job's watchdog window.
 - Daybook's owner-only nonblocking state lock suppresses simultaneous manual
   and scheduled invocations. Deployment quiesces launchd before replacing
   files, while the operation journal recovers an interrupted copy.
@@ -64,6 +68,13 @@ An activation play may call this same role with
 bootstraps the user LaunchAgent; `RunAtLoad=true` performs the first scheduled
 context run immediately. The user must have an active Aqua login session and
 the Fractal share must already be mounted at the configured exact mount point.
-Before activation, run the installed launcher once in that Aqua session and
-grant macOS Photos/Full Disk Access if prompted; otherwise TCC may prevent the
-background process from reading the Photos library.
+Before activation, grant Full Disk Access to `/bin/bash`, the interpreter of
+the script launchd starts. This is a broad macOS permission, so keep the agent
+disabled if that tradeoff is not acceptable and run the managed checkout's
+`daybook photos archive-sync` command directly from Terminal instead. Do not
+use the launchd-only wrapper for that attended fallback: its privacy preflight
+is intentionally bounded and cannot wait for an interactive macOS consent
+dialog. Terminal access is not proof that launchd has access because macOS
+attributes the background process separately. Without the permission the
+launcher's bounded preflight exits 77 before Daybook starts; verify the grant
+by activating once and checking that launchctl records exit 0.

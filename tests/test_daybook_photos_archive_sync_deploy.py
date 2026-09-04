@@ -31,6 +31,20 @@ def test_launcher_is_exact_clean_execute_summary_and_never_mounts() -> None:
     assert "GIT_CONFIG_SYSTEM=/dev/null" in launcher
     assert "venv_path ~ '/bin/daybook'" in launcher
     assert "checkout is not at the pinned revision" in launcher
+    assert "venv_path ~ '/bin/python'" in launcher
+    assert "Photos.sqlite" in launcher
+    assert "launchd Photos.sqlite access failed with status $photos_access_status" in launcher
+    assert "configured Photos.sqlite path does not exist" in launcher
+    assert "Photos.sqlite preflight failed with status $photos_access_status" in launcher
+    assert "LaunchAgent interpreter (/bin/bash)" in launcher
+    assert "exit 77" in launcher
+    assert "exit 66" in launcher
+    assert "exit 74" in launcher
+    assert "77|124|137" in launcher
+    assert "daybook_photos_archive_sync_photos_access_timeout_seconds | int" in launcher
+    assert launcher.index("venv_path ~ '/bin/python'") < launcher.index("venv_path ~ '/bin/daybook'")
+    assert launcher.index("/usr/bin/env -i") < launcher.index("venv_path ~ '/bin/python'")
+    assert "--kill-after=5" in launcher
     assert "--signal=TERM" in launcher
     assert "--kill-after=60" in launcher
     assert "photos archive-sync" in launcher
@@ -84,5 +98,6 @@ def test_activation_and_watchdog_are_strictly_gated() -> None:
     assert "activation | Boot out archive synchronization after activation failure" in tasks
     assert "activation | Report fail-closed activation failure" in tasks
     assert "daybook_photos_archive_sync_timeout_seconds: 5400" in defaults
+    assert "daybook_photos_archive_sync_photos_access_timeout_seconds: 15" in defaults
     assert "daybook_photos_archive_sync_interval_seconds: 7200" in defaults
-    assert "daybook_photos_archive_sync_timeout_seconds | int < daybook_photos_archive_sync_interval_seconds | int" in tasks
+    assert "daybook_photos_archive_sync_photos_access_timeout_seconds | int + 5 + daybook_photos_archive_sync_timeout_seconds | int + 60 < daybook_photos_archive_sync_interval_seconds | int" in tasks
