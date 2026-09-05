@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added `daybook_voice_memo_inbox_deploy`, a disabled-first macOS Aqua
+  LaunchAgent role for the Daybook Apple Voice Memos importer. It installs an
+  exact bundled Daybook commit, keeps source/state/log/credential boundaries
+  explicit, rejects placeholder secrets, baselines historical database
+  identities only behind a confirmation phrase, and schedules privacy-safe
+  ingestion every 300 seconds with `RunAtLoad`. Activation failures are
+  rescued to a proven disabled/unloaded state, an unreadable existing
+  checkout is never deleted, the bundle is verified to carry the pinned
+  commit before any checkout replacement, a modified protected checkout
+  fails deployment,
+  the scheduled interpreter is staged root-owned and checksum-bound to the
+  pinned Homebrew interpreter, fresh-host check-mode guards are keyed by
+  path, and empty required values are rejected like placeholders.
+
 ### Fixed
 
 - `macos_time_machine_exclusions` documents that paths under macOS

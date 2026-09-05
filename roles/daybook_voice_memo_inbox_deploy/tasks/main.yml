@@ -1,0 +1,909 @@
+---
+- name: Validate Voice Memo inbox deployment inputs
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == 'Darwin'
+      - daybook_voice_memo_inbox_service_user != 'CHANGEME'
+      - daybook_voice_memo_inbox_service_user | length > 0
+      - daybook_voice_memo_inbox_service_home == '/Users/' ~ daybook_voice_memo_inbox_service_user
+      - daybook_voice_memo_inbox_service_group == 'staff'
+      - daybook_voice_memo_inbox_system_group == 'wheel'
+      - daybook_voice_memo_inbox_repo_bundle_src != 'CHANGEME'
+      - daybook_voice_memo_inbox_repo_bundle_src is match('^/')
+      - daybook_voice_memo_inbox_repo_ref is match('^[0-9a-f]{40}$')
+      - daybook_voice_memo_inbox_install_root == '/Library/Application Support/Daybook/voice-memo-inbox'
+      - daybook_voice_memo_inbox_checkout_path == daybook_voice_memo_inbox_install_root ~ '/daybook'
+      - daybook_voice_memo_inbox_repo_bundle_path == daybook_voice_memo_inbox_install_root ~ '/source.bundle'
+      - daybook_voice_memo_inbox_uv_bin == '/opt/homebrew/bin/uv'
+      - daybook_voice_memo_inbox_python_source == '/opt/homebrew/bin/python3.14'
+      - daybook_voice_memo_inbox_python == daybook_voice_memo_inbox_checkout_path ~ '/.venv/bin/python'
+      - daybook_voice_memo_inbox_source_dir == daybook_voice_memo_inbox_service_home ~ '/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings'
+      - daybook_voice_memo_inbox_database_name == 'CloudRecordings.db'
+      - daybook_voice_memo_inbox_runtime_dir == daybook_voice_memo_inbox_service_home ~ '/.local/state/daybook/voice-memo-inbox'
+      - daybook_voice_memo_inbox_policy_path == daybook_voice_memo_inbox_install_root ~ '/policy.json'
+      - daybook_voice_memo_inbox_activation_marker_path == daybook_voice_memo_inbox_install_root ~ '/activation.json'
+      - daybook_voice_memo_inbox_activation_proof_path == daybook_voice_memo_inbox_install_root ~ '/activation-proven.json'
+      - daybook_voice_memo_inbox_state_path == daybook_voice_memo_inbox_runtime_dir ~ '/ledger.json'
+      - daybook_voice_memo_inbox_lock_path == daybook_voice_memo_inbox_runtime_dir ~ '/ingest.lock'
+      - daybook_voice_memo_inbox_log_dir == daybook_voice_memo_inbox_runtime_dir ~ '/logs'
+      - daybook_voice_memo_inbox_stdout_log == daybook_voice_memo_inbox_log_dir ~ '/ingest.log'
+      - daybook_voice_memo_inbox_stderr_log == daybook_voice_memo_inbox_log_dir ~ '/ingest.err.log'
+      - daybook_voice_memo_inbox_credential_dir == daybook_voice_memo_inbox_service_home ~ '/.config/daybook-voice-memo-inbox'
+      - daybook_voice_memo_inbox_credential_path == daybook_voice_memo_inbox_credential_dir ~ '/credentials.json'
+      - daybook_voice_memo_inbox_launchd_label == 'de.wersdoerfer.daybook.voice-memo-inbox'
+      - daybook_voice_memo_inbox_plist_path == daybook_voice_memo_inbox_service_home ~ '/Library/LaunchAgents/' ~ daybook_voice_memo_inbox_launchd_label ~ '.plist'
+      - daybook_voice_memo_inbox_ffprobe_path == '/opt/homebrew/bin/ffprobe'
+      - daybook_voice_memo_inbox_ffmpeg_path == '/opt/homebrew/bin/ffmpeg'
+      - daybook_voice_memo_inbox_bucket != 'CHANGEME'
+      - daybook_voice_memo_inbox_bucket | string | length > 0
+      - daybook_voice_memo_inbox_s3_endpoint_url != 'CHANGEME'
+      - daybook_voice_memo_inbox_s3_endpoint_url | string is match('^https?://[^/\\s]+')
+      - daybook_voice_memo_inbox_s3_access_key_id != 'CHANGEME'
+      - daybook_voice_memo_inbox_s3_access_key_id | string | length > 0
+      - daybook_voice_memo_inbox_s3_secret_access_key != 'CHANGEME'
+      - daybook_voice_memo_inbox_s3_secret_access_key | string | length > 0
+      - daybook_voice_memo_inbox_voxhelm_token != 'CHANGEME'
+      - daybook_voice_memo_inbox_voxhelm_token | string | length > 0
+      - daybook_voice_memo_inbox_voxhelm_endpoint == 'http://127.0.0.1:8787/v1/audio/transcriptions'
+      - daybook_voice_memo_inbox_prefix == 'Inbox/Voice Memos'
+      - daybook_voice_memo_inbox_interval_seconds | int == 300
+      - daybook_voice_memo_inbox_activation_phrase == 'BASELINE ALL CURRENT VOICE MEMOS AS HISTORICAL'
+      - daybook_voice_memo_inbox_activation_status_retries | int == 72
+      - daybook_voice_memo_inbox_activation_status_delay_seconds | int == 5
+      - daybook_voice_memo_inbox_activation_status_retries | int * daybook_voice_memo_inbox_activation_status_delay_seconds | int > daybook_voice_memo_inbox_interval_seconds | int
+      - daybook_voice_memo_inbox_min_stable_seconds | int >= 120
+      - daybook_voice_memo_inbox_max_audio_bytes | int > 0
+      - daybook_voice_memo_inbox_max_audio_bytes | int <= 16777216
+      - daybook_voice_memo_inbox_max_duration_seconds | float > 0
+      - daybook_voice_memo_inbox_max_duration_seconds | float <= 180
+      - daybook_voice_memo_inbox_duration_tolerance_seconds | float == 1.0
+      - daybook_voice_memo_inbox_request_timeout_seconds | int > 0
+      - daybook_voice_memo_inbox_request_timeout_seconds | int < daybook_voice_memo_inbox_interval_seconds | int
+      - not daybook_voice_memo_inbox_launchd_enabled | bool or daybook_voice_memo_inbox_activation_confirmation == daybook_voice_memo_inbox_activation_phrase
+    fail_msg: >-
+      Voice Memo inbox deployment requires a Darwin Studio target, an exact
+      Daybook commit, least-privilege credentials, safe fixed paths/defaults,
+      and the explicit historical-baseline phrase before activation.
+  when: daybook_voice_memo_inbox_enabled | bool
+
+- name: Resolve Voice Memo inbox service uid
+  ansible.builtin.command:
+    argv: [/usr/bin/id, -u, "{{ daybook_voice_memo_inbox_service_user }}"]
+  register: daybook_voice_memo_inbox_uid
+  changed_when: false
+  check_mode: false
+  when: daybook_voice_memo_inbox_enabled | bool
+
+- name: Inspect required Voice Memo inbox executables
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: true
+    get_checksum: true
+  loop:
+    - /usr/bin/git
+    - "{{ daybook_voice_memo_inbox_uv_bin }}"
+    - "{{ daybook_voice_memo_inbox_python_source }}"
+    - "{{ daybook_voice_memo_inbox_ffprobe_path }}"
+    - "{{ daybook_voice_memo_inbox_ffmpeg_path }}"
+  register: daybook_voice_memo_inbox_executables
+  when: daybook_voice_memo_inbox_enabled | bool
+
+- name: Require executable Voice Memo inbox prerequisites
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg
+      - item.stat.executable
+    fail_msg: "Required Voice Memo inbox executable is absent or not executable: {{ item.item }}"
+  loop: "{{ daybook_voice_memo_inbox_executables.results }}"
+  when: daybook_voice_memo_inbox_enabled | bool
+
+- name: Require active Voice Memo owner Aqua domain for deployment
+  ansible.builtin.command:
+    argv:
+      - /bin/launchctl
+      - print
+      - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}"
+  changed_when: false
+  check_mode: false
+  when: daybook_voice_memo_inbox_enabled | bool
+
+- name: Disable Voice Memo inbox before deployment
+  ansible.builtin.command:
+    argv:
+      - /bin/launchctl
+      - disable
+      - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}/{{ daybook_voice_memo_inbox_launchd_label }}"
+  changed_when: false
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Read disabled Voice Memo inbox labels
+  ansible.builtin.command:
+    argv:
+      - /bin/launchctl
+      - print-disabled
+      - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}"
+  register: daybook_voice_memo_inbox_disabled_labels
+  changed_when: false
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Boot out Voice Memo inbox before deployment
+  ansible.builtin.command:
+    argv:
+      - /bin/launchctl
+      - bootout
+      - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}/{{ daybook_voice_memo_inbox_launchd_label }}"
+  changed_when: false
+  failed_when: false
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Prove Voice Memo inbox label is disabled
+  ansible.builtin.assert:
+    that:
+      - >-
+        daybook_voice_memo_inbox_disabled_labels.stdout
+        | regex_search(
+            '(?m)^\\s*"'
+            ~ (daybook_voice_memo_inbox_launchd_label | regex_escape)
+            ~ '"\\s*=>\\s*(?:true|disabled)\\s*$'
+          ) is not none
+    fail_msg: Voice Memo inbox label could not be proven disabled before deployment.
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Verify Voice Memo inbox is quiesced before managed changes
+  ansible.builtin.command:
+    argv:
+      - /bin/launchctl
+      - print
+      - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}/{{ daybook_voice_memo_inbox_launchd_label }}"
+  register: daybook_voice_memo_inbox_quiesced
+  changed_when: false
+  # bootout may return while the job is still terminating; tolerate that
+  # window without weakening the proof.
+  retries: 12
+  delay: 5
+  until: daybook_voice_memo_inbox_quiesced.rc != 0
+  failed_when: daybook_voice_memo_inbox_quiesced.rc == 0
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Inspect Voice Memo inbox managed parent directories
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    get_checksum: false
+  loop:
+    - "{{ daybook_voice_memo_inbox_install_root }}"
+    - "{{ daybook_voice_memo_inbox_log_dir }}"
+    - "{{ daybook_voice_memo_inbox_credential_dir }}"
+    - "{{ daybook_voice_memo_inbox_service_home }}/Library/LaunchAgents"
+  register: daybook_voice_memo_inbox_managed_parents
+  check_mode: false
+  when: daybook_voice_memo_inbox_enabled | bool
+
+- name: Index Voice Memo inbox managed parent directories by path
+  ansible.builtin.set_fact:
+    daybook_voice_memo_inbox_parent_exists: >-
+      {{
+        dict(
+          daybook_voice_memo_inbox_managed_parents.results | map(attribute='item')
+          | zip(daybook_voice_memo_inbox_managed_parents.results | map(attribute='stat.exists'))
+        )
+      }}
+  when: daybook_voice_memo_inbox_enabled | bool
+
+- name: Create protected Voice Memo inbox directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: /Library/Application Support/Daybook
+      owner: root
+      group: "{{ daybook_voice_memo_inbox_system_group }}"
+      mode: "0755"
+    - path: "{{ daybook_voice_memo_inbox_install_root }}"
+      owner: root
+      group: "{{ daybook_voice_memo_inbox_system_group }}"
+      mode: "0755"
+    - path: "{{ daybook_voice_memo_inbox_service_home }}/Library/LaunchAgents"
+      owner: "{{ daybook_voice_memo_inbox_service_user }}"
+      group: "{{ daybook_voice_memo_inbox_service_group }}"
+      mode: "0755"
+    - path: "{{ daybook_voice_memo_inbox_runtime_dir }}"
+      owner: "{{ daybook_voice_memo_inbox_service_user }}"
+      group: "{{ daybook_voice_memo_inbox_service_group }}"
+      mode: "0700"
+    - path: "{{ daybook_voice_memo_inbox_log_dir }}"
+      owner: "{{ daybook_voice_memo_inbox_service_user }}"
+      group: "{{ daybook_voice_memo_inbox_service_group }}"
+      mode: "0700"
+    - path: "{{ daybook_voice_memo_inbox_credential_dir }}"
+      owner: "{{ daybook_voice_memo_inbox_service_user }}"
+      group: "{{ daybook_voice_memo_inbox_service_group }}"
+      mode: "0700"
+  when: daybook_voice_memo_inbox_enabled | bool
+
+- name: Create owner-only Voice Memo inbox logs
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: touch
+    owner: "{{ daybook_voice_memo_inbox_service_user }}"
+    group: "{{ daybook_voice_memo_inbox_service_group }}"
+    mode: "0600"
+    modification_time: preserve
+    access_time: preserve
+  loop:
+    - "{{ daybook_voice_memo_inbox_stdout_log }}"
+    - "{{ daybook_voice_memo_inbox_stderr_log }}"
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode or daybook_voice_memo_inbox_parent_exists[daybook_voice_memo_inbox_log_dir]
+
+- name: Install exact Daybook source bundle
+  ansible.builtin.copy:
+    src: "{{ daybook_voice_memo_inbox_repo_bundle_src }}"
+    dest: "{{ daybook_voice_memo_inbox_repo_bundle_path }}"
+    owner: root
+    group: "{{ daybook_voice_memo_inbox_system_group }}"
+    mode: "0600"
+  register: daybook_voice_memo_inbox_bundle
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode or daybook_voice_memo_inbox_parent_exists[daybook_voice_memo_inbox_install_root]
+
+- name: Inspect existing managed Daybook checkout
+  ansible.builtin.stat:
+    path: "{{ daybook_voice_memo_inbox_checkout_path }}/.git"
+    follow: false
+    get_checksum: false
+  register: daybook_voice_memo_inbox_checkout_dir
+  check_mode: false
+  when: daybook_voice_memo_inbox_enabled | bool
+
+- name: Verify installed Daybook source bundle against the existing checkout
+  # git bundle verify needs a repository context; the existing checkout is the
+  # only repository whose replacement this proof guards.
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/git
+      - bundle
+      - verify
+      - "{{ daybook_voice_memo_inbox_repo_bundle_path }}"
+  args:
+    chdir: "{{ daybook_voice_memo_inbox_checkout_path }}"
+  register: daybook_voice_memo_inbox_bundle_verify
+  changed_when: false
+  failed_when: false
+  environment:
+    GIT_CONFIG_GLOBAL: /dev/null
+    GIT_CONFIG_SYSTEM: /dev/null
+    GIT_OPTIONAL_LOCKS: "0"
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+    - daybook_voice_memo_inbox_checkout_dir.stat.exists
+
+- name: List installed Daybook source bundle heads
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/git
+      - bundle
+      - list-heads
+      - "{{ daybook_voice_memo_inbox_repo_bundle_path }}"
+  register: daybook_voice_memo_inbox_bundle_heads
+  changed_when: false
+  failed_when: false
+  environment:
+    GIT_CONFIG_GLOBAL: /dev/null
+    GIT_CONFIG_SYSTEM: /dev/null
+    GIT_OPTIONAL_LOCKS: "0"
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Require a valid Daybook bundle containing the pinned commit
+  # Header-level proof before any existing checkout may be replaced: a wrong
+  # bundle, a wrong ref, or a truncated header cannot trigger the replacement.
+  # Object-level corruption inside the pack is only detected by the clone
+  # itself, which runs after the old checkout is removed.
+  ansible.builtin.assert:
+    that:
+      - not daybook_voice_memo_inbox_checkout_dir.stat.exists or daybook_voice_memo_inbox_bundle_verify.rc == 0
+      - daybook_voice_memo_inbox_bundle_heads.rc == 0
+      - daybook_voice_memo_inbox_bundle_heads.stdout is search('(?m)^' ~ daybook_voice_memo_inbox_repo_ref ~ ' ')
+    fail_msg: >-
+      The installed Daybook source bundle is invalid or does not carry the
+      pinned commit (verify rc={{ daybook_voice_memo_inbox_bundle_verify.rc | default('skipped') }},
+      list-heads rc={{ daybook_voice_memo_inbox_bundle_heads.rc }}); the existing
+      checkout is left untouched.
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Inspect installed Daybook checkout revision
+  ansible.builtin.command:
+    argv: [/usr/bin/git, -C, "{{ daybook_voice_memo_inbox_checkout_path }}", rev-parse, HEAD]
+  register: daybook_voice_memo_inbox_installed_ref
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  environment:
+    GIT_CONFIG_GLOBAL: /dev/null
+    GIT_CONFIG_SYSTEM: /dev/null
+    GIT_OPTIONAL_LOCKS: "0"
+  when: daybook_voice_memo_inbox_enabled | bool
+
+- name: Refuse to replace an existing checkout whose revision cannot be read
+  ansible.builtin.assert:
+    that:
+      - not daybook_voice_memo_inbox_checkout_dir.stat.exists or daybook_voice_memo_inbox_installed_ref.rc == 0
+    fail_msg: >-
+      git could not read the revision of the existing protected Daybook
+      checkout (rc={{ daybook_voice_memo_inbox_installed_ref.rc }}); refusing
+      to delete it and the Full Disk Access interpreter it contains. Repair git
+      or the checkout on the host first.
+  when: daybook_voice_memo_inbox_enabled | bool
+
+- name: Replace drifted managed Daybook checkout
+  ansible.builtin.file:
+    path: "{{ daybook_voice_memo_inbox_checkout_path }}"
+    state: absent
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+    - daybook_voice_memo_inbox_checkout_dir.stat.exists
+    # The pinned 40-hex commit identifies the content; bundle bytes may differ
+    # between regenerations without any drift, so they never trigger a replace.
+    - daybook_voice_memo_inbox_installed_ref.stdout | trim != daybook_voice_memo_inbox_repo_ref
+
+- name: Clone exact Daybook bundle
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/git
+      - clone
+      - --no-checkout
+      - "{{ daybook_voice_memo_inbox_repo_bundle_path }}"
+      - "{{ daybook_voice_memo_inbox_checkout_path }}"
+    creates: "{{ daybook_voice_memo_inbox_checkout_path }}/.git"
+  environment:
+    GIT_CONFIG_GLOBAL: /dev/null
+    GIT_CONFIG_SYSTEM: /dev/null
+    GIT_OPTIONAL_LOCKS: "0"
+  when: daybook_voice_memo_inbox_enabled | bool
+
+- name: Check out exact reviewed Daybook commit
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/git
+      - -C
+      - "{{ daybook_voice_memo_inbox_checkout_path }}"
+      - checkout
+      - --detach
+      - "{{ daybook_voice_memo_inbox_repo_ref }}"
+  register: daybook_voice_memo_inbox_checkout
+  changed_when: daybook_voice_memo_inbox_installed_ref.stdout | trim != daybook_voice_memo_inbox_repo_ref
+  environment:
+    GIT_CONFIG_GLOBAL: /dev/null
+    GIT_CONFIG_SYSTEM: /dev/null
+    GIT_OPTIONAL_LOCKS: "0"
+  when: daybook_voice_memo_inbox_enabled | bool
+
+- name: Inspect protected Daybook checkout cleanliness
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/git
+      - -C
+      - "{{ daybook_voice_memo_inbox_checkout_path }}"
+      - status
+      - --porcelain
+      - --untracked-files=all
+  register: daybook_voice_memo_inbox_checkout_status
+  changed_when: false
+  environment:
+    GIT_CONFIG_GLOBAL: /dev/null
+    GIT_CONFIG_SYSTEM: /dev/null
+    GIT_OPTIONAL_LOCKS: "0"
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Require an unmodified protected Daybook checkout
+  ansible.builtin.assert:
+    that:
+      - daybook_voice_memo_inbox_checkout_status.stdout | trim | length == 0
+    fail_msg: >-
+      The protected Daybook checkout contains modified or untracked tracked-tree
+      files ({{ daybook_voice_memo_inbox_checkout_status.stdout_lines | length }}
+      entries; paths withheld). The scheduled interpreter would execute code
+      that is not the pinned commit. Inspect the checkout as root and remove
+      the modification, or delete the checkout so the next deployment
+      re-clones the exact bundle.
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Synchronize locked Daybook runtime
+  ansible.builtin.command:
+    argv:
+      - "{{ daybook_voice_memo_inbox_uv_bin }}"
+      - sync
+      - --frozen
+      - --no-dev
+      - --python
+      - "{{ daybook_voice_memo_inbox_python_source }}"
+  args:
+    chdir: "{{ daybook_voice_memo_inbox_checkout_path }}"
+  register: daybook_voice_memo_inbox_sync
+  changed_when: >-
+    'Installed' in daybook_voice_memo_inbox_sync.stderr or
+    'Uninstalled' in daybook_voice_memo_inbox_sync.stderr
+  environment:
+    HOME: /var/root
+    UV_NO_PROGRESS: "1"
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - >-
+      not ansible_check_mode
+      or (
+        daybook_voice_memo_inbox_installed_ref.rc == 0
+        and daybook_voice_memo_inbox_installed_ref.stdout | trim == daybook_voice_memo_inbox_repo_ref
+      )
+
+- name: Inspect Voice Memo inbox virtualenv interpreter
+  ansible.builtin.stat:
+    path: "{{ daybook_voice_memo_inbox_python }}"
+    follow: false
+    get_checksum: true
+  register: daybook_voice_memo_inbox_python_stat
+  when: daybook_voice_memo_inbox_enabled | bool
+
+- name: Resolve pinned Voice Memo inbox source interpreter checksum
+  ansible.builtin.set_fact:
+    daybook_voice_memo_inbox_python_source_checksum: >-
+      {{
+        daybook_voice_memo_inbox_executables.results
+        | selectattr('item', 'eq', daybook_voice_memo_inbox_python_source)
+        | map(attribute='stat.checksum') | first
+      }}
+    # Materialize a root-owned copy when the venv still links to the shared
+    # interpreter or when the copied binary no longer matches the pinned source
+    # (for example after a Homebrew Python upgrade).
+    daybook_voice_memo_inbox_python_needs_copy: >-
+      {{
+        daybook_voice_memo_inbox_python_stat.stat.islnk | default(false)
+        or (
+          daybook_voice_memo_inbox_python_stat.stat.exists
+          and daybook_voice_memo_inbox_python_stat.stat.checksum | default('')
+              != (
+                daybook_voice_memo_inbox_executables.results
+                | selectattr('item', 'eq', daybook_voice_memo_inbox_python_source)
+                | map(attribute='stat.checksum') | first
+              )
+        )
+      }}
+  when: daybook_voice_memo_inbox_enabled | bool
+
+- name: Copy pinned Voice Memo inbox interpreter into protected checkout
+  ansible.builtin.command:
+    argv:
+      - /bin/cp
+      - -L
+      - "{{ daybook_voice_memo_inbox_python_source }}"
+      - "{{ daybook_voice_memo_inbox_python }}.managed"
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+    - daybook_voice_memo_inbox_python_needs_copy | bool
+
+- name: Protect staged Voice Memo inbox interpreter before it becomes live
+  ansible.builtin.file:
+    path: "{{ daybook_voice_memo_inbox_python }}.managed"
+    state: file
+    owner: root
+    group: "{{ daybook_voice_memo_inbox_system_group }}"
+    mode: "0755"
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+    - daybook_voice_memo_inbox_python_needs_copy | bool
+
+- name: Install regular Voice Memo inbox interpreter atomically
+  ansible.builtin.command:
+    argv:
+      - /bin/mv
+      - -f
+      - "{{ daybook_voice_memo_inbox_python }}.managed"
+      - "{{ daybook_voice_memo_inbox_python }}"
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+    - daybook_voice_memo_inbox_python_needs_copy | bool
+
+- name: Protect Voice Memo inbox interpreter
+  ansible.builtin.file:
+    path: "{{ daybook_voice_memo_inbox_python }}"
+    state: file
+    follow: false
+    owner: root
+    group: "{{ daybook_voice_memo_inbox_system_group }}"
+    mode: "0755"
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode or daybook_voice_memo_inbox_python_stat.stat.exists
+
+- name: Verify Voice Memo inbox interpreter is a regular protected file
+  ansible.builtin.stat:
+    path: "{{ daybook_voice_memo_inbox_python }}"
+    follow: false
+    get_checksum: true
+  register: daybook_voice_memo_inbox_protected_python
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Require protected Voice Memo inbox interpreter boundary
+  ansible.builtin.assert:
+    that:
+      - daybook_voice_memo_inbox_protected_python.stat.isreg
+      - not daybook_voice_memo_inbox_protected_python.stat.islnk
+      - daybook_voice_memo_inbox_protected_python.stat.nlink == 1
+      - daybook_voice_memo_inbox_protected_python.stat.pw_name == 'root'
+      - daybook_voice_memo_inbox_protected_python.stat.mode == '0755'
+      - daybook_voice_memo_inbox_protected_python.stat.checksum == daybook_voice_memo_inbox_python_source_checksum
+    fail_msg: >-
+      Voice Memo inbox refuses an unprotected, shared, or substituted
+      interpreter: the scheduled binary must be a root-owned regular copy whose
+      checksum equals the pinned source interpreter.
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Smoke-test protected Voice Memo inbox interpreter as service user
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/sudo
+      - -u
+      - "{{ daybook_voice_memo_inbox_service_user }}"
+      - /usr/bin/env
+      - "HOME={{ daybook_voice_memo_inbox_service_home }}"
+      - "{{ daybook_voice_memo_inbox_python }}"
+      - -B
+      - -I
+      - -c
+      - import daybook, sqlite3, ssl
+  args:
+    chdir: "{{ daybook_voice_memo_inbox_checkout_path }}"
+  changed_when: false
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Smoke-test protected Voice Memo inbox CLI entrypoint as service user
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/sudo
+      - -u
+      - "{{ daybook_voice_memo_inbox_service_user }}"
+      - /usr/bin/env
+      - "HOME={{ daybook_voice_memo_inbox_service_home }}"
+      - "{{ daybook_voice_memo_inbox_python }}"
+      - -B
+      - -I
+      - -c
+      - from daybook.cli import main; raise SystemExit(main())
+      - voice-memos
+      - --help
+  args:
+    chdir: "{{ daybook_voice_memo_inbox_checkout_path }}"
+  changed_when: false
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Render protected Voice Memo inbox policy
+  ansible.builtin.template:
+    src: policy.json.j2
+    dest: "{{ daybook_voice_memo_inbox_policy_path }}"
+    owner: root
+    group: "{{ daybook_voice_memo_inbox_system_group }}"
+    mode: "0644"
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode or daybook_voice_memo_inbox_parent_exists[daybook_voice_memo_inbox_install_root]
+
+- name: Render owner-only Voice Memo inbox credentials
+  ansible.builtin.template:
+    src: credentials.json.j2
+    dest: "{{ daybook_voice_memo_inbox_credential_path }}"
+    owner: "{{ daybook_voice_memo_inbox_service_user }}"
+    group: "{{ daybook_voice_memo_inbox_service_group }}"
+    mode: "0600"
+  no_log: true
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode or daybook_voice_memo_inbox_parent_exists[daybook_voice_memo_inbox_credential_dir]
+
+- name: Render disabled-first Voice Memo inbox LaunchAgent
+  ansible.builtin.template:
+    src: voice-memo-inbox.launchd.plist.j2
+    dest: "{{ daybook_voice_memo_inbox_plist_path }}"
+    owner: root
+    group: "{{ daybook_voice_memo_inbox_system_group }}"
+    mode: "0644"
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode or daybook_voice_memo_inbox_parent_exists[daybook_voice_memo_inbox_service_home ~ '/Library/LaunchAgents']
+
+- name: Validate Voice Memo inbox LaunchAgent plist
+  ansible.builtin.command:
+    argv: [/usr/bin/plutil, -lint, "{{ daybook_voice_memo_inbox_plist_path }}"]
+  changed_when: false
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Activate Voice Memo inbox after explicit historical baseline
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - daybook_voice_memo_inbox_launchd_enabled | bool
+    - not ansible_check_mode
+  block:
+    - name: Check for existing Voice Memo inbox activation marker
+      ansible.builtin.stat:
+        path: "{{ daybook_voice_memo_inbox_activation_marker_path }}"
+        follow: false
+      register: daybook_voice_memo_inbox_marker
+
+    - name: Check for proven first Voice Memo scan
+      ansible.builtin.stat:
+        path: "{{ daybook_voice_memo_inbox_activation_proof_path }}"
+        follow: false
+      register: daybook_voice_memo_inbox_activation_proof
+
+    - name: Reject inconsistent Voice Memo activation markers
+      ansible.builtin.assert:
+        that:
+          - daybook_voice_memo_inbox_marker.stat.exists or not daybook_voice_memo_inbox_activation_proof.stat.exists
+        fail_msg: >-
+          Voice Memo activation proof exists without activation.json; restore
+          the root-owned marker pair before deployment. Re-baselining is refused.
+
+    - name: Initialize Voice Memo historical baseline in Aqua context
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - asuser
+          - "{{ daybook_voice_memo_inbox_uid.stdout | trim }}"
+          - /usr/bin/sudo
+          - -u
+          - "{{ daybook_voice_memo_inbox_service_user }}"
+          - /usr/bin/env
+          - "HOME={{ daybook_voice_memo_inbox_service_home }}"
+          - "DAYBOOK_VOICE_MEMOS_POLICY={{ daybook_voice_memo_inbox_policy_path }}"
+          - "{{ daybook_voice_memo_inbox_python }}"
+          - -I
+          - -c
+          - from daybook.cli import main; raise SystemExit(main())
+          - voice-memos
+          - init
+      args:
+        chdir: "{{ daybook_voice_memo_inbox_checkout_path }}"
+      register: daybook_voice_memo_inbox_init
+      changed_when: false
+      failed_when: false
+      no_log: true
+      when: not daybook_voice_memo_inbox_marker.stat.exists
+
+    - name: Require successful Voice Memo historical baseline command
+      ansible.builtin.assert:
+        that:
+          - daybook_voice_memo_inbox_init.rc == 0
+        fail_msg: Voice Memo historical baseline command failed; inspect owner-only runtime diagnostics.
+      when: not daybook_voice_memo_inbox_marker.stat.exists
+
+    - name: Parse Voice Memo historical baseline proof
+      ansible.builtin.set_fact:
+        daybook_voice_memo_inbox_init_report: "{{ daybook_voice_memo_inbox_init.stdout | from_json }}"
+      no_log: true
+      when: not daybook_voice_memo_inbox_marker.stat.exists
+
+    - name: Require safe Voice Memo historical baseline proof
+      ansible.builtin.assert:
+        that:
+          - daybook_voice_memo_inbox_init.rc == 0
+          - daybook_voice_memo_inbox_init_report.category == 'unactivated'
+          - daybook_voice_memo_inbox_init_report.activation_id is match('^[0-9a-f]{32}$')
+        fail_msg: Voice Memo historical baseline could not be proven.
+      when: not daybook_voice_memo_inbox_marker.stat.exists
+
+    - name: Install root-owned Voice Memo activation marker
+      ansible.builtin.copy:
+        dest: "{{ daybook_voice_memo_inbox_activation_marker_path }}"
+        content: >-
+          {{ {'schema': 1, 'activation_id': daybook_voice_memo_inbox_init_report.activation_id} | to_nice_json }}
+        owner: root
+        group: "{{ daybook_voice_memo_inbox_system_group }}"
+        mode: "0644"
+      no_log: true
+      when: not daybook_voice_memo_inbox_marker.stat.exists
+
+    - name: Capture Voice Memo ledger generation before bootstrap
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - asuser
+          - "{{ daybook_voice_memo_inbox_uid.stdout | trim }}"
+          - /usr/bin/sudo
+          - -u
+          - "{{ daybook_voice_memo_inbox_service_user }}"
+          - /usr/bin/env
+          - "HOME={{ daybook_voice_memo_inbox_service_home }}"
+          - "DAYBOOK_VOICE_MEMOS_POLICY={{ daybook_voice_memo_inbox_policy_path }}"
+          - "{{ daybook_voice_memo_inbox_python }}"
+          - -I
+          - -c
+          - from daybook.cli import main; raise SystemExit(main())
+          - voice-memos
+          - status
+          - --summary-only
+      args:
+        chdir: "{{ daybook_voice_memo_inbox_checkout_path }}"
+      register: daybook_voice_memo_inbox_prebootstrap_status
+      changed_when: false
+
+    - name: Parse Voice Memo pre-bootstrap generation
+      ansible.builtin.set_fact:
+        daybook_voice_memo_inbox_prebootstrap_report: >-
+          {{ daybook_voice_memo_inbox_prebootstrap_status.stdout | from_json }}
+
+    - name: Require healthy Voice Memo pre-bootstrap state
+      ansible.builtin.assert:
+        that:
+          - daybook_voice_memo_inbox_prebootstrap_status.rc == 0
+          - daybook_voice_memo_inbox_prebootstrap_report.category == 'healthy'
+          - daybook_voice_memo_inbox_prebootstrap_report.generation | int >= 1
+        fail_msg: Voice Memo inbox state was not healthy before bootstrap.
+
+    - name: Enable Voice Memo inbox exact label
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - enable
+          - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}/{{ daybook_voice_memo_inbox_launchd_label }}"
+      changed_when: false
+
+    - name: Bootstrap Voice Memo inbox LaunchAgent
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - bootstrap
+          - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}"
+          - "{{ daybook_voice_memo_inbox_plist_path }}"
+      changed_when: true
+
+    - name: Wait for privacy-safe first Voice Memo scan
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - asuser
+          - "{{ daybook_voice_memo_inbox_uid.stdout | trim }}"
+          - /usr/bin/sudo
+          - -u
+          - "{{ daybook_voice_memo_inbox_service_user }}"
+          - /usr/bin/env
+          - "HOME={{ daybook_voice_memo_inbox_service_home }}"
+          - "DAYBOOK_VOICE_MEMOS_POLICY={{ daybook_voice_memo_inbox_policy_path }}"
+          - "{{ daybook_voice_memo_inbox_python }}"
+          - -I
+          - -c
+          - from daybook.cli import main; raise SystemExit(main())
+          - voice-memos
+          - status
+          - --summary-only
+      args:
+        chdir: "{{ daybook_voice_memo_inbox_checkout_path }}"
+      register: daybook_voice_memo_inbox_status
+      changed_when: false
+      retries: "{{ daybook_voice_memo_inbox_activation_status_retries }}"
+      delay: "{{ daybook_voice_memo_inbox_activation_status_delay_seconds }}"
+      until:
+        - daybook_voice_memo_inbox_status.rc == 0
+        - (daybook_voice_memo_inbox_status.stdout | from_json).category == 'healthy'
+        - (daybook_voice_memo_inbox_status.stdout | from_json).last_successful_scan_at is not none
+        - (daybook_voice_memo_inbox_status.stdout | from_json).generation | int > daybook_voice_memo_inbox_prebootstrap_report.generation | int
+        - (daybook_voice_memo_inbox_status.stdout | from_json).historical_count | int == daybook_voice_memo_inbox_prebootstrap_report.historical_count | int
+
+    - name: Install root-owned proven first Voice Memo scan marker
+      ansible.builtin.copy:
+        dest: "{{ daybook_voice_memo_inbox_activation_proof_path }}"
+        content: "{{ {'schema': 1, 'first_scan_proven': true} | to_nice_json }}"
+        owner: root
+        group: "{{ daybook_voice_memo_inbox_system_group }}"
+        mode: "0644"
+      when: not daybook_voice_memo_inbox_activation_proof.stat.exists
+  rescue:
+    - name: Rescue-disable Voice Memo inbox label
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - disable
+          - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}/{{ daybook_voice_memo_inbox_launchd_label }}"
+      register: daybook_voice_memo_inbox_rescue_disable
+      changed_when: false
+      failed_when: false
+
+    - name: Rescue-bootout Voice Memo inbox label
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - bootout
+          - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}/{{ daybook_voice_memo_inbox_launchd_label }}"
+      register: daybook_voice_memo_inbox_rescue_bootout
+      changed_when: false
+      failed_when: false
+
+    - name: Re-read disabled Voice Memo inbox labels after rescue
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - print-disabled
+          - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}"
+      register: daybook_voice_memo_inbox_rescue_disabled_labels
+      changed_when: false
+      failed_when: false
+
+    - name: Probe Voice Memo inbox label after rescue
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - print
+          - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}/{{ daybook_voice_memo_inbox_launchd_label }}"
+      register: daybook_voice_memo_inbox_rescue_probe
+      changed_when: false
+      failed_when: false
+      retries: 12
+      delay: 5
+      until: daybook_voice_memo_inbox_rescue_probe.rc != 0
+      # Retry exhaustion marks the task failed regardless of failed_when; the
+      # loud proof assertion below must still run inside the rescue.
+      ignore_errors: true
+
+    - name: Require proven disabled/unloaded state after activation failure
+      ansible.builtin.assert:
+        that:
+          - daybook_voice_memo_inbox_rescue_disabled_labels.rc == 0
+          - >-
+            daybook_voice_memo_inbox_rescue_disabled_labels.stdout
+            | regex_search(
+                '(?m)^\\s*"'
+                ~ (daybook_voice_memo_inbox_launchd_label | regex_escape)
+                ~ '"\\s*=>\\s*(?:true|disabled)\\s*$'
+              ) is not none
+          - daybook_voice_memo_inbox_rescue_probe.rc != 0
+        fail_msg: >-
+          VOICE MEMO INBOX ACTIVATION FAILED AND THE RESCUE COULD NOT PROVE A
+          DISABLED/UNLOADED STATE (disable rc={{ daybook_voice_memo_inbox_rescue_disable.rc }},
+          bootout rc={{ daybook_voice_memo_inbox_rescue_bootout.rc }},
+          print-disabled rc={{ daybook_voice_memo_inbox_rescue_disabled_labels.rc }},
+          print rc={{ daybook_voice_memo_inbox_rescue_probe.rc }}). The LaunchAgent may
+          still be loaded or re-loadable at login; run the emergency disable
+          playbook and inspect launchctl on the host immediately.
+
+    - name: Fail closed after Voice Memo inbox activation error
+      ansible.builtin.fail:
+        msg: >-
+          Voice Memo inbox activation failed and was returned to a proven
+          disabled/unloaded state (disable rc={{ daybook_voice_memo_inbox_rescue_disable.rc }},
+          bootout rc={{ daybook_voice_memo_inbox_rescue_bootout.rc }}).

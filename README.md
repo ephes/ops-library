@@ -195,6 +195,7 @@ consumer repos depend on.
 | Bootstrap | [`opsgate_ingress_deploy`](roles/opsgate_ingress_deploy/README.md) | Expose OpsGate over private HTTPS via Traefik on the edge host while proxying to the macOS backend over Tailscale. |
 | Bootstrap | [`daybook_sessions_deploy`](roles/daybook_sessions_deploy/README.md) | Run Daybook session shipping, quote classification, and a disabled-by-default draft reconcile schedule on macOS. |
 | Bootstrap | [`daybook_photos_offload_deploy`](roles/daybook_photos_offload_deploy/README.md) | Install Daybook's read-only Photos discovery ledger as a quiesce-first Aqua user LaunchAgent on macOS. |
+| Bootstrap | [`daybook_voice_memo_inbox_deploy`](roles/daybook_voice_memo_inbox_deploy/README.md) | Install the disabled-first Apple Voice Memos to Voxhelm and immutable Obsidian inbox importer on macOS. |
 | Bootstrap | [`ollama_install`](roles/ollama_install/README.md) | Install Ollama on macOS via Homebrew and manage a launchd service. |
 | Bootstrap | [`voxhelm_deploy`](roles/voxhelm_deploy/README.md) | Deploy Voxhelm on macOS with `uv`, Uvicorn, and a launchd-managed synchronous transcription API. |
 | Bootstrap | [`voxhelm_ingress_deploy`](roles/voxhelm_ingress_deploy/README.md) | Expose Voxhelm over private HTTPS via Traefik on the edge host while proxying to the macOS backend over Tailscale. |
