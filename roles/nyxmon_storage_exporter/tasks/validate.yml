@@ -19,6 +19,51 @@
     label: "pool {{ idx }}"
   when: nyxmon_storage_exporter_pools | length > 0
 
+- name: validate | Assert pool capacity thresholds is a mapping
+  ansible.builtin.assert:
+    that:
+      - nyxmon_storage_exporter_pool_capacity_thresholds is mapping
+    fail_msg: "nyxmon_storage_exporter_pool_capacity_thresholds must be a mapping"
+
+- name: validate | Assert each pool capacity threshold policy is complete
+  ansible.builtin.assert:
+    that:
+      - >-
+        nyxmon_storage_exporter_pools | length == 0
+        or item.key in nyxmon_storage_exporter_pools
+      - item.value is mapping
+      - >-
+        item.value.warning_ratio is number
+        or (item.value.warning_ratio is string
+          and item.value.warning_ratio
+            | regex_search('^[0-9]+(?:[.][0-9]+)?$'))
+      - >-
+        item.value.critical_ratio is number
+        or (item.value.critical_ratio is string
+          and item.value.critical_ratio
+            | regex_search('^[0-9]+(?:[.][0-9]+)?$'))
+      - item.value.warning_ratio | float < item.value.critical_ratio | float
+      - >-
+        (item.value.warning_free_bytes is not defined
+          and item.value.critical_free_bytes is not defined)
+        or ((item.value.warning_free_bytes is integer
+            or (item.value.warning_free_bytes is string
+              and item.value.warning_free_bytes
+                | regex_search('^[0-9]+$')))
+          and (item.value.critical_free_bytes is integer
+            or (item.value.critical_free_bytes is string
+              and item.value.critical_free_bytes
+                | regex_search('^[0-9]+$')))
+          and item.value.warning_free_bytes | int
+            > item.value.critical_free_bytes | int)
+    fail_msg: >-
+      Pool capacity policy {{ item.key }} must target a configured pool and
+      provide ordered numeric warning/critical ratios and, when used, both
+      ordered warning/critical free-byte thresholds.
+  loop: "{{ nyxmon_storage_exporter_pool_capacity_thresholds | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
 - name: validate | Assert disks is a list (not string)
   ansible.builtin.assert:
     that:
@@ -68,12 +113,57 @@
     label: "{{ item.name | default('filesystem ' ~ idx) }}"
   when: nyxmon_storage_exporter_filesystems | length > 0
 
+- name: validate | Assert ZFS datasets is a list (not string)
+  ansible.builtin.assert:
+    that:
+      - nyxmon_storage_exporter_zfs_datasets is sequence
+      - nyxmon_storage_exporter_zfs_datasets is not string
+      - nyxmon_storage_exporter_zfs_datasets is not mapping
+    fail_msg: >-
+      nyxmon_storage_exporter_zfs_datasets must be a list, got:
+      {{ nyxmon_storage_exporter_zfs_datasets | type_debug }}
+
+- name: validate | Assert each ZFS dataset has required keys
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - item.name is defined
+      - item.dataset is defined
+      - item.name is string
+      - item.dataset is string
+      - item.name | length > 0
+      - item.dataset | length > 0
+    fail_msg: >-
+      nyxmon_storage_exporter_zfs_datasets[{{ idx }}] must have non-empty
+      string 'name' and 'dataset' values
+  loop: "{{ nyxmon_storage_exporter_zfs_datasets }}"
+  loop_control:
+    index_var: idx
+    label: "{{ item.name | default('ZFS dataset ' ~ idx) }}"
+  when: nyxmon_storage_exporter_zfs_datasets | length > 0
+
+- name: validate | Assert ZFS dataset names are unique
+  ansible.builtin.assert:
+    that:
+      - >-
+        nyxmon_storage_exporter_zfs_datasets | map(attribute='name') | list
+        | unique | length == nyxmon_storage_exporter_zfs_datasets | length
+    fail_msg: "nyxmon_storage_exporter_zfs_datasets names must be unique"
+  when: nyxmon_storage_exporter_zfs_datasets | length > 0
+
 - name: validate | Assert quiet-hours spindown interval is valid
   ansible.builtin.assert:
     that:
       - nyxmon_storage_exporter_quiet_hours_spindown_min_interval_sec is number
       - nyxmon_storage_exporter_quiet_hours_spindown_min_interval_sec | int >= 0
     fail_msg: "nyxmon_storage_exporter_quiet_hours_spindown_min_interval_sec must be a non-negative integer"
+
+- name: validate | Assert quiet-hours cache maximum age is valid
+  ansible.builtin.assert:
+    that:
+      - nyxmon_storage_exporter_quiet_hours_cache_max_age_sec is number
+      - nyxmon_storage_exporter_quiet_hours_cache_max_age_sec | int > 0
+    fail_msg: "nyxmon_storage_exporter_quiet_hours_cache_max_age_sec must be a positive integer"
 
 - name: validate | Assert quiet-hours spindown state file path is valid
   ansible.builtin.assert:

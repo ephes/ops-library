@@ -4,6 +4,8 @@ A collection of reusable Ansible roles for homelab automation and service deploy
 
 📖 **[Full Documentation](https://ops-library.readthedocs.io/)** | 📚 [Architecture](./ARCHITECTURE.md) | 🧭 [Service Lifecycle Guide](./docs/source/howto/service_lifecycle.md) | 🧪 [Testing](./TESTING.md)
 
+Reusable collection filters are documented in the [filter reference](./docs/source/zfs_size_filter.md).
+
 ## Quick Start
 
 ```bash
@@ -101,6 +103,7 @@ consumer repos depend on.
 | Storage | [`zfs_syncoid_replication`](roles/zfs_syncoid_replication/README.md) | Schedule syncoid replication jobs with systemd timers, alerts, and optional HDD spindown hooks. |
 | Storage | [`zfs_usb_replication`](roles/zfs_usb_replication/README.md) | Replicate ZFS datasets to an encrypted USB pool with device detection and optional alerts. |
 | Storage | [`hdparm_tune`](roles/hdparm_tune/README.md) | Configure persistent hdparm power settings (APM/spindown) for disks. |
+| Operations | [`macos_time_machine_exclusions`](roles/macos_time_machine_exclusions/README.md) | Reapply audited user-scoped Time Machine exclusions daily without deleting client data. |
 | Infrastructure | [`netplan_config`](roles/netplan_config/README.md) | Configure persistent netplan networking. |
 | Monitoring | [`smartd`](roles/smartd/README.md) | Configure smartmontools smartd for HDD/NVMe monitoring and scheduled tests. |
 | Monitoring | [`zed`](roles/zed/README.md) | Configure ZFS Event Daemon notifications and optional zpool scrub timers. |

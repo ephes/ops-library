@@ -27,8 +27,13 @@ nyxmon_storage_exporter_quiet_hours_spindown_script: ""
 nyxmon_storage_exporter_quiet_hours_spindown_min_interval_sec: 300
 nyxmon_storage_exporter_quiet_hours_spindown_state_file: "/run/nyxmon-storage-metrics-spindown.ts"
 nyxmon_storage_exporter_pool_cache_path: "/var/lib/nyxmon-storage-metrics/pool-cache.json"
+nyxmon_storage_exporter_quiet_hours_cache_max_age_sec: 172800
 
 # Input inventory
 nyxmon_storage_exporter_pools: []
+# Optional per-pool warning/critical ratio and free-byte thresholds. When set,
+# the exporter emits evidence-aware capacity failure booleans for alerting.
+nyxmon_storage_exporter_pool_capacity_thresholds: {}
 nyxmon_storage_exporter_disks: []
 nyxmon_storage_exporter_filesystems: []
+nyxmon_storage_exporter_zfs_datasets: []

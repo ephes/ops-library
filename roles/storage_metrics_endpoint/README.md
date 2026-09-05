@@ -1,6 +1,8 @@
 # storage_metrics_endpoint
 
-Exposes storage metrics (ZFS pool health, SMART status, ECC counters) as an authenticated HTTP endpoint. The HTTP server runs on system Python 3 (no venv/uv).
+Exposes storage metrics (ZFS pool and dataset capacity, snapshot-retained space,
+SMART status, and ECC counters) as an authenticated HTTP endpoint. The HTTP
+server runs on system Python 3 (no venv/uv).
 
 ## Design
 
@@ -84,6 +86,10 @@ schedule is armed. `OnCalendar=` is also the wall-clock trigger to which
 
 ## Response Format
 
+This role does not generate storage fields itself. It serves the complete JSON
+document written by `nyxmon_storage_exporter`, including configured dataset
+metrics.
+
 Success (HTTP 200):
 
 ```json
@@ -98,6 +104,15 @@ Success (HTTP 200):
     "served_at_epoch": 1734260442
   },
   "pools": {...},
+  "zfs_datasets": [...],
+  "zfs_datasets_by_name": {
+    "timemachine": {
+      "dataset": "fast/timemachine",
+      "available_bytes": 412316860416,
+      "used_by_snapshots_bytes": 274877906944,
+      "ok": true
+    }
+  },
   "ts": 1734260400
 }
 ```

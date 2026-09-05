@@ -24,6 +24,32 @@ QUIET_SPINDOWN_SCRIPT = "{{ nyxmon_storage_exporter_quiet_hours_spindown_script 
 QUIET_SPINDOWN_MIN_INTERVAL_SEC = {{ nyxmon_storage_exporter_quiet_hours_spindown_min_interval_sec | default(300) | int }}
 QUIET_SPINDOWN_STATE_FILE = "{{ nyxmon_storage_exporter_quiet_hours_spindown_state_file | default('/run/nyxmon-storage-metrics-spindown.ts') }}"
 POOL_CACHE_PATH = "{{ nyxmon_storage_exporter_pool_cache_path | default('/var/lib/nyxmon-storage-metrics/pool-cache.json') }}"
+QUIET_CACHE_MAX_AGE_SEC = {{ nyxmon_storage_exporter_quiet_hours_cache_max_age_sec | default(172800) | int }}
+POOL_CAPACITY_THRESHOLDS = {
+{% for pool_name, thresholds in (nyxmon_storage_exporter_pool_capacity_thresholds | default({}) | dictsort) %}
+    {{ pool_name | to_json }}: {
+        "warning_ratio": {{ thresholds.warning_ratio | float }},
+        "critical_ratio": {{ thresholds.critical_ratio | float }},
+{% if thresholds.warning_free_bytes is defined %}
+        "warning_free_bytes": {{ thresholds.warning_free_bytes | int }},
+        "critical_free_bytes": {{ thresholds.critical_free_bytes | int }},
+{% endif %}
+    },
+{% endfor %}
+}
+ZFS_DATASET_PROPERTIES = {
+    "used": "used_bytes",
+    "available": "available_bytes",
+    "referenced": "referenced_bytes",
+    "usedbysnapshots": "used_by_snapshots_bytes",
+    "usedbydataset": "used_by_dataset_bytes",
+    "usedbychildren": "used_by_children_bytes",
+    "usedbyrefreservation": "used_by_refreservation_bytes",
+    "quota": "quota_bytes",
+    "refquota": "refquota_bytes",
+    "reservation": "reservation_bytes",
+    "refreservation": "refreservation_bytes",
+}
 
 
 def _run(argv: list[str]) -> subprocess.CompletedProcess[str]:
@@ -100,7 +126,7 @@ def _parse_size_to_bytes(value: str) -> int | None:
 
 
 def _parse_percent_ratio(value: str) -> float | None:
-    match = re.match(r"^\s*([0-9]+(?:\.[0-9]+)?)%\s*$", value)
+    match = re.match(r"^\s*([0-9]+(?:\.[0-9]+)?)%?\s*$", value)
     if not match:
         return None
     return float(match.group(1)) / 100.0
@@ -130,7 +156,7 @@ def _write_json_file(path: str, data: dict[str, Any]) -> bool:
         return False
 
 
-def _pool_cache_sample(pool_payload: dict[str, Any]) -> dict[str, Any]:
+def _probe_cache_sample(probe_payload: dict[str, Any]) -> dict[str, Any]:
     cache_metadata_keys = {
         "cached",
         "cache_age_seconds",
@@ -141,21 +167,26 @@ def _pool_cache_sample(pool_payload: dict[str, Any]) -> dict[str, Any]:
     }
     return {
         key: value
-        for key, value in pool_payload.items()
+        for key, value in probe_payload.items()
         if key not in cache_metadata_keys
     }
 
 
-def _cached_pool_payload(name: str, pool_cache: dict[str, Any], now_ts: int) -> dict[str, Any] | None:
-    pools_cache = pool_cache.get("pools")
-    if not isinstance(pools_cache, dict):
+def _cached_probe_payload(
+    section: str, name: str, probe_cache: dict[str, Any], now_ts: int
+) -> dict[str, Any] | None:
+    section_cache = probe_cache.get(section)
+    if not isinstance(section_cache, dict):
         return None
-    entry = pools_cache.get(name)
+    entry = section_cache.get(name)
     if not isinstance(entry, dict):
         return None
     sample = entry.get("sample")
     cache_ts = entry.get("ts")
     if not isinstance(sample, dict) or not isinstance(cache_ts, int):
+        return None
+    cache_age_seconds = max(0, now_ts - cache_ts)
+    if cache_age_seconds > QUIET_CACHE_MAX_AGE_SEC:
         return None
 
     payload = dict(sample)
@@ -163,13 +194,149 @@ def _cached_pool_payload(name: str, pool_cache: dict[str, Any], now_ts: int) -> 
     payload["reason"] = "quiet_hours"
     payload["cached"] = True
     payload["cache_timestamp"] = cache_ts
-    payload["cache_age_seconds"] = max(0, now_ts - cache_ts)
+    payload["cache_age_seconds"] = cache_age_seconds
     return payload
+
+
+def _cached_pool_payload(name: str, pool_cache: dict[str, Any], now_ts: int) -> dict[str, Any] | None:
+    payload = _cached_probe_payload("pools", name, pool_cache, now_ts)
+    if payload is None:
+        return None
+    normalized = _unknown_pool_payload(name)
+    normalized.update(payload)
+    if "health_known" not in payload:
+        normalized["health_known"] = isinstance(payload.get("health"), str)
+    if "health_failed" not in payload:
+        normalized["health_failed"] = (
+            isinstance(payload.get("health"), str)
+            and payload.get("health") != "ONLINE"
+        )
+    _apply_pool_capacity_policy(normalized, name)
+    return normalized
+
+
+def _unknown_pool_payload(name: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "health": None,
+        "health_known": False,
+        "health_failed": False,
+        "cached": False,
+        "cache_timestamp": None,
+        "cache_age_seconds": None,
+        "size": None,
+        "alloc": None,
+        "free": None,
+        "cap": None,
+        "size_bytes": None,
+        "alloc_bytes": None,
+        "free_bytes": None,
+        "cap_ratio": None,
+        "capacity_known": False,
+        "capacity_warning_failed": False,
+        "capacity_critical_failed": False,
+        "last_scrub_ts": None,
+        "last_scrub_age_days": None,
+    }
+
+
+def _apply_pool_capacity_policy(payload: dict[str, Any], name: str) -> None:
+    thresholds = POOL_CAPACITY_THRESHOLDS.get(name)
+    if not isinstance(thresholds, dict):
+        return
+    cap_ratio = payload.get("cap_ratio")
+    free_bytes = payload.get("free_bytes")
+    warning_free_bytes = thresholds.get("warning_free_bytes")
+    critical_free_bytes = thresholds.get("critical_free_bytes")
+    uses_free_bytes = isinstance(warning_free_bytes, int) and isinstance(
+        critical_free_bytes, int
+    )
+    capacity_known = isinstance(cap_ratio, (int, float)) and (
+        not uses_free_bytes or isinstance(free_bytes, int)
+    )
+    payload["capacity_known"] = capacity_known
+    if not capacity_known:
+        payload["capacity_warning_failed"] = False
+        payload["capacity_critical_failed"] = False
+        return
+    payload["capacity_warning_failed"] = (
+        cap_ratio >= thresholds["warning_ratio"]
+        or (uses_free_bytes and free_bytes <= warning_free_bytes)
+    )
+    payload["capacity_critical_failed"] = (
+        cap_ratio >= thresholds["critical_ratio"]
+        or (uses_free_bytes and free_bytes <= critical_free_bytes)
+    )
+
+
+def _cached_disk_payload(
+    name: str, device: str, probe_cache: dict[str, Any], now_ts: int
+) -> dict[str, Any] | None:
+    payload = _cached_probe_payload("disks", name, probe_cache, now_ts)
+    if payload is None or payload.get("device") != device:
+        return None
+    normalized = _unknown_disk_payload(device)
+    normalized.update(payload)
+    if "health_known" not in payload:
+        normalized["health_known"] = isinstance(payload.get("ok"), bool)
+    if "health_failed" not in payload:
+        normalized["health_failed"] = payload.get("ok") is False
+    return normalized
+
+
+def _unknown_disk_payload(device: str) -> dict[str, Any]:
+    return {
+        "device": device,
+        "temp_c": None,
+        "ok": None,
+        "health_known": False,
+        "health_failed": False,
+        "cached": False,
+        "cache_timestamp": None,
+        "cache_age_seconds": None,
+    }
+
+
+def _cached_dataset_payload(
+    name: str, dataset: str, probe_cache: dict[str, Any], now_ts: int
+) -> dict[str, Any] | None:
+    payload = _cached_probe_payload("datasets", name, probe_cache, now_ts)
+    if payload is None or payload.get("dataset") != dataset:
+        return None
+    normalized = _unknown_dataset_payload(dataset)
+    normalized.update(payload)
+    if "metrics_known" not in payload:
+        normalized["metrics_known"] = payload.get("ok") is True
+    return normalized
+
+
+def _disk_sample_cacheable(payload: dict[str, Any]) -> bool:
+    """Cache completed evidence, including an observed failure with probe errors."""
+    return not payload.get("skipped") and (
+        "error" not in payload or payload.get("health_known") is True
+    )
+
+
+def _dataset_sample_cacheable(payload: dict[str, Any]) -> bool:
+    """Cache only successfully observed dataset metrics."""
+    return not payload.get("skipped") and "error" not in payload
+
+
+def _unknown_dataset_payload(dataset: str) -> dict[str, Any]:
+    return {
+        "dataset": dataset,
+        "ok": None,
+        "metrics_known": False,
+        "cached": False,
+        "cache_timestamp": None,
+        "cache_age_seconds": None,
+        **{output_name: None for output_name in ZFS_DATASET_PROPERTIES.values()},
+    }
 
 
 def _zpool_list(pools: list[str], skip_pools: set[str]) -> dict[str, dict[str, Any]]:
     if not pools:
-        result = _run(["zpool", "list", "-H", "-o", "name,health,size,alloc,free,cap"])
+        result = _run(["zpool", "list", "-H", "-p", "-o", "name,health,size,alloc,free,cap"])
         if result.returncode != 0:
             return {"_error": {"error": result.stderr.strip() or "zpool list failed"}}
         pools = [line.split()[0] for line in result.stdout.splitlines() if line.split()]
@@ -190,20 +357,33 @@ def _zpool_list(pools: list[str], skip_pools: set[str]) -> dict[str, dict[str, A
             payload[name] = (
                 cached_payload
                 if cached_payload is not None
-                else {"skipped": True, "reason": "quiet_hours"}
+                else {
+                    **_unknown_pool_payload(name),
+                    "skipped": True,
+                    "reason": "quiet_hours",
+                }
             )
             continue
-        result = _run(["zpool", "list", "-H", "-o", "name,health,size,alloc,free,cap", name])
+        result = _run(["zpool", "list", "-H", "-p", "-o", "name,health,size,alloc,free,cap", name])
         if result.returncode != 0:
-            payload[name] = {"error": result.stderr.strip() or "zpool list failed"}
+            payload[name] = {
+                **_unknown_pool_payload(name),
+                "error": result.stderr.strip() or "zpool list failed",
+            }
             continue
         parts = result.stdout.split()
         if len(parts) != 6:
-            payload[name] = {"error": "unexpected zpool list output"}
+            payload[name] = {
+                **_unknown_pool_payload(name),
+                "error": "unexpected zpool list output",
+            }
             continue
         _, health, size, alloc, free, cap = parts
         payload[name] = {
+            **_unknown_pool_payload(name),
             "health": health,
+            "health_known": True,
+            "health_failed": health != "ONLINE",
             "size": size,
             "alloc": alloc,
             "free": free,
@@ -212,7 +392,13 @@ def _zpool_list(pools: list[str], skip_pools: set[str]) -> dict[str, dict[str, A
         size_bytes = _parse_size_to_bytes(size)
         alloc_bytes = _parse_size_to_bytes(alloc)
         free_bytes = _parse_size_to_bytes(free)
-        cap_ratio = _parse_percent_ratio(cap)
+        cap_ratio = (
+            alloc_bytes / size_bytes
+            if size_bytes is not None
+            and size_bytes > 0
+            and alloc_bytes is not None
+            else _parse_percent_ratio(cap)
+        )
         if size_bytes is not None:
             payload[name]["size_bytes"] = size_bytes
         if alloc_bytes is not None:
@@ -221,6 +407,7 @@ def _zpool_list(pools: list[str], skip_pools: set[str]) -> dict[str, dict[str, A
             payload[name]["free_bytes"] = free_bytes
         if cap_ratio is not None:
             payload[name]["cap_ratio"] = cap_ratio
+        _apply_pool_capacity_policy(payload[name], name)
 
         status = _run(["zpool", "status", name])
         if status.returncode == 0:
@@ -235,7 +422,7 @@ def _zpool_list(pools: list[str], skip_pools: set[str]) -> dict[str, dict[str, A
             payload[name]["status_error"] = status.stderr.strip()
 
         payload[name]["cached"] = False
-        pools_cache[name] = {"ts": now_ts, "sample": _pool_cache_sample(payload[name])}
+        pools_cache[name] = {"ts": now_ts, "sample": _probe_cache_sample(payload[name])}
         cache_changed = True
 
     if cache_changed:
@@ -349,12 +536,56 @@ def _run_quiet_hours_spindown(quiet_active: bool) -> dict[str, Any]:
 
 def _smartctl_health(device: str) -> dict[str, Any]:
     out = _run(SMARTCTL_ARGS + [device])
-    payload: dict[str, Any] = {"device": device, "ok": False}
-    if out.returncode != 0:
+    payload = _unknown_disk_payload(device)
+    health_match = re.search(
+        r"^(?:SMART overall-health self-assessment test result|SMART Health Status):[ ]*"
+        r"(PASSED|OK|FAILED!?|FAILING|FAILURE)",
+        out.stdout,
+        re.IGNORECASE | re.MULTILINE,
+    )
+    # smartctl bits 3-4 are current failures. Bits 5-7 describe historical
+    # attribute, error-log, or self-test records and must not create a permanent
+    # critical health state.
+    # Negative signal return codes and conventional launcher failure codes are
+    # not smartctl bitmasks. Treat them as missing evidence, never disk damage.
+    bitmask_valid = (
+        0 <= out.returncode <= 255 and out.returncode not in {124, 126, 127}
+    )
+    if not bitmask_valid:
+        if health_match and health_match.group(1).upper().rstrip("!") not in {
+            "PASSED",
+            "OK",
+        }:
+            payload["ok"] = False
+            payload["health_known"] = True
+            payload["health_failed"] = True
+            payload["smartctl_exit_status"] = out.returncode
+        payload["error"] = (
+            out.stderr.strip() or out.stdout.strip() or "smartctl failed"
+        )
+        return payload
+    current_failure_bits = out.returncode & 0b00011000
+    historical_failure_bits = out.returncode & 0b11100000
+    if current_failure_bits:
+        payload["ok"] = False
+        payload["health_known"] = True
+        payload["health_failed"] = True
+    elif health_match:
+        health_status = health_match.group(1).upper().rstrip("!")
+        payload["ok"] = health_status in {"PASSED", "OK"}
+        payload["health_known"] = True
+        payload["health_failed"] = not payload["ok"]
+    elif out.returncode != 0:
         payload["error"] = out.stderr.strip() or out.stdout.strip() or "smartctl failed"
         return payload
+    else:
+        payload["error"] = "smartctl health status unavailable"
+        return payload
 
-    payload["ok"] = "PASSED" in out.stdout
+    if out.returncode != 0:
+        payload["smartctl_exit_status"] = out.returncode
+    if historical_failure_bits:
+        payload["smartctl_historical_failure_bits"] = historical_failure_bits
     temp_match = re.search(
         r"^194\s+Temperature_Celsius\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(\d+)",
         out.stdout,
@@ -367,7 +598,7 @@ def _smartctl_health(device: str) -> dict[str, Any]:
 
 def _nvme_smart(device: str) -> dict[str, Any]:
     out = _run(["nvme", "smart-log", "-o", "json", device])
-    payload: dict[str, Any] = {"device": device, "ok": False}
+    payload = _unknown_disk_payload(device)
     if out.returncode != 0:
         payload["error"] = out.stderr.strip() or out.stdout.strip() or "nvme smart-log failed"
         return payload
@@ -379,6 +610,8 @@ def _nvme_smart(device: str) -> dict[str, Any]:
 
     crit = int(data.get("critical_warning", 0))
     payload["ok"] = crit == 0
+    payload["health_known"] = True
+    payload["health_failed"] = not payload["ok"]
     temp_k = data.get("temperature")
     if isinstance(temp_k, (int, float)):
         payload["temp_c"] = round(float(temp_k) - 273.15, 1)
@@ -395,7 +628,14 @@ def _edac_status() -> dict[str, Any]:
         modules = ""
 
     edac_loaded = "amd64_edac" in modules or "edac_mce_amd" in modules
-    status: dict[str, Any] = {"loaded": edac_loaded, "ce": None, "ue": None}
+    status: dict[str, Any] = {
+        "loaded": edac_loaded,
+        "counters_available": False,
+        "ce": None,
+        "ue": None,
+        "correctable_ok": True,
+        "uncorrectable_ok": True,
+    }
 
     base = "/sys/devices/system/edac/mc"
     if not os.path.isdir(base):
@@ -403,11 +643,13 @@ def _edac_status() -> dict[str, Any]:
 
     ce = 0
     ue = 0
-    found = False
-    for entry in os.listdir(base):
-        if not entry.startswith("mc"):
-            continue
-        found = True
+    ce_samples = 0
+    ue_samples = 0
+    controllers = [entry for entry in os.listdir(base) if entry.startswith("mc")]
+    if not controllers:
+        return status
+    all_counters_available = True
+    for entry in controllers:
         for counter, total in (("ce_count", "ce"), ("ue_count", "ue")):
             path = os.path.join(base, entry, counter)
             try:
@@ -415,14 +657,19 @@ def _edac_status() -> dict[str, Any]:
                     val = int(f.read().strip() or "0")
                 if total == "ce":
                     ce += val
+                    ce_samples += 1
                 else:
                     ue += val
-            except OSError:
-                continue
-
-    if found:
+                    ue_samples += 1
+            except (OSError, ValueError):
+                all_counters_available = False
+    status["counters_available"] = all_counters_available
+    if ce_samples:
         status["ce"] = ce
+        status["correctable_ok"] = ce == 0
+    if ue_samples:
         status["ue"] = ue
+        status["uncorrectable_ok"] = ue == 0
     return status
 
 
@@ -467,10 +714,63 @@ def _filesystem_stats(path: str) -> dict[str, Any]:
     return payload
 
 
+def _zfs_dataset_stats(dataset: str) -> dict[str, Any]:
+    properties = ZFS_DATASET_PROPERTIES
+    result = _run(
+        [
+            "zfs",
+            "get",
+            "-H",
+            "-p",
+            "-o",
+            "property,value",
+            ",".join(properties),
+            dataset,
+        ]
+    )
+    payload = _unknown_dataset_payload(dataset)
+    if result.returncode != 0:
+        payload["ok"] = False
+        payload["error"] = result.stderr.strip() or result.stdout.strip() or "zfs get failed"
+        return payload
+
+    values: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        parts = line.split("\t", maxsplit=1)
+        if len(parts) == 2:
+            values[parts[0]] = parts[1]
+
+    missing = sorted(set(properties) - set(values))
+    if missing:
+        payload["ok"] = False
+        payload["error"] = f"missing ZFS properties: {', '.join(missing)}"
+        return payload
+
+    for property_name, output_name in properties.items():
+        raw = values[property_name]
+        if raw in {"none", "-"} or (
+            raw == "0"
+            and property_name in {"quota", "refquota", "reservation", "refreservation"}
+        ):
+            payload[output_name] = None
+            continue
+        try:
+            payload[output_name] = int(raw)
+        except ValueError:
+            payload["ok"] = False
+            payload["error"] = f"ZFS property {property_name} was not numeric: {raw}"
+            return payload
+
+    payload["ok"] = True
+    payload["metrics_known"] = True
+    return payload
+
+
 def main() -> int:
     pools: list[str] = json.loads(r'''{{ nyxmon_storage_exporter_pools | to_json }}''')
     disks: list[dict[str, Any]] = json.loads(r'''{{ nyxmon_storage_exporter_disks | to_json }}''')
     filesystems: list[dict[str, Any]] = json.loads(r'''{{ nyxmon_storage_exporter_filesystems | to_json }}''')
+    zfs_datasets: list[dict[str, Any]] = json.loads(r'''{{ nyxmon_storage_exporter_zfs_datasets | default([]) | to_json }}''')
 
     quiet = _in_quiet_hours()
     skip_pools = set(QUIET_SKIP_POOLS) if quiet else set()
@@ -482,6 +782,13 @@ def main() -> int:
     }
     payload["pools"] = _zpool_list(pools, skip_pools)
 
+    now_ts = _now_ts()
+    probe_cache = _read_json_file(POOL_CACHE_PATH)
+    disks_cache = probe_cache.get("disks")
+    if not isinstance(disks_cache, dict):
+        disks_cache = {}
+        probe_cache["disks"] = disks_cache
+    disk_cache_changed = False
     disk_results: list[dict[str, Any]] = []
     disks_by_name: dict[str, dict[str, Any]] = {}
     for disk in disks:
@@ -491,7 +798,20 @@ def main() -> int:
         if not device:
             continue
         if quiet and dtype in skip_disk_types:
-            res = {"device": device, "ok": None, "skipped": True, "reason": "quiet_hours"}
+            cached_payload = (
+                _cached_disk_payload(str(name), device, probe_cache, now_ts)
+                if name
+                else None
+            )
+            res = (
+                cached_payload
+                if cached_payload is not None
+                else {
+                    **_unknown_disk_payload(device),
+                    "skipped": True,
+                    "reason": "quiet_hours",
+                }
+            )
         elif dtype == "nvme":
             res = _nvme_smart(device)
         else:
@@ -502,6 +822,9 @@ def main() -> int:
         disk_results.append(res)
         if name:
             disks_by_name[name] = res
+            if _disk_sample_cacheable(res):
+                disks_cache[name] = {"ts": now_ts, "sample": _probe_cache_sample(res)}
+                disk_cache_changed = True
     payload["disks"] = disk_results
     payload["disks_by_name"] = disks_by_name
 
@@ -518,6 +841,51 @@ def main() -> int:
         filesystems_by_name[name] = result
     payload["filesystems"] = filesystem_results
     payload["filesystems_by_name"] = filesystems_by_name
+
+    zfs_dataset_results: list[dict[str, Any]] = []
+    zfs_datasets_by_name: dict[str, dict[str, Any]] = {}
+    datasets_cache = probe_cache.get("datasets")
+    if not isinstance(datasets_cache, dict):
+        datasets_cache = {}
+        probe_cache["datasets"] = datasets_cache
+    dataset_cache_changed = False
+    for item in zfs_datasets:
+        name = str(item.get("name", "")).strip()
+        dataset = str(item.get("dataset", "")).strip()
+        if not name or not dataset:
+            continue
+        pool_name = dataset.split("/", maxsplit=1)[0]
+        if quiet and pool_name in skip_pools:
+            cached_payload = _cached_dataset_payload(
+                name, dataset, probe_cache, now_ts
+            )
+            result = (
+                cached_payload
+                if cached_payload is not None
+                else {
+                    **_unknown_dataset_payload(dataset),
+                    "skipped": True,
+                    "reason": "quiet_hours",
+                }
+            )
+        else:
+            result = _zfs_dataset_stats(dataset)
+        result["name"] = name
+        zfs_dataset_results.append(result)
+        zfs_datasets_by_name[name] = result
+        if _dataset_sample_cacheable(result):
+            datasets_cache[name] = {"ts": now_ts, "sample": _probe_cache_sample(result)}
+            dataset_cache_changed = True
+    cache_changed = disk_cache_changed or dataset_cache_changed
+    if cache_changed and not _write_json_file(POOL_CACHE_PATH, probe_cache):
+        for disk_payload in disk_results:
+            if _disk_sample_cacheable(disk_payload):
+                disk_payload["cache_write_error"] = True
+        for dataset_payload in zfs_dataset_results:
+            if _dataset_sample_cacheable(dataset_payload):
+                dataset_payload["cache_write_error"] = True
+    payload["zfs_datasets"] = zfs_dataset_results
+    payload["zfs_datasets_by_name"] = zfs_datasets_by_name
 
     payload["quiet_hours"]["spindown"] = _run_quiet_hours_spindown(quiet)
     payload["ecc"] = _edac_status()

@@ -43,6 +43,10 @@ When `zfs_dataset_macos_compat: true`, the following properties are set:
 | `refquota` | Reference quota | e.g., `6T` |
 | `atime` | Access time updates | `off` for performance |
 
+Size properties are compared in parseable bytes. Decimal binary-unit values
+such as `1.1T` use ZFS's truncating conversion, avoiding perpetual one-byte
+changes caused by rounded human-size conversion.
+
 ## Example Playbook
 
 ```yaml
@@ -124,6 +128,12 @@ Then in your playbook:
 - **casesensitivity**: Can only be set at creation time. If you need to change it, destroy and recreate the dataset.
 - **Encryption**: Datasets inherit encryption from parent pool automatically
 - **Quotas**: Use `refquota` for quotas that don't include snapshots, `quota` to include snapshots
+- **Automatic zvol reservations**: OpenZFS does not expose whether a numeric
+  `refreservation` originated from `auto`. When configured as `auto`, the role
+  reapplies that symbolic setting on each run rather than incorrectly treating
+  a coincidentally equal numeric reservation as proof of the policy. A
+  successful forced reapply is reported as unchanged so idempotence checks stay
+  meaningful.
 
 ## Dependencies
 

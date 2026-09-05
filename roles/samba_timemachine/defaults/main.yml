@@ -13,8 +13,9 @@ samba_tm_path: "/fast/timemachine"
 # Share name as it appears in Finder
 samba_tm_share_name: "timemachine"
 
-# Time Machine quota (fruit:time machine max size)
-# This is enforced at the Samba level, separate from ZFS refquota
+# Time Machine quota (fruit:time machine max size). Samba estimates share use
+# from sparsebundle band counts. It does not resize their virtual APFS images
+# and is not a substitute for a snapshot-inclusive ZFS parent quota.
 samba_tm_max_size: "6T"
 
 # Share visibility

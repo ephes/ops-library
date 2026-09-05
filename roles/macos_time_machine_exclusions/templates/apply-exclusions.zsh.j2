@@ -1,0 +1,30 @@
+#!/bin/zsh
+set -u
+
+apply_exclusion() {
+  local tm_path="$1"
+  local exclusion_state
+
+  [[ -e "$tm_path" ]] || return 0
+
+  if ! exclusion_state=$(/usr/bin/tmutil isexcluded "$tm_path" 2>&1); then
+    print -u2 -- "Unable to inspect Time Machine exclusion: $tm_path: $exclusion_state"
+    return 1
+  fi
+  if print -r -- "$exclusion_state" | /usr/bin/grep -Fq '[Excluded]'; then
+    return 0
+  fi
+  if ! /usr/bin/tmutil addexclusion "$tm_path"; then
+    print -u2 -- "Unable to add Time Machine exclusion: $tm_path"
+    return 1
+  fi
+  print -r -- "changed=true path=$tm_path"
+}
+
+overall_status=0
+
+{% for path in macos_time_machine_exclusions_paths %}
+apply_exclusion {{ path | quote }} || overall_status=1
+{% endfor %}
+
+exit "$overall_status"

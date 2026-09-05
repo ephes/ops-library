@@ -20,6 +20,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OpenClaw's internal Doctor backup directory writable by the container
   identity.
 
+### Added
+
+- Added `macos_time_machine_exclusions`, a non-destructive daily LaunchAgent
+  that reapplies user-scoped `tmutil` exclusions to configured reproducible
+  paths when build directories are recreated, continues through per-path
+  failures, tolerates transient launchd bootout races while retrying the
+  authoritative bootstrap, reports newly applied exclusions as changes, leaves
+  standard macOS directory modes intact, and rejects deployment under the wrong
+  user or home.
+- `nyxmon_storage_exporter` can now publish named ZFS dataset usage,
+  availability, quota, reservation, and snapshot-retained byte metrics for
+  stable Nyxmon JSONPaths and proactive dataset-capacity alerts. Parseable
+  `zpool` output supplies exact byte fields, while quiet-hours pool, dataset,
+  and disk policies avoid HDD wakeups and preserve cached health signals.
+  Dataset payloads retain a stable nullable metric schema plus `metrics_known`
+  when probes are skipped or fail.
+- Added the `local.ops_library.zfs_size_to_bytes` filter for exact ZFS binary
+  size normalization. It truncates fractional values the same way ZFS does,
+  avoiding one-byte idempotency drift from rounded generic size filters.
+
+### Changed
+
+- **Breaking output-format clarification:** `nyxmon_storage_exporter` now runs
+  `zpool list -H -p`, so the existing `pools.<name>.size`, `alloc`, and `free`
+  keys contain raw byte strings and `cap` contains a raw percentage number
+  string without `%`. Consumers should use the numeric `size_bytes`,
+  `alloc_bytes`, `free_bytes`, and `cap_ratio` keys instead; `cap_ratio` is
+  calculated from exact allocation and size bytes rather than whole-percent
+  `cap` output.
+
 ### Fixed
 
 - `nyxmon_deploy` now restricts its SQLite database family to the service
@@ -36,6 +66,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   boot trigger is consumed and no service-relative trigger remains. Both
   timers now have independent activation-relative and wall-clock anchors, and
   both roles repair and reject an unarmed timer during deployment.
+- `zfs_pool_deploy` and `zfs_dataset` now compare exact byte-normalized dataset
+  size properties using ZFS's truncating conversion, so both exact values such
+  as `quota: 6.5T` and fractional values such as `quota: 1.1T` remain
+  idempotent when `zfs get -p` renders integer bytes. Symbolic `auto` is forced
+  only for `refreservation`; properties that report `auto` directly remain
+  idempotent. Native YAML integers are normalized without regex type errors,
+  and the forced symbolic reapply no longer reports a false configuration
+  change when it succeeds.
+- `nyxmon_storage_exporter` now distinguishes missing quiet-hours SMART evidence
+  from an observed disk failure, and distinguishes unavailable EDAC counters
+  from observed correctable or uncorrectable errors. This prevents monitoring
+  gaps from masquerading as critical hardware failures while keeping real
+  failures alertable. Current smartctl failure bits remain critical; signal
+  exits and command-launch failure codes remain unknown evidence; and historical
+  attribute/error/self-test bits are exported separately.
+- `nyxmon_storage_exporter` pool payloads now keep a stable nullable schema and
+  separate `health_known` from `health_failed`, so an expired quiet-hours cache
+  warns about missing evidence without impersonating a pool failure.
+- `nyxmon_storage_exporter` now caches positively observed SMART failures even
+  when smartctl also ended abnormally, preserving critical evidence through the
+  following quiet-hours window.
+- Pool, disk, and dataset payloads now expose stable cache metadata keys on
+  active, cached, and uncached-fallback samples, so freshness JSONPaths do not
+  disappear when probe state changes.
+- Optional pool capacity policies now expose evidence-aware warning/critical
+  failure booleans, allowing missing capacity evidence to warn without creating
+  a false critical while still evaluating exact ratio and integer free-byte
+  thresholds. Policies support both explicit pool lists and pool auto-discovery.
+- Disk payloads now also keep `temp_c` present with `null` when no temperature
+  evidence is available, including legacy-cache and quiet-hours fallbacks.
+- Quiet-hours cache reuse now verifies the configured disk or dataset identity,
+  and disk/dataset cache updates share one final write so write-error diagnostics
+  describe the actual persisted state.
 - `traefik_deploy` now creates its ACME directory as `0700` in the original
   directory loop. Previously every run briefly changed it to `0755` and then
   back to `0700`, producing false idempotency changes and momentarily making
