@@ -84,6 +84,17 @@ echoport_scheduler_interval: "*/5"  # Run every 5 minutes by default
 echoport_cleanup_enabled: true
 echoport_cleanup_hour: "3"  # Run at 3am (after 2am backups complete)
 
+# MinIO access for the cleanup job. The cleanup cron runs as echoport_user and
+# deletes expired archives through mc, so that user needs its own mc alias.
+# When cleanup is enabled the URL and credentials are required; the role
+# configures the alias for echoport_user and verifies it can list the bucket.
+echoport_minio_mc_path: "/usr/local/bin/mc"
+echoport_minio_alias: "minio"
+echoport_minio_url: ""  # Must be provided when echoport_cleanup_enabled
+echoport_minio_access_key: ""  # Must be provided when echoport_cleanup_enabled
+echoport_minio_secret_key: ""  # Must be provided when echoport_cleanup_enabled
+echoport_minio_verify_bucket: "backups"
+
 # Nightly staging DB refresh (best-effort, warning-only)
 echoport_staging_db_refresh_enabled: false
 echoport_staging_db_refresh_hour: "2"

@@ -25,6 +25,78 @@
     access_time: preserve
   when: echoport_scheduler_enabled
 
+- name: scheduler | Require MinIO access for retention cleanup
+  ansible.builtin.assert:
+    that:
+      - echoport_minio_alias | length > 0
+      - echoport_minio_url | length > 0
+      - echoport_minio_access_key | length > 0
+      - echoport_minio_secret_key | length > 0
+      - echoport_minio_secret_key != "CHANGEME"
+    fail_msg: >-
+      echoport_cleanup_enabled requires echoport_minio_url,
+      echoport_minio_access_key and echoport_minio_secret_key so the cleanup
+      job can delete expired archives as {{ echoport_user }}.
+  when: echoport_cleanup_enabled
+
+- name: scheduler | Read current mc alias for cleanup user
+  ansible.builtin.command:
+    argv:
+      - "{{ echoport_minio_mc_path }}"
+      - --json
+      - alias
+      - list
+      - "{{ echoport_minio_alias }}"
+  become: true
+  become_user: "{{ echoport_user }}"
+  register: _echoport_mc_alias_current
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: echoport_cleanup_enabled
+
+- name: scheduler | Configure mc alias for cleanup user
+  ansible.builtin.command:
+    argv:
+      - "{{ echoport_minio_mc_path }}"
+      - alias
+      - set
+      - "{{ echoport_minio_alias }}"
+      - "{{ echoport_minio_url }}"
+      - "{{ echoport_minio_access_key }}"
+      - "{{ echoport_minio_secret_key }}"
+  become: true
+  become_user: "{{ echoport_user }}"
+  no_log: true
+  vars:
+    _echoport_mc_alias_json: >-
+      {{
+        (_echoport_mc_alias_current.stdout | default('') | from_json)
+        if (_echoport_mc_alias_current.rc | default(1)) == 0
+          and (_echoport_mc_alias_current.stdout | default('') | trim | length) > 0
+        else {}
+      }}
+  when:
+    - echoport_cleanup_enabled
+    - >-
+      _echoport_mc_alias_json.URL | default('') != echoport_minio_url
+      or _echoport_mc_alias_json.accessKey | default('') != echoport_minio_access_key
+      or _echoport_mc_alias_json.secretKey | default('') != echoport_minio_secret_key
+
+- name: scheduler | Verify cleanup user can reach the MinIO bucket
+  ansible.builtin.command:
+    argv:
+      - "{{ echoport_minio_mc_path }}"
+      - ls
+      - "{{ echoport_minio_alias }}/{{ echoport_minio_verify_bucket }}"
+  become: true
+  become_user: "{{ echoport_user }}"
+  changed_when: false
+  no_log: true
+  when:
+    - echoport_cleanup_enabled
+    - echoport_minio_verify_bucket | length > 0
+
 - name: scheduler | Setup cleanup cron job
   ansible.builtin.cron:
     name: "Echoport cleanup old backups"

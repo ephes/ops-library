@@ -53,3 +53,13 @@ Verify with:
 tmutil isexcluded /Users/example/project/build
 launchctl print gui/$(id -u)/de.wersdoerfer.time-machine-exclusions
 ```
+
+## Limitations
+
+Paths protected by macOS privacy controls (TCC), such as `~/Library/Containers`
+and `~/Library/Mail`, are not visible to the launchd-run agent. For those the
+agent reports the path as included and `tmutil addexclusion` fails with
+`Error (100001)` / `EINVAL`, and the nightly run exits non-zero. Do not list
+such paths here. Apply a one-time sticky exclusion from an SSH or Terminal
+session that has Full Disk Access instead, and confirm with `tmutil isexcluded`;
+the exclusion follows the inode, so it persists until the bundle is recreated.

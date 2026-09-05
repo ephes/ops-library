@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `macos_time_machine_exclusions` documents that paths under macOS
+  privacy-protected locations such as `~/Library/Containers` cannot be managed
+  by the launchd-run agent and must receive a one-time sticky exclusion from a
+  session with Full Disk Access.
+- `echoport_deploy` now provisions and verifies the `mc` alias that the
+  `cleanup_old_backups` cron uses as the service user, and exports
+  `MINIO_MC_PATH` / `MINIO_ALIAS` to the application environment. The alias
+  previously existed only for the root-run upload scripts, so every scheduled
+  deletion failed silently and MinIO retention never applied.
+
 ### Changed
 
 - `wagtail_deploy` now defaults to Python 3.14.7, keeping its uv-managed

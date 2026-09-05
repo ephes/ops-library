@@ -43,6 +43,12 @@ echoport_scheduler_interval: "*/5"
 
 echoport_cleanup_enabled: true
 echoport_cleanup_hour: "3"
+echoport_minio_mc_path: "/usr/local/bin/mc"
+echoport_minio_alias: "minio"
+echoport_minio_url: ""            # required when cleanup is enabled
+echoport_minio_access_key: ""     # required when cleanup is enabled
+echoport_minio_secret_key: ""     # required when cleanup is enabled
+echoport_minio_verify_bucket: "backups"
 
 echoport_staging_db_refresh_enabled: false
 echoport_staging_db_refresh_hour: "2"
@@ -57,6 +63,16 @@ echoport_staging_db_refresh_triggered_by: "staging-refresh-scheduler"
 - In `ops-control` playbooks, list variables replace role defaults (they do not merge), so
   if overriding `echoport_allowed_path_prefixes`, provide the full intended list.
 - Keep sensitive values in the private control repo (SOPS), not in this public role.
+- The retention cleanup cron runs `cleanup_old_backups` as `echoport_user` and
+  deletes expired archives with `mc`, so that user needs its own `mc` alias.
+  When `echoport_cleanup_enabled` is true the role requires
+  `echoport_minio_url`, `echoport_minio_access_key` and
+  `echoport_minio_secret_key`, configures the alias for `echoport_user`
+  (idempotently, only when URL or credentials differ), verifies it can list
+  `echoport_minio_verify_bucket`, and writes `MINIO_MC_PATH` / `MINIO_ALIAS`
+  into the application `.env`. Without this alias every scheduled deletion
+  fails and `mc` reports a missing local path; check
+  `/home/echoport/logs/cleanup.log` for `Complete with errors`.
 
 ## Example
 
