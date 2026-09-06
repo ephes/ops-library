@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import plistlib
 import re
 import subprocess
 import sys
@@ -50,6 +51,27 @@ ZFS_DATASET_PROPERTIES = {
     "reservation": "reservation_bytes",
     "refreservation": "refreservation_bytes",
 }
+TIMEMACHINE_BUNDLE_DIRS: list[str] = json.loads(
+    r'''{{ nyxmon_storage_exporter_timemachine_bundle_dirs | default([]) | to_json }}'''
+)
+TIMEMACHINE_BUNDLE_SUFFIX = ".sparsebundle"
+TIMEMACHINE_INFO_PLIST = "Info.plist"
+TIMEMACHINE_RESULTS_PLIST = "com.apple.TimeMachine.Results.plist"
+TIMEMACHINE_HISTORY_PLIST = "com.apple.TimeMachine.SnapshotHistory.plist"
+TIMEMACHINE_HISTORY_DATE_KEY = "com.apple.backupd.SnapshotCompletionDate"
+TIMEMACHINE_BUNDLE_NUMERIC_KEYS = (
+    "bytes_used",
+    "client_bytes_available",
+    "last_bytes_to_copy",
+    "band_count",
+    "band_size_bytes",
+    "bands_bytes",
+    "backup_count",
+    "oldest_backup_ts",
+    "newest_backup_ts",
+    "newest_backup_age_days",
+    "history_days",
+)
 
 
 def _run(argv: list[str]) -> subprocess.CompletedProcess[str]:
@@ -331,6 +353,43 @@ def _unknown_dataset_payload(dataset: str) -> dict[str, Any]:
         "cache_timestamp": None,
         "cache_age_seconds": None,
         **{output_name: None for output_name in ZFS_DATASET_PROPERTIES.values()},
+    }
+
+
+def _cached_timemachine_bundle_payload(
+    name: str, path: str, probe_cache: dict[str, Any], now_ts: int
+) -> dict[str, Any] | None:
+    payload = _cached_probe_payload("timemachine_bundles", name, probe_cache, now_ts)
+    if payload is None or payload.get("path") != path:
+        return None
+    normalized = _unknown_timemachine_bundle_payload(name, path)
+    normalized.update(payload)
+    if "metrics_known" not in payload:
+        normalized["metrics_known"] = payload.get("ok") is True
+    newest_ts = normalized.get("newest_backup_ts")
+    if isinstance(newest_ts, int):
+        # Age keeps advancing while the cached sample is reused.
+        normalized["newest_backup_age_days"] = round((now_ts - newest_ts) / 86400, 2)
+    return normalized
+
+
+def _timemachine_bundle_sample_cacheable(payload: dict[str, Any]) -> bool:
+    """Cache only successfully observed bundle metrics."""
+    return not payload.get("skipped") and payload.get("ok") is True
+
+
+def _unknown_timemachine_bundle_payload(name: str, path: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "bundle": os.path.basename(path),
+        "path": path,
+        "ok": None,
+        "metrics_known": False,
+        "running": None,
+        "cached": False,
+        "cache_timestamp": None,
+        "cache_age_seconds": None,
+        **{key: None for key in TIMEMACHINE_BUNDLE_NUMERIC_KEYS},
     }
 
 
@@ -766,6 +825,151 @@ def _zfs_dataset_stats(dataset: str) -> dict[str, Any]:
     return payload
 
 
+def _timemachine_bundle_name(bundle_basename: str) -> str:
+    """Stable `timemachine_bundles_by_name` key for a sparsebundle directory.
+
+    Strips the `.sparsebundle` suffix and replaces remaining dots so the name
+    can be addressed with dotted JSONPaths such as
+    `$.timemachine_bundles_by_name.<name>.ok`.
+    """
+    name = bundle_basename
+    if name.endswith(TIMEMACHINE_BUNDLE_SUFFIX):
+        name = name[: -len(TIMEMACHINE_BUNDLE_SUFFIX)]
+    return name.replace(".", "_")
+
+
+def _read_plist(path: str) -> dict[str, Any]:
+    with open(path, "rb") as f:
+        data = plistlib.load(f)
+    if not isinstance(data, dict):
+        raise ValueError("plist root is not a dictionary")
+    return data
+
+
+def _plist_int(data: dict[str, Any], key: str) -> int | None:
+    value = data.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return int(value)
+
+
+def _plist_datetime_ts(value: Any) -> int | None:
+    """Return the UTC epoch of a plist date; plistlib yields naive UTC datetimes."""
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return int(value.timestamp())
+
+
+def _timemachine_bundle_stats(path: str, now_ts: int) -> dict[str, Any]:
+    """Read-only probe of one Time Machine sparsebundle.
+
+    Reads the two small Time Machine plists plus `Info.plist` and counts the
+    `bands/` directory entries. It never opens a band, mounts the bundle, or
+    walks the bundle tree.
+    """
+    name = _timemachine_bundle_name(os.path.basename(path))
+    payload = _unknown_timemachine_bundle_payload(name, path)
+    errors: list[str] = []
+
+    try:
+        info = _read_plist(os.path.join(path, TIMEMACHINE_INFO_PLIST))
+        payload["band_size_bytes"] = _plist_int(info, "band-size")
+        if payload["band_size_bytes"] is None:
+            errors.append(f"{TIMEMACHINE_INFO_PLIST}: band-size missing or non-numeric")
+    except Exception as err:  # noqa: BLE001 - one bad plist must not sink the payload
+        errors.append(f"{TIMEMACHINE_INFO_PLIST}: {err}")
+
+    try:
+        with os.scandir(os.path.join(path, "bands")) as entries:
+            payload["band_count"] = sum(1 for _ in entries)
+    except OSError as err:
+        errors.append(f"bands: {err}")
+
+    if isinstance(payload["band_count"], int) and isinstance(
+        payload["band_size_bytes"], int
+    ):
+        payload["bands_bytes"] = payload["band_count"] * payload["band_size_bytes"]
+
+    try:
+        results = _read_plist(os.path.join(path, TIMEMACHINE_RESULTS_PLIST))
+        payload["bytes_used"] = _plist_int(results, "BytesUsed")
+        payload["client_bytes_available"] = _plist_int(results, "BytesAvailable")
+        payload["last_bytes_to_copy"] = _plist_int(results, "BytesToCopy")
+        running = results.get("Running")
+        payload["running"] = running if isinstance(running, bool) else None
+        if payload["bytes_used"] is None:
+            errors.append(f"{TIMEMACHINE_RESULTS_PLIST}: BytesUsed missing or non-numeric")
+    except Exception as err:  # noqa: BLE001 - one bad plist must not sink the payload
+        errors.append(f"{TIMEMACHINE_RESULTS_PLIST}: {err}")
+
+    try:
+        history = _read_plist(os.path.join(path, TIMEMACHINE_HISTORY_PLIST))
+        snapshots = history.get("Snapshots")
+        if not isinstance(snapshots, list):
+            raise ValueError("Snapshots is not a list")
+        completion_ts = sorted(
+            ts
+            for ts in (
+                _plist_datetime_ts(item.get(TIMEMACHINE_HISTORY_DATE_KEY))
+                for item in snapshots
+                if isinstance(item, dict)
+            )
+            if ts is not None
+        )
+        payload["backup_count"] = len(completion_ts)
+        if completion_ts:
+            payload["oldest_backup_ts"] = completion_ts[0]
+            payload["newest_backup_ts"] = completion_ts[-1]
+            payload["newest_backup_age_days"] = round(
+                (now_ts - completion_ts[-1]) / 86400, 2
+            )
+            payload["history_days"] = round(
+                (completion_ts[-1] - completion_ts[0]) / 86400, 2
+            )
+        else:
+            payload["history_days"] = 0.0
+    except Exception as err:  # noqa: BLE001 - one bad plist must not sink the payload
+        errors.append(f"{TIMEMACHINE_HISTORY_PLIST}: {err}")
+
+    if errors:
+        payload["ok"] = False
+        payload["error"] = "; ".join(errors)
+        return payload
+
+    payload["ok"] = True
+    payload["metrics_known"] = True
+    return payload
+
+
+def _scan_timemachine_bundle_dirs(dirs: list[str]) -> tuple[dict[str, Any], list[str]]:
+    """List `*.sparsebundle` directories directly under each configured directory."""
+    scan: dict[str, Any] = {"ok": True, "bundle_count": 0, "dirs": []}
+    bundle_paths: list[str] = []
+    for directory in dirs:
+        entry: dict[str, Any] = {"path": directory, "ok": False, "bundle_count": 0}
+        try:
+            with os.scandir(directory) as entries:
+                found = sorted(
+                    os.path.join(directory, item.name)
+                    for item in entries
+                    if item.name.endswith(TIMEMACHINE_BUNDLE_SUFFIX)
+                    and item.is_dir(follow_symlinks=False)
+                )
+        except OSError as err:
+            entry["error"] = str(err)
+            scan["ok"] = False
+            scan["dirs"].append(entry)
+            continue
+        entry["ok"] = True
+        entry["bundle_count"] = len(found)
+        scan["bundle_count"] += len(found)
+        scan["dirs"].append(entry)
+        bundle_paths.extend(found)
+    return scan, bundle_paths
+
+
 def main() -> int:
     pools: list[str] = json.loads(r'''{{ nyxmon_storage_exporter_pools | to_json }}''')
     disks: list[dict[str, Any]] = json.loads(r'''{{ nyxmon_storage_exporter_disks | to_json }}''')
@@ -876,7 +1080,47 @@ def main() -> int:
         if _dataset_sample_cacheable(result):
             datasets_cache[name] = {"ts": now_ts, "sample": _probe_cache_sample(result)}
             dataset_cache_changed = True
-    cache_changed = disk_cache_changed or dataset_cache_changed
+    timemachine_bundle_results: list[dict[str, Any]] = []
+    timemachine_bundles_by_name: dict[str, dict[str, Any]] = {}
+    bundles_cache = probe_cache.get("timemachine_bundles")
+    if not isinstance(bundles_cache, dict):
+        bundles_cache = {}
+        probe_cache["timemachine_bundles"] = bundles_cache
+    bundle_cache_changed = False
+    timemachine_scan, timemachine_bundle_paths = _scan_timemachine_bundle_dirs(
+        TIMEMACHINE_BUNDLE_DIRS
+    )
+    for bundle_path in timemachine_bundle_paths:
+        name = _timemachine_bundle_name(os.path.basename(bundle_path))
+        # Bundles on a skipped pool follow the dataset quiet-hours rule; the
+        # pool is taken from the first path component (ZFS default mountpoints).
+        pool_name = bundle_path.strip("/").split("/", maxsplit=1)[0]
+        if quiet and pool_name in skip_pools:
+            cached_payload = _cached_timemachine_bundle_payload(
+                name, bundle_path, probe_cache, now_ts
+            )
+            result = (
+                cached_payload
+                if cached_payload is not None
+                else {
+                    **_unknown_timemachine_bundle_payload(name, bundle_path),
+                    "skipped": True,
+                    "reason": "quiet_hours",
+                }
+            )
+        else:
+            result = _timemachine_bundle_stats(bundle_path, now_ts)
+        if name in timemachine_bundles_by_name:
+            result["ok"] = False
+            result["metrics_known"] = False
+            result["error"] = f"duplicate bundle name {name}"
+            timemachine_scan["ok"] = False
+        timemachine_bundle_results.append(result)
+        timemachine_bundles_by_name[name] = result
+        if _timemachine_bundle_sample_cacheable(result):
+            bundles_cache[name] = {"ts": now_ts, "sample": _probe_cache_sample(result)}
+            bundle_cache_changed = True
+    cache_changed = disk_cache_changed or dataset_cache_changed or bundle_cache_changed
     if cache_changed and not _write_json_file(POOL_CACHE_PATH, probe_cache):
         for disk_payload in disk_results:
             if _disk_sample_cacheable(disk_payload):
@@ -884,8 +1128,14 @@ def main() -> int:
         for dataset_payload in zfs_dataset_results:
             if _dataset_sample_cacheable(dataset_payload):
                 dataset_payload["cache_write_error"] = True
+        for bundle_payload in timemachine_bundle_results:
+            if _timemachine_bundle_sample_cacheable(bundle_payload):
+                bundle_payload["cache_write_error"] = True
     payload["zfs_datasets"] = zfs_dataset_results
     payload["zfs_datasets_by_name"] = zfs_datasets_by_name
+    payload["timemachine_bundle_scan"] = timemachine_scan
+    payload["timemachine_bundles"] = timemachine_bundle_results
+    payload["timemachine_bundles_by_name"] = timemachine_bundles_by_name
 
     payload["quiet_hours"]["spindown"] = _run_quiet_hours_spindown(quiet)
     payload["ecc"] = _edac_status()

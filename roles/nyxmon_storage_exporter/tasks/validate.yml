@@ -151,6 +151,40 @@
     fail_msg: "nyxmon_storage_exporter_zfs_datasets names must be unique"
   when: nyxmon_storage_exporter_zfs_datasets | length > 0
 
+- name: validate | Assert Time Machine bundle directories is a list (not string)
+  ansible.builtin.assert:
+    that:
+      - nyxmon_storage_exporter_timemachine_bundle_dirs is sequence
+      - nyxmon_storage_exporter_timemachine_bundle_dirs is not string
+      - nyxmon_storage_exporter_timemachine_bundle_dirs is not mapping
+    fail_msg: >-
+      nyxmon_storage_exporter_timemachine_bundle_dirs must be a list, got:
+      {{ nyxmon_storage_exporter_timemachine_bundle_dirs | type_debug }}
+
+- name: validate | Assert each Time Machine bundle directory is an absolute path
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item | length > 1
+      - item.startswith("/")
+    fail_msg: >-
+      nyxmon_storage_exporter_timemachine_bundle_dirs[{{ idx }}] must be a
+      non-empty absolute directory path
+  loop: "{{ nyxmon_storage_exporter_timemachine_bundle_dirs }}"
+  loop_control:
+    index_var: idx
+    label: "bundle dir {{ idx }}"
+  when: nyxmon_storage_exporter_timemachine_bundle_dirs | length > 0
+
+- name: validate | Assert Time Machine bundle directories are unique
+  ansible.builtin.assert:
+    that:
+      - >-
+        nyxmon_storage_exporter_timemachine_bundle_dirs | unique | length
+        == nyxmon_storage_exporter_timemachine_bundle_dirs | length
+    fail_msg: "nyxmon_storage_exporter_timemachine_bundle_dirs entries must be unique"
+  when: nyxmon_storage_exporter_timemachine_bundle_dirs | length > 0
+
 - name: validate | Assert quiet-hours spindown interval is valid
   ansible.builtin.assert:
     that:

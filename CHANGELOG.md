@@ -13,7 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `voxhelm_lane_scheduler_non_interactive_slots` (both default `1`) for
   Voxhelm's bounded inference slots (Voxhelm decision D-24): one reserved
   interactive slot plus one non-interactive slot, rendered into `voxhelm.env`.
-
+- `nyxmon_storage_exporter` can now report per-client Time Machine footprint
+  from the server side. `nyxmon_storage_exporter_timemachine_bundle_dirs`
+  lists directories to scan for `*.sparsebundle` directories; each bundle is
+  exported under `timemachine_bundles_by_name` with `bytes_used`,
+  `client_bytes_available`, `last_bytes_to_copy`, `running`, `band_count`,
+  `band_size_bytes`, `bands_bytes`, `backup_count`, `oldest_backup_ts`,
+  `newest_backup_ts`, `newest_backup_age_days`, `history_days`, `ok`,
+  `metrics_known`, and `error`, plus a `timemachine_bundle_scan` summary. The
+  probe is read-only (three small plists and a `bands/` entry count; it never
+  opens a band or mounts a bundle), a missing or unparsable plist marks only
+  that bundle `ok: false`, and bundles on a quiet-hours pool reuse the probe
+  cache like datasets.
 - Added `daybook_voice_memo_inbox_deploy`, a disabled-first macOS Aqua
   LaunchAgent role for the Daybook Apple Voice Memos importer. It installs an
   exact bundled Daybook commit, keeps source/state/log/credential boundaries

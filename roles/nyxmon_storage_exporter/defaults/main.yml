@@ -37,3 +37,6 @@ nyxmon_storage_exporter_pool_capacity_thresholds: {}
 nyxmon_storage_exporter_disks: []
 nyxmon_storage_exporter_filesystems: []
 nyxmon_storage_exporter_zfs_datasets: []
+# Directories scanned for Time Machine `*.sparsebundle` directories. Each bundle
+# is probed read-only from its Time Machine plists and band count only.
+nyxmon_storage_exporter_timemachine_bundle_dirs: []

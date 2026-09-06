@@ -1,7 +1,8 @@
 import io
 import json
+import plistlib
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,7 @@ def _load_exporter_namespace(
     disks: list[dict[str, str]] | None = None,
     pools: list[str] | None = None,
     pool_capacity_thresholds: dict[str, dict[str, float | int]] | None = None,
+    timemachine_bundle_dirs: list[str] | None = None,
 ) -> dict[str, Any]:
     env = Environment()
     env.filters["bool"] = _ansible_bool
@@ -62,6 +64,7 @@ def _load_exporter_namespace(
         nyxmon_storage_exporter_disks=disks or [],
         nyxmon_storage_exporter_filesystems=[],
         nyxmon_storage_exporter_zfs_datasets=zfs_datasets or [],
+        nyxmon_storage_exporter_timemachine_bundle_dirs=timemachine_bundle_dirs or [],
     )
     namespace: dict[str, Any] = {"__name__": "nyxmon_storage_exporter_test"}
     exec(compile(rendered, str(TEMPLATE_PATH), "exec"), namespace)
@@ -1011,3 +1014,384 @@ def test_zpool_list_marks_successful_pool_when_cache_write_fails(
 
     assert payload["tank"]["cached"] is False
     assert payload["tank"]["cache_write_error"] is True
+
+
+BAND_SIZE = 1610612736
+NOW_TS = 1_787_664_000  # 2026-08-25T13:20:00Z
+
+
+def _utc(year: int, month: int, day: int, hour: int = 0, minute: int = 0) -> datetime:
+    # plistlib stores dates as UTC and returns them as naive datetimes.
+    return datetime(year, month, day, hour, minute)
+
+
+def _write_plist(path: Path, data: dict[str, Any]) -> None:
+    with open(path, "wb") as f:
+        plistlib.dump(data, f)
+
+
+def _make_bundle(
+    root: Path,
+    basename: str,
+    *,
+    bands: int = 3,
+    results: dict[str, Any] | None = None,
+    snapshots: list[datetime] | None = None,
+    info: dict[str, Any] | None = None,
+) -> Path:
+    bundle = root / basename
+    (bundle / "bands").mkdir(parents=True)
+    for index in range(bands):
+        (bundle / "bands" / format(index, "x")).write_bytes(b"")
+    if info is None:
+        info = {
+            "CFBundleInfoDictionaryVersion": "6.0",
+            "band-size": BAND_SIZE,
+            "bundle-backingstore-version": 2,
+            "diskimage-bundle-type": "com.apple.diskimage.sparsebundle",
+            "size": 16000000000000,
+        }
+    _write_plist(bundle / "Info.plist", info)
+    if results is not None:
+        _write_plist(bundle / "com.apple.TimeMachine.Results.plist", results)
+    if snapshots is not None:
+        _write_plist(
+            bundle / "com.apple.TimeMachine.SnapshotHistory.plist",
+            {
+                "Snapshots": [
+                    {
+                        "com.apple.backupd.SnapshotCompletionDate": completed,
+                        "com.apple.backupd.SnapshotName": completed.strftime(
+                            "%Y-%m-%d-%H%M%S.backup"
+                        ),
+                    }
+                    for completed in snapshots
+                ]
+            },
+        )
+    return bundle
+
+
+def _completed_results(bytes_used: int, bytes_to_copy: int) -> dict[str, Any]:
+    return {
+        "BackupStrategy": 2,
+        "BytesAvailable": 436476051456,
+        "BytesToCopy": bytes_to_copy,
+        "BytesUsed": bytes_used,
+        "ClientID": "com.apple.backupd",
+        "Running": False,
+    }
+
+
+def test_timemachine_bundle_name_is_jsonpath_safe(tmp_path: Path) -> None:
+    namespace = _load_exporter_namespace(tmp_path)
+    bundle_name = namespace["_timemachine_bundle_name"]
+
+    assert bundle_name("studio.sparsebundle") == "studio"
+    assert bundle_name("MacBook Pro von Example.sparsebundle") == "MacBook Pro von Example"
+    assert bundle_name("laptop.local.sparsebundle") == "laptop_local"
+
+
+def test_timemachine_bundle_stats_reads_plists_and_counts_bands(tmp_path: Path) -> None:
+    namespace = _load_exporter_namespace(tmp_path)
+    oldest = _utc(2025, 12, 13, 4, 54)
+    newest = _utc(2026, 8, 24, 13, 20)
+    bundle = _make_bundle(
+        tmp_path,
+        "studio.sparsebundle",
+        bands=4,
+        results=_completed_results(3034285142016, 2782527946752),
+        snapshots=[newest, oldest, _utc(2026, 3, 1, 1, 0)],
+    )
+
+    payload = namespace["_timemachine_bundle_stats"](str(bundle), NOW_TS)
+
+    assert payload["ok"] is True
+    assert payload["metrics_known"] is True
+    assert "error" not in payload
+    assert payload["name"] == "studio"
+    assert payload["bundle"] == "studio.sparsebundle"
+    assert payload["path"] == str(bundle)
+    assert payload["bytes_used"] == 3034285142016
+    assert payload["last_bytes_to_copy"] == 2782527946752
+    assert payload["client_bytes_available"] == 436476051456
+    assert payload["running"] is False
+    assert payload["band_count"] == 4
+    assert payload["band_size_bytes"] == BAND_SIZE
+    assert payload["bands_bytes"] == 4 * BAND_SIZE
+    assert payload["backup_count"] == 3
+    assert payload["oldest_backup_ts"] == int(
+        oldest.replace(tzinfo=timezone.utc).timestamp()
+    )
+    assert payload["newest_backup_ts"] == int(
+        newest.replace(tzinfo=timezone.utc).timestamp()
+    )
+    assert payload["newest_backup_age_days"] == 1.0
+    assert payload["history_days"] == pytest.approx(254.35, abs=0.01)
+    assert payload["cached"] is False
+
+
+def test_timemachine_bundle_stats_marks_missing_results_plist_as_failure(
+    tmp_path: Path,
+) -> None:
+    namespace = _load_exporter_namespace(tmp_path)
+    bundle = _make_bundle(
+        tmp_path,
+        "atlas.sparsebundle",
+        bands=2,
+        results=None,
+        snapshots=[_utc(2026, 8, 20, 12, 0)],
+    )
+
+    payload = namespace["_timemachine_bundle_stats"](str(bundle), NOW_TS)
+
+    assert payload["ok"] is False
+    assert payload["metrics_known"] is False
+    assert "com.apple.TimeMachine.Results.plist" in payload["error"]
+    assert payload["bytes_used"] is None
+    assert payload["last_bytes_to_copy"] is None
+    assert payload["running"] is None
+    # Evidence that could be read is still reported for diagnostics.
+    assert payload["band_count"] == 2
+    assert payload["backup_count"] == 1
+
+
+def test_timemachine_bundle_stats_reports_in_progress_backup(tmp_path: Path) -> None:
+    namespace = _load_exporter_namespace(tmp_path)
+    results = _completed_results(1190128427008, 901507817472)
+    results["Running"] = True
+    results["Progress"] = {"Percent": 0.65, "bytes": 45013037056}
+    bundle = _make_bundle(
+        tmp_path,
+        "atlas.sparsebundle",
+        results=results,
+        snapshots=[_utc(2026, 8, 24, 13, 20)],
+    )
+
+    payload = namespace["_timemachine_bundle_stats"](str(bundle), NOW_TS)
+
+    assert payload["ok"] is True
+    assert payload["running"] is True
+    assert payload["last_bytes_to_copy"] == 901507817472
+    assert payload["bytes_used"] == 1190128427008
+
+
+def test_timemachine_bundle_stats_handles_unparsable_and_empty_history(
+    tmp_path: Path,
+) -> None:
+    namespace = _load_exporter_namespace(tmp_path)
+    broken = _make_bundle(
+        tmp_path,
+        "broken.sparsebundle",
+        results=_completed_results(10, 5),
+        snapshots=[_utc(2026, 8, 24)],
+    )
+    (broken / "com.apple.TimeMachine.Results.plist").write_bytes(b"not a plist")
+    payload = namespace["_timemachine_bundle_stats"](str(broken), NOW_TS)
+    assert payload["ok"] is False
+    assert "Results.plist" in payload["error"]
+    assert payload["bytes_used"] is None
+
+    (broken / "com.apple.TimeMachine.Results.plist").write_bytes(
+        b'<?xml version="1.0"?><plist version="1.0"><dict><key>BytesUsed'
+    )
+    payload = namespace["_timemachine_bundle_stats"](str(broken), NOW_TS)
+    assert payload["ok"] is False
+    assert "Results.plist" in payload["error"]
+    assert payload["backup_count"] == 1
+
+    fresh = _make_bundle(
+        tmp_path,
+        "fresh.sparsebundle",
+        bands=0,
+        results=_completed_results(0, 0),
+        snapshots=[],
+    )
+    payload = namespace["_timemachine_bundle_stats"](str(fresh), NOW_TS)
+    assert payload["ok"] is True
+    assert payload["band_count"] == 0
+    assert payload["bands_bytes"] == 0
+    assert payload["backup_count"] == 0
+    assert payload["oldest_backup_ts"] is None
+    assert payload["newest_backup_ts"] is None
+    assert payload["newest_backup_age_days"] is None
+    assert payload["history_days"] == 0.0
+
+    no_band_size = _make_bundle(
+        tmp_path,
+        "nobandsize.sparsebundle",
+        results=_completed_results(10, 5),
+        snapshots=[_utc(2026, 8, 24)],
+        info={"size": 16000000000000},
+    )
+    payload = namespace["_timemachine_bundle_stats"](str(no_band_size), NOW_TS)
+    assert payload["ok"] is False
+    assert "band-size" in payload["error"]
+    assert payload["bands_bytes"] is None
+
+
+def test_scan_timemachine_bundle_dirs_reports_empty_and_missing_dirs(
+    tmp_path: Path,
+) -> None:
+    namespace = _load_exporter_namespace(tmp_path)
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    populated = tmp_path / "timemachine"
+    populated.mkdir()
+    _make_bundle(populated, "b.sparsebundle", results={}, snapshots=[])
+    _make_bundle(populated, "a.sparsebundle", results={}, snapshots=[])
+    (populated / "notabundle").mkdir()
+    (populated / "file.sparsebundle").write_bytes(b"")
+
+    scan, paths = namespace["_scan_timemachine_bundle_dirs"](
+        [str(empty), str(populated), str(tmp_path / "missing")]
+    )
+
+    assert paths == [
+        str(populated / "a.sparsebundle"),
+        str(populated / "b.sparsebundle"),
+    ]
+    assert scan["ok"] is False
+    assert scan["bundle_count"] == 2
+    assert [entry["ok"] for entry in scan["dirs"]] == [True, True, False]
+    assert scan["dirs"][0]["bundle_count"] == 0
+    assert scan["dirs"][1]["bundle_count"] == 2
+    assert "error" in scan["dirs"][2]
+
+
+def test_main_exports_timemachine_bundles_by_name(tmp_path: Path, capsys: Any) -> None:
+    bundle_dir = tmp_path / "fast" / "timemachine"
+    bundle_dir.mkdir(parents=True)
+    _make_bundle(
+        bundle_dir,
+        "studio.sparsebundle",
+        bands=2,
+        results=_completed_results(100, 10),
+        snapshots=[_utc(2026, 8, 24, 13, 20)],
+    )
+    _make_bundle(
+        bundle_dir,
+        "MacBook Pro von Example.sparsebundle",
+        bands=1,
+        results=None,
+        snapshots=[_utc(2026, 8, 20)],
+    )
+    namespace = _load_exporter_namespace(
+        tmp_path, timemachine_bundle_dirs=[str(bundle_dir)]
+    )
+    namespace["_now_ts"] = lambda: NOW_TS
+    namespace["_zpool_list"] = lambda _pools, _skip: {}
+    namespace["_run_quiet_hours_spindown"] = lambda _quiet: {"enabled": False}
+    namespace["_edac_status"] = lambda: {"loaded": True, "ce": 0, "ue": 0}
+
+    assert namespace["main"]() == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["timemachine_bundle_scan"]["ok"] is True
+    assert payload["timemachine_bundle_scan"]["bundle_count"] == 2
+    by_name = payload["timemachine_bundles_by_name"]
+    assert set(by_name) == {"studio", "MacBook Pro von Example"}
+    assert by_name["studio"]["ok"] is True
+    assert by_name["studio"]["metrics_known"] is True
+    assert by_name["studio"]["bands_bytes"] == 2 * BAND_SIZE
+    assert by_name["studio"]["newest_backup_age_days"] == 1.0
+    assert by_name["MacBook Pro von Example"]["ok"] is False
+    assert by_name["MacBook Pro von Example"]["metrics_known"] is False
+    assert payload["timemachine_bundles"] == [
+        by_name["MacBook Pro von Example"],
+        by_name["studio"],
+    ]
+
+    cache = json.loads((tmp_path / "pool-cache.json").read_text(encoding="utf-8"))
+    assert set(cache["timemachine_bundles"]) == {"studio"}
+    assert cache["timemachine_bundles"]["studio"]["sample"]["bytes_used"] == 100
+    assert "cached" not in cache["timemachine_bundles"]["studio"]["sample"]
+
+
+def test_main_uses_cached_timemachine_bundle_during_quiet_hours(
+    tmp_path: Path, capsys: Any
+) -> None:
+    bundle_dir = tmp_path / "tank" / "timemachine"
+    bundle_dir.mkdir(parents=True)
+    bundle = _make_bundle(
+        bundle_dir,
+        "studio.sparsebundle",
+        results=_completed_results(100, 10),
+        snapshots=[_utc(2026, 8, 24, 13, 20)],
+    )
+    namespace = _load_exporter_namespace(
+        tmp_path, timemachine_bundle_dirs=[str(bundle_dir)]
+    )
+    namespace["_now_ts"] = lambda: NOW_TS
+    namespace["_zpool_list"] = lambda _pools, _skip: {}
+    namespace["_run_quiet_hours_spindown"] = lambda _quiet: {"enabled": False}
+    namespace["_edac_status"] = lambda: {"loaded": True, "ce": 0, "ue": 0}
+    assert namespace["main"]() == 0
+    capsys.readouterr()
+
+    quiet_namespace = _load_exporter_namespace(
+        tmp_path, timemachine_bundle_dirs=[str(bundle_dir)]
+    )
+    # The pool name is the first path component of the bundle directory.
+    quiet_namespace["QUIET_SKIP_POOLS"] = [
+        str(bundle_dir).strip("/").split("/", maxsplit=1)[0]
+    ]
+    quiet_namespace["_in_quiet_hours"] = lambda: True
+    quiet_namespace["_now_ts"] = lambda: NOW_TS + 86400
+    quiet_namespace["_zpool_list"] = lambda _pools, _skip: {}
+    quiet_namespace["_timemachine_bundle_stats"] = lambda _path, _now: (
+        _ for _ in ()
+    ).throw(AssertionError("quiet-hours bundle probe must not run"))
+    quiet_namespace["_run_quiet_hours_spindown"] = lambda _quiet: {"enabled": False}
+    quiet_namespace["_edac_status"] = lambda: {"loaded": True, "ce": 0, "ue": 0}
+
+    assert quiet_namespace["main"]() == 0
+    payload = json.loads(capsys.readouterr().out)
+    cached = payload["timemachine_bundles_by_name"]["studio"]
+    assert cached["cached"] is True
+    assert cached["skipped"] is True
+    assert cached["reason"] == "quiet_hours"
+    assert cached["ok"] is True
+    assert cached["metrics_known"] is True
+    assert cached["path"] == str(bundle)
+    assert cached["bytes_used"] == 100
+    assert cached["cache_age_seconds"] == 86400
+    # Age keeps advancing against the cached completion timestamp.
+    assert cached["newest_backup_age_days"] == 2.0
+
+    # Without usable cache the schema stays stable and fails closed.
+    (tmp_path / "pool-cache.json").unlink()
+    assert quiet_namespace["main"]() == 0
+    payload = json.loads(capsys.readouterr().out)
+    unknown = payload["timemachine_bundles_by_name"]["studio"]
+    assert unknown["ok"] is None
+    assert unknown["metrics_known"] is False
+    assert unknown["bytes_used"] is None
+    assert unknown["newest_backup_age_days"] is None
+    assert unknown["skipped"] is True
+
+
+def test_cached_timemachine_bundle_payload_rejects_retargeted_path(
+    tmp_path: Path,
+) -> None:
+    namespace = _load_exporter_namespace(tmp_path)
+    probe_cache = {
+        "timemachine_bundles": {
+            "studio": {
+                "ts": 100,
+                "sample": {"path": "/old/studio.sparsebundle", "ok": True},
+            }
+        }
+    }
+    assert (
+        namespace["_cached_timemachine_bundle_payload"](
+            "studio", "/new/studio.sparsebundle", probe_cache, 101
+        )
+        is None
+    )
+    cached = namespace["_cached_timemachine_bundle_payload"](
+        "studio", "/old/studio.sparsebundle", probe_cache, 101
+    )
+    assert cached is not None
+    assert cached["metrics_known"] is True
+    assert cached["band_count"] is None

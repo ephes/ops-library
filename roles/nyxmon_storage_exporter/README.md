@@ -4,7 +4,7 @@ Storage health metrics exporter for Nyxmon integration.
 
 ## Description
 
-This role installs a Python script that collects and outputs storage health metrics as JSON. It gathers SMART data from disks (temperature, health status), ZFS pool information (health, capacity, last scrub), optional named filesystem usage, and optional ZFS dataset capacity and snapshot-retained space. The JSON output is designed to be served over HTTP and monitored using Nyxmon's `json-metrics` check type, using system Python 3 (no venv/uv).
+This role installs a Python script that collects and outputs storage health metrics as JSON. It gathers SMART data from disks (temperature, health status), ZFS pool information (health, capacity, last scrub), optional named filesystem usage, optional ZFS dataset capacity and snapshot-retained space, and optional per-client Time Machine sparsebundle footprint metrics. The JSON output is designed to be served over HTTP and monitored using Nyxmon's `json-metrics` check type, using system Python 3 (no venv/uv).
 
 ## Requirements
 
@@ -35,6 +35,7 @@ The role installs `nyxmon_storage_exporter_packages` (defaults to `python3`). Ad
 | `nyxmon_storage_exporter_filesystems` | list | `[]` | List of named filesystems/paths to measure with `df -B1` |
 | `nyxmon_storage_exporter_zfs_datasets` | list | `[]` | List of named ZFS datasets whose usage, availability, quotas, and snapshot-retained bytes are exported |
 | `nyxmon_storage_exporter_pool_capacity_thresholds` | mapping | `{}` | Optional per-pool `warning_ratio` and `critical_ratio`, plus an optional pair of `warning_free_bytes` and `critical_free_bytes`; emits evidence-aware capacity failure booleans |
+| `nyxmon_storage_exporter_timemachine_bundle_dirs` | list | `[]` | Absolute directories scanned for Time Machine `*.sparsebundle` directories; each bundle is exported under `timemachine_bundles_by_name` (see below) |
 
 **Note:** Disk and filesystem lists default to empty. An empty pool list enables
 zpool auto-discovery; capacity-threshold keys may target those discovered names.
@@ -67,6 +68,28 @@ Each entry in `nyxmon_storage_exporter_zfs_datasets` must have:
 |-----|------|-------------|
 | `name` | string | Unique stable name used in `zfs_datasets_by_name` JSONPaths |
 | `dataset` | string | ZFS dataset name passed to `zfs get`; the pool root name (for example `fast`) is valid |
+
+#### Time Machine Bundle Directories
+
+`nyxmon_storage_exporter_timemachine_bundle_dirs` lists directories (for
+example a Samba Time Machine share root) whose direct `*.sparsebundle`
+subdirectories are probed on every run. The probe is read-only and cheap: it
+reads three small property lists and counts the entries of the `bands/`
+directory. It never opens a band, mounts a bundle, or walks the bundle tree.
+
+| Source | Keys used |
+|--------|-----------|
+| `Info.plist` | `band-size` (bytes per band). The virtual `size` is sparse address space and is ignored. |
+| `com.apple.TimeMachine.Results.plist` | `BytesUsed`, `BytesAvailable`, `BytesToCopy`, `Running` |
+| `com.apple.TimeMachine.SnapshotHistory.plist` | `Snapshots[].com.apple.backupd.SnapshotCompletionDate` |
+| `bands/` | entry count |
+
+Each bundle is keyed by its basename without the `.sparsebundle` suffix and
+with any remaining `.` replaced by `_`, so it can be addressed with dotted
+JSONPaths such as `$.timemachine_bundles_by_name.studio.ok`. The raw basename
+stays available as `bundle`. Bundles under a directory whose first path
+component is a pool skipped during quiet hours (ZFS default mountpoint layout)
+follow the dataset cache rule.
 
 ### Optional Variables
 
@@ -125,6 +148,9 @@ nyxmon_storage_exporter_zfs_datasets:
     dataset: fast
   - name: timemachine
     dataset: fast/timemachine
+
+nyxmon_storage_exporter_timemachine_bundle_dirs:
+  - /fast/timemachine
 
 nyxmon_storage_exporter_quiet_hours_enabled: true
 nyxmon_storage_exporter_quiet_hours_start: "06:00"
@@ -207,6 +233,34 @@ Cache hits are accepted only when the cached device or dataset identity exactly
 matches current configuration; retargeting a reused logical name fails closed
 until the new target is actively probed.
 
+Time Machine bundles are exported as `timemachine_bundles` (list) and
+`timemachine_bundles_by_name` (mapping), plus a `timemachine_bundle_scan`
+summary (`ok`, `bundle_count`, and one `dirs[]` entry per configured directory
+with `ok`, `bundle_count`, and `error`). Every bundle entry always carries the
+same keys:
+
+| Key | Meaning |
+|-----|---------|
+| `name` / `bundle` / `path` | JSONPath-safe key, raw basename, and absolute bundle path |
+| `ok` | `true` when all three plists and the band directory were read; `false` on any missing or unparsable input (see `error`); `null` when skipped without cache |
+| `metrics_known` | `true` when the numeric fields come from a successful current or fresh cached probe |
+| `bytes_used` | `BytesUsed` from `Results.plist`: the client's view of allocated backup data |
+| `client_bytes_available` | `BytesAvailable` from `Results.plist`: free space as the client last saw it |
+| `last_bytes_to_copy` | `BytesToCopy` from the last run's `Results.plist` |
+| `running` | `Running` from `Results.plist`. Time Machine writes this file during a run and may leave `true` behind, so treat it as a hint, not a lock |
+| `band_count` / `band_size_bytes` / `bands_bytes` | entries in `bands/`, `band-size`, and their product: the figure Samba's `fruit:time machine max size` estimate counts |
+| `backup_count` / `oldest_backup_ts` / `newest_backup_ts` | completed backups in the snapshot history and their first/last UTC epoch |
+| `newest_backup_age_days` | days since the newest completed backup, recomputed from the cached timestamp on cache hits |
+| `history_days` | days between the oldest and newest completed backup (`0.0` for an empty history) |
+| `cached` / `cache_timestamp` / `cache_age_seconds` | quiet-hours cache metadata, as for datasets |
+
+A partial failure (for example a missing `Results.plist`) still reports the
+values that could be read, but `ok` is `false` and `metrics_known` is `false`;
+numeric rules on `null` fields then fail closed. Missing bundle directories or
+a bundle that disappears set `timemachine_bundle_scan.ok` to `false` or drop
+the bundle key, so pair every per-bundle numeric rule with a
+`metrics_known == true` rule.
+
 ## Nyxmon Threshold Configuration
 
 ### Recommended: Use `disks_by_name` for Stable JSONPaths
@@ -235,6 +289,12 @@ The output includes a `disks_by_name` object keyed by disk name, which provides 
 | `$.zfs_datasets_by_name.timemachine.cached` | `==` | `false` | warning | Time Machine capacity evidence comes from an active sample; alternatively bound `cache_age_seconds` |
 | `$.zfs_datasets_by_name.timemachine.available_bytes` | `>` | `412316860416` | warning | Time Machine dataset has more than 384 GiB available |
 | `$.zfs_datasets_by_name.timemachine.used_by_snapshots_bytes` | `<` | `274877906944` | warning | snapshots retain less than 256 GiB |
+| `$.timemachine_bundle_scan.ok` | `==` | `true` | warning | every configured bundle directory could be listed |
+| `$.timemachine_bundles_by_name.studio.metrics_known` | `==` | `true` | warning | the studio bundle exists and was probed (pair with cache freshness) |
+| `$.timemachine_bundles_by_name.studio.ok` | `==` | `true` | warning | studio bundle plists were readable |
+| `$.timemachine_bundles_by_name.studio.bands_bytes` | `<` | `3628388371660` | warning | studio uses less than 55% of a 6 TiB share budget |
+| `$.timemachine_bundles_by_name.studio.newest_backup_age_days` | `<` | `3` | warning | studio completed a backup within three days |
+| `$.timemachine_bundles_by_name.studio.history_days` | `>` | `30` | warning | studio history spans more than 30 days (thinning is not eating history faster than expected) |
 | `$.ecc.loaded` | `==` | `true` | warning | ECC module loaded |
 | `$.ecc.counters_available` | `==` | `true` | warning | EDAC counters are available |
 | `$.ecc.correctable_ok` | `==` | `true` | warning | no observed correctable ECC errors |
@@ -338,6 +398,35 @@ The script outputs JSON with disk temperatures, health status, pool information,
       "ok": true
     }
   },
+  "timemachine_bundle_scan": {
+    "ok": true,
+    "bundle_count": 1,
+    "dirs": [{"path": "/fast/timemachine", "ok": true, "bundle_count": 1}]
+  },
+  "timemachine_bundles_by_name": {
+    "studio": {
+      "name": "studio",
+      "bundle": "studio.sparsebundle",
+      "path": "/fast/timemachine/studio.sparsebundle",
+      "ok": true,
+      "metrics_known": true,
+      "bytes_used": 3034285142016,
+      "client_bytes_available": 430033600512,
+      "last_bytes_to_copy": 2782527946752,
+      "running": false,
+      "band_count": 1902,
+      "band_size_bytes": 1610612736,
+      "bands_bytes": 3063385423872,
+      "backup_count": 83,
+      "oldest_backup_ts": 1765601692,
+      "newest_backup_ts": 1788613675,
+      "newest_backup_age_days": 0.9,
+      "history_days": 266.34,
+      "cached": false,
+      "cache_timestamp": null,
+      "cache_age_seconds": null
+    }
+  },
   "quiet_hours": {
     "enabled": true,
     "active": true,
@@ -397,6 +486,7 @@ just test-role nyxmon_storage_exporter
 
 ## Changelog
 
+- **1.1.0** (2026-09-06): Add read-only Time Machine sparsebundle metrics (`nyxmon_storage_exporter_timemachine_bundle_dirs`)
 - **1.0.0** (2025-12-14): Initial release
 
 ## License
