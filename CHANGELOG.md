@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `voxhelm_deploy` gained `voxhelm_lane_scheduler_interactive_slots` and
+  `voxhelm_lane_scheduler_non_interactive_slots` (both default `1`) for
+  Voxhelm's bounded inference slots (Voxhelm decision D-24): one reserved
+  interactive slot plus one non-interactive slot, rendered into `voxhelm.env`.
+
 - Added `daybook_voice_memo_inbox_deploy`, a disabled-first macOS Aqua
   LaunchAgent role for the Daybook Apple Voice Memos importer. It installs an
   exact bundled Daybook commit, keeps source/state/log/credential boundaries
