@@ -34,15 +34,15 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         return variables
 
     def render_plist(self, template: str) -> dict:
-        rendered = Environment(keep_trailing_newline=True).from_string(
-            self.text(f"{ROLE}/templates/{template}")
-        ).render(**self.role_variables())
+        rendered = (
+            Environment(keep_trailing_newline=True)
+            .from_string(self.text(f"{ROLE}/templates/{template}"))
+            .render(**self.role_variables())
+        )
         return plistlib.loads(rendered.encode("utf-8"))
 
     def test_defaults_are_disabled_and_secret_free(self):
-        defaults = self.text(
-            "roles/daybook_voice_memo_inbox_deploy/defaults/main.yml"
-        )
+        defaults = self.text("roles/daybook_voice_memo_inbox_deploy/defaults/main.yml")
         self.assertIn("daybook_voice_memo_inbox_enabled: false", defaults)
         self.assertIn("daybook_voice_memo_inbox_launchd_enabled: false", defaults)
         self.assertIn('daybook_voice_memo_inbox_voxhelm_token: "CHANGEME"', defaults)
@@ -53,15 +53,17 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         self.assertNotIn("Bearer ", defaults)
 
     def test_schedule_and_program_arguments_are_fixed(self):
-        defaults = self.text(
-            "roles/daybook_voice_memo_inbox_deploy/defaults/main.yml"
-        )
+        defaults = self.text("roles/daybook_voice_memo_inbox_deploy/defaults/main.yml")
         plist = self.text(
             "roles/daybook_voice_memo_inbox_deploy/templates/voice-memo-inbox.launchd.plist.j2"
         )
         self.assertIn("daybook_voice_memo_inbox_interval_seconds: 300", defaults)
-        self.assertIn("daybook_voice_memo_inbox_activation_status_retries: 72", defaults)
-        self.assertIn("daybook_voice_memo_inbox_activation_status_delay_seconds: 5", defaults)
+        self.assertIn(
+            "daybook_voice_memo_inbox_activation_status_retries: 72", defaults
+        )
+        self.assertIn(
+            "daybook_voice_memo_inbox_activation_status_delay_seconds: 5", defaults
+        )
         self.assertIn("<key>RunAtLoad</key>\n  <true/>", plist)
         self.assertIn("<key>StartInterval</key>", plist)
         self.assertIn("voice-memos", plist)
@@ -87,18 +89,26 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         bundle = tasks.index("Install exact Daybook source bundle")
         self.assertLess(disable, bundle)
         self.assertLess(quiesced, bundle)
-        self.assertIn("Prove Voice Memo inbox is quiesced before managed changes", tasks)
+        self.assertIn(
+            "Prove Voice Memo inbox is quiesced before managed changes", tasks
+        )
         self.assertIn("daybook_voice_memo_inbox_quiesced.rc | int != 0", tasks)
         self.assertIn("until: daybook_voice_memo_inbox_quiesced.rc != 0", tasks)
         self.assertIn("until: daybook_voice_memo_inbox_rescue_probe.rc != 0", tasks)
-        rescue_probe = tasks[tasks.index("Probe Voice Memo inbox label after rescue"):tasks.index(
-            "Require proven disabled/unloaded state after activation failure"
-        )]
+        rescue_probe = tasks[
+            tasks.index("Probe Voice Memo inbox label after rescue") : tasks.index(
+                "Require proven disabled/unloaded state after activation failure"
+            )
+        ]
         self.assertIn("ignore_errors: true", rescue_probe)
-        protect = tasks[tasks.index("- name: Protect Voice Memo inbox interpreter\n") + 1:]
+        protect = tasks[
+            tasks.index("- name: Protect Voice Memo inbox interpreter\n") + 1 :
+        ]
         protect = protect[: protect.index("\n- name:")]
         self.assertIn("follow: false", protect)
-        self.assertIn("Require active Voice Memo owner Aqua domain for deployment", tasks)
+        self.assertIn(
+            "Require active Voice Memo owner Aqua domain for deployment", tasks
+        )
         self.assertIn("Prove Voice Memo inbox label is disabled", tasks)
         self.assertIn("print-disabled", tasks)
         self.assertIn(
@@ -106,10 +116,15 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
             "daybook_voice_memo_inbox_activation_phrase",
             tasks,
         )
-        self.assertIn("Initialize Voice Memo historical baseline in Aqua context", tasks)
+        self.assertIn(
+            "Initialize Voice Memo historical baseline in Aqua context", tasks
+        )
         self.assertIn("Install root-owned Voice Memo activation marker", tasks)
         self.assertIn("Capture Voice Memo ledger generation before bootstrap", tasks)
-        self.assertIn("generation | int > daybook_voice_memo_inbox_prebootstrap_report.generation | int", tasks)
+        self.assertIn(
+            "generation | int > daybook_voice_memo_inbox_prebootstrap_report.generation | int",
+            tasks,
+        )
         self.assertLess(
             tasks.index("Install root-owned Voice Memo activation marker"),
             tasks.index("Capture Voice Memo ledger generation before bootstrap"),
@@ -136,7 +151,9 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
             tasks.index("Wait for privacy-safe first Voice Memo scan"),
             tasks.index("Install root-owned proven first Voice Memo scan marker"),
         )
-        proof_start = tasks.index("Install root-owned proven first Voice Memo scan marker")
+        proof_start = tasks.index(
+            "Install root-owned proven first Voice Memo scan marker"
+        )
         proof_end = tasks.index("Rescue-disable Voice Memo inbox label")
         proof_block = tasks[proof_start:proof_end]
         self.assertIn("owner: root", proof_block)
@@ -148,29 +165,45 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
 
     def test_scheduled_interpreter_is_regular_and_protected(self):
         tasks = self.text("roles/daybook_voice_memo_inbox_deploy/tasks/main.yml")
-        self.assertIn("Copy pinned Voice Memo inbox interpreter into protected checkout", tasks)
+        self.assertIn(
+            "Copy pinned Voice Memo inbox interpreter into protected checkout", tasks
+        )
         self.assertIn("- -L", tasks)
         self.assertNotIn("- -pL", tasks)
-        copy = tasks.index("Copy pinned Voice Memo inbox interpreter into protected checkout")
-        protect_staged = tasks.index("Protect staged Voice Memo inbox interpreter before it becomes live")
+        copy = tasks.index(
+            "Copy pinned Voice Memo inbox interpreter into protected checkout"
+        )
+        protect_staged = tasks.index(
+            "Protect staged Voice Memo inbox interpreter before it becomes live"
+        )
         install = tasks.index("Install regular Voice Memo inbox interpreter atomically")
         self.assertLess(copy, protect_staged)
         self.assertLess(protect_staged, install)
         staged = tasks[protect_staged:install]
         self.assertIn("owner: root", staged)
         self.assertIn('mode: "0755"', staged)
-        self.assertIn("daybook_voice_memo_inbox_python_needs_copy | bool", tasks[copy:install])
+        self.assertIn(
+            "daybook_voice_memo_inbox_python_needs_copy | bool", tasks[copy:install]
+        )
         self.assertIn(
             "daybook_voice_memo_inbox_protected_python.stat.checksum == daybook_voice_memo_inbox_python_source_checksum",
             tasks,
         )
         self.assertNotIn("stat.checksum | length == 40", tasks)
-        self.assertIn("selectattr('item', 'eq', daybook_voice_memo_inbox_python_source)", tasks)
+        self.assertIn(
+            "selectattr('item', 'eq', daybook_voice_memo_inbox_python_source)", tasks
+        )
         self.assertIn("Require protected Voice Memo inbox interpreter boundary", tasks)
         self.assertIn("not daybook_voice_memo_inbox_protected_python.stat.islnk", tasks)
-        self.assertIn("daybook_voice_memo_inbox_protected_python.stat.nlink == 1", tasks)
-        self.assertIn("daybook_voice_memo_inbox_protected_python.stat.pw_name == 'root'", tasks)
-        self.assertIn("daybook_voice_memo_inbox_protected_python.stat.mode == '0755'", tasks)
+        self.assertIn(
+            "daybook_voice_memo_inbox_protected_python.stat.nlink == 1", tasks
+        )
+        self.assertIn(
+            "daybook_voice_memo_inbox_protected_python.stat.pw_name == 'root'", tasks
+        )
+        self.assertIn(
+            "daybook_voice_memo_inbox_protected_python.stat.mode == '0755'", tasks
+        )
         self.assertIn(
             "Smoke-test protected Voice Memo inbox interpreter as service user", tasks
         )
@@ -188,9 +221,7 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
             "- name: Initialize Voice Memo historical baseline in Aqua context", 1
         )[1]
         self.assertGreaterEqual(
-            activation.count(
-                'chdir: "{{ daybook_voice_memo_inbox_checkout_path }}"'
-            ),
+            activation.count('chdir: "{{ daybook_voice_memo_inbox_checkout_path }}"'),
             3,
         )
 
@@ -214,11 +245,13 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         )
         self.assertIn("paths withheld", require_block)
         readme = self.text("roles/daybook_voice_memo_inbox_deploy/README.md")
-        self.assertIn("does not disable, unload, or remove an existing installation", readme)
+        self.assertIn(
+            "does not disable, unload, or remove an existing installation", readme
+        )
 
     def test_activation_rescue_proves_disabled_and_unloaded(self):
         tasks = self.text("roles/daybook_voice_memo_inbox_deploy/tasks/main.yml")
-        rescue = tasks[tasks.index("  rescue:"):]
+        rescue = tasks[tasks.index("  rescue:") :]
         order = [
             "Rescue-disable Voice Memo inbox label",
             "Rescue-bootout Voice Memo inbox label",
@@ -231,35 +264,49 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         self.assertEqual(positions, sorted(positions))
         self.assertIn("register: daybook_voice_memo_inbox_rescue_disable", rescue)
         self.assertIn("register: daybook_voice_memo_inbox_rescue_bootout", rescue)
-        proof = rescue[positions[4]:positions[5]]
+        proof = rescue[positions[4] : positions[5]]
         self.assertIn("daybook_voice_memo_inbox_rescue_disabled_labels.rc == 0", proof)
         self.assertIn("regex_search(", proof)
         self.assertIn("(?:true|disabled)", proof)
         self.assertIn("daybook_voice_memo_inbox_rescue_probe.rc != 0", proof)
         self.assertIn("COULD NOT PROVE", proof)
         self.assertIn("emergency disable", proof)
-        final = rescue[positions[5]:]
+        final = rescue[positions[5] :]
         self.assertIn("proven", final)
-        self.assertIn("disable rc={{ daybook_voice_memo_inbox_rescue_disable.rc }}", final)
+        self.assertIn(
+            "disable rc={{ daybook_voice_memo_inbox_rescue_disable.rc }}", final
+        )
 
     def test_checkout_replacement_fails_closed_when_git_cannot_read_revision(self):
         tasks = self.text("roles/daybook_voice_memo_inbox_deploy/tasks/main.yml")
-        executables = tasks[tasks.index("Inspect required Voice Memo inbox executables"):tasks.index(
-            "Require executable Voice Memo inbox prerequisites"
-        )]
+        executables = tasks[
+            tasks.index("Inspect required Voice Memo inbox executables") : tasks.index(
+                "Require executable Voice Memo inbox prerequisites"
+            )
+        ]
         self.assertIn("    - /usr/bin/git\n", executables)
         bundle_install = tasks.index("Install exact Daybook source bundle")
-        verify = tasks.index("Verify installed Daybook source bundle against the existing checkout")
+        verify = tasks.index(
+            "Verify installed Daybook source bundle against the existing checkout"
+        )
         heads = tasks.index("List installed Daybook source bundle heads")
-        require_bundle = tasks.index("Require a valid Daybook bundle containing the pinned commit")
+        require_bundle = tasks.index(
+            "Require a valid Daybook bundle containing the pinned commit"
+        )
         inspect = tasks.index("Inspect existing managed Daybook checkout")
-        refuse = tasks.index("Refuse to replace an existing checkout whose revision cannot be read")
+        refuse = tasks.index(
+            "Refuse to replace an existing checkout whose revision cannot be read"
+        )
         replace = tasks.index("Replace drifted managed Daybook checkout")
         self.assertLess(bundle_install, inspect)
         self.assertLess(inspect, verify)
         verify_block = tasks[verify:heads]
-        self.assertIn('chdir: "{{ daybook_voice_memo_inbox_checkout_path }}"', verify_block)
-        self.assertIn("- daybook_voice_memo_inbox_checkout_dir.stat.exists", verify_block)
+        self.assertIn(
+            'chdir: "{{ daybook_voice_memo_inbox_checkout_path }}"', verify_block
+        )
+        self.assertIn(
+            "- daybook_voice_memo_inbox_checkout_dir.stat.exists", verify_block
+        )
         self.assertLess(verify, heads)
         self.assertLess(heads, require_bundle)
         self.assertLess(require_bundle, replace)
@@ -278,8 +325,10 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
             "not daybook_voice_memo_inbox_checkout_dir.stat.exists or daybook_voice_memo_inbox_installed_ref.rc == 0",
             refuse_block,
         )
-        replace_block = tasks[replace:tasks.index("Clone exact Daybook bundle")]
-        self.assertIn("- daybook_voice_memo_inbox_checkout_dir.stat.exists", replace_block)
+        replace_block = tasks[replace : tasks.index("Clone exact Daybook bundle")]
+        self.assertIn(
+            "- daybook_voice_memo_inbox_checkout_dir.stat.exists", replace_block
+        )
         self.assertNotIn("installed_ref.rc != 0", replace_block)
         self.assertIn(
             "- daybook_voice_memo_inbox_installed_ref.stdout | trim != daybook_voice_memo_inbox_repo_ref\n",
@@ -290,36 +339,56 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
     def test_fresh_host_check_mode_guards_are_keyed_by_path(self):
         tasks = self.text("roles/daybook_voice_memo_inbox_deploy/tasks/main.yml")
         self.assertNotIn("managed_parents.results[", tasks)
-        index = tasks[tasks.index("Index Voice Memo inbox managed parent directories by path"):]
-        index = index[: index.index("- name: Create protected Voice Memo inbox directories")]
+        index = tasks[
+            tasks.index("Index Voice Memo inbox managed parent directories by path") :
+        ]
+        index = index[
+            : index.index("- name: Create protected Voice Memo inbox directories")
+        ]
         self.assertIn("map(attribute='item')", index)
         self.assertIn("map(attribute='stat.exists')", index)
         for task_name, key in (
-            ("Create owner-only Voice Memo inbox logs", "daybook_voice_memo_inbox_log_dir"),
-            ("Install exact Daybook source bundle", "daybook_voice_memo_inbox_install_root"),
-            ("Render protected Voice Memo inbox policy", "daybook_voice_memo_inbox_install_root"),
-            ("Render owner-only Voice Memo inbox credentials", "daybook_voice_memo_inbox_credential_dir"),
+            (
+                "Create owner-only Voice Memo inbox logs",
+                "daybook_voice_memo_inbox_log_dir",
+            ),
+            (
+                "Install exact Daybook source bundle",
+                "daybook_voice_memo_inbox_install_root",
+            ),
+            (
+                "Render protected Voice Memo inbox policy",
+                "daybook_voice_memo_inbox_install_root",
+            ),
+            (
+                "Render owner-only Voice Memo inbox credentials",
+                "daybook_voice_memo_inbox_credential_dir",
+            ),
             (
                 "Render disabled-first Voice Memo inbox LaunchAgent",
                 "daybook_voice_memo_inbox_service_home ~ '/Library/LaunchAgents'",
             ),
         ):
-            body = tasks[tasks.index(f"- name: {task_name}") + 1:]
+            body = tasks[tasks.index(f"- name: {task_name}") + 1 :]
             body = body[: body.index("\n- name:")]
             self.assertIn(
                 f"not ansible_check_mode or daybook_voice_memo_inbox_parent_exists[{key}]",
                 body,
                 task_name,
             )
-        protect = tasks[tasks.index("- name: Protect Voice Memo inbox interpreter") + 1:]
+        protect = tasks[
+            tasks.index("- name: Protect Voice Memo inbox interpreter") + 1 :
+        ]
         protect = protect[: protect.index("\n- name:")]
         self.assertIn(
             "not ansible_check_mode or daybook_voice_memo_inbox_python_stat.stat.exists",
             protect,
         )
-        loop = tasks[tasks.index("Inspect Voice Memo inbox managed parent directories"):tasks.index(
-            "Index Voice Memo inbox managed parent directories by path"
-        )]
+        loop = tasks[
+            tasks.index(
+                "Inspect Voice Memo inbox managed parent directories"
+            ) : tasks.index("Index Voice Memo inbox managed parent directories by path")
+        ]
         for path in (
             "daybook_voice_memo_inbox_install_root",
             "daybook_voice_memo_inbox_log_dir",
@@ -346,9 +415,9 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
 
     def test_fresh_check_mode_does_not_enter_an_uncreated_checkout(self):
         tasks = self.text("roles/daybook_voice_memo_inbox_deploy/tasks/main.yml")
-        sync_task = tasks.split(
-            "- name: Synchronize locked Daybook runtime", 1
-        )[1].split("- name: Inspect Voice Memo inbox virtualenv interpreter", 1)[0]
+        sync_task = tasks.split("- name: Synchronize locked Daybook runtime", 1)[
+            1
+        ].split("- name: Inspect Voice Memo inbox virtualenv interpreter", 1)[0]
         self.assertIn("not ansible_check_mode", sync_task)
         self.assertIn("daybook_voice_memo_inbox_installed_ref.rc == 0", sync_task)
         self.assertIn(
@@ -358,15 +427,15 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         )
 
     def test_launch_agent_is_scoped_to_voice_memos_owner(self):
-        defaults = self.text(
-            "roles/daybook_voice_memo_inbox_deploy/defaults/main.yml"
-        )
+        defaults = self.text("roles/daybook_voice_memo_inbox_deploy/defaults/main.yml")
         tasks = self.text("roles/daybook_voice_memo_inbox_deploy/tasks/main.yml")
         self.assertIn(
-            'daybook_voice_memo_inbox_service_home }}/Library/LaunchAgents/',
+            "daybook_voice_memo_inbox_service_home }}/Library/LaunchAgents/",
             defaults,
         )
-        self.assertNotIn('daybook_voice_memo_inbox_plist_path: "/Library/LaunchAgents/', defaults)
+        self.assertNotIn(
+            'daybook_voice_memo_inbox_plist_path: "/Library/LaunchAgents/', defaults
+        )
         self.assertIn("daybook_voice_memo_inbox_plist_path ==", tasks)
 
     def test_credentials_are_owner_only_and_hidden(self):
@@ -386,9 +455,7 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         policy = self.text(
             "roles/daybook_voice_memo_inbox_deploy/templates/policy.json.j2"
         )
-        defaults = self.text(
-            "roles/daybook_voice_memo_inbox_deploy/defaults/main.yml"
-        )
+        defaults = self.text("roles/daybook_voice_memo_inbox_deploy/defaults/main.yml")
         self.assertIn('daybook_voice_memo_inbox_prefix: "Inbox/Voice Memos"', defaults)
         self.assertIn("min_stable_seconds", policy)
         self.assertIn("duration_tolerance_seconds", policy)
@@ -432,7 +499,9 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         )
         # 24 MiB stays below Voxhelm's 25 MiB sync upload limit and above the
         # short lane's ceiling.
-        self.assertLess(variables["daybook_voice_memo_inbox_long_max_audio_bytes"], 25 * 1024 * 1024)
+        self.assertLess(
+            variables["daybook_voice_memo_inbox_long_max_audio_bytes"], 25 * 1024 * 1024
+        )
         self.assertGreaterEqual(
             variables["daybook_voice_memo_inbox_long_max_audio_bytes"],
             variables["daybook_voice_memo_inbox_max_audio_bytes"],
@@ -443,7 +512,9 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         long_lane = self.render_plist("voice-memo-inbox-long.launchd.plist.j2")
         self.assertEqual(short["Label"], SHORT_LABEL)
         self.assertEqual(long_lane["Label"], LONG_LABEL)
-        self.assertEqual(short["ProgramArguments"][:5], long_lane["ProgramArguments"][:5])
+        self.assertEqual(
+            short["ProgramArguments"][:5], long_lane["ProgramArguments"][:5]
+        )
         self.assertEqual(short["ProgramArguments"][5:], ["ingest", "--summary-only"])
         self.assertEqual(
             long_lane["ProgramArguments"][5:], ["transcribe-long", "--summary-only"]
@@ -452,7 +523,9 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         self.assertEqual(long_lane["StartInterval"], 600)
         self.assertIs(short["RunAtLoad"], True)
         self.assertIs(long_lane["RunAtLoad"], False)
-        self.assertEqual(short["EnvironmentVariables"], long_lane["EnvironmentVariables"])
+        self.assertEqual(
+            short["EnvironmentVariables"], long_lane["EnvironmentVariables"]
+        )
         self.assertEqual(short["WorkingDirectory"], long_lane["WorkingDirectory"])
         self.assertTrue(long_lane["StandardOutPath"].endswith("/logs/ingest-long.log"))
         self.assertTrue(
@@ -497,16 +570,20 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         positions = [tasks.index(name) for name in order]
         self.assertEqual(positions, sorted(positions))
         prove_long = tasks[
-            tasks.index("Prove Voice Memo inbox long lane label is disabled") : tasks.index(
+            tasks.index(
+                "Prove Voice Memo inbox long lane label is disabled"
+            ) : tasks.index(
                 "Verify Voice Memo inbox is quiesced before managed changes"
             )
         ]
-        self.assertIn("daybook_voice_memo_inbox_long_launchd_label | regex_escape", prove_long)
+        self.assertIn(
+            "daybook_voice_memo_inbox_long_launchd_label | regex_escape", prove_long
+        )
         self.assertIn("(?:true|disabled)", prove_long)
         bootout_long = tasks[
-            tasks.index("Boot out Voice Memo inbox long lane before deployment") : tasks.index(
-                "Prove Voice Memo inbox label is disabled"
-            )
+            tasks.index(
+                "Boot out Voice Memo inbox long lane before deployment"
+            ) : tasks.index("Prove Voice Memo inbox label is disabled")
         ]
         self.assertIn("failed_when: false", bootout_long)
         quiesced_long = tasks[
@@ -514,11 +591,15 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
                 "Verify Voice Memo inbox long lane is quiesced before managed changes"
             ) : tasks.index("Inspect Voice Memo inbox managed parent directories")
         ]
-        self.assertIn("until: daybook_voice_memo_inbox_long_quiesced.rc != 0", quiesced_long)
+        self.assertIn(
+            "until: daybook_voice_memo_inbox_long_quiesced.rc != 0", quiesced_long
+        )
         # The raw launchctl print output of a still-loaded job is never shown;
         # the proof is a sanitized assertion on the exit status instead.
         self.assertIn("no_log: true", quiesced_long)
-        self.assertIn("daybook_voice_memo_inbox_long_quiesced.rc | int != 0", quiesced_long)
+        self.assertIn(
+            "daybook_voice_memo_inbox_long_quiesced.rc | int != 0", quiesced_long
+        )
         for lane in ("", " long lane"):
             probe = tasks[
                 tasks.index(f"Probe Voice Memo inbox{lane} label after rescue") :
@@ -553,9 +634,7 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         self.assertIn("- --summary-only", read_block)
         self.assertNotIn("transcribe-long", read_block)
         # Skipped on a fresh host where interpreter or policy do not exist yet.
-        self.assertIn(
-            "daybook_voice_memo_inbox_prequiesce_runtime.results", read_block
-        )
+        self.assertIn("daybook_voice_memo_inbox_prequiesce_runtime.results", read_block)
         self.assertIn("stat.exists", read_block)
         extract_block = tasks[extract_start:report_start]
         # The count is extracted best-effort with a regular expression: a
@@ -564,9 +643,9 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         self.assertNotIn("from_json", extract_block)
         self.assertIn("regex_search", extract_block)
         self.assertIn("ignore_errors: true", extract_block)
-        report_block = tasks[report_start : tasks.index(
-            "Disable Voice Memo inbox before deployment"
-        )]
+        report_block = tasks[
+            report_start : tasks.index("Disable Voice Memo inbox before deployment")
+        ]
         self.assertIn("items in flight before quiesce", report_block)
         self.assertIn("daybook_voice_memo_inbox_prequiesce_in_flight", report_block)
         self.assertIn("ansible.builtin.debug", report_block)
@@ -595,9 +674,9 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         positions = [tasks.index(name) for name in order]
         self.assertEqual(positions, sorted(positions))
         proof = tasks[
-            tasks.index("Prove Voice Memo inbox long lane liveness without work") : tasks.index(
-                "Verify Voice Memo inbox long lane label is loaded"
-            )
+            tasks.index(
+                "Prove Voice Memo inbox long lane liveness without work"
+            ) : tasks.index("Verify Voice Memo inbox long lane label is loaded")
         ]
         self.assertIn("- transcribe-long", proof)
         self.assertIn("- --no-work", proof)
@@ -621,9 +700,9 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
             proof,
         )
         loaded = tasks[
-            tasks.index("Verify Voice Memo inbox long lane label is loaded") : tasks.index(
-                "Require a loaded Voice Memo inbox long lane label"
-            )
+            tasks.index(
+                "Verify Voice Memo inbox long lane label is loaded"
+            ) : tasks.index("Require a loaded Voice Memo inbox long lane label")
         ]
         self.assertIn("- print", loaded)
         self.assertIn("daybook_voice_memo_inbox_long_launchd_label", loaded)
@@ -633,9 +712,9 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         self.assertIn("register: daybook_voice_memo_inbox_long_loaded", loaded)
         self.assertIn("failed_when: false", loaded)
         report = tasks[
-            tasks.index("Require a loaded Voice Memo inbox long lane label") : tasks.index(
-                "Wait for privacy-safe first Voice Memo scan"
-            )
+            tasks.index(
+                "Require a loaded Voice Memo inbox long lane label"
+            ) : tasks.index("Wait for privacy-safe first Voice Memo scan")
         ]
         # A non-zero launchctl print must still fail the activation block, and
         # only the sanitized rc and label may be reported.
@@ -644,9 +723,9 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         self.assertNotIn("stderr", report)
         # The first-scan proof marker stays bound to the short lane.
         marker = tasks[
-            tasks.index("Install root-owned proven first Voice Memo scan marker") : tasks.index(
-                "Rescue-disable Voice Memo inbox label"
-            )
+            tasks.index(
+                "Install root-owned proven first Voice Memo scan marker"
+            ) : tasks.index("Rescue-disable Voice Memo inbox label")
         ]
         self.assertNotIn("long", marker)
 
@@ -690,7 +769,10 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
             argv = command.get("argv") if isinstance(command, dict) else None
             if not argv:
                 continue
-            runs_cli = "asuser" in argv and "from daybook.cli import main; raise SystemExit(main())" in argv
+            runs_cli = (
+                "asuser" in argv
+                and "from daybook.cli import main; raise SystemExit(main())" in argv
+            )
             prints_job = argv[:2] == ["/bin/launchctl", "print"]
             if (runs_cli or prints_job) and task.get("no_log") is not True:
                 offenders.append(task.get("name"))
@@ -724,7 +806,9 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
                 yaml.safe_dump(plays, sort_keys=False), encoding="utf-8"
             )
             config = Path(workdir) / "ansible.cfg"
-            config.write_text("[defaults]\nstdout_callback = default\n", encoding="utf-8")
+            config.write_text(
+                "[defaults]\nstdout_callback = default\n", encoding="utf-8"
+            )
             env = dict(
                 os.environ,
                 ANSIBLE_CONFIG=str(config),
@@ -878,7 +962,10 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         rejected = [
             case for case in self.LIVENESS_CASES if case["expected"] == "FAILED"
         ]
-        for case in (rejected[0], next(c for c in rejected if c["id"] == "malformed-json")):
+        for case in (
+            rejected[0],
+            next(c for c in rejected if c["id"] == "malformed-json"),
+        ):
             with self.subTest(case=case["id"]):
                 play = {
                     "hosts": "localhost",
@@ -955,7 +1042,9 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
                 "long_launchd_label" if label == LONG_LABEL else "inbox_launchd_label",
                 argv[2],
             )
-        self.assertEqual(rescue_names[-1], "Fail closed after Voice Memo inbox activation error")
+        self.assertEqual(
+            rescue_names[-1], "Fail closed after Voice Memo inbox activation error"
+        )
         self.assertIn("ansible.builtin.fail", rescue[-1])
 
     def test_quiesce_proofs_fail_when_a_label_is_still_loaded(self):
@@ -1018,7 +1107,9 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         for case, outcome in expectations:
             with self.subTest(case=case):
-                self.assertIn(f"QUIESCE {case} {outcome}", completed.stdout, completed.stdout)
+                self.assertIn(
+                    f"QUIESCE {case} {outcome}", completed.stdout, completed.stdout
+                )
 
     PREQUIESCE_CASES = [
         {"id": "count-three", "stdout": '{"long_in_flight_count": 3}', "value": "3"},
@@ -1112,7 +1203,9 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         for case in self.PREQUIESCE_CASES:
             with self.subTest(case=case["id"]):
                 self.assertNotIn(
-                    f"PREQUIESCE {case['id']} ABORTED", completed.stdout, completed.stdout
+                    f"PREQUIESCE {case['id']} ABORTED",
+                    completed.stdout,
+                    completed.stdout,
                 )
                 self.assertIn(
                     f"PREQUIESCE {case['id']} VALUE=[{case['value']}]",
@@ -1149,12 +1242,16 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         positions = [rescue.index(name) for name in order]
         self.assertEqual(positions, sorted(positions))
         proof = rescue[positions[7] : positions[8]]
-        self.assertIn("daybook_voice_memo_inbox_long_launchd_label | regex_escape", proof)
+        self.assertIn(
+            "daybook_voice_memo_inbox_long_launchd_label | regex_escape", proof
+        )
         self.assertIn("daybook_voice_memo_inbox_rescue_probe.rc != 0", proof)
         self.assertIn("daybook_voice_memo_inbox_rescue_long_probe.rc != 0", proof)
         self.assertIn("COULD NOT PROVE", proof)
         long_probe = rescue[positions[6] : positions[7]]
-        self.assertIn("until: daybook_voice_memo_inbox_rescue_long_probe.rc != 0", long_probe)
+        self.assertIn(
+            "until: daybook_voice_memo_inbox_rescue_long_probe.rc != 0", long_probe
+        )
         self.assertIn("ignore_errors: true", long_probe)
         # The rescue only touches launchd; it never re-clones, re-syncs, or
         # otherwise changes the deployed Daybook revision.
@@ -1187,8 +1284,12 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
             self.assertIn(f'"{field}"', policy, field)
         tasks = self.text(f"{ROLE}/tasks/main.yml")
         validation = tasks[: tasks.index("Resolve Voice Memo inbox service uid")]
-        self.assertIn("daybook_voice_memo_inbox_long_lane_enabled is boolean", validation)
-        self.assertIn("daybook_voice_memo_inbox_long_interval_seconds | int == 600", validation)
+        self.assertIn(
+            "daybook_voice_memo_inbox_long_lane_enabled is boolean", validation
+        )
+        self.assertIn(
+            "daybook_voice_memo_inbox_long_interval_seconds | int == 600", validation
+        )
         for bound in (
             "long_max_duration_seconds | float > 180",
             "long_max_duration_seconds | float <= 3600",
@@ -1211,30 +1312,35 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
             # Bounded values are validated unconditionally: they are rendered
             # into the shared policy whether or not the lane may do work.
             line = [
-                candidate
-                for candidate in validation.splitlines()
-                if bound in candidate
+                candidate for candidate in validation.splitlines() if bound in candidate
             ][0]
             self.assertNotIn(
                 "not daybook_voice_memo_inbox_long_lane_enabled | bool or", line, bound
             )
         self.assertIn("round(0, 'ceil') | int", validation)
-        self.assertIn("daybook_voice_memo_inbox_long_queue_slack_seconds | int\n", validation)
+        self.assertIn(
+            "daybook_voice_memo_inbox_long_queue_slack_seconds | int\n", validation
+        )
         self.assertIn(") <= 2700", validation)
         defaults = self.role_variables()
-        deadline = -(
-            -int(
-                defaults["daybook_voice_memo_inbox_long_max_duration_seconds"]
-                * defaults["daybook_voice_memo_inbox_long_realtime_factor"]
-                * 1000
+        deadline = (
+            -(
+                -int(
+                    defaults["daybook_voice_memo_inbox_long_max_duration_seconds"]
+                    * defaults["daybook_voice_memo_inbox_long_realtime_factor"]
+                    * 1000
+                )
+                // 1000
             )
-            // 1000
-        ) + defaults["daybook_voice_memo_inbox_long_queue_slack_seconds"]
+            + defaults["daybook_voice_memo_inbox_long_queue_slack_seconds"]
+        )
         self.assertLessEqual(deadline, 2700)
 
     def test_second_log_pair_is_owner_only_and_check_mode_guarded(self):
         tasks = self.text(f"{ROLE}/tasks/main.yml")
-        logs = tasks[tasks.index("- name: Create owner-only Voice Memo inbox logs") + 1 :]
+        logs = tasks[
+            tasks.index("- name: Create owner-only Voice Memo inbox logs") + 1 :
+        ]
         logs = logs[: logs.index("\n- name:")]
         for variable in (
             "daybook_voice_memo_inbox_stdout_log",
@@ -1261,7 +1367,10 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
             validation,
         )
         plist_render = tasks[
-            tasks.index("- name: Render disabled-first Voice Memo inbox long lane LaunchAgent") + 1 :
+            tasks.index(
+                "- name: Render disabled-first Voice Memo inbox long lane LaunchAgent"
+            )
+            + 1 :
         ]
         plist_render = plist_render[: plist_render.index("\n- name:")]
         self.assertIn(

@@ -9,6 +9,7 @@ fastdeploy_deploy
 fastdeploy_self_deploy
 daybook_sessions_deploy
 daybook_photos_offload_deploy
+daybook_voice_memo_inbox_deploy
 weeknotes_home_deploy
 nyxmon_deploy
 logyard_deploy

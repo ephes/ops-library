@@ -88,6 +88,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `daybook_voice_memo_inbox_deploy` now has a rendered documentation page
+  under the deployment roles (the README is included, and the role carries the
+  `ops_library_documentation_category` marker so `validate_docs.py` requires
+  the page from now on). `tests/test_daybook_voice_memo_inbox_deploy.py` is
+  formatted with black; no test changed.
 - `macos_time_machine_exclusions` documents that paths under macOS
   privacy-protected locations such as `~/Library/Containers` cannot be managed
   by the launchd-run agent and must receive a one-time sticky exclusion from a

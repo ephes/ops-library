@@ -1,4 +1,5 @@
 ---
+ops_library_documentation_category: deployment
 # Install the Apple Voice Memos -> Voxhelm -> Obsidian importer on macOS.
 
 daybook_voice_memo_inbox_enabled: false
