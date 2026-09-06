@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `wagtail_deploy` gained `wagtail_require_object_storage` and
+  `wagtail_require_sentry` (both default `true`, so existing deployments are
+  unchanged). Setting either to `false` skips the corresponding secret
+  validation and leaves those names out of the rendered environment file, which
+  makes the role usable for a Wagtail site that serves static files with
+  WhiteNoise and media from local disk and runs without Sentry.
+
 - `voxhelm_deploy` gained `voxhelm_lane_scheduler_interactive_slots` and
   `voxhelm_lane_scheduler_non_interactive_slots` (both default `1`) for
   Voxhelm's bounded inference slots (Voxhelm decision D-24): one reserved
@@ -38,6 +45,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the scheduled interpreter is staged root-owned and checksum-bound to the
   pinned Homebrew interpreter, fresh-host check-mode guards are keyed by
   path, and empty required values are rejected like placeholders.
+
+### Changed
+
+- `wagtail_deploy` moved its input validation into `tasks/validate.yml`, like
+  the other roles that have one, and `main.yml` imports it. `just test` now
+  runs `tests/test_wagtail_deploy.yml` through the new `test-wagtail-deploy`
+  recipe; before, that playbook only ever ran when somebody started it by
+  hand. The test renders the templates as before and additionally runs the
+  validation itself, so an inverted condition on one of the new switches fails
+  the suite instead of silently disabling a secret check.
 
 ### Fixed
 

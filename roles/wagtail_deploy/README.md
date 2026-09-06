@@ -37,6 +37,22 @@ wagtail_mailgun_sender_domain: "..."
 wagtail_django_server_email: "..."
 ```
 
+### Sites Without Object Storage or Sentry
+
+Not every Wagtail site keeps its media in S3 behind CloudFront or reports to
+Sentry. A site that serves static files with WhiteNoise and media from local
+disk has no such credentials:
+
+```yaml
+wagtail_require_object_storage: false  # skips the S3/CloudFront secrets
+wagtail_require_sentry: false          # skips the Sentry DSN
+```
+
+Both default to `true`, so existing deployments keep their validation. When one
+is `false`, the corresponding secrets are neither demanded nor written to the
+environment file — an empty `SENTRY_DSN` reads as a configured one in some SDK
+versions, so leaving the name out entirely is the safer rendering.
+
 ### Sentry Environment
 
 ```yaml
@@ -213,8 +229,15 @@ templates, and handlers.
 
 ```bash
 cd /path/to/ops-library
-just test-role wagtail_deploy
+just test-role wagtail_deploy   # YAML syntax and structure of the role
+just test-wagtail-deploy        # renders the systemd units and the env file
 ```
+
+`just test-role` checks the shape of the role; it renders nothing. The second
+recipe runs `tests/test_wagtail_deploy.yml`, which renders the templates and
+asserts on the result - among other things that a site with
+`wagtail_require_object_storage: false` receives no S3, CloudFront or Sentry
+names at all. It is part of `just test`.
 
 ## License
 

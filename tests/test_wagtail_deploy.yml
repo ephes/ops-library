@@ -14,6 +14,7 @@
     rendered_worker_with_args: "/tmp/test-wagtail-db-worker-with-args.service"
     rendered_env: "/tmp/test-wagtail.env"
     rendered_env_staging: "/tmp/test-wagtail-staging.env"
+    rendered_env_plain: "/tmp/test-wagtail-plain.env"
     wagtail_project_slug: "python-podcast"
     # Shared inputs for the wagtail.env.j2 renders below. Task-level vars in the
     # service-template tasks override these where the names overlap.
@@ -37,6 +38,22 @@
     wagtail_django_server_email: "noreply@example.com"
     wagtail_env_extra: {}
 
+    # Taken from the role defaults instead of repeated as literals: a default
+    # that flips in the role has to reach the "default case" of these renders.
+    # A play var on purpose - set_fact would rank above the task vars of the
+    # renders below and override their deliberate false.
+    wagtail_require_object_storage: "{{ wagtail_defaults.wagtail_require_object_storage }}"
+    wagtail_require_sentry: "{{ wagtail_defaults.wagtail_require_sentry }}"
+
+    # Flattened failure text of the most recent rescued failure; a looped
+    # assert reports through .results, a plain assert through .msg.
+    wagtail_validate_failure_text: >-
+      {{ ansible_failed_result.msg | default('') ~ ' ' ~
+      (
+        ansible_failed_result.results | default([])
+        | map(attribute='msg', default='') | list | join(' ')
+      ) }}
+
   tasks:
     - name: Load role defaults
       ansible.builtin.include_vars:
@@ -57,6 +74,91 @@
         fail_msg: >-
           wagtail_django_sentry_environment must default to production so
           existing production deployments keep their Sentry environment tag.
+
+    # ------------------------------------------------------------------
+    # Validation: the wagtail_require_* switches decide which secrets are
+    # demanded.  Rendering the templates alone would not notice an inverted
+    # when: on those asserts.
+    #
+    # include_tasks, not include_role: the role depends on postgres_install
+    # through its meta, and include_role would run that dependency - which
+    # needs become and has nothing to do with validating inputs.  The switches
+    # come from the defaults through the set_fact above.
+    # ------------------------------------------------------------------
+    - name: Validation accepts a complete set of secrets
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate.yml"
+      vars:
+        wagtail_service_name: "python-podcast"
+        wagtail_fqdn: "example.com"
+        wagtail_traefik_host_rule: "Host(`example.com`)"
+        wagtail_app_port: 10014
+        wagtail_source_path: "/tmp"
+        wagtail_deploy_method: "{{ wagtail_defaults.wagtail_deploy_method }}"
+
+    - name: Validation rejects a missing object storage secret
+      block:
+        - name: Run validation without an AWS key
+          ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate.yml"
+          vars:
+            wagtail_service_name: "python-podcast"
+            wagtail_fqdn: "example.com"
+            wagtail_traefik_host_rule: "Host(`example.com`)"
+            wagtail_app_port: 10014
+            wagtail_source_path: "/tmp"
+            wagtail_deploy_method: "{{ wagtail_defaults.wagtail_deploy_method }}"
+            wagtail_django_aws_access_key_id: ""
+
+        - name: Fail because the missing key was accepted
+          ansible.builtin.fail:
+            msg: "Validation accepted an empty wagtail_django_aws_access_key_id"
+      rescue:
+        - name: Confirm the failure came from the object storage assert
+          ansible.builtin.assert:
+            that:
+              - "'Object storage secrets are missing' in wagtail_validate_failure_text"
+            fail_msg: "Unexpected failure: {{ wagtail_validate_failure_text }}"
+
+    - name: Validation passes without object storage and Sentry when both are off
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate.yml"
+      vars:
+        wagtail_service_name: "ggs-lennestrasse"
+        wagtail_fqdn: "example.org"
+        wagtail_traefik_host_rule: "Host(`example.org`)"
+        wagtail_app_port: 10021
+        wagtail_source_path: "/tmp"
+        wagtail_deploy_method: "{{ wagtail_defaults.wagtail_deploy_method }}"
+        wagtail_require_object_storage: false
+        wagtail_require_sentry: false
+        wagtail_django_aws_access_key_id: ""
+        wagtail_django_aws_secret_access_key: ""
+        wagtail_django_aws_storage_bucket_name: ""
+        wagtail_cloudfront_domain: ""
+        wagtail_django_sentry_dsn: ""
+
+    - name: Validation still demands the shared secrets when both are off
+      block:
+        - name: Run validation without a secret key
+          ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate.yml"
+          vars:
+            wagtail_service_name: "ggs-lennestrasse"
+            wagtail_fqdn: "example.org"
+            wagtail_traefik_host_rule: "Host(`example.org`)"
+            wagtail_app_port: 10021
+            wagtail_source_path: "/tmp"
+            wagtail_deploy_method: "{{ wagtail_defaults.wagtail_deploy_method }}"
+            wagtail_require_object_storage: false
+            wagtail_require_sentry: false
+            wagtail_django_secret_key: ""
+
+        - name: Fail because the missing secret key was accepted
+          ansible.builtin.fail:
+            msg: "Validation accepted an empty wagtail_django_secret_key"
+      rescue:
+        - name: Confirm the failure came from the shared assert
+          ansible.builtin.assert:
+            that:
+              - "'Required secrets or settings are missing' in wagtail_validate_failure_text"
+            fail_msg: "Unexpected failure: {{ wagtail_validate_failure_text }}"
 
     - name: Render Wagtail web service template
       ansible.builtin.template:
@@ -135,6 +237,21 @@
         wagtail_django_settings_module: "config.settings.production"
         wagtail_django_sentry_environment: "staging"
 
+    - name: Render Wagtail env file for a site without object storage and Sentry
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/wagtail.env.j2"
+        dest: "{{ rendered_env_plain }}"
+      vars:
+        wagtail_django_settings_module: "ggs_lennestrasse.settings.production"
+        wagtail_require_object_storage: false
+        wagtail_require_sentry: false
+        wagtail_django_aws_access_key_id: ""
+        wagtail_django_aws_secret_access_key: ""
+        wagtail_django_aws_storage_bucket_name: ""
+        wagtail_cloudfront_domain: ""
+        wagtail_django_sentry_dsn: ""
+        wagtail_django_sentry_environment: "staging"
+
     - name: Read rendered services
       ansible.builtin.slurp:
         path: "{{ item }}"
@@ -144,6 +261,7 @@
         - "{{ rendered_worker_with_args }}"
         - "{{ rendered_env }}"
         - "{{ rendered_env_staging }}"
+        - "{{ rendered_env_plain }}"
       register: rendered_files
 
     - name: Assert rendered services include web and worker commands
@@ -178,6 +296,25 @@
         rendered_env_text: "{{ rendered_files.results[3].content | b64decode }}"
         rendered_env_staging_text: "{{ rendered_files.results[4].content | b64decode }}"
 
+    - name: Assert a site without object storage keeps those names out of the env file
+      ansible.builtin.assert:
+        that:
+          - "'DJANGO_AWS_ACCESS_KEY_ID' not in rendered_env_plain_text"
+          - "'DJANGO_AWS_SECRET_ACCESS_KEY' not in rendered_env_plain_text"
+          - "'DJANGO_AWS_STORAGE_BUCKET_NAME' not in rendered_env_plain_text"
+          - "'CLOUDFRONT_DOMAIN' not in rendered_env_plain_text"
+          - "'SENTRY_DSN' not in rendered_env_plain_text"
+          - "'SENTRY_ENVIRONMENT' not in rendered_env_plain_text"
+          - "'DATABASE_URL' in rendered_env_plain_text"
+          - "'MAILGUN_SENDER_DOMAIN' in rendered_env_plain_text"
+          - "'DJANGO_SECRET_KEY' in rendered_env_plain_text"
+        fail_msg: >-
+          A site that serves static files with WhiteNoise and runs without
+          Sentry must not receive empty S3, CloudFront or Sentry variables:
+          an empty DSN reads as a configured one in some SDK versions.
+      vars:
+        rendered_env_plain_text: "{{ rendered_files.results[5].content | b64decode }}"
+
     - name: Clean up rendered services
       ansible.builtin.file:
         path: "{{ item }}"
@@ -188,3 +325,4 @@
         - "{{ rendered_worker_with_args }}"
         - "{{ rendered_env }}"
         - "{{ rendered_env_staging }}"
+        - "{{ rendered_env_plain }}"

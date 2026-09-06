@@ -11,7 +11,7 @@ setup:
     @./setup-pre-commit.sh
 
 # Run the default contributor validation path
-test: venv test-roles test-openclaw-audio-transcription test-openclaw-codex-registration-backport test-network-recovery test-monitoring-pipeline-repair test-traefik-metrics-entrypoint test-os-apt-maintenance-failed-run test-tailscale-metrics-timer test-nyxmon-deploy test-certbot-dns-renewal-hooks test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-voice-memo-inbox-deploy test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup test-takahe-deploy lint docs-build docs-lint
+test: venv test-roles test-openclaw-audio-transcription test-openclaw-codex-registration-backport test-network-recovery test-monitoring-pipeline-repair test-traefik-metrics-entrypoint test-os-apt-maintenance-failed-run test-tailscale-metrics-timer test-nyxmon-deploy test-certbot-dns-renewal-hooks test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-voice-memo-inbox-deploy test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup test-takahe-deploy test-wagtail-deploy lint docs-build docs-lint
     @echo ""
     @echo "✅ Validation completed!"
 
@@ -126,6 +126,10 @@ test-heis-production-backup: venv
 test-takahe-deploy: venv
     @echo "Testing Takahe error mail validation and env rendering..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_takahe_deploy.yml
+
+test-wagtail-deploy: venv
+    @echo "Testing Wagtail env rendering and the secret validation switches..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_wagtail_deploy.yml
 
 # Quick syntax check for everything
 syntax-check: venv
