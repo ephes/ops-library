@@ -28,10 +28,15 @@
       - daybook_voice_memo_inbox_log_dir == daybook_voice_memo_inbox_runtime_dir ~ '/logs'
       - daybook_voice_memo_inbox_stdout_log == daybook_voice_memo_inbox_log_dir ~ '/ingest.log'
       - daybook_voice_memo_inbox_stderr_log == daybook_voice_memo_inbox_log_dir ~ '/ingest.err.log'
+      - daybook_voice_memo_inbox_long_stdout_log == daybook_voice_memo_inbox_log_dir ~ '/ingest-long.log'
+      - daybook_voice_memo_inbox_long_stderr_log == daybook_voice_memo_inbox_log_dir ~ '/ingest-long.err.log'
       - daybook_voice_memo_inbox_credential_dir == daybook_voice_memo_inbox_service_home ~ '/.config/daybook-voice-memo-inbox'
       - daybook_voice_memo_inbox_credential_path == daybook_voice_memo_inbox_credential_dir ~ '/credentials.json'
       - daybook_voice_memo_inbox_launchd_label == 'de.wersdoerfer.daybook.voice-memo-inbox'
       - daybook_voice_memo_inbox_plist_path == daybook_voice_memo_inbox_service_home ~ '/Library/LaunchAgents/' ~ daybook_voice_memo_inbox_launchd_label ~ '.plist'
+      - daybook_voice_memo_inbox_long_launchd_label == 'de.wersdoerfer.daybook.voice-memo-inbox-long'
+      - daybook_voice_memo_inbox_long_launchd_label != daybook_voice_memo_inbox_launchd_label
+      - daybook_voice_memo_inbox_long_plist_path == daybook_voice_memo_inbox_service_home ~ '/Library/LaunchAgents/' ~ daybook_voice_memo_inbox_long_launchd_label ~ '.plist'
       - daybook_voice_memo_inbox_ffprobe_path == '/opt/homebrew/bin/ffprobe'
       - daybook_voice_memo_inbox_ffmpeg_path == '/opt/homebrew/bin/ffmpeg'
       - daybook_voice_memo_inbox_bucket != 'CHANGEME'
@@ -59,10 +64,45 @@
       - daybook_voice_memo_inbox_duration_tolerance_seconds | float == 1.0
       - daybook_voice_memo_inbox_request_timeout_seconds | int > 0
       - daybook_voice_memo_inbox_request_timeout_seconds | int < daybook_voice_memo_inbox_interval_seconds | int
+      - daybook_voice_memo_inbox_long_lane_enabled is boolean
+      - daybook_voice_memo_inbox_long_interval_seconds | int == 600
+      - daybook_voice_memo_inbox_long_interval_seconds | int >= 2 * (daybook_voice_memo_inbox_interval_seconds | int)
+      # The long-lane ranges are validated whenever the role runs, including
+      # while the lane is disabled: the values are rendered into the shared
+      # policy either way, so an out-of-range value must never reach the host.
+      - daybook_voice_memo_inbox_long_max_duration_seconds | float > 180
+      - daybook_voice_memo_inbox_long_max_duration_seconds | float <= 3600
+      - daybook_voice_memo_inbox_long_max_audio_bytes | int >= 16777216
+      - daybook_voice_memo_inbox_long_max_audio_bytes | int < 26214400
+      - daybook_voice_memo_inbox_long_max_audio_bytes | int >= daybook_voice_memo_inbox_max_audio_bytes | int
+      - daybook_voice_memo_inbox_long_realtime_factor | float >= 0.02
+      - daybook_voice_memo_inbox_long_realtime_factor | float <= 4.0
+      - daybook_voice_memo_inbox_long_queue_slack_seconds | int >= 120
+      - daybook_voice_memo_inbox_long_queue_slack_seconds | int <= 900
+      - daybook_voice_memo_inbox_long_validation_timeout_seconds | int >= 30
+      - daybook_voice_memo_inbox_long_validation_timeout_seconds | int <= 120
+      - daybook_voice_memo_inbox_long_max_attempts | int >= 1
+      - daybook_voice_memo_inbox_long_max_attempts | int <= 10
+      - daybook_voice_memo_inbox_long_queue_per_run | int >= 1
+      - daybook_voice_memo_inbox_long_queue_per_run | int <= 5
+      - daybook_voice_memo_inbox_long_min_gap_seconds | int > 430
+      - daybook_voice_memo_inbox_long_min_gap_seconds | int <= 900
+      # The long-lane ranges and the deadline inequality are validated even
+      # while the lane is disabled: the values are rendered into the shared
+      # policy either way, and Daybook validates them on every command.
+      # Deadline inequality: the worst-case item deadline derived from the
+      # ceiling must stay inside the 2700-second clamp, otherwise an admitted
+      # memo could be queued and never fit its own deadline.
+      - >-
+        (
+          ((daybook_voice_memo_inbox_long_max_duration_seconds | float * daybook_voice_memo_inbox_long_realtime_factor | float) | round(0, 'ceil') | int)
+          + daybook_voice_memo_inbox_long_queue_slack_seconds | int
+        ) <= 2700
       - not daybook_voice_memo_inbox_launchd_enabled | bool or daybook_voice_memo_inbox_activation_confirmation == daybook_voice_memo_inbox_activation_phrase
     fail_msg: >-
       Voice Memo inbox deployment requires a Darwin Studio target, an exact
       Daybook commit, least-privilege credentials, safe fixed paths/defaults,
+      a long lane whose ceilings satisfy the 2700-second deadline inequality,
       and the explicit historical-baseline phrase before activation.
   when: daybook_voice_memo_inbox_enabled | bool
 
@@ -98,15 +138,111 @@
   loop: "{{ daybook_voice_memo_inbox_executables.results }}"
   when: daybook_voice_memo_inbox_enabled | bool
 
-- name: Require active Voice Memo owner Aqua domain for deployment
+- name: Inspect Voice Memo owner Aqua domain for deployment
+  # launchctl print of the whole gui domain lists every loaded job with its
+  # environment; the raw output is never printed, only the exit status.
   ansible.builtin.command:
     argv:
       - /bin/launchctl
       - print
       - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}"
+  register: daybook_voice_memo_inbox_aqua_domain
   changed_when: false
+  failed_when: false
+  check_mode: false
+  no_log: true
+  when: daybook_voice_memo_inbox_enabled | bool
+
+- name: Require active Voice Memo owner Aqua domain for deployment
+  ansible.builtin.assert:
+    that:
+      - daybook_voice_memo_inbox_aqua_domain.rc | int == 0
+    fail_msg: >-
+      The Voice Memo owner has no active Aqua (gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }})
+      session on this host (launchctl print rc={{ daybook_voice_memo_inbox_aqua_domain.rc }}).
+      The user must be logged in at the console before deploying.
+  when: daybook_voice_memo_inbox_enabled | bool
+
+- name: Inspect Voice Memo inbox runtime before quiesce
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    get_checksum: false
+  loop:
+    - "{{ daybook_voice_memo_inbox_python }}"
+    - "{{ daybook_voice_memo_inbox_policy_path }}"
+  register: daybook_voice_memo_inbox_prequiesce_runtime
   check_mode: false
   when: daybook_voice_memo_inbox_enabled | bool
+
+- name: Read Voice Memo inbox long lane in-flight count before quiesce
+  # Best-effort, read-only aggregate. Quiescing kills a running long item
+  # instead of waiting for it, so this line is the operator's record that an
+  # item was interrupted; the next window A returns it to the queue.
+  ansible.builtin.command:
+    argv:
+      - /bin/launchctl
+      - asuser
+      - "{{ daybook_voice_memo_inbox_uid.stdout | trim }}"
+      - /usr/bin/sudo
+      - -u
+      - "{{ daybook_voice_memo_inbox_service_user }}"
+      - /usr/bin/env
+      - "HOME={{ daybook_voice_memo_inbox_service_home }}"
+      - "DAYBOOK_VOICE_MEMOS_POLICY={{ daybook_voice_memo_inbox_policy_path }}"
+      - "{{ daybook_voice_memo_inbox_python }}"
+      - -I
+      - -c
+      - from daybook.cli import main; raise SystemExit(main())
+      - voice-memos
+      - status
+      - --summary-only
+  args:
+    chdir: "{{ daybook_voice_memo_inbox_checkout_path }}"
+  register: daybook_voice_memo_inbox_prequiesce_status
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+    # Skipped on a fresh host: no protected interpreter or policy yet.
+    - daybook_voice_memo_inbox_prequiesce_runtime.results | selectattr('stat.exists') | list | length == 2
+
+- name: Extract Voice Memo inbox long lane in-flight count before quiesce
+  # Deliberately parser-free: a malformed, truncated, or non-JSON status
+  # document must never abort the quiesce that follows, so the count is read
+  # with a regular expression rather than a JSON parser. A failed extraction
+  # can only yield an empty string, and the report below is then skipped.
+  ansible.builtin.set_fact:
+    daybook_voice_memo_inbox_prequiesce_in_flight: >-
+      {{
+        daybook_voice_memo_inbox_prequiesce_status.stdout | default('', true)
+        | regex_search('"long_in_flight_count"[^0-9a-z-]{0,4}[0-9]+') | default('', true)
+        | regex_search('[0-9]+') | default('', true)
+      }}
+  # Belt and braces: nothing above can raise, and nothing here may stop the
+  # quiesce even if it did.
+  ignore_errors: true
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+    - not daybook_voice_memo_inbox_prequiesce_status.skipped | default(false)
+    - daybook_voice_memo_inbox_prequiesce_status.rc | default(1) == 0
+
+- name: Report Voice Memo inbox long lane in-flight count before quiesce
+  ansible.builtin.debug:
+    msg: >-
+      Voice Memo inbox long lane items in flight before quiesce:
+      {{ daybook_voice_memo_inbox_prequiesce_in_flight }}
+      (a running long item is terminated by bootout and returned to the queue
+      by the next transcribe-long run).
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+    # Reports a validated non-negative integer only; an absent or unparsable
+    # count is silently skipped.
+    - (daybook_voice_memo_inbox_prequiesce_in_flight | default('') | string) is match('[0-9]+$')
 
 - name: Disable Voice Memo inbox before deployment
   ansible.builtin.command:
@@ -114,6 +250,17 @@
       - /bin/launchctl
       - disable
       - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}/{{ daybook_voice_memo_inbox_launchd_label }}"
+  changed_when: false
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Disable Voice Memo inbox long lane before deployment
+  ansible.builtin.command:
+    argv:
+      - /bin/launchctl
+      - disable
+      - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}/{{ daybook_voice_memo_inbox_long_launchd_label }}"
   changed_when: false
   when:
     - daybook_voice_memo_inbox_enabled | bool
@@ -143,6 +290,21 @@
     - daybook_voice_memo_inbox_enabled | bool
     - not ansible_check_mode
 
+- name: Boot out Voice Memo inbox long lane before deployment
+  # Never waits for a running long item: launchd terminates the process, the
+  # aborted Voxhelm request releases its inference slot on disconnect, and the
+  # next window A returns the interrupted entry to the queue.
+  ansible.builtin.command:
+    argv:
+      - /bin/launchctl
+      - bootout
+      - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}/{{ daybook_voice_memo_inbox_long_launchd_label }}"
+  changed_when: false
+  failed_when: false
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
 - name: Prove Voice Memo inbox label is disabled
   ansible.builtin.assert:
     that:
@@ -154,6 +316,21 @@
             ~ '"\\s*=>\\s*(?:true|disabled)\\s*$'
           ) is not none
     fail_msg: Voice Memo inbox label could not be proven disabled before deployment.
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Prove Voice Memo inbox long lane label is disabled
+  ansible.builtin.assert:
+    that:
+      - >-
+        daybook_voice_memo_inbox_disabled_labels.stdout
+        | regex_search(
+            '(?m)^\\s*"'
+            ~ (daybook_voice_memo_inbox_long_launchd_label | regex_escape)
+            ~ '"\\s*=>\\s*(?:true|disabled)\\s*$'
+          ) is not none
+    fail_msg: Voice Memo inbox long lane label could not be proven disabled before deployment.
   when:
     - daybook_voice_memo_inbox_enabled | bool
     - not ansible_check_mode
@@ -171,7 +348,63 @@
   retries: 12
   delay: 5
   until: daybook_voice_memo_inbox_quiesced.rc != 0
-  failed_when: daybook_voice_memo_inbox_quiesced.rc == 0
+  failed_when: false
+  # launchctl print dumps a still-loaded job's HOME, private log paths, and
+  # full environment; the raw output stays hidden and only the sanitized exit
+  # status is proven below.
+  no_log: true
+  # Retry exhaustion marks the task failed regardless of failed_when; the
+  # sanitized proof below must still run and fail the deployment.
+  ignore_errors: true
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Prove Voice Memo inbox is quiesced before managed changes
+  ansible.builtin.assert:
+    that:
+      - daybook_voice_memo_inbox_quiesced.rc | int != 0
+    fail_msg: >-
+      Voice Memo inbox label {{ daybook_voice_memo_inbox_launchd_label }} is
+      still loaded after bootout
+      (launchctl print rc={{ daybook_voice_memo_inbox_quiesced.rc | default('absent') }}).
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Verify Voice Memo inbox long lane is quiesced before managed changes
+  ansible.builtin.command:
+    argv:
+      - /bin/launchctl
+      - print
+      - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}/{{ daybook_voice_memo_inbox_long_launchd_label }}"
+  register: daybook_voice_memo_inbox_long_quiesced
+  changed_when: false
+  # Bounded by launchd's termination window only. The bootout above already
+  # killed any running long item, so this never waits for a transcription.
+  retries: 12
+  delay: 5
+  until: daybook_voice_memo_inbox_long_quiesced.rc != 0
+  failed_when: false
+  # Same sanitization as the short lane: the raw launchctl print output is
+  # hidden and only the exit status is proven below.
+  no_log: true
+  # Retry exhaustion marks the task failed regardless of failed_when; the
+  # sanitized proof below must still run and fail the deployment.
+  ignore_errors: true
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Prove Voice Memo inbox long lane is quiesced before managed changes
+  ansible.builtin.assert:
+    that:
+      - daybook_voice_memo_inbox_long_quiesced.rc | int != 0
+    fail_msg: >-
+      Voice Memo inbox long lane label
+      {{ daybook_voice_memo_inbox_long_launchd_label }} is still loaded after
+      bootout
+      (launchctl print rc={{ daybook_voice_memo_inbox_long_quiesced.rc | default('absent') }}).
   when:
     - daybook_voice_memo_inbox_enabled | bool
     - not ansible_check_mode
@@ -247,6 +480,8 @@
   loop:
     - "{{ daybook_voice_memo_inbox_stdout_log }}"
     - "{{ daybook_voice_memo_inbox_stderr_log }}"
+    - "{{ daybook_voice_memo_inbox_long_stdout_log }}"
+    - "{{ daybook_voice_memo_inbox_long_stderr_log }}"
   when:
     - daybook_voice_memo_inbox_enabled | bool
     - not ansible_check_mode or daybook_voice_memo_inbox_parent_exists[daybook_voice_memo_inbox_log_dir]
@@ -646,9 +881,28 @@
     - daybook_voice_memo_inbox_enabled | bool
     - not ansible_check_mode or daybook_voice_memo_inbox_parent_exists[daybook_voice_memo_inbox_service_home ~ '/Library/LaunchAgents']
 
+- name: Render disabled-first Voice Memo inbox long lane LaunchAgent
+  ansible.builtin.template:
+    src: voice-memo-inbox-long.launchd.plist.j2
+    dest: "{{ daybook_voice_memo_inbox_long_plist_path }}"
+    owner: root
+    group: "{{ daybook_voice_memo_inbox_system_group }}"
+    mode: "0644"
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode or daybook_voice_memo_inbox_parent_exists[daybook_voice_memo_inbox_service_home ~ '/Library/LaunchAgents']
+
 - name: Validate Voice Memo inbox LaunchAgent plist
   ansible.builtin.command:
     argv: [/usr/bin/plutil, -lint, "{{ daybook_voice_memo_inbox_plist_path }}"]
+  changed_when: false
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Validate Voice Memo inbox long lane LaunchAgent plist
+  ansible.builtin.command:
+    argv: [/usr/bin/plutil, -lint, "{{ daybook_voice_memo_inbox_long_plist_path }}"]
   changed_when: false
   when:
     - daybook_voice_memo_inbox_enabled | bool
@@ -762,19 +1016,28 @@
         chdir: "{{ daybook_voice_memo_inbox_checkout_path }}"
       register: daybook_voice_memo_inbox_prebootstrap_status
       changed_when: false
+      failed_when: false
+      # The argv carries the service home and user, and a traceback on stderr
+      # can name private paths: the raw result is never printed, the assert
+      # below reports only the exit status and the category.
+      no_log: true
 
     - name: Parse Voice Memo pre-bootstrap generation
       ansible.builtin.set_fact:
         daybook_voice_memo_inbox_prebootstrap_report: >-
-          {{ daybook_voice_memo_inbox_prebootstrap_status.stdout | from_json }}
+          {{ daybook_voice_memo_inbox_prebootstrap_status.stdout | default('{}', true) | from_json }}
+      no_log: true
 
     - name: Require healthy Voice Memo pre-bootstrap state
       ansible.builtin.assert:
         that:
           - daybook_voice_memo_inbox_prebootstrap_status.rc == 0
-          - daybook_voice_memo_inbox_prebootstrap_report.category == 'healthy'
-          - daybook_voice_memo_inbox_prebootstrap_report.generation | int >= 1
-        fail_msg: Voice Memo inbox state was not healthy before bootstrap.
+          - daybook_voice_memo_inbox_prebootstrap_report.category | default('absent') == 'healthy'
+          - daybook_voice_memo_inbox_prebootstrap_report.generation | default(0) | int >= 1
+        fail_msg: >-
+          Voice Memo inbox state was not healthy before bootstrap
+          (rc={{ daybook_voice_memo_inbox_prebootstrap_status.rc }},
+          category={{ daybook_voice_memo_inbox_prebootstrap_report.category | default('absent') }}).
 
     - name: Enable Voice Memo inbox exact label
       ansible.builtin.command:
@@ -792,6 +1055,111 @@
           - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}"
           - "{{ daybook_voice_memo_inbox_plist_path }}"
       changed_when: true
+
+    - name: Enable Voice Memo inbox long lane exact label
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - enable
+          - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}/{{ daybook_voice_memo_inbox_long_launchd_label }}"
+      changed_when: false
+
+    - name: Bootstrap Voice Memo inbox long lane LaunchAgent
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - bootstrap
+          - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}"
+          - "{{ daybook_voice_memo_inbox_long_plist_path }}"
+      changed_when: true
+
+    - name: Prove Voice Memo inbox long lane liveness without work
+      # --no-work performs only the schema migration, the return of
+      # interrupted items, and the vanished-entry sweep. It never selects or
+      # transcribes an item, and it proves the lane even while
+      # long_lane_enabled is false.
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - asuser
+          - "{{ daybook_voice_memo_inbox_uid.stdout | trim }}"
+          - /usr/bin/sudo
+          - -u
+          - "{{ daybook_voice_memo_inbox_service_user }}"
+          - /usr/bin/env
+          - "HOME={{ daybook_voice_memo_inbox_service_home }}"
+          - "DAYBOOK_VOICE_MEMOS_POLICY={{ daybook_voice_memo_inbox_policy_path }}"
+          - "{{ daybook_voice_memo_inbox_python }}"
+          - -I
+          - -c
+          - from daybook.cli import main; raise SystemExit(main())
+          - voice-memos
+          - transcribe-long
+          - --summary-only
+          - --no-work
+      args:
+        chdir: "{{ daybook_voice_memo_inbox_checkout_path }}"
+      register: daybook_voice_memo_inbox_long_liveness
+      changed_when: false
+      failed_when: false
+      # Same privacy rule as the status commands: the argv carries the
+      # service home and user, and stderr can name private paths. Only the
+      # exit status and the category are reported by the assert below.
+      no_log: true
+
+    - name: Parse Voice Memo inbox long lane liveness proof
+      ansible.builtin.set_fact:
+        daybook_voice_memo_inbox_long_liveness_report: >-
+          {{ daybook_voice_memo_inbox_long_liveness.stdout | default('{}', true) | from_json }}
+      no_log: true
+
+    - name: Require a proven live Voice Memo inbox long lane
+      ansible.builtin.assert:
+        that:
+          - >-
+            (
+              daybook_voice_memo_inbox_long_liveness.rc == 0
+              and daybook_voice_memo_inbox_long_liveness_report.category == 'proof_only'
+            ) or (
+              daybook_voice_memo_inbox_long_liveness.rc == 75
+              and daybook_voice_memo_inbox_long_liveness_report.category in ['lock_contended', 'ledger_busy']
+            )
+        fail_msg: >-
+          Voice Memo inbox long lane liveness could not be proven
+          (rc={{ daybook_voice_memo_inbox_long_liveness.rc }},
+          category={{ daybook_voice_memo_inbox_long_liveness_report.category | default('absent') }}).
+          Only proof_only (0) or lock_contended/ledger_busy (75) are accepted.
+
+    - name: Verify Voice Memo inbox long lane label is loaded
+      # launchctl print dumps the loaded job's HOME, private log paths, and
+      # full environment. The raw output is suppressed; only the sanitized
+      # exit status is proven and reported below.
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - print
+          - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}/{{ daybook_voice_memo_inbox_long_launchd_label }}"
+      register: daybook_voice_memo_inbox_long_loaded
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Require a loaded Voice Memo inbox long lane label
+      ansible.builtin.assert:
+        that:
+          - daybook_voice_memo_inbox_long_loaded.rc | int == 0
+        fail_msg: >-
+          Voice Memo inbox long lane label
+          {{ daybook_voice_memo_inbox_long_launchd_label }} is not loaded in the
+          owner Aqua domain
+          (launchctl print rc={{ daybook_voice_memo_inbox_long_loaded.rc | default('absent') }}).
+
+    - name: Report loaded Voice Memo inbox long lane label
+      ansible.builtin.debug:
+        msg: >-
+          Voice Memo inbox long lane label
+          {{ daybook_voice_memo_inbox_long_launchd_label }} is loaded
+          (launchctl print rc={{ daybook_voice_memo_inbox_long_loaded.rc }}).
 
     - name: Wait for privacy-safe first Voice Memo scan
       ansible.builtin.command:
@@ -816,6 +1184,11 @@
         chdir: "{{ daybook_voice_memo_inbox_checkout_path }}"
       register: daybook_voice_memo_inbox_status
       changed_when: false
+      failed_when: false
+      # Retries print the registered result on every attempt without this;
+      # the proof below reports only the exit status and the category.
+      no_log: true
+      ignore_errors: true
       retries: "{{ daybook_voice_memo_inbox_activation_status_retries }}"
       delay: "{{ daybook_voice_memo_inbox_activation_status_delay_seconds }}"
       until:
@@ -824,6 +1197,25 @@
         - (daybook_voice_memo_inbox_status.stdout | from_json).last_successful_scan_at is not none
         - (daybook_voice_memo_inbox_status.stdout | from_json).generation | int > daybook_voice_memo_inbox_prebootstrap_report.generation | int
         - (daybook_voice_memo_inbox_status.stdout | from_json).historical_count | int == daybook_voice_memo_inbox_prebootstrap_report.historical_count | int
+
+    - name: Parse Voice Memo first scan proof
+      ansible.builtin.set_fact:
+        daybook_voice_memo_inbox_first_scan_report: >-
+          {{ daybook_voice_memo_inbox_status.stdout | default('{}', true) | from_json }}
+      no_log: true
+
+    - name: Require a privacy-safe proven first Voice Memo scan
+      ansible.builtin.assert:
+        that:
+          - daybook_voice_memo_inbox_status.rc | default(1) == 0
+          - daybook_voice_memo_inbox_first_scan_report.category | default('absent') == 'healthy'
+          - daybook_voice_memo_inbox_first_scan_report.last_successful_scan_at | default(none) is not none
+          - daybook_voice_memo_inbox_first_scan_report.generation | default(0) | int > daybook_voice_memo_inbox_prebootstrap_report.generation | int
+          - daybook_voice_memo_inbox_first_scan_report.historical_count | default(-1) | int == daybook_voice_memo_inbox_prebootstrap_report.historical_count | int
+        fail_msg: >-
+          The first Voice Memo scan was not proven within the activation window
+          (rc={{ daybook_voice_memo_inbox_status.rc | default('absent') }},
+          category={{ daybook_voice_memo_inbox_first_scan_report.category | default('absent') }}).
 
     - name: Install root-owned proven first Voice Memo scan marker
       ansible.builtin.copy:
@@ -844,6 +1236,16 @@
       changed_when: false
       failed_when: false
 
+    - name: Rescue-disable Voice Memo inbox long lane label
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - disable
+          - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}/{{ daybook_voice_memo_inbox_long_launchd_label }}"
+      register: daybook_voice_memo_inbox_rescue_long_disable
+      changed_when: false
+      failed_when: false
+
     - name: Rescue-bootout Voice Memo inbox label
       ansible.builtin.command:
         argv:
@@ -851,6 +1253,18 @@
           - bootout
           - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}/{{ daybook_voice_memo_inbox_launchd_label }}"
       register: daybook_voice_memo_inbox_rescue_bootout
+      changed_when: false
+      failed_when: false
+
+    - name: Rescue-bootout Voice Memo inbox long lane label
+      # Kills a running long item rather than waiting for it; the interrupted
+      # entry returns to the queue on the next window A.
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - bootout
+          - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}/{{ daybook_voice_memo_inbox_long_launchd_label }}"
+      register: daybook_voice_memo_inbox_rescue_long_bootout
       changed_when: false
       failed_when: false
 
@@ -873,9 +1287,31 @@
       register: daybook_voice_memo_inbox_rescue_probe
       changed_when: false
       failed_when: false
+      # A job that is still loaded would print its HOME, private log paths,
+      # and environment; only the exit status is used and reported.
+      no_log: true
       retries: 12
       delay: 5
       until: daybook_voice_memo_inbox_rescue_probe.rc != 0
+      # Retry exhaustion marks the task failed regardless of failed_when; the
+      # loud proof assertion below must still run inside the rescue.
+      ignore_errors: true
+
+    - name: Probe Voice Memo inbox long lane label after rescue
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - print
+          - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}/{{ daybook_voice_memo_inbox_long_launchd_label }}"
+      register: daybook_voice_memo_inbox_rescue_long_probe
+      changed_when: false
+      failed_when: false
+      # A job that is still loaded would print its HOME, private log paths,
+      # and environment; only the exit status is used and reported.
+      no_log: true
+      retries: 12
+      delay: 5
+      until: daybook_voice_memo_inbox_rescue_long_probe.rc != 0
       # Retry exhaustion marks the task failed regardless of failed_when; the
       # loud proof assertion below must still run inside the rescue.
       ignore_errors: true
@@ -891,19 +1327,33 @@
                 ~ (daybook_voice_memo_inbox_launchd_label | regex_escape)
                 ~ '"\\s*=>\\s*(?:true|disabled)\\s*$'
               ) is not none
+          - >-
+            daybook_voice_memo_inbox_rescue_disabled_labels.stdout
+            | regex_search(
+                '(?m)^\\s*"'
+                ~ (daybook_voice_memo_inbox_long_launchd_label | regex_escape)
+                ~ '"\\s*=>\\s*(?:true|disabled)\\s*$'
+              ) is not none
           - daybook_voice_memo_inbox_rescue_probe.rc != 0
+          - daybook_voice_memo_inbox_rescue_long_probe.rc != 0
         fail_msg: >-
           VOICE MEMO INBOX ACTIVATION FAILED AND THE RESCUE COULD NOT PROVE A
-          DISABLED/UNLOADED STATE (disable rc={{ daybook_voice_memo_inbox_rescue_disable.rc }},
+          DISABLED/UNLOADED STATE FOR BOTH LANES (disable rc={{ daybook_voice_memo_inbox_rescue_disable.rc }},
+          long disable rc={{ daybook_voice_memo_inbox_rescue_long_disable.rc }},
           bootout rc={{ daybook_voice_memo_inbox_rescue_bootout.rc }},
+          long bootout rc={{ daybook_voice_memo_inbox_rescue_long_bootout.rc }},
           print-disabled rc={{ daybook_voice_memo_inbox_rescue_disabled_labels.rc }},
-          print rc={{ daybook_voice_memo_inbox_rescue_probe.rc }}). The LaunchAgent may
+          print rc={{ daybook_voice_memo_inbox_rescue_probe.rc }},
+          long print rc={{ daybook_voice_memo_inbox_rescue_long_probe.rc }}). A LaunchAgent may
           still be loaded or re-loadable at login; run the emergency disable
           playbook and inspect launchctl on the host immediately.
 
     - name: Fail closed after Voice Memo inbox activation error
       ansible.builtin.fail:
         msg: >-
-          Voice Memo inbox activation failed and was returned to a proven
-          disabled/unloaded state (disable rc={{ daybook_voice_memo_inbox_rescue_disable.rc }},
-          bootout rc={{ daybook_voice_memo_inbox_rescue_bootout.rc }}).
+          Voice Memo inbox activation failed and both labels were returned to a
+          proven disabled/unloaded state (disable rc={{ daybook_voice_memo_inbox_rescue_disable.rc }},
+          long disable rc={{ daybook_voice_memo_inbox_rescue_long_disable.rc }},
+          bootout rc={{ daybook_voice_memo_inbox_rescue_bootout.rc }},
+          long bootout rc={{ daybook_voice_memo_inbox_rescue_long_bootout.rc }}).
+          The deployed Daybook revision is unchanged.

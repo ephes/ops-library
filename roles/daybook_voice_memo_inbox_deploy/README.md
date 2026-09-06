@@ -1,19 +1,38 @@
 # daybook_voice_memo_inbox_deploy
 
-Installs Daybook's Apple Voice Memos importer as a quiesce-first macOS Aqua
-LaunchAgent. The importer reads Voice Memos and its copied SQLite projection,
+Installs Daybook's Apple Voice Memos importer as two quiesce-first macOS Aqua
+LaunchAgents. The importer reads Voice Memos and its copied SQLite projection,
 transcribes only stable post-baseline recordings through Voxhelm, and creates
 one immutable Markdown object per memo revision in an Obsidian S3 bucket.
+
+The short lane (`de.wersdoerfer.daybook.voice-memo-inbox`, every 300 seconds)
+transcribes memos up to 180 seconds inline. The long lane
+(`de.wersdoerfer.daybook.voice-memo-inbox-long`, every 600 seconds) transcribes
+one queued long memo per firing outside the scan budget. Both labels are
+installed disabled-first; the long lane does work only when
+`daybook_voice_memo_inbox_long_lane_enabled` is true.
 
 The role is public and contains no credentials. Its defaults are disabled and
 all environment-specific or secret values use rejected `CHANGEME` placeholders.
 
 ## Safety model
 
-- General deployment disables and boots out the exact label before replacing
-  managed code or configuration and leaves it disabled by default. The
+- General deployment disables and boots out both exact labels before replacing
+  managed code or configuration and leaves them disabled by default. Each
   unloaded proof tolerates launchd's short termination window (up to one
   minute of retries) without weakening the assertion.
+- Quiescing never waits for a running long transcription. Booting out the long
+  label terminates the process, Voxhelm ends `whisper-cli` when the client
+  disconnects, and the next `transcribe-long` window A returns the interrupted
+  entry to the queue. Before quiescing, when the protected interpreter and
+  policy already exist, the role reads `status --summary-only` as the service
+  user and logs only the aggregate `long_in_flight_count`, so an operator can
+  see that an item was interrupted. The command output itself is suppressed and
+  the count is extracted best-effort with a regular expression rather than a
+  JSON parser, so a malformed, truncated, or non-JSON status document reports
+  nothing instead of stopping the quiesce. Only a validated non-negative
+  integer is ever printed. That read is skipped on a fresh host and never fails
+  a deployment.
 - Enabling requires the exact value of
   `daybook_voice_memo_inbox_activation_phrase`. On first activation Daybook
   baselines every current database identity as historical before the root-owned
@@ -21,7 +40,28 @@ all environment-specific or secret values use rejected `CHANGEME` placeholders.
   separate root-owned proof marker is written only after a fresh scan advances
   the ledger generation without changing the historical baseline. A genuinely
   new post-baseline memo may be imported during that window; historical source
-  identities remain fenced.
+  identities remain fenced. The proof marker stays bound to the short lane.
+- Activation enables and bootstraps the long label after the short one and then
+  proves the long lane live with a single
+  `transcribe-long --summary-only --no-work` run through the same
+  `launchctl asuser` path as the status calls. That run only migrates the
+  ledger schema, returns interrupted items, and sweeps vanished entries; it
+  never selects or transcribes an item, and it proves the lane even while the
+  lane is disabled. Only exit 0 with category `proof_only` or exit 75 with
+  `lock_contended` or `ledger_busy` is accepted, each as valid JSON, and
+  `launchctl print` must then show the long label loaded. A failed migration
+  therefore fails activation, which is the intended fail-closed outcome.
+- Every label-scoped `launchctl print` proof (both quiesce checks, the long-lane
+  loaded check, and both rescue probes) hides the raw command output, because a
+  loaded job prints its `HOME`, private log paths, and full environment. The
+  role asserts and reports only the sanitized exit status together with the
+  label, so a verbose deployment run never leaks the job's environment. The
+  same rule covers the whole-domain Aqua session probe and every task that
+  runs the Daybook CLI under `launchctl asuser` (the pre-bootstrap status, the
+  long-lane liveness proof, and the first-scan wait): their argv carries the
+  service home and user and their stderr can carry a traceback, so the raw
+  result and the parsed report are hidden and only the exit status and the
+  category are asserted. A test enforces `no_log` on all of them.
 - The source directory and live `CloudRecordings.db` are never modified.
 - The 300-second job processes only regular supported files whose size/mtime
   signature was unchanged across at least 120 seconds and two runs. It probes
@@ -54,10 +94,12 @@ all environment-specific or secret values use rejected `CHANGEME` placeholders.
   --porcelain` empty, `.venv` and caches are ignored) before the runtime is
   synchronized. A modified or foreign file inside the checkout fails the
   deployment; the role never silently keeps or resets such edits.
-- Any activation failure is rescued by disabling and booting out the exact
-  label, and the rescue then re-reads `launchctl print-disabled` and probes
-  the label to prove the disabled/unloaded state. If that proof fails the play
-  ends with a distinct, louder error instead of claiming a safe state.
+- Any activation failure is rescued by disabling and booting out both exact
+  labels, and the rescue then re-reads `launchctl print-disabled` and probes
+  both labels to prove the disabled/unloaded state. If that proof fails the play
+  ends with a distinct, louder error instead of claiming a safe state. The
+  rescue only touches launchd: it never re-clones, re-syncs, or otherwise
+  changes the deployed Daybook revision.
 - State and logs are owner-only. Deployment and rollback never delete the
   ledger, source recordings, or existing Obsidian objects.
 - An existing protected checkout is replaced only after the newly installed
@@ -124,7 +166,9 @@ model, and language/prompt values remain bounded operational configuration.
 | `daybook_voice_memo_inbox_enabled` | `false` |
 | `daybook_voice_memo_inbox_launchd_enabled` | `false` |
 | `daybook_voice_memo_inbox_launchd_label` | `de.wersdoerfer.daybook.voice-memo-inbox` |
+| `daybook_voice_memo_inbox_long_launchd_label` | `de.wersdoerfer.daybook.voice-memo-inbox-long` |
 | `daybook_voice_memo_inbox_interval_seconds` | `300` |
+| `daybook_voice_memo_inbox_long_interval_seconds` | `600` (pinned; at least twice the scan interval) |
 | activation status window | `72 × 5 seconds` (pinned; six minutes) |
 | `daybook_voice_memo_inbox_min_stable_seconds` | `120` |
 | `daybook_voice_memo_inbox_max_audio_bytes` | `16777216` |
@@ -140,15 +184,75 @@ model, and language/prompt values remain bounded operational configuration.
 
 The 1-second duration tolerance covers expected AAC priming/padding and Apple's
 duration rounding. Changing it changes admission behavior and requires a
-reviewed rollout. The supported slice deliberately caps a memo at 180 seconds
-and 16 MiB; `status --summary-only` reports only aggregate rejection counts and
+reviewed rollout. The short lane deliberately caps a memo at 180 seconds and
+16 MiB; longer memos belong to the long lane below.
+`status --summary-only` reports only aggregate rejection counts and
 never source identifiers. Scheduled ingest distinguishes the permanent
 `rejected_count` from per-run `rejection_events`.
 
 The service user owns the parent `~/Library/LaunchAgents` directory and could
-replace the plist. The enforced boundary prevents ambient Python path injection
-and cross-user loading; it does not defend against a malicious service user who
-already owns the credentials, source recordings, state, and launchd domain.
+replace either plist. The enforced boundary prevents ambient Python path
+injection and cross-user loading; it does not defend against a malicious
+service user who already owns the credentials, source recordings, state, and
+launchd domain.
+
+## Long-memo lane
+
+The second LaunchAgent runs `voice-memos transcribe-long --summary-only` every
+600 seconds with `RunAtLoad` false. Its `ProgramArguments`, working directory,
+and environment are identical to the short lane's; only the subcommand, the
+interval, `RunAtLoad`, and the log pair differ. It writes its own owner-only
+mode-0600 logs `ingest-long.log` and `ingest-long.err.log` in the existing log
+directory, so long-lane output never interleaves with the scan log.
+
+Each firing transcribes at most one queued long memo under its own run lock,
+with an item deadline derived from the probed duration. The short lane keeps
+its 300-second budget and never blocks behind a long transcription.
+
+| Variable | Default | Accepted range (validated unconditionally) |
+| --- | --- | --- |
+| `daybook_voice_memo_inbox_long_lane_enabled` | `false` | real YAML boolean |
+| `daybook_voice_memo_inbox_long_max_duration_seconds` | `2400` | `180 < x <= 3600` |
+| `daybook_voice_memo_inbox_long_max_audio_bytes` | `25165824` (24 MiB) | `16 MiB <= x < 25 MiB` |
+| `daybook_voice_memo_inbox_long_realtime_factor` | `0.08` | `0.02 <= x <= 4.0` |
+| `daybook_voice_memo_inbox_long_queue_slack_seconds` | `600` | `120–900` |
+| `daybook_voice_memo_inbox_long_validation_timeout_seconds` | `60` | `30–120` |
+| `daybook_voice_memo_inbox_long_max_attempts` | `5` | `1–10` |
+| `daybook_voice_memo_inbox_long_queue_per_run` | `2` | `1–5` |
+| `daybook_voice_memo_inbox_long_min_gap_seconds` | `480` | `430 < x <= 900` |
+
+All of them are rendered into the root-owned policy together with the pinned
+`long_interval_seconds`. The ranges are asserted on every run of the role,
+whether or not `daybook_voice_memo_inbox_long_lane_enabled` is true, because
+the values reach the host policy either way; the label, plist path, interval,
+and log paths are pinned unconditionally as well.
+
+Deployment also asserts the deadline inequality
+`ceil(long_max_duration_seconds x long_realtime_factor) + long_queue_slack_seconds <= 2700`,
+so a memo inside the configured ceiling can never be queued with a deadline the
+lane refuses to grant. Raising the ceiling therefore requires lowering the
+realtime factor or the slack, and the factor must come from the Studio
+benchmark (1.5 x the measured value), not from a guess. The 24 MiB size ceiling
+stays below Voxhelm's 25 MiB synchronous upload limit.
+
+**Disabled-first rollout.** The role always installs, disables, quiesces, and
+(on activation) bootstraps the long label, but ships
+`daybook_voice_memo_inbox_long_lane_enabled: false`. A disabled lane behaves
+exactly as before this change: the scan keeps the 16 MiB discovery filter and
+the 180-second ceiling, and each `transcribe-long` firing only returns
+interrupted items and exits `long_lane_disabled`. Queue entries written before
+the flag was cleared are kept and counted, and re-enabling resumes them.
+ops-control enables the lane after the Studio benchmark.
+
+**Voxhelm dependency (D-24).** Both lanes are non-interactive Voxhelm consumers
+and share the single non-interactive inference slot. Enabling the long lane is
+only safe while the Voxhelm deployment pins
+`VOXHELM_LANE_SCHEDULER_INTERACTIVE_SLOTS=1` and
+`VOXHELM_LANE_SCHEDULER_NON_INTERACTIVE_SLOTS=1`, which reserves an interactive
+slot for the voice assistant. Those slot variables are set by
+`voxhelm_deploy` and pinned in ops-control, which asserts the wiring next to
+the importer flag so the two cannot drift apart. This role cannot verify the
+Voxhelm configuration itself.
 
 ## Example disabled-first deployment
 
@@ -204,9 +308,28 @@ The JSON output contains only aggregate state. The scheduled command likewise
 prints no memo identifiers, paths, transcript text, credentials, or upstream
 response bodies.
 
-Rollback disables and boots out the exact label, then redeploys the prior
+A long memo that was in flight when a deployment, rollback, or emergency
+disable quiesced the lane is not lost: the entry returns to `pending` on the
+next `transcribe-long` window A, with its attempt restored and an incremented
+interruption counter. After three interruptions the entry becomes
+`needs_operator` instead of cycling forever.
+
+Rollback disables and boots out both exact labels, then redeploys the prior
 reviewed commit/configuration. Preserve `ledger.json`, `activation.json`,
 `activation-proven.json`, logs, Voice Memos, and all destination objects.
-Removing generated notes is not part of rollback. A GUI logout pauses the Aqua LaunchAgent safely; recordings remain
+Removing generated notes is not part of rollback.
+
+Downgrading past the ledger migration needs one extra step, because the
+previous Daybook release refuses a schema-2 ledger (`invalid_state`) and both
+lanes would stop: with both labels proven disabled and unloaded, restore the
+newest `ledger.schema1.<generation>.<UTC>.json` backup whose `activation_id`
+matches `activation.json` to `ledger.json` (refuse an older or mismatched
+backup), then redeploy the previous release. Consequences: long memos
+completed after the migration keep their immutable objects but are
+re-rejected by the old duration pre-check, so their completions are absent
+from the ledger until a compatible release runs again (no duplicate can be
+created); short-lane completions made after the backup are recovered through
+`HeadObject`; queue entries and attempt history are lost by design. The
+ops-control runbook carries the operator procedure. A GUI logout pauses the Aqua LaunchAgent safely; recordings remain
 post-watermark and are considered after login, while monitoring must document
 that it shares or does not share that session dependency.

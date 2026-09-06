@@ -46,6 +46,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pinned Homebrew interpreter, fresh-host check-mode guards are keyed by
   path, and empty required values are rejected like placeholders.
 
+- `daybook_voice_memo_inbox_deploy` gained the asynchronous long-memo lane: a
+  second disabled-first LaunchAgent
+  (`de.wersdoerfer.daybook.voice-memo-inbox-long`) that runs
+  `voice-memos transcribe-long --summary-only` every 600 seconds with
+  `RunAtLoad` false and its own owner-only `ingest-long` log pair. Deployment
+  now quiesces and proves both labels before any managed change, logging the
+  aggregate `long_in_flight_count` beforehand instead of waiting for a running
+  transcription, and activation enables, bootstraps, and proves the long lane
+  with a `transcribe-long --summary-only --no-work` liveness run that accepts
+  only `proof_only` (0) or `lock_contended`/`ledger_busy` (75). The rescue path
+  disables, boots out, and proves both labels without changing the deployed
+  Daybook revision. New `daybook_voice_memo_inbox_long_*` variables are
+  rendered into the policy and validated against the reviewed ranges,
+  including the deadline inequality
+  `ceil(duration x factor) + slack <= 2700`. The lane ships disabled, so the
+  short lane's behaviour is unchanged until ops-control enables it after the
+  Studio benchmark; enabling requires Voxhelm's bounded inference slots
+  (D-24). The long-lane ranges are validated on every run of the role, whether
+  or not the lane is enabled, because the values reach the host policy either
+  way. Every label-scoped `launchctl print` proof now hides its raw output and
+  asserts only the sanitized exit status, so a verbose run no longer prints a
+  loaded job's `HOME`, private log paths, and environment; the same applies to
+  the Aqua domain probe and to every Daybook CLI invocation (pre-bootstrap
+  status, long-lane liveness proof, first-scan wait), whose results and parsed
+  reports are hidden while the asserts report only exit status and category,
+  enforced by a test; and the pre-quiesce
+  in-flight count is extracted best-effort so a malformed status document
+  reports nothing instead of aborting the deployment before either label is
+  quiesced.
+
 ### Changed
 
 - `wagtail_deploy` moved its input validation into `tasks/validate.yml`, like

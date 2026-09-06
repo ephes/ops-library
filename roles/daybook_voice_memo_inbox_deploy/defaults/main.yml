@@ -28,6 +28,8 @@ daybook_voice_memo_inbox_lock_path: "{{ daybook_voice_memo_inbox_runtime_dir }}/
 daybook_voice_memo_inbox_log_dir: "{{ daybook_voice_memo_inbox_runtime_dir }}/logs"
 daybook_voice_memo_inbox_stdout_log: "{{ daybook_voice_memo_inbox_log_dir }}/ingest.log"
 daybook_voice_memo_inbox_stderr_log: "{{ daybook_voice_memo_inbox_log_dir }}/ingest.err.log"
+daybook_voice_memo_inbox_long_stdout_log: "{{ daybook_voice_memo_inbox_log_dir }}/ingest-long.log"
+daybook_voice_memo_inbox_long_stderr_log: "{{ daybook_voice_memo_inbox_log_dir }}/ingest-long.err.log"
 daybook_voice_memo_inbox_credential_dir: "{{ daybook_voice_memo_inbox_service_home }}/.config/daybook-voice-memo-inbox"
 daybook_voice_memo_inbox_credential_path: "{{ daybook_voice_memo_inbox_credential_dir }}/credentials.json"
 daybook_voice_memo_inbox_policy_path: "{{ daybook_voice_memo_inbox_install_root }}/policy.json"
@@ -39,6 +41,13 @@ daybook_voice_memo_inbox_plist_path: "{{ daybook_voice_memo_inbox_service_home }
 daybook_voice_memo_inbox_interval_seconds: 300
 daybook_voice_memo_inbox_activation_status_retries: 72
 daybook_voice_memo_inbox_activation_status_delay_seconds: 5
+
+# Long-memo lane: a second LaunchAgent that transcribes one queued long memo
+# per firing outside the 300-second scan budget. The label is always installed
+# disabled-first; the policy flag below decides whether the lane does work.
+daybook_voice_memo_inbox_long_launchd_label: de.wersdoerfer.daybook.voice-memo-inbox-long
+daybook_voice_memo_inbox_long_plist_path: "{{ daybook_voice_memo_inbox_service_home }}/Library/LaunchAgents/{{ daybook_voice_memo_inbox_long_launchd_label }}.plist"
+daybook_voice_memo_inbox_long_interval_seconds: 600
 
 daybook_voice_memo_inbox_bucket: "CHANGEME"
 daybook_voice_memo_inbox_prefix: "Inbox/Voice Memos"
@@ -61,3 +70,15 @@ daybook_voice_memo_inbox_duration_tolerance_seconds: 1.0
 daybook_voice_memo_inbox_ffprobe_path: /opt/homebrew/bin/ffprobe
 daybook_voice_memo_inbox_ffmpeg_path: /opt/homebrew/bin/ffmpeg
 daybook_voice_memo_inbox_request_timeout_seconds: 100
+
+# Long-memo lane policy. Disabled by default: the role deploys the second
+# label first and ops-control enables the lane after the Studio benchmark.
+daybook_voice_memo_inbox_long_lane_enabled: false
+daybook_voice_memo_inbox_long_max_duration_seconds: 2400
+daybook_voice_memo_inbox_long_max_audio_bytes: 25165824
+daybook_voice_memo_inbox_long_realtime_factor: 0.08
+daybook_voice_memo_inbox_long_queue_slack_seconds: 600
+daybook_voice_memo_inbox_long_validation_timeout_seconds: 60
+daybook_voice_memo_inbox_long_max_attempts: 5
+daybook_voice_memo_inbox_long_queue_per_run: 2
+daybook_voice_memo_inbox_long_min_gap_seconds: 480
