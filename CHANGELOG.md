@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.16.1] - 2026-09-07
+
+### Fixed
+
+- `voxhelm_deploy` now renders configurable `VOXHELM_CSRF_TRUSTED_ORIGINS`
+  for the application's existing HTTPS operator-login support. The default is
+  an empty list; callers supply explicit trusted origins.
+
 ## [2.16.0] - 2026-09-07
 
 ### Added

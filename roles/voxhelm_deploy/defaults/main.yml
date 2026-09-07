@@ -140,6 +140,7 @@ voxhelm_allowed_hosts:
   - "studio"
   - "localhost"
   - "127.0.0.1"
+voxhelm_csrf_trusted_origins: []
 voxhelm_mlx_model: "mlx-community/whisper-large-v3-mlx"
 voxhelm_whispercpp_model: "ggml-large-v3.bin"
 voxhelm_whispercpp_model_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{{ voxhelm_whispercpp_model }}"

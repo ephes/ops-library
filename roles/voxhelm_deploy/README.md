@@ -136,12 +136,27 @@ voxhelm_allowed_hosts:
   - "studio"
   - "localhost"
   - "127.0.0.1"
+voxhelm_csrf_trusted_origins: []
 voxhelm_allowed_url_hosts: []
 voxhelm_trusted_http_hosts: []
 voxhelm_uvicorn_log_level: "info"
 ```
 
 For the full list, see `defaults/main.yml`.
+
+## Operator login through HTTPS ingress
+
+`voxhelm_csrf_trusted_origins` supplies the app's existing
+`VOXHELM_CSRF_TRUSTED_ORIGINS` environment setting as a comma-separated list.
+Use a list of scheme-qualified HTTP(S) origins such as `https://voxhelm.example.com`.
+Validation rejects bare strings, missing schemes, paths, whitespace, and commas
+before deployment changes are made.
+The default `[]` renders an empty environment value. Voxhelm's `env_list`
+parser filters blank entries, so this has the same empty-list behavior as an
+unset variable. This setting applies
+to Django's browser/session CSRF checks; it does not replace API bearer-token
+checks or `voxhelm_allowed_hosts`. Voxhelm already honors forwarded HTTPS in
+its Django settings.
 
 ## Example Playbook
 
@@ -156,6 +171,8 @@ For the full list, see `defaults/main.yml`.
         voxhelm_source_path: "/Users/jochen/projects/voxhelm"
         voxhelm_django_secret_key: "{{ service_secrets.django_secret_key }}"
         voxhelm_bearer_tokens_env: "archive={{ service_secrets.api_token_archive }}"
+        voxhelm_csrf_trusted_origins:
+          - "https://voxhelm.example.com"
         voxhelm_bootstrap_operator_username: "{{ service_secrets.bootstrap_operator_username }}"
         voxhelm_bootstrap_operator_email: "{{ service_secrets.bootstrap_operator_email }}"
         voxhelm_bootstrap_operator_password: "{{ service_secrets.bootstrap_operator_password }}"
