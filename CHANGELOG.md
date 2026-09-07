@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.18.0] - 2026-09-07
+
+### Added
+
+- `macos_ssh_tunnel` manages an independent user LaunchAgent for a loopback
+  SSH local forward, with persistent start/stop controls and an HTTPS health
+  check. Installation defaults to stopped and certificate verification is
+  enabled unless the private caller explicitly opts out.
+
 ## [2.17.0] - 2026-09-07
 
 ### Added

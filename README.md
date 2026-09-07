@@ -114,6 +114,7 @@ consumer repos depend on.
 | Monitoring | [`dns_metrics_endpoint`](roles/dns_metrics_endpoint/README.md) | Expose per-endpoint authoritative-DNS health (v4/v6, UDP/TCP, `aa` required, SOA serial agreement, open-resolver regression) as authenticated JSON for Nyxmon (`/.well-known/dns`). |
 | Infrastructure | [`mail_relay_client`](roles/mail_relay_client/README.md) | Configure a minimal Postfix setup for relaying outbound alert mail via a smarthost. |
 | Infrastructure | [`ssh_authorized_keys_manage`](roles/ssh_authorized_keys_manage/README.md) | Manage `~/.ssh` and the full `authorized_keys` file for an arbitrary target account, including `root`. |
+| Infrastructure | [`macos_ssh_tunnel`](roles/macos_ssh_tunnel/README.md) | Manage a user LaunchAgent for an SSH local forward with lifecycle and HTTPS checks. |
 | Infrastructure | [`ssh_forwarding_identity`](roles/ssh_forwarding_identity/README.md) | Provision a non-rotating, passphrase-free Ed25519 identity for unattended forwarding. |
 | Infrastructure | [`ssh_restricted_forwarding_account`](roles/ssh_restricted_forwarding_account/README.md) | Provision a dedicated OpenSSH account restricted to local forwarding toward one host and port. |
 | File sharing | [`samba_timemachine`](roles/samba_timemachine/README.md) | Configure Samba Time Machine share with vfs_fruit and conf.d snippet wiring. |

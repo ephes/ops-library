@@ -1,0 +1,20 @@
+---
+ops_library_documentation_category: infrastructure
+macos_ssh_tunnel_state: present
+macos_ssh_tunnel_home: "{{ ansible_env.HOME }}"
+macos_ssh_tunnel_label: org.example.ssh-tunnel
+macos_ssh_tunnel_directory: "{{ macos_ssh_tunnel_home }}/Library/Application Support/SSH Tunnel"
+macos_ssh_tunnel_plist: "{{ macos_ssh_tunnel_home }}/Library/LaunchAgents/{{ macos_ssh_tunnel_label }}.plist"
+macos_ssh_tunnel_log_directory: "{{ macos_ssh_tunnel_home }}/Library/Logs/SSH Tunnel"
+macos_ssh_tunnel_host: CHANGEME
+macos_ssh_tunnel_user: CHANGEME
+macos_ssh_tunnel_identity: "{{ macos_ssh_tunnel_home }}/.ssh/tunnel_ed25519"
+macos_ssh_tunnel_known_hosts: "{{ macos_ssh_tunnel_home }}/.ssh/known_hosts"
+macos_ssh_tunnel_target: CHANGEME
+macos_ssh_tunnel_target_port: 443
+macos_ssh_tunnel_local_port: 18443
+macos_ssh_tunnel_ignore_ssl_errors: false
+macos_ssh_tunnel_ca_file: ""
+macos_ssh_tunnel_health_path: /
+macos_ssh_tunnel_health_status: 200
+macos_ssh_tunnel_python: /opt/homebrew/bin/python3

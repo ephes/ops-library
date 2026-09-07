@@ -1,0 +1,168 @@
+---
+- name: Validate local user tunnel configuration
+  ansible.builtin.assert:
+    that:
+      - ansible_system == 'Darwin'
+      - ansible_user_uid | int != 0
+      - macos_ssh_tunnel_home == ansible_env.HOME
+      - macos_ssh_tunnel_state in ['present', 'absent']
+      - macos_ssh_tunnel_label is match('^[A-Za-z0-9][A-Za-z0-9.-]+$')
+      - macos_ssh_tunnel_host is match('^[A-Za-z0-9][A-Za-z0-9.-]+$')
+      - macos_ssh_tunnel_target is match('^[A-Za-z0-9][A-Za-z0-9.-]+$')
+      - macos_ssh_tunnel_host != 'CHANGEME'
+      - macos_ssh_tunnel_target != 'CHANGEME'
+      - macos_ssh_tunnel_user is match('^[A-Za-z_][A-Za-z0-9_-]+$')
+      - macos_ssh_tunnel_user != 'CHANGEME'
+      - macos_ssh_tunnel_local_port | int >= 1024
+      - macos_ssh_tunnel_local_port | int <= 65535
+      - macos_ssh_tunnel_target_port | int >= 1
+      - macos_ssh_tunnel_target_port | int <= 65535
+      - macos_ssh_tunnel_ignore_ssl_errors | type_debug == 'bool'
+      - macos_ssh_tunnel_health_path is match('^/[A-Za-z0-9/_.-]*$')
+      - macos_ssh_tunnel_health_status | int >= 100
+      - macos_ssh_tunnel_health_status | int <= 599
+
+- name: Validate managed paths
+  ansible.builtin.assert:
+    that:
+      - item.startswith(macos_ssh_tunnel_home ~ '/')
+      - item is match('^/[A-Za-z0-9_ ./-]+$')
+      - "'..' not in item.split('/')"
+      - "'.' not in item.split('/')"
+  loop:
+    - "{{ macos_ssh_tunnel_directory }}"
+    - "{{ macos_ssh_tunnel_plist }}"
+    - "{{ macos_ssh_tunnel_log_directory }}"
+    - "{{ macos_ssh_tunnel_identity }}"
+    - "{{ macos_ssh_tunnel_known_hosts }}"
+
+- name: Inspect existing service
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "gui/{{ ansible_user_uid }}/{{ macos_ssh_tunnel_label }}"]
+  register: macos_ssh_tunnel_loaded
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Disable automatic start during installation or removal
+  ansible.builtin.command:
+    argv: [/bin/launchctl, disable, "gui/{{ ansible_user_uid }}/{{ macos_ssh_tunnel_label }}"]
+  changed_when: false
+
+- name: Unload only this tunnel before updating its files
+  ansible.builtin.command:
+    argv: [/bin/launchctl, bootout, "gui/{{ ansible_user_uid }}/{{ macos_ssh_tunnel_label }}"]
+  when: macos_ssh_tunnel_loaded.rc == 0
+  changed_when: true
+  failed_when: false
+
+- name: Confirm launchd has unloaded the job before managing files
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "gui/{{ ansible_user_uid }}/{{ macos_ssh_tunnel_label }}"]
+  register: macos_ssh_tunnel_unloaded
+  changed_when: false
+  failed_when: false
+  until: macos_ssh_tunnel_unloaded.rc != 0
+  retries: 10
+  delay: 1
+  when:
+    - macos_ssh_tunnel_loaded.rc == 0
+    - not ansible_check_mode
+
+- name: Require completed unload
+  ansible.builtin.assert:
+    that:
+      - macos_ssh_tunnel_unloaded.rc != 0
+    fail_msg: Tunnel did not unload; refusing to change its files.
+  when:
+    - macos_ssh_tunnel_loaded.rc == 0
+    - not ansible_check_mode
+
+- name: Wait for the unloaded tunnel to release its listener
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ macos_ssh_tunnel_local_port }}"
+    state: stopped
+    timeout: 10
+  when:
+    - macos_ssh_tunnel_loaded.rc == 0
+    - not ansible_check_mode
+
+- name: Remove managed tunnel files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ macos_ssh_tunnel_plist }}"
+    - "{{ macos_ssh_tunnel_directory }}/ssh_config"
+    - "{{ macos_ssh_tunnel_directory }}/config.json"
+    - "{{ macos_ssh_tunnel_directory }}/tunnel_control.py"
+    - "{{ macos_ssh_tunnel_directory }}/config.lock"
+  when: macos_ssh_tunnel_state == 'absent'
+
+- name: Install tunnel
+  when: macos_ssh_tunnel_state == 'present'
+  block:
+    - name: Create user-owned runtime directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0700'
+      loop:
+        - "{{ macos_ssh_tunnel_directory }}"
+        - "{{ macos_ssh_tunnel_log_directory }}"
+
+    - name: Inspect the shared LaunchAgents directory
+      ansible.builtin.stat:
+        path: "{{ macos_ssh_tunnel_plist | dirname }}"
+      register: macos_ssh_tunnel_parent
+
+    - name: Create the LaunchAgents directory without changing existing permissions
+      ansible.builtin.file:
+        path: "{{ macos_ssh_tunnel_plist | dirname }}"
+        state: directory
+        mode: "{{ omit if macos_ssh_tunnel_parent.stat.exists else '0755' }}"
+
+    - name: Install SSH configuration
+      ansible.builtin.template:
+        src: ssh_config.j2
+        dest: "{{ macos_ssh_tunnel_directory }}/ssh_config"
+        mode: '0600'
+        validate: /usr/bin/ssh -G -F %s managed-tunnel
+
+    - name: Install LaunchAgent
+      ansible.builtin.template:
+        src: launchagent.plist.j2
+        dest: "{{ macos_ssh_tunnel_plist }}"
+        mode: '0600'
+        validate: /usr/bin/plutil -lint %s
+
+    - name: Install lifecycle controller
+      ansible.builtin.copy:
+        src: tunnel_control.py
+        dest: "{{ macos_ssh_tunnel_directory }}/tunnel_control.py"
+        mode: '0700'
+
+    - name: Install health check configuration
+      ansible.builtin.copy:
+        content: "{{ macos_ssh_tunnel_config | to_nice_json }}\n"
+        dest: "{{ macos_ssh_tunnel_directory }}/config.json"
+        mode: '0600'
+      vars:
+        macos_ssh_tunnel_config:
+          label: "{{ macos_ssh_tunnel_label }}"
+          plist: "{{ macos_ssh_tunnel_plist }}"
+          stderr_log: "{{ macos_ssh_tunnel_log_directory }}/stderr.log"
+          local_port: "{{ macos_ssh_tunnel_local_port | int }}"
+          https_host: "{{ macos_ssh_tunnel_target }}"
+          ignore_ssl_errors: "{{ macos_ssh_tunnel_ignore_ssl_errors }}"
+          ca_file: "{{ macos_ssh_tunnel_ca_file }}"
+          health_path: "{{ macos_ssh_tunnel_health_path }}"
+          health_status: "{{ macos_ssh_tunnel_health_status | int }}"
+
+    - name: Explain explicit start
+      ansible.builtin.debug:
+        msg: >-
+          Installed stopped. Start using {{ macos_ssh_tunnel_python }}
+          '{{ macos_ssh_tunnel_directory }}/tunnel_control.py'
+          --config '{{ macos_ssh_tunnel_directory }}/config.json' start.

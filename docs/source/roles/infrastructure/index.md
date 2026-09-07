@@ -5,6 +5,7 @@ Reusable host identity, access-control, networking, and storage building blocks.
 ```{toctree}
 :maxdepth: 1
 
+macos_ssh_tunnel
 ssh_forwarding_identity
 ssh_restricted_forwarding_account
 ```
