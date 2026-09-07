@@ -1,0 +1,12 @@
+---
+- name: nyxmon | Upsert supplied software live Nyxmon checks
+  become: true
+  become_user: '{{ software_live_nyxmon_user }}'
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - '{{ software_live_install_dir }}/nyxmon_checks.py'
+    stdin: '{{ {"db": software_live_nyxmon_db, "checks": software_live_nyxmon_checks} | to_json }}'
+  register: _software_live_nyxmon_update
+  changed_when: "'changed=true' in _software_live_nyxmon_update.stdout"
+  no_log: true

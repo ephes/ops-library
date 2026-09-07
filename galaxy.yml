@@ -1,7 +1,7 @@
 ---
 namespace: local
 name: ops_library
-version: 2.18.0
+version: 2.19.0
 readme: README.md
 authors:
   - Jochen Wersdörfer
@@ -17,6 +17,8 @@ dependencies:
   community.general: ">=5.0.0"
   ansible.posix: ">=1.0.0"
 build_ignore:
+  - .mypy_cache
+  - .ruff_cache
   - .git
   - .venv
   - .ansible

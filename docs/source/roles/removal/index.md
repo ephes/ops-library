@@ -5,6 +5,7 @@ Roles for safely removing services and cleaning up resources.
 ```{toctree}
 :maxdepth: 1
 
+software_live_remove
 fastdeploy_remove
 nyxmon_remove
 traefik_remove
@@ -28,6 +29,7 @@ ollama_proxy_remove
 ```
 
 These roles handle:
+
 - Service停止 and disablement
 - Systemd unit removal
 - Configuration cleanup

@@ -1,0 +1,14 @@
+---
+- name: Reload software live systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Restart software live endpoint
+  ansible.builtin.systemd_service:
+    name: software-live-endpoint.service
+    state: restarted
+
+- name: Restart software live timer
+  ansible.builtin.systemd_service:
+    name: software-live-collector.timer
+    state: restarted

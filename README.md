@@ -173,6 +173,8 @@ consumer repos depend on.
 | Service operations | [`mastodon_maintenance`](roles/mastodon_maintenance/README.md) | Run Mastodon tootctl maintenance commands (media cleanup, cache pruning). |
 | Service operations | [`minio_offsite_replication`](roles/minio_offsite_replication/README.md) | Pull MinIO backup archives from a remote source into offsite storage via systemd timer + rsync/SSH. |
 | Service operations | [`mail_offsite_replication`](roles/mail_offsite_replication/README.md) | Pull maildir + staged DB/config artifacts into a single offsite ZFS dataset via rsync/SSH with post-sync snapshots. |
+| Service operations | [`software_live`](roles/software_live/README.md) | Observe live Traefik and pending APT security updates through SSH or authenticated JSON. |
+| Service removal | [`software_live_remove`](roles/software_live_remove/README.md) | Remove software observation components while preserving application state. |
 | Service operations | [`os_apt_maintenance`](roles/os_apt_maintenance/README.md) | Run host-local apt update/dist-upgrade/autoremove/autoclean via systemd timer with durable state and optional Nyxmon endpoint. |
 | Service removal | [`fastdeploy_remove`](roles/fastdeploy_remove/README.md) | Remove FastDeploy and related resources safely. |
 | Service removal | [`nyxmon_remove`](roles/nyxmon_remove/README.md) | Remove Nyxmon while preserving data as needed. |
@@ -211,6 +213,7 @@ consumer repos depend on.
 ## Development
 
 ### Testing
+
 ```bash
 # Run the default contributor validation path
 just test
@@ -235,6 +238,7 @@ Use `just validate-strict` when you want `ansible-lint` failures to stop the run
 only as a quick summary helper.
 
 ### Developer Setup
+
 ```bash
 # Bootstrap the local dev environment and install hooks
 just setup
@@ -244,6 +248,7 @@ just pre-commit
 ```
 
 ### Statistics
+
 ```bash
 # Show YAML lines of code (requires cloc)
 just stats

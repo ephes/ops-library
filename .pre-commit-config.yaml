@@ -9,17 +9,25 @@ repos:
     rev: v4.5.0
     hooks:
       - id: trailing-whitespace
+        files: &legacy_text_files "^(.*\\.(yml|yaml|py|sh|bash|j2|md)|Justfile|Makefile)$"
       - id: end-of-file-fixer
+        files: *legacy_text_files
       - id: check-yaml
+        files: *legacy_text_files
         args: [--unsafe]  # Allow custom tags like !vault
       - id: check-added-large-files
         args: ['--maxkb=1000']
       - id: check-case-conflict
+        files: *legacy_text_files
       - id: check-merge-conflict
+        files: *legacy_text_files
       - id: check-executables-have-shebangs
+        files: *legacy_text_files
       - id: check-shebang-scripts-are-executable
+        files: *legacy_text_files
       - id: detect-private-key
       - id: mixed-line-ending
+        files: *legacy_text_files
         args: [--fix=lf]
 
   # YAML linting
@@ -30,19 +38,15 @@ repos:
         args: [-c=.yamllint]
         types: [yaml]
 
-  # Ansible linting
-  - repo: https://github.com/ansible/ansible-lint
-    rev: v6.22.1
+  # Use the same locked Ansible toolchain as the contributor test suite.
+  - repo: local
     hooks:
       - id: ansible-lint
+        name: Ansible-lint
+        entry: uv run ansible-lint
+        language: system
         files: \.(yaml|yml)$
-        exclude: |
-          (?x)^(
-            .github/.*|
-            molecule/.*
-          )$
-        additional_dependencies:
-          - ansible-core>=2.15
+        exclude: '(^|/)(\.github|molecule)/'
 
   # Python code formatting (for deploy.py scripts)
   - repo: https://github.com/psf/black
@@ -69,10 +73,12 @@ repos:
         args: [--severity=warning]
 
   # Jinja2 template linting
-  - repo: https://github.com/motet-a/jinjalint
-    rev: 0.5
+  - repo: local
     hooks:
-      - id: jinjalint
+      - id: jinja-syntax
+        name: Check Jinja template syntax
+        entry: uv run python scripts/check_jinja.py
+        language: system
         files: \.j2$
 
   # Security checks
@@ -80,7 +86,7 @@ repos:
     rev: v1.4.0
     hooks:
       - id: detect-secrets
-        args: ['--baseline', '.secrets.baseline']
+        args: [--exclude-secrets, "^CHANGE_ME$"]
 
   # Markdown linting (for documentation)
   - repo: https://github.com/igorshubovych/markdownlint-cli
@@ -89,14 +95,6 @@ repos:
       - id: markdownlint
         args: [--fix]
         files: \.md$
-
-# Configuration for specific file types
-files: |
-  (?x)^(
-    .*\.(yml|yaml|py|sh|bash|j2|md)|
-    Justfile|
-    Makefile
-  )$
 
 # Don't run on these paths
 exclude: |

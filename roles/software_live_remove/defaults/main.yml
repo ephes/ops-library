@@ -1,0 +1,6 @@
+---
+ops_library_documentation_category: removal
+software_live_remove_data: false
+software_live_remove_config_dir: /etc/software-live
+software_live_remove_data_dir: /var/lib/software-live
+software_live_remove_install_dir: /usr/local/lib/software-live

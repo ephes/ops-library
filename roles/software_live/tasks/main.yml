@@ -1,0 +1,188 @@
+---
+- name: Validate software live configuration
+  ansible.builtin.assert:
+    that:
+      - software_live_policy.host is defined
+      - software_live_policy.traefik is defined
+      - software_live_auth_user != 'CHANGE_ME'
+      - software_live_auth_user is match('^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$')
+      - software_live_auth_password != 'CHANGE_ME'
+      - software_live_auth_password | length >= 12
+      - software_live_port | int > 1024
+      - software_live_port | int < 65536
+      - software_live_config_dir is match('^/[a-zA-Z0-9_./-]+$')
+      - software_live_data_dir is match('^/[a-zA-Z0-9_./-]+$')
+      - software_live_install_dir is match('^/[a-zA-Z0-9_./-]+$')
+    fail_msg: Supply a host policy and non-placeholder metrics credentials.
+  no_log: true
+
+- name: Require dedicated software observation directories
+  ansible.builtin.assert:
+    that:
+      - item is match('^/(etc|var/lib|usr/local/lib)/[a-zA-Z0-9_-]*software-live[a-zA-Z0-9_-]*$')
+    fail_msg: Paths must be dedicated software-live directories under etc, var/lib or usr/local/lib.
+  loop:
+    - '{{ software_live_config_dir }}'
+    - '{{ software_live_data_dir }}'
+    - '{{ software_live_install_dir }}'
+
+- name: Validate private IPv4 endpoint binding
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - >-
+        import ipaddress,sys;
+        ip=ipaddress.ip_address(sys.argv[1]);
+        assert ip.version == 4 and (ip.is_loopback or ip in ipaddress.ip_network('100.64.0.0/10'))
+      - '{{ software_live_bind }}'
+  changed_when: false
+  check_mode: false
+
+- name: Install software observation dependencies
+  ansible.builtin.package:
+    name: '{{ software_live_packages }}'
+    state: present
+
+- name: Create software metrics group
+  ansible.builtin.group:
+    name: '{{ software_live_group }}'
+    system: true
+
+- name: Create software metrics user
+  ansible.builtin.user:
+    name: '{{ software_live_user }}'
+    group: '{{ software_live_group }}'
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+
+- name: Create software observation directories
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: root
+    group: '{{ software_live_group }}'
+    mode: '0750'
+  loop:
+    - '{{ software_live_config_dir }}'
+    - '{{ software_live_data_dir }}'
+
+- name: Create public program directory
+  ansible.builtin.file:
+    path: '{{ software_live_install_dir }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install software observation programs
+  ansible.builtin.copy:
+    src: '{{ item }}'
+    dest: '{{ software_live_install_dir }}/{{ item }}'
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - software_live.py
+    - nyxmon_checks.py
+  notify: Restart software live endpoint
+
+- name: Install software observation policy
+  ansible.builtin.copy:
+    content: "{{ software_live_policy | to_nice_json }}\n"
+    dest: '{{ software_live_config_dir }}/policy.json'
+    owner: root
+    group: '{{ software_live_group }}'
+    mode: '0640'
+
+- name: Validate software observation policy
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - '{{ software_live_install_dir }}/software_live.py'
+      - validate
+      - --config
+      - '{{ software_live_config_dir }}/policy.json'
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Verify current software endpoint credentials
+  ansible.builtin.command:
+    argv: [htpasswd, '-vi', '{{ software_live_config_dir }}/htpasswd', '{{ software_live_auth_user }}']
+    stdin: '{{ software_live_auth_password }}'
+  changed_when: false
+  failed_when: false
+  register: _software_live_auth
+  no_log: true
+
+- name: Create software endpoint password hash
+  ansible.builtin.command:
+    argv: [htpasswd, '-niB', '{{ software_live_auth_user }}']
+    stdin: '{{ software_live_auth_password }}'
+  changed_when: false
+  register: _software_live_hash
+  when: _software_live_auth.rc | default(1) != 0
+  no_log: true
+
+- name: Install software endpoint password hash
+  ansible.builtin.copy:
+    content: "{{ _software_live_hash.stdout }}\n"
+    dest: '{{ software_live_config_dir }}/htpasswd'
+    owner: root
+    group: '{{ software_live_group }}'
+    mode: '0640'
+  when: _software_live_auth.rc | default(1) != 0 and not ansible_check_mode
+  no_log: true
+
+- name: Configure software endpoint
+  ansible.builtin.copy:
+    content: "{{ _software_live_endpoint_config | to_nice_json }}\n"
+    dest: '{{ software_live_config_dir }}/endpoint.json'
+    owner: root
+    group: '{{ software_live_group }}'
+    mode: '0640'
+  vars:
+    _software_live_endpoint_config:
+      bind: '{{ software_live_bind }}'
+      port: '{{ software_live_port | int }}'
+      path: /.well-known/software-live
+      state: '{{ software_live_data_dir }}/state.json'
+      auth_user: '{{ software_live_auth_user }}'
+      htpasswd: '{{ software_live_config_dir }}/htpasswd'
+  notify: Restart software live endpoint
+
+- name: Install software observation units
+  ansible.builtin.template:
+    src: '{{ item.src }}'
+    dest: '/etc/systemd/system/{{ item.dest }}'
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - {src: collector.service.j2, dest: software-live-collector.service}
+    - {src: collector.timer.j2, dest: software-live-collector.timer}
+    - {src: endpoint.service.j2, dest: software-live-endpoint.service}
+  notify:
+    - Reload software live systemd
+    - Restart software live endpoint
+    - Restart software live timer
+
+- name: Load software observation units
+  ansible.builtin.meta: flush_handlers
+
+- name: Collect an initial software observation
+  ansible.builtin.systemd_service:
+    name: software-live-collector.service
+    state: started
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Enable software observation timer and endpoint
+  ansible.builtin.systemd_service:
+    name: '{{ item }}'
+    state: started
+    enabled: true
+  loop:
+    - software-live-collector.timer
+    - software-live-endpoint.service

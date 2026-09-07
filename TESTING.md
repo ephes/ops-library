@@ -101,3 +101,15 @@ just docs-lint
 just pre-commit
 just pre-commit-update
 ```
+
+The Ansible hook uses the same `uv run ansible-lint` toolchain as contributor
+checks. The Jinja hook parses templates with Jinja2 without rendering variables,
+executing filters, or accessing inventory. Both use the project toolchain. Secret scanning covers supplied files of every
+extension without a generated baseline; formatting hooks retain their previous source-file scope. Large-file and
+private-key checks intentionally cover all extensions. Only the exact `CHANGE_ME` sentinel is
+excluded, so replacing it with a credential is still detected. Long role-table rows are allowed;
+the changelog permits repeated historical category headings. MyST include wrappers
+locally suppress the first-heading rule because their included README supplies it.
+
+Docker integration tests require a running runtime. On macOS, start the configured
+Colima VM with `colima start` before `just test`; `just` detects its socket.

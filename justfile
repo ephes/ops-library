@@ -11,7 +11,7 @@ setup:
     @./setup-pre-commit.sh
 
 # Run the default contributor validation path
-test: venv test-macos-ssh-tunnel test-roles test-openclaw-audio-transcription test-openclaw-codex-registration-backport test-network-recovery test-monitoring-pipeline-repair test-traefik-metrics-entrypoint test-os-apt-maintenance-failed-run test-tailscale-metrics-timer test-nyxmon-deploy test-certbot-dns-renewal-hooks test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-photos-archive-sync-deploy test-daybook-voice-memo-inbox-deploy test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup test-takahe-deploy test-wagtail-deploy test-static-site-deploy test-voxhelm-csrf lint docs-build docs-lint
+test: venv test-macos-ssh-tunnel typecheck test-roles test-software-live test-openclaw-audio-transcription test-openclaw-codex-registration-backport test-network-recovery test-monitoring-pipeline-repair test-traefik-metrics-entrypoint test-os-apt-maintenance-failed-run test-tailscale-metrics-timer test-nyxmon-deploy test-certbot-dns-renewal-hooks test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-photos-archive-sync-deploy test-daybook-voice-memo-inbox-deploy test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup test-takahe-deploy test-wagtail-deploy test-static-site-deploy test-voxhelm-csrf lint docs-build docs-lint
     @echo ""
     @echo "✅ Validation completed!"
 
@@ -466,6 +466,14 @@ test-static-site-deploy: venv
 # Test Voxhelm CSRF origin configuration
 test-voxhelm-csrf: venv
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_voxhelm_csrf
+
+# Live software observation contracts; no network or host mutations.
+test-software-live: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -W error::ResourceWarning -m unittest tests.test_software_live
+
+# Typed Python added by the software observation roles.
+typecheck: venv
+    @uv run --with mypy mypy --ignore-missing-imports roles/software_live/files/software_live.py roles/software_live/files/nyxmon_checks.py
 
 # Local lifecycle and HTTPS tests; no live infrastructure mutations.
 test-macos-ssh-tunnel: venv

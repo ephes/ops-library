@@ -1,0 +1,22 @@
+---
+ops_library_documentation_category: operations
+software_live_policy: {}
+software_live_bind: '127.0.0.1'
+software_live_port: 9110
+software_live_auth_user: CHANGE_ME
+# The secret-scanning hook excludes only this exact sentinel value.
+software_live_auth_password: CHANGE_ME
+software_live_user: metrics
+software_live_group: metrics
+software_live_config_dir: /etc/software-live
+software_live_data_dir: /var/lib/software-live
+software_live_install_dir: /usr/local/lib/software-live
+software_live_packages:
+  - python3
+  - python3-apt
+  - apache2-utils
+software_live_on_calendar: '*:0/15'
+software_live_nyxmon_db: /home/nyxmon/site/db.sqlite3
+software_live_nyxmon_user: nyxmon
+software_live_nyxmon_checks: []
+software_live_nyxmon_disable_names: []

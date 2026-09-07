@@ -1,0 +1,12 @@
+---
+- name: nyxmon_disable | Disable explicitly named software live Nyxmon checks
+  become: true
+  become_user: '{{ software_live_nyxmon_user }}'
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - '{{ software_live_install_dir }}/nyxmon_checks.py'
+    stdin: '{{ {"db": software_live_nyxmon_db, "disable_names": software_live_nyxmon_disable_names} | to_json }}'
+  register: _software_live_nyxmon_disable
+  changed_when: "'changed=true' in _software_live_nyxmon_disable.stdout"
+  no_log: true

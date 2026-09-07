@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.19.0] - 2026-09-07
+
+### Added
+
+- `software_live` provides shared read-only Traefik disk/process/version drift and
+  cached APT security-update observations, a hardened periodic collector and a
+  Tailscale/loopback-only authenticated JSON endpoint. Unknown/stale observations,
+  held security updates and failed upstream lookups remain visible.
+- Targeted Nyxmon check upsert/disable task entries and `software_live_remove`
+  complete monitoring lifecycle without changing monitored applications.
+
+### Fixed
+
+- Restore usable pre-commit validation with the project's Ansible toolchain,
+  a local Jinja syntax parser, secret scanning without a missing baseline, and
+  Markdown settings compatible with role tables and historical release notes.
+- Exclude mutable mypy/Ruff caches from collection artifacts so concurrent checks
+  cannot create checksum-invalid deployment archives.
+
+<!-- Historical release sections repeat category headings. -->
+<!-- markdownlint-disable MD024 -->
+
 ## [2.18.0] - 2026-09-07
 
 ### Added
@@ -1139,6 +1161,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   newer macOS releases.
 
 ### Security
+
 - `weeknotes_home_deploy` now protects public-source HTTPS requests with shared
   Traefik Basic Auth while a higher-priority, validated RFC1918/Tailnet router
   preserves Studio's independent bearer-auth API calls. The role strips Basic
@@ -1149,6 +1172,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to share one managed secret instead of exposing those endpoints anonymously.
 
 ### Added
+
 - `daybook_sessions_deploy` can install a dedicated Mac Studio draft-only
   weeknotes reconcile LaunchDaemon at 07:40 and 19:40 local time. The distinct
   unit, logs, mode-0600 environment, local state, and auth-only pi directory are
@@ -1158,6 +1182,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   be replaced only through explicit unloaded-unit rotation.
 
 ### Fixed
+
 - `openclaw_deploy` now accepts bounded weeknotes write payloads up to 4,000
   characters by default, so normal long-form voice-note transcriptions are not
   rejected by the journal handler's previous 500-character ceiling.
@@ -1195,6 +1220,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   DNS does not block ACME certificates for otherwise valid production names.
 
 ### Breaking Changes
+
 - **Python 3.14+ required** - Dropped support for Python 3.8–3.13
   - Supports Python 3.14 (N-2 policy currently aligns with the latest stable release)
   - All roles and testing infrastructure now require Python 3.14+
@@ -1204,6 +1230,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Update your Ansible installation before upgrading
 
 ### Added
+
 - `openclaw_deploy` can now restore source-controlled workspace skills from
   controller-local files, including executable support scripts, while
   preserving interactive unmanaged skills and refreshing cached session skill
@@ -1285,7 +1312,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `shell_basics_deploy` role to install fish, modern CLI tools (btop, bmon, sysstat/iotop, tealdeer, eza), set shell/editor defaults, and keep chezmoi current via upstream installer
 - `snappymail_deploy` role to install SnappyMail from upstream archives (PHP-FPM + nginx), wire IMAP/SMTP defaults, persist data under `/mnt/cryptdata/snappymail`, and expose via Traefik
 - ReadTheDocs integration with Sphinx and MyST parser
-  - Browsable documentation at https://ops-library.readthedocs.io/
+  - Browsable documentation at <https://ops-library.readthedocs.io/>
   - Furo theme for modern, clean appearance
   - Automated role documentation from individual READMEs
   - Just commands for documentation workflow (docs-build, docs-watch, etc.)
@@ -1309,6 +1336,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Navidrome lifecycle roles: `navidrome_deploy`, `navidrome_backup`, `navidrome_restore`, and `navidrome_remove` (systemd binary install, Traefik basic auth, rescan timer, backup/restore tooling)
 
 ### Changed
+
 - `openclaw_deploy` now installs the official Codex app-server plugin at the
   OpenClaw-matching release and supports an
   explicit canonical `auth.order.openai` profile list so deployments can require
@@ -1326,6 +1354,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit tests for OpenClaw metrics collector canary behavior and schema invariants (`tests/unit/test_openclaw_metrics_collector.py`)
 
 ### Fixed
+
 - `daybook_sessions_deploy` now uses an explicit boolean assertion for the S3
   session path check, keeping the role compatible with stricter Ansible
   conditional validation during real macOS deploys.
@@ -1350,6 +1379,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wagtail_deploy` rsync deployments now exclude the managed `.env` file and collected `/staticfiles` directory, preventing failed deploys from clobbering runtime secrets or deleting WhiteNoise assets before `collectstatic` runs.
 
 ### Changed
+
 - `homeassistant_deploy` now performs its read-only Python, Home Assistant, and
   Matter Server inspection commands during Ansible check mode, preventing
   upgrade preflights from failing on missing skipped-command output, and its
@@ -1384,7 +1414,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `nyxmon_deploy` systemd service now launches Granian instead of Gunicorn to match the upstream project
 - `ollama_install` stops any Homebrew-managed Ollama service by default, stops conflicting user-level `ollama serve` processes, and ensures the launchd service is running
 - Updated README.md with prominent link to ReadTheDocs
-- Updated repository URLs to https://github.com/ephes/ops-library
+- Updated repository URLs to <https://github.com/ephes/ops-library>
 - Modernized Python tooling: uv replaces traditional pip/venv workflow
 - Removed `docs-setup` command (auto-handled by uv)
 - `fastdeploy_deploy` now depends on `postgres_install` for database provisioning (removing the legacy inline PostgreSQL tasks)
@@ -1404,6 +1434,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `openclaw_deploy` synthetic canary collection now sets explicit collector `TimeoutStartSec=600`, keeps dedicated canary session-id routing, and preserves stable canary metadata keys (`agent`, `timeout_seconds`, `session_id`) in payload defaults
 
 ### Fixed
+
 - `backup_metrics_endpoint` and `openclaw_deploy` collector timers now schedule from timer activation and collector completion, preventing post-reboot or post-restart `active (elapsed)` timers with no next run.
 - `mail_spam_deploy` now configures the Rspamd APT repository with a scoped `signed-by` keyring and removes the legacy global apt-key entry, avoiding apt-key deprecation warnings on Ubuntu 24.04.
 - `mastodon_backup` now restarts Mastodon services after failed backup payload capture, preventing `pg_dump` or media-copy failures from leaving services stopped.
@@ -1425,10 +1456,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.0.0] - 2025-10-09
 
 ### Breaking Changes
+
 - **REMOVED**: `python_app_systemd` role - Legacy manifest-driven deployment (use dedicated `*_deploy` roles instead)
 - **REMOVED**: `python_app_django` role - Legacy manifest-driven Django deployment (use dedicated `*_deploy` roles instead)
 
 ### Added
+
 - `homelab_deploy` role - Django/Granian deployment with dual router Traefik authentication
 - `homelab_remove` role - Safe removal with data preservation options
 - `traefik_deploy` role - Install and harden Traefik with Let's Encrypt automation, architecture auto-detection, and smoke tests
@@ -1443,6 +1476,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Standardized role README template
 
 ### Changed
+
 - Streamlined role documentation for consistency
 - Fixed systemd service template to remove `ProtectHome` for services in /home
 - Improved validation.yml to handle undefined variables gracefully in homelab_remove
@@ -1453,12 +1487,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `nyxmon_deploy` gained rsync support for additional source directories and smarter uv-based dependency management (pyproject validation, lock cleanup, mode-aware sync commands)
 
 ### Fixed
+
 - Template evaluation crashes in homelab_remove when home directory doesn't exist
 - Undefined variable errors in removal validation when database/media checks are skipped
 - Permission issues with Python virtual environments on redeployment
 
 ### Migration Guide
+
 If you were using `python_app_systemd` or `python_app_django`:
+
 1. Migrate to dedicated roles: `fastdeploy_deploy`, `nyxmon_deploy`, `homelab_deploy`, etc.
 2. Follow the role development guide to create custom deployment roles if needed
 3. The old `services.d/` manifest workflow is no longer supported
@@ -1466,6 +1503,7 @@ If you were using `python_app_systemd` or `python_app_django`:
 ## [1.0.0] - 2024-09-22
 
 ### Added
+
 - Initial release of ops-library collection
 - Core service deployment roles:
   - `fastdeploy_deploy` - Deploy FastDeploy platform
@@ -1487,19 +1525,25 @@ If you were using `python_app_systemd` or `python_app_django`:
   - `python_app_systemd` - Systemd service management (deprecated)
 
 ### Security
+
 - Strict validation of secrets to prevent "CHANGEME" placeholder values
 - SOPS/age encryption support for secrets management
 - Sudoers configuration for privilege separation
 
+<!-- markdownlint-enable MD024 -->
+
 ## Role Version History
 
 ### fastdeploy_deploy
+
 - **1.0.0** (2024-09-22): Initial release with rsync/git deployment support
 
 ### nyxmon_deploy
+
 - **1.0.0** (2024-09-22): Initial release with Telegram integration
 
 ### apt_upgrade_register
+
 - **1.0.0** (2024-09-22): Initial release with SSH key management
 
 [Unreleased]: https://github.com/ephes/ops-library/compare/v2.0.0...HEAD
