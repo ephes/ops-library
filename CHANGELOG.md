@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.16.0] - 2026-09-07
+
 ### Added
 
+- Added `static_site_deploy` in collection 2.16.0, a reusable controller-to-host
+  publication role for compact generated sites. It permits only regular files and directories
+  in the source, syncs deterministic modes into a root-owned document root,
+  serves it on loopback with a hardened systemd unit and disabled directory
+  listings, renders an HTTPS Traefik route, and can verify both local and public
+  serving paths.
 - `wagtail_deploy` gained `wagtail_require_object_storage` and
   `wagtail_require_sentry` (both default `true`, so existing deployments are
   unchanged). Setting either to `false` skips the corresponding secret

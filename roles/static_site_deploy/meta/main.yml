@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: static_site_deploy
+  author: Jochen Wersdörfer
+  description: Deploy a generated static website behind Traefik.
+  license: MIT
+  min_ansible_version: "2.20"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+dependencies: []

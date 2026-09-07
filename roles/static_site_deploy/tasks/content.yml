@@ -1,0 +1,26 @@
+---
+- name: content | Synchronize generated static site
+  ansible.posix.synchronize:
+    src: "{{ static_site_source_path }}/"
+    dest: "{{ static_site_path }}/"
+    archive: false
+    recursive: true
+    links: false
+    times: true
+    delete: "{{ static_site_rsync_delete | bool }}"
+    owner: false
+    group: false
+    perms: true
+    rsync_path: "sudo -n rsync"
+    rsync_opts:
+      - "--chmod=D0755,F0644"
+  delegate_to: localhost
+  become: false
+
+- name: content | Keep published content root-owned and service-readable
+  ansible.builtin.file:
+    path: "{{ static_site_path }}"
+    state: directory
+    owner: root
+    group: "{{ static_site_group }}"
+    recurse: true

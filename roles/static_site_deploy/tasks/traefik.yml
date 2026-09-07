@@ -1,0 +1,16 @@
+---
+- name: traefik | Ensure dynamic configuration directory exists
+  ansible.builtin.file:
+    path: "{{ static_site_traefik_config_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: traefik | Publish static site route
+  ansible.builtin.template:
+    src: static-site.traefik.yml.j2
+    dest: "{{ static_site_traefik_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
