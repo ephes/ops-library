@@ -1,0 +1,422 @@
+---
+- name: validate | Validate Nikon archive synchronization configuration
+  ansible.builtin.assert:
+    that:
+      - not (daybook_photos_archive_sync_enabled | bool) or ansible_facts['os_family'] == 'Darwin'
+      - daybook_photos_archive_sync_service_user != 'CHANGEME'
+      - ansible_user_id == daybook_photos_archive_sync_service_user
+      - (daybook_photos_archive_sync_service_home | string).startswith('/Users/')
+      - (daybook_photos_archive_sync_repo_ref | string | regex_search('^[0-9a-f]{40}$')) is not none
+      - (daybook_photos_archive_sync_repo_bundle_src | string).startswith('/')
+      - daybook_photos_archive_sync_repo_bundle_src != 'CHANGEME'
+      - (daybook_photos_archive_sync_checkout_path | string).startswith(daybook_photos_archive_sync_service_home ~ '/')
+      - (daybook_photos_archive_sync_install_root | string).startswith(daybook_photos_archive_sync_service_home ~ '/')
+      - (daybook_photos_archive_sync_repo_bundle_path | string).startswith(daybook_photos_archive_sync_install_root ~ '/')
+      - (daybook_photos_archive_sync_runtime_dir | string).startswith(daybook_photos_archive_sync_service_home ~ '/')
+      - (daybook_photos_archive_sync_config_dir | string).startswith(daybook_photos_archive_sync_service_home ~ '/')
+      - (daybook_photos_archive_sync_log_dir | string).startswith(daybook_photos_archive_sync_runtime_dir ~ '/')
+      - (daybook_photos_archive_sync_stdout_log | string).startswith(daybook_photos_archive_sync_log_dir ~ '/')
+      - (daybook_photos_archive_sync_stderr_log | string).startswith(daybook_photos_archive_sync_log_dir ~ '/')
+      - (daybook_photos_archive_sync_venv_path | string).startswith(daybook_photos_archive_sync_checkout_path ~ '/')
+      - (daybook_photos_archive_sync_launcher_path | string).startswith(daybook_photos_archive_sync_config_dir ~ '/')
+      - (daybook_photos_archive_sync_library_path | string).startswith(daybook_photos_archive_sync_service_home ~ '/')
+      - (daybook_photos_archive_sync_source_root | string).startswith(daybook_photos_archive_sync_service_home ~ '/')
+      - (daybook_photos_archive_sync_state_path | string).startswith(daybook_photos_archive_sync_runtime_dir ~ '/')
+      - (daybook_photos_archive_sync_folder_map_path | string).startswith(daybook_photos_archive_sync_runtime_dir ~ '/')
+      - (daybook_photos_archive_sync_mount_point | string).startswith('/Volumes/')
+      - daybook_photos_archive_sync_expected_smb_server != 'CHANGEME'
+      - daybook_photos_archive_sync_expected_smb_share | length > 0
+      - daybook_photos_archive_sync_expected_writer_host != 'CHANGEME'
+      - daybook_photos_archive_sync_expected_writer_host | lower == inventory_hostname | lower
+      - daybook_photos_archive_sync_interval_seconds | int >= 3600
+      - daybook_photos_archive_sync_timeout_seconds | int > 0
+      - daybook_photos_archive_sync_photos_access_timeout_seconds | int > 0
+      - daybook_photos_archive_sync_photos_access_timeout_seconds | int + 5 + daybook_photos_archive_sync_timeout_seconds | int + 60 < daybook_photos_archive_sync_interval_seconds | int
+      - daybook_photos_archive_sync_launchd_plist_path == daybook_photos_archive_sync_service_home ~ '/Library/LaunchAgents/' ~ daybook_photos_archive_sync_launchd_label ~ '.plist'
+      - daybook_photos_archive_sync_launchd_enabled | type_debug == 'bool'
+    fail_msg: >-
+      Nikon archive synchronization needs an exact Daybook commit and bundle,
+      owner-local paths, a verified Fractal identity, and an inventory hostname
+      equal to the single configured writer.
+  when: daybook_photos_archive_sync_enabled | bool
+
+- name: validate | Reject relative or traversing managed paths
+  ansible.builtin.assert:
+    that:
+      - (item | string).startswith('/')
+      - "'.' not in (item | string).split('/')"
+      - "'..' not in (item | string).split('/')"
+    fail_msg: "Nikon archive synchronization paths must be absolute and contain no traversal."
+  loop:
+    - "{{ daybook_photos_archive_sync_service_home }}"
+    - "{{ daybook_photos_archive_sync_install_root }}"
+    - "{{ daybook_photos_archive_sync_repo_bundle_path }}"
+    - "{{ daybook_photos_archive_sync_checkout_path }}"
+    - "{{ daybook_photos_archive_sync_runtime_dir }}"
+    - "{{ daybook_photos_archive_sync_venv_path }}"
+    - "{{ daybook_photos_archive_sync_log_dir }}"
+    - "{{ daybook_photos_archive_sync_stdout_log }}"
+    - "{{ daybook_photos_archive_sync_stderr_log }}"
+    - "{{ daybook_photos_archive_sync_state_path }}"
+    - "{{ daybook_photos_archive_sync_folder_map_path }}"
+    - "{{ daybook_photos_archive_sync_config_dir }}"
+    - "{{ daybook_photos_archive_sync_launcher_path }}"
+    - "{{ daybook_photos_archive_sync_launchd_plist_path }}"
+    - "{{ daybook_photos_archive_sync_library_path }}"
+    - "{{ daybook_photos_archive_sync_source_root }}"
+    - "{{ daybook_photos_archive_sync_mount_point }}"
+  when: daybook_photos_archive_sync_enabled | bool
+
+- name: validate | Resolve archive synchronization user id
+  ansible.builtin.command:
+    argv: [/usr/bin/id, -u, "{{ daybook_photos_archive_sync_service_user }}"]
+  register: daybook_photos_archive_sync_uid
+  changed_when: false
+  check_mode: false
+  when: daybook_photos_archive_sync_enabled | bool
+
+- name: validate | Resolve effective task identity
+  ansible.builtin.command:
+    argv: [/usr/bin/id, -un]
+  register: daybook_photos_archive_sync_effective_user
+  changed_when: false
+  check_mode: false
+  when: daybook_photos_archive_sync_enabled | bool
+
+- name: validate | Require service-user task execution
+  ansible.builtin.assert:
+    that:
+      - daybook_photos_archive_sync_effective_user.stdout | trim == daybook_photos_archive_sync_service_user
+    fail_msg: Nikon archive synchronization deployment tasks must run as the service user without become.
+  when: daybook_photos_archive_sync_enabled | bool
+
+- name: quiesce | Disable Nikon archive synchronization before deployment
+  ansible.builtin.command:
+    argv:
+      - /bin/launchctl
+      - disable
+      - "gui/{{ daybook_photos_archive_sync_uid.stdout | trim }}/{{ daybook_photos_archive_sync_launchd_label }}"
+  changed_when: false
+  failed_when: false
+  when:
+    - daybook_photos_archive_sync_enabled | bool
+    - not ansible_check_mode
+
+- name: quiesce | Boot out Nikon archive synchronization before deployment
+  ansible.builtin.command:
+    argv:
+      - /bin/launchctl
+      - bootout
+      - "gui/{{ daybook_photos_archive_sync_uid.stdout | trim }}/{{ daybook_photos_archive_sync_launchd_label }}"
+  changed_when: false
+  failed_when: false
+  when:
+    - daybook_photos_archive_sync_enabled | bool
+    - not ansible_check_mode
+
+- name: quiesce | Read persistent LaunchAgent disable state
+  ansible.builtin.command:
+    argv:
+      - /bin/launchctl
+      - print-disabled
+      - "gui/{{ daybook_photos_archive_sync_uid.stdout | trim }}"
+  register: daybook_photos_archive_sync_disabled_state
+  changed_when: false
+  when:
+    - daybook_photos_archive_sync_enabled | bool
+    - not ansible_check_mode
+
+- name: quiesce | Inspect exact LaunchAgent service state
+  ansible.builtin.command:
+    argv:
+      - /bin/launchctl
+      - print
+      - "gui/{{ daybook_photos_archive_sync_uid.stdout | trim }}/{{ daybook_photos_archive_sync_launchd_label }}"
+  register: daybook_photos_archive_sync_service_state
+  changed_when: false
+  failed_when: false
+  when:
+    - daybook_photos_archive_sync_enabled | bool
+    - not ansible_check_mode
+
+- name: quiesce | Require disabled and unloaded LaunchAgent
+  ansible.builtin.assert:
+    that:
+      - >-
+        ('"' ~ daybook_photos_archive_sync_launchd_label ~ '" => disabled')
+        in daybook_photos_archive_sync_disabled_state.stdout
+        or ('"' ~ daybook_photos_archive_sync_launchd_label ~ '" => true')
+        in daybook_photos_archive_sync_disabled_state.stdout
+      - daybook_photos_archive_sync_service_state.rc != 0
+    fail_msg: Refusing deployment until the exact archive-sync LaunchAgent is disabled and unloaded.
+  when:
+    - daybook_photos_archive_sync_enabled | bool
+    - not ansible_check_mode
+
+- name: filesystem | Create owner-private deployment directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ daybook_photos_archive_sync_service_user }}"
+    group: "{{ daybook_photos_archive_sync_service_group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: "{{ daybook_photos_archive_sync_install_root }}", mode: "0700"}
+    - {path: "{{ daybook_photos_archive_sync_runtime_dir }}", mode: "0700"}
+    - {path: "{{ daybook_photos_archive_sync_log_dir }}", mode: "0700"}
+    - {path: "{{ daybook_photos_archive_sync_config_dir }}", mode: "0700"}
+  when: daybook_photos_archive_sync_enabled | bool
+
+- name: filesystem | Ensure standard user LaunchAgents directory exists
+  ansible.builtin.file:
+    path: "{{ daybook_photos_archive_sync_launchd_plist_path | dirname }}"
+    state: directory
+    owner: "{{ daybook_photos_archive_sync_service_user }}"
+    group: "{{ daybook_photos_archive_sync_service_group }}"
+  when: daybook_photos_archive_sync_enabled | bool
+
+- name: source | Install controller-verified Daybook source bundle
+  ansible.builtin.copy:
+    src: "{{ daybook_photos_archive_sync_repo_bundle_src }}"
+    dest: "{{ daybook_photos_archive_sync_repo_bundle_path }}"
+    owner: "{{ daybook_photos_archive_sync_service_user }}"
+    group: "{{ daybook_photos_archive_sync_service_group }}"
+    mode: "0600"
+  when: daybook_photos_archive_sync_enabled | bool
+
+- name: source | Inspect existing Daybook checkout
+  ansible.builtin.stat:
+    path: "{{ daybook_photos_archive_sync_checkout_path }}/.git"
+  register: daybook_photos_archive_sync_git
+  when: daybook_photos_archive_sync_enabled | bool
+
+- name: source | Inspect existing checkout index
+  ansible.builtin.stat:
+    path: "{{ daybook_photos_archive_sync_checkout_path }}/.git/index"
+  register: daybook_photos_archive_sync_git_index
+  when: daybook_photos_archive_sync_enabled | bool
+
+- name: source | Clone protected Daybook bundle without checkout
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/git
+      - clone
+      - --no-checkout
+      - --branch
+      - main
+      - "{{ daybook_photos_archive_sync_repo_bundle_path }}"
+      - "{{ daybook_photos_archive_sync_checkout_path }}"
+  environment:
+    GIT_CONFIG_GLOBAL: /dev/null
+    GIT_CONFIG_SYSTEM: /dev/null
+    GIT_TERMINAL_PROMPT: "0"
+  when:
+    - daybook_photos_archive_sync_enabled | bool
+    - not (daybook_photos_archive_sync_git.stat.exists | default(false))
+    - not ansible_check_mode
+
+- name: source | Reject dirty managed Daybook checkout
+  ansible.builtin.command:
+    argv: [/usr/bin/git, -C, "{{ daybook_photos_archive_sync_checkout_path }}", -c, core.fsmonitor=false, status, --porcelain=v1, --untracked-files=all]
+  environment:
+    GIT_CONFIG_GLOBAL: /dev/null
+    GIT_CONFIG_SYSTEM: /dev/null
+  register: daybook_photos_archive_sync_status
+  changed_when: false
+  when:
+    - daybook_photos_archive_sync_enabled | bool
+    - daybook_photos_archive_sync_git.stat.exists | default(false)
+    - daybook_photos_archive_sync_git_index.stat.exists | default(false)
+    - not ansible_check_mode
+
+- name: source | Require clean managed Daybook checkout
+  ansible.builtin.assert:
+    that: daybook_photos_archive_sync_status.stdout | trim | length == 0
+    fail_msg: "Refusing to overwrite a dirty managed Daybook archive-sync checkout."
+  when:
+    - daybook_photos_archive_sync_enabled | bool
+    - daybook_photos_archive_sync_git.stat.exists | default(false)
+    - daybook_photos_archive_sync_git_index.stat.exists | default(false)
+    - not ansible_check_mode
+
+- name: source | Fetch exact Daybook archive synchronization revision
+  ansible.builtin.command:
+    argv: [/usr/bin/git, -C, "{{ daybook_photos_archive_sync_checkout_path }}", fetch, --no-tags, "{{ daybook_photos_archive_sync_repo_bundle_path }}", "{{ daybook_photos_archive_sync_repo_ref }}"]
+  environment:
+    GIT_CONFIG_GLOBAL: /dev/null
+    GIT_CONFIG_SYSTEM: /dev/null
+    GIT_TERMINAL_PROMPT: "0"
+  changed_when: false
+  when:
+    - daybook_photos_archive_sync_enabled | bool
+    - not ansible_check_mode
+
+- name: source | Materialize exact detached Daybook archive synchronization revision
+  ansible.builtin.command:
+    argv: [/usr/bin/git, -C, "{{ daybook_photos_archive_sync_checkout_path }}", checkout, --detach, "{{ daybook_photos_archive_sync_repo_ref }}"]
+  environment:
+    GIT_CONFIG_GLOBAL: /dev/null
+    GIT_CONFIG_SYSTEM: /dev/null
+  register: daybook_photos_archive_sync_checkout
+  changed_when: "'HEAD is now at' in daybook_photos_archive_sync_checkout.stderr"
+  when:
+    - daybook_photos_archive_sync_enabled | bool
+    - not ansible_check_mode
+
+- name: source | Inspect materialized Daybook checkout
+  ansible.builtin.command:
+    argv: [/usr/bin/git, -C, "{{ daybook_photos_archive_sync_checkout_path }}", -c, core.fsmonitor=false, status, --porcelain=v1, --untracked-files=all]
+  environment:
+    GIT_CONFIG_GLOBAL: /dev/null
+    GIT_CONFIG_SYSTEM: /dev/null
+  register: daybook_photos_archive_sync_materialized_status
+  changed_when: false
+  when:
+    - daybook_photos_archive_sync_enabled | bool
+    - not ansible_check_mode
+
+- name: source | Require clean materialized Daybook checkout
+  ansible.builtin.assert:
+    that: daybook_photos_archive_sync_materialized_status.stdout | trim | length == 0
+    fail_msg: The materialized Daybook archive-sync checkout is not clean.
+  when:
+    - daybook_photos_archive_sync_enabled | bool
+    - not ansible_check_mode
+
+- name: runtime | Verify uv and timeout executables
+  ansible.builtin.command:
+    argv: ["{{ item }}", --version]
+  loop:
+    - "{{ daybook_photos_archive_sync_uv_bin }}"
+    - "{{ daybook_photos_archive_sync_timeout_bin }}"
+  changed_when: false
+  when: daybook_photos_archive_sync_enabled | bool
+
+- name: runtime | Verify ExifTool executable
+  ansible.builtin.command:
+    argv: [/opt/homebrew/bin/exiftool, -ver]
+  changed_when: false
+  when: daybook_photos_archive_sync_enabled | bool
+
+- name: runtime | Synchronize pinned Daybook runtime
+  ansible.builtin.command:
+    argv:
+      - "{{ daybook_photos_archive_sync_uv_bin }}"
+      - sync
+      - --frozen
+      - --no-dev
+      - --python
+      - "{{ daybook_photos_archive_sync_python_version }}"
+  args:
+    chdir: "{{ daybook_photos_archive_sync_checkout_path }}"
+  environment:
+    HOME: "{{ daybook_photos_archive_sync_service_home }}"
+    PATH: "{{ daybook_photos_archive_sync_path }}"
+  changed_when: false
+  when:
+    - daybook_photos_archive_sync_enabled | bool
+    - not ansible_check_mode
+
+- name: runtime | Verify installed Daybook console script
+  ansible.builtin.command:
+    argv: ["{{ daybook_photos_archive_sync_venv_path }}/bin/daybook", --help]
+  environment:
+    HOME: "{{ daybook_photos_archive_sync_service_home }}"
+    PATH: "{{ daybook_photos_archive_sync_path }}"
+  changed_when: false
+  when:
+    - daybook_photos_archive_sync_enabled | bool
+    - not ansible_check_mode
+
+- name: runtime | Recheck checkout cleanliness after environment synchronization
+  ansible.builtin.command:
+    argv: [/usr/bin/git, -C, "{{ daybook_photos_archive_sync_checkout_path }}", -c, core.fsmonitor=false, status, --porcelain=v1, --untracked-files=all]
+  environment:
+    GIT_CONFIG_GLOBAL: /dev/null
+    GIT_CONFIG_SYSTEM: /dev/null
+  register: daybook_photos_archive_sync_post_sync_status
+  changed_when: false
+  when:
+    - daybook_photos_archive_sync_enabled | bool
+    - not ansible_check_mode
+
+- name: runtime | Require clean checkout after environment synchronization
+  ansible.builtin.assert:
+    that: daybook_photos_archive_sync_post_sync_status.stdout | trim | length == 0
+    fail_msg: Daybook environment synchronization left the managed checkout dirty.
+  when:
+    - daybook_photos_archive_sync_enabled | bool
+    - not ansible_check_mode
+
+- name: configuration | Install archive synchronization launcher
+  ansible.builtin.template:
+    src: archive-sync.sh.j2
+    dest: "{{ daybook_photos_archive_sync_launcher_path }}"
+    owner: "{{ daybook_photos_archive_sync_service_user }}"
+    group: "{{ daybook_photos_archive_sync_service_group }}"
+    mode: "0700"
+  when: daybook_photos_archive_sync_enabled | bool
+
+- name: configuration | Install archive synchronization LaunchAgent
+  ansible.builtin.template:
+    src: archive-sync.plist.j2
+    dest: "{{ daybook_photos_archive_sync_launchd_plist_path }}"
+    owner: "{{ daybook_photos_archive_sync_service_user }}"
+    group: "{{ daybook_photos_archive_sync_service_group }}"
+    mode: "0600"
+  when: daybook_photos_archive_sync_enabled | bool
+
+- name: activation | Activate Nikon archive synchronization fail-closed
+  when:
+    - daybook_photos_archive_sync_enabled | bool
+    - daybook_photos_archive_sync_launchd_enabled | bool
+    - not ansible_check_mode
+  block:
+    - name: activation | Enable Nikon archive synchronization
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - enable
+          - "gui/{{ daybook_photos_archive_sync_uid.stdout | trim }}/{{ daybook_photos_archive_sync_launchd_label }}"
+      changed_when: false
+
+    - name: activation | Bootstrap Nikon archive synchronization LaunchAgent
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - bootstrap
+          - "gui/{{ daybook_photos_archive_sync_uid.stdout | trim }}"
+          - "{{ daybook_photos_archive_sync_launchd_plist_path }}"
+      changed_when: true
+
+    - name: activation | Verify enabled archive synchronization service
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - print
+          - "gui/{{ daybook_photos_archive_sync_uid.stdout | trim }}/{{ daybook_photos_archive_sync_launchd_label }}"
+      changed_when: false
+  rescue:
+    - name: activation | Disable archive synchronization after activation failure
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - disable
+          - "gui/{{ daybook_photos_archive_sync_uid.stdout | trim }}/{{ daybook_photos_archive_sync_launchd_label }}"
+      changed_when: false
+      failed_when: false
+
+    - name: activation | Boot out archive synchronization after activation failure
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - bootout
+          - "gui/{{ daybook_photos_archive_sync_uid.stdout | trim }}/{{ daybook_photos_archive_sync_launchd_label }}"
+      changed_when: false
+      failed_when: false
+
+    - name: activation | Report fail-closed activation failure
+      ansible.builtin.fail:
+        msg: >-
+          Nikon archive synchronization activation failed and the role attempted
+          to restore the disabled and unloaded state.

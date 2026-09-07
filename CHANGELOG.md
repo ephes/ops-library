@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.17.0] - 2026-09-07
+
+### Added
+
+- Archive deployment validates log overrides beneath the private log tree and
+  the virtualenv beneath the verified checkout; actual Ansible assertion tests
+  reject outside, relative, and traversing overrides for all managed paths.
+- Included the archive role in rendered documentation and its pytest regression
+  module in the default test recipe.
+- Added `daybook_photos_archive_sync_deploy`, a disabled-first macOS Aqua
+  LaunchAgent for a single Nikon archive writer. It installs an exact bundled
+  Daybook revision, protects private state/logs, requires an existing SMB mount,
+  and keeps installation separate from activation. The same-runtime Photos
+  preflight exits 77 within 15 seconds when launchd cannot read `Photos.sqlite`;
+  interval validation includes both watchdog grace periods.
+- Documented the repaired Daybook source-root migration, immutable recovery,
+  creation-ownership evidence, and repeated-lock escalation. Deployment remains
+  disabled until an exact repaired revision is separately reviewed and installed.
+
+### Fixed
+
+- Keep the copied Nikon source bundle beneath the install root. Validation-only
+  tests select named assertion tasks and reject any other executable task keys.
+
 ## [2.16.1] - 2026-09-07
 
 ### Fixed
