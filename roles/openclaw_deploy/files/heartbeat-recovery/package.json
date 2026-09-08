@@ -1,0 +1,12 @@
+{
+  "name": "openclaw-heartbeat-recovery",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "main": "./index.js",
+  "openclaw": {
+    "extensions": [
+      "./index.js"
+    ]
+  }
+}

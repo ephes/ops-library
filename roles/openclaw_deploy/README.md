@@ -137,6 +137,8 @@ changes, so newly deployed instructions become visible to new session bindings.
 | `openclaw_agent_model_primary` | `""` | Optional default model (`provider/model`) patched to `agents.defaults.model.primary` |
 | `openclaw_agent_model_fallbacks` | `[]` | Optional ordered fallback list (`provider/model` entries) patched to `agents.defaults.model.fallbacks` |
 | `openclaw_openai_auth_order` | `[]` | Optional ordered canonical OpenAI auth profiles patched to `auth.order.openai`; use an OAuth-only list such as `["openai:default"]` to require ChatGPT/Codex subscription auth for agent turns |
+| `openclaw_heartbeat_recovery_managed` | `false` | Manage the v2026.9.1 heartbeat recovery extension and its enabled state |
+| `openclaw_heartbeat_recovery_enabled` | `true` | When managed, keep incomplete-heartbeat retries on `heartbeat_respond` and block direct message sends during recovery |
 | `openclaw_codex_plugin_enabled` | `false` | Install, enable, and allow the official `@openclaw/codex` app-server runtime plugin, pinned to the configured OpenClaw version |
 | `openclaw_codex_plugin_id` | `codex` | Plugin registry ID used for inspection and managed config |
 | `openclaw_codex_plugin_package` | `@openclaw/codex` | Official npm package installed through OpenClaw's persistent plugin registry |
@@ -233,6 +235,41 @@ changes that enable and allow the plugin. Package installation uses host network
 resolution follows the deployment host instead of Docker's transient default-bridge DNS.
 This intentionally lets package install-time code reach host-local services; enable this path
 only for the official, exact-version-pinned package that the role verifies after installation.
+
+The optional `heartbeat-recovery` extension uses supported OpenClaw hooks to
+recognize the exact v2026.9.1 empty-response and reasoning-only retry prompts
+only when the host marks the run as a heartbeat. It adds heartbeat-specific
+system guidance and narrows recovery tools to `heartbeat_respond`; a run-scoped
+`before_tool_call` guard also blocks direct `message` dispatch if a forced or
+retained tool remains available. Alerts still use `notify: true` and
+`notificationText`, leaving destination selection to OpenClaw. Ordinary
+heartbeats, user chat, and other cron jobs are unchanged. Missing evidence must
+be reported honestly, rather than converted into a successful check.
+
+The managed entry explicitly grants conversation access and prompt injection,
+required by OpenClaw for these hooks. The local extension reads only the host
+trigger, run ID and current prompt; it does not inspect the message history or
+perform network calls. Deployment health checks verify the enabled state and
+all three registered hooks, so a permissions-blocked extension fails deployment.
+If the host omits a run ID, prompt guidance and tool filtering still apply, but
+the dispatch guard cannot scope its block; the extension logs
+`heartbeat-recovery: dispatch guard unavailable without a host run ID` with the
+reduced enforcement described in the remainder of the warning.
+
+Enable both `openclaw_heartbeat_recovery_managed` and
+`openclaw_heartbeat_recovery_enabled` to deploy it. To roll back, deploy with
+management still enabled and `openclaw_heartbeat_recovery_enabled: false`;
+this explicitly disables the plugin while retaining its files. Setting
+management false alone leaves existing state untouched. Disable it first and
+then turn management off before an upstream upgrade; validation restricts this
+prompt-dependent workaround to `v2026.9.1`. This extension does not change
+execution deadlines or fix provider stream stalls.
+
+Validation requires Node.js on the controller: `just test-openclaw-heartbeat-recovery`.
+The integration script `tests/integration/openclaw_heartbeat_recovery.mjs` also
+exercises the installed image's hook runner and forced-tool policy without model
+calls, outbound sends, or state writes. Run it inside the v2026.9.1 image with
+`HEARTBEAT_PLUGIN` set to the deployed extension's `index.js` path.
 
 `@openclaw/codex@2026.9.1` has a known startup race: a synchronous gateway
 session-snapshot read can consume most of the plugin's hard-coded two-second

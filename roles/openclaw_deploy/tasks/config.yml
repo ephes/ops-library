@@ -82,6 +82,8 @@
       is version('2026.9.1', '>=', version_type='semver')
   notify: restart openclaw
 
+# The image runs as uid 1000 and compose mounts openclaw_data_dir at the fixed
+# /home/node/.openclaw path; extension host and container paths use that contract.
 - name: config | Build managed plugin patch inputs
   ansible.builtin.set_fact:
     _openclaw_managed_plugin_entries: >-
@@ -90,6 +92,17 @@
           "telegram": { "enabled": openclaw_telegram_enabled | bool },
           "whatsapp": { "enabled": false }
         }
+        | combine(
+            {
+              'heartbeat-recovery': {
+                'enabled': openclaw_heartbeat_recovery_enabled | bool,
+                'hooks': {'allowConversationAccess': true, 'allowPromptInjection': true}
+              }
+            }
+            if (openclaw_heartbeat_recovery_managed | bool)
+            else {},
+            recursive=True
+          )
         | combine(
             (
               {
@@ -115,9 +128,9 @@
       }}
     _openclaw_managed_plugin_load_paths: >-
       {{
-        [openclaw_opsgate_container_extension_dir]
-        if (openclaw_opsgate_enabled | bool)
-        else []
+        ([openclaw_opsgate_container_extension_dir] if (openclaw_opsgate_enabled | bool) else [])
+        +
+        (['/home/node/.openclaw/extensions/heartbeat-recovery'] if (openclaw_heartbeat_recovery_managed | bool) else [])
       }}
     _openclaw_managed_plugin_allow: >-
       {{
@@ -125,6 +138,8 @@
           ([openclaw_codex_plugin_id] if (openclaw_codex_plugin_enabled | bool) else [])
           +
           ([openclaw_opsgate_extension_id] if (openclaw_opsgate_enabled | bool) else [])
+          +
+          (['heartbeat-recovery'] if (openclaw_heartbeat_recovery_managed | bool) else [])
         )
         | unique
         | list

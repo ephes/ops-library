@@ -22,6 +22,10 @@
 - name: main | Render OpenClaw environment file
   ansible.builtin.import_tasks: env.yml
 
+- name: main | Install heartbeat recovery extension
+  ansible.builtin.import_tasks: heartbeat_recovery.yml
+  when: openclaw_heartbeat_recovery_managed | bool
+
 - name: main | Render gateway config
   ansible.builtin.import_tasks: config.yml
 

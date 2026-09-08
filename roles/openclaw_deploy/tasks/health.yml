@@ -99,3 +99,44 @@
       running and connected. Inspect gateway logs for migration or crash-loop
       suppression errors.
   when: _openclaw_telegram_expected_enabled | bool
+
+- name: health | Inspect managed heartbeat recovery runtime
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - "{{ openclaw_container_name }}"
+      - openclaw
+      - plugins
+      - inspect
+      - heartbeat-recovery
+      - --runtime
+      - --json
+  register: _openclaw_heartbeat_recovery_inspect
+  changed_when: false
+  when: openclaw_heartbeat_recovery_managed | bool
+
+- name: health | Verify heartbeat recovery enabled state and hook registration
+  ansible.builtin.assert:
+    that:
+      - >-
+        (_openclaw_heartbeat_recovery_inspect.stdout | from_json).plugin.enabled
+        == (openclaw_heartbeat_recovery_enabled | bool)
+      - >-
+        not (openclaw_heartbeat_recovery_enabled | bool)
+        or (
+          (_openclaw_heartbeat_recovery_inspect.stdout | from_json).plugin.status == 'loaded'
+          and (_openclaw_heartbeat_recovery_inspect.stdout | from_json).plugin.imported
+          and (
+            ['before_prompt_build', 'before_tool_call', 'agent_end']
+            | difference(
+                (_openclaw_heartbeat_recovery_inspect.stdout | from_json).typedHooks
+                | map(attribute='name') | list
+              ) | length == 0
+          )
+        )
+    fail_msg: >-
+      Heartbeat recovery plugin state or runtime hooks do not match the managed
+      configuration. Inspect plugin diagnostics, including conversation-access
+      and prompt-injection permissions, before considering deployment successful.
+  when: openclaw_heartbeat_recovery_managed | bool

@@ -822,3 +822,12 @@
   when:
     - openclaw_weeknotes_enabled | bool
     - openclaw_weeknotes_backend == 's3'
+
+- name: validate | Validate supported upstream version
+  ansible.builtin.assert:
+    that:
+      - (openclaw_version | regex_replace('^v', '')) == '2026.9.1'
+    fail_msg: >-
+      Heartbeat recovery matches v2026.9.1 internal retry prompts. Disable this
+      extension and its management before upgrading; revalidate against upstream.
+  when: openclaw_heartbeat_recovery_managed | bool
