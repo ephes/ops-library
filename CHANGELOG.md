@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Allow verified SSH recovery for proxy-only transactions and provide read-only ingress/static-alias acceptance probes.
+
 - Add journaled pre-enrollment ownership repair and inactive-service retirement; preserve application data and proxy PID.
 
 ## [2.20.0] - 2026-09-07

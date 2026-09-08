@@ -246,10 +246,16 @@ def evidence(request: dict[str, Any], live: dict[str, Any]) -> None:
     require(proof["baseline"] == live, "reviewed baseline does not match live state")
     age = time.time() - proof["verified_at"]
     require(0 <= age <= 3600, "preflight evidence must be at most one hour old")
+    recovery = proof.get("recovery_access", proof.get("console_recovery"))
+    require(
+        isinstance(recovery, str)
+        and bool(recovery.strip())
+        and "CHANGEME" not in recovery,
+        "missing evidence: recovery_access",
+    )
     for key in [
         "owner",
         "review_reference",
-        "console_recovery",
         "independent_observer",
         "observer_delivery_test",
     ]:

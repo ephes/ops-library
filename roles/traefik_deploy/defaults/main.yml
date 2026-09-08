@@ -111,3 +111,6 @@ traefik_alias_policy: {}
 
 # Explicit one-time repairs before enrollment; no default live target or action.
 traefik_preparation_request: {}
+
+# Read-only acceptance probe transport, supplied with a captured private baseline.
+traefik_health_probe_config: {}

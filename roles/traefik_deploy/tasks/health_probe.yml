@@ -1,0 +1,82 @@
+---
+- name: health_probe | Require a complete nonempty captured baseline
+  ansible.builtin.assert:
+    that:
+      - traefik_health_probe_config is mapping
+      - traefik_health_probe_config.probes | default([]) | length > 0
+      - traefik_health_probe_config.observations | default([]) | length == traefik_health_probe_config.probes | length
+      - traefik_health_probe_config.dynamic | default(none) is mapping
+      - traefik_health_probe_config.entrypoints | default([]) | length > 0
+    fail_msg: Supply explicit probes, captured observations, dynamic hashes and entrypoint names.
+
+- name: health_probe | Check the explicitly pinned probe interpreter
+  ansible.builtin.raw: /usr/bin/python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)'
+  register: traefik_health_probe_python
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: health_probe | Require Python 3.11 or newer before probe installation
+  ansible.builtin.assert:
+    that:
+      - traefik_health_probe_python.rc == 0
+    fail_msg: Both verification and transaction probes use /usr/bin/python3 and require Python 3.11 or newer.
+  when: not ansible_check_mode
+
+- name: health_probe | Create private probe directory
+  ansible.builtin.file:
+    path: /var/lib/traefik-update-probes
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: health_probe | Install read-only acceptance program
+  ansible.builtin.copy:
+    src: traefik_health_probe.py
+    dest: /var/lib/traefik-update-probes/health.py
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: health_probe | Install captured private acceptance baseline
+  ansible.builtin.copy:
+    content: '{{ traefik_health_probe_config | to_nice_json }}'
+    dest: /var/lib/traefik-update-probes/checks.json
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+
+- name: health_probe | Verify the captured baseline against live ingress
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - /var/lib/traefik-update-probes/health.py
+      - health
+      - /var/lib/traefik-update-probes/checks.json
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: health_probe | Read the installed program identity for transaction requests
+  ansible.builtin.stat:
+    path: /var/lib/traefik-update-probes/health.py
+    checksum_algorithm: sha256
+  register: traefik_health_probe_installed
+
+- name: health_probe | Supply transaction probe commands
+  ansible.builtin.set_fact:
+    traefik_health_probe_commands:
+      baseline_probe:
+        argv: [/var/lib/traefik-update-probes/health.py, health, /var/lib/traefik-update-probes/checks.json]
+        sha256: '{{ traefik_health_probe_installed.stat.checksum }}'
+      acceptance_probe:
+        argv: [/var/lib/traefik-update-probes/health.py, health, /var/lib/traefik-update-probes/checks.json]
+        sha256: '{{ traefik_health_probe_installed.stat.checksum }}'
+      alias_acceptance_probe:
+        argv: [/var/lib/traefik-update-probes/health.py, alias, /var/lib/traefik-update-probes/checks.json]
+        sha256: '{{ traefik_health_probe_installed.stat.checksum }}'
+      cleanup_probe:
+        argv: [/var/lib/traefik-update-probes/health.py, cleanup, /var/lib/traefik-update-probes/checks.json]
+        sha256: '{{ traefik_health_probe_installed.stat.checksum }}'
+  when: not ansible_check_mode

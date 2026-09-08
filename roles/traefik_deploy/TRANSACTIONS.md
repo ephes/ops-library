@@ -59,9 +59,13 @@ The `inspect` result supplies a content identity (machine ID, binary hash/versio
 static configuration hash, dynamic tree hash and effective unit-text hash) and the
 host state. Every other action needs `evidence` with that exact `baseline`,
 `verified_at` (Unix seconds, at most one hour old), `owner`, `review_reference`,
-`console_recovery`, `independent_observer`, `observer_delivery_test`, and
+`recovery_access`, `independent_observer`, `observer_delivery_test`, and
 `observer_watch_active: true`. These are operator attestations backed by referenced
-evidence, not automated proof that a console or observer works.
+evidence, not automated proof that access works. For a proxy-only update that
+preserves SSH, network and unit configuration, a freshly verified SSH connection
+and the retained rollback files can be the recovery path. A provider console is
+not a mandatory prerequisite for that scope. The legacy `console_recovery` field
+is accepted for existing callers; new callers should use `recovery_access`.
 
 `binary` and `alias` additionally require:
 
@@ -148,3 +152,34 @@ unprivileged owner is not an automatic recovery action. Mark a pending journal
 reconciled only after reviewing the actual host state and retaining the record.
 These initial repairs do not replace the recovery/observer requirements of a
 binary or alias transaction.
+
+## Read-only ingress acceptance
+
+`files/traefik_health_probe.py` supports `capture`, `health`, `alias` and `cleanup`
+with a private JSON configuration. Configure `probes` with host, scheme, port,
+address and optional path, and `entrypoints` with the complete expected set.
+Capture returns per-probe curl exit/status and hashes of permanent dynamic files;
+merge this into the private configuration before the update. Health requires the
+same observed results (or recovery from a 5xx backend failure to 2xx) and unchanged permanent routing. TLS verification remains
+on; existing failing routes are recorded as baseline failures, not called healthy.
+Alias mode additionally verifies `delete` on every configured entrypoint. Cleanup
+verifies permanent routing; this probe creates no temporary route, backend or unit.
+This provides representative ingress regression checks, not application-specific
+upload/websocket tests or live backend header capture. Keep those distinctions in
+the operator's verification report.
+
+The health probe requires `/usr/bin/python3` version 3.11 or newer. The role
+checks that exact interpreter before installation, and both verification and
+transaction invocation use it.
+
+Install via `tasks_from: health_probe` with `traefik_health_probe_config` (default
+`{}`) containing the complete captured configuration. The role installs the script
+and baseline root-owned under `/var/lib/traefik-update-probes`, validates live
+health, and returns `traefik_health_probe_commands` with exact SHA256/argv objects
+for `baseline_probe`, `acceptance_probe`, `alias_acceptance_probe` and
+`cleanup_probe`. Select the alias command as acceptance for an alias transaction.
+Capturing a new baseline is a separate explicit pre-deployment action; do not
+recapture after an acceptance failure. The probe refuses an empty list, preserves
+exact authentication/redirect expectations, and records bounded curl timeouts.
+An explicitly invalid `recovery_access` value is refused even if a legacy console
+field is also present; fallback applies only when the new field is absent.

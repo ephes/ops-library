@@ -3,6 +3,7 @@
 import base64
 import copy
 import importlib.util
+import io
 import json
 import os
 import tempfile
@@ -25,6 +26,111 @@ def module(name):
 
 tx = module("traefik_transaction")
 ctl = module("traefik_control")
+health = module("traefik_health_probe")
+
+
+class HealthProbeTests(unittest.TestCase):
+    def test_timeout_is_an_observation(self):
+        with patch.object(
+            health.subprocess,
+            "run",
+            side_effect=health.subprocess.TimeoutExpired("curl", 12),
+        ):
+            self.assertEqual(
+                health.observe(
+                    {
+                        "host": "example.invalid",
+                        "port": 443,
+                        "scheme": "https",
+                        "address": "127.0.0.1",
+                    }
+                ),
+                {"status": "", "exit": 28},
+            )
+
+    def test_backend_recovery_is_allowed_but_auth_and_redirect_changes_fail(self):
+        def result(code):
+            return {"status": code, "exit": 0}
+
+        self.assertTrue(health.acceptable(result("502"), result("200")))
+        for before, after in (
+            ("401", "200"),
+            ("403", "200"),
+            ("301", "302"),
+            ("200", "502"),
+        ):
+            self.assertFalse(health.acceptable(result(before), result(after)))
+
+    def test_cleanup_reports_verified_tree_and_refuses_routing_drift(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "checks.json"
+            config.write_text(
+                json.dumps(
+                    {
+                        "probes": [{"host": "example.invalid"}],
+                        "dynamic": {"route.yml": "before"},
+                    }
+                )
+            )
+            with patch("sys.argv", ["probe", "cleanup", str(config)]):
+                output = io.StringIO()
+                with patch.object(
+                    health, "tree", return_value={"route.yml": "before"}
+                ), patch("sys.stdout", output):
+                    health.main()
+                self.assertEqual(
+                    json.loads(output.getvalue()),
+                    {"cleanup": "no temporary resources", "dynamic_verified": True},
+                )
+                with patch.object(
+                    health, "tree", return_value={"route.yml": "changed"}
+                ), self.assertRaisesRegex(RuntimeError, "Permanent routing changed"):
+                    health.main()
+
+    def test_empty_capture_and_acceptance_are_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "checks.json"
+            config.write_text(
+                json.dumps({"probes": [], "observations": [], "dynamic": {}})
+            )
+            for mode in ("capture", "health", "alias"):
+                with patch(
+                    "sys.argv", ["probe", mode, str(config)]
+                ), self.assertRaisesRegex(ValueError, "At least one"):
+                    health.main()
+
+
+class RecoveryEvidenceTests(unittest.TestCase):
+    def test_verified_ssh_or_legacy_console_reference_is_required(self):
+        proof = {
+            "baseline": {},
+            "verified_at": tx.time.time(),
+            "owner": "operator",
+            "review_reference": "approved proxy-only update",
+            "independent_observer": "controller",
+            "observer_delivery_test": "live HTTP observation",
+            "observer_watch_active": True,
+        }
+        for key in ("recovery_access", "console_recovery"):
+            tx.evidence({"evidence": {**proof, key: "verified access"}}, {})
+        with self.assertRaises(tx.Refused):
+            tx.evidence({"evidence": proof}, {})
+        for key in ("recovery_access", "console_recovery"):
+            for value in (None, "", "CHANGEME"):
+                with self.assertRaises(tx.Refused):
+                    tx.evidence({"evidence": {**proof, key: value}}, {})
+        # An explicitly invalid new field must not be hidden by a legacy value.
+        with self.assertRaises(tx.Refused):
+            tx.evidence(
+                {
+                    "evidence": {
+                        **proof,
+                        "recovery_access": None,
+                        "console_recovery": "verified legacy access",
+                    }
+                },
+                {},
+            )
 
 
 class StartupArgumentTests(unittest.TestCase):
