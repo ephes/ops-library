@@ -1,0 +1,30 @@
+---
+ops_library_documentation_category: deployment
+
+daybook_voice_memo_work_enabled: false
+daybook_voice_memo_work_service_user: CHANGEME
+daybook_voice_memo_work_service_home: "/Users/{{ daybook_voice_memo_work_service_user }}"
+daybook_voice_memo_work_service_group: staff
+daybook_voice_memo_work_cli: "{{ daybook_voice_memo_work_service_home }}/.local/share/daybook/work-runtime/venv/bin/daybook"
+daybook_voice_memo_work_runtime_dir: "{{ daybook_voice_memo_work_service_home }}/.local/share/daybook/work-runtime/memos"
+daybook_voice_memo_work_state_path: "{{ daybook_voice_memo_work_runtime_dir }}/work.sqlite3"
+daybook_voice_memo_work_cutoff_path: "{{ daybook_voice_memo_work_runtime_dir }}/imported-since"
+daybook_voice_memo_work_imported_since: CHANGEME
+daybook_voice_memo_work_notify_config_path: "{{ daybook_voice_memo_work_service_home }}/.local/share/daybook/work-runtime/notify-client.json"
+daybook_voice_memo_work_notification_state_path: "{{ daybook_voice_memo_work_runtime_dir }}/notifications.sqlite3"
+daybook_voice_memo_work_provider: codex
+daybook_voice_memo_work_cwd: "{{ daybook_voice_memo_work_service_home }}"
+daybook_voice_memo_work_codex_socket: CHANGEME
+daybook_voice_memo_work_codex_home: "{{ daybook_voice_memo_work_service_home }}/.local/state/daybook/voice-memo-attention/native/codex-registration/home"
+daybook_voice_memo_work_aws_shared_credentials_file: "{{ daybook_voice_memo_work_runtime_dir }}/aws-credentials"
+daybook_voice_memo_work_aws_profile: daybook-work
+daybook_voice_memo_work_aws_access_key_id: CHANGEME
+daybook_voice_memo_work_aws_secret_access_key: CHANGEME
+daybook_voice_memo_work_s3_endpoint_url: CHANGEME
+daybook_voice_memo_work_aws_region: us-east-1
+daybook_voice_memo_work_path: /usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
+daybook_voice_memo_work_interval_seconds: 300
+daybook_voice_memo_work_launchd_label: de.wersdoerfer.daybook.voice-memo-work
+daybook_voice_memo_work_plist_path: "{{ daybook_voice_memo_work_service_home }}/Library/LaunchAgents/{{ daybook_voice_memo_work_launchd_label }}.plist"
+daybook_voice_memo_work_stdout_log: "{{ daybook_voice_memo_work_runtime_dir }}/work.log"
+daybook_voice_memo_work_stderr_log: "{{ daybook_voice_memo_work_runtime_dir }}/work.err.log"

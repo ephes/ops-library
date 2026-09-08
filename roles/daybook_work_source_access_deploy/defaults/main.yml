@@ -1,0 +1,8 @@
+---
+ops_library_documentation_category: deployment
+daybook_work_source_access_access_key: CHANGEME
+daybook_work_source_access_secret_key: CHANGEME
+daybook_work_source_access_mc_bin: /usr/local/bin/mc
+daybook_work_source_access_alias: local
+daybook_work_source_access_python: /usr/bin/python3
+daybook_work_source_access_state_dir: /var/lib/daybook-work-source-access
