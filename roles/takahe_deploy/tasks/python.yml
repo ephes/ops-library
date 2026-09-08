@@ -1,15 +1,15 @@
 ---
-- name: Ensure requirements.txt exists
+- name: python | Ensure requirements.txt exists
   ansible.builtin.stat:
     path: "{{ takahe_site_path }}/requirements.txt"
   register: takahe_requirements_stat
 
-- name: Fail when requirements.txt is missing
+- name: python | Fail when requirements.txt is missing
   ansible.builtin.fail:
     msg: "requirements.txt not found in {{ takahe_site_path }}"
   when: not takahe_requirements_stat.stat.exists
 
-- name: Create Python virtual environment
+- name: python | Create Python virtual environment
   ansible.builtin.command:
     cmd: "python3 -m venv {{ takahe_venv_path }}"
   args:
@@ -17,7 +17,7 @@
   become: true
   become_user: "{{ takahe_user }}"
 
-- name: Upgrade pip inside virtualenv
+- name: python | Upgrade pip inside virtualenv
   ansible.builtin.pip:
     name: pip
     state: latest
@@ -26,7 +26,7 @@
   become_user: "{{ takahe_user }}"
   when: takahe_pip_upgrade | bool
 
-- name: Install Takahe requirements
+- name: python | Install Takahe requirements
   ansible.builtin.pip:
     requirements: "{{ takahe_site_path }}/requirements.txt"
     virtualenv: "{{ takahe_venv_path }}"

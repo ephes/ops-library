@@ -128,6 +128,7 @@ test-heis-production-backup: venv
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_heis_production_backup
 
 test-takahe-deploy: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_takahe_routing
     @echo "Testing Takahe error mail validation and env rendering..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_takahe_deploy.yml
 

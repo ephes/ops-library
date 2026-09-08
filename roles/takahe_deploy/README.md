@@ -20,9 +20,9 @@ Deploys Takahe from source with systemd services, an nginx cache/accel proxy, an
 
 ```yaml
 takahe_domain: "takahe.example.com"
-takahe_secret_key: "..."
+takahe_secret_key: "..."  # pragma: allowlist secret
 takahe_postgres_password: "..."
-takahe_email_server: "smtp://user:pass@mail.example.com:587?tls=true"
+takahe_email_server: "smtp://user:pass@mail.example.com:587?tls=true"  # pragma: allowlist secret
 takahe_email_from: "Takahe <noreply@example.com>"
 takahe_error_emails:
   - "ops@example.com"
@@ -60,6 +60,31 @@ Resolver configuration (optional):
 takahe_nginx_resolver: ""  # auto-detect from resolv.conf
 takahe_nginx_resolver_fallback: "1.1.1.1 1.0.0.1"
 ```
+
+### Migrating legacy Traefik routes
+
+Set `takahe_traefik_legacy_config_paths` (default `[]`) to explicit obsolete YAML
+files in the same directory as `takahe_traefik_config_path`. The role renders the
+managed route first, then removes those files. It rejects the managed destination
+itself and paths outside that directory. Check that other routers do not depend
+on middleware defined only in a file being removed. Before the first removal,
+back up the managed and legacy files outside the watched dynamic directory so
+they can be restored if verification fails. This is an explicit migration list:
+do not list files still owned by another service's deployment.
+
+```yaml
+takahe_traefik_legacy_config_paths:
+  - /etc/traefik/dynamic/takahe.traefik.yml
+```
+
+Use `--tags takahe_traefik` with an existing deployment playbook for a routing-only
+update, without updating application source, database, or nginx. This requires
+an already working nginx backend. Verify public HTTPS, HTTP redirection, the
+selected backend in Traefik access logs, and media cache hits after deployment.
+The tag skips full application/secret validation: supply an already validated
+`takahe_domain`/`takahe_traefik_host` and routing inputs, and inspect the rendered
+rule/backend in `--check --diff` before applying. It is not a bootstrap command.
+Caching saves upstream work; it does not prevent external media downloads.
 
 Note: Takahe only accepts `debug`, `development`, `production`, or `test` as its runtime environment. The role maps `takahe_environment: staging` to `production` in the generated `.env`.
 
@@ -108,7 +133,7 @@ See `defaults/main.yml` and `roles/takahe_shared/defaults/main.yml` for the full
     takahe_domain: "takahe.staging.example.com"
     takahe_secret_key: "{{ takahe_secret_key }}"
     takahe_postgres_password: "{{ takahe_postgres_password }}"
-    takahe_email_server: "smtp://user:pass@mail.example.com:587?tls=true"
+    takahe_email_server: "smtp://user:pass@mail.example.com:587?tls=true"  # pragma: allowlist secret
     takahe_email_from: "Takahe <noreply@example.com>"
     takahe_error_emails:
       - "ops@example.com"
@@ -132,7 +157,12 @@ See `defaults/main.yml` and `roles/takahe_shared/defaults/main.yml` for the full
 ```bash
 cd /path/to/ops-library
 just test-role takahe_deploy
+just test-takahe-deploy
 ```
+
+The targeted suite exercises rendering and legacy removal, preserves the legacy
+file when rendering fails, checks idempotence and path guards, and validates the
+error-mail configuration.
 
 ## License
 

@@ -39,3 +39,4 @@
 - name: Configure Traefik exposure
   ansible.builtin.import_tasks: traefik.yml
   when: takahe_traefik_enabled | bool
+  tags: [takahe_traefik]

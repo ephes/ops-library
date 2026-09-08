@@ -1,5 +1,5 @@
 ---
-- name: Run Takahe migrations
+- name: django | Run Takahe migrations
   ansible.builtin.command:
     argv:
       - "{{ takahe_python_bin }}"
@@ -13,7 +13,7 @@
   changed_when: "'No migrations to apply' not in takahe_migrate_result.stdout"
   when: takahe_run_migrations | bool
 
-- name: Collect Takahe static files
+- name: django | Collect Takahe static files
   ansible.builtin.command:
     argv:
       - "{{ takahe_python_bin }}"

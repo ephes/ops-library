@@ -15,6 +15,9 @@ Provides shared defaults for the Takahe lifecycle roles (deploy, backup, restore
 
 - Most operators do **not** call this role directly; it exists so other roles share a single default variable set.
 - See `defaults/main.yml` for the complete variable reference.
+- `takahe_traefik_legacy_config_paths` defaults to `[]`. The deploy role uses it
+  to retire explicitly listed obsolete YAML files after rendering its managed
+  route; see the [migration procedure](../takahe_deploy/README.md#migrating-legacy-traefik-routes).
 
 ## License
 

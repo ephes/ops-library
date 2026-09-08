@@ -1,5 +1,5 @@
 ---
-- name: Ensure Takahe application directories exist
+- name: directories | Ensure Takahe application directories exist
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
@@ -17,7 +17,7 @@
     - "{{ takahe_nginx_log_dir }}"
     - "{{ takahe_nginx_run_dir }}"
 
-- name: Ensure nginx config directory exists
+- name: directories | Ensure nginx config directory exists
   ansible.builtin.file:
     path: "{{ takahe_nginx_conf_dir }}"
     state: directory
@@ -25,7 +25,7 @@
     group: root
     mode: "0755"
 
-- name: Ensure Traefik dynamic config directory exists
+- name: directories | Ensure Traefik dynamic config directory exists
   ansible.builtin.file:
     path: "{{ takahe_traefik_config_path | dirname }}"
     state: directory

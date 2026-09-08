@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Prevent explicitly retired legacy Takahe routes from bypassing the managed
+  nginx cache by removing them only after rendering the replacement route.
+
+### Added
+
+- Add `takahe_traefik_legacy_config_paths` and the `takahe_traefik` tag for
+  opt-in legacy-route migration and routing-only updates.
+
 ## [2.21.0] - 2026-09-08
 
 ### Added

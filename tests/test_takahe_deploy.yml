@@ -25,6 +25,23 @@
     takahe_error_emails: []
 
   tasks:
+    - name: Reject deletion of the managed Traefik configuration
+      block:
+        - name: Attempt unsafe legacy cleanup
+          ansible.builtin.include_tasks: ../roles/takahe_deploy/tasks/traefik.yml
+          vars:
+            takahe_traefik_config_path: /tmp/takahe-routing-test/takahe.yml
+            takahe_traefik_legacy_config_paths:
+              - /tmp/takahe-routing-test/takahe.yml
+        - name: Fail if managed configuration was accepted for deletion
+          ansible.builtin.fail:
+            msg: "Unsafe legacy path was accepted"
+      rescue:
+        - name: Verify rejection happened before filesystem changes
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'traefik | Validate obsolete configuration paths'
+
     - name: Load shared Takahe defaults
       ansible.builtin.include_vars:
         file: "{{ shared_defaults_path }}"

@@ -41,7 +41,7 @@ takahe_csrf_hosts:
 takahe_use_proxy_headers: true
 
 # Secrets / email
-takahe_secret_key: "CHANGEME"
+takahe_secret_key: "CHANGEME"  # pragma: allowlist secret
 takahe_email_server: "CHANGEME"
 takahe_email_from: "CHANGEME"
 takahe_error_emails: []
@@ -56,7 +56,7 @@ takahe_postgres_host: localhost
 takahe_postgres_port: 5432
 takahe_postgres_database: takahe
 takahe_postgres_user: takahe
-takahe_postgres_password: "CHANGEME"
+takahe_postgres_password: "CHANGEME"  # pragma: allowlist secret
 takahe_postgres_become_user: postgres
 takahe_postgres_packages:
   - "postgresql-{{ takahe_postgres_version }}"
@@ -138,6 +138,8 @@ takahe_traefik_entrypoints:
 takahe_traefik_cert_resolver: ""
 takahe_traefik_middlewares: []
 takahe_traefik_config_path: /etc/traefik/dynamic/takahe.yml
+# Explicit obsolete files in the same dynamic directory; removed after rendering.
+takahe_traefik_legacy_config_paths: []
 takahe_traefik_service_name: takahe
 
 # APT packages
