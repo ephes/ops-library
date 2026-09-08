@@ -10,6 +10,7 @@ fastdeploy_self_deploy
 daybook_sessions_deploy
 daybook_photos_offload_deploy
 daybook_voice_memo_inbox_deploy
+daybook_voice_memo_work_deploy
 weeknotes_home_deploy
 nyxmon_deploy
 logyard_deploy
@@ -50,6 +51,7 @@ zellij_ingress_deploy
 daybook_voice_memo_attention_deploy
 daybook_voice_memo_attention_notifier_deploy
 daybook_voice_memo_attention_reader_deploy
+daybook_work_source_access_deploy
 ```
 
 These roles handle the complete deployment lifecycle including:

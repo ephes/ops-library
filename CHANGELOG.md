@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added `daybook_voice_memo_work_deploy`, a separate five-minute macOS
+  LaunchAgent for capable work on newly imported memos, and
+  `daybook_work_source_access_deploy` for its dedicated source identity.
+
 - Added `daybook_voice_memo_attention_reader_deploy` for a dedicated MinIO identity
   with exact-prefix listing and object reads only. It rejects policy, group,
   ownership, and credential drift rather than adopting existing identities.

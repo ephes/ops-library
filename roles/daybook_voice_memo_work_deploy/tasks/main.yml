@@ -1,0 +1,267 @@
+---
+- name: Validate Voice Memo work deployment inputs
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == 'Darwin'
+      - daybook_voice_memo_work_enabled | type_debug == 'bool'
+      - daybook_voice_memo_work_service_user is match('^[a-z_][a-z0-9_-]*$')
+      - daybook_voice_memo_work_service_user not in ['root', 'CHANGEME']
+      - daybook_voice_memo_work_service_home == '/Users/' ~ daybook_voice_memo_work_service_user
+      - daybook_voice_memo_work_service_group == 'staff'
+      - daybook_voice_memo_work_launchd_label == 'de.wersdoerfer.daybook.voice-memo-work'
+    fail_msg: Voice Memo work disable requires the exact macOS owner and label.
+
+- name: Resolve Voice Memo work owner uid
+  ansible.builtin.command:
+    argv: [/usr/bin/id, -u, "{{ daybook_voice_memo_work_service_user }}"]
+  register: daybook_voice_memo_work_uid
+  changed_when: false
+  check_mode: false
+
+- name: Read disabled Voice Memo work GUI domain
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "gui/{{ daybook_voice_memo_work_uid.stdout | trim }}"]
+  register: daybook_voice_memo_work_disabled_domain
+  changed_when: false
+  failed_when: daybook_voice_memo_work_disabled_domain.rc not in [0, 112]
+  no_log: true
+  when: not daybook_voice_memo_work_enabled | bool
+
+- name: Read disabled Voice Memo work loaded state
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "gui/{{ daybook_voice_memo_work_uid.stdout | trim }}/{{ daybook_voice_memo_work_launchd_label }}"]
+  register: daybook_voice_memo_work_disabled_loaded
+  changed_when: false
+  failed_when: >-
+    daybook_voice_memo_work_disabled_loaded.rc not in [0, 113]
+    or (
+      daybook_voice_memo_work_disabled_loaded.rc == 113
+      and (
+        'Could not find service "' ~ daybook_voice_memo_work_launchd_label
+        ~ '" in domain for user gui: ' ~ (daybook_voice_memo_work_uid.stdout | trim)
+      ) not in daybook_voice_memo_work_disabled_loaded.stderr
+    )
+  no_log: true
+  when:
+    - not daybook_voice_memo_work_enabled | bool
+    - daybook_voice_memo_work_disabled_domain.rc == 0
+
+- name: Disable Voice Memo work LaunchAgent
+  ansible.builtin.command:
+    argv: [/bin/launchctl, disable, "gui/{{ daybook_voice_memo_work_uid.stdout | trim }}/{{ daybook_voice_memo_work_launchd_label }}"]
+  when: not daybook_voice_memo_work_enabled | bool
+  changed_when: false
+
+- name: Boot out disabled Voice Memo work LaunchAgent
+  ansible.builtin.command:
+    argv: [/bin/launchctl, bootout, "gui/{{ daybook_voice_memo_work_uid.stdout | trim }}/{{ daybook_voice_memo_work_launchd_label }}"]
+  when:
+    - not daybook_voice_memo_work_enabled | bool
+    - daybook_voice_memo_work_disabled_domain.rc == 0
+    - daybook_voice_memo_work_disabled_loaded.rc == 0
+  changed_when: true
+
+- name: Verify disabled Voice Memo work LaunchAgent is unloaded
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "gui/{{ daybook_voice_memo_work_uid.stdout | trim }}/{{ daybook_voice_memo_work_launchd_label }}"]
+  register: daybook_voice_memo_work_disabled_verified
+  changed_when: false
+  failed_when: >-
+    daybook_voice_memo_work_disabled_verified.rc != 113
+    or (
+      'Could not find service "' ~ daybook_voice_memo_work_launchd_label
+      ~ '" in domain for user gui: ' ~ (daybook_voice_memo_work_uid.stdout | trim)
+    ) not in daybook_voice_memo_work_disabled_verified.stderr
+  no_log: true
+  when:
+    - not daybook_voice_memo_work_enabled | bool
+    - daybook_voice_memo_work_disabled_domain.rc == 0
+
+- name: Stop after applying disabled Voice Memo work state
+  ansible.builtin.meta: end_role
+  when: not daybook_voice_memo_work_enabled | bool
+
+- name: Validate enabled Voice Memo work configuration
+  ansible.builtin.assert:
+    that:
+      - daybook_voice_memo_work_cli == daybook_voice_memo_work_service_home ~ '/.local/share/daybook/work-runtime/venv/bin/daybook'
+      - daybook_voice_memo_work_runtime_dir == daybook_voice_memo_work_service_home ~ '/.local/share/daybook/work-runtime/memos'
+      - daybook_voice_memo_work_state_path == daybook_voice_memo_work_runtime_dir ~ '/work.sqlite3'
+      - daybook_voice_memo_work_cutoff_path == daybook_voice_memo_work_runtime_dir ~ '/imported-since'
+      - daybook_voice_memo_work_notify_config_path == daybook_voice_memo_work_service_home ~ '/.local/share/daybook/work-runtime/notify-client.json'
+      - daybook_voice_memo_work_notification_state_path == daybook_voice_memo_work_runtime_dir ~ '/notifications.sqlite3'
+      - daybook_voice_memo_work_provider in ['claude', 'codex']
+      - daybook_voice_memo_work_cwd == daybook_voice_memo_work_service_home
+      - daybook_voice_memo_work_imported_since is match('^\\d{4}-\\d\d-\\d\dT\\d\d:\\d\d:\\d\d(?:[.]\\d+)?(?:Z|[+-]\\d\d:\\d\d)$')
+      - daybook_voice_memo_work_aws_shared_credentials_file == daybook_voice_memo_work_runtime_dir ~ '/aws-credentials'
+      - daybook_voice_memo_work_aws_profile == 'daybook-work'
+      - daybook_voice_memo_work_aws_access_key_id not in ['', 'CHANGEME']
+      - daybook_voice_memo_work_aws_secret_access_key not in ['', 'CHANGEME']
+      - daybook_voice_memo_work_s3_endpoint_url is match('^https://')
+      - daybook_voice_memo_work_interval_seconds | int == 300
+      - daybook_voice_memo_work_plist_path == daybook_voice_memo_work_service_home ~ '/Library/LaunchAgents/' ~ daybook_voice_memo_work_launchd_label ~ '.plist'
+      - daybook_voice_memo_work_provider != 'codex' or daybook_voice_memo_work_codex_socket is match('^' ~ daybook_voice_memo_work_service_home ~ '/')
+      - daybook_voice_memo_work_provider != 'codex' or daybook_voice_memo_work_codex_home == daybook_voice_memo_work_service_home ~ '/.local/state/daybook/voice-memo-attention/native/codex-registration/home'
+    fail_msg: Voice Memo work requires fixed owner-private runtime paths, credentials, provider context, and an aware import cutoff.
+
+- name: Inspect existing Voice Memo work prerequisites
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - "{{ daybook_voice_memo_work_cli }}"
+    - "{{ daybook_voice_memo_work_notify_config_path }}"
+    - "{{ daybook_voice_memo_work_cwd }}"
+    - "{{ daybook_voice_memo_work_codex_home if daybook_voice_memo_work_provider == 'codex' else daybook_voice_memo_work_service_home }}"
+  register: daybook_voice_memo_work_prerequisites
+
+- name: Require private owner runtime prerequisites
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - not (item.stat.islnk | default(false))
+      - item.stat.pw_name == daybook_voice_memo_work_service_user
+      - not (item.stat.woth | default(true))
+    fail_msg: "Missing, linked, or publicly writable prerequisite: {{ item.item }}"
+  loop: "{{ daybook_voice_memo_work_prerequisites.results }}"
+  when: not ansible_check_mode
+
+- name: Verify installed Daybook supports recurring import cutoff
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    chdir: "{{ daybook_voice_memo_work_service_home }}"
+    argv:
+      - /usr/bin/sudo
+      - -n
+      - -H
+      - -u
+      - "{{ daybook_voice_memo_work_service_user }}"
+      - --
+      - "{{ daybook_voice_memo_work_cli }}"
+      - work
+      - memos
+      - --help
+  register: daybook_voice_memo_work_help
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Require imported-since capability
+  ansible.builtin.assert:
+    that: "'--imported-since' in daybook_voice_memo_work_help.stdout"
+  when: not ansible_check_mode
+
+- name: Create owner-private Voice Memo work runtime
+  ansible.builtin.file:
+    path: "{{ daybook_voice_memo_work_runtime_dir }}"
+    state: directory
+    owner: "{{ daybook_voice_memo_work_service_user }}"
+    group: "{{ daybook_voice_memo_work_service_group }}"
+    mode: '0700'
+
+- name: Install owner-private Voice Memo source credentials
+  ansible.builtin.template:
+    src: aws-credentials.j2
+    dest: "{{ daybook_voice_memo_work_aws_shared_credentials_file }}"
+    owner: "{{ daybook_voice_memo_work_service_user }}"
+    group: "{{ daybook_voice_memo_work_service_group }}"
+    mode: '0600'
+  no_log: true
+
+- name: Inspect preserved Voice Memo activation cutoff
+  ansible.builtin.stat:
+    path: "{{ daybook_voice_memo_work_cutoff_path }}"
+    follow: false
+  register: daybook_voice_memo_work_cutoff_stat
+
+- name: Reject unsafe preserved Voice Memo activation cutoff
+  ansible.builtin.assert:
+    that:
+      - not (daybook_voice_memo_work_cutoff_stat.stat.islnk | default(false))
+      - not daybook_voice_memo_work_cutoff_stat.stat.exists or daybook_voice_memo_work_cutoff_stat.stat.isreg
+      - not daybook_voice_memo_work_cutoff_stat.stat.exists or daybook_voice_memo_work_cutoff_stat.stat.pw_name == daybook_voice_memo_work_service_user
+      - not daybook_voice_memo_work_cutoff_stat.stat.exists or not (daybook_voice_memo_work_cutoff_stat.stat.woth | default(true))
+
+- name: Persist first enabled Voice Memo activation cutoff
+  ansible.builtin.copy:
+    content: "{{ daybook_voice_memo_work_imported_since }}\n"
+    dest: "{{ daybook_voice_memo_work_cutoff_path }}"
+    owner: "{{ daybook_voice_memo_work_service_user }}"
+    group: "{{ daybook_voice_memo_work_service_group }}"
+    mode: '0600'
+    force: false
+  when: daybook_voice_memo_work_enabled | bool
+
+- name: Reinspect effective Voice Memo activation cutoff
+  ansible.builtin.stat:
+    path: "{{ daybook_voice_memo_work_cutoff_path }}"
+    follow: false
+  register: daybook_voice_memo_work_effective_cutoff_stat
+
+- name: Read effective Voice Memo activation cutoff
+  ansible.builtin.slurp:
+    src: "{{ daybook_voice_memo_work_cutoff_path }}"
+  register: daybook_voice_memo_work_cutoff_content
+  when: daybook_voice_memo_work_effective_cutoff_stat.stat.exists
+
+- name: Validate effective preserved Voice Memo activation cutoff
+  ansible.builtin.assert:
+    that:
+      - (daybook_voice_memo_work_cutoff_content.content | b64decode | trim) is match('^\\d{4}-\\d\d-\\d\dT\\d\d:\\d\d:\\d\d(?:[.]\\d+)?(?:Z|[+-]\\d\d:\\d\d)$')
+  when: daybook_voice_memo_work_effective_cutoff_stat.stat.exists
+
+- name: Select effective Voice Memo activation cutoff
+  ansible.builtin.set_fact:
+    daybook_voice_memo_work_effective_cutoff: >-
+      {{ (daybook_voice_memo_work_cutoff_content.content | b64decode | trim)
+         if (daybook_voice_memo_work_cutoff_content.content is defined)
+         else daybook_voice_memo_work_imported_since }}
+
+- name: Create owner LaunchAgents directory
+  ansible.builtin.file:
+    path: "{{ daybook_voice_memo_work_plist_path | dirname }}"
+    state: directory
+    owner: "{{ daybook_voice_memo_work_service_user }}"
+    group: "{{ daybook_voice_memo_work_service_group }}"
+    mode: '0755'
+
+- name: Install Voice Memo work LaunchAgent
+  ansible.builtin.template:
+    src: voice-memo-work.launchd.plist.j2
+    dest: "{{ daybook_voice_memo_work_plist_path }}"
+    owner: "{{ daybook_voice_memo_work_service_user }}"
+    group: "{{ daybook_voice_memo_work_service_group }}"
+    mode: '0644'
+    validate: /usr/bin/plutil -lint %s
+  register: daybook_voice_memo_work_plist
+
+- name: Read Voice Memo work loaded state
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "gui/{{ daybook_voice_memo_work_uid.stdout | trim }}/{{ daybook_voice_memo_work_launchd_label }}"]
+  register: daybook_voice_memo_work_loaded
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Reload changed Voice Memo work LaunchAgent
+  ansible.builtin.command:
+    argv: [/bin/launchctl, bootout, "gui/{{ daybook_voice_memo_work_uid.stdout | trim }}/{{ daybook_voice_memo_work_launchd_label }}"]
+  when:
+    - daybook_voice_memo_work_enabled | bool
+    - daybook_voice_memo_work_plist.changed
+    - daybook_voice_memo_work_loaded.rc == 0
+  changed_when: true
+
+- name: Enable Voice Memo work LaunchAgent
+  ansible.builtin.command:
+    argv: [/bin/launchctl, enable, "gui/{{ daybook_voice_memo_work_uid.stdout | trim }}/{{ daybook_voice_memo_work_launchd_label }}"]
+  when: daybook_voice_memo_work_enabled | bool
+  changed_when: false
+
+- name: Bootstrap absent Voice Memo work LaunchAgent
+  ansible.builtin.command:
+    argv: [/bin/launchctl, bootstrap, "gui/{{ daybook_voice_memo_work_uid.stdout | trim }}", "{{ daybook_voice_memo_work_plist_path }}"]
+  when:
+    - daybook_voice_memo_work_enabled | bool
+    - daybook_voice_memo_work_loaded.rc != 0 or daybook_voice_memo_work_plist.changed
+  changed_when: true

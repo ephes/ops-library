@@ -11,7 +11,7 @@ setup:
     @./setup-pre-commit.sh
 
 # Run the default contributor validation path
-test: venv test-roles test-openclaw-audio-transcription test-openclaw-codex-registration-backport test-network-recovery test-monitoring-pipeline-repair test-traefik-metrics-entrypoint test-os-apt-maintenance-failed-run test-tailscale-metrics-timer test-nyxmon-deploy test-certbot-dns-renewal-hooks test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-voice-memo-inbox-deploy test-daybook-voice-memo-attention test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup test-takahe-deploy test-wagtail-deploy lint docs-build docs-lint
+test: venv test-roles test-openclaw-audio-transcription test-openclaw-codex-registration-backport test-network-recovery test-monitoring-pipeline-repair test-traefik-metrics-entrypoint test-os-apt-maintenance-failed-run test-tailscale-metrics-timer test-nyxmon-deploy test-certbot-dns-renewal-hooks test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-voice-memo-inbox-deploy test-daybook-voice-memo-work test-daybook-voice-memo-attention test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup test-takahe-deploy test-wagtail-deploy lint docs-build docs-lint
     @echo ""
     @echo "✅ Validation completed!"
 
@@ -105,6 +105,10 @@ test-daybook-photos-offload-symlink-safety: venv
 test-daybook-voice-memo-inbox-deploy: venv
     @echo "Testing Daybook Voice Memo inbox deploy contracts..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_daybook_voice_memo_inbox_deploy
+
+test-daybook-voice-memo-work: venv
+    @echo "Testing Daybook Voice Memo capable-work scheduler and source identity..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_daybook_voice_memo_work_deploy tests.test_daybook_work_source_access
 
 test-daybook-voice-memo-attention: venv
     @echo "Testing disabled Daybook attention deployment and restricted notifier contracts..."

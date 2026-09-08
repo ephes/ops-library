@@ -1,0 +1,77 @@
+---
+- name: Validate dedicated work source configuration
+  ansible.builtin.assert:
+    that:
+      - daybook_work_source_access_access_key is string
+      - daybook_work_source_access_access_key is match('^[A-Za-z0-9][A-Za-z0-9_-]{15,127}$')
+      - daybook_work_source_access_access_key != 'CHANGEME'
+      - daybook_work_source_access_secret_key is string
+      - daybook_work_source_access_secret_key | length >= 32
+      - daybook_work_source_access_secret_key | length <= 256
+      - daybook_work_source_access_secret_key is not search('[\r\n]')
+      - daybook_work_source_access_alias is match('^[A-Za-z0-9_-]+$')
+      - daybook_work_source_access_mc_bin is match('^/')
+      - daybook_work_source_access_python is match('^/')
+      - daybook_work_source_access_state_dir is match('^/var/lib/[A-Za-z0-9_-]+$')
+      - daybook_work_source_access_access_key is not search('[\r\n]')
+    fail_msg: Dedicated work source credentials and safe absolute paths are required; values withheld.
+  no_log: true
+
+- name: Inspect work source ownership directory
+  ansible.builtin.stat:
+    path: "{{ daybook_work_source_access_state_dir }}"
+    follow: false
+  register: daybook_work_source_access_directory
+
+- name: Refuse redirected work source ownership directory
+  ansible.builtin.assert:
+    that:
+      - not daybook_work_source_access_directory.stat.exists or daybook_work_source_access_directory.stat.isdir
+      - not daybook_work_source_access_directory.stat.islnk | default(false)
+    fail_msg: The dedicated work source state path must be a real directory.
+
+- name: Create private work source ownership directory
+  ansible.builtin.file:
+    path: "{{ daybook_work_source_access_state_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Install dedicated work source provisioner
+  ansible.builtin.copy:
+    src: provision_source.py
+    dest: "{{ daybook_work_source_access_state_dir }}/provision_source.py"
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Provision and verify exact dedicated work source permissions
+  ansible.builtin.command:
+    argv:
+      - "{{ daybook_work_source_access_python }}"
+      - "{{ daybook_work_source_access_state_dir }}/provision_source.py"
+    stdin: >-
+      {{ {
+        'access_key': daybook_work_source_access_access_key,
+        'secret_key': daybook_work_source_access_secret_key,
+        'mc_bin': daybook_work_source_access_mc_bin,
+        'alias': daybook_work_source_access_alias,
+        'state_dir': daybook_work_source_access_state_dir
+      } | to_json }}
+    stdin_add_newline: true
+  register: daybook_work_source_access_result
+  changed_when: "'\"changed\": true' in daybook_work_source_access_result.stdout"
+  failed_when: false
+  no_log: true
+  when: not ansible_check_mode
+
+- name: Require verified dedicated work source
+  ansible.builtin.assert:
+    that:
+      - daybook_work_source_access_result.rc == 0
+    fail_msg: >-
+      Dedicated MinIO work source provisioning refused an inspection, identity,
+      permission, or ownership mismatch. Inspect the root-only role state and
+      MinIO identity locally; no credentials or raw CLI output are logged.
+  when: not ansible_check_mode
