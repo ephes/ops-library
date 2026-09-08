@@ -47,6 +47,9 @@ certbot_dns_deploy
 voxhelm_deploy
 voxhelm_ingress_deploy
 zellij_ingress_deploy
+daybook_voice_memo_attention_deploy
+daybook_voice_memo_attention_notifier_deploy
+daybook_voice_memo_attention_reader_deploy
 ```
 
 These roles handle the complete deployment lifecycle including:

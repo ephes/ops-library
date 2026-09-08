@@ -25,6 +25,8 @@ mastodon_remove
 takahe_remove
 ollama_remove
 ollama_proxy_remove
+daybook_voice_memo_attention_remove
+daybook_voice_memo_attention_notifier_remove
 ```
 
 These roles handle:

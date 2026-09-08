@@ -1,0 +1,77 @@
+---
+- name: Validate dedicated attention reader configuration
+  ansible.builtin.assert:
+    that:
+      - daybook_voice_memo_attention_reader_access_key is string
+      - daybook_voice_memo_attention_reader_access_key is match('^[A-Za-z0-9][A-Za-z0-9_-]{15,127}$')
+      - daybook_voice_memo_attention_reader_access_key != 'CHANGEME'
+      - daybook_voice_memo_attention_reader_secret_key is string
+      - daybook_voice_memo_attention_reader_secret_key | length >= 32
+      - daybook_voice_memo_attention_reader_secret_key | length <= 256
+      - daybook_voice_memo_attention_reader_secret_key is not search('[\r\n]')
+      - daybook_voice_memo_attention_reader_alias is match('^[A-Za-z0-9_-]+$')
+      - daybook_voice_memo_attention_reader_mc_bin is match('^/')
+      - daybook_voice_memo_attention_reader_python is match('^/')
+      - daybook_voice_memo_attention_reader_state_dir is match('^/var/lib/[A-Za-z0-9_-]+$')
+      - daybook_voice_memo_attention_reader_access_key is not search('[\r\n]')
+    fail_msg: Dedicated reader credentials and safe absolute paths are required; values withheld.
+  no_log: true
+
+- name: Inspect attention reader ownership directory
+  ansible.builtin.stat:
+    path: "{{ daybook_voice_memo_attention_reader_state_dir }}"
+    follow: false
+  register: daybook_voice_memo_attention_reader_directory
+
+- name: Refuse redirected attention reader ownership directory
+  ansible.builtin.assert:
+    that:
+      - not daybook_voice_memo_attention_reader_directory.stat.exists or daybook_voice_memo_attention_reader_directory.stat.isdir
+      - not daybook_voice_memo_attention_reader_directory.stat.islnk | default(false)
+    fail_msg: The dedicated reader state path must be a real directory.
+
+- name: Create private attention reader ownership directory
+  ansible.builtin.file:
+    path: "{{ daybook_voice_memo_attention_reader_state_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Install dedicated attention reader provisioner
+  ansible.builtin.copy:
+    src: provision_reader.py
+    dest: "{{ daybook_voice_memo_attention_reader_state_dir }}/provision_reader.py"
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Provision and verify exact dedicated reader permissions
+  ansible.builtin.command:
+    argv:
+      - "{{ daybook_voice_memo_attention_reader_python }}"
+      - "{{ daybook_voice_memo_attention_reader_state_dir }}/provision_reader.py"
+    stdin: >-
+      {{ {
+        'access_key': daybook_voice_memo_attention_reader_access_key,
+        'secret_key': daybook_voice_memo_attention_reader_secret_key,
+        'mc_bin': daybook_voice_memo_attention_reader_mc_bin,
+        'alias': daybook_voice_memo_attention_reader_alias,
+        'state_dir': daybook_voice_memo_attention_reader_state_dir
+      } | to_json }}
+    stdin_add_newline: true
+  register: daybook_voice_memo_attention_reader_result
+  changed_when: "'\"changed\": true' in daybook_voice_memo_attention_reader_result.stdout"
+  failed_when: false
+  no_log: true
+  when: not ansible_check_mode
+
+- name: Require verified dedicated attention reader
+  ansible.builtin.assert:
+    that:
+      - daybook_voice_memo_attention_reader_result.rc == 0
+    fail_msg: >-
+      Dedicated MinIO reader provisioning refused an inspection, identity,
+      permission, or ownership mismatch. Inspect the root-only role state and
+      MinIO identity locally; no credentials or raw CLI output are logged.
+  when: not ansible_check_mode

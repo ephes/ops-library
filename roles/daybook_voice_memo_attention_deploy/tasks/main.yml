@@ -1,0 +1,246 @@
+---
+- name: Validate disabled attention deployment inputs
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == 'Darwin'
+      - daybook_voice_memo_attention_enabled is boolean
+      - not daybook_voice_memo_attention_enabled
+      - daybook_voice_memo_attention_service_user is match('^[a-z_][a-z0-9_-]*$')
+      - daybook_voice_memo_attention_service_user not in ['root', 'CHANGEME']
+      - daybook_voice_memo_attention_service_home == '/Users/' ~ daybook_voice_memo_attention_service_user
+      - daybook_voice_memo_attention_wheel_src is match('^/')
+      - daybook_voice_memo_attention_wheel_src | basename is match('^daybook-[A-Za-z0-9_.+-]+[.]whl$')
+      - daybook_voice_memo_attention_install_root == '/Library/Application Support/Daybook/voice-memo-attention'
+      - daybook_voice_memo_attention_venv == daybook_voice_memo_attention_install_root ~ '/venv'
+      - daybook_voice_memo_attention_uv_bin == '/opt/homebrew/bin/uv'
+      - daybook_voice_memo_attention_python_source == '/opt/homebrew/bin/python3.14'
+      - daybook_voice_memo_attention_runtime_dir == daybook_voice_memo_attention_service_home ~ '/.local/state/daybook/voice-memo-attention'
+      - daybook_voice_memo_attention_config_path == daybook_voice_memo_attention_runtime_dir ~ '/config.json'
+      - daybook_voice_memo_attention_launchd_label == 'de.wersdoerfer.daybook.voice-memo-attention'
+      - daybook_voice_memo_attention_plist_path == daybook_voice_memo_attention_service_home ~ '/Library/LaunchAgents/' ~ daybook_voice_memo_attention_launchd_label ~ '.plist'
+      - daybook_voice_memo_attention_service_user is not search('[\r\n]')
+      - daybook_voice_memo_attention_wheel_src is not search('[\r\n]')
+    fail_msg: This partial pilot supports disabled installation only; invalid owner or paths.
+
+- name: Validate private disabled attention configuration
+  ansible.builtin.assert:
+    that:
+      - daybook_voice_memo_attention_config is mapping
+      - daybook_voice_memo_attention_config.version | default(0) == 1
+      - daybook_voice_memo_attention_config.enabled is defined
+      - daybook_voice_memo_attention_config.enabled is boolean
+      - not daybook_voice_memo_attention_config.enabled
+      - daybook_voice_memo_attention_config.profile | default('') in ['synthetic', 'production']
+      - daybook_voice_memo_attention_config.state_path | default('') == daybook_voice_memo_attention_runtime_dir ~ '/state.sqlite3'
+      - daybook_voice_memo_attention_config.source is mapping
+      - daybook_voice_memo_attention_config.source.kind | default('') in ['synthetic', 's3']
+    fail_msg: Supply an explicitly disabled private pilot configuration.
+  no_log: true
+
+- name: Inspect attention managed paths before changes
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - /Library/Application Support
+    - /Library/Application Support/Daybook
+    - "{{ daybook_voice_memo_attention_install_root }}"
+    - "{{ daybook_voice_memo_attention_venv }}"
+    - "{{ daybook_voice_memo_attention_install_root }}/installed-wheel.sha1"
+    - "{{ daybook_voice_memo_attention_install_root }}/{{ daybook_voice_memo_attention_wheel_src | basename }}"
+    - "{{ daybook_voice_memo_attention_service_home }}"
+    - "{{ daybook_voice_memo_attention_service_home }}/.local"
+    - "{{ daybook_voice_memo_attention_service_home }}/.local/state"
+    - "{{ daybook_voice_memo_attention_service_home }}/.local/state/daybook"
+    - "{{ daybook_voice_memo_attention_runtime_dir }}"
+    - "{{ daybook_voice_memo_attention_config_path }}"
+    - "{{ daybook_voice_memo_attention_service_home }}/Library"
+    - "{{ daybook_voice_memo_attention_service_home }}/Library/LaunchAgents"
+    - "{{ daybook_voice_memo_attention_plist_path }}"
+  register: daybook_voice_memo_attention_paths
+
+- name: Reject links in attention managed paths
+  ansible.builtin.assert:
+    that:
+      - not item.stat.islnk | default(false)
+      - not item.stat.exists or item.stat.nlink | default(1) == 1 or item.stat.isdir | default(false)
+    fail_msg: Attention managed paths must not be symlinks or hard-linked files.
+  loop: "{{ daybook_voice_memo_attention_paths.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Resolve attention owner UID
+  ansible.builtin.command:
+    argv: [/usr/bin/id, -u, "{{ daybook_voice_memo_attention_service_user }}"]
+  register: daybook_voice_memo_attention_uid
+  changed_when: false
+  check_mode: false
+
+- name: Require logged-in owner GUI domain
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "gui/{{ daybook_voice_memo_attention_uid.stdout }}"]
+  changed_when: false
+  no_log: true
+  check_mode: false
+
+- name: Disable attention label before any installation
+  ansible.builtin.command:
+    argv: [/bin/launchctl, disable, "gui/{{ daybook_voice_memo_attention_uid.stdout }}/{{ daybook_voice_memo_attention_launchd_label }}"]
+  changed_when: false
+
+- name: Unload only the attention label
+  ansible.builtin.command:
+    argv: [/bin/launchctl, bootout, "gui/{{ daybook_voice_memo_attention_uid.stdout }}/{{ daybook_voice_memo_attention_launchd_label }}"]
+  register: daybook_voice_memo_attention_bootout
+  changed_when: daybook_voice_memo_attention_bootout.rc == 0
+  failed_when: false
+
+- name: Verify attention label is unloaded
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "gui/{{ daybook_voice_memo_attention_uid.stdout }}/{{ daybook_voice_memo_attention_launchd_label }}"]
+  register: daybook_voice_memo_attention_unloaded
+  changed_when: false
+  no_log: true
+  failed_when: daybook_voice_memo_attention_unloaded.rc == 0
+  when: not ansible_check_mode
+
+- name: Create protected attention installation directory
+  ansible.builtin.file:
+    path: "{{ daybook_voice_memo_attention_install_root }}"
+    state: directory
+    owner: root
+    group: wheel
+    mode: '0755'
+
+- name: Copy provided Daybook wheel
+  ansible.builtin.copy:
+    src: "{{ daybook_voice_memo_attention_wheel_src }}"
+    dest: "{{ daybook_voice_memo_attention_install_root }}/{{ daybook_voice_memo_attention_wheel_src | basename }}"
+    owner: root
+    group: wheel
+    mode: '0644'
+  # Retained for convergence-test observability; receipts use destination stat.
+  register: daybook_voice_memo_attention_wheel
+
+- name: Read installed wheel destination checksum
+  ansible.builtin.stat:
+    path: "{{ daybook_voice_memo_attention_install_root }}/{{ daybook_voice_memo_attention_wheel_src | basename }}"
+    checksum_algorithm: sha1
+    get_checksum: true
+    follow: false
+  register: daybook_voice_memo_attention_wheel_destination
+
+- name: Require a readable installed wheel checksum
+  ansible.builtin.assert:
+    that:
+      - daybook_voice_memo_attention_wheel_destination.stat.isreg | default(false)
+      - daybook_voice_memo_attention_wheel_destination.stat.checksum | default('') is match('^[0-9a-f]{40}$')
+    fail_msg: The copied Daybook wheel must have a readable destination SHA1 before installation.
+  when: not ansible_check_mode
+
+- name: Create separate attention virtual environment
+  ansible.builtin.command:
+    argv:
+      - "{{ daybook_voice_memo_attention_uv_bin }}"
+      - venv
+      - --python
+      - "{{ daybook_voice_memo_attention_python_source }}"
+      - "{{ daybook_voice_memo_attention_venv }}"
+    creates: "{{ daybook_voice_memo_attention_venv }}/bin/python"
+  register: daybook_voice_memo_attention_venv_created
+
+- name: Inspect successful wheel installation receipt
+  ansible.builtin.stat:
+    path: "{{ daybook_voice_memo_attention_install_root }}/installed-wheel.sha1"
+  register: daybook_voice_memo_attention_receipt
+
+- name: Read successful wheel installation receipt
+  ansible.builtin.slurp:
+    src: "{{ daybook_voice_memo_attention_install_root }}/installed-wheel.sha1"
+  register: daybook_voice_memo_attention_receipt_content
+  when: daybook_voice_memo_attention_receipt.stat.exists
+
+- name: Determine whether attention wheel needs installation
+  ansible.builtin.set_fact:
+    daybook_voice_memo_attention_install_needed: >-
+      {{ daybook_voice_memo_attention_venv_created.changed or
+         (daybook_voice_memo_attention_receipt_content.content | default('') | b64decode | trim)
+         != (daybook_voice_memo_attention_wheel_destination.stat.checksum | default('unavailable')) }}
+
+- name: Install provided Daybook wheel into attention environment
+  ansible.builtin.command:
+    argv:
+      - "{{ daybook_voice_memo_attention_uv_bin }}"
+      - pip
+      - install
+      - --python
+      - "{{ daybook_voice_memo_attention_venv }}/bin/python"
+      - --reinstall-package
+      - daybook
+      - "{{ daybook_voice_memo_attention_install_root }}/{{ daybook_voice_memo_attention_wheel_src | basename }}"
+  changed_when: true
+  when: daybook_voice_memo_attention_install_needed
+
+- name: Verify installed attention module imports without running the pilot
+  become: true
+  become_user: root
+  ansible.builtin.command:
+    chdir: "{{ daybook_voice_memo_attention_service_home }}"
+    argv:
+      - /usr/bin/sudo
+      - -n
+      - -H
+      - -u
+      - "{{ daybook_voice_memo_attention_service_user }}"
+      - --
+      - "{{ daybook_voice_memo_attention_venv }}/bin/python"
+      - -I
+      - -c
+      - import daybook.attention
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Record successful attention wheel installation
+  ansible.builtin.copy:
+    content: "{{ daybook_voice_memo_attention_wheel_destination.stat.checksum }}\n"
+    dest: "{{ daybook_voice_memo_attention_install_root }}/installed-wheel.sha1"
+    owner: root
+    group: wheel
+    mode: '0644'
+  when:
+    - daybook_voice_memo_attention_install_needed
+    - not ansible_check_mode
+
+- name: Create private attention runtime directory
+  ansible.builtin.file:
+    path: "{{ daybook_voice_memo_attention_runtime_dir }}"
+    state: directory
+    owner: "{{ daybook_voice_memo_attention_service_user }}"
+    group: staff
+    mode: '0700'
+
+- name: Install disabled private attention configuration
+  ansible.builtin.copy:
+    content: "{{ daybook_voice_memo_attention_config | to_nice_json }}\n"
+    dest: "{{ daybook_voice_memo_attention_config_path }}"
+    owner: "{{ daybook_voice_memo_attention_service_user }}"
+    group: staff
+    mode: '0600'
+  no_log: true
+
+- name: Create owner LaunchAgents directory
+  ansible.builtin.file:
+    path: "{{ daybook_voice_memo_attention_service_home }}/Library/LaunchAgents"
+    state: directory
+    owner: "{{ daybook_voice_memo_attention_service_user }}"
+    group: staff
+    mode: '0755'
+
+- name: Install disabled attention LaunchAgent without loading it
+  ansible.builtin.template:
+    src: attention.launchd.plist.j2
+    dest: "{{ daybook_voice_memo_attention_plist_path }}"
+    owner: "{{ daybook_voice_memo_attention_service_user }}"
+    group: staff
+    mode: '0644'
+    validate: /usr/bin/plutil -lint %s

@@ -1,0 +1,9 @@
+---
+galaxy_info:
+  author: Jochen Wersdörfer
+  description: Install the disabled Daybook voice memo attention pilot
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: MacOSX
+dependencies: []

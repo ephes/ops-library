@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added `daybook_voice_memo_attention_reader_deploy` for a dedicated MinIO identity
+  with exact-prefix listing and object reads only. It rejects policy, group,
+  ownership, and credential drift rather than adopting existing identities.
+  Input validation rejects CR/LF in secrets and option-like access keys before
+  running MinIO commands.
+
+- Added `daybook_voice_memo_attention_notifier_deploy` and
+  `daybook_voice_memo_attention_notifier_remove` for a recipient-pinned
+  outbound-only notifier with a dedicated restricted SSH key. Installation does
+  not send messages and preserves existing administration keys.
+
+- Added disabled-only `daybook_voice_memo_attention_deploy` and state-preserving
+  `daybook_voice_memo_attention_remove` macOS roles. The pilot installs a provided
+  Daybook wheel in a separate environment and an unloaded persistent `serve`
+  LaunchAgent with failed-exit restarts throttled to 900 seconds;
+  it rejects activation and does not initialize tracking or touch the importer.
+
 - `wagtail_deploy` gained `wagtail_require_object_storage` and
   `wagtail_require_sentry` (both default `true`, so existing deployments are
   unchanged). Setting either to `false` skips the corresponding secret
@@ -87,6 +104,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the suite instead of silently disabling a secret check.
 
 ### Fixed
+
+- Attention notifier authorization checks now ignore commented keys and harmless
+  field spacing or trailing comments, while rejecting differently authorized
+  keys. Attention deployment validates the Daybook wheel name and imports the
+  installed module as the service owner before recording installation success,
+  without running a tick. Deployment/removal document the persistent launchd
+  disable override and the separate explicit enable/bootstrap activation steps.
+  Wheel receipts use an explicit destination SHA1; real two-converge tests cover
+  unchanged installation and changed wheel bytes without depending on copy return
+  fields. Owner import verification starts from the service home and switches
+  only its Python subprocess, avoiding inaccessible root SSH working directories.
 
 - `daybook_voice_memo_inbox_deploy` now has a rendered documentation page
   under the deployment roles (the README is included, and the role carries the

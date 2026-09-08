@@ -1,0 +1,8 @@
+---
+ops_library_documentation_category: deployment
+# Outbound-only forced command; supply a newly generated dedicated key.
+daybook_voice_memo_attention_notifier_script_src: CHANGEME
+daybook_voice_memo_attention_notifier_public_key: CHANGEME
+daybook_voice_memo_attention_notifier_native_host: CHANGEME
+daybook_voice_memo_attention_notifier_recipient: CHANGEME
+daybook_voice_memo_attention_notifier_container: openclaw-gateway

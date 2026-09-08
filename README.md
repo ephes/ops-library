@@ -124,6 +124,9 @@ consumer repos depend on.
 | Monitoring | [`tailscale_metrics_endpoint`](roles/tailscale_metrics_endpoint/README.md) | Expose Tailscale login state and node-key expiry as authenticated JSON for Nyxmon (`/.well-known/tailscale`). |
 | Infrastructure | [`bind_authoritative_deploy`](roles/bind_authoritative_deploy/README.md) | Deploy authoritative BIND 9 with managed configs and zone files, including transfer-backed (secondary) zones. |
 | Infrastructure | [`echoport_backup`](roles/echoport_backup/README.md) | Register centralized Echoport backup/restore runners with FastDeploy. |
+| Service deployment | [`daybook_voice_memo_attention_deploy`](roles/daybook_voice_memo_attention_deploy/README.md) | Install the disabled persistent macOS attention supervisor without starting it. |
+| Service deployment | [`daybook_voice_memo_attention_notifier_deploy`](roles/daybook_voice_memo_attention_notifier_deploy/README.md) | Install recipient-pinned outbound notification transport with a dedicated forced-command key. |
+| Service deployment | [`daybook_voice_memo_attention_reader_deploy`](roles/daybook_voice_memo_attention_reader_deploy/README.md) | Provision a dedicated exact-prefix MinIO list/read identity for voice-memo attention. |
 | Service deployment | [`fastdeploy_deploy`](roles/fastdeploy_deploy/README.md) | Deploy the FastDeploy platform (database, uv, frontend build, systemd, Traefik). |
 | Service deployment | [`nyxmon_deploy`](roles/nyxmon_deploy/README.md) | Deploy Nyxmon (Django app, monitoring agent, Telegram integration). |
 | Service deployment | [`archive_deploy`](roles/archive_deploy/README.md) | Deploy the Archive Django service with SQLite, systemd, Traefik, and admin bootstrap. |
@@ -172,6 +175,8 @@ consumer repos depend on.
 | Service operations | [`minio_offsite_replication`](roles/minio_offsite_replication/README.md) | Pull MinIO backup archives from a remote source into offsite storage via systemd timer + rsync/SSH. |
 | Service operations | [`mail_offsite_replication`](roles/mail_offsite_replication/README.md) | Pull maildir + staged DB/config artifacts into a single offsite ZFS dataset via rsync/SSH with post-sync snapshots. |
 | Service operations | [`os_apt_maintenance`](roles/os_apt_maintenance/README.md) | Run host-local apt update/dist-upgrade/autoremove/autoclean via systemd timer with durable state and optional Nyxmon endpoint. |
+| Service removal | [`daybook_voice_memo_attention_remove`](roles/daybook_voice_memo_attention_remove/README.md) | Unload only the attention LaunchAgent while preserving tracking and native history. |
+| Service removal | [`daybook_voice_memo_attention_notifier_remove`](roles/daybook_voice_memo_attention_notifier_remove/README.md) | Revoke only the dedicated notifier key and executable while preserving other authorizations. |
 | Service removal | [`fastdeploy_remove`](roles/fastdeploy_remove/README.md) | Remove FastDeploy and related resources safely. |
 | Service removal | [`nyxmon_remove`](roles/nyxmon_remove/README.md) | Remove Nyxmon while preserving data as needed. |
 | Service removal | [`homeassistant_remove`](roles/homeassistant_remove/README.md) | Tear down Home Assistant (service, config, user) with confirmation guards. |

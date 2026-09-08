@@ -1,0 +1,11 @@
+---
+galaxy_info:
+  author: Jochen Wersdörfer
+  description: Provision a dedicated prefix-only MinIO reader for voice memo attention
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+dependencies: []
