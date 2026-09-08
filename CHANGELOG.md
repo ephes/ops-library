@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add journaled pre-enrollment ownership repair and inactive-service retirement; preserve application data and proxy PID.
+
+## [2.20.0] - 2026-09-07
+
+### Added
+
+- Guarded Traefik binary and alias-only transaction entry with exact checksums,
+  runtime identity verification, atomic replacement, rollback and paired recovery
+  records. Operator evidence and reviewed acceptance/cleanup programs are required.
+- Legacy Traefik full deploy, restore and removal guards for transaction-managed
+  hosts; future template rendering preserves approved header-alias policy.
+
 ## [2.19.0] - 2026-09-07
 
 ### Added

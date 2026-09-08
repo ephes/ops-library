@@ -113,3 +113,20 @@ locally suppress the first-heading rule because their included README supplies i
 
 Docker integration tests require a running runtime. On macOS, start the configured
 Colima VM with `colima start` before `just test`; `just` detects its socket.
+
+### Traefik transactions
+
+`just test-traefik-transactions` runs the failure and journal regression tests.
+On an ARM64 Docker host, `just test-traefik-transactions-integration /path/to/cache`
+runs a disposable systemd container with networking disabled. The cache must contain
+`3.5.3/traefik_v3.5.3_linux_arm64.tar.gz` and
+`3.7.12/traefik_v3.7.12_linux_arm64.tar.gz`; the fixture verifies exact published
+checksums before execution. It exercises a real failed-acceptance rollback,
+reviewed resume, binary update, alias-only update, no-op PID preservation and ACME
+preservation. The runner removes only its own container ID. This is a mechanics
+fixture, not native-x86 validation or production ingress/mitigation evidence.
+
+The Traefik Linux transaction integration also exercises pre-enrollment ownership
+repair and inactive linked-service retirement against real systemd. It checks
+preserved proxy PID/data/middleware and refuses active services, route drift,
+invalid candidates, changed middleware, unresolved journals and enrollment.

@@ -2,12 +2,26 @@
 # Main tasks for traefik_deploy role
 # Installs and configures base Traefik infrastructure
 
+- name: Guard legacy Traefik deployment
+  ansible.builtin.import_tasks: guard.yml
+  tags: always
+
 - name: Validate required variables
   ansible.builtin.assert:
     that:
       - traefik_letsencrypt_email is defined
       - traefik_letsencrypt_email != "CHANGEME@example.com"
     fail_msg: "traefik_letsencrypt_email must be set to a valid email address"
+
+- name: Validate alias policy compatibility before future full rendering
+  ansible.builtin.assert:
+    that:
+      - traefik_alias_policy is mapping
+      - traefik_version is version('3.7.12', '>=')
+      - traefik_alias_policy.values() | unique | list == ['delete']
+      - "(traefik_alias_policy.keys() | list | sort) == ((['web', 'web-secure'] + (['traefik'] if (traefik_dashboard_enabled or traefik_metrics_enabled) else [])) | sort)"
+    fail_msg: Alias policy must cover the full rendered entrypoint set and use a compatible release.
+  when: traefik_alias_policy | length > 0
 
 - name: Auto-detect OS if not specified
   ansible.builtin.set_fact:

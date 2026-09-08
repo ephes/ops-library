@@ -250,7 +250,7 @@ Override `traefik_os` and `traefik_arch` only if auto-detection fails.
 
 **Always use checksum validation in production:**
 
-1. Visit https://github.com/traefik/traefik/releases/tag/v3.3.5
+1. Visit <https://github.com/traefik/traefik/releases/tag/v3.3.5>
 2. Download `traefik_v3.3.5_checksums.txt`
 3. Find the SHA256 hash for your platform
 4. Set in playbook: `traefik_checksum: "sha256:abc123..."`
@@ -262,6 +262,7 @@ The dashboard is **NOT exposed** through the firewall by default (internal local
 **Secure access methods:**
 
 1. **SSH Tunnel** (Recommended):
+
    ```bash
    ssh -L 8090:localhost:8090 user@server
    # Access at http://localhost:8090
@@ -269,6 +270,7 @@ The dashboard is **NOT exposed** through the firewall by default (internal local
 
 2. **Traefik Dynamic Config with Auth**:
    Create `/etc/traefik/dynamic/dashboard.yml`:
+
    ```yaml
    http:
      routers:
@@ -288,6 +290,7 @@ The dashboard is **NOT exposed** through the firewall by default (internal local
    ```
 
 3. **Open Firewall** (Not Recommended):
+
    ```yaml
    traefik_dashboard_firewall_open: true  # ⚠️ Security risk!
    ```
@@ -295,6 +298,7 @@ The dashboard is **NOT exposed** through the firewall by default (internal local
 ### Systemd Hardening
 
 The role applies systemd security hardening:
+
 - `NoNewPrivileges=true`
 - `PrivateTmp=true`
 - `ProtectSystem=strict`
@@ -350,9 +354,10 @@ tail -f /var/log/traefik/traefik.log
 
 2. **Rate limiting**:
    - Let's Encrypt has rate limits (5 certificates per week per domain)
-   - Use staging environment for testing: https://letsencrypt.org/docs/staging-environment/
+   - Use staging environment for testing: <https://letsencrypt.org/docs/staging-environment/>
 
 3. **Check ACME logs**:
+
    ```bash
    journalctl -u traefik | grep -i acme
    ```
@@ -369,16 +374,19 @@ ansible-playbook playbook.yml -e traefik_force_update=true
 ### Dashboard Not Accessible
 
 1. **Check service is running**:
+
    ```bash
    systemctl status traefik
    ```
 
 2. **Verify port is listening**:
+
    ```bash
    netstat -tlnp | grep 8090
    ```
 
 3. **Access via SSH tunnel**:
+
    ```bash
    ssh -L 8090:localhost:8090 user@server
    # Then visit http://localhost:8090
@@ -457,3 +465,9 @@ hand-tuned configuration, apply just these tasks:
     name: local.ops_library.traefik_deploy
     tasks_from: web_conflicts
 ```
+
+## Guarded updates of existing installations
+
+Use the separate [transaction entry](https://github.com/ephes/ops-library/blob/main/roles/traefik_deploy/TRANSACTIONS.md) for binary-only updates and
+reviewed header-alias changes. The full deploy, restore and remove workflows refuse
+transaction-managed hosts until they share its locks and recovery records.

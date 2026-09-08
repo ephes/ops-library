@@ -1,0 +1,92 @@
+---
+- name: transaction | Require an explicit guarded transaction request and controller result destination
+  ansible.builtin.assert:
+    that:
+      - traefik_transaction_request is mapping
+      - traefik_transaction_request.action in ['inspect', 'enroll', 'binary', 'alias', 'resume']
+      - traefik_transaction_result_path | length > 0
+      - not ansible_check_mode
+    fail_msg: Use the paired controller command; check mode cannot prove a transaction.
+
+- name: transaction | Require inventory Python 3.11 or newer before transport
+  ansible.builtin.raw: /usr/bin/python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)'
+  changed_when: false
+  failed_when: false
+  register: traefik_transaction_python
+
+- name: transaction | Explain the engine interpreter requirement
+  ansible.builtin.assert:
+    that:
+      - traefik_transaction_python.rc == 0
+    fail_msg: >-
+      The transaction engine explicitly uses /usr/bin/python3 and requires version
+      3.11 or newer, independently of Ansible's module interpreter selection.
+
+- name: transaction | Create private temporary transaction transport directory
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: traefik-transaction-
+  register: traefik_transaction_transport
+
+- name: transaction | Execute guarded transaction
+  block:
+    - name: transaction | Copy transaction engine
+      ansible.builtin.copy:
+        src: traefik_transaction.py
+        dest: '{{ traefik_transaction_transport.path }}/engine.py'
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: transaction | Fetch exact approved release archive
+      ansible.builtin.get_url:
+        url: >-
+          https://github.com/traefik/traefik/releases/download/v{{ traefik_transaction_request.release.version }}/traefik_v{{ traefik_transaction_request.release.version }}_linux_{{ traefik_transaction_request.release.arch }}.tar.gz
+        checksum: 'sha256:{{ traefik_transaction_request.release.sha256 }}'
+        dest: '{{ traefik_transaction_transport.path }}/release.tar.gz'
+        owner: root
+        group: root
+        mode: '0600'
+      when: traefik_transaction_request.action == 'binary'
+
+    - name: transaction | Write private request
+      ansible.builtin.copy:
+        content: >-
+          {{ traefik_transaction_request | combine({'archive_path': traefik_transaction_transport.path ~ '/release.tar.gz'}) | to_nice_json }}
+        dest: '{{ traefik_transaction_transport.path }}/request.json'
+        owner: root
+        group: root
+        mode: '0600'
+      no_log: true
+
+    - name: transaction | Run transaction under the shared host lock
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - '{{ traefik_transaction_transport.path }}/engine.py'
+          - --request
+          - '{{ traefik_transaction_transport.path }}/request.json'
+      register: traefik_transaction_result
+      changed_when: (traefik_transaction_result.stdout | from_json).changed | default(false)
+      failed_when: false
+      no_log: true
+
+    - name: transaction | Persist sanitized response on the controller even when recovery occurred
+      ansible.builtin.copy:
+        content: '{{ traefik_transaction_result.stdout }}'
+        dest: '{{ traefik_transaction_result_path }}'
+        mode: '0600'
+      delegate_to: localhost
+      become: false
+      no_log: true
+
+    - name: transaction | Refuse failed or recovered transactions
+      ansible.builtin.assert:
+        that:
+          - traefik_transaction_result.rc == 0
+        fail_msg: Transaction failed; inspect the controller result and recovery records before retrying.
+  always:
+    - name: transaction | Remove only this invocation's transport files
+      ansible.builtin.file:
+        path: '{{ traefik_transaction_transport.path }}'
+        state: absent

@@ -52,6 +52,7 @@ zellij_ingress_deploy
 ```
 
 These roles handle the complete deployment lifecycle including:
+
 - Service user and directory setup
 - Configuration file management
 - Database initialization

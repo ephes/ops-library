@@ -101,3 +101,13 @@ traefik_conflicting_web_services:
   - apache2.service
   - caddy.service
   - lighttpd.service
+
+# Guarded transaction entry (see TRANSACTIONS.md). The full role refuses managed
+# hosts until it shares the transaction workflow; Heis/default pins are unchanged.
+traefik_transaction_required: false
+traefik_transaction_request: {}
+traefik_transaction_result_path: ""
+traefik_alias_policy: {}
+
+# Explicit one-time repairs before enrollment; no default live target or action.
+traefik_preparation_request: {}
