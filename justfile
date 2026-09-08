@@ -11,7 +11,7 @@ setup:
     @./setup-pre-commit.sh
 
 # Run the default contributor validation path
-test: venv test-macos-ssh-tunnel typecheck test-roles test-zfs-snapshot-file-attestation test-software-live test-debian13-compatibility test-os-apt-maintenance-refresh test-traefik-transactions test-openclaw-audio-transcription test-openclaw-codex-registration-backport test-openclaw-heartbeat-recovery test-network-recovery test-monitoring-pipeline-repair test-traefik-metrics-entrypoint test-os-apt-maintenance-failed-run test-tailscale-metrics-timer test-nyxmon-deploy test-certbot-dns-renewal-hooks test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-photos-archive-sync-deploy test-daybook-voice-memo-inbox-deploy test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup test-takahe-deploy test-wagtail-deploy test-static-site-deploy test-voxhelm-csrf lint docs-build docs-lint
+test: venv test-macos-ssh-tunnel typecheck test-roles test-zfs-snapshot-file-attestation test-software-live test-debian13-compatibility test-os-apt-maintenance-refresh test-traefik-transactions test-openclaw-audio-transcription test-openclaw-codex-registration-backport test-openclaw-heartbeat-recovery test-network-recovery test-monitoring-pipeline-repair test-traefik-metrics-entrypoint test-os-apt-maintenance-failed-run test-tailscale-metrics-timer test-nyxmon-deploy test-certbot-dns-renewal-hooks test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-photos-archive-sync-deploy test-daybook-voice-memo-inbox-deploy test-daybook-voice-memo-attention test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup test-takahe-deploy test-wagtail-deploy test-static-site-deploy test-voxhelm-csrf lint docs-build docs-lint
     @echo ""
     @echo "✅ Validation completed!"
 
@@ -123,6 +123,10 @@ test-daybook-photos-archive-sync-deploy: venv
 test-daybook-voice-memo-inbox-deploy: venv
     @echo "Testing Daybook Voice Memo inbox deploy contracts..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_daybook_voice_memo_inbox_deploy
+
+test-daybook-voice-memo-attention: venv
+    @echo "Testing disabled Daybook attention deployment and restricted notifier contracts..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_daybook_voice_memo_attention_deploy tests.test_daybook_voice_memo_attention_notifier_deploy tests.test_daybook_voice_memo_attention_reader
 
 test-daybook-weeknotes-reconcile-check-mode: venv
     @echo "Testing configured and unconfigured Daybook reconcile check mode..."

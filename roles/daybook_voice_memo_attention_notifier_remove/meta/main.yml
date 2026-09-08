@@ -1,0 +1,10 @@
+---
+galaxy_info:
+  author: Jochen Wersdörfer
+  description: Revoke the dedicated attention notifier key while preserving other SSH access
+  license: MIT
+  min_ansible_version: '2.15'
+  platforms:
+    - name: Ubuntu
+      versions: [all]
+dependencies: []

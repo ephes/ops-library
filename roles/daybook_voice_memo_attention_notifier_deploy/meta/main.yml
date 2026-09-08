@@ -1,0 +1,10 @@
+---
+galaxy_info:
+  author: Jochen Wersdörfer
+  description: Install a recipient-pinned outbound attention notifier with a dedicated forced SSH key
+  license: MIT
+  min_ansible_version: '2.15'
+  platforms:
+    - name: Ubuntu
+      versions: [all]
+dependencies: []
