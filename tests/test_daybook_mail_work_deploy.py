@@ -101,6 +101,17 @@ class MailWorkRoleTests(unittest.TestCase):
         self.assertIn("daybook_mail_work_host_enabled | bool",
                       guard["ansible.builtin.assert"]["that"])
 
+    def test_the_notify_config_must_exist_before_anything_is_installed(self):
+        tasks = yaml.safe_load((ROLE / "tasks/main.yml").read_text())
+        inspect = next(t for t in tasks if t["name"].startswith("Inspect existing"))
+        self.assertIn("{{ daybook_mail_work_notify_config_path }}", inspect["loop"])
+
+    def test_state_may_be_shared_with_manual_runs(self):
+        """Pinning state under the runtime dir forced a second watermark."""
+        body = (ROLE / "tasks/main.yml").read_text()
+        self.assertNotIn("daybook_mail_work_state_path == daybook_mail_work_runtime_dir", body)
+        self.assertNotIn("daybook_mail_work_mail_state_path == daybook_mail_work_runtime_dir", body)
+
     def test_both_agents_default_to_off(self):
         values = yaml.safe_load((ROLE / "defaults/main.yml").read_text())
         self.assertFalse(values["daybook_mail_work_host_enabled"])

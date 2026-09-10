@@ -66,6 +66,20 @@ Neither of these is a fault, and neither should be treated as one:
   behaviour, not a failure to fix here. The watermark still advances, because a
   session was launched; the prose on the work record is what carries the rest.
 
+## Where the state lives
+
+`daybook_mail_work_state_path` and `daybook_mail_work_mail_state_path` are not
+tied to the runtime directory. If the worker has already been run by hand on the
+host, point them at those databases: manual and scheduled runs then share one
+watermark and take the same lease, so they cannot process the same mail twice,
+and the stored watermark means no seeding is needed at all. A separate, fresh
+state would keep a second watermark over the same mailbox that no manual run
+knows about. The runtime directory holds only the courier's attempts, lock and
+logs.
+
+`daybook_mail_work_notify_config_path` must already exist; the role checks it
+rather than letting every notification fail later.
+
 ## Claude only
 
 `daybook_mail_work_provider` must be `claude`. The inheritance measurement covers
