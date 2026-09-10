@@ -58,8 +58,14 @@
       - daybook_mail_work_cli is match('^/')
       - daybook_mail_work_cli.endswith('/bin/daybook')
       - daybook_mail_work_runtime_dir == daybook_mail_work_service_home ~ '/.local/share/daybook/work-runtime/mail'
-      - daybook_mail_work_state_path == daybook_mail_work_runtime_dir ~ '/work.sqlite3'
-      - daybook_mail_work_mail_state_path == daybook_mail_work_runtime_dir ~ '/mail.sqlite3'
+      # The state is not the courier's to own. A host that already runs the
+      # worker by hand keeps its own databases, so manual and scheduled runs
+      # share one watermark and one lease rather than keeping two uncoordinated
+      # watermarks over the same mailbox. Only the courier's attempts, lock and
+      # logs are pinned under the runtime directory.
+      - daybook_mail_work_state_path is match('^/') and daybook_mail_work_state_path.endswith('.sqlite3')
+      - daybook_mail_work_mail_state_path is match('^/') and daybook_mail_work_mail_state_path.endswith('.sqlite3')
+      - daybook_mail_work_notify_config_path is match('^/')
       - daybook_mail_work_attempts_root == daybook_mail_work_runtime_dir ~ '/attempts'
       - daybook_mail_work_lock_path == daybook_mail_work_runtime_dir ~ '/host.lock'
       - daybook_mail_work_provider == 'claude'
@@ -87,6 +93,9 @@
     - "{{ daybook_mail_work_assignment_path }}"
     - "{{ daybook_mail_work_cwd }}"
     - "{{ daybook_mail_work_tmux }}"
+    # Sessions are handed this path to reach the owner. It is not created here,
+    # so a missing one must fail the deploy rather than every notification.
+    - "{{ daybook_mail_work_notify_config_path }}"
   register: daybook_mail_work_prerequisites
 
 - name: Require private owner runtime prerequisites
