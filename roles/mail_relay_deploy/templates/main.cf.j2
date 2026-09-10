@@ -34,10 +34,31 @@ relay_domains = hash:/etc/postfix/relay_domains
 # Transport map for routing to backend
 transport_maps = hash:/etc/postfix/transport
 
-# Optional recipient canonical rewrites (e.g. Unicode IDN -> punycode)
+# Recipient canonical rewrites. Two independent consumers share this parameter:
+# the optional Unicode IDN -> punycode map, and SRS reverse lookups. Postfix
+# searches canonical tables in order and uses the first match, and postsrsd
+# returns NOTFOUND for anything that is not an SRS address, so the SRS table is
+# listed first and the IDN map still sees everything else. Overwriting rather
+# than composing here silently breaks IDN recipient rewriting.
+{% set _rcpt_maps = [] %}
+{% if mail_relay_srs_enabled %}
+{% set _ = _rcpt_maps.append('tcp:' ~ mail_relay_srs_listen_addr ~ ':' ~ mail_relay_srs_reverse_port) %}
+{% endif %}
 {% if mail_relay_recipient_rewrites | length > 0 %}
-recipient_canonical_maps = hash:/etc/postfix/recipient_canonical
+{% set _ = _rcpt_maps.append('hash:/etc/postfix/recipient_canonical') %}
+{% endif %}
+{% if _rcpt_maps | length > 0 %}
+recipient_canonical_maps = {{ _rcpt_maps | join(', ') }}
 recipient_canonical_classes = envelope_recipient
+{% endif %}
+{% if mail_relay_srs_enabled %}
+
+# SRS forward rewriting. envelope_sender ONLY: including header_sender would
+# rewrite the visible From: header, so recipients would see the SRS address
+# instead of who actually wrote to them. Postfix's default for this parameter is
+# "envelope_sender, header_sender", so it must be set explicitly, not left out.
+sender_canonical_maps = tcp:{{ mail_relay_srs_listen_addr }}:{{ mail_relay_srs_forward_port }}
+sender_canonical_classes = envelope_sender
 {% endif %}
 
 # Do NOT set relayhost here - we use transport_maps for inbound relay

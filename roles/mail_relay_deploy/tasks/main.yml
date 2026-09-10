@@ -15,7 +15,7 @@
       - mail_relay_postgrey_whitelist_clients_extra is iterable
       - mail_relay_postgrey_whitelist_clients_extra is not string
       - mail_relay_postgrey_whitelist_clients_extra is not mapping
-    fail_msg: |
+    fail_msg: |  # pragma: allowlist secret
       Required variables not set:
       - mail_relay_domains: List of domains to accept mail for
       - mail_relay_backend_host: Backend server to relay inbound mail to
@@ -53,6 +53,10 @@
 
 - name: Configure transport maps
   ansible.builtin.import_tasks: transport.yml
+
+- name: Configure SRS
+  ansible.builtin.import_tasks: srs.yml
+  when: mail_relay_srs_enabled
 
 - name: Configure services
   ansible.builtin.import_tasks: services.yml

@@ -128,3 +128,35 @@ mail_relay_packages:
   - libsasl2-modules
   - sasl2-bin
   - ca-certificates
+
+# =============================================================================
+# SRS (Sender Rewriting Scheme)
+# =============================================================================
+# When this relay forwards mail to an external address, the envelope sender
+# still belongs to the original third-party domain. The receiving server checks
+# that domain's SPF against THIS host's IP and fails it. SRS rewrites the
+# envelope sender into a domain we control, and reverses the rewrite on the
+# bounce path. The From: header is untouched, so replies are unaffected.
+#
+# Disabled by default: enabling it changes the envelope sender of outbound mail
+# on a live relay, so it must be switched on deliberately and tested with a
+# single forward before any MX is pointed here.
+mail_relay_srs_enabled: false
+
+# Domain the rewritten sender lives in. Its MX must point at this relay (so
+# bounces come back and can be reversed) and its SPF must authorise this host.
+mail_relay_srs_domain: ""
+
+# Shared secret for the SRS hash. Supply from SOPS; never commit a literal.
+mail_relay_srs_secret: ""
+
+# Domains that must NEVER be rewritten -- our own senders. Defaults to the set
+# this relay already accepts mail for, which is exactly the right list.
+mail_relay_srs_exclude_domains: "{{ mail_relay_domains }}"
+
+# postsrsd 1.x exposes two TCP lookup tables. Ubuntu 24.04 ships 1.10; upstream
+# 2.x (socketmap) is not packaged in any Debian/Ubuntu suite.
+mail_relay_srs_listen_addr: "127.0.0.1"
+mail_relay_srs_forward_port: 10001
+mail_relay_srs_reverse_port: 10002
+mail_relay_srs_secret_file: "/etc/postsrsd.secret"

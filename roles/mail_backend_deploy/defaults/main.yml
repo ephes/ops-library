@@ -143,7 +143,7 @@ mail_backend_sender_only_domains: []
 # =============================================================================
 
 # Password hashing scheme
-mail_backend_password_scheme: "SHA512-CRYPT"
+mail_backend_password_scheme: "SHA512-CRYPT"  # pragma: allowlist secret
 
 # Tag addressing delimiter (user-tag@domain delivers to user)
 mail_backend_recipient_delimiter: "-"
@@ -195,6 +195,32 @@ mail_backend_schema_mode: "legacy"
 #   - alias_domain: "wersdoerfer.de"
 #     target_domain: "xn--wersdrfer-47a.de"
 mail_backend_postfixadmin_domain_aliases: []
+
+# Forwarding aliases (PostfixAdmin schema).
+#
+# An address in a hosted domain that delivers to one or more destinations, which
+# may be external. This is distinct from mail_backend_required_aliases (a
+# cross-product of fixed localparts over every domain, pointing at a local
+# mailbox) and from mail_users_sync's `send_as` (which authorises an envelope
+# sender for a login). Neither can express "one public address, several
+# recipients, some of them elsewhere".
+#
+# `goto` in the PostfixAdmin schema is a comma-separated destination list, which
+# is how a single address fans out to several mailboxes.
+#
+# The address's domain must already exist in the `domain` table -- add it to
+# mail_backend_domains -- because alias.domain is a foreign key onto it.
+#
+# Forwarding to an external destination re-sends mail whose envelope sender
+# belongs to a third party, so the edge relay needs SRS enabled or the forwarded
+# copy fails SPF at the receiving end. See mail_relay_deploy's SRS options.
+#
+# mail_backend_forward_aliases:
+#   - address: "hallo@example.com"
+#     destinations:
+#       - "someone@example.com"
+#       - "someone-else@elsewhere.org"
+mail_backend_forward_aliases: []
 
 # =============================================================================
 # Package Management

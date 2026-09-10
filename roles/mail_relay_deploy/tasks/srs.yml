@@ -1,0 +1,72 @@
+---
+# Configure SRS (Sender Rewriting Scheme) via postsrsd.
+#
+# Only runs when mail_relay_srs_enabled. Everything here is inert until the
+# main.cf canonical maps point at the daemon, which is likewise gated on the
+# same flag -- so a deploy with the flag off leaves the relay exactly as it was.
+
+- name: srs | Validate SRS configuration
+  ansible.builtin.assert:
+    that:
+      - mail_relay_srs_domain | length > 0
+      - mail_relay_srs_secret | length > 0
+      - mail_relay_srs_exclude_domains | length > 0
+      - mail_relay_srs_domain | lower in (mail_relay_domains | map('lower') | list)
+    fail_msg: |  # pragma: allowlist secret
+      mail_relay_srs_enabled is true but the configuration is incomplete:
+      - mail_relay_srs_domain: domain the rewritten sender lives in. Its MX must
+        point at this relay, its SPF must authorise this host, and it MUST be
+        listed in mail_relay_domains. That last one is not cosmetic: a bounce to
+        an SRS0.../SRS1... address is checked by smtpd's reject_unauth_destination
+        before cleanup applies recipient_canonical_maps, so if this relay does not
+        already accept the domain the bounce is rejected at RCPT and the reverse
+        rewrite never runs.
+      - mail_relay_srs_secret: shared secret for the SRS hash (supply from SOPS).
+      - mail_relay_srs_exclude_domains: domains that must never be rewritten.
+
+- name: srs | Install postsrsd
+  ansible.builtin.apt:
+    name: postsrsd
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# On a FIRST install the package's postinst generates a random
+# /etc/postsrsd.secret and starts the daemon, so postsrsd runs briefly with a
+# secret we did not choose; an SRS address minted in that window stops verifying
+# once the handler restarts with the managed secret. That window is deliberately
+# accepted rather than closed by stopping the daemon here: a host being installed
+# is not forwarding anything yet, whereas an unconditional stop would take SRS
+# down on EVERY subsequent run while Postfix still points at the TCP maps, and
+# would leave it down if any later task failed. The handler restarts the daemon
+# only when one of these managed files actually changes.
+#
+# The secret is sourced from SOPS and kept STABLE rather than regenerated:
+# rotating it invalidates every SRS return address still in flight, and those
+# stay valid for 21 days.
+- name: srs | Install SRS secret
+  ansible.builtin.copy:
+    content: "{{ mail_relay_srs_secret }}\n"
+    dest: "{{ mail_relay_srs_secret_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart postsrsd
+
+- name: srs | Render postsrsd defaults
+  ansible.builtin.template:
+    src: postsrsd.default.j2
+    dest: /etc/default/postsrsd
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart postsrsd
+
+- name: srs | Ensure postsrsd is enabled and running
+  ansible.builtin.systemd:
+    name: postsrsd
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: not ansible_check_mode
