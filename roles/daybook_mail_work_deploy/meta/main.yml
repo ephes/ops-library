@@ -1,0 +1,9 @@
+---
+galaxy_info:
+  author: Jochen Wersdörfer
+  description: Schedule capable Daybook mail work through a GUI-attributed capability host
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: MacOSX
+dependencies: []

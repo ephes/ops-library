@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>{{ daybook_mail_work_host_launchd_label | e }}</string>
+  <!--
+    "daybook work host ensure" is the only entry point. It takes an exclusive
+    lock, refuses to adopt a server it did not create, and reaches open(1) only
+    when no host answers. Wiring this agent straight at open would bypass the
+    lock and the provenance marker, and would add a spare application instance
+    on every run, because a forced new instance always launches one.
+  -->
+  <key>ProgramArguments</key><array>
+    <string>{{ daybook_mail_work_cli | e }}</string>
+    <string>work</string><string>host</string><string>ensure</string>
+    <string>--socket</string><string>{{ daybook_mail_work_socket | e }}</string>
+    <string>--session</string><string>{{ daybook_mail_work_session | e }}</string>
+    <string>--tmux</string><string>{{ daybook_mail_work_tmux | e }}</string>
+    <string>--tmpdir</string><string>{{ daybook_mail_work_tmux_tmpdir | e }}</string>
+    <string>--application</string><string>{{ daybook_mail_work_application | e }}</string>
+    <string>--open</string><string>{{ daybook_mail_work_open | e }}</string>
+    <string>--lock</string><string>{{ daybook_mail_work_lock_path | e }}</string>
+  </array>
+  <key>WorkingDirectory</key><string>{{ daybook_mail_work_service_home | e }}</string>
+  <!-- The host needs a GUI session: LaunchServices cannot place a window without one. -->
+  <key>LimitLoadToSessionType</key><string>Aqua</string>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>{{ daybook_mail_work_host_interval_seconds | int }}</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>Umask</key><integer>63</integer>
+  <key>StandardOutPath</key><string>{{ daybook_mail_work_host_stdout_log | e }}</string>
+  <key>StandardErrorPath</key><string>{{ daybook_mail_work_host_stderr_log | e }}</string>
+  <key>EnvironmentVariables</key><dict>
+    <key>HOME</key><string>{{ daybook_mail_work_service_home | e }}</string>
+    <key>USER</key><string>{{ daybook_mail_work_service_user | e }}</string>
+    <key>LOGNAME</key><string>{{ daybook_mail_work_service_user | e }}</string>
+    <key>PATH</key><string>{{ daybook_mail_work_path | e }}</string>
+    <key>TMUX_TMPDIR</key><string>{{ daybook_mail_work_tmux_tmpdir | e }}</string>
+  </dict>
+</dict></plist>

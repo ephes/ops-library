@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>{{ daybook_mail_work_launchd_label | e }}</string>
+  <!--
+    No explicit window start here, deliberately. One would override the stored
+    watermark, so every run would begin at the same point and take a fresh end:
+    a fresh source identity each tick, over a history that only grows. The
+    watermark is the only thing that decides scope, and it is seeded once by
+    hand. The role asserts this file cannot name a window start at all.
+  -->
+  <key>ProgramArguments</key><array>
+    <string>{{ daybook_mail_work_cli | e }}</string>
+    <string>work</string>
+    <string>--state</string><string>{{ daybook_mail_work_state_path | e }}</string>
+    <string>mail</string>
+    <string>--mail-state</string><string>{{ daybook_mail_work_mail_state_path | e }}</string>
+    <string>--assignment</string><string>{{ daybook_mail_work_assignment_path | e }}</string>
+    <string>--provider</string><string>{{ daybook_mail_work_provider | e }}</string>
+    <string>--cwd</string><string>{{ daybook_mail_work_cwd | e }}</string>
+    <string>--config</string><string>{{ daybook_mail_work_notify_config_path | e }}</string>
+    <string>--via-host</string><string>{{ daybook_mail_work_socket | e }}</string>
+    <string>--host-session</string><string>{{ daybook_mail_work_session | e }}</string>
+    <string>--host-tmux</string><string>{{ daybook_mail_work_tmux | e }}</string>
+    <string>--host-tmpdir</string><string>{{ daybook_mail_work_tmux_tmpdir | e }}</string>
+    <string>--attempts-root</string><string>{{ daybook_mail_work_attempts_root | e }}</string>
+    <string>--run-timeout</string><string>{{ daybook_mail_work_run_timeout_seconds | int }}</string>
+  </array>
+  <key>WorkingDirectory</key><string>{{ daybook_mail_work_cwd | e }}</string>
+  <key>LimitLoadToSessionType</key><string>Aqua</string>
+  <key>RunAtLoad</key><true/>
+  <!--
+    launchd fires a missed StartInterval once on wake rather than replaying every
+    tick it slept through, which is exactly the coalescing this worker wants: a
+    sleeping Mac becomes one wider window, never a backlog of runs.
+  -->
+  <key>StartInterval</key><integer>{{ daybook_mail_work_interval_seconds | int }}</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>Umask</key><integer>63</integer>
+  <key>StandardOutPath</key><string>{{ daybook_mail_work_stdout_log | e }}</string>
+  <key>StandardErrorPath</key><string>{{ daybook_mail_work_stderr_log | e }}</string>
+  <key>EnvironmentVariables</key><dict>
+    <key>HOME</key><string>{{ daybook_mail_work_service_home | e }}</string>
+    <key>USER</key><string>{{ daybook_mail_work_service_user | e }}</string>
+    <key>LOGNAME</key><string>{{ daybook_mail_work_service_user | e }}</string>
+    <key>PATH</key><string>{{ daybook_mail_work_path | e }}</string>
+    <key>TMUX_TMPDIR</key><string>{{ daybook_mail_work_tmux_tmpdir | e }}</string>
+  </dict>
+</dict></plist>

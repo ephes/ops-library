@@ -1,0 +1,57 @@
+---
+ops_library_documentation_category: deployment
+
+# Two independent controls, not one. The rollout needs three distinct states --
+# both off, host only, then both on -- and the worker is useless without a host,
+# so the tasks assert that the worker cannot be enabled unless the host is.
+daybook_mail_work_host_enabled: false
+daybook_mail_work_worker_enabled: false
+
+daybook_mail_work_service_user: CHANGEME
+daybook_mail_work_service_home: "/Users/{{ daybook_mail_work_service_user }}"
+daybook_mail_work_service_group: staff
+
+# Absolute path to the installed CLI. The default matches the voice-memo
+# convention; a host that runs Daybook from a checkout sets its own.
+daybook_mail_work_cli: "{{ daybook_mail_work_service_home }}/.local/share/daybook/work-runtime/venv/bin/daybook"
+daybook_mail_work_runtime_dir: "{{ daybook_mail_work_service_home }}/.local/share/daybook/work-runtime/mail"
+daybook_mail_work_state_path: "{{ daybook_mail_work_runtime_dir }}/work.sqlite3"
+daybook_mail_work_mail_state_path: "{{ daybook_mail_work_runtime_dir }}/mail.sqlite3"
+daybook_mail_work_attempts_root: "{{ daybook_mail_work_runtime_dir }}/attempts"
+daybook_mail_work_lock_path: "{{ daybook_mail_work_runtime_dir }}/host.lock"
+daybook_mail_work_assignment_path: CHANGEME
+daybook_mail_work_notify_config_path: "{{ daybook_mail_work_service_home }}/.local/share/daybook/work-runtime/notify-client.json"
+daybook_mail_work_cwd: CHANGEME
+
+# Claude only. The inheritance measurement covers ClaudeNativeAdapter, which
+# spawns its per-work tmux server from inside the host. CodexNativeAdapter may
+# instead attach to an app-server started outside that spawn chain, and nothing
+# has measured whether such a process carries the host's grants.
+daybook_mail_work_provider: claude
+
+# The capability host. `-L` resolves against TMUX_TMPDIR, which is not
+# guaranteed to agree between the launchd and GUI environments, so it is pinned
+# rather than inherited.
+daybook_mail_work_socket: daybook-host
+daybook_mail_work_session: host
+daybook_mail_work_tmux: /opt/homebrew/bin/tmux
+daybook_mail_work_tmux_tmpdir: /private/tmp
+daybook_mail_work_application: Ghostty
+daybook_mail_work_open: /usr/bin/open
+
+daybook_mail_work_run_timeout_seconds: 180
+daybook_mail_work_interval_seconds: 300
+# Deliberately far from the worker's cadence: `host ensure` can open a GUI
+# window, and a five-minute agent that failed to start one would paper the
+# desktop. Hourly bounds the outage without that failure mode.
+daybook_mail_work_host_interval_seconds: 3600
+
+daybook_mail_work_path: /usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
+daybook_mail_work_launchd_label: de.wersdoerfer.daybook.mail-work
+daybook_mail_work_host_launchd_label: de.wersdoerfer.daybook.mail-work-host
+daybook_mail_work_plist_path: "{{ daybook_mail_work_service_home }}/Library/LaunchAgents/{{ daybook_mail_work_launchd_label }}.plist"
+daybook_mail_work_host_plist_path: "{{ daybook_mail_work_service_home }}/Library/LaunchAgents/{{ daybook_mail_work_host_launchd_label }}.plist"
+daybook_mail_work_stdout_log: "{{ daybook_mail_work_runtime_dir }}/work.log"
+daybook_mail_work_stderr_log: "{{ daybook_mail_work_runtime_dir }}/work.err.log"
+daybook_mail_work_host_stdout_log: "{{ daybook_mail_work_runtime_dir }}/host.log"
+daybook_mail_work_host_stderr_log: "{{ daybook_mail_work_runtime_dir }}/host.err.log"
