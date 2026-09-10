@@ -27,6 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `takahe_traefik_legacy_config_paths` and the `takahe_traefik` tag for
   opt-in legacy-route migration and routing-only updates.
 
+- Add a daily index-only apt refresh to `os_apt_maintenance`
+  (`os-apt-maintenance-refresh.timer`, `--refresh-only`). The weekly
+  maintenance timer cannot hold the 48-hour apt index freshness budget that
+  `software_live` enforces, so hosts without `unattended-upgrades` performing an
+  incidental daily `apt update` reported `pending_security_count: 0` from
+  week-old indexes. The refresh installs nothing, shares the maintenance lock,
+  and never writes `state.json`. Disable with
+  `os_apt_maintenance_refresh_enabled: false`.
+
 ## [2.21.0] - 2026-09-08
 
 ### Added

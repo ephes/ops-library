@@ -10,9 +10,44 @@ This role deploys:
 - `os-apt-maintenance.service`: a root `oneshot` systemd service.
 - `os-apt-maintenance.timer`: a persistent, jittered systemd timer.
 - `/var/lib/os-apt-maintenance/state.json`: durable run state updated atomically even when apt fails.
+- `os-apt-maintenance-refresh.service` / `.timer`: a daily `apt-get update`-only refresh (see below).
 - Optional `os-apt-maintenance-endpoint.service`: an authenticated HTTP endpoint for Nyxmon `json-metrics` checks.
 
 The role is intentionally limited to OS package maintenance. It does not replace application dependency upgrades, product upgrades, or FastDeploy ad-hoc apt runners.
+
+## Index Refresh vs. Maintenance
+
+The two timers exist because they answer to different budgets.
+
+The **maintenance** timer installs upgrades, so it runs on a slow, jittered
+cadence (weekly in ops-control) to keep package churn predictable. The
+**refresh** timer runs `apt-get update` and nothing else, daily, because
+monitoring is stricter than the upgrade cadence: the `software_live` apt check
+warns when the newest security `InRelease` is older than 48 hours. That budget
+exists because `pending_security_count: 0` computed from week-old indexes is not
+evidence that a host has no pending security updates - it only means nobody has
+looked recently.
+
+A weekly maintenance timer alone can therefore never hold a 48-hour freshness
+budget. Hosts that happened to look healthy were usually relying on
+`unattended-upgrades` performing a daily `apt update` as a side effect, which
+makes index freshness an accident of which packages a base image ships rather
+than something this role asserts.
+
+The refresh run:
+
+- installs, removes and upgrades nothing, and never reboots;
+- shares `os_apt_maintenance_lock_file`, so it can never overlap a real upgrade,
+  and exits successfully without running apt when maintenance holds the lock;
+- never writes `state.json`. `last_success_at` there means "a full maintenance
+  run succeeded" and feeds the 14-day freshness check; stamping it on every
+  index refresh would keep that check green on a host whose weekly upgrade had
+  been failing for a month. Refresh health is visible through the apt index age
+  that `software_live` already reports, and through the unit's own systemd
+  result.
+
+Set `os_apt_maintenance_refresh_enabled: false` to turn it off; the role then
+stops the timer and removes both units rather than leaving them firing.
 
 ## Safety Defaults
 
@@ -46,6 +81,15 @@ The role is intentionally limited to OS package maintenance. It does not replace
 | `os_apt_maintenance_timer_persistent` | `true` | Catch up missed timer runs after downtime. |
 | `os_apt_maintenance_run_on_deploy` | `false` | Run the apt maintenance service during role deploy. |
 | `os_apt_maintenance_run_on_first_deploy` | `false` | Run the apt maintenance service when the state file did not exist before this deploy. |
+| `os_apt_maintenance_refresh_enabled` | `true` | Deploy the daily index-only refresh timer. |
+| `os_apt_maintenance_refresh_service_name` | `os-apt-maintenance-refresh` | Unit name for the refresh service and timer. |
+| `os_apt_maintenance_refresh_timer_on_calendar` | `*-*-* 06:00:00` | Refresh schedule. Must stay well inside the monitored index freshness budget. |
+| `os_apt_maintenance_refresh_timer_randomized_delay_sec` | `1h` | Refresh timer jitter. |
+| `os_apt_maintenance_refresh_timer_accuracy_sec` | `10m` | Refresh timer accuracy. |
+| `os_apt_maintenance_refresh_timer_persistent` | `true` | Catch up a missed refresh after downtime. |
+| `os_apt_maintenance_refresh_timer_enabled` | `true` | Enable the refresh timer unit. |
+| `os_apt_maintenance_refresh_timer_state` | `started` | Desired refresh timer state. |
+| `os_apt_maintenance_refresh_command_timeout` | `900` | Timeout for the refresh `apt-get update`. |
 | `os_apt_maintenance_freshness_max_age_seconds` | `1209600` | Monitoring threshold for last successful run, default 14 days. |
 | `os_apt_maintenance_endpoint_enabled` | `false` | Serve state JSON over authenticated HTTP. |
 | `os_apt_maintenance_endpoint_user` | `metrics` | Local system user that serves the endpoint and reads state. |
@@ -193,6 +237,16 @@ systemctl cat os-apt-maintenance.service os-apt-maintenance.timer
 cat /var/lib/os-apt-maintenance/state.json | jq .
 journalctl -u os-apt-maintenance.service -n 100 --no-pager
 
+# Index refresh
+systemctl status os-apt-maintenance-refresh.timer
+systemctl list-timers os-apt-maintenance-refresh.timer --all
+journalctl -u os-apt-maintenance-refresh.service -n 50 --no-pager
+/usr/local/sbin/os-apt-maintenance --refresh-only   # safe to run by hand
+
+# What the refresh is actually for: the newest security index must stay inside
+# the freshness budget software_live enforces (48h).
+ls -l --time-style=full-iso /var/lib/apt/lists/*security*InRelease
+
 # Endpoint, when enabled
 curl -sS -o /dev/null -w '%{http_code}\n' http://<TAILSCALE_IP>:9106/.well-known/os-apt-maintenance
 curl -sS -u "nyxmon:<password>" http://<TAILSCALE_IP>:9106/.well-known/os-apt-maintenance | jq .
@@ -208,4 +262,6 @@ curl -sS -u "nyxmon:<password>" http://<TAILSCALE_IP>:9106/.well-known/os-apt-ma
 cd /path/to/ops-library
 just test-role os_apt_maintenance
 just lint-role os_apt_maintenance
+just test-os-apt-maintenance-refresh
+just molecule-test os_apt_maintenance
 ```

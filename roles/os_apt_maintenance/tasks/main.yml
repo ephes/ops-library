@@ -23,6 +23,18 @@
           - os_apt_maintenance_command_timeout | int > 0
         fail_msg: "Invalid os_apt_maintenance configuration."
 
+    - name: Validate apt index refresh variables
+      ansible.builtin.assert:
+        that:
+          - os_apt_maintenance_refresh_service_name is defined
+          - os_apt_maintenance_refresh_service_name | length > 0
+          - os_apt_maintenance_refresh_service_name != os_apt_maintenance_service_name
+          - os_apt_maintenance_refresh_timer_on_calendar is defined
+          - os_apt_maintenance_refresh_timer_on_calendar | length > 0
+          - os_apt_maintenance_refresh_command_timeout | int > 0
+        fail_msg: "Invalid os_apt_maintenance refresh configuration."
+      when: os_apt_maintenance_refresh_enabled | bool
+
     - name: Validate endpoint auth variables
       ansible.builtin.assert:
         that:
@@ -111,6 +123,29 @@
       notify:
         - reload systemd
         - restart os-apt-maintenance-timer
+
+    - name: Deploy apt index refresh service unit
+      ansible.builtin.template:
+        src: os-apt-maintenance-refresh.service.j2
+        dest: "/etc/systemd/system/{{ os_apt_maintenance_refresh_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+      when: os_apt_maintenance_refresh_enabled | bool
+
+    - name: Deploy apt index refresh timer unit
+      ansible.builtin.template:
+        src: os-apt-maintenance-refresh.timer.j2
+        dest: "/etc/systemd/system/{{ os_apt_maintenance_refresh_service_name }}.timer"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart os-apt-maintenance-refresh-timer
+      when: os_apt_maintenance_refresh_enabled | bool
 
     - name: Deploy apt maintenance HTTP server
       ansible.builtin.template:
@@ -207,6 +242,34 @@
         enabled: "{{ os_apt_maintenance_timer_enabled | bool }}"
         state: "{{ os_apt_maintenance_timer_state }}"
         daemon_reload: true
+
+    - name: Ensure apt index refresh timer is enabled and started
+      ansible.builtin.systemd:
+        name: "{{ os_apt_maintenance_refresh_service_name }}.timer"
+        enabled: "{{ os_apt_maintenance_refresh_timer_enabled | bool }}"
+        state: "{{ os_apt_maintenance_refresh_timer_state }}"
+        daemon_reload: true
+      when: os_apt_maintenance_refresh_enabled | bool
+
+    # Turning the refresh off must actually stop it. Leaving the units on disk
+    # would keep a disabled-in-inventory timer firing until someone noticed.
+    - name: Stop apt index refresh timer when disabled
+      ansible.builtin.systemd:
+        name: "{{ os_apt_maintenance_refresh_service_name }}.timer"
+        enabled: false
+        state: stopped
+      failed_when: false
+      when: not os_apt_maintenance_refresh_enabled | bool
+
+    - name: Remove apt index refresh units when disabled
+      ansible.builtin.file:
+        path: "/etc/systemd/system/{{ os_apt_maintenance_refresh_service_name }}.{{ item }}"
+        state: absent
+      loop:
+        - service
+        - timer
+      notify: reload systemd
+      when: not os_apt_maintenance_refresh_enabled | bool
 
     - name: Ensure apt maintenance endpoint is enabled and running
       ansible.builtin.systemd:
