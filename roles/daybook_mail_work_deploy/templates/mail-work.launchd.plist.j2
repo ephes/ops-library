@@ -25,6 +25,8 @@
     <string>--host-tmpdir</string><string>{{ daybook_mail_work_tmux_tmpdir | e }}</string>
     <string>--attempts-root</string><string>{{ daybook_mail_work_attempts_root | e }}</string>
     <string>--run-timeout</string><string>{{ daybook_mail_work_run_timeout_seconds | int }}</string>
+    <string>--session-tmux</string><string>{{ daybook_mail_work_tmux | e }}</string>
+    <string>--claude</string><string>{{ daybook_mail_work_claude | e }}</string>
   </array>
   <key>WorkingDirectory</key><string>{{ daybook_mail_work_cwd | e }}</string>
   <key>LimitLoadToSessionType</key><string>Aqua</string>

@@ -36,6 +36,10 @@ daybook_mail_work_socket: daybook-host
 daybook_mail_work_session: host
 daybook_mail_work_tmux: /opt/homebrew/bin/tmux
 daybook_mail_work_tmux_tmpdir: /private/tmp
+# The session adapter defaults both of these to bare PATH lookups. A session
+# inside the host inherits whatever environment the GUI had when the server
+# started, so a scheduled run names them instead.
+daybook_mail_work_claude: /opt/homebrew/bin/claude
 daybook_mail_work_application: Ghostty
 daybook_mail_work_open: /usr/bin/open
 

@@ -61,6 +61,13 @@ class MailWorkRoleTests(unittest.TestCase):
         self.assertEqual(plist["EnvironmentVariables"]["TMUX_TMPDIR"], "/private/tmp")
         self.assertIn("--host-tmpdir", plist["ProgramArguments"])
 
+    def test_the_worker_names_the_executables_its_session_will_use(self):
+        """A session in the host inherits the GUI environment, not the agent's."""
+        plist, _ = self.render("mail-work.launchd.plist.j2")
+        argv = plist["ProgramArguments"]
+        for flag in ("--session-tmux", "--claude"):
+            self.assertTrue(argv[argv.index(flag) + 1].startswith("/"), flag)
+
     def test_the_worker_runs_on_an_interval_in_a_gui_session(self):
         plist, _ = self.render("mail-work.launchd.plist.j2")
         self.assertEqual(plist["StartInterval"], 300)
