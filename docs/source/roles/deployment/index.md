@@ -8,6 +8,7 @@ Roles for deploying and configuring services.
 fastdeploy_deploy
 fastdeploy_self_deploy
 daybook_sessions_deploy
+daybook_mail_work_deploy
 daybook_photos_offload_deploy
 daybook_voice_memo_inbox_deploy
 daybook_voice_memo_work_deploy

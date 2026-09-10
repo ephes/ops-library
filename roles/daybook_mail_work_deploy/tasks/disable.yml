@@ -1,0 +1,41 @@
+---
+# Disable and boot out exactly one label, leaving the other agent, the work
+# database, the watermark and the logs untouched.
+- name: disable | Read disabled Daybook mail work GUI domain
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "gui/{{ daybook_mail_work_uid.stdout | trim }}"]
+  register: daybook_mail_work_domain
+  changed_when: false
+  failed_when: daybook_mail_work_domain.rc not in [0, 112]
+  no_log: true
+
+- name: disable | Read disabled Daybook mail work loaded state
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "gui/{{ daybook_mail_work_uid.stdout | trim }}/{{ daybook_mail_work_agent.label }}"]
+  register: daybook_mail_work_loaded
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: daybook_mail_work_domain.rc == 0
+
+- name: disable | Disable Daybook mail work LaunchAgent
+  ansible.builtin.command:
+    argv: [/bin/launchctl, disable, "gui/{{ daybook_mail_work_uid.stdout | trim }}/{{ daybook_mail_work_agent.label }}"]
+  changed_when: false
+
+- name: disable | Boot out disabled Daybook mail work LaunchAgent
+  ansible.builtin.command:
+    argv: [/bin/launchctl, bootout, "gui/{{ daybook_mail_work_uid.stdout | trim }}/{{ daybook_mail_work_agent.label }}"]
+  when:
+    - daybook_mail_work_domain.rc == 0
+    - daybook_mail_work_loaded.rc | default(1) == 0
+  changed_when: true
+
+- name: disable | Verify disabled Daybook mail work LaunchAgent is unloaded
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "gui/{{ daybook_mail_work_uid.stdout | trim }}/{{ daybook_mail_work_agent.label }}"]
+  register: daybook_mail_work_verified
+  changed_when: false
+  failed_when: daybook_mail_work_verified.rc == 0
+  no_log: true
+  when: daybook_mail_work_domain.rc == 0

@@ -1,0 +1,155 @@
+---
+- name: Validate Daybook mail work deployment inputs
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == 'Darwin'
+      - daybook_mail_work_host_enabled | type_debug == 'bool'
+      - daybook_mail_work_worker_enabled | type_debug == 'bool'
+      - daybook_mail_work_service_user is match('^[a-z_][a-z0-9_-]*$')
+      - daybook_mail_work_service_user not in ['root', 'CHANGEME']
+      - daybook_mail_work_service_home == '/Users/' ~ daybook_mail_work_service_user
+      - daybook_mail_work_service_group == 'staff'
+      - daybook_mail_work_launchd_label == 'de.wersdoerfer.daybook.mail-work'
+      - daybook_mail_work_host_launchd_label == 'de.wersdoerfer.daybook.mail-work-host'
+    fail_msg: Daybook mail work requires the exact macOS owner and labels.
+
+- name: Require a capability host whenever the worker runs
+  ansible.builtin.assert:
+    that:
+      - daybook_mail_work_host_enabled | bool
+    fail_msg: >-
+      daybook_mail_work_worker_enabled requires daybook_mail_work_host_enabled.
+      The worker cannot reach Mail or the bookkeeping applications on its own;
+      without a host every run would exit non-zero reporting capability_host_absent.
+  when: daybook_mail_work_worker_enabled | bool
+
+- name: Resolve Daybook mail work owner uid
+  ansible.builtin.command:
+    argv: [/usr/bin/id, -u, "{{ daybook_mail_work_service_user }}"]
+  register: daybook_mail_work_uid
+  changed_when: false
+  check_mode: false
+
+- name: Apply disabled Daybook mail work state per label
+  ansible.builtin.include_tasks: disable.yml
+  loop:
+    - label: "{{ daybook_mail_work_launchd_label }}"
+      enabled: "{{ daybook_mail_work_worker_enabled | bool }}"
+    - label: "{{ daybook_mail_work_host_launchd_label }}"
+      enabled: "{{ daybook_mail_work_host_enabled | bool }}"
+  loop_control:
+    loop_var: daybook_mail_work_agent
+    label: "{{ daybook_mail_work_agent.label }}"
+  when: not daybook_mail_work_agent.enabled
+
+- name: Stop after applying fully disabled Daybook mail work state
+  ansible.builtin.meta: end_role
+  when:
+    - not daybook_mail_work_host_enabled | bool
+    - not daybook_mail_work_worker_enabled | bool
+
+- name: Validate enabled Daybook mail work configuration
+  ansible.builtin.assert:
+    that:
+      # Not pinned to one layout: studio runs a dedicated work-runtime venv,
+      # atlas runs the CLI out of its repository checkout. Absolute, owner-owned
+      # and existing is what actually matters, and the stat check below covers
+      # the rest.
+      - daybook_mail_work_cli is match('^/')
+      - daybook_mail_work_cli.endswith('/bin/daybook')
+      - daybook_mail_work_runtime_dir == daybook_mail_work_service_home ~ '/.local/share/daybook/work-runtime/mail'
+      - daybook_mail_work_state_path == daybook_mail_work_runtime_dir ~ '/work.sqlite3'
+      - daybook_mail_work_mail_state_path == daybook_mail_work_runtime_dir ~ '/mail.sqlite3'
+      - daybook_mail_work_attempts_root == daybook_mail_work_runtime_dir ~ '/attempts'
+      - daybook_mail_work_lock_path == daybook_mail_work_runtime_dir ~ '/host.lock'
+      - daybook_mail_work_provider == 'claude'
+      - daybook_mail_work_assignment_path is match('^/') and daybook_mail_work_assignment_path != 'CHANGEME'
+      - daybook_mail_work_cwd is match('^/') and daybook_mail_work_cwd != 'CHANGEME'
+      - daybook_mail_work_tmux is match('^/')
+      - daybook_mail_work_open == '/usr/bin/open'
+      - daybook_mail_work_socket is match('^[A-Za-z0-9._-]+$')
+      - daybook_mail_work_session is match('^[A-Za-z0-9._-]+$')
+      - daybook_mail_work_interval_seconds | int >= 60
+      - daybook_mail_work_host_interval_seconds | int >= 900
+      - daybook_mail_work_run_timeout_seconds | int >= 60
+      - daybook_mail_work_plist_path == daybook_mail_work_service_home ~ '/Library/LaunchAgents/' ~ daybook_mail_work_launchd_label ~ '.plist'
+      - daybook_mail_work_host_plist_path == daybook_mail_work_service_home ~ '/Library/LaunchAgents/' ~ daybook_mail_work_host_launchd_label ~ '.plist'
+    fail_msg: >-
+      Daybook mail work requires fixed owner-private runtime paths, an absolute
+      assignment and working directory, and the Claude provider.
+
+- name: Inspect existing Daybook mail work prerequisites
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - "{{ daybook_mail_work_cli }}"
+    - "{{ daybook_mail_work_assignment_path }}"
+    - "{{ daybook_mail_work_cwd }}"
+    - "{{ daybook_mail_work_tmux }}"
+  register: daybook_mail_work_prerequisites
+
+- name: Require private owner runtime prerequisites
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.pw_name in [daybook_mail_work_service_user, 'root']
+      - not (item.stat.woth | default(true))
+    fail_msg: "Missing or publicly writable prerequisite: {{ item.item }}"
+  loop: "{{ daybook_mail_work_prerequisites.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not ansible_check_mode
+
+- name: Verify installed Daybook can route work through a capability host
+  ansible.builtin.command:
+    chdir: "{{ daybook_mail_work_service_home }}"
+    argv: ["{{ daybook_mail_work_cli }}", work, mail, --help]
+  become: true
+  become_user: "{{ daybook_mail_work_service_user }}"
+  register: daybook_mail_work_help
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Require capability-host routing support
+  ansible.builtin.assert:
+    that:
+      - "'--via-host' in daybook_mail_work_help.stdout"
+      - "'--reseed' in daybook_mail_work_help.stdout"
+    fail_msg: The installed Daybook predates capability-host routing.
+  when: not ansible_check_mode
+
+- name: Create owner-private Daybook mail work runtime
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ daybook_mail_work_service_user }}"
+    group: "{{ daybook_mail_work_service_group }}"
+    mode: '0700'
+  loop:
+    - "{{ daybook_mail_work_runtime_dir }}"
+    - "{{ daybook_mail_work_attempts_root }}"
+
+- name: Create owner LaunchAgents directory
+  ansible.builtin.file:
+    path: "{{ daybook_mail_work_plist_path | dirname }}"
+    state: directory
+    owner: "{{ daybook_mail_work_service_user }}"
+    group: "{{ daybook_mail_work_service_group }}"
+    mode: '0755'
+
+- name: Install enabled Daybook mail work LaunchAgents
+  ansible.builtin.include_tasks: enable.yml
+  loop:
+    - label: "{{ daybook_mail_work_host_launchd_label }}"
+      template: mail-work-host.launchd.plist.j2
+      path: "{{ daybook_mail_work_host_plist_path }}"
+      enabled: "{{ daybook_mail_work_host_enabled | bool }}"
+    - label: "{{ daybook_mail_work_launchd_label }}"
+      template: mail-work.launchd.plist.j2
+      path: "{{ daybook_mail_work_plist_path }}"
+      enabled: "{{ daybook_mail_work_worker_enabled | bool }}"
+  loop_control:
+    loop_var: daybook_mail_work_agent
+    label: "{{ daybook_mail_work_agent.label }}"
+  when: daybook_mail_work_agent.enabled

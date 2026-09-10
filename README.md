@@ -127,6 +127,7 @@ consumer repos depend on.
 | Service deployment | [`daybook_voice_memo_attention_deploy`](roles/daybook_voice_memo_attention_deploy/README.md) | Install the disabled persistent macOS attention supervisor without starting it. |
 | Service deployment | [`daybook_voice_memo_attention_notifier_deploy`](roles/daybook_voice_memo_attention_notifier_deploy/README.md) | Install recipient-pinned outbound notification transport with a dedicated forced-command key. |
 | Service deployment | [`daybook_voice_memo_attention_reader_deploy`](roles/daybook_voice_memo_attention_reader_deploy/README.md) | Provision a dedicated exact-prefix MinIO list/read identity for voice-memo attention. |
+| Service deployment | [`daybook_mail_work_deploy`](roles/daybook_mail_work_deploy/README.md) | Schedule Daybook mail work through a GUI-attributed tmux capability host, because a LaunchAgent reaches neither Mail nor the bookkeeping apps. |
 | Service deployment | [`daybook_voice_memo_work_deploy`](roles/daybook_voice_memo_work_deploy/README.md) | Schedule capable work for newly imported voice memos using the owner's pinned runtime. |
 | Service deployment | [`daybook_work_source_access_deploy`](roles/daybook_work_source_access_deploy/README.md) | Provision the dedicated source reader used by capable Voice Memo work. |
 | Service deployment | [`fastdeploy_deploy`](roles/fastdeploy_deploy/README.md) | Deploy the FastDeploy platform (database, uv, frontend build, systemd, Traefik). |
