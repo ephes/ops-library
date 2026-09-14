@@ -38,7 +38,7 @@ traefik_letsencrypt_email: "admin@example.com"
 
 ```yaml
 # Traefik version to install
-traefik_version: "3.3.5"
+traefik_version: "3.7.13"
 
 # Platform configuration (auto-detected from ansible facts)
 # Only override if auto-detection fails or for cross-platform deployment
@@ -133,9 +133,9 @@ None.
   roles:
     - role: local.ops_library.traefik_deploy
       vars:
-        traefik_version: "3.3.5"
+        traefik_version: "3.7.13"
         traefik_letsencrypt_email: "admin@example.com"
-        traefik_checksum: "sha256:1234567890abcdef..."
+        traefik_checksum: "sha256:52cd039a34258dd61c617a95d69252bc6bcae27c520f338186c31c7fef8f6394"
 ```
 
 ### ARM64 Architecture
@@ -167,9 +167,9 @@ Simply change the `traefik_version` variable:
   roles:
     - role: local.ops_library.traefik_deploy
       vars:
-        traefik_version: "3.4.0"  # Role will detect version mismatch and upgrade
+        traefik_version: "3.8.0"  # Example future release; verify before use
         traefik_letsencrypt_email: "admin@example.com"
-        traefik_checksum: "sha256:newversion..."
+        traefik_checksum: "sha256:<verified-linux-amd64-archive-digest>"
 ```
 
 ## Service Configuration
@@ -250,10 +250,11 @@ Override `traefik_os` and `traefik_arch` only if auto-detection fails.
 
 **Always use checksum validation in production:**
 
-1. Visit <https://github.com/traefik/traefik/releases/tag/v3.3.5>
-2. Download `traefik_v3.3.5_checksums.txt`
-3. Find the SHA256 hash for your platform
-4. Set in playbook: `traefik_checksum: "sha256:abc123..."`
+1. Open the [GitHub release](https://github.com/traefik/traefik/releases) for the
+   selected `traefik_version`.
+2. Download that release's `traefik_v<version>_checksums.txt` manifest.
+3. Find the SHA256 hash for the exact OS and architecture archive being deployed.
+4. Set that value as `traefik_checksum: "sha256:<verified-archive-digest>"`.
 
 ### Dashboard Security
 

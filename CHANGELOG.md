@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Default Traefik deployments to 3.7.13, addressing upstream advisories
+  [GHSA-qqjf-53cj-pwvv](https://github.com/traefik/traefik/security/advisories/GHSA-qqjf-53cj-pwvv),
+  [GHSA-f52w-8j3h-j724](https://github.com/traefik/traefik/security/advisories/GHSA-f52w-8j3h-j724),
+  [GHSA-v67p-phpq-fc8x](https://github.com/traefik/traefik/security/advisories/GHSA-v67p-phpq-fc8x),
+  [GHSA-w4v4-9rw7-5326](https://github.com/traefik/traefik/security/advisories/GHSA-w4v4-9rw7-5326),
+  and [GHSA-8fcf-v89g-xpg6](https://github.com/traefik/traefik/security/advisories/GHSA-8fcf-v89g-xpg6).
+
 ### Fixed
 
 - Prevent explicitly retired legacy Takahe routes from bypassing the managed
