@@ -45,6 +45,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and never writes `state.json`. Disable with
   `os_apt_maintenance_refresh_enabled: false`.
 
+## [2.21.1] - 2026-09-14
+
+### Fixed
+
+- Declare the managed OpenClaw OpsGate tool in the plugin manifest so OpenClaw
+  2026.9.4 registers it instead of reporting a missing `contracts.tools` error.
+
 ## [2.21.0] - 2026-09-08
 
 ### Added

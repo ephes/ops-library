@@ -651,6 +651,13 @@ Safety guarantees:
 
 Operational note:
 
+- The plugin manifest declares `openclaw_opsgate_tool_name` in `contracts.tools`,
+  as required by OpenClaw 2026.9.4. After an upgrade, check runtime plugin
+  inspection for the registered tool and an empty diagnostics list; a plugin
+  can report `status: loaded` while tool registration failed.
+  The manifest and plugin registration use the same configured tool name.
+  This field is compatible with older pins: the 2026.9.2 manifest loader already
+  normalizes contracts, while the 2026.3.8 loader ignores unknown manifest fields.
 - Both `openclaw agent --message '/opsgate ...' --json` and long-lived Telegram chats use the same deterministic local plugin path.
 - When the managed slash-skill set changes, the role automatically invalidates cached skill snapshots and rotates existing session bindings so pre-existing Telegram sessions pick up `/opsgate` and other managed slash skills on the next message.
 
