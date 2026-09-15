@@ -469,6 +469,8 @@ hand-tuned configuration, apply just these tasks:
 
 ## Guarded updates of existing installations
 
-Use the separate [transaction entry](https://github.com/ephes/ops-library/blob/main/roles/traefik_deploy/TRANSACTIONS.md) for binary-only updates and
-reviewed header-alias changes. The full deploy, restore and remove workflows refuse
+Use the separate [transaction entry](https://github.com/ephes/ops-library/blob/main/roles/traefik_deploy/TRANSACTIONS.md) for binary-only updates,
+reviewed header-alias changes, and the narrowly constrained repair that adds a
+loopback-only `127.0.0.1:8080` metrics entrypoint to an already managed static
+configuration. The full deploy, restore and remove workflows refuse
 transaction-managed hosts until they share its locks and recovery records.

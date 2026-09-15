@@ -1,0 +1,17 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Deploy an authoritative BIND primary or secondary server
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+        - trixie
+  galaxy_tags:
+    - bind
+    - dns
+    - authoritative
+
+dependencies: []

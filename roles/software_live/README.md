@@ -5,6 +5,8 @@ for Debian/Ubuntu systemd hosts. The same collector can run over SSH without
 installation. It observes Traefik's configured executable and the actual MainPID
 executable, compares hashes and versions with desired state and upstream, and
 lists security upgrades available in the local APT indexes, including held updates.
+It also observes the host OS lifecycle and PostgreSQL clusters, server version,
+current minor release and end-of-life date.
 
 The role never runs apt update/upgrade, changes Traefik, or restarts applications.
 The deployment installs Python/APT bindings and endpoint dependencies if missing.
@@ -18,6 +20,15 @@ The deployment installs Python/APT bindings and endpoint dependencies if missing
   software_live_auth_password: "{{ vault_metrics_password }}"
   software_live_policy:
     host: example
+    os:
+      expected_id: ubuntu
+      product: ubuntu
+      desired_cycle: '24.04'
+    postgresql:
+      expected: true
+      desired_major: '17'
+      cluster: main
+      port: 5432
     traefik:
       expected: true
       unit: traefik.service
@@ -29,6 +40,12 @@ The deployment installs Python/APT bindings and endpoint dependencies if missing
 Set `expected: false` for hosts without Traefik. An unexpected installed/running
 proxy is reported rather than ignored. A null desired version is reported as
 unassigned policy, never as a match. No arbitrary service commands are supported.
+Set `postgresql.expected: false` where PostgreSQL must be absent. On database
+hosts, every additional cluster—including a stopped cluster with missing
+binaries—is reported as unexpected. The server version comes from the verified
+running postmaster executable referenced by its cluster PID file, so the hardened
+collector needs no database login or credentials. OS identity comes from
+`/etc/os-release`.
 See `defaults/main.yml` for all deployment defaults. The endpoint binds only to
 IPv4 loopback or a Tailscale address; port 9110 and path
 `/.well-known/software-live` are defaults. Authentication uses an htpasswd file,
@@ -45,7 +62,11 @@ The endpoint computes freshness from the observation timestamp on every request.
 Stale/malformed/missing evidence fails closed. `collect` returns success for a
 valid report even when software needs attention; consumers inspect `summary`.
 
-Version support is intentionally limited to Traefik stable numeric releases.
+Traefik checks support stable numeric releases. OS and PostgreSQL lifecycle data
+comes from endoflife.date and is cached for one day. A lifecycle lookup failure
+warns without replacing the last successful cache. OS desired-cycle drift,
+standard-support expiry and EOL are distinct issues. PostgreSQL desired-major
+drift, an outdated minor release, EOL and additional clusters are distinct issues.
 This is release drift detection, not a complete CVE/applicability scan. In
 particular, a patched version alone does not prove configuration mitigations.
 
@@ -64,18 +85,21 @@ systemctl status software-live-collector.timer software-live-endpoint.service
 ```
 
 `summary.observation_ok` and request-time `summary.fresh` are critical checks.
-`summary.traefik_ok`, `summary.security_updates_ok` and
-`summary.apt_indexes_fresh` are warning checks. Nyxmon's existing `json-metrics`
-executor can consume them. Optional `tasks_from: nyxmon` upserts only the supplied
-checks using `software_live_nyxmon_checks`, preserving unrelated checks.
+`summary.os_ok`, `summary.postgresql_ok`, `summary.traefik_ok`,
+`summary.security_updates_ok` and `summary.apt_indexes_fresh` are warning checks.
+Nyxmon's existing `json-metrics` executor can consume them. Optional
+`tasks_from: nyxmon` upserts only the supplied checks using
+`software_live_nyxmon_checks`, preserving unrelated checks. Schema version 2
+adds the required OS and PostgreSQL observations and summary fields.
 
 Use `software_live_remove` to stop/remove this monitoring component. State is
 retained by default. Removal does not alter Traefik or package maintenance.
 
 ## Validation
 
-`just test-software-live` exercises version/hash drift, PID races, lookup failures,
-APT security/hold classification, freshness, HTTP authentication and check upserts.
+`just test-software-live` exercises version/hash drift, OS/PostgreSQL lifecycle,
+additional PostgreSQL clusters, PID races, lookup failures, APT security/hold
+classification, freshness, HTTP authentication and check upserts.
 Use synthetic identifiers in public tests; operator inventory belongs downstream.
 
 Configuration, data and program paths must be dedicated directory names containing

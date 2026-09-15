@@ -3,6 +3,8 @@
   ansible.builtin.assert:
     that:
       - software_live_policy.host is defined
+      - software_live_policy.os is defined
+      - software_live_policy.postgresql is defined
       - software_live_policy.traefik is defined
       - software_live_auth_user != 'CHANGE_ME'
       - software_live_auth_user is match('^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$')

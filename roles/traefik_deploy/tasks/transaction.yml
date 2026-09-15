@@ -3,7 +3,7 @@
   ansible.builtin.assert:
     that:
       - traefik_transaction_request is mapping
-      - traefik_transaction_request.action in ['inspect', 'enroll', 'binary', 'alias', 'resume']
+      - traefik_transaction_request.action in ['inspect', 'enroll', 'binary', 'alias', 'metrics_bind', 'resume']
       - traefik_transaction_result_path | length > 0
       - not ansible_check_mode
     fail_msg: Use the paired controller command; check mode cannot prove a transaction.

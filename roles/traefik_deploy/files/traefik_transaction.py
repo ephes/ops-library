@@ -307,6 +307,45 @@ def validate_alias(before: bytes, after: bytes, approved: dict[str, str]) -> Non
     require(new == expected, "alias candidate changes unrelated configuration")
 
 
+def validate_metrics_bind(
+    before: bytes, after: bytes, approved: dict[str, str]
+) -> None:
+    """Allow only the loopback metrics entrypoint repair."""
+    old, new = tomllib.loads(before.decode()), tomllib.loads(after.decode())
+    entries = old.get("entryPoints")
+    if not isinstance(entries, dict) or not entries:
+        raise Refused("entrypoints are required")
+    require("traefik" not in entries, "metrics entrypoint already exists")
+    require(
+        set(approved) == set(entries) | {"traefik"},
+        "metrics binding policy must cover every resulting entrypoint",
+    )
+    for name, setting in approved.items():
+        require(setting == "delete", "only the approved delete strategy is supported")
+        if name != "traefik":
+            require(
+                entries[name].get("http", {}).get("aliasHeadersStrategy")
+                == "delete",
+                "existing entrypoint alias policy is incomplete",
+            )
+    metrics = old.get("metrics")
+    if not isinstance(metrics, dict):
+        raise Refused("Prometheus metrics must already be enabled")
+    prometheus = metrics.get("prometheus")
+    if not isinstance(prometheus, dict) or "entryPoint" in prometheus:
+        raise Refused("Prometheus must use the implicit entrypoint before repair")
+    expected = copy.deepcopy(old)
+    expected["entryPoints"]["traefik"] = {
+        "address": "127.0.0.1:8080",
+        "http": {"aliasHeadersStrategy": "delete"},
+    }
+    expected["metrics"]["prometheus"]["entryPoint"] = "traefik"
+    require(
+        new == expected,
+        "metrics binding candidate changes unrelated static configuration",
+    )
+
+
 def candidate_binary(
     archive: Path, checksum: str, destination: Path, target: str
 ) -> Path:
@@ -405,7 +444,9 @@ def execute(request: dict[str, Any]) -> dict[str, Any]:
     policy, action = request["policy"], request["action"]
     validate_policy(policy)
     require(
-        action in ["inspect", "enroll", "binary", "alias", "resume"], "unknown action"
+        action
+        in ["inspect", "enroll", "binary", "alias", "metrics_bind", "resume"],
+        "unknown action",
     )
     state_path = STATE_ROOT / "state.json"
     if action == "inspect":
@@ -513,7 +554,10 @@ def execute(request: dict[str, Any]) -> dict[str, Any]:
                 "alias operation requires approved executable hash",
             )
             after = base64.b64decode(request["candidate_config_base64"], validate=True)
-            validate_alias(old_config, after, policy["alias_policy"])
+            if action == "alias":
+                validate_alias(old_config, after, policy["alias_policy"])
+            else:
+                validate_metrics_bind(old_config, after, policy["alias_policy"])
             candidate = directory / "candidate.toml"
             atomic(candidate, after)
             expected["config_sha256"] = digest(candidate)

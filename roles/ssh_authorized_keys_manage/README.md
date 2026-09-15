@@ -25,6 +25,7 @@ This role is intended for cases where the playbook owns the complete `authorized
 
 - The target user, group, and home directory must already exist.
 - Run the role with privileges that can write the target account's home directory.
+- Debian 12 and 13 are declared supported platforms.
 
 ## Role Variables
 

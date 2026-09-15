@@ -9,6 +9,16 @@ bind_packages:
 bind_service_name: named
 bind_config_dir: /etc/bind
 bind_working_dir: /var/cache/bind
+# Debian 13 replaced named.conf.default-zones with named.conf.root-hints. Keep
+# this overridable for derivative distributions while selecting the packaged
+# include that exists on supported Debian releases.
+bind_builtin_zones_file: >-
+  {{ bind_config_dir }}/{{
+    'named.conf.root-hints'
+    if ansible_distribution == 'Debian'
+    and (ansible_distribution_major_version | int) >= 13
+    else 'named.conf.default-zones'
+  }}
 bind_zone_files_dir: "{{ (playbook_dir | realpath) | regex_replace('/playbooks.*$', '/files/bind') }}"
 
 bind_config_owner: root

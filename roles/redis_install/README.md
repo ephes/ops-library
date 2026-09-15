@@ -15,7 +15,8 @@ An ops-library role for installing and configuring Redis with predictable defaul
 ## Requirements
 
 - Ansible `2.15` or newer
-- Target OS: Debian 11+/Ubuntu 20.04+ (systemd)
+- Target OS: Debian 11–13/Ubuntu 20.04+ (systemd). The package, service, bind,
+  and idempotence checks run against Debian 13 in Molecule.
 - Redis `3.2`+ (for multiple `bind` directives)
 
 ## Variables

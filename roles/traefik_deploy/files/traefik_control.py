@@ -137,7 +137,7 @@ def control(
             return code
         if action == "enroll" and previous is not None:
             raise ValueError("enrollment cannot overwrite a controller record")
-        if action in ["binary", "alias"] and (
+        if action in ["binary", "alias", "metrics_bind"] and (
             not previous or previous.get("phase") != "clear"
         ):
             raise ValueError(
@@ -163,14 +163,14 @@ def control(
                 )
             request["controller_state"] = inspected["state"]
         required = ["evidence"]
-        if action in ["binary", "alias"]:
+        if action in ["binary", "alias", "metrics_bind"]:
             required += [
                 "compatibility",
                 "baseline_probe",
                 "acceptance_probe",
                 "cleanup_probe",
             ]
-        if action == "alias":
+        if action in ["alias", "metrics_bind"]:
             required += ["candidate_config_base64", "approved_binary_sha256"]
         if action == "resume":
             required += ["baseline_probe", "recovery_review_reference"]
@@ -227,7 +227,8 @@ def main() -> int:
         "--journal", type=Path, default=Path.home() / ".local/state/ops-control/traefik"
     )
     parser.add_argument(
-        "action", choices=["inspect", "enroll", "binary", "alias", "resume"]
+        "action",
+        choices=["inspect", "enroll", "binary", "alias", "metrics_bind", "resume"],
     )
     parser.add_argument("host")
     parser.add_argument("request", type=Path, nargs="?")

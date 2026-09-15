@@ -33,6 +33,17 @@ live = load("software_live")
 checks = load("nyxmon_checks")
 POLICY = {
     "host": "example",
+    "os": {
+        "expected_id": "ubuntu",
+        "desired_cycle": "24.04",
+        "product": "ubuntu",
+    },
+    "postgresql": {
+        "expected": True,
+        "desired_major": "17",
+        "cluster": "main",
+        "port": 5432,
+    },
     "traefik": {
         "expected": True,
         "unit": "traefik.service",
@@ -157,6 +168,17 @@ class CollectorTests(unittest.TestCase):
         with (
             patch.object(live, "upstream", return_value={"status": "unknown"}),
             patch.object(live, "observe_traefik", return_value=observed),
+            patch.object(live, "lifecycle_upstream", return_value={"status": "ok"}),
+            patch.object(
+                live,
+                "observe_os",
+                return_value={"observed": True, "status": "ok"},
+            ),
+            patch.object(
+                live,
+                "observe_postgresql",
+                return_value={"observed": True, "status": "ok"},
+            ),
             patch.object(
                 live,
                 "observe_apt",
@@ -170,6 +192,80 @@ class CollectorTests(unittest.TestCase):
             summary = live.collect(POLICY)["summary"]
         self.assertTrue(summary["observation_ok"])
         self.assertFalse(summary["traefik_ok"])
+
+    def test_os_lifecycle_reports_desired_drift_and_lts_phase(self):
+        latest = {
+            "status": "ok",
+            "cycles": [
+                {"cycle": "13", "support": "2028-08-09", "eol": "2030-06-30"},
+                {
+                    "cycle": "12",
+                    "latest": "12.15",
+                    "support": "2026-07-11",
+                    "eol": "2028-06-30",
+                },
+            ],
+        }
+        release = {
+            "ID": "debian",
+            "VERSION_ID": "12",
+            "VERSION_CODENAME": "bookworm",
+            "PRETTY_NAME": "Debian GNU/Linux 12 (bookworm)",
+        }
+        with patch.object(
+            live.platform, "freedesktop_os_release", return_value=release
+        ):
+            result = live.observe_os(
+                {"expected_id": "debian", "desired_cycle": "13"},
+                latest,
+                1_789_344_000,
+            )
+        self.assertEqual(result["status"], "warning")
+        self.assertTrue(result["observed"])
+        self.assertIn("desired_cycle_drift", result["issues"])
+        self.assertIn("standard_support_ended", result["issues"])
+        self.assertEqual(result["lifecycle"]["eol"], "2028-06-30")
+
+    def test_postgresql_minor_and_extra_clusters_are_visible(self):
+        main = {
+            "major": "17",
+            "name": "main",
+            "port": 5432,
+            "status": "online",
+            "owner": "postgres",
+        }
+        old = {
+            "major": "16",
+            "name": "main",
+            "port": 5433,
+            "status": "down,binaries_missing",
+            "owner": "postgres",
+        }
+        latest = {
+            "status": "ok",
+            "cycles": [
+                {"cycle": "18", "latest": "18.6", "eol": "2030-11-14"},
+                {"cycle": "17", "latest": "17.11", "eol": "2029-11-08"},
+            ],
+        }
+        with (
+            patch.object(live, "postgres_clusters", return_value=[main, old]),
+            patch.object(live, "postgresql_server_version", return_value="17.10"),
+        ):
+            result = live.observe_postgresql(
+                POLICY["postgresql"], latest, 1_789_344_000
+            )
+        self.assertEqual(result["status"], "warning")
+        self.assertIn("outdated_minor", result["issues"])
+        self.assertIn("unexpected_cluster", result["issues"])
+
+    def test_expected_postgresql_absence_is_healthy(self):
+        with patch.object(live, "postgres_clusters", return_value=[]):
+            result = live.observe_postgresql(
+                {"expected": False}, {"status": "not_applicable"}, 1
+            )
+        self.assertEqual(result["status"], "ok")
+        self.assertTrue(result["observed"])
 
     def test_bounded_pid_retry(self):
         self.assertEqual(self.proxy([BINARY] * 4, [11, 12, 12, 12])["main_pid"], 12)
@@ -243,6 +339,54 @@ class CollectorTests(unittest.TestCase):
                 response.read.return_value = b'{"tag_name":"garbage"}'
                 self.assertEqual(live.upstream(path, 100000)["status"], "unknown")
 
+    def test_lifecycle_daily_cache_and_failed_refresh_preserves_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / "upstream.json"
+            response = Mock()
+            response.__enter__ = Mock(return_value=response)
+            response.__exit__ = Mock(return_value=False)
+            response.read.return_value = (
+                b'[{"cycle":"17","latest":"17.11","eol":"2029-11-08"}]'
+            )
+            with patch.object(
+                live.urllib.request, "urlopen", return_value=response
+            ) as fetch:
+                first = live.lifecycle_upstream("postgresql", base, 100)
+                cached = live.lifecycle_upstream("postgresql", base, 101)
+                self.assertEqual(first["cycles"][0]["latest"], "17.11")
+                self.assertTrue(cached["cached"])
+                self.assertEqual(fetch.call_count, 1)
+            cache = Path(directory) / "upstream-postgresql.json"
+            previous = json.loads(cache.read_text())
+            with patch.object(
+                live.urllib.request, "urlopen", side_effect=OSError("offline")
+            ):
+                failed = live.lifecycle_upstream("postgresql", base, 100000)
+            self.assertEqual(failed["status"], "unknown")
+            self.assertEqual(failed["last_success"], previous)
+            self.assertEqual(json.loads(cache.read_text()), previous)
+
+    def test_postgresql_cluster_parser_omits_data_paths(self):
+        output = (
+            "17 main 5432 online postgres /var/lib/postgresql/17/main "
+            "/var/log/postgresql/postgresql-17-main.log\n"
+            "16 old 5433 down,binaries_missing postgres "
+            "/var/lib/postgresql/16/old /var/log/postgresql/postgresql-16-old.log"
+        )
+        with patch.object(live, "command", return_value=output):
+            clusters = live.postgres_clusters()
+        self.assertEqual(clusters[0]["major"], "17")
+        self.assertEqual(clusters[1]["status"], "down,binaries_missing")
+        self.assertNotIn("data_directory", clusters[0])
+
+    def test_postgresql_cluster_parser_rejects_unsafe_identity(self):
+        output = "17 ../main 5432 online postgres /var/lib/postgresql/17/main"
+        with (
+            patch.object(live, "command", return_value=output),
+            self.assertRaisesRegex(ValueError, "unsafe"),
+        ):
+            live.postgres_clusters()
+
     def test_atomic_state_permissions_and_failure_preserves_previous(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "state.json"
@@ -255,10 +399,12 @@ class CollectorTests(unittest.TestCase):
 
     def test_cached_timestamp_is_used_not_file_touch(self):
         state = {
-            "schema_version": 1,
+            "schema_version": 2,
             "generated_at_epoch": 1,
             "summary": {
                 "observation_ok": True,
+                "os_ok": True,
+                "postgresql_ok": True,
                 "traefik_ok": True,
                 "security_updates_ok": True,
                 "apt_indexes_fresh": True,
@@ -279,7 +425,7 @@ class CollectorTests(unittest.TestCase):
             {**state, "generated_at_epoch": float("nan")},
             {**state, "summary": {}},
         ]:
-            with self.assertRaises((ValueError, KeyError)):
+            with self.assertRaises((TypeError, ValueError, KeyError)):
                 live.with_freshness(bad)
 
     def test_security_packages_include_held_and_pinned_versions(self):
@@ -332,10 +478,12 @@ class EndpointTests(unittest.TestCase):
             state.write_text(
                 json.dumps(
                     {
-                        "schema_version": 1,
+                        "schema_version": 2,
                         "generated_at_epoch": 1,
                         "summary": {
                             "observation_ok": True,
+                            "os_ok": True,
+                            "postgresql_ok": True,
                             "traefik_ok": True,
                             "security_updates_ok": True,
                             "apt_indexes_fresh": True,

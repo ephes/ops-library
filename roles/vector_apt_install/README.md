@@ -31,6 +31,8 @@ manage `/etc/vector/config.d`, service environment, or any pipeline fragments.
 
 ## Notes
 
-- The role assumes `apt`-based hosts.
+- The role assumes `apt`-based hosts and declares tested Debian 12/13 support.
+- Vector's `stable vector-0` repository is suite-independent; consumers must
+  still verify the desired candidate for their release before an OS upgrade.
 - Downstream roles are still responsible for validating Vector configuration and
   starting `vector.service`.

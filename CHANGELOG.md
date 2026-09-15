@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Add a guarded `metrics_bind` Traefik transaction that can only replace an
+  implicit public Prometheus listener with an explicit loopback-only
+  `127.0.0.1:8080` entrypoint while preserving every unrelated static setting,
+  the binary, dynamic routes, unit identity, rollback, and recovery interlocks.
+
 - Default Traefik deployments to 3.7.13, addressing upstream advisories
   [GHSA-qqjf-53cj-pwvv](https://github.com/traefik/traefik/security/advisories/GHSA-qqjf-53cj-pwvv),
   [GHSA-f52w-8j3h-j724](https://github.com/traefik/traefik/security/advisories/GHSA-f52w-8j3h-j724),
@@ -18,10 +23,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Select Debian 13's packaged `named.conf.root-hints` include in
+  `bind_authoritative_deploy`; trixie removes `named.conf.default-zones`, which
+  otherwise leaves BIND half-configured during an in-place upgrade.
+
+- Replace Tailscale's deprecated one-line `apt_repository` path with deb822 and
+  clean up the legacy `.list` file, so fresh Debian 13 hosts do not depend on
+  the removed `apt-key` command.
+
 - Prevent explicitly retired legacy Takahe routes from bypassing the managed
   nginx cache by removing them only after rendering the replacement route.
 
 ### Added
+
+- Declare Debian 13/trixie support for the staging package, repository,
+  application, DNS, logging, SSH/base, static-site, and systemd-mask roles.
+  PostgreSQL 17, Redis, Tailscale, and shell package paths now run in real
+  Debian 13 Molecule containers, with focused release/repository contracts for
+  the remaining staging roles.
+
+- Extend `software_live` with OS lifecycle and PostgreSQL cluster/version
+  observations. Schema version 2 exposes desired-cycle/major drift, support and
+  EOL status, PostgreSQL minor drift and unexpected clusters for Nyxmon warning
+  checks without changing packages or database state.
 
 - `zfs_usb_replication` now installs an attended, root-private snapshot-file
   replication attestation helper. Closed bounded requests bind exact relative

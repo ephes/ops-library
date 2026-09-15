@@ -10,7 +10,7 @@ Harden SSH access against brute-force noise by enabling fail2ban and applying a 
 
 ## Requirements
 
-- Debian/Ubuntu with systemd and OpenSSH.
+- Debian 12/13 or Ubuntu with systemd and OpenSSH.
 - Root privileges on the target host.
 
 ## Role Variables

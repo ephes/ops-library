@@ -12,7 +12,7 @@ Deploys Takahe from source with systemd services, an nginx cache/accel proxy, an
 
 ## Requirements
 
-- Ubuntu/Debian host with systemd
+- Ubuntu or Debian 12/13 host with systemd
 - `nginx`, Python 3, and build tooling installed (handled by this role)
 - Traefik running when `takahe_traefik_enabled: true`
 

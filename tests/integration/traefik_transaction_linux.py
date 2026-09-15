@@ -62,6 +62,8 @@ watch=true
 address="127.0.0.1:18080"
 [entryPoints.secure]
 address="127.0.0.1:18443"
+[metrics.prometheus]
+addEntryPointsLabels=true
 """
 config.write_bytes(before)
 config.chmod(0o644)
@@ -300,12 +302,28 @@ alias["compatibility"]["candidate_config_sha256"] = hashlib.sha256(after).hexdig
 result = tx.execute(alias)
 assert not result.get("failed")
 assert config.read_bytes() == after and acme.read_text() == '{"fixture":"preserve"}'
+policy["alias_policy"]["traefik"] = "delete"
+metrics_after = after.replace(
+    b"[metrics.prometheus]\n",
+    b'[entryPoints.traefik]\naddress="127.0.0.1:8080"\nhttp.aliasHeadersStrategy="delete"\n[metrics.prometheus]\nentryPoint="traefik"\n',
+)
+metrics_bind = request("metrics_bind", result["state"])
+metrics_bind.update(
+    candidate_config_base64=base64.b64encode(metrics_after).decode(),
+    approved_binary_sha256=tx.digest(binary),
+)
+metrics_bind["compatibility"]["candidate_config_sha256"] = hashlib.sha256(
+    metrics_after
+).hexdigest()
+result = tx.execute(metrics_bind)
+assert not result.get("failed")
+assert config.read_bytes() == metrics_after
 pid = subprocess.check_output(
     ["systemctl", "show", "traefik", "-p", "MainPID", "--value"]
 )
 noop = request("alias", result["state"])
 noop.update(
-    candidate_config_base64=base64.b64encode(after).decode(),
+    candidate_config_base64=base64.b64encode(metrics_after).decode(),
     approved_binary_sha256=tx.digest(binary),
 )
 result = tx.execute(noop)
@@ -324,6 +342,7 @@ print(
             "binary_rollback": "verified",
             "binary_update": "3.7.12",
             "alias_update": "verified",
+            "metrics_bind_update": "verified",
             "noop_pid_preserved": True,
             "acme_preserved": True,
         }

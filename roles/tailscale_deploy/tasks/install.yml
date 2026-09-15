@@ -3,7 +3,12 @@
   ansible.builtin.apt:
     name: "{{ tailscale_package_name }}{{ '' if tailscale_package_version == 'latest' else '=' ~ tailscale_package_version }}"
     state: present
-    update_cache: "{{ tailscale_repo_config is changed }}"
+    update_cache: >-
+      {{
+        tailscale_repo_config is changed
+        or tailscale_repo_key is changed
+        or tailscale_legacy_repo is changed
+      }}
 
 - name: Ensure tailscaled service is enabled and started
   ansible.builtin.systemd:

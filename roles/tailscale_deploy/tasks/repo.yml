@@ -12,10 +12,28 @@
     force: true
   register: tailscale_repo_key
 
-- name: Configure Tailscale apt repository
-  ansible.builtin.apt_repository:
-    repo: "deb [signed-by={{ tailscale_repo_keyring }}] {{ tailscale_repo_url }} {{ tailscale_repo_release }} {{ tailscale_repo_component }}"
-    filename: "{{ tailscale_repo_list_file | basename | regex_replace('\\.list$', '') }}"
+- name: Install python3-debian for deb822 repository support
+  ansible.builtin.apt:
+    name: python3-debian
     state: present
     update_cache: true
+    cache_valid_time: 3600
+
+- name: Remove legacy one-line Tailscale repository
+  ansible.builtin.file:
+    path: "{{ tailscale_repo_list_file }}"
+    state: absent
+  register: tailscale_legacy_repo
+
+- name: Configure Tailscale apt repository
+  ansible.builtin.deb822_repository:
+    name: "{{ tailscale_repo_name }}"
+    types: deb
+    uris: "{{ tailscale_repo_url }}"
+    suites: "{{ tailscale_repo_release }}"
+    components:
+      - "{{ tailscale_repo_component }}"
+    signed_by: "{{ tailscale_repo_keyring }}"
+    enabled: true
+    state: present
   register: tailscale_repo_config

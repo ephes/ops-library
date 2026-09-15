@@ -55,9 +55,26 @@ def tree(root):
     }
 
 
+def validate_static_policy(static, expected_entrypoints, mode):
+    entries = static["entryPoints"]
+    if set(entries) != set(expected_entrypoints) or any(
+        entry.get("http", {}).get("aliasHeadersStrategy") != "delete"
+        for entry in entries.values()
+    ):
+        raise RuntimeError("Incomplete header-alias policy")
+    if mode == "metrics_bind" and (
+        entries.get("traefik", {}).get("address") != "127.0.0.1:8080"
+        or static.get("metrics", {}).get("prometheus", {}).get("entryPoint")
+        != "traefik"
+    ):
+        raise RuntimeError("Metrics entrypoint is not bound to loopback")
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=["capture", "health", "alias", "cleanup"])
+    parser.add_argument(
+        "mode", choices=["capture", "health", "alias", "metrics_bind", "cleanup"]
+    )
     parser.add_argument("config", type=Path)
     args = parser.parse_args()
     config = json.loads(args.config.read_text())
@@ -77,14 +94,9 @@ def main():
             json.dumps({"cleanup": "no temporary resources", "dynamic_verified": True})
         )
         return
-    if args.mode == "alias":
+    if args.mode in {"alias", "metrics_bind"}:
         static = tomllib.loads(Path("/etc/traefik/traefik.toml").read_text())
-        entries = static["entryPoints"]
-        if set(entries) != set(config["entrypoints"]) or any(
-            e.get("http", {}).get("aliasHeadersStrategy") != "delete"
-            for e in entries.values()
-        ):
-            raise RuntimeError("Incomplete header-alias policy")
+        validate_static_policy(static, config["entrypoints"], args.mode)
     for attempt in range(5):
         with concurrent.futures.ThreadPoolExecutor(8) as pool:
             actual = list(pool.map(observe, config["probes"]))

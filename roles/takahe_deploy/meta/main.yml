@@ -1,4 +1,23 @@
 ---
+galaxy_info:
+  author: ops-library
+  description: Deploy Takahe with PostgreSQL and systemd
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bookworm
+        - trixie
+  galaxy_tags:
+    - takahe
+    - django
+    - activitypub
+
 dependencies:
   - role: local.ops_library.takahe_shared
   - role: local.ops_library.postgres_install

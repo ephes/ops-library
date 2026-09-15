@@ -11,7 +11,7 @@ directly from the controller.
 
 ## Requirements
 
-- A target with systemd, Python 3, and rsync.
+- A Debian 12/13 or Ubuntu target with systemd, Python 3, and rsync.
 - `ansible.posix` on the controller.
 - An existing Traefik service watching the configured dynamic directory when
   `static_site_traefik_enabled` is true.

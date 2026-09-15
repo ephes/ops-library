@@ -16,7 +16,7 @@ Deploys Mastodon from source with rbenv + nvm runtimes, systemd services, and Tr
 
 ## Requirements
 
-- Ubuntu/Debian host with systemd
+- Ubuntu or Debian 12/13 host with systemd
 - Traefik running when `mastodon_traefik_enabled: true`
 - Outbound network access to fetch rbenv/nvm and the Mastodon repository (when using git mode)
 

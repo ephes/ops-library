@@ -76,6 +76,9 @@
       alias_acceptance_probe:
         argv: [/var/lib/traefik-update-probes/health.py, alias, /var/lib/traefik-update-probes/checks.json]
         sha256: '{{ traefik_health_probe_installed.stat.checksum }}'
+      metrics_bind_acceptance_probe:
+        argv: [/var/lib/traefik-update-probes/health.py, metrics_bind, /var/lib/traefik-update-probes/checks.json]
+        sha256: '{{ traefik_health_probe_installed.stat.checksum }}'
       cleanup_probe:
         argv: [/var/lib/traefik-update-probes/health.py, cleanup, /var/lib/traefik-update-probes/checks.json]
         sha256: '{{ traefik_health_probe_installed.stat.checksum }}'

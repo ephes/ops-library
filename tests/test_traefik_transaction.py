@@ -2,6 +2,7 @@
 
 import base64
 import copy
+import hashlib
 import importlib.util
 import io
 import json
@@ -99,6 +100,38 @@ class HealthProbeTests(unittest.TestCase):
                 ), self.assertRaisesRegex(ValueError, "At least one"):
                     health.main()
 
+    def test_metrics_bind_probe_requires_exact_loopback_static_policy(self):
+        static = {
+            "entryPoints": {
+                name: {
+                    "address": "127.0.0.1:8080" if name == "traefik" else ":443",
+                    "http": {"aliasHeadersStrategy": "delete"},
+                }
+                for name in ("web", "web-secure", "traefik")
+            },
+            "metrics": {"prometheus": {"entryPoint": "traefik"}},
+        }
+        health.validate_static_policy(
+            static, ["web", "web-secure", "traefik"], "metrics_bind"
+        )
+        for broken in (
+            {**static, "metrics": {"prometheus": {}}},
+            {
+                **static,
+                "entryPoints": {
+                    **static["entryPoints"],
+                    "traefik": {
+                        **static["entryPoints"]["traefik"],
+                        "address": ":8080",
+                    },
+                },
+            },
+        ):
+            with self.assertRaisesRegex(RuntimeError, "loopback"):
+                health.validate_static_policy(
+                    broken, ["web", "web-secure", "traefik"], "metrics_bind"
+                )
+
 
 class RecoveryEvidenceTests(unittest.TestCase):
     def test_verified_ssh_or_legacy_console_reference_is_required(self):
@@ -177,6 +210,57 @@ class AliasTests(unittest.TestCase):
         )
         with self.assertRaises(tx.Refused):
             tx.validate_alias(before, self.after, self.policy)
+
+
+class MetricsBindTests(unittest.TestCase):
+    before = b"""[entryPoints.web]
+address=":80"
+http.aliasHeadersStrategy="delete"
+[entryPoints.web-secure]
+address=":443"
+http.aliasHeadersStrategy="delete"
+[metrics.prometheus]
+addEntryPointsLabels=true
+"""
+    after = b"""[entryPoints.web]
+address=":80"
+http.aliasHeadersStrategy="delete"
+[entryPoints.web-secure]
+address=":443"
+http.aliasHeadersStrategy="delete"
+[entryPoints.traefik]
+address="127.0.0.1:8080"
+http.aliasHeadersStrategy="delete"
+[metrics.prometheus]
+addEntryPointsLabels=true
+entryPoint="traefik"
+"""
+    policy: ClassVar[dict] = {
+        "web": "delete",
+        "web-secure": "delete",
+        "traefik": "delete",
+    }
+
+    def test_exact_loopback_metrics_delta_is_accepted(self):
+        tx.validate_metrics_bind(self.before, self.after, self.policy)
+
+    def test_wrong_bind_missing_entrypoint_and_unrelated_changes_are_rejected(self):
+        candidates = (
+            self.after.replace(b"127.0.0.1:8080", b":8080"),
+            self.after.replace(b'entryPoint="traefik"\n', b""),
+            self.after + b'\n[api]\ninsecure=true\n',
+        )
+        for candidate in candidates:
+            with self.subTest(candidate=candidate), self.assertRaises(tx.Refused):
+                tx.validate_metrics_bind(self.before, candidate, self.policy)
+
+    def test_incomplete_alias_policy_and_preexisting_entrypoint_are_rejected(self):
+        with self.assertRaises(tx.Refused):
+            tx.validate_metrics_bind(
+                self.before, self.after, {"web": "delete", "web-secure": "delete"}
+            )
+        with self.assertRaises(tx.Refused):
+            tx.validate_metrics_bind(self.after, self.after, self.policy)
 
 
 class TransactionTests(unittest.TestCase):
@@ -347,6 +431,44 @@ class TransactionTests(unittest.TestCase):
         self.assertEqual(result["state"]["phase"], "degraded")
         self.assertIn("review_due", result["state"])
 
+    def configure_metrics_bind(self):
+        self.config.write_bytes(MetricsBindTests.before)
+        self.policy["alias_policy"] = MetricsBindTests.policy
+        self.live["config_sha256"] = tx.digest(self.config)
+        self.state["identity"] = self.live
+        tx.save(self.state_path, self.state)
+        self.request.update(
+            action="metrics_bind",
+            candidate_config_base64=base64.b64encode(MetricsBindTests.after).decode(),
+        )
+        self.request["compatibility"].update(
+            baseline=self.live,
+            candidate_binary_sha256=self.live["binary_sha256"],
+            candidate_config_sha256=hashlib.sha256(MetricsBindTests.after).hexdigest(),
+        )
+
+    def test_metrics_bind_success_uses_the_static_transaction_path(self):
+        self.configure_metrics_bind()
+        expected = dict(
+            self.live,
+            config_sha256=hashlib.sha256(MetricsBindTests.after).hexdigest(),
+        )
+        with patch.object(tx, "restart_verify", return_value=expected):
+            result = tx.execute(self.request)
+        self.assertTrue(result["changed"])
+        self.assertEqual(result["state"]["phase"], "clear")
+        self.assertEqual(self.config.read_bytes(), MetricsBindTests.after)
+
+    def test_metrics_bind_interruption_rolls_back_and_leaves_recovery_active(self):
+        self.configure_metrics_bind()
+        with patch.object(
+            tx, "restart_verify", side_effect=[KeyboardInterrupt(), self.live]
+        ):
+            result = tx.execute(self.request)
+        self.assertTrue(result["failed"])
+        self.assertEqual(result["state"]["phase"], "recovery")
+        self.assertEqual(self.config.read_bytes(), MetricsBindTests.before)
+
     def test_noop_never_restarts(self):
         self.config.write_bytes(AliasTests.after)
         self.live["config_sha256"] = tx.digest(self.config)
@@ -479,6 +601,34 @@ class ControllerTests(unittest.TestCase):
             }
             with patch.object(ctl, "invoke") as invoke, self.assertRaises(ValueError):
                 ctl.control(root, self.registry, "fixture", "alias", supplied, journal)
+            invoke.assert_not_called()
+            self.assertEqual(
+                json.loads((journal / "fixture.json").read_text()), initial
+            )
+
+    def test_metrics_bind_request_requires_candidate_before_pending(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            journal = root / "journal"
+            journal.mkdir(mode=0o700)
+            initial = {"schema": 1, "host": "fixture", "phase": "clear"}
+            ctl.write_json(journal / "fixture.json", initial)
+            supplied = {
+                "evidence": {},
+                "compatibility": {},
+                "baseline_probe": {},
+                "acceptance_probe": {},
+                "cleanup_probe": {},
+            }
+            with patch.object(ctl, "invoke") as invoke, self.assertRaises(ValueError):
+                ctl.control(
+                    root,
+                    self.registry,
+                    "fixture",
+                    "metrics_bind",
+                    supplied,
+                    journal,
+                )
             invoke.assert_not_called()
             self.assertEqual(
                 json.loads((journal / "fixture.json").read_text()), initial

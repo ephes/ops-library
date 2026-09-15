@@ -9,4 +9,4 @@ include "{{ bind_tsig_keys_file }}";
 {% endif %}
 include "{{ bind_config_dir }}/named.conf.options";
 include "{{ bind_config_dir }}/named.conf.local";
-include "{{ bind_config_dir }}/named.conf.default-zones";
+include "{{ bind_builtin_zones_file }}";

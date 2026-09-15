@@ -13,6 +13,8 @@ tailscale_repo_distro: "{{ ansible_distribution | lower }}"
 tailscale_repo_release: "{{ ansible_distribution_release }}"
 tailscale_repo_component: main
 tailscale_repo_keyring: /usr/share/keyrings/tailscale-archive-keyring.gpg
+tailscale_repo_name: tailscale
+tailscale_repo_sources_file: /etc/apt/sources.list.d/tailscale.sources
 tailscale_repo_list_file: /etc/apt/sources.list.d/tailscale.list
 
 # Package configuration

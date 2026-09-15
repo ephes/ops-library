@@ -8,7 +8,8 @@ those workflows have been integrated with the same transaction engine.
 
 Operations are separate: `inspect` reads state; `enroll` establishes initial clear
 state without changing Traefik; `binary` replaces only the executable; `alias`
-changes only the approved per-entrypoint header-alias keys; `resume` reconciles an
+changes only the approved per-entrypoint header-alias keys; `metrics_bind` adds the
+single loopback-only metrics entrypoint described below; `resume` reconciles an
 active recovery record after reviewed recovery. Enrollment never clears recovery.
 The controller must persist a pending record before starting a mutation, retain it
 on transport failure, and persist the exact returned host record only on success.
@@ -67,7 +68,7 @@ and the retained rollback files can be the recovery path. A provider console is
 not a mandatory prerequisite for that scope. The legacy `console_recovery` field
 is accepted for existing callers; new callers should use `recovery_access`.
 
-`binary` and `alias` additionally require:
+`binary`, `alias`, and `metrics_bind` additionally require:
 
 - `baseline_probe`, `acceptance_probe`, `cleanup_probe`: objects with `argv` and
   `sha256` for trusted root-owned executable programs. No shell string is accepted.
@@ -84,6 +85,14 @@ is accepted for existing callers; new callers should use `recovery_access`.
   and running hashes must match; versions before 3.7.12 are refused. Parsed TOML
   must differ only by `http.aliasHeadersStrategy=delete` on every entrypoint.
   Legacy underscore settings and UDP entrypoints require separate reconciliation.
+- `metrics_bind`: the same approved executable and candidate fields as `alias`.
+  The parsed current configuration must already enable Prometheus without an
+  explicit entrypoint and must already carry `aliasHeadersStrategy = "delete"`
+  on every existing entrypoint. The only accepted semantic delta adds
+  `entryPoints.traefik` at `127.0.0.1:8080` with the delete alias policy and sets
+  `metrics.prometheus.entryPoint = "traefik"`. Existing entrypoints and every
+  unrelated static field must remain semantically identical. This operation
+  cannot write an arbitrary static configuration.
 
 Probe programs must be reviewed with their host-specific route/expiry manifests.
 The engine does **not** supply or authorize temporary echo routes, observation
@@ -155,7 +164,8 @@ binary or alias transaction.
 
 ## Read-only ingress acceptance
 
-`files/traefik_health_probe.py` supports `capture`, `health`, `alias` and `cleanup`
+`files/traefik_health_probe.py` supports `capture`, `health`, `alias`,
+`metrics_bind` and `cleanup`
 with a private JSON configuration. Configure `probes` with host, scheme, port,
 address and optional path, and `entrypoints` with the complete expected set.
 Capture returns per-probe curl exit/status and hashes of permanent dynamic files;
@@ -176,8 +186,9 @@ Install via `tasks_from: health_probe` with `traefik_health_probe_config` (defau
 `{}`) containing the complete captured configuration. The role installs the script
 and baseline root-owned under `/var/lib/traefik-update-probes`, validates live
 health, and returns `traefik_health_probe_commands` with exact SHA256/argv objects
-for `baseline_probe`, `acceptance_probe`, `alias_acceptance_probe` and
-`cleanup_probe`. Select the alias command as acceptance for an alias transaction.
+for `baseline_probe`, `acceptance_probe`, `alias_acceptance_probe`,
+`metrics_bind_acceptance_probe` and `cleanup_probe`. Select the action-specific
+command as acceptance for an alias or metrics-binding transaction.
 Capturing a new baseline is a separate explicit pre-deployment action; do not
 recapture after an acceptance failure. The probe refuses an empty list, preserves
 exact authentication/redirect expectations, and records bounded curl timeouts.

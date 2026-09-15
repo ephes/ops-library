@@ -8,7 +8,9 @@ This role installs the Tailscale repository, packages, and systemd service, then
 
 ## Requirements
 
-- Debian/Ubuntu target with root/sudo access
+- Debian 12 or 13/Ubuntu target with root/sudo access. Repository resolution,
+  package installation, and service startup are exercised on Debian 13 in
+  Molecule.
 - Auth key available via SOPS when `tailscale_manual_up` is `false`
 - Network access to `pkgs.tailscale.com`
 
@@ -42,7 +44,9 @@ tailscale_repo_release: "{{ ansible_distribution_release }}"
 tailscale_repo_component: main
 tailscale_repo_base: https://pkgs.tailscale.com
 tailscale_repo_keyring: /usr/share/keyrings/tailscale-archive-keyring.gpg
-tailscale_repo_list_file: /etc/apt/sources.list.d/tailscale.list
+tailscale_repo_name: tailscale            # Writes tailscale.sources via deb822
+tailscale_repo_sources_file: /etc/apt/sources.list.d/tailscale.sources
+tailscale_repo_list_file: /etc/apt/sources.list.d/tailscale.list  # Legacy cleanup
 ```
 
 ## Example Playbook
