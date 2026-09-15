@@ -34,6 +34,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Prevent explicitly retired legacy Takahe routes from bypassing the managed
   nginx cache by removing them only after rendering the replacement route.
 
+### Changed
+
+- `daybook_sessions_deploy` now defaults `daybook_sessions_checkout_path` to a
+  dedicated clone under `~/.local/share/daybook/sessions/daybook` instead of the
+  service user's `~/projects/daybook`. The scheduled jobs pin that path to
+  `daybook_sessions_repo_ref`, and sharing it with an interactive clone meant a
+  routine `git pull` stopped the weeknotes reconcile at its revision guard for
+  two weeks. Hosts that relied on the old default must either set the previous
+  path explicitly or stage the new clone before the next no-fetch deployment.
+
 ### Added
 
 - Declare Debian 13/trixie support for the staging package, repository,

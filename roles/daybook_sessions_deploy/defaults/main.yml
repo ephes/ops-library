@@ -9,7 +9,10 @@ daybook_sessions_service_home: "/Users/{{ daybook_sessions_service_user }}"
 
 daybook_sessions_repo_url: "https://github.com/ephes/daybook.git"
 daybook_sessions_repo_ref: "CHANGEME"
-daybook_sessions_checkout_path: "{{ daybook_sessions_service_home }}/projects/daybook"
+# Dedicated checkout for the scheduled jobs. Keep it apart from any interactive
+# clone the service user develops in: the reconcile wrapper pins this path to
+# daybook_sessions_repo_ref, and a shared clone drifts as soon as someone pulls.
+daybook_sessions_checkout_path: "{{ daybook_sessions_service_home }}/.local/share/daybook/sessions/daybook"
 daybook_sessions_checkout_force: true
 daybook_sessions_repo_update: true
 
