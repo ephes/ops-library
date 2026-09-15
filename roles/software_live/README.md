@@ -90,7 +90,10 @@ systemctl status software-live-collector.timer software-live-endpoint.service
 Nyxmon's existing `json-metrics` executor can consume them. Optional
 `tasks_from: nyxmon` upserts only the supplied checks using
 `software_live_nyxmon_checks`, preserving unrelated checks. Schema version 2
-adds the required OS and PostgreSQL observations and summary fields.
+adds the required OS and PostgreSQL observations and summary fields. Upgrading
+from schema version 1 requires adding the `os` and `postgresql` policy mappings
+shown above before deploying the role. Existing schema-1 state is deliberately
+rejected as stale/invalid until the schema-2 collector completes successfully.
 
 Use `software_live_remove` to stop/remove this monitoring component. State is
 retained by default. Removal does not alter Traefik or package maintenance.

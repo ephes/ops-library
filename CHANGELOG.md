@@ -28,8 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   otherwise leaves BIND half-configured during an in-place upgrade.
 
 - Replace Tailscale's deprecated one-line `apt_repository` path with deb822 and
-  clean up the legacy `.list` file, so fresh Debian 13 hosts do not depend on
-  the removed `apt-key` command.
+  clean up the legacy `.list` file, avoiding the deprecated one-line repository
+  path on Debian 13.
 
 - Prevent explicitly retired legacy Takahe routes from bypassing the managed
   nginx cache by removing them only after rendering the replacement route.
@@ -46,6 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   observations. Schema version 2 exposes desired-cycle/major drift, support and
   EOL status, PostgreSQL minor drift and unexpected clusters for Nyxmon warning
   checks without changing packages or database state.
+
+  This schema change requires `os` and `postgresql` policy mappings in existing
+  inventory. Previously written schema-1 state is rejected until the upgraded
+  collector writes schema-2 evidence.
 
 - `zfs_usb_replication` now installs an attended, root-private snapshot-file
   replication attestation helper. Closed bounded requests bind exact relative

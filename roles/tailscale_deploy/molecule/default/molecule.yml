@@ -4,6 +4,18 @@ driver:
 
 platforms:
   - name: instance
+    image: geerlingguy/docker-ubuntu2404-ansible
+    pre_build_image: true
+    privileged: true
+    cgroupns_mode: host
+    override_command: false
+    command: /sbin/init
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+      - /run
+      - /tmp
+  - name: debian13
     image: geerlingguy/docker-debian13-ansible
     pre_build_image: true
     privileged: true
@@ -21,6 +33,8 @@ provisioner:
   inventory:
     host_vars:
       instance:
+        ansible_user: root
+      debian13:
         ansible_user: root
   playbooks:
     converge: converge.yml

@@ -226,6 +226,30 @@ class CollectorTests(unittest.TestCase):
         self.assertIn("standard_support_ended", result["issues"])
         self.assertEqual(result["lifecycle"]["eol"], "2028-06-30")
 
+    def test_os_boolean_support_state_is_applied_at_observation_boundary(self):
+        release = {
+            "ID": "debian",
+            "VERSION_ID": "13",
+            "VERSION_CODENAME": "trixie",
+            "PRETTY_NAME": "Debian GNU/Linux 13 (trixie)",
+        }
+        policy = {"expected_id": "debian", "desired_cycle": "13"}
+        with patch.object(
+            live.platform, "freedesktop_os_release", return_value=release
+        ):
+            for supported, should_warn in ((False, True), (True, False)):
+                with self.subTest(supported=supported):
+                    latest = {
+                        "status": "ok",
+                        "cycles": [
+                            {"cycle": "13", "support": supported, "eol": False}
+                        ],
+                    }
+                    result = live.observe_os(policy, latest, 1_789_430_400)
+                    self.assertEqual(
+                        "standard_support_ended" in result["issues"], should_warn
+                    )
+
     def test_postgresql_minor_and_extra_clusters_are_visible(self):
         main = {
             "major": "17",
@@ -365,6 +389,48 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual(failed["status"], "unknown")
             self.assertEqual(failed["last_success"], previous)
             self.assertEqual(json.loads(cache.read_text()), previous)
+
+    def test_lifecycle_refresh_skips_malformed_irrelevant_cycles(self):
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.read.return_value = json.dumps(
+            [
+                {"cycle": "old", "latest": "1.0", "eol": {"bad": "value"}},
+                {"cycle": "17", "latest": "17.11", "eol": "2029-11-08"},
+            ]
+        ).encode()
+        with patch.object(live.urllib.request, "urlopen", return_value=response):
+            result = live.lifecycle_upstream("postgresql", None, 100)
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual([cycle["cycle"] for cycle in result["cycles"]], ["17"])
+
+    def test_boolean_lifecycle_fields_preserve_known_support_state(self):
+        today = live.date(2026, 9, 15)
+        self.assertTrue(live.lifecycle_ended(True, today, true_means_ended=True))
+        self.assertFalse(live.lifecycle_ended(False, today, true_means_ended=True))
+        self.assertFalse(live.lifecycle_ended(True, today, true_means_ended=False))
+        self.assertTrue(live.lifecycle_ended(False, today, true_means_ended=False))
+
+        latest = {
+            "status": "ok",
+            "cycles": [{"cycle": "17", "latest": "17.11", "eol": True}],
+        }
+        cluster = {
+            "major": "17",
+            "name": "main",
+            "port": 5432,
+            "status": "online",
+            "owner": "postgres",
+        }
+        with (
+            patch.object(live, "postgres_clusters", return_value=[cluster]),
+            patch.object(live, "postgresql_server_version", return_value="17.11"),
+        ):
+            result = live.observe_postgresql(POLICY["postgresql"], latest, 1_789_430_400)
+        self.assertEqual(result["status"], "warning")
+        self.assertIn("cycle_eol", result["issues"])
 
     def test_postgresql_cluster_parser_omits_data_paths(self):
         output = (
@@ -515,6 +581,13 @@ class EndpointTests(unittest.TestCase):
                 with patch.object(live.subprocess, "run"):
                     with urllib.request.urlopen(request) as response:
                         self.assertFalse(json.load(response)["summary"]["fresh"])
+                    invalid_summary = json.loads(state.read_text())
+                    invalid_summary["summary"]["os_ok"] = "yes"
+                    state.write_text(json.dumps(invalid_summary))
+                    with self.assertRaises(urllib.error.HTTPError) as invalid:
+                        urllib.request.urlopen(request)
+                    self.assertEqual(invalid.exception.code, 503)
+                    invalid.exception.close()
                     state.write_text("{broken")
                     with self.assertRaises(urllib.error.HTTPError) as broken:
                         urllib.request.urlopen(request)

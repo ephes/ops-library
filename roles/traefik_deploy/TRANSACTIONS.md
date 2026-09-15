@@ -94,6 +94,14 @@ is accepted for existing callers; new callers should use `recovery_access`.
   unrelated static field must remain semantically identical. This operation
   cannot write an arbitrary static configuration.
 
+  Before this transaction, update the health probe configuration's
+  `entrypoints` to the complete post-change set, including `traefik`, and
+  reinstall the probe baseline. The `metrics_bind_acceptance_probe` runs after
+  the candidate is live and rejects a pre-change entrypoint set. If a later
+  `alias` transaction is required, capture and install that transaction's own
+  complete expected entrypoint set first; do not reuse an earlier probe
+  configuration whose set no longer matches the live static configuration.
+
 Probe programs must be reviewed with their host-specific route/expiry manifests.
 The engine does **not** supply or authorize temporary echo routes, observation
 infrastructure or expiry jobs. The acceptance program owns their safe creation,

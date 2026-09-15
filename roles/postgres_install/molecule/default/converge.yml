@@ -12,7 +12,6 @@
 
   vars:
     postgres_install_use_pgdg_repo: false
-    postgres_install_version: "17"
     postgres_install_users:
       - name: molecule
         password: "molecule-pass"

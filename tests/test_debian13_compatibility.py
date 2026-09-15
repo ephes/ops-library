@@ -114,17 +114,42 @@ class Debian13CompatibilityTests(unittest.TestCase):
                     (ROLES / role_name / "molecule/default/molecule.yml").read_text()
                 )
                 self.assertEqual(
-                    scenario["platforms"][0]["image"],
-                    "geerlingguy/docker-debian13-ansible",
+                    {platform["image"] for platform in scenario["platforms"]},
+                    {
+                        "geerlingguy/docker-ubuntu2404-ansible",
+                        "geerlingguy/docker-debian13-ansible",
+                    },
                 )
+                platform_names = {
+                    platform["name"] for platform in scenario["platforms"]
+                }
+                self.assertEqual(
+                    set(scenario["provisioner"]["inventory"]["host_vars"]),
+                    platform_names,
+                )
+                for playbook in ("converge.yml", "verify.yml"):
+                    plays = yaml.safe_load(
+                        (
+                            ROLES
+                            / role_name
+                            / "molecule/default"
+                            / playbook
+                        ).read_text()
+                    )
+                    self.assertIsInstance(plays, list)
+                    self.assertTrue(plays)
+                    for play in plays:
+                        self.assertEqual(play["hosts"], "all")
                 sequence = scenario["scenario"]["test_sequence"]
                 self.assertIn("converge", sequence)
                 self.assertIn("verify", sequence)
 
-        postgres_converge = (
-            ROLES / "postgres_install/molecule/default/converge.yml"
-        ).read_text()
-        self.assertIn('postgres_install_version: "17"', postgres_converge)
+        postgres_scenario = yaml.safe_load(
+            (ROLES / "postgres_install/molecule/default/molecule.yml").read_text()
+        )
+        postgres_hosts = postgres_scenario["provisioner"]["inventory"]["host_vars"]
+        self.assertEqual(postgres_hosts["instance"]["postgres_install_version"], "16")
+        self.assertEqual(postgres_hosts["debian13"]["postgres_install_version"], "17")
 
     def test_application_and_dns_package_tasks_remain_distribution_native(self) -> None:
         package_tasks = {
