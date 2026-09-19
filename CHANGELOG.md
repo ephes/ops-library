@@ -66,6 +66,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add a local macOS `software_estate_publisher` LaunchAgent with weekly scan
+  cadence, hourly eligible delivery, private durable state, shared manual-run
+  locking and removal that retains unconfirmed reports and credentials.
+
 - Add opt-in private Graphyard inventory ingress with source allowlisting, 8 MiB
   body limit and independent rate/concurrency limits; existing UI/metric routes
   remain unchanged. Inventory writers still authenticate at the application.

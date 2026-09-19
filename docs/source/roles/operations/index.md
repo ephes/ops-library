@@ -45,6 +45,7 @@ Available runbooks:
 :maxdepth: 1
 
 software_estate
+software_estate_publisher
 software_live
 homeassistant_backup
 homeassistant_restore

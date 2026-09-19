@@ -166,5 +166,6 @@ CLI failures before a report outcome use a generic local-error code; check endpo
 private paths, lock ownership and state locally. The TLS regression suite requires
 an OpenSSL executable supporting `req -addext` for its temporary test certificate.
 
-No deployment role, timer or existing Vector configuration is changed. Production
-receiver enrollment, service lifecycle and live rollout remain subsequent steps.
+The sender itself does not install a job or change Vector. For the separate
+local macOS lifecycle, see [software_estate_publisher](../software_estate_publisher/README.md).
+Linux scheduling remains a subsequent slice.

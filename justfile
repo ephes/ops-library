@@ -500,7 +500,7 @@ test-software-live: venv
 
 # Typed Python added by the software observation roles.
 typecheck: venv
-    @uv run --with mypy mypy --ignore-missing-imports --check-untyped-defs roles/software_estate/files/collect.py roles/software_estate/files/emit.py roles/software_estate/files/outbox.py roles/software_estate/files/send.py roles/software_estate/files/vector_inventory_config.py roles/software_estate/files/sbom.py roles/software_live/files/software_live.py roles/software_live/files/nyxmon_checks.py roles/traefik_deploy/files/traefik_transaction.py roles/traefik_deploy/files/traefik_control.py
+    @uv run --with mypy mypy --ignore-missing-imports --check-untyped-defs roles/software_estate/files/collect.py roles/software_estate/files/emit.py roles/software_estate/files/outbox.py roles/software_estate/files/send.py roles/software_estate/files/publish.py roles/software_estate/files/vector_inventory_config.py roles/software_estate/files/sbom.py roles/software_live/files/software_live.py roles/software_live/files/nyxmon_checks.py roles/traefik_deploy/files/traefik_transaction.py roles/traefik_deploy/files/traefik_control.py
 
 # Exercise guarded binary/config transactions and controller failure journaling.
 test-traefik-transactions: venv
@@ -520,4 +520,4 @@ test-openclaw-heartbeat-recovery: venv
 
 # Read-only application/host software discovery.
 test-software-estate: venv
-    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_software_estate tests.test_inventory_emit tests.test_inventory_send
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_software_estate tests.test_inventory_emit tests.test_inventory_send tests.test_inventory_publish

@@ -16,6 +16,10 @@ MAX_REPORTS = 32
 INTERNAL = {".lock", ".delivery.json"}
 
 
+class Busy(ValueError):
+    """Another process holds the private outbox or whole-run lock."""
+
+
 def report_name(identifier):
     return str(UUID(identifier)) + ".ndjson"
 
@@ -91,7 +95,7 @@ def locked(spool):
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise ValueError("outbox is busy") from None
+            raise Busy("outbox is busy") from None
         yield spool
     finally:
         os.close(fd)
