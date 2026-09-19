@@ -41,6 +41,19 @@ just molecule-test unifi_restore
 `just validate-strict` swaps in `just lint-strict` for the same sequence.
 Use `just lint` only as a quick summary helper. It intentionally does not fail the run.
 
+## SSH forwarding identity fixtures
+
+`just test-ssh-forwarding-roles` runs the descriptor, ownership, recovery and race
+regressions locally. Identity fixtures explicitly set their temporary root's group
+to the test process's primary group before creating children. macOS inherits the
+parent directory's group, which may otherwise be `wheel` under the system temp
+root even when the configured test identity belongs to `staff`.
+
+This setup changes only fresh test directories. The production helper still
+rejects a mismatched configured owner/group, and a dedicated negative test verifies
+that a non-root operation rejects the mismatch without changing the directory.
+Do not skip ownership or race assertions to make the suite pass on macOS.
+
 ## Molecule Scenarios
 
 Molecule coverage lives under `roles/<role>/molecule/default/`.

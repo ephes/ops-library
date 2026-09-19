@@ -14,6 +14,7 @@ import tempfile
 import threading
 import time
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from unittest import mock
 
@@ -51,6 +52,16 @@ IDENTITY_HELPER_PATH = (
 identity_helper = load_module("manage_forwarding_identity", IDENTITY_HELPER_PATH)
 
 
+@contextmanager
+def identity_test_directory():
+    """Match the configured group before Darwin inherits it into child inodes."""
+    with tempfile.TemporaryDirectory() as temporary:
+        # The system temp root can belong to wheel while the test user is staff.
+        # Only normalize this newly created fixture, never production ownership.
+        os.chown(temporary, -1, os.getgid())
+        yield temporary
+
+
 class SSHForwardingRoleTests(unittest.TestCase):
     def read(self, relative: str) -> str:
         return (ROOT / relative).read_text(encoding="utf-8")
@@ -82,7 +93,7 @@ class SSHForwardingRoleTests(unittest.TestCase):
     ):
         uid = os.getuid()
         gid = os.getgid()
-        with tempfile.TemporaryDirectory() as temporary:
+        with identity_test_directory() as temporary:
             root = Path(temporary).resolve()
             real = root / "real"
             home = real / "home"
@@ -119,7 +130,7 @@ class SSHForwardingRoleTests(unittest.TestCase):
     def test_check_mode_derives_ephemeral_key_without_creating_missing_parent(self):
         user = pwd.getpwuid(os.getuid()).pw_name
         group = grp.getgrgid(os.getgid()).gr_name
-        with tempfile.TemporaryDirectory() as temporary:
+        with identity_test_directory() as temporary:
             home = Path(temporary).resolve() / "home"
             home.mkdir()
             args = argparse.Namespace(
@@ -166,7 +177,7 @@ class SSHForwardingRoleTests(unittest.TestCase):
             return result
 
         for boundary in ("staged", "published"):
-            with self.subTest(boundary=boundary), tempfile.TemporaryDirectory() as tmp:
+            with self.subTest(boundary=boundary), identity_test_directory() as tmp:
                 home = Path(tmp).resolve() / "home"
                 parent = home / ".ssh"
                 parent.mkdir(parents=True, mode=0o700)
@@ -241,7 +252,7 @@ class SSHForwardingRoleTests(unittest.TestCase):
     def test_unbound_creation_restart_keeps_exact_original_intent_authority(self):
         user = pwd.getpwuid(os.getuid())
         group = grp.getgrgid(os.getgid())
-        with tempfile.TemporaryDirectory() as temporary:
+        with identity_test_directory() as temporary:
             home = Path(temporary).resolve() / "home"
             parent = home / ".ssh"
             parent.mkdir(parents=True, mode=0o700)
@@ -322,7 +333,7 @@ class SSHForwardingRoleTests(unittest.TestCase):
             for raced_name in ("canonical", "staging"):
                 with (
                     self.subTest(check=check, raced_name=raced_name),
-                    tempfile.TemporaryDirectory() as temporary,
+                    identity_test_directory() as temporary,
                 ):
                     home = Path(temporary).resolve() / "home"
                     parent = home / ".ssh"
@@ -385,7 +396,7 @@ class SSHForwardingRoleTests(unittest.TestCase):
         for raced_name in ("canonical", "staging"):
             with (
                 self.subTest(raced_name=raced_name),
-                tempfile.TemporaryDirectory() as temporary,
+                identity_test_directory() as temporary,
             ):
                 parent = Path(temporary)
                 parent.chmod(0o700)
@@ -455,7 +466,7 @@ class SSHForwardingRoleTests(unittest.TestCase):
     def test_identity_parent_swap_after_open_cannot_redirect_key_install(self):
         user = pwd.getpwuid(os.getuid()).pw_name
         group = grp.getgrgid(os.getgid()).gr_name
-        with tempfile.TemporaryDirectory() as temporary:
+        with identity_test_directory() as temporary:
             root = Path(temporary).resolve()
             home = root / "home"
             parent = home / ".ssh"
@@ -494,7 +505,7 @@ class SSHForwardingRoleTests(unittest.TestCase):
         user = pwd.getpwuid(os.getuid())
         group = grp.getgrgid(os.getgid())
         for case in ("zero", "enospc"):
-            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+            with self.subTest(case=case), identity_test_directory() as temporary:
                 parent = Path(temporary)
                 parent.chmod(0o700)
                 parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
@@ -559,7 +570,7 @@ class SSHForwardingRoleTests(unittest.TestCase):
     def test_private_identity_write_all_retries_partial_and_eintr(self):
         user = pwd.getpwuid(os.getuid())
         group = grp.getgrgid(os.getgid())
-        with tempfile.TemporaryDirectory() as temporary:
+        with identity_test_directory() as temporary:
             parent = Path(temporary)
             parent.chmod(0o700)
             parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
@@ -601,7 +612,7 @@ class SSHForwardingRoleTests(unittest.TestCase):
     def test_bound_private_temporary_resumes_after_restart_without_rotation(self):
         user = pwd.getpwuid(os.getuid())
         group = grp.getgrgid(os.getgid())
-        with tempfile.TemporaryDirectory() as temporary:
+        with identity_test_directory() as temporary:
             parent = Path(temporary)
             parent.chmod(0o700)
             parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
@@ -660,7 +671,7 @@ class SSHForwardingRoleTests(unittest.TestCase):
     def test_unbound_private_temporary_is_preserved_fail_closed_on_restart(self):
         user = pwd.getpwuid(os.getuid())
         group = grp.getgrgid(os.getgid())
-        with tempfile.TemporaryDirectory() as temporary:
+        with identity_test_directory() as temporary:
             parent = Path(temporary)
             parent.chmod(0o700)
             parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
@@ -739,7 +750,7 @@ class SSHForwardingRoleTests(unittest.TestCase):
             for case, (canonical_payload, staging_payload) in cases.items():
                 with (
                     self.subTest(check=check, case=case),
-                    tempfile.TemporaryDirectory() as temporary,
+                    identity_test_directory() as temporary,
                 ):
                     home = Path(temporary).resolve() / "home"
                     parent = home / ".ssh"
@@ -797,7 +808,7 @@ class SSHForwardingRoleTests(unittest.TestCase):
     def test_restart_never_accepts_partial_replacement_canonical_key(self):
         user = pwd.getpwuid(os.getuid())
         group = grp.getgrgid(os.getgid())
-        with tempfile.TemporaryDirectory() as temporary:
+        with identity_test_directory() as temporary:
             parent = Path(temporary)
             parent.chmod(0o700)
             parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
@@ -867,7 +878,7 @@ class SSHForwardingRoleTests(unittest.TestCase):
             for race in ("temporary", "canonical"):
                 with (
                     self.subTest(target=target_kind, race=race),
-                    tempfile.TemporaryDirectory() as temporary,
+                    identity_test_directory() as temporary,
                 ):
                     parent = Path(temporary)
                     parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
@@ -999,7 +1010,7 @@ class SSHForwardingRoleTests(unittest.TestCase):
         uid = os.getuid()
         gid = os.getgid()
         for target_kind in ("public-key", "creation-intent"):
-            with self.subTest(target=target_kind), tempfile.TemporaryDirectory() as tmp:
+            with self.subTest(target=target_kind), identity_test_directory() as tmp:
                 parent = Path(tmp)
                 parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
                 try:
@@ -1096,7 +1107,7 @@ class SSHForwardingRoleTests(unittest.TestCase):
         for transition in ("update", "clear"):
             with (
                 self.subTest(transition=transition),
-                tempfile.TemporaryDirectory() as tmp,
+                identity_test_directory() as tmp,
             ):
                 parent = Path(tmp)
                 parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
@@ -1169,7 +1180,7 @@ class SSHForwardingRoleTests(unittest.TestCase):
             for kind in ("fifo", "socket", "directory"):
                 with (
                     self.subTest(name=inspected_name, kind=kind),
-                    tempfile.TemporaryDirectory() as temporary,
+                    identity_test_directory() as temporary,
                 ):
                     home = Path(temporary).resolve() / "home"
                     parent = home / ".ssh"
@@ -1253,9 +1264,37 @@ class SSHForwardingRoleTests(unittest.TestCase):
         )
         self.assertNotEqual(completed.returncode, 0)
 
+    def test_nonroot_identity_parent_rejects_wrong_configured_group(self):
+        with identity_test_directory() as temporary:
+            home = Path(temporary).resolve()
+            parent = home / ".ssh"
+            parent.mkdir(mode=0o700)
+            before = parent.stat()
+            with (
+                mock.patch.object(
+                    identity_helper.os, "geteuid", return_value=os.getuid() or 1
+                ),
+                self.assertRaisesRegex(
+                    identity_helper.IdentityError, "configured user/group"
+                ),
+            ):
+                identity_helper.open_parent(
+                    str(home),
+                    str(parent / "identity"),
+                    uid=os.getuid(),
+                    gid=before.st_gid + 1,
+                    create=True,
+                )
+            after = parent.stat()
+            self.assertEqual(
+                (after.st_uid, after.st_gid, after.st_mode),
+                (before.st_uid, before.st_gid, before.st_mode),
+            )
+            self.assertEqual(list(parent.iterdir()), [])
+
     def test_identity_rejects_wrong_mode_and_hardlink_replacements_before_read(self):
         uid = os.getuid()
-        with tempfile.TemporaryDirectory() as temporary:
+        with identity_test_directory() as temporary:
             parent = Path(temporary)
             descriptor = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
             try:
@@ -1279,7 +1318,7 @@ class SSHForwardingRoleTests(unittest.TestCase):
 
     def test_identity_cleanup_is_exclusive_and_rejects_post_verification_swap(self):
         for case in ("precreated-target", "post-verification-swap"):
-            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+            with self.subTest(case=case), identity_test_directory() as temporary:
                 parent = Path(temporary)
                 source = parent / "identity"
                 source.write_bytes(b"owned")
@@ -1350,7 +1389,7 @@ class SSHForwardingRoleTests(unittest.TestCase):
             for boundary in ("rename", "first-fsync", "final-fsync"):
                 with (
                     self.subTest(name=name, boundary=boundary),
-                    tempfile.TemporaryDirectory() as temporary,
+                    identity_test_directory() as temporary,
                 ):
                     parent = Path(temporary)
                     source = parent / name
@@ -1423,7 +1462,7 @@ class SSHForwardingRoleTests(unittest.TestCase):
     ):
         uid = os.getuid()
         for name, mode in (("identity", 0o600), ("identity.pub", 0o644)):
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+            with self.subTest(name=name), identity_test_directory() as temporary:
                 parent = Path(temporary)
                 source = parent / name
                 source.write_bytes(b"validated")

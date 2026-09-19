@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Initialize SSH forwarding identity test fixtures with the configured primary
+  group so macOS group inheritance does not bypass the intended race regressions.
+  Production owner/group checks remain unchanged and are explicitly tested.
+
 ### Security
 
 - Add a guarded `metrics_bind` Traefik transaction that can only replace an
