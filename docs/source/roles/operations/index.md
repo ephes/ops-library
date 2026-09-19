@@ -44,6 +44,7 @@ Available runbooks:
 ```{toctree}
 :maxdepth: 1
 
+software_estate
 software_live
 homeassistant_backup
 homeassistant_restore

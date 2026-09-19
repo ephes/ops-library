@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Initialize SSH forwarding identity test fixtures with the configured primary
-  group so macOS group inheritance does not bypass the intended race regressions.
-  Production owner/group checks remain unchanged and are explicitly tested.
-
 ### Security
 
 - Add a guarded `metrics_bind` Traefik transaction that can only replace an
@@ -26,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and [GHSA-8fcf-v89g-xpg6](https://github.com/traefik/traefik/security/advisories/GHSA-8fcf-v89g-xpg6).
 
 ### Fixed
+
+- Initialize SSH forwarding identity test fixtures with the configured primary
+  group so macOS group inheritance does not bypass the intended race regressions.
+  Production owner/group checks remain unchanged and are explicitly tested.
+
+- Reject empty/duplicate application IDs before collection and preserve missing
+  package/version evidence and nested Git/Python failures in the pilot applications
+  category. Keep spool and Vector data paths separate; typecheck helper bodies.
 
 - Select Debian 13's packaged `named.conf.root-hints` include in
   `bind_authoritative_deploy`; trixie removes `named.conf.default-zones`, which
@@ -49,6 +53,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path explicitly or stage the new clone before the next no-fetch deployment.
 
 ### Added
+
+- Add opt-in local inventory report emission and isolated Vector config generation; source-run pilot helpers do not install schedules or remote access.
+
+- Add read-only software estate discovery and explicit coverage evidence for
+  host packages, service state, container identities and registered applications.
+  Private estate reports preserve configured intent separately from live state.
 
 - Declare Debian 13/trixie support for the staging package, repository,
   application, DNS, logging, SSH/base, static-site, and systemd-mask roles.

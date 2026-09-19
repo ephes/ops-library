@@ -50,8 +50,9 @@ parent directory's group, which may otherwise be `wheel` under the system temp
 root even when the configured test identity belongs to `staff`.
 
 This setup changes only fresh test directories. The production helper still
-rejects a mismatched configured owner/group, and a dedicated negative test verifies
-that a non-root operation rejects the mismatch without changing the directory.
+rejects mismatched configured ownership. A dedicated negative test verifies
+that a non-root operation rejects a mismatched configured group without changing
+the directory.
 Do not skip ownership or race assertions to make the suite pass on macOS.
 
 ## Molecule Scenarios

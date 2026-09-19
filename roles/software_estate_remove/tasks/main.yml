@@ -1,0 +1,10 @@
+---
+- name: Require dedicated software estate removal directory
+  ansible.builtin.assert:
+    that:
+      - software_estate_remove_install_dir == '/usr/local/lib/software-estate'
+
+- name: Remove software estate collector and bundled scanner
+  ansible.builtin.file:
+    path: '{{ software_estate_remove_install_dir }}'
+    state: absent

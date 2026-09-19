@@ -5,6 +5,7 @@ Roles for safely removing services and cleaning up resources.
 ```{toctree}
 :maxdepth: 1
 
+software_estate_remove
 software_live_remove
 fastdeploy_remove
 nyxmon_remove
