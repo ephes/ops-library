@@ -175,24 +175,27 @@ class InventoryEmitterTests(unittest.TestCase):
 
     def test_atomic_report_is_private_and_immutable(self):
         with tempfile.TemporaryDirectory() as tmp:
+            tmp = str(Path(tmp).resolve())
             result = emit.envelope(self.observation())
             output = emit.write_report(result, tmp)
             self.assertEqual(json.loads(output.read_text()), result)
             self.assertEqual(output.stat().st_mode & 0o777, 0o600)
-            self.assertEqual(list(Path(tmp).iterdir()), [output])
+            self.assertEqual(emit.outbox.entries(Path(tmp)), [output])
             with self.assertRaises(ValueError):
                 emit.write_report(result, tmp)
 
     def test_outbox_never_evicts_unconfirmed_data(self):
         with tempfile.TemporaryDirectory() as tmp:
+            tmp = str(Path(tmp).resolve())
             for i in range(32):
                 (Path(tmp) / str(i)).write_text("keep")
             with self.assertRaisesRegex(ValueError, "outbox full"):
                 emit.write_report(emit.envelope(self.observation()), tmp)
-            self.assertEqual(len(list(Path(tmp).iterdir())), 32)
+            self.assertEqual(len(emit.outbox.entries(Path(tmp))), 32)
 
     def test_byte_limit_and_nonprivate_spool(self):
         with tempfile.TemporaryDirectory() as tmp:
+            tmp = str(Path(tmp).resolve())
             result = emit.envelope(self.observation())
             result["gaps"] = ["x" * emit.MAX_BYTES]
             with self.assertRaises(ValueError):
@@ -210,6 +213,7 @@ class InventoryEmitterTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 config.configuration("/tmp/reports", "/tmp/data", endpoint)
         with tempfile.TemporaryDirectory() as tmp:
+            tmp = str(Path(tmp).resolve())
             root = Path(tmp).resolve()
             result = config.configuration(
                 root / "reports",
@@ -232,6 +236,7 @@ class InventoryEmitterTests(unittest.TestCase):
 
     def test_vector_secret_sibling_follows_resolved_data_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
+            tmp = str(Path(tmp).resolve())
             root = Path(tmp).resolve()
             data = root / "data"
             data.mkdir()
@@ -246,6 +251,7 @@ class InventoryEmitterTests(unittest.TestCase):
 
     def test_vector_checks_existing_secret_permissions_and_overlap(self):
         with tempfile.TemporaryDirectory() as tmp:
+            tmp = str(Path(tmp).resolve())
             root = Path(tmp)
             data = root / "data"
             secrets = config.secret_directory(data)

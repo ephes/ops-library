@@ -63,6 +63,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add source-run direct HTTPS inventory delivery with durable retry/block state,
+  strict acknowledgment validation and shared outbox locking. Reports are removed
+  only after confirmed storage. Existing Vector log/metric routes are unchanged;
+  no scheduler or production inventory rollout is installed.
+
 - Add opt-in local inventory report emission and isolated Vector config generation; source-run pilot helpers do not install schedules or remote access.
 
 - Add read-only software estate discovery and explicit coverage evidence for

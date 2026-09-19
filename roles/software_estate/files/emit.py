@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import collect
+import outbox
 
 MAX_BYTES = 8 * 1024 * 1024
 
@@ -78,17 +79,21 @@ def write_report(report, spool):
     if len(data) > MAX_BYTES:
         raise ValueError("report exceeds 8 MiB")
     spool = Path(spool)
-    if spool.is_symlink():
+    if any(part.is_symlink() for part in (spool.absolute(), *spool.absolute().parents)):
         raise ValueError("spool must not be a symlink")
     spool.mkdir(parents=True, exist_ok=True, mode=0o700)
     if spool.stat().st_uid != os.geteuid() or spool.stat().st_mode & 0o077:
         raise ValueError("spool must be owner-only and owned by the current user")
-    if len(list(spool.iterdir())) >= 32:
+    with outbox.locked(spool):
+        return publish_report(data, report, spool)
+
+
+def publish_report(data, report, spool):
+    if len(outbox.entries(spool)) >= outbox.MAX_REPORTS:
         raise ValueError(
             "pilot outbox full; preserve reports and reconcile delivery before cleanup"
         )
-    identifier = str(uuid.UUID(report["snapshot_id"]))
-    target = spool / (identifier + ".ndjson")
+    target = spool / outbox.report_name(report["snapshot_id"])
     if target.exists():
         raise ValueError("snapshot file already exists")
     descriptor, temporary = tempfile.mkstemp(prefix=".pending-", dir=spool)
@@ -101,6 +106,7 @@ def write_report(report, spool):
         os.link(temporary, target)
     finally:
         os.unlink(temporary)
+    outbox.sync_directory(spool)
     return target
 
 

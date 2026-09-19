@@ -73,9 +73,9 @@ collectors and applications are not affected.
 `files/emit.py --policy HOST.json --spool /private/path/outbox` runs one local scan
 and writes an immutable schema-1 JSON report for the Graphyard inventory pilot.
 It performs no network transfer. The directory must be owned by the caller and
-mode 0700; files are mode 0600. Reports are limited to 8 MiB and the pilot stops
-at 32 outbox entries rather than deleting unconfirmed data. This deliberately
-requires manual delivery reconciliation; it is not an unattended lifecycle.
+mode 0700; files are mode 0600. The emitter also rejects symlinked path
+components; use canonical paths such as `/private/tmp` on macOS. Reports are limited to 8 MiB and the pilot stops
+at 32 outbox entries rather than deleting unconfirmed data. The direct sender below reconciles confirmed deliveries; scheduling is not installed.
 
 `files/vector_inventory_config.py --spool /absolute/outbox --data-dir /absolute/data
 --endpoint https://receiver.example/v1/inventory --output /private/vector.json`
@@ -125,3 +125,46 @@ revocation, source retention, service lifecycle and private receiving endpoint.
 Spool and Vector data directories must not overlap, preventing failed-record
 output from being ingested as new inventory. File-only tests are not evidence of HTTP delivery. The target Python floor for
 both helpers is 3.10. Run `just test-software-estate` for offline regression tests.
+
+## Direct one-shot delivery (source-run)
+
+The preferred inventory path is `files/send.py --spool /private/outbox
+--endpoint https://receiver.example/v1/inventory --credential-file /private/auth/writer`.
+Python 3.10+ on Linux or macOS is required. Run once per manual retry; this does
+not collect, schedule or install anything. Do not run Vector against this outbox.
+The emitter and sender share a nonblocking local lock. Paths must contain no
+symlinks (on macOS use `/private/tmp`, not `/tmp`); spool and credential parent
+must be caller-owned and private, files regular, mode 0600 and without hard links.
+
+Reports stay until HTTP 200 with a matching JSON `stored` acknowledgment, including
+boolean `duplicate`. Lost replies retain the same immutable report for safe replay.
+TLS verification is mandatory; redirects and environment proxies are not used.
+`--allow-loopback-http` permits only literal loopback HTTP for isolated tests.
+The sender emits only identifiers and fixed outcome codes, never response bodies
+or credentials. Default total run deadline is 120 seconds (`--run-timeout 1..600`).
+
+`.delivery.json` keeps retry/block state under the outbox lock. Transient network,
+429 and 5xx failures are eligible after one hour; Retry-After can extend this to
+at most 24 hours. After fixing a transient outage, `--retry-now` explicitly
+overrides that wait; `--retry-blocked` remains separate. Nothing sleeps or schedules a retry: another invocation is needed.
+Other HTTP rejections, invalid acknowledgments and invalid reports stay blocked;
+after correcting the cause, use `--retry-blocked`. Changed credentials/endpoint
+or changed report bytes invalidate prior retry state; do not edit published reports
+or reuse their IDs for different content. One blocked report does not stop others.
+
+Exit 0 means all attempted reports were acknowledged (or the queue was empty).
+Exit 1 includes blocked/deferred reports, local errors or a run deadline. On crash,
+unconfirmed reports remain; replay after an acknowledged-but-not-deleted delivery
+is harmless. Report publication, state updates and acknowledged deletion fsync the
+directory. Lock/state files do not count toward the 32-report limit. Unexpected
+files (including interrupted temporary files) count and remain visible as errors;
+inspect and reconcile them locally rather than deleting unconfirmed reports.
+Stray temporary files do not prevent the sender from draining up to 32 reports.
+Malformed state (including impossible retry dates or a significant backward clock
+jump) fails closed. Preserve it for diagnosis before repairing it locally.
+CLI failures before a report outcome use a generic local-error code; check endpoint,
+private paths, lock ownership and state locally. The TLS regression suite requires
+an OpenSSL executable supporting `req -addext` for its temporary test certificate.
+
+No deployment role, timer or existing Vector configuration is changed. Production
+receiver enrollment, service lifecycle and live rollout remain subsequent steps.
