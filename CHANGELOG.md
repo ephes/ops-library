@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve target-local Graphyard `src/django/.env` during source synchronization;
+  exclude developer copies from upload as well.
+
 - Resolve the inventory writer credential through Vector's directory secret backend
   at `<data-dir>-secrets/writer`. Environment interpolation is disabled by default
   in current Vector; the previous placeholder was sent literally and rejected.
@@ -62,6 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path explicitly or stage the new clone before the next no-fetch deployment.
 
 ### Added
+
+- Add opt-in private Graphyard inventory ingress with source allowlisting, 8 MiB
+  body limit and independent rate/concurrency limits; existing UI/metric routes
+  remain unchanged. Inventory writers still authenticate at the application.
 
 - Add source-run direct HTTPS inventory delivery with durable retry/block state,
   strict acknowledgment validation and shared outbox locking. Reports are removed

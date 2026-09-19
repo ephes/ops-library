@@ -98,6 +98,7 @@
               - graphyard_deploy_defaults.graphyard_grafana_influx_username == "grafana"
               - graphyard_deploy_defaults.graphyard_grafana_influx_password == "CHANGEME"
               - graphyard_sample_retention_seconds == 15552000
+              - "'src/django/.env' in graphyard_deploy_defaults.graphyard_rsync_excludes"
 
     - name: Validate runtime and retention tasks are wired into the role
       block:

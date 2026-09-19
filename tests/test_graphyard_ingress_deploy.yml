@@ -59,11 +59,9 @@
 
     - name: Validate template renders expected dual-router and middleware configuration
       block:
-        - name: Render template with test values
-          ansible.builtin.template:
-            src: "{{ role_path }}/templates/traefik-graphyard.yml.j2"
-            dest: "{{ rendered_config }}"
-          vars:
+        # set_fact deliberately overrides include_vars defaults in this render test.
+        - name: Set template test values
+          ansible.builtin.set_fact:
             graphyard_ingress_basic_auth_enabled: true
             graphyard_ingress_graphyard_host: "graphyard.home.xn--wersdrfer-47a.de"
             graphyard_ingress_grafana_host: "grafana.home.xn--wersdrfer-47a.de"
@@ -77,6 +75,11 @@
             graphyard_ingress_basic_auth_password_hash: "$2y$05$abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd"
             graphyard_ingress_graphyard_middlewares: []
             graphyard_ingress_grafana_middlewares: []
+
+        - name: Render template with test values
+          ansible.builtin.template:
+            src: "{{ role_path }}/templates/traefik-graphyard.yml.j2"
+            dest: "{{ rendered_config }}"
 
         - name: Read rendered template
           ansible.builtin.slurp:
@@ -101,6 +104,79 @@
               - "'certResolver: letsencrypt' in rendered_text"
           vars:
             rendered_text: "{{ rendered_file.content | b64decode }}"
+
+    - name: Validate inventory limits without changing existing routes
+      block:
+        - name: Enable inventory for second render
+          ansible.builtin.set_fact:
+            graphyard_ingress_inventory_enabled: true
+
+        - name: Render opt-in inventory route
+          ansible.builtin.template:
+            src: "{{ role_path }}/templates/traefik-graphyard.yml.j2"
+            dest: "{{ rendered_config }}"
+
+        - name: Read inventory template
+          ansible.builtin.slurp:
+            path: "{{ rendered_config }}"
+          register: inventory_rendered
+
+        - name: Assert inventory policy and existing routes
+          ansible.builtin.assert:
+            that:
+              - "'graphyard-inventory' not in before.http.routers"
+              - after.http.routers['graphyard-inventory'].priority > after.http.routers['graphyard-int'].priority
+              - after.http.routers['graphyard-inventory'].priority > after.http.routers['graphyard-ext'].priority
+              - "'Path(`/v1/inventory`)' in after.http.routers['graphyard-inventory'].rule"
+              - "'ClientIP' not in after.http.routers['graphyard-inventory'].rule"
+              - after.http.routers['graphyard-inventory'].middlewares == inventory_chain
+              - after.http.middlewares['graphyard-inventory-body'].buffering.maxRequestBodyBytes == 8388608
+              - after.http.middlewares['graphyard-inventory-body'].buffering.memRequestBodyBytes == 1048576
+              - after.http.middlewares['graphyard-inventory-rate'].rateLimit.average == 6
+              - after.http.middlewares['graphyard-inventory-rate'].rateLimit.period == '1m'
+              - after.http.middlewares['graphyard-inventory-rate'].rateLimit.burst == 4
+              - after.http.middlewares['graphyard-inventory-inflight'].inFlightReq.amount == 2
+              - after.http.middlewares['graphyard-inventory-inflight'].inFlightReq.sourceCriterion.requestHost == true
+              - after.http.middlewares['graphyard-inventory-sources'].ipAllowList.sourceRange == ['192.168.0.0/16', '100.64.0.0/10']
+              - after.http.routers['graphyard-int'] == before.http.routers['graphyard-int']
+              - after.http.routers['graphyard-ext'] == before.http.routers['graphyard-ext']
+              - after.http.routers['grafana-int'] == before.http.routers['grafana-int']
+              - after.http.routers['grafana-ext'] == before.http.routers['grafana-ext']
+              - after.http.services == before.http.services
+              - before.http.middlewares.items() | difference(after.http.middlewares.items()) | length == 0
+          vars:
+            before: "{{ rendered_file.content | b64decode | from_yaml }}"
+            after: "{{ inventory_rendered.content | b64decode | from_yaml }}"
+            inventory_chain:
+              - graphyard-inventory-sources
+              - graphyard-inventory-rate
+              - graphyard-inventory-inflight
+              - graphyard-inventory-body
+              - graphyard-headers
+
+    - name: Disable Basic Auth for final render
+      ansible.builtin.set_fact:
+        graphyard_ingress_basic_auth_enabled: false
+
+    - name: Render inventory route without Basic Auth
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/traefik-graphyard.yml.j2"
+        dest: "{{ rendered_config }}"
+
+    - name: Read configuration without Basic Auth
+      ansible.builtin.slurp:
+        path: "{{ rendered_config }}"
+      register: noauth_rendered
+
+    - name: Assert all router middlewares exist without Basic Auth
+      ansible.builtin.assert:
+        that:
+          - "'graphyard-inventory' in config.http.routers"
+          - config.http.routers.values() | map(attribute='middlewares') | flatten | difference(config.http.middlewares.keys()) | length == 0
+          - "'graphyard-stack-auth' not in config.http.middlewares"
+          - "'graphyard-secure' in config.http.routers"
+      vars:
+        config: "{{ noauth_rendered.content | b64decode | from_yaml }}"
 
     - name: Clean up rendered test file
       ansible.builtin.file:

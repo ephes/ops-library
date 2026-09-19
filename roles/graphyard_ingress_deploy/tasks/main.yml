@@ -22,6 +22,7 @@
               graphyard_ingress_basic_auth_password != "CHANGEME"
             )
           - not graphyard_ingress_basic_auth_enabled or graphyard_ingress_internal_ip_ranges | length > 0
+          - not graphyard_ingress_inventory_enabled | bool or graphyard_ingress_internal_ip_ranges | length > 0
           - not graphyard_ingress_manage_graphyard_env or graphyard_ingress_django_allowed_hosts | length > 0
           - not graphyard_ingress_manage_graphyard_env or graphyard_ingress_django_csrf_trusted_origins | length > 0
           - graphyard_ingress_django_admin_url | length == 0 or (
@@ -43,7 +44,7 @@
         webapp_deploy_internal_traefik_basic_auth_enabled: "{{ graphyard_ingress_basic_auth_enabled }}"
         webapp_deploy_internal_traefik_basic_auth_user: "{{ graphyard_ingress_basic_auth_user }}"
         webapp_deploy_internal_traefik_basic_auth_password: "{{ graphyard_ingress_basic_auth_password }}"
-        webapp_deploy_internal_traefik_password_hash_var: graphyard_ingress_basic_auth_password_hash
+        webapp_deploy_internal_traefik_password_hash_var: graphyard_ingress_basic_auth_password_hash  # pragma: allowlist secret
         webapp_deploy_internal_traefik_auth_packages:
           - apache2-utils
         webapp_deploy_internal_traefik_auth_package_os_families:

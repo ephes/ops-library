@@ -141,3 +141,7 @@ See `defaults/main.yml` for the full variable set.
 - On first boot against an empty InfluxDB state directory, the role also creates
   the Grafana-facing InfluxDB v1 auth expected by the provisioned InfluxQL
   datasource.
+
+Rsync preserves `src/django/.env` alongside the runtime database and media.
+A local developer environment file is never copied over the target configuration.
+The role-managed runtime environment remains `/etc/graphyard/graphyard.env`.
