@@ -6,8 +6,36 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import stat
 from pathlib import Path
 from urllib.parse import urlsplit
+
+
+def secret_directory(data_dir):
+    """Keep credentials separate from buffers that may need diagnostic copying."""
+    path = Path(data_dir)
+    return path.with_name(path.name + "-secrets")
+
+
+def check_existing_secret_paths(directory):
+    # Configs may be generated before enrollment. Check existing paths only;
+    # operators must also protect any credential provisioned later.
+    for path, is_directory in ((directory, True), (directory / "writer", False)):
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            raise ValueError("cannot inspect existing secret path") from exc
+        if stat.S_ISLNK(info.st_mode):
+            raise ValueError("secret paths must not be symlinks")
+        expected_type = stat.S_ISDIR if is_directory else stat.S_ISREG
+        if not expected_type(info.st_mode):
+            raise ValueError("unexpected secret path type")
+        if info.st_uid != os.geteuid() or info.st_mode & 0o077:
+            raise ValueError(
+                "existing secret paths must be owner-only and caller-owned"
+            )
 
 
 def configuration(spool, data_dir, endpoint):
@@ -30,8 +58,23 @@ def configuration(spool, data_dir, endpoint):
         or data_path in spool_path.parents
     ):
         raise ValueError("spool and data directories must not overlap")
+    secrets = secret_directory(data_path)
+    if (
+        secrets == spool_path
+        or secrets in spool_path.parents
+        or spool_path in secrets.parents
+    ):
+        raise ValueError("secret directory and spool must not overlap")
+    check_existing_secret_paths(secrets)
     return {
         "data_dir": str(data_dir),
+        "secret": {
+            "inventory_writer": {
+                "type": "directory",
+                "path": str(secrets),
+                "remove_trailing_whitespace": True,
+            }
+        },
         "sources": {
             "inventory_files": {
                 "type": "file",
@@ -60,7 +103,7 @@ def configuration(spool, data_dir, endpoint):
                 "encoding": {"codec": "json"},
                 "auth": {
                     "strategy": "bearer",
-                    "token": "${SOFTWARE_ESTATE_WRITE_CREDENTIAL}",
+                    "token": "SECRET[inventory_writer.writer]",
                 },
                 "healthcheck": {"enabled": False},
                 "acknowledgements": {"enabled": True},

@@ -209,13 +209,64 @@ class InventoryEmitterTests(unittest.TestCase):
         ]:
             with self.assertRaises(ValueError):
                 config.configuration("/tmp/reports", "/tmp/data", endpoint)
-        result = config.configuration(
-            "/tmp/reports", "/tmp/data", "https://inventory.example/v1/inventory"
-        )
-        sink = result["sinks"]["inventory_http"]
-        self.assertEqual(sink["batch"]["max_events"], 1)
-        self.assertEqual(sink["buffer"]["when_full"], "block")
-        self.assertIn("${SOFTWARE_ESTATE_WRITE_CREDENTIAL}", sink["auth"]["token"])
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            result = config.configuration(
+                root / "reports",
+                root / "data",
+                "https://inventory.example/v1/inventory",
+            )
+            self.assertNotIn("${", json.dumps(result))
+            sink = result["sinks"]["inventory_http"]
+            self.assertEqual(sink["batch"]["max_events"], 1)
+            self.assertEqual(sink["buffer"]["when_full"], "block")
+            self.assertEqual(sink["auth"]["token"], "SECRET[inventory_writer.writer]")
+            self.assertEqual(
+                result["secret"]["inventory_writer"],
+                {
+                    "type": "directory",
+                    "path": str(root / "data-secrets"),
+                    "remove_trailing_whitespace": True,
+                },
+            )
+
+    def test_vector_secret_sibling_follows_resolved_data_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            data = root / "data"
+            data.mkdir()
+            alias = root / "alias"
+            alias.symlink_to(data, target_is_directory=True)
+            result = config.configuration(
+                root / "outbox", alias, "http://127.0.0.1/v1/inventory"
+            )
+            self.assertEqual(
+                result["secret"]["inventory_writer"]["path"], str(root / "data-secrets")
+            )
+
+    def test_vector_checks_existing_secret_permissions_and_overlap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = root / "data"
+            secrets = config.secret_directory(data)
+            secrets.mkdir(mode=0o700)
+            writer = secrets / "writer"
+            writer.write_text("synthetic")
+            writer.chmod(0o600)
+            endpoint = "http://127.0.0.1/v1/inventory"
+            config.configuration(root / "outbox", data, endpoint)
+            for path in (secrets, writer):
+                private_mode = path.stat().st_mode & 0o777
+                path.chmod(0o755 if path.is_dir() else 0o644)
+                with self.assertRaisesRegex(ValueError, "owner-only"):
+                    config.configuration(root / "outbox", data, endpoint)
+                path.chmod(private_mode)
+            with self.assertRaisesRegex(ValueError, "overlap"):
+                config.configuration(secrets, data, endpoint)
+            writer.unlink()
+            writer.symlink_to(root / "missing")
+            with self.assertRaisesRegex(ValueError, "symlinks"):
+                config.configuration(root / "outbox", data, endpoint)
 
     def test_python310_syntax(self):
         import ast

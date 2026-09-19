@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Resolve the inventory writer credential through Vector's directory secret backend
+  at `<data-dir>-secrets/writer`. Environment interpolation is disabled by default
+  in current Vector; the previous placeholder was sent literally and rejected.
+  Stop the separate pilot, back up its old config, provision a private 0600
+  credential file and regenerate the config while retaining outbox/buffer state.
+  Keep secrets outside the buffer directory and reject insecure existing paths.
+  Real Graphyard integration exposed intermittent low-traffic stalls in Vector
+  0.58, including with one worker; unattended inventory delivery remains blocked.
+
 - Initialize SSH forwarding identity test fixtures with the configured primary
   group so macOS group inheritance does not bypass the intended race regressions.
   Production owner/group checks remain unchanged and are explicitly tested.

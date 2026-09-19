@@ -79,11 +79,33 @@ requires manual delivery reconciliation; it is not an unattended lifecycle.
 
 `files/vector_inventory_config.py --spool /absolute/outbox --data-dir /absolute/data
 --endpoint https://receiver.example/v1/inventory --output /private/vector.json`
-generates a separate pipeline. It uses `${SOFTWARE_ESTATE_WRITE_CREDENTIAL}` from
-the Vector process environment; the rendered file contains no credential. It
+generates a separate pipeline. Its directory secret backend reads the credential
+from `<data-dir>-secrets/writer`, computed after resolving the data directory
+(including symlinks), stripping trailing whitespace. Create the secrets
+directory with mode 0700 and store the issued host credential in `writer` with
+mode 0600. The rendered config contains only `SECRET[inventory_writer.writer]`;
+missing/empty secrets prevent Vector startup. This works with Vector 0.58 without
+enabling environment interpolation (disabled by default since 0.57). See the
+[Vector secrets reference](https://vector.dev/docs/reference/configuration/secrets/).
+To migrate an existing pilot, stop its separate Vector process, move the old config
+to a private backup filename, provision the secret directory/file above, and generate
+a new config at the original output path. Retain the existing outbox and buffer data.
+For an isolated diagnostic run use `vector --config /private/vector.json`.
+Vector 0.58 on macOS intermittently stalls low-traffic reports; one worker also
+failed a later repetition and is not a reliable workaround. The real Graphyard
+probe detects this unresolved transport blocker. Do not enable unattended inventory
+shipping until it is resolved. Exporting the old environment variable no longer
+supplies authentication. The generator
 refuses to overwrite an existing config or use non-TLS remote endpoints. Local
 loopback HTTP is allowed only for tests. Parsing failures route to a private
 `invalid.ndjson` file. Monitor Vector's own errors for permanent HTTP rejection.
+
+Secrets live next to the Vector data directory, so copying/resetting buffer state
+does not include/remove credentials. Existing secret paths must be caller-owned,
+owner-only and not symlinks; the generator rejects violations. If credentials are
+provisioned after generation, the operator must enforce those permissions then.
+Generation does not certify later changes to the filesystem. `vector validate
+--no-environment` does not check secret availability; actual startup does.
 
 Create the data directory with mode 0700 and run this pipeline as the same
 unprivileged user that owns the outbox. The installed system Vector service is
