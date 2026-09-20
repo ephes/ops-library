@@ -89,6 +89,9 @@
 - name: main | Configure and start systemd services
   ansible.builtin.import_tasks: service.yml
 
+- name: main | Configure optional public inventory release refresh
+  ansible.builtin.import_tasks: inventory_releases.yml
+
 - name: main | Apply handlers before health verification
   ansible.builtin.meta: flush_handlers
 

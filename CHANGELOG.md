@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add optional weekly public release comparison scheduling to Graphyard, using its existing unprivileged account and preserving refresh locks during rsync.
+
 - Optionally export existing local software-health metadata for the unprivileged
   inventory publisher, preserving source timestamps and explicit coverage gaps
   without granting monitoring credentials or adding cross-host collection.

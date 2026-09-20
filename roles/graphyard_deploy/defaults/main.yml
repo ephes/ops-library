@@ -154,3 +154,7 @@ graphyard_healthcheck_delay_seconds: 5
 
 # Optional skips for emergency rollback workflows
 graphyard_skip_django_manage: false
+
+# Optional weekly lookup of explicit public release sources. No inventory host access.
+graphyard_inventory_releases_enabled: false
+graphyard_inventory_release_sources: []

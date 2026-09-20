@@ -145,3 +145,52 @@ See `defaults/main.yml` for the full variable set.
 Rsync preserves `src/django/.env` alongside the runtime database and media.
 A local developer environment file is never copied over the target configuration.
 The role-managed runtime environment remains `/etc/graphyard/graphyard.env`.
+
+### Optional inventory release comparison
+
+Set `graphyard_inventory_releases_enabled: true` and supply
+`graphyard_inventory_release_sources` to enable the weekly public release lookup.
+The default is disabled. A source example is:
+
+```yaml
+graphyard_inventory_release_sources:
+  - kind: pypi
+    project: django
+    targets:
+      - kind: python
+        name: django
+```
+
+Requires Graphyard's `refresh_inventory_releases` command and migration 0009.
+The role validates the registry without fetching, installs root-owned configuration,
+and enables `graphyard-inventory-releases.timer` (weekly, randomized by up to one
+hour, persistent). Its oneshot uses the existing Graphyard user/environment and
+writes only the Django directory within its filesystem sandbox. No host SSH,
+Docker permission, new service credential or publisher change is needed. Public
+metadata is fetched from fixed PyPI/GitHub/Homebrew HTTPS APIs; uploaded inventory
+cannot choose URLs. Requests use no GitHub credentials and may hit public rate limits.
+
+The receiver handles successful/failed lookup timestamps and compares only fresh
+observations. Unknown sources, lookup failures, unsupported versions and stale
+reports remain unknown. This reports available upstream releases, not upgrade
+compatibility or vulnerability conclusions. Configuration is stored in
+`{{ graphyard_env_dir }}/inventory-releases.json`. `--check` validates only;
+`--force` requests an explicit refresh. Normal refresh reuses successful cache entries younger than six days,
+leaving margin for weekly timer jitter and request duration. The private Django-directory lock serializes manual and
+scheduled refreshes and is excluded from source rsync deletion.
+
+To stop scheduling, set the enable flag false and redeploy; both timer and oneshot
+are stopped/disabled. Cache history and the root-owned registry file are retained.
+Application removal workflows must disable this optional job before deleting the
+Graphyard runtime. For acceptance, start the service explicitly, inspect its exit
+status and timer, verify the authenticated version view and database backup, then
+repeat deployment and confirm no unnecessary refresh occurred.
+
+Emergency `graphyard_skip_django_manage: true` also prevents enabling this job,
+skips its management command validation, and stops an installed timer/service.
+Check mode does not attempt to start units that have not yet been written.
+The refresh lock basename is always protected by rsync, including when custom
+excludes are supplied. The web and refresh units both use `graphyard_user`.
+Boolean options are typed YAML/JSON booleans; use `-e '{"graphyard_inventory_releases_enabled":false}'`
+when overriding a directly invoked role (the core orchestration play may set its
+own explicit value).
