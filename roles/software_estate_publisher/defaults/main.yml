@@ -13,3 +13,4 @@ software_estate_publisher_policy: {}
 software_estate_publisher_hostnames: []
 software_estate_publisher_endpoint: ""
 software_estate_publisher_credential_file: ""
+software_estate_publisher_writer: ""

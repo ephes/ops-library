@@ -1,16 +1,26 @@
 ---
-- name: Require a local unprivileged macOS publisher
+- name: Require an unprivileged macOS publisher
   ansible.builtin.assert:
     that:
       - ansible_system == 'Darwin'
       - ansible_user_uid | int != 0
-      - ansible_connection == 'local'
       - software_estate_publisher_home == ansible_env.HOME
       - software_estate_publisher_state in ['present', 'absent']
       - software_estate_publisher_label is match('^[A-Za-z0-9][A-Za-z0-9.-]+$')
       - software_estate_publisher_minute is integer
       - software_estate_publisher_minute | int >= 0
       - software_estate_publisher_minute | int <= 59
+
+- name: Require explicit local producer configuration
+  ansible.builtin.assert:
+    that:
+      - software_estate_publisher_policy.host is defined
+      - software_estate_publisher_hostnames | length > 0
+      - software_estate_publisher_policy.host in software_estate_publisher_hostnames
+      - ansible_hostname | lower in software_estate_publisher_hostnames
+      - software_estate_publisher_endpoint is match('^https://')
+      - software_estate_publisher_credential_file | length > 0
+  when: software_estate_publisher_state == 'present'
 
 - name: Derive immutable program release
   ansible.builtin.set_fact:
@@ -25,7 +35,7 @@
 - name: Check publisher paths before managing them
   ansible.builtin.command:
     argv:
-      - "{{ ansible_playbook_python }}"
+      - "{{ ansible_facts.python.executable }}"
       - -c
       - |
         import os, pathlib, stat, sys
@@ -60,6 +70,12 @@
       - "{{ software_estate_publisher_config }}"
       - "{{ software_estate_publisher_plist }}"
       - "{{ software_estate_publisher_program }}/run"
+      - >-
+        {{ (software_estate_publisher_credential_file | dirname)
+        if software_estate_publisher_state == 'present' else software_estate_publisher_program }}
+      - >-
+        {{ software_estate_publisher_credential_file
+        if software_estate_publisher_state == 'present' else software_estate_publisher_program }}
   changed_when: false
   check_mode: false
 
@@ -80,15 +96,6 @@
 - name: Install publisher files
   when: software_estate_publisher_state == 'present'
   block:
-    - name: Require explicit local producer configuration
-      ansible.builtin.assert:
-        that:
-          - software_estate_publisher_policy.host is defined
-          - software_estate_publisher_hostnames | length > 0
-          - software_estate_publisher_policy.host in software_estate_publisher_hostnames
-          - software_estate_publisher_endpoint is match('^https://')
-          - software_estate_publisher_credential_file | length > 0
-
     - name: Create private publisher directories
       ansible.builtin.file:
         path: "{{ item }}"
@@ -107,6 +114,23 @@
         mode: '0600'
       loop: [publish.py, collect.py, emit.py, outbox.py, send.py]
       register: software_estate_publisher_programs_result
+
+    - name: Create the private writer directory when provisioning a new credential
+      ansible.builtin.file:
+        path: "{{ software_estate_publisher_credential_file | dirname }}"
+        state: directory
+        mode: '0700'
+      when: software_estate_publisher_writer | trim | length > 0
+
+    - name: Provision a missing host-bound writer without replacing an existing one
+      ansible.builtin.copy:
+        content: "{{ software_estate_publisher_writer | trim }}\n"
+        dest: "{{ software_estate_publisher_credential_file }}"
+        mode: '0600'
+        force: false
+      no_log: true
+      diff: false
+      when: software_estate_publisher_writer | trim | length > 0
 
     - name: Install publisher configuration without embedding credentials
       ansible.builtin.copy:

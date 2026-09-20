@@ -66,6 +66,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Support operator-initiated remote installation of the host-local macOS inventory
+  publisher, with target-side Python validation and private initial writer
+  provisioning that preserves existing credentials. Installation now requires the
+  observed hostname in the configured lowercase hostname allowlist.
+
 - Add a Linux/systemd local inventory publisher with a dedicated unprivileged
   identity, persistent weekly cadence, hourly HTTPS delivery, retained outbox
   on removal, and a privilege-dropping manual entry point.

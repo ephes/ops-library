@@ -1,8 +1,11 @@
 # software_estate_publisher
 
-Local macOS user LaunchAgent for the software-estate push publisher. This first
-lifecycle slice supports **local macOS deployment only**, as the logged-in,
-unprivileged user. It does not install a Linux timer, SSH access, Syft or updates.
+Host-local macOS user LaunchAgent for the software-estate push publisher. Deploy
+as the logged-in, unprivileged user, either locally or through an explicitly
+invoked operator SSH connection. The runtime scans only that target Mac and sends
+HTTPS; it does not acquire SSH access, poll other machines, install Syft or updates.
+Path validation uses the target's discovered Python interpreter rather than the
+controller's interpreter path. A user GUI domain must already exist on the target.
 The original `software_estate` installation role and Vector services are unchanged.
 
 ## Behavior
@@ -58,12 +61,27 @@ and acknowledgements use private atomic, fsynced files.
 | `python` | `/opt/homebrew/bin/python3` | Trusted Python 3.10+ interpreter |
 | `minute` | `17` | Hourly calendar minute (0–59) |
 | `policy` | `{}` | Required local collector policy with host and application probes |
-| `hostnames` | `[]` | Required local short hostnames; mismatch refuses collection |
+| `hostnames` | `[]` | Required lowercase local short hostnames; observed hostname must match at installation and collection |
 | `endpoint` | empty | Required HTTPS inventory endpoint |
-| `credential_file` | empty | Existing host-bound writer file; never embedded or rotated |
+| `credential_file` | empty | Private host-bound writer path; writer content is never embedded in runtime config or rotated |
+| `writer` | empty | Optional secret for initial provisioning only; existing credential file is preserved |
 
 Only use paths below the current home. Existing managed paths must be private,
 owned by this user and not symlinks; regular managed files must not have hard links.
+Credential path and parent are checked before any writes, using the same private
+ownership/link constraints as managed publisher paths. Supply `writer` from an
+encrypted secret only; whitespace-only values count as empty. Its copy task is
+`no_log`, diff-disabled and `force: false`:
+it provisions a missing file but never replaces an existing writer, even when the
+supplied value differs. Explicit rotation/reconciliation is a separate operator
+action. With empty `writer`, a private credential must already exist. Removal
+needs neither a supplied writer nor an existing credential path.
+Use a dedicated credential subdirectory below home; do not put the writer directly
+in home or reuse a shared 0755 parent such as `~/.config`. Existing credential
+parents must already be private; the role refuses them rather than changing a
+shared directory's permissions. Intermediate ancestors are checked for symlinks;
+only managed paths and the immediate credential parent have ownership/mode checks.
+Use trusted, non-writable-by-other-users ancestors, as for other private state.
 The credential has the same private-path requirements as `send.py`. Versioned
 program directories prevent updating a running interpreter's imported modules.
 The launchd environment explicitly includes Homebrew's path. Existing chezmoi

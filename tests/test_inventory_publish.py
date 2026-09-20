@@ -5,6 +5,7 @@ import io
 import json
 import plistlib
 import socket
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -281,6 +282,92 @@ class PublisherTests(unittest.TestCase):
                 capture_output=True,
             )
             self.assertEqual(result.returncode, status)
+
+    @unittest.skipUnless(shutil.which("ansible-playbook"), "Ansible unavailable")
+    def test_initial_writer_provision_preserves_existing_and_rejects_symlink(self):
+        role = FILES.parent.parent / "software_estate_publisher"
+        tasks = yaml.safe_load((role / "tasks/main.yml").read_text())
+        guard = next(t for t in tasks if t["name"].startswith("Check publisher paths"))
+        install = next(t for t in tasks if t["name"] == "Install publisher files")
+        provision = [
+            t
+            for t in install["block"]
+            if t["name"].startswith(
+                ("Create the private writer", "Provision a missing host-bound writer")
+            )
+        ]
+        marker = self.root / "target-python-used"
+        target_python = self.root / "target-python"
+        target_python.write_text(
+            f"#!{sys.executable}\n"
+            "import os,sys\nfrom pathlib import Path\n"
+            f"Path({str(marker)!r}).touch()\n"
+            f"os.execv({sys.executable!r}, [{sys.executable!r}, *sys.argv[1:]])\n"
+        )
+        target_python.chmod(0o700)
+        variables = yaml.safe_load((role / "defaults/main.yml").read_text())
+        variables.update(
+            software_estate_publisher_home=str(self.root),
+            software_estate_publisher_release=str(self.root / "release"),
+            software_estate_publisher_credential_file=str(
+                self.root / "credentials/writer"
+            ),
+            software_estate_publisher_writer="synthetic-initial-writer",
+            ansible_facts={"python": {"executable": str(target_python)}},
+            ansible_python_interpreter=sys.executable,
+        )
+        play = self.root / "provision.yml"
+        writer = self.root / "credentials/writer"
+        for supplied, succeeds in [
+            ("  \n", True),
+            ("synthetic-initial-writer", True),
+            ("synthetic-replacement-writer", True),
+            ("synthetic-symlink-writer", False),
+        ]:
+            if not succeeds:
+                writer.unlink()
+                writer.symlink_to(self.writer)
+            marker.unlink(missing_ok=True)
+            variables["software_estate_publisher_writer"] = supplied
+            play.write_text(
+                yaml.safe_dump(
+                    [
+                        {
+                            "hosts": "localhost",
+                            "connection": "local",
+                            "gather_facts": False,
+                            "vars": variables,
+                            "tasks": [guard, *provision],
+                        }
+                    ]
+                )
+            )
+            result = subprocess.run(
+                ["ansible-playbook", "-i", "localhost,", str(play)],
+                capture_output=True,
+                text=True,
+                timeout=45,
+            )
+            self.assertEqual(result.returncode == 0, succeeds, result.stdout)
+            self.assertTrue(
+                marker.exists(), "Guard did not invoke the target interpreter"
+            )
+            if supplied.strip():
+                self.assertNotIn(supplied, result.stdout + result.stderr)
+            else:
+                self.assertFalse(
+                    writer.exists(), "Whitespace must not create an unusable writer"
+                )
+                continue
+            if succeeds:
+                self.assertEqual(writer.read_text(), "synthetic-initial-writer\n")
+                self.assertEqual(writer.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(writer.parent.stat().st_mode & 0o777, 0o700)
+            else:
+                self.assertIn("symlink", result.stdout)
+                self.assertEqual(
+                    self.writer.read_text(), "1.synthetic-credential-for-tests-only"
+                )
 
     def test_python310_syntax(self):
         import ast
