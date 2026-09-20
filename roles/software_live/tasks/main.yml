@@ -154,6 +154,44 @@
       htpasswd: '{{ software_live_config_dir }}/htpasswd'
   notify: Restart software live endpoint
 
+- name: Validate opt-in inventory export
+  ansible.builtin.assert:
+    that:
+      - software_live_inventory_export is boolean
+      - software_live_inventory_group is match('^[a-z_][a-z0-9_-]*$')
+
+- name: Prepare a separate read-only inventory projection directory
+  when: software_live_inventory_export
+  block:
+    - name: Require the existing inventory reader group
+      ansible.builtin.getent:
+        database: group
+        key: '{{ software_live_inventory_group }}'
+
+    - name: Inspect inventory projection directory without following links
+      ansible.builtin.stat:
+        path: /var/lib/software-estate-observations
+        follow: false
+      register: _software_live_inventory_dir
+
+    - name: Refuse unsafe existing inventory projection directory
+      ansible.builtin.assert:
+        that:
+          - >-
+            not _software_live_inventory_dir.stat.exists or
+            (_software_live_inventory_dir.stat.isdir | default(false) and
+             not _software_live_inventory_dir.stat.islnk | default(false) and
+             _software_live_inventory_dir.stat.uid == 0 and
+             _software_live_inventory_dir.stat.mode in ['0750', '0700'])
+
+    - name: Create the root-owned inventory projection directory
+      ansible.builtin.file:
+        path: /var/lib/software-estate-observations
+        state: directory
+        owner: root
+        group: '{{ software_live_inventory_group }}'
+        mode: '0750'
+
 - name: Install software observation units
   ansible.builtin.template:
     src: '{{ item.src }}'

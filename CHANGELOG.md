@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Optionally export existing local software-health metadata for the unprivileged
+  inventory publisher, preserving source timestamps and explicit coverage gaps
+  without granting monitoring credentials or adding cross-host collection.
+
 ### Security
 
 - Add a guarded `metrics_bind` Traefik transaction that can only replace an

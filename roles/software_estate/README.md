@@ -197,3 +197,21 @@ spool use `just software-estate-local --send-only --retry-blocked --retry-now` w
 its original directory, endpoint and credential options. Retain reports; do not
 rewrite or delete them. Disabling the flag affects future scans only. An unresolved
 blocked queue can fill the bounded outbox and defer further scans.
+
+### Existing software-health metadata
+
+An application may opt into `software_health: true` on Linux. The collector reads
+only `/var/lib/software-estate-observations/software-health.json`, the optional
+allowlisted export of the existing `software_live` job. It does not access that
+job's private state/configuration, obtain its credentials, execute its collector,
+or query its endpoint. Directory/file must be root-owned and not group/world
+writable; symbolic links, hard-linked files, non-regular files, wrong host/schema,
+extra fields, oversized content and source observations older than 1800 seconds
+or in the future are refused. Unavailable evidence becomes an explicit coverage
+gap; enable partial application preservation if other subprobes must remain visible.
+
+Successful reading means the observation could be obtained, not that all software
+is healthy/current. Original monitoring verdicts, unknowns, versions and source
+time remain in `software_health.items`. APT covers security updates in existing
+local indexes, not arbitrary application updates. No fields are added to the
+normal envelope; this is nested evidence inside the existing application contract.

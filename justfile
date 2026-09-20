@@ -496,7 +496,7 @@ test-voxhelm-csrf: venv
 
 # Live software observation contracts; no network or host mutations.
 test-software-live: venv
-    @UV_PROJECT_ENVIRONMENT=.venv uv run python -W error::ResourceWarning -m unittest tests.test_software_live
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -W error::ResourceWarning -m unittest tests.test_software_live tests.test_software_health_bridge
 
 # Typed Python added by the software observation roles.
 typecheck: venv
