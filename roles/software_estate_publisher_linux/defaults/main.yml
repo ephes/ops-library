@@ -1,0 +1,9 @@
+---
+ops_library_documentation_category: operations
+software_estate_publisher_linux_state: present
+software_estate_publisher_linux_policy: {}
+software_estate_publisher_linux_hostnames: []
+software_estate_publisher_linux_endpoint: ""
+software_estate_publisher_linux_writer: ""
+software_estate_publisher_linux_minute: 23
+software_estate_publisher_linux_python: /usr/bin/python3

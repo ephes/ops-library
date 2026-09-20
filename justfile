@@ -520,4 +520,4 @@ test-openclaw-heartbeat-recovery: venv
 
 # Read-only application/host software discovery.
 test-software-estate: venv
-    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_software_estate tests.test_inventory_emit tests.test_inventory_send tests.test_inventory_publish
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_software_estate tests.test_inventory_emit tests.test_inventory_send tests.test_inventory_publish tests.test_inventory_publisher_linux

@@ -46,6 +46,7 @@ Available runbooks:
 
 software_estate
 software_estate_publisher
+software_estate_publisher_linux
 software_live
 homeassistant_backup
 homeassistant_restore

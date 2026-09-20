@@ -181,6 +181,7 @@ consumer repos depend on.
 | Service operations | [`mail_offsite_replication`](roles/mail_offsite_replication/README.md) | Pull maildir + staged DB/config artifacts into a single offsite ZFS dataset via rsync/SSH with post-sync snapshots. |
 | Service operations | [`software_estate`](roles/software_estate/README.md) | Discover host and application software; optionally install a pinned SBOM scanner. |
 | Service operations | [`software_estate_publisher`](roles/software_estate_publisher/README.md) | Schedule local macOS inventory collection and durable HTTPS delivery. |
+| Service operations | [`software_estate_publisher_linux`](roles/software_estate_publisher_linux/README.md) | Schedule unprivileged Linux inventory collection and durable HTTPS delivery. |
 | Service removal | [`software_estate_remove`](roles/software_estate_remove/README.md) | Remove estate tools while retaining application state and caller-owned evidence. |
 | Service operations | [`software_live`](roles/software_live/README.md) | Observe live Traefik and pending APT security updates through SSH or authenticated JSON. |
 | Service removal | [`software_live_remove`](roles/software_live_remove/README.md) | Remove software observation components while preserving application state. |

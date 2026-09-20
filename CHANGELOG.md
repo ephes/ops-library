@@ -66,6 +66,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add a Linux/systemd local inventory publisher with a dedicated unprivileged
+  identity, persistent weekly cadence, hourly HTTPS delivery, retained outbox
+  on removal, and a privilege-dropping manual entry point.
+
 - Add a local macOS `software_estate_publisher` LaunchAgent with weekly scan
   cadence, hourly eligible delivery, private durable state, shared manual-run
   locking and removal that retains unconfirmed reports and credentials.
