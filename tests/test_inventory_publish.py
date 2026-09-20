@@ -66,6 +66,46 @@ class PublisherTests(unittest.TestCase):
             result = publish.tick(self.config, **kwargs)
             return result, scan.call_count, post.call_count
 
+    def test_partial_evidence_policy_reaches_durable_report(self):
+        self.config["policy"]["preserve_partial_applications"] = True
+        self.observation["applications"] = [
+            {"id": "working", "status": "ok", "items": {"installed_version": "1.2"}},
+            {"id": "missing", "status": "error", "items": []},
+        ]
+        result, scans, posts = self.tick(("retry", "network_error", 3600))
+        self.assertEqual((result["scan"], scans, posts), ("published", 1, 1))
+        report = json.loads(next((self.root / "outbox").glob("*.ndjson")).read_text())
+        category = report["categories"]["applications"]
+        self.assertEqual(category["status"], "error")
+        self.assertEqual(category["items"], [])
+        self.assertEqual(category["partial_items"], self.observation["applications"])
+        self.now += 3601
+        self.assertEqual(self.tick()[1:], (0, 1))
+
+    def test_legacy_receiver_rejection_preserves_partial_report_for_explicit_retry(
+        self,
+    ):
+        self.config["policy"]["preserve_partial_applications"] = True
+        self.observation["applications"] = [
+            {"id": "broken", "status": "error", "items": []}
+        ]
+        result, _, _ = self.tick(("blocked", "http_400", 0))
+        self.assertEqual(result["reports"][0]["status"], "blocked")
+        path = next((self.root / "outbox").glob("*.ndjson"))
+        original = path.read_bytes()
+        self.assertEqual(
+            json.loads(original)["categories"]["applications"]["partial_items"],
+            self.observation["applications"],
+        )
+        self.now += 3600
+        self.assertEqual(self.tick()[1:], (0, 0))
+        self.assertEqual(path.read_bytes(), original)
+        # After the receiver upgrade, explicitly retry the same immutable report.
+        self.assertEqual(
+            self.tick(send_only=True, retry_blocked=True, retry_now=True)[1:], (0, 1)
+        )
+        self.assertFalse(path.exists())
+
     def test_weekly_cadence_hourly_retry_and_restart(self):
         result, scans, posts = self.tick(("retry", "network_error", 3600))
         self.assertEqual((result["scan"], scans, posts), ("published", 1, 1))

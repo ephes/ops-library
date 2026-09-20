@@ -66,6 +66,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add an opt-in `preserve_partial_applications` policy boolean to retain application
+  probe evidence in failed inventory reports without claiming complete coverage.
+  Upgrade the Graphyard receiver before enabling this schema extension.
+
 - Support operator-initiated remote installation of the host-local macOS inventory
   publisher, with target-side Python validation and private initial writer
   provisioning that preserves existing credentials. Installation now requires the

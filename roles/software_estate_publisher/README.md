@@ -186,3 +186,8 @@ restart/wake catch-up, transient failure/retry, deadline, full outbox, corrupt
 state, clock reversal, category failures and locks. Physical sleep/power-cycle
 behavior still needs observation on the target; deterministic clock tests and the
 calendar plist do not prove an actual machine sleep transition happened.
+
+### Opt-in partial application evidence
+
+The local policy supports `preserve_partial_applications: true` after upgrading
+the receiver. See the [shared evidence contract and recovery procedure](../software_estate/README.md#opt-in-partial-application-evidence) before enabling it.

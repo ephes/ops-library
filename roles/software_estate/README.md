@@ -169,3 +169,31 @@ an OpenSSL executable supporting `req -addext` for its temporary test certificat
 The sender itself does not install a job or change Vector. For the separate
 local macOS lifecycle, see [software_estate_publisher](../software_estate_publisher/README.md).
 Linux scheduling remains a subsequent slice.
+
+### Opt-in partial application evidence
+
+After upgrading the Graphyard receiver to support `partial_items`, set the local
+policy boolean `preserve_partial_applications: true` to retain individual probe
+results when the applications category fails. The default is `false`, preserving
+compatibility with older receivers. Deploy the receiver first: an older receiver
+rejects the new field. This does not change permissions, probe scope or cadence.
+
+The failed category still has `status: error` and empty successful `items`;
+`partial_items` carries the observed application entries, including errors and
+coverage gaps. It cannot replace the receiver's last successful observation or
+clear a coverage alert. Both the standalone emitter and scheduled publisher use
+the flag. Existing buffered reports remain unchanged.
+
+Partial evidence exports the configured probe results (including paths, versions
+and coverage identifiers) into private immutable receiver snapshots. Collector
+errors contain exception **class names**, not exception messages or command stderr.
+The existing report size and nesting limits apply; no new probe is enabled.
+
+If enabled before the receiver upgrade, HTTP 400 leaves the immutable report
+blocked in the local outbox. Ordinary ticks do not retry blocked reports. Upgrade
+the receiver, then run `sudo software-estate-publisher --send-only --retry-blocked
+--retry-now` on Linux (omit sudo for the user-owned macOS publisher). For a manual
+spool use `just software-estate-local --send-only --retry-blocked --retry-now` with
+its original directory, endpoint and credential options. Retain reports; do not
+rewrite or delete them. Disabling the flag affects future scans only. An unresolved
+blocked queue can fill the bounded outbox and defer further scans.

@@ -108,3 +108,8 @@ deploy to an explicitly selected inventory host. Verify actual service identity,
 timer state, authenticated receiver download, no rescan on repeated activation,
 and removal/reinstallation with a pending immutable report. Real sleep or reboot
 requires a separate operator maintenance window; do not claim it from clock tests.
+
+### Opt-in partial application evidence
+
+The local policy supports `preserve_partial_applications: true` after upgrading
+the receiver. See the [shared evidence contract and recovery procedure](../software_estate/README.md#opt-in-partial-application-evidence) before enabling it.

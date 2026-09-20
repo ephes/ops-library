@@ -122,7 +122,12 @@ def tick(
                     if len(outbox.entries(spool)) >= outbox.MAX_REPORTS:
                         raise ValueError("outbox full")
                 with send.deadline(120):
-                    report = emit.envelope(collect.collect(config["policy"]))
+                    report = emit.envelope(
+                        collect.collect(config["policy"]),
+                        preserve_partial=config["policy"].get(
+                            "preserve_partial_applications", False
+                        ),
+                    )
                     emit.write_report(report, directory / "outbox")
                 state["last_scan"] = now
                 atomic_json(directory, STATE, state)

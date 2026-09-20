@@ -30,7 +30,9 @@ def application_failed(app):
     )
 
 
-def envelope(observation):
+def envelope(observation, *, preserve_partial=False):
+    if not isinstance(preserve_partial, bool):
+        raise ValueError("preserve_partial must be a boolean")
     categories = {
         name: observation["categories"][name] for name in ("packages", "containers")
     }
@@ -49,6 +51,8 @@ def envelope(observation):
             "items": [],
             "error": "application_probe_failed",
         }
+        if preserve_partial:
+            categories["applications"]["partial_items"] = applications
     else:
         categories["applications"] = {"status": "ok", "items": applications}
     # Extra collector metadata is represented as an explicit coverage note in this pilot.
@@ -118,7 +122,15 @@ def main():
     policy = json.loads(args.policy.read_text(encoding="utf-8"))
     if not isinstance(policy, dict) or not isinstance(policy.get("host"), str):
         raise ValueError("host policy required")
-    print(write_report(envelope(collect.collect(policy)), args.spool))
+    print(
+        write_report(
+            envelope(
+                collect.collect(policy),
+                preserve_partial=policy.get("preserve_partial_applications", False),
+            ),
+            args.spool,
+        )
+    )
 
 
 if __name__ == "__main__":

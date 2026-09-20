@@ -53,6 +53,97 @@ class InventoryEmitterTests(unittest.TestCase):
             {"status": "error", "items": [], "error": "application_probe_failed"},
         )
 
+    def test_opt_in_preserves_partial_evidence_without_claiming_success(self):
+        observation = self.observation()
+        apps = [
+            {"id": "working", "status": "ok", "items": {"installed_version": "1.2"}},
+            {
+                "id": "missing",
+                "status": "error",
+                "items": [],
+                "error": "PermissionError",
+            },
+        ]
+        observation["applications"] = apps
+        legacy = emit.envelope(observation)["categories"]["applications"]
+        self.assertNotIn("partial_items", legacy)
+        category = emit.envelope(observation, preserve_partial=True)["categories"][
+            "applications"
+        ]
+        self.assertEqual(category["status"], "error")
+        self.assertEqual(category["items"], [])
+        self.assertEqual(category["partial_items"], apps)
+        observation["applications"] = apps[:1]
+        self.assertNotIn(
+            "partial_items",
+            emit.envelope(observation, preserve_partial=True)["categories"][
+                "applications"
+            ],
+        )
+        for invalid in ["false", 1, None]:
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                emit.collect.validate_policy(
+                    {"host": "test", "preserve_partial_applications": invalid}
+                )
+
+    def test_cli_reads_partial_evidence_opt_in(self):
+        observation = self.observation()
+        observation["applications"] = [{"id": "broken", "status": "error", "items": []}]
+        with tempfile.TemporaryDirectory() as tmp:
+            policy = Path(tmp) / "policy.json"
+            policy.write_text(
+                json.dumps({"host": "test", "preserve_partial_applications": True})
+            )
+            with (
+                patch.object(
+                    sys, "argv", ["emit", "--policy", str(policy), "--spool", tmp]
+                ),
+                patch.object(emit.collect, "collect", return_value=observation),
+                patch("builtins.print"),
+            ):
+                emit.main()
+            report = json.loads(next(Path(tmp).glob("*.ndjson")).read_text())
+            self.assertEqual(
+                report["categories"]["applications"]["partial_items"],
+                observation["applications"],
+            )
+
+    def test_invalid_cli_policy_fails_before_scanning_or_writing(self):
+        for invalid in ["false", 1, None]:
+            with self.subTest(invalid=invalid), tempfile.TemporaryDirectory() as tmp:
+                policy = Path(tmp) / "policy.json"
+                policy.write_text(
+                    json.dumps(
+                        {"host": "test", "preserve_partial_applications": invalid}
+                    )
+                )
+                with (
+                    patch.object(
+                        sys, "argv", ["emit", "--policy", str(policy), "--spool", tmp]
+                    ),
+                    patch.object(emit.collect, "packages") as packages,
+                    self.assertRaisesRegex(ValueError, "preserve_partial_applications"),
+                ):
+                    emit.main()
+                packages.assert_not_called()
+                self.assertEqual(list(Path(tmp).rglob("*.ndjson")), [])
+
+    def test_partial_probe_error_does_not_export_exception_message(self):
+        with patch.object(
+            emit.collect,
+            "application",
+            side_effect=RuntimeError("private-command-output"),
+        ):
+            observed = emit.collect.category(lambda: emit.collect.application({}, []))
+        observation = self.observation()
+        observation["applications"] = [{"id": "broken", **observed}]
+        report = emit.envelope(observation, preserve_partial=True)
+        self.assertEqual(
+            report["categories"]["applications"]["partial_items"][0]["error"],
+            "RuntimeError",
+        )
+        self.assertNotIn("private-command-output", json.dumps(report))
+
     def test_nested_probe_failures_reach_the_envelope(self):
         for field, probe in [
             ("path", "git_checkout"),
