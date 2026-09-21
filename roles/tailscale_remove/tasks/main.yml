@@ -27,11 +27,14 @@
     purge: true
 
 - name: Remove Tailscale repository
-  ansible.builtin.apt_repository:
-    repo: "deb [signed-by={{ tailscale_repo_keyring }}] {{ tailscale_repo_base }}/{{ tailscale_channel }}/{{ tailscale_repo_distro }} {{ tailscale_repo_release }} {{ tailscale_repo_component }}"
-    filename: "{{ tailscale_repo_list_file | basename | regex_replace('\\.list$', '') }}"
+  ansible.builtin.file:
+    path: "{{ tailscale_repo_sources_file }}"
     state: absent
-    update_cache: false  # Avoid apt-get update failures when removing under limited connectivity
+
+- name: Remove legacy one-line Tailscale repository
+  ansible.builtin.file:
+    path: "{{ tailscale_repo_list_file }}"
+    state: absent
 
 - name: Remove repository key
   ansible.builtin.file:

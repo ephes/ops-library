@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{{ macos_time_machine_exclusions_label }}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{ macos_time_machine_exclusions_script_path }}</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>{{ macos_time_machine_exclusions_hour | int }}</integer>
+    <key>Minute</key>
+    <integer>{{ macos_time_machine_exclusions_minute | int }}</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>{{ macos_time_machine_exclusions_log_path }}</string>
+  <key>StandardErrorPath</key>
+  <string>{{ macos_time_machine_exclusions_log_path }}</string>
+</dict>
+</plist>

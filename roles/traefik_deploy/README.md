@@ -38,7 +38,7 @@ traefik_letsencrypt_email: "admin@example.com"
 
 ```yaml
 # Traefik version to install
-traefik_version: "3.3.5"
+traefik_version: "3.7.13"
 
 # Platform configuration (auto-detected from ansible facts)
 # Only override if auto-detection fails or for cross-platform deployment
@@ -133,9 +133,9 @@ None.
   roles:
     - role: local.ops_library.traefik_deploy
       vars:
-        traefik_version: "3.3.5"
+        traefik_version: "3.7.13"
         traefik_letsencrypt_email: "admin@example.com"
-        traefik_checksum: "sha256:1234567890abcdef..."
+        traefik_checksum: "sha256:52cd039a34258dd61c617a95d69252bc6bcae27c520f338186c31c7fef8f6394"
 ```
 
 ### ARM64 Architecture
@@ -167,9 +167,9 @@ Simply change the `traefik_version` variable:
   roles:
     - role: local.ops_library.traefik_deploy
       vars:
-        traefik_version: "3.4.0"  # Role will detect version mismatch and upgrade
+        traefik_version: "3.8.0"  # Example future release; verify before use
         traefik_letsencrypt_email: "admin@example.com"
-        traefik_checksum: "sha256:newversion..."
+        traefik_checksum: "sha256:<verified-linux-amd64-archive-digest>"
 ```
 
 ## Service Configuration
@@ -250,10 +250,11 @@ Override `traefik_os` and `traefik_arch` only if auto-detection fails.
 
 **Always use checksum validation in production:**
 
-1. Visit https://github.com/traefik/traefik/releases/tag/v3.3.5
-2. Download `traefik_v3.3.5_checksums.txt`
-3. Find the SHA256 hash for your platform
-4. Set in playbook: `traefik_checksum: "sha256:abc123..."`
+1. Open the [GitHub release](https://github.com/traefik/traefik/releases) for the
+   selected `traefik_version`.
+2. Download that release's `traefik_v<version>_checksums.txt` manifest.
+3. Find the SHA256 hash for the exact OS and architecture archive being deployed.
+4. Set that value as `traefik_checksum: "sha256:<verified-archive-digest>"`.
 
 ### Dashboard Security
 
@@ -262,6 +263,7 @@ The dashboard is **NOT exposed** through the firewall by default (internal local
 **Secure access methods:**
 
 1. **SSH Tunnel** (Recommended):
+
    ```bash
    ssh -L 8090:localhost:8090 user@server
    # Access at http://localhost:8090
@@ -269,6 +271,7 @@ The dashboard is **NOT exposed** through the firewall by default (internal local
 
 2. **Traefik Dynamic Config with Auth**:
    Create `/etc/traefik/dynamic/dashboard.yml`:
+
    ```yaml
    http:
      routers:
@@ -288,6 +291,7 @@ The dashboard is **NOT exposed** through the firewall by default (internal local
    ```
 
 3. **Open Firewall** (Not Recommended):
+
    ```yaml
    traefik_dashboard_firewall_open: true  # ⚠️ Security risk!
    ```
@@ -295,6 +299,7 @@ The dashboard is **NOT exposed** through the firewall by default (internal local
 ### Systemd Hardening
 
 The role applies systemd security hardening:
+
 - `NoNewPrivileges=true`
 - `PrivateTmp=true`
 - `ProtectSystem=strict`
@@ -305,11 +310,18 @@ The role applies systemd security hardening:
 
 ### Prometheus Metrics
 
-Metrics are exposed on the dashboard port:
+With the dashboard enabled, metrics share the dashboard entrypoint:
 
 ```bash
 curl http://localhost:8090/metrics
 ```
+
+With the dashboard disabled, the role still defines the `traefik` entrypoint
+explicitly and binds it to `traefik_metrics_bind_address:traefik_metrics_port`
+(default `127.0.0.1:8080`). Without that definition Traefik creates the
+entrypoint implicitly on `:8080` on every interface, which exposed `/metrics`
+to the internet on a host without a firewall. Set `traefik_metrics_bind_address`
+to the Tailscale IP to scrape it from another host.
 
 Configure Prometheus to scrape:
 
@@ -343,9 +355,10 @@ tail -f /var/log/traefik/traefik.log
 
 2. **Rate limiting**:
    - Let's Encrypt has rate limits (5 certificates per week per domain)
-   - Use staging environment for testing: https://letsencrypt.org/docs/staging-environment/
+   - Use staging environment for testing: <https://letsencrypt.org/docs/staging-environment/>
 
 3. **Check ACME logs**:
+
    ```bash
    journalctl -u traefik | grep -i acme
    ```
@@ -362,16 +375,19 @@ ansible-playbook playbook.yml -e traefik_force_update=true
 ### Dashboard Not Accessible
 
 1. **Check service is running**:
+
    ```bash
    systemctl status traefik
    ```
 
 2. **Verify port is listening**:
+
    ```bash
    netstat -tlnp | grep 8090
    ```
 
 3. **Access via SSH tunnel**:
+
    ```bash
    ssh -L 8090:localhost:8090 user@server
    # Then visit http://localhost:8090
@@ -413,3 +429,48 @@ Created for homelab infrastructure automation.
 - [Traefik Documentation](https://doc.traefik.io/traefik/)
 - [Let's Encrypt](https://letsencrypt.org/)
 - [Traefik GitHub Releases](https://github.com/traefik/traefik/releases)
+
+## Conflicting web servers
+
+Traefik owns this host's HTTP/HTTPS entrypoints. Distro web-server packages ship
+a stock unit that the package post-install enables and starts on `:80`. Several
+roles pull such a package in as a dependency for their own sidecar instance
+(for example `mastodon_deploy` and `takahe_deploy` run `nginx -c <private.conf>`
+on a loopback port behind Traefik) - but nothing disables the stock unit. It
+then sits enabled and races Traefik for `:80` on every boot. Whichever binds
+first wins; if the stock unit wins, Traefik fails to start and every site on the
+host is down until an operator intervenes.
+
+This role stops, disables and **masks** those units before starting Traefik.
+Masking rather than merely disabling is deliberate: `apt upgrade` re-enables a
+disabled service, so on a host running unattended apt maintenance a plain
+disable silently re-arms the trap at the next package update.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `traefik_mask_conflicting_web_services` | `true` | Disarm conflicting web servers before starting Traefik. |
+| `traefik_conflicting_web_services` | `[nginx.service, apache2.service, caddy.service, lighttpd.service]` | Units to disarm. |
+
+Only units that already exist on the host are touched, so this never blocks a
+future deliberate installation. Sidecar units (`mastodon-nginx.service`,
+`takahe-nginx.service`, ...) have distinct unit names and are never affected.
+
+### Applying this to a host whose Traefik this role does not manage
+
+Where Traefik was installed by hand and running the full role would overwrite a
+hand-tuned configuration, apply just these tasks:
+
+```yaml
+- name: Apply the traefik_deploy conflict-disarming tasks
+  ansible.builtin.include_role:
+    name: local.ops_library.traefik_deploy
+    tasks_from: web_conflicts
+```
+
+## Guarded updates of existing installations
+
+Use the separate [transaction entry](https://github.com/ephes/ops-library/blob/main/roles/traefik_deploy/TRANSACTIONS.md) for binary-only updates,
+reviewed header-alias changes, and the narrowly constrained repair that adds a
+loopback-only `127.0.0.1:8080` metrics entrypoint to an already managed static
+configuration. The full deploy, restore and remove workflows refuse
+transaction-managed hosts until they share its locks and recovery records.

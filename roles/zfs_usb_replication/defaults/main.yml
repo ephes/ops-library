@@ -21,6 +21,11 @@ zfs_usb_replication_state_dir: "/var/lib/zfs-usb-replication"
 zfs_usb_replication_state_path: "{{ zfs_usb_replication_state_dir }}/status.json"
 zfs_usb_replication_state_writer_path: "/usr/local/bin/zfs_usb_replication_state.py"
 
+# Root-private, attended snapshot-file replication evidence. The helper is not
+# called by the scheduled replication job and never imports or mutates ZFS.
+zfs_usb_replication_attestation_dir: "{{ zfs_usb_replication_state_dir }}/attestations"
+zfs_usb_replication_attestation_helper_path: "/usr/local/sbin/zfs-snapshot-file-attestation"
+
 # Optional pre-sync retention policies. Each policy prunes only target snapshots
 # older than keep_days whose names match a managed prefix and no longer exist on
 # the source. Pruning refuses to run without at least one common snapshot.

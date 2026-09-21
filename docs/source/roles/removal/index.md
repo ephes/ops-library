@@ -5,6 +5,10 @@ Roles for safely removing services and cleaning up resources.
 ```{toctree}
 :maxdepth: 1
 
+daybook_operations_api_remove
+
+software_estate_remove
+software_live_remove
 fastdeploy_remove
 nyxmon_remove
 traefik_remove
@@ -25,9 +29,12 @@ mastodon_remove
 takahe_remove
 ollama_remove
 ollama_proxy_remove
+daybook_voice_memo_attention_remove
+daybook_voice_memo_attention_notifier_remove
 ```
 
 These roles handle:
+
 - Service停止 and disablement
 - Systemd unit removal
 - Configuration cleanup

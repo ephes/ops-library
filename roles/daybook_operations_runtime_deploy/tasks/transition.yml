@@ -1,0 +1,64 @@
+---
+- name: transition | Resolve local GUI user ID
+  ansible.builtin.command:
+    argv: [/usr/bin/id, -u, "{{ daybook_operations_runtime_user }}"]
+  register: daybook_operations_runtime_uid
+  changed_when: false
+
+- name: transition | Disable only the regular label
+  ansible.builtin.command:
+    argv: [/bin/launchctl, disable, "gui/{{ daybook_operations_runtime_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
+  changed_when: true
+
+- name: transition | Wait for current regular job to finish without terminating it
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "gui/{{ daybook_operations_runtime_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
+  register: daybook_operations_runtime_current
+  changed_when: false
+  failed_when: daybook_operations_runtime_current.rc not in [0, 113]
+  retries: 75
+  delay: 5
+  until: daybook_operations_runtime_current.rc == 113 or (daybook_operations_runtime_current.stdout is not search('state = (running|spawning)'))
+  no_log: true
+
+- name: transition | Unload idle regular label
+  ansible.builtin.command:
+    argv: [/bin/launchctl, bootout, "gui/{{ daybook_operations_runtime_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
+  changed_when: true
+  when: daybook_operations_runtime_current.rc == 0
+
+- name: transition | Prove regular label absent
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "gui/{{ daybook_operations_runtime_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
+  register: daybook_operations_runtime_absent
+  changed_when: false
+  failed_when: daybook_operations_runtime_absent.rc != 113
+  no_log: true
+
+- name: transition | Prove runtime and importer locks idle through supported CLI
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_runtime_python }}", -I, -c, 'from daybook.cli import main; raise SystemExit(main())', operations, idle, --policy, "{{ daybook_operations_runtime_policy }}"]
+  become: true
+  become_user: "{{ daybook_operations_runtime_user }}"
+  become_flags: "-H -S -n -i"
+  changed_when: false
+
+- name: transition | Save original regular importer command once
+  ansible.builtin.copy:
+    src: "{{ daybook_operations_runtime_plist }}"
+    dest: "{{ daybook_operations_runtime_legacy_plist }}"
+    remote_src: true
+    force: false
+    owner: root
+    group: wheel
+    mode: "0644"
+  when: daybook_operations_runtime_action == 'cutover'
+
+- name: transition | Install selected command without enabling it
+  ansible.builtin.copy:
+    src: "{{ daybook_operations_runtime_staged_plist if daybook_operations_runtime_action == 'cutover' else daybook_operations_runtime_legacy_plist }}"
+    dest: "{{ daybook_operations_runtime_plist }}"
+    remote_src: true
+    owner: root
+    group: wheel
+    mode: "0644"

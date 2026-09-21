@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Install Vector from its suite-independent apt repository
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+        - trixie
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+  galaxy_tags:
+    - vector
+    - logging
+
+dependencies: []

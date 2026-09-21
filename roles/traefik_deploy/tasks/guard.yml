@@ -1,0 +1,18 @@
+---
+# This entry never changes Traefik or a recovery record. Full workflow integration
+# is intentionally deferred; merely seeing clear state is insufficient authority.
+- name: guard | Observe whether Traefik transaction state has been enrolled
+  ansible.builtin.stat:
+    path: /var/lib/traefik-transactions
+  register: traefik_transaction_guard_state
+  tags: always
+
+- name: guard | Refuse legacy Traefik writes on transaction-managed hosts
+  ansible.builtin.assert:
+    that:
+      - not (traefik_transaction_required | default(false) | bool)
+      - not traefik_transaction_guard_state.stat.exists
+    fail_msg: >-
+      This host requires the guarded Traefik transaction workflow. Legacy full
+      deploy, restore and removal cannot bypass pending or recovery records.
+  tags: always

@@ -27,6 +27,22 @@
       Django secret key, bearer token config, bootstrap operator credentials,
       port, uv binary path, and Piper voice config.
 
+- name: validate | Validate CSRF origin list
+  ansible.builtin.assert:
+    that:
+      - voxhelm_csrf_trusted_origins is sequence
+      - voxhelm_csrf_trusted_origins is not string
+      - voxhelm_csrf_trusted_origins is not mapping
+    fail_msg: "voxhelm_csrf_trusted_origins must be a list of HTTP(S) origins."
+
+- name: validate | Validate CSRF origin entries
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item is match('^https?://[^/\s,?#]+\Z')
+    fail_msg: "CSRF origins require an HTTP(S) scheme and host, without a path, whitespace, or commas."
+  loop: "{{ voxhelm_csrf_trusted_origins }}"
+
 - name: validate | Normalize transcription execution mode
   ansible.builtin.set_fact:
     voxhelm_transcription_execution_mode_normalized: "{{ voxhelm_transcription_execution_mode | string | trim | lower }}"

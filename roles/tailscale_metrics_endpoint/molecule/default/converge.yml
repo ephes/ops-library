@@ -1,0 +1,49 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    tailscale_metrics_endpoint_enabled: true
+    tailscale_metrics_endpoint_bind: 127.0.0.1
+    tailscale_metrics_endpoint_auth_user: nyxmon
+    tailscale_metrics_endpoint_auth_password: molecule-tailscale-metrics-password
+    tailscale_metrics_endpoint_ip_address_allow:
+      - localhost
+    tailscale_metrics_endpoint_tailscale_bin: /usr/local/bin/tailscale
+    # Short cadence so the scenario can watch the collector actually fire again
+    # instead of trusting a unit file.
+    tailscale_metrics_endpoint_timer_interval: 15
+    tailscale_metrics_endpoint_timer_on_boot_sec: 5
+    tailscale_metrics_endpoint_timer_on_calendar: "*:*:0/15"
+    tailscale_metrics_endpoint_timer_accuracy_sec: 1
+    tailscale_metrics_endpoint_timer_randomized_delay_sec: 0
+
+  pre_tasks:
+    - name: Refresh the apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    # The role only ever calls `tailscale status --json`, so a stub is enough
+    # to exercise the collector, the timer and the endpoint end to end.
+    - name: Install a tailscale stub
+      ansible.builtin.copy:
+        dest: /usr/local/bin/tailscale
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          cat <<'JSON'
+          {
+            "BackendState": "Running",
+            "Self": {
+              "HostName": "molecule",
+              "Online": true,
+              "KeyExpiry": "2099-01-01T00:00:00Z"
+            }
+          }
+          JSON
+
+  roles:
+    - role: tailscale_metrics_endpoint

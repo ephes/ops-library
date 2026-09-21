@@ -104,6 +104,7 @@ Preserve certificates and dynamic configs for easy reinstallation:
 ```
 
 **Result:**
+
 - ✓ Service, binary, static config, logs removed
 - 💾 Certificates preserved (reusable after reinstall)
 - 💾 Dynamic configs preserved (services remain configured)
@@ -125,6 +126,7 @@ Remove everything including certificates and configs:
 ```
 
 **Result:**
+
 - ✓ Everything removed
 - ⚠️ Certificates deleted (need to re-acquire from Let's Encrypt)
 - ⚠️ Configs deleted (services need reconfiguration)
@@ -196,6 +198,7 @@ ansible-playbook -i inventory playbooks/remove-traefik.yml \
 By default, the role will fail with a detailed warning message if `traefik_confirm_removal` is not explicitly set to `true`. This prevents accidental removal.
 
 **Warning message includes:**
+
 - List of components that will be removed
 - List of components that will be preserved
 - Impact on services using Traefik
@@ -217,6 +220,7 @@ Services will automatically reconnect to Traefik using preserved dynamic configu
 **⚠️ WARNING**: Removing Traefik will make all services using it **inaccessible via HTTPS** until Traefik is reinstalled.
 
 Affected services may include:
+
 - FastDeploy
 - Nyxmon
 - Home Assistant
@@ -226,6 +230,7 @@ Affected services may include:
 ## Dependencies
 
 This role has no dependencies on other roles, but it's designed to work with:
+
 - `traefik_deploy` - Deploys Traefik (paths must match)
 - Service-specific remove roles should clean their own dynamic configs
 
@@ -245,6 +250,7 @@ ansible-playbook playbooks/remove-traefik.yml --skip-tags firewall
 ```
 
 Available tags:
+
 - `validate` - Safety checks and confirmation
 - `service` - SystemD service removal
 - `binary` - Binary removal
@@ -256,6 +262,7 @@ Available tags:
 ## Idempotency
 
 This role is fully idempotent and can be run multiple times safely. It will:
+
 - Skip removal of files that don't exist
 - Not fail if service is already stopped
 - Handle missing firewall rules gracefully
@@ -273,21 +280,25 @@ If removal was accidental:
 ## Security Considerations
 
 ### Let's Encrypt Certificates
+
 - Rate limited: 5 certificates per week per domain
 - Default: PRESERVE (safe for reinstallation)
 - Contains public certificates only (no sensitive data)
 
 ### Dynamic Configurations
+
 - May contain service URLs and routing rules
 - No secrets stored (credentials are in services)
 - Default: PRESERVE (allows service remove roles to clean up)
 
 ### Firewall Rules
+
 - Removing closes ports 80/443
 - Prevents HTTP/HTTPS access
 - Default: REMOVE (security-first approach)
 
 ### Log Files
+
 - May contain access logs with IP addresses
 - Default: REMOVE
 
@@ -304,17 +315,21 @@ ansible-playbook playbooks/remove-traefik.yml --check \
 ## Troubleshooting
 
 ### Role fails with "removal not confirmed"
+
 **Solution**: Set `traefik_confirm_removal: true` in your playbook or via `-e`
 
 ### Services still inaccessible after reinstall
+
 **Cause**: Dynamic configs were removed
 **Solution**: Re-deploy affected services to regenerate Traefik configs
 
 ### Certificate errors after reinstall
+
 **Cause**: Certificates were removed
 **Solution**: Wait for Let's Encrypt to issue new certificates (automatic)
 
 ### Firewall rules not removed
+
 **Cause**: UFW not installed or `traefik_remove_firewall_rules: false`
 **Solution**: Manually remove rules or ensure UFW is installed
 
@@ -325,3 +340,9 @@ MIT
 ## Author
 
 Created for ops-library collection
+
+## Transaction-managed hosts
+
+This legacy entry refuses hosts with `traefik_transaction_required: true` or an
+existing `/var/lib/traefik-transactions` directory. Use reviewed Traefik recovery;
+do not delete the journal or unset the guard to bypass an unresolved transaction.

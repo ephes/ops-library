@@ -1,0 +1,15 @@
+---
+macos_time_machine_exclusions_enabled: true
+macos_time_machine_exclusions_user: "{{ ansible_user_id }}"
+macos_time_machine_exclusions_group: "staff"
+macos_time_machine_exclusions_home: "{{ ansible_env.HOME }}"
+macos_time_machine_exclusions_paths: []
+macos_time_machine_exclusions_label: "de.wersdoerfer.time-machine-exclusions"
+macos_time_machine_exclusions_hour: 3
+macos_time_machine_exclusions_minute: 5
+macos_time_machine_exclusions_script_path: >-
+  {{ macos_time_machine_exclusions_home }}/Library/Application Support/Time Machine Exclusions/apply-exclusions
+macos_time_machine_exclusions_plist_path: >-
+  {{ macos_time_machine_exclusions_home }}/Library/LaunchAgents/{{ macos_time_machine_exclusions_label }}.plist
+macos_time_machine_exclusions_log_path: >-
+  {{ macos_time_machine_exclusions_home }}/Library/Logs/time-machine-exclusions.log

@@ -1,3 +1,21 @@
 ---
+galaxy_info:
+  author: ops-library
+  description: Install and configure Tailscale on Debian and Ubuntu hosts
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bookworm
+        - trixie
+  galaxy_tags:
+    - tailscale
+    - networking
+
 dependencies:
   - role: local.ops_library.tailscale_shared

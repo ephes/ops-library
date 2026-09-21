@@ -4,7 +4,7 @@ Storage health metrics exporter for Nyxmon integration.
 
 ## Description
 
-This role installs a Python script that collects and outputs storage health metrics as JSON. It gathers SMART data from disks (temperature, health status), ZFS pool information (health, capacity, last scrub), and optional named filesystem usage. The JSON output is designed to be served over HTTP and monitored using Nyxmon's `json-metrics` check type, using system Python 3 (no venv/uv).
+This role installs a Python script that collects and outputs storage health metrics as JSON. It gathers SMART data from disks (temperature, health status), ZFS pool information (health, capacity, last scrub), optional named filesystem usage, optional ZFS dataset capacity and snapshot-retained space, and optional per-client Time Machine sparsebundle footprint metrics. The JSON output is designed to be served over HTTP and monitored using Nyxmon's `json-metrics` check type, using system Python 3 (no venv/uv).
 
 ## Requirements
 
@@ -33,8 +33,12 @@ The role installs `nyxmon_storage_exporter_packages` (defaults to `python3`). Ad
 | `nyxmon_storage_exporter_disks` | list | `[]` | List of disks to monitor (see structure below) |
 | `nyxmon_storage_exporter_pools` | list | `[]` | List of ZFS pool names to monitor |
 | `nyxmon_storage_exporter_filesystems` | list | `[]` | List of named filesystems/paths to measure with `df -B1` |
+| `nyxmon_storage_exporter_zfs_datasets` | list | `[]` | List of named ZFS datasets whose usage, availability, quotas, and snapshot-retained bytes are exported |
+| `nyxmon_storage_exporter_pool_capacity_thresholds` | mapping | `{}` | Optional per-pool `warning_ratio` and `critical_ratio`, plus an optional pair of `warning_free_bytes` and `critical_free_bytes`; emits evidence-aware capacity failure booleans |
+| `nyxmon_storage_exporter_timemachine_bundle_dirs` | list | `[]` | Absolute directories scanned for Time Machine `*.sparsebundle` directories; each bundle is exported under `timemachine_bundles_by_name` (see below) |
 
-**Note:** Both lists default to empty. If empty, the exporter will still run but report no disk/pool data. Configure at least one of these to get meaningful metrics.
+**Note:** Disk and filesystem lists default to empty. An empty pool list enables
+zpool auto-discovery; capacity-threshold keys may target those discovered names.
 
 #### Disk Entry Structure
 
@@ -56,6 +60,37 @@ Each filesystem in `nyxmon_storage_exporter_filesystems` must have:
 | `name` | string | Stable logical name for the filesystem |
 | `path` | string | Absolute path to measure via `df -B1` |
 
+#### ZFS Dataset Entry Structure
+
+Each entry in `nyxmon_storage_exporter_zfs_datasets` must have:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `name` | string | Unique stable name used in `zfs_datasets_by_name` JSONPaths |
+| `dataset` | string | ZFS dataset name passed to `zfs get`; the pool root name (for example `fast`) is valid |
+
+#### Time Machine Bundle Directories
+
+`nyxmon_storage_exporter_timemachine_bundle_dirs` lists directories (for
+example a Samba Time Machine share root) whose direct `*.sparsebundle`
+subdirectories are probed on every run. The probe is read-only and cheap: it
+reads three small property lists and counts the entries of the `bands/`
+directory. It never opens a band, mounts a bundle, or walks the bundle tree.
+
+| Source | Keys used |
+|--------|-----------|
+| `Info.plist` | `band-size` (bytes per band). The virtual `size` is sparse address space and is ignored. |
+| `com.apple.TimeMachine.Results.plist` | `BytesUsed`, `BytesAvailable`, `BytesToCopy`, `Running` |
+| `com.apple.TimeMachine.SnapshotHistory.plist` | `Snapshots[].com.apple.backupd.SnapshotCompletionDate` |
+| `bands/` | entry count |
+
+Each bundle is keyed by its basename without the `.sparsebundle` suffix and
+with any remaining `.` replaced by `_`, so it can be addressed with dotted
+JSONPaths such as `$.timemachine_bundles_by_name.studio.ok`. The raw basename
+stays available as `bundle`. Bundles under a directory whose first path
+component is a pool skipped during quiet hours (ZFS default mountpoint layout)
+follow the dataset cache rule.
+
 ### Optional Variables
 
 | Variable | Default | Description |
@@ -74,7 +109,8 @@ Each filesystem in `nyxmon_storage_exporter_filesystems` must have:
 | `nyxmon_storage_exporter_quiet_hours_spindown_script` | `""` | Absolute path to executable spindown script used by quiet-hours hook |
 | `nyxmon_storage_exporter_quiet_hours_spindown_min_interval_sec` | `300` | Minimum seconds between quiet-hours spindown hook runs |
 | `nyxmon_storage_exporter_quiet_hours_spindown_state_file` | `/run/nyxmon-storage-metrics-spindown.ts` | State file storing last quiet-hours spindown hook run timestamp |
-| `nyxmon_storage_exporter_pool_cache_path` | `/var/lib/nyxmon-storage-metrics/pool-cache.json` | Last-known cache for successful ZFS pool samples used when quiet-hours pool probes are skipped |
+| `nyxmon_storage_exporter_pool_cache_path` | `/var/lib/nyxmon-storage-metrics/pool-cache.json` | Last-known successful pool, disk, and dataset samples used when quiet-hours probes are skipped; deleting it discards that evidence until active probes run again |
+| `nyxmon_storage_exporter_quiet_hours_cache_max_age_sec` | `172800` | Maximum age (48 hours) for quiet-hours pool, disk, and dataset cache samples |
 
 See `defaults/main.yml` for the full list.
 
@@ -107,6 +143,15 @@ nyxmon_storage_exporter_filesystems:
   - name: rootfs
     path: /
 
+nyxmon_storage_exporter_zfs_datasets:
+  - name: fast_root
+    dataset: fast
+  - name: timemachine
+    dataset: fast/timemachine
+
+nyxmon_storage_exporter_timemachine_bundle_dirs:
+  - /fast/timemachine
+
 nyxmon_storage_exporter_quiet_hours_enabled: true
 nyxmon_storage_exporter_quiet_hours_start: "06:00"
 nyxmon_storage_exporter_quiet_hours_end: "22:00"
@@ -130,8 +175,91 @@ paths such as `$.pools.tank.cap_ratio`. Cached pool payloads keep `health`,
 - `cache_timestamp`
 - `cache_age_seconds`
 
-If no previous successful sample exists, the exporter preserves the existing
-skip-only payload: `{"skipped": true, "reason": "quiet_hours"}`.
+`cap` preserves zpool's whole-percent string, while `cap_ratio` is calculated
+from exact `alloc_bytes / size_bytes` and retains sub-percentage alert runway.
+When a pool capacity policy is configured, use `capacity_known == true` as the
+warning evidence guard, `capacity_warning_failed == false` as the warning
+capacity rule, and `capacity_critical_failed == false` as the critical rule.
+Unknown evidence sets `capacity_known` false without impersonating a capacity
+failure; an observed ratio or absolute-free breach sets the matching failure
+boolean.
+Cached pool capacity can be as old as
+`nyxmon_storage_exporter_quiet_hours_cache_max_age_sec`. Consumers that need a
+tighter freshness bound must also inspect `cached` and `cache_age_seconds`, just
+as for cached dataset capacity and disk temperature.
+
+If no sufficiently fresh successful sample exists, the exporter keeps a stable
+nullable pool schema: `health` and numeric capacity/scrub fields are `null`,
+`health_known` and `health_failed` are false, and the quiet-hours skip metadata
+remains present. Alert on `health_known` for evidence freshness and on
+`health_failed` for an observed non-ONLINE state; do not compare nullable
+`health` directly with `ONLINE`.
+
+Disk health samples are cached in the same file. A disk type skipped during
+quiet hours retains its last successful payload, including `ok` and temperature,
+and adds the same cache metadata, so stable SMART-health alerts remain evaluable
+without spinning up a sleeping disk. `health_known` distinguishes an observed or
+cached result from a quiet-hours gap, while `health_failed` becomes true only for
+an observed current SMART/NVMe failure (smartctl current-failure bits, an
+explicit failed health line, or a nonzero NVMe critical warning). Historical
+attribute, error-log, and self-test records (bits 5-7) are exposed separately as
+`smartctl_historical_failure_bits` and do not create a permanent critical state.
+Until the first active-hours sample exists, or once
+the sample is older than the configured maximum age, `ok` is `null`,
+`health_known` is false, and `health_failed` remains false. Alert on the latter
+two fields so an evidence gap warns without impersonating a disk failure.
+Cached temperatures can be up to
+`nyxmon_storage_exporter_quiet_hours_cache_max_age_sec` old; temperature checks
+must inspect `cached` and `cache_age_seconds` or run only against active samples.
+Those cache metadata keys are always present: active and uncached fallback
+samples use `cached: false` with null timestamp/age values, while cache-backed
+samples use `cached: true` with numeric timestamp/age values.
+
+Configured datasets on a skipped pool are not probed independently during
+quiet hours. Their last successful numeric metrics are cached with the same
+metadata, preventing a dataset-level `zfs get` from waking the pool while
+keeping configured JSONPaths stable. Every dataset entry always includes all
+numeric metric keys. Without a sufficiently fresh sample, those values are
+`null`, `metrics_known` is false, and the entry contains `ok: null`,
+`skipped: true`, and `reason: "quiet_hours"`. `metrics_known` means usable
+evidence exists; it does not mean the evidence is current. Cached dataset bytes
+can be as old as `nyxmon_storage_exporter_quiet_hours_cache_max_age_sec`, so
+capacity checks must also inspect `cached` and `cache_age_seconds`, or run only
+against active samples.
+On a known-good sample (`metrics_known: true`), unset quota and reservation
+properties are also represented as `null`; interpret nullable property values
+together with `metrics_known`, not as evidence gaps by themselves.
+Cache hits are accepted only when the cached device or dataset identity exactly
+matches current configuration; retargeting a reused logical name fails closed
+until the new target is actively probed.
+
+Time Machine bundles are exported as `timemachine_bundles` (list) and
+`timemachine_bundles_by_name` (mapping), plus a `timemachine_bundle_scan`
+summary (`ok`, `bundle_count`, and one `dirs[]` entry per configured directory
+with `ok`, `bundle_count`, and `error`). Every bundle entry always carries the
+same keys:
+
+| Key | Meaning |
+|-----|---------|
+| `name` / `bundle` / `path` | JSONPath-safe key, raw basename, and absolute bundle path |
+| `ok` | `true` when all three plists and the band directory were read; `false` on any missing or unparsable input (see `error`); `null` when skipped without cache |
+| `metrics_known` | `true` when the numeric fields come from a successful current or fresh cached probe |
+| `bytes_used` | `BytesUsed` from `Results.plist`: the client's view of allocated backup data |
+| `client_bytes_available` | `BytesAvailable` from `Results.plist`: free space as the client last saw it |
+| `last_bytes_to_copy` | `BytesToCopy` from the last run's `Results.plist` |
+| `running` | `Running` from `Results.plist`. Time Machine writes this file during a run and may leave `true` behind, so treat it as a hint, not a lock |
+| `band_count` / `band_size_bytes` / `bands_bytes` | entries in `bands/`, `band-size`, and their product: the figure Samba's `fruit:time machine max size` estimate counts |
+| `backup_count` / `oldest_backup_ts` / `newest_backup_ts` | completed backups in the snapshot history and their first/last UTC epoch |
+| `newest_backup_age_days` | days since the newest completed backup, recomputed from the cached timestamp on cache hits |
+| `history_days` | days between the oldest and newest completed backup (`0.0` for an empty history) |
+| `cached` / `cache_timestamp` / `cache_age_seconds` | quiet-hours cache metadata, as for datasets |
+
+A partial failure (for example a missing `Results.plist`) still reports the
+values that could be read, but `ok` is `false` and `metrics_known` is `false`;
+numeric rules on `null` fields then fail closed. Missing bundle directories or
+a bundle that disappears set `timemachine_bundle_scan.ok` to `false` or drop
+the bundle key, so pair every per-bundle numeric rule with a
+`metrics_known == true` rule.
 
 ## Nyxmon Threshold Configuration
 
@@ -141,14 +269,47 @@ The output includes a `disks_by_name` object keyed by disk name, which provides 
 
 | JSONPath | Operator | Value | Severity | Description |
 |----------|----------|-------|----------|-------------|
-| `$.disks_by_name.boot-nvme.ok` | `==` | `true` | critical | boot-nvme health |
-| `$.disks_by_name.fast-nvme.ok` | `==` | `true` | critical | fast-nvme health |
-| `$.disks_by_name.tank-hdd-1.ok` | `==` | `true` | critical | tank-hdd-1 health |
-| `$.disks_by_name.tank-hdd-2.ok` | `==` | `true` | critical | tank-hdd-2 health |
-| `$.pools.fast.health` | `==` | `ONLINE` | critical | fast pool status |
-| `$.pools.tank.health` | `==` | `ONLINE` | critical | tank pool status |
+| `$.disks_by_name.boot-nvme.health_failed` | `==` | `false` | critical | no observed boot-nvme health failure |
+| `$.disks_by_name.boot-nvme.health_known` | `==` | `true` | warning | boot-nvme health evidence is fresh |
+| `$.disks_by_name.fast-nvme.health_failed` | `==` | `false` | critical | no observed fast-nvme health failure |
+| `$.disks_by_name.fast-nvme.health_known` | `==` | `true` | warning | fast-nvme health evidence is fresh |
+| `$.disks_by_name.tank-hdd-1.health_failed` | `==` | `false` | critical | no observed tank-hdd-1 SMART failure |
+| `$.disks_by_name.tank-hdd-1.health_known` | `==` | `true` | warning | tank-hdd-1 health evidence is fresh |
+| `$.disks_by_name.tank-hdd-2.health_failed` | `==` | `false` | critical | no observed tank-hdd-2 SMART failure |
+| `$.disks_by_name.tank-hdd-2.health_known` | `==` | `true` | warning | tank-hdd-2 health evidence is fresh |
+| `$.pools.fast.health_failed` | `==` | `false` | critical | no observed fast-pool failure |
+| `$.pools.fast.health_known` | `==` | `true` | warning | fast-pool health evidence is fresh |
+| `$.pools.fast.capacity_known` | `==` | `true` | warning | configured pool-capacity evidence is available; pair cached evidence with an age bound |
+| `$.pools.fast.capacity_warning_failed` | `==` | `false` | warning | no observed warning ratio/free-byte breach |
+| `$.pools.fast.capacity_critical_failed` | `==` | `false` | critical | no observed critical ratio/free-byte breach |
+| `$.pools.tank.health_failed` | `==` | `false` | critical | no observed tank-pool failure |
+| `$.pools.tank.health_known` | `==` | `true` | warning | tank-pool health evidence is fresh |
 | `$.pools.fast.last_scrub_age_days` | `<` | `14` | warning | scrub recency |
+| `$.zfs_datasets_by_name.timemachine.metrics_known` | `==` | `true` | warning | Time Machine dataset evidence is usable (pair with cache freshness) |
+| `$.zfs_datasets_by_name.timemachine.cached` | `==` | `false` | warning | Time Machine capacity evidence comes from an active sample; alternatively bound `cache_age_seconds` |
+| `$.zfs_datasets_by_name.timemachine.available_bytes` | `>` | `412316860416` | warning | Time Machine dataset has more than 384 GiB available |
+| `$.zfs_datasets_by_name.timemachine.used_by_snapshots_bytes` | `<` | `274877906944` | warning | snapshots retain less than 256 GiB |
+| `$.timemachine_bundle_scan.ok` | `==` | `true` | warning | every configured bundle directory could be listed |
+| `$.timemachine_bundles_by_name.studio.metrics_known` | `==` | `true` | warning | the studio bundle exists and was probed (pair with cache freshness) |
+| `$.timemachine_bundles_by_name.studio.ok` | `==` | `true` | warning | studio bundle plists were readable |
+| `$.timemachine_bundles_by_name.studio.bands_bytes` | `<` | `3628388371660` | warning | studio uses less than 55% of a 6 TiB share budget |
+| `$.timemachine_bundles_by_name.studio.newest_backup_age_days` | `<` | `3` | warning | studio completed a backup within three days |
+| `$.timemachine_bundles_by_name.studio.history_days` | `>` | `30` | warning | studio history spans more than 30 days (thinning is not eating history faster than expected) |
 | `$.ecc.loaded` | `==` | `true` | warning | ECC module loaded |
+| `$.ecc.counters_available` | `==` | `true` | warning | EDAC counters are available |
+| `$.ecc.correctable_ok` | `==` | `true` | warning | no observed correctable ECC errors |
+| `$.ecc.uncorrectable_ok` | `==` | `true` | critical | no observed uncorrectable ECC errors |
+
+`counters_available` is true only when every discovered controller exposes both
+EDAC counters. Any counters that can be read are still summed and exported, so
+an observed correctable or uncorrectable error remains alertable even when a
+different controller has incomplete counter coverage.
+
+Each dataset entry exposes `used_bytes`, `available_bytes`, `referenced_bytes`,
+`used_by_snapshots_bytes`, `used_by_dataset_bytes`, `used_by_children_bytes`,
+`used_by_refreservation_bytes`, `quota_bytes`, `refquota_bytes`,
+`reservation_bytes`, and `refreservation_bytes`. These keys remain present with
+`null` values when evidence is unavailable.
 
 During an active or paused scrub, `last_scrub_age_days` is calculated from the
 running scrub's start timestamp; after completion, it is calculated from the
@@ -172,24 +333,29 @@ The script outputs JSON with disk temperatures, health status, pool information,
 ```json
 {
   "disks": [
-    {"name": "tank-hdd-1", "device": "/dev/...", "type": "sat", "pool": "tank", "temp_c": 40, "ok": true},
-    {"name": "boot-nvme", "device": "/dev/...", "type": "nvme", "pool": "none", "temp_c": 25, "ok": true}
+    {"name": "tank-hdd-1", "device": "/dev/...", "type": "sat", "pool": "tank", "temp_c": 40, "ok": true, "health_known": true, "health_failed": false},
+    {"name": "boot-nvme", "device": "/dev/...", "type": "nvme", "pool": "none", "temp_c": 25, "ok": true, "health_known": true, "health_failed": false}
   ],
   "disks_by_name": {
-    "tank-hdd-1": {"name": "tank-hdd-1", "device": "/dev/...", "type": "sat", "pool": "tank", "temp_c": 40, "ok": true},
-    "boot-nvme": {"name": "boot-nvme", "device": "/dev/...", "type": "nvme", "pool": "none", "temp_c": 25, "ok": true}
+    "tank-hdd-1": {"name": "tank-hdd-1", "device": "/dev/...", "type": "sat", "pool": "tank", "temp_c": 40, "ok": true, "health_known": true, "health_failed": false},
+    "boot-nvme": {"name": "boot-nvme", "device": "/dev/...", "type": "nvme", "pool": "none", "temp_c": 25, "ok": true, "health_known": true, "health_failed": false}
   },
   "pools": {
     "tank": {
       "health": "ONLINE",
-      "size": "10.9T",
-      "alloc": "7.54M",
-      "free": "10.9T",
-      "cap": "0%",
+      "health_known": true,
+      "health_failed": false,
+      "size": "11984625352704",
+      "alloc": "7906263",
+      "free": "11984617446441",
+      "cap": "0",
       "size_bytes": 11984625352704,
       "alloc_bytes": 7906263,
       "free_bytes": 11984617446441,
       "cap_ratio": 0.0,
+      "capacity_known": true,
+      "capacity_warning_failed": false,
+      "capacity_critical_failed": false,
       "last_scrub_age_days": 0.5,
       "cached": false
     }
@@ -218,12 +384,62 @@ The script outputs JSON with disk temperatures, health status, pool information,
       "ok": true
     }
   },
+  "zfs_datasets_by_name": {
+    "timemachine": {
+      "name": "timemachine",
+      "dataset": "fast/timemachine",
+      "used_bytes": 7146825580544,
+      "available_bytes": 213674622976,
+      "referenced_bytes": 6387487248384,
+      "used_by_snapshots_bytes": 754840371200,
+      "refquota_bytes": 6597069766656,
+      "quota_bytes": null,
+      "metrics_known": true,
+      "ok": true
+    }
+  },
+  "timemachine_bundle_scan": {
+    "ok": true,
+    "bundle_count": 1,
+    "dirs": [{"path": "/fast/timemachine", "ok": true, "bundle_count": 1}]
+  },
+  "timemachine_bundles_by_name": {
+    "studio": {
+      "name": "studio",
+      "bundle": "studio.sparsebundle",
+      "path": "/fast/timemachine/studio.sparsebundle",
+      "ok": true,
+      "metrics_known": true,
+      "bytes_used": 3034285142016,
+      "client_bytes_available": 430033600512,
+      "last_bytes_to_copy": 2782527946752,
+      "running": false,
+      "band_count": 1902,
+      "band_size_bytes": 1610612736,
+      "bands_bytes": 3063385423872,
+      "backup_count": 83,
+      "oldest_backup_ts": 1765601692,
+      "newest_backup_ts": 1788613675,
+      "newest_backup_age_days": 0.9,
+      "history_days": 266.34,
+      "cached": false,
+      "cache_timestamp": null,
+      "cache_age_seconds": null
+    }
+  },
   "quiet_hours": {
     "enabled": true,
     "active": true,
     "spindown": {"enabled": true, "attempted": true, "reason": "ok"}
   },
-  "ecc": {"loaded": true, "ce": null, "ue": null},
+  "ecc": {
+    "loaded": true,
+    "counters_available": false,
+    "ce": null,
+    "ue": null,
+    "correctable_ok": true,
+    "uncorrectable_ok": true
+  },
   "ts": 1702548000
 }
 ```
@@ -270,6 +486,7 @@ just test-role nyxmon_storage_exporter
 
 ## Changelog
 
+- **1.1.0** (2026-09-06): Add read-only Time Machine sparsebundle metrics (`nyxmon_storage_exporter_timemachine_bundle_dirs`)
 - **1.0.0** (2025-12-14): Initial release
 
 ## License

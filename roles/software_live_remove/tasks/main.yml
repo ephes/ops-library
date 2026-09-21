@@ -1,0 +1,51 @@
+---
+- name: Require dedicated software observation directories before removal
+  ansible.builtin.assert:
+    that:
+      - item is match('^/(etc|var/lib|usr/local/lib)/[a-zA-Z0-9_-]*software-live[a-zA-Z0-9_-]*$')
+    fail_msg: Removal paths must be dedicated software-live directories under etc, var/lib or usr/local/lib.
+  loop:
+    - '{{ software_live_remove_config_dir }}'
+    - '{{ software_live_remove_data_dir }}'
+    - '{{ software_live_remove_install_dir }}'
+
+- name: Inspect installed software observation units
+  ansible.builtin.stat:
+    path: '/etc/systemd/system/{{ item }}'
+  loop:
+    - software-live-collector.timer
+    - software-live-collector.service
+    - software-live-endpoint.service
+  register: _software_live_remove_units
+
+- name: Stop and disable installed software observation units
+  ansible.builtin.systemd_service:
+    name: '{{ item.item }}'
+    state: stopped
+    enabled: false
+  loop: '{{ _software_live_remove_units.results }}'
+  when: item.stat.exists
+
+- name: Remove software observation units
+  ansible.builtin.file:
+    path: '/etc/systemd/system/{{ item.item }}'
+    state: absent
+  loop: '{{ _software_live_remove_units.results }}'
+
+- name: Remove software observation configuration and programs
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: absent
+  loop:
+    - '{{ software_live_remove_config_dir }}'
+    - '{{ software_live_remove_install_dir }}'
+
+- name: Remove software observation state when requested
+  ansible.builtin.file:
+    path: '{{ software_live_remove_data_dir }}'
+    state: absent
+  when: software_live_remove_data | bool
+
+- name: Reload systemd after software observation removal
+  ansible.builtin.systemd_service:
+    daemon_reload: true

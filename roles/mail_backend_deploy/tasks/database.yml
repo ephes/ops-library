@@ -396,6 +396,69 @@
         - mail_backend_required_aliases is defined
         - mail_backend_schema_mode == 'postfixadmin'
 
+    - name: database | Validate forwarding aliases
+      ansible.builtin.assert:
+        that:
+          - item.address is defined
+          - item.address is string
+          - item.address is match('^[^@\\s]+@[^@\\s]+$')
+          - item.destinations is defined
+          - item.destinations is sequence
+          - item.destinations is not string
+          - item.destinations is not mapping
+          - item.destinations | length > 0
+          - item.address.split('@')[1] | lower in (mail_backend_domains | map('lower') | list)
+          # Each destination checked individually. A comma is rejected outright:
+          # goto is a comma-separated list, so a destination containing one would
+          # silently inject extra recipients into the forward.
+          - item.destinations | select('string') | list | length == item.destinations | length
+          - item.destinations | select('match', '^[^@,\\s]+@[^@,\\s]+\\.[^@,\\s]+$') | list | length == item.destinations | length
+        fail_msg: >-
+          Each mail_backend_forward_aliases entry needs a valid 'address'
+          (user@domain) whose domain is listed in mail_backend_domains -- the
+          alias table's domain column is a foreign key onto the domain table --
+          and a non-empty 'destinations' list of plain user@domain strings. A
+          destination may not contain a comma or whitespace: goto is a
+          comma-separated list and such a value would inject extra recipients.
+      loop: "{{ mail_backend_forward_aliases }}"
+      when: mail_backend_forward_aliases | length > 0
+
+    # Deliberately does NOT touch rows it does not own: only the addresses named
+    # here are upserted. Removing an entry from the variable leaves its row in
+    # place, the same contract as `send_as` -- delete it by hand to actually
+    # revoke a forward.
+    - name: database | Configure forwarding aliases (PostfixAdmin schema)
+      community.postgresql.postgresql_query:
+        db: "{{ mail_backend_postgres_database }}"
+        query: |
+          -- address and domain are lowercased because they are lookup keys and
+          -- the schema's foreign key onto domain.domain is case sensitive.
+          -- goto deliberately is NOT: it holds destination addresses, and an
+          -- SMTP local part is case sensitive per RFC 5321. Most receivers treat
+          -- it case-insensitively, but normalising someone else's mailbox name is
+          -- not ours to do, and it silently misdelivers where it matters.
+          INSERT INTO alias (address, goto, domain, active, created, modified)
+          VALUES (
+            LOWER(%(address)s),
+            %(goto)s,
+            LOWER(%(domain)s),
+            '1',
+            NOW(),
+            NOW()
+          )
+          ON CONFLICT (address) DO UPDATE
+          SET goto = EXCLUDED.goto, domain = EXCLUDED.domain, active = '1', modified = NOW()
+        named_args:
+          address: "{{ item.address }}"
+          goto: "{{ item.destinations | join(',') }}"
+          domain: "{{ item.address.split('@')[1] }}"
+      become: true
+      become_user: postgres
+      loop: "{{ mail_backend_forward_aliases }}"
+      when:
+        - mail_backend_forward_aliases | length > 0
+        - mail_backend_schema_mode == 'postfixadmin'
+
     - name: Ensure mailbox self-alias entries exist (PostfixAdmin schema)
       community.postgresql.postgresql_query:
         db: "{{ mail_backend_postgres_database }}"

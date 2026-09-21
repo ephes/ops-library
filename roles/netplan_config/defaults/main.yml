@@ -18,3 +18,13 @@ netplan_config_apply: true
 # Reconfigure interfaces with networkctl after apply. Useful to recover
 # networkd-managed links that are stuck in a failed state after a bad route.
 netplan_config_reconfigure_interfaces: false
+
+# Periodically recover networkd-managed interfaces that have carrier but no
+# usable IPv4 default route, or whose networkd setup state is failed.
+netplan_config_route_guard_enabled: false
+netplan_config_route_guard_interfaces: []
+netplan_config_route_guard_interval_sec: 60
+netplan_config_route_guard_confirmation_delay_sec: 5
+netplan_config_route_guard_recovery_delay_sec: 10
+netplan_config_route_guard_script_path: /usr/local/sbin/netplan-route-guard
+netplan_config_route_guard_service_name: netplan-route-guard

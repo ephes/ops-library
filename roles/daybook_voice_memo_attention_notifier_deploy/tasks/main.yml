@@ -1,0 +1,114 @@
+---
+- name: Validate attention notifier deployment inputs
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.system == 'Linux'
+      - daybook_voice_memo_attention_notifier_script_src is match('^/.*[.]py$')
+      - daybook_voice_memo_attention_notifier_public_key is match('^ssh-ed25519 [A-Za-z0-9+/]{68}([ ][A-Za-z0-9._@-]+)?$')
+      - daybook_voice_memo_attention_notifier_native_host != 'CHANGEME'
+      - daybook_voice_memo_attention_notifier_native_host is match('^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$')
+      - daybook_voice_memo_attention_notifier_recipient is string
+      - daybook_voice_memo_attention_notifier_recipient is match('^[1-9][0-9]{4,19}$')
+      - daybook_voice_memo_attention_notifier_container == 'openclaw-gateway'
+      - daybook_voice_memo_attention_notifier_script_src is not search('[\r\n]')
+      - daybook_voice_memo_attention_notifier_public_key is not search('[\r\n]')
+      - daybook_voice_memo_attention_notifier_native_host is not search('[\r\n]')
+      - daybook_voice_memo_attention_notifier_recipient is not search('[\r\n]')
+    fail_msg: Supply a dedicated Ed25519 key, validated owner recipient, host label and notifier source.
+  no_log: true
+
+- name: Inspect notifier managed paths
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - /usr/local
+    - /usr/local/libexec
+    - /usr/local/libexec/daybook-attention-notify.py
+    - /etc/daybook-attention-notify.json
+    - /root/.ssh
+    - /root/.ssh/authorized_keys
+  register: daybook_voice_memo_attention_notifier_paths
+
+- name: Reject links in notifier managed paths
+  ansible.builtin.assert:
+    that:
+      - not item.stat.islnk | default(false)
+      - not item.stat.exists or item.stat.nlink | default(1) == 1 or item.stat.isdir | default(false)
+    fail_msg: Notifier managed paths must not be symlinks or hard-linked files.
+  loop: "{{ daybook_voice_memo_attention_notifier_paths.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Define the single restricted notifier authorization
+  ansible.builtin.set_fact:
+    daybook_voice_memo_attention_notifier_key_options: >-
+      restrict,command="/usr/bin/python3 -I /usr/local/libexec/daybook-attention-notify.py --config /etc/daybook-attention-notify.json"
+    daybook_voice_memo_attention_notifier_key: >-
+      {{ daybook_voice_memo_attention_notifier_public_key.split()[:2] | join(' ') }}
+
+- name: Read existing root authorized keys without logging them
+  ansible.builtin.slurp:
+    src: /root/.ssh/authorized_keys
+  register: daybook_voice_memo_attention_notifier_existing_keys
+  when: (daybook_voice_memo_attention_notifier_paths.results | selectattr('item', 'equalto', '/root/.ssh/authorized_keys') | first).stat.exists
+  no_log: true
+
+- name: Reject reuse of a differently authorized existing key
+  ansible.builtin.assert:
+    that:
+      - >-
+        (daybook_voice_memo_attention_notifier_existing_keys.content | default('') | b64decode).splitlines()
+        | map('trim') | reject('match', '^#')
+        | select('search', '(^|[ \t])ssh-ed25519[ \t]+' ~ (daybook_voice_memo_attention_notifier_key.split()[1] | regex_escape) ~ '([ \t]|$)')
+        | reject('match', '^' ~ (daybook_voice_memo_attention_notifier_key_options | regex_escape) ~ '[ \t]+ssh-ed25519[ \t]+' ~
+                 (daybook_voice_memo_attention_notifier_key.split()[1] | regex_escape) ~ '([ \t]+.*)?$')
+        | list | length == 0
+      - >-
+        (daybook_voice_memo_attention_notifier_existing_keys.content | default('') | b64decode).splitlines()
+        | map('trim') | reject('match', '^#')
+        | select('search', '(^|[ \t])daybook-attention-notifier([ \t]|$)')
+        | reject('match', '^' ~ (daybook_voice_memo_attention_notifier_key_options | regex_escape) ~ '[ \t]+ssh-ed25519[ \t]+' ~
+                 (daybook_voice_memo_attention_notifier_key.split()[1] | regex_escape) ~ '([ \t]+.*)?$')
+        | list | length == 0
+    fail_msg: Use the dedicated key only; revoke an old notifier key before rotating it.
+  no_log: true
+
+- name: Create root-owned notifier executable directory
+  ansible.builtin.file:
+    path: /usr/local/libexec
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install standalone attention notifier executable
+  ansible.builtin.copy:
+    src: "{{ daybook_voice_memo_attention_notifier_script_src }}"
+    dest: /usr/local/libexec/daybook-attention-notify.py
+    owner: root
+    group: root
+    mode: '0755'
+    validate: /usr/bin/python3 -m py_compile %s
+
+- name: Install pinned private notifier configuration
+  ansible.builtin.copy:
+    content: >-
+      {{ {'native_host': daybook_voice_memo_attention_notifier_native_host,
+          'recipient': daybook_voice_memo_attention_notifier_recipient,
+          'container': daybook_voice_memo_attention_notifier_container} | to_nice_json }}
+    dest: /etc/daybook-attention-notify.json
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+
+- name: Add only the dedicated forced-command notifier key
+  ansible.posix.authorized_key:
+    user: root
+    key: "{{ daybook_voice_memo_attention_notifier_key }}"
+    comment: daybook-attention-notifier
+    key_options: "{{ daybook_voice_memo_attention_notifier_key_options }}"
+    exclusive: false
+    state: present
+  no_log: true

@@ -10,6 +10,13 @@
         state: directory
         mode: "0700"
 
+    # The base image ships a stale apt cache, so htpasswd's package would not
+    # resolve without this.
+    - name: Refresh the apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
   vars:
     os_apt_maintenance_host_id: molecule
     os_apt_maintenance_update_cache: false

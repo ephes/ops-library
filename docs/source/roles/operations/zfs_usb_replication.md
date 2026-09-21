@@ -12,6 +12,9 @@ Runs syncoid replication to a USB-attached ZFS pool on a schedule, skipping clea
 - For `recursive: true` + `readonly: true` jobs, existing target parents are auto-set to
   `canmount=off` before `zfs mount -a` to avoid read-only mountpoint creation failures.
 - Ensures `/etc/exports.d` exists before mounting to avoid exportfs lock-path errors.
+- Installs an attended root-private helper that can bind exact source-snapshot
+  file bytes and SHA-256 digests to a corresponding replica snapshot GUID
+  without modifying ZFS or joining the scheduled replication path.
 
 ## Key Variables
 
@@ -27,11 +30,25 @@ Runs syncoid replication to a USB-attached ZFS pool on a schedule, skipping clea
 - `abort_partial_receive: true` in a job aborts any leftover partial ZFS receive on the target
   (recursively for recursive jobs) before syncing. Uses the shared abort script from
   `zfs_syncoid_replication`.
+- `zfs_usb_replication_attestation_dir` is the root-owned mode-`0700`
+  request/response directory.
+- `zfs_usb_replication_attestation_helper_path` is the root-owned mode-`0750`
+  read-only verifier.
+
+The attestation helper is invoked only by an attended control workflow after
+replication. That external caller pins and passes absolute `zfs` and `zpool`
+binary paths. The helper selects the newest source/target snapshot pair with the
+same preserved GUID, verifies target read-only and receive-complete state,
+hashes bounded files from the mounted source snapshot using safe descriptor
+traversal, and re-observes both snapshot identities before publishing an atomic
+mode-`0600` response. Matching GUIDs prove replication lineage and exact
+source-snapshot containment. They do not prove retention, failure-domain
+independence, or physical offsite custody.
 
 Example usage:
 
 ```yaml
-- hosts: fractal
+- hosts: storage
   become: true
   vars:
     zfs_usb_replication_key: "{{ vault_usb_key }}"

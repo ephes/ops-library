@@ -1,0 +1,7 @@
+---
+ops_library_documentation_category: removal
+# Removal unloads/removes only the plist and always preserves state and install.
+daybook_voice_memo_attention_remove_confirm: false
+daybook_voice_memo_attention_remove_service_user: CHANGEME
+daybook_voice_memo_attention_remove_service_home: "/Users/{{ daybook_voice_memo_attention_remove_service_user }}"
+daybook_voice_memo_attention_remove_launchd_label: de.wersdoerfer.daybook.voice-memo-attention

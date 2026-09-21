@@ -1,0 +1,134 @@
+---
+- name: register_echoport | Validate fixed operations backup registration
+  ansible.builtin.assert:
+    that:
+      - not ansible_check_mode
+      - ansible_facts.system == 'Linux'
+      - daybook_operations_api_backup_runner == '/usr/local/libexec/daybook-operations-backup'
+      - daybook_operations_api_backup_policy == '/etc/daybook-operations-backup.json'
+      - daybook_operations_api_backup_target is match('^[a-z][a-z0-9_-]+$')
+      - daybook_operations_api_backup_bucket is match('^[a-z][a-z0-9-]+$')
+      - daybook_operations_api_backup_alias is match('^[a-z][a-z0-9-]+$')
+      - daybook_operations_api_backup_retention_days | int >= 1
+    fail_msg: Registration requires live execution on Linux with the fixed backup policy; check mode is not supported.
+
+- name: register_echoport | Create root-controlled runner and upload directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: /usr/local/libexec, mode: '0755'}
+    - {path: '{{ daybook_operations_api_backup_staging }}', mode: '0700'}
+    - {path: '{{ daybook_operations_api_backup_fastdeploy_root }}/services/{{ daybook_operations_api_backup_fastdeploy_service }}', mode: '0755'}
+
+- name: register_echoport | Install fixed-source backup bridge outside service-writable directories
+  ansible.builtin.copy:
+    src: echoport_runner.py
+    dest: "{{ daybook_operations_api_backup_runner }}"
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: register_echoport | Write root-owned backup bridge policy
+  ansible.builtin.copy:
+    dest: "{{ daybook_operations_api_backup_policy }}"
+    owner: root
+    group: root
+    mode: '0600'
+    content: "{{ {'user': daybook_operations_api_backup_user, 'python': daybook_operations_api_backup_python, 'lifecycle': daybook_operations_api_backup_script, 'config': daybook_operations_api_backup_config, 'backup_root': daybook_operations_api_backup_root, 'staging_root': daybook_operations_api_backup_staging, 'mc': daybook_operations_api_backup_mc, 'alias': daybook_operations_api_backup_alias, 'bucket': daybook_operations_api_backup_bucket, 'target': daybook_operations_api_backup_target, 'lock': daybook_operations_api_backup_staging + '/bridge.lock'} | to_nice_json }}"
+
+- name: register_echoport | Define the shared FastDeploy service payload
+  ansible.builtin.set_fact:
+    daybook_operations_api_backup_service_payload: "{{ {'name': daybook_operations_api_backup_fastdeploy_service, 'description': 'Daybook operations backup; attended restore only', 'deploy_script': daybook_operations_api_backup_runner, 'steps': [{'name': 'backup'}, {'name': 'upload'}, {'name': 'verify'}, {'name': 'result'}]} }}"
+
+- name: register_echoport | Install FastDeploy bridge configuration
+  ansible.builtin.copy:
+    dest: "{{ daybook_operations_api_backup_fastdeploy_root }}/services/{{ daybook_operations_api_backup_fastdeploy_service }}/config.json"
+    owner: root
+    group: root
+    mode: '0644'
+    content: "{{ daybook_operations_api_backup_service_payload | to_nice_json }}"
+
+- name: register_echoport | Permit only the root-owned backup bridge through the established runner chain
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/daybook_operations_backup
+    owner: root
+    group: root
+    mode: '0440'
+    validate: /usr/sbin/visudo -cf %s
+    content: |  # pragma: allowlist secret (sudoers rule, no credential)
+      fastdeploy ALL=(deploy) NOPASSWD:NOSETENV: {{ daybook_operations_api_backup_runner }} --config *
+      deploy ALL=(root) NOPASSWD:NOSETENV: {{ daybook_operations_api_backup_runner }} --config *
+
+- name: register_echoport | Register this FastDeploy service without syncing unrelated services
+  community.postgresql.postgresql_query:
+    login_db: fastdeploy
+    query: >-
+      INSERT INTO service (name, data) VALUES (%(name)s, %(data)s::json)
+      ON CONFLICT (name) DO UPDATE SET data = EXCLUDED.data
+      WHERE service.data::jsonb IS DISTINCT FROM EXCLUDED.data::jsonb
+      RETURNING name
+    named_args:
+      name: "{{ daybook_operations_api_backup_fastdeploy_service }}"
+      data: "{{ daybook_operations_api_backup_service_payload | to_json }}"
+  become: true
+  become_user: postgres
+  register: daybook_operations_api_backup_service_row
+  changed_when: daybook_operations_api_backup_service_row.rowcount > 0
+
+- name: register_echoport | Mint a token scoped to the backup bridge as the FastDeploy account
+  ansible.builtin.command:
+    argv: ['{{ daybook_operations_api_backup_fastdeploy_root }}/.venv/bin/python', '-']
+    chdir: '{{ daybook_operations_api_backup_fastdeploy_root }}'
+    stdin: |
+      from datetime import timedelta
+      from dotenv import load_dotenv
+      load_dotenv('.env')
+      from deploy.auth import create_access_token
+      print(create_access_token(payload={'type': 'service', 'service': {{ daybook_operations_api_backup_fastdeploy_service | to_json }}, 'origin': 'echoport', 'user': 'ops-control'}, expires_delta=timedelta(days=180)))
+  become: true
+  become_user: fastdeploy
+  register: daybook_operations_api_backup_service_token
+  changed_when: false
+  no_log: true
+
+- name: register_echoport | Register the backup schedule and retention in Echoport
+  ansible.builtin.command:
+    argv: ['{{ daybook_operations_api_backup_echoport_root }}/.venv/bin/python', '{{ daybook_operations_api_backup_echoport_root }}/manage.py', shell]
+    chdir: '{{ daybook_operations_api_backup_echoport_root }}'
+    stdin: |
+      import json
+      from backups.models import BackupTarget
+      from django.db import transaction
+      with transaction.atomic():
+          target, created = BackupTarget.objects.get_or_create(name={{ daybook_operations_api_backup_target | to_json }}, defaults={'fastdeploy_service': {{ daybook_operations_api_backup_fastdeploy_service | to_json }}, 'target_mode': 'service_owned'})
+          target.fastdeploy_service = {{ daybook_operations_api_backup_fastdeploy_service | to_json }}
+          target.service_token = {{ daybook_operations_api_backup_service_token.stdout | trim | to_json }}
+          target.target_mode = 'service_owned'
+          target.service_name = 'daybook-operations'
+          target.description = 'Database and replay keyring; restore only through attended operations lifecycle'
+          target.db_path = ''
+          target.backup_files = []
+          target.storage_bucket = {{ daybook_operations_api_backup_bucket | to_json }}
+          if created or {{ daybook_operations_api_backup_update_schedule | bool }}:
+              target.schedule = {{ daybook_operations_api_backup_schedule | to_json }}
+              target.schedule_required = bool(target.schedule)
+          target.retention_days = {{ daybook_operations_api_backup_retention_days | int }}
+          target.timeout_seconds = 1800
+          if created:
+              target.status = 'active'
+          target.full_clean()
+          target.save()
+      print(json.dumps({'schedule': target.schedule, 'status': target.status}))
+  become: true
+  become_user: echoport
+  register: daybook_operations_api_backup_target_result
+  changed_when: true
+  no_log: true
+
+- name: register_echoport | Expose the preserved schedule for monitoring
+  ansible.builtin.set_fact:
+    daybook_operations_api_backup_registered_schedule: "{{ (daybook_operations_api_backup_target_result.stdout_lines[-1] | from_json).schedule }}"

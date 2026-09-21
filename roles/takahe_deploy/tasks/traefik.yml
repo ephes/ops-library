@@ -1,5 +1,16 @@
 ---
-- name: Ensure Traefik dynamic config directory exists
+- name: traefik | Validate obsolete configuration paths
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item != takahe_traefik_config_path
+      - (item | dirname) == (takahe_traefik_config_path | dirname)
+      - item is match('^/.*\\.ya?ml$')
+      - "'..' not in item.split('/')"
+    fail_msg: "Invalid legacy path {{ item }}: must be a distinct YAML file in the managed dynamic directory."
+  loop: "{{ takahe_traefik_legacy_config_paths }}"
+
+- name: traefik | Ensure dynamic config directory exists
   ansible.builtin.file:
     path: "{{ takahe_traefik_config_path | dirname }}"
     state: directory
@@ -7,11 +18,18 @@
     group: root
     mode: "0755"
 
-- name: Render Traefik configuration
+- name: traefik | Render configuration
   ansible.builtin.template:
     src: traefik.yml.j2
     dest: "{{ takahe_traefik_config_path }}"
     owner: root
     group: root
     mode: "0644"
+  notify: reload traefik
+
+- name: traefik | Remove explicitly configured obsolete files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ takahe_traefik_legacy_config_paths }}"
   notify: reload traefik

@@ -1,0 +1,34 @@
+---
+- name: user | Ensure static site group exists
+  ansible.builtin.group:
+    name: "{{ static_site_group }}"
+    system: true
+    state: present
+
+- name: user | Ensure static site user exists
+  ansible.builtin.user:
+    name: "{{ static_site_user }}"
+    group: "{{ static_site_group }}"
+    shell: /usr/sbin/nologin
+    create_home: false
+    system: true
+    state: present
+
+- name: user | Ensure shared parent directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ static_site_path | dirname }}"
+    - "{{ static_site_server_path | dirname }}"
+
+- name: user | Ensure static site document root exists
+  ansible.builtin.file:
+    path: "{{ static_site_path }}"
+    state: directory
+    owner: root
+    group: "{{ static_site_group }}"
+    mode: "0755"

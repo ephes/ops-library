@@ -3,6 +3,8 @@
 Mask systemd units that cannot work on a host, and clear any lingering `failed`
 state so `systemctl --failed` keeps reporting only real problems.
 
+The role declares Debian 12 and 13 support.
+
 ## Why mask rather than disable
 
 `enabled: false` stops a unit being pulled in at boot, but it can still be

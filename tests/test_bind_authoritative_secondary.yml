@@ -29,11 +29,15 @@
     rendered_slave: "{{ test_tmp_dir }}/slave.named.conf.local"
     rendered_secondary: "{{ test_tmp_dir }}/secondary.named.conf.local"
     rendered_prod: "{{ test_tmp_dir }}/prod.named.conf.local"
+    rendered_trixie_named_conf: "{{ test_tmp_dir }}/trixie.named.conf"
 
     # Template inputs are taken from the role defaults so the test fails if a
     # default is renamed or dropped.
     bind_config_dir: "{{ bind_defaults.bind_config_dir }}"
     bind_working_dir: "{{ bind_defaults.bind_working_dir }}"
+    # Preserve the legacy fixture below explicitly; a separate render asserts
+    # the Debian 13 packaged root-hints include.
+    bind_builtin_zones_file: "{{ bind_config_dir }}/named.conf.default-zones"
     bind_zone_default_type: "{{ bind_defaults.bind_zone_default_type }}"
     bind_zone_transfer_backed_types: "{{ bind_defaults.bind_zone_transfer_backed_types }}"
     bind_verify_zone_types: "{{ bind_defaults.bind_verify_zone_types }}"
@@ -405,6 +409,14 @@
       vars:
         bind_tsig_keys: "{{ test_tsig_keys }}"
 
+    - name: Render named.conf for Debian 13 packaged includes
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/named.conf.j2"
+        dest: "{{ rendered_trixie_named_conf }}"
+        mode: "0644"
+      vars:
+        bind_builtin_zones_file: "{{ bind_config_dir }}/named.conf.root-hints"
+
     - name: Render the TSIG keys file
       ansible.builtin.template:
         src: "{{ role_path }}/templates/named.conf.keys.j2"
@@ -420,6 +432,7 @@
         - "{{ test_tmp_dir }}/nokeys.named.conf"
         - "{{ test_tmp_dir }}/keys.named.conf"
         - "{{ test_tmp_dir }}/named.conf.keys"
+        - "{{ rendered_trixie_named_conf }}"
       register: rendered_tsig_slurp
 
     - name: Assert named.conf is unchanged when no TSIG keys are configured
@@ -451,6 +464,15 @@
           reference a key.
       vars:
         rendered_keys_text: "{{ rendered_tsig_slurp.results[1].content | b64decode }}"
+
+    - name: Assert Debian 13 uses the packaged root-hints include
+      ansible.builtin.assert:
+        that:
+          - "'include \"/etc/bind/named.conf.root-hints\";' in rendered_trixie_text"
+          - "'named.conf.default-zones' not in rendered_trixie_text"
+        fail_msg: "Debian 13 named.conf must include its packaged root hints file."
+      vars:
+        rendered_trixie_text: "{{ rendered_tsig_slurp.results[3].content | b64decode }}"
 
     - name: Assert key stanzas render with the documented algorithm default
       ansible.builtin.assert:

@@ -2,6 +2,8 @@
 
 Install a curated set of command line tools, switch the default shell to fish, and keep chezmoi up to date from upstream.
 
+The package and idempotence path is exercised on Debian 13 in Molecule.
+
 ## Features
 
 - Installs modern CLI defaults: `fish`, `eza`, `fd-find` (with `fd` symlink), `ripgrep`, `bat` (`batcat` symlink), `fzf`, `tmux`, `tealdeer`, `just`, `btop`, `bmon`, `sysstat` (`iostat`/`mpstat`), `iotop`, and common utilities.

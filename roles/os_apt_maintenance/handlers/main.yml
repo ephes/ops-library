@@ -8,6 +8,11 @@
     name: "{{ os_apt_maintenance_service_name }}.timer"
     state: restarted
 
+- name: restart os-apt-maintenance-refresh-timer
+  ansible.builtin.systemd:
+    name: "{{ os_apt_maintenance_refresh_service_name }}.timer"
+    state: restarted
+
 - name: restart os-apt-maintenance-endpoint
   ansible.builtin.systemd:
     name: "{{ os_apt_maintenance_endpoint_service_name }}"

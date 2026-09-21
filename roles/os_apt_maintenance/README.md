@@ -10,9 +10,44 @@ This role deploys:
 - `os-apt-maintenance.service`: a root `oneshot` systemd service.
 - `os-apt-maintenance.timer`: a persistent, jittered systemd timer.
 - `/var/lib/os-apt-maintenance/state.json`: durable run state updated atomically even when apt fails.
+- `os-apt-maintenance-refresh.service` / `.timer`: a daily `apt-get update`-only refresh (see below).
 - Optional `os-apt-maintenance-endpoint.service`: an authenticated HTTP endpoint for Nyxmon `json-metrics` checks.
 
 The role is intentionally limited to OS package maintenance. It does not replace application dependency upgrades, product upgrades, or FastDeploy ad-hoc apt runners.
+
+## Index Refresh vs. Maintenance
+
+The two timers exist because they answer to different budgets.
+
+The **maintenance** timer installs upgrades, so it runs on a slow, jittered
+cadence (weekly in ops-control) to keep package churn predictable. The
+**refresh** timer runs `apt-get update` and nothing else, daily, because
+monitoring is stricter than the upgrade cadence: the `software_live` apt check
+warns when the newest security `InRelease` is older than 48 hours. That budget
+exists because `pending_security_count: 0` computed from week-old indexes is not
+evidence that a host has no pending security updates - it only means nobody has
+looked recently.
+
+A weekly maintenance timer alone can therefore never hold a 48-hour freshness
+budget. Hosts that happened to look healthy were usually relying on
+`unattended-upgrades` performing a daily `apt update` as a side effect, which
+makes index freshness an accident of which packages a base image ships rather
+than something this role asserts.
+
+The refresh run:
+
+- installs, removes and upgrades nothing, and never reboots;
+- shares `os_apt_maintenance_lock_file`, so it can never overlap a real upgrade,
+  and exits successfully without running apt when maintenance holds the lock;
+- never writes `state.json`. `last_success_at` there means "a full maintenance
+  run succeeded" and feeds the 14-day freshness check; stamping it on every
+  index refresh would keep that check green on a host whose weekly upgrade had
+  been failing for a month. Refresh health is visible through the apt index age
+  that `software_live` already reports, and through the unit's own systemd
+  result.
+
+Set `os_apt_maintenance_refresh_enabled: false` to turn it off; the role then
+stops the timer and removes both units rather than leaving them firing.
 
 ## Safety Defaults
 
@@ -21,6 +56,11 @@ The role is intentionally limited to OS package maintenance. It does not replace
 - The timer includes `RandomizedDelaySec` to avoid synchronized apt runs.
 - The runner uses a non-blocking lock file to prevent overlapping runs.
 - A failed run still writes `state.json` and preserves the previous `last_success_at`.
+- The runner stamps the endpoint-readable group and mode onto `state.json` itself,
+  on every write. systemd skips `ExecStartPost=` when `ExecStart=` exits non-zero,
+  so relying on the unit alone left a failed run's state file unreadable by the
+  endpoint user and the endpoint answering HTTP 503 - hiding the failure it had
+  just recorded. The unit's fix-up runs from `ExecStopPost=-` for the same reason.
 - Package config prompts use `--force-confold`, so unattended runs keep existing local config files.
 
 ## Variables
@@ -41,6 +81,15 @@ The role is intentionally limited to OS package maintenance. It does not replace
 | `os_apt_maintenance_timer_persistent` | `true` | Catch up missed timer runs after downtime. |
 | `os_apt_maintenance_run_on_deploy` | `false` | Run the apt maintenance service during role deploy. |
 | `os_apt_maintenance_run_on_first_deploy` | `false` | Run the apt maintenance service when the state file did not exist before this deploy. |
+| `os_apt_maintenance_refresh_enabled` | `true` | Deploy the daily index-only refresh timer. |
+| `os_apt_maintenance_refresh_service_name` | `os-apt-maintenance-refresh` | Unit name for the refresh service and timer. |
+| `os_apt_maintenance_refresh_timer_on_calendar` | `*-*-* 06:00:00` | Refresh schedule. Must stay well inside the monitored index freshness budget. |
+| `os_apt_maintenance_refresh_timer_randomized_delay_sec` | `1h` | Refresh timer jitter. |
+| `os_apt_maintenance_refresh_timer_accuracy_sec` | `10m` | Refresh timer accuracy. |
+| `os_apt_maintenance_refresh_timer_persistent` | `true` | Catch up a missed refresh after downtime. |
+| `os_apt_maintenance_refresh_timer_enabled` | `true` | Enable the refresh timer unit. |
+| `os_apt_maintenance_refresh_timer_state` | `started` | Desired refresh timer state. |
+| `os_apt_maintenance_refresh_command_timeout` | `900` | Timeout for the refresh `apt-get update`. |
 | `os_apt_maintenance_freshness_max_age_seconds` | `1209600` | Monitoring threshold for last successful run, default 14 days. |
 | `os_apt_maintenance_endpoint_enabled` | `false` | Serve state JSON over authenticated HTTP. |
 | `os_apt_maintenance_endpoint_user` | `metrics` | Local system user that serves the endpoint and reads state. |
@@ -115,11 +164,67 @@ When the HTTP endpoint is enabled, it adds request-time `meta` and `summary` fie
 - `$.meta.state_file_fresh == true`
 - `$.reboot_required == false` as warning or critical, depending on operator policy
 
-The endpoint reports `$.reboot_required` from the live `/var/run/reboot-required`
-marker at request time, so a successful operator reboot clears the monitoring
-warning immediately even if the durable state file was last written before the
-reboot. The previous state-file value is exposed as
-`$.meta.state_reboot_required` for debugging.
+The endpoint reports `$.reboot_required` live at request time, so a successful
+operator reboot clears the monitoring warning immediately even if the durable
+state file was last written before the reboot. The previous state-file value is
+exposed as `$.meta.state_reboot_required` for debugging.
+
+### How a required reboot is detected
+
+Two independent signals, OR'd together, with the reason reported in
+`$.reboot_required_details`:
+
+| Signal | `reasons` entry | Source |
+| --- | --- | --- |
+| `/var/run/reboot-required` exists | `reboot_required_flag` | Ubuntu's `update-notifier-common` |
+| A newer kernel than the running one is installed | `stale_kernel` | `dpkg-query` vs `uname -r` |
+
+The marker file alone is **not** sufficient. It is created by
+`update-notifier-common`, which Debian does not ship by default and which is
+absent on some Ubuntu hosts too. On such a host the marker can never appear, so
+a check asserting `$.reboot_required == false` stays confidently green while the
+machine runs a kernel several releases behind the one installed - a false
+negative indistinguishable from a healthy host.
+
+This was observed in production: a Debian 12 host running a bullseye `5.10`
+kernel with `6.1` installed, monitored as green for over two years.
+
+The kernel comparison needs no extra package and behaves identically on Debian
+and Ubuntu. It only counts packages in dpkg state `installed`, so a
+removed-but-not-purged kernel left in `config-files` does not raise a false
+alarm, and it fails closed to "no signal" if `dpkg-query` is unavailable rather
+than erroring the run.
+
+`$.reboot_required_details` additionally carries `running_kernel`,
+`running_kernel_version` and `newest_installed_kernel` when the kernel signal
+fires, so an operator can tell a pending-kernel reboot from a library-triggered
+one without logging in.
+
+The kernel comparison runs inside the maintenance run and is persisted in the
+state file, so it is only re-evaluated on the timer's cadence. The endpoint
+re-reads the marker file on every request and serves the persisted kernel
+signal for as long as `uname -r` still matches the kernel that run observed.
+A reboot into the newer kernel therefore clears both signals immediately,
+while a reboot back into the old kernel keeps the warning. State files written
+before this signal existed serve marker-only behaviour until the next run.
+
+**Known limitations.**
+
+- The comparison only sees kernels installed as dpkg packages. A host booting
+  a kernel installed outside dpkg - a custom build, a vendor kernel that was
+  not packaged - has no `linux-image-*` packages to compare against, so
+  `stale_kernel` reports no signal. That is a deliberate fail-safe: reporting
+  nothing is correct behaviour for "cannot tell", and it avoids inventing a
+  false warning. But it does mean **absence of a kernel signal on such a host
+  is not evidence the kernel is current**, and those hosts still depend on the
+  marker file alone. Track them separately.
+- The comparison has no notion of *why* an older kernel is running. A host
+  deliberately pinned to an older packaged kernel (a GRUB default pointing at
+  a known-good release while a newer one stays installed) reports
+  `stale_kernel` on every run until the pin is lifted or the newer package is
+  removed. The role does not offer an allow-list for this; the warning is the
+  truthful statement that a newer kernel is installed and not running, and
+  what to do about it is an operator decision.
 
 During an active run, `$.summary.currently_running` is `true`. `last_run_ok` remains true while
 the previous successful run is still fresh, so monitoring does not page during normal apt work.
@@ -131,6 +236,16 @@ systemctl status os-apt-maintenance.timer
 systemctl cat os-apt-maintenance.service os-apt-maintenance.timer
 cat /var/lib/os-apt-maintenance/state.json | jq .
 journalctl -u os-apt-maintenance.service -n 100 --no-pager
+
+# Index refresh
+systemctl status os-apt-maintenance-refresh.timer
+systemctl list-timers os-apt-maintenance-refresh.timer --all
+journalctl -u os-apt-maintenance-refresh.service -n 50 --no-pager
+/usr/local/sbin/os-apt-maintenance --refresh-only   # safe to run by hand
+
+# What the refresh is actually for: the newest security index must stay inside
+# the freshness budget software_live enforces (48h).
+ls -l --time-style=full-iso /var/lib/apt/lists/*security*InRelease
 
 # Endpoint, when enabled
 curl -sS -o /dev/null -w '%{http_code}\n' http://<TAILSCALE_IP>:9106/.well-known/os-apt-maintenance
@@ -147,4 +262,6 @@ curl -sS -u "nyxmon:<password>" http://<TAILSCALE_IP>:9106/.well-known/os-apt-ma
 cd /path/to/ops-library
 just test-role os_apt_maintenance
 just lint-role os_apt_maintenance
+just test-os-apt-maintenance-refresh
+just molecule-test os_apt_maintenance
 ```

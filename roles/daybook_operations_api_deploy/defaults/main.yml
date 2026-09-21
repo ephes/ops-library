@@ -1,0 +1,39 @@
+---
+ops_library_documentation_category: deployment
+daybook_operations_api_enabled: false
+daybook_operations_api_user: daybook-operations
+daybook_operations_api_home: /home/daybook-operations
+daybook_operations_api_site: "{{ daybook_operations_api_home }}/site"
+daybook_operations_api_venv: "{{ daybook_operations_api_home }}/venv"
+daybook_operations_api_config_dir: /etc/daybook-operations
+daybook_operations_api_source_path: ""
+daybook_operations_api_deploy_method: rsync
+daybook_operations_api_git_repo: https://github.com/ephes/daybook.git
+daybook_operations_api_git_revision: CHANGEME
+daybook_operations_api_uv: /usr/local/bin/uv
+daybook_operations_api_port: 10063
+daybook_operations_api_domain: operations.home.example.com
+daybook_operations_api_secret_key: CHANGEME  # pragma: allowlist secret (rejected placeholder)
+daybook_operations_api_signing_keys: {}
+daybook_operations_api_signing_key_id: ""
+daybook_operations_api_profiles: []
+daybook_operations_api_record_limit: 100000
+# Monitoring: the sampled storage location is operator-configured and never client-selected.
+daybook_operations_api_storage_path: "{{ daybook_operations_api_home }}"
+daybook_operations_api_storage_sample_interval: 300
+daybook_operations_api_storage_sample_max_age: 900
+daybook_operations_api_nominal_records_per_day: 1152
+daybook_operations_api_capacity_warn_utilization: 0.70
+daybook_operations_api_capacity_critical_utilization: 0.80
+daybook_operations_api_capacity_warn_days: 30
+daybook_operations_api_capacity_critical_days: 14
+daybook_operations_api_postgres_version: "17"
+daybook_operations_api_database: daybook_operations
+daybook_operations_api_database_user: daybook_operations
+daybook_operations_api_database_password: CHANGEME  # pragma: allowlist secret (rejected placeholder)
+daybook_operations_api_database_url: "postgresql://{{ daybook_operations_api_database_user }}:{{ daybook_operations_api_database_password | urlencode | replace('/', '%2F') }}@127.0.0.1:5432/{{ daybook_operations_api_database }}"
+daybook_operations_api_allowed_networks:
+  - 100.64.0.0/10
+  - fd7a:115c:a1e0::/48
+daybook_operations_api_traefik_path: /etc/traefik/dynamic/daybook-operations.yml
+daybook_operations_api_backup_root: /opt/backups/daybook_operations

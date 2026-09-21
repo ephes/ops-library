@@ -1,0 +1,266 @@
+---
+- name: Inspect effective privilege for publisher management
+  ansible.builtin.command:
+    argv: [id, -u]
+  register: software_estate_publisher_linux_effective_uid
+  changed_when: false
+  check_mode: false
+
+- name: Require an explicitly configured Linux publisher
+  ansible.builtin.assert:
+    that:
+      - ansible_system == 'Linux'
+      - ansible_service_mgr == 'systemd'
+      - software_estate_publisher_linux_effective_uid.stdout | int == 0
+      - software_estate_publisher_linux_state in ['present', 'absent']
+      - software_estate_publisher_linux_minute is integer
+      - software_estate_publisher_linux_minute >= 0
+      - software_estate_publisher_linux_minute <= 59
+      - software_estate_publisher_linux_python is match('^/[A-Za-z0-9_./-]+$')
+
+- name: Derive immutable Linux program release
+  ansible.builtin.set_fact:
+    software_estate_publisher_linux_release: >-
+      /usr/local/lib/software-estate-publisher/{{ (
+      lookup('file', role_path + '/../software_estate/files/publish.py') ~
+      lookup('file', role_path + '/../software_estate/files/collect.py') ~
+      lookup('file', role_path + '/../software_estate/files/emit.py') ~
+      lookup('file', role_path + '/../software_estate/files/outbox.py') ~
+      lookup('file', role_path + '/../software_estate/files/send.py')) | hash('sha256') }}
+
+- name: Inspect privileged publisher paths without following links
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    get_checksum: false
+  loop:
+    - /usr
+    - /usr/local
+    - /usr/local/bin
+    - /usr/local/lib
+    - /etc
+    - /etc/systemd
+    - /etc/systemd/system
+    - /var
+    - /var/lib
+    - /usr/local/lib/software-estate-publisher
+    - "{{ software_estate_publisher_linux_release }}"
+    - "{{ software_estate_publisher_linux_release }}/publish.py"
+    - "{{ software_estate_publisher_linux_release }}/collect.py"
+    - "{{ software_estate_publisher_linux_release }}/emit.py"
+    - "{{ software_estate_publisher_linux_release }}/outbox.py"
+    - "{{ software_estate_publisher_linux_release }}/send.py"
+    - /usr/local/bin/software-estate-publisher
+    - /etc/systemd/system/software-estate-publisher.service
+    - /etc/systemd/system/software-estate-publisher.timer
+  register: software_estate_publisher_linux_root_paths
+
+- name: Refuse unsafe privileged publisher paths
+  ansible.builtin.assert:
+    that:
+      - not item.stat.islnk
+      - item.stat.uid == 0
+      - not item.stat.wgrp and not item.stat.woth
+      - item.stat.isdir or (item.stat.isreg and item.stat.nlink == 1)
+    fail_msg: "Unsafe publisher path: {{ item.item }}"
+    quiet: true
+  loop: "{{ software_estate_publisher_linux_root_paths.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stat.exists
+
+- name: Remove the Linux scheduled publisher while retaining private state
+  when: software_estate_publisher_linux_state == 'absent'
+  block:
+    - name: Stop and disable only the publisher timer and service
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop: [software-estate-publisher.timer, software-estate-publisher.service]
+      when: >-
+        (software_estate_publisher_linux_root_paths.results |
+        selectattr('item', 'equalto', '/etc/systemd/system/' + item) | first).stat.exists
+
+    - name: Remove publisher units only
+      ansible.builtin.file:
+        path: "/etc/systemd/system/software-estate-publisher.{{ item }}"
+        state: absent
+      loop: [timer, service]
+      register: software_estate_publisher_linux_removed
+
+    - name: Reload systemd after removal
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: software_estate_publisher_linux_removed.changed
+
+- name: Install the local Linux publisher
+  when: software_estate_publisher_linux_state == 'present'
+  block:
+    - name: Validate the explicit local identity and endpoint
+      ansible.builtin.assert:
+        that:
+          - software_estate_publisher_linux_policy.host is defined
+          - software_estate_publisher_linux_policy.host in software_estate_publisher_linux_hostnames
+          - ansible_hostname | lower in software_estate_publisher_linux_hostnames
+          - software_estate_publisher_linux_endpoint is match('^https://')
+
+    - name: Create the dedicated publisher group
+      ansible.builtin.group:
+        name: software-estate-publisher
+        system: true
+
+    - name: Create the unprivileged publisher identity
+      ansible.builtin.user:
+        name: software-estate-publisher
+        group: software-estate-publisher
+        groups: []
+        system: true
+        create_home: false
+        home: /nonexistent
+        shell: /usr/sbin/nologin
+      register: software_estate_publisher_linux_user
+
+    - name: Require a non-root runtime identity
+      ansible.builtin.assert:
+        that: software_estate_publisher_linux_user.uid | int != 0
+
+    - name: Inspect private publisher paths
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+        get_checksum: false
+      loop:
+        - /etc/software-estate-publisher
+        - /etc/software-estate-publisher/config.json
+        - /etc/software-estate-publisher/writer
+        - /var/lib/software-estate-publisher
+        - /var/lib/software-estate-publisher/outbox
+      register: software_estate_publisher_linux_private_paths
+
+    - name: Refuse unsafe private publisher paths
+      ansible.builtin.assert:
+        that:
+          - not item.stat.islnk
+          - item.stat.uid == software_estate_publisher_linux_user.uid
+          - item.stat.mode in ['0600', '0700']
+          - item.stat.isdir or (item.stat.isreg and item.stat.nlink == 1)
+        fail_msg: "Unsafe publisher path: {{ item.item }}"
+        quiet: true
+      loop: "{{ software_estate_publisher_linux_private_paths.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: item.stat.exists
+
+    - name: Create private configuration and state directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: software-estate-publisher
+        group: software-estate-publisher
+        mode: '0700'
+      loop:
+        - /etc/software-estate-publisher
+        - /var/lib/software-estate-publisher
+        - /var/lib/software-estate-publisher/outbox
+
+    - name: Create root-owned immutable program directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - /usr/local/lib/software-estate-publisher
+        - "{{ software_estate_publisher_linux_release }}"
+
+    - name: Install the shared publisher programs
+      ansible.builtin.copy:
+        src: "{{ role_path }}/../software_estate/files/{{ item }}"
+        dest: "{{ software_estate_publisher_linux_release }}/{{ item }}"
+        owner: root
+        group: root
+        mode: '0644'
+      loop: [publish.py, collect.py, emit.py, outbox.py, send.py]
+
+    - name: Install the existing host-bound writer privately
+      ansible.builtin.copy:
+        content: "{{ software_estate_publisher_linux_writer | trim }}\n"
+        dest: /etc/software-estate-publisher/writer
+        owner: software-estate-publisher
+        group: software-estate-publisher
+        mode: '0600'
+      no_log: true
+      diff: false
+      when: software_estate_publisher_linux_writer | length > 0
+
+    - name: Install configuration containing only the credential path
+      ansible.builtin.copy:
+        content: "{{ software_estate_publisher_linux_configuration | to_nice_json }}\n"
+        dest: /etc/software-estate-publisher/config.json
+        owner: software-estate-publisher
+        group: software-estate-publisher
+        mode: '0600'
+      vars:
+        software_estate_publisher_linux_configuration:
+          policy: "{{ software_estate_publisher_linux_policy }}"
+          hostnames: "{{ software_estate_publisher_linux_hostnames }}"
+          endpoint: "{{ software_estate_publisher_linux_endpoint }}"
+          directory: /var/lib/software-estate-publisher
+          credential_file: /etc/software-estate-publisher/writer
+
+    - name: Validate configuration as the runtime user before enabling
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/runuser
+          - -u
+          - software-estate-publisher
+          - --
+          - "{{ software_estate_publisher_linux_python }}"
+          - "{{ software_estate_publisher_linux_release }}/publish.py"
+          - --config
+          - /etc/software-estate-publisher/config.json
+          - --check
+      register: software_estate_publisher_linux_check
+      until: software_estate_publisher_linux_check.rc | default(1) != 75
+      retries: 60
+      delay: 5
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: Install manual entry point with mandatory privilege drop
+      ansible.builtin.template:
+        src: run.j2
+        dest: /usr/local/bin/software-estate-publisher
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Install publisher service and timer
+      ansible.builtin.template:
+        src: "publisher.{{ item }}.j2"
+        dest: "/etc/systemd/system/software-estate-publisher.{{ item }}"
+        owner: root
+        group: root
+        mode: '0644'
+      loop: [service, timer]
+      register: software_estate_publisher_linux_units
+
+    - name: Reload installed publisher units
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: software_estate_publisher_linux_units.changed
+
+    - name: Enable the local publisher timer
+      ansible.builtin.systemd_service:
+        name: software-estate-publisher.timer
+        enabled: true
+        state: "{{ 'restarted' if software_estate_publisher_linux_units.changed else 'started' }}"
+
+    - name: Start one immediate cadence and delivery check after installation
+      ansible.builtin.systemd_service:
+        name: software-estate-publisher.service
+        state: started
+        no_block: true
+      when: software_estate_publisher_linux_units.changed

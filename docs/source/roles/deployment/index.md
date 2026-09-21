@@ -5,10 +5,18 @@ Roles for deploying and configuring services.
 ```{toctree}
 :maxdepth: 1
 
+daybook_operations_runtime_deploy
+
+daybook_operations_api_deploy
+
 fastdeploy_deploy
 fastdeploy_self_deploy
 daybook_sessions_deploy
+daybook_mail_work_deploy
 daybook_photos_offload_deploy
+daybook_photos_archive_sync_deploy
+daybook_voice_memo_inbox_deploy
+daybook_voice_memo_work_deploy
 weeknotes_home_deploy
 nyxmon_deploy
 logyard_deploy
@@ -38,6 +46,7 @@ openclaw_deploy
 mastodon_deploy
 mastodon_shared
 snappymail_deploy
+static_site_deploy
 takahe_deploy
 takahe_shared
 mail_backend_deploy
@@ -46,9 +55,14 @@ certbot_dns_deploy
 voxhelm_deploy
 voxhelm_ingress_deploy
 zellij_ingress_deploy
+daybook_voice_memo_attention_deploy
+daybook_voice_memo_attention_notifier_deploy
+daybook_voice_memo_attention_reader_deploy
+daybook_work_source_access_deploy
 ```
 
 These roles handle the complete deployment lifecycle including:
+
 - Service user and directory setup
 - Configuration file management
 - Database initialization

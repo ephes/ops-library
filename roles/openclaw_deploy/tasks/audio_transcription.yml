@@ -1,0 +1,66 @@
+---
+- name: audio_transcription | Render SecretRef apply plan
+  ansible.builtin.template:
+    src: openclaw-audio-secrets-plan.json.j2
+    dest: "{{ openclaw_data_dir }}/managed-audio-secrets-plan.json"
+    owner: "1000"
+    group: "1000"
+    mode: "0600"
+
+- name: audio_transcription | Preflight dedicated auth profile
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --user
+      - "1000:1000"
+      - --env-file
+      - "{{ openclaw_site_dir }}/.env"
+      - --volume
+      - "{{ openclaw_data_dir }}:/home/node/.openclaw"
+      - --entrypoint
+      - node
+      - "{{ openclaw_image_name }}:{{ openclaw_image_tag }}"
+      - dist/index.js
+      - secrets
+      - apply
+      - --from
+      - /home/node/.openclaw/managed-audio-secrets-plan.json
+      - --dry-run
+      - --json
+  register: _openclaw_audio_secrets_dry_run
+  changed_when: false
+  no_log: true
+
+- name: audio_transcription | Parse SecretRef preflight result
+  ansible.builtin.set_fact:
+    _openclaw_audio_secrets_preflight: >-
+      {{ _openclaw_audio_secrets_dry_run.stdout | from_json }}
+  no_log: true
+
+- name: audio_transcription | Apply dedicated auth profile
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --user
+      - "1000:1000"
+      - --env-file
+      - "{{ openclaw_site_dir }}/.env"
+      - --volume
+      - "{{ openclaw_data_dir }}:/home/node/.openclaw"
+      - --entrypoint
+      - node
+      - "{{ openclaw_image_name }}:{{ openclaw_image_tag }}"
+      - dist/index.js
+      - secrets
+      - apply
+      - --from
+      - /home/node/.openclaw/managed-audio-secrets-plan.json
+      - --json
+  when: _openclaw_audio_secrets_preflight.changed | bool
+  changed_when: true
+  no_log: true
+  notify: restart openclaw

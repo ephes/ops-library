@@ -1,0 +1,2 @@
+# These programs run on inventory system Python, not the controller venv.
+target-version = "py311"

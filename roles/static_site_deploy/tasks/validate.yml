@@ -1,0 +1,161 @@
+---
+- name: validate | Validate static site configuration
+  ansible.builtin.assert:
+    that:
+      - static_site_service_name is match('^[a-z][a-z0-9-]{1,62}\Z')
+      - static_site_user is match('^[a-z_][a-z0-9_-]{0,30}\Z')
+      - static_site_group is match('^[a-z_][a-z0-9_-]{0,30}\Z')
+      - static_site_source_path is match('^/[A-Za-z0-9_./-]+\Z')
+      - static_site_source_path != '/'
+      - static_site_path is match('^/[A-Za-z0-9_./-]+\Z')
+      - static_site_path != '/'
+      - static_site_python_path is match('^/[A-Za-z0-9_./-]+\Z')
+      - static_site_server_path is match('^/[A-Za-z0-9_./-]+\Z')
+      - static_site_systemd_unit_name is match('^[a-z][a-z0-9_.-]{1,62}\Z')
+      - static_site_systemd_unit_path is match('^/[A-Za-z0-9_./-]+[.]service\Z')
+      - not (static_site_traefik_enabled | bool) or static_site_traefik_cert_resolver is match('^[A-Za-z0-9_.-]*\Z')
+      - static_site_bind_host == '127.0.0.1'
+      - static_site_port | int >= 1024
+      - static_site_port | int <= 65535
+      - static_site_required_files is sequence
+      - static_site_required_files is not string
+      - static_site_required_files | length > 0
+      - not (static_site_traefik_enabled | bool) or static_site_host is match('^[A-Za-z0-9.-]+\Z')
+      - not (static_site_traefik_enabled | bool) or static_site_host != 'static.example.com'
+      - not (static_site_traefik_enabled | bool) or static_site_traefik_entrypoints is sequence
+      - not (static_site_traefik_enabled | bool) or static_site_traefik_entrypoints is not string
+      - not (static_site_traefik_enabled | bool) or static_site_traefik_entrypoints | length > 0
+      - not (static_site_traefik_enabled | bool) or static_site_traefik_http_entrypoint is string
+      - not (static_site_traefik_enabled | bool) or static_site_traefik_http_entrypoint is match('^[A-Za-z0-9_.-]+\Z')
+      - not (static_site_traefik_enabled | bool) or static_site_traefik_http_entrypoint not in static_site_traefik_entrypoints
+      - not (static_site_traefik_enabled | bool) or static_site_traefik_config_path is match('^/[A-Za-z0-9_./-]+[.]ya?ml\Z')
+      - static_site_public_healthcheck_retries | int > 0
+      - static_site_public_healthcheck_delay | int >= 0
+    fail_msg: >-
+      static_site_deploy requires a safe absolute source/document root,
+      loopback bind, unprivileged port, valid service identifiers, and a real
+      Traefik hostname when ingress is enabled.
+
+- name: validate | Validate required file names
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item is match('^[A-Za-z0-9_.-]+\Z')
+    fail_msg: "Unsafe static_site_required_files entry: {{ item }}"
+  loop: "{{ static_site_required_files }}"
+
+- name: validate | Validate HTTPS entrypoint names
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item is match('^[A-Za-z0-9_.-]+\Z')
+    fail_msg: "Unsafe static_site_traefik_entrypoints entry: {{ item }}"
+  loop: "{{ static_site_traefik_entrypoints }}"
+  when: static_site_traefik_enabled | bool
+
+- name: validate | Inspect controller-side source directory
+  ansible.builtin.stat:
+    path: "{{ static_site_source_path }}"
+  delegate_to: localhost
+  become: false
+  register: static_site_source_stat
+
+- name: validate | Require a real controller-side source directory
+  ansible.builtin.assert:
+    that:
+      - static_site_source_stat.stat.exists
+      - static_site_source_stat.stat.isdir
+      - not static_site_source_stat.stat.islnk
+    fail_msg: "Static site source is missing, not a directory, or a symlink: {{ static_site_source_path }}"
+
+- name: validate | Inspect required controller-side files
+  ansible.builtin.stat:
+    path: "{{ static_site_source_path }}/{{ item }}"
+    follow: false
+  delegate_to: localhost
+  become: false
+  register: static_site_required_file_stats
+  loop: "{{ static_site_required_files }}"
+
+- name: validate | Require regular publication files
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg
+      - not item.stat.islnk
+    fail_msg: "Required static publication file is missing or unsafe: {{ item.item }}"
+  loop: "{{ static_site_required_file_stats.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: validate | Find symbolic links in source
+  ansible.builtin.find:
+    paths: "{{ static_site_source_path }}"
+    recurse: true
+    hidden: true
+    file_type: link
+  delegate_to: localhost
+  become: false
+  register: static_site_source_links
+
+- name: validate | Reject symbolic links in publication source
+  ansible.builtin.assert:
+    that:
+      - static_site_source_links.matched == 0
+    fail_msg: "Static publication source contains symbolic links; refusing to follow or publish them."
+
+- name: validate | Find all publication source entries
+  ansible.builtin.find:
+    paths: "{{ static_site_source_path }}"
+    recurse: true
+    hidden: true
+    file_type: any
+  delegate_to: localhost
+  become: false
+  register: static_site_source_entries
+
+- name: validate | Find regular publication files
+  ansible.builtin.find:
+    paths: "{{ static_site_source_path }}"
+    recurse: true
+    hidden: true
+    file_type: file
+  delegate_to: localhost
+  become: false
+  register: static_site_source_regular_files
+
+- name: validate | Find publication directories
+  ansible.builtin.find:
+    paths: "{{ static_site_source_path }}"
+    recurse: true
+    hidden: true
+    file_type: directory
+  delegate_to: localhost
+  become: false
+  register: static_site_source_directories
+
+- name: validate | Reject special publication source entries
+  ansible.builtin.assert:
+    that:
+      - >-
+        static_site_source_entries.matched
+        == (static_site_source_regular_files.matched + static_site_source_directories.matched)
+    fail_msg: >-
+      Static publication source contains a socket, FIFO, device, or another
+      unsupported entry; only regular files and directories are accepted.
+
+- name: validate | Enforce exact compact publication allowlist
+  ansible.builtin.assert:
+    that:
+      - static_site_source_directories.matched == 0
+      - static_site_source_regular_files.matched == (static_site_required_files | length)
+      - >-
+        static_site_source_regular_files.files
+        | map(attribute='path')
+        | map('basename')
+        | difference(static_site_required_files)
+        | length == 0
+    fail_msg: >-
+      Strict static publication accepts only the configured required regular
+      files at the source root; nested directories and extra files are refused.
+  when: static_site_restrict_to_required_files | bool

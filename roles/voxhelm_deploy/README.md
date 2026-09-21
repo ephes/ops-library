@@ -126,6 +126,8 @@ voxhelm_wyoming_stt_normalize_transcript: true
 voxhelm_lane_scheduler_enabled: true
 voxhelm_lane_scheduler_dir: "/opt/apps/voxhelm/site/var/lane-scheduler"
 voxhelm_lane_scheduler_stale_seconds: 1800
+voxhelm_lane_scheduler_interactive_slots: 1
+voxhelm_lane_scheduler_non_interactive_slots: 1
 voxhelm_bootstrap_operator_username: "CHANGEME"
 voxhelm_bootstrap_operator_email: ""
 voxhelm_bootstrap_operator_password: "CHANGEME"
@@ -134,12 +136,27 @@ voxhelm_allowed_hosts:
   - "studio"
   - "localhost"
   - "127.0.0.1"
+voxhelm_csrf_trusted_origins: []
 voxhelm_allowed_url_hosts: []
 voxhelm_trusted_http_hosts: []
 voxhelm_uvicorn_log_level: "info"
 ```
 
 For the full list, see `defaults/main.yml`.
+
+## Operator login through HTTPS ingress
+
+`voxhelm_csrf_trusted_origins` supplies the app's existing
+`VOXHELM_CSRF_TRUSTED_ORIGINS` environment setting as a comma-separated list.
+Use a list of scheme-qualified HTTP(S) origins such as `https://voxhelm.example.com`.
+Validation rejects bare strings, missing schemes, paths, whitespace, and commas
+before deployment changes are made.
+The default `[]` renders an empty environment value. Voxhelm's `env_list`
+parser filters blank entries, so this has the same empty-list behavior as an
+unset variable. This setting applies
+to Django's browser/session CSRF checks; it does not replace API bearer-token
+checks or `voxhelm_allowed_hosts`. Voxhelm already honors forwarded HTTPS in
+its Django settings.
 
 ## Example Playbook
 
@@ -154,6 +171,8 @@ For the full list, see `defaults/main.yml`.
         voxhelm_source_path: "/Users/jochen/projects/voxhelm"
         voxhelm_django_secret_key: "{{ service_secrets.django_secret_key }}"
         voxhelm_bearer_tokens_env: "archive={{ service_secrets.api_token_archive }}"
+        voxhelm_csrf_trusted_origins:
+          - "https://voxhelm.example.com"
         voxhelm_bootstrap_operator_username: "{{ service_secrets.bootstrap_operator_username }}"
         voxhelm_bootstrap_operator_email: "{{ service_secrets.bootstrap_operator_email }}"
         voxhelm_bootstrap_operator_password: "{{ service_secrets.bootstrap_operator_password }}"
@@ -225,14 +244,21 @@ For the full list, see `defaults/main.yml`.
   returned to Home Assistant. This is enabled by default because the built-in
   German Assist parser is materially less tolerant of those prefixes than the
   English one.
-- `voxhelm_lane_scheduler_enabled` enables the first C13 slice: one host-wide
-  admission gate shared by the HTTP API, Django Tasks worker, and Wyoming
-  sidecar.
-- `voxhelm_lane_scheduler_dir` stores the shared scheduler state on local disk.
+- `voxhelm_lane_scheduler_enabled` enables the host-wide admission gate shared
+  by the HTTP API, Django Tasks worker, and Wyoming sidecar.
+- `voxhelm_lane_scheduler_dir` stores the shared scheduler state on local disk
+  (one file per admitted holder under `holders/`).
 - `voxhelm_lane_scheduler_stale_seconds` defaults to `1800` so a crashed holder
   can be reclaimed without risking false expiry during long-running local
   inference. Lower this only if the runtime also refreshes the lease while work
-  is active.
+  is active. Recovery applies to every holder file independently.
+- `voxhelm_lane_scheduler_interactive_slots` (default `1`) reserves that many
+  slots for the Wyoming (interactive) lane; non-interactive work never occupies
+  them. `voxhelm_lane_scheduler_non_interactive_slots` (default `1`) caps how
+  many HTTP/batch inferences may run at once. Keep both at `1` on `studio`
+  (Voxhelm decision D-24): one long HTTP transcription and one Wyoming request
+  then share the GPU instead of the Wyoming request waiting. Set the interactive
+  count to `0` to fall back to the original single-slot serialization.
 - `voxhelm_stt_debug_logging` enables one structured log line per transcription
   containing the input audio shape, requested and resolved backend/model/language,
   and transcript preview. When normalization changes the transcript, the debug
@@ -241,10 +267,17 @@ For the full list, see `defaults/main.yml`.
 - Piper voice files are downloaded during deploy into `voxhelm_piper_voice_dir`.
 - `voxhelm_piper_language_voices` maps requested language codes such as `en` / `de`
   to installed Piper voice IDs for both Wyoming TTS and HTTP or batch synthesis.
-- The first C13 slice is cooperative, not preemptive. A running HTTP or batch
-  inference can still delay a later Wyoming turn, but new non-interactive work
-  will not be admitted ahead of a waiting Wyoming request while the scheduler is
-  enabled.
+- The scheduler is cooperative, not preemptive: it never interrupts running
+  work. With the default `1 + 1` slots a Wyoming turn is admitted immediately
+  while one HTTP or batch inference runs; it only waits when both slots are
+  taken. Only separate-process backends (`whisper-cli`, WhisperKit) overlap; the
+  `mlx` Wyoming backend runs in the sidecar process and overlaps a `whisper-cli`
+  run from the HTTP process safely. The sync transcription endpoint terminates
+  its `whisper-cli` child when the HTTP client disconnects.
+- Deploys restart all three launchd services in one run. The holder layout
+  changed with D-24 (`holders/` directory instead of `holder.json`); during the
+  seconds between the sequential restarts the concurrency bound can be exceeded
+  by one holder, which is a transient GPU-share effect only.
 - The role verifies the sidecar by checking the launchd unit state and waiting
   for the configured TCP port to listen locally on the target host.
 

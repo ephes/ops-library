@@ -1,0 +1,96 @@
+---
+- name: prepare | Require an explicit pre-enrollment repair request
+  ansible.builtin.assert:
+    that:
+      - not ansible_check_mode
+      - traefik_preparation_request.action in ['ownership', 'retire']
+      - traefik_preparation_request.review_reference | length > 0
+    fail_msg: Preparation requires a reviewed explicit request and cannot run in check mode.
+
+- name: prepare | Validate retirement name before reading the route
+  ansible.builtin.assert:
+    that:
+      - traefik_preparation_request.service is match('^[a-z][a-z0-9_-]*\Z')
+      - traefik_preparation_request.service != 'traefik'
+  when: traefik_preparation_request.action == 'retire'
+
+- name: prepare | Read the observed retirement route
+  ansible.builtin.slurp:
+    src: '/etc/traefik/dynamic/{{ traefik_preparation_request.service }}.traefik.yml'
+  register: traefik_preparation_route
+  no_log: true
+  when: traefik_preparation_request.action == 'retire'
+
+- name: prepare | Verify retirement content with private diagnostics
+  block:
+    - name: prepare | Require exact preservation of the observed middleware
+      ansible.builtin.assert:
+        that:
+          - >-
+            (traefik_preparation_route.content | b64decode | hash('sha256')) ==
+            traefik_preparation_request.route_sha256
+          - >-
+            (traefik_preparation_request.candidate_base64 | b64decode | from_json) ==
+            {'http': {'middlewares': (traefik_preparation_route.content | b64decode | from_yaml).http.middlewares}}
+        fail_msg: Retirement must preserve exactly the middleware in the hash-verified original route.
+      no_log: true
+      when: traefik_preparation_request.action == 'retire'
+  rescue:
+    - name: prepare | Explain a refused retirement candidate
+      ansible.builtin.fail:
+        msg: Retirement refused; refresh the original route hash and preserve its complete http.middlewares map exactly. Raw configuration is withheld.
+
+- name: prepare | Supply middleware evidence from the observed file
+  ansible.builtin.set_fact:
+    traefik_preparation_effective_request: >-
+      {{ traefik_preparation_request | combine({'verified_middlewares':
+         (traefik_preparation_route.content | b64decode | from_yaml).http.middlewares})
+         if traefik_preparation_request.action == 'retire' else traefik_preparation_request }}
+  no_log: true
+
+- name: prepare | Create private transport directory
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: traefik-prepare-
+  register: traefik_preparation_transport
+
+- name: prepare | Run narrow preparation
+  block:
+    - name: prepare | Copy engines
+      ansible.builtin.copy:
+        src: '{{ item }}'
+        dest: '{{ traefik_preparation_transport.path }}/{{ item }}'
+        owner: root
+        group: root
+        mode: '0600'
+      loop:
+        - traefik_prepare.py
+        - traefik_transaction.py
+
+    - name: prepare | Write private request
+      ansible.builtin.copy:
+        content: '{{ traefik_preparation_effective_request | to_nice_json }}'
+        dest: '{{ traefik_preparation_transport.path }}/request.json'
+        owner: root
+        group: root
+        mode: '0600'
+      no_log: true
+
+    - name: prepare | Execute journaled repair without restarting Traefik
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - '{{ traefik_preparation_transport.path }}/traefik_prepare.py'
+          - --request
+          - '{{ traefik_preparation_transport.path }}/request.json'
+      changed_when: true
+      register: traefik_preparation_result
+
+    - name: prepare | Report retained recovery evidence
+      ansible.builtin.debug:
+        var: traefik_preparation_result.stdout
+  always:
+    - name: prepare | Remove invocation transport
+      ansible.builtin.file:
+        path: '{{ traefik_preparation_transport.path }}'
+        state: absent

@@ -4,7 +4,8 @@ Deploys [Vector](https://vector.dev/) on a host and configures it to push normal
 
 ## Features
 
-- Installs Vector from the official apt repository (`apt.vector.dev`) on Linux
+- Installs Vector from the official suite-independent apt repository
+  (`apt.vector.dev`, including Debian 13) on Linux
 - Installs Vector via Homebrew on macOS/Darwin
 - Collects host metrics (`filesystem`, `disk`, `cpu`, `memory`, `load`, `network`)
 - Normalizes events to Graphyard ingest schema (`ts`, `host`, `metric`, `value`, optional `service`, `tags`)

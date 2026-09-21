@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>{{ daybook_operations_runtime_label | e }}</string>
+<key>ProgramArguments</key><array>
+<string>{{ daybook_operations_runtime_python | e }}</string><string>-I</string><string>-c</string>
+<string>from daybook.cli import main; raise SystemExit(main())</string>
+<string>operations</string><string>tick</string><string>--policy</string><string>{{ daybook_operations_runtime_policy | e }}</string>
+</array>
+<key>EnvironmentVariables</key><dict><key>HOME</key><string>{{ daybook_operations_runtime_home | e }}</string><key>PATH</key><string>/usr/bin:/bin</string></dict>
+<key>StartInterval</key><integer>300</integer>
+<key>RunAtLoad</key><true/>
+<key>ProcessType</key><string>Background</string>
+</dict></plist>

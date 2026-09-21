@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import plistlib
 import re
 import subprocess
 import sys
@@ -24,6 +25,53 @@ QUIET_SPINDOWN_SCRIPT = "{{ nyxmon_storage_exporter_quiet_hours_spindown_script 
 QUIET_SPINDOWN_MIN_INTERVAL_SEC = {{ nyxmon_storage_exporter_quiet_hours_spindown_min_interval_sec | default(300) | int }}
 QUIET_SPINDOWN_STATE_FILE = "{{ nyxmon_storage_exporter_quiet_hours_spindown_state_file | default('/run/nyxmon-storage-metrics-spindown.ts') }}"
 POOL_CACHE_PATH = "{{ nyxmon_storage_exporter_pool_cache_path | default('/var/lib/nyxmon-storage-metrics/pool-cache.json') }}"
+QUIET_CACHE_MAX_AGE_SEC = {{ nyxmon_storage_exporter_quiet_hours_cache_max_age_sec | default(172800) | int }}
+POOL_CAPACITY_THRESHOLDS = {
+{% for pool_name, thresholds in (nyxmon_storage_exporter_pool_capacity_thresholds | default({}) | dictsort) %}
+    {{ pool_name | to_json }}: {
+        "warning_ratio": {{ thresholds.warning_ratio | float }},
+        "critical_ratio": {{ thresholds.critical_ratio | float }},
+{% if thresholds.warning_free_bytes is defined %}
+        "warning_free_bytes": {{ thresholds.warning_free_bytes | int }},
+        "critical_free_bytes": {{ thresholds.critical_free_bytes | int }},
+{% endif %}
+    },
+{% endfor %}
+}
+ZFS_DATASET_PROPERTIES = {
+    "used": "used_bytes",
+    "available": "available_bytes",
+    "referenced": "referenced_bytes",
+    "usedbysnapshots": "used_by_snapshots_bytes",
+    "usedbydataset": "used_by_dataset_bytes",
+    "usedbychildren": "used_by_children_bytes",
+    "usedbyrefreservation": "used_by_refreservation_bytes",
+    "quota": "quota_bytes",
+    "refquota": "refquota_bytes",
+    "reservation": "reservation_bytes",
+    "refreservation": "refreservation_bytes",
+}
+TIMEMACHINE_BUNDLE_DIRS: list[str] = json.loads(
+    r'''{{ nyxmon_storage_exporter_timemachine_bundle_dirs | default([]) | to_json }}'''
+)
+TIMEMACHINE_BUNDLE_SUFFIX = ".sparsebundle"
+TIMEMACHINE_INFO_PLIST = "Info.plist"
+TIMEMACHINE_RESULTS_PLIST = "com.apple.TimeMachine.Results.plist"
+TIMEMACHINE_HISTORY_PLIST = "com.apple.TimeMachine.SnapshotHistory.plist"
+TIMEMACHINE_HISTORY_DATE_KEY = "com.apple.backupd.SnapshotCompletionDate"
+TIMEMACHINE_BUNDLE_NUMERIC_KEYS = (
+    "bytes_used",
+    "client_bytes_available",
+    "last_bytes_to_copy",
+    "band_count",
+    "band_size_bytes",
+    "bands_bytes",
+    "backup_count",
+    "oldest_backup_ts",
+    "newest_backup_ts",
+    "newest_backup_age_days",
+    "history_days",
+)
 
 
 def _run(argv: list[str]) -> subprocess.CompletedProcess[str]:
@@ -100,7 +148,7 @@ def _parse_size_to_bytes(value: str) -> int | None:
 
 
 def _parse_percent_ratio(value: str) -> float | None:
-    match = re.match(r"^\s*([0-9]+(?:\.[0-9]+)?)%\s*$", value)
+    match = re.match(r"^\s*([0-9]+(?:\.[0-9]+)?)%?\s*$", value)
     if not match:
         return None
     return float(match.group(1)) / 100.0
@@ -130,7 +178,7 @@ def _write_json_file(path: str, data: dict[str, Any]) -> bool:
         return False
 
 
-def _pool_cache_sample(pool_payload: dict[str, Any]) -> dict[str, Any]:
+def _probe_cache_sample(probe_payload: dict[str, Any]) -> dict[str, Any]:
     cache_metadata_keys = {
         "cached",
         "cache_age_seconds",
@@ -141,21 +189,26 @@ def _pool_cache_sample(pool_payload: dict[str, Any]) -> dict[str, Any]:
     }
     return {
         key: value
-        for key, value in pool_payload.items()
+        for key, value in probe_payload.items()
         if key not in cache_metadata_keys
     }
 
 
-def _cached_pool_payload(name: str, pool_cache: dict[str, Any], now_ts: int) -> dict[str, Any] | None:
-    pools_cache = pool_cache.get("pools")
-    if not isinstance(pools_cache, dict):
+def _cached_probe_payload(
+    section: str, name: str, probe_cache: dict[str, Any], now_ts: int
+) -> dict[str, Any] | None:
+    section_cache = probe_cache.get(section)
+    if not isinstance(section_cache, dict):
         return None
-    entry = pools_cache.get(name)
+    entry = section_cache.get(name)
     if not isinstance(entry, dict):
         return None
     sample = entry.get("sample")
     cache_ts = entry.get("ts")
     if not isinstance(sample, dict) or not isinstance(cache_ts, int):
+        return None
+    cache_age_seconds = max(0, now_ts - cache_ts)
+    if cache_age_seconds > QUIET_CACHE_MAX_AGE_SEC:
         return None
 
     payload = dict(sample)
@@ -163,13 +216,186 @@ def _cached_pool_payload(name: str, pool_cache: dict[str, Any], now_ts: int) -> 
     payload["reason"] = "quiet_hours"
     payload["cached"] = True
     payload["cache_timestamp"] = cache_ts
-    payload["cache_age_seconds"] = max(0, now_ts - cache_ts)
+    payload["cache_age_seconds"] = cache_age_seconds
     return payload
+
+
+def _cached_pool_payload(name: str, pool_cache: dict[str, Any], now_ts: int) -> dict[str, Any] | None:
+    payload = _cached_probe_payload("pools", name, pool_cache, now_ts)
+    if payload is None:
+        return None
+    normalized = _unknown_pool_payload(name)
+    normalized.update(payload)
+    if "health_known" not in payload:
+        normalized["health_known"] = isinstance(payload.get("health"), str)
+    if "health_failed" not in payload:
+        normalized["health_failed"] = (
+            isinstance(payload.get("health"), str)
+            and payload.get("health") != "ONLINE"
+        )
+    _apply_pool_capacity_policy(normalized, name)
+    return normalized
+
+
+def _unknown_pool_payload(name: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "health": None,
+        "health_known": False,
+        "health_failed": False,
+        "cached": False,
+        "cache_timestamp": None,
+        "cache_age_seconds": None,
+        "size": None,
+        "alloc": None,
+        "free": None,
+        "cap": None,
+        "size_bytes": None,
+        "alloc_bytes": None,
+        "free_bytes": None,
+        "cap_ratio": None,
+        "capacity_known": False,
+        "capacity_warning_failed": False,
+        "capacity_critical_failed": False,
+        "last_scrub_ts": None,
+        "last_scrub_age_days": None,
+    }
+
+
+def _apply_pool_capacity_policy(payload: dict[str, Any], name: str) -> None:
+    thresholds = POOL_CAPACITY_THRESHOLDS.get(name)
+    if not isinstance(thresholds, dict):
+        return
+    cap_ratio = payload.get("cap_ratio")
+    free_bytes = payload.get("free_bytes")
+    warning_free_bytes = thresholds.get("warning_free_bytes")
+    critical_free_bytes = thresholds.get("critical_free_bytes")
+    uses_free_bytes = isinstance(warning_free_bytes, int) and isinstance(
+        critical_free_bytes, int
+    )
+    capacity_known = isinstance(cap_ratio, (int, float)) and (
+        not uses_free_bytes or isinstance(free_bytes, int)
+    )
+    payload["capacity_known"] = capacity_known
+    if not capacity_known:
+        payload["capacity_warning_failed"] = False
+        payload["capacity_critical_failed"] = False
+        return
+    payload["capacity_warning_failed"] = (
+        cap_ratio >= thresholds["warning_ratio"]
+        or (uses_free_bytes and free_bytes <= warning_free_bytes)
+    )
+    payload["capacity_critical_failed"] = (
+        cap_ratio >= thresholds["critical_ratio"]
+        or (uses_free_bytes and free_bytes <= critical_free_bytes)
+    )
+
+
+def _cached_disk_payload(
+    name: str, device: str, probe_cache: dict[str, Any], now_ts: int
+) -> dict[str, Any] | None:
+    payload = _cached_probe_payload("disks", name, probe_cache, now_ts)
+    if payload is None or payload.get("device") != device:
+        return None
+    normalized = _unknown_disk_payload(device)
+    normalized.update(payload)
+    if "health_known" not in payload:
+        normalized["health_known"] = isinstance(payload.get("ok"), bool)
+    if "health_failed" not in payload:
+        normalized["health_failed"] = payload.get("ok") is False
+    return normalized
+
+
+def _unknown_disk_payload(device: str) -> dict[str, Any]:
+    return {
+        "device": device,
+        "temp_c": None,
+        "ok": None,
+        "health_known": False,
+        "health_failed": False,
+        "cached": False,
+        "cache_timestamp": None,
+        "cache_age_seconds": None,
+    }
+
+
+def _cached_dataset_payload(
+    name: str, dataset: str, probe_cache: dict[str, Any], now_ts: int
+) -> dict[str, Any] | None:
+    payload = _cached_probe_payload("datasets", name, probe_cache, now_ts)
+    if payload is None or payload.get("dataset") != dataset:
+        return None
+    normalized = _unknown_dataset_payload(dataset)
+    normalized.update(payload)
+    if "metrics_known" not in payload:
+        normalized["metrics_known"] = payload.get("ok") is True
+    return normalized
+
+
+def _disk_sample_cacheable(payload: dict[str, Any]) -> bool:
+    """Cache completed evidence, including an observed failure with probe errors."""
+    return not payload.get("skipped") and (
+        "error" not in payload or payload.get("health_known") is True
+    )
+
+
+def _dataset_sample_cacheable(payload: dict[str, Any]) -> bool:
+    """Cache only successfully observed dataset metrics."""
+    return not payload.get("skipped") and "error" not in payload
+
+
+def _unknown_dataset_payload(dataset: str) -> dict[str, Any]:
+    return {
+        "dataset": dataset,
+        "ok": None,
+        "metrics_known": False,
+        "cached": False,
+        "cache_timestamp": None,
+        "cache_age_seconds": None,
+        **{output_name: None for output_name in ZFS_DATASET_PROPERTIES.values()},
+    }
+
+
+def _cached_timemachine_bundle_payload(
+    name: str, path: str, probe_cache: dict[str, Any], now_ts: int
+) -> dict[str, Any] | None:
+    payload = _cached_probe_payload("timemachine_bundles", name, probe_cache, now_ts)
+    if payload is None or payload.get("path") != path:
+        return None
+    normalized = _unknown_timemachine_bundle_payload(name, path)
+    normalized.update(payload)
+    if "metrics_known" not in payload:
+        normalized["metrics_known"] = payload.get("ok") is True
+    newest_ts = normalized.get("newest_backup_ts")
+    if isinstance(newest_ts, int):
+        # Age keeps advancing while the cached sample is reused.
+        normalized["newest_backup_age_days"] = round((now_ts - newest_ts) / 86400, 2)
+    return normalized
+
+
+def _timemachine_bundle_sample_cacheable(payload: dict[str, Any]) -> bool:
+    """Cache only successfully observed bundle metrics."""
+    return not payload.get("skipped") and payload.get("ok") is True
+
+
+def _unknown_timemachine_bundle_payload(name: str, path: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "bundle": os.path.basename(path),
+        "path": path,
+        "ok": None,
+        "metrics_known": False,
+        "running": None,
+        "cached": False,
+        "cache_timestamp": None,
+        "cache_age_seconds": None,
+        **{key: None for key in TIMEMACHINE_BUNDLE_NUMERIC_KEYS},
+    }
 
 
 def _zpool_list(pools: list[str], skip_pools: set[str]) -> dict[str, dict[str, Any]]:
     if not pools:
-        result = _run(["zpool", "list", "-H", "-o", "name,health,size,alloc,free,cap"])
+        result = _run(["zpool", "list", "-H", "-p", "-o", "name,health,size,alloc,free,cap"])
         if result.returncode != 0:
             return {"_error": {"error": result.stderr.strip() or "zpool list failed"}}
         pools = [line.split()[0] for line in result.stdout.splitlines() if line.split()]
@@ -190,20 +416,33 @@ def _zpool_list(pools: list[str], skip_pools: set[str]) -> dict[str, dict[str, A
             payload[name] = (
                 cached_payload
                 if cached_payload is not None
-                else {"skipped": True, "reason": "quiet_hours"}
+                else {
+                    **_unknown_pool_payload(name),
+                    "skipped": True,
+                    "reason": "quiet_hours",
+                }
             )
             continue
-        result = _run(["zpool", "list", "-H", "-o", "name,health,size,alloc,free,cap", name])
+        result = _run(["zpool", "list", "-H", "-p", "-o", "name,health,size,alloc,free,cap", name])
         if result.returncode != 0:
-            payload[name] = {"error": result.stderr.strip() or "zpool list failed"}
+            payload[name] = {
+                **_unknown_pool_payload(name),
+                "error": result.stderr.strip() or "zpool list failed",
+            }
             continue
         parts = result.stdout.split()
         if len(parts) != 6:
-            payload[name] = {"error": "unexpected zpool list output"}
+            payload[name] = {
+                **_unknown_pool_payload(name),
+                "error": "unexpected zpool list output",
+            }
             continue
         _, health, size, alloc, free, cap = parts
         payload[name] = {
+            **_unknown_pool_payload(name),
             "health": health,
+            "health_known": True,
+            "health_failed": health != "ONLINE",
             "size": size,
             "alloc": alloc,
             "free": free,
@@ -212,7 +451,13 @@ def _zpool_list(pools: list[str], skip_pools: set[str]) -> dict[str, dict[str, A
         size_bytes = _parse_size_to_bytes(size)
         alloc_bytes = _parse_size_to_bytes(alloc)
         free_bytes = _parse_size_to_bytes(free)
-        cap_ratio = _parse_percent_ratio(cap)
+        cap_ratio = (
+            alloc_bytes / size_bytes
+            if size_bytes is not None
+            and size_bytes > 0
+            and alloc_bytes is not None
+            else _parse_percent_ratio(cap)
+        )
         if size_bytes is not None:
             payload[name]["size_bytes"] = size_bytes
         if alloc_bytes is not None:
@@ -221,6 +466,7 @@ def _zpool_list(pools: list[str], skip_pools: set[str]) -> dict[str, dict[str, A
             payload[name]["free_bytes"] = free_bytes
         if cap_ratio is not None:
             payload[name]["cap_ratio"] = cap_ratio
+        _apply_pool_capacity_policy(payload[name], name)
 
         status = _run(["zpool", "status", name])
         if status.returncode == 0:
@@ -235,7 +481,7 @@ def _zpool_list(pools: list[str], skip_pools: set[str]) -> dict[str, dict[str, A
             payload[name]["status_error"] = status.stderr.strip()
 
         payload[name]["cached"] = False
-        pools_cache[name] = {"ts": now_ts, "sample": _pool_cache_sample(payload[name])}
+        pools_cache[name] = {"ts": now_ts, "sample": _probe_cache_sample(payload[name])}
         cache_changed = True
 
     if cache_changed:
@@ -349,12 +595,56 @@ def _run_quiet_hours_spindown(quiet_active: bool) -> dict[str, Any]:
 
 def _smartctl_health(device: str) -> dict[str, Any]:
     out = _run(SMARTCTL_ARGS + [device])
-    payload: dict[str, Any] = {"device": device, "ok": False}
-    if out.returncode != 0:
+    payload = _unknown_disk_payload(device)
+    health_match = re.search(
+        r"^(?:SMART overall-health self-assessment test result|SMART Health Status):[ ]*"
+        r"(PASSED|OK|FAILED!?|FAILING|FAILURE)",
+        out.stdout,
+        re.IGNORECASE | re.MULTILINE,
+    )
+    # smartctl bits 3-4 are current failures. Bits 5-7 describe historical
+    # attribute, error-log, or self-test records and must not create a permanent
+    # critical health state.
+    # Negative signal return codes and conventional launcher failure codes are
+    # not smartctl bitmasks. Treat them as missing evidence, never disk damage.
+    bitmask_valid = (
+        0 <= out.returncode <= 255 and out.returncode not in {124, 126, 127}
+    )
+    if not bitmask_valid:
+        if health_match and health_match.group(1).upper().rstrip("!") not in {
+            "PASSED",
+            "OK",
+        }:
+            payload["ok"] = False
+            payload["health_known"] = True
+            payload["health_failed"] = True
+            payload["smartctl_exit_status"] = out.returncode
+        payload["error"] = (
+            out.stderr.strip() or out.stdout.strip() or "smartctl failed"
+        )
+        return payload
+    current_failure_bits = out.returncode & 0b00011000
+    historical_failure_bits = out.returncode & 0b11100000
+    if current_failure_bits:
+        payload["ok"] = False
+        payload["health_known"] = True
+        payload["health_failed"] = True
+    elif health_match:
+        health_status = health_match.group(1).upper().rstrip("!")
+        payload["ok"] = health_status in {"PASSED", "OK"}
+        payload["health_known"] = True
+        payload["health_failed"] = not payload["ok"]
+    elif out.returncode != 0:
         payload["error"] = out.stderr.strip() or out.stdout.strip() or "smartctl failed"
         return payload
+    else:
+        payload["error"] = "smartctl health status unavailable"
+        return payload
 
-    payload["ok"] = "PASSED" in out.stdout
+    if out.returncode != 0:
+        payload["smartctl_exit_status"] = out.returncode
+    if historical_failure_bits:
+        payload["smartctl_historical_failure_bits"] = historical_failure_bits
     temp_match = re.search(
         r"^194\s+Temperature_Celsius\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(\d+)",
         out.stdout,
@@ -367,7 +657,7 @@ def _smartctl_health(device: str) -> dict[str, Any]:
 
 def _nvme_smart(device: str) -> dict[str, Any]:
     out = _run(["nvme", "smart-log", "-o", "json", device])
-    payload: dict[str, Any] = {"device": device, "ok": False}
+    payload = _unknown_disk_payload(device)
     if out.returncode != 0:
         payload["error"] = out.stderr.strip() or out.stdout.strip() or "nvme smart-log failed"
         return payload
@@ -379,6 +669,8 @@ def _nvme_smart(device: str) -> dict[str, Any]:
 
     crit = int(data.get("critical_warning", 0))
     payload["ok"] = crit == 0
+    payload["health_known"] = True
+    payload["health_failed"] = not payload["ok"]
     temp_k = data.get("temperature")
     if isinstance(temp_k, (int, float)):
         payload["temp_c"] = round(float(temp_k) - 273.15, 1)
@@ -395,7 +687,14 @@ def _edac_status() -> dict[str, Any]:
         modules = ""
 
     edac_loaded = "amd64_edac" in modules or "edac_mce_amd" in modules
-    status: dict[str, Any] = {"loaded": edac_loaded, "ce": None, "ue": None}
+    status: dict[str, Any] = {
+        "loaded": edac_loaded,
+        "counters_available": False,
+        "ce": None,
+        "ue": None,
+        "correctable_ok": True,
+        "uncorrectable_ok": True,
+    }
 
     base = "/sys/devices/system/edac/mc"
     if not os.path.isdir(base):
@@ -403,11 +702,13 @@ def _edac_status() -> dict[str, Any]:
 
     ce = 0
     ue = 0
-    found = False
-    for entry in os.listdir(base):
-        if not entry.startswith("mc"):
-            continue
-        found = True
+    ce_samples = 0
+    ue_samples = 0
+    controllers = [entry for entry in os.listdir(base) if entry.startswith("mc")]
+    if not controllers:
+        return status
+    all_counters_available = True
+    for entry in controllers:
         for counter, total in (("ce_count", "ce"), ("ue_count", "ue")):
             path = os.path.join(base, entry, counter)
             try:
@@ -415,14 +716,19 @@ def _edac_status() -> dict[str, Any]:
                     val = int(f.read().strip() or "0")
                 if total == "ce":
                     ce += val
+                    ce_samples += 1
                 else:
                     ue += val
-            except OSError:
-                continue
-
-    if found:
+                    ue_samples += 1
+            except (OSError, ValueError):
+                all_counters_available = False
+    status["counters_available"] = all_counters_available
+    if ce_samples:
         status["ce"] = ce
+        status["correctable_ok"] = ce == 0
+    if ue_samples:
         status["ue"] = ue
+        status["uncorrectable_ok"] = ue == 0
     return status
 
 
@@ -467,10 +773,208 @@ def _filesystem_stats(path: str) -> dict[str, Any]:
     return payload
 
 
+def _zfs_dataset_stats(dataset: str) -> dict[str, Any]:
+    properties = ZFS_DATASET_PROPERTIES
+    result = _run(
+        [
+            "zfs",
+            "get",
+            "-H",
+            "-p",
+            "-o",
+            "property,value",
+            ",".join(properties),
+            dataset,
+        ]
+    )
+    payload = _unknown_dataset_payload(dataset)
+    if result.returncode != 0:
+        payload["ok"] = False
+        payload["error"] = result.stderr.strip() or result.stdout.strip() or "zfs get failed"
+        return payload
+
+    values: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        parts = line.split("\t", maxsplit=1)
+        if len(parts) == 2:
+            values[parts[0]] = parts[1]
+
+    missing = sorted(set(properties) - set(values))
+    if missing:
+        payload["ok"] = False
+        payload["error"] = f"missing ZFS properties: {', '.join(missing)}"
+        return payload
+
+    for property_name, output_name in properties.items():
+        raw = values[property_name]
+        if raw in {"none", "-"} or (
+            raw == "0"
+            and property_name in {"quota", "refquota", "reservation", "refreservation"}
+        ):
+            payload[output_name] = None
+            continue
+        try:
+            payload[output_name] = int(raw)
+        except ValueError:
+            payload["ok"] = False
+            payload["error"] = f"ZFS property {property_name} was not numeric: {raw}"
+            return payload
+
+    payload["ok"] = True
+    payload["metrics_known"] = True
+    return payload
+
+
+def _timemachine_bundle_name(bundle_basename: str) -> str:
+    """Stable `timemachine_bundles_by_name` key for a sparsebundle directory.
+
+    Strips the `.sparsebundle` suffix and replaces remaining dots so the name
+    can be addressed with dotted JSONPaths such as
+    `$.timemachine_bundles_by_name.<name>.ok`.
+    """
+    name = bundle_basename
+    if name.endswith(TIMEMACHINE_BUNDLE_SUFFIX):
+        name = name[: -len(TIMEMACHINE_BUNDLE_SUFFIX)]
+    return name.replace(".", "_")
+
+
+def _read_plist(path: str) -> dict[str, Any]:
+    with open(path, "rb") as f:
+        data = plistlib.load(f)
+    if not isinstance(data, dict):
+        raise ValueError("plist root is not a dictionary")
+    return data
+
+
+def _plist_int(data: dict[str, Any], key: str) -> int | None:
+    value = data.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return int(value)
+
+
+def _plist_datetime_ts(value: Any) -> int | None:
+    """Return the UTC epoch of a plist date; plistlib yields naive UTC datetimes."""
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return int(value.timestamp())
+
+
+def _timemachine_bundle_stats(path: str, now_ts: int) -> dict[str, Any]:
+    """Read-only probe of one Time Machine sparsebundle.
+
+    Reads the two small Time Machine plists plus `Info.plist` and counts the
+    `bands/` directory entries. It never opens a band, mounts the bundle, or
+    walks the bundle tree.
+    """
+    name = _timemachine_bundle_name(os.path.basename(path))
+    payload = _unknown_timemachine_bundle_payload(name, path)
+    errors: list[str] = []
+
+    try:
+        info = _read_plist(os.path.join(path, TIMEMACHINE_INFO_PLIST))
+        payload["band_size_bytes"] = _plist_int(info, "band-size")
+        if payload["band_size_bytes"] is None:
+            errors.append(f"{TIMEMACHINE_INFO_PLIST}: band-size missing or non-numeric")
+    except Exception as err:  # noqa: BLE001 - one bad plist must not sink the payload
+        errors.append(f"{TIMEMACHINE_INFO_PLIST}: {err}")
+
+    try:
+        with os.scandir(os.path.join(path, "bands")) as entries:
+            payload["band_count"] = sum(1 for _ in entries)
+    except OSError as err:
+        errors.append(f"bands: {err}")
+
+    if isinstance(payload["band_count"], int) and isinstance(
+        payload["band_size_bytes"], int
+    ):
+        payload["bands_bytes"] = payload["band_count"] * payload["band_size_bytes"]
+
+    try:
+        results = _read_plist(os.path.join(path, TIMEMACHINE_RESULTS_PLIST))
+        payload["bytes_used"] = _plist_int(results, "BytesUsed")
+        payload["client_bytes_available"] = _plist_int(results, "BytesAvailable")
+        payload["last_bytes_to_copy"] = _plist_int(results, "BytesToCopy")
+        running = results.get("Running")
+        payload["running"] = running if isinstance(running, bool) else None
+        if payload["bytes_used"] is None:
+            errors.append(f"{TIMEMACHINE_RESULTS_PLIST}: BytesUsed missing or non-numeric")
+    except Exception as err:  # noqa: BLE001 - one bad plist must not sink the payload
+        errors.append(f"{TIMEMACHINE_RESULTS_PLIST}: {err}")
+
+    try:
+        history = _read_plist(os.path.join(path, TIMEMACHINE_HISTORY_PLIST))
+        snapshots = history.get("Snapshots")
+        if not isinstance(snapshots, list):
+            raise ValueError("Snapshots is not a list")
+        completion_ts = sorted(
+            ts
+            for ts in (
+                _plist_datetime_ts(item.get(TIMEMACHINE_HISTORY_DATE_KEY))
+                for item in snapshots
+                if isinstance(item, dict)
+            )
+            if ts is not None
+        )
+        payload["backup_count"] = len(completion_ts)
+        if completion_ts:
+            payload["oldest_backup_ts"] = completion_ts[0]
+            payload["newest_backup_ts"] = completion_ts[-1]
+            payload["newest_backup_age_days"] = round(
+                (now_ts - completion_ts[-1]) / 86400, 2
+            )
+            payload["history_days"] = round(
+                (completion_ts[-1] - completion_ts[0]) / 86400, 2
+            )
+        else:
+            payload["history_days"] = 0.0
+    except Exception as err:  # noqa: BLE001 - one bad plist must not sink the payload
+        errors.append(f"{TIMEMACHINE_HISTORY_PLIST}: {err}")
+
+    if errors:
+        payload["ok"] = False
+        payload["error"] = "; ".join(errors)
+        return payload
+
+    payload["ok"] = True
+    payload["metrics_known"] = True
+    return payload
+
+
+def _scan_timemachine_bundle_dirs(dirs: list[str]) -> tuple[dict[str, Any], list[str]]:
+    """List `*.sparsebundle` directories directly under each configured directory."""
+    scan: dict[str, Any] = {"ok": True, "bundle_count": 0, "dirs": []}
+    bundle_paths: list[str] = []
+    for directory in dirs:
+        entry: dict[str, Any] = {"path": directory, "ok": False, "bundle_count": 0}
+        try:
+            with os.scandir(directory) as entries:
+                found = sorted(
+                    os.path.join(directory, item.name)
+                    for item in entries
+                    if item.name.endswith(TIMEMACHINE_BUNDLE_SUFFIX)
+                    and item.is_dir(follow_symlinks=False)
+                )
+        except OSError as err:
+            entry["error"] = str(err)
+            scan["ok"] = False
+            scan["dirs"].append(entry)
+            continue
+        entry["ok"] = True
+        entry["bundle_count"] = len(found)
+        scan["bundle_count"] += len(found)
+        scan["dirs"].append(entry)
+        bundle_paths.extend(found)
+    return scan, bundle_paths
+
+
 def main() -> int:
     pools: list[str] = json.loads(r'''{{ nyxmon_storage_exporter_pools | to_json }}''')
     disks: list[dict[str, Any]] = json.loads(r'''{{ nyxmon_storage_exporter_disks | to_json }}''')
     filesystems: list[dict[str, Any]] = json.loads(r'''{{ nyxmon_storage_exporter_filesystems | to_json }}''')
+    zfs_datasets: list[dict[str, Any]] = json.loads(r'''{{ nyxmon_storage_exporter_zfs_datasets | default([]) | to_json }}''')
 
     quiet = _in_quiet_hours()
     skip_pools = set(QUIET_SKIP_POOLS) if quiet else set()
@@ -482,6 +986,13 @@ def main() -> int:
     }
     payload["pools"] = _zpool_list(pools, skip_pools)
 
+    now_ts = _now_ts()
+    probe_cache = _read_json_file(POOL_CACHE_PATH)
+    disks_cache = probe_cache.get("disks")
+    if not isinstance(disks_cache, dict):
+        disks_cache = {}
+        probe_cache["disks"] = disks_cache
+    disk_cache_changed = False
     disk_results: list[dict[str, Any]] = []
     disks_by_name: dict[str, dict[str, Any]] = {}
     for disk in disks:
@@ -491,7 +1002,20 @@ def main() -> int:
         if not device:
             continue
         if quiet and dtype in skip_disk_types:
-            res = {"device": device, "ok": None, "skipped": True, "reason": "quiet_hours"}
+            cached_payload = (
+                _cached_disk_payload(str(name), device, probe_cache, now_ts)
+                if name
+                else None
+            )
+            res = (
+                cached_payload
+                if cached_payload is not None
+                else {
+                    **_unknown_disk_payload(device),
+                    "skipped": True,
+                    "reason": "quiet_hours",
+                }
+            )
         elif dtype == "nvme":
             res = _nvme_smart(device)
         else:
@@ -502,6 +1026,9 @@ def main() -> int:
         disk_results.append(res)
         if name:
             disks_by_name[name] = res
+            if _disk_sample_cacheable(res):
+                disks_cache[name] = {"ts": now_ts, "sample": _probe_cache_sample(res)}
+                disk_cache_changed = True
     payload["disks"] = disk_results
     payload["disks_by_name"] = disks_by_name
 
@@ -518,6 +1045,97 @@ def main() -> int:
         filesystems_by_name[name] = result
     payload["filesystems"] = filesystem_results
     payload["filesystems_by_name"] = filesystems_by_name
+
+    zfs_dataset_results: list[dict[str, Any]] = []
+    zfs_datasets_by_name: dict[str, dict[str, Any]] = {}
+    datasets_cache = probe_cache.get("datasets")
+    if not isinstance(datasets_cache, dict):
+        datasets_cache = {}
+        probe_cache["datasets"] = datasets_cache
+    dataset_cache_changed = False
+    for item in zfs_datasets:
+        name = str(item.get("name", "")).strip()
+        dataset = str(item.get("dataset", "")).strip()
+        if not name or not dataset:
+            continue
+        pool_name = dataset.split("/", maxsplit=1)[0]
+        if quiet and pool_name in skip_pools:
+            cached_payload = _cached_dataset_payload(
+                name, dataset, probe_cache, now_ts
+            )
+            result = (
+                cached_payload
+                if cached_payload is not None
+                else {
+                    **_unknown_dataset_payload(dataset),
+                    "skipped": True,
+                    "reason": "quiet_hours",
+                }
+            )
+        else:
+            result = _zfs_dataset_stats(dataset)
+        result["name"] = name
+        zfs_dataset_results.append(result)
+        zfs_datasets_by_name[name] = result
+        if _dataset_sample_cacheable(result):
+            datasets_cache[name] = {"ts": now_ts, "sample": _probe_cache_sample(result)}
+            dataset_cache_changed = True
+    timemachine_bundle_results: list[dict[str, Any]] = []
+    timemachine_bundles_by_name: dict[str, dict[str, Any]] = {}
+    bundles_cache = probe_cache.get("timemachine_bundles")
+    if not isinstance(bundles_cache, dict):
+        bundles_cache = {}
+        probe_cache["timemachine_bundles"] = bundles_cache
+    bundle_cache_changed = False
+    timemachine_scan, timemachine_bundle_paths = _scan_timemachine_bundle_dirs(
+        TIMEMACHINE_BUNDLE_DIRS
+    )
+    for bundle_path in timemachine_bundle_paths:
+        name = _timemachine_bundle_name(os.path.basename(bundle_path))
+        # Bundles on a skipped pool follow the dataset quiet-hours rule; the
+        # pool is taken from the first path component (ZFS default mountpoints).
+        pool_name = bundle_path.strip("/").split("/", maxsplit=1)[0]
+        if quiet and pool_name in skip_pools:
+            cached_payload = _cached_timemachine_bundle_payload(
+                name, bundle_path, probe_cache, now_ts
+            )
+            result = (
+                cached_payload
+                if cached_payload is not None
+                else {
+                    **_unknown_timemachine_bundle_payload(name, bundle_path),
+                    "skipped": True,
+                    "reason": "quiet_hours",
+                }
+            )
+        else:
+            result = _timemachine_bundle_stats(bundle_path, now_ts)
+        if name in timemachine_bundles_by_name:
+            result["ok"] = False
+            result["metrics_known"] = False
+            result["error"] = f"duplicate bundle name {name}"
+            timemachine_scan["ok"] = False
+        timemachine_bundle_results.append(result)
+        timemachine_bundles_by_name[name] = result
+        if _timemachine_bundle_sample_cacheable(result):
+            bundles_cache[name] = {"ts": now_ts, "sample": _probe_cache_sample(result)}
+            bundle_cache_changed = True
+    cache_changed = disk_cache_changed or dataset_cache_changed or bundle_cache_changed
+    if cache_changed and not _write_json_file(POOL_CACHE_PATH, probe_cache):
+        for disk_payload in disk_results:
+            if _disk_sample_cacheable(disk_payload):
+                disk_payload["cache_write_error"] = True
+        for dataset_payload in zfs_dataset_results:
+            if _dataset_sample_cacheable(dataset_payload):
+                dataset_payload["cache_write_error"] = True
+        for bundle_payload in timemachine_bundle_results:
+            if _timemachine_bundle_sample_cacheable(bundle_payload):
+                bundle_payload["cache_write_error"] = True
+    payload["zfs_datasets"] = zfs_dataset_results
+    payload["zfs_datasets_by_name"] = zfs_datasets_by_name
+    payload["timemachine_bundle_scan"] = timemachine_scan
+    payload["timemachine_bundles"] = timemachine_bundle_results
+    payload["timemachine_bundles_by_name"] = timemachine_bundles_by_name
 
     payload["quiet_hours"]["spindown"] = _run_quiet_hours_spindown(quiet)
     payload["ecc"] = _edac_status()

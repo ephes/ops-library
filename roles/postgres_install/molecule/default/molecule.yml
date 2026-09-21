@@ -14,6 +14,17 @@ platforms:
     tmpfs:
       - /run
       - /tmp
+  - name: debian13
+    image: geerlingguy/docker-debian13-ansible
+    pre_build_image: true
+    privileged: true
+    cgroupns_mode: host
+    command: /lib/systemd/systemd
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+      - /run
+      - /tmp
 
 provisioner:
   name: ansible
@@ -21,6 +32,10 @@ provisioner:
     host_vars:
       instance:
         ansible_user: root
+        postgres_install_version: "16"
+      debian13:
+        ansible_user: root
+        postgres_install_version: "17"
   playbooks:
     converge: converge.yml
     verify: verify.yml

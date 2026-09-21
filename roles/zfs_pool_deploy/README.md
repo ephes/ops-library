@@ -82,6 +82,13 @@ zfs_pool_force_create: false    # DANGEROUS: overwrites existing data
 zfs_pool_no_log: true          # Hide passphrases in logs
 ```
 
+Root-filesystem size properties are compared in parseable bytes. Decimal
+binary-unit values such as `1.1T` use ZFS's truncating conversion so repeated
+runs remain idempotent. The symbolic value `auto` is special-cased only for
+`refreservation`, the OpenZFS property whose automatic origin cannot be
+distinguished after it is rendered as a numeric value. The role reapplies that
+symbolic policy without reporting a false change when the command succeeds.
+
 For complete variable list, see `defaults/main.yml`.
 
 ## Dependencies

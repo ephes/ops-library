@@ -22,7 +22,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
   roles:
     - role: local.ops_library.openclaw_deploy
       vars:
-        openclaw_version: "v2026.7.1"
+        openclaw_version: "v2026.9.1"
         openclaw_data_dir: "/mnt/cryptdata/openclaw/data"
         openclaw_gateway_token: "{{ sops_secrets.gateway_token }}"
         openclaw_anthropic_api_key: "{{ sops_secrets.anthropic_api_key }}"
@@ -41,6 +41,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 - The gateway handles all messaging channels internally (Telegram via grammY, etc.).
 - AI replies are handled by the gateway using configured provider APIs — no external scripts needed.
 - Optional model policy patching can enforce a default model and ordered fallback chain under `agents.defaults.model`.
+- Optional audio transcription can route voice notes to a dedicated OpenAI-compatible endpoint and auth profile without changing normal agent model authentication.
 - Persistent state (sessions, config) is stored in a bind-mounted directory owned by container uid 1000.
 - The container binds to `127.0.0.1:18789` by default, with optional Traefik reverse proxy for external access. When Traefik is enabled, the bind host is validated to be loopback.
 - When Traefik is enabled, role-managed config sets `gateway.bind: "lan"` and `gateway.controlUi.allowedOrigins` to `https://<openclaw_traefik_host>` so the host-side reverse proxy can reach the gateway UI safely.
@@ -56,7 +57,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 
 | Variable | Description |
 |----------|-------------|
-| `openclaw_version` | Git tag to checkout and build (e.g. `v2026.7.1`) |
+| `openclaw_version` | Git tag to checkout and build (e.g. `v2026.9.1`) |
 | `openclaw_gateway_token` | Gateway authentication token |
 | `openclaw_anthropic_api_key` | Anthropic API key for AI replies |
 
@@ -136,10 +137,83 @@ changes, so newly deployed instructions become visible to new session bindings.
 | `openclaw_agent_model_primary` | `""` | Optional default model (`provider/model`) patched to `agents.defaults.model.primary` |
 | `openclaw_agent_model_fallbacks` | `[]` | Optional ordered fallback list (`provider/model` entries) patched to `agents.defaults.model.fallbacks` |
 | `openclaw_openai_auth_order` | `[]` | Optional ordered canonical OpenAI auth profiles patched to `auth.order.openai`; use an OAuth-only list such as `["openai:default"]` to require ChatGPT/Codex subscription auth for agent turns |
+| `openclaw_heartbeat_recovery_managed` | `false` | Manage the v2026.9.1 heartbeat recovery extension and its enabled state |
+| `openclaw_heartbeat_recovery_enabled` | `true` | When managed, keep incomplete-heartbeat retries on `heartbeat_respond` and block direct message sends during recovery |
 | `openclaw_codex_plugin_enabled` | `false` | Install, enable, and allow the official `@openclaw/codex` app-server runtime plugin, pinned to the configured OpenClaw version |
 | `openclaw_codex_plugin_id` | `codex` | Plugin registry ID used for inspection and managed config |
 | `openclaw_codex_plugin_package` | `@openclaw/codex` | Official npm package installed through OpenClaw's persistent plugin registry |
 | `openclaw_codex_plugin_version` | OpenClaw version without leading `v` | Exact plugin version; override only when upstream does not publish the plugin in release lockstep |
+| `openclaw_codex_v2026_9_1_registration_backport_managed` | `false` | Manage the exact-version upstream commit `26e5c2858a` backport for `@openclaw/codex@2026.9.1` |
+| `openclaw_codex_v2026_9_1_registration_backport_enabled` | `true` | When management is enabled, apply the backport; set false to atomically restore the pinned pristine bundle |
+
+### Audio Transcription
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `openclaw_audio_transcription_managed` | `false` | Opt in to role ownership of the audio enable/disable lifecycle |
+| `openclaw_audio_transcription_enabled` | `false` | Enable audio understanding when management is opted in; requires OpenClaw v2026.9.1 or newer |
+| `openclaw_audio_transcription_base_url` | `""` | Endpoint base URL ending at `/v1`, without a trailing slash; OpenClaw appends `/audio/transcriptions` |
+| `openclaw_audio_transcription_allow_private_network` | `false` | Set the selected provider's private-network opt-in so its dedicated audio route can reach a trusted LAN/tailnet endpoint; this transport policy is provider-wide |
+| `openclaw_audio_transcription_provider` | `senseaudio` | Registered OpenClaw media provider used as the isolated OpenAI-compatible audio adapter |
+| `openclaw_audio_transcription_model` | `gpt-4o-mini-transcribe` | Model name sent to the compatible endpoint |
+| `openclaw_audio_transcription_profile_id` | `senseaudio:audio` | Dedicated provider-scoped API-key profile selected only by the managed audio model entry |
+| `openclaw_audio_transcription_api_key` | `""` | Endpoint bearer token; required when audio transcription is enabled |
+| `openclaw_audio_transcription_api_key_env` | `OPENCLAW_AUDIO_TRANSCRIPTION_API_KEY` | Dedicated environment variable referenced by the SQLite auth profile |
+| `openclaw_audio_transcription_timeout_seconds` | `120` | Per-recording transcription timeout |
+
+The role writes the token only to the root-owned `0600` service environment. It
+uses `openclaw secrets apply` to create a ref-only SQLite API-key profile, so
+neither `openclaw.json` nor the auth database contains the plaintext token. The
+audio model explicitly selects that profile. Production uses the bundled
+`senseaudio` media provider as an isolated OpenAI-compatible adapter, leaving the
+normal `openai` provider and its OAuth-only auth order untouched. OpenClaw
+2026.9.1 accepts private-network opt-in only on
+`models.providers.<provider>.request`, not on a media-model entry. For media-only
+plugins that are not model-provider overlays, the role emits the required base
+URL and minimal model catalog alongside that request policy.
+
+```yaml
+openclaw_audio_transcription_managed: true
+openclaw_audio_transcription_enabled: true
+openclaw_audio_transcription_base_url: "http://speech.tailnet.example:8787/v1"
+openclaw_audio_transcription_allow_private_network: true
+openclaw_audio_transcription_provider: "senseaudio"
+openclaw_audio_transcription_profile_id: "senseaudio:local-speech"
+openclaw_audio_transcription_api_key: "{{ speech_service_token }}"
+```
+
+When management is enabled, the role owns the audio-capable entries in
+`tools.media.models`.
+It preserves entries explicitly limited to other capabilities such as image or
+video, while replacing prior audio-capable or unscoped entries to prevent a
+voice recording from falling through to a metered provider. A complete
+`openclaw_gateway_config` override is intentionally incompatible with these
+managed audio variables; put the equivalent media configuration and auth
+profile lifecycle in the override's owning automation instead.
+
+Set `openclaw_audio_transcription_enabled: false` while leaving
+`openclaw_audio_transcription_managed: true` to disable audio and remove the
+role-owned model entry. The ref-only auth profile remains as inert persistent
+state so a later re-enable does not require a separate credential migration;
+it cannot be selected by normal OpenAI turns because validation requires an
+explicit auth order that excludes the audio profile. Remove the inert profile
+manually with `openclaw models auth remove` only when retiring the integration
+permanently.
+
+When upgrading an existing data directory to `v2026.9.1` or newer, the role
+also migrates the removed `agents.defaults.memorySearch` setting to
+`memory.search` and drops the obsolete `meta.lastTouchedAt` field before any
+version-matched plugins are inspected or installed. The migration preserves an
+already configured `memory.search` value and is idempotent. If retired
+workspace setup or attestation files are present, the role then stops the
+gateway and runs upstream `doctor --fix --non-interactive --yes`, which imports
+and verifies the state in SQLite before removing or archiving the legacy
+sources. Doctor may also apply other upstream-supported repairs discovered in
+the same pass. Create and verify a restorable backup of the complete OpenClaw
+data directory before upgrading; the deployment role does not create that
+backup. The role keeps OpenClaw's separate internal `backups/` directory owned
+by container uid/gid 1000 so Doctor can stage its own per-file safety copies.
+Config is reconciled again after Doctor so role-managed policy wins.
 
 For subscription-backed OpenAI agent turns, enable the official Codex plugin, configure a canonical
 `openai/<model>` primary, and list the OAuth profile before any optional API-key backup:
@@ -161,6 +235,67 @@ changes that enable and allow the plugin. Package installation uses host network
 resolution follows the deployment host instead of Docker's transient default-bridge DNS.
 This intentionally lets package install-time code reach host-local services; enable this path
 only for the official, exact-version-pinned package that the role verifies after installation.
+
+The optional `heartbeat-recovery` extension uses supported OpenClaw hooks to
+recognize the exact v2026.9.1 empty-response and reasoning-only retry prompts
+only when the host marks the run as a heartbeat. It adds heartbeat-specific
+system guidance and narrows recovery tools to `heartbeat_respond`; a run-scoped
+`before_tool_call` guard also blocks direct `message` dispatch if a forced or
+retained tool remains available. Alerts still use `notify: true` and
+`notificationText`, leaving destination selection to OpenClaw. Ordinary
+heartbeats, user chat, and other cron jobs are unchanged. Missing evidence must
+be reported honestly, rather than converted into a successful check.
+
+The managed entry explicitly grants conversation access and prompt injection,
+required by OpenClaw for these hooks. The local extension reads only the host
+trigger, run ID and current prompt; it does not inspect the message history or
+perform network calls. Deployment health checks verify the enabled state and
+all three registered hooks, so a permissions-blocked extension fails deployment.
+If the host omits a run ID, prompt guidance and tool filtering still apply, but
+the dispatch guard cannot scope its block; the extension logs
+`heartbeat-recovery: dispatch guard unavailable without a host run ID` with the
+reduced enforcement described in the remainder of the warning.
+
+Enable both `openclaw_heartbeat_recovery_managed` and
+`openclaw_heartbeat_recovery_enabled` to deploy it. To roll back, deploy with
+management still enabled and `openclaw_heartbeat_recovery_enabled: false`;
+this explicitly disables the plugin while retaining its files. Setting
+management false alone leaves existing state untouched. Disable it first and
+then turn management off before an upstream upgrade; validation restricts this
+prompt-dependent workaround to `v2026.9.1`. This extension does not change
+execution deadlines or fix provider stream stalls.
+
+Validation requires Node.js on the controller: `just test-openclaw-heartbeat-recovery`.
+The integration script `tests/integration/openclaw_heartbeat_recovery.mjs` also
+exercises the installed image's hook runner and forced-tool policy without model
+calls, outbound sends, or state writes. Run it inside the v2026.9.1 image with
+`HEARTBEAT_PLUGIN` set to the deployed extension's `index.js` path.
+
+`@openclaw/codex@2026.9.1` has a known startup race: a synchronous gateway
+session-snapshot read can consume most of the plugin's hard-coded two-second
+process-registration deadline, causing an otherwise healthy heartbeat to fail
+before the Codex app-server starts. Upstream commit
+[`26e5c2858a`](https://github.com/openclaw/openclaw/commit/26e5c2858a811390887f2937236dac51015f2a48)
+gives startup identity and command inspection one shared ten-second budget while
+leaving the shorter signal-containment deadline unchanged. Enable
+`openclaw_codex_v2026_9_1_registration_backport_managed` only while deploying
+the exact official `2026.9.1` plugin. Leave its separate `enabled` switch true
+to apply the fix; set it false to restore the pristine pinned bundle. The role verifies the npm identity,
+version, non-symlinked install path, pristine bundle digest, exact compiled
+patch sites, and patched digest before replacing the bundle atomically. It first
+plans the change without writing. When bytes must change, the role stops a
+running gateway, revalidates directory and file identities at each mutation
+boundary, publishes the replacement, and restores the service in an Ansible
+`always` block. This detects accidental path replacement and ensures a later
+deploy failure cannot leave stale code loaded in memory. The role assumes
+exclusive operational control of the data directory during reconciliation; it
+is not a security boundary against another uncoordinated or malicious process
+running as container uid 1000. The role checks desired state on every
+deployment, so a same-version plugin reinstall is repaired. Unknown or
+partially modified bundles fail closed.
+Disable this switch when upgrading to a release that contains the upstream fix;
+validation intentionally rejects other plugin versions while management
+remains enabled.
 
 When `openclaw_gateway_config` supplies a complete raw config override, it must include the
 `codex` entry in both `plugins.entries` (enabled) and `plugins.allow`; individual managed
@@ -516,6 +651,13 @@ Safety guarantees:
 
 Operational note:
 
+- The plugin manifest declares `openclaw_opsgate_tool_name` in `contracts.tools`,
+  as required by OpenClaw 2026.9.4. After an upgrade, check runtime plugin
+  inspection for the registered tool and an empty diagnostics list; a plugin
+  can report `status: loaded` while tool registration failed.
+  The manifest and plugin registration use the same configured tool name.
+  This field is compatible with older pins: the 2026.9.2 manifest loader already
+  normalizes contracts, while the 2026.3.8 loader ignores unknown manifest fields.
 - Both `openclaw agent --message '/opsgate ...' --json` and long-lived Telegram chats use the same deterministic local plugin path.
 - When the managed slash-skill set changes, the role automatically invalidates cached skill snapshots and rotates existing session bindings so pre-existing Telegram sessions pick up `/opsgate` and other managed slash skills on the next message.
 
@@ -574,7 +716,8 @@ Handler unit tests for managed OpenClaw integration handlers live at:
 |----------|---------|-------------|
 | `openclaw_install_docker` | `true` | Install Docker via docker_install role |
 | `openclaw_manage_user` | `true` | Create system user/group |
-| `openclaw_healthcheck_enabled` | `true` | Run post-deploy health check (TCP + container) |
+| `openclaw_upgrade_migrations_enabled` | `true` | On v2026.9.1+, detect runtime-blocking legacy workspace state and run the supported non-interactive Doctor repair with the gateway stopped |
+| `openclaw_healthcheck_enabled` | `true` | Require TCP, a stable container, healthy gateway RPC, and configured Telegram readiness after deployment |
 
 For a complete list, see `defaults/main.yml`.
 
@@ -612,12 +755,12 @@ openclaw_gateway_config:
 
 ## Health Check
 
-The role performs a two-stage health check after deploy:
-
-1. **TCP port check** — `wait_for` on the bound host/port (TCP connect)
-2. **Container check** — verifies the Docker container is in running state
-
-Note: The deploy health check intentionally uses TCP + container state. OpenClaw also serves a control UI over HTTP, but role health checks avoid endpoint/auth coupling.
+The role waits for the TCP port, verifies the container survives its startup
+window, and then calls `openclaw health --json` inside the container. The RPC
+response must report `ok: true`; when Telegram is configured, the role retries
+through normal channel startup until Telegram is running and connected with no
+last error. This catches startup failures and crash-loop breaker channel
+suppression that a port-only probe cannot see.
 
 ## Nyxmon Monitoring Integration
 

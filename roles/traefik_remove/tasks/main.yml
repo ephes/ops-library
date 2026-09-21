@@ -1,4 +1,10 @@
 ---
+- name: Guard legacy Traefik writes
+  ansible.builtin.import_role:
+    name: traefik_deploy
+    tasks_from: guard
+  tags: always
+
 # Main task file for traefik_remove role
 
 - name: Traefik removal - validation and safety checks

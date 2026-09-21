@@ -1,0 +1,8 @@
+---
+ops_library_documentation_category: deployment
+daybook_voice_memo_attention_reader_access_key: CHANGEME
+daybook_voice_memo_attention_reader_secret_key: CHANGEME
+daybook_voice_memo_attention_reader_mc_bin: /usr/local/bin/mc
+daybook_voice_memo_attention_reader_alias: local
+daybook_voice_memo_attention_reader_python: /usr/bin/python3
+daybook_voice_memo_attention_reader_state_dir: /var/lib/daybook-voice-memo-attention-reader

@@ -1,0 +1,6 @@
+---
+# Role tables and command examples deliberately use long physical lines.
+MD013: false
+# Release notes repeat Added/Changed/Fixed beneath different release headings.
+MD024:
+  siblings_only: true

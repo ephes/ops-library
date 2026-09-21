@@ -8,7 +8,7 @@ This role deploys Wagtail applications (e.g. homepage, python-podcast) using eit
 
 ## Requirements
 
-- Ubuntu host with systemd
+- Ubuntu or Debian 12/13 host with systemd
 - `uv` installed on the target host (role uses `uv_install` by default; path: `/usr/local/bin/uv`)
 - Ansible collections:
   - `ansible.posix`
@@ -36,6 +36,22 @@ wagtail_django_mailgun_api_key: "..."
 wagtail_mailgun_sender_domain: "..."
 wagtail_django_server_email: "..."
 ```
+
+### Sites Without Object Storage or Sentry
+
+Not every Wagtail site keeps its media in S3 behind CloudFront or reports to
+Sentry. A site that serves static files with WhiteNoise and media from local
+disk has no such credentials:
+
+```yaml
+wagtail_require_object_storage: false  # skips the S3/CloudFront secrets
+wagtail_require_sentry: false          # skips the Sentry DSN
+```
+
+Both default to `true`, so existing deployments keep their validation. When one
+is `false`, the corresponding secrets are neither demanded nor written to the
+environment file — an empty `SENTRY_DSN` reads as a configured one in some SDK
+versions, so leaving the name out entirely is the safer rendering.
 
 ### Sentry Environment
 
@@ -70,7 +86,7 @@ wagtail_git_version: "main"
 ### Common Configuration
 
 ```yaml
-wagtail_python_version: "3.14.5"  # uv-managed; set empty to use wagtail_global_python
+wagtail_python_version: "3.14.7"  # uv-managed; set empty to use wagtail_global_python
 wagtail_global_python: "/opt/python/python"
 wagtail_uv_path: "/usr/local/bin/uv"
 wagtail_gunicorn_workers: 4
@@ -160,7 +176,7 @@ templates, and handlers.
     wagtail_fqdn: "example.com"
     wagtail_traefik_host_rule: "Host(`example.com`) || Host(`www.example.com`)"
     wagtail_app_port: 10013
-    wagtail_python_version: "3.14.5"
+    wagtail_python_version: "3.14.7"
     wagtail_django_secret_key: "{{ service_secrets.django_secret_key }}"
     wagtail_postgres_password: "{{ service_secrets.postgres_password }}"
     wagtail_django_aws_access_key_id: "{{ service_secrets.django_aws_access_key_id }}"
@@ -213,8 +229,15 @@ templates, and handlers.
 
 ```bash
 cd /path/to/ops-library
-just test-role wagtail_deploy
+just test-role wagtail_deploy   # YAML syntax and structure of the role
+just test-wagtail-deploy        # renders the systemd units and the env file
 ```
+
+`just test-role` checks the shape of the role; it renders nothing. The second
+recipe runs `tests/test_wagtail_deploy.yml`, which renders the templates and
+asserts on the result - among other things that a site with
+`wagtail_require_object_storage: false` receives no S3, CloudFront or Sentry
+names at all. It is part of `just test`.
 
 ## License
 

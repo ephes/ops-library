@@ -41,6 +41,20 @@ just molecule-test unifi_restore
 `just validate-strict` swaps in `just lint-strict` for the same sequence.
 Use `just lint` only as a quick summary helper. It intentionally does not fail the run.
 
+## SSH forwarding identity fixtures
+
+`just test-ssh-forwarding-roles` runs the descriptor, ownership, recovery and race
+regressions locally. Identity fixtures explicitly set their temporary root's group
+to the test process's primary group before creating children. macOS inherits the
+parent directory's group, which may otherwise be `wheel` under the system temp
+root even when the configured test identity belongs to `staff`.
+
+This setup changes only fresh test directories. The production helper still
+rejects mismatched configured ownership. A dedicated negative test verifies
+that a non-root operation rejects a mismatched configured group without changing
+the directory.
+Do not skip ownership or race assertions to make the suite pass on macOS.
+
 ## Molecule Scenarios
 
 Molecule coverage lives under `roles/<role>/molecule/default/`.
@@ -101,3 +115,32 @@ just docs-lint
 just pre-commit
 just pre-commit-update
 ```
+
+The Ansible hook uses the same `uv run ansible-lint` toolchain as contributor
+checks. The Jinja hook parses templates with Jinja2 without rendering variables,
+executing filters, or accessing inventory. Both use the project toolchain. Secret scanning covers supplied files of every
+extension without a generated baseline; formatting hooks retain their previous source-file scope. Large-file and
+private-key checks intentionally cover all extensions. Only the exact `CHANGE_ME` sentinel is
+excluded, so replacing it with a credential is still detected. Long role-table rows are allowed;
+the changelog permits repeated historical category headings. MyST include wrappers
+locally suppress the first-heading rule because their included README supplies it.
+
+Docker integration tests require a running runtime. On macOS, start the configured
+Colima VM with `colima start` before `just test`; `just` detects its socket.
+
+### Traefik transactions
+
+`just test-traefik-transactions` runs the failure and journal regression tests.
+On an ARM64 Docker host, `just test-traefik-transactions-integration /path/to/cache`
+runs a disposable systemd container with networking disabled. The cache must contain
+`3.5.3/traefik_v3.5.3_linux_arm64.tar.gz` and
+`3.7.12/traefik_v3.7.12_linux_arm64.tar.gz`; the fixture verifies exact published
+checksums before execution. It exercises a real failed-acceptance rollback,
+reviewed resume, binary update, alias-only update, no-op PID preservation and ACME
+preservation. The runner removes only its own container ID. This is a mechanics
+fixture, not native-x86 validation or production ingress/mitigation evidence.
+
+The Traefik Linux transaction integration also exercises pre-enrollment ownership
+repair and inactive linked-service retirement against real systemd. It checks
+preserved proxy PID/data/middleware and refuses active services, route drift,
+invalid candidates, changed middleware, unresolved journals and enrollment.

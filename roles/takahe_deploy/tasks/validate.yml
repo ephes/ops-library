@@ -1,5 +1,5 @@
 ---
-- name: Validate required Takahe settings
+- name: validate | Validate required Takahe settings
   ansible.builtin.assert:
     that:
       - takahe_source_mode in ['rsync', 'git']
@@ -39,7 +39,7 @@
 # declares ERROR_EMAILS as list[EmailStr] | None and parses the environment
 # variable as JSON, so a bare string (the CHANGEME placeholder, a single
 # address, or an empty string) raises SettingsError before Django starts.
-- name: Validate Takahe error mail recipients
+- name: validate | Validate Takahe error mail recipients
   ansible.builtin.assert:
     that:
       - takahe_error_emails is sequence
@@ -62,7 +62,7 @@
       is rejected here because Takahe parses TAKAHE_ERROR_EMAILS as a JSON list
       and would fail to start.
 
-- name: Validate Takahe Git settings
+- name: validate | Validate Takahe Git settings
   ansible.builtin.assert:
     that:
       - takahe_git_repo | default('') | length > 0

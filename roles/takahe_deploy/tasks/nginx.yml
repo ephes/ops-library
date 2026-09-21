@@ -1,11 +1,11 @@
 ---
-- name: Read resolver from /etc/resolv.conf
+- name: nginx | Read resolver from /etc/resolv.conf
   ansible.builtin.slurp:
     src: /etc/resolv.conf
   register: takahe_resolv_conf
   when: takahe_nginx_resolver | length == 0
 
-- name: Extract resolvers from /etc/resolv.conf
+- name: nginx | Extract resolvers from /etc/resolv.conf
   ansible.builtin.set_fact:
     takahe_nginx_resolver_candidates: >-
       {{ (takahe_resolv_conf.content | b64decode).splitlines()
@@ -15,7 +15,7 @@
          | list }}
   when: takahe_nginx_resolver | length == 0
 
-- name: Check systemd-resolved resolver file
+- name: nginx | Check systemd-resolved resolver file
   ansible.builtin.stat:
     path: /run/systemd/resolve/resolv.conf
   register: takahe_systemd_resolv_conf_stat
@@ -23,7 +23,7 @@
     - takahe_nginx_resolver | length == 0
     - takahe_nginx_resolver_candidates | default([]) | length == 0
 
-- name: Read systemd-resolved resolver file
+- name: nginx | Read systemd-resolved resolver file
   ansible.builtin.slurp:
     src: /run/systemd/resolve/resolv.conf
   register: takahe_systemd_resolv_conf
@@ -33,7 +33,7 @@
     - takahe_systemd_resolv_conf_stat is defined
     - takahe_systemd_resolv_conf_stat.stat.exists
 
-- name: Extract resolvers from systemd-resolved file
+- name: nginx | Extract resolvers from systemd-resolved file
   ansible.builtin.set_fact:
     takahe_nginx_resolver_candidates: >-
       {{ (takahe_systemd_resolv_conf.content | b64decode).splitlines()
@@ -47,7 +47,7 @@
     - takahe_systemd_resolv_conf is defined
     - takahe_systemd_resolv_conf.content is defined
 
-- name: Set nginx resolver from resolv.conf
+- name: nginx | Set nginx resolver from resolv.conf
   ansible.builtin.set_fact:
     takahe_nginx_resolver: >-
       {{ takahe_nginx_resolver_candidates
@@ -55,7 +55,7 @@
          | default(takahe_nginx_resolver_fallback, true) }}
   when: takahe_nginx_resolver | length == 0
 
-- name: Render Takahe nginx config
+- name: nginx | Render Takahe nginx config
   ansible.builtin.template:
     src: nginx.conf.j2
     dest: "{{ takahe_nginx_config_path }}"
@@ -65,7 +65,7 @@
   notify:
     - restart takahe-nginx
 
-- name: Render Takahe nginx systemd unit
+- name: nginx | Render Takahe nginx systemd unit
   ansible.builtin.template:
     src: nginx.service.j2
     dest: "{{ takahe_nginx_unit_path }}"
@@ -76,7 +76,7 @@
     - reload systemd
     - restart takahe-nginx
 
-- name: Enable and start Takahe nginx
+- name: nginx | Enable and start Takahe nginx
   ansible.builtin.systemd:
     name: "{{ takahe_nginx_service_name }}"
     enabled: true

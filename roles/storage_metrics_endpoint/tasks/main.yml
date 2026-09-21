@@ -154,6 +154,110 @@
         state: started
         daemon_reload: true
 
+    - name: Read collector timer next monotonic elapse
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - "{{ storage_metrics_endpoint_timer_name }}.timer"
+          - --property=NextElapseUSecMonotonic
+          - --value
+      register: storage_metrics_endpoint_timer_monotonic
+      changed_when: false
+      check_mode: false
+      when: not ansible_check_mode
+
+    - name: Read collector timer next realtime elapse
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - "{{ storage_metrics_endpoint_timer_name }}.timer"
+          - --property=NextElapseUSecRealtime
+          - --value
+      register: storage_metrics_endpoint_timer_realtime
+      changed_when: false
+      check_mode: false
+      when: not ansible_check_mode
+
+    - name: Determine whether the collector timer is armed
+      ansible.builtin.set_fact:
+        storage_metrics_endpoint_timer_armed: >-
+          {{
+            (
+              storage_metrics_endpoint_timer_realtime.stdout | trim | lower
+              not in ['', 'infinity', '0', 'n/a']
+            )
+            or (
+              storage_metrics_endpoint_timer_monotonic.stdout | trim | lower
+              not in ['', 'infinity', '0', 'n/a']
+            )
+          }}
+      when: not ansible_check_mode
+
+    - name: Re-arm a collector timer that elapsed without a next trigger
+      ansible.builtin.systemd:
+        name: "{{ storage_metrics_endpoint_timer_name }}.timer"
+        state: restarted
+      when:
+        - not ansible_check_mode
+        - not (storage_metrics_endpoint_timer_armed | bool)
+
+    - name: Re-read collector timer next elapse after repair
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - "{{ storage_metrics_endpoint_timer_name }}.timer"
+          - --property=NextElapseUSecRealtime
+          - --property=NextElapseUSecMonotonic
+          - --property=SubState
+      register: storage_metrics_endpoint_timer_recheck
+      changed_when: false
+      check_mode: false
+      when: not ansible_check_mode
+      until: >-
+        (
+          storage_metrics_endpoint_timer_recheck.stdout
+          | regex_search('NextElapseUSecRealtime=(.*)', '\\1')
+          | default([''], true) | first | default('', true) | trim | lower
+          not in ['', 'infinity', '0', 'n/a']
+        )
+        or (
+          storage_metrics_endpoint_timer_recheck.stdout
+          | regex_search('NextElapseUSecMonotonic=(.*)', '\\1')
+          | default([''], true) | first | default('', true) | trim | lower
+          not in ['', 'infinity', '0', 'n/a']
+        )
+      retries: 5
+      delay: 2
+      failed_when: false
+
+    - name: Require an armed collector timer
+      ansible.builtin.assert:
+        that:
+          - >-
+            (
+              storage_metrics_endpoint_timer_recheck.stdout
+              | regex_search('NextElapseUSecRealtime=(.*)', '\\1')
+              | default([''], true) | first | default('', true) | trim | lower
+              not in ['', 'infinity', '0', 'n/a']
+            )
+            or (
+              storage_metrics_endpoint_timer_recheck.stdout
+              | regex_search('NextElapseUSecMonotonic=(.*)', '\\1')
+              | default([''], true) | first | default('', true) | trim | lower
+              not in ['', 'infinity', '0', 'n/a']
+            )
+        fail_msg: >-
+          {{ storage_metrics_endpoint_timer_name }}.timer has no next elapse
+          (realtime or monotonic); the metrics payload would freeze while the
+          endpoint keeps serving it. Observed: {{
+            storage_metrics_endpoint_timer_recheck.stdout | trim
+          }}
+        success_msg: "Collector timer is armed with a next elapse."
+      when: not ansible_check_mode
+
     - name: Ensure HTTP server is enabled and running
       ansible.builtin.systemd:
         name: "{{ storage_metrics_endpoint_service_name }}"

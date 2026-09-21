@@ -1,0 +1,5 @@
+---
+ops_library_documentation_category: removal
+# Revoke only the exact dedicated key, preserving every other root key.
+daybook_voice_memo_attention_notifier_remove_confirm: false
+daybook_voice_memo_attention_notifier_remove_public_key: CHANGEME

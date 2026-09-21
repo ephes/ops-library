@@ -1,4 +1,5 @@
 ---
+ops_library_documentation_category: deployment
 daybook_photos_archive_sync_enabled: false
 daybook_photos_archive_sync_launchd_enabled: false
 

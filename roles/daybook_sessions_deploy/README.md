@@ -48,7 +48,7 @@ skip sessions that were already shipped manually.
 ```yaml
 daybook_sessions_repo_url: "https://github.com/ephes/daybook.git"
 daybook_sessions_repo_ref: "CHANGEME"
-daybook_sessions_checkout_path: "{{ daybook_sessions_service_home }}/projects/daybook"
+daybook_sessions_checkout_path: "{{ daybook_sessions_service_home }}/.local/share/daybook/sessions/daybook"
 daybook_sessions_repo_update: true
 daybook_sessions_path: "s3://agent-sessions"
 daybook_sessions_schedule_interval_seconds: 1800
@@ -148,10 +148,21 @@ objects and production lifecycle state object in `agent-sessions`, plus exactly
 the two configured Obsidian quote objects. Do not grant quote-bucket
 listing/delete access and do not pass the MinIO admin key to this role.
 
+The checkout path is dedicated to these jobs. Do not point it at a clone the
+service user also develops in: the reconcile wrapper refuses to run unless
+`HEAD` equals `daybook_sessions_repo_ref` and the tree is clean, so an
+interactive `git pull` in a shared clone silently stops the schedule, and the
+role's forced detached checkout would in turn discard that clone's branch
+state. The default lives under the service user's `~/.local/share/daybook`,
+next to the other Daybook runtimes.
+
 Set `daybook_sessions_repo_update: false` only when the private control repo has
-pre-staged a service-user-owned checkout on the target and
+pre-staged a service-user-owned checkout at that path and
 `daybook_sessions_repo_ref` is the full 40-character commit id already present
-there. The role verifies the checkout and commit locally, always rejects
+there. A local clone of another checkout on the same host is enough for
+staging, for example `git clone --no-checkout <existing clone> <path>` followed
+by `git remote set-url origin <repo url>` as the service user; the role then
+detaches it at the pinned commit. The role verifies the checkout and commit locally, always rejects
 untracked files, rejects tracked changes when force is disabled, and uses a
 local detached checkout without any remote operation. A missing checkout or
 object fails instead of cloning or fetching.
@@ -344,7 +355,7 @@ Status remains content-free:
 ```sh
 launchctl print system/de.wersdoerfer.daybook.weeknotes-reconcile
 set -a; . /etc/daybook-sessions/weeknotes-reconcile.env; set +a
-cd /Users/USER/projects/daybook
+cd /Users/USER/.local/share/daybook/sessions/daybook
 /opt/homebrew/bin/uv run --isolated --frozen --no-dev --no-config \
   daybook weeknotes reconcile-status \
   --state "$DAYBOOK_WEEKNOTES_RECONCILE_STATE"

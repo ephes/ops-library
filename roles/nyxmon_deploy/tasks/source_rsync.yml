@@ -69,27 +69,24 @@
     - nyxmon_rsync_additional_paths is defined
     - nyxmon_rsync_additional_paths | length > 0
 
+# owner/group are deliberately not preserved: rsync would otherwise stamp the
+# controller's uid/gid onto the destination directory itself, which takes write
+# access to the site directory away from the service user mid-deploy. With a
+# rollback journal that is exactly SQLITE_READONLY_DIRECTORY, reported as
+# "attempt to write a readonly database".
 - name: source_rsync | Sync Django source code to target
   ansible.posix.synchronize:
     src: "{{ nyxmon_source_path }}/src/django/"
     dest: "{{ nyxmon_site_path }}/"
     delete: true
-    rsync_opts:
-      - "--exclude=.git"
-      - "--exclude=.venv"
-      - "--exclude=__pycache__"
-      - "--exclude=*.pyc"
-      - "--exclude=.pytest_cache"
-      - "--exclude=.coverage"
-      - "--exclude=htmlcov"
-      - "--exclude=.tox"
-      - "--exclude=.mypy_cache"
-      - "--exclude=node_modules"
-      - "--exclude=cache"
-      - "--exclude=src/"  # Preserve package sources; synced explicitly later
-      - "--exclude=db.sqlite3"  # Don't overwrite the database
-      - "--exclude=media/"
-      - "--exclude=staticfiles/"
+    owner: false
+    group: false
+    rsync_opts: >-
+      {{
+        (nyxmon_rsync_excludes + nyxmon_rsync_django_excludes)
+        | map('regex_replace', '^', '--exclude=')
+        | list
+      }}
   become: false
   delegate_to: localhost
 
@@ -98,18 +95,14 @@
     src: "{{ nyxmon_source_path }}/{{ item }}"
     dest: "{{ nyxmon_site_path }}/{{ item }}"
     delete: true
-    rsync_opts:
-      - "--exclude=.git"
-      - "--exclude=.venv"
-      - "--exclude=__pycache__"
-      - "--exclude=*.pyc"
-      - "--exclude=.pytest_cache"
-      - "--exclude=.coverage"
-      - "--exclude=htmlcov"
-      - "--exclude=.tox"
-      - "--exclude=.mypy_cache"
-      - "--exclude=node_modules"
-      - "--exclude=cache"
+    owner: false
+    group: false
+    rsync_opts: >-
+      {{
+        nyxmon_rsync_excludes
+        | map('regex_replace', '^', '--exclude=')
+        | list
+      }}
   become: false
   delegate_to: localhost
   loop: "{{ nyxmon_rsync_additional_paths }}"
@@ -143,6 +136,14 @@
     - nyxmon_rsync_extra_files is defined
     - nyxmon_rsync_extra_files | length > 0
 
+# This walks the live database, which lives in the site tree. That is safe: it
+# only sets owner/group to the service user the database already belongs to, and
+# it does not touch modes. The readonly-database failure came from the syncs
+# above, where `synchronize`'s default `archive: true` stamped the CONTROLLER's
+# uid/gid onto the destination directory and took write access away from the
+# service user mid-sync - SQLITE_READONLY_DIRECTORY, because SQLite must create
+# a journal file there. Hence `owner: false` / `group: false` on both syncs, plus
+# the db.sqlite3* excludes in nyxmon_rsync_excludes.
 - name: source_rsync | Set ownership for synced files
   file:
     path: "{{ nyxmon_site_path }}"

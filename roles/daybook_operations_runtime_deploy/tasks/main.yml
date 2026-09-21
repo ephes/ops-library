@@ -1,0 +1,137 @@
+---
+- name: Validate protected runtime installation
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.system == 'Darwin'
+      - daybook_operations_runtime_action in ['install', 'cutover', 'rollback']
+      - daybook_operations_runtime_action == 'install' or daybook_operations_runtime_confirmed | bool
+      - not daybook_operations_runtime_start | bool or daybook_operations_runtime_confirmed | bool
+      - daybook_operations_runtime_user != 'CHANGEME'
+      - daybook_operations_runtime_revision is match('^[0-9a-f]{40}$')
+      - daybook_operations_runtime_binding is match('^[a-z0-9][a-z0-9_-]{0,49}$')
+      - daybook_operations_runtime_api_url is match('^https://[a-z0-9.-]+(:[0-9]+)?$')
+      - daybook_operations_runtime_token is match('^[A-Za-z0-9._~-]{32,256}$')
+  no_log: true
+
+- name: Verify protected interpreter checkout revision
+  ansible.builtin.command:
+    argv: [/usr/bin/git, -C, "{{ daybook_operations_runtime_install_root }}/daybook", rev-parse, HEAD]
+  register: daybook_operations_runtime_installed_revision
+  changed_when: false
+
+- name: Require the reviewed Daybook revision already installed
+  ansible.builtin.assert:
+    that:
+      - daybook_operations_runtime_installed_revision.stdout | trim == daybook_operations_runtime_revision
+    fail_msg: Install the reviewed protected Daybook revision in the attended maintenance window first.
+
+- name: Verify runtime is importable in the existing FDA interpreter
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_runtime_python }}", -I, -c, 'import daybook.operations_runtime']
+  become: true
+  become_user: "{{ daybook_operations_runtime_user }}"
+  become_flags: "-H -S -n -i"
+  changed_when: false
+
+- name: Read existing local operations policy
+  ansible.builtin.stat:
+    path: "{{ daybook_operations_runtime_policy }}"
+  register: daybook_operations_runtime_existing_policy
+
+- name: Require disabled staging before an attended transition
+  ansible.builtin.assert:
+    that:
+      - daybook_operations_runtime_action == 'install' or daybook_operations_runtime_existing_policy.stat.exists
+    fail_msg: Install the disabled local policy before cutover or rollback.
+
+- name: Inspect existing disabled policy locally
+  ansible.builtin.slurp:
+    src: "{{ daybook_operations_runtime_policy }}"
+  register: daybook_operations_runtime_previous_policy
+  when: daybook_operations_runtime_existing_policy.stat.exists
+  no_log: true
+
+- name: Preserve profile identity and refuse installing over an enabled runtime
+  ansible.builtin.assert:
+    that:
+      - daybook_operations_runtime_action != 'install' or not (daybook_operations_runtime_previous_policy.content | b64decode | from_json).enabled
+      - (daybook_operations_runtime_previous_policy.content | b64decode | from_json).binding == daybook_operations_runtime_binding
+      - (daybook_operations_runtime_previous_policy.content | b64decode | from_json).journal == daybook_operations_runtime_journal
+      - (daybook_operations_runtime_previous_policy.content | b64decode | from_json).api_url == daybook_operations_runtime_api_url
+    fail_msg: Preserve the existing profile identity and journal; use attended cutover or rollback for an enabled runtime.
+  when: daybook_operations_runtime_existing_policy.stat.exists
+
+- name: Inspect existing runtime status before configuration changes
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_runtime_python }}", -I, -c, 'from daybook.cli import main; raise SystemExit(main())', operations, status, --policy, "{{ daybook_operations_runtime_policy }}"]
+  become: true
+  become_user: "{{ daybook_operations_runtime_user }}"
+  become_flags: "-H -S -n -i"
+  register: daybook_operations_runtime_existing_status
+  changed_when: false
+  when:
+    - daybook_operations_runtime_existing_policy.stat.exists
+    - daybook_operations_runtime_action != 'install'
+
+- name: Refuse to overwrite an active installation or bypass unresolved evidence
+  ansible.builtin.assert:
+    that:
+      - not (daybook_operations_runtime_existing_status.stdout | from_json).enabled or daybook_operations_runtime_action == 'rollback'
+      - (daybook_operations_runtime_existing_status.stdout | from_json).status in ['idle', 'awaiting', 'blocked']
+      - (daybook_operations_runtime_existing_status.stdout | from_json).server.active_state not in ['assigned', 'awaiting_apply']
+      - daybook_operations_runtime_action != 'rollback' or not (daybook_operations_runtime_existing_status.stdout | from_json).server.enabled
+    fail_msg: Quiesce and reconcile the runtime and server binding before replacing configuration.
+  when:
+    - daybook_operations_runtime_existing_policy.stat.exists
+    - daybook_operations_runtime_action != 'install'
+
+- name: Create owner-private delivery journal
+  ansible.builtin.file:
+    path: "{{ daybook_operations_runtime_journal }}"
+    state: directory
+    owner: "{{ daybook_operations_runtime_user }}"
+    group: staff
+    mode: "0700"
+
+- name: Create owner-private credential directory
+  ansible.builtin.file:
+    path: "{{ daybook_operations_runtime_credential | dirname }}"
+    state: directory
+    owner: "{{ daybook_operations_runtime_user }}"
+    group: staff
+    mode: "0700"
+
+- name: Write local API credential
+  ansible.builtin.template:
+    src: credentials.json.j2
+    dest: "{{ daybook_operations_runtime_credential }}"
+    owner: "{{ daybook_operations_runtime_user }}"
+    group: staff
+    mode: "0600"
+  no_log: true
+
+- name: Stage candidate outside LaunchAgents
+  ansible.builtin.template:
+    src: runtime.plist.j2
+    dest: "{{ daybook_operations_runtime_staged_plist }}"
+    owner: root
+    group: wheel
+    mode: "0644"
+
+- name: Perform attended regular-label transition
+  ansible.builtin.include_tasks: transition.yml
+  when: daybook_operations_runtime_action != 'install'
+
+- name: Write disabled-first root-owned local policy
+  ansible.builtin.template:
+    src: policy.json.j2
+    dest: "{{ daybook_operations_runtime_policy }}"
+    owner: root
+    group: wheel
+    mode: "0644"
+
+- name: Optionally enable the reviewed regular label after transition
+  ansible.builtin.include_tasks: start.yml
+  when:
+    - daybook_operations_runtime_start | bool
+    - daybook_operations_runtime_action != 'install'

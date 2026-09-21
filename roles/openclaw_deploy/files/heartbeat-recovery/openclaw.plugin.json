@@ -1,0 +1,6 @@
+{
+  "id": "heartbeat-recovery",
+  "name": "Heartbeat Recovery",
+  "description": "Keep empty heartbeat recovery on the structured heartbeat response protocol.",
+  "configSchema": {"type": "object", "additionalProperties": false, "properties": {}}
+}

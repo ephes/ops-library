@@ -11,7 +11,7 @@ setup:
     @./setup-pre-commit.sh
 
 # Run the default contributor validation path
-test: venv test-roles test-certbot-dns-renewal-hooks test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-photos-archive-sync-deploy test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup test-takahe-deploy lint docs-build docs-lint
+test: venv test-daybook-operations test-macos-ssh-tunnel typecheck test-roles test-zfs-snapshot-file-attestation test-software-live test-software-estate test-debian13-compatibility test-os-apt-maintenance-refresh test-traefik-transactions test-openclaw-audio-transcription test-openclaw-codex-registration-backport test-openclaw-heartbeat-recovery test-network-recovery test-monitoring-pipeline-repair test-traefik-metrics-entrypoint test-os-apt-maintenance-failed-run test-tailscale-metrics-timer test-nyxmon-deploy test-certbot-dns-renewal-hooks test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-photos-archive-sync-deploy test-daybook-voice-memo-inbox-deploy test-daybook-voice-memo-work test-daybook-mail-work test-daybook-voice-memo-attention test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup test-takahe-deploy test-wagtail-deploy test-static-site-deploy test-voxhelm-csrf lint docs-build docs-lint
     @echo ""
     @echo "✅ Validation completed!"
 
@@ -25,10 +25,60 @@ test-roles: venv
     @echo "Testing all roles..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run ./test_roles.py --all
 
+test-network-recovery: venv
+    @echo "Testing network recovery and Tailscale health templates..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_network_recovery
+
+test-openclaw-audio-transcription: venv
+    @echo "Testing OpenClaw audio transcription configuration..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.unit.test_openclaw_audio_transcription
+
+test-openclaw-codex-registration-backport: venv
+    @echo "Testing the OpenClaw Codex process-registration backport..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run pytest -q tests/unit/test_openclaw_codex_registration_backport.py
+
+test-zfs-snapshot-file-attestation: venv
+    @echo "Testing read-only ZFS snapshot-file attestation..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run pytest -q tests/unit/test_zfs_snapshot_file_attestation.py
+
 # Test a specific role
 test-role ROLE: venv
     @echo "Testing role: {{ROLE}}"
     @UV_PROJECT_ENVIRONMENT=.venv uv run ./test_roles.py {{ROLE}}
+
+test-monitoring-pipeline-repair: venv
+    @echo "Testing apt-maintenance state permissions and Tailscale collector timer arming..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_monitoring_pipeline_repair
+
+test-traefik-metrics-entrypoint: venv
+    @echo "Testing that Traefik never opens an implicit :8080 metrics entrypoint..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_traefik_metrics_entrypoint
+
+test-debian13-compatibility: venv
+    @echo "Testing Debian 13 package and repository compatibility contracts..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_debian13_compatibility
+
+# Executes the rendered refresh runner against a fake apt-get: proves the
+# index-only mode installs nothing and never stamps the maintenance state file.
+test-os-apt-maintenance-refresh: venv
+    @echo "Testing index-only apt refresh contracts..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_os_apt_maintenance_refresh
+
+# Drives a real failing apt run and asserts the state file stays readable for
+# the endpoint group, so a failed run reports itself instead of serving 503.
+test-os-apt-maintenance-failed-run: venv
+    @echo "Testing that a failed apt-maintenance run still serves its state..."
+    @just molecule-test os_apt_maintenance
+
+# Reproduces a parked `active (elapsed)` collector timer and asserts the role
+# detects it, refuses to accept it, and re-arms it once it can.
+test-tailscale-metrics-timer: venv
+    @echo "Testing Tailscale metrics collector timer arming against real systemd..."
+    @just molecule-test tailscale_metrics_endpoint
+
+test-nyxmon-deploy: venv
+    @echo "Testing Nyxmon rsync safety and notification policy contracts..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_nyxmon_deploy
 
 test-certbot-dns-renewal-hooks: venv
     @echo "Testing Certbot DNS renewal hook rendering and failure aggregation..."
@@ -70,6 +120,22 @@ test-daybook-photos-archive-sync-deploy: venv
     @echo "Testing Daybook Nikon archive deployment contracts..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run pytest tests/test_daybook_photos_archive_sync_deploy.py
 
+test-daybook-voice-memo-inbox-deploy: venv
+    @echo "Testing Daybook Voice Memo inbox deploy contracts..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_daybook_voice_memo_inbox_deploy
+
+test-daybook-voice-memo-work: venv
+    @echo "Testing Daybook Voice Memo capable-work scheduler and source identity..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_daybook_voice_memo_work_deploy tests.test_daybook_work_source_access
+
+test-daybook-mail-work: venv
+    @echo "Testing Daybook mail work capability-host scheduler..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_daybook_mail_work_deploy
+
+test-daybook-voice-memo-attention: venv
+    @echo "Testing disabled Daybook attention deployment and restricted notifier contracts..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_daybook_voice_memo_attention_deploy tests.test_daybook_voice_memo_attention_notifier_deploy tests.test_daybook_voice_memo_attention_reader
+
 test-daybook-weeknotes-reconcile-check-mode: venv
     @echo "Testing configured and unconfigured Daybook reconcile check mode..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_daybook_weeknotes_reconcile_check_mode.yml --check
@@ -88,8 +154,13 @@ test-heis-production-backup: venv
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_heis_production_backup
 
 test-takahe-deploy: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_takahe_routing
     @echo "Testing Takahe error mail validation and env rendering..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_takahe_deploy.yml
+
+test-wagtail-deploy: venv
+    @echo "Testing Wagtail env rendering and the secret validation switches..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_wagtail_deploy.yml
 
 # Quick syntax check for everything
 syntax-check: venv
@@ -261,6 +332,13 @@ molecule-test role:
     export ANSIBLE_ALLOW_BROKEN_CONDITIONALS=1
     cd roles/{{role}} && uv run molecule test
 
+# Run a named molecule scenario for a specific role
+molecule-test-scenario role scenario:
+    #!/usr/bin/env bash
+    eval "$(just _export-docker-host)"
+    export ANSIBLE_ALLOW_BROKEN_CONDITIONALS=1
+    cd roles/{{role}} && uv run molecule test -s {{scenario}}
+
 # Run molecule converge (apply without destroy) for debugging
 molecule-converge role:
     #!/usr/bin/env bash
@@ -407,3 +485,42 @@ help:
     @echo "  just stats-roles    # Show YAML lines per role (top 20)"
     @echo ""
     @echo "Run 'just' to see all available commands"
+
+test-static-site-deploy: venv
+    @echo "Testing static-site deployment security and publication contracts..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_static_site_deploy
+
+# Test Voxhelm CSRF origin configuration
+test-voxhelm-csrf: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_voxhelm_csrf
+
+# Live software observation contracts; no network or host mutations.
+test-software-live: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -W error::ResourceWarning -m unittest tests.test_software_live tests.test_software_health_bridge
+
+# Typed Python added by the software observation roles.
+typecheck: venv
+    @uv run --with mypy mypy --ignore-missing-imports --check-untyped-defs roles/software_estate/files/collect.py roles/software_estate/files/emit.py roles/software_estate/files/outbox.py roles/software_estate/files/send.py roles/software_estate/files/publish.py roles/software_estate/files/vector_inventory_config.py roles/software_estate/files/sbom.py roles/software_live/files/software_live.py roles/software_live/files/nyxmon_checks.py roles/traefik_deploy/files/traefik_transaction.py roles/traefik_deploy/files/traefik_control.py
+
+# Exercise guarded binary/config transactions and controller failure journaling.
+test-traefik-transactions: venv
+    @uv run python -m unittest tests.test_traefik_transaction
+
+# Disposable real systemd/Traefik ARM64 fixture; requires the two verified archives.
+test-traefik-transactions-integration ARTIFACTS: venv
+    @uv run python scripts/run-traefik-transaction-integration.py {{quote(ARTIFACTS)}}
+
+# Local lifecycle and HTTPS tests; no live infrastructure mutations.
+test-macos-ssh-tunnel: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_macos_ssh_tunnel
+
+# Managed OpenClaw heartbeat recovery hooks
+test-openclaw-heartbeat-recovery: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run pytest -q tests/unit/test_openclaw_heartbeat_recovery.py
+
+test-daybook-operations: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_daybook_operations tests.test_daybook_operations_backup_bridge
+
+# Read-only application/host software discovery.
+test-software-estate: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_software_estate tests.test_inventory_emit tests.test_inventory_send tests.test_inventory_publish tests.test_inventory_publisher_linux

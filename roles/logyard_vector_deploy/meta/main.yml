@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Deploy the Logyard Vector journald producer
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+        - trixie
+  galaxy_tags:
+    - vector
+    - logging
+
+dependencies: []

@@ -5,7 +5,6 @@
   gather_facts: false
 
   vars:
-    postgres_install_version: "16"
     postgres_install_cluster_name: main
     postgres_install_conf_d_filename: 20-ops-library.conf
     postgres_service: postgresql

@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased — operations API (2.22.0)
+
+- Add operations capacity monitoring to the API role: executor/monitor credential
+  purposes in versioned profile entries, rendered capacity thresholds, nominal
+  growth and an operator-configured storage sampling path. Legacy executor-only
+  profile entries keep working; a monitor token may never also be an executor
+  token. Documented in the role README; not deployed.
+- Add a fixed-source, backup-only Echoport bridge with private staging and verified upload; preserve attended restore requirements.
+- Fix macOS runtime user switching from root-only SSH working directories and
+  allow the unprivileged restore helper to replace its private configuration atomically.
+- Add disabled-first Daybook JSON API and protected macOS importer runtime roles.
+- Add private database/keyring backup, guarded restore with stopped services, and evidence-preserving removal.
+- Stage regular-label cutover/rollback without changing long/native-work labels. Live rollout remains separately gated.
+
 All notable changes to the ops-library collection will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
@@ -7,40 +21,652 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Add a guarded `metrics_bind` Traefik transaction that can only replace an
+  implicit public Prometheus listener with an explicit loopback-only
+  `127.0.0.1:8080` entrypoint while preserving every unrelated static setting,
+  the binary, dynamic routes, unit identity, rollback, and recovery interlocks.
+
+- Default Traefik deployments to 3.7.13, addressing upstream advisories
+  [GHSA-qqjf-53cj-pwvv](https://github.com/traefik/traefik/security/advisories/GHSA-qqjf-53cj-pwvv),
+  [GHSA-f52w-8j3h-j724](https://github.com/traefik/traefik/security/advisories/GHSA-f52w-8j3h-j724),
+  [GHSA-v67p-phpq-fc8x](https://github.com/traefik/traefik/security/advisories/GHSA-v67p-phpq-fc8x),
+  [GHSA-w4v4-9rw7-5326](https://github.com/traefik/traefik/security/advisories/GHSA-w4v4-9rw7-5326),
+  and [GHSA-8fcf-v89g-xpg6](https://github.com/traefik/traefik/security/advisories/GHSA-8fcf-v89g-xpg6).
+
 ### Fixed
 
-- Contain the copied source bundle beneath the install root. Validation-only
-  fixtures select named assertions and reject other executable task keys.
+- Select Debian 13's packaged `named.conf.root-hints` include in
+  `bind_authoritative_deploy`; trixie removes `named.conf.default-zones`, which
+  otherwise leaves BIND half-configured during an in-place upgrade.
 
-- Nikon archive deployment overrides now constrain logs beneath the private log
-  directory and the virtualenv beneath the checkout, rejecting traversal in all
-  managed paths. The default test workflow runs the archive pytest module,
-  including real validation-only Ansible cases. The current-main integration and
-  reconciled 2.17.0 candidate are in the sibling `ws-photos-integration` workspace;
-  the older version labels below belong to this preserved feature branch.
+- Replace Tailscale's deprecated one-line `apt_repository` path with deb822 and
+  clean up the legacy `.list` file, avoiding the deprecated one-line repository
+  path on Debian 13.
 
-## [2.13.0] - 2026-09-04
+- Prevent explicitly retired legacy Takahe routes from bypassing the managed
+  nginx cache by removing them only after rendering the replacement route.
 
-### Fixed
+### Changed
 
-- The Nikon archive-sync launcher now tests `Photos.sqlite` with the exact
-  managed Python runtime under a 15-second watchdog before starting Daybook.
-  macOS can allow the same read from Terminal while blocking the launchd
-  process; that missing Full Disk Access now exits 77 with a useful error
-  instead of consuming the 90-minute job watchdog. The role's interval guard
-  now includes both watchdog kill-grace periods, so previously near-interval
-  custom timeout values fail closed during deployment.
+- `daybook_mail_work_deploy` now passes `--rotate-log` for the courier's two
+  launchd logs (`daybook_mail_work_rotate_logs`, default `true`), so the Daybook
+  CLI copy-and-truncates them at 1 MiB; the same CLI release prunes attempt
+  directories on every tick. Update the host's Daybook CLI before deploying, or
+  set the variable to `false`, because an older CLI rejects the option.
 
-## [2.12.0] - 2026-09-04
+- `daybook_sessions_deploy` now defaults `daybook_sessions_checkout_path` to a
+  dedicated clone under `~/.local/share/daybook/sessions/daybook` instead of the
+  service user's `~/projects/daybook`. The scheduled jobs pin that path to
+  `daybook_sessions_repo_ref`, and sharing it with an interactive clone meant a
+  routine `git pull` stopped the weeknotes reconcile at its revision guard for
+  two weeks. Hosts that relied on the old default must either set the previous
+  path explicitly or stage the new clone before the next no-fetch deployment.
 
 ### Added
 
-- Added `daybook_photos_archive_sync_deploy`, a disabled-by-default macOS Aqua
-  user LaunchAgent for Daybook's one-way Nikon working-folder archive
-  reconciler. The role enforces one inventory-named writer, installs an exact
-  controller-bundled Daybook commit, rejects a dirty checkout, keeps owner-only
-  state/logs, requires Fractal to be mounted already, runs every two hours under
-  a watchdog, and separates installation from explicit activation.
+- Configure an optional dedicated read-only Graphyard inventory monitor credential
+  in the protected environment. Weekly release refresh now bypasses the success
+  cache so a recent manual run cannot postpone scheduled source freshness.
+
+- Read SnappyMail and PostfixAdmin installed artifact metadata through bounded,
+  root-owned paths without executing application code or reading configuration.
+
+- Resolve the emitter CLI test spool path on macOS without weakening symlink checks.
+
+- Bind explicit related systemd units from the existing local inventory,
+  preserving source errors and missing-unit coverage without additional probes.
+
+- Add optional weekly public release comparison scheduling to Graphyard, using its existing unprivileged account and preserving refresh locks during rsync.
+
+- Optionally export existing local software-health metadata for the unprivileged
+  inventory publisher, preserving source timestamps and explicit coverage gaps
+  without granting monitoring credentials or adding cross-host collection.
+
+- Add an opt-in `preserve_partial_applications` policy boolean to retain application
+  probe evidence in failed inventory reports without claiming complete coverage.
+  Upgrade the Graphyard receiver before enabling this schema extension.
+
+- Support operator-initiated remote installation of the host-local macOS inventory
+  publisher, with target-side Python validation and private initial writer
+  provisioning that preserves existing credentials. Installation now requires the
+  observed hostname in the configured lowercase hostname allowlist.
+
+- Add a Linux/systemd local inventory publisher with a dedicated unprivileged
+  identity, persistent weekly cadence, hourly HTTPS delivery, retained outbox
+  on removal, and a privilege-dropping manual entry point.
+
+- Add a local macOS `software_estate_publisher` LaunchAgent with weekly scan
+  cadence, hourly eligible delivery, private durable state, shared manual-run
+  locking and removal that retains unconfirmed reports and credentials.
+
+- Add opt-in private Graphyard inventory ingress with source allowlisting, 8 MiB
+  body limit and independent rate/concurrency limits; existing UI/metric routes
+  remain unchanged. Inventory writers still authenticate at the application.
+
+- Add source-run direct HTTPS inventory delivery with durable retry/block state,
+  strict acknowledgment validation and shared outbox locking. Reports are removed
+  only after confirmed storage. Existing Vector log/metric routes are unchanged;
+  no scheduler or production inventory rollout is installed.
+
+- Add opt-in local inventory report emission and isolated Vector config generation; source-run pilot helpers do not install schedules or remote access.
+
+- Add read-only software estate discovery and explicit coverage evidence for
+  host packages, service state, container identities and registered applications.
+  Private estate reports preserve configured intent separately from live state.
+
+- Declare Debian 13/trixie support for the staging package, repository,
+  application, DNS, logging, SSH/base, static-site, and systemd-mask roles.
+  PostgreSQL 17, Redis, Tailscale, and shell package paths now run in real
+  Debian 13 Molecule containers, with focused release/repository contracts for
+  the remaining staging roles.
+
+- Extend `software_live` with OS lifecycle and PostgreSQL cluster/version
+  observations. Schema version 2 exposes desired-cycle/major drift, support and
+  EOL status, PostgreSQL minor drift and unexpected clusters for Nyxmon warning
+  checks without changing packages or database state.
+
+  This schema change requires `os` and `postgresql` policy mappings in existing
+  inventory. Previously written schema-1 state is rejected until the upgraded
+  collector writes schema-2 evidence.
+
+- `zfs_usb_replication` now installs an attended, root-private snapshot-file
+  replication attestation helper. Closed bounded requests bind exact relative
+  paths, byte counts, and SHA-256 digests to the newest source snapshot whose
+  preserved GUID is also present on a distinct read-only replica pool. The
+  helper uses only bounded, absolute-path `zfs list/get` and `zpool get` calls,
+  descriptor-safe source-snapshot reads, post-hash snapshot re-observation, and
+  atomic mode-`0600` responses. It deliberately does not run from the scheduled
+  replication service and makes no claim about retention, independent failure
+  domains, or physical offsite custody.
+
+- Add `takahe_traefik_legacy_config_paths` and the `takahe_traefik` tag for
+  opt-in legacy-route migration and routing-only updates.
+
+- Add a daily index-only apt refresh to `os_apt_maintenance`
+  (`os-apt-maintenance-refresh.timer`, `--refresh-only`). The weekly
+  maintenance timer cannot hold the 48-hour apt index freshness budget that
+  `software_live` enforces, so hosts without `unattended-upgrades` performing an
+  incidental daily `apt update` reported `pending_security_count: 0` from
+  week-old indexes. The refresh installs nothing, shares the maintenance lock,
+  and never writes `state.json`. Disable with
+  `os_apt_maintenance_refresh_enabled: false`.
+
+### Security
+
+- Add a guarded `metrics_bind` Traefik transaction that can only replace an
+  implicit public Prometheus listener with an explicit loopback-only
+  `127.0.0.1:8080` entrypoint while preserving every unrelated static setting,
+  the binary, dynamic routes, unit identity, rollback, and recovery interlocks.
+
+- Default Traefik deployments to 3.7.13, addressing upstream advisories
+  [GHSA-qqjf-53cj-pwvv](https://github.com/traefik/traefik/security/advisories/GHSA-qqjf-53cj-pwvv),
+  [GHSA-f52w-8j3h-j724](https://github.com/traefik/traefik/security/advisories/GHSA-f52w-8j3h-j724),
+  [GHSA-v67p-phpq-fc8x](https://github.com/traefik/traefik/security/advisories/GHSA-v67p-phpq-fc8x),
+  [GHSA-w4v4-9rw7-5326](https://github.com/traefik/traefik/security/advisories/GHSA-w4v4-9rw7-5326),
+  and [GHSA-8fcf-v89g-xpg6](https://github.com/traefik/traefik/security/advisories/GHSA-8fcf-v89g-xpg6).
+
+### Fixed
+
+- Allow Mastodon backup fetches to disable privilege escalation when the SSH
+  user can read the archive directly. This avoids Ansible's in-memory `slurp`
+  fallback exhausting controller memory on large production archives.
+
+- Preserve target-local Graphyard `src/django/.env` during source synchronization;
+  exclude developer copies from upload as well.
+
+- Resolve the inventory writer credential through Vector's directory secret backend
+  at `<data-dir>-secrets/writer`. Environment interpolation is disabled by default
+  in current Vector; the previous placeholder was sent literally and rejected.
+  Stop the separate pilot, back up its old config, provision a private 0600
+  credential file and regenerate the config while retaining outbox/buffer state.
+  Keep secrets outside the buffer directory and reject insecure existing paths.
+  Real Graphyard integration exposed intermittent low-traffic stalls in Vector
+  0.58, including with one worker; unattended inventory delivery remains blocked.
+
+- Initialize SSH forwarding identity test fixtures with the configured primary
+  group so macOS group inheritance does not bypass the intended race regressions.
+  Production owner/group checks remain unchanged and are explicitly tested.
+
+- Reject empty/duplicate application IDs before collection and preserve missing
+  package/version evidence and nested Git/Python failures in the pilot applications
+  category. Keep spool and Vector data paths separate; typecheck helper bodies.
+
+- Select Debian 13's packaged `named.conf.root-hints` include in
+  `bind_authoritative_deploy`; trixie removes `named.conf.default-zones`, which
+  otherwise leaves BIND half-configured during an in-place upgrade.
+
+- Replace Tailscale's deprecated one-line `apt_repository` path with deb822 and
+  clean up the legacy `.list` file, avoiding the deprecated one-line repository
+  path on Debian 13.
+
+- Prevent explicitly retired legacy Takahe routes from bypassing the managed
+  nginx cache by removing them only after rendering the replacement route.
+
+### Changed
+
+- `daybook_sessions_deploy` now defaults `daybook_sessions_checkout_path` to a
+  dedicated clone under `~/.local/share/daybook/sessions/daybook` instead of the
+  service user's `~/projects/daybook`. The scheduled jobs pin that path to
+  `daybook_sessions_repo_ref`, and sharing it with an interactive clone meant a
+  routine `git pull` stopped the weeknotes reconcile at its revision guard for
+  two weeks. Hosts that relied on the old default must either set the previous
+  path explicitly or stage the new clone before the next no-fetch deployment.
+
+## [2.21.1] - 2026-09-14
+
+### Fixed
+
+- Declare the managed OpenClaw OpsGate tool in the plugin manifest so OpenClaw
+  2026.9.4 registers it instead of reporting a missing `contracts.tools` error.
+
+## [2.21.0] - 2026-09-08
+
+### Added
+
+- Allow verified SSH recovery for proxy-only transactions and provide read-only ingress/static-alias acceptance probes.
+
+- Add journaled pre-enrollment ownership repair and inactive-service retirement; preserve application data and proxy PID.
+
+- Optional OpenClaw v2026.9.1 heartbeat recovery extension preserves structured
+  notification decisions during incomplete-turn retries and blocks direct
+  message sends in those recovery runs.
+
+## [2.20.0] - 2026-09-07
+
+### Added
+
+- Guarded Traefik binary and alias-only transaction entry with exact checksums,
+  runtime identity verification, atomic replacement, rollback and paired recovery
+  records. Operator evidence and reviewed acceptance/cleanup programs are required.
+- Legacy Traefik full deploy, restore and removal guards for transaction-managed
+  hosts; future template rendering preserves approved header-alias policy.
+
+## [2.19.0] - 2026-09-07
+
+### Added
+
+- `software_live` provides shared read-only Traefik disk/process/version drift and
+  cached APT security-update observations, a hardened periodic collector and a
+  Tailscale/loopback-only authenticated JSON endpoint. Unknown/stale observations,
+  held security updates and failed upstream lookups remain visible.
+- Targeted Nyxmon check upsert/disable task entries and `software_live_remove`
+  complete monitoring lifecycle without changing monitored applications.
+
+### Fixed
+
+- Restore usable pre-commit validation with the project's Ansible toolchain,
+  a local Jinja syntax parser, secret scanning without a missing baseline, and
+  Markdown settings compatible with role tables and historical release notes.
+- Exclude mutable mypy/Ruff caches from collection artifacts so concurrent checks
+  cannot create checksum-invalid deployment archives.
+
+<!-- Historical release sections repeat category headings. -->
+<!-- markdownlint-disable MD024 -->
+
+## [2.18.0] - 2026-09-07
+
+### Added
+
+- `macos_ssh_tunnel` manages an independent user LaunchAgent for a loopback
+  SSH local forward, with persistent start/stop controls and an HTTPS health
+  check. Installation defaults to stopped and certificate verification is
+  enabled unless the private caller explicitly opts out.
+
+## [2.17.0] - 2026-09-07
+
+### Added
+
+- Archive deployment validates log overrides beneath the private log tree and
+  the virtualenv beneath the verified checkout; actual Ansible assertion tests
+  reject outside, relative, and traversing overrides for all managed paths.
+- Included the archive role in rendered documentation and its pytest regression
+  module in the default test recipe.
+- Added `daybook_photos_archive_sync_deploy`, a disabled-first macOS Aqua
+  LaunchAgent for a single Nikon archive writer. It installs an exact bundled
+  Daybook revision, protects private state/logs, requires an existing SMB mount,
+  and keeps installation separate from activation. The same-runtime Photos
+  preflight exits 77 within 15 seconds when launchd cannot read `Photos.sqlite`;
+  interval validation includes both watchdog grace periods.
+- Documented the repaired Daybook source-root migration, immutable recovery,
+  creation-ownership evidence, and repeated-lock escalation. Deployment remains
+  disabled until an exact repaired revision is separately reviewed and installed.
+
+### Fixed
+
+- Keep the copied Nikon source bundle beneath the install root. Validation-only
+  tests select named assertion tasks and reject any other executable task keys.
+
+## [2.16.1] - 2026-09-07
+
+### Fixed
+
+- `voxhelm_deploy` now renders configurable `VOXHELM_CSRF_TRUSTED_ORIGINS`
+  for the application's existing HTTPS operator-login support. The default is
+  an empty list; callers supply explicit trusted origins.
+
+## [2.16.0] - 2026-09-07
+
+### Added
+
+- Added `static_site_deploy` in collection 2.16.0, a reusable controller-to-host
+  publication role for compact generated sites. It permits only regular files and directories
+  in the source, syncs deterministic modes into a root-owned document root,
+  serves it on loopback with a hardened systemd unit and disabled directory
+  listings, renders an HTTPS Traefik route, and can verify both local and public
+  serving paths.
+
+- Added `daybook_voice_memo_work_deploy`, a separate five-minute macOS
+  LaunchAgent for capable work on newly imported memos, and
+  `daybook_work_source_access_deploy` for its dedicated source identity.
+
+- Added `daybook_voice_memo_attention_reader_deploy` for a dedicated MinIO identity
+  with exact-prefix listing and object reads only. It rejects policy, group,
+  ownership, and credential drift rather than adopting existing identities.
+  Input validation rejects CR/LF in secrets and option-like access keys before
+  running MinIO commands.
+
+- Added `daybook_voice_memo_attention_notifier_deploy` and
+  `daybook_voice_memo_attention_notifier_remove` for a recipient-pinned
+  outbound-only notifier with a dedicated restricted SSH key. Installation does
+  not send messages and preserves existing administration keys.
+
+- Added disabled-only `daybook_voice_memo_attention_deploy` and state-preserving
+  `daybook_voice_memo_attention_remove` macOS roles. The pilot installs a provided
+  Daybook wheel in a separate environment and an unloaded persistent `serve`
+  LaunchAgent with failed-exit restarts throttled to 900 seconds;
+  it rejects activation and does not initialize tracking or touch the importer.
+
+- `wagtail_deploy` gained `wagtail_require_object_storage` and
+  `wagtail_require_sentry` (both default `true`, so existing deployments are
+  unchanged). Setting either to `false` skips the corresponding secret
+  validation and leaves those names out of the rendered environment file, which
+  makes the role usable for a Wagtail site that serves static files with
+  WhiteNoise and media from local disk and runs without Sentry.
+
+- `voxhelm_deploy` gained `voxhelm_lane_scheduler_interactive_slots` and
+  `voxhelm_lane_scheduler_non_interactive_slots` (both default `1`) for
+  Voxhelm's bounded inference slots (Voxhelm decision D-24): one reserved
+  interactive slot plus one non-interactive slot, rendered into `voxhelm.env`.
+- `nyxmon_storage_exporter` can now report per-client Time Machine footprint
+  from the server side. `nyxmon_storage_exporter_timemachine_bundle_dirs`
+  lists directories to scan for `*.sparsebundle` directories; each bundle is
+  exported under `timemachine_bundles_by_name` with `bytes_used`,
+  `client_bytes_available`, `last_bytes_to_copy`, `running`, `band_count`,
+  `band_size_bytes`, `bands_bytes`, `backup_count`, `oldest_backup_ts`,
+  `newest_backup_ts`, `newest_backup_age_days`, `history_days`, `ok`,
+  `metrics_known`, and `error`, plus a `timemachine_bundle_scan` summary. The
+  probe is read-only (three small plists and a `bands/` entry count; it never
+  opens a band or mounts a bundle), a missing or unparsable plist marks only
+  that bundle `ok: false`, and bundles on a quiet-hours pool reuse the probe
+  cache like datasets.
+- Added `daybook_voice_memo_inbox_deploy`, a disabled-first macOS Aqua
+  LaunchAgent role for the Daybook Apple Voice Memos importer. It installs an
+  exact bundled Daybook commit, keeps source/state/log/credential boundaries
+  explicit, rejects placeholder secrets, baselines historical database
+  identities only behind a confirmation phrase, and schedules privacy-safe
+  ingestion every 300 seconds with `RunAtLoad`. Activation failures are
+  rescued to a proven disabled/unloaded state, an unreadable existing
+  checkout is never deleted, the bundle is verified to carry the pinned
+  commit before any checkout replacement, a modified protected checkout
+  fails deployment,
+  the scheduled interpreter is staged root-owned and checksum-bound to the
+  pinned Homebrew interpreter, fresh-host check-mode guards are keyed by
+  path, and empty required values are rejected like placeholders.
+
+- `daybook_voice_memo_inbox_deploy` gained the asynchronous long-memo lane: a
+  second disabled-first LaunchAgent
+  (`de.wersdoerfer.daybook.voice-memo-inbox-long`) that runs
+  `voice-memos transcribe-long --summary-only` every 600 seconds with
+  `RunAtLoad` false and its own owner-only `ingest-long` log pair. Deployment
+  now quiesces and proves both labels before any managed change, logging the
+  aggregate `long_in_flight_count` beforehand instead of waiting for a running
+  transcription, and activation enables, bootstraps, and proves the long lane
+  with a `transcribe-long --summary-only --no-work` liveness run that accepts
+  only `proof_only` (0) or `lock_contended`/`ledger_busy` (75). The rescue path
+  disables, boots out, and proves both labels without changing the deployed
+  Daybook revision. New `daybook_voice_memo_inbox_long_*` variables are
+  rendered into the policy and validated against the reviewed ranges,
+  including the deadline inequality
+  `ceil(duration x factor) + slack <= 2700`. The lane ships disabled, so the
+  short lane's behaviour is unchanged until ops-control enables it after the
+  Studio benchmark; enabling requires Voxhelm's bounded inference slots
+  (D-24). The long-lane ranges are validated on every run of the role, whether
+  or not the lane is enabled, because the values reach the host policy either
+  way. Every label-scoped `launchctl print` proof now hides its raw output and
+  asserts only the sanitized exit status, so a verbose run no longer prints a
+  loaded job's `HOME`, private log paths, and environment; the same applies to
+  the Aqua domain probe and to every Daybook CLI invocation (pre-bootstrap
+  status, long-lane liveness proof, first-scan wait), whose results and parsed
+  reports are hidden while the asserts report only exit status and category,
+  enforced by a test; and the pre-quiesce
+  in-flight count is extracted best-effort so a malformed status document
+  reports nothing instead of aborting the deployment before either label is
+  quiesced.
+
+### Changed
+
+- `wagtail_deploy` moved its input validation into `tasks/validate.yml`, like
+  the other roles that have one, and `main.yml` imports it. `just test` now
+  runs `tests/test_wagtail_deploy.yml` through the new `test-wagtail-deploy`
+  recipe; before, that playbook only ever ran when somebody started it by
+  hand. The test renders the templates as before and additionally runs the
+  validation itself, so an inverted condition on one of the new switches fails
+  the suite instead of silently disabling a secret check.
+
+### Fixed
+
+- Attention notifier authorization checks now ignore commented keys and harmless
+  field spacing or trailing comments, while rejecting differently authorized
+  keys. Attention deployment validates the Daybook wheel name and imports the
+  installed module as the service owner before recording installation success,
+  without running a tick. Deployment/removal document the persistent launchd
+  disable override and the separate explicit enable/bootstrap activation steps.
+  Wheel receipts use an explicit destination SHA1; real two-converge tests cover
+  unchanged installation and changed wheel bytes without depending on copy return
+  fields. Owner import verification starts from the service home and switches
+  only its Python subprocess, avoiding inaccessible root SSH working directories.
+
+- `daybook_voice_memo_inbox_deploy` now has a rendered documentation page
+  under the deployment roles (the README is included, and the role carries the
+  `ops_library_documentation_category` marker so `validate_docs.py` requires
+  the page from now on). `tests/test_daybook_voice_memo_inbox_deploy.py` is
+  formatted with black; no test changed.
+- `macos_time_machine_exclusions` documents that paths under macOS
+  privacy-protected locations such as `~/Library/Containers` cannot be managed
+  by the launchd-run agent and must receive a one-time sticky exclusion from a
+  session with Full Disk Access.
+- `echoport_deploy` now provisions and verifies the `mc` alias that the
+  `cleanup_old_backups` cron uses as the service user, and exports
+  `MINIO_MC_PATH` / `MINIO_ALIAS` to the application environment. The alias
+  previously existed only for the root-run upload scripts, so every scheduled
+  deletion failed silently and MinIO retention never applied.
+
+### Changed
+
+- `wagtail_deploy` now defaults to Python 3.14.7, keeping its uv-managed
+  runtime on the latest 3.14 patch release.
+- `openclaw_deploy` can opt its selected audio-provider transport into
+  private-network requests for a dedicated local audio route. The provider is
+  configurable and defaults to the bundled `senseaudio` media adapter so local
+  endpoint credentials stay out of the normal OpenAI agent-auth namespace. Its deploy
+  health gate now derives Telegram readiness from complete raw gateway
+  overrides as well as the role's individual channel variables. It also keeps
+  OpenClaw's internal Doctor backup directory writable by the container
+  identity.
+
+### Added
+
+- Added `macos_time_machine_exclusions`, a non-destructive daily LaunchAgent
+  that reapplies user-scoped `tmutil` exclusions to configured reproducible
+  paths when build directories are recreated, continues through per-path
+  failures, tolerates transient launchd bootout races while retrying the
+  authoritative bootstrap, reports newly applied exclusions as changes, leaves
+  standard macOS directory modes intact, and rejects deployment under the wrong
+  user or home.
+- `nyxmon_storage_exporter` can now publish named ZFS dataset usage,
+  availability, quota, reservation, and snapshot-retained byte metrics for
+  stable Nyxmon JSONPaths and proactive dataset-capacity alerts. Parseable
+  `zpool` output supplies exact byte fields, while quiet-hours pool, dataset,
+  and disk policies avoid HDD wakeups and preserve cached health signals.
+  Dataset payloads retain a stable nullable metric schema plus `metrics_known`
+  when probes are skipped or fail.
+- Added the `local.ops_library.zfs_size_to_bytes` filter for exact ZFS binary
+  size normalization. It truncates fractional values the same way ZFS does,
+  avoiding one-byte idempotency drift from rounded generic size filters.
+
+### Changed
+
+- **Breaking output-format clarification:** `nyxmon_storage_exporter` now runs
+  `zpool list -H -p`, so the existing `pools.<name>.size`, `alloc`, and `free`
+  keys contain raw byte strings and `cap` contains a raw percentage number
+  string without `%`. Consumers should use the numeric `size_bytes`,
+  `alloc_bytes`, `free_bytes`, and `cap_ratio` keys instead; `cap_ratio` is
+  calculated from exact allocation and size bytes rather than whole-percent
+  `cap` output.
+
+### Fixed
+
+- `nyxmon_deploy` now restricts its SQLite database family to the service
+  account and sets `UMask=0077` on both writers, preventing stored JSON-check
+  credentials from being exposed through the database or new sidecars.
+- `openclaw_deploy` can apply upstream Codex fix `26e5c2858a` to the exact
+  `@openclaw/codex@2026.9.1` runtime. The backport gives app-server startup
+  process registration a shared ten-second inspection budget, preventing
+  synchronous session-snapshot reads from intermittently failing isolated
+  heartbeats. The compiled bundle is reconciled atomically with pinned pristine
+  and patched digests and fails closed on unknown artifacts.
+- `storage_metrics_endpoint` and `thermal_metrics_endpoint` collector timers
+  no longer remain `active (elapsed)` with no next run after their one-shot
+  boot trigger is consumed and no service-relative trigger remains. Both
+  timers now have independent activation-relative and wall-clock anchors, and
+  both roles repair and reject an unarmed timer during deployment.
+- `zfs_pool_deploy` and `zfs_dataset` now compare exact byte-normalized dataset
+  size properties using ZFS's truncating conversion, so both exact values such
+  as `quota: 6.5T` and fractional values such as `quota: 1.1T` remain
+  idempotent when `zfs get -p` renders integer bytes. Symbolic `auto` is forced
+  only for `refreservation`; properties that report `auto` directly remain
+  idempotent. Native YAML integers are normalized without regex type errors,
+  and the forced symbolic reapply no longer reports a false configuration
+  change when it succeeds.
+- `nyxmon_storage_exporter` now distinguishes missing quiet-hours SMART evidence
+  from an observed disk failure, and distinguishes unavailable EDAC counters
+  from observed correctable or uncorrectable errors. This prevents monitoring
+  gaps from masquerading as critical hardware failures while keeping real
+  failures alertable. Current smartctl failure bits remain critical; signal
+  exits and command-launch failure codes remain unknown evidence; and historical
+  attribute/error/self-test bits are exported separately.
+- `nyxmon_storage_exporter` pool payloads now keep a stable nullable schema and
+  separate `health_known` from `health_failed`, so an expired quiet-hours cache
+  warns about missing evidence without impersonating a pool failure.
+- `nyxmon_storage_exporter` now caches positively observed SMART failures even
+  when smartctl also ended abnormally, preserving critical evidence through the
+  following quiet-hours window.
+- Pool, disk, and dataset payloads now expose stable cache metadata keys on
+  active, cached, and uncached-fallback samples, so freshness JSONPaths do not
+  disappear when probe state changes.
+- Optional pool capacity policies now expose evidence-aware warning/critical
+  failure booleans, allowing missing capacity evidence to warn without creating
+  a false critical while still evaluating exact ratio and integer free-byte
+  thresholds. Policies support both explicit pool lists and pool auto-discovery.
+- Disk payloads now also keep `temp_c` present with `null` when no temperature
+  evidence is available, including legacy-cache and quiet-hours fallbacks.
+- Quiet-hours cache reuse now verifies the configured disk or dataset identity,
+  and disk/dataset cache updates share one final write so write-error diagnostics
+  describe the actual persisted state.
+- `traefik_deploy` now creates its ACME directory as `0700` in the original
+  directory loop. Previously every run briefly changed it to `0755` and then
+  back to `0700`, producing false idempotency changes and momentarily making
+  the private state directory world-traversable.
+- `traefik_deploy` no longer exposes Prometheus metrics on `:8080` on every
+  interface when the dashboard is disabled. Metrics default to the `traefik`
+  entrypoint, and when nothing defined it Traefik created it implicitly on
+  `:8080`; a host without a firewall served `/metrics` to the internet after
+  its first restart under the role. The entrypoint is now defined explicitly
+  and bound to `traefik_metrics_bind_address:traefik_metrics_port` (default
+  `127.0.0.1:8080`). Hosts with the dashboard enabled are unchanged.
+- `os_apt_maintenance`'s kernel comparison never fired. `_installed_kernel_versions()`
+  read a `stdout` key from `run_command()`, which only exposes a 4000-character
+  `stdout_tail`, so every host parsed an empty kernel list and the new signal
+  silently degraded back to the marker file alone - the same false negative it
+  was written to close. The kernel list is now read from the full `dpkg-query`
+  output directly, and the unit tests fake `subprocess.run` (the real
+  boundary) instead of `run_command()` with a shape it never produced.
+- The `os_apt_maintenance` endpoint discarded the persisted kernel signal: it
+  replaced `reboot_required` with the live marker-file check on every request,
+  so a check asserting `$.reboot_required == false` could never see
+  `stale_kernel` even once the run recorded it. The endpoint now serves the
+  live marker OR the persisted kernel signal, and drops the kernel signal as
+  soon as `uname -r` no longer matches the kernel the run observed, so a reboot
+  into the new kernel still clears the warning immediately. It also serves
+  `$.reboot_required_details` with the reasons.
+- `os_apt_maintenance` no longer reports "no reboot needed" on hosts where
+  Ubuntu's `/var/run/reboot-required` marker can never appear. That file comes
+  from `update-notifier-common`, which Debian does not ship and which some
+  Ubuntu hosts lack, so the check reported a confident green on a Debian 12 host
+  that had been running a bullseye `5.10` kernel with `6.1` installed for over
+  two years - a false negative indistinguishable from a healthy host. Reboot
+  state is now the OR of the marker file and a `dpkg-query`-vs-`uname`
+  comparison, and `$.reboot_required_details` reports which signal fired.
+  Existing Ubuntu behaviour is unchanged.
+- `traefik_deploy`'s conflict disarming no longer fails on a unit that systemd
+  references but whose file is gone (a removed `apache2` leaves
+  `apache2.service  not-found  failed`). `service_facts` reports such an entry
+  identically to a real failed unit, so the role tried to stop it and aborted
+  the play with "Could not find the requested service". Unit existence is now
+  probed with `LoadState`.
+
+### Fixed
+
+- `nyxmon_deploy` no longer trips `attempt to write a readonly database` during a
+  source sync. Both `ansible.posix.synchronize` tasks now pass `owner: false` /
+  `group: false`: `synchronize` defaults to `archive: true`, which implies
+  `-o -g` and stamped the controller's uid/gid onto the destination directory,
+  taking write access away from the service user mid-sync
+  (`SQLITE_READONLY_DIRECTORY`, because SQLite must create a journal file
+  there). `nyxmon_rsync_excludes` now also covers the `-wal`, `-shm` and
+  `-journal` sidecars and `.env`; excluding only `db.sqlite3` still let
+  `rsync --delete` remove a live journal out from under the writer.
+- `tailscale_metrics_endpoint` timer-arming probes and their assertion are now
+  skipped under `--check`. They forced `check_mode: false` while unit rendering
+  and startup remained check-mode no-ops, so a first deployment under `--check`
+  queried a nonexistent timer and failed.
+
+### Added
+
+- `openclaw_deploy` can now route voice notes to an OpenAI-compatible local
+  transcription endpoint through a dedicated, explicitly selected API-key
+  profile. The role stores only an environment SecretRef in OpenClaw's SQLite
+  auth store, preserves explicitly non-audio media models, and prevents normal
+  OAuth-backed agent turns from inheriting the transcription credential.
+- `openclaw_deploy` now migrates the pre-2026.9.1 memory-search and timestamp
+  config keys before plugin reconciliation, so in-place upgrades do not fail
+  the newer schema validation.
+- `openclaw_deploy` now detects and safely migrates v2026.9.1 legacy workspace
+  state through upstream non-interactive Doctor repair before startup, then
+  verifies gateway RPC and Telegram readiness instead of accepting a briefly
+  open port from a crash-looping container.
+
+- `tailscale_metrics_endpoint` can now inspect `/proc/mdstat`, report each
+  active array (including `active (auto-read-only)` arrays) and its `[UU]`-style
+  member bitmap, require an explicit set of array names, and include required
+  mdraid health in `summary.overall_ok`. This closes the monitoring gap that
+  left a degraded staging `/boot` mirror unnoticed for more than three years.
+  Active bitmap-less RAID0/linear arrays are supported, and disabled probes
+  report an unknown value instead of an unevaluated healthy value.
+- `traefik_deploy` now stops, disables and masks stock distro web-server units
+  (`nginx.service`, `apache2.service`, `caddy.service`, `lighttpd.service`)
+  before starting Traefik, controlled by
+  `traefik_mask_conflicting_web_services` / `traefik_conflicting_web_services`.
+  Installing nginx - which several roles pull in as a dependency for their own
+  sidecar instance - enables a stock unit that binds `:80`; nothing disabled it,
+  so it raced Traefik for the port on every boot and could take a host's entire
+  ingress down. Masking rather than disabling is deliberate, because `apt
+  upgrade` re-enables a disabled unit and would silently re-arm the trap on
+  hosts running unattended apt maintenance. Only units already present are
+  touched, and sidecar units (`mastodon-nginx`, `takahe-nginx`) are unaffected.
+  The tasks are also includable standalone via `tasks_from: web_conflicts`, for
+  hosts whose Traefik this role does not manage.
+- `netplan_config` can now install an optional networkd route guard that
+  reconfigures a carrier-up interface when its IPv4 default route disappears or
+  its setup state becomes failed. Managed `netplan generate`, `netplan apply`,
+  and follow-up `networkctl reconfigure` commands share the guard lock so
+  recovery commands cannot execute concurrently with those planned transitions.
+- `tailscale_metrics_endpoint` now reports `Self.Online` and an optional IPv4
+  default-route probe, with a configurable systemd IP allow-list for authenticated
+  LAN-side monitoring when the Tailscale path itself is broken. Existing
+  `summary.overall_ok` behavior stays compatible unless the new
+  `tailscale_metrics_endpoint_require_self_online` or
+  `tailscale_metrics_endpoint_require_default_ipv4_route` option is enabled;
+  route-probe errors count as an unhealthy required route. Allow-list validation
+  parses real IP networks and rejects prefixes broader than `/8` for IPv4 or
+  `/32` for IPv6, as well as out-of-range prefixes. Deployments now fail closed
+  unless `bpftool` confirms systemd attached both cgroup ingress and egress IP
+  filters to the endpoint service when fail-closed verification is enabled;
+  Ubuntu deployments install the GA-tracking `linux-tools-generic` metapackage
+  so verification survives GA kernel upgrades; HWE hosts must separately retain
+  their release-specific HWE tools metapackage. Use the option for non-Tailnet
+  binds. The collector unit also gains a new
+  address-family sandbox permitting only `AF_UNIX`, `AF_INET`, `AF_INET6`, and
+  `AF_NETLINK` (needed by the route probe).
+- `nyxmon_deploy` now renders consecutive-failure, persistent-reminder,
+  stale-processing-lease, and bounded check-batch settings into Nyxmon's worker
+  environment.
+- `os_apt_maintenance` gained executable coverage for the failed-run state-file
+  repair (`just test-os-apt-maintenance-failed-run`): the molecule scenario
+  points the role at an `apt-get` stub that exits 100, resets `state.json` to
+  the pre-fix `0600 root:root`, and asserts the file comes back
+  `root:<endpoint group> 0640` both through systemd and when the writer runs
+  outside systemd, with the endpoint answering HTTP 200 and `last_run_ok=false`
+  rather than 503.
+- `tailscale_metrics_endpoint` gained a molecule scenario
+  (`just test-tailscale-metrics-timer`) that reproduces a parked
+  `active (elapsed)` collector timer against real systemd, asserts the
+  deployment fails rather than accepting it, and asserts the role re-arms it
+  once it can. The scenario also watches the payload file actually get a newer
+  mtime, so "armed" is proven by the collector running rather than by the unit
+  file.
 
 - `mail_backend_deploy` gained `mail_backend_sender_only_domains`: domains the
   backend signs and authorises as an envelope sender, but hosts no mailboxes for.
@@ -139,6 +765,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `nyxmon_deploy` replaces sample-count alert reminders with elapsed-time ones.
+  `nyxmon_notify_repeat_failures` is gone and `NYXMON_NOTIFY_REPEAT_FAILURES` is
+  no longer rendered; the role now renders
+  `NYXMON_NOTIFY_REPEAT_INTERVAL_SECONDS` from
+  `nyxmon_notify_repeat_interval_seconds` (default `21600`) and
+  `NYXMON_NOTIFY_WARNING_REPEAT_INTERVAL_SECONDS` from
+  `nyxmon_notify_warning_repeat_interval_seconds` (default `86400`). A sample
+  count meant a different wall-clock cadence for every check interval — twelve
+  samples is roughly hourly for a five-minute check and roughly twelve-hourly
+  for an hourly one — which is why it cannot be translated into a duration and
+  is ignored rather than converted. Setting the old variable is not an error:
+  the role logs a deprecation notice naming both replacements and continues, so
+  an inventory can be migrated without a failed deploy.
+
+  `nyxmon_notify_consecutive_failures` now defaults to `2` instead of `1`. A
+  first-sample page for every check is what turned one wedged batch into an
+  alert storm; hosts that genuinely need first-sample paging set it per check
+  rather than globally. All five reliability settings are now validated as whole
+  numbers first and then range-checked (threshold 1..100, reminder intervals
+  60..2592000 seconds), so a typo fails the deploy instead of silently landing
+  in the worker environment.
+
 - `certbot_dns_deploy` renewal-hook items now run in isolated fail-fast blocks;
   all independent items are attempted and failures are identified and
   propagated. Existing ordering-dependent hook lists must combine prerequisite
@@ -228,6 +876,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `upgrade.php` step.
 
 ### Fixed
+
+- `os_apt_maintenance`: a failed apt run left the monitoring endpoint answering
+  HTTP 503 until the next successful run. The script writes `state.json` via
+  `tempfile.mkstemp` (0600, root) and `os.replace`, and the unit widened it back
+  to `root:<endpoint group> 0640` in `ExecStartPost=` — which systemd skips
+  entirely when `ExecStart=` exits non-zero. The endpoint user could then not
+  read the file, so a truthful `last_run_ok: false` / `reboot_required: true`
+  state was replaced by a generic 503. `atomic_write_json` now stamps the final
+  group and mode onto the open temp file descriptor before `os.replace` (best
+  effort; a permission problem there never aborts the run), and the unit's
+  fix-up moved from `ExecStartPost=` to `ExecStopPost=-`, which runs on success
+  and failure alike. The `ExecStartPre=` directory hooks are unchanged.
+- `tailscale_metrics_endpoint`: the collector timer could park permanently and
+  freeze the served payload. `OnBootSec=` and `OnUnitActiveSec=` are both
+  monotonic; after the one-shot boot trigger fired, missing service activation
+  history could leave neither with a next elapse, and systemd left the timer
+  `active (elapsed)` with
+  `NextElapseUSecMonotonic=infinity`. `Persistent=true` did not help because it
+  only applies to `OnCalendar=`. The endpoint kept serving the frozen snapshot,
+  so every `summary` assertion built on it stayed green while the host was
+  unmonitored. The timer template now also sets `OnActiveSec=` (anchored on the
+  timer unit's own activation) and `OnCalendar=` (new variable
+  `tailscale_metrics_endpoint_timer_on_calendar`, default `*:0/5`). Because
+  `systemd: state: started` is a no-op on an already-active timer and could not
+  repair this, the role now reads the timer's `NextElapseUSecMonotonic` and
+  `NextElapseUSecRealtime`, restarts a timer that has no future trigger, and
+  asserts the timer is armed afterwards.
+
+- `nyxmon_deploy`: a deploy could make the running collector fail with
+  `sqlite3.OperationalError: attempt to write a readonly database`. The source
+  sync ran with rsync's archive defaults, which stamp the controller's uid/gid
+  onto the *destination directory itself*. With `journal_mode=delete` SQLite has
+  to create `db.sqlite3-journal` next to the database for every write
+  transaction, so losing write permission on that directory is
+  `SQLITE_READONLY_DIRECTORY` — reported with exactly that message. The window
+  closed a few seconds later when the role's recursive `chown` ran, which is why
+  it showed up as a single failed collector iteration mid-deploy.
+
+  The sync now passes `owner: false` / `group: false` so it never re-owns the
+  destination, and the excludes moved into `nyxmon_rsync_excludes` /
+  `nyxmon_rsync_django_excludes`. The previous list excluded only `db.sqlite3`,
+  so `rsync --delete` was free to remove a live `-wal`, `-shm`, or `-journal`
+  sidecar — losing crash atomicity rather than merely failing a write. It now
+  excludes each sidecar by name plus `db.sqlite3*` and `*.sqlite3`, and `.env`,
+  which was previously deleted and recreated on every deploy so a restart landing
+  in that window would fail to start. The recursive ownership fix still walks the
+  in-tree database, which is safe: it only sets owner/group to the service user
+  the file already belongs to and never touches modes.
 
 - Corrected the Certbot DNS hook examples and Traefik file-provider guidance:
   rotating a certificate behind `/etc/letsencrypt/live/` does not change
@@ -734,6 +1430,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   newer macOS releases.
 
 ### Security
+
 - `weeknotes_home_deploy` now protects public-source HTTPS requests with shared
   Traefik Basic Auth while a higher-priority, validated RFC1918/Tailnet router
   preserves Studio's independent bearer-auth API calls. The role strips Basic
@@ -744,6 +1441,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to share one managed secret instead of exposing those endpoints anonymously.
 
 ### Added
+
 - `daybook_sessions_deploy` can install a dedicated Mac Studio draft-only
   weeknotes reconcile LaunchDaemon at 07:40 and 19:40 local time. The distinct
   unit, logs, mode-0600 environment, local state, and auth-only pi directory are
@@ -753,6 +1451,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   be replaced only through explicit unloaded-unit rotation.
 
 ### Fixed
+
 - `openclaw_deploy` now accepts bounded weeknotes write payloads up to 4,000
   characters by default, so normal long-form voice-note transcriptions are not
   rejected by the journal handler's previous 500-character ceiling.
@@ -790,6 +1489,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   DNS does not block ACME certificates for otherwise valid production names.
 
 ### Breaking Changes
+
 - **Python 3.14+ required** - Dropped support for Python 3.8–3.13
   - Supports Python 3.14 (N-2 policy currently aligns with the latest stable release)
   - All roles and testing infrastructure now require Python 3.14+
@@ -799,6 +1499,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Update your Ansible installation before upgrading
 
 ### Added
+
 - `openclaw_deploy` can now restore source-controlled workspace skills from
   controller-local files, including executable support scripts, while
   preserving interactive unmanaged skills and refreshing cached session skill
@@ -880,7 +1581,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `shell_basics_deploy` role to install fish, modern CLI tools (btop, bmon, sysstat/iotop, tealdeer, eza), set shell/editor defaults, and keep chezmoi current via upstream installer
 - `snappymail_deploy` role to install SnappyMail from upstream archives (PHP-FPM + nginx), wire IMAP/SMTP defaults, persist data under `/mnt/cryptdata/snappymail`, and expose via Traefik
 - ReadTheDocs integration with Sphinx and MyST parser
-  - Browsable documentation at https://ops-library.readthedocs.io/
+  - Browsable documentation at <https://ops-library.readthedocs.io/>
   - Furo theme for modern, clean appearance
   - Automated role documentation from individual READMEs
   - Just commands for documentation workflow (docs-build, docs-watch, etc.)
@@ -904,6 +1605,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Navidrome lifecycle roles: `navidrome_deploy`, `navidrome_backup`, `navidrome_restore`, and `navidrome_remove` (systemd binary install, Traefik basic auth, rescan timer, backup/restore tooling)
 
 ### Changed
+
 - `openclaw_deploy` now installs the official Codex app-server plugin at the
   OpenClaw-matching release and supports an
   explicit canonical `auth.order.openai` profile list so deployments can require
@@ -921,6 +1623,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit tests for OpenClaw metrics collector canary behavior and schema invariants (`tests/unit/test_openclaw_metrics_collector.py`)
 
 ### Fixed
+
 - `daybook_sessions_deploy` now uses an explicit boolean assertion for the S3
   session path check, keeping the role compatible with stricter Ansible
   conditional validation during real macOS deploys.
@@ -945,6 +1648,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wagtail_deploy` rsync deployments now exclude the managed `.env` file and collected `/staticfiles` directory, preventing failed deploys from clobbering runtime secrets or deleting WhiteNoise assets before `collectstatic` runs.
 
 ### Changed
+
 - `homeassistant_deploy` now performs its read-only Python, Home Assistant, and
   Matter Server inspection commands during Ansible check mode, preventing
   upgrade preflights from failing on missing skipped-command output, and its
@@ -979,7 +1683,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `nyxmon_deploy` systemd service now launches Granian instead of Gunicorn to match the upstream project
 - `ollama_install` stops any Homebrew-managed Ollama service by default, stops conflicting user-level `ollama serve` processes, and ensures the launchd service is running
 - Updated README.md with prominent link to ReadTheDocs
-- Updated repository URLs to https://github.com/ephes/ops-library
+- Updated repository URLs to <https://github.com/ephes/ops-library>
 - Modernized Python tooling: uv replaces traditional pip/venv workflow
 - Removed `docs-setup` command (auto-handled by uv)
 - `fastdeploy_deploy` now depends on `postgres_install` for database provisioning (removing the legacy inline PostgreSQL tasks)
@@ -999,6 +1703,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `openclaw_deploy` synthetic canary collection now sets explicit collector `TimeoutStartSec=600`, keeps dedicated canary session-id routing, and preserves stable canary metadata keys (`agent`, `timeout_seconds`, `session_id`) in payload defaults
 
 ### Fixed
+
 - `backup_metrics_endpoint` and `openclaw_deploy` collector timers now schedule from timer activation and collector completion, preventing post-reboot or post-restart `active (elapsed)` timers with no next run.
 - `mail_spam_deploy` now configures the Rspamd APT repository with a scoped `signed-by` keyring and removes the legacy global apt-key entry, avoiding apt-key deprecation warnings on Ubuntu 24.04.
 - `mastodon_backup` now restarts Mastodon services after failed backup payload capture, preventing `pg_dump` or media-copy failures from leaving services stopped.
@@ -1020,10 +1725,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.0.0] - 2025-10-09
 
 ### Breaking Changes
+
 - **REMOVED**: `python_app_systemd` role - Legacy manifest-driven deployment (use dedicated `*_deploy` roles instead)
 - **REMOVED**: `python_app_django` role - Legacy manifest-driven Django deployment (use dedicated `*_deploy` roles instead)
 
 ### Added
+
 - `homelab_deploy` role - Django/Granian deployment with dual router Traefik authentication
 - `homelab_remove` role - Safe removal with data preservation options
 - `traefik_deploy` role - Install and harden Traefik with Let's Encrypt automation, architecture auto-detection, and smoke tests
@@ -1038,6 +1745,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Standardized role README template
 
 ### Changed
+
 - Streamlined role documentation for consistency
 - Fixed systemd service template to remove `ProtectHome` for services in /home
 - Improved validation.yml to handle undefined variables gracefully in homelab_remove
@@ -1048,12 +1756,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `nyxmon_deploy` gained rsync support for additional source directories and smarter uv-based dependency management (pyproject validation, lock cleanup, mode-aware sync commands)
 
 ### Fixed
+
 - Template evaluation crashes in homelab_remove when home directory doesn't exist
 - Undefined variable errors in removal validation when database/media checks are skipped
 - Permission issues with Python virtual environments on redeployment
 
 ### Migration Guide
+
 If you were using `python_app_systemd` or `python_app_django`:
+
 1. Migrate to dedicated roles: `fastdeploy_deploy`, `nyxmon_deploy`, `homelab_deploy`, etc.
 2. Follow the role development guide to create custom deployment roles if needed
 3. The old `services.d/` manifest workflow is no longer supported
@@ -1061,6 +1772,7 @@ If you were using `python_app_systemd` or `python_app_django`:
 ## [1.0.0] - 2024-09-22
 
 ### Added
+
 - Initial release of ops-library collection
 - Core service deployment roles:
   - `fastdeploy_deploy` - Deploy FastDeploy platform
@@ -1082,19 +1794,25 @@ If you were using `python_app_systemd` or `python_app_django`:
   - `python_app_systemd` - Systemd service management (deprecated)
 
 ### Security
+
 - Strict validation of secrets to prevent "CHANGEME" placeholder values
 - SOPS/age encryption support for secrets management
 - Sudoers configuration for privilege separation
 
+<!-- markdownlint-enable MD024 -->
+
 ## Role Version History
 
 ### fastdeploy_deploy
+
 - **1.0.0** (2024-09-22): Initial release with rsync/git deployment support
 
 ### nyxmon_deploy
+
 - **1.0.0** (2024-09-22): Initial release with Telegram integration
 
 ### apt_upgrade_register
+
 - **1.0.0** (2024-09-22): Initial release with SSH key management
 
 [Unreleased]: https://github.com/ephes/ops-library/compare/v2.0.0...HEAD

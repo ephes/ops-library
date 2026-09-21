@@ -1,0 +1,84 @@
+---
+- name: Validate notifier removal inputs
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.system == 'Linux'
+      - daybook_voice_memo_attention_notifier_remove_confirm is boolean
+      - daybook_voice_memo_attention_notifier_remove_confirm
+      - daybook_voice_memo_attention_notifier_remove_public_key is match('^ssh-ed25519 [A-Za-z0-9+/]{68}([ ][A-Za-z0-9._@-]+)?$')
+      - daybook_voice_memo_attention_notifier_remove_public_key is not search('[\r\n]')
+    fail_msg: Explicitly confirm removal and supply the exact dedicated notifier public key.
+  no_log: true
+
+- name: Inspect notifier removal paths
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - /usr/local
+    - /usr/local/libexec
+    - /usr/local/libexec/daybook-attention-notify.py
+    - /etc/daybook-attention-notify.json
+    - /root/.ssh
+    - /root/.ssh/authorized_keys
+  register: daybook_voice_memo_attention_notifier_remove_paths
+
+- name: Reject linked notifier removal paths
+  ansible.builtin.assert:
+    that:
+      - not item.stat.islnk | default(false)
+    fail_msg: Notifier removal paths must not be symlinks.
+  loop: "{{ daybook_voice_memo_attention_notifier_remove_paths.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Define exact notifier key authorization for removal
+  ansible.builtin.set_fact:
+    daybook_voice_memo_attention_notifier_remove_key_options: >-
+      restrict,command="/usr/bin/python3 -I /usr/local/libexec/daybook-attention-notify.py --config /etc/daybook-attention-notify.json"
+    daybook_voice_memo_attention_notifier_remove_key: >-
+      {{ daybook_voice_memo_attention_notifier_remove_public_key.split()[:2] | join(' ') }}
+
+- name: Read existing notifier authorizations for removal
+  ansible.builtin.slurp:
+    src: /root/.ssh/authorized_keys
+  register: daybook_voice_memo_attention_notifier_remove_existing_keys
+  when: (daybook_voice_memo_attention_notifier_remove_paths.results | selectattr('item', 'equalto', '/root/.ssh/authorized_keys') | first).stat.exists
+  no_log: true
+
+- name: Require exact dedicated authorization before removing key or executable
+  ansible.builtin.assert:
+    that:
+      - >-
+        (daybook_voice_memo_attention_notifier_remove_existing_keys.content | default('') | b64decode).splitlines()
+        | map('trim') | reject('match', '^#')
+        | select('search', '(^|[ \t])ssh-ed25519[ \t]+' ~ (daybook_voice_memo_attention_notifier_remove_key.split()[1] | regex_escape) ~ '([ \t]|$)')
+        | reject('match', '^' ~ (daybook_voice_memo_attention_notifier_remove_key_options | regex_escape) ~ '[ \t]+ssh-ed25519[ \t]+' ~
+                 (daybook_voice_memo_attention_notifier_remove_key.split()[1] | regex_escape) ~ '([ \t]+.*)?$')
+        | list | length == 0
+      - >-
+        (daybook_voice_memo_attention_notifier_remove_existing_keys.content | default('') | b64decode).splitlines()
+        | map('trim') | reject('match', '^#')
+        | select('search', '(^|[ \t])daybook-attention-notifier([ \t]|$)')
+        | reject('match', '^' ~ (daybook_voice_memo_attention_notifier_remove_key_options | regex_escape) ~ '[ \t]+ssh-ed25519[ \t]+' ~
+                 (daybook_voice_memo_attention_notifier_remove_key.split()[1] | regex_escape) ~ '([ \t]+.*)?$')
+        | list | length == 0
+    fail_msg: Refusing to remove an administration key or another notifier identity.
+  no_log: true
+
+- name: Revoke only the exact dedicated notifier key
+  ansible.posix.authorized_key:
+    user: root
+    key: "{{ daybook_voice_memo_attention_notifier_remove_key }}"
+    exclusive: false
+    state: absent
+  when: (daybook_voice_memo_attention_notifier_remove_paths.results | selectattr('item', 'equalto', '/root/.ssh/authorized_keys') | first).stat.exists
+  no_log: true
+
+- name: Remove only notifier configuration and executable
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/daybook-attention-notify.json
+    - /usr/local/libexec/daybook-attention-notify.py

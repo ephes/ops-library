@@ -4,7 +4,7 @@ Deploy an authoritative BIND 9 DNS server with managed config files and raw zone
 
 ## Features
 
-- Installs BIND packages on Debian/Ubuntu.
+- Installs BIND packages on Debian 12/13 or Ubuntu.
 - Manages `named.conf`, `named.conf.options`, and `named.conf.local`.
 - Copies controller-managed zone files to `/etc/bind/`.
 - Supports transfer-backed (secondary) zones that named populates via AXFR/IXFR.
@@ -24,6 +24,11 @@ bind_zone_files_dir: "{{ (playbook_dir | realpath) | regex_replace('/playbooks.*
 bind_service_name: named
 bind_config_dir: /etc/bind
 bind_working_dir: /var/cache/bind
+bind_builtin_zones_file: >-
+  {{ bind_config_dir }}/{{ 'named.conf.root-hints'
+     if ansible_distribution == 'Debian'
+     and (ansible_distribution_major_version | int) >= 13
+     else 'named.conf.default-zones' }}
 
 # Options
 bind_recursion: true
@@ -66,6 +71,7 @@ bind_zone_transfer_backed_types:
 | `bind_zone_transfer_backed_types` | `[slave, secondary]` | Allow-list of zone types whose zone file is written by named from a zone transfer. Membership in this list is the single predicate that drives every secondary-specific behaviour (see below). |
 | `bind_working_dir` | `/var/cache/bind` | BIND's `directory`; also where a transfer-backed zone's relative `file` is resolved. |
 | `bind_config_dir` | `/etc/bind` | Where every other zone type's relative `file` is resolved, and where controller-managed zone files are installed. |
+| `bind_builtin_zones_file` | Debian 13: `named.conf.root-hints`; earlier releases: `named.conf.default-zones` | Packaged built-in/root-zone include appended to `named.conf`. Debian 13 removed `named.conf.default-zones`, so the release-aware default prevents a retained Debian 12 configuration from making BIND unconfigurable during an upgrade. Override only for a derivative with a different packaged layout. |
 | `bind_verify_retries` / `bind_verify_delay` | `12` / `5` | Retry budget for the post-deploy authoritative SOA check (default: up to ~60s **per zone**; the loop runs every zone before failing, so a wholly broken server takes retries × delay × zone-count to report). |
 | `bind_verify_zone_types` | `[master, primary, slave, secondary]` | Zone types the SOA check applies to. The check requires the `aa` flag, which non-authoritative types (`hint`, `forward`, `stub`) never set, so they are skipped rather than failed. |
 | `bind_tsig_keys` | `[]` | TSIG keys to render as top-level `key { ... };` stanzas. Each entry is `{name, algorithm, secret}`; `algorithm` is optional and defaults to `hmac-sha256`. **`secret` must come from SOPS or `ansible-vault`, never from `defaults` or `group_vars`.** Empty by default, and nothing is rendered or included while it is empty. |

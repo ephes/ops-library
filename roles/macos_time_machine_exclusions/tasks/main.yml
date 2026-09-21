@@ -1,0 +1,145 @@
+---
+- name: Validate Time Machine exclusion configuration
+  ansible.builtin.assert:
+    that:
+      - ansible_system == 'Darwin'
+      - macos_time_machine_exclusions_user is string
+      - macos_time_machine_exclusions_user | length > 0
+      - macos_time_machine_exclusions_group is string
+      - macos_time_machine_exclusions_group | length > 0
+      - macos_time_machine_exclusions_home is string
+      - macos_time_machine_exclusions_home.startswith('/')
+      - ansible_user_id == macos_time_machine_exclusions_user
+      - ansible_env.HOME == macos_time_machine_exclusions_home
+      - macos_time_machine_exclusions_paths is sequence
+      - macos_time_machine_exclusions_paths is not string
+      - macos_time_machine_exclusions_paths is not mapping
+      - macos_time_machine_exclusions_hour | int >= 0
+      - macos_time_machine_exclusions_hour | int <= 23
+      - macos_time_machine_exclusions_minute | int >= 0
+      - macos_time_machine_exclusions_minute | int <= 59
+    fail_msg: >-
+      Invalid macOS Time Machine exclusion configuration. Run this user-scoped
+      role without become as the configured user, and use that user's home.
+  when: macos_time_machine_exclusions_enabled | bool
+
+- name: Validate Time Machine exclusion paths
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item.startswith('/')
+      - item | length > 1
+    fail_msg: "Time Machine exclusions must be non-root absolute paths"
+  loop: "{{ macos_time_machine_exclusions_paths }}"
+  when: macos_time_machine_exclusions_enabled | bool
+
+- name: Get Time Machine exclusion user ID
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/id
+      - -u
+      - "{{ macos_time_machine_exclusions_user }}"
+  register: _macos_time_machine_exclusions_uid
+  changed_when: false
+  when: macos_time_machine_exclusions_enabled | bool
+
+- name: Ensure Time Machine exclusion application directory exists
+  ansible.builtin.file:
+    path: "{{ macos_time_machine_exclusions_script_path | dirname }}"
+    state: directory
+    mode: "0755"
+    owner: "{{ macos_time_machine_exclusions_user }}"
+    group: "{{ macos_time_machine_exclusions_group }}"
+  when: macos_time_machine_exclusions_enabled | bool
+
+- name: Ensure standard Time Machine exclusion parent directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ macos_time_machine_exclusions_user }}"
+    group: "{{ macos_time_machine_exclusions_group }}"
+  loop:
+    - "{{ macos_time_machine_exclusions_plist_path | dirname }}"
+    - "{{ macos_time_machine_exclusions_log_path | dirname }}"
+  when: macos_time_machine_exclusions_enabled | bool
+
+- name: Install Time Machine exclusion script
+  ansible.builtin.template:
+    src: apply-exclusions.zsh.j2
+    dest: "{{ macos_time_machine_exclusions_script_path }}"
+    mode: "0755"
+    owner: "{{ macos_time_machine_exclusions_user }}"
+    group: "{{ macos_time_machine_exclusions_group }}"
+  register: _macos_time_machine_exclusions_script
+  when: macos_time_machine_exclusions_enabled | bool
+
+- name: Install Time Machine exclusion LaunchAgent
+  ansible.builtin.template:
+    src: time-machine-exclusions.plist.j2
+    dest: "{{ macos_time_machine_exclusions_plist_path }}"
+    mode: "0644"
+    owner: "{{ macos_time_machine_exclusions_user }}"
+    group: "{{ macos_time_machine_exclusions_group }}"
+  register: _macos_time_machine_exclusions_plist
+  when: macos_time_machine_exclusions_enabled | bool
+
+- name: Inspect Time Machine exclusion LaunchAgent
+  ansible.builtin.command:
+    argv:
+      - /bin/launchctl
+      - print
+      - >-
+        gui/{{ _macos_time_machine_exclusions_uid.stdout | trim }}/{{ macos_time_machine_exclusions_label }}
+  register: _macos_time_machine_exclusions_launchd
+  changed_when: false
+  failed_when: false
+  when: macos_time_machine_exclusions_enabled | bool
+
+- name: Unload changed Time Machine exclusion LaunchAgent
+  ansible.builtin.command:
+    argv:
+      - /bin/launchctl
+      - bootout
+      - >-
+        gui/{{ _macos_time_machine_exclusions_uid.stdout | trim }}/{{ macos_time_machine_exclusions_label }}
+  register: _macos_time_machine_exclusions_bootout
+  changed_when: _macos_time_machine_exclusions_bootout.rc == 0
+  failed_when: false
+  when:
+    - macos_time_machine_exclusions_enabled | bool
+    - _macos_time_machine_exclusions_launchd.rc == 0
+    - >-
+      _macos_time_machine_exclusions_script.changed
+      or _macos_time_machine_exclusions_plist.changed
+
+- name: Load Time Machine exclusion LaunchAgent
+  ansible.builtin.command:
+    argv:
+      - /bin/launchctl
+      - bootstrap
+      - "gui/{{ _macos_time_machine_exclusions_uid.stdout | trim }}"
+      - "{{ macos_time_machine_exclusions_plist_path }}"
+  register: _macos_time_machine_exclusions_bootstrap
+  retries: 5
+  delay: 1
+  until: _macos_time_machine_exclusions_bootstrap.rc == 0
+  when:
+    - macos_time_machine_exclusions_enabled | bool
+    - >-
+      _macos_time_machine_exclusions_launchd.rc != 0
+      or _macos_time_machine_exclusions_script.changed
+      or _macos_time_machine_exclusions_plist.changed
+
+- name: Apply configured Time Machine exclusions on unchanged loaded agent
+  ansible.builtin.command:
+    argv:
+      - "{{ macos_time_machine_exclusions_script_path }}"
+  register: _macos_time_machine_exclusions_apply
+  changed_when: "'changed=true' in _macos_time_machine_exclusions_apply.stdout"
+  when:
+    - macos_time_machine_exclusions_enabled | bool
+    # A new or reloaded agent runs the script through RunAtLoad. Only invoke it
+    # here when bootstrap did not run, avoiding two concurrent tmutil passes.
+    - _macos_time_machine_exclusions_launchd.rc == 0
+    - not _macos_time_machine_exclusions_script.changed
+    - not _macos_time_machine_exclusions_plist.changed

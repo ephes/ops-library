@@ -41,7 +41,7 @@ wagtail_git_repo: ""
 wagtail_git_version: "main"
 
 # Python/uv configuration
-wagtail_python_version: "3.14.6"
+wagtail_python_version: "3.14.7"
 wagtail_global_python: "python3.14"
 wagtail_uv_path: "/usr/local/bin/uv"
 wagtail_venv_path: "{{ wagtail_site_path }}/.venv"
@@ -116,6 +116,14 @@ wagtail_asset_build_commands: []
 wagtail_asset_build_workdir: "{{ wagtail_site_path }}"
 wagtail_asset_build_env: {}
 wagtail_staticfiles_required_paths: []
+
+# Not every site keeps media in S3 behind CloudFront or reports to Sentry.
+# Setting either to false skips the corresponding secret validation and leaves
+# those names out of the environment file entirely - deliberately not empty
+# values, because an empty SENTRY_DSN reads as a configured one in some SDK
+# versions.
+wagtail_require_object_storage: true
+wagtail_require_sentry: true
 
 # Environment values (required secrets)
 # wagtail_django_secret_key: ""

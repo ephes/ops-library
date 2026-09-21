@@ -24,6 +24,56 @@
     fail_msg: "Each netplan_config_interfaces entry needs name and dhcp4/dhcp6/addresses."
   loop: "{{ netplan_config_interfaces }}"
 
+- name: Validate route guard managed paths
+  ansible.builtin.assert:
+    that:
+      - netplan_config_route_guard_script_path is string
+      - netplan_config_route_guard_script_path | length > 1
+      - netplan_config_route_guard_script_path is match('^/')
+      - "'..' not in netplan_config_route_guard_script_path.split('/')"
+      - netplan_config_route_guard_service_name is string
+      - netplan_config_route_guard_service_name is match('^[A-Za-z0-9_.@-]+$')
+      - netplan_config_route_guard_service_name is search('[A-Za-z0-9]')
+      - netplan_config_route_guard_service_name not in ['.', '..']
+    fail_msg: >-
+      The route guard script must be a safe absolute path and the service name
+      must be a non-empty systemd unit-name fragment without path separators.
+
+- name: Validate route guard configuration
+  ansible.builtin.assert:
+    that:
+      - netplan_config_renderer | lower == "networkd"
+      - netplan_config_route_guard_interfaces is sequence
+      - netplan_config_route_guard_interfaces is not string
+      - netplan_config_route_guard_interfaces | length > 0
+      - >-
+        netplan_config_route_guard_interfaces
+        | difference(netplan_config_interfaces | map(attribute='name') | list)
+        | length == 0
+      - netplan_config_route_guard_interval_sec | int >= 15
+      - netplan_config_route_guard_confirmation_delay_sec | int >= 0
+      - netplan_config_route_guard_confirmation_delay_sec | int <= 60
+      - netplan_config_route_guard_recovery_delay_sec | int >= 0
+      - netplan_config_route_guard_recovery_delay_sec | int <= 300
+      - netplan_config_apply | bool
+    fail_msg: >-
+      The route guard requires the networkd renderer, at least one interface,
+      names drawn from netplan_config_interfaces, an interval of at least 15
+      seconds, a confirmation delay from 0 to 60 seconds, and a recovery delay
+      from 0 to 300 seconds, and netplan_config_apply=true so the guard cannot
+      activate configuration that an operator intentionally left unapplied.
+  when: netplan_config_route_guard_enabled | default(false) | bool
+
+- name: Validate guarded interface names
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item | length > 0
+      - item is match('^[A-Za-z0-9_.:-]+$')
+    fail_msg: "Every route guard interface must be a valid non-empty interface name."
+  loop: "{{ netplan_config_route_guard_interfaces }}"
+  when: netplan_config_route_guard_enabled | default(false) | bool
+
 - name: Reject DHCP interfaces with manual default routes
   ansible.builtin.assert:
     that:
@@ -47,13 +97,31 @@
     state: directory
     mode: "0755"
 
+- name: Inspect existing route guard timer before network changes
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ netplan_config_route_guard_service_name }}.timer"
+  register: _netplan_route_guard_timer
+
+- name: Ensure route guard runtime directory exists before network changes
+  ansible.builtin.file:
+    path: "/run/{{ netplan_config_route_guard_service_name }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  when: >-
+    (netplan_config_route_guard_enabled | default(false) | bool)
+    or (_netplan_route_guard_timer.stat.exists | default(false))
+
 - name: Remove conflicting netplan files
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
   loop: "{{ netplan_config_cleanup_files }}"
   when: netplan_config_cleanup_files | length > 0
-  notify: "Apply netplan"
+  notify:
+    - "Apply netplan"
+    - "Restart netplan route guard timer"
 
 - name: Deploy netplan configuration
   ansible.builtin.template:
@@ -62,7 +130,9 @@
     owner: root
     group: root
     mode: "0600"
-  notify: "Apply netplan"
+  notify:
+    - "Apply netplan"
+    - "Restart netplan route guard timer"
 
 - name: Flush netplan handlers before interface reconfigure
   ansible.builtin.meta: flush_handlers
@@ -71,11 +141,220 @@
     - netplan_config_reconfigure_interfaces | bool
     - netplan_config_renderer | lower == "networkd"
 
-- name: Reconfigure networkd-managed interfaces after apply
-  ansible.builtin.command: "networkctl reconfigure {{ item.name }}"
+- name: Reconfigure networkd-managed interfaces under the route guard lock
+  ansible.builtin.command:
+    argv:
+      - flock
+      - --exclusive
+      - "/run/{{ netplan_config_route_guard_service_name }}/lock"
+      - networkctl
+      - reconfigure
+      - "{{ item.name }}"
   loop: "{{ netplan_config_interfaces }}"
   when:
     - netplan_config_apply | bool
     - netplan_config_reconfigure_interfaces | bool
     - netplan_config_renderer | lower == "networkd"
+    - >-
+      (netplan_config_route_guard_enabled | default(false) | bool)
+      or (_netplan_route_guard_timer.stat.exists | default(false))
   changed_when: false
+
+- name: Reconfigure networkd-managed interfaces without a route guard lock
+  ansible.builtin.command:
+    argv:
+      - networkctl
+      - reconfigure
+      - "{{ item.name }}"
+  loop: "{{ netplan_config_interfaces }}"
+  when:
+    - netplan_config_apply | bool
+    - netplan_config_reconfigure_interfaces | bool
+    - netplan_config_renderer | lower == "networkd"
+    - not (
+        (netplan_config_route_guard_enabled | default(false) | bool)
+        or (_netplan_route_guard_timer.stat.exists | default(false))
+      )
+  changed_when: false
+
+- name: Inspect route guard installation targets
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ netplan_config_route_guard_script_path }}"
+    - "/etc/systemd/system/{{ netplan_config_route_guard_service_name }}.service"
+    - "/etc/systemd/system/{{ netplan_config_route_guard_service_name }}.timer"
+  register: _netplan_route_guard_install_targets
+  when: netplan_config_route_guard_enabled | default(false) | bool
+
+- name: Read existing route guard installation targets
+  ansible.builtin.slurp:
+    src: "{{ item.item }}"
+  loop: "{{ _netplan_route_guard_install_targets.results }}"
+  register: _netplan_route_guard_install_target_contents
+  when:
+    - netplan_config_route_guard_enabled | default(false) | bool
+    - item.stat.exists
+    - item.stat.isreg
+    - not item.stat.islnk
+
+- name: Refuse to overwrite unmanaged route guard installation targets
+  ansible.builtin.assert:
+    that:
+      - >-
+        not item.item.stat.exists
+        or (
+          item.item.stat.isreg
+          and not item.item.stat.islnk
+          and 'Managed by local.ops_library.netplan_config'
+              in ((item.content | default('')) | b64decode)
+        )
+    fail_msg: >-
+      Refusing to overwrite {{ item.item.item }} because it is not an ordinary
+      file carrying the netplan_config ownership marker.
+  loop: "{{ _netplan_route_guard_install_target_contents.results }}"
+  when: netplan_config_route_guard_enabled | default(false) | bool
+
+- name: Deploy default-route recovery guard
+  ansible.builtin.template:
+    src: netplan-route-guard.sh.j2
+    dest: "{{ netplan_config_route_guard_script_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when: netplan_config_route_guard_enabled | default(false) | bool
+
+- name: Deploy default-route recovery service
+  ansible.builtin.template:
+    src: netplan-route-guard.service.j2
+    dest: "/etc/systemd/system/{{ netplan_config_route_guard_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  when: netplan_config_route_guard_enabled | default(false) | bool
+  notify: "Reload systemd for netplan route guard"
+
+- name: Deploy default-route recovery timer
+  ansible.builtin.template:
+    src: netplan-route-guard.timer.j2
+    dest: "/etc/systemd/system/{{ netplan_config_route_guard_service_name }}.timer"
+    owner: root
+    group: root
+    mode: "0644"
+  when: netplan_config_route_guard_enabled | default(false) | bool
+  notify:
+    - "Reload systemd for netplan route guard"
+    - "Restart netplan route guard timer"
+
+- name: Enable and start default-route recovery timer
+  ansible.builtin.systemd:
+    name: "{{ netplan_config_route_guard_service_name }}.timer"
+    enabled: true
+    state: started
+    daemon_reload: true
+  when:
+    - netplan_config_route_guard_enabled | default(false) | bool
+    - not ansible_check_mode
+
+- name: Inspect disabled default-route recovery service
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ netplan_config_route_guard_service_name }}.service"
+  register: _netplan_route_guard_service
+  when: not (netplan_config_route_guard_enabled | default(false) | bool)
+
+- name: Read disabled default-route recovery timer ownership marker
+  ansible.builtin.slurp:
+    src: "/etc/systemd/system/{{ netplan_config_route_guard_service_name }}.timer"
+  register: _netplan_route_guard_timer_content
+  when:
+    - not (netplan_config_route_guard_enabled | default(false) | bool)
+    - _netplan_route_guard_timer.stat.exists
+
+- name: Read disabled default-route recovery service ownership marker
+  ansible.builtin.slurp:
+    src: "/etc/systemd/system/{{ netplan_config_route_guard_service_name }}.service"
+  register: _netplan_route_guard_service_content
+  when:
+    - not (netplan_config_route_guard_enabled | default(false) | bool)
+    - _netplan_route_guard_service.stat.exists
+
+- name: Refuse to remove unmanaged route guard units
+  ansible.builtin.assert:
+    that:
+      - >-
+        not _netplan_route_guard_timer.stat.exists
+        or 'Managed by local.ops_library.netplan_config'
+        in (_netplan_route_guard_timer_content.content | b64decode)
+      - >-
+        not _netplan_route_guard_service.stat.exists
+        or 'Managed by local.ops_library.netplan_config'
+        in (_netplan_route_guard_service_content.content | b64decode)
+    fail_msg: >-
+      Refusing to stop or remove route guard units without the netplan_config
+      ownership marker.
+  when: not (netplan_config_route_guard_enabled | default(false) | bool)
+
+- name: Inspect disabled default-route recovery script
+  ansible.builtin.stat:
+    path: "{{ netplan_config_route_guard_script_path }}"
+  register: _netplan_route_guard_script
+  when: not (netplan_config_route_guard_enabled | default(false) | bool)
+
+- name: Read disabled default-route recovery script ownership marker
+  ansible.builtin.slurp:
+    src: "{{ netplan_config_route_guard_script_path }}"
+  register: _netplan_route_guard_script_content
+  when:
+    - not (netplan_config_route_guard_enabled | default(false) | bool)
+    - _netplan_route_guard_script.stat.exists
+
+- name: Refuse to remove an unmanaged route guard script
+  ansible.builtin.assert:
+    that:
+      - >-
+        'Managed by local.ops_library.netplan_config'
+        in (_netplan_route_guard_script_content.content | b64decode)
+    fail_msg: >-
+      Refusing to remove {{ netplan_config_route_guard_script_path }} because it
+      does not carry the netplan_config ownership marker.
+  when:
+    - not (netplan_config_route_guard_enabled | default(false) | bool)
+    - _netplan_route_guard_script.stat.exists
+
+- name: Stop and disable default-route recovery timer
+  ansible.builtin.systemd:
+    name: "{{ netplan_config_route_guard_service_name }}.timer"
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  when:
+    - not (netplan_config_route_guard_enabled | default(false) | bool)
+    - _netplan_route_guard_timer.stat.exists
+    - not ansible_check_mode
+
+- name: Stop disabled default-route recovery service
+  ansible.builtin.systemd:
+    name: "{{ netplan_config_route_guard_service_name }}.service"
+    state: stopped
+  when:
+    - not (netplan_config_route_guard_enabled | default(false) | bool)
+    - _netplan_route_guard_service.stat.exists
+    - not ansible_check_mode
+
+- name: Remove disabled default-route recovery guard
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "/etc/systemd/system/{{ netplan_config_route_guard_service_name }}.service"
+    - "/etc/systemd/system/{{ netplan_config_route_guard_service_name }}.timer"
+  when: not (netplan_config_route_guard_enabled | default(false) | bool)
+  notify: "Reload systemd for netplan route guard"
+
+- name: Remove disabled owned default-route recovery script
+  ansible.builtin.file:
+    path: "{{ netplan_config_route_guard_script_path }}"
+    state: absent
+  when:
+    - not (netplan_config_route_guard_enabled | default(false) | bool)
+    - _netplan_route_guard_script.stat.exists

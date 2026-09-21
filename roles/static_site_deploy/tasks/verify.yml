@@ -1,0 +1,46 @@
+---
+- name: verify | Wait for loopback static service
+  ansible.builtin.uri:
+    url: "http://{{ static_site_bind_host }}:{{ static_site_port }}/"
+    return_content: true
+    status_code: 200
+  register: static_site_local_healthcheck
+  retries: 10
+  delay: 1
+  until: static_site_local_healthcheck.status == 200
+  when: not ansible_check_mode
+
+- name: verify | Require expected index content
+  ansible.builtin.assert:
+    that:
+      - static_site_healthcheck_contains in static_site_local_healthcheck.content
+    fail_msg: "Static site index did not contain the configured health-check marker."
+  when:
+    - not ansible_check_mode
+    - static_site_healthcheck_contains | length > 0
+
+- name: verify | Wait for public HTTPS route
+  ansible.builtin.uri:
+    url: "https://{{ static_site_host }}/"
+    return_content: true
+    status_code: 200
+    validate_certs: true
+  register: static_site_public_healthcheck
+  retries: "{{ static_site_public_healthcheck_retries }}"
+  delay: "{{ static_site_public_healthcheck_delay }}"
+  until: static_site_public_healthcheck.status == 200
+  when:
+    - not ansible_check_mode
+    - static_site_traefik_enabled | bool
+    - static_site_verify_public | bool
+
+- name: verify | Require expected public index content
+  ansible.builtin.assert:
+    that:
+      - static_site_healthcheck_contains in static_site_public_healthcheck.content
+    fail_msg: "Public static site did not contain the configured health-check marker."
+  when:
+    - not ansible_check_mode
+    - static_site_traefik_enabled | bool
+    - static_site_verify_public | bool
+    - static_site_healthcheck_contains | length > 0

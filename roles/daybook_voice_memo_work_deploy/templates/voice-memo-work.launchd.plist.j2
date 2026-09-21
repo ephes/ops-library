@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>{{ daybook_voice_memo_work_launchd_label | e }}</string>
+  <key>ProgramArguments</key><array>
+    <string>{{ daybook_voice_memo_work_cli | e }}</string>
+    <string>work</string><string>--state</string><string>{{ daybook_voice_memo_work_state_path | e }}</string>
+    <string>memos</string><string>--imported-since</string><string>{{ daybook_voice_memo_work_effective_cutoff | e }}</string>
+    <string>--provider</string><string>{{ daybook_voice_memo_work_provider | e }}</string>
+    <string>--cwd</string><string>{{ daybook_voice_memo_work_cwd | e }}</string>
+    <string>--config</string><string>{{ daybook_voice_memo_work_notify_config_path | e }}</string>
+    <string>--notification-state</string><string>{{ daybook_voice_memo_work_notification_state_path | e }}</string>
+{% if daybook_voice_memo_work_provider == 'codex' %}
+    <string>--socket</string><string>{{ daybook_voice_memo_work_codex_socket | e }}</string>
+    <string>--codex-home</string><string>{{ daybook_voice_memo_work_codex_home | e }}</string>
+{% endif %}
+  </array>
+  <key>WorkingDirectory</key><string>{{ daybook_voice_memo_work_cwd | e }}</string>
+  <key>LimitLoadToSessionType</key><string>Aqua</string>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>{{ daybook_voice_memo_work_interval_seconds | int }}</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>Umask</key><integer>63</integer>
+  <key>StandardOutPath</key><string>{{ daybook_voice_memo_work_stdout_log | e }}</string>
+  <key>StandardErrorPath</key><string>{{ daybook_voice_memo_work_stderr_log | e }}</string>
+  <key>EnvironmentVariables</key><dict>
+    <key>HOME</key><string>{{ daybook_voice_memo_work_service_home | e }}</string>
+    <key>USER</key><string>{{ daybook_voice_memo_work_service_user | e }}</string>
+    <key>LOGNAME</key><string>{{ daybook_voice_memo_work_service_user | e }}</string>
+    <key>PATH</key><string>{{ daybook_voice_memo_work_path | e }}</string>
+    <key>AWS_SHARED_CREDENTIALS_FILE</key><string>{{ daybook_voice_memo_work_aws_shared_credentials_file | e }}</string>
+    <key>AWS_PROFILE</key><string>{{ daybook_voice_memo_work_aws_profile | e }}</string>
+    <key>AWS_DEFAULT_PROFILE</key><string>{{ daybook_voice_memo_work_aws_profile | e }}</string>
+    <key>AWS_CONFIG_FILE</key><string>/dev/null</string>
+    <key>AWS_ACCESS_KEY_ID</key><string></string>
+    <key>AWS_SECRET_ACCESS_KEY</key><string></string>
+    <key>AWS_SESSION_TOKEN</key><string></string>
+    <key>AWS_SECURITY_TOKEN</key><string></string>
+    <key>AWS_WEB_IDENTITY_TOKEN_FILE</key><string></string>
+    <key>AWS_ROLE_ARN</key><string></string>
+    <key>AWS_ROLE_SESSION_NAME</key><string></string>
+    <key>AWS_ENDPOINT_URL_S3</key><string>{{ daybook_voice_memo_work_s3_endpoint_url | e }}</string>
+    <key>AWS_DEFAULT_REGION</key><string>{{ daybook_voice_memo_work_aws_region | e }}</string>
+  </dict>
+</dict></plist>

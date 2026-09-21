@@ -4,7 +4,8 @@ Deploys Vector on a producer host and ships journald logs to Logyard/Loki.
 
 ## Features
 
-- installs Vector from the official apt repository
+- installs Vector from the official suite-independent apt repository on Debian
+  12/13
 - reads from journald first
 - normalizes logs into a compact JSON payload
 - keeps Loki labels low-cardinality and stable

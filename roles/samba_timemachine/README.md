@@ -29,7 +29,7 @@ samba_tm_users:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `samba_tm_share_name` | `timemachine` | Share name in Finder |
-| `samba_tm_max_size` | `6T` | Time Machine quota |
+| `samba_tm_max_size` | `6T` | Approximate Time Machine share limit derived from sparsebundle band allocation |
 | `samba_tm_browseable` | `true` | Show in network browser |
 | `samba_tm_workgroup` | `WORKGROUP` | SMB workgroup |
 | `samba_tm_server_string` | `Time Machine Backup Server` | Server description |
@@ -140,12 +140,22 @@ The role configures Samba with Apple's vfs_fruit module for optimal Time Machine
 - **fruit:model = MacSamba**: Shows Samba server icon in Finder
 - **fruit:posix_rename = yes**: Enables atomic renames
 - **fruit:time machine = yes**: Enables Time Machine protocol extensions
-- **fruit:time machine max size**: Enforces quota at Samba level
+- **fruit:time machine max size**: Advertises an approximate share limit based
+  on the total number and size of sparsebundle bands in the share
 
 This configuration:
 - Avoids AppleDouble/._file issues
 - Provides proper macOS metadata handling
-- Enforces Time Machine quota independently of ZFS
+- Lets macOS react to an approximate share limit independently of ZFS
+
+`fruit:time machine max size` does not resize the virtual disk described by a
+sparsebundle's `Info.plist`; Disk Utility can therefore show (for example) a
+16 TB APFS container while the SMB destination has a 6 TB maximum. Samba also
+counts allocated bands across all sparsebundles in the share. ZFS snapshots can
+retain blocks deleted from those bundles without increasing Samba's band-count
+estimate. For safe operation, pair this setting with a ZFS dataset `refquota`,
+a snapshot-inclusive parent quota that reserves pool headroom, and alerts on
+both physical pool free bytes and dataset availability.
 
 ## Dependencies
 

@@ -1,0 +1,27 @@
+---
+- name: service | Install static HTTP server
+  ansible.builtin.template:
+    src: static-site-httpd.py.j2
+    dest: "{{ static_site_server_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: static site | Restart static site
+
+- name: service | Install static site systemd unit
+  ansible.builtin.template:
+    src: static-site.service.j2
+    dest: "{{ static_site_systemd_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - static site | Reload systemd
+    - static site | Restart static site
+
+- name: service | Enable and start static site service
+  ansible.builtin.systemd:
+    name: "{{ static_site_systemd_unit_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true

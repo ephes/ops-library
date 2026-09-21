@@ -1,10 +1,10 @@
 ---
-- name: Ensure Takahe group exists
+- name: user | Ensure Takahe group exists
   ansible.builtin.group:
     name: "{{ takahe_group }}"
     state: present
 
-- name: Ensure Takahe user exists
+- name: user | Ensure Takahe user exists
   ansible.builtin.user:
     name: "{{ takahe_user }}"
     group: "{{ takahe_group }}"

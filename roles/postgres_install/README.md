@@ -15,7 +15,8 @@ Install and configure PostgreSQL from the official PGDG repository (or distro pa
 ## Requirements
 
 - Ansible `2.15+`
-- Debian 11+/Ubuntu 20.04+ with systemd
+- Debian 11–13/Ubuntu 20.04+ with systemd. Debian 13 is exercised with
+  PostgreSQL 17 in the role's Molecule scenario.
 - Target host must allow the `postgres_install_admin_user` (default `postgres`) to manage databases via peer auth or password
 - Ansible collection `community.postgresql` (install via `ansible-galaxy collection install community.postgresql`)
 

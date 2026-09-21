@@ -1,4 +1,10 @@
 ---
+- name: Guard legacy Traefik writes
+  ansible.builtin.import_role:
+    name: traefik_deploy
+    tasks_from: guard
+  tags: always
+
 - name: Validate inputs
   ansible.builtin.assert:
     that:

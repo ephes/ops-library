@@ -16,27 +16,128 @@
           - tailscale_metrics_endpoint_auth_password is defined
           - tailscale_metrics_endpoint_auth_password != "CHANGE_ME"
           - tailscale_metrics_endpoint_auth_password | length > 0
+          - tailscale_metrics_endpoint_ip_address_allow is sequence
+          - tailscale_metrics_endpoint_ip_address_allow is not string
+          - tailscale_metrics_endpoint_ip_address_allow | length > 0
+          - tailscale_metrics_endpoint_default_route_interface is string
+          - >-
+            tailscale_metrics_endpoint_default_route_interface | length == 0
+            or tailscale_metrics_endpoint_default_route_interface is match('^[A-Za-z0-9_.:-]+$')
           - tailscale_metrics_endpoint_warning_days | int > 0
           - tailscale_metrics_endpoint_critical_days | int > 0
           - tailscale_metrics_endpoint_warning_days | int >= tailscale_metrics_endpoint_critical_days | int
+          - >-
+            not (tailscale_metrics_endpoint_require_default_ipv4_route | bool)
+            or (tailscale_metrics_endpoint_default_route_interface | trim | length > 0)
         fail_msg: >-
-          tailscale_metrics_endpoint auth values or thresholds are invalid.
-          Set auth user/password and keep warning_days >= critical_days > 0.
+          tailscale_metrics_endpoint auth, allow-list, route probe, or thresholds are invalid.
+          Set auth user/password, keep warning_days >= critical_days > 0, and name
+          the default-route interface when the route probe is required.
+
+    - name: Validate IP allow-list entries
+      ansible.builtin.assert:
+        that:
+          - item is string
+          - item | trim | length > 0
+          - item == item | trim
+          - item is match('^(localhost|link-local|multicast|[0-9A-Fa-f:.]+(/[0-9]{1,3})?)$')
+          - item | trim | lower not in ['any', '0.0.0.0/0', '::/0']
+          - >-
+            '/' not in item
+            or (item.split('/') | last | int) > 0
+          - >-
+            '/' not in item
+            or (
+              (':' in item and (item.split('/') | last | int) <= 128)
+              or (':' not in item and (item.split('/') | last | int) <= 32)
+            )
+        fail_msg: >-
+          Every IPAddressAllow entry must be a single IP/CIDR or supported local
+          keyword without whitespace. Prefixes must be 1-32 for IPv4 or 1-128
+          for IPv6; world-open prefixes are forbidden.
+      loop: "{{ tailscale_metrics_endpoint_ip_address_allow }}"
+
+    - name: Validate IP allow-list networks
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - >-
+            import ipaddress, sys;
+            network = ipaddress.ip_network(sys.argv[1], strict=False);
+            minimum = 8 if network.version == 4 else 32;
+            sys.exit(0 if network.prefixlen >= minimum else 1)
+          - "{{ item }}"
+      delegate_to: localhost
+      become: false
+      check_mode: false
+      changed_when: false
+      register: _tailscale_metrics_allow_network_validation
+      failed_when: _tailscale_metrics_allow_network_validation.rc != 0
+      loop: "{{ tailscale_metrics_endpoint_ip_address_allow }}"
+      when: item not in ['localhost', 'link-local', 'multicast']
 
     - name: Validate tailscale binary exists
       ansible.builtin.stat:
         path: "{{ tailscale_metrics_endpoint_tailscale_bin }}"
       register: _tailscale_metrics_bin_stat
 
+    - name: Validate ip binary exists
+      ansible.builtin.stat:
+        path: "{{ tailscale_metrics_endpoint_ip_bin }}"
+      register: _tailscale_metrics_ip_bin_stat
+      when: tailscale_metrics_endpoint_require_default_ipv4_route | bool
+
     - name: Fail if tailscale binary not found
       ansible.builtin.fail:
         msg: "Tailscale binary not found at {{ tailscale_metrics_endpoint_tailscale_bin }}."
       when: not _tailscale_metrics_bin_stat.stat.exists
 
+    - name: Fail if ip binary not found
+      ansible.builtin.fail:
+        msg: "ip binary not found at {{ tailscale_metrics_endpoint_ip_bin }}."
+      when:
+        - tailscale_metrics_endpoint_require_default_ipv4_route | bool
+        - not _tailscale_metrics_ip_bin_stat.stat.exists
+
     - name: Install dependencies for Tailscale metrics endpoint
       ansible.builtin.package:
         name: "{{ tailscale_metrics_endpoint_packages }}"
         state: present
+
+    - name: Validate cgroup IP filter verification prerequisites
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution is defined
+          - ansible_kernel is defined
+        fail_msg: >-
+          Effective IP filter verification requires gathered distribution and
+          kernel facts. Enable gather_facts for this play.
+      when: tailscale_metrics_endpoint_require_effective_ip_filter | bool
+
+    - name: Install cgroup IP filter verification tools
+      ansible.builtin.package:
+        name: >-
+          {{
+            [
+              'linux-tools-common',
+              'linux-tools-generic',
+              'linux-tools-' ~ ansible_kernel,
+            ]
+            if ansible_distribution == 'Ubuntu'
+            else ['bpftool']
+          }}
+        state: present
+      when: tailscale_metrics_endpoint_require_effective_ip_filter | bool
+
+    - name: Validate bpftool executable
+      ansible.builtin.command:
+        argv:
+          - "{{ tailscale_metrics_endpoint_bpftool_bin }}"
+          - version
+      register: _tailscale_metrics_endpoint_bpftool_version
+      changed_when: false
+      when: tailscale_metrics_endpoint_require_effective_ip_filter | bool
 
     - name: Create metrics system group
       ansible.builtin.group:
@@ -164,9 +265,177 @@
         state: started
         daemon_reload: true
 
+    # `state: started` is a no-op on a timer that is already `active` - even
+    # when that timer is `active (elapsed)` with no next elapse, which is the
+    # state a monotonic-only timer can retain after its one-shot boot trigger
+    # has fired and service activation history is unavailable. In that state
+    # the collector never runs again, the payload freezes, and every `summary`
+    # assertion keeps passing against a stale snapshot. Detect it explicitly
+    # and re-arm.
+    - name: Read collector timer next monotonic elapse
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - "{{ tailscale_metrics_endpoint_timer_name }}.timer"
+          - --property=NextElapseUSecMonotonic
+          - --value
+      register: tailscale_metrics_endpoint_timer_monotonic
+      changed_when: false
+      check_mode: false
+      when: not ansible_check_mode
+
+    - name: Read collector timer next realtime elapse
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - "{{ tailscale_metrics_endpoint_timer_name }}.timer"
+          - --property=NextElapseUSecRealtime
+          - --value
+      register: tailscale_metrics_endpoint_timer_realtime
+      changed_when: false
+      check_mode: false
+      when: not ansible_check_mode
+
+    - name: Determine whether the collector timer is armed
+      when: not ansible_check_mode
+      ansible.builtin.set_fact:
+        tailscale_metrics_endpoint_timer_armed: >-
+          {{
+            (
+              tailscale_metrics_endpoint_timer_realtime.stdout | trim | lower
+              not in ['', 'infinity', '0', 'n/a']
+            )
+            or (
+              tailscale_metrics_endpoint_timer_monotonic.stdout | trim | lower
+              not in ['', 'infinity', '0', 'n/a']
+            )
+          }}
+
+    - name: Re-arm a collector timer that elapsed without a next trigger
+      ansible.builtin.systemd:
+        name: "{{ tailscale_metrics_endpoint_timer_name }}.timer"
+        state: restarted
+      when:
+        - not ansible_check_mode
+        - not (tailscale_metrics_endpoint_timer_armed | bool)
+
+    # Re-read BOTH properties and apply the same predicate used above. A timer
+    # armed only monotonically is armed; so is one systemd has momentarily put
+    # in `running` state because the collector service it triggers is executing
+    # - in that window NextElapseUSecRealtime is transiently empty. Asserting on
+    # the realtime value alone fails a healthy timer under load.
+    - name: Re-read collector timer next elapse after repair
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - "{{ tailscale_metrics_endpoint_timer_name }}.timer"
+          - --property=NextElapseUSecRealtime
+          - --property=NextElapseUSecMonotonic
+          - --property=SubState
+      register: tailscale_metrics_endpoint_timer_recheck
+      changed_when: false
+      check_mode: false
+      when: not ansible_check_mode
+      until: >-
+        (
+          tailscale_metrics_endpoint_timer_recheck.stdout
+          | regex_search('NextElapseUSecRealtime=(.*)', '\\1')
+          | default([''], true) | first | default('', true) | trim | lower
+          not in ['', 'infinity', '0', 'n/a']
+        )
+        or (
+          tailscale_metrics_endpoint_timer_recheck.stdout
+          | regex_search('NextElapseUSecMonotonic=(.*)', '\\1')
+          | default([''], true) | first | default('', true) | trim | lower
+          not in ['', 'infinity', '0', 'n/a']
+        )
+      retries: 5
+      delay: 2
+      # The retry only rides out the transient `running` window; the assert
+      # below is the gate. Without this, retry exhaustion fails the command
+      # task with an empty msg and the operator never sees the real reason.
+      failed_when: false
+
+    # Skipped under --check: the unit rendering and start tasks above are
+    # check-mode no-ops, so on a first deployment the timer does not exist yet
+    # and there is nothing meaningful to assert against.
+    - name: Require an armed collector timer
+      when: not ansible_check_mode
+      ansible.builtin.assert:
+        that:
+          - >-
+            (
+              tailscale_metrics_endpoint_timer_recheck.stdout
+              | regex_search('NextElapseUSecRealtime=(.*)', '\\1')
+              | default([''], true) | first | default('', true) | trim | lower
+              not in ['', 'infinity', '0', 'n/a']
+            )
+            or (
+              tailscale_metrics_endpoint_timer_recheck.stdout
+              | regex_search('NextElapseUSecMonotonic=(.*)', '\\1')
+              | default([''], true) | first | default('', true) | trim | lower
+              not in ['', 'infinity', '0', 'n/a']
+            )
+        fail_msg: >-
+          {{ tailscale_metrics_endpoint_timer_name }}.timer has no next elapse
+          (realtime or monotonic); the metrics payload would freeze while the
+          endpoint keeps serving it. Observed: {{
+            tailscale_metrics_endpoint_timer_recheck.stdout | trim
+          }}
+        success_msg: "Collector timer is armed with a next elapse."
+
     - name: Ensure HTTP server is enabled and running
       ansible.builtin.systemd:
         name: "{{ tailscale_metrics_endpoint_service_name }}"
         enabled: true
         state: started
         daemon_reload: true
+
+    - name: Flush metrics endpoint handlers before effective filter verification
+      ansible.builtin.meta: flush_handlers
+
+    - name: Read metrics endpoint control group
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - "{{ tailscale_metrics_endpoint_service_name }}.service"
+          - --property=ControlGroup
+          - --value
+      register: _tailscale_metrics_endpoint_control_group
+      changed_when: false
+      check_mode: false
+      when:
+        - tailscale_metrics_endpoint_require_effective_ip_filter | bool
+        - not ansible_check_mode
+
+    - name: Inspect effective metrics endpoint cgroup IP filters
+      ansible.builtin.command:
+        argv:
+          - "{{ tailscale_metrics_endpoint_bpftool_bin }}"
+          - cgroup
+          - show
+          - "/sys/fs/cgroup{{ _tailscale_metrics_endpoint_control_group.stdout | trim }}"
+      register: _tailscale_metrics_endpoint_cgroup_filters
+      changed_when: false
+      check_mode: false
+      when:
+        - tailscale_metrics_endpoint_require_effective_ip_filter | bool
+        - not ansible_check_mode
+
+    - name: Require effective metrics endpoint cgroup IP filters
+      ansible.builtin.assert:
+        that:
+          - _tailscale_metrics_endpoint_control_group.stdout | trim | length > 0
+          - "'cgroup_inet_ingress' in _tailscale_metrics_endpoint_cgroup_filters.stdout"
+          - "'cgroup_inet_egress' in _tailscale_metrics_endpoint_cgroup_filters.stdout"
+        fail_msg: >-
+          systemd did not attach ingress and egress cgroup-BPF IP filters to
+          {{ tailscale_metrics_endpoint_service_name }}. Refusing a potentially
+          fail-open endpoint; verify cgroup v2 and CONFIG_CGROUP_BPF support.
+      when:
+        - tailscale_metrics_endpoint_require_effective_ip_filter | bool
+        - not ansible_check_mode

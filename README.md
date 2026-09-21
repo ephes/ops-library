@@ -4,6 +4,8 @@ A collection of reusable Ansible roles for homelab automation and service deploy
 
 📖 **[Full Documentation](https://ops-library.readthedocs.io/)** | 📚 [Architecture](./ARCHITECTURE.md) | 🧭 [Service Lifecycle Guide](./docs/source/howto/service_lifecycle.md) | 🧪 [Testing](./TESTING.md)
 
+Reusable collection filters are documented in the [filter reference](./docs/source/zfs_size_filter.md).
+
 ## Quick Start
 
 ```bash
@@ -99,18 +101,20 @@ consumer repos depend on.
 | Storage | [`zfs_dataset`](roles/zfs_dataset/README.md) | Create/manage ZFS datasets with property support and optional macOS SMB compatibility defaults. |
 | Storage | [`sanoid`](roles/sanoid/README.md) | Configure sanoid snapshot policies and a dedicated systemd timer. |
 | Storage | [`zfs_syncoid_replication`](roles/zfs_syncoid_replication/README.md) | Schedule syncoid replication jobs with systemd timers, alerts, and optional HDD spindown hooks. |
-| Storage | [`zfs_usb_replication`](roles/zfs_usb_replication/README.md) | Replicate ZFS datasets to an encrypted USB pool with device detection and optional alerts. |
+| Storage | [`zfs_usb_replication`](roles/zfs_usb_replication/README.md) | Replicate ZFS datasets to an encrypted USB pool, with device detection, alerts, and attended read-only snapshot-file evidence. |
 | Storage | [`hdparm_tune`](roles/hdparm_tune/README.md) | Configure persistent hdparm power settings (APM/spindown) for disks. |
+| Operations | [`macos_time_machine_exclusions`](roles/macos_time_machine_exclusions/README.md) | Reapply audited user-scoped Time Machine exclusions daily without deleting client data. |
 | Infrastructure | [`netplan_config`](roles/netplan_config/README.md) | Configure persistent netplan networking. |
 | Monitoring | [`smartd`](roles/smartd/README.md) | Configure smartmontools smartd for HDD/NVMe monitoring and scheduled tests. |
 | Monitoring | [`zed`](roles/zed/README.md) | Configure ZFS Event Daemon notifications and optional zpool scrub timers. |
-| Monitoring | [`nyxmon_storage_exporter`](roles/nyxmon_storage_exporter/README.md) | Install `nyxmon-storage-metrics` JSON exporter for storage health monitoring via HTTP endpoints. |
+| Monitoring | [`nyxmon_storage_exporter`](roles/nyxmon_storage_exporter/README.md) | Install `nyxmon-storage-metrics` JSON exporter for storage health monitoring via HTTP endpoints, including read-only per-client Time Machine sparsebundle metrics. |
 | Monitoring | [`logyard_vector_deploy`](roles/logyard_vector_deploy/README.md) | Deploy Vector journald producers for Logyard/Loki with low-cardinality labels, disk buffering, and retries. |
 | Monitoring | [`graphyard_vector_deploy`](roles/graphyard_vector_deploy/README.md) | Deploy Vector host-metrics ingest producer for Graphyard (`POST /v1/metrics`) with disk buffering and retries. |
 | Monitoring | [`backup_metrics_endpoint`](roles/backup_metrics_endpoint/README.md) | Expose backup-job + replication freshness signals as authenticated JSON for Nyxmon (`/.well-known/backup`). |
 | Monitoring | [`dns_metrics_endpoint`](roles/dns_metrics_endpoint/README.md) | Expose per-endpoint authoritative-DNS health (v4/v6, UDP/TCP, `aa` required, SOA serial agreement, open-resolver regression) as authenticated JSON for Nyxmon (`/.well-known/dns`). |
 | Infrastructure | [`mail_relay_client`](roles/mail_relay_client/README.md) | Configure a minimal Postfix setup for relaying outbound alert mail via a smarthost. |
 | Infrastructure | [`ssh_authorized_keys_manage`](roles/ssh_authorized_keys_manage/README.md) | Manage `~/.ssh` and the full `authorized_keys` file for an arbitrary target account, including `root`. |
+| Infrastructure | [`macos_ssh_tunnel`](roles/macos_ssh_tunnel/README.md) | Manage a user LaunchAgent for an SSH local forward with lifecycle and HTTPS checks. |
 | Infrastructure | [`ssh_forwarding_identity`](roles/ssh_forwarding_identity/README.md) | Provision a non-rotating, passphrase-free Ed25519 identity for unattended forwarding. |
 | Infrastructure | [`ssh_restricted_forwarding_account`](roles/ssh_restricted_forwarding_account/README.md) | Provision a dedicated OpenSSH account restricted to local forwarding toward one host and port. |
 | File sharing | [`samba_timemachine`](roles/samba_timemachine/README.md) | Configure Samba Time Machine share with vfs_fruit and conf.d snippet wiring. |
@@ -121,6 +125,12 @@ consumer repos depend on.
 | Monitoring | [`tailscale_metrics_endpoint`](roles/tailscale_metrics_endpoint/README.md) | Expose Tailscale login state and node-key expiry as authenticated JSON for Nyxmon (`/.well-known/tailscale`). |
 | Infrastructure | [`bind_authoritative_deploy`](roles/bind_authoritative_deploy/README.md) | Deploy authoritative BIND 9 with managed configs and zone files, including transfer-backed (secondary) zones. |
 | Infrastructure | [`echoport_backup`](roles/echoport_backup/README.md) | Register centralized Echoport backup/restore runners with FastDeploy. |
+| Service deployment | [`daybook_voice_memo_attention_deploy`](roles/daybook_voice_memo_attention_deploy/README.md) | Install the disabled persistent macOS attention supervisor without starting it. |
+| Service deployment | [`daybook_voice_memo_attention_notifier_deploy`](roles/daybook_voice_memo_attention_notifier_deploy/README.md) | Install recipient-pinned outbound notification transport with a dedicated forced-command key. |
+| Service deployment | [`daybook_voice_memo_attention_reader_deploy`](roles/daybook_voice_memo_attention_reader_deploy/README.md) | Provision a dedicated exact-prefix MinIO list/read identity for voice-memo attention. |
+| Service deployment | [`daybook_mail_work_deploy`](roles/daybook_mail_work_deploy/README.md) | Schedule Daybook mail work through a GUI-attributed tmux capability host, because a LaunchAgent reaches neither Mail nor the bookkeeping apps. |
+| Service deployment | [`daybook_voice_memo_work_deploy`](roles/daybook_voice_memo_work_deploy/README.md) | Schedule capable work for newly imported voice memos using the owner's pinned runtime. |
+| Service deployment | [`daybook_work_source_access_deploy`](roles/daybook_work_source_access_deploy/README.md) | Provision the dedicated source reader used by capable Voice Memo work. |
 | Service deployment | [`fastdeploy_deploy`](roles/fastdeploy_deploy/README.md) | Deploy the FastDeploy platform (database, uv, frontend build, systemd, Traefik). |
 | Service deployment | [`nyxmon_deploy`](roles/nyxmon_deploy/README.md) | Deploy Nyxmon (Django app, monitoring agent, Telegram integration). |
 | Service deployment | [`archive_deploy`](roles/archive_deploy/README.md) | Deploy the Archive Django service with SQLite, systemd, Traefik, and admin bootstrap. |
@@ -142,6 +152,7 @@ consumer repos depend on.
 | Service deployment | [`mailgun_relay_deploy`](roles/mailgun_relay_deploy/README.md) | Deploy the mailgun-relay FastAPI service (Mailgun-API-compatible HTTP→SMTP adapter for django-anymail clients). |
 | Service deployment | [`mailgun_relay_ingress_deploy`](roles/mailgun_relay_ingress_deploy/README.md) | Render Traefik dynamic config exposing mailgun-relay behind HTTPS. |
 | Service deployment | [`snappymail_deploy`](roles/snappymail_deploy/README.md) | Deploy SnappyMail webmail via PHP-FPM + nginx with Traefik exposure and IMAP/SMTP defaults. |
+| Service deployment | [`static_site_deploy`](roles/static_site_deploy/README.md) | Publish a generated static site through a read-only loopback service and Traefik. |
 | Service deployment | [`takahe_deploy`](roles/takahe_deploy/README.md) | Deploy Takahe with systemd, nginx cache/accel proxying, and Traefik exposure. |
 | Service deployment | [`wagtail_deploy`](roles/wagtail_deploy/README.md) | Deploy Wagtail Django sites with uv, systemd, and Traefik routing. |
 | Service deployment | [`mastodon_deploy`](roles/mastodon_deploy/README.md) | Deploy Mastodon from source with rbenv+nvm, systemd services, and Traefik routing. |
@@ -168,7 +179,15 @@ consumer repos depend on.
 | Service operations | [`mastodon_maintenance`](roles/mastodon_maintenance/README.md) | Run Mastodon tootctl maintenance commands (media cleanup, cache pruning). |
 | Service operations | [`minio_offsite_replication`](roles/minio_offsite_replication/README.md) | Pull MinIO backup archives from a remote source into offsite storage via systemd timer + rsync/SSH. |
 | Service operations | [`mail_offsite_replication`](roles/mail_offsite_replication/README.md) | Pull maildir + staged DB/config artifacts into a single offsite ZFS dataset via rsync/SSH with post-sync snapshots. |
+| Service operations | [`software_estate`](roles/software_estate/README.md) | Discover host and application software; optionally install a pinned SBOM scanner. |
+| Service operations | [`software_estate_publisher`](roles/software_estate_publisher/README.md) | Schedule local macOS inventory collection and durable HTTPS delivery. |
+| Service operations | [`software_estate_publisher_linux`](roles/software_estate_publisher_linux/README.md) | Schedule unprivileged Linux inventory collection and durable HTTPS delivery. |
+| Service removal | [`software_estate_remove`](roles/software_estate_remove/README.md) | Remove estate tools while retaining application state and caller-owned evidence. |
+| Service operations | [`software_live`](roles/software_live/README.md) | Observe live Traefik and pending APT security updates through SSH or authenticated JSON. |
+| Service removal | [`software_live_remove`](roles/software_live_remove/README.md) | Remove software observation components while preserving application state. |
 | Service operations | [`os_apt_maintenance`](roles/os_apt_maintenance/README.md) | Run host-local apt update/dist-upgrade/autoremove/autoclean via systemd timer with durable state and optional Nyxmon endpoint. |
+| Service removal | [`daybook_voice_memo_attention_remove`](roles/daybook_voice_memo_attention_remove/README.md) | Unload only the attention LaunchAgent while preserving tracking and native history. |
+| Service removal | [`daybook_voice_memo_attention_notifier_remove`](roles/daybook_voice_memo_attention_notifier_remove/README.md) | Revoke only the dedicated notifier key and executable while preserving other authorizations. |
 | Service removal | [`fastdeploy_remove`](roles/fastdeploy_remove/README.md) | Remove FastDeploy and related resources safely. |
 | Service removal | [`nyxmon_remove`](roles/nyxmon_remove/README.md) | Remove Nyxmon while preserving data as needed. |
 | Service removal | [`homeassistant_remove`](roles/homeassistant_remove/README.md) | Tear down Home Assistant (service, config, user) with confirmation guards. |
@@ -193,6 +212,7 @@ consumer repos depend on.
 | Bootstrap | [`daybook_sessions_deploy`](roles/daybook_sessions_deploy/README.md) | Run Daybook session shipping, quote classification, and a disabled-by-default draft reconcile schedule on macOS. |
 | Bootstrap | [`daybook_photos_offload_deploy`](roles/daybook_photos_offload_deploy/README.md) | Install Daybook's read-only Photos discovery ledger as a quiesce-first Aqua user LaunchAgent on macOS. |
 | Bootstrap | [`daybook_photos_archive_sync_deploy`](roles/daybook_photos_archive_sync_deploy/README.md) | Install the disabled-first, single-writer Nikon working-folder archive reconciler as an Aqua user LaunchAgent. |
+| Bootstrap | [`daybook_voice_memo_inbox_deploy`](roles/daybook_voice_memo_inbox_deploy/README.md) | Install the disabled-first Apple Voice Memos to Voxhelm and immutable Obsidian inbox importer on macOS. |
 | Bootstrap | [`ollama_install`](roles/ollama_install/README.md) | Install Ollama on macOS via Homebrew and manage a launchd service. |
 | Bootstrap | [`voxhelm_deploy`](roles/voxhelm_deploy/README.md) | Deploy Voxhelm on macOS with `uv`, Uvicorn, and a launchd-managed synchronous transcription API. |
 | Bootstrap | [`voxhelm_ingress_deploy`](roles/voxhelm_ingress_deploy/README.md) | Expose Voxhelm over private HTTPS via Traefik on the edge host while proxying to the macOS backend over Tailscale. |
@@ -205,6 +225,7 @@ consumer repos depend on.
 ## Development
 
 ### Testing
+
 ```bash
 # Run the default contributor validation path
 just test
@@ -229,6 +250,7 @@ Use `just validate-strict` when you want `ansible-lint` failures to stop the run
 only as a quick summary helper.
 
 ### Developer Setup
+
 ```bash
 # Bootstrap the local dev environment and install hooks
 just setup
@@ -238,6 +260,7 @@ just pre-commit
 ```
 
 ### Statistics
+
 ```bash
 # Show YAML lines of code (requires cloc)
 just stats
@@ -266,3 +289,9 @@ just stats-roles
 ## License
 
 MIT
+
+Operations coordination: [API deployment](roles/daybook_operations_api_deploy/README.md),
+[local runtime](roles/daybook_operations_runtime_deploy/README.md),
+[backup](roles/daybook_operations_api_backup/README.md),
+[restore](roles/daybook_operations_api_restore/README.md),
+and [removal](roles/daybook_operations_api_remove/README.md). Disabled-first; live acceptance pending.

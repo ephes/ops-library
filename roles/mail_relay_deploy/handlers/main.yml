@@ -32,6 +32,14 @@
   notify: Reload postfix
   when: not ansible_check_mode
 
+- name: Restart postsrsd
+  ansible.builtin.systemd:
+    name: postsrsd
+    state: restarted
+    daemon_reload: true
+  notify: Reload postfix
+  when: not ansible_check_mode
+
 - name: Reload postfix
   ansible.builtin.command: postfix reload
   changed_when: true

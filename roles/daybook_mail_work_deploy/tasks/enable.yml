@@ -1,0 +1,55 @@
+---
+# Install, reload and bootstrap exactly one label.
+- name: enable | Install Daybook mail work LaunchAgent
+  ansible.builtin.template:
+    src: "{{ daybook_mail_work_agent.template }}"
+    dest: "{{ daybook_mail_work_agent.path }}"
+    owner: "{{ daybook_mail_work_service_user }}"
+    group: "{{ daybook_mail_work_service_group }}"
+    mode: '0644'
+    validate: /usr/bin/plutil -lint %s
+  register: daybook_mail_work_plist
+
+- name: enable | Read back the installed Daybook mail work LaunchAgent
+  ansible.builtin.slurp:
+    src: "{{ daybook_mail_work_agent.path }}"
+  register: daybook_mail_work_installed
+
+- name: enable | Refuse a scheduled window start
+  # Checked against what actually landed on the host, not the template source:
+  # a lookup would read the controller's filesystem, where no plist exists.
+  ansible.builtin.assert:
+    that:
+      - "'--since' not in (daybook_mail_work_installed.content | b64decode)"
+    fail_msg: >-
+      A scheduled invocation must not carry --since. An explicit window start
+      overrides the stored watermark, so every run would begin at the same point,
+      take a fresh end and therefore a fresh source identity, and start a new
+      session over an ever-growing history. Seed the watermark once by hand.
+
+- name: enable | Read Daybook mail work loaded state
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "gui/{{ daybook_mail_work_uid.stdout | trim }}/{{ daybook_mail_work_agent.label }}"]
+  register: daybook_mail_work_loaded
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: enable | Reload changed Daybook mail work LaunchAgent
+  ansible.builtin.command:
+    argv: [/bin/launchctl, bootout, "gui/{{ daybook_mail_work_uid.stdout | trim }}/{{ daybook_mail_work_agent.label }}"]
+  when:
+    - daybook_mail_work_plist.changed
+    - daybook_mail_work_loaded.rc == 0
+  changed_when: true
+
+- name: enable | Enable Daybook mail work LaunchAgent
+  ansible.builtin.command:
+    argv: [/bin/launchctl, enable, "gui/{{ daybook_mail_work_uid.stdout | trim }}/{{ daybook_mail_work_agent.label }}"]
+  changed_when: false
+
+- name: enable | Bootstrap absent Daybook mail work LaunchAgent
+  ansible.builtin.command:
+    argv: [/bin/launchctl, bootstrap, "gui/{{ daybook_mail_work_uid.stdout | trim }}", "{{ daybook_mail_work_agent.path }}"]
+  when: daybook_mail_work_loaded.rc != 0 or daybook_mail_work_plist.changed
+  changed_when: true

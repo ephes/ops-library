@@ -38,7 +38,7 @@
 
 - name: configure | Get current root filesystem properties
   ansible.builtin.command:
-    cmd: zfs get all {{ zfs_pool_name }} -H -o property,value
+    cmd: zfs get all {{ zfs_pool_name }} -H -p -o property,value
   register: _zfs_root_fs_current_props
   changed_when: false
 
@@ -52,9 +52,37 @@
   loop: "{{ zfs_pool_filesystem_properties | dict2items }}"
   loop_control:
     label: "{{ item.key }}={{ item.value }}"
-  when: _zfs_root_fs_props_dict[item.key] | default('') != item.value | string
+  vars:
+    _zfs_root_fs_size_properties:
+      - quota
+      - refquota
+      - reservation
+      - refreservation
+      - recordsize
+      - volblocksize
+      - volsize
+      - special_small_blocks
+    _zfs_root_fs_desired_raw: "{{ item.value | string | lower }}"
+    _zfs_root_fs_desired_value: >-
+      {{
+        ('0'
+          if item.key in _zfs_root_fs_size_properties
+            and (_zfs_root_fs_desired_raw | string) == 'none'
+          else ((item.value | local.ops_library.zfs_size_to_bytes | string)
+            if item.key in _zfs_root_fs_size_properties
+              and (_zfs_root_fs_desired_raw | string)
+                | regex_search('(?i)^[0-9]+(?:[.][0-9]+)?[ ]*[kmgtpez]?(?:i?b)?$')
+            else item.value | string))
+      }}
+  when: >-
+    (item.key == 'refreservation' and (_zfs_root_fs_desired_raw | string) == 'auto')
+    or (_zfs_root_fs_props_dict[item.key] | default('') | string)
+      != (_zfs_root_fs_desired_value | string)
   register: _zfs_fs_property_results
-  changed_when: _zfs_fs_property_results.rc == 0
+  changed_when: >-
+    _zfs_fs_property_results.rc == 0
+    and not (item.key == 'refreservation'
+      and (_zfs_root_fs_desired_raw | string) == 'auto')
 
 # =============================================================================
 # Summary

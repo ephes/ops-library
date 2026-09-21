@@ -1,0 +1,22 @@
+---
+- name: main | Validate configuration and source
+  ansible.builtin.include_tasks: validate.yml
+
+- name: main | Provision service account and directories
+  ansible.builtin.include_tasks: user.yml
+
+- name: main | Publish generated site content
+  ansible.builtin.include_tasks: content.yml
+
+- name: main | Configure static content service
+  ansible.builtin.include_tasks: service.yml
+
+- name: main | Configure Traefik route
+  ansible.builtin.include_tasks: traefik.yml
+  when: static_site_traefik_enabled | bool
+
+- name: main | Apply service handlers before verification
+  ansible.builtin.meta: flush_handlers
+
+- name: main | Verify local and public serving paths
+  ansible.builtin.include_tasks: verify.yml

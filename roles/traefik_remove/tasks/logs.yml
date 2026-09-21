@@ -1,29 +1,29 @@
 ---
 # Remove Traefik log files and logrotate configuration
 
-- name: Check if log directory exists
+- name: logs | Check if log directory exists
   ansible.builtin.stat:
     path: "{{ traefik_log_dir }}"
   register: traefik_log_dir_stat
 
-- name: Remove log directory
+- name: logs | Remove log directory
   ansible.builtin.file:
     path: "{{ traefik_log_dir }}"
     state: absent
   when: traefik_log_dir_stat.stat.exists
 
-- name: Check if logrotate config exists
+- name: logs | Check if logrotate config exists
   ansible.builtin.stat:
     path: "/etc/logrotate.d/traefik"
   register: traefik_logrotate_config
 
-- name: Remove logrotate configuration
+- name: logs | Remove logrotate configuration
   ansible.builtin.file:
     path: "/etc/logrotate.d/traefik"
     state: absent
   when: traefik_logrotate_config.stat.exists
 
-- name: Display log cleanup status
+- name: logs | Display log cleanup status
   ansible.builtin.debug:
     msg:
       - "✓ Log files cleaned up"

@@ -1,0 +1,26 @@
+---
+- name: Require exact restore archive and quiesced clients
+  ansible.builtin.assert:
+    that:
+      - daybook_operations_api_restore_confirmed | bool
+      - daybook_operations_api_restore_clients_quiesced | bool
+      - daybook_operations_api_restore_archive is match('^/')
+    fail_msg: Quiesce every client and explicitly confirm this archive before restoring.
+- name: Validate before stopping services
+  become: true
+  become_user: "{{ daybook_operations_api_restore_user }}"
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_api_restore_python }}", "{{ daybook_operations_api_restore_script }}", validate, --config, "{{ daybook_operations_api_restore_config }}", --archive, "{{ daybook_operations_api_restore_archive }}"]
+  changed_when: false
+- name: Stop both units before running the unprivileged restore helper
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop: [daybook-operations, daybook-operations-reconcile]
+- name: Restore with safety backup and leave both services stopped
+  become: true
+  become_user: "{{ daybook_operations_api_restore_user }}"
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_api_restore_python }}", "{{ daybook_operations_api_restore_script }}", restore, --clients-quiesced, --config, "{{ daybook_operations_api_restore_config }}", --archive, "{{ daybook_operations_api_restore_archive }}"]
+  changed_when: true

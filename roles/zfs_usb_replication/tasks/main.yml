@@ -127,6 +127,22 @@
         group: root
         mode: "0755"
 
+    - name: Ensure snapshot-file attestation directory exists
+      ansible.builtin.file:
+        path: "{{ zfs_usb_replication_attestation_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Install read-only snapshot-file attestation helper
+      ansible.builtin.copy:
+        src: zfs_snapshot_file_attestation.py
+        dest: "{{ zfs_usb_replication_attestation_helper_path }}"
+        owner: root
+        group: root
+        mode: "0750"
+
     - name: Install USB snapshot retention helper
       ansible.builtin.copy:
         src: zfs_usb_snapshot_retention.py

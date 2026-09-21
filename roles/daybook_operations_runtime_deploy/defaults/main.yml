@@ -1,0 +1,21 @@
+---
+ops_library_documentation_category: deployment
+daybook_operations_runtime_action: install
+daybook_operations_runtime_confirmed: false
+daybook_operations_runtime_start: false
+daybook_operations_runtime_user: CHANGEME
+daybook_operations_runtime_home: "/Users/{{ daybook_operations_runtime_user }}"
+daybook_operations_runtime_install_root: /Library/Application Support/Daybook/voice-memo-inbox
+daybook_operations_runtime_python: "{{ daybook_operations_runtime_install_root }}/daybook/.venv/bin/python"
+daybook_operations_runtime_revision: CHANGEME
+daybook_operations_runtime_policy: "{{ daybook_operations_runtime_install_root }}/operations.json"
+daybook_operations_runtime_importer_policy: "{{ daybook_operations_runtime_install_root }}/policy.json"
+daybook_operations_runtime_credential: "{{ daybook_operations_runtime_home }}/.config/daybook-voice-memo-inbox/operations.json"
+daybook_operations_runtime_token: CHANGEME
+daybook_operations_runtime_api_url: https://operations.home.example.com
+daybook_operations_runtime_binding: regular
+daybook_operations_runtime_journal: "{{ daybook_operations_runtime_home }}/.local/state/daybook/operations-importer"
+daybook_operations_runtime_label: de.wersdoerfer.daybook.voice-memo-inbox
+daybook_operations_runtime_plist: "{{ daybook_operations_runtime_home }}/Library/LaunchAgents/{{ daybook_operations_runtime_label }}.plist"
+daybook_operations_runtime_staged_plist: "{{ daybook_operations_runtime_install_root }}/operations.launchd.plist"
+daybook_operations_runtime_legacy_plist: "{{ daybook_operations_runtime_install_root }}/regular-importer.before-operations.plist"
