@@ -27,6 +27,10 @@
     <string>--run-timeout</string><string>{{ daybook_mail_work_run_timeout_seconds | int }}</string>
     <string>--session-tmux</string><string>{{ daybook_mail_work_tmux | e }}</string>
     <string>--claude</string><string>{{ daybook_mail_work_claude | e }}</string>
+{% if daybook_mail_work_rotate_logs | bool %}
+    <string>--rotate-log</string><string>{{ daybook_mail_work_stdout_log | e }}</string>
+    <string>--rotate-log</string><string>{{ daybook_mail_work_stderr_log | e }}</string>
+{% endif %}
   </array>
   <key>WorkingDirectory</key><string>{{ daybook_mail_work_cwd | e }}</string>
   <key>LimitLoadToSessionType</key><string>Aqua</string>

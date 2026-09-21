@@ -15,6 +15,26 @@ from jinja2 import Environment
 ROOT = Path(__file__).resolve().parents[1]
 ROLE = ROOT / "roles/daybook_mail_work_deploy"
 
+# Ansible's `bool` filter, which plain Jinja2 does not provide. Python's builtin
+# would be wrong here: bool("false") is True, and treating an explicit
+# `-e daybook_mail_work_rotate_logs=false` as enabled is the exact mistake the
+# filter exists to prevent.
+TRUTHY = {"1", "true", "yes", "on", "t", "y"}
+
+
+def ansible_bool(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value).strip().lower() in TRUTHY
+
+
+def environment():
+    env = Environment()
+    env.filters.update(bool=ansible_bool)
+    return env
+
 
 class MailWorkRoleTests(unittest.TestCase):
     def variables(self, **overrides):
@@ -25,7 +45,7 @@ class MailWorkRoleTests(unittest.TestCase):
             daybook_mail_work_cwd="/Users/example/daybook",
         )
         values.update(overrides)
-        env = Environment()
+        env = environment()
         for _ in range(8):
             for name, value in values.items():
                 if isinstance(value, str):
@@ -34,10 +54,14 @@ class MailWorkRoleTests(unittest.TestCase):
 
     def render(self, template: str, **overrides):
         values = self.variables(**overrides)
-        body = Environment().from_string(
+        body = environment().from_string(
             (ROLE / "templates" / template).read_text()
         ).render(**values)
         return plistlib.loads(body.encode()), body
+
+    def _render_worker_plist(self, **overrides):
+        plist, _ = self.render("mail-work.launchd.plist.j2", **overrides)
+        return plist
 
     # -- the worker -------------------------------------------------------
 
@@ -67,6 +91,30 @@ class MailWorkRoleTests(unittest.TestCase):
         argv = plist["ProgramArguments"]
         for flag in ("--session-tmux", "--claude"):
             self.assertTrue(argv[argv.index(flag) + 1].startswith("/"), flag)
+
+    def test_the_courier_is_told_to_rotate_both_launchd_logs(self) -> None:
+        plist = self._render_worker_plist()
+        argv = plist["ProgramArguments"]
+        rotated = [argv[i + 1] for i, flag in enumerate(argv) if flag == "--rotate-log"]
+        self.assertEqual(rotated, [plist["StandardOutPath"], plist["StandardErrorPath"]])
+
+    def test_log_rotation_can_be_withheld_for_an_older_cli(self) -> None:
+        plist = self._render_worker_plist(daybook_mail_work_rotate_logs=False)
+        self.assertNotIn("--rotate-log", plist["ProgramArguments"])
+
+    def test_rotation_stays_off_when_it_is_withheld_as_a_string(self) -> None:
+        """`-e daybook_mail_work_rotate_logs=false` arrives as a string, and a
+        non-empty string is truthy in Jinja. Without Ansible's bool filter the
+        flag would be rendered for a host that was explicitly opted out, and
+        every tick would then fail at argparse on an older CLI."""
+        for withheld in ("false", "False", "no", "off", "0"):
+            with self.subTest(value=withheld):
+                plist = self._render_worker_plist(daybook_mail_work_rotate_logs=withheld)
+                self.assertNotIn("--rotate-log", plist["ProgramArguments"])
+        for enabled in ("true", "yes", "on", "1"):
+            with self.subTest(value=enabled):
+                plist = self._render_worker_plist(daybook_mail_work_rotate_logs=enabled)
+                self.assertIn("--rotate-log", plist["ProgramArguments"])
 
     def test_the_worker_runs_on_an_interval_in_a_gui_session(self):
         plist, _ = self.render("mail-work.launchd.plist.j2")

@@ -75,7 +75,13 @@ watermark and take the same lease, so they cannot process the same mail twice,
 and the stored watermark means no seeding is needed at all. A separate, fresh
 state would keep a second watermark over the same mailbox that no manual run
 knows about. The runtime directory holds only the courier's attempts, lock and
-logs.
+logs, and the courier keeps it bounded itself: each tick prunes attempt
+directories older than 24 hours (7 days for one without an exit code), and with
+`daybook_mail_work_rotate_logs` (default `true`) the plist passes `--rotate-log`
+for `work.log` and `work.err.log`, which the courier copy-and-truncates at
+1 MiB. The flag needs a Daybook CLI from 2026-09-15 or later; update the CLI on
+the host before deploying, or set the variable to `false` until then, because
+an older CLI rejects the unknown option on every tick.
 
 `daybook_mail_work_notify_config_path` must already exist; the role checks it
 rather than letting every notification fail later.

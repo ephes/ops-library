@@ -50,6 +50,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `daybook_mail_work_deploy` now passes `--rotate-log` for the courier's two
+  launchd logs (`daybook_mail_work_rotate_logs`, default `true`), so the Daybook
+  CLI copy-and-truncates them at 1 MiB; the same CLI release prunes attempt
+  directories on every tick. Update the host's Daybook CLI before deploying, or
+  set the variable to `false`, because an older CLI rejects the option.
+
 - `daybook_sessions_deploy` now defaults `daybook_sessions_checkout_path` to a
   dedicated clone under `~/.local/share/daybook/sessions/daybook` instead of the
   service user's `~/projects/daybook`. The scheduled jobs pin that path to

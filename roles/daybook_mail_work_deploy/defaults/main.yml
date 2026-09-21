@@ -57,5 +57,9 @@ daybook_mail_work_plist_path: "{{ daybook_mail_work_service_home }}/Library/Laun
 daybook_mail_work_host_plist_path: "{{ daybook_mail_work_service_home }}/Library/LaunchAgents/{{ daybook_mail_work_host_launchd_label }}.plist"
 daybook_mail_work_stdout_log: "{{ daybook_mail_work_runtime_dir }}/work.log"
 daybook_mail_work_stderr_log: "{{ daybook_mail_work_runtime_dir }}/work.err.log"
+# Pass `--rotate-log` for both launchd logs so the courier copy-and-truncates
+# them at 1 MiB. Requires a Daybook that knows the flag (2026-09-15 or later);
+# set false while a host still runs an older CLI, or every tick fails at argparse.
+daybook_mail_work_rotate_logs: true
 daybook_mail_work_host_stdout_log: "{{ daybook_mail_work_runtime_dir }}/host.log"
 daybook_mail_work_host_stderr_log: "{{ daybook_mail_work_runtime_dir }}/host.err.log"
