@@ -11,7 +11,52 @@
       - daybook_operations_runtime_binding is match('^[a-z0-9][a-z0-9_-]{0,49}$')
       - daybook_operations_runtime_api_url is match('^https://[a-z0-9.-]+(:[0-9]+)?$')
       - daybook_operations_runtime_token is match('^[A-Za-z0-9._~-]{32,256}$')
+      - daybook_operations_runtime_mode in ['tick', 'serve']
+      # A binding list and the supervisor go together, in both directions.
+      # `operations tick` with no `--binding` cannot choose between several
+      # bindings -- it stops with `ambiguous_binding` -- and launchd's fixed
+      # wake-up could not honour their separate cadences even if it could. A
+      # `serve` label with no list would supervise the single schema 1 binding
+      # by accident rather than by decision.
+      - (daybook_operations_runtime_mode == 'serve')
+        == (daybook_operations_runtime_bindings | length > 0)
   no_log: true
+
+- name: Validate every binding in a multi-binding profile
+  ansible.builtin.assert:
+    that:
+      # Shared configuration that does not parse stops the whole profile at load,
+      # so catch a typo here rather than on the machine.
+      - item.keys() | sort == ['adapter', 'cadence', 'deadline', 'journal', 'lease', 'name']
+      - item.name is match('^[a-z0-9][a-z0-9_-]{0,49}$')
+      - item.adapter in daybook_operations_runtime_adapters
+      - item.journal is match('^/')
+      # Whole numbers, not merely things `| int` would coerce. The profile is
+      # emitted verbatim, and the client requires real integers: a quoted "300"
+      # or a 300.5 would pass a coercing check here and then stop the whole
+      # profile at load. `is integer` accepts booleans, hence the second test.
+      - item.cadence is integer and item.cadence is not boolean
+      - item.deadline is integer and item.deadline is not boolean
+      - item.lease is integer and item.lease is not boolean
+      - item.cadence >= 60 and item.cadence <= 3600
+      - item.deadline >= 60 and item.deadline <= 3600
+      # The lease has to outlast the child plus the room to stop it and deliver
+      # its receipt, which is what the client checks when it loads this.
+      - item.lease >= item.deadline + 60
+    fail_msg: "Binding {{ item.name | default(item) }} is not a usable profile entry."
+  loop: "{{ daybook_operations_runtime_bindings }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"
+
+- name: Require distinct binding names and journals
+  ansible.builtin.assert:
+    that:
+      - daybook_operations_runtime_bindings | map(attribute='name') | unique | length
+        == daybook_operations_runtime_bindings | length
+      - daybook_operations_runtime_bindings | map(attribute='journal') | unique | length
+        == daybook_operations_runtime_bindings | length
+    fail_msg: Two bindings sharing a name or a journal would interleave their delivery slots.
+  when: daybook_operations_runtime_bindings | length > 0
 
 - name: Verify protected interpreter checkout revision
   ansible.builtin.command:

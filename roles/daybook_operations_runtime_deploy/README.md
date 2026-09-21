@@ -69,11 +69,74 @@ daybook_operations_runtime_token: CHANGEME
 daybook_operations_runtime_api_url: https://operations.home.example.com
 daybook_operations_runtime_binding: regular
 daybook_operations_runtime_journal: "{{ daybook_operations_runtime_home }}/.local/state/daybook/operations-importer"
+daybook_operations_runtime_mode: tick
+daybook_operations_runtime_bindings: []
+daybook_operations_runtime_adapters:
+  - voice_memos.ingest.v1
+  - voice_memos.transcribe_long.v1
 daybook_operations_runtime_label: de.wersdoerfer.daybook.voice-memo-inbox
 daybook_operations_runtime_plist: "{{ daybook_operations_runtime_home }}/Library/LaunchAgents/{{ daybook_operations_runtime_label }}.plist"
 daybook_operations_runtime_staged_plist: "{{ daybook_operations_runtime_install_root }}/operations.launchd.plist"
 daybook_operations_runtime_legacy_plist: "{{ daybook_operations_runtime_install_root }}/regular-importer.before-operations.plist"
 ```
+
+## One binding or several
+
+The defaults render the profile this service has always had: schema 1, one
+binding, woken by launchd every 300 seconds through `operations tick`.
+
+Setting `daybook_operations_runtime_bindings` to a non-empty list renders schema 2
+instead, where every entry states its own `name`, `adapter`, `journal`, `cadence`,
+`deadline` and `lease`. The list and `daybook_operations_runtime_mode: serve` go
+together, and the role requires both or neither: `operations tick` with no
+`--binding` cannot choose between several bindings -- it stops with
+`ambiguous_binding` -- and launchd's single fixed wake-up could not honour their
+separate cadences even if it could choose. A `serve` label with no list would
+supervise the schema 1 binding by accident rather than by decision.
+
+In `serve` the label runs the supervisor -- one long-lived process, one worker per
+binding -- under `KeepAlive` rather than `StartInterval`, because the supervisor
+owns its own due times and must not also be woken.
+
+`KeepAlive` is only safe here because a binding that stops for an operator records
+that stop beside its journal. The restarted supervisor reads the marker, reports
+the reason and dispatches nothing; without it, the key would be a retry loop back
+into the state a person was meant to look at first.
+
+```yaml
+daybook_operations_runtime_mode: serve
+daybook_operations_runtime_bindings:
+  - name: regular
+    adapter: voice_memos.ingest.v1
+    journal: /Users/SERVICE/.local/state/daybook/operations-importer
+    cadence: 300
+    deadline: 330
+    lease: 600
+  - name: long
+    adapter: voice_memos.transcribe_long.v1
+    journal: /Users/SERVICE/.local/state/daybook/operations-long
+    cadence: 600
+    deadline: 1200
+    lease: 1500
+```
+
+The long lane's `deadline` is not a free choice. The client derives a minimum from
+the importer policy the child will run under and refuses the whole profile when
+the configured value is below it -- too small a deadline would kill a
+transcription that was going to succeed. Under Studio's documented policy that
+minimum is 1132 seconds; see the budget table in Daybook's `docs/operations.md`
+before changing either the importer policy or this number. `lease` must exceed
+`deadline` by at least 60 seconds, the time it takes to stop a child and deliver
+its receipt.
+
+`cadence`, `deadline` and `lease` must be whole numbers, not strings or floats
+that happen to convert. The profile is written out exactly as given and the client
+requires real integers, so a quoted `"300"` would pass a coercing check here and
+then stop the entire profile when the client loads it.
+
+Preserve the regular binding's existing journal path when moving to schema 2.
+Create only the new long journal; do not copy, reinterpret or clear outstanding
+deliveries during the upgrade.
 
 ## Validation
 

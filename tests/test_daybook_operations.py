@@ -63,6 +63,98 @@ class OperationsRoleTests(unittest.TestCase):
             )
             self.assertEqual(policy["enabled"], enabled)
 
+    def test_the_supervisor_mode_renders_a_kept_alive_profile_of_several_bindings(self):
+        """`serve` is one long-lived process, so launchd keeps it rather than
+        waking it. That is only safe because a binding stopped for an operator
+        records the stop beside its journal; without that, KeepAlive would be a
+        retry loop straight back into the uncertain state."""
+        role = "daybook_operations_runtime_deploy"
+        values, env = self.variables(role)
+        bindings = [
+            {"name": "regular", "adapter": "voice_memos.ingest.v1",
+             "journal": "/Users/x/.local/state/daybook/operations-importer",
+             "cadence": 300, "deadline": 330, "lease": 600},
+            {"name": "long", "adapter": "voice_memos.transcribe_long.v1",
+             "journal": "/Users/x/.local/state/daybook/operations-long",
+             "cadence": 600, "deadline": 1200, "lease": 1500},
+        ]
+        values["daybook_operations_runtime_mode"] = "serve"
+        values["daybook_operations_runtime_bindings"] = bindings
+        plist = plistlib.loads(
+            env.from_string(self.text(role, "templates/runtime.plist.j2"))
+            .render(**values).encode())
+        self.assertEqual(plist["ProgramArguments"][4:6], ["operations", "serve"])
+        self.assertTrue(plist["KeepAlive"])
+        # A supervisor that owns its own due times must not also be woken.
+        self.assertNotIn("StartInterval", plist)
+
+        policy = json.loads(
+            env.from_string(self.text(role, "templates/policy.json.j2")).render(**values))
+        self.assertEqual(policy["schema"], 2)
+        self.assertEqual(policy["bindings"], bindings)
+        self.assertNotIn("binding", policy)
+        self.assertNotIn("journal", policy)
+        # Staging stays disabled; only an attended cutover enables dispatch.
+        self.assertFalse(policy["enabled"])
+
+    def test_the_single_binding_profile_is_untouched_by_the_supervisor_option(self):
+        """Studio runs this today. Adding the option must not rewrite it."""
+        role = "daybook_operations_runtime_deploy"
+        values, env = self.variables(role)
+        self.assertEqual(values["daybook_operations_runtime_mode"], "tick")
+        self.assertEqual(values["daybook_operations_runtime_bindings"], [])
+        policy = json.loads(
+            env.from_string(self.text(role, "templates/policy.json.j2")).render(**values))
+        self.assertEqual(policy["schema"], 1)
+        self.assertEqual(policy["binding"], "regular")
+        self.assertIn("journal", policy)
+        plist = plistlib.loads(
+            env.from_string(self.text(role, "templates/runtime.plist.j2"))
+            .render(**values).encode())
+        self.assertEqual(plist["ProgramArguments"][4:6], ["operations", "tick"])
+        self.assertEqual(plist["StartInterval"], 300)
+        self.assertNotIn("KeepAlive", plist)
+
+    def test_the_role_refuses_a_profile_that_would_stop_at_load(self):
+        """Each of these fails on the machine anyway; failing here is cheaper."""
+        role = "daybook_operations_runtime_deploy"
+        tasks = yaml.safe_load(self.text(role, "tasks/main.yml"))
+        entry = next(t for t in tasks if t["name"].startswith("Validate every binding"))
+        conditions = " ".join(entry["ansible.builtin.assert"]["that"])
+        self.assertIn("['adapter', 'cadence', 'deadline', 'journal', 'lease', 'name']",
+                      conditions)
+        self.assertIn("daybook_operations_runtime_adapters", conditions)
+        # The lease must outlast the child plus termination and delivery.
+        self.assertIn("item.lease >= item.deadline + 60", conditions)
+        # Whole numbers, not things `| int` would coerce: the profile is emitted
+        # verbatim and the client requires real integers, so a quoted "300" would
+        # pass a coercing check here and stop the whole profile at load.
+        for field in ("cadence", "deadline", "lease"):
+            self.assertIn(f"item.{field} is integer and item.{field} is not boolean",
+                          conditions)
+        self.assertNotIn("| int", conditions)
+        self.assertEqual(entry["loop"], "{{ daybook_operations_runtime_bindings }}")
+
+        guard = next(t for t in tasks if t["name"] == "Validate protected runtime installation")
+        conditions = guard["ansible.builtin.assert"]["that"]
+        self.assertIn("daybook_operations_runtime_mode in ['tick', 'serve']", conditions)
+        # A binding list and the supervisor go together in both directions.
+        # `operations tick` with no `--binding` cannot choose between several
+        # bindings, and launchd's fixed wake-up could not honour their separate
+        # cadences either; `serve` with no list would supervise the schema 1
+        # binding by accident rather than by decision.
+        self.assertIn(
+            "(daybook_operations_runtime_mode == 'serve') "
+            "== (daybook_operations_runtime_bindings | length > 0)",
+            " ".join(conditions))
+
+        unique = next(t for t in tasks if t["name"].startswith("Require distinct"))
+        self.assertIn("map(attribute='journal') | unique", str(unique))
+
+        values, _ = self.variables(role)
+        self.assertEqual(values["daybook_operations_runtime_adapters"],
+                         ["voice_memos.ingest.v1", "voice_memos.transcribe_long.v1"])
+
     def test_transition_waits_before_bootout_and_never_touches_long_label(self):
         text = self.text("daybook_operations_runtime_deploy", "tasks/transition.yml")
         self.assertLess(text.index("Wait for current"), text.index("bootout"))
