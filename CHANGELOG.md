@@ -2,6 +2,7 @@
 
 ## Unreleased — operations API (2.22.0)
 
+- Add a fixed-source, backup-only Echoport bridge with private staging and verified upload; preserve attended restore requirements.
 - Fix macOS runtime user switching from root-only SSH working directories and
   allow the unprivileged restore helper to replace its private configuration atomically.
 - Add disabled-first Daybook JSON API and protected macOS importer runtime roles.

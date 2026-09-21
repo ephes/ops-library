@@ -519,4 +519,4 @@ test-openclaw-heartbeat-recovery: venv
     @UV_PROJECT_ENVIRONMENT=.venv uv run pytest -q tests/unit/test_openclaw_heartbeat_recovery.py
 
 test-daybook-operations: venv
-    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_daybook_operations
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_daybook_operations tests.test_daybook_operations_backup_bridge

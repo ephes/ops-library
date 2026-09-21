@@ -5,3 +5,17 @@ daybook_operations_api_backup_config: /etc/daybook-operations/lifecycle.json
 daybook_operations_api_backup_root: /opt/backups/daybook_operations
 daybook_operations_api_backup_archive: ""
 daybook_operations_api_backup_user: daybook-operations
+# Optional registration through tasks_from: register_echoport.
+daybook_operations_api_backup_runner: /usr/local/libexec/daybook-operations-backup
+daybook_operations_api_backup_policy: /etc/daybook-operations-backup.json
+daybook_operations_api_backup_staging: /var/lib/daybook-operations-backup
+daybook_operations_api_backup_mc: /usr/local/bin/mc
+daybook_operations_api_backup_alias: minio
+daybook_operations_api_backup_bucket: backups
+daybook_operations_api_backup_target: daybook_operations_api
+daybook_operations_api_backup_fastdeploy_service: daybook-operations-backup
+daybook_operations_api_backup_fastdeploy_root: /home/fastdeploy/site
+daybook_operations_api_backup_echoport_root: /home/echoport/site
+daybook_operations_api_backup_schedule: ""
+daybook_operations_api_backup_retention_days: 30
+daybook_operations_api_backup_update_schedule: false
