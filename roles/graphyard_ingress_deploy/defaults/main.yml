@@ -57,3 +57,7 @@ graphyard_ingress_django_admin_url: ""
 
 # Used by Graphyard UI to build Grafana links
 graphyard_ingress_grafana_public_url: "https://{{ graphyard_ingress_grafana_host }}"
+
+# Private inventory POST endpoint; existing UI/metrics routers stay unchanged.
+# Enabled receivers must use host-bound bearer credentials and SQLite FULL.
+graphyard_ingress_inventory_enabled: false

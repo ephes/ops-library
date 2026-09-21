@@ -1,0 +1,16 @@
+---
+ops_library_documentation_category: operations
+software_estate_publisher_state: present
+software_estate_publisher_home: "{{ ansible_env.HOME }}"
+software_estate_publisher_label: local.ops.software-estate
+software_estate_publisher_program: "{{ software_estate_publisher_home }}/.local/share/software-estate-publisher"
+software_estate_publisher_directory: "{{ software_estate_publisher_home }}/.local/state/software-estate/publisher"
+software_estate_publisher_config: "{{ software_estate_publisher_program }}/config.json"
+software_estate_publisher_plist: "{{ software_estate_publisher_home }}/Library/LaunchAgents/{{ software_estate_publisher_label }}.plist"
+software_estate_publisher_python: /opt/homebrew/bin/python3
+software_estate_publisher_minute: 17
+software_estate_publisher_policy: {}
+software_estate_publisher_hostnames: []
+software_estate_publisher_endpoint: ""
+software_estate_publisher_credential_file: ""
+software_estate_publisher_writer: ""

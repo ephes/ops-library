@@ -86,7 +86,7 @@ repos:
     rev: v1.4.0
     hooks:
       - id: detect-secrets
-        args: [--exclude-secrets, "^CHANGE_ME$"]
+        args: [--baseline, .secrets.baseline, --exclude-secrets, "^CHANGE_ME$"]
 
   # Markdown linting (for documentation)
   - repo: https://github.com/igorshubovych/markdownlint-cli

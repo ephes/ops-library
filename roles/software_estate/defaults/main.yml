@@ -1,0 +1,7 @@
+---
+ops_library_documentation_category: operations
+# SSH streaming works without installation; this role supports persistent probes.
+software_estate_install_syft: false
+software_estate_syft_version: '1.52.0'
+software_estate_syft_sha256: caeedb81fb0491615f1ebd1761e4145d41ee86dd2cc7bf80669f9f5ad9d6133d  # pragma: allowlist secret (public upstream Syft archive checksum)
+software_estate_install_dir: /usr/local/lib/software-estate

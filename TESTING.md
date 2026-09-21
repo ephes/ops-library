@@ -43,12 +43,17 @@ Use `just lint` only as a quick summary helper. It intentionally does not fail t
 
 ## SSH forwarding identity fixtures
 
-`just test-ssh-forwarding-roles` exercises filesystem ownership and race guards
-with the current user's UID and primary GID. Its temporary-directory helper sets
-that GID before creating fixture files: macOS inherits the parent's group, and
-the system temporary directory can belong to `wheel` rather than the test user's
-primary group. This is fixture setup only; production ownership checks remain
-strict. Run the suite as the normal contributor user, without sudo.
+`just test-ssh-forwarding-roles` runs the descriptor, ownership, recovery and race
+regressions locally. Identity fixtures explicitly set their temporary root's group
+to the test process's primary group before creating children. macOS inherits the
+parent directory's group, which may otherwise be `wheel` under the system temp
+root even when the configured test identity belongs to `staff`.
+
+This setup changes only fresh test directories. The production helper still
+rejects mismatched configured ownership. A dedicated negative test verifies
+that a non-root operation rejects a mismatched configured group without changing
+the directory.
+Do not skip ownership or race assertions to make the suite pass on macOS.
 
 ## Molecule Scenarios
 

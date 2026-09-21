@@ -116,3 +116,29 @@ running version is explicitly unknown (`null`), while installed evidence remains
 available. Read failures and unstable observations remain critical. Running-process version probing pins an open
 file descriptor and validates the process image before executing that descriptor,
 so a process re-exec cannot redirect the root probe to a different image.
+
+## Optional local inventory metadata export
+
+`software_live_inventory_export` defaults to `false`. Set it to `true` only after
+an inventory reader group already exists (`software_live_inventory_group`, default
+`software-estate-publisher`). The role creates the separate root-owned 0750
+`/var/lib/software-estate-observations` directory with that read-only group.
+No user is added to metrics, Docker or sudo groups, and no monitoring password is
+shared. Unsafe existing directory ownership/modes or symlinks are refused.
+
+An optional `ExecStartPost` on the **existing** observation job projects the just
+written local state into `software-health.json` (root-owned 0640, atomic replace).
+It runs no probes or network requests itself and retains the original observation
+time. Only host/time, OS/PostgreSQL/Traefik verdicts and versions, bounded issue
+codes, and APT security-count/index-freshness fields are allowed. Paths, process
+IDs, credentials, arbitrary source fields and package lists are omitted.
+Export failure is logged by exception type and does not fail the existing health
+job or alter its endpoint response. The previous projection may remain; its
+original timestamp expires independently. Disabling export stops future writes;
+a retained projection is not fresh forever and can be removed deliberately.
+
+The unprivileged inventory reader must reject wrong-host, malformed, future or
+older-than-1800-second projections at collection. A received weekly inventory is
+an observation at its source time, not a live monitoring query. The receiver must
+label historical health evidence rather than refreshing its age on delivery.
+An unknown APT observation or stale indexes never means zero security updates.

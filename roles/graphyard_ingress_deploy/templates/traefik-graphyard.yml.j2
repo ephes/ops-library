@@ -4,6 +4,27 @@
 
 http:
   routers:
+{% if graphyard_ingress_inventory_enabled | bool %}
+    # Match all sources here so untrusted callers cannot fall through to UI auth.
+    graphyard-inventory:
+      rule: "Host(`{{ graphyard_ingress_graphyard_host }}`) && Path(`/v1/inventory`)"
+      entryPoints:
+        - web-secure
+      priority: 200
+      middlewares:
+        - graphyard-inventory-sources
+        - graphyard-inventory-rate
+        - graphyard-inventory-inflight
+        - graphyard-inventory-body
+        - graphyard-headers
+      service: graphyard
+{% if graphyard_ingress_traefik_cert_resolver | default('') | length > 0 %}
+      tls:
+        certResolver: {{ graphyard_ingress_traefik_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+{% endif %}
 {% if graphyard_ingress_basic_auth_enabled %}
     # Graphyard internal router (LAN + Tailscale) - no auth
     graphyard-int:
@@ -144,6 +165,28 @@ http:
       service: grafana
 
   middlewares:
+{% if graphyard_ingress_inventory_enabled | bool %}
+    graphyard-inventory-sources:
+      ipAllowList:
+        sourceRange:
+{% for range in graphyard_ingress_internal_ip_ranges %}
+          - "{{ range }}"
+{% endfor %}
+    graphyard-inventory-rate:
+      rateLimit:
+        average: 6
+        period: 1m
+        burst: 4
+    graphyard-inventory-inflight:
+      inFlightReq:
+        amount: 2
+        sourceCriterion:
+          requestHost: true
+    graphyard-inventory-body:
+      buffering:
+        maxRequestBodyBytes: 8388608
+        memRequestBodyBytes: 1048576
+{% endif %}
 {% if graphyard_ingress_basic_auth_enabled %}
     graphyard-stack-auth:
       basicAuth:

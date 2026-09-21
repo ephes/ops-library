@@ -1,0 +1,241 @@
+---
+- name: Require an unprivileged macOS publisher
+  ansible.builtin.assert:
+    that:
+      - ansible_system == 'Darwin'
+      - ansible_user_uid | int != 0
+      - software_estate_publisher_home == ansible_env.HOME
+      - software_estate_publisher_state in ['present', 'absent']
+      - software_estate_publisher_label is match('^[A-Za-z0-9][A-Za-z0-9.-]+$')
+      - software_estate_publisher_minute is integer
+      - software_estate_publisher_minute | int >= 0
+      - software_estate_publisher_minute | int <= 59
+
+- name: Require explicit local producer configuration
+  ansible.builtin.assert:
+    that:
+      - software_estate_publisher_policy.host is defined
+      - software_estate_publisher_hostnames | length > 0
+      - software_estate_publisher_policy.host in software_estate_publisher_hostnames
+      - ansible_hostname | lower in software_estate_publisher_hostnames
+      - software_estate_publisher_endpoint is match('^https://')
+      - software_estate_publisher_credential_file | length > 0
+  when: software_estate_publisher_state == 'present'
+
+- name: Derive immutable program release
+  ansible.builtin.set_fact:
+    software_estate_publisher_release: >-
+      {{ software_estate_publisher_program }}/{{ (
+      lookup('file', role_path + '/../software_estate/files/publish.py') ~
+      lookup('file', role_path + '/../software_estate/files/collect.py') ~
+      lookup('file', role_path + '/../software_estate/files/emit.py') ~
+      lookup('file', role_path + '/../software_estate/files/outbox.py') ~
+      lookup('file', role_path + '/../software_estate/files/send.py')) | hash('sha256') }}
+
+- name: Check publisher paths before managing them
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_facts.python.executable }}"
+      - -c
+      - |
+        import os, pathlib, stat, sys
+        home = pathlib.Path(sys.argv[1])
+        for raw in sys.argv[2:]:
+            path = pathlib.Path(raw)
+            def require(condition, reason):
+                if not condition:
+                    sys.exit(f"unsafe path {raw}: {reason}")
+            require(path.is_absolute() and path.is_relative_to(home) and path != home,
+                    "must be below current home")
+            require('..' not in path.parts, "parent traversal")
+            require(not any(p.is_symlink() for p in (path, *path.parents)), "symlink")
+            if path.exists():
+                info = path.stat()
+                require(info.st_uid == os.geteuid(), "different owner")
+                require(not info.st_mode & 0o077, "not private")
+                require(stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode),
+                        "not a regular file or directory")
+                if stat.S_ISREG(info.st_mode):
+                    require(info.st_nlink == 1, "hard links")
+      - "{{ software_estate_publisher_home }}"
+      - "{{ software_estate_publisher_program }}"
+      - "{{ software_estate_publisher_release }}"
+      - "{{ software_estate_publisher_release }}/publish.py"
+      - "{{ software_estate_publisher_release }}/collect.py"
+      - "{{ software_estate_publisher_release }}/emit.py"
+      - "{{ software_estate_publisher_release }}/outbox.py"
+      - "{{ software_estate_publisher_release }}/send.py"
+      - "{{ software_estate_publisher_directory }}"
+      - "{{ software_estate_publisher_directory }}/outbox"
+      - "{{ software_estate_publisher_config }}"
+      - "{{ software_estate_publisher_plist }}"
+      - "{{ software_estate_publisher_program }}/run"
+      - >-
+        {{ (software_estate_publisher_credential_file | dirname)
+        if software_estate_publisher_state == 'present' else software_estate_publisher_program }}
+      - >-
+        {{ software_estate_publisher_credential_file
+        if software_estate_publisher_state == 'present' else software_estate_publisher_program }}
+  changed_when: false
+  check_mode: false
+
+- name: Check user GUI domain
+  ansible.builtin.command:
+    argv: [launchctl, print, "gui/{{ ansible_user_uid }}"]
+  changed_when: false
+  check_mode: false
+
+- name: Inspect existing publisher job
+  ansible.builtin.command:
+    argv: [launchctl, print, "gui/{{ ansible_user_uid }}/{{ software_estate_publisher_label }}"]
+  register: software_estate_publisher_loaded
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Install publisher files
+  when: software_estate_publisher_state == 'present'
+  block:
+    - name: Create private publisher directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0700'
+      loop:
+        - "{{ software_estate_publisher_program }}"
+        - "{{ software_estate_publisher_release }}"
+        - "{{ software_estate_publisher_directory }}"
+        - "{{ software_estate_publisher_directory }}/outbox"
+
+    - name: Install versioned publisher programs
+      ansible.builtin.copy:
+        src: "{{ role_path }}/../software_estate/files/{{ item }}"
+        dest: "{{ software_estate_publisher_release }}/{{ item }}"
+        mode: '0600'
+      loop: [publish.py, collect.py, emit.py, outbox.py, send.py]
+      register: software_estate_publisher_programs_result
+
+    - name: Create the private writer directory when provisioning a new credential
+      ansible.builtin.file:
+        path: "{{ software_estate_publisher_credential_file | dirname }}"
+        state: directory
+        mode: '0700'
+      when: software_estate_publisher_writer | trim | length > 0
+
+    - name: Provision a missing host-bound writer without replacing an existing one
+      ansible.builtin.copy:
+        content: "{{ software_estate_publisher_writer | trim }}\n"
+        dest: "{{ software_estate_publisher_credential_file }}"
+        mode: '0600'
+        force: false
+      no_log: true
+      diff: false
+      when: software_estate_publisher_writer | trim | length > 0
+
+    - name: Install publisher configuration without embedding credentials
+      ansible.builtin.copy:
+        content: "{{ software_estate_publisher_configuration | to_nice_json }}\n"
+        dest: "{{ software_estate_publisher_config }}"
+        mode: '0600'
+      vars:
+        software_estate_publisher_configuration:
+          policy: "{{ software_estate_publisher_policy }}"
+          hostnames: "{{ software_estate_publisher_hostnames }}"
+          directory: "{{ software_estate_publisher_directory }}"
+          endpoint: "{{ software_estate_publisher_endpoint }}"
+          credential_file: "{{ software_estate_publisher_credential_file }}"
+      register: software_estate_publisher_config_result
+
+    - name: Validate installed configuration and existing state before enabling
+      ansible.builtin.command:
+        argv:
+          - "{{ software_estate_publisher_python }}"
+          - "{{ software_estate_publisher_release }}/publish.py"
+          - --config
+          - "{{ software_estate_publisher_config }}"
+          - --check
+      register: software_estate_publisher_check
+      until: software_estate_publisher_check.rc | default(1) != 75
+      retries: 60
+      delay: 5
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: Install stable manual entry point
+      ansible.builtin.template:
+        src: run.j2
+        dest: "{{ software_estate_publisher_program }}/run"
+        mode: '0700'
+
+    - name: Ensure user LaunchAgents directory exists
+      ansible.builtin.file:
+        path: "{{ software_estate_publisher_home }}/Library/LaunchAgents"
+        state: directory
+        mode: '0755'
+
+    - name: Render the publisher LaunchAgent
+      ansible.builtin.template:
+        src: publisher.plist.j2
+        dest: "{{ software_estate_publisher_plist }}"
+        mode: '0600'
+        validate: /usr/bin/plutil -lint %s
+      register: software_estate_publisher_plist_result
+
+- name: Stop job for update or removal
+  when: >-
+    software_estate_publisher_state == 'absent' or
+    software_estate_publisher_programs_result.changed | default(false) or
+    software_estate_publisher_config_result.changed | default(false) or
+    software_estate_publisher_plist_result.changed | default(false) or software_estate_publisher_loaded.rc != 0
+  block:
+    - name: Disable the publisher before unloading
+      ansible.builtin.command:
+        argv: [launchctl, disable, "gui/{{ ansible_user_uid }}/{{ software_estate_publisher_label }}"]
+      changed_when: true
+
+    - name: Unload only the publisher
+      ansible.builtin.command:
+        argv: [launchctl, bootout, "gui/{{ ansible_user_uid }}/{{ software_estate_publisher_label }}"]
+      when: software_estate_publisher_loaded.rc == 0
+      changed_when: true
+      failed_when: false
+
+    - name: Wait until publisher is unloaded
+      ansible.builtin.command:
+        argv: [launchctl, print, "gui/{{ ansible_user_uid }}/{{ software_estate_publisher_label }}"]
+      register: software_estate_publisher_unloaded
+      changed_when: false
+      failed_when: false
+      until: software_estate_publisher_unloaded.rc != 0
+      retries: 15
+      delay: 1
+      when: not ansible_check_mode
+
+    - name: Require completed unload
+      ansible.builtin.assert:
+        that: software_estate_publisher_unloaded.rc != 0
+      when: not ansible_check_mode
+
+    - name: Enable publisher login and calendar triggers
+      ansible.builtin.command:
+        argv: [launchctl, enable, "gui/{{ ansible_user_uid }}/{{ software_estate_publisher_label }}"]
+      changed_when: true
+      when: software_estate_publisher_state == 'present'
+
+    - name: Bootstrap publisher in current user domain
+      ansible.builtin.command:
+        argv: [launchctl, bootstrap, "gui/{{ ansible_user_uid }}", "{{ software_estate_publisher_plist }}"]
+      changed_when: true
+      when: software_estate_publisher_state == 'present'
+
+- name: Reconcile enabled triggers even for an unchanged loaded publisher
+  ansible.builtin.command:
+    argv: [launchctl, enable, "gui/{{ ansible_user_uid }}/{{ software_estate_publisher_label }}"]
+  changed_when: false
+  when: software_estate_publisher_state == 'present'
+
+- name: Remove only the scheduled job, preserving programs and all private state
+  ansible.builtin.file:
+    path: "{{ software_estate_publisher_plist }}"
+    state: absent
+  when: software_estate_publisher_state == 'absent'

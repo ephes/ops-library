@@ -1,0 +1,67 @@
+---
+- name: inventory_releases | Validate optional release refresh configuration
+  ansible.builtin.assert:
+    that:
+      - graphyard_inventory_releases_enabled is boolean
+      - graphyard_inventory_release_sources is sequence
+      - graphyard_inventory_release_sources is not string
+      - graphyard_inventory_release_sources is not mapping
+
+- name: inventory_releases | Install configured release refresh
+  when: graphyard_inventory_releases_enabled and not graphyard_skip_django_manage | bool
+  block:
+    - name: inventory_releases | Install explicit source registry
+      ansible.builtin.copy:
+        content: "{{ graphyard_inventory_release_sources | to_nice_json }}\n"
+        dest: "{{ graphyard_env_dir }}/inventory-releases.json"
+        owner: root
+        group: "{{ graphyard_group }}"
+        mode: '0640'
+
+    - name: inventory_releases | Validate registry without fetching or changing the database
+      ansible.builtin.command:
+        argv:
+          - "{{ graphyard_venv_bin }}/python"
+          - manage.py
+          - refresh_inventory_releases
+          - --file
+          - "{{ graphyard_env_dir }}/inventory-releases.json"
+          - --check
+        chdir: "{{ graphyard_django_path }}"
+      become: true
+      become_user: "{{ graphyard_user }}"
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: inventory_releases | Install unprivileged refresh units
+      ansible.builtin.template:
+        src: "inventory-releases.{{ item }}.j2"
+        dest: "/etc/systemd/system/graphyard-inventory-releases.{{ item }}"
+        owner: root
+        group: root
+        mode: '0644'
+      loop: [service, timer]
+
+    - name: inventory_releases | Enable weekly refresh timer
+      ansible.builtin.systemd_service:
+        name: graphyard-inventory-releases.timer
+        daemon_reload: true
+        enabled: true
+        state: started
+      when: not ansible_check_mode
+
+- name: inventory_releases | Inspect optional timer when disabled
+  ansible.builtin.stat:
+    path: /etc/systemd/system/graphyard-inventory-releases.timer
+  register: _graphyard_release_timer
+  when: not graphyard_inventory_releases_enabled or graphyard_skip_django_manage | bool
+
+- name: inventory_releases | Stop disabled release refresh units
+  ansible.builtin.systemd_service:
+    name: "graphyard-inventory-releases.{{ item }}"
+    enabled: "{{ false if item == 'timer' else omit }}"
+    state: stopped
+  loop: [timer, service]
+  when:
+    - not graphyard_inventory_releases_enabled or graphyard_skip_django_manage | bool
+    - _graphyard_release_timer.stat.exists

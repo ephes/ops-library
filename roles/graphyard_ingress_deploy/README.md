@@ -80,3 +80,36 @@ graphyard_ingress_django_admin_url: ""      # optional; example "hidden_admin/" 
   Keep ingest producers on direct/local Graphyard ingest URLs (`http://127.0.0.1:8051/v1/metrics`) rather than through these public Traefik routers.
 - HTTP routers include a dynamic `redirect-to-https` middleware as defense in depth.
 - This role relies on Traefik file-provider hot reload (`[providers.file].watch = true`) for dynamic config updates.
+
+## Optional private inventory receiver
+
+Set `graphyard_ingress_inventory_enabled: true` only for a Graphyard version
+providing host-bound inventory writer authentication. The default is `false`.
+The exact `/v1/inventory` path gets a higher-priority HTTPS router for all sources:
+only `graphyard_ingress_internal_ip_ranges` pass its IP allowlist; other sources
+receive 403, including callers with valid UI basic auth. Allowed producers keep
+their bearer Authorization header for Graphyard to verify. This is not a public
+basic-auth bypass for any other path, nor does IP allowlisting replace writer auth.
+
+The route limits requests to 8 MiB (413 beyond that), buffers at most 1 MiB per
+body in memory before using disk, permits two in-flight requests shared by all writers targeting the same request host and limits
+each source IP to six requests per minute with burst four (429 on excess).
+No proxy retries are configured; the producer owns idempotent retries. UI, status,
+metrics and Grafana routes are unchanged. Body/rate policies use Traefik's
+[buffering](https://doc.traefik.io/traefik/reference/routing-configuration/http/middlewares/buffering/)
+and [rate limit](https://doc.traefik.io/traefik/reference/routing-configuration/http/middlewares/ratelimit/)
+middlewares. This role does not enroll hosts, issue credentials or run collectors.
+
+Before receiving reports, deploy the Graphyard inventory migrations, configure
+`graphyard_sqlite_synchronous: FULL` in the core role, and verify backup/restore.
+Check anonymous writer rejection, authenticated delivery, 413/429 enforcement,
+private reader access and existing metrics health on the live endpoint. Setting
+the inventory flag back to false removes only the dedicated ingress policy;
+it does not disable the application's endpoint behind the existing generic
+routers. To disable ingestion, also revoke writers/disable inventory hosts.
+
+The application registers only the exact ingest path `/v1/inventory`. A trailing
+slash returns 404; `/v1/inventory/status` is a separate authenticated reader API.
+Keep those distinctions when changing application routes. In-flight grouping is
+explicitly by request host, as documented by
+[Traefik InFlightReq](https://doc.traefik.io/traefik/reference/routing-configuration/http/middlewares/inflightreq/).

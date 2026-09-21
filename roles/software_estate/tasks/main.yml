@@ -1,0 +1,63 @@
+---
+- name: Require dedicated software estate installation directory
+  ansible.builtin.assert:
+    that:
+      - software_estate_install_dir == '/usr/local/lib/software-estate'
+      - not software_estate_install_syft or ansible_facts['system'] == 'Linux'
+      - not software_estate_install_syft or ansible_facts['architecture'] == 'x86_64'
+      - software_estate_syft_version == '1.52.0'
+      - software_estate_syft_sha256 is match('^[a-f0-9]{64}$')
+
+- name: Create software estate program directory
+  ansible.builtin.file:
+    path: '{{ software_estate_install_dir }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install read-only software estate collector
+  ansible.builtin.copy:
+    src: '{{ item }}'
+    dest: '{{ software_estate_install_dir }}/{{ item }}'
+    owner: root
+    group: root
+    mode: '0755'
+  loop: [collect.py, sbom.py]
+
+- name: Download verified pinned SBOM scanner archive
+  ansible.builtin.get_url:
+    url: 'https://github.com/anchore/syft/releases/download/v{{ software_estate_syft_version }}/syft_{{ software_estate_syft_version }}_linux_amd64.tar.gz'
+    dest: '{{ software_estate_install_dir }}/syft-{{ software_estate_syft_version }}.tar.gz'
+    checksum: 'sha256:{{ software_estate_syft_sha256 }}'
+    owner: root
+    group: root
+    mode: '0644'
+  when: software_estate_install_syft
+
+- name: Extract pinned scanner in a versioned directory
+  when: software_estate_install_syft
+  block:
+    - name: Create scanner version directory
+      ansible.builtin.file:
+        path: '{{ software_estate_install_dir }}/syft-{{ software_estate_syft_version }}'
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Extract scanner executable
+      ansible.builtin.unarchive:
+        src: '{{ software_estate_install_dir }}/syft-{{ software_estate_syft_version }}.tar.gz'
+        dest: '{{ software_estate_install_dir }}/syft-{{ software_estate_syft_version }}'
+        remote_src: true
+        include: [syft]
+        creates: '{{ software_estate_install_dir }}/syft-{{ software_estate_syft_version }}/syft'
+
+    - name: Select pinned scanner executable
+      ansible.builtin.file:
+        src: '{{ software_estate_install_dir }}/syft-{{ software_estate_syft_version }}/syft'
+        dest: '{{ software_estate_install_dir }}/syft'
+        state: link
+        owner: root
+        group: root

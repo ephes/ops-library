@@ -31,6 +31,7 @@ Creates on-host backups of the Mastodon database, media, and configuration with 
 | `mastodon_backup_include_media` | `true` | Include local media directory. |
 | `mastodon_backup_media_rsync_excludes` | `["/cache/***"]` | Rsync exclude patterns for local media backups. |
 | `mastodon_backup_fetch_local` | `true` | Fetch archive to the controller. |
+| `mastodon_backup_fetch_become` | `true` | Use privilege escalation while fetching. Set to `false` when the SSH user can read the archive directly so Ansible streams large archives instead of using its in-memory become fallback. |
 | `mastodon_backup_retain` | `7` | Number of archives to retain. |
 | `mastodon_backup_postgres_become_user` | `{{ mastodon_backup_owner }}` | OS user for running `pg_dump`. |
 
@@ -41,6 +42,11 @@ still preserving local account and media attachment files.
 By default, `pg_dump` runs as the backup directory owner so it can write into the root-owned backup tree while
 authenticating to PostgreSQL as `mastodon_backup_postgres_user`. If `pg_hba.conf` requires peer auth, set
 `mastodon_backup_postgres_become_user` to `postgres` and ensure the backup directory is writable by that user.
+
+Ansible's `fetch` action falls back to `slurp` when privilege escalation is active, which reads the remote file
+into controller memory. Keep `mastodon_backup_fetch_become: true` when the SSH user cannot traverse and read the
+backup path. Set it to `false` for direct-root connections or another SSH user with direct read access; this
+keeps large archive transfers streaming and avoids controller memory growth.
 
 See `defaults/main.yml` and `roles/mastodon_shared/defaults/main.yml` for the full reference.
 

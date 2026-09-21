@@ -211,6 +211,7 @@
     src: "{{ mastodon_backup_archive }}"
     dest: "{{ mastodon_backup_local_dir }}/"
     flat: true
+  become: "{{ mastodon_backup_fetch_become | bool }}"
   run_once: true
   when:
     - mastodon_backup_fetch_local | bool

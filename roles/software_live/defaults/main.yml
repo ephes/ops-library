@@ -20,3 +20,7 @@ software_live_nyxmon_db: /home/nyxmon/site/db.sqlite3
 software_live_nyxmon_user: nyxmon
 software_live_nyxmon_checks: []
 software_live_nyxmon_disable_names: []
+
+# Optional allowlisted metadata export for an already existing inventory publisher.
+software_live_inventory_export: false
+software_live_inventory_group: software-estate-publisher

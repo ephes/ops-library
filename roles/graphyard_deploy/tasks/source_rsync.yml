@@ -39,7 +39,7 @@
     src: "{{ graphyard_source_path }}/"
     dest: "{{ graphyard_site_path }}/"
     delete: true
-    rsync_opts: "{{ graphyard_rsync_excludes | map('regex_replace', '^(.*)$', '--exclude=\\1') | list }}"
+    rsync_opts: "{{ (graphyard_rsync_excludes + ['.inventory-releases.lock']) | unique | map('regex_replace', '^(.*)$', '--exclude=\\1') | list }}"
   delegate_to: localhost
   become: false
   notify:

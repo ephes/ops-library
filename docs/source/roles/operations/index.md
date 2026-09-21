@@ -48,6 +48,9 @@ daybook_operations_api_restore
 
 daybook_operations_api_backup
 
+software_estate
+software_estate_publisher
+software_estate_publisher_linux
 software_live
 homeassistant_backup
 homeassistant_restore
