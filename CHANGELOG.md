@@ -2,6 +2,15 @@
 
 ## Unreleased — operations API (2.22.0)
 
+- Document how to choose `daybook_mail_work_interval_seconds` in the
+  `daybook_mail_work_deploy` README, with the measurement behind it. The default
+  of 300 is probably too short for a judgement-heavy source: measured on one
+  host over 20.5 hours of steady running, 50 of 58 five-minute windows held
+  exactly one message and the 58 carried 68 in total, so every message got a
+  full agent session instead of the window being the unit of work. A table simulates 5 to 120 minutes against those same arrivals — an
+  hour gives 21 sessions a day averaging 3.8 messages, against 68 averaging 1.2.
+  The default is unchanged; this only makes the trade-off visible.
+
 - Add operations capacity monitoring to the API role: executor/monitor credential
   purposes in versioned profile entries, rendered capacity thresholds, nominal
   growth and an operator-configured storage sampling path. Legacy executor-only
