@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Initialize SSH forwarding test directories with the test user's primary group,
+  so macOS temporary-directory group inheritance does not stop the regression
+  suite before it reaches its ownership and race assertions.
+
 - Select Debian 13's packaged `named.conf.root-hints` include in
   `bind_authoritative_deploy`; trixie removes `named.conf.default-zones`, which
   otherwise leaves BIND half-configured during an in-place upgrade.

@@ -41,6 +41,15 @@ just molecule-test unifi_restore
 `just validate-strict` swaps in `just lint-strict` for the same sequence.
 Use `just lint` only as a quick summary helper. It intentionally does not fail the run.
 
+## SSH forwarding identity fixtures
+
+`just test-ssh-forwarding-roles` exercises filesystem ownership and race guards
+with the current user's UID and primary GID. Its temporary-directory helper sets
+that GID before creating fixture files: macOS inherits the parent's group, and
+the system temporary directory can belong to `wheel` rather than the test user's
+primary group. This is fixture setup only; production ownership checks remain
+strict. Run the suite as the normal contributor user, without sudo.
+
 ## Molecule Scenarios
 
 Molecule coverage lives under `roles/<role>/molecule/default/`.
