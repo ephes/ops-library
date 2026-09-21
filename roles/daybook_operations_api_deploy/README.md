@@ -31,6 +31,35 @@ than reparsing it as legacy, so monitor material can never fall back into execut
 authority. A token may not appear in both lists, and an existing credential's purpose
 is immutable — rotate to a new token instead of promoting or demoting one in place.
 
+`schema: 3` replaces `binding` and `binding_enabled` with a `bindings` list, so one
+principal can run more than one lane. Each entry names its `name`, `adapter`,
+`enabled`, `cadence` and `lease_seconds`; the single-binding keys must be absent,
+and the list must be present. Schema 1 and 2 entries name one binding and say
+nothing about how it runs, so it keeps the model defaults — the regular lane's
+adapter, cadence and lease. A long binding provisioned that way would carry the
+wrong command and a budget too small to finish one transcription.
+
+```yaml
+- name: studio-importer
+  schema: 3
+  host: studio
+  profile: voice-memo-importer
+  enabled: true
+  tokens: ["{{ executor_token }}"]
+  monitor_tokens: ["{{ monitor_token }}"]
+  bindings:
+    - {name: regular, adapter: voice_memos.ingest.v1, enabled: true, cadence: 300, lease_seconds: 600}
+    - {name: long, adapter: voice_memos.transcribe_long.v1, enabled: false, cadence: 600, lease_seconds: 1500}
+```
+
+The role validates each entry against `daybook_operations_api_adapters` and the
+60–3600 second ranges, requiring whole numbers and a real boolean `enabled`,
+because the profile is written out exactly as given: provisioning would refuse the
+whole file while reporting only that it was invalid, where failing here names the
+offending field. An existing binding is never repointed at a different adapter —
+its operation identities and the client's journal still describe the old command,
+so a different adapter is a different binding.
+
 Example (secret variables supplied by an encrypted private control repository):
 
 ```yaml

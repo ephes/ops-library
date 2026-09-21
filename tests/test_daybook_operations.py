@@ -247,6 +247,49 @@ class OperationsRoleTests(unittest.TestCase):
             purposes["ansible.builtin.assert"]["that"],
         )
 
+    def test_the_server_role_accepts_a_schema_three_profile_and_checks_its_bindings(self):
+        """The provisioner learned schema 3; this role had to as well.
+
+        A dry run caught it refusing the very profile ops-control now writes.
+        Validating here names the offending field, where the provisioner can only
+        report that the whole file was invalid.
+        """
+        role = "daybook_operations_api_deploy"
+        tasks = yaml.safe_load(self.text(role, "tasks/main.yml"))
+        purposes = next(t for t in tasks if t["name"] == "Validate profile purposes")
+        conditions = purposes["ansible.builtin.assert"]["that"]
+        self.assertIn("item.schema is not defined or item.schema in [2, 3]", conditions)
+        # Schema 3 replaces the single-binding keys rather than ignoring them,
+        # and the earlier schemas must not carry a binding list.
+        joined = " ".join(conditions)
+        self.assertIn("'binding' not in item and 'binding_enabled' not in item", joined)
+        self.assertIn("('bindings' not in item)", joined)
+        # A schema 3 entry with no list at all would otherwise slip past both
+        # binding checks, which skip profiles that have none.
+        self.assertIn("item.schema | default(2) != 3 or item.bindings is defined", conditions)
+
+        entry = next(t for t in tasks if t["name"].startswith("Validate every binding"))
+        checks = " ".join(entry["ansible.builtin.assert"]["that"])
+        self.assertIn("['adapter', 'cadence', 'enabled', 'lease_seconds', 'name']", checks)
+        self.assertIn("daybook_operations_api_adapters", checks)
+        # Whole numbers, not values `| int` would coerce: the profile is written
+        # out as given and the provisioner requires real integers.
+        for field in ("cadence", "lease_seconds"):
+            self.assertIn(f"item.1.{field} is integer and item.1.{field} is not boolean",
+                          checks)
+        self.assertNotIn("| int", checks)
+        # A quoted "false" is not false.
+        self.assertIn("item.1.enabled is boolean", checks)
+        # subelements with skip_missing leaves schema 1 and 2 profiles alone.
+        self.assertIn("subelements('bindings', skip_missing=True)", entry["loop"])
+
+        unique = next(t for t in tasks if t["name"].startswith("Require distinct binding"))
+        self.assertIn("map(attribute='name') | unique", str(unique))
+
+        values, _ = self.variables(role)
+        self.assertEqual(values["daybook_operations_api_adapters"],
+                         ["voice_memos.ingest.v1", "voice_memos.transcribe_long.v1"])
+
     def test_restore_account_can_atomically_replace_private_configuration(self):
         role = "daybook_operations_api_deploy"
         values, env = self.variables(role)

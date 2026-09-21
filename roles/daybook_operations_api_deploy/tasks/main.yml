@@ -31,11 +31,48 @@
 - name: Validate profile purposes
   ansible.builtin.assert:
     that:
-      - item.schema is not defined or item.schema == 2
+      - item.schema is not defined or item.schema in [2, 3]
       - item.monitor_tokens is not defined or item.schema is defined
       - item.monitor_tokens | default([]) | select('in', item.tokens) | list | length == 0
+      # Schema 3 replaces the single binding with a list, so the two
+      # single-binding keys must be gone rather than quietly ignored.
+      - item.schema | default(2) != 3 or ('binding' not in item and 'binding_enabled' not in item)
+      - item.schema | default(2) == 3 or ('bindings' not in item)
+      # Without this a schema 3 entry carrying no list at all would slip past
+      # both binding checks below, which skip profiles that have none.
+      - item.schema | default(2) != 3 or item.bindings is defined
   loop: "{{ daybook_operations_api_profiles }}"
   no_log: true
+
+- name: Validate every binding of a schema 3 profile
+  ansible.builtin.assert:
+    that:
+      # Mirrors what `provision_operations` requires. Failing here names the
+      # offending field; failing there reports only that the file was invalid.
+      - item.1.keys() | sort == ['adapter', 'cadence', 'enabled', 'lease_seconds', 'name']
+      - item.1.name is match('^[a-z0-9_-]{1,50}$')
+      - item.1.adapter in daybook_operations_api_adapters
+      # A quoted "false" is not false. The provisioner requires a real boolean
+      # and would refuse the whole file without naming which field was wrong.
+      - item.1.enabled is boolean
+      - item.1.cadence is integer and item.1.cadence is not boolean
+      - item.1.lease_seconds is integer and item.1.lease_seconds is not boolean
+      - item.1.cadence >= 60 and item.1.cadence <= 3600
+      - item.1.lease_seconds >= 60 and item.1.lease_seconds <= 3600
+    fail_msg: "Binding {{ item.1.name | default(item.1) }} is not a usable profile entry."
+  loop: "{{ daybook_operations_api_profiles | subelements('bindings', skip_missing=True) }}"
+  loop_control:
+    label: "{{ item.1.name | default('unnamed') }}"
+
+- name: Require distinct binding names in a schema 3 profile
+  ansible.builtin.assert:
+    that:
+      - item.bindings | length >= 1
+      - item.bindings | map(attribute='name') | unique | length == item.bindings | length
+    fail_msg: Two bindings of one principal cannot share a name.
+  loop: "{{ daybook_operations_api_profiles | selectattr('bindings', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"
 
 - name: Validate derivation keys
   ansible.builtin.assert:
