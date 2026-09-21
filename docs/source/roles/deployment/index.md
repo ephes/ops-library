@@ -5,6 +5,10 @@ Roles for deploying and configuring services.
 ```{toctree}
 :maxdepth: 1
 
+daybook_operations_runtime_deploy
+
+daybook_operations_api_deploy
+
 fastdeploy_deploy
 fastdeploy_self_deploy
 daybook_sessions_deploy

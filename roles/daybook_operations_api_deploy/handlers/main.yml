@@ -1,0 +1,8 @@
+---
+- name: Restart operations services
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: restarted
+    daemon_reload: true
+  loop: [daybook-operations, daybook-operations-reconcile]
+  when: daybook_operations_api_enabled | bool

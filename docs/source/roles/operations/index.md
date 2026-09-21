@@ -44,6 +44,10 @@ Available runbooks:
 ```{toctree}
 :maxdepth: 1
 
+daybook_operations_api_restore
+
+daybook_operations_api_backup
+
 software_live
 homeassistant_backup
 homeassistant_restore

@@ -1,0 +1,6 @@
+{{ {
+  'schema': 1, 'enabled': daybook_operations_runtime_action == 'cutover',
+  'api_url': daybook_operations_runtime_api_url, 'credential_path': daybook_operations_runtime_credential,
+  'binding': daybook_operations_runtime_binding, 'journal': daybook_operations_runtime_journal,
+  'importer_policy': daybook_operations_runtime_importer_policy
+} | to_nice_json }}

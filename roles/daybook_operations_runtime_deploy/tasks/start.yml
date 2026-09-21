@@ -1,0 +1,26 @@
+---
+- name: start | Validate API and local readiness before enabling new scheduler
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_runtime_python }}", -I, -c, 'from daybook.cli import main; raise SystemExit(main())', operations, status, --policy, "{{ daybook_operations_runtime_policy }}"]
+  become: true
+  become_user: "{{ daybook_operations_runtime_user }}"
+  register: daybook_operations_runtime_ready
+  changed_when: false
+
+- name: start | Require reconciled local and remote state
+  ansible.builtin.assert:
+    that:
+      - (daybook_operations_runtime_ready.stdout | from_json).server.active_state is none
+      - daybook_operations_runtime_action != 'cutover' or (daybook_operations_runtime_ready.stdout | from_json).status == 'idle'
+      - (daybook_operations_runtime_ready.stdout | from_json).server.enabled == (daybook_operations_runtime_action == 'cutover')
+    fail_msg: Reconcile journals and set the explicit server binding state before starting.
+
+- name: start | Enable only the regular label
+  ansible.builtin.command:
+    argv: [/bin/launchctl, enable, "gui/{{ daybook_operations_runtime_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
+  changed_when: true
+
+- name: start | Bootstrap the reviewed regular command
+  ansible.builtin.command:
+    argv: [/bin/launchctl, bootstrap, "gui/{{ daybook_operations_runtime_uid.stdout | trim }}", "{{ daybook_operations_runtime_plist }}"]
+  changed_when: true

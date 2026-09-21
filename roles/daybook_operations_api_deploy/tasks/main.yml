@@ -1,0 +1,182 @@
+---
+- name: Validate operations service configuration
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.system == 'Linux'
+      - daybook_operations_api_deploy_method in ['rsync', 'git']
+      - daybook_operations_api_deploy_method != 'rsync' or daybook_operations_api_source_path | length > 0
+      - daybook_operations_api_deploy_method != 'git' or daybook_operations_api_git_revision is match('^[0-9a-f]{40}$')
+      - daybook_operations_api_port | int > 1024
+      - daybook_operations_api_port | int < 65536
+      - daybook_operations_api_domain is match('^[a-z0-9.-]+$')
+      - daybook_operations_api_database is match('^[a-z][a-z0-9_]+$')
+      - daybook_operations_api_database_user is match('^[a-z][a-z0-9_]+$')
+      - daybook_operations_api_secret_key is match('^[A-Za-z0-9._~-]{32,256}$')
+      - daybook_operations_api_database_password is match('^[A-Za-z0-9._~-]{32,256}$')
+      - daybook_operations_api_signing_key_id in daybook_operations_api_signing_keys
+      - daybook_operations_api_profiles is sequence
+      - daybook_operations_api_record_limit | int >= 100
+      - daybook_operations_api_allowed_networks | length > 0
+  no_log: true
+
+- name: Validate derivation keys
+  ansible.builtin.assert:
+    that:
+      - item.key is match('^[a-zA-Z0-9_-]{1,64}$')
+      - item.value is match('^[A-Za-z0-9._~-]{32,256}$')
+  loop: "{{ daybook_operations_api_signing_keys | dict2items }}"
+  no_log: true
+
+- name: Provision the dedicated database
+  ansible.builtin.include_role:
+    name: local.ops_library.postgres_install
+  vars:
+    postgres_install_version: "{{ daybook_operations_api_postgres_version }}"
+    postgres_install_users:
+      - name: "{{ daybook_operations_api_database_user }}"
+        password: "{{ daybook_operations_api_database_password }}"
+    postgres_install_databases:
+      - name: "{{ daybook_operations_api_database }}"
+        owner: "{{ daybook_operations_api_database_user }}"
+  no_log: true
+
+- name: Create operations system account
+  ansible.builtin.user:
+    name: "{{ daybook_operations_api_user }}"
+    home: "{{ daybook_operations_api_home }}"
+    shell: /usr/sbin/nologin
+    system: true
+    create_home: true
+
+- name: Create service directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ 'root' if item == daybook_operations_api_config_dir else daybook_operations_api_user }}"
+    group: "{{ daybook_operations_api_user }}"
+    mode: "0750"
+  loop:
+    - "{{ daybook_operations_api_site }}"
+    - "{{ daybook_operations_api_config_dir }}"
+
+- name: Create private backup and disaster-recovery staging directory
+  ansible.builtin.file:
+    path: "{{ daybook_operations_api_backup_root }}"
+    state: directory
+    owner: "{{ daybook_operations_api_user }}"
+    group: "{{ daybook_operations_api_user }}"
+    mode: "0700"
+
+- name: Install uv
+  ansible.builtin.include_role:
+    name: local.ops_library.uv_install
+  vars:
+    uv_install_dir: "{{ daybook_operations_api_uv | dirname }}"
+
+- name: Copy development source
+  ansible.posix.synchronize:
+    src: "{{ daybook_operations_api_source_path }}/"
+    dest: "{{ daybook_operations_api_site }}/"
+    delete: true
+    owner: false
+    group: false
+    rsync_path: sudo rsync
+    rsync_opts:
+      - --exclude=.git
+      - --exclude=.venv*
+      - --exclude=.env*
+      - --exclude=__pycache__
+      - --exclude=site
+      - --exclude=.cache
+      - --exclude=experiments
+  delegate_to: localhost
+  become: false
+  when: daybook_operations_api_deploy_method == 'rsync'
+  notify: Restart operations services
+
+- name: Checkout reviewed production revision
+  ansible.builtin.git:
+    repo: "{{ daybook_operations_api_git_repo }}"
+    dest: "{{ daybook_operations_api_site }}"
+    version: "{{ daybook_operations_api_git_revision }}"
+  become: true
+  become_user: "{{ daybook_operations_api_user }}"
+  when: daybook_operations_api_deploy_method == 'git'
+  notify: Restart operations services
+
+- name: Set source ownership
+  ansible.builtin.file:
+    path: "{{ daybook_operations_api_site }}"
+    owner: "{{ daybook_operations_api_user }}"
+    group: "{{ daybook_operations_api_user }}"
+    recurse: true
+
+- name: Install separate server dependencies from lockfile
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_api_uv }}", sync, --frozen, --no-dev, --group, operations-api, --python, '3.14']
+    chdir: "{{ daybook_operations_api_site }}"
+  environment:
+    UV_PROJECT_ENVIRONMENT: "{{ daybook_operations_api_venv }}"
+  become: true
+  become_user: "{{ daybook_operations_api_user }}"
+  register: daybook_operations_api_sync
+  changed_when: "'Installed' in daybook_operations_api_sync.stderr or 'Uninstalled' in daybook_operations_api_sync.stderr"
+  notify: Restart operations services
+
+- name: Write protected service configuration
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ daybook_operations_api_config_dir }}/{{ item }}"
+    owner: "{{ daybook_operations_api_user }}"
+    group: "{{ daybook_operations_api_user }}"
+    mode: "0600"
+  loop: [environment, profiles.json, lifecycle.json]
+  no_log: true
+  notify: Restart operations services
+
+- name: Migrate then provision with an individual fail-closed guard
+  ansible.builtin.include_tasks: management.yml
+  loop:
+    - [migrate, --noinput]
+    - [provision_operations, "{{ daybook_operations_api_config_dir }}/profiles.json"]
+  loop_control:
+    loop_var: daybook_operations_api_management_argv
+
+- name: Install API and reconciliation units
+  ansible.builtin.template:
+    src: service.j2
+    dest: "/etc/systemd/system/daybook-operations{{ '-reconcile' if item == 'reconcile' else '' }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: [api, reconcile]
+  notify: Restart operations services
+
+- name: Install private TLS router
+  ansible.builtin.template:
+    src: traefik.yml.j2
+    dest: "{{ daybook_operations_api_traefik_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Set explicit service state
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: "{{ daybook_operations_api_enabled | bool }}"
+    state: "{{ 'started' if daybook_operations_api_enabled | bool else 'stopped' }}"
+    daemon_reload: true
+  loop: [daybook-operations, daybook-operations-reconcile]
+
+- name: Apply enabled service changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify enabled API database readiness
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ daybook_operations_api_port }}/healthz"
+    status_code: 200
+  register: daybook_operations_api_health
+  retries: 10
+  delay: 2
+  until: daybook_operations_api_health.status == 200
+  when: daybook_operations_api_enabled | bool

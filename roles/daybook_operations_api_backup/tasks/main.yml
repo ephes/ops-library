@@ -1,0 +1,20 @@
+---
+- name: Create protected backup directory
+  ansible.builtin.file:
+    path: "{{ daybook_operations_api_backup_root }}"
+    state: directory
+    owner: "{{ daybook_operations_api_backup_user }}"
+    group: "{{ daybook_operations_api_backup_user }}"
+    mode: "0700"
+- name: Select unique archive path
+  ansible.builtin.set_fact:
+    daybook_operations_api_backup_destination: "{{ daybook_operations_api_backup_archive | default(daybook_operations_api_backup_root + '/' + now(utc=true, fmt='%Y%m%dT%H%M%S%fZ') + '.tar', true) }}"
+- name: Back up database with replay keyring and profile configuration
+  become: true
+  become_user: "{{ daybook_operations_api_backup_user }}"
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_api_backup_python }}", "{{ daybook_operations_api_backup_script }}", backup, --config, "{{ daybook_operations_api_backup_config }}", --archive, "{{ daybook_operations_api_backup_destination }}"]
+  changed_when: true
+- name: Report protected archive location
+  ansible.builtin.debug:
+    msg: "{{ daybook_operations_api_backup_destination }}"

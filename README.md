@@ -285,3 +285,9 @@ just stats-roles
 ## License
 
 MIT
+
+Operations coordination: [API deployment](roles/daybook_operations_api_deploy/README.md),
+[local runtime](roles/daybook_operations_runtime_deploy/README.md),
+[backup](roles/daybook_operations_api_backup/README.md),
+[restore](roles/daybook_operations_api_restore/README.md),
+and [removal](roles/daybook_operations_api_remove/README.md). Disabled-first; live acceptance pending.

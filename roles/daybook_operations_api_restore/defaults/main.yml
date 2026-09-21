@@ -1,0 +1,8 @@
+---
+daybook_operations_api_restore_python: /home/daybook-operations/venv/bin/python
+daybook_operations_api_restore_script: /home/daybook-operations/site/services/operations_api/lifecycle.py
+daybook_operations_api_restore_config: /etc/daybook-operations/lifecycle.json
+daybook_operations_api_restore_archive: ""
+daybook_operations_api_restore_confirmed: false
+daybook_operations_api_restore_clients_quiesced: false
+daybook_operations_api_restore_user: daybook-operations

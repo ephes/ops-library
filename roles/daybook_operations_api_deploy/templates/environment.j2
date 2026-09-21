@@ -1,0 +1,6 @@
+OPERATIONS_SECRET_KEY={{ daybook_operations_api_secret_key }}
+OPERATIONS_DATABASE_URL={{ daybook_operations_api_database_url }}
+OPERATIONS_SIGNING_KEYS='{{ daybook_operations_api_signing_keys | to_json }}'
+OPERATIONS_SIGNING_KEY_ID={{ daybook_operations_api_signing_key_id }}
+OPERATIONS_ALLOWED_HOSTS=localhost,127.0.0.1,{{ daybook_operations_api_domain }}
+OPERATIONS_RECORD_LIMIT={{ daybook_operations_api_record_limit }}
