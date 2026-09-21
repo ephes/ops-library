@@ -123,7 +123,15 @@ class InventoryEmitterTests(unittest.TestCase):
             )
             with (
                 patch.object(
-                    sys, "argv", ["emit", "--policy", str(policy), "--spool", tmp]
+                    sys,
+                    "argv",
+                    [
+                        "emit",
+                        "--policy",
+                        str(policy),
+                        "--spool",
+                        str(Path(tmp).resolve()),
+                    ],
                 ),
                 patch.object(emit.collect, "collect", return_value=observation),
                 patch("builtins.print"),

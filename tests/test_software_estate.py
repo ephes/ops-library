@@ -56,6 +56,180 @@ class CollectorTests(unittest.TestCase):
             collector.application({"id": "x", "unit": "x; cat /etc/passwd.service"}, [])
 
 
+class WebArtifactTests(unittest.TestCase):
+    def test_public_artifacts_supply_installed_not_running_versions(self):
+        fixtures = {
+            "snappymail/index.php": "<?php\ndefine('APP_VERSION', '2.38.2');\n",
+            "snappymail/snappymail/v/2.38.2/include.php": "<?php // public entry",
+            "postfixadmin/.installed_version": "4.0.5\n",
+            "postfixadmin/public/index.php": "<?php // public entry",
+        }
+        for kind, version in (("snappymail", "2.38.2"), ("postfixadmin", "4.0.5")):
+            with (
+                self.subTest(kind=kind),
+                patch.object(
+                    collector, "artifact_metadata", side_effect=fixtures.__getitem__
+                ) as read,
+                patch.object(collector.platform, "system", return_value="Linux"),
+                patch.object(
+                    collector, "command", side_effect=AssertionError("no commands")
+                ),
+            ):
+                value = collector.application({"id": kind, "version_probe": kind}, [])
+                self.assertEqual(value["installed_version"], version)
+                self.assertEqual(value["presence"], "installed")
+                self.assertIsNone(value["running_version"])
+                self.assertEqual(value["coverage"], [])
+                self.assertEqual(value["version_source"]["kind"], "artifact-metadata")
+                self.assertEqual(read.call_count, 2)
+
+    def test_invalid_or_missing_artifact_preserves_coverage_failure(self):
+        for content in (
+            "",
+            "<?php define('APP_VERSION', 'secret');",
+            "4.0.5\nother",
+            "../4.0.5",
+        ):
+            with (
+                self.subTest(content=content),
+                patch.object(collector, "artifact_metadata", return_value=content),
+                patch.object(collector.platform, "system", return_value="Linux"),
+            ):
+                value = collector.application(
+                    {"id": "p", "version_probe": "postfixadmin"}, []
+                )
+                self.assertNotIn("installed_version", value)
+                self.assertNotIn("presence", value)
+                self.assertIn("installed_version:unknown", value["coverage"])
+                self.assertEqual(value["version_probe_error"], "ValueError")
+        with (
+            patch.object(
+                collector,
+                "artifact_metadata",
+                side_effect=PermissionError("private detail"),
+            ),
+            patch.object(collector.platform, "system", return_value="Linux"),
+        ):
+            value = collector.application(
+                {"id": "s", "version_probe": "snappymail"}, []
+            )
+            self.assertEqual(value["version_probe_error"], "PermissionError")
+            self.assertNotIn("private detail", str(value))
+
+    def test_ambiguous_snappymail_and_missing_selected_entry_are_rejected(self):
+        statement = "define('APP_VERSION', '2.38.2');\n"
+        for replies in (
+            [statement * 2],
+            [statement + 'define("APP_VERSION", "9.9.9");\n'],
+            [statement + "DEFINE('APP_VERSION', '9.9.9');\n"],
+            [statement + "const APP_VERSION = '9.9.9';\n"],
+            [statement, ""],
+            [statement, FileNotFoundError()],
+        ):
+            with (
+                self.subTest(replies=replies),
+                patch.object(collector, "artifact_metadata", side_effect=replies),
+                patch.object(collector.platform, "system", return_value="Linux"),
+            ):
+                value = collector.application(
+                    {"id": "s", "version_probe": "snappymail"}, []
+                )
+                self.assertNotIn("installed_version", value)
+                self.assertIn("installed_version:unknown", value["coverage"])
+
+    def test_reader_rejects_symlinks_special_files_writable_and_oversize(self):
+        import os
+        from types import SimpleNamespace
+
+        original_fstat = os.fstat
+
+        def root_owned(fd):
+            actual = original_fstat(fd)
+            return SimpleNamespace(
+                st_uid=0, st_mode=actual.st_mode, st_size=actual.st_size
+            )
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.object(collector, "ARTIFACT_ROOT", tmp),
+            patch.object(collector, "artifact_stat", side_effect=root_owned),
+        ):
+            root = Path(tmp)
+            (root / "app").mkdir()
+            target = root / "app/version"
+            target.write_text("1.2.3")
+            self.assertEqual(collector.artifact_metadata("app/version"), "1.2.3")
+            (root / "alias").symlink_to(root / "app", target_is_directory=True)
+            (root / "app/link").symlink_to(target)
+            os.mkfifo(root / "app/fifo")
+            for bad in (
+                "alias/version",
+                "app/link",
+                "app/fifo",
+                "../escape",
+                "/etc/passwd",
+            ):
+                with self.subTest(bad=bad), self.assertRaises((ValueError, OSError)):
+                    collector.artifact_metadata(bad)
+            target.chmod(0o666)
+            with self.assertRaises(ValueError):
+                collector.artifact_metadata("app/version")
+            target.chmod(0o644)
+            target.write_text("x" * 16385)
+            with self.assertRaises(ValueError):
+                collector.artifact_metadata("app/version")
+            target.write_text("ok")
+            (root / "app").chmod(0o777)
+            with self.assertRaises(ValueError):
+                collector.artifact_metadata("app/version")
+            (root / "app").chmod(0o755)
+
+            def wrong_owner(fd):
+                actual = root_owned(fd)
+                if collector.stat.S_ISREG(actual.st_mode):
+                    actual.st_uid = 123
+                return actual
+
+            with patch.object(collector, "artifact_stat", side_effect=wrong_owner):
+                with self.assertRaisesRegex(ValueError, "untrusted artifact file"):
+                    collector.artifact_metadata("app/version")
+            with patch.object(
+                collector,
+                "artifact_stat",
+                return_value=SimpleNamespace(st_uid=123, st_mode=0o40755),
+            ):
+                with self.assertRaisesRegex(ValueError, "untrusted artifact directory"):
+                    collector.artifact_metadata("app/version")
+            target.write_text("1.2.3")
+            original_read = os.read
+            with patch.object(
+                collector,
+                "artifact_read",
+                side_effect=lambda fd, n: original_read(fd, min(n, 2)),
+            ):
+                self.assertEqual(collector.artifact_metadata("app/version"), "1.2.3")
+
+    def test_non_linux_web_probe_does_not_read_files(self):
+        with (
+            patch.object(collector.platform, "system", return_value="Darwin"),
+            patch.object(
+                collector,
+                "artifact_metadata",
+                side_effect=AssertionError("no metadata access"),
+            ),
+        ):
+            for kind in ("snappymail", "postfixadmin"):
+                value = collector.application({"id": kind, "version_probe": kind}, [])
+                self.assertEqual(value["coverage"], ["installed_version:unknown"])
+                self.assertEqual(value["version_probe_error"], "ValueError")
+
+    def test_navidrome_failure_keeps_existing_shape(self):
+        with patch.object(collector, "media_version", side_effect=ValueError()):
+            value = collector.application({"id": "n", "version_probe": "navidrome"}, [])
+            self.assertEqual(value["coverage"], ["installed_version:unknown"])
+            self.assertNotIn("version_probe_error", value)
+
+
 class SbomModuleMixin:
     def setUp(self):
         import json

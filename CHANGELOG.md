@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Read SnappyMail and PostfixAdmin installed artifact metadata through bounded,
+  root-owned paths without executing application code or reading configuration.
+
+- Resolve the emitter CLI test spool path on macOS without weakening symlink checks.
+
 - Bind explicit related systemd units from the existing local inventory,
   preserving source errors and missing-unit coverage without additional probes.
 

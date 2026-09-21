@@ -33,12 +33,31 @@ bundle plists; launchctl is scoped to the invoking user's bootstrap context.
 
 Application policy requires a non-empty, unique stable `id`. Optional probes use a
 fixed service `unit`, package names with a `primary_package`, registered absolute
-Git `path` or Python `venv`, or the dedicated `navidrome` version probe.
+Git `path` or Python `venv`, or a dedicated `navidrome`, `snappymail` or `postfixadmin` version probe.
 Package probes with missing host package evidence or an unresolved primary package
 report coverage gaps, which fail the pilot applications category. The navidrome probe trusts only
 its fixed root-owned non-writable binary and pins its inode during execution.
 No arbitrary executable/command field is supported. Applications with different
 layouts need explicit adapters rather than executing untrusted discovered code.
+
+The Linux web probes read only fixed public artifact files below `/opt`:
+SnappyMail's `index.php` must contain exactly one literal `APP_VERSION` definition
+and its selected `snappymail/v/<version>/include.php` must exist and be nonempty.
+PostfixAdmin's `.installed_version` deployment marker must contain a numeric
+three-part version and `public/index.php` must exist and be nonempty. The reader
+pins each directory with `openat`, rejects symlinks, non-regular files, non-root
+ownership, group/other-writable paths and files larger than 16 KiB. It never runs
+PHP or reads configuration/data files. No new permissions or exporter are needed.
+
+These are installed artifact/marker versions, not runtime, integrity, web routing
+or complete dependency evidence. In particular a stale deployment marker cannot
+prove every installed file matches that release. `version_source` retains the
+exact metadata and entry-point paths in the original downloadable report;
+`running_version` remains null and runtime is not assessed. Unreadable, malformed,
+ambiguous or missing evidence adds `installed_version:unknown` with only a safe
+exception class in `version_probe_error`; absence is never inferred from denial.
+No paths or commands are accepted from policy for these probes. Custom layouts
+require a separately reviewed adapter.
 
 An optional `related_units` list binds additional systemd units to the same
 application without creating more application entries. It accepts up to 32 unique,
