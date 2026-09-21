@@ -22,6 +22,37 @@ voice-memo scheduler.
 | `daybook_mail_work_host_enabled` | `de.wersdoerfer.daybook.mail-work-host` | `daybook work host ensure` at login and hourly |
 | `daybook_mail_work_worker_enabled` | `de.wersdoerfer.daybook.mail-work` | `daybook work mail --via-host` every `daybook_mail_work_interval_seconds` |
 
+### Choosing the interval
+
+The default `daybook_mail_work_interval_seconds` is 300, and for a
+judgement-heavy source that is probably too short. The unit of work is meant to
+be the *window*, not the message — but a five-minute window over a low-volume
+mailbox usually holds nothing or one thing, so in practice every message gets a
+full agent session of its own.
+
+Measured on one host over 20.5 hours of steady running on 2026-09-21: 58
+windows carrying 68 messages, 3.3 an hour. **50 of those 58 windows held exactly
+one message**, six held two and two held three. Simulated against those same
+arrivals:
+
+| interval | sessions/day | messages/session | busiest |
+|---:|---:|---:|---:|
+| 5 min | 68 | 1.2 | 3 |
+| 15 min | 56 | 1.4 | 5 |
+| 30 min | 35 | 2.3 | 7 |
+| 60 min | 21 | 3.8 | 10 |
+| 120 min | 12 | 6.8 | 13 |
+
+Fifteen minutes is not worth the change; an hour is where the curve turns. The
+gain is judgement as much as cost — a session that sees a morning's mail
+together can notice that two messages are the same purchase, which four
+sessions holding one message each cannot.
+
+These figures come from one host on one day, and mail volume is the thing that
+varies. Measure your own before choosing. The source-staleness guard does not
+constrain the choice: it asks whether anything reached the index within
+`--stale-after-hours`, a time threshold rather than a tick count.
+
 Two controls rather than one, because the rollout needs three states: both off,
 host only, then both on. The role asserts that the worker cannot be enabled
 without the host — without one, every run exits non-zero reporting
