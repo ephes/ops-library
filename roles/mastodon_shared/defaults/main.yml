@@ -207,6 +207,9 @@ mastodon_backup_archive_format: gz
 mastodon_backup_archive_extension: tar.gz
 mastodon_backup_create_archive: true
 mastodon_backup_fetch_local: true
+# Disable when the SSH user can read the archive directly. Ansible fetch uses
+# an in-memory slurp fallback when privilege escalation is active.
+mastodon_backup_fetch_become: true
 mastodon_backup_local_dir: "{{ lookup('env', 'HOME') }}/backups/mastodon"
 mastodon_backup_dir_mode: "0700"
 mastodon_backup_file_mode: "0600"

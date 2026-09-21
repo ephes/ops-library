@@ -103,6 +103,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Allow Mastodon backup fetches to disable privilege escalation when the SSH
+  user can read the archive directly. This avoids Ansible's in-memory `slurp`
+  fallback exhausting controller memory on large production archives.
+
 - Preserve target-local Graphyard `src/django/.env` during source synchronization;
   exclude developer copies from upload as well.
 
