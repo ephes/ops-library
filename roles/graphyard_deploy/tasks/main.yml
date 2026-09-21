@@ -61,6 +61,14 @@
     fail_msg: "graphyard_source_path must be set when graphyard_deploy_method=rsync"
   when: graphyard_deploy_method == "rsync"
 
+- name: main | Validate optional inventory monitoring credential
+  ansible.builtin.assert:
+    that:
+      - graphyard_inventory_monitor_token is string
+      - graphyard_inventory_monitor_token == '' or graphyard_inventory_monitor_token is match('^[A-Za-z0-9_-]{32,128}\\Z')
+    fail_msg: Inventory monitor secret must be empty or 32-128 URL-safe characters.
+  no_log: true
+
 - name: main | Ensure graphyard user and directories
   ansible.builtin.import_tasks: user.yml
 

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Configure an optional dedicated read-only Graphyard inventory monitor credential
+  in the protected environment. Weekly release refresh now bypasses the success
+  cache so a recent manual run cannot postpone scheduled source freshness.
+
 - Read SnappyMail and PostfixAdmin installed artifact metadata through bounded,
   root-owned paths without executing application code or reading configuration.
 

@@ -57,6 +57,10 @@ graphyard_django_login_url: "/login/"
 graphyard_django_login_redirect_url: "/"
 graphyard_django_session_cookie_age_seconds: 86400
 
+# Dedicated read-only inventory status secret; empty disables machine access.
+# Graphyard supports Bearer or Basic username inventory-monitor with this password.
+graphyard_inventory_monitor_token: ""
+
 # Influx integration
 graphyard_influx_url: "http://127.0.0.1:8086"
 # Placeholder only; override via secrets.

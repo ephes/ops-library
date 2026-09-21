@@ -175,9 +175,13 @@ observations. Unknown sources, lookup failures, unsupported versions and stale
 reports remain unknown. This reports available upstream releases, not upgrade
 compatibility or vulnerability conclusions. Configuration is stored in
 `{{ graphyard_env_dir }}/inventory-releases.json`. `--check` validates only;
-`--force` requests an explicit refresh. Normal refresh reuses successful cache entries younger than six days,
-leaving margin for weekly timer jitter and request duration. The private Django-directory lock serializes manual and
-scheduled refreshes and is excluded from source rsync deletion.
+`--force` requests an explicit refresh. The scheduled service always uses `--force`
+so a recent manual refresh cannot cause a weekly run to skip and leave source
+timestamps older than Graphyard's eight-day freshness limit. Direct management
+commands without `--force` reuse successful cache entries younger than six days.
+The private Django-directory lock serializes manual and scheduled refreshes and
+is excluded from source rsync deletion. Deployment validates configuration only;
+it does not trigger an upstream lookup.
 
 To stop scheduling, set the enable flag false and redeploy; both timer and oneshot
 are stopped/disabled. Cache history and the root-owned registry file are retained.
@@ -194,3 +198,16 @@ excludes are supplied. The web and refresh units both use `graphyard_user`.
 Boolean options are typed YAML/JSON booleans; use `-e '{"graphyard_inventory_releases_enabled":false}'`
 when overriding a directly invoked role (the core orchestration play may set its
 own explicit value).
+
+### Optional inventory status monitoring
+
+`graphyard_inventory_monitor_token` defaults to empty (machine access disabled).
+Set a dedicated random secret containing 32-128 URL-safe characters
+(`A-Z`, `a-z`, `0-9`, `_`, `-`) from private secret storage to render
+`GRAPHYARD_INVENTORY_MONITOR_TOKEN` into the protected Django environment. Do not
+reuse producer credentials or Django passwords. With a compatible Graphyard
+receiver, monitoring can read `GET /v1/inventory/status` over HTTPS using Bearer
+authentication or Basic username `inventory-monitor` and this secret as password.
+This credential grants no ingest, UI-session or admin access. An external monitor
+must check expected host/source identities and freshness, not only zero failures.
+This role configures receiver access; check provisioning belongs to orchestration.
