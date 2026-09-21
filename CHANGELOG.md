@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Contain the copied source bundle beneath the install root. Validation-only
+  fixtures select named assertions and reject other executable task keys.
+
+- Nikon archive deployment overrides now constrain logs beneath the private log
+  directory and the virtualenv beneath the checkout, rejecting traversal in all
+  managed paths. The default test workflow runs the archive pytest module,
+  including real validation-only Ansible cases. The current-main integration and
+  reconciled 2.17.0 candidate are in the sibling `ws-photos-integration` workspace;
+  the older version labels below belong to this preserved feature branch.
+
 ## [2.13.0] - 2026-09-04
 
 ### Fixed

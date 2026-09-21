@@ -11,9 +11,13 @@
       - daybook_photos_archive_sync_repo_bundle_src != 'CHANGEME'
       - (daybook_photos_archive_sync_checkout_path | string).startswith(daybook_photos_archive_sync_service_home ~ '/')
       - (daybook_photos_archive_sync_install_root | string).startswith(daybook_photos_archive_sync_service_home ~ '/')
+      - (daybook_photos_archive_sync_repo_bundle_path | string).startswith(daybook_photos_archive_sync_install_root ~ '/')
       - (daybook_photos_archive_sync_runtime_dir | string).startswith(daybook_photos_archive_sync_service_home ~ '/')
       - (daybook_photos_archive_sync_config_dir | string).startswith(daybook_photos_archive_sync_service_home ~ '/')
       - (daybook_photos_archive_sync_log_dir | string).startswith(daybook_photos_archive_sync_runtime_dir ~ '/')
+      - (daybook_photos_archive_sync_stdout_log | string).startswith(daybook_photos_archive_sync_log_dir ~ '/')
+      - (daybook_photos_archive_sync_stderr_log | string).startswith(daybook_photos_archive_sync_log_dir ~ '/')
+      - (daybook_photos_archive_sync_venv_path | string).startswith(daybook_photos_archive_sync_checkout_path ~ '/')
       - (daybook_photos_archive_sync_launcher_path | string).startswith(daybook_photos_archive_sync_config_dir ~ '/')
       - (daybook_photos_archive_sync_library_path | string).startswith(daybook_photos_archive_sync_service_home ~ '/')
       - (daybook_photos_archive_sync_source_root | string).startswith(daybook_photos_archive_sync_service_home ~ '/')
@@ -49,6 +53,12 @@
     - "{{ daybook_photos_archive_sync_repo_bundle_path }}"
     - "{{ daybook_photos_archive_sync_checkout_path }}"
     - "{{ daybook_photos_archive_sync_runtime_dir }}"
+    - "{{ daybook_photos_archive_sync_venv_path }}"
+    - "{{ daybook_photos_archive_sync_log_dir }}"
+    - "{{ daybook_photos_archive_sync_stdout_log }}"
+    - "{{ daybook_photos_archive_sync_stderr_log }}"
+    - "{{ daybook_photos_archive_sync_state_path }}"
+    - "{{ daybook_photos_archive_sync_folder_map_path }}"
     - "{{ daybook_photos_archive_sync_config_dir }}"
     - "{{ daybook_photos_archive_sync_launcher_path }}"
     - "{{ daybook_photos_archive_sync_launchd_plist_path }}"

@@ -1,4 +1,10 @@
 from pathlib import Path
+import json
+import subprocess
+import sys
+
+import pytest
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -101,3 +107,58 @@ def test_activation_and_watchdog_are_strictly_gated() -> None:
     assert "daybook_photos_archive_sync_photos_access_timeout_seconds: 15" in defaults
     assert "daybook_photos_archive_sync_interval_seconds: 7200" in defaults
     assert "daybook_photos_archive_sync_photos_access_timeout_seconds | int + 5 + daybook_photos_archive_sync_timeout_seconds | int + 60 < daybook_photos_archive_sync_interval_seconds | int" in tasks
+
+
+@pytest.mark.parametrize("variable,override", [
+    (None, None),
+    *[(variable, path) for variable in ("stdout_log", "stderr_log") for path in (
+        "/tmp/outside.log", "relative.log",
+        "/Users/fixture/.daybook/nikon-archive-sync/logs/../outside.log",
+    )],
+    *[("venv_path", path) for path in (
+        "/tmp/other-venv", "relative-venv",
+        "/Users/fixture/.local/share/daybook-photos-archive-sync/daybook/../other-venv",
+    )],
+    ("repo_bundle_path", "/Users/fixture/Documents/other.bundle"),
+    ("log_dir", "/Users/fixture/.daybook/nikon-archive-sync/../other-logs"),
+    ("state_path", "/Users/fixture/.daybook/nikon-archive-sync/../other-state.json"),
+    ("folder_map_path", "/Users/fixture/.daybook/nikon-archive-sync/../other-map.json"),
+])
+def test_managed_path_overrides_use_actual_ansible_validation(tmp_path, variable, override):
+    # Execute only the role's two pure assertions, never deployment/quiesce tasks.
+    role_tasks = yaml.safe_load(_text("roles/daybook_photos_archive_sync_deploy/tasks/main.yml"))
+    names = {
+        "validate | Validate Nikon archive synchronization configuration",
+        "validate | Reject relative or traversing managed paths",
+    }
+    tasks = [task for task in role_tasks if task.get("name") in names]
+    assert len(tasks) == 2 and {task["name"] for task in tasks} == names
+    for task in tasks:
+        assert "ansible.builtin.assert" in task
+        assert set(task) <= {"name", "ansible.builtin.assert", "when", "loop"}
+    variables = {
+        "daybook_photos_archive_sync_enabled": True,
+        "daybook_photos_archive_sync_service_user": "fixture",
+        "daybook_photos_archive_sync_repo_ref": "a" * 40,
+        "daybook_photos_archive_sync_repo_bundle_src": "/fixture/source.bundle",
+        "daybook_photos_archive_sync_expected_smb_server": "fractal.example.invalid",
+        "daybook_photos_archive_sync_expected_writer_host": "localhost",
+        "ansible_user_id": "fixture", "ansible_facts": {"os_family": "Darwin"},
+    }
+    if variable:
+        variables["daybook_photos_archive_sync_" + variable] = override
+    playbook = [{"name": "Validate fixture paths", "hosts": "localhost", "gather_facts": False,
+        "vars_files": [str(ROOT / "roles/daybook_photos_archive_sync_deploy/defaults/main.yml")],
+        "vars": variables, "tasks": tasks}]
+    path = tmp_path / "validate.yml"
+    path.write_text(yaml.safe_dump(playbook, sort_keys=False))
+    overrides = tmp_path / "overrides.json"
+    overrides.write_text(json.dumps(variables))
+    result = subprocess.run([str(Path(sys.executable).parent / "ansible-playbook"),
+        "-i", "localhost,", "-c", "local", "--extra-vars", "@" + str(overrides), str(path)], capture_output=True, text=True, timeout=30)
+    if variable is None:
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "ok=2" in result.stdout and "skipped=0" in result.stdout, result.stdout
+    else:
+        assert result.returncode != 0, result.stdout
+        assert "Nikon archive synchronization needs an exact Daybook" in result.stdout or "Nikon archive synchronization paths" in result.stdout, result.stdout + result.stderr
