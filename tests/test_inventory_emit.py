@@ -15,6 +15,33 @@ finally:
 
 
 class InventoryEmitterTests(unittest.TestCase):
+    def test_related_unit_failure_preserves_partial_and_unit_category(self):
+        with (
+            patch.object(emit.collect.platform, "system", return_value="Linux"),
+            patch.object(emit.collect, "packages", return_value=[]),
+            patch.object(emit.collect, "containers", return_value=[]),
+            patch.object(
+                emit.collect, "units", side_effect=RuntimeError("private diagnostic")
+            ) as unit_probe,
+        ):
+            observed = emit.collect.collect(
+                {
+                    "host": "test",
+                    "applications": [
+                        {"id": "app", "related_units": ["worker.service"]}
+                    ],
+                }
+            )
+        unit_probe.assert_called_once_with()
+        result = emit.envelope(observed, preserve_partial=True)
+        self.assertEqual(result["categories"]["units"]["status"], "error")
+        app_category = result["categories"]["applications"]
+        self.assertEqual(app_category["status"], "error")
+        self.assertEqual(app_category["items"], [])
+        related = app_category["partial_items"][0]["items"]["related_units"]
+        self.assertEqual(related["items"][0]["state"], "unknown")
+        self.assertNotIn("private diagnostic", json.dumps(result))
+
     def observation(self):
         return {
             "host": "test",
@@ -192,16 +219,13 @@ class InventoryEmitterTests(unittest.TestCase):
             RuntimeError("timeout"),
             emit.collect.UnsupportedProbe("missing"),
         ):
-            with self.subTest(probe=type(package_probe).__name__), patch.object(
-                emit.collect.platform, "system", return_value="Linux"
-            ), patch.object(
-                emit.collect, "packages", side_effect=package_probe
-            ), patch.object(
-                emit.collect, "units", return_value=[]
-            ), patch.object(
-                emit.collect, "containers", return_value=[]
-            ), patch.object(
-                emit.collect, "command", return_value=""
+            with (
+                self.subTest(probe=type(package_probe).__name__),
+                patch.object(emit.collect.platform, "system", return_value="Linux"),
+                patch.object(emit.collect, "packages", side_effect=package_probe),
+                patch.object(emit.collect, "units", return_value=[]),
+                patch.object(emit.collect, "containers", return_value=[]),
+                patch.object(emit.collect, "command", return_value=""),
             ):
                 observed = emit.collect.collect(
                     {
@@ -226,8 +250,9 @@ class InventoryEmitterTests(unittest.TestCase):
 
     def test_unresolved_primary_package_is_a_coverage_gap(self):
         for primary in (None, "missing"):
-            with self.subTest(primary=primary), patch.object(
-                emit.collect, "command", return_value=""
+            with (
+                self.subTest(primary=primary),
+                patch.object(emit.collect, "command", return_value=""),
             ):
                 app = emit.collect.application(
                     {

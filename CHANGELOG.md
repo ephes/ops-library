@@ -9,70 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Bind explicit related systemd units from the existing local inventory,
+  preserving source errors and missing-unit coverage without additional probes.
+
 - Add optional weekly public release comparison scheduling to Graphyard, using its existing unprivileged account and preserving refresh locks during rsync.
 
 - Optionally export existing local software-health metadata for the unprivileged
   inventory publisher, preserving source timestamps and explicit coverage gaps
   without granting monitoring credentials or adding cross-host collection.
-
-### Security
-
-- Add a guarded `metrics_bind` Traefik transaction that can only replace an
-  implicit public Prometheus listener with an explicit loopback-only
-  `127.0.0.1:8080` entrypoint while preserving every unrelated static setting,
-  the binary, dynamic routes, unit identity, rollback, and recovery interlocks.
-
-- Default Traefik deployments to 3.7.13, addressing upstream advisories
-  [GHSA-qqjf-53cj-pwvv](https://github.com/traefik/traefik/security/advisories/GHSA-qqjf-53cj-pwvv),
-  [GHSA-f52w-8j3h-j724](https://github.com/traefik/traefik/security/advisories/GHSA-f52w-8j3h-j724),
-  [GHSA-v67p-phpq-fc8x](https://github.com/traefik/traefik/security/advisories/GHSA-v67p-phpq-fc8x),
-  [GHSA-w4v4-9rw7-5326](https://github.com/traefik/traefik/security/advisories/GHSA-w4v4-9rw7-5326),
-  and [GHSA-8fcf-v89g-xpg6](https://github.com/traefik/traefik/security/advisories/GHSA-8fcf-v89g-xpg6).
-
-### Fixed
-
-- Preserve target-local Graphyard `src/django/.env` during source synchronization;
-  exclude developer copies from upload as well.
-
-- Resolve the inventory writer credential through Vector's directory secret backend
-  at `<data-dir>-secrets/writer`. Environment interpolation is disabled by default
-  in current Vector; the previous placeholder was sent literally and rejected.
-  Stop the separate pilot, back up its old config, provision a private 0600
-  credential file and regenerate the config while retaining outbox/buffer state.
-  Keep secrets outside the buffer directory and reject insecure existing paths.
-  Real Graphyard integration exposed intermittent low-traffic stalls in Vector
-  0.58, including with one worker; unattended inventory delivery remains blocked.
-
-- Initialize SSH forwarding identity test fixtures with the configured primary
-  group so macOS group inheritance does not bypass the intended race regressions.
-  Production owner/group checks remain unchanged and are explicitly tested.
-
-- Reject empty/duplicate application IDs before collection and preserve missing
-  package/version evidence and nested Git/Python failures in the pilot applications
-  category. Keep spool and Vector data paths separate; typecheck helper bodies.
-
-- Select Debian 13's packaged `named.conf.root-hints` include in
-  `bind_authoritative_deploy`; trixie removes `named.conf.default-zones`, which
-  otherwise leaves BIND half-configured during an in-place upgrade.
-
-- Replace Tailscale's deprecated one-line `apt_repository` path with deb822 and
-  clean up the legacy `.list` file, avoiding the deprecated one-line repository
-  path on Debian 13.
-
-- Prevent explicitly retired legacy Takahe routes from bypassing the managed
-  nginx cache by removing them only after rendering the replacement route.
-
-### Changed
-
-- `daybook_sessions_deploy` now defaults `daybook_sessions_checkout_path` to a
-  dedicated clone under `~/.local/share/daybook/sessions/daybook` instead of the
-  service user's `~/projects/daybook`. The scheduled jobs pin that path to
-  `daybook_sessions_repo_ref`, and sharing it with an interactive clone meant a
-  routine `git pull` stopped the weeknotes reconcile at its revision guard for
-  two weeks. Hosts that relied on the old default must either set the previous
-  path explicitly or stage the new clone before the next no-fetch deployment.
-
-### Added
 
 - Add an opt-in `preserve_partial_applications` policy boolean to retain application
   probe evidence in failed inventory reports without claiming complete coverage.
@@ -142,6 +86,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   week-old indexes. The refresh installs nothing, shares the maintenance lock,
   and never writes `state.json`. Disable with
   `os_apt_maintenance_refresh_enabled: false`.
+
+### Security
+
+- Add a guarded `metrics_bind` Traefik transaction that can only replace an
+  implicit public Prometheus listener with an explicit loopback-only
+  `127.0.0.1:8080` entrypoint while preserving every unrelated static setting,
+  the binary, dynamic routes, unit identity, rollback, and recovery interlocks.
+
+- Default Traefik deployments to 3.7.13, addressing upstream advisories
+  [GHSA-qqjf-53cj-pwvv](https://github.com/traefik/traefik/security/advisories/GHSA-qqjf-53cj-pwvv),
+  [GHSA-f52w-8j3h-j724](https://github.com/traefik/traefik/security/advisories/GHSA-f52w-8j3h-j724),
+  [GHSA-v67p-phpq-fc8x](https://github.com/traefik/traefik/security/advisories/GHSA-v67p-phpq-fc8x),
+  [GHSA-w4v4-9rw7-5326](https://github.com/traefik/traefik/security/advisories/GHSA-w4v4-9rw7-5326),
+  and [GHSA-8fcf-v89g-xpg6](https://github.com/traefik/traefik/security/advisories/GHSA-8fcf-v89g-xpg6).
+
+### Fixed
+
+- Preserve target-local Graphyard `src/django/.env` during source synchronization;
+  exclude developer copies from upload as well.
+
+- Resolve the inventory writer credential through Vector's directory secret backend
+  at `<data-dir>-secrets/writer`. Environment interpolation is disabled by default
+  in current Vector; the previous placeholder was sent literally and rejected.
+  Stop the separate pilot, back up its old config, provision a private 0600
+  credential file and regenerate the config while retaining outbox/buffer state.
+  Keep secrets outside the buffer directory and reject insecure existing paths.
+  Real Graphyard integration exposed intermittent low-traffic stalls in Vector
+  0.58, including with one worker; unattended inventory delivery remains blocked.
+
+- Initialize SSH forwarding identity test fixtures with the configured primary
+  group so macOS group inheritance does not bypass the intended race regressions.
+  Production owner/group checks remain unchanged and are explicitly tested.
+
+- Reject empty/duplicate application IDs before collection and preserve missing
+  package/version evidence and nested Git/Python failures in the pilot applications
+  category. Keep spool and Vector data paths separate; typecheck helper bodies.
+
+- Select Debian 13's packaged `named.conf.root-hints` include in
+  `bind_authoritative_deploy`; trixie removes `named.conf.default-zones`, which
+  otherwise leaves BIND half-configured during an in-place upgrade.
+
+- Replace Tailscale's deprecated one-line `apt_repository` path with deb822 and
+  clean up the legacy `.list` file, avoiding the deprecated one-line repository
+  path on Debian 13.
+
+- Prevent explicitly retired legacy Takahe routes from bypassing the managed
+  nginx cache by removing them only after rendering the replacement route.
+
+### Changed
+
+- `daybook_sessions_deploy` now defaults `daybook_sessions_checkout_path` to a
+  dedicated clone under `~/.local/share/daybook/sessions/daybook` instead of the
+  service user's `~/projects/daybook`. The scheduled jobs pin that path to
+  `daybook_sessions_repo_ref`, and sharing it with an interactive clone meant a
+  routine `git pull` stopped the weeknotes reconcile at its revision guard for
+  two weeks. Hosts that relied on the old default must either set the previous
+  path explicitly or stage the new clone before the next no-fetch deployment.
 
 ## [2.21.1] - 2026-09-14
 

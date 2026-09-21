@@ -358,5 +358,117 @@ class SecondReviewTests(SbomModuleMixin, unittest.TestCase):
             )
 
 
+class RelatedUnitTests(unittest.TestCase):
+    def test_binding_reuses_unit_inventory_without_commands(self):
+        observation = {
+            "status": "ok",
+            "items": [
+                {"name": "worker.service", "state": "failed"},
+                {"name": "idle.service", "state": "not-loaded"},
+                {"name": "unrelated.service", "state": "active"},
+            ],
+        }
+        with patch.object(
+            collector, "command", side_effect=AssertionError("extra probe")
+        ):
+            result = collector.application(
+                {
+                    "id": "app",
+                    "related_units": [
+                        "worker.service",
+                        "idle.service",
+                        "missing.service",
+                    ],
+                },
+                [],
+                unit_observation=observation,
+            )
+        self.assertEqual(
+            result["related_units"]["items"],
+            [
+                {"name": "worker.service", "state": "failed"},
+                {"name": "idle.service", "state": "not-loaded"},
+                {"name": "missing.service", "state": "not-observed"},
+            ],
+        )
+        self.assertEqual(
+            result["coverage"], ["related_units:missing.service:not_observed"]
+        )
+        self.assertNotIn("installed_version", result)
+        self.assertNotIn("runtime", result)
+
+    def test_unavailable_inventory_cannot_reuse_supplied_states(self):
+        for status in ["error", "unsupported"]:
+            result = collector.application(
+                {"id": "app", "related_units": ["worker.service"]},
+                [],
+                unit_observation={
+                    "status": status,
+                    "error": "sensitive detail",
+                    "items": [{"name": "worker.service", "state": "active"}],
+                },
+            )
+            self.assertEqual(result["related_units"]["status"], status)
+            self.assertEqual(result["related_units"]["items"][0]["state"], "unknown")
+            self.assertEqual(
+                result["coverage"], ["related_units:host_probe_unavailable"]
+            )
+            self.assertNotIn("sensitive detail", str(result))
+
+    def test_invalid_bindings_fail_before_collection(self):
+        invalid = [
+            None,
+            "worker.service",
+            [None],
+            [{}],
+            ["worker.service"] * 2,
+            ["app.service"],
+            ["bad;name.service"],
+            ["a" * 201 + ".service"],
+            [f"worker-{i}.service" for i in range(33)],
+        ]
+        for names in invalid:
+            with (
+                self.subTest(names=names),
+                patch.object(collector, "packages") as packages,
+            ):
+                with self.assertRaises(ValueError):
+                    collector.collect(
+                        {
+                            "host": "test",
+                            "applications": [
+                                {
+                                    "id": "app",
+                                    "unit": "app.service",
+                                    "related_units": names,
+                                }
+                            ],
+                        }
+                    )
+                packages.assert_not_called()
+
+    def test_maximum_bindings_and_old_policy_are_supported(self):
+        longest = "a" * (200 - len(".service")) + ".service"
+        names = [longest] + [f"worker-{i}.service" for i in range(31)]
+        result = collector.application(
+            {"id": "app", "related_units": names},
+            [],
+            unit_observation={
+                "status": "ok",
+                "items": [{"name": name, "state": "inactive"} for name in names],
+            },
+        )
+        self.assertEqual(len(result["related_units"]["items"]), 32)
+        self.assertEqual(result["related_units"]["items"][0]["name"], longest)
+        self.assertEqual(result["coverage"], [])
+        for spec in [{"id": "app"}, {"id": "app", "related_units": []}]:
+            with self.subTest(spec=spec):
+                result = collector.application(
+                    spec, [], unit_observation={"status": "error", "items": []}
+                )
+                self.assertNotIn("related_units", result)
+                self.assertEqual(result["coverage"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

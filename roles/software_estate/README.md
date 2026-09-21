@@ -40,6 +40,32 @@ its fixed root-owned non-writable binary and pins its inode during execution.
 No arbitrary executable/command field is supported. Applications with different
 layouts need explicit adapters rather than executing untrusted discovered code.
 
+An optional `related_units` list binds additional systemd units to the same
+application without creating more application entries. It accepts up to 32 unique,
+exact `.service` names matching `[a-zA-Z0-9_.@-]+\.service` (maximum 200
+characters each), excluding the primary `unit`. Escaped or colon-bearing names
+require a deliberate contract extension. An empty binding list omits this field
+from application evidence. Missing units emit
+`related_units:<name>:not_observed`; unavailable sources emit
+`related_units:host_probe_unavailable`.
+For example:
+
+```json
+{"id":"example","unit":"example-web.service","related_units":["example-worker.service","example-scheduler.service"]}
+```
+
+Bindings project only the existing `services` category from the same scan; they
+run no additional commands and grant no new access. Nested `related_units` evidence
+contains the source category `status` and `{name, state}` rows. Missing names are
+`not-observed` with an explicit coverage gap, not proven absent. A failed or
+unsupported unit inventory forces every bound state to `unknown` and fails the
+application coverage even when the primary unit probe succeeded. Inactive, failed
+and not-loaded states remain literal observations; they do not get converted to
+healthy states. These bindings establish operator-declared grouping only, not
+complete stack health, runtime dependencies or container artifact identities.
+Older policies without this field remain unchanged. Reports retain their original
+observation time; readers must preserve partial/historical/freshness labels.
+
 The collector returns no Docker environment or service command lines. Unit names
 can still contain runtime instance identifiers, paths and addresses; observations
 belong in a private inventory. Git dirty
