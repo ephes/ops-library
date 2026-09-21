@@ -37,7 +37,12 @@ Example, installation only:
     daybook_operations_runtime_api_url: https://operations.example.com
 ```
 
-The user must have a GUI login for attended label changes. Configure credentials
+The user must have a GUI login for attended label changes. The role uses a
+noninteractive login-style sudo user switch (`-H -S -n -i`), which enters the user's
+home before Ansible starts its Python module. A root SSH session's working
+directory may be inaccessible to that user on macOS. The login shell also loads
+the user's shell configuration; recheck deployment after changing it. Commands
+still use the absolute protected Python path with isolated mode. Configure credentials
 with mode 0600 and the delivery directory with mode 0700. `operations status`
 uses the same policy and exposes aggregate state only. After a crash, never clear
 the journal: drain its receipt or authorize a linked recovery on the server,

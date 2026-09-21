@@ -40,6 +40,7 @@
     argv: ["{{ daybook_operations_runtime_python }}", -I, -c, 'from daybook.cli import main; raise SystemExit(main())', operations, idle, --policy, "{{ daybook_operations_runtime_policy }}"]
   become: true
   become_user: "{{ daybook_operations_runtime_user }}"
+  become_flags: "-H -S -n -i"
   changed_when: false
 
 - name: transition | Save original regular importer command once

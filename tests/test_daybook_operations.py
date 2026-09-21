@@ -101,6 +101,41 @@ class OperationsRoleTests(unittest.TestCase):
             16384,
         )
 
+    def test_restore_account_can_atomically_replace_private_configuration(self):
+        role = "daybook_operations_api_deploy"
+        values, env = self.variables(role)
+        tasks = yaml.safe_load(self.text(role, "tasks/main.yml"))
+        directories = next(
+            t for t in tasks if t["name"] == "Create service directories"
+        )
+        values["item"] = values["daybook_operations_api_config_dir"]
+        config = directories["ansible.builtin.file"]
+        owner = env.from_string(config["owner"]).render(**values)
+        self.assertEqual(owner, values["daybook_operations_api_user"])
+        mode = int(config["mode"], 8)
+        self.assertEqual(mode & 0o300, 0o300)
+        self.assertEqual(mode & 0o027, 0)
+
+    def test_macos_user_commands_enter_an_accessible_login_directory(self):
+        role = "daybook_operations_runtime_deploy"
+
+        def walk(tasks):
+            for task in tasks or []:
+                yield task
+                for branch in ("block", "rescue", "always"):
+                    yield from walk(task.get(branch, []))
+
+        checked = 0
+        for path in (ROOT / "roles" / role / "tasks").glob("*.yml"):
+            for task in walk(yaml.safe_load(path.read_text())):
+                if "become_user" in task:
+                    checked += 1
+                    with self.subTest(task=task["name"]):
+                        flags = task.get("become_flags", "").split()
+                        for expected in ("-i", "-H", "-S", "-n"):
+                            self.assertIn(expected, flags)
+        self.assertGreater(checked, 0)
+
     def test_lifecycle_never_executes_service_owned_python_as_root(self):
         for action in ("backup", "restore"):
             role = "daybook_operations_api_" + action

@@ -2,6 +2,8 @@
 
 ## Unreleased — operations API (2.22.0)
 
+- Fix macOS runtime user switching from root-only SSH working directories and
+  allow the unprivileged restore helper to replace its private configuration atomically.
 - Add disabled-first Daybook JSON API and protected macOS importer runtime roles.
 - Add private database/keyring backup, guarded restore with stopped services, and evidence-preserving removal.
 - Stage regular-label cutover/rollback without changing long/native-work labels. Live rollout remains separately gated.

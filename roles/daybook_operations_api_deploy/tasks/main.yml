@@ -52,7 +52,8 @@
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
-    owner: "{{ 'root' if item == daybook_operations_api_config_dir else daybook_operations_api_user }}"
+    # The unprivileged restore helper atomically replaces files in this directory.
+    owner: "{{ daybook_operations_api_user }}"
     group: "{{ daybook_operations_api_user }}"
     mode: "0750"
   loop:

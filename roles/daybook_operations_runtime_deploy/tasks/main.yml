@@ -30,6 +30,7 @@
     argv: ["{{ daybook_operations_runtime_python }}", -I, -c, 'import daybook.operations_runtime']
   become: true
   become_user: "{{ daybook_operations_runtime_user }}"
+  become_flags: "-H -S -n -i"
   changed_when: false
 
 - name: Read existing local operations policy
@@ -65,6 +66,7 @@
     argv: ["{{ daybook_operations_runtime_python }}", -I, -c, 'from daybook.cli import main; raise SystemExit(main())', operations, status, --policy, "{{ daybook_operations_runtime_policy }}"]
   become: true
   become_user: "{{ daybook_operations_runtime_user }}"
+  become_flags: "-H -S -n -i"
   register: daybook_operations_runtime_existing_status
   changed_when: false
   when:

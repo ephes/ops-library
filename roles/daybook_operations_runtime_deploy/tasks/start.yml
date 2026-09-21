@@ -4,6 +4,7 @@
     argv: ["{{ daybook_operations_runtime_python }}", -I, -c, 'from daybook.cli import main; raise SystemExit(main())', operations, status, --policy, "{{ daybook_operations_runtime_policy }}"]
   become: true
   become_user: "{{ daybook_operations_runtime_user }}"
+  become_flags: "-H -S -n -i"
   register: daybook_operations_runtime_ready
   changed_when: false
 

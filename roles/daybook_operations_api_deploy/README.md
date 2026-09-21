@@ -40,6 +40,14 @@ on the client for scan age, backlog, blocked/awaiting state and admission storag
 Inspect both `daybook-operations` and `daybook-operations-reconcile` units. No
 source-health claim follows from the HTTP readiness check alone.
 
+The configuration directory is service-owned with mode 0750; individual secret
+files use mode 0600. The unprivileged restore helper needs directory write access
+to replace configuration atomically. The parent `/etc` remains root-owned.
+The service account is trusted to rewrite its environment, profiles and lifecycle
+configuration, just as it owns the application and these files' contents. This
+ownership check is not an operator-authorship guarantee. Systemd units and
+privileged service control remain root-owned and outside this trust boundary.
+
 Use the sibling backup/restore/remove roles for lifecycle actions. Archives
 contain credentials and must remain private. Restore requires quiesced clients
 and leaves services stopped. Removal preserves the database, config and code.
