@@ -101,6 +101,60 @@ class OperationsRoleTests(unittest.TestCase):
             16384,
         )
 
+    def test_capacity_monitoring_environment_is_rendered_and_bounded(self):
+        role = "daybook_operations_api_deploy"
+        values, env = self.variables(role)
+        environment = env.from_string(self.text(role, "templates/environment.j2")).render(
+            **values
+        )
+        settings = dict(
+            line.split("=", 1) for line in environment.splitlines() if "=" in line
+        )
+        # The sampled location is operator-configured and absolute; no client selects it.
+        self.assertTrue(settings["OPERATIONS_STORAGE_PATH"].startswith("/"))
+        self.assertEqual(settings["OPERATIONS_RECORD_LIMIT"], "100000")
+        self.assertEqual(settings["OPERATIONS_NOMINAL_RECORDS_PER_DAY"], "1152")
+        self.assertEqual(settings["OPERATIONS_CAPACITY_WARN_UTILIZATION"], "0.7")
+        self.assertEqual(settings["OPERATIONS_CAPACITY_CRITICAL_UTILIZATION"], "0.8")
+        self.assertEqual(settings["OPERATIONS_CAPACITY_WARN_DAYS"], "30")
+        self.assertEqual(settings["OPERATIONS_CAPACITY_CRITICAL_DAYS"], "14")
+        # A missing sample must become stale well inside the documented alerting window.
+        self.assertLessEqual(
+            int(settings["OPERATIONS_STORAGE_SAMPLE_INTERVAL"]),
+            int(settings["OPERATIONS_STORAGE_SAMPLE_MAX_AGE"]),
+        )
+        self.assertEqual(settings["OPERATIONS_STORAGE_SAMPLE_MAX_AGE"], "900")
+
+    def test_role_validates_capacity_bounds_and_separated_profile_purposes(self):
+        tasks = yaml.safe_load(self.text("daybook_operations_api_deploy", "tasks/main.yml"))
+        asserts = [
+            task
+            for task in tasks
+            if task.get("ansible.builtin.assert") and task["name"].startswith("Validate")
+        ]
+        conditions = " ".join(
+            " ".join(task["ansible.builtin.assert"]["that"]) for task in asserts
+        )
+        for expected in (
+            "daybook_operations_api_storage_path is match('^/')",
+            "daybook_operations_api_nominal_records_per_day | int >= 1",
+            "daybook_operations_api_capacity_critical_utilization | float <= 1",
+        ):
+            self.assertIn(expected, conditions)
+        purposes = next(
+            task for task in asserts if task["name"] == "Validate profile purposes"
+        )
+        self.assertTrue(purposes["no_log"])
+        # A monitor token may never also be listed as an executor token.
+        self.assertIn(
+            "item.monitor_tokens | default([]) | select('in', item.tokens) | list | length == 0",
+            purposes["ansible.builtin.assert"]["that"],
+        )
+        self.assertIn(
+            "item.monitor_tokens is not defined or item.schema is defined",
+            purposes["ansible.builtin.assert"]["that"],
+        )
+
     def test_restore_account_can_atomically_replace_private_configuration(self):
         role = "daybook_operations_api_deploy"
         values, env = self.variables(role)

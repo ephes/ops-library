@@ -17,6 +17,24 @@
       - daybook_operations_api_profiles is sequence
       - daybook_operations_api_record_limit | int >= 100
       - daybook_operations_api_allowed_networks | length > 0
+      - daybook_operations_api_storage_path is match('^/')
+      - daybook_operations_api_storage_sample_interval | int >= 1
+      - daybook_operations_api_storage_sample_max_age | int >= daybook_operations_api_storage_sample_interval | int
+      - daybook_operations_api_nominal_records_per_day | int >= 1
+      - daybook_operations_api_capacity_warn_utilization | float > 0
+      - daybook_operations_api_capacity_warn_utilization | float <= daybook_operations_api_capacity_critical_utilization | float
+      - daybook_operations_api_capacity_critical_utilization | float <= 1
+      - daybook_operations_api_capacity_critical_days | float > 0
+      - daybook_operations_api_capacity_critical_days | float <= daybook_operations_api_capacity_warn_days | float
+  no_log: true
+
+- name: Validate profile purposes
+  ansible.builtin.assert:
+    that:
+      - item.schema is not defined or item.schema == 2
+      - item.monitor_tokens is not defined or item.schema is defined
+      - item.monitor_tokens | default([]) | select('in', item.tokens) | list | length == 0
+  loop: "{{ daybook_operations_api_profiles }}"
   no_log: true
 
 - name: Validate derivation keys

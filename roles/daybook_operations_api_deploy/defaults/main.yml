@@ -18,6 +18,15 @@ daybook_operations_api_signing_keys: {}
 daybook_operations_api_signing_key_id: ""
 daybook_operations_api_profiles: []
 daybook_operations_api_record_limit: 100000
+# Monitoring: the sampled storage location is operator-configured and never client-selected.
+daybook_operations_api_storage_path: "{{ daybook_operations_api_home }}"
+daybook_operations_api_storage_sample_interval: 300
+daybook_operations_api_storage_sample_max_age: 900
+daybook_operations_api_nominal_records_per_day: 1152
+daybook_operations_api_capacity_warn_utilization: 0.70
+daybook_operations_api_capacity_critical_utilization: 0.80
+daybook_operations_api_capacity_warn_days: 30
+daybook_operations_api_capacity_critical_days: 14
 daybook_operations_api_postgres_version: "17"
 daybook_operations_api_database: daybook_operations
 daybook_operations_api_database_user: daybook_operations

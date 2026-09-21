@@ -21,6 +21,16 @@ identity; signing key versions must be retained while any attempt references the
 All secrets come from the caller and are rendered with `no_log`, never command
 arguments. The public role contains no inventory host identities or credentials.
 
+A profile entry may additionally carry `schema: 2` and `monitor_tokens`. Tokens in
+`tokens` receive **executor** authority; tokens in `monitor_tokens` receive
+**monitor** authority, which reaches only the read-only aggregate status route and
+is refused on every mutating route. Entries without `schema` remain the legacy
+executor-only form and keep working unchanged. An entry that declares `schema` must
+match the versioned key set exactly: provisioning rejects an unexpected entry rather
+than reparsing it as legacy, so monitor material can never fall back into executor
+authority. A token may not appear in both lists, and an existing credential's purpose
+is immutable — rotate to a new token instead of promoting or demoting one in place.
+
 Example (secret variables supplied by an encrypted private control repository):
 
 ```yaml
@@ -39,6 +49,40 @@ Status: `/healthz` proves DB connectivity only. Use `daybook operations status`
 on the client for scan age, backlog, blocked/awaiting state and admission storage.
 Inspect both `daybook-operations` and `daybook-operations-reconcile` units. No
 source-health claim follows from the HTTP readiness check alone.
+
+`GET /v1/status` is the monitoring surface. It is genuinely read-only: it performs
+no write, never expires an attempt and never advances executor liveness, so polling
+it cannot make a dead client look alive. It reports admission count/limit/utilization
+and the growth forecast for the authorized principal, server database bytes and
+filesystem headroom, and per-binding contact, accepted-result, scan and import
+freshness plus the age of un-applied receipts. Expiry is calculated for the reader
+and deliberately not persisted; the reconciler and the existing write paths remain
+the only places that expire an attempt.
+
+Because the existing JSON-metrics monitor cannot send a bearer header, this one
+route also accepts the monitor token over HTTP Basic with the fixed username
+`monitor`. Basic is refused on every other route and purpose is still enforced in
+the service, so it is a transport for monitor authority, never a path to executor
+authority. Serve it over the private TLS origin; the token is a credential at rest
+wherever the monitor stores its check configuration.
+
+Storage gauges are sampled server-side on the existing reconciler lifecycle, at most
+once per `daybook_operations_api_storage_sample_interval`, from the operator-configured
+`daybook_operations_api_storage_path`. No client selects that path and no new client
+timer is added. A sample older than `daybook_operations_api_storage_sample_max_age`,
+a missing sample, an unconfigured path and an unreadable path are each reported
+distinctly and are **unknown/alerting, never green**.
+
+Capacity warns at `daybook_operations_api_capacity_warn_utilization` (0.70) or
+`daybook_operations_api_capacity_warn_days` (30) remaining, and goes critical at
+0.80 or 14 days. The forecast uses the higher of the configured nominal growth and
+the measured 24-hour/7-day growth; a window is only used once the principal's own
+history is that old, otherwise the estimate is labelled `insufficient_history` and
+the nominal rate keeps the horizon finite rather than infinite. The admission limit
+is **principal-wide**: it is not multiplied by the number of bindings, and at the
+boundary every binding of that principal stops acquiring new work while outstanding
+receipts, identical replays and status stay available. There is no automatic limit
+increase and no automatic deletion.
 
 The configuration directory is service-owned with mode 0750; individual secret
 files use mode 0600. The unprivileged restore helper needs directory write access
@@ -75,6 +119,14 @@ daybook_operations_api_signing_keys: {}
 daybook_operations_api_signing_key_id: ""
 daybook_operations_api_profiles: []
 daybook_operations_api_record_limit: 100000
+daybook_operations_api_storage_path: "{{ daybook_operations_api_home }}"
+daybook_operations_api_storage_sample_interval: 300
+daybook_operations_api_storage_sample_max_age: 900
+daybook_operations_api_nominal_records_per_day: 1152
+daybook_operations_api_capacity_warn_utilization: 0.70
+daybook_operations_api_capacity_critical_utilization: 0.80
+daybook_operations_api_capacity_warn_days: 30
+daybook_operations_api_capacity_critical_days: 14
 daybook_operations_api_postgres_version: "17"
 daybook_operations_api_database: daybook_operations
 daybook_operations_api_database_user: daybook_operations
@@ -98,3 +150,8 @@ At the fixed 300-second cadence, the 100000-record admission limit lasts roughly
 87 days (four records/cycle). Review storage at 80% and raise the configured limit
 only after checking DB/archive space and restore duration. Never delete replay
 evidence or referenced signing keys. Automatic compaction is not provided.
+
+Monitoring makes that horizon visible before it is reached, but it does not change
+it. Raising `daybook_operations_api_record_limit` remains a deliberate operator
+decision that must follow measured sizing, backup and restore evidence at the
+intended budget; the role never raises it automatically.

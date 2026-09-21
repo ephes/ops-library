@@ -2,6 +2,11 @@
 
 ## Unreleased — operations API (2.22.0)
 
+- Add operations capacity monitoring to the API role: executor/monitor credential
+  purposes in versioned profile entries, rendered capacity thresholds, nominal
+  growth and an operator-configured storage sampling path. Legacy executor-only
+  profile entries keep working; a monitor token may never also be an executor
+  token. Documented in the role README; not deployed.
 - Add a fixed-source, backup-only Echoport bridge with private staging and verified upload; preserve attended restore requirements.
 - Fix macOS runtime user switching from root-only SSH working directories and
   allow the unprivileged restore helper to replace its private configuration atomically.
