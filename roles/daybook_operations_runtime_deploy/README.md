@@ -136,7 +136,20 @@ then stop the entire profile when the client loads it.
 
 Preserve the regular binding's existing journal path when moving to schema 2.
 Create only the new long journal; do not copy, reinterpret or clear outstanding
-deliveries during the upgrade.
+deliveries during the upgrade. The role enforces this: the binding it is
+transitioning must already exist in the previous profile with the same journal,
+and a binding present there may be added to but never dropped, since a dropped
+one leaves its journal holding an undelivered receipt nobody reads again.
+
+The transition guards read either schema. They ask the client for status by
+binding name rather than relying on an implied single binding, which a
+multi-binding profile does not have.
+
+`install` refuses to run over an enabled profile and `cutover` refuses to replace
+one, by design: only `rollback` may act on an enabled runtime. Moving an already
+enabled single-binding profile to a multi-binding one is therefore a full cycle --
+disable the server binding, `rollback`, `install` the new profile staged, re-enable
+the server binding, then `cutover`.
 
 ## Validation
 

@@ -96,19 +96,46 @@
   when: daybook_operations_runtime_existing_policy.stat.exists
   no_log: true
 
+- name: Map the previous profile's bindings to their journals
+  ansible.builtin.set_fact:
+    # Schema 1 names its one binding inline; schema 2 lists them. Reading only
+    # the schema 1 shape made every guard below undefined against a multi-binding
+    # profile -- the role could write one and then not read its own output.
+    daybook_operations_runtime_previous_journals: >-
+      {{ dict(previous.bindings | map(attribute='name') | zip(previous.bindings | map(attribute='journal')))
+         if previous.bindings is defined
+         else {previous.binding: previous.journal} }}
+    daybook_operations_runtime_previous_enabled: "{{ previous.enabled }}"
+    daybook_operations_runtime_previous_api_url: "{{ previous.api_url }}"
+  vars:
+    previous: "{{ daybook_operations_runtime_previous_policy.content | b64decode | from_json }}"
+  when: daybook_operations_runtime_existing_policy.stat.exists
+  no_log: true
+
 - name: Preserve profile identity and refuse installing over an enabled runtime
   ansible.builtin.assert:
     that:
-      - daybook_operations_runtime_action != 'install' or not (daybook_operations_runtime_previous_policy.content | b64decode | from_json).enabled
-      - (daybook_operations_runtime_previous_policy.content | b64decode | from_json).binding == daybook_operations_runtime_binding
-      - (daybook_operations_runtime_previous_policy.content | b64decode | from_json).journal == daybook_operations_runtime_journal
-      - (daybook_operations_runtime_previous_policy.content | b64decode | from_json).api_url == daybook_operations_runtime_api_url
+      - daybook_operations_runtime_action != 'install' or not daybook_operations_runtime_previous_enabled | bool
+      - daybook_operations_runtime_previous_api_url == daybook_operations_runtime_api_url
+      # The binding being transitioned must already exist and keep its journal.
+      # Moving it would strand whatever delivery is outstanding in the old one.
+      - daybook_operations_runtime_binding in daybook_operations_runtime_previous_journals
+      - daybook_operations_runtime_previous_journals[daybook_operations_runtime_binding]
+        == daybook_operations_runtime_journal
+      # Bindings may be added, never silently dropped: one removed here would
+      # leave its journal holding an undelivered receipt nobody reads again.
+      - daybook_operations_runtime_previous_journals.keys() | difference(
+          daybook_operations_runtime_bindings | map(attribute='name') | list
+          if daybook_operations_runtime_bindings else [daybook_operations_runtime_binding]) | length == 0
     fail_msg: Preserve the existing profile identity and journal; use attended cutover or rollback for an enabled runtime.
   when: daybook_operations_runtime_existing_policy.stat.exists
 
 - name: Inspect existing runtime status before configuration changes
   ansible.builtin.command:
-    argv: ["{{ daybook_operations_runtime_python }}", -I, -c, 'from daybook.cli import main; raise SystemExit(main())', operations, status, --policy, "{{ daybook_operations_runtime_policy }}"]
+    # Name the binding explicitly: a multi-binding profile has no single implied
+    # one, and `operations status` would stop with `ambiguous_binding` rather
+    # than report the state these guards are about to read.
+    argv: ["{{ daybook_operations_runtime_python }}", -I, -c, 'from daybook.cli import main; raise SystemExit(main())', operations, status, --policy, "{{ daybook_operations_runtime_policy }}", --binding, "{{ daybook_operations_runtime_binding }}"]
   become: true
   become_user: "{{ daybook_operations_runtime_user }}"
   become_flags: "-H -S -n -i"

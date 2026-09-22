@@ -155,6 +155,42 @@ class OperationsRoleTests(unittest.TestCase):
         self.assertEqual(values["daybook_operations_runtime_adapters"],
                          ["voice_memos.ingest.v1", "voice_memos.transcribe_long.v1"])
 
+    def test_the_runtime_role_can_read_the_multi_binding_profile_it_writes(self):
+        """It learned to render schema 2 and not to read it.
+
+        Every transition guard resolved `.binding` and `.journal` against the
+        previous policy, which schema 2 does not have, and it asked the client
+        for status without naming a binding -- which stops with
+        `ambiguous_binding` as soon as there are two. A cutover onto a staged
+        multi-binding profile could not have run at all.
+        """
+        role = "daybook_operations_runtime_deploy"
+        tasks = yaml.safe_load(self.text(role, "tasks/main.yml"))
+
+        mapping = next(t for t in tasks if t["name"].startswith("Map the previous profile"))
+        expression = mapping["ansible.builtin.set_fact"][
+            "daybook_operations_runtime_previous_journals"]
+        self.assertIn("previous.bindings is defined", expression)
+        self.assertIn("{previous.binding: previous.journal}", expression)
+
+        guard = next(t for t in tasks
+                     if t["name"] == "Preserve profile identity and refuse installing over an enabled runtime")
+        conditions = " ".join(guard["ansible.builtin.assert"]["that"])
+        # Never against the raw previous document again.
+        self.assertNotIn("from_json).binding", conditions)
+        self.assertNotIn("from_json).journal", conditions)
+        self.assertIn("daybook_operations_runtime_binding in "
+                      "daybook_operations_runtime_previous_journals", conditions)
+        # A binding may be added but never silently dropped: one removed here
+        # leaves its journal holding an undelivered receipt nobody reads again.
+        self.assertIn("difference(", conditions)
+
+        status = next(t for t in tasks if t["name"].startswith("Inspect existing runtime status"))
+        argv = status["ansible.builtin.command"]["argv"]
+        self.assertIn("--binding", argv)
+        self.assertEqual(argv[argv.index("--binding") + 1],
+                         "{{ daybook_operations_runtime_binding }}")
+
     def test_transition_waits_before_bootout_and_never_touches_long_label(self):
         text = self.text("daybook_operations_runtime_deploy", "tasks/transition.yml")
         self.assertLess(text.index("Wait for current"), text.index("bootout"))
