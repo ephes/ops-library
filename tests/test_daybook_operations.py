@@ -204,6 +204,14 @@ class OperationsRoleTests(unittest.TestCase):
                                      "{{ daybook_operations_runtime_binding }}")
         self.assertGreaterEqual(seen, 3)
 
+        # Every binding needs its own journal directory. A worker opens its
+        # journal before anything else, so a missing one stops that binding dead.
+        journals = next(t for t in tasks if t["name"].startswith("Create an owner-private"))
+        self.assertIn("daybook_operations_runtime_bindings | map(attribute='journal')",
+                      journals["loop"])
+        self.assertIn("[daybook_operations_runtime_journal]", journals["loop"])
+        self.assertEqual(journals["ansible.builtin.file"]["mode"], "0700")
+
     def test_transition_waits_before_bootout_and_never_touches_long_label(self):
         text = self.text("daybook_operations_runtime_deploy", "tasks/transition.yml")
         self.assertLess(text.index("Wait for current"), text.index("bootout"))

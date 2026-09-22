@@ -157,13 +157,20 @@
     - daybook_operations_runtime_existing_policy.stat.exists
     - daybook_operations_runtime_action != 'install'
 
-- name: Create owner-private delivery journal
+- name: Create an owner-private delivery journal for every binding
   ansible.builtin.file:
-    path: "{{ daybook_operations_runtime_journal }}"
+    path: "{{ item }}"
     state: directory
     owner: "{{ daybook_operations_runtime_user }}"
     group: staff
     mode: "0700"
+  # One per binding, not one for the profile. A worker opens its journal before
+  # it does anything else, so a binding whose directory is missing stops at once
+  # and reports needing an operator -- which is correct behaviour for a fault,
+  # and a silly way to discover that deployment simply never created it.
+  loop: "{{ daybook_operations_runtime_bindings | map(attribute='journal') | list
+            if daybook_operations_runtime_bindings
+            else [daybook_operations_runtime_journal] }}"
 
 - name: Create owner-private credential directory
   ansible.builtin.file:
