@@ -75,6 +75,17 @@ daybook_voice_memo_inbox_request_timeout_seconds: 100
 # Long-memo lane policy. Disabled by default: the role deploys the second
 # label first and ops-control enables the lane after the Studio benchmark.
 daybook_voice_memo_inbox_long_lane_enabled: false
+# Whether this role runs the long lane from its own LaunchAgent. Set it false
+# once the operations supervisor serves a long binding: two schedulers would
+# otherwise dispatch the same lane. They would serialise on `ingest-long.lock`
+# rather than collide, but exactly one scheduler per binding is the rule.
+# The role quiesces this label before every deployment anyway, so leaving the
+# re-enable out is what makes the retirement persistent -- the plist and this
+# recipe stay in place, so restoring the lane is flipping this back to true.
+# It does not touch `daybook_voice_memo_inbox_long_lane_enabled`, which says
+# whether the importer policy has a long lane at all; the supervisor still needs
+# that true to do any long work.
+daybook_voice_memo_inbox_long_label_enabled: true
 daybook_voice_memo_inbox_long_max_duration_seconds: 2400
 daybook_voice_memo_inbox_long_max_audio_bytes: 25165824
 daybook_voice_memo_inbox_long_realtime_factor: 0.08

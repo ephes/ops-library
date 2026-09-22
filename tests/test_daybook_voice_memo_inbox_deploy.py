@@ -249,6 +249,63 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
             "does not disable, unload, or remove an existing installation", readme
         )
 
+    def test_the_long_label_can_be_retired_without_losing_the_long_lane(self):
+        """Two schedulers must not dispatch one lane.
+
+        Once the operations supervisor serves a long binding, this role's own
+        long LaunchAgent has to go -- and stay gone across later deployments,
+        which is why the retirement is a default rather than a hand-run
+        `launchctl disable` that the next deploy would undo.
+        """
+        variables = self.role_variables()
+        # The lane stays on by default; only the label is in question here.
+        self.assertTrue(variables["daybook_voice_memo_inbox_long_label_enabled"])
+        self.assertFalse(variables["daybook_voice_memo_inbox_long_lane_enabled"])
+
+        tasks = yaml.safe_load(self.text(f"{ROLE}/tasks/main.yml"))
+        block = next(t for t in tasks if t.get("name") == ACTIVATION_BLOCK)["block"]
+        guarded = {t["name"]: t.get("when") for t in block
+                   if "long lane" in t["name"] and "Prove the retired" not in t["name"]}
+        self.assertEqual(len(guarded), 8, sorted(guarded))
+        for name, when in guarded.items():
+            with self.subTest(task=name):
+                self.assertEqual(when, "daybook_voice_memo_inbox_long_label_enabled | bool")
+
+        # Skipping the re-enable is what makes it persistent: the role already
+        # disables and boots the label out before every deployment.
+        text = self.text(f"{ROLE}/tasks/main.yml")
+        self.assertLess(text.index("Disable Voice Memo inbox long lane before deployment"),
+                        text.index("Enable Voice Memo inbox long lane exact label"))
+        self.assertLess(text.index("Boot out Voice Memo inbox long lane before deployment"),
+                        text.index("Enable Voice Memo inbox long lane exact label"))
+
+        # And when retired it is proven gone rather than merely skipped: 113 is
+        # launchctl's "no such service".
+        # Deliberately outside the activation block: a retired label must be
+        # proven absent after every deployment, not only after one that activated
+        # something. 113 is launchctl's "no such service".
+        retired = next(t for t in tasks if t.get("name", "").startswith("Prove the retired"))
+        self.assertIn("not daybook_voice_memo_inbox_long_label_enabled | bool",
+                      retired["when"])
+        self.assertIn("rc != 113", retired["failed_when"])
+        self.assertTrue(retired["no_log"])
+        # The disable and bootout that do the retiring are themselves top-level
+        # and skipped in check mode, so this proof has to carry their conditions
+        # or a dry run of a retired configuration fails on a loaded label.
+        quiesce = [t for t in tasks if t.get("name") in (
+            "Disable Voice Memo inbox long lane before deployment",
+            "Boot out Voice Memo inbox long lane before deployment")]
+        self.assertEqual(len(quiesce), 2)
+        for task in quiesce:
+            self.assertIn("daybook_voice_memo_inbox_enabled | bool", task["when"])
+            self.assertIn("not ansible_check_mode", task["when"])
+        self.assertIn("not ansible_check_mode", retired["when"])
+
+        guard = next(t for t in tasks if "assert" in str(t.get("ansible.builtin.assert", ""))
+                     or "daybook_voice_memo_inbox_long_lane_enabled is boolean"
+                     in str(t))
+        self.assertIn("daybook_voice_memo_inbox_long_label_enabled is boolean", str(guard))
+
     def test_activation_rescue_proves_disabled_and_unloaded(self):
         tasks = self.text("roles/daybook_voice_memo_inbox_deploy/tasks/main.yml")
         rescue = tasks[tasks.index("  rescue:") :]
@@ -839,6 +896,9 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
                 },
                 "daybook_voice_memo_inbox_long_loaded": {"rc": case["loaded_rc"]},
                 "daybook_voice_memo_inbox_long_launchd_label": LONG_LABEL,
+                # These tasks only run while this role owns the long label; the
+                # harness exercises them, so it supplies the same condition.
+                "daybook_voice_memo_inbox_long_label_enabled": True,
             },
             "block": copy.deepcopy(tasks)
             + [
@@ -983,6 +1043,7 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
                                     "rc": case["loaded_rc"]
                                 },
                                 "daybook_voice_memo_inbox_long_launchd_label": LONG_LABEL,
+                                "daybook_voice_memo_inbox_long_label_enabled": True,
                             },
                             "block": copy.deepcopy(proof_tasks),
                             # Stands in for the role's rescue, which can only

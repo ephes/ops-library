@@ -65,6 +65,7 @@
       - daybook_voice_memo_inbox_request_timeout_seconds | int > 0
       - daybook_voice_memo_inbox_request_timeout_seconds | int < daybook_voice_memo_inbox_interval_seconds | int
       - daybook_voice_memo_inbox_long_lane_enabled is boolean
+      - daybook_voice_memo_inbox_long_label_enabled is boolean
       - daybook_voice_memo_inbox_long_interval_seconds | int == 600
       - daybook_voice_memo_inbox_long_interval_seconds | int >= 2 * (daybook_voice_memo_inbox_interval_seconds | int)
       # The long-lane ranges are validated whenever the role runs, including
@@ -1063,6 +1064,7 @@
           - enable
           - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}/{{ daybook_voice_memo_inbox_long_launchd_label }}"
       changed_when: false
+      when: daybook_voice_memo_inbox_long_label_enabled | bool
 
     - name: Bootstrap Voice Memo inbox long lane LaunchAgent
       ansible.builtin.command:
@@ -1072,6 +1074,7 @@
           - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}"
           - "{{ daybook_voice_memo_inbox_long_plist_path }}"
       changed_when: true
+      when: daybook_voice_memo_inbox_long_label_enabled | bool
 
     - name: Prove Voice Memo inbox long lane liveness without work
       # --no-work performs only the schema migration, the return of
@@ -1106,12 +1109,14 @@
       # service home and user, and stderr can name private paths. Only the
       # exit status and the category are reported by the assert below.
       no_log: true
+      when: daybook_voice_memo_inbox_long_label_enabled | bool
 
     - name: Parse Voice Memo inbox long lane liveness proof
       ansible.builtin.set_fact:
         daybook_voice_memo_inbox_long_liveness_report: >-
           {{ daybook_voice_memo_inbox_long_liveness.stdout | default('{}', true) | from_json }}
       no_log: true
+      when: daybook_voice_memo_inbox_long_label_enabled | bool
 
     - name: Require a proven live Voice Memo inbox long lane
       ansible.builtin.assert:
@@ -1129,6 +1134,7 @@
           (rc={{ daybook_voice_memo_inbox_long_liveness.rc }},
           category={{ daybook_voice_memo_inbox_long_liveness_report.category | default('absent') }}).
           Only proof_only (0) or lock_contended/ledger_busy (75) are accepted.
+      when: daybook_voice_memo_inbox_long_label_enabled | bool
 
     - name: Verify Voice Memo inbox long lane label is loaded
       # launchctl print dumps the loaded job's HOME, private log paths, and
@@ -1143,6 +1149,7 @@
       changed_when: false
       failed_when: false
       no_log: true
+      when: daybook_voice_memo_inbox_long_label_enabled | bool
 
     - name: Require a loaded Voice Memo inbox long lane label
       ansible.builtin.assert:
@@ -1153,6 +1160,7 @@
           {{ daybook_voice_memo_inbox_long_launchd_label }} is not loaded in the
           owner Aqua domain
           (launchctl print rc={{ daybook_voice_memo_inbox_long_loaded.rc | default('absent') }}).
+      when: daybook_voice_memo_inbox_long_label_enabled | bool
 
     - name: Report loaded Voice Memo inbox long lane label
       ansible.builtin.debug:
@@ -1160,6 +1168,7 @@
           Voice Memo inbox long lane label
           {{ daybook_voice_memo_inbox_long_launchd_label }} is loaded
           (launchctl print rc={{ daybook_voice_memo_inbox_long_loaded.rc }}).
+      when: daybook_voice_memo_inbox_long_label_enabled | bool
 
     - name: Wait for privacy-safe first Voice Memo scan
       ansible.builtin.command:
@@ -1357,3 +1366,27 @@
           bootout rc={{ daybook_voice_memo_inbox_rescue_bootout.rc }},
           long bootout rc={{ daybook_voice_memo_inbox_rescue_long_bootout.rc }}).
           The deployed Daybook revision is unchanged.
+
+# Outside the activation block on purpose: a retired label must be proven absent
+# after every deployment, not only after one that activated something. The role
+# disables and boots it out before any managed change, so leaving the re-enable
+# out is what retires it -- this is the proof that nothing put it back.
+# launchctl's 113 is "no such service": not merely disabled, but gone from the
+# domain, which is what "exactly one scheduler dispatches this lane" requires.
+- name: Prove the retired Voice Memo inbox long lane label stays unloaded
+  ansible.builtin.command:
+    argv:
+      - /bin/launchctl
+      - print
+      - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}/{{ daybook_voice_memo_inbox_long_launchd_label }}"
+  register: daybook_voice_memo_inbox_long_retired
+  changed_when: false
+  failed_when: daybook_voice_memo_inbox_long_retired.rc != 113
+  no_log: true
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not daybook_voice_memo_inbox_long_label_enabled | bool
+    # The same condition the disable and bootout above carry. Check mode skips
+    # those, so the label is still loaded and this would fail a dry run of a
+    # perfectly good retired configuration.
+    - not ansible_check_mode

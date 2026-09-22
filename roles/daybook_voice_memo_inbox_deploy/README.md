@@ -209,6 +209,27 @@ Each firing transcribes at most one queued long memo under its own run lock,
 with an item deadline derived from the probed duration. The short lane keeps
 its 300-second budget and never blocks behind a long transcription.
 
+### Retiring the label
+
+`daybook_voice_memo_inbox_long_label_enabled` (default `true`) decides whether
+this role runs the long lane from its own LaunchAgent. Set it `false` once the
+operations supervisor serves a long binding: two schedulers would otherwise
+dispatch the same lane. They would serialise on `ingest-long.lock` rather than
+collide, but exactly one scheduler per binding is the rule, and a hand-run
+`launchctl disable` is not retirement -- the next deployment would put the label
+straight back.
+
+The role disables and boots the label out before every managed change anyway, so
+leaving the re-enable out is what makes the retirement stick. Afterwards it
+proves the label is absent from the domain rather than assuming it: `launchctl
+print` must answer 113, "no such service".
+
+Do not confuse this with `daybook_voice_memo_inbox_long_lane_enabled`, which says
+whether the importer policy has a long lane at all. The supervisor still needs
+that `true` to do any long work; retiring the label only changes who starts it.
+The plist and this recipe stay in place, so restoring the standalone lane is
+flipping the flag back.
+
 | Variable | Default | Accepted range (validated unconditionally) |
 | --- | --- | --- |
 | `daybook_voice_memo_inbox_long_lane_enabled` | `false` | real YAML boolean |
