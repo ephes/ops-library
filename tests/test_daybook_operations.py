@@ -312,68 +312,33 @@ class OperationsRoleTests(unittest.TestCase):
         self.assertTrue(purposes["no_log"])
         # A monitor token may never also be listed as an executor token.
         self.assertIn(
-            "item.monitor_tokens | default([]) | select('in', item.tokens) | list | length == 0",
-            purposes["ansible.builtin.assert"]["that"],
-        )
-        self.assertIn(
-            "item.monitor_tokens is not defined or item.schema is defined",
+            "item.monitor_tokens | select('in', item.tokens) | list | length == 0",
             purposes["ansible.builtin.assert"]["that"],
         )
 
-    def test_a_schema_4_server_profile_names_no_source(self):
-        """Sources are rows on the server. A profile that still names one -- in
-        either the single-binding or the list form -- is refused, because the
-        provisioner would otherwise rewrite it on every deploy."""
+    def test_the_server_role_accepts_schema_4_identities_only(self):
+        """Sources are rows on the server and belong to no machine. Schemas 1 to 3
+        named a machine's sources, pinning them and rewriting them on every
+        deploy; the provisioner refuses them, and failing here names the entry."""
         tasks = yaml.safe_load(self.text("daybook_operations_api_deploy", "tasks/main.yml"))
-        purposes = next(t for t in tasks if t["name"] == "Validate profile purposes")
-        that = purposes["ansible.builtin.assert"]["that"]
-        self.assertIn("item.schema is not defined or item.schema in [2, 3, 4]", that)
-        self.assertIn("item.schema | default(2) == 3 or ('bindings' not in item)", that)
-        self.assertIn("item.schema | default(2) != 4 or ('binding' not in item and "
-                      "'binding_enabled' not in item)", " ".join(that))
-
-    def test_the_server_role_accepts_a_schema_three_profile_and_checks_its_bindings(self):
-        """The provisioner learned schema 3; this role had to as well.
-
-        A dry run caught it refusing the very profile ops-control now writes.
-        Validating here names the offending field, where the provisioner can only
-        report that the whole file was invalid.
-        """
-        role = "daybook_operations_api_deploy"
-        tasks = yaml.safe_load(self.text(role, "tasks/main.yml"))
-        purposes = next(t for t in tasks if t["name"] == "Validate profile purposes")
-        conditions = purposes["ansible.builtin.assert"]["that"]
-        self.assertIn("item.schema is not defined or item.schema in [2, 3, 4]", conditions)
-        # Schema 3 replaces the single-binding keys rather than ignoring them,
-        # and the earlier schemas must not carry a binding list.
-        joined = " ".join(conditions)
-        self.assertIn("'binding' not in item and 'binding_enabled' not in item", joined)
-        self.assertIn("('bindings' not in item)", joined)
-        # A schema 3 entry with no list at all would otherwise slip past both
-        # binding checks, which skip profiles that have none.
-        self.assertIn("item.schema | default(2) != 3 or item.bindings is defined", conditions)
-
-        entry = next(t for t in tasks if t["name"].startswith("Validate every binding"))
-        checks = " ".join(entry["ansible.builtin.assert"]["that"])
-        self.assertIn("['adapter', 'cadence', 'enabled', 'lease_seconds', 'name']", checks)
-        self.assertIn("daybook_operations_api_adapters", checks)
-        # Whole numbers, not values `| int` would coerce: the profile is written
-        # out as given and the provisioner requires real integers.
-        for field in ("cadence", "lease_seconds"):
-            self.assertIn(f"item.1.{field} is integer and item.1.{field} is not boolean",
-                          checks)
-        self.assertNotIn("| int", checks)
-        # A quoted "false" is not false.
-        self.assertIn("item.1.enabled is boolean", checks)
-        # subelements with skip_missing leaves schema 1 and 2 profiles alone.
-        self.assertIn("subelements('bindings', skip_missing=True)", entry["loop"])
-
-        unique = next(t for t in tasks if t["name"].startswith("Require distinct binding"))
-        self.assertIn("map(attribute='name') | unique", str(unique))
-
-        values, _ = self.variables(role)
-        self.assertEqual(values["daybook_operations_api_adapters"],
-                         ["voice_memos.ingest.v1", "voice_memos.transcribe_long.v1"])
+        shape = next(t for t in tasks if t["name"] == "Validate profile shape")
+        that = [c.replace("daybook_operations_api_profiles[item]", "entry")
+                for c in shape["ansible.builtin.assert"]["that"]]
+        for condition in ("entry.schema == 4", "entry.schema is integer", "entry.schema is not boolean",
+                          "entry.keys() | sort == ['enabled', 'host', 'monitor_tokens', 'name', "
+                          "'profile', 'schema', 'tokens']",
+                          "entry.enabled is boolean"):
+            self.assertIn(condition, that)
+        # It names the failing entry, so it must not be silenced -- and it can afford
+        # not to be, because it loops over positions and never prints a token.
+        self.assertNotIn("no_log", shape)
+        self.assertEqual(shape["loop"], "{{ range(daybook_operations_api_profiles | length) | list }}")
+        self.assertIn("daybook_operations_api_profiles[item].name", shape["ansible.builtin.assert"]["fail_msg"])
+        # Nothing validates or dispatches source lists any more.
+        names = [t["name"] for t in tasks]
+        self.assertFalse([n for n in names if "binding" in n.lower()])
+        values, _ = self.variables("daybook_operations_api_deploy")
+        self.assertNotIn("daybook_operations_api_adapters", values)
 
     def test_restore_account_can_atomically_replace_private_configuration(self):
         role = "daybook_operations_api_deploy"

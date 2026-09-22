@@ -37,10 +37,3 @@ daybook_operations_api_allowed_networks:
   - fd7a:115c:a1e0::/48
 daybook_operations_api_traefik_path: /etc/traefik/dynamic/daybook-operations.yml
 daybook_operations_api_backup_root: /opt/backups/daybook_operations
-# The adapters this server will dispatch. A schema 3 binding must name one of
-# these; the coordination service refuses anything else at request and claim time
-# anyway, but a binding that can never dispatch is a deployment fault, not a
-# runtime one.
-daybook_operations_api_adapters:
-  - voice_memos.ingest.v1
-  - voice_memos.transcribe_long.v1
