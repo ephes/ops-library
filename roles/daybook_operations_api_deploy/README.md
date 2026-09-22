@@ -31,6 +31,15 @@ than reparsing it as legacy, so monitor material can never fall back into execut
 authority. A token may not appear in both lists, and an existing credential's purpose
 is immutable — rotate to a new token instead of promoting or demoting one in place.
 
+`schema: 4` names the principal, its host and profile, and its credentials -- and
+**no sources at all**. Sources are rows on the server, added with `manage.py sources
+add` and changed with `sources set`; nothing redeploys or restarts. Earlier schemas
+made provisioning `update_or_create` every listed source on each run, which
+reverted any change made in the database and switched a running source off
+whenever its `enabled` override was forgotten. A schema 4 entry that still carries
+`binding`, `binding_enabled` or `bindings` is refused rather than ignored. Existing
+sources keep whatever state they have when an installation moves to schema 4.
+
 `schema: 3` replaces `binding` and `binding_enabled` with a `bindings` list, so one
 principal can run more than one lane. Each entry names its `name`, `adapter`,
 `enabled`, `cadence` and `lease_seconds`; the single-binding keys must be absent,

@@ -320,6 +320,18 @@ class OperationsRoleTests(unittest.TestCase):
             purposes["ansible.builtin.assert"]["that"],
         )
 
+    def test_a_schema_4_server_profile_names_no_source(self):
+        """Sources are rows on the server. A profile that still names one -- in
+        either the single-binding or the list form -- is refused, because the
+        provisioner would otherwise rewrite it on every deploy."""
+        tasks = yaml.safe_load(self.text("daybook_operations_api_deploy", "tasks/main.yml"))
+        purposes = next(t for t in tasks if t["name"] == "Validate profile purposes")
+        that = purposes["ansible.builtin.assert"]["that"]
+        self.assertIn("item.schema is not defined or item.schema in [2, 3, 4]", that)
+        self.assertIn("item.schema | default(2) == 3 or ('bindings' not in item)", that)
+        self.assertIn("item.schema | default(2) != 4 or ('binding' not in item and "
+                      "'binding_enabled' not in item)", " ".join(that))
+
     def test_the_server_role_accepts_a_schema_three_profile_and_checks_its_bindings(self):
         """The provisioner learned schema 3; this role had to as well.
 
@@ -331,7 +343,7 @@ class OperationsRoleTests(unittest.TestCase):
         tasks = yaml.safe_load(self.text(role, "tasks/main.yml"))
         purposes = next(t for t in tasks if t["name"] == "Validate profile purposes")
         conditions = purposes["ansible.builtin.assert"]["that"]
-        self.assertIn("item.schema is not defined or item.schema in [2, 3]", conditions)
+        self.assertIn("item.schema is not defined or item.schema in [2, 3, 4]", conditions)
         # Schema 3 replaces the single-binding keys rather than ignoring them,
         # and the earlier schemas must not carry a binding list.
         joined = " ".join(conditions)

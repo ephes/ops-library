@@ -31,13 +31,17 @@
 - name: Validate profile purposes
   ansible.builtin.assert:
     that:
-      - item.schema is not defined or item.schema in [2, 3]
+      - item.schema is not defined or item.schema in [2, 3, 4]
       - item.monitor_tokens is not defined or item.schema is defined
       - item.monitor_tokens | default([]) | select('in', item.tokens) | list | length == 0
       # Schema 3 replaces the single binding with a list, so the two
       # single-binding keys must be gone rather than quietly ignored.
       - item.schema | default(2) != 3 or ('binding' not in item and 'binding_enabled' not in item)
       - item.schema | default(2) == 3 or ('bindings' not in item)
+      # Schema 4 names identity and credentials only. Sources are rows on the
+      # server, added with an insert; a deployment that listed them would rewrite
+      # them on every run and revert any change made there.
+      - item.schema | default(2) != 4 or ('binding' not in item and 'binding_enabled' not in item)
       # Without this a schema 3 entry carrying no list at all would slip past
       # both binding checks below, which skip profiles that have none.
       - item.schema | default(2) != 3 or item.bindings is defined
