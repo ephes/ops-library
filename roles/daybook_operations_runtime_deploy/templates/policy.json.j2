@@ -1,10 +1,11 @@
-{# Schema 3: one delivery store for the machine, a worker pool, and the sources it
-   can run. Written disabled by every action except `cutover`. #}
+{# Schema 4: the machine's identity, the kinds of work it can run, its pool and its
+   store. No source: the source list is the server's. Written disabled by every
+   action except `cutover`. #}
 {{ {
-  'schema': 3, 'enabled': daybook_operations_runtime_action == 'cutover',
+  'schema': 4, 'enabled': daybook_operations_runtime_action == 'cutover',
   'api_url': daybook_operations_runtime_api_url, 'credential_path': daybook_operations_runtime_credential,
   'journal': daybook_operations_runtime_journal,
   'workers': daybook_operations_runtime_workers,
-  'bindings': daybook_operations_runtime_bindings,
+  'kinds': daybook_operations_runtime_kinds,
   'importer_policy': daybook_operations_runtime_importer_policy
 } | to_nice_json }}

@@ -17,11 +17,7 @@
       - daybook_operations_runtime_journal is match('^/')
       - "'..' not in daybook_operations_runtime_journal.split('/')"
       - daybook_operations_runtime_mode in ['tick', 'serve']
-      - daybook_operations_runtime_bindings | length > 0
-      # `operations tick` with no `--binding` cannot choose between several
-      # sources -- it stops with `ambiguous_binding` -- so a fixed launchd wake-up
-      # is only coherent for a profile with exactly one.
-      - daybook_operations_runtime_mode == 'serve' or daybook_operations_runtime_bindings | length == 1
+      - daybook_operations_runtime_kinds | length > 0
       - daybook_operations_runtime_workers is mapping
       - daybook_operations_runtime_workers.keys() | sort == ['count', 'long']
       - daybook_operations_runtime_workers.count is integer and daybook_operations_runtime_workers.count is not boolean
@@ -32,13 +28,13 @@
       - daybook_operations_runtime_workers.long < daybook_operations_runtime_workers.count
   no_log: true
 
-- name: Validate every source in the profile
+- name: Validate every kind of work in the profile
   ansible.builtin.assert:
     that:
       # Shared configuration that does not parse stops the whole profile at load,
-      # so catch a typo here rather than on the machine.
-      - item.keys() | sort == ['adapter', 'deadline', 'lease', 'name']
-      - item.name is match('^[a-z0-9][a-z0-9_-]{0,49}$')
+      # so catch a typo here rather than on the machine. No source name, no
+      # cadence, no journal: those are the server's, or the store's.
+      - item.keys() | sort == ['adapter', 'deadline', 'lease']
       - item.adapter in daybook_operations_runtime_adapters
       # Whole numbers, not merely things `| int` would coerce. The profile is
       # emitted verbatim, and the client requires real integers: a quoted "330"
@@ -50,18 +46,17 @@
       # The lease has to outlast the child plus the room to stop it and deliver
       # its receipt, which is what the client checks when it loads this.
       - item.lease >= item.deadline + 60
-    fail_msg: "Source {{ item.name | default(item) }} is not a usable profile entry."
-  loop: "{{ daybook_operations_runtime_bindings }}"
+    fail_msg: "Kind {{ item.adapter | default(item) }} is not a usable profile entry."
+  loop: "{{ daybook_operations_runtime_kinds }}"
   loop_control:
-    label: "{{ item.name | default('unnamed') }}"
+    label: "{{ item.adapter | default('unnamed') }}"
 
-- name: Require distinct source names
+- name: Require each kind of work at most once
   ansible.builtin.assert:
     that:
-      - daybook_operations_runtime_bindings | map(attribute='name') | unique | length
-        == daybook_operations_runtime_bindings | length
-      - daybook_operations_runtime_binding in daybook_operations_runtime_bindings | map(attribute='name')
-    fail_msg: Source names must be distinct, and the one the transition names must be listed.
+      - daybook_operations_runtime_kinds | map(attribute='adapter') | unique | length
+        == daybook_operations_runtime_kinds | length
+    fail_msg: A kind of work may be listed once; its budget would otherwise be ambiguous.
 
 - name: Verify protected interpreter checkout revision
   ansible.builtin.command:
@@ -107,11 +102,16 @@
     # machine. Both are read, because moving from the first to the second is
     # exactly the transition that has to prove the old journals drained.
     daybook_operations_runtime_previous_schema: "{{ previous.schema }}"
-    daybook_operations_runtime_previous_names: >-
-      {{ previous.bindings | map(attribute='name') | list
-         if previous.bindings is defined else [previous.binding] }}
+    # The kinds of work the old profile could run. Schema 4 lists them; schemas 2
+    # and 3 imply them through their sources' adapters, and schema 1 ran only the
+    # regular ingest. Leaving the older ones empty would let a replace drop a kind
+    # without the guard below ever seeing it.
+    daybook_operations_runtime_previous_kinds: >-
+      {{ previous.kinds | map(attribute='adapter') | list if previous.kinds is defined
+         else (previous.bindings | map(attribute='adapter') | unique | list
+               if previous.bindings is defined else ['voice_memos.ingest.v1']) }}
     daybook_operations_runtime_previous_journals: >-
-      {{ [previous.journal] if previous.schema == 3
+      {{ [previous.journal] if previous.schema >= 3
          else (previous.bindings | map(attribute='journal') | list
                if previous.bindings is defined else [previous.journal]) }}
     daybook_operations_runtime_previous_enabled: "{{ previous.enabled }}"
@@ -124,21 +124,25 @@
 - name: Preserve profile identity and refuse installing over an enabled runtime
   ansible.builtin.assert:
     that:
+      # Only shapes this role knows how to prove drained. A schema written by some
+      # later release may keep obligations somewhere these checks do not look, so
+      # it is refused rather than assumed to look like the newest one known here.
+      - daybook_operations_runtime_previous_schema | int in [1, 2, 3, 4]
       - daybook_operations_runtime_action != 'install' or not daybook_operations_runtime_previous_enabled | bool
       - daybook_operations_runtime_previous_api_url == daybook_operations_runtime_api_url
-      # Sources may be added, never silently dropped: a delivery record naming a
-      # dropped source would be evidence nobody could act on again.
-      - daybook_operations_runtime_previous_names | difference(
-          daybook_operations_runtime_bindings | map(attribute='name') | list) | length == 0
-      # Within schema 3 the store itself must not move, or outstanding records
-      # would be stranded in the old one.
-      - daybook_operations_runtime_previous_schema | int != 3
+      # Kinds of work may be added, never silently dropped: a delivery record for
+      # a dropped kind has no budget left to finish it with.
+      - daybook_operations_runtime_previous_kinds | difference(
+          daybook_operations_runtime_kinds | map(attribute='adapter') | list) | length == 0
+      # Once there is one store, it must not move, or outstanding records would
+      # be stranded in the old one.
+      - daybook_operations_runtime_previous_schema | int < 3
         or daybook_operations_runtime_previous_journals[0] == daybook_operations_runtime_journal
-      # Only `replace` may change the store's shape: it is the one action that
-      # proves the label quiesced and every old journal drained. `install` over a
-      # disabled old profile would skip the label check, and `cutover`/`rollback`
-      # act on the profile as installed.
-      - daybook_operations_runtime_previous_schema | int == 3
+      # Only `replace` may change the profile's shape: it is the one action that
+      # proves the label quiesced and every old journal or store drained. `install`
+      # over a disabled old profile would skip the label check, and
+      # `cutover`/`rollback` act on the profile as installed.
+      - daybook_operations_runtime_previous_schema | int == 4
         or daybook_operations_runtime_action == 'replace'
     fail_msg: Preserve the existing profile identity and store; drain and replace to change the store's shape.
   when: daybook_operations_runtime_existing_policy.stat.exists
@@ -165,11 +169,11 @@
 - name: Inspect every journal being left behind
   ansible.builtin.stat:
     path: "{{ item }}"
-  # For a schema 3 store its two subdirectories too: a `find` over a directory
+  # For a store its two subdirectories too: a `find` over a directory
   # that is not there matches nothing, which would read as "owes nothing".
   loop: >-
     {{ daybook_operations_runtime_previous_journals
-       if daybook_operations_runtime_previous_schema | int != 3
+       if daybook_operations_runtime_previous_schema | int < 3
        else [daybook_operations_runtime_previous_journals[0],
              daybook_operations_runtime_previous_journals[0] ~ '/deliveries',
              daybook_operations_runtime_previous_journals[0] ~ '/halts'] }}
@@ -198,7 +202,7 @@
   register: daybook_operations_runtime_old_files
   when:
     - daybook_operations_runtime_action == 'replace'
-    - daybook_operations_runtime_previous_schema | int != 3
+    - daybook_operations_runtime_previous_schema | int < 3
 
 - name: Read each per-source delivery slot being left behind
   ansible.builtin.slurp:
@@ -212,7 +216,7 @@
   no_log: true
   when:
     - daybook_operations_runtime_action == 'replace'
-    - daybook_operations_runtime_previous_schema | int != 3
+    - daybook_operations_runtime_previous_schema | int < 3
 
 - name: Start the idle evidence from nothing
   ansible.builtin.set_fact:
@@ -222,7 +226,7 @@
     daybook_operations_runtime_idle_journals: []
   when:
     - daybook_operations_runtime_action == 'replace'
-    - daybook_operations_runtime_previous_schema | int != 3
+    - daybook_operations_runtime_previous_schema | int < 3
 
 - name: Collect the per-source journals whose slot reads exactly idle
   ansible.builtin.set_fact:
@@ -235,7 +239,7 @@
   no_log: true
   when:
     - daybook_operations_runtime_action == 'replace'
-    - daybook_operations_runtime_previous_schema | int != 3
+    - daybook_operations_runtime_previous_schema | int < 3
 
 - name: Prove every per-source journal being left behind is drained
   ansible.builtin.assert:
@@ -262,9 +266,9 @@
   loop: "{{ daybook_operations_runtime_previous_journals }}"
   when:
     - daybook_operations_runtime_action == 'replace'
-    - daybook_operations_runtime_previous_schema | int != 3
+    - daybook_operations_runtime_previous_schema | int < 3
 
-- name: Find anything still owed in a schema 3 store being replaced
+- name: Find anything still owed in a store being replaced
   ansible.builtin.find:
     paths:
       - "{{ daybook_operations_runtime_previous_journals[0] }}/deliveries"
@@ -274,20 +278,21 @@
   register: daybook_operations_runtime_old_store
   when:
     - daybook_operations_runtime_action == 'replace'
-    - daybook_operations_runtime_previous_schema | int == 3
+    - daybook_operations_runtime_previous_schema | int >= 3
 
-- name: Prove a schema 3 store being replaced owes nothing
+- name: Prove a store being replaced owes nothing
   ansible.builtin.assert:
     that:
-      # In a schema 3 store there is no idle record: any record is owed, and any
-      # halt is a person's attention request.
+      # In a store there is no idle record: any record is owed, and any halt --
+      # including the store-wide one for an unreadable record -- is a person's
+      # attention request.
       - daybook_operations_runtime_old_store.matched == 0
     fail_msg: >-
       {{ daybook_operations_runtime_previous_journals[0] }} still holds deliveries or
       halts. Settle or recover them before replacing the profile.
   when:
     - daybook_operations_runtime_action == 'replace'
-    - daybook_operations_runtime_previous_schema | int == 3
+    - daybook_operations_runtime_previous_schema | int >= 3
 
 - name: Inspect existing runtime status before configuration changes
   ansible.builtin.command:

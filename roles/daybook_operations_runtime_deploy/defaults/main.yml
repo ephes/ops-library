@@ -13,6 +13,8 @@ daybook_operations_runtime_importer_policy: "{{ daybook_operations_runtime_insta
 daybook_operations_runtime_credential: "{{ daybook_operations_runtime_home }}/.config/daybook-voice-memo-inbox/operations.json"
 daybook_operations_runtime_token: CHANGEME
 daybook_operations_runtime_api_url: https://operations.home.example.com
+# The source the transition guards ask about (`operations status --binding`). A
+# name the server knows; the machine holds no list of them.
 daybook_operations_runtime_binding: regular
 # The machine's one delivery store. A record in it belongs to an operation, not to
 # a source, which is what lets a pool of workers hold several at once without one
@@ -30,15 +32,15 @@ daybook_operations_runtime_mode: serve
 daybook_operations_runtime_workers:
   count: 2
   long: 1
-# The sources this machine can run, and what running each costs here. No journal
-# and no cadence: the journal is the machine's, and the server has answered when a
-# check is due since step 1 of Daybook's central scheduling design. The long lane's
-# deadline is not a free choice -- the client derives the minimum from the
-# importer policy and refuses a profile that configures less. See the budget
-# table in daybook's docs/operations.md.
-daybook_operations_runtime_bindings:
-  - name: regular
-    adapter: voice_memos.ingest.v1
+# The kinds of work this machine can run, and what running each costs here. Not
+# sources: since step 3 of Daybook's central scheduling design the source list is
+# the server's, a source is added with an insert there, and nothing here names one.
+# The machine offers these kinds when it asks what to do. The long kind's deadline
+# is not a free choice -- the client derives the minimum from the importer policy
+# and refuses a profile that configures less. See the budget table in daybook's
+# docs/operations.md.
+daybook_operations_runtime_kinds:
+  - adapter: voice_memos.ingest.v1
     deadline: 330
     lease: 600
 daybook_operations_runtime_adapters:

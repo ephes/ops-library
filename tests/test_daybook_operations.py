@@ -65,46 +65,41 @@ class OperationsRoleTests(unittest.TestCase):
             )
             self.assertEqual(policy["enabled"], enabled)
 
-    def test_the_profile_is_schema_3_with_one_store_and_a_pool(self):
-        """No journal and no cadence per source.
+    def test_the_profile_is_schema_4_and_names_no_source(self):
+        """The machine's identity, the kinds of work it can run, a pool and a store.
 
-        A delivery record belongs to an operation, so the store is the machine's;
-        the server has answered when a check is due since step 1, so a cadence
-        here would be a second copy with no owner. What stays per source is the
-        kind of work and its budget.
+        No source: since step 3 the source list is the server's, and a source is
+        added with an insert there. What stays per kind is how it runs here and
+        what that costs.
         """
         role = "daybook_operations_runtime_deploy"
         values, env = self.variables(role)
-        bindings = [
-            {"name": "regular", "adapter": "voice_memos.ingest.v1",
-             "deadline": 330, "lease": 600},
-            {"name": "long", "adapter": "voice_memos.transcribe_long.v1",
-             "deadline": 1200, "lease": 1500},
+        kinds = [
+            {"adapter": "voice_memos.ingest.v1", "deadline": 330, "lease": 600},
+            {"adapter": "voice_memos.transcribe_long.v1", "deadline": 1200, "lease": 1500},
         ]
-        values["daybook_operations_runtime_bindings"] = bindings
+        values["daybook_operations_runtime_kinds"] = kinds
         plist = plistlib.loads(
             env.from_string(self.text(role, "templates/runtime.plist.j2"))
             .render(**values).encode())
         self.assertEqual(plist["ProgramArguments"][4:6], ["operations", "serve"])
         self.assertTrue(plist["KeepAlive"])
-        # The server owns the due times; launchd must not also wake it.
         self.assertNotIn("StartInterval", plist)
 
         policy = json.loads(
             env.from_string(self.text(role, "templates/policy.json.j2")).render(**values))
-        self.assertEqual(policy["schema"], 3)
-        self.assertEqual(policy["bindings"], bindings)
+        self.assertEqual(policy["schema"], 4)
+        self.assertEqual(policy["kinds"], kinds)
+        self.assertNotIn("bindings", policy)
         self.assertEqual(policy["journal"], values["daybook_operations_runtime_journal"])
         self.assertEqual(policy["workers"], {"count": 2, "long": 1})
-        for entry in policy["bindings"]:
-            self.assertNotIn("journal", entry)
+        for entry in policy["kinds"]:
+            self.assertNotIn("name", entry)
             self.assertNotIn("cadence", entry)
+            self.assertNotIn("journal", entry)
         self.assertFalse(policy["enabled"])
 
     def test_the_store_is_a_new_directory_not_an_old_journal(self):
-        """The per-source journals of schemas 1 and 2 are left where they are,
-        drained and untouched. Reusing one as the new store would put an old
-        `delivery.json` beside records the new client treats as operations."""
         values, _ = self.variables("daybook_operations_runtime_deploy")
         store = values["daybook_operations_runtime_journal"]
         self.assertTrue(store.endswith("/.local/state/daybook/operations"), store)
@@ -115,9 +110,9 @@ class OperationsRoleTests(unittest.TestCase):
         """Each of these fails on the machine anyway; failing here is cheaper."""
         role = "daybook_operations_runtime_deploy"
         tasks = yaml.safe_load(self.text(role, "tasks/main.yml"))
-        entry = next(t for t in tasks if t["name"].startswith("Validate every source"))
+        entry = next(t for t in tasks if t["name"].startswith("Validate every kind of work"))
         conditions = " ".join(entry["ansible.builtin.assert"]["that"])
-        self.assertIn("['adapter', 'deadline', 'lease', 'name']", conditions)
+        self.assertIn("['adapter', 'deadline', 'lease']", conditions)
         self.assertIn("daybook_operations_runtime_adapters", conditions)
         self.assertIn("item.lease >= item.deadline + 60", conditions)
         for field in ("deadline", "lease"):
@@ -125,20 +120,21 @@ class OperationsRoleTests(unittest.TestCase):
                           conditions)
         self.assertNotIn("| int", conditions)
         self.assertNotIn("cadence", conditions)
-        self.assertEqual(entry["loop"], "{{ daybook_operations_runtime_bindings }}")
+        self.assertEqual(entry["loop"], "{{ daybook_operations_runtime_kinds }}")
+        once = next(t for t in tasks if t["name"] == "Require each kind of work at most once")
+        self.assertIn("map(attribute='adapter') | unique", str(once))
 
         guard = next(t for t in tasks if t["name"] == "Validate protected runtime installation")
         conditions = " ".join(guard["ansible.builtin.assert"]["that"])
         self.assertIn("daybook_operations_runtime_mode in ['tick', 'serve']", conditions)
         self.assertIn("daybook_operations_runtime_action in ['install', 'replace', 'cutover', 'rollback']",
                       conditions)
-        # The long allowance must leave a worker it cannot take.
         self.assertIn("daybook_operations_runtime_workers.long < daybook_operations_runtime_workers.count",
                       conditions)
         self.assertIn("daybook_operations_runtime_workers.long >= 1", conditions)
-        # `replace` never starts anything.
         self.assertIn("daybook_operations_runtime_action != 'replace' or not daybook_operations_runtime_start",
                       conditions)
+        self.assertNotIn("bindings", conditions)
 
     def test_changing_the_stores_shape_proves_every_old_journal_drained(self):
         """The installed client reads only schema 3, so it cannot be asked about a
@@ -172,25 +168,33 @@ class OperationsRoleTests(unittest.TestCase):
                         names.index("Collect the per-source journals whose slot reads exactly idle"))
         collect = tasks[names.index("Collect the per-source journals whose slot reads exactly idle")]
         self.assertIn(".phase == 'idle'", str(collect))
-        store = tasks[names.index("Prove a schema 3 store being replaced owes nothing")]
+        store = tasks[names.index("Prove a store being replaced owes nothing")]
         self.assertIn("daybook_operations_runtime_old_store.matched == 0",
                       store["ansible.builtin.assert"]["that"])
         # Every proof runs before anything is written.
         for name in ("Prove every per-source journal being left behind is drained",
-                     "Prove a schema 3 store being replaced owes nothing"):
+                     "Prove a store being replaced owes nothing"):
             self.assertLess(names.index(name),
                             names.index("Write disabled-first root-owned local policy"))
 
         identity = tasks[names.index(
             "Preserve profile identity and refuse installing over an enabled runtime")]
         conditions = " ".join(identity["ansible.builtin.assert"]["that"])
-        # Only `replace` may change the store's shape -- not `install`, which
+        # Only `replace` may change the profile's shape -- not `install`, which
         # skips the label check.
-        self.assertIn("or daybook_operations_runtime_action == 'replace'", conditions)
+        self.assertIn("daybook_operations_runtime_previous_schema | int == 4 "
+                      "or daybook_operations_runtime_action == 'replace'", conditions)
         self.assertNotIn("['install', 'replace']", conditions)
         self.assertIn("daybook_operations_runtime_previous_journals[0] == "
                       "daybook_operations_runtime_journal", conditions)
-        self.assertIn("difference(", conditions)
+        # Kinds of work may be added, never silently dropped -- including the ones
+        # an older profile only implied through its sources' adapters.
+        self.assertIn("daybook_operations_runtime_previous_kinds | difference(", conditions)
+        shape = tasks[names.index("Read the previous profile's shape")]["ansible.builtin.set_fact"]
+        self.assertIn("previous.bindings | map(attribute='adapter')",
+                      shape["daybook_operations_runtime_previous_kinds"])
+        # An unknown future schema is refused, not assumed to look like the newest.
+        self.assertIn("daybook_operations_runtime_previous_schema | int in [1, 2, 3, 4]", conditions)
 
         label = tasks[names.index("Require the regular label already quiesced before a replace")]
         self.assertEqual(label["failed_when"], "daybook_operations_runtime_replace_label.rc != 113")

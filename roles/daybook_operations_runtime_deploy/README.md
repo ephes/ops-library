@@ -26,11 +26,11 @@ the attended importer upgrade has booted it out. It exists because the installed
 client reads only the current profile schema, so it cannot be asked about the old
 one, and the ordinary `rollback`/`install` cycle asks it exactly that. `replace`
 instead proves the old state by reading the files, and refuses to pass on their
-absence. The label must answer 113. Every journal the old profile names must
-exist. A per-source journal of a schema 1 or 2 profile must have no halt marker,
+absence. The label must answer 113. Every journal or store the old profile names
+must exist. A per-source journal of a schema 1 or 2 profile must have no halt marker,
 and a slot that exists must read exactly `idle`. Only a journal with neither slot
 nor `runtime.lock` counts as never opened; a lock without a slot is a used journal
-whose evidence is gone, and is refused. A schema 3 store must
+whose evidence is gone, and is refused. A store (schema 3 or 4) must
 have both its subdirectories and hold no delivery record or halt at all. Then it
 writes the new profile **disabled** and a staged plist, and starts nothing; the
 `cutover` that follows does the enabling, under its own guards. It never reads
@@ -84,6 +84,8 @@ daybook_operations_runtime_importer_policy: "{{ daybook_operations_runtime_insta
 daybook_operations_runtime_credential: "{{ daybook_operations_runtime_home }}/.config/daybook-voice-memo-inbox/operations.json"
 daybook_operations_runtime_token: CHANGEME
 daybook_operations_runtime_api_url: https://operations.home.example.com
+# The source the transition guards ask about (`operations status --binding`). A
+# name the server knows; the machine holds no list of them.
 daybook_operations_runtime_binding: regular
 # The machine's one delivery store. A record in it belongs to an operation, not to
 # a source, which is what lets a pool of workers hold several at once without one
@@ -101,15 +103,15 @@ daybook_operations_runtime_mode: serve
 daybook_operations_runtime_workers:
   count: 2
   long: 1
-# The sources this machine can run, and what running each costs here. No journal
-# and no cadence: the journal is the machine's, and the server has answered when a
-# check is due since step 1 of Daybook's central scheduling design. The long lane's
-# deadline is not a free choice -- the client derives the minimum from the
-# importer policy and refuses a profile that configures less. See the budget
-# table in daybook's docs/operations.md.
-daybook_operations_runtime_bindings:
-  - name: regular
-    adapter: voice_memos.ingest.v1
+# The kinds of work this machine can run, and what running each costs here. Not
+# sources: since step 3 of Daybook's central scheduling design the source list is
+# the server's, a source is added with an insert there, and nothing here names one.
+# The machine offers these kinds when it asks what to do. The long kind's deadline
+# is not a free choice -- the client derives the minimum from the importer policy
+# and refuses a profile that configures less. See the budget table in daybook's
+# docs/operations.md.
+daybook_operations_runtime_kinds:
+  - adapter: voice_memos.ingest.v1
     deadline: 330
     lease: 600
 daybook_operations_runtime_adapters:
@@ -121,9 +123,9 @@ daybook_operations_runtime_staged_plist: "{{ daybook_operations_runtime_install_
 daybook_operations_runtime_legacy_plist: "{{ daybook_operations_runtime_install_root }}/regular-importer.before-operations.plist"
 ```
 
-## The profile: sources, a pool, and one store
+## The profile: identity, kinds of work, a pool, and one store
 
-The role renders profile schema 3, which the Daybook client requires:
+The role renders profile schema 4, which the Daybook client requires:
 
 ```yaml
 daybook_operations_runtime_mode: serve
@@ -131,38 +133,39 @@ daybook_operations_runtime_journal: /Users/SERVICE/.local/state/daybook/operatio
 daybook_operations_runtime_workers:
   count: 2
   long: 1
-daybook_operations_runtime_bindings:
-  - name: regular
-    adapter: voice_memos.ingest.v1
+daybook_operations_runtime_kinds:
+  - adapter: voice_memos.ingest.v1
     deadline: 330
     lease: 600
-  - name: long
-    adapter: voice_memos.transcribe_long.v1
+  - adapter: voice_memos.transcribe_long.v1
     deadline: 1200
     lease: 1500
 ```
 
-**No journal and no cadence per source.** A delivery record belongs to an
-operation, not to a source, so the store is the machine's and holds one record per
-operation it is still answerable for -- `deliveries/` for those, `halts/` for the
-per-source stop markers. The server has decided when a check is due since step 1
-of Daybook's central scheduling design, so a cadence here would be a second copy
-with no owner.
+**No source.** Since step 3 of Daybook's central scheduling design the source
+list is the server's: a source is a row there, added with an insert and changed
+with an update, and the machine learns a source's name only from the answer to
+its own question. The profile names what the machine *can run* -- each kind of
+work with the child `deadline` and `lease` it needs on this hardware -- and the
+machine offers those kinds when it asks what to do. How a kind is executed stays
+fixed on the machine; the server never sends a command.
 
-**A pool, not a worker per source.** `serve` runs one long-lived supervisor whose
-`workers.count` threads take whatever the server hands out, so a source costs a
-row rather than a thread and there is no cap on how many may be listed. The
-requirement that a blocked long source must never stop ordinary discovery is kept
-as a number: long work may occupy at most `workers.long` of them, and the role and
-the client both refuse a value that does not leave at least one worker it cannot
-take. `tick` remains for a profile with exactly one source.
+**One store** holds one delivery record per operation in flight (`deliveries/`)
+and the stop markers (`halts/`, per source, plus `_store` for a record too corrupt
+to attribute).
+
+**A pool**, not a worker per source. `serve` runs one supervisor whose
+`workers.count` threads take whatever is ready. Long work may occupy at most
+`workers.long` of them, and the role and the client both refuse a value that does
+not leave at least one worker it cannot take; once the allowance is spent, the
+machine stops offering long work, so the server cannot hand any out.
 
 The label runs under `KeepAlive` rather than `StartInterval`, because the server
 owns the due times and the process must not also be woken. That is only safe
-because a source that stops for an operator records the stop in `halts/`; a
-restarted supervisor reads it and dispatches nothing for that source.
+because a stopped source records its stop in `halts/`; a restarted supervisor
+reads it, withholds that source from every question, and dispatches nothing for it.
 
-The long lane's `deadline` is not a free choice. The client derives a minimum from
+The long kind's `deadline` is not a free choice. The client derives a minimum from
 the importer policy the child will run under and refuses the whole profile when
 the configured value is below it -- too small a deadline would kill a
 transcription that was going to succeed. Under Studio's documented policy that
@@ -175,15 +178,16 @@ its receipt.
 floats that happen to convert. The profile is written out exactly as given and
 the client requires real integers.
 
-Sources may be added and never silently dropped, and within schema 3 the store
-may not move: either would strand records nobody reads again. Changing the store's
-*shape* -- from the per-source journals of schemas 1 and 2 to this one -- is what
-`replace` is for, and only `replace`: `install` over a disabled old profile would
-skip the check that the label is quiesced.
+Kinds of work may be added and never silently dropped, and once there is a store
+it may not move: either would strand records nobody could finish. Changing the
+profile's *shape* -- from the per-source journals of schemas 1 and 2, or a schema
+3 profile that still named sources -- is what `replace` is for, and only
+`replace`: `install` over a disabled old profile would skip the check that the
+label is quiesced.
 
 `install` refuses to run over an enabled profile and `cutover` refuses to replace
 one, by design: only `rollback` may act on an enabled runtime, and only `replace`
-may change the store's shape.
+may change the profile's shape.
 
 ## Validation
 
