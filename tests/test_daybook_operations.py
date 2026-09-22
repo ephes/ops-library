@@ -185,11 +185,24 @@ class OperationsRoleTests(unittest.TestCase):
         # leaves its journal holding an undelivered receipt nobody reads again.
         self.assertIn("difference(", conditions)
 
-        status = next(t for t in tasks if t["name"].startswith("Inspect existing runtime status"))
-        argv = status["ansible.builtin.command"]["argv"]
-        self.assertIn("--binding", argv)
-        self.assertEqual(argv[argv.index("--binding") + 1],
-                         "{{ daybook_operations_runtime_binding }}")
+        # Every CLI call the role makes, not just the first one found: the fix
+        # was shipped incomplete once, and the cutover then failed on the second
+        # occurrence in transition.yml after the label had already been unloaded.
+        seen = 0
+        for name in ("tasks/main.yml", "tasks/transition.yml", "tasks/start.yml"):
+            for task in yaml.safe_load(self.text(role, name)):
+                argv = (task.get("ansible.builtin.command") or {}).get("argv") or []
+                if "operations" not in argv:
+                    continue
+                verb = argv[argv.index("operations") + 1]
+                if verb == "serve":
+                    continue
+                seen += 1
+                with self.subTest(file=name, verb=verb):
+                    self.assertIn("--binding", argv)
+                    self.assertEqual(argv[argv.index("--binding") + 1],
+                                     "{{ daybook_operations_runtime_binding }}")
+        self.assertGreaterEqual(seen, 3)
 
     def test_transition_waits_before_bootout_and_never_touches_long_label(self):
         text = self.text("daybook_operations_runtime_deploy", "tasks/transition.yml")

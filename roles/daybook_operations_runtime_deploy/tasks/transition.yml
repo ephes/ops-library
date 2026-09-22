@@ -37,7 +37,10 @@
 
 - name: transition | Prove runtime and importer locks idle through supported CLI
   ansible.builtin.command:
-    argv: ["{{ daybook_operations_runtime_python }}", -I, -c, 'from daybook.cli import main; raise SystemExit(main())', operations, idle, --policy, "{{ daybook_operations_runtime_policy }}"]
+    # A multi-binding profile has no implied single binding, so the CLI would
+    # stop with `ambiguous_binding` instead of answering. Name the one being
+    # transitioned; the importer lock this also proves is profile-wide.
+    argv: ["{{ daybook_operations_runtime_python }}", -I, -c, 'from daybook.cli import main; raise SystemExit(main())', operations, idle, --policy, "{{ daybook_operations_runtime_policy }}", --binding, "{{ daybook_operations_runtime_binding }}"]
   become: true
   become_user: "{{ daybook_operations_runtime_user }}"
   become_flags: "-H -S -n -i"
