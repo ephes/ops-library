@@ -20,6 +20,23 @@ idle, saves the old plist once, and installs the new command. The journal/ledger
 remain intact. Default `start: false` leaves it disabled. `start: true` additionally
 requires reconciled journal/API state and an enabled server binding before loading.
 
+`action: replace`, with `confirmed: true`, changes the shape of the delivery store
+on a runtime whose regular label is already quiesced -- in practice, right after
+the attended importer upgrade has booted it out. It exists because the installed
+client reads only the current profile schema, so it cannot be asked about the old
+one, and the ordinary `rollback`/`install` cycle asks it exactly that. `replace`
+instead proves the old state by reading the files, and refuses to pass on their
+absence. The label must answer 113. Every journal the old profile names must
+exist. A per-source journal of a schema 1 or 2 profile must have no halt marker,
+and a slot that exists must read exactly `idle`. Only a journal with neither slot
+nor `runtime.lock` counts as never opened; a lock without a slot is a used journal
+whose evidence is gone, and is refused. A schema 3 store must
+have both its subdirectories and hold no delivery record or halt at all. Then it
+writes the new profile **disabled** and a staged plist, and starts nothing; the
+`cutover` that follows does the enabling, under its own guards. It never reads
+the server, never touches the server binding, and never deletes an old journal --
+those are left in place, drained, for a person to remove once satisfied.
+
 `action: rollback` requires the server binding already disabled and no unresolved
 assigned/awaiting-application work. It quiesces the same regular label, restores
 the saved plist and disables the local policy. Optional `start: true` loads the
@@ -68,9 +85,33 @@ daybook_operations_runtime_credential: "{{ daybook_operations_runtime_home }}/.c
 daybook_operations_runtime_token: CHANGEME
 daybook_operations_runtime_api_url: https://operations.home.example.com
 daybook_operations_runtime_binding: regular
-daybook_operations_runtime_journal: "{{ daybook_operations_runtime_home }}/.local/state/daybook/operations-importer"
-daybook_operations_runtime_mode: tick
-daybook_operations_runtime_bindings: []
+# The machine's one delivery store. A record in it belongs to an operation, not to
+# a source, which is what lets a pool of workers hold several at once without one
+# completion overwriting another's evidence. It is a new directory on purpose: the
+# per-source journals of profile schemas 1 and 2 are left where they are, drained
+# and untouched, rather than reinterpreted.
+daybook_operations_runtime_journal: "{{ daybook_operations_runtime_home }}/.local/state/daybook/operations"
+# 'serve' runs the supervisor: one long-lived process with a pool of workers that
+# take whatever the server hands out. 'tick' is one launchd wake-up per check and
+# only makes sense for a profile with exactly one source.
+daybook_operations_runtime_mode: serve
+# The pool. `long` is how many workers long work may occupy at once, and it must
+# leave at least one it cannot take: that is the guarantee the separate long
+# thread used to give, now as a number. The client refuses a profile that breaks it.
+daybook_operations_runtime_workers:
+  count: 2
+  long: 1
+# The sources this machine can run, and what running each costs here. No journal
+# and no cadence: the journal is the machine's, and the server has answered when a
+# check is due since step 1 of Daybook's central scheduling design. The long lane's
+# deadline is not a free choice -- the client derives the minimum from the
+# importer policy and refuses a profile that configures less. See the budget
+# table in daybook's docs/operations.md.
+daybook_operations_runtime_bindings:
+  - name: regular
+    adapter: voice_memos.ingest.v1
+    deadline: 330
+    lease: 600
 daybook_operations_runtime_adapters:
   - voice_memos.ingest.v1
   - voice_memos.transcribe_long.v1
@@ -80,45 +121,46 @@ daybook_operations_runtime_staged_plist: "{{ daybook_operations_runtime_install_
 daybook_operations_runtime_legacy_plist: "{{ daybook_operations_runtime_install_root }}/regular-importer.before-operations.plist"
 ```
 
-## One binding or several
+## The profile: sources, a pool, and one store
 
-The defaults render the profile this service has always had: schema 1, one
-binding, woken by launchd every 300 seconds through `operations tick`.
-
-Setting `daybook_operations_runtime_bindings` to a non-empty list renders schema 2
-instead, where every entry states its own `name`, `adapter`, `journal`, `cadence`,
-`deadline` and `lease`. The list and `daybook_operations_runtime_mode: serve` go
-together, and the role requires both or neither: `operations tick` with no
-`--binding` cannot choose between several bindings -- it stops with
-`ambiguous_binding` -- and launchd's single fixed wake-up could not honour their
-separate cadences even if it could choose. A `serve` label with no list would
-supervise the schema 1 binding by accident rather than by decision.
-
-In `serve` the label runs the supervisor -- one long-lived process, one worker per
-binding -- under `KeepAlive` rather than `StartInterval`, because the supervisor
-owns its own due times and must not also be woken.
-
-`KeepAlive` is only safe here because a binding that stops for an operator records
-that stop beside its journal. The restarted supervisor reads the marker, reports
-the reason and dispatches nothing; without it, the key would be a retry loop back
-into the state a person was meant to look at first.
+The role renders profile schema 3, which the Daybook client requires:
 
 ```yaml
 daybook_operations_runtime_mode: serve
+daybook_operations_runtime_journal: /Users/SERVICE/.local/state/daybook/operations
+daybook_operations_runtime_workers:
+  count: 2
+  long: 1
 daybook_operations_runtime_bindings:
   - name: regular
     adapter: voice_memos.ingest.v1
-    journal: /Users/SERVICE/.local/state/daybook/operations-importer
-    cadence: 300
     deadline: 330
     lease: 600
   - name: long
     adapter: voice_memos.transcribe_long.v1
-    journal: /Users/SERVICE/.local/state/daybook/operations-long
-    cadence: 600
     deadline: 1200
     lease: 1500
 ```
+
+**No journal and no cadence per source.** A delivery record belongs to an
+operation, not to a source, so the store is the machine's and holds one record per
+operation it is still answerable for -- `deliveries/` for those, `halts/` for the
+per-source stop markers. The server has decided when a check is due since step 1
+of Daybook's central scheduling design, so a cadence here would be a second copy
+with no owner.
+
+**A pool, not a worker per source.** `serve` runs one long-lived supervisor whose
+`workers.count` threads take whatever the server hands out, so a source costs a
+row rather than a thread and there is no cap on how many may be listed. The
+requirement that a blocked long source must never stop ordinary discovery is kept
+as a number: long work may occupy at most `workers.long` of them, and the role and
+the client both refuse a value that does not leave at least one worker it cannot
+take. `tick` remains for a profile with exactly one source.
+
+The label runs under `KeepAlive` rather than `StartInterval`, because the server
+owns the due times and the process must not also be woken. That is only safe
+because a source that stops for an operator records the stop in `halts/`; a
+restarted supervisor reads it and dispatches nothing for that source.
 
 The long lane's `deadline` is not a free choice. The client derives a minimum from
 the importer policy the child will run under and refuses the whole profile when
@@ -129,27 +171,19 @@ before changing either the importer policy or this number. `lease` must exceed
 `deadline` by at least 60 seconds, the time it takes to stop a child and deliver
 its receipt.
 
-`cadence`, `deadline` and `lease` must be whole numbers, not strings or floats
-that happen to convert. The profile is written out exactly as given and the client
-requires real integers, so a quoted `"300"` would pass a coercing check here and
-then stop the entire profile when the client loads it.
+`deadline`, `lease` and both pool numbers must be whole numbers, not strings or
+floats that happen to convert. The profile is written out exactly as given and
+the client requires real integers.
 
-Preserve the regular binding's existing journal path when moving to schema 2.
-Create only the new long journal; do not copy, reinterpret or clear outstanding
-deliveries during the upgrade. The role enforces this: the binding it is
-transitioning must already exist in the previous profile with the same journal,
-and a binding present there may be added to but never dropped, since a dropped
-one leaves its journal holding an undelivered receipt nobody reads again.
-
-The transition guards read either schema. They ask the client for status by
-binding name rather than relying on an implied single binding, which a
-multi-binding profile does not have.
+Sources may be added and never silently dropped, and within schema 3 the store
+may not move: either would strand records nobody reads again. Changing the store's
+*shape* -- from the per-source journals of schemas 1 and 2 to this one -- is what
+`replace` is for, and only `replace`: `install` over a disabled old profile would
+skip the check that the label is quiesced.
 
 `install` refuses to run over an enabled profile and `cutover` refuses to replace
-one, by design: only `rollback` may act on an enabled runtime. Moving an already
-enabled single-binding profile to a multi-binding one is therefore a full cycle --
-disable the server binding, `rollback`, `install` the new profile staged, re-enable
-the server binding, then `cutover`.
+one, by design: only `rollback` may act on an enabled runtime, and only `replace`
+may change the store's shape.
 
 ## Validation
 

@@ -3,60 +3,65 @@
   ansible.builtin.assert:
     that:
       - ansible_facts.system == 'Darwin'
-      - daybook_operations_runtime_action in ['install', 'cutover', 'rollback']
+      - daybook_operations_runtime_action in ['install', 'replace', 'cutover', 'rollback']
       - daybook_operations_runtime_action == 'install' or daybook_operations_runtime_confirmed | bool
       - not daybook_operations_runtime_start | bool or daybook_operations_runtime_confirmed | bool
+      # `replace` writes a disabled profile and starts nothing; the cutover that
+      # follows it is what enables and starts, after its own guards.
+      - daybook_operations_runtime_action != 'replace' or not daybook_operations_runtime_start | bool
       - daybook_operations_runtime_user != 'CHANGEME'
       - daybook_operations_runtime_revision is match('^[0-9a-f]{40}$')
       - daybook_operations_runtime_binding is match('^[a-z0-9][a-z0-9_-]{0,49}$')
       - daybook_operations_runtime_api_url is match('^https://[a-z0-9.-]+(:[0-9]+)?$')
       - daybook_operations_runtime_token is match('^[A-Za-z0-9._~-]{32,256}$')
+      - daybook_operations_runtime_journal is match('^/')
+      - "'..' not in daybook_operations_runtime_journal.split('/')"
       - daybook_operations_runtime_mode in ['tick', 'serve']
-      # A binding list and the supervisor go together, in both directions.
+      - daybook_operations_runtime_bindings | length > 0
       # `operations tick` with no `--binding` cannot choose between several
-      # bindings -- it stops with `ambiguous_binding` -- and launchd's fixed
-      # wake-up could not honour their separate cadences even if it could. A
-      # `serve` label with no list would supervise the single schema 1 binding
-      # by accident rather than by decision.
-      - (daybook_operations_runtime_mode == 'serve')
-        == (daybook_operations_runtime_bindings | length > 0)
+      # sources -- it stops with `ambiguous_binding` -- so a fixed launchd wake-up
+      # is only coherent for a profile with exactly one.
+      - daybook_operations_runtime_mode == 'serve' or daybook_operations_runtime_bindings | length == 1
+      - daybook_operations_runtime_workers is mapping
+      - daybook_operations_runtime_workers.keys() | sort == ['count', 'long']
+      - daybook_operations_runtime_workers.count is integer and daybook_operations_runtime_workers.count is not boolean
+      - daybook_operations_runtime_workers.long is integer and daybook_operations_runtime_workers.long is not boolean
+      - daybook_operations_runtime_workers.count >= 2 and daybook_operations_runtime_workers.count <= 16
+      # Long work must always leave a worker it cannot take.
+      - daybook_operations_runtime_workers.long >= 1
+      - daybook_operations_runtime_workers.long < daybook_operations_runtime_workers.count
   no_log: true
 
-- name: Validate every binding in a multi-binding profile
+- name: Validate every source in the profile
   ansible.builtin.assert:
     that:
       # Shared configuration that does not parse stops the whole profile at load,
       # so catch a typo here rather than on the machine.
-      - item.keys() | sort == ['adapter', 'cadence', 'deadline', 'journal', 'lease', 'name']
+      - item.keys() | sort == ['adapter', 'deadline', 'lease', 'name']
       - item.name is match('^[a-z0-9][a-z0-9_-]{0,49}$')
       - item.adapter in daybook_operations_runtime_adapters
-      - item.journal is match('^/')
       # Whole numbers, not merely things `| int` would coerce. The profile is
-      # emitted verbatim, and the client requires real integers: a quoted "300"
-      # or a 300.5 would pass a coercing check here and then stop the whole
+      # emitted verbatim, and the client requires real integers: a quoted "330"
+      # or a 330.5 would pass a coercing check here and then stop the whole
       # profile at load. `is integer` accepts booleans, hence the second test.
-      - item.cadence is integer and item.cadence is not boolean
       - item.deadline is integer and item.deadline is not boolean
       - item.lease is integer and item.lease is not boolean
-      - item.cadence >= 60 and item.cadence <= 3600
       - item.deadline >= 60 and item.deadline <= 3600
       # The lease has to outlast the child plus the room to stop it and deliver
       # its receipt, which is what the client checks when it loads this.
       - item.lease >= item.deadline + 60
-    fail_msg: "Binding {{ item.name | default(item) }} is not a usable profile entry."
+    fail_msg: "Source {{ item.name | default(item) }} is not a usable profile entry."
   loop: "{{ daybook_operations_runtime_bindings }}"
   loop_control:
     label: "{{ item.name | default('unnamed') }}"
 
-- name: Require distinct binding names and journals
+- name: Require distinct source names
   ansible.builtin.assert:
     that:
       - daybook_operations_runtime_bindings | map(attribute='name') | unique | length
         == daybook_operations_runtime_bindings | length
-      - daybook_operations_runtime_bindings | map(attribute='journal') | unique | length
-        == daybook_operations_runtime_bindings | length
-    fail_msg: Two bindings sharing a name or a journal would interleave their delivery slots.
-  when: daybook_operations_runtime_bindings | length > 0
+      - daybook_operations_runtime_binding in daybook_operations_runtime_bindings | map(attribute='name')
+    fail_msg: Source names must be distinct, and the one the transition names must be listed.
 
 - name: Verify protected interpreter checkout revision
   ansible.builtin.command:
@@ -96,15 +101,19 @@
   when: daybook_operations_runtime_existing_policy.stat.exists
   no_log: true
 
-- name: Map the previous profile's bindings to their journals
+- name: Read the previous profile's shape
   ansible.builtin.set_fact:
-    # Schema 1 names its one binding inline; schema 2 lists them. Reading only
-    # the schema 1 shape made every guard below undefined against a multi-binding
-    # profile -- the role could write one and then not read its own output.
+    # Schemas 1 and 2 kept a journal per source; schema 3 keeps one store for the
+    # machine. Both are read, because moving from the first to the second is
+    # exactly the transition that has to prove the old journals drained.
+    daybook_operations_runtime_previous_schema: "{{ previous.schema }}"
+    daybook_operations_runtime_previous_names: >-
+      {{ previous.bindings | map(attribute='name') | list
+         if previous.bindings is defined else [previous.binding] }}
     daybook_operations_runtime_previous_journals: >-
-      {{ dict(previous.bindings | map(attribute='name') | zip(previous.bindings | map(attribute='journal')))
-         if previous.bindings is defined
-         else {previous.binding: previous.journal} }}
+      {{ [previous.journal] if previous.schema == 3
+         else (previous.bindings | map(attribute='journal') | list
+               if previous.bindings is defined else [previous.journal]) }}
     daybook_operations_runtime_previous_enabled: "{{ previous.enabled }}"
     daybook_operations_runtime_previous_api_url: "{{ previous.api_url }}"
   vars:
@@ -117,24 +126,176 @@
     that:
       - daybook_operations_runtime_action != 'install' or not daybook_operations_runtime_previous_enabled | bool
       - daybook_operations_runtime_previous_api_url == daybook_operations_runtime_api_url
-      # The binding being transitioned must already exist and keep its journal.
-      # Moving it would strand whatever delivery is outstanding in the old one.
-      - daybook_operations_runtime_binding in daybook_operations_runtime_previous_journals
-      - daybook_operations_runtime_previous_journals[daybook_operations_runtime_binding]
-        == daybook_operations_runtime_journal
-      # Bindings may be added, never silently dropped: one removed here would
-      # leave its journal holding an undelivered receipt nobody reads again.
-      - daybook_operations_runtime_previous_journals.keys() | difference(
-          daybook_operations_runtime_bindings | map(attribute='name') | list
-          if daybook_operations_runtime_bindings else [daybook_operations_runtime_binding]) | length == 0
-    fail_msg: Preserve the existing profile identity and journal; use attended cutover or rollback for an enabled runtime.
+      # Sources may be added, never silently dropped: a delivery record naming a
+      # dropped source would be evidence nobody could act on again.
+      - daybook_operations_runtime_previous_names | difference(
+          daybook_operations_runtime_bindings | map(attribute='name') | list) | length == 0
+      # Within schema 3 the store itself must not move, or outstanding records
+      # would be stranded in the old one.
+      - daybook_operations_runtime_previous_schema | int != 3
+        or daybook_operations_runtime_previous_journals[0] == daybook_operations_runtime_journal
+      # Only `replace` may change the store's shape: it is the one action that
+      # proves the label quiesced and every old journal drained. `install` over a
+      # disabled old profile would skip the label check, and `cutover`/`rollback`
+      # act on the profile as installed.
+      - daybook_operations_runtime_previous_schema | int == 3
+        or daybook_operations_runtime_action == 'replace'
+    fail_msg: Preserve the existing profile identity and store; drain and replace to change the store's shape.
   when: daybook_operations_runtime_existing_policy.stat.exists
+
+- name: Resolve local GUI user ID for a replace
+  ansible.builtin.command:
+    argv: [/usr/bin/id, -u, "{{ daybook_operations_runtime_user }}"]
+  register: daybook_operations_runtime_uid_for_replace
+  changed_when: false
+  when: daybook_operations_runtime_action == 'replace'
+
+- name: Require the regular label already quiesced before a replace
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "gui/{{ daybook_operations_runtime_uid_for_replace.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
+  register: daybook_operations_runtime_replace_label
+  changed_when: false
+  # `replace` does not stop anything itself. The supervisor runs under KeepAlive,
+  # and stopping it here would mean sending a signal while a child may be mid-scan;
+  # the attended importer upgrade is what quiesces the label, and this proves it did.
+  failed_when: daybook_operations_runtime_replace_label.rc != 113
+  when: daybook_operations_runtime_action == 'replace'
+  no_log: true
+
+- name: Inspect every journal being left behind
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  # For a schema 3 store its two subdirectories too: a `find` over a directory
+  # that is not there matches nothing, which would read as "owes nothing".
+  loop: >-
+    {{ daybook_operations_runtime_previous_journals
+       if daybook_operations_runtime_previous_schema | int != 3
+       else [daybook_operations_runtime_previous_journals[0],
+             daybook_operations_runtime_previous_journals[0] ~ '/deliveries',
+             daybook_operations_runtime_previous_journals[0] ~ '/halts'] }}
+  register: daybook_operations_runtime_old_dirs
+  when: daybook_operations_runtime_action == 'replace'
+
+- name: Require every journal being left behind to exist
+  ansible.builtin.assert:
+    that:
+      # A proof over files that are not there proves nothing. A journal the
+      # profile names but the disk does not have has been lost or removed, and
+      # either way nobody can say what it owed.
+      - item.stat.exists and item.stat.isdir
+    fail_msg: "{{ item.item }} is named by the installed profile but missing; its deliveries cannot be proven drained."
+  loop: "{{ daybook_operations_runtime_old_dirs.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item | default('none') }}"
+  when: daybook_operations_runtime_action == 'replace'
+
+- name: Inspect the evidence files of each per-source journal
+  ansible.builtin.stat:
+    path: "{{ item.0 }}/{{ item.1 }}"
+  loop: "{{ daybook_operations_runtime_previous_journals | product(['delivery.json', 'runtime.lock', 'halted.json']) | list }}"
+  loop_control:
+    label: "{{ item.0 | basename }}/{{ item.1 }}"
+  register: daybook_operations_runtime_old_files
+  when:
+    - daybook_operations_runtime_action == 'replace'
+    - daybook_operations_runtime_previous_schema | int != 3
+
+- name: Read each per-source delivery slot being left behind
+  ansible.builtin.slurp:
+    src: "{{ item.stat.path }}"
+  loop: "{{ daybook_operations_runtime_old_files.results | default([])
+            | selectattr('item.1', 'equalto', 'delivery.json')
+            | selectattr('stat.exists') | list }}"
+  loop_control:
+    label: "{{ item.item.0 | default('none') | basename }}"
+  register: daybook_operations_runtime_old_slots
+  no_log: true
+  when:
+    - daybook_operations_runtime_action == 'replace'
+    - daybook_operations_runtime_previous_schema | int != 3
+
+- name: Start the idle evidence from nothing
+  ansible.builtin.set_fact:
+    # A fact persists for the host across plays and earlier role runs. Without a
+    # reset, a journal found idle by some previous invocation would still count as
+    # proven idle here, whatever its slot says now.
+    daybook_operations_runtime_idle_journals: []
+  when:
+    - daybook_operations_runtime_action == 'replace'
+    - daybook_operations_runtime_previous_schema | int != 3
+
+- name: Collect the per-source journals whose slot reads exactly idle
+  ansible.builtin.set_fact:
+    daybook_operations_runtime_idle_journals: >-
+      {{ daybook_operations_runtime_idle_journals
+         + ([item.item.item.0] if (item.content | b64decode | from_json).phase == 'idle' else []) }}
+  loop: "{{ daybook_operations_runtime_old_slots.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.item.0 | default('none') | basename }}"
+  no_log: true
+  when:
+    - daybook_operations_runtime_action == 'replace'
+    - daybook_operations_runtime_previous_schema | int != 3
+
+- name: Prove every per-source journal being left behind is drained
+  ansible.builtin.assert:
+    that:
+      # A halt marker is a person's attention request; carrying on past one into
+      # a new store would lose it. It has to be recovered first.
+      - not halted.stat.exists
+      # A slot that exists must read exactly `idle`, whatever else is there --
+      # anything else is a delivery still owed. Only a journal with neither slot
+      # nor lock counts as never opened. A lock without a slot is a used journal
+      # whose evidence is gone, and is refused; a lock is never what makes a slot
+      # acceptable, since a missing lock would then hide an outstanding delivery.
+      - (slot.stat.exists and item in daybook_operations_runtime_idle_journals)
+        or (not slot.stat.exists and not lock.stat.exists)
+    fail_msg: >-
+      {{ item }} is not drained. Tick that source to idle with the runtime still
+      on its current profile, or recover it, before changing the store's shape.
+      Never delete its files to get past this.
+  vars:
+    files: "{{ daybook_operations_runtime_old_files.results | selectattr('item.0', 'equalto', item) | list }}"
+    halted: "{{ files | selectattr('item.1', 'equalto', 'halted.json') | first }}"
+    lock: "{{ files | selectattr('item.1', 'equalto', 'runtime.lock') | first }}"
+    slot: "{{ files | selectattr('item.1', 'equalto', 'delivery.json') | first }}"
+  loop: "{{ daybook_operations_runtime_previous_journals }}"
+  when:
+    - daybook_operations_runtime_action == 'replace'
+    - daybook_operations_runtime_previous_schema | int != 3
+
+- name: Find anything still owed in a schema 3 store being replaced
+  ansible.builtin.find:
+    paths:
+      - "{{ daybook_operations_runtime_previous_journals[0] }}/deliveries"
+      - "{{ daybook_operations_runtime_previous_journals[0] }}/halts"
+    patterns: ['*.json']
+    file_type: file
+  register: daybook_operations_runtime_old_store
+  when:
+    - daybook_operations_runtime_action == 'replace'
+    - daybook_operations_runtime_previous_schema | int == 3
+
+- name: Prove a schema 3 store being replaced owes nothing
+  ansible.builtin.assert:
+    that:
+      # In a schema 3 store there is no idle record: any record is owed, and any
+      # halt is a person's attention request.
+      - daybook_operations_runtime_old_store.matched == 0
+    fail_msg: >-
+      {{ daybook_operations_runtime_previous_journals[0] }} still holds deliveries or
+      halts. Settle or recover them before replacing the profile.
+  when:
+    - daybook_operations_runtime_action == 'replace'
+    - daybook_operations_runtime_previous_schema | int == 3
 
 - name: Inspect existing runtime status before configuration changes
   ansible.builtin.command:
-    # Name the binding explicitly: a multi-binding profile has no single implied
+    # Name the binding explicitly: a multi-source profile has no single implied
     # one, and `operations status` would stop with `ambiguous_binding` rather
-    # than report the state these guards are about to read.
+    # than report the state these guards are about to read. Only a schema 3
+    # profile can be asked at all -- the installed client reads no other -- which
+    # is why changing the store's shape goes through `replace` instead.
     argv: ["{{ daybook_operations_runtime_python }}", -I, -c, 'from daybook.cli import main; raise SystemExit(main())', operations, status, --policy, "{{ daybook_operations_runtime_policy }}", --binding, "{{ daybook_operations_runtime_binding }}"]
   become: true
   become_user: "{{ daybook_operations_runtime_user }}"
@@ -143,34 +304,37 @@
   changed_when: false
   when:
     - daybook_operations_runtime_existing_policy.stat.exists
-    - daybook_operations_runtime_action != 'install'
+    - daybook_operations_runtime_action in ['cutover', 'rollback']
 
 - name: Refuse to overwrite an active installation or bypass unresolved evidence
   ansible.builtin.assert:
     that:
       - not (daybook_operations_runtime_existing_status.stdout | from_json).enabled or daybook_operations_runtime_action == 'rollback'
+      # `idle` means this source owes nothing. `awaiting` and `blocked` are the
+      # phases a transition may carry across: the receipt reached the server, and
+      # the record stays in the same store to be settled afterwards.
       - (daybook_operations_runtime_existing_status.stdout | from_json).status in ['idle', 'awaiting', 'blocked']
       - (daybook_operations_runtime_existing_status.stdout | from_json).server.active_state not in ['assigned', 'awaiting_apply']
       - daybook_operations_runtime_action != 'rollback' or not (daybook_operations_runtime_existing_status.stdout | from_json).server.enabled
     fail_msg: Quiesce and reconcile the runtime and server binding before replacing configuration.
   when:
     - daybook_operations_runtime_existing_policy.stat.exists
-    - daybook_operations_runtime_action != 'install'
+    - daybook_operations_runtime_action in ['cutover', 'rollback']
 
-- name: Create an owner-private delivery journal for every binding
+- name: Create the owner-private delivery store
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
     owner: "{{ daybook_operations_runtime_user }}"
     group: staff
     mode: "0700"
-  # One per binding, not one for the profile. A worker opens its journal before
-  # it does anything else, so a binding whose directory is missing stops at once
-  # and reports needing an operator -- which is correct behaviour for a fault,
-  # and a silly way to discover that deployment simply never created it.
-  loop: "{{ daybook_operations_runtime_bindings | map(attribute='journal') | list
-            if daybook_operations_runtime_bindings
-            else [daybook_operations_runtime_journal] }}"
+  # One store for the machine: the root, the delivery records keyed by operation,
+  # and the per-source halt markers. The client refuses to open a store whose
+  # parts are missing or loose, so deployment creates all three.
+  loop:
+    - "{{ daybook_operations_runtime_journal }}"
+    - "{{ daybook_operations_runtime_journal }}/deliveries"
+    - "{{ daybook_operations_runtime_journal }}/halts"
 
 - name: Create owner-private credential directory
   ansible.builtin.file:
@@ -199,7 +363,9 @@
 
 - name: Perform attended regular-label transition
   ansible.builtin.include_tasks: transition.yml
-  when: daybook_operations_runtime_action != 'install'
+  # `replace` needs none: it proved the label already quiesced and every old
+  # journal drained, and it writes the new profile disabled for a cutover to act on.
+  when: daybook_operations_runtime_action in ['cutover', 'rollback']
 
 - name: Write disabled-first root-owned local policy
   ansible.builtin.template:
@@ -213,4 +379,4 @@
   ansible.builtin.include_tasks: start.yml
   when:
     - daybook_operations_runtime_start | bool
-    - daybook_operations_runtime_action != 'install'
+    - daybook_operations_runtime_action in ['cutover', 'rollback']

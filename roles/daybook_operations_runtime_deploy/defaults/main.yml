@@ -14,18 +14,33 @@ daybook_operations_runtime_credential: "{{ daybook_operations_runtime_home }}/.c
 daybook_operations_runtime_token: CHANGEME
 daybook_operations_runtime_api_url: https://operations.home.example.com
 daybook_operations_runtime_binding: regular
-daybook_operations_runtime_journal: "{{ daybook_operations_runtime_home }}/.local/state/daybook/operations-importer"
-# 'tick' is one launchd wake-up per check, the shape this service has always had.
-# 'serve' runs the supervisor: one long-lived process, one worker per binding,
-# and it requires the schema 2 binding list below.
-daybook_operations_runtime_mode: tick
-# Empty keeps the schema 1 profile -- one binding, with the deadline and lease
-# this lane has always run with. A non-empty list renders schema 2, where each
-# entry states its own adapter, journal, cadence, child deadline and lease.
-# The long lane's deadline is not a free choice: the client derives the minimum
-# from the importer policy and refuses a profile that configures less. See the
-# budget table in daybook's docs/operations.md.
-daybook_operations_runtime_bindings: []
+# The machine's one delivery store. A record in it belongs to an operation, not to
+# a source, which is what lets a pool of workers hold several at once without one
+# completion overwriting another's evidence. It is a new directory on purpose: the
+# per-source journals of profile schemas 1 and 2 are left where they are, drained
+# and untouched, rather than reinterpreted.
+daybook_operations_runtime_journal: "{{ daybook_operations_runtime_home }}/.local/state/daybook/operations"
+# 'serve' runs the supervisor: one long-lived process with a pool of workers that
+# take whatever the server hands out. 'tick' is one launchd wake-up per check and
+# only makes sense for a profile with exactly one source.
+daybook_operations_runtime_mode: serve
+# The pool. `long` is how many workers long work may occupy at once, and it must
+# leave at least one it cannot take: that is the guarantee the separate long
+# thread used to give, now as a number. The client refuses a profile that breaks it.
+daybook_operations_runtime_workers:
+  count: 2
+  long: 1
+# The sources this machine can run, and what running each costs here. No journal
+# and no cadence: the journal is the machine's, and the server has answered when a
+# check is due since step 1 of Daybook's central scheduling design. The long lane's
+# deadline is not a free choice -- the client derives the minimum from the
+# importer policy and refuses a profile that configures less. See the budget
+# table in daybook's docs/operations.md.
+daybook_operations_runtime_bindings:
+  - name: regular
+    adapter: voice_memos.ingest.v1
+    deadline: 330
+    lease: 600
 daybook_operations_runtime_adapters:
   - voice_memos.ingest.v1
   - voice_memos.transcribe_long.v1
