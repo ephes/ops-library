@@ -1,6 +1,10 @@
 # daybook_operations_runtime_deploy
 
-Stage one API-backed scheduler in an existing protected macOS importer profile.
+Stage the Daybook operations supervisor on a client machine: one long-lived
+process that asks the coordination server what to do and runs what it is handed.
+On Studio it lives in the existing protected macOS importer profile; on a machine
+deployed without root, such as Atlas, it is a user-owned install of its own (see
+[Two kinds of machine](#two-kinds-of-machine-owner-and-mode)).
 
 This role preserves the existing Full Disk Access interpreter path. It does not
 install/update the importer checkout, initialize a ledger, change an activation
@@ -80,6 +84,33 @@ the journal: drain its receipt or authorize a linked recovery on the server,
 then use `operations recover` locally. Runtime lock inheritance protects orphaned
 children. No PID read from disk is killed by recovery.
 
+## Two kinds of machine: owner and mode
+
+| Variable | Values | Meaning |
+|----------|--------|---------|
+| `daybook_operations_runtime_owner` | `root` (default), `user` | `root`: install, profile, staged and installed plist are root-owned (Studio). `user`: all of it belongs to `daybook_operations_runtime_user`, for a machine where deployment has no root (Atlas: `ansible_user` is the GUI user and `sudo` needs a password). The LaunchAgent passes `--policy-owner user`, the only way the client accepts a user-owned profile; the profile cannot vouch for itself. |
+| `daybook_operations_runtime_mode` | `serve` (default), `host` | `serve`: the label runs the supervisor itself. `host`: the label runs the keeper, `operations host-keep`, which creates the machine's capability host if it is missing (with `work host ensure`'s lock and marker), starts the supervisor inside it as its own tmux session, and exits when either is gone so launchd starts it again. The supervisor's tasks then inherit the host's grants: a machine has one place that holds special permissions, and nothing is granted to a process of its own. `KeepAlive`, a 30-second throttle, and `LimitLoadToSessionType: Aqua`. |
+| `daybook_operations_runtime_host_*` | socket `daybook-host`, session `host`, tmux, `TMUX_TMPDIR` `/private/tmp`, lock, application `Ghostty` | The capability host, in `host` mode. |
+| `daybook_operations_runtime_code_bundle_src` | `""` (default), a path | A git bundle carrying the pinned revision, for a machine where no other role installs the code. The role then clones it into `install_root/daybook`, checks out exactly `daybook_operations_runtime_revision` detached, refuses a checkout that differs, and runs `uv sync --frozen --no-dev`. Empty: the code is already installed (Studio's importer role does that). |
+
+**Stopping a hosted supervisor.** Booting out the keeper leaves the supervisor
+running inside the host, by design. `cutover` and `rollback` therefore refuse
+while the label is loaded running `serve` or `host-keep`, **and** while any
+`operations serve` process of the user runs (`pgrep -f "[o]perations serve"`):
+boot out the keeper, send SIGTERM to the supervisor so owned work finishes and
+persists its receipt, wait for it to exit, then transition.
+
+**A machine whose label never ran anything** (Atlas: its old jobs were other
+labels, retired by their own roles). `cutover` saves no original command, because
+there is none; `rollback` then leaves the label with no command at all, and
+`start: true` bootstraps nothing -- the old jobs come back through their own roles.
+
+**The profile is proven loadable at deployment.** After writing it, the role loads
+it with the installed client, `Config.load(policy, owner)`, as the user. Every rule
+the client applies -- each adapter's settings, whether a kind said it is long
+where it must, the importer policy's budget, the owner -- fails the deployment
+instead of the supervisor's start.
+
 ## Defaults and variables
 
 ```yaml
@@ -89,6 +120,13 @@ daybook_operations_runtime_action: install
 daybook_operations_runtime_confirmed: false
 daybook_operations_runtime_start: false
 daybook_operations_runtime_user: CHANGEME
+# Who owns the install. `root`: a root-owned install, profile and LaunchAgent, as
+# on Studio. `user`: a machine deployed without root, such as Atlas -- code,
+# profile, credential and LaunchAgent belong to the GUI user, and the client is
+# told so with `--policy-owner user` in the job's own arguments.
+daybook_operations_runtime_owner: root
+daybook_operations_runtime_file_owner: "{{ 'root' if daybook_operations_runtime_owner == 'root' else daybook_operations_runtime_user }}"
+daybook_operations_runtime_file_group: "{{ 'wheel' if daybook_operations_runtime_owner == 'root' else 'staff' }}"
 daybook_operations_runtime_home: "/Users/{{ daybook_operations_runtime_user }}"
 daybook_operations_runtime_install_root: /Library/Application Support/Daybook/voice-memo-inbox
 daybook_operations_runtime_python: "{{ daybook_operations_runtime_install_root }}/daybook/.venv/bin/python"
@@ -107,10 +145,27 @@ daybook_operations_runtime_binding: regular
 # per-source journals of profile schemas 1 and 2 are left where they are, drained
 # and untouched, rather than reinterpreted.
 daybook_operations_runtime_journal: "{{ daybook_operations_runtime_home }}/.local/state/daybook/operations"
-# 'serve' runs the supervisor: one long-lived process with a pool of workers that
-# take whatever the server hands out. It is the only mode: 'tick' needed a profile
-# naming exactly one source, and a profile names none now.
+# 'serve' runs the supervisor as a plain LaunchAgent: one long-lived process with a
+# pool of workers that take whatever the server hands out. 'host' runs the keeper
+# (`operations host-keep`) instead, which keeps that supervisor alive inside the
+# machine's capability host -- the one place on the machine that holds special
+# permissions -- so every task it starts inherits the host's grants. 'tick' is
+# gone: it needed a profile naming exactly one source, and a profile names none.
 daybook_operations_runtime_mode: serve
+# The capability host, for mode 'host': the Ghostty-born tmux server `work host
+# ensure` creates, under its lock and marker.
+daybook_operations_runtime_host_socket: daybook-host
+daybook_operations_runtime_host_session: host
+daybook_operations_runtime_host_tmux: /opt/homebrew/bin/tmux
+daybook_operations_runtime_host_tmpdir: /private/tmp
+daybook_operations_runtime_host_lock: "{{ daybook_operations_runtime_home }}/.local/state/daybook/host/host.lock"
+daybook_operations_runtime_host_application: Ghostty
+# A pinned source bundle to install the code from, for a machine where no other
+# role installs it (Atlas). Empty: the code is already installed at the pinned
+# revision -- on Studio the Voice Memo importer role does that.
+daybook_operations_runtime_code_bundle_src: ""
+daybook_operations_runtime_uv_bin: /opt/homebrew/bin/uv
+daybook_operations_runtime_python_version: "3.14"
 # The pool. `long` is how many workers long work may occupy at once, and it must
 # leave at least one it cannot take: that is the guarantee the separate long
 # thread used to give, now as a number. The client refuses a profile that breaks it.
@@ -131,6 +186,17 @@ daybook_operations_runtime_kinds:
 daybook_operations_runtime_adapters:
   - voice_memos.ingest.v1
   - voice_memos.transcribe_long.v1
+  - mail.work.v1
+  - sessions.ship.v1
+  - archive.classify_quotes.v1
+  - weeknotes.reconcile.v1
+  - voice_memos.work.v1
+# The kinds that run the memo importer. Each gets `run.importer_policy` from
+# `daybook_operations_runtime_importer_policy` unless it names its own `run`; a
+# machine with none of them names no importer policy at all (profile schema 5).
+daybook_operations_runtime_importer_adapters:
+  - voice_memos.ingest.v1
+  - voice_memos.transcribe_long.v1
 daybook_operations_runtime_label: de.wersdoerfer.daybook.voice-memo-inbox
 daybook_operations_runtime_plist: "{{ daybook_operations_runtime_home }}/Library/LaunchAgents/{{ daybook_operations_runtime_label }}.plist"
 daybook_operations_runtime_staged_plist: "{{ daybook_operations_runtime_install_root }}/operations.launchd.plist"
@@ -139,7 +205,8 @@ daybook_operations_runtime_legacy_plist: "{{ daybook_operations_runtime_install_
 
 ## The profile: identity, kinds of work, a pool, and one store
 
-The role renders profile schema 4, which the Daybook client requires:
+The role renders profile schema 5 (the client reads 4 and 5; a schema 4 profile
+upgrades in place, since the store does not change):
 
 ```yaml
 daybook_operations_runtime_mode: serve
@@ -154,6 +221,27 @@ daybook_operations_runtime_kinds:
   - adapter: voice_memos.transcribe_long.v1
     deadline: 1200
     lease: 1500
+```
+
+**Each kind may carry `long` and `run`.** `long` says whether the kind draws on
+the long allowance; an adapter that fixes the answer (the long memo lane is always
+long) cannot be overridden, and the publishing adapters require the profile to
+say. `run` is the adapter's local settings -- paths and names its fixed command
+needs on this machine -- checked per adapter by the client and never sent to the
+server. The memo kinds get `run: {importer_policy: …}` from
+`daybook_operations_runtime_importer_policy` unless they name their own; a machine
+with no memo kind names no importer policy at all.
+
+```yaml
+daybook_operations_runtime_kinds:
+  - adapter: mail.work.v1
+    deadline: 120
+    lease: 300
+    run:
+      state: /Users/SERVICE/.local/share/daybook/mail-work/work.sqlite3
+      mail_state: /Users/SERVICE/.local/share/daybook/mail-work/mail.sqlite3
+      # … the remaining mail settings, see Daybook's docs/operations.md
+      search_path: [/opt/homebrew/bin, /usr/bin, /bin]
 ```
 
 **No source.** Since step 3 of Daybook's central scheduling design the source

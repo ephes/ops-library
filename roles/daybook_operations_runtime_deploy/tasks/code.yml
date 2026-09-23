@@ -1,0 +1,127 @@
+---
+# Install the pinned code on a machine where no other role does (Atlas). The same
+# shape the Voice Memo importer role gives Studio's install -- a git bundle, a
+# detached checkout of exactly the pinned commit, proven clean, and a locked
+# environment -- owned by whoever owns the install.
+- name: code | Create the install root
+  ansible.builtin.file:
+    path: "{{ daybook_operations_runtime_install_root }}"
+    state: directory
+    owner: "{{ daybook_operations_runtime_file_owner }}"
+    group: "{{ daybook_operations_runtime_file_group }}"
+    mode: "0755"
+
+- name: code | Install the pinned source bundle
+  ansible.builtin.copy:
+    src: "{{ daybook_operations_runtime_code_bundle_src }}"
+    dest: "{{ daybook_operations_runtime_install_root }}/daybook.bundle"
+    owner: "{{ daybook_operations_runtime_file_owner }}"
+    group: "{{ daybook_operations_runtime_file_group }}"
+    mode: "0600"
+
+- name: code | Require the bundle to carry the pinned commit
+  ansible.builtin.command:
+    argv: [/usr/bin/git, bundle, list-heads, "{{ daybook_operations_runtime_install_root }}/daybook.bundle"]
+  register: daybook_operations_runtime_bundle_heads
+  changed_when: false
+  failed_when: >-
+    daybook_operations_runtime_bundle_heads.rc != 0
+    or daybook_operations_runtime_bundle_heads.stdout is not search('(?m)^' ~ daybook_operations_runtime_revision ~ ' ')
+  environment: &git_env
+    GIT_CONFIG_GLOBAL: /dev/null
+    GIT_CONFIG_SYSTEM: /dev/null
+    GIT_OPTIONAL_LOCKS: "0"
+
+- name: code | Read the installed checkout's revision
+  ansible.builtin.command:
+    argv: [/usr/bin/git, -C, "{{ daybook_operations_runtime_install_root }}/daybook", rev-parse, HEAD]
+  register: daybook_operations_runtime_code_revision
+  changed_when: false
+  failed_when: false
+  environment: *git_env
+
+- name: code | Decide whether running code would be replaced
+  ansible.builtin.set_fact:
+    daybook_operations_runtime_code_replacing: >-
+      {{ daybook_operations_runtime_code_revision.rc == 0
+         and daybook_operations_runtime_code_revision.stdout | trim != daybook_operations_runtime_revision }}
+
+- name: code | Resolve the GUI user for the running-code checks
+  ansible.builtin.command:
+    argv: [/usr/bin/id, -u, "{{ daybook_operations_runtime_user }}"]
+  register: daybook_operations_runtime_code_uid
+  changed_when: false
+  when: daybook_operations_runtime_code_replacing | bool
+
+- name: code | Inspect the supervisor label before replacing its code
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "gui/{{ daybook_operations_runtime_code_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
+  register: daybook_operations_runtime_code_label
+  changed_when: false
+  failed_when: daybook_operations_runtime_code_label.rc not in [0, 113]
+  when: daybook_operations_runtime_code_replacing | bool
+
+- name: code | Look for a supervisor running this code
+  ansible.builtin.command:
+    argv: [/usr/bin/pgrep, -u, "{{ daybook_operations_runtime_user }}", -f, "[o]perations serve"]
+  register: daybook_operations_runtime_code_serving
+  changed_when: false
+  failed_when: daybook_operations_runtime_code_serving.rc not in [0, 1]
+  when: daybook_operations_runtime_code_replacing | bool
+
+- name: code | Refuse to replace code a supervisor may be running
+  ansible.builtin.assert:
+    that:
+      # The same quiescence the transitions require: the label unloaded and no
+      # `operations serve` left anywhere (a hosted one outlives its keeper).
+      - daybook_operations_runtime_code_label.rc == 113
+      - daybook_operations_runtime_code_serving.rc == 1
+    fail_msg: >-
+      The installed code is at another revision and a supervisor may be running it.
+      Stop it as the ops-control runbook describes, then deploy again.
+  when: daybook_operations_runtime_code_replacing | bool
+
+- name: code | Replace a checkout at another revision
+  ansible.builtin.file:
+    path: "{{ daybook_operations_runtime_install_root }}/daybook"
+    state: absent
+  # Only a readable, different revision is replaced. The supervisor is stopped
+  # before any deployment that changes code, as the runbook requires.
+  when: daybook_operations_runtime_code_replacing | bool
+
+- name: code | Clone the bundle
+  ansible.builtin.command:
+    argv: [/usr/bin/git, clone, --no-checkout, "{{ daybook_operations_runtime_install_root }}/daybook.bundle", "{{ daybook_operations_runtime_install_root }}/daybook"]
+    creates: "{{ daybook_operations_runtime_install_root }}/daybook/.git"
+  environment: *git_env
+
+- name: code | Check out exactly the pinned commit
+  ansible.builtin.command:
+    argv: [/usr/bin/git, -C, "{{ daybook_operations_runtime_install_root }}/daybook", checkout, --detach, "{{ daybook_operations_runtime_revision }}"]
+  changed_when: daybook_operations_runtime_code_revision.stdout | default('') | trim != daybook_operations_runtime_revision
+  environment: *git_env
+
+- name: code | Inspect the checkout for anything that is not the commit
+  ansible.builtin.command:
+    argv: [/usr/bin/git, -C, "{{ daybook_operations_runtime_install_root }}/daybook", status, --porcelain, --untracked-files=all]
+  register: daybook_operations_runtime_code_status
+  changed_when: false
+  environment: *git_env
+
+- name: code | Require an unmodified checkout
+  ansible.builtin.assert:
+    that:
+      - daybook_operations_runtime_code_status.stdout | trim | length == 0
+    fail_msg: >-
+      The installed Daybook checkout differs from the pinned commit
+      ({{ daybook_operations_runtime_code_status.stdout_lines | length }} entries;
+      paths withheld). Remove it so the next deployment clones the bundle again.
+
+- name: code | Synchronize the locked environment
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_runtime_uv_bin }}", sync, --frozen, --no-dev, --python, "{{ daybook_operations_runtime_python_version }}"]
+    chdir: "{{ daybook_operations_runtime_install_root }}/daybook"
+  register: daybook_operations_runtime_code_sync
+  changed_when: "'Installed' in daybook_operations_runtime_code_sync.stderr or 'Uninstalled' in daybook_operations_runtime_code_sync.stderr"
+  environment:
+    UV_NO_PROGRESS: "1"

@@ -107,6 +107,7 @@ test-dns-metrics-endpoint: venv
 test-daybook-sessions-deploy: venv
     @echo "Testing Daybook sessions deploy behavior..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_daybook_sessions_deploy.yml
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_daybook_sessions_retire
 
 test-daybook-photos-offload-deploy: venv
     @echo "Testing Daybook Photos offload deploy contracts..."

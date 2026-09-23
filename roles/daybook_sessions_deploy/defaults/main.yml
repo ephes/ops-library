@@ -38,12 +38,22 @@ daybook_sessions_launchd_label: "de.wersdoerfer.daybook.sessions"
 daybook_sessions_launchd_scope: "system"
 daybook_sessions_launchd_plist_path: "/Library/LaunchDaemons/{{ daybook_sessions_launchd_label }}.plist"
 daybook_sessions_launchd_manage_state: true
+# Whether launchd schedules session shipping. `false` retires the timer --
+# unloaded, disabled and its plist removed -- while the environment file, launcher
+# and checkout stay: a Daybook operations supervisor runs the same work from them
+# as a source (`sessions.ship.v1`), and needs `sessions.env` to do it.
+daybook_sessions_launchd_enabled: true
 daybook_sessions_launchd_start_service: true
 daybook_sessions_launchd_run_at_load: true
 daybook_sessions_schedule_interval_seconds: 1800
 daybook_sessions_launchd_path: "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 daybook_archive_quote_classifier_enabled: false
+# As `daybook_sessions_launchd_enabled`, for the classifier: `false` with the
+# classifier enabled retires its 07:20/19:20 timer but keeps its environment file
+# and launcher for the operations supervisor (`archive.classify_quotes.v1`).
+# Disabling the classifier itself still removes everything.
+daybook_archive_quote_classifier_launchd_enabled: true
 daybook_archive_quote_classifier_launchd_label: "de.wersdoerfer.daybook.archive-quotes"
 daybook_archive_quote_classifier_launchd_plist_path: "/Library/LaunchDaemons/{{ daybook_archive_quote_classifier_launchd_label }}.plist"
 daybook_archive_quote_classifier_launcher_path: "{{ daybook_sessions_config_dir }}/classify-archive-quotes.sh"

@@ -1,0 +1,45 @@
+---
+# Retire one launchd timer whose work has moved to the Daybook operations
+# supervisor. Its configuration stays: the supervisor runs the same command from
+# the same environment file. Only the schedule goes, and it goes for good -- a
+# timer and a source for the same work must never both be able to run it.
+- name: retire_timer | Inspect the timer being retired
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "{{ daybook_sessions_launchd_domain }}/{{ daybook_sessions_retiring.label }}"]
+  register: daybook_sessions_retiring_status
+  changed_when: false
+  failed_when: daybook_sessions_retiring_status.rc not in [0, 113]
+
+- name: retire_timer | Refuse to retire a timer while its run is in flight
+  ansible.builtin.assert:
+    that:
+      # Booting out a running job would signal it mid-run. The operator retires a
+      # timer at a quiet moment; this proves the moment was quiet.
+      - daybook_sessions_retiring_status.rc == 113
+        or daybook_sessions_retiring_status.stdout is not search('state = (running|spawning)')
+    fail_msg: >-
+      {{ daybook_sessions_retiring.label }} is running. Wait for this run to end, then
+      retire it again.
+
+- name: retire_timer | Unload the timer
+  ansible.builtin.command:
+    argv: [/bin/launchctl, bootout, "{{ daybook_sessions_launchd_domain }}/{{ daybook_sessions_retiring.label }}"]
+  changed_when: true
+  when: daybook_sessions_retiring_status.rc == 0
+
+- name: retire_timer | Disable the timer's label persistently
+  ansible.builtin.command:
+    argv: [/bin/launchctl, disable, "{{ daybook_sessions_launchd_domain }}/{{ daybook_sessions_retiring.label }}"]
+  changed_when: false
+
+- name: retire_timer | Remove the timer's plist
+  ansible.builtin.file:
+    path: "{{ daybook_sessions_retiring.plist }}"
+    state: absent
+
+- name: retire_timer | Prove the timer is gone
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "{{ daybook_sessions_launchd_domain }}/{{ daybook_sessions_retiring.label }}"]
+  register: daybook_sessions_retired_status
+  changed_when: false
+  failed_when: daybook_sessions_retired_status.rc != 113

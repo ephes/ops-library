@@ -4,8 +4,20 @@ daybook_operations_runtime_action: install
 daybook_operations_runtime_confirmed: false
 daybook_operations_runtime_start: false
 daybook_operations_runtime_user: CHANGEME
+# Who owns the install. `root`: a root-owned install, profile and LaunchAgent, as
+# on Studio. `user`: a machine deployed without root, such as Atlas -- code,
+# profile, credential and LaunchAgent belong to the GUI user, and the client is
+# told so with `--policy-owner user` in the job's own arguments.
+daybook_operations_runtime_owner: root
+daybook_operations_runtime_file_owner: "{{ 'root' if daybook_operations_runtime_owner == 'root' else daybook_operations_runtime_user }}"
+daybook_operations_runtime_file_group: "{{ 'wheel' if daybook_operations_runtime_owner == 'root' else 'staff' }}"
 daybook_operations_runtime_home: "/Users/{{ daybook_operations_runtime_user }}"
-daybook_operations_runtime_install_root: /Library/Application Support/Daybook/voice-memo-inbox
+# Root's protected install on Studio; the user's own Application Support where the
+# install is the user's, since deployment there cannot write under /Library.
+daybook_operations_runtime_install_root: >-
+  {{ '/Library/Application Support/Daybook/voice-memo-inbox'
+     if daybook_operations_runtime_owner == 'root'
+     else daybook_operations_runtime_home ~ '/Library/Application Support/Daybook/operations' }}
 daybook_operations_runtime_python: "{{ daybook_operations_runtime_install_root }}/daybook/.venv/bin/python"
 daybook_operations_runtime_revision: CHANGEME
 daybook_operations_runtime_policy: "{{ daybook_operations_runtime_install_root }}/operations.json"
@@ -22,10 +34,27 @@ daybook_operations_runtime_binding: regular
 # per-source journals of profile schemas 1 and 2 are left where they are, drained
 # and untouched, rather than reinterpreted.
 daybook_operations_runtime_journal: "{{ daybook_operations_runtime_home }}/.local/state/daybook/operations"
-# 'serve' runs the supervisor: one long-lived process with a pool of workers that
-# take whatever the server hands out. It is the only mode: 'tick' needed a profile
-# naming exactly one source, and a profile names none now.
+# 'serve' runs the supervisor as a plain LaunchAgent: one long-lived process with a
+# pool of workers that take whatever the server hands out. 'host' runs the keeper
+# (`operations host-keep`) instead, which keeps that supervisor alive inside the
+# machine's capability host -- the one place on the machine that holds special
+# permissions -- so every task it starts inherits the host's grants. 'tick' is
+# gone: it needed a profile naming exactly one source, and a profile names none.
 daybook_operations_runtime_mode: serve
+# The capability host, for mode 'host': the Ghostty-born tmux server `work host
+# ensure` creates, under its lock and marker.
+daybook_operations_runtime_host_socket: daybook-host
+daybook_operations_runtime_host_session: host
+daybook_operations_runtime_host_tmux: /opt/homebrew/bin/tmux
+daybook_operations_runtime_host_tmpdir: /private/tmp
+daybook_operations_runtime_host_lock: "{{ daybook_operations_runtime_home }}/.local/state/daybook/host/host.lock"
+daybook_operations_runtime_host_application: Ghostty
+# A pinned source bundle to install the code from, for a machine where no other
+# role installs it (Atlas). Empty: the code is already installed at the pinned
+# revision -- on Studio the Voice Memo importer role does that.
+daybook_operations_runtime_code_bundle_src: ""
+daybook_operations_runtime_uv_bin: /opt/homebrew/bin/uv
+daybook_operations_runtime_python_version: "3.14"
 # The pool. `long` is how many workers long work may occupy at once, and it must
 # leave at least one it cannot take: that is the guarantee the separate long
 # thread used to give, now as a number. The client refuses a profile that breaks it.
@@ -44,6 +73,17 @@ daybook_operations_runtime_kinds:
     deadline: 330
     lease: 600
 daybook_operations_runtime_adapters:
+  - voice_memos.ingest.v1
+  - voice_memos.transcribe_long.v1
+  - mail.work.v1
+  - sessions.ship.v1
+  - archive.classify_quotes.v1
+  - weeknotes.reconcile.v1
+  - voice_memos.work.v1
+# The kinds that run the memo importer. Each gets `run.importer_policy` from
+# `daybook_operations_runtime_importer_policy` unless it names its own `run`; a
+# machine with none of them names no importer policy at all (profile schema 5).
+daybook_operations_runtime_importer_adapters:
   - voice_memos.ingest.v1
   - voice_memos.transcribe_long.v1
 daybook_operations_runtime_label: de.wersdoerfer.daybook.voice-memo-inbox

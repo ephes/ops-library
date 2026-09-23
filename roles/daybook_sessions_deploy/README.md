@@ -193,6 +193,30 @@ daybook_archive_quote_classifier_stderr_log: "/Users/jochen/Library/Logs/daybook
 daybook_archive_quote_classifier_launchd_plist_path: "/Users/jochen/Library/LaunchAgents/de.wersdoerfer.daybook.archive-quotes.plist"
 ```
 
+## Retiring a Timer to the Operations Supervisor
+
+Session shipping and the Archive quote classifier can run as sources under the
+Daybook operations supervisor (`sessions.ship.v1`, `archive.classify_quotes.v1`)
+instead of as launchd timers. The supervisor runs the same commands from the
+same environment files, so retiring a timer removes only its schedule:
+
+| Variable | Default | `false` means |
+|----------|---------|---------------|
+| `daybook_sessions_launchd_enabled` | `true` | the sessions timer is unloaded, disabled and its plist removed; `sessions.env`, the launcher and the checkout stay |
+| `daybook_archive_quote_classifier_launchd_enabled` | `true` | with the classifier enabled, its 07:20/19:20 timer goes the same way; `archive-quotes.env` and the launcher stay |
+
+The weeknotes reconciler already has `daybook_weeknotes_reconcile_launchd_enabled`,
+which keeps its environment file and checksum while the unit stays disabled and
+unloaded. Disabling the classifier itself (`daybook_archive_quote_classifier_enabled:
+false`) still removes its files.
+
+A retire refuses while the timer's run is in flight: booting out a running job
+would signal it mid-run, so retire at a quiet moment and run the role again if it
+refuses. It then proves the label is gone. A timer and a source for the same work
+must never both be able to run it, so retire the timer **before** the source is
+enabled on the server, and on rollback disable and drain the source before setting
+the variable back to `true`.
+
 ## Redaction Notes
 
 `daybook sessions ship` harvests secret values from its process environment,

@@ -2,6 +2,23 @@
 
 ## Unreleased — operations API (2.22.0)
 
+- Generalise `daybook_operations_runtime_deploy` for a second machine and for the
+  supervisor inside a capability host. `daybook_operations_runtime_owner: user`
+  makes the install, profile and LaunchAgent the GUI user's, for a machine
+  deployed without root (Atlas), and the plist passes `--policy-owner`.
+  `daybook_operations_runtime_mode: host` runs `operations host-keep`, which keeps
+  the supervisor alive inside the machine's capability host. The profile is
+  schema 5 (per-kind `long` and `run`; the importer policy moves into the memo
+  kinds), and is proven loadable by the installed client at deployment. An
+  optional git bundle installs the pinned code on a fresh machine, never over code
+  a supervisor may be running. Transitions also refuse while a hosted
+  `operations serve` still runs, and handle a label that never ran anything.
+- Add `daybook_sessions_launchd_enabled` and
+  `daybook_archive_quote_classifier_launchd_enabled` to `daybook_sessions_deploy`:
+  `false` retires that launchd timer (refused while it runs; unloaded, disabled,
+  plist removed, proven gone) while keeping the environment file, launcher and
+  checkout the Daybook operations supervisor now runs the same work from.
+
 - Document how to choose `daybook_mail_work_interval_seconds` in the
   `daybook_mail_work_deploy` README, with the measurement behind it. The default
   of 300 is probably too short for a judgement-heavy source: measured on one

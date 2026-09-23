@@ -22,6 +22,8 @@ class OperationsRoleTests(unittest.TestCase):
             to_json=json.dumps,
             to_nice_json=json.dumps,
             dirname=lambda p: str(Path(p).parent),
+            combine=lambda a, b: {**a, **b},
+            difference=lambda a, b: [x for x in a if x not in b],
         )
         for _ in range(8):
             for key, value in list(result.items()):
@@ -65,7 +67,7 @@ class OperationsRoleTests(unittest.TestCase):
             )
             self.assertEqual(policy["enabled"], enabled)
 
-    def test_the_profile_is_schema_4_and_names_no_source(self):
+    def test_the_profile_is_schema_5_and_names_no_source(self):
         """The machine's identity, the kinds of work it can run, a pool and a store.
 
         No source: since step 3 the source list is the server's, and a source is
@@ -88,8 +90,12 @@ class OperationsRoleTests(unittest.TestCase):
 
         policy = json.loads(
             env.from_string(self.text(role, "templates/policy.json.j2")).render(**values))
-        self.assertEqual(policy["schema"], 4)
-        self.assertEqual(policy["kinds"], kinds)
+        self.assertEqual(policy["schema"], 5)
+        # The memo kinds carry the importer policy in their own settings; the
+        # profile names none at the top.
+        importer = {"importer_policy": values["daybook_operations_runtime_importer_policy"]}
+        self.assertEqual(policy["kinds"], [{**kind, "run": importer} for kind in kinds])
+        self.assertNotIn("importer_policy", policy)
         self.assertNotIn("bindings", policy)
         self.assertEqual(policy["journal"], values["daybook_operations_runtime_journal"])
         self.assertEqual(policy["workers"], {"count": 2, "long": 1})
@@ -112,7 +118,8 @@ class OperationsRoleTests(unittest.TestCase):
         tasks = yaml.safe_load(self.text(role, "tasks/main.yml"))
         entry = next(t for t in tasks if t["name"].startswith("Validate every kind of work"))
         conditions = " ".join(entry["ansible.builtin.assert"]["that"])
-        self.assertIn("['adapter', 'deadline', 'lease']", conditions)
+        self.assertIn("difference(['adapter', 'deadline', 'lease', 'long', 'run'])", conditions)
+        self.assertIn("item.long is not defined or item.long is boolean", conditions)
         self.assertIn("daybook_operations_runtime_adapters", conditions)
         self.assertIn("item.lease >= item.deadline + 60", conditions)
         for field in ("deadline", "lease"):
@@ -127,7 +134,8 @@ class OperationsRoleTests(unittest.TestCase):
         guard = next(t for t in tasks if t["name"] == "Validate protected runtime installation")
         conditions = " ".join(guard["ansible.builtin.assert"]["that"])
         # `tick` went with the source list: only the supervisor remains.
-        self.assertIn("daybook_operations_runtime_mode == 'serve'", conditions)
+        self.assertIn("daybook_operations_runtime_mode in ['serve', 'host']", conditions)
+        self.assertIn("daybook_operations_runtime_owner in ['root', 'user']", conditions)
         self.assertNotIn("'tick'", conditions)
         self.assertIn("daybook_operations_runtime_action in ['install', 'replace', 'cutover', 'rollback']",
                       conditions)
@@ -177,14 +185,14 @@ class OperationsRoleTests(unittest.TestCase):
         for name in ("Prove every per-source journal being left behind is drained",
                      "Prove a store being replaced owes nothing"):
             self.assertLess(names.index(name),
-                            names.index("Write disabled-first root-owned local policy"))
+                            names.index("Write disabled-first local policy"))
 
         identity = tasks[names.index(
             "Preserve profile identity and refuse installing over an enabled runtime")]
         conditions = " ".join(identity["ansible.builtin.assert"]["that"])
         # Only `replace` may change the profile's shape -- not `install`, which
         # skips the label check.
-        self.assertIn("daybook_operations_runtime_previous_schema | int == 4 "
+        self.assertIn("daybook_operations_runtime_previous_schema | int in [4, 5] "
                       "or daybook_operations_runtime_action == 'replace'", conditions)
         self.assertNotIn("['install', 'replace']", conditions)
         self.assertIn("daybook_operations_runtime_previous_journals[0] == "
@@ -196,11 +204,11 @@ class OperationsRoleTests(unittest.TestCase):
         self.assertIn("previous.bindings | map(attribute='adapter')",
                       shape["daybook_operations_runtime_previous_kinds"])
         # An unknown future schema is refused, not assumed to look like the newest.
-        self.assertIn("daybook_operations_runtime_previous_schema | int in [1, 2, 3, 4]", conditions)
+        self.assertIn("daybook_operations_runtime_previous_schema | int in [1, 2, 3, 4, 5]", conditions)
 
         label = tasks[names.index("Require the regular label already quiesced before a replace")]
         self.assertEqual(label["failed_when"], "daybook_operations_runtime_replace_label.rc != 113")
-        transition = tasks[names.index("Perform attended regular-label transition")]
+        transition = tasks[names.index("Perform attended supervisor-label transition")]
         self.assertEqual(transition["when"], "daybook_operations_runtime_action in ['cutover', 'rollback']")
 
     def test_every_cli_call_names_its_source_and_the_store_is_created_whole(self):
@@ -543,10 +551,10 @@ class OperationsRoleTests(unittest.TestCase):
         tasks = yaml.safe_load(self.text("daybook_operations_runtime_deploy", "tasks/transition.yml"))
         names = [t["name"] for t in tasks]
         refuse = names.index("transition | Refuse to wait out a running supervisor")
-        self.assertLess(refuse, names.index("transition | Disable only the regular label"))
+        self.assertLess(refuse, names.index("transition | Disable only the supervisor label"))
         that = " ".join(tasks[refuse]["ansible.builtin.assert"]["that"])
         self.assertNotIn("state = ", that, "any loaded supervisor refuses, whatever its state")
-        self.assertIn("search('(?m)^\\s*serve\\s*$')", that)
+        self.assertIn("search('(?m)^\\s*(serve|host-keep)\\s*$')", that)
         # And nothing up to it stops the label: the only bootout is later, for a label
         # already proven to have finished.
         for task in tasks[:refuse + 1]:
@@ -560,7 +568,7 @@ class OperationsRoleTests(unittest.TestCase):
         tasks = yaml.safe_load(self.text("daybook_operations_runtime_deploy", "tasks/transition.yml"))
         names = [t["name"] for t in tasks]
         find = names.index("transition | Find anything a rollback would abandon in the store")
-        self.assertGreater(find, names.index("transition | Prove regular label absent"))
+        self.assertGreater(find, names.index("transition | Prove supervisor label absent"))
         self.assertEqual(tasks[find]["ansible.builtin.find"]["paths"],
                          ["{{ daybook_operations_runtime_journal }}/deliveries",
                           "{{ daybook_operations_runtime_journal }}/halts"])
@@ -584,3 +592,176 @@ class OperationsRoleTests(unittest.TestCase):
         self.assertIn("daybook_operations_runtime_old_store.skipped_paths | default({}) | length == 0",
                       proof["ansible.builtin.assert"]["that"])
 
+
+
+class RuntimeGeneralisationTests(unittest.TestCase):
+    """A second machine, and the supervisor inside a capability host."""
+
+    ROLE = "daybook_operations_runtime_deploy"
+    text = OperationsRoleTests.text
+
+    def rendered(self, template, **overrides):
+        # Overrides go in before the defaults are resolved, as Ansible's variable
+        # precedence has them: a home derived from the user must follow the user.
+        values = yaml.safe_load(self.text(self.ROLE, "defaults/main.yml"))
+        values.update(overrides)
+        _, env = OperationsRoleTests.variables(self, self.ROLE)
+        for _ in range(8):
+            for key, value in list(values.items()):
+                if isinstance(value, str) and "{{" in value:
+                    values[key] = env.from_string(value).render(**values)
+        return env.from_string(self.text(self.ROLE, "templates/" + template)).render(**values), values
+
+    def test_host_mode_runs_the_keeper_not_the_supervisor(self):
+        body, values = self.rendered("runtime.plist.j2", daybook_operations_runtime_mode="host",
+                                     daybook_operations_runtime_owner="user",
+                                     daybook_operations_runtime_user="jochen")
+        plist = plistlib.loads(body.encode())
+        args = plist["ProgramArguments"]
+        self.assertEqual(args[4:6], ["operations", "host-keep"])
+        self.assertNotIn("serve", args)
+        self.assertEqual(args[args.index("--policy-owner") + 1], "user")
+        self.assertEqual(args[args.index("--socket") + 1], "daybook-host")
+        self.assertEqual(args[args.index("--lock") + 1], "/Users/jochen/.local/state/daybook/host/host.lock")
+        self.assertEqual(plist["EnvironmentVariables"]["TMUX_TMPDIR"], "/private/tmp")
+        self.assertTrue(plist["KeepAlive"])
+        self.assertEqual(plist["LimitLoadToSessionType"], "Aqua")
+        self.assertEqual(plist["ThrottleInterval"], 30)
+        self.assertNotIn("StartInterval", plist)
+
+    def test_serve_mode_names_its_profile_owner_too(self):
+        plist = plistlib.loads(self.rendered("runtime.plist.j2")[0].encode())
+        args = plist["ProgramArguments"]
+        self.assertEqual(args[4:6], ["operations", "serve"])
+        self.assertEqual(args[-2:], ["--policy-owner", "root"])
+        self.assertNotIn("LimitLoadToSessionType", plist)
+
+    def test_a_machine_without_memo_work_names_no_importer_policy(self):
+        kinds = [
+            {"adapter": "mail.work.v1", "deadline": 120, "lease": 300,
+             "run": {"state": "/Users/x/work.sqlite3"}},
+            {"adapter": "sessions.ship.v1", "deadline": 900, "lease": 1200,
+             "run": {"env_file": "/Users/x/sessions.env"}},
+        ]
+        body, _ = self.rendered("policy.json.j2", daybook_operations_runtime_kinds=kinds)
+        policy = json.loads(body)
+        self.assertEqual(policy["kinds"], kinds)
+        self.assertNotIn("importer_policy", json.dumps(policy))
+
+    def test_a_memo_kind_keeps_a_run_it_names_itself(self):
+        kinds = [{"adapter": "voice_memos.ingest.v1", "deadline": 330, "lease": 600,
+                  "run": {"importer_policy": "/elsewhere/policy.json"}}]
+        policy = json.loads(self.rendered("policy.json.j2", daybook_operations_runtime_kinds=kinds)[0])
+        self.assertEqual(policy["kinds"][0]["run"], {"importer_policy": "/elsewhere/policy.json"})
+
+    def test_file_ownership_follows_the_install_owner(self):
+        _, root = self.rendered("policy.json.j2")
+        self.assertEqual((root["daybook_operations_runtime_file_owner"],
+                          root["daybook_operations_runtime_file_group"]), ("root", "wheel"))
+        _, user = self.rendered("policy.json.j2", daybook_operations_runtime_owner="user",
+                                daybook_operations_runtime_user="jochen")
+        self.assertEqual((user["daybook_operations_runtime_file_owner"],
+                          user["daybook_operations_runtime_file_group"]), ("jochen", "staff"))
+        for name in ("tasks/main.yml", "tasks/transition.yml", "tasks/code.yml"):
+            text = self.text(self.ROLE, name)
+            with self.subTest(file=name):
+                self.assertNotIn("owner: root", text)
+                self.assertNotIn("become: true", text)
+
+    def test_the_written_profile_is_loaded_by_the_real_client_before_anything_starts(self):
+        tasks = yaml.safe_load(self.text(self.ROLE, "tasks/main.yml"))
+        names = [t["name"] for t in tasks]
+        proof = tasks[names.index("Prove the written profile loads in the installed client")]
+        argv = proof["ansible.builtin.command"]["argv"]
+        self.assertIn("Config.load(sys.argv[1], sys.argv[2])", argv[3])
+        self.assertEqual(argv[-1], "{{ daybook_operations_runtime_owner }}")
+        self.assertGreater(names.index("Prove the written profile loads in the installed client"),
+                           names.index("Write disabled-first local policy"))
+        self.assertLess(names.index("Prove the written profile loads in the installed client"),
+                        names.index("Optionally enable the reviewed regular label after transition"))
+
+    def test_a_transition_refuses_while_a_hosted_supervisor_still_runs(self):
+        tasks = yaml.safe_load(self.text(self.ROLE, "tasks/transition.yml"))
+        names = [t["name"] for t in tasks]
+        look = tasks[names.index("transition | Look for a supervisor running outside launchd")]
+        argv = look["ansible.builtin.command"]["argv"]
+        # A pattern that cannot match its own command line.
+        self.assertEqual(argv[-1], "[o]perations serve")
+        self.assertLess(names.index("transition | Refuse while a supervisor still runs anywhere"),
+                        names.index("transition | Disable only the supervisor label"))
+
+    def test_a_fresh_machine_has_nothing_to_save_and_a_rollback_leaves_nothing(self):
+        tasks = yaml.safe_load(self.text(self.ROLE, "tasks/transition.yml"))
+        by_name = {t["name"]: t for t in tasks}
+        save = by_name["transition | Save the label's original command once"]
+        self.assertIn("daybook_operations_runtime_installed_plist.stat.exists", save["when"])
+        install = by_name["transition | Install selected command without enabling it"]
+        self.assertIn("daybook_operations_runtime_saved_plist.stat.exists", install["when"])
+        clear = by_name["transition | Leave the label without a command when there was none before"]
+        self.assertEqual(clear["ansible.builtin.file"]["state"], "absent")
+        start = yaml.safe_load(self.text(self.ROLE, "tasks/start.yml"))
+        bootstrap = next(t for t in start if t["name"] == "start | Bootstrap the reviewed command")
+        self.assertIn("daybook_operations_runtime_saved_plist.stat.exists", bootstrap["when"])
+
+    def test_code_is_installed_from_the_pinned_bundle_and_proven_clean(self):
+        tasks = yaml.safe_load(self.text(self.ROLE, "tasks/code.yml"))
+        names = [t["name"] for t in tasks]
+        self.assertLess(names.index("code | Require the bundle to carry the pinned commit"),
+                        names.index("code | Replace a checkout at another revision"))
+        checkout = tasks[names.index("code | Check out exactly the pinned commit")]
+        self.assertEqual(checkout["ansible.builtin.command"]["argv"][-2:],
+                         ["--detach", "{{ daybook_operations_runtime_revision }}"])
+        clean = tasks[names.index("code | Require an unmodified checkout")]
+        self.assertIn("daybook_operations_runtime_code_status.stdout | trim | length == 0",
+                      clean["ansible.builtin.assert"]["that"])
+        sync = tasks[names.index("code | Synchronize the locked environment")]
+        self.assertIn("--frozen", sync["ansible.builtin.command"]["argv"])
+        main = yaml.safe_load(self.text(self.ROLE, "tasks/main.yml"))
+        include = next(t for t in main if t["name"] == "Install the pinned code where no other role does")
+        self.assertEqual(include["when"], "daybook_operations_runtime_code_bundle_src != ''")
+
+    def test_schema_4_to_5_keeps_the_store_and_needs_no_replace(self):
+        tasks = yaml.safe_load(self.text(self.ROLE, "tasks/main.yml"))
+        guard = next(t for t in tasks if t["name"].startswith("Preserve profile identity"))
+        that = " ".join(guard["ansible.builtin.assert"]["that"])
+        self.assertIn("in [1, 2, 3, 4, 5]", that)
+        self.assertIn("daybook_operations_runtime_previous_schema | int in [4, 5]", that)
+
+
+class RuntimeFreshMachineTests(unittest.TestCase):
+    ROLE = "daybook_operations_runtime_deploy"
+    text = OperationsRoleTests.text
+    rendered = RuntimeGeneralisationTests.rendered
+
+    def test_code_is_installed_before_its_revision_is_verified(self):
+        tasks = yaml.safe_load(self.text(self.ROLE, "tasks/main.yml"))
+        names = [t["name"] for t in tasks]
+        self.assertLess(names.index("Install the pinned code where no other role does"),
+                        names.index("Verify protected interpreter checkout revision"))
+
+    def test_a_user_owned_install_defaults_under_the_users_home(self):
+        _, root = self.rendered("policy.json.j2")
+        self.assertEqual(root["daybook_operations_runtime_install_root"],
+                         "/Library/Application Support/Daybook/voice-memo-inbox")
+        _, user = self.rendered("policy.json.j2", daybook_operations_runtime_owner="user",
+                                daybook_operations_runtime_user="jochen")
+        self.assertEqual(user["daybook_operations_runtime_install_root"],
+                         "/Users/jochen/Library/Application Support/Daybook/operations")
+        self.assertTrue(user["daybook_operations_runtime_policy"].startswith("/Users/jochen/"))
+
+
+class RuntimeCodeReplacementTests(unittest.TestCase):
+    ROLE = "daybook_operations_runtime_deploy"
+    text = OperationsRoleTests.text
+
+    def test_running_code_is_never_replaced(self):
+        tasks = yaml.safe_load(self.text(self.ROLE, "tasks/code.yml"))
+        names = [t["name"] for t in tasks]
+        refuse = names.index("code | Refuse to replace code a supervisor may be running")
+        self.assertLess(refuse, names.index("code | Replace a checkout at another revision"))
+        self.assertLess(refuse, names.index("code | Clone the bundle"))
+        that = tasks[refuse]["ansible.builtin.assert"]["that"]
+        self.assertIn("daybook_operations_runtime_code_label.rc == 113", that)
+        self.assertIn("daybook_operations_runtime_code_serving.rc == 1", that)
+        look = tasks[names.index("code | Look for a supervisor running this code")]
+        self.assertEqual(look["ansible.builtin.command"]["argv"][-1], "[o]perations serve")

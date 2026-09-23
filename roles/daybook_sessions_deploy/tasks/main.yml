@@ -670,7 +670,9 @@
     group: "{{ (daybook_sessions_launchd_scope == 'system') | ternary('wheel', daybook_sessions_service_group) }}"
     mode: "0644"
   register: daybook_sessions_launchd_template
-  when: daybook_sessions_enabled | bool
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_launchd_enabled | bool
 
 - name: config | Render archive quote classifier launchd launcher
   ansible.builtin.template:
@@ -695,6 +697,7 @@
   when:
     - daybook_sessions_enabled | bool
     - daybook_archive_quote_classifier_enabled | bool
+    - daybook_archive_quote_classifier_launchd_enabled | bool
 
 - name: launchd | Resolve service user uid for user LaunchAgent
   ansible.builtin.command:
@@ -765,6 +768,7 @@
   when:
     - daybook_sessions_enabled | bool
     - daybook_sessions_launchd_manage_state | bool
+    - daybook_sessions_launchd_enabled | bool
 
 - name: launchd | Unload existing Daybook sessions unit before bootstrap
   ansible.builtin.command: "launchctl bootout {{ daybook_sessions_launchd_domain }} {{ daybook_sessions_launchd_plist_path }}"
@@ -773,6 +777,7 @@
   when:
     - daybook_sessions_enabled | bool
     - daybook_sessions_launchd_manage_state | bool
+    - daybook_sessions_launchd_enabled | bool
     - daybook_sessions_launchd_template.changed
     - daybook_sessions_launchd_status.rc == 0
 
@@ -783,6 +788,7 @@
   when:
     - daybook_sessions_enabled | bool
     - daybook_sessions_launchd_manage_state | bool
+    - daybook_sessions_launchd_enabled | bool
     - daybook_sessions_launchd_template.changed or daybook_sessions_launchd_status.rc != 0
 
 - name: launchd | Enable Daybook sessions unit
@@ -792,6 +798,7 @@
   when:
     - daybook_sessions_enabled | bool
     - daybook_sessions_launchd_manage_state | bool
+    - daybook_sessions_launchd_enabled | bool
     - daybook_sessions_launchd_template.changed or daybook_sessions_launchd_status.rc != 0
 
 - name: launchd | Kickstart Daybook sessions unit after deploy changes
@@ -801,6 +808,7 @@
   when:
     - daybook_sessions_enabled | bool
     - daybook_sessions_launchd_manage_state | bool
+    - daybook_sessions_launchd_enabled | bool
     - daybook_sessions_launchd_start_service | bool
     - >-
       daybook_sessions_launchd_template.changed
@@ -820,6 +828,7 @@
     - daybook_sessions_enabled | bool
     - daybook_sessions_launchd_manage_state | bool
     - daybook_archive_quote_classifier_enabled | bool
+    - daybook_archive_quote_classifier_launchd_enabled | bool
 
 - name: launchd | Unload existing archive quote classifier unit before bootstrap
   ansible.builtin.command: "launchctl bootout {{ daybook_sessions_launchd_domain }} {{ daybook_archive_quote_classifier_launchd_plist_path }}"
@@ -829,6 +838,7 @@
     - daybook_sessions_enabled | bool
     - daybook_sessions_launchd_manage_state | bool
     - daybook_archive_quote_classifier_enabled | bool
+    - daybook_archive_quote_classifier_launchd_enabled | bool
     - daybook_archive_quote_classifier_launchd_template.changed
     - daybook_archive_quote_classifier_launchd_status.rc == 0
 
@@ -840,6 +850,7 @@
     - daybook_sessions_enabled | bool
     - daybook_sessions_launchd_manage_state | bool
     - daybook_archive_quote_classifier_enabled | bool
+    - daybook_archive_quote_classifier_launchd_enabled | bool
     - daybook_archive_quote_classifier_launchd_template.changed or daybook_archive_quote_classifier_launchd_status.rc != 0
 
 - name: launchd | Enable archive quote classifier unit
@@ -850,6 +861,7 @@
     - daybook_sessions_enabled | bool
     - daybook_sessions_launchd_manage_state | bool
     - daybook_archive_quote_classifier_enabled | bool
+    - daybook_archive_quote_classifier_launchd_enabled | bool
     - daybook_archive_quote_classifier_launchd_template.changed or daybook_archive_quote_classifier_launchd_status.rc != 0
 
 - name: launchd | Kickstart archive quote classifier unit after deploy changes
@@ -860,6 +872,7 @@
     - daybook_sessions_enabled | bool
     - daybook_sessions_launchd_manage_state | bool
     - daybook_archive_quote_classifier_enabled | bool
+    - daybook_archive_quote_classifier_launchd_enabled | bool
     - daybook_archive_quote_classifier_run_at_load | bool
     - >-
       daybook_archive_quote_classifier_launchd_template.changed
@@ -870,6 +883,25 @@
       or (daybook_sessions_no_fetch_checkout.changed | default(false))
       or daybook_sessions_uv_sync.changed
       or daybook_archive_quote_classifier_launchd_status.rc != 0
+
+- name: launchd | Retire timers whose work now runs under the operations supervisor
+  ansible.builtin.include_tasks: retire_timer.yml
+  loop:
+    - label: "{{ daybook_sessions_launchd_label }}"
+      plist: "{{ daybook_sessions_launchd_plist_path }}"
+      retire: "{{ not (daybook_sessions_launchd_enabled | bool) }}"
+    - label: "{{ daybook_archive_quote_classifier_launchd_label }}"
+      plist: "{{ daybook_archive_quote_classifier_launchd_plist_path }}"
+      retire: >-
+        {{ (daybook_archive_quote_classifier_enabled | bool)
+           and not (daybook_archive_quote_classifier_launchd_enabled | bool) }}
+  loop_control:
+    loop_var: daybook_sessions_retiring
+    label: "{{ daybook_sessions_retiring.label }}"
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_launchd_manage_state | bool
+    - daybook_sessions_retiring.retire | bool
 
 - name: weeknotes reconcile | Install dedicated draft-only worker
   ansible.builtin.include_tasks: weeknotes_reconcile.yml

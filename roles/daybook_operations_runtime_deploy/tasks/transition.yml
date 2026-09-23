@@ -5,7 +5,7 @@
   register: daybook_operations_runtime_uid
   changed_when: false
 
-- name: transition | Inspect the regular label before touching it
+- name: transition | Inspect the supervisor label before touching it
   ansible.builtin.command:
     argv: [/bin/launchctl, print, "gui/{{ daybook_operations_runtime_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
   register: daybook_operations_runtime_before
@@ -23,18 +23,37 @@
       # loaded supervisor label counts, whatever its state this instant: KeepAlive
       # would start one that is between runs again before the disable lands.
       - daybook_operations_runtime_before.rc == 113
-        or daybook_operations_runtime_before.stdout is not search('(?m)^\s*serve\s*$')
+        or daybook_operations_runtime_before.stdout is not search('(?m)^\s*(serve|host-keep)\s*$')
     fail_msg: >-
       The operations supervisor's label is loaded. Quiesce it by hand as the ops-control
       runbook describes -- no active operation, an empty store, every source at least
       90 seconds from due, then `launchctl bootout` -- and run this again.
 
-- name: transition | Disable only the regular label
+- name: transition | Look for a supervisor running outside launchd
+  ansible.builtin.command:
+    # A hosted supervisor is the host's child, not the label's: booting out the
+    # keeper leaves it running, by design. The pattern cannot match this command.
+    argv: [/usr/bin/pgrep, -u, "{{ daybook_operations_runtime_user }}", -f, "[o]perations serve"]
+  register: daybook_operations_runtime_serving
+  changed_when: false
+  failed_when: daybook_operations_runtime_serving.rc not in [0, 1]
+
+- name: transition | Refuse while a supervisor still runs anywhere
+  ansible.builtin.assert:
+    that:
+      - daybook_operations_runtime_serving.rc == 1
+    fail_msg: >-
+      An `operations serve` process still runs -- a supervisor inside the capability
+      host outlives its keeper. Stop it as the ops-control runbook describes (boot out
+      the keeper, then SIGTERM the supervisor and wait for it to exit), then run this
+      again.
+
+- name: transition | Disable only the supervisor label
   ansible.builtin.command:
     argv: [/bin/launchctl, disable, "gui/{{ daybook_operations_runtime_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
   changed_when: true
 
-- name: transition | Wait for current regular job to finish without terminating it
+- name: transition | Wait for current job to finish without terminating it
   ansible.builtin.command:
     argv: [/bin/launchctl, print, "gui/{{ daybook_operations_runtime_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
   register: daybook_operations_runtime_current
@@ -45,13 +64,13 @@
   until: daybook_operations_runtime_current.rc == 113 or (daybook_operations_runtime_current.stdout is not search('state = (running|spawning)'))
   no_log: true
 
-- name: transition | Unload idle regular label
+- name: transition | Unload idle supervisor label
   ansible.builtin.command:
     argv: [/bin/launchctl, bootout, "gui/{{ daybook_operations_runtime_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
   changed_when: true
   when: daybook_operations_runtime_current.rc == 0
 
-- name: transition | Prove regular label absent
+- name: transition | Prove supervisor label absent
   ansible.builtin.command:
     argv: [/bin/launchctl, print, "gui/{{ daybook_operations_runtime_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
   register: daybook_operations_runtime_absent
@@ -97,28 +116,53 @@
     # A multi-binding profile has no implied single binding, so the CLI would
     # stop with `ambiguous_binding` instead of answering. Name the one being
     # transitioned; the importer lock this also proves is profile-wide.
-    argv: ["{{ daybook_operations_runtime_python }}", -I, -c, 'from daybook.cli import main; raise SystemExit(main())', operations, idle, --policy, "{{ daybook_operations_runtime_policy }}", --binding, "{{ daybook_operations_runtime_binding }}"]
-  become: true
+    argv: ["{{ daybook_operations_runtime_python }}", -I, -c, 'from daybook.cli import main; raise SystemExit(main())', operations, idle, --policy, "{{ daybook_operations_runtime_policy }}", --policy-owner, "{{ daybook_operations_runtime_owner }}", --binding, "{{ daybook_operations_runtime_binding }}"]
+  become: "{{ daybook_operations_runtime_owner == 'root' }}"
   become_user: "{{ daybook_operations_runtime_user }}"
   become_flags: "-H -S -n -i"
   changed_when: false
 
-- name: transition | Save original regular importer command once
+- name: transition | Inspect the command the label runs now
+  ansible.builtin.stat:
+    path: "{{ daybook_operations_runtime_plist }}"
+  register: daybook_operations_runtime_installed_plist
+
+- name: transition | Save the label's original command once
   ansible.builtin.copy:
     src: "{{ daybook_operations_runtime_plist }}"
     dest: "{{ daybook_operations_runtime_legacy_plist }}"
     remote_src: true
     force: false
-    owner: root
-    group: wheel
+    owner: "{{ daybook_operations_runtime_file_owner }}"
+    group: "{{ daybook_operations_runtime_file_group }}"
     mode: "0644"
-  when: daybook_operations_runtime_action == 'cutover'
+  # On a machine where the label never ran anything -- Atlas, whose old jobs were
+  # other labels, retired by their own roles -- there is nothing to save.
+  when:
+    - daybook_operations_runtime_action == 'cutover'
+    - daybook_operations_runtime_installed_plist.stat.exists
+
+- name: transition | Inspect the saved original command
+  ansible.builtin.stat:
+    path: "{{ daybook_operations_runtime_legacy_plist }}"
+  register: daybook_operations_runtime_saved_plist
 
 - name: transition | Install selected command without enabling it
   ansible.builtin.copy:
     src: "{{ daybook_operations_runtime_staged_plist if daybook_operations_runtime_action == 'cutover' else daybook_operations_runtime_legacy_plist }}"
     dest: "{{ daybook_operations_runtime_plist }}"
     remote_src: true
-    owner: root
-    group: wheel
+    owner: "{{ daybook_operations_runtime_file_owner }}"
+    group: "{{ daybook_operations_runtime_file_group }}"
     mode: "0644"
+  when: daybook_operations_runtime_action == 'cutover' or daybook_operations_runtime_saved_plist.stat.exists
+
+- name: transition | Leave the label without a command when there was none before
+  ansible.builtin.file:
+    # Rolling back a label that never ran anything means it runs nothing again;
+    # the old jobs come back through their own roles.
+    path: "{{ daybook_operations_runtime_plist }}"
+    state: absent
+  when:
+    - daybook_operations_runtime_action == 'rollback'
+    - not daybook_operations_runtime_saved_plist.stat.exists
