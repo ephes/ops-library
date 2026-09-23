@@ -766,8 +766,28 @@ class RuntimeCodeReplacementTests(unittest.TestCase):
         self.assertEqual(fetch["ansible.builtin.command"]["argv"][-1], "+refs/*:refs/bundle/*")
         commands = [t["ansible.builtin.command"]["argv"] for t in tasks if "ansible.builtin.command" in t]
         self.assertFalse(any("clone" in argv for argv in commands))
-        that = tasks[refuse]["ansible.builtin.assert"]["that"]
-        self.assertIn("daybook_operations_runtime_code_label.rc == 113", that)
-        self.assertIn("daybook_operations_runtime_code_serving.rc == 1", that)
+        self.assertEqual(tasks[refuse]["ansible.builtin.assert"]["that"],
+                         ["not (daybook_operations_runtime_code_in_use | bool)"])
+        in_use = tasks[names.index("code | Decide whether the code may be in use")]
+        decided = in_use["ansible.builtin.set_fact"]["daybook_operations_runtime_code_in_use"]
+        self.assertIn("daybook_operations_runtime_code_label.rc != 113", decided)
+        self.assertIn("daybook_operations_runtime_code_serving.rc != 1", decided)
         look = tasks[names.index("code | Look for a supervisor running this code")]
         self.assertEqual(look["ansible.builtin.command"]["argv"][-1], "[o]perations serve")
+        # Asked on every run, not only when the revision changes.
+        for name in ("code | Inspect the supervisor label", "code | Look for a supervisor running this code"):
+            self.assertNotIn("when", tasks[names.index(name)])
+
+    def test_a_running_environment_is_never_changed(self):
+        tasks = yaml.safe_load(self.text(self.ROLE, "tasks/code.yml"))
+        names = [t["name"] for t in tasks]
+        check = tasks[names.index("code | Ask whether the environment already matches the lock")]
+        self.assertEqual(check["ansible.builtin.command"]["argv"][-1], "--check")
+        refuse = names.index("code | Refuse to change an environment a supervisor may be running")
+        sync = names.index("code | Synchronize the locked environment")
+        self.assertLess(names.index("code | Ask whether the environment already matches the lock"), refuse)
+        self.assertLess(refuse, sync)
+        self.assertEqual(tasks[refuse]["ansible.builtin.assert"]["that"],
+                         ["not (daybook_operations_runtime_code_in_use | bool)"])
+        self.assertEqual(tasks[refuse]["when"], "daybook_operations_runtime_code_sync_check.rc == 1")
+        self.assertEqual(tasks[sync]["when"], "daybook_operations_runtime_code_sync_check.rc == 1")

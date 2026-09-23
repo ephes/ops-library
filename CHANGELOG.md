@@ -2,6 +2,11 @@
 
 ## Unreleased — operations API (2.22.0)
 
+- `daybook_operations_runtime_deploy` no longer changes a running supervisor's
+  environment on a redeploy of the same revision: it asks `uv sync --check`
+  first, syncs only when the environment is out of date, and refuses that (as it
+  already refused replacing the checkout) while the supervisor label is loaded or
+  an `operations serve` runs.
 - `daybook_voice_memo_inbox_deploy` does the same for Studio's protected
   checkout: `git init` and a fetch of every ref of the bundle instead of a clone.
 - `daybook_operations_runtime_deploy` installs the code by fetching every ref of

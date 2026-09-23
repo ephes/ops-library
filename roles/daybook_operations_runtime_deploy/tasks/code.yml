@@ -46,20 +46,20 @@
       {{ daybook_operations_runtime_code_revision.rc == 0
          and daybook_operations_runtime_code_revision.stdout | trim != daybook_operations_runtime_revision }}
 
+# Whether a supervisor may be using the installed code, asked on every run:
+# replacing the checkout and changing its environment both need it quiet.
 - name: code | Resolve the GUI user for the running-code checks
   ansible.builtin.command:
     argv: [/usr/bin/id, -u, "{{ daybook_operations_runtime_user }}"]
   register: daybook_operations_runtime_code_uid
   changed_when: false
-  when: daybook_operations_runtime_code_replacing | bool
 
-- name: code | Inspect the supervisor label before replacing its code
+- name: code | Inspect the supervisor label
   ansible.builtin.command:
     argv: [/bin/launchctl, print, "gui/{{ daybook_operations_runtime_code_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
   register: daybook_operations_runtime_code_label
   changed_when: false
   failed_when: daybook_operations_runtime_code_label.rc not in [0, 113]
-  when: daybook_operations_runtime_code_replacing | bool
 
 - name: code | Look for a supervisor running this code
   ansible.builtin.command:
@@ -67,15 +67,19 @@
   register: daybook_operations_runtime_code_serving
   changed_when: false
   failed_when: daybook_operations_runtime_code_serving.rc not in [0, 1]
-  when: daybook_operations_runtime_code_replacing | bool
+
+- name: code | Decide whether the code may be in use
+  ansible.builtin.set_fact:
+    # The same quiescence the transitions require: the label unloaded and no
+    # `operations serve` left anywhere (a hosted one outlives its keeper).
+    daybook_operations_runtime_code_in_use: >-
+      {{ daybook_operations_runtime_code_label.rc != 113
+         or daybook_operations_runtime_code_serving.rc != 1 }}
 
 - name: code | Refuse to replace code a supervisor may be running
   ansible.builtin.assert:
     that:
-      # The same quiescence the transitions require: the label unloaded and no
-      # `operations serve` left anywhere (a hosted one outlives its keeper).
-      - daybook_operations_runtime_code_label.rc == 113
-      - daybook_operations_runtime_code_serving.rc == 1
+      - not (daybook_operations_runtime_code_in_use | bool)
     fail_msg: >-
       The installed code is at another revision and a supervisor may be running it.
       Stop it as the ops-control runbook describes, then deploy again.
@@ -127,6 +131,25 @@
       ({{ daybook_operations_runtime_code_status.stdout_lines | length }} entries;
       paths withheld). Remove it so the next deployment installs the bundle again.
 
+- name: code | Ask whether the environment already matches the lock
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_runtime_uv_bin }}", sync, --frozen, --no-dev, --python, "{{ daybook_operations_runtime_python_version }}", --check]
+    chdir: "{{ daybook_operations_runtime_install_root }}/daybook"
+  register: daybook_operations_runtime_code_sync_check
+  changed_when: false
+  failed_when: daybook_operations_runtime_code_sync_check.rc not in [0, 1]
+  environment:
+    UV_NO_PROGRESS: "1"
+
+- name: code | Refuse to change an environment a supervisor may be running
+  ansible.builtin.assert:
+    that:
+      - not (daybook_operations_runtime_code_in_use | bool)
+    fail_msg: >-
+      The installed environment differs from the lock and a supervisor may be
+      running it. Stop it as the ops-control runbook describes, then deploy again.
+  when: daybook_operations_runtime_code_sync_check.rc == 1
+
 - name: code | Synchronize the locked environment
   ansible.builtin.command:
     argv: ["{{ daybook_operations_runtime_uv_bin }}", sync, --frozen, --no-dev, --python, "{{ daybook_operations_runtime_python_version }}"]
@@ -135,3 +158,4 @@
   changed_when: "'Installed' in daybook_operations_runtime_code_sync.stderr or 'Uninstalled' in daybook_operations_runtime_code_sync.stderr"
   environment:
     UV_NO_PROGRESS: "1"
+  when: daybook_operations_runtime_code_sync_check.rc == 1
