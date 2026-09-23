@@ -5,6 +5,30 @@
   register: daybook_operations_runtime_uid
   changed_when: false
 
+- name: transition | Inspect the regular label before touching it
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "gui/{{ daybook_operations_runtime_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
+  register: daybook_operations_runtime_before
+  changed_when: false
+  failed_when: daybook_operations_runtime_before.rc not in [0, 113]
+  no_log: true
+
+- name: transition | Refuse to wait out a running supervisor
+  ansible.builtin.assert:
+    that:
+      # Disabling a KeepAlive label does not stop it, so waiting below could only
+      # time out. And the role must not stop it either: SIGTERM lets the workers
+      # finish their units, but launchd kills after its exit timeout and could end
+      # a long child mid-run. Quiescing is the operator's, at a quiet moment. Any
+      # loaded supervisor label counts, whatever its state this instant: KeepAlive
+      # would start one that is between runs again before the disable lands.
+      - daybook_operations_runtime_before.rc == 113
+        or daybook_operations_runtime_before.stdout is not search('(?m)^\s*serve\s*$')
+    fail_msg: >-
+      The operations supervisor's label is loaded. Quiesce it by hand as the ops-control
+      runbook describes -- no active operation, an empty store, every source at least
+      90 seconds from due, then `launchctl bootout` -- and run this again.
+
 - name: transition | Disable only the regular label
   ansible.builtin.command:
     argv: [/bin/launchctl, disable, "gui/{{ daybook_operations_runtime_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
@@ -34,6 +58,39 @@
   changed_when: false
   failed_when: daybook_operations_runtime_absent.rc != 113
   no_log: true
+
+- name: transition | Find anything a rollback would abandon in the store
+  ansible.builtin.find:
+    paths:
+      - "{{ daybook_operations_runtime_journal }}/deliveries"
+      - "{{ daybook_operations_runtime_journal }}/halts"
+    patterns: ['*.json']
+    # Not only regular visible files: the client reads a symlinked or dot-named
+    # marker as a stop too.
+    file_type: any
+    hidden: true
+  register: daybook_operations_runtime_rollback_store
+  # Only once the label is proven gone, so nothing can write between the look and
+  # the rollback.
+  when: daybook_operations_runtime_action == 'rollback'
+
+- name: transition | Refuse a rollback while the store owes or holds anything
+  ansible.builtin.assert:
+    that:
+      # The status guards ask about one source; the store is shared by all of them,
+      # and the legacy importer a rollback restores reads neither its deliveries nor
+      # its stops. So a record for any source, one nobody can attribute, or a stop
+      # waiting for a person refuses it.
+      - daybook_operations_runtime_rollback_store.matched == 0
+      # A path find could not read proves nothing about what is in it.
+      - daybook_operations_runtime_rollback_store.skipped_paths | default({}) | length == 0
+    fail_msg: >-
+      {{ daybook_operations_runtime_journal }} could not be read in full, or still holds
+      {{ daybook_operations_runtime_rollback_store.matched }} delivery record(s) or stop
+      marker(s). Boot the supervisor back in to settle deliveries, recover stops (a
+      source's with `operations recover --binding SOURCE`, the store-wide one with a
+      bare `operations recover`), quiesce again, and then roll back.
+  when: daybook_operations_runtime_action == 'rollback'
 
 - name: transition | Prove runtime and importer locks idle through supported CLI
   ansible.builtin.command:

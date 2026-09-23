@@ -37,11 +37,25 @@ writes the new profile **disabled** and a staged plist, and starts nothing; the
 the server, never touches the server binding, and never deletes an old journal --
 those are left in place, drained, for a person to remove once satisfied.
 
-`action: rollback` requires the server binding already disabled and no unresolved
-assigned/awaiting-application work. It quiesces the same regular label, restores
-the saved plist and disables the local policy. Optional `start: true` loads the
+`action: rollback` requires the server binding already disabled, no unresolved
+assigned/awaiting-application work, and a store holding **no delivery record and
+no stop marker for any source**, checked once the label is proven gone: the store
+is shared by all of them, and the legacy importer a rollback restores reads
+neither. It quiesces the same regular label, restores
+the saved plist and disables the local policy.
+
+`cutover` and `rollback` never stop a running supervisor. Disabling a KeepAlive
+label does not stop it, and stopping it here could have launchd kill a long child
+at its exit timeout. With the supervisor's label loaded -- running or between
+runs, since KeepAlive would start it again -- they refuse at once and say so:
+quiesce it by hand first, as the ops-control runbook describes (no active
+operation, empty store, every source at least 90 seconds from due, then
+`launchctl bootout`). A legacy importer run still in progress is waited for, as
+before. Optional `start: true` loads the
 legacy command only after the remote active slot has been reconciled. This does
-not restore an old ledger or delete API evidence. Failures leave the label disabled.
+not restore an old ledger or delete API evidence. Failures after the label has been
+disabled leave it disabled; the refusal over a loaded supervisor comes before the
+label is touched, and leaves it enabled and running as it was.
 
 Example, installation only:
 
@@ -94,8 +108,8 @@ daybook_operations_runtime_binding: regular
 # and untouched, rather than reinterpreted.
 daybook_operations_runtime_journal: "{{ daybook_operations_runtime_home }}/.local/state/daybook/operations"
 # 'serve' runs the supervisor: one long-lived process with a pool of workers that
-# take whatever the server hands out. 'tick' is one launchd wake-up per check and
-# only makes sense for a profile with exactly one source.
+# take whatever the server hands out. It is the only mode: 'tick' needed a profile
+# naming exactly one source, and a profile names none now.
 daybook_operations_runtime_mode: serve
 # The pool. `long` is how many workers long work may occupy at once, and it must
 # leave at least one it cannot take: that is the guarantee the separate long

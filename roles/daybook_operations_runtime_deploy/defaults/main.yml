@@ -23,8 +23,8 @@ daybook_operations_runtime_binding: regular
 # and untouched, rather than reinterpreted.
 daybook_operations_runtime_journal: "{{ daybook_operations_runtime_home }}/.local/state/daybook/operations"
 # 'serve' runs the supervisor: one long-lived process with a pool of workers that
-# take whatever the server hands out. 'tick' is one launchd wake-up per check and
-# only makes sense for a profile with exactly one source.
+# take whatever the server hands out. It is the only mode: 'tick' needed a profile
+# naming exactly one source, and a profile names none now.
 daybook_operations_runtime_mode: serve
 # The pool. `long` is how many workers long work may occupy at once, and it must
 # leave at least one it cannot take: that is the guarantee the separate long

@@ -126,7 +126,9 @@ class OperationsRoleTests(unittest.TestCase):
 
         guard = next(t for t in tasks if t["name"] == "Validate protected runtime installation")
         conditions = " ".join(guard["ansible.builtin.assert"]["that"])
-        self.assertIn("daybook_operations_runtime_mode in ['tick', 'serve']", conditions)
+        # `tick` went with the source list: only the supervisor remains.
+        self.assertIn("daybook_operations_runtime_mode == 'serve'", conditions)
+        self.assertNotIn("'tick'", conditions)
         self.assertIn("daybook_operations_runtime_action in ['install', 'replace', 'cutover', 'rollback']",
                       conditions)
         self.assertIn("daybook_operations_runtime_workers.long < daybook_operations_runtime_workers.count",
@@ -230,7 +232,7 @@ class OperationsRoleTests(unittest.TestCase):
 
     def test_transition_waits_before_bootout_and_never_touches_long_label(self):
         text = self.text("daybook_operations_runtime_deploy", "tasks/transition.yml")
-        self.assertLess(text.index("Wait for current"), text.index("bootout"))
+        self.assertLess(text.index("Wait for current"), text.index("[/bin/launchctl, bootout"))
         self.assertLess(text.index("Prove runtime"), text.index("Install selected"))
         self.assertNotIn("voice-memo-inbox-long", text)
         self.assertNotIn("activation.json", text)
@@ -534,3 +536,39 @@ class OperationsRoleTests(unittest.TestCase):
                         self.assertNotIn("provision_operations", calls)
                         self.assertNotIn("SERVICE_START_REACHED", output)
                         self.assertIn("management_command_failed", output)
+
+    def test_a_transition_never_waits_out_or_stops_a_running_supervisor(self):
+        """Disabling a KeepAlive label does not stop it, so the wait could only time
+        out; stopping it could kill a long child. The role refuses at once."""
+        tasks = yaml.safe_load(self.text("daybook_operations_runtime_deploy", "tasks/transition.yml"))
+        names = [t["name"] for t in tasks]
+        refuse = names.index("transition | Refuse to wait out a running supervisor")
+        self.assertLess(refuse, names.index("transition | Disable only the regular label"))
+        that = " ".join(tasks[refuse]["ansible.builtin.assert"]["that"])
+        self.assertNotIn("state = ", that, "any loaded supervisor refuses, whatever its state")
+        self.assertIn("search('(?m)^\\s*serve\\s*$')", that)
+        # And nothing up to it stops the label: the only bootout is later, for a label
+        # already proven to have finished.
+        for task in tasks[:refuse + 1]:
+            argv = task.get("ansible.builtin.command", {}).get("argv", [])
+            self.assertNotIn("bootout", argv)
+
+    def test_a_rollback_refuses_a_store_that_owes_anything(self):
+        """The status guard asks about one source; the store is every source's, and
+        the legacy importer a rollback restores reads neither deliveries nor stops.
+        Checked only once the label is proven gone, so nothing writes in between."""
+        tasks = yaml.safe_load(self.text("daybook_operations_runtime_deploy", "tasks/transition.yml"))
+        names = [t["name"] for t in tasks]
+        find = names.index("transition | Find anything a rollback would abandon in the store")
+        self.assertGreater(find, names.index("transition | Prove regular label absent"))
+        self.assertEqual(tasks[find]["ansible.builtin.find"]["paths"],
+                         ["{{ daybook_operations_runtime_journal }}/deliveries",
+                          "{{ daybook_operations_runtime_journal }}/halts"])
+        guard = tasks[names.index("transition | Refuse a rollback while the store owes or holds anything")]
+        self.assertIn("daybook_operations_runtime_rollback_store.matched == 0",
+                      guard["ansible.builtin.assert"]["that"])
+        self.assertIn("daybook_operations_runtime_rollback_store.skipped_paths | default({}) | length == 0",
+                      guard["ansible.builtin.assert"]["that"])
+        self.assertIs(tasks[find]["ansible.builtin.find"]["hidden"], True)
+        self.assertEqual(tasks[find]["ansible.builtin.find"]["file_type"], "any")
+        self.assertEqual(guard["when"], "daybook_operations_runtime_action == 'rollback'")

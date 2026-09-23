@@ -16,7 +16,10 @@
       - daybook_operations_runtime_token is match('^[A-Za-z0-9._~-]{32,256}$')
       - daybook_operations_runtime_journal is match('^/')
       - "'..' not in daybook_operations_runtime_journal.split('/')"
-      - daybook_operations_runtime_mode in ['tick', 'serve']
+      # `tick` is gone with the source list: a profile names no source for one
+      # wake-up to run, its interval would break the server's 60-second discovery
+      # bound, and one long task would hold the only tick.
+      - daybook_operations_runtime_mode == 'serve'
       - daybook_operations_runtime_kinds | length > 0
       - daybook_operations_runtime_workers is mapping
       - daybook_operations_runtime_workers.keys() | sort == ['count', 'long']
