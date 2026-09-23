@@ -572,3 +572,15 @@ class OperationsRoleTests(unittest.TestCase):
         self.assertIs(tasks[find]["ansible.builtin.find"]["hidden"], True)
         self.assertEqual(tasks[find]["ansible.builtin.find"]["file_type"], "any")
         self.assertEqual(guard["when"], "daybook_operations_runtime_action == 'rollback'")
+
+    def test_replace_proves_a_store_drained_by_every_entry_it_could_hold(self):
+        """The same scan as rollback's: symlinked and dot-named records and stops count,
+        and a path find could not read proves nothing."""
+        tasks = yaml.safe_load(self.text("daybook_operations_runtime_deploy", "tasks/main.yml"))
+        find = next(t for t in tasks if t["name"] == "Find anything still owed in a store being replaced")
+        self.assertEqual(find["ansible.builtin.find"]["file_type"], "any")
+        self.assertIs(find["ansible.builtin.find"]["hidden"], True)
+        proof = next(t for t in tasks if t["name"] == "Prove a store being replaced owes nothing")
+        self.assertIn("daybook_operations_runtime_old_store.skipped_paths | default({}) | length == 0",
+                      proof["ansible.builtin.assert"]["that"])
+

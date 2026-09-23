@@ -277,7 +277,10 @@
       - "{{ daybook_operations_runtime_previous_journals[0] }}/deliveries"
       - "{{ daybook_operations_runtime_previous_journals[0] }}/halts"
     patterns: ['*.json']
-    file_type: file
+    # Every entry the client could read as a record or a stop: symlinked and
+    # dot-named ones too.
+    file_type: any
+    hidden: true
   register: daybook_operations_runtime_old_store
   when:
     - daybook_operations_runtime_action == 'replace'
@@ -290,6 +293,8 @@
       # including the store-wide one for an unreadable record -- is a person's
       # attention request.
       - daybook_operations_runtime_old_store.matched == 0
+      # A path find could not read proves nothing about what is in it.
+      - daybook_operations_runtime_old_store.skipped_paths | default({}) | length == 0
     fail_msg: >-
       {{ daybook_operations_runtime_previous_journals[0] }} still holds deliveries or
       halts. Settle or recover them before replacing the profile.
