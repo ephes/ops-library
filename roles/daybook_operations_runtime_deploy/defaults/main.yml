@@ -90,3 +90,5 @@ daybook_operations_runtime_label: de.wersdoerfer.daybook.voice-memo-inbox
 daybook_operations_runtime_plist: "{{ daybook_operations_runtime_home }}/Library/LaunchAgents/{{ daybook_operations_runtime_label }}.plist"
 daybook_operations_runtime_staged_plist: "{{ daybook_operations_runtime_install_root }}/operations.launchd.plist"
 daybook_operations_runtime_legacy_plist: "{{ daybook_operations_runtime_install_root }}/regular-importer.before-operations.plist"
+# Written by `action: closeout`; while it exists `rollback` refuses.
+daybook_operations_runtime_closeout_marker: "{{ daybook_operations_runtime_install_root }}/closed-out"

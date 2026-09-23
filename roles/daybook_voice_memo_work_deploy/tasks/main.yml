@@ -4,12 +4,15 @@
     that:
       - ansible_facts.os_family == 'Darwin'
       - daybook_voice_memo_work_enabled | type_debug == 'bool'
+      - daybook_voice_memo_work_retired | type_debug == 'bool'
+      - not (daybook_voice_memo_work_retired | bool and daybook_voice_memo_work_enabled | bool)
       - daybook_voice_memo_work_service_user is match('^[a-z_][a-z0-9_-]*$')
       - daybook_voice_memo_work_service_user not in ['root', 'CHANGEME']
       - daybook_voice_memo_work_service_home == '/Users/' ~ daybook_voice_memo_work_service_user
       - daybook_voice_memo_work_service_group == 'staff'
       - daybook_voice_memo_work_launchd_label == 'de.wersdoerfer.daybook.voice-memo-work'
-    fail_msg: Voice Memo work disable requires the exact macOS owner and label.
+      - daybook_voice_memo_work_plist_path == daybook_voice_memo_work_service_home ~ '/Library/LaunchAgents/' ~ daybook_voice_memo_work_launchd_label ~ '.plist'
+    fail_msg: Voice Memo work disable requires the exact macOS owner, label and plist, and a retired job disabled.
 
 - name: Resolve Voice Memo work owner uid
   ansible.builtin.command:
@@ -75,6 +78,17 @@
   no_log: true
   when:
     - not daybook_voice_memo_work_enabled | bool
+    - daybook_voice_memo_work_disabled_domain.rc == 0
+
+- name: Delete the retired Voice Memo work plist
+  # Only once the label is proven unloaded above; the database, cutoff and logs
+  # stay.
+  ansible.builtin.file:
+    path: "{{ daybook_voice_memo_work_plist_path }}"
+    state: absent
+  when:
+    - not daybook_voice_memo_work_enabled | bool
+    - daybook_voice_memo_work_retired | bool
     - daybook_voice_memo_work_disabled_domain.rc == 0
 
 - name: Stop after applying disabled Voice Memo work state

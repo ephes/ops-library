@@ -60,6 +60,11 @@ without the host — without one, every run exits non-zero reporting
 independently; the work database, watermark and logs survive either being turned
 off.
 
+`daybook_mail_work_retired: true` (only with both controls off) additionally
+deletes both plists once each label is proven unloaded. Mail now runs as the
+`mail` source under the Daybook operations supervisor, whose keeper also keeps the
+capability host alive, so launchd keeps nothing of this role to load.
+
 `host ensure` is the only way the host is started. It takes an exclusive lock,
 refuses to adopt a tmux server it did not create, and reaches `open` only when
 nothing answers. Wiring an agent straight at `open -na Ghostty` would skip the

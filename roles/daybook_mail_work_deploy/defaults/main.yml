@@ -6,6 +6,9 @@ ops_library_documentation_category: deployment
 # so the tasks assert that the worker cannot be enabled unless the host is.
 daybook_mail_work_host_enabled: false
 daybook_mail_work_worker_enabled: false
+# Both jobs have moved under the Daybook operations supervisor for good: on top of
+# the disabled state, both plists are deleted, so launchd has nothing left to load.
+daybook_mail_work_retired: false
 
 daybook_mail_work_service_user: CHANGEME
 daybook_mail_work_service_home: "/Users/{{ daybook_mail_work_service_user }}"

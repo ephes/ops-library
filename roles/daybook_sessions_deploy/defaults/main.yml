@@ -91,6 +91,11 @@ daybook_archive_browser_render_wait_seconds: 1
 # and the launchd schedule remains disabled/unloaded until explicitly enabled.
 daybook_weeknotes_reconcile_enabled: false
 daybook_weeknotes_reconcile_launchd_enabled: false
+# The reconciler has moved under the Daybook operations supervisor (the
+# `weeknotes` source) for good: on top of the disabled state, the plist is not
+# rendered and is deleted. The launcher, env file and checksum stay; the source
+# runs from them.
+daybook_weeknotes_reconcile_launchd_retired: false
 daybook_weeknotes_reconcile_launchd_label: "de.wersdoerfer.daybook.weeknotes-reconcile"
 daybook_weeknotes_reconcile_launchd_plist_path: "/Library/LaunchDaemons/{{ daybook_weeknotes_reconcile_launchd_label }}.plist"
 daybook_weeknotes_reconcile_env_file: "{{ daybook_sessions_config_dir }}/weeknotes-reconcile.env"

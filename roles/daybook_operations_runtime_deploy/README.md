@@ -48,6 +48,15 @@ is shared by all of them, and the legacy importer a rollback restores reads
 neither. It quiesces the same regular label, restores
 the saved plist and disables the local policy.
 
+`action: closeout`, with `confirmed: true`, ends a machine's rollback path once its
+last window is done. It deletes the label's original command that the first
+`cutover` saved (`regular-importer.before-operations.plist`) and writes
+`install_root/closed-out`; from then on `rollback` refuses, and a later `cutover`
+saves nothing. It touches nothing else -- the supervisor keeps running under its
+keeper -- and does not take `start: true`. Recovery afterwards happens inside the
+model: the keeper repairs the supervisor, and a source that must stop is disabled
+on the server.
+
 `cutover` and `rollback` never stop a running supervisor. Disabling a KeepAlive
 label does not stop it, and stopping it here could have launchd kill a long child
 at its exit timeout. With the supervisor's label loaded -- running or between
@@ -201,6 +210,8 @@ daybook_operations_runtime_label: de.wersdoerfer.daybook.voice-memo-inbox
 daybook_operations_runtime_plist: "{{ daybook_operations_runtime_home }}/Library/LaunchAgents/{{ daybook_operations_runtime_label }}.plist"
 daybook_operations_runtime_staged_plist: "{{ daybook_operations_runtime_install_root }}/operations.launchd.plist"
 daybook_operations_runtime_legacy_plist: "{{ daybook_operations_runtime_install_root }}/regular-importer.before-operations.plist"
+# Written by `action: closeout`; while it exists `rollback` refuses.
+daybook_operations_runtime_closeout_marker: "{{ daybook_operations_runtime_install_root }}/closed-out"
 ```
 
 ## The profile: identity, kinds of work, a pool, and one store

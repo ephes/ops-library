@@ -3,9 +3,10 @@
   ansible.builtin.assert:
     that:
       - ansible_facts.system == 'Darwin'
-      - daybook_operations_runtime_action in ['install', 'replace', 'cutover', 'rollback']
+      - daybook_operations_runtime_action in ['install', 'replace', 'cutover', 'rollback', 'closeout']
       - daybook_operations_runtime_action == 'install' or daybook_operations_runtime_confirmed | bool
       - not daybook_operations_runtime_start | bool or daybook_operations_runtime_confirmed | bool
+      - daybook_operations_runtime_action != 'closeout' or not daybook_operations_runtime_start | bool
       # `replace` writes a disabled profile and starts nothing; the cutover that
       # follows it is what enables and starts, after its own guards.
       - daybook_operations_runtime_action != 'replace' or not daybook_operations_runtime_start | bool
@@ -76,6 +77,29 @@
       - daybook_operations_runtime_kinds | map(attribute='adapter') | unique | length
         == daybook_operations_runtime_kinds | length
     fail_msg: A kind of work may be listed once; its budget would otherwise be ambiguous.
+
+- name: Inspect whether the machine was closed out
+  ansible.builtin.stat:
+    path: "{{ daybook_operations_runtime_closeout_marker }}"
+  register: daybook_operations_runtime_closed_out
+
+- name: Refuse a rollback on a machine that was closed out
+  ansible.builtin.assert:
+    that:
+      - daybook_operations_runtime_action != 'rollback' or not daybook_operations_runtime_closed_out.stat.exists
+    fail_msg: >-
+      This machine was closed out, so there is nothing a rollback may restore. Fix
+      the capability host or the supervisor (the keeper restarts it), and disable a
+      source on the server if it must stop.
+
+- name: Close the machine out
+  ansible.builtin.include_tasks: closeout.yml
+  when: daybook_operations_runtime_action == 'closeout'
+
+- name: Stop after closing the machine out
+  # Nothing else is touched: the supervisor keeps running under its keeper.
+  ansible.builtin.meta: end_role
+  when: daybook_operations_runtime_action == 'closeout'
 
 - name: Install the pinned code where no other role does
   # Before the revision is verified below: on a fresh machine there is no

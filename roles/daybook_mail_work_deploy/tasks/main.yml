@@ -5,13 +5,17 @@
       - ansible_facts.os_family == 'Darwin'
       - daybook_mail_work_host_enabled | type_debug == 'bool'
       - daybook_mail_work_worker_enabled | type_debug == 'bool'
+      - daybook_mail_work_retired | type_debug == 'bool'
+      - not (daybook_mail_work_retired | bool and (daybook_mail_work_host_enabled | bool or daybook_mail_work_worker_enabled | bool))
+      - daybook_mail_work_plist_path == daybook_mail_work_service_home ~ '/Library/LaunchAgents/' ~ daybook_mail_work_launchd_label ~ '.plist'
+      - daybook_mail_work_host_plist_path == daybook_mail_work_service_home ~ '/Library/LaunchAgents/' ~ daybook_mail_work_host_launchd_label ~ '.plist'
       - daybook_mail_work_service_user is match('^[a-z_][a-z0-9_-]*$')
       - daybook_mail_work_service_user not in ['root', 'CHANGEME']
       - daybook_mail_work_service_home == '/Users/' ~ daybook_mail_work_service_user
       - daybook_mail_work_service_group == 'staff'
       - daybook_mail_work_launchd_label == 'de.wersdoerfer.daybook.mail-work'
       - daybook_mail_work_host_launchd_label == 'de.wersdoerfer.daybook.mail-work-host'
-    fail_msg: Daybook mail work requires the exact macOS owner and labels.
+    fail_msg: Daybook mail work requires the exact macOS owner, labels and plists, and retired jobs disabled.
 
 - name: Require a capability host whenever the worker runs
   ansible.builtin.assert:
@@ -34,8 +38,10 @@
   ansible.builtin.include_tasks: disable.yml
   loop:
     - label: "{{ daybook_mail_work_launchd_label }}"
+      plist: "{{ daybook_mail_work_plist_path }}"
       enabled: "{{ daybook_mail_work_worker_enabled | bool }}"
     - label: "{{ daybook_mail_work_host_launchd_label }}"
+      plist: "{{ daybook_mail_work_host_plist_path }}"
       enabled: "{{ daybook_mail_work_host_enabled | bool }}"
   loop_control:
     loop_var: daybook_mail_work_agent

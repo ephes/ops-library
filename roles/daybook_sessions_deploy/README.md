@@ -80,6 +80,7 @@ daybook_archive_browser_navigation_timeout_seconds: 30
 daybook_archive_browser_render_wait_seconds: 1
 daybook_weeknotes_reconcile_enabled: false
 daybook_weeknotes_reconcile_launchd_enabled: false
+daybook_weeknotes_reconcile_launchd_retired: false
 daybook_weeknotes_reconcile_launchd_label: de.wersdoerfer.daybook.weeknotes-reconcile
 daybook_weeknotes_reconcile_start_calendar:
   - {Hour: 7, Minute: 40}
@@ -207,7 +208,10 @@ same environment files, so retiring a timer removes only its schedule:
 
 The weeknotes reconciler already has `daybook_weeknotes_reconcile_launchd_enabled`,
 which keeps its environment file and checksum while the unit stays disabled and
-unloaded. Disabling the classifier itself (`daybook_archive_quote_classifier_enabled:
+unloaded. `daybook_weeknotes_reconcile_launchd_retired: true` (only with the unit
+disabled) goes one step further once the job runs as the `weeknotes` source: the
+plist is no longer rendered and is deleted after the unit is proven unloaded and
+disabled, while the launcher, environment file and checksum stay. Disabling the classifier itself (`daybook_archive_quote_classifier_enabled:
 false`) still removes its files.
 
 A retire refuses while the timer's run is in flight: booting out a running job

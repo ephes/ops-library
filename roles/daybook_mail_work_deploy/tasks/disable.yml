@@ -39,3 +39,13 @@
   failed_when: daybook_mail_work_verified.rc == 0
   no_log: true
   when: daybook_mail_work_domain.rc == 0
+
+- name: disable | Delete the retired Daybook mail work plist
+  # Only once the label is proven unloaded; the work database, watermark and logs
+  # stay.
+  ansible.builtin.file:
+    path: "{{ daybook_mail_work_agent.plist }}"
+    state: absent
+  when:
+    - daybook_mail_work_retired | bool
+    - daybook_mail_work_domain.rc == 0

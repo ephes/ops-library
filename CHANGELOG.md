@@ -2,6 +2,14 @@
 
 ## Unreleased — operations API (2.22.0)
 
+- Close out the Daybook machines once every scheduled job runs under the
+  operations supervisor. `daybook_operations_runtime_deploy` gains
+  `action: closeout`: it deletes the label's saved original command and writes a
+  `closed-out` marker, after which `rollback` refuses and a later `cutover` saves
+  nothing; it touches nothing else. `daybook_voice_memo_work_retired`,
+  `daybook_mail_work_retired` and `daybook_weeknotes_reconcile_launchd_retired`
+  (each only with the job disabled) delete the job's plist once its label is
+  proven unloaded, keeping the configuration the supervisor's sources run from.
 - `daybook_operations_runtime_deploy` no longer changes a running supervisor's
   environment on a redeploy of the same revision: it asks `uv sync --check`
   first, syncs only when the environment is out of date, and refuses that (as it

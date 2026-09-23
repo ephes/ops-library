@@ -4,6 +4,8 @@
     that:
       - daybook_sessions_launchd_scope == 'system'
       - daybook_weeknotes_reconcile_launchd_enabled | type_debug == 'bool'
+      - daybook_weeknotes_reconcile_launchd_retired | type_debug == 'bool'
+      - not (daybook_weeknotes_reconcile_launchd_retired | bool and daybook_weeknotes_reconcile_launchd_enabled | bool)
       - daybook_weeknotes_reconcile_launchd_label == 'de.wersdoerfer.daybook.weeknotes-reconcile'
       - daybook_weeknotes_reconcile_launchd_plist_path == '/Library/LaunchDaemons/de.wersdoerfer.daybook.weeknotes-reconcile.plist'
       - daybook_weeknotes_reconcile_env_file | string | trim | length > 0
@@ -598,6 +600,7 @@
     owner: root
     group: wheel
     mode: "0644"
+  when: not (daybook_weeknotes_reconcile_launchd_retired | bool)
   register: daybook_weeknotes_reconcile_launchd_template
 
 - name: weeknotes_reconcile | Check launchd unit status without starting it
@@ -750,3 +753,12 @@
   when:
     - daybook_sessions_launchd_manage_state | bool
     - not ansible_check_mode
+
+- name: weeknotes_reconcile | Delete the retired launchd plist
+  # Only after the unit is proven unloaded and disabled above.
+  ansible.builtin.file:
+    path: "{{ daybook_weeknotes_reconcile_launchd_plist_path }}"
+    state: absent
+  when:
+    - daybook_sessions_launchd_manage_state | bool
+    - daybook_weeknotes_reconcile_launchd_retired | bool

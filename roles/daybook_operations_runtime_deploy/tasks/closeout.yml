@@ -1,0 +1,26 @@
+---
+# Close a machine out once its last window is done: the label's original command,
+# saved by the first cutover as the rollback path, is deleted, and a marker makes
+# every later `rollback` refuse, because there is nothing left it may restore.
+# From here on a machine is recovered inside the model: the keeper repairs the
+# supervisor, and a source that must stop is disabled on the server.
+- name: closeout | Inspect the saved original command
+  ansible.builtin.stat:
+    path: "{{ daybook_operations_runtime_legacy_plist }}"
+  register: daybook_operations_runtime_closeout_saved
+
+- name: closeout | Delete the saved original command
+  ansible.builtin.file:
+    path: "{{ daybook_operations_runtime_legacy_plist }}"
+    state: absent
+
+- name: closeout | Mark the machine closed out
+  ansible.builtin.copy:
+    dest: "{{ daybook_operations_runtime_closeout_marker }}"
+    content: |
+      This machine was closed out: its original command is gone and `rollback`
+      refuses. Recover inside the model -- the keeper repairs the supervisor, and a
+      source that must stop is disabled on the server.
+    owner: "{{ daybook_operations_runtime_file_owner }}"
+    group: "{{ daybook_operations_runtime_file_group }}"
+    mode: "0644"

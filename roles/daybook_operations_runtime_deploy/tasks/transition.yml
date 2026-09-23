@@ -141,6 +141,9 @@
   when:
     - daybook_operations_runtime_action == 'cutover'
     - daybook_operations_runtime_installed_plist.stat.exists
+    # After closeout the label's command is the supervisor's own; saving it would
+    # recreate a rollback path that was deliberately ended.
+    - not daybook_operations_runtime_closed_out.stat.exists
 
 - name: transition | Inspect the saved original command
   ansible.builtin.stat:

@@ -2,6 +2,9 @@
 ops_library_documentation_category: deployment
 
 daybook_voice_memo_work_enabled: false
+# The job has moved under the Daybook operations supervisor for good: on top of
+# the disabled state, the plist is deleted, so launchd has nothing left to load.
+daybook_voice_memo_work_retired: false
 daybook_voice_memo_work_service_user: CHANGEME
 daybook_voice_memo_work_service_home: "/Users/{{ daybook_voice_memo_work_service_user }}"
 daybook_voice_memo_work_service_group: staff

@@ -23,6 +23,10 @@ directory is the owner's home so the session can discover the owner's projects.
 Set `daybook_voice_memo_work_enabled: true` to enable and bootstrap the agent.
 Changing the plist reloads only this label. Setting it to `false` disables and
 boots out only this label while preserving the work database, cutoff and logs.
+`daybook_voice_memo_work_retired: true` (only with `enabled: false`) additionally
+deletes the plist once the label is proven unloaded: the job now runs as the
+`memo-work` source under the Daybook operations supervisor, and launchd keeps
+nothing to load.
 
 The dedicated production database is
 `~/.local/share/daybook/work-runtime/memos/work.sqlite3`; acceptance data is not
