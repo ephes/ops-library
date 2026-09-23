@@ -89,10 +89,20 @@
   # before any deployment that changes code, as the runbook requires.
   when: daybook_operations_runtime_code_replacing | bool
 
-- name: code | Clone the bundle
+# Not `git clone`: a clone takes only branches, and the bundle carries main as
+# the remote has it (`refs/remotes/origin/main`) -- production runs main, never a
+# branch -- so a clone would arrive empty. Every ref the bundle holds is fetched
+# instead, and the pinned commit is checked out below.
+- name: code | Create the checkout's repository
   ansible.builtin.command:
-    argv: [/usr/bin/git, clone, --no-checkout, "{{ daybook_operations_runtime_install_root }}/daybook.bundle", "{{ daybook_operations_runtime_install_root }}/daybook"]
+    argv: [/usr/bin/git, init, --quiet, "{{ daybook_operations_runtime_install_root }}/daybook"]
     creates: "{{ daybook_operations_runtime_install_root }}/daybook/.git"
+  environment: *git_env
+
+- name: code | Fetch every ref of the bundle
+  ansible.builtin.command:
+    argv: [/usr/bin/git, -C, "{{ daybook_operations_runtime_install_root }}/daybook", fetch, --quiet, --no-tags, "{{ daybook_operations_runtime_install_root }}/daybook.bundle", "+refs/*:refs/bundle/*"]
+  changed_when: false
   environment: *git_env
 
 - name: code | Check out exactly the pinned commit
@@ -115,7 +125,7 @@
     fail_msg: >-
       The installed Daybook checkout differs from the pinned commit
       ({{ daybook_operations_runtime_code_status.stdout_lines | length }} entries;
-      paths withheld). Remove it so the next deployment clones the bundle again.
+      paths withheld). Remove it so the next deployment installs the bundle again.
 
 - name: code | Synchronize the locked environment
   ansible.builtin.command:

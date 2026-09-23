@@ -382,7 +382,7 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
             "not daybook_voice_memo_inbox_checkout_dir.stat.exists or daybook_voice_memo_inbox_installed_ref.rc == 0",
             refuse_block,
         )
-        replace_block = tasks[replace : tasks.index("Clone exact Daybook bundle")]
+        replace_block = tasks[replace : tasks.index("Create the protected Daybook repository")]
         self.assertIn(
             "- daybook_voice_memo_inbox_checkout_dir.stat.exists", replace_block
         )
@@ -1442,6 +1442,22 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         self.assertIn("src: voice-memo-inbox-long.launchd.plist.j2", plist_render)
         self.assertIn('mode: "0644"', plist_render)
         self.assertIn("owner: root", plist_render)
+
+
+class ImporterBundleOfMainTests(unittest.TestCase):
+    def test_the_bundle_is_fetched_by_every_ref_not_cloned(self):
+        """The bundle carries main as `refs/remotes/origin/main`; a clone would
+        take only branches and arrive empty."""
+        tasks = yaml.safe_load((ROOT / "roles/daybook_voice_memo_inbox_deploy/tasks/main.yml").read_text())
+        names = [t.get("name") for t in tasks]
+        fetch = tasks[names.index("Fetch every ref of the exact Daybook bundle")]
+        self.assertEqual(fetch["ansible.builtin.command"]["argv"][-1], "+refs/*:refs/bundle/*")
+        self.assertLess(names.index("Create the protected Daybook repository"),
+                        names.index("Fetch every ref of the exact Daybook bundle"))
+        self.assertLess(names.index("Fetch every ref of the exact Daybook bundle"),
+                        names.index("Check out exact reviewed Daybook commit"))
+        commands = [t["ansible.builtin.command"]["argv"] for t in tasks if "ansible.builtin.command" in t]
+        self.assertFalse(any("clone" in argv for argv in commands))
 
 
 if __name__ == "__main__":

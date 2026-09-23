@@ -759,7 +759,13 @@ class RuntimeCodeReplacementTests(unittest.TestCase):
         names = [t["name"] for t in tasks]
         refuse = names.index("code | Refuse to replace code a supervisor may be running")
         self.assertLess(refuse, names.index("code | Replace a checkout at another revision"))
-        self.assertLess(refuse, names.index("code | Clone the bundle"))
+        self.assertLess(refuse, names.index("code | Create the checkout's repository"))
+        fetch = tasks[names.index("code | Fetch every ref of the bundle")]
+        # Every ref, whatever its name: a clone would take only branches and the
+        # bundle carries main as `refs/remotes/origin/main`.
+        self.assertEqual(fetch["ansible.builtin.command"]["argv"][-1], "+refs/*:refs/bundle/*")
+        commands = [t["ansible.builtin.command"]["argv"] for t in tasks if "ansible.builtin.command" in t]
+        self.assertFalse(any("clone" in argv for argv in commands))
         that = tasks[refuse]["ansible.builtin.assert"]["that"]
         self.assertIn("daybook_operations_runtime_code_label.rc == 113", that)
         self.assertIn("daybook_operations_runtime_code_serving.rc == 1", that)

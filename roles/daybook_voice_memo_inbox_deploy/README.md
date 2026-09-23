@@ -98,8 +98,12 @@ all environment-specific or secret values use rejected `CHANGEME` placeholders.
   labels, and the rescue then re-reads `launchctl print-disabled` and probes
   both labels to prove the disabled/unloaded state. If that proof fails the play
   ends with a distinct, louder error instead of claiming a safe state. The
-  rescue only touches launchd: it never re-clones, re-syncs, or otherwise
+  rescue only touches launchd: it never re-installs, re-syncs, or otherwise
   changes the deployed Daybook revision.
+- The bundle carries Daybook `main` as `refs/remotes/origin/main` -- production
+  runs main, never a branch -- so the checkout is created with `git init` and
+  every ref of the bundle fetched into it; a `git clone` would take only branches
+  and arrive empty.
 - State and logs are owner-only. Deployment and rollback never delete the
   ledger, source recordings, or existing Obsidian objects.
 - An existing protected checkout is replaced only after the newly installed
@@ -107,8 +111,8 @@ all environment-specific or secret values use rejected `CHANGEME` placeholders.
   heads, and only when the checkout's revision is readable and differs from
   the pinned commit; bundle bytes alone never trigger a replacement. Those
   checks are header-level: a bundle whose pack objects are corrupt is only
-  rejected by the subsequent clone, which runs after the old checkout was
-  removed, so a failed upgrade clone leaves no runtime until the next
+  rejected by the subsequent fetch, which runs after the old checkout was
+  removed, so a failed upgrade fetch leaves no runtime until the next
   successful deployment (the ledger, markers, and credentials are unaffected;
   re-grant Full Disk Access after the interpreter is recreated). If
   `/usr/bin/git` cannot read the revision, the role fails closed rather than

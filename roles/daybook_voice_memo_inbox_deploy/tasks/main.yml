@@ -552,7 +552,7 @@
 - name: Require a valid Daybook bundle containing the pinned commit
   # Header-level proof before any existing checkout may be replaced: a wrong
   # bundle, a wrong ref, or a truncated header cannot trigger the replacement.
-  # Object-level corruption inside the pack is only detected by the clone
+  # Object-level corruption inside the pack is only detected by the fetch
   # itself, which runs after the old checkout is removed.
   ansible.builtin.assert:
     that:
@@ -604,13 +604,17 @@
     # between regenerations without any drift, so they never trigger a replace.
     - daybook_voice_memo_inbox_installed_ref.stdout | trim != daybook_voice_memo_inbox_repo_ref
 
-- name: Clone exact Daybook bundle
+# Not `git clone`: a clone takes only branches, and the bundle carries Daybook
+# main as the remote has it (`refs/remotes/origin/main`) -- production runs
+# main, never a branch -- so a clone would arrive empty. A repository is created
+# and every ref of the bundle fetched instead; the pinned commit is checked out
+# below.
+- name: Create the protected Daybook repository
   ansible.builtin.command:
     argv:
       - /usr/bin/git
-      - clone
-      - --no-checkout
-      - "{{ daybook_voice_memo_inbox_repo_bundle_path }}"
+      - init
+      - --quiet
       - "{{ daybook_voice_memo_inbox_checkout_path }}"
     creates: "{{ daybook_voice_memo_inbox_checkout_path }}/.git"
   environment:
@@ -618,6 +622,26 @@
     GIT_CONFIG_SYSTEM: /dev/null
     GIT_OPTIONAL_LOCKS: "0"
   when: daybook_voice_memo_inbox_enabled | bool
+
+- name: Fetch every ref of the exact Daybook bundle
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/git
+      - -C
+      - "{{ daybook_voice_memo_inbox_checkout_path }}"
+      - fetch
+      - --quiet
+      - --no-tags
+      - "{{ daybook_voice_memo_inbox_repo_bundle_path }}"
+      - "+refs/*:refs/bundle/*"
+  changed_when: false
+  environment:
+    GIT_CONFIG_GLOBAL: /dev/null
+    GIT_CONFIG_SYSTEM: /dev/null
+    GIT_OPTIONAL_LOCKS: "0"
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
 
 - name: Check out exact reviewed Daybook commit
   ansible.builtin.command:
@@ -665,7 +689,7 @@
       entries; paths withheld). The scheduled interpreter would execute code
       that is not the pinned commit. Inspect the checkout as root and remove
       the modification, or delete the checkout so the next deployment
-      re-clones the exact bundle.
+      installs the exact bundle again.
   when:
     - daybook_voice_memo_inbox_enabled | bool
     - not ansible_check_mode

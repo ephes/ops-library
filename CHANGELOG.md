@@ -2,6 +2,13 @@
 
 ## Unreleased — operations API (2.22.0)
 
+- `daybook_voice_memo_inbox_deploy` does the same for Studio's protected
+  checkout: `git init` and a fetch of every ref of the bundle instead of a clone.
+- `daybook_operations_runtime_deploy` installs the code by fetching every ref of
+  the bundle into a fresh repository instead of cloning it, because the bundle now
+  carries Daybook `main` as `refs/remotes/origin/main` (production runs main,
+  never a branch) and a clone takes only branches, so it arrived empty.
+
 - Generalise `daybook_operations_runtime_deploy` for a second machine and for the
   supervisor inside a capability host. `daybook_operations_runtime_owner: user`
   makes the install, profile and LaunchAgent the GUI user's, for a machine
