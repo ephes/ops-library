@@ -110,6 +110,18 @@ class WeeknotesRetiredTests(unittest.TestCase):
                          {"path": "{{ daybook_weeknotes_reconcile_launchd_plist_path }}", "state": "absent"})
         self.assertIn("daybook_weeknotes_reconcile_launchd_retired | bool", conditions(items[delete]))
 
+    def test_a_retired_unit_needs_the_verified_epoch_before_its_environment_is_written(self):
+        # The source reads the environment on every run and refuses all work
+        # without the epoch, so rendering it without would stop the reconciler.
+        items = tasks(self.ROLE, self.FILE)
+        order = names(items)
+        guard = order.index("weeknotes_reconcile | Require verified epoch while the operations source runs the reconciler")
+        self.assertLess(order.index("weeknotes_reconcile | Open identity epoch gate after exact verification"), guard)
+        self.assertLess(guard, order.index("weeknotes_reconcile | Render mode-0600 managed environment"))
+        self.assertEqual(asserted(items[guard]),
+                         ["not (daybook_weeknotes_reconcile_launchd_retired | bool)"
+                          " or daybook_weeknotes_identity_attestation_verified | bool"])
+
 
 class RuntimeCloseoutTests(unittest.TestCase):
     ROLE = "daybook_operations_runtime_deploy"

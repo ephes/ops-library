@@ -2,6 +2,12 @@
 
 ## Unreleased — operations API (2.22.0)
 
+- `daybook_sessions_deploy` refuses to write the weeknotes reconciler's
+  environment without the verified `monday-after-v1` epoch once its unit is
+  retired. The `weeknotes` source reads that file on every run and, without the
+  epoch, refuses all work; an ordinary deployment in the first Studio window had
+  rewritten it without, and the first timed run failed both audiences
+  (`source_unavailable`).
 - Close out the Daybook machines once every scheduled job runs under the
   operations supervisor. `daybook_operations_runtime_deploy` gains
   `action: closeout`: it deletes the label's saved original command and writes a

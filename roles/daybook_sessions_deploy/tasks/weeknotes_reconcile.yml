@@ -556,6 +556,18 @@
       - not (daybook_weeknotes_reconcile_launchd_enabled | bool) or daybook_weeknotes_identity_attestation_verified | bool
     fail_msg: "The reconcile schedule cannot be enabled without the exact verified identity attestation."
 
+- name: weeknotes_reconcile | Require verified epoch while the operations source runs the reconciler
+  ansible.builtin.assert:
+    that:
+      # A retired unit means the `weeknotes` source runs from the environment file
+      # rendered below, on every run. Without the epoch it refuses all work, so
+      # rendering it without would silently stop the reconciler.
+      - not (daybook_weeknotes_reconcile_launchd_retired | bool) or daybook_weeknotes_identity_attestation_verified | bool
+    fail_msg: >-
+      The weeknotes source runs from this environment file and needs the verified
+      monday-after-v1 epoch. Request it (daybook_weeknotes_post_identity_epoch:
+      monday-after-v1 with the private seed intent) so the attestation is verified.
+
 - name: weeknotes_reconcile | Render mode-0600 managed environment
   ansible.builtin.template:
     src: "{{ role_path }}/templates/weeknotes-reconcile.env.j2"

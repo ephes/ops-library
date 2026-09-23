@@ -211,7 +211,10 @@ which keeps its environment file and checksum while the unit stays disabled and
 unloaded. `daybook_weeknotes_reconcile_launchd_retired: true` (only with the unit
 disabled) goes one step further once the job runs as the `weeknotes` source: the
 plist is no longer rendered and is deleted after the unit is proven unloaded and
-disabled, while the launcher, environment file and checksum stay. Disabling the classifier itself (`daybook_archive_quote_classifier_enabled:
+disabled, while the launcher, environment file and checksum stay. Because the
+source reads that environment file on every run, a retired unit also requires the
+verified `monday-after-v1` epoch on every deployment: without the epoch the
+reconciler refuses all work, so the role refuses to render the file without it. Disabling the classifier itself (`daybook_archive_quote_classifier_enabled:
 false`) still removes its files.
 
 A retire refuses while the timer's run is in flight: booting out a running job
