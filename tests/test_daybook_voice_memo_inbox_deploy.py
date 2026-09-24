@@ -289,6 +289,15 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
                       retired["when"])
         self.assertIn("rc != 113", retired["failed_when"])
         self.assertTrue(retired["no_log"])
+        # Retired means gone: rendered only while enabled, deleted once proven absent.
+        names = [t.get("name", "") for t in tasks]
+        delete = tasks[names.index("Delete the retired Voice Memo inbox long lane plist")]
+        self.assertLess(names.index(retired["name"]), names.index(delete["name"]))
+        self.assertEqual(delete["ansible.builtin.file"]["state"], "absent")
+        self.assertIn("not daybook_voice_memo_inbox_long_label_enabled | bool", delete["when"])
+        for name in ("Render disabled-first Voice Memo inbox long lane LaunchAgent",
+                     "Validate Voice Memo inbox long lane LaunchAgent plist"):
+            self.assertIn("daybook_voice_memo_inbox_long_label_enabled | bool", tasks[names.index(name)]["when"])
         # The disable and bootout that do the retiring are themselves top-level
         # and skipped in check mode, so this proof has to carry their conditions
         # or a dry run of a retired configuration fails on a loaded label.
@@ -308,7 +317,7 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
 
     def test_activation_rescue_proves_disabled_and_unloaded(self):
         tasks = self.text("roles/daybook_voice_memo_inbox_deploy/tasks/main.yml")
-        rescue = tasks[tasks.index("  rescue:") :]
+        rescue = tasks[tasks.index("  rescue:") :].split("\n# Outside the activation block", 1)[0]
         order = [
             "Rescue-disable Voice Memo inbox label",
             "Rescue-bootout Voice Memo inbox label",
@@ -1288,7 +1297,7 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
 
     def test_rescue_proves_both_labels_and_keeps_the_deployed_revision(self):
         tasks = self.text(f"{ROLE}/tasks/main.yml")
-        rescue = tasks[tasks.index("  rescue:") :]
+        rescue = tasks[tasks.index("  rescue:") :].split("\n# Outside the activation block", 1)[0]
         order = [
             "Rescue-disable Voice Memo inbox label",
             "Rescue-disable Voice Memo inbox long lane label",

@@ -231,8 +231,9 @@ print` must answer 113, "no such service".
 Do not confuse this with `daybook_voice_memo_inbox_long_lane_enabled`, which says
 whether the importer policy has a long lane at all. The supervisor still needs
 that `true` to do any long work; retiring the label only changes who starts it.
-The plist and this recipe stay in place, so restoring the standalone lane is
-flipping the flag back.
+Once the label is proven absent its plist is deleted too, so launchd holds
+nothing of the standalone lane; restoring it is flipping the flag back, which
+renders the plist again.
 
 | Variable | Default | Accepted range (validated unconditionally) |
 | --- | --- | --- |

@@ -2,6 +2,10 @@
 
 ## Unreleased — operations API (2.22.0)
 
+- `daybook_voice_memo_inbox_deploy` deletes the long-lane plist once
+  `daybook_voice_memo_inbox_long_label_enabled: false` has proven the label
+  absent, and no longer renders it while retired; setting the flag back renders
+  it again.
 - `daybook_sessions_deploy` refuses to write the weeknotes reconciler's
   environment without the verified `monday-after-v1` epoch once its unit is
   retired. The `weeknotes` source reads that file on every run and, without the

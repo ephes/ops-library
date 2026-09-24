@@ -914,6 +914,7 @@
     group: "{{ daybook_voice_memo_inbox_system_group }}"
     mode: "0644"
   when:
+    - daybook_voice_memo_inbox_long_label_enabled | bool
     - daybook_voice_memo_inbox_enabled | bool
     - not ansible_check_mode or daybook_voice_memo_inbox_parent_exists[daybook_voice_memo_inbox_service_home ~ '/Library/LaunchAgents']
 
@@ -930,6 +931,7 @@
     argv: [/usr/bin/plutil, -lint, "{{ daybook_voice_memo_inbox_long_plist_path }}"]
   changed_when: false
   when:
+    - daybook_voice_memo_inbox_long_label_enabled | bool
     - daybook_voice_memo_inbox_enabled | bool
     - not ansible_check_mode
 
@@ -1413,4 +1415,16 @@
     # The same condition the disable and bootout above carry. Check mode skips
     # those, so the label is still loaded and this would fail a dry run of a
     # perfectly good retired configuration.
+    - not ansible_check_mode
+
+# Retired means gone, not only unloaded: once the label is proven absent its plist
+# is deleted, so launchd holds nothing of the standalone lane. Setting
+# daybook_voice_memo_inbox_long_label_enabled back to true renders it again.
+- name: Delete the retired Voice Memo inbox long lane plist
+  ansible.builtin.file:
+    path: "{{ daybook_voice_memo_inbox_long_plist_path }}"
+    state: absent
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not daybook_voice_memo_inbox_long_label_enabled | bool
     - not ansible_check_mode
