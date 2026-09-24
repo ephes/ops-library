@@ -51,6 +51,9 @@
       - daybook_weeknotes_public_repositories_json != 'CHANGEME'
       - (daybook_weeknotes_public_repositories_json | from_json) is mapping
       - (daybook_weeknotes_public_repositories_json | from_json) | length > 0
+      - daybook_weeknotes_confidential_names_json != 'CHANGEME'
+      - (daybook_weeknotes_confidential_names_json | from_json) | type_debug == 'list'
+      - (daybook_weeknotes_confidential_names_json | from_json) | select('string') | list | length == (daybook_weeknotes_confidential_names_json | from_json) | length
       - daybook_weeknotes_post_identity_epoch in ['', 'monday-after-v1']
       - not (daybook_weeknotes_reconcile_launchd_enabled | bool)
       - >-

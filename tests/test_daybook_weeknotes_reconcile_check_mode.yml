@@ -87,6 +87,7 @@
         daybook_weeknotes_public_blog_id: "4"
         daybook_weeknotes_family_blog_id: "9"
         daybook_weeknotes_public_repositories_json: '{"example":"https://github.com/example/example"}'
+        daybook_weeknotes_confidential_names_json: '["example-private"]'
         daybook_quotes_unused_path: s3://quotes-test/unused.md
         daybook_quotes_used_path: s3://quotes-test/used.md
         daybook_quote_lifecycle_state: s3://quotes-test/state.json

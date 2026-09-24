@@ -2,6 +2,11 @@
 
 ## Unreleased — operations API (2.22.0)
 
+- `daybook_sessions_deploy` renders `DAYBOOK_WEEKNOTES_CONFIDENTIAL_NAMES` from
+  `daybook_weeknotes_confidential_names_json` (a JSON list, required) into the
+  weeknotes reconcile environment: the configured names public weeknotes must
+  never carry, replacing the aliases Daybook used to derive from session
+  directories.
 - `daybook_voice_memo_inbox_deploy` deletes the long-lane plist once
   `daybook_voice_memo_inbox_long_label_enabled: false` has proven the label
   absent, and no longer renders it while retired; setting the flag back renders

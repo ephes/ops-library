@@ -124,6 +124,10 @@ daybook_weeknotes_reconcile_family_timeout_seconds: 1200
 # alias -> canonical public GitHub repository mapping. This value is kept only
 # in the owner-readable reconcile environment, never in launchd argv or logs.
 daybook_weeknotes_public_repositories_json: "CHANGEME"
+# The names public weeknotes must never carry (a JSON list; `[]` is valid):
+# redacted in the author's input and refused in its output. Configured by private
+# control, never derived. Missing, the reconciler fails the public audience closed.
+daybook_weeknotes_confidential_names_json: "CHANGEME"
 
 # The Monday-after identity epoch is deliberately absent on ordinary installs.
 # Requesting it is accepted only after the exact private plan and its Daybook

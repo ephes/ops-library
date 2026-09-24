@@ -92,6 +92,7 @@ daybook_weeknotes_reconcile_pi_auth_source_root: "{{ daybook_sessions_service_ho
 daybook_weeknotes_reconcile_pi_auth_source: "{{ daybook_weeknotes_reconcile_pi_auth_source_root }}/auth.json"
 daybook_weeknotes_reconcile_pi_auth_rotate: false
 daybook_weeknotes_public_repositories_json: "CHANGEME"
+daybook_weeknotes_confidential_names_json: "CHANGEME"
 daybook_weeknotes_post_identity_epoch: ""
 daybook_weeknotes_identity_required_repo_ref: ""
 daybook_weeknotes_identity_seed_moves: []
@@ -278,6 +279,9 @@ The mode-0600 managed environment supplies these names:
 - django-cast base URL/token and distinct public/family blog ids
 - weeknotes.home URL/token
 - the strict nonempty `DAYBOOK_WEEKNOTES_PUBLIC_REPOSITORIES_JSON` mapping
+- `DAYBOOK_WEEKNOTES_CONFIDENTIAL_NAMES`, a JSON list (possibly empty) of the names
+  public weeknotes must never carry: redacted in the author's input, refused in
+  its output
 - `DAYBOOK_WEEKNOTES_POST_IDENTITY_EPOCH=monday-after-v1` only after the exact
   private plan/attestation gate has passed
 

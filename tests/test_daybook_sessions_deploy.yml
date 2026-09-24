@@ -143,6 +143,7 @@
           - daybook_weeknotes_public_blog_id == 'CHANGEME'
           - daybook_weeknotes_family_blog_id == 'CHANGEME'
           - daybook_weeknotes_public_repositories_json == 'CHANGEME'
+          - daybook_weeknotes_confidential_names_json == 'CHANGEME'
           - daybook_weeknotes_post_identity_epoch == ''
           - daybook_weeknotes_identity_required_repo_ref == ''
           - daybook_weeknotes_identity_seed_moves | length == 0
@@ -268,6 +269,7 @@
             daybook_weeknotes_public_blog_id: "4"
             daybook_weeknotes_family_blog_id: "9"
             daybook_weeknotes_public_repositories_json: '{"example":"https://github.com/example/example"}'
+            daybook_weeknotes_confidential_names_json: '["example-private"]'
             daybook_quotes_unused_path: s3://quotes-test/unused.md
             daybook_quotes_used_path: s3://quotes-test/used.md
             daybook_quote_lifecycle_state: s3://quotes-test/state.json
@@ -595,6 +597,7 @@
         daybook_weeknotes_public_blog_id: "4"
         daybook_weeknotes_family_blog_id: "9"
         daybook_weeknotes_public_repositories_json: '{"example":"https://github.com/example/example"}'
+        daybook_weeknotes_confidential_names_json: '["example-private"]'
         daybook_weeknotes_post_identity_epoch: ""
         daybook_weeknotes_identity_attestation_verified: false
 
