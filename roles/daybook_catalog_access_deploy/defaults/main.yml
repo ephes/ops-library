@@ -1,0 +1,20 @@
+---
+ops_library_documentation_category: deployment
+# `server` provisions the MinIO identity (as root on the MinIO host); `client`
+# installs its credentials for the machine that runs the catalogue lane.
+daybook_catalog_access_mode: server
+daybook_catalog_access_access_key: CHANGEME
+daybook_catalog_access_secret_key: CHANGEME
+
+# Server
+daybook_catalog_access_mc_bin: /usr/local/bin/mc
+daybook_catalog_access_alias: local
+daybook_catalog_access_python: /usr/bin/python3
+daybook_catalog_access_state_dir: /var/lib/daybook-catalog-access
+
+# Client. Atlas deploys as its owner, without root, like its runtime.
+daybook_catalog_access_user: "{{ ansible_user_id }}"
+daybook_catalog_access_home: "{{ ansible_env.HOME }}"
+daybook_catalog_access_root: "{{ daybook_catalog_access_home }}/Library/Application Support/Daybook/catalog"
+daybook_catalog_access_credentials_file: "{{ daybook_catalog_access_root }}/aws-credentials"
+daybook_catalog_access_profile: daybook-catalog

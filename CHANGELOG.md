@@ -2,6 +2,13 @@
 
 ## Unreleased — operations API (2.22.0)
 
+- New role `daybook_catalog_access_deploy`: the MinIO identity the Daybook vault
+  catalogue writes with (`daybook-catalog-writer`: list only the three
+  `Katalog/<repository>/` prefixes of `obsidian`, get and put only under
+  `obsidian/Katalog/*`, no delete), provisioned fail closed by the same
+  provisioner as `daybook_work_source_access_deploy` (`mode: server`), and its
+  owner-private credentials file and lane directories on the machine that runs
+  the lane (`mode: client`, user-owned for Atlas). Not yet deployed anywhere.
 - `daybook_sessions_deploy` renders `DAYBOOK_WEEKNOTES_CONFIDENTIAL_NAMES` from
   `daybook_weeknotes_confidential_names_json` (a JSON list, required) into the
   weeknotes reconcile environment: the configured names public weeknotes must

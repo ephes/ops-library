@@ -1,0 +1,77 @@
+---
+- name: Validate catalogue client configuration
+  ansible.builtin.assert:
+    that:
+      - daybook_catalog_access_access_key is string
+      - daybook_catalog_access_access_key is match('^[A-Za-z0-9][A-Za-z0-9_-]{15,127}$')
+      - daybook_catalog_access_access_key != 'CHANGEME'
+      - daybook_catalog_access_secret_key is string
+      - daybook_catalog_access_secret_key | length >= 32
+      - daybook_catalog_access_secret_key | length <= 256
+      # The same rule the server provisioner applies: no control character at all.
+      - daybook_catalog_access_secret_key is not search('[\x00-\x1f\x7f]')
+      - daybook_catalog_access_access_key is not search('[\x00-\x1f\x7f]')
+      - daybook_catalog_access_profile is match('^[A-Za-z0-9_.-]{1,64}$')
+      - daybook_catalog_access_root is match('^/')
+      - daybook_catalog_access_root is not search('(^|/)\.\.?(/|$)')
+      - daybook_catalog_access_root.startswith(daybook_catalog_access_home ~ '/')
+      - daybook_catalog_access_credentials_file == daybook_catalog_access_root ~ '/aws-credentials'
+    fail_msg: Catalogue credentials and an absolute private root are required; values withheld.
+  no_log: true
+
+# The home directory and every component below it, and each path the role writes,
+# must be a real directory or file or absent -- never a link a later task would
+# follow out of the private root.
+- name: List the catalogue's paths to inspect
+  ansible.builtin.set_fact:
+    daybook_catalog_access_inspected: >-
+      {%- set parts = daybook_catalog_access_root.split('/') -%}
+      {%- set depth = daybook_catalog_access_home.split('/') | length -%}
+      {%- set found = [] -%}
+      {%- for i in range(depth, parts | length + 1) -%}
+      {%- set _ = found.append(parts[:i] | join('/')) -%}
+      {%- endfor -%}
+      {{ found + [daybook_catalog_access_root ~ '/state',
+                  daybook_catalog_access_root ~ '/session',
+                  daybook_catalog_access_credentials_file] }}
+
+- name: Inspect the catalogue's paths
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop: "{{ daybook_catalog_access_inspected }}"
+  register: daybook_catalog_access_paths
+
+- name: Refuse a link anywhere on the catalogue's paths
+  ansible.builtin.assert:
+    that:
+      - not (item.stat.islnk | default(false))
+      - >-
+        not item.stat.exists
+        or (item.item == daybook_catalog_access_credentials_file and item.stat.isreg)
+        or (item.item != daybook_catalog_access_credentials_file and item.stat.isdir)
+    fail_msg: "{{ item.item }} must be a real directory (or, for the credentials, a regular file) or absent, never a link."
+  loop: "{{ daybook_catalog_access_paths.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+# The lane's state (leases, attempts, the history of replaced notes) and the
+# session's working directory, whose `.claude/settings.json` the lane writes.
+- name: Create the catalogue's private directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ daybook_catalog_access_user }}"
+    mode: "0700"
+  loop:
+    - "{{ daybook_catalog_access_root }}"
+    - "{{ daybook_catalog_access_root }}/state"
+    - "{{ daybook_catalog_access_root }}/session"
+
+- name: Install the catalogue's owner-private credentials
+  ansible.builtin.template:
+    src: aws-credentials.j2
+    dest: "{{ daybook_catalog_access_credentials_file }}"
+    owner: "{{ daybook_catalog_access_user }}"
+    mode: "0600"
+  no_log: true

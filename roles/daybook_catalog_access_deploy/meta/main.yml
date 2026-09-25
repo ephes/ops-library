@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  author: Jochen Wersdörfer
+  description: Provision the MinIO identity the Daybook vault catalogue writes with, and its client credentials
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+    - name: MacOSX
+      versions:
+        - all
+dependencies: []

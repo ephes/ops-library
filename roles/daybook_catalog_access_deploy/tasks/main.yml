@@ -1,0 +1,14 @@
+---
+- name: Validate the catalogue access mode
+  ansible.builtin.assert:
+    that:
+      - daybook_catalog_access_mode in ['server', 'client']
+    fail_msg: daybook_catalog_access_mode must be server (the MinIO host) or client (the machine running the lane).
+
+- name: Provision the catalogue writer identity on the MinIO server
+  ansible.builtin.include_tasks: server.yml
+  when: daybook_catalog_access_mode == 'server'
+
+- name: Install the catalogue's owner-private credentials and directories
+  ansible.builtin.include_tasks: client.yml
+  when: daybook_catalog_access_mode == 'client'

@@ -1,0 +1,77 @@
+---
+- name: Validate catalogue writer configuration
+  ansible.builtin.assert:
+    that:
+      - daybook_catalog_access_access_key is string
+      - daybook_catalog_access_access_key is match('^[A-Za-z0-9][A-Za-z0-9_-]{15,127}$')
+      - daybook_catalog_access_access_key != 'CHANGEME'
+      - daybook_catalog_access_secret_key is string
+      - daybook_catalog_access_secret_key | length >= 32
+      - daybook_catalog_access_secret_key | length <= 256
+      - daybook_catalog_access_secret_key is not search('[\r\n]')
+      - daybook_catalog_access_alias is match('^[A-Za-z0-9_-]+$')
+      - daybook_catalog_access_mc_bin is match('^/')
+      - daybook_catalog_access_python is match('^/')
+      - daybook_catalog_access_state_dir is match('^/var/lib/[A-Za-z0-9_-]+$')
+      - daybook_catalog_access_access_key is not search('[\r\n]')
+    fail_msg: Catalogue writer credentials and safe absolute paths are required; values withheld.
+  no_log: true
+
+- name: Inspect catalogue writer ownership directory
+  ansible.builtin.stat:
+    path: "{{ daybook_catalog_access_state_dir }}"
+    follow: false
+  register: daybook_catalog_access_directory
+
+- name: Refuse redirected catalogue writer ownership directory
+  ansible.builtin.assert:
+    that:
+      - not daybook_catalog_access_directory.stat.exists or daybook_catalog_access_directory.stat.isdir
+      - not daybook_catalog_access_directory.stat.islnk | default(false)
+    fail_msg: The catalogue writer state path must be a real directory.
+
+- name: Create private catalogue writer ownership directory
+  ansible.builtin.file:
+    path: "{{ daybook_catalog_access_state_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Install catalogue writer provisioner
+  ansible.builtin.copy:
+    src: provision_catalog.py
+    dest: "{{ daybook_catalog_access_state_dir }}/provision_catalog.py"
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Provision and verify exact catalogue writer permissions
+  ansible.builtin.command:
+    argv:
+      - "{{ daybook_catalog_access_python }}"
+      - "{{ daybook_catalog_access_state_dir }}/provision_catalog.py"
+    stdin: >-
+      {{ {
+        'access_key': daybook_catalog_access_access_key,
+        'secret_key': daybook_catalog_access_secret_key,
+        'mc_bin': daybook_catalog_access_mc_bin,
+        'alias': daybook_catalog_access_alias,
+        'state_dir': daybook_catalog_access_state_dir
+      } | to_json }}
+    stdin_add_newline: true
+  register: daybook_catalog_access_result
+  changed_when: "'\"changed\": true' in daybook_catalog_access_result.stdout"
+  failed_when: false
+  no_log: true
+  when: not ansible_check_mode
+
+- name: Require verified catalogue writer
+  ansible.builtin.assert:
+    that:
+      - daybook_catalog_access_result.rc == 0
+    fail_msg: >-
+      MinIO catalogue writer provisioning refused an inspection, identity,
+      permission, or ownership mismatch. Inspect the root-only role state and
+      MinIO identity locally; no credentials or raw CLI output are logged.
+  when: not ansible_check_mode

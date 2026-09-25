@@ -127,7 +127,7 @@ test-daybook-voice-memo-inbox-deploy: venv
 
 test-daybook-voice-memo-work: venv
     @echo "Testing Daybook Voice Memo capable-work scheduler and source identity..."
-    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_daybook_voice_memo_work_deploy tests.test_daybook_work_source_access
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_daybook_voice_memo_work_deploy tests.test_daybook_work_source_access tests.test_daybook_catalog_access
 
 test-daybook-mail-work: venv
     @echo "Testing Daybook mail work capability-host scheduler..."
