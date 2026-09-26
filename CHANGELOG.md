@@ -2,6 +2,12 @@
 
 ## Unreleased — operations API (2.22.0)
 
+- `daybook_operations_runtime_deploy` accepts the two Photos kinds of work,
+  `photos.archive_sync.v1` (the Nikon working-folder sync, Atlas) and
+  `photos.archive.v1` (Daybook's complete Photos archive, Studio). Both exist in
+  Daybook `main`, and ops-control declares them behind per-machine flags; until
+  now a profile naming either failed the role's kind validation before the
+  client could load it.
 - New role `daybook_catalog_access_deploy`: the MinIO identity the Daybook vault
   catalogue writes with (`daybook-catalog-writer`: list only the three
   `Katalog/<repository>/` prefixes of `obsidian`, get and put only under

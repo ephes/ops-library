@@ -112,6 +112,15 @@ class OperationsRoleTests(unittest.TestCase):
         self.assertNotIn("operations-importer", store)
         self.assertNotIn("operations-long", store)
 
+    def test_the_photos_kinds_are_accepted(self):
+        """Daybook main runs both Photos adapters, and ops-control declares them
+        per machine; the role must not refuse a profile that names them."""
+        values, _ = self.variables("daybook_operations_runtime_deploy")
+        adapters = values["daybook_operations_runtime_adapters"]
+        self.assertIn("photos.archive_sync.v1", adapters)
+        self.assertIn("photos.archive.v1", adapters)
+        self.assertEqual(len(adapters), len(set(adapters)))
+
     def test_the_role_refuses_a_profile_that_would_stop_at_load(self):
         """Each of these fails on the machine anyway; failing here is cheaper."""
         role = "daybook_operations_runtime_deploy"
