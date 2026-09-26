@@ -202,6 +202,7 @@ daybook_operations_runtime_adapters:
   - voice_memos.work.v1
   - photos.archive_sync.v1
   - photos.archive.v1
+  - catalog.work.v1
 # The kinds that run the memo importer. Each gets `run.importer_policy` from
 # `daybook_operations_runtime_importer_policy` unless it names its own `run`; a
 # machine with none of them names no importer policy at all (profile schema 5).

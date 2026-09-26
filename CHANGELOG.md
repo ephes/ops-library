@@ -2,6 +2,10 @@
 
 ## Unreleased — operations API (2.22.0)
 
+- `daybook_operations_runtime_deploy` accepts `catalog.work.v1` (the Daybook
+  vault catalogue) in its adapter allowlist. Atlas's profile renders the kind
+  from daybook 94cac7c on; without it the role refused the profile before the
+  client could load it.
 - `daybook_operations_runtime_deploy` accepts the two Photos kinds of work,
   `photos.archive_sync.v1` (the Nikon working-folder sync, Atlas) and
   `photos.archive.v1` (Daybook's complete Photos archive, Studio). Both exist in

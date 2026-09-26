@@ -119,6 +119,8 @@ class OperationsRoleTests(unittest.TestCase):
         adapters = values["daybook_operations_runtime_adapters"]
         self.assertIn("photos.archive_sync.v1", adapters)
         self.assertIn("photos.archive.v1", adapters)
+        # The vault catalogue, on Atlas: three sources share this one kind.
+        self.assertIn("catalog.work.v1", adapters)
         self.assertEqual(len(adapters), len(set(adapters)))
 
     def test_the_role_refuses_a_profile_that_would_stop_at_load(self):
