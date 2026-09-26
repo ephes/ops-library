@@ -76,6 +76,7 @@ daybook_operations_runtime_adapters:
   - voice_memos.ingest.v1
   - voice_memos.transcribe_long.v1
   - mail.work.v1
+  - mail.review.v1
   - sessions.ship.v1
   - archive.classify_quotes.v1
   - weeknotes.reconcile.v1

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — operations API (2.23.0)
+
+- `daybook_operations_runtime_deploy` accepts `mail.review.v1` for explicit mail follow-up cohorts.
+
 ## Unreleased — operations API (2.22.0)
 
 - `daybook_operations_runtime_deploy` accepts `catalog.work.v1` (the Daybook

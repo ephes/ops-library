@@ -321,3 +321,14 @@ prove both local locks free without HTTP. Preserve/inspect journal and source
 evidence before manually restoring the saved legacy plist and disabled policy.
 Reconcile and disable the central binding before unfencing the server. The private
 control runbook contains the attended steps; this is never an automatic bypass.
+
+### Mail follow-up adapter
+
+`mail.review.v1` is accepted for runtimes pinned to a Daybook revision providing
+that adapter. Its run settings are absolute `state`, `config`, `claude` paths,
+`limit` (1–20) and `search_path`. It reassesses explicitly enrolled mail work
+through the capability host, without spawning native sessions or moving the mail
+watermark. It may send important questions via the existing pinned notification
+transport; intent and delivery receipts are durable. No provider archive is
+performed. Use a five-item batch, 1200-second deadline and 1500-second lease;
+add the central source only after an attended preview and deployment.
