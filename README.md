@@ -104,6 +104,7 @@ consumer repos depend on.
 | Storage | [`zfs_usb_replication`](roles/zfs_usb_replication/README.md) | Replicate ZFS datasets to an encrypted USB pool, with device detection, alerts, and attended read-only snapshot-file evidence. |
 | Storage | [`hdparm_tune`](roles/hdparm_tune/README.md) | Configure persistent hdparm power settings (APM/spindown) for disks. |
 | Operations | [`macos_time_machine_exclusions`](roles/macos_time_machine_exclusions/README.md) | Reapply audited user-scoped Time Machine exclusions daily without deleting client data. |
+| Operations | [`macos_smb_mount_keeper`](roles/macos_smb_mount_keeper/README.md) | Remount SMB shares at their exact `/Volumes` path from a user LaunchAgent, never unmounting anything. |
 | Infrastructure | [`netplan_config`](roles/netplan_config/README.md) | Configure persistent netplan networking. |
 | Monitoring | [`smartd`](roles/smartd/README.md) | Configure smartmontools smartd for HDD/NVMe monitoring and scheduled tests. |
 | Monitoring | [`zed`](roles/zed/README.md) | Configure ZFS Event Daemon notifications and optional zpool scrub timers. |

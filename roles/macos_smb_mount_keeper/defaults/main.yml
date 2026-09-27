@@ -1,0 +1,18 @@
+---
+macos_smb_mount_keeper_enabled: true
+macos_smb_mount_keeper_user: "{{ ansible_user_id }}"
+macos_smb_mount_keeper_group: "staff"
+macos_smb_mount_keeper_home: "{{ ansible_env.HOME }}"
+# Each share: server, share, account (whose login-keychain credential mounts it),
+# and mount_point, which must be exactly /Volumes/<share>: that is where Finder's
+# `mount volume` puts it, and consumers refuse any other path.
+macos_smb_mount_keeper_shares: []
+macos_smb_mount_keeper_interval_seconds: 300
+macos_smb_mount_keeper_label: "de.wersdoerfer.smb-mount-keeper"
+macos_smb_mount_keeper_python: /usr/bin/python3
+macos_smb_mount_keeper_support_dir: >-
+  {{ macos_smb_mount_keeper_home }}/Library/Application Support/SMB Mount Keeper
+macos_smb_mount_keeper_plist_path: >-
+  {{ macos_smb_mount_keeper_home }}/Library/LaunchAgents/{{ macos_smb_mount_keeper_label }}.plist
+macos_smb_mount_keeper_log_path: >-
+  {{ macos_smb_mount_keeper_home }}/Library/Logs/smb-mount-keeper.log

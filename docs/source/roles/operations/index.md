@@ -40,6 +40,7 @@ Available runbooks:
 - [ZFS Syncoid Replication](https://github.com/ephes/ops-library/blob/main/roles/zfs_syncoid_replication/README.md)
 - [ZFS USB Replication](https://github.com/ephes/ops-library/blob/main/roles/zfs_usb_replication/README.md)
 - [macOS Time Machine Exclusions](https://github.com/ephes/ops-library/blob/main/roles/macos_time_machine_exclusions/README.md)
+- [macOS SMB Mount Keeper](https://github.com/ephes/ops-library/blob/main/roles/macos_smb_mount_keeper/README.md)
 
 ```{toctree}
 :maxdepth: 1
@@ -88,6 +89,7 @@ minecraft_java_restore
 zfs_syncoid_replication
 zfs_usb_replication
 macos_time_machine_exclusions
+macos_smb_mount_keeper
 ```
 
 Operations roles provide consistent snapshot, restore, and maintenance tooling that can be composed with deployment/removal roles to rehearse disaster-recovery scenarios.

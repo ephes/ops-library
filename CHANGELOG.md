@@ -6,6 +6,11 @@
 
 ## Unreleased — operations API (2.22.0)
 
+- New role `macos_smb_mount_keeper`: a user LaunchAgent that remounts SMB shares
+  at their exact `/Volumes/<share>` path with Finder's `mount volume` and the
+  login keychain's credential, at load and every five minutes by default. It
+  leaves an occupied mount point or a share mounted elsewhere alone and only
+  logs it, never unmounts or deletes anything, and logs only a change of outcome.
 - `daybook_operations_runtime_deploy` accepts `catalog.work.v1` (the Daybook
   vault catalogue) in its adapter allowlist. Atlas's profile renders the kind
   from daybook 94cac7c on; without it the role refused the profile before the

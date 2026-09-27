@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{{ macos_smb_mount_keeper_label | e }}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{ macos_smb_mount_keeper_python | e }}</string>
+    <string>{{ (macos_smb_mount_keeper_support_dir ~ "/mount_keeper.py") | e }}</string>
+    <string>{{ (macos_smb_mount_keeper_support_dir ~ "/shares.json") | e }}</string>
+    <string>{{ (macos_smb_mount_keeper_support_dir ~ "/state.json") | e }}</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>{{ macos_smb_mount_keeper_interval_seconds | int }}</integer>
+  <key>LimitLoadToSessionType</key>
+  <string>Aqua</string>
+  <key>StandardOutPath</key>
+  <string>{{ macos_smb_mount_keeper_log_path | e }}</string>
+  <key>StandardErrorPath</key>
+  <string>{{ macos_smb_mount_keeper_log_path | e }}</string>
+</dict>
+</plist>

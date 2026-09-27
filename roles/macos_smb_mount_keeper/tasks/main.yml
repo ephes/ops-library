@@ -1,0 +1,149 @@
+---
+- name: Validate SMB mount keeper configuration
+  ansible.builtin.assert:
+    that:
+      - ansible_system == 'Darwin'
+      - macos_smb_mount_keeper_user is string and macos_smb_mount_keeper_user | length > 0
+      - macos_smb_mount_keeper_home is string and macos_smb_mount_keeper_home.startswith('/')
+      # A user LaunchAgent: run without become, as the user whose keychain and
+      # Aqua session mount the shares.
+      - ansible_user_id == macos_smb_mount_keeper_user
+      - ansible_env.HOME == macos_smb_mount_keeper_home
+      - macos_smb_mount_keeper_shares is sequence
+      - macos_smb_mount_keeper_shares is not string
+      - macos_smb_mount_keeper_shares is not mapping
+      - macos_smb_mount_keeper_interval_seconds | int >= 60
+    fail_msg: >-
+      Invalid SMB mount keeper configuration. Run this user-scoped role without
+      become as the configured user, with that user's home.
+
+- name: Validate each kept share
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - item.keys() | sort == ['account', 'mount_point', 'server', 'share']
+      - item.server is match('^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$')
+      - item.share is match('^[A-Za-z0-9._-]{1,80}$')
+      - item.account is match('^[A-Za-z0-9._-]{1,64}$')
+      # Finder's `mount volume` mounts at /Volumes/<share>; any other expected
+      # point could never be reached, only reported.
+      - item.mount_point == '/Volumes/' ~ item.share
+    fail_msg: "Each share needs server, share, account and mount_point /Volumes/<share>."
+  loop: "{{ macos_smb_mount_keeper_shares }}"
+  when: macos_smb_mount_keeper_enabled | bool
+
+- name: Get the keeper user's ID
+  ansible.builtin.command:
+    argv: [/usr/bin/id, -u, "{{ macos_smb_mount_keeper_user }}"]
+  register: _macos_smb_mount_keeper_uid
+  changed_when: false
+
+- name: Inspect the SMB mount keeper LaunchAgent
+  ansible.builtin.command:
+    argv:
+      - /bin/launchctl
+      - print
+      - "gui/{{ _macos_smb_mount_keeper_uid.stdout | trim }}/{{ macos_smb_mount_keeper_label }}"
+  register: _macos_smb_mount_keeper_launchd
+  changed_when: false
+  failed_when: false
+
+- name: Install the SMB mount keeper
+  when: macos_smb_mount_keeper_enabled | bool
+  block:
+    - name: Ensure the keeper's directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0700"
+        owner: "{{ macos_smb_mount_keeper_user }}"
+        group: "{{ macos_smb_mount_keeper_group }}"
+      loop:
+        - "{{ macos_smb_mount_keeper_support_dir }}"
+
+    - name: Ensure the LaunchAgent and log directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ macos_smb_mount_keeper_user }}"
+        group: "{{ macos_smb_mount_keeper_group }}"
+      loop:
+        - "{{ macos_smb_mount_keeper_plist_path | dirname }}"
+        - "{{ macos_smb_mount_keeper_log_path | dirname }}"
+
+    - name: Install the keeper script
+      ansible.builtin.copy:
+        src: mount_keeper.py
+        dest: "{{ macos_smb_mount_keeper_support_dir }}/mount_keeper.py"
+        mode: "0755"
+        owner: "{{ macos_smb_mount_keeper_user }}"
+        group: "{{ macos_smb_mount_keeper_group }}"
+      register: _macos_smb_mount_keeper_script
+
+    - name: Install the kept shares
+      ansible.builtin.copy:
+        content: "{{ {'shares': macos_smb_mount_keeper_shares} | to_nice_json }}\n"
+        dest: "{{ macos_smb_mount_keeper_support_dir }}/shares.json"
+        mode: "0600"
+        owner: "{{ macos_smb_mount_keeper_user }}"
+        group: "{{ macos_smb_mount_keeper_group }}"
+      register: _macos_smb_mount_keeper_config
+
+    - name: Install the keeper LaunchAgent
+      ansible.builtin.template:
+        src: smb-mount-keeper.plist.j2
+        dest: "{{ macos_smb_mount_keeper_plist_path }}"
+        mode: "0644"
+        owner: "{{ macos_smb_mount_keeper_user }}"
+        group: "{{ macos_smb_mount_keeper_group }}"
+      register: _macos_smb_mount_keeper_plist
+
+    - name: Unload the changed keeper LaunchAgent
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - bootout
+          - "gui/{{ _macos_smb_mount_keeper_uid.stdout | trim }}/{{ macos_smb_mount_keeper_label }}"
+      register: _macos_smb_mount_keeper_bootout
+      changed_when: _macos_smb_mount_keeper_bootout.rc == 0
+      failed_when: false
+      when:
+        - _macos_smb_mount_keeper_launchd.rc == 0
+        - _macos_smb_mount_keeper_script.changed or _macos_smb_mount_keeper_config.changed or _macos_smb_mount_keeper_plist.changed
+
+    - name: Load the keeper LaunchAgent
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - bootstrap
+          - "gui/{{ _macos_smb_mount_keeper_uid.stdout | trim }}"
+          - "{{ macos_smb_mount_keeper_plist_path }}"
+      register: _macos_smb_mount_keeper_bootstrap
+      retries: 5
+      delay: 1
+      until: _macos_smb_mount_keeper_bootstrap.rc == 0
+      when: >-
+        _macos_smb_mount_keeper_launchd.rc != 0
+        or _macos_smb_mount_keeper_script.changed
+        or _macos_smb_mount_keeper_config.changed
+        or _macos_smb_mount_keeper_plist.changed
+
+- name: Remove the SMB mount keeper
+  when: not (macos_smb_mount_keeper_enabled | bool)
+  block:
+    - name: Unload the keeper LaunchAgent
+      ansible.builtin.command:
+        argv:
+          - /bin/launchctl
+          - bootout
+          - "gui/{{ _macos_smb_mount_keeper_uid.stdout | trim }}/{{ macos_smb_mount_keeper_label }}"
+      register: _macos_smb_mount_keeper_removed
+      changed_when: _macos_smb_mount_keeper_removed.rc == 0
+      failed_when: false
+      when: _macos_smb_mount_keeper_launchd.rc == 0
+
+    # Mounted shares stay mounted: the keeper only ever mounts.
+    - name: Remove the keeper LaunchAgent plist
+      ansible.builtin.file:
+        path: "{{ macos_smb_mount_keeper_plist_path }}"
+        state: absent
