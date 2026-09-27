@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — mail organization (2.23.1)
+
+- Document opt-in `mail.review.v1` organization, quoted enrollment cutoff, scheduled
+  Keychain acceptance, API-first compatibility and rollback preserving journals.
+  The role continues to pass adapter settings to the pinned client for validation.
+
 ## Unreleased — operations API (2.23.0)
 
 - `daybook_operations_runtime_deploy` accepts `mail.review.v1` for explicit mail follow-up cohorts.

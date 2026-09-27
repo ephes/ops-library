@@ -326,9 +326,33 @@ control runbook contains the attended steps; this is never an automatic bypass.
 
 `mail.review.v1` is accepted for runtimes pinned to a Daybook revision providing
 that adapter. Its run settings are absolute `state`, `config`, `claude` paths,
-`limit` (1–20) and `search_path`. It reassesses explicitly enrolled mail work
+`limit` (1–20), `search_path` and optional `enroll_since` (see below). It reassesses explicitly enrolled mail work
 through the capability host, without spawning native sessions or moving the mail
 watermark. It may send important questions via the existing pinned notification
-transport; intent and delivery receipts are durable. No provider archive is
-performed. Use a five-item batch, 1200-second deadline and 1500-second lease;
-add the central source only after an attended preview and deployment.
+transport; intent and delivery receipts are durable. Use a five-item batch,
+1200-second deadline and 1500-second lease.
+
+With a Daybook revision providing mail organization, optional `run.enroll_since`
+(an ISO-8601 timestamp with timezone, quoted in YAML) opts into native organization
+and bounded enrollment of future submitted windows with outcomes. The role passes
+`run` through; the pinned client validates its exact schema before startup. Omit
+this setting to retain explicit enrollment and obligation review only. Do not add
+a second timer. Before adding a central source, deploy and run an attended preview.
+Deploy `daybook_operations_api_deploy` with the same reviewed Daybook revision
+first: its `operations_protocol` validator must accept both old and organization
+receipt shapes before upgrading runtime clients.
+
+Organization uses the scheduled GUI user's default Claude Code login Keychain
+OAuth credential. Verify access from the actual capability host; a shell test is
+insufficient. From a terminal inside that host, run the deployed `daybook work
+--state /absolute/work.sqlite3 mail-review WORK_ID --organize --summary-only`
+preview, then a selected `--apply` pass after checking its result. Finally inspect
+the first actual scheduled receipt: `visibility_failed` must be zero and intended
+changes must have confirmed GET readback in the private journal. No credential belongs in Ansible variables or rendered policy. Auth
+failures stop title/archive/restore requests while current-mail obligation review
+and deduplicated important questions continue. Fresh evidence, activity/history guards and durable
+intents protect archive/restore/title changes; owner changes become holds. Preview
+a small explicitly selected cohort before activation, verify remote readback and
+an unchanged second pass, and preserve existing source offers. Rollback removes
+`enroll_since` while preserving obligation and visibility journals. Native mail
+workers are retained rather than terminated by the content-blind terminal reaper.

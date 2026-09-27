@@ -112,6 +112,23 @@ class OperationsRoleTests(unittest.TestCase):
         self.assertNotIn("operations-importer", store)
         self.assertNotIn("operations-long", store)
 
+    def test_mail_organization_cutoff_is_passed_through(self):
+        role = "daybook_operations_runtime_deploy"
+        values, env = self.variables(role)
+        kind = {"adapter": "mail.review.v1", "deadline": 1200, "lease": 1500,
+                "run": {"state": "/private/work.sqlite3", "config": "/private/notify.json",
+                        "claude": "/usr/local/bin/claude", "limit": 5,
+                        "search_path": ["/usr/bin"], "enroll_since": "2026-01-01T00:00:00Z"}}
+        values["daybook_operations_runtime_kinds"] = [kind]
+        policy = json.loads(env.from_string(self.text(role, "templates/policy.json.j2")).render(**values))
+        self.assertEqual(policy["kinds"], [kind])
+        tasks = yaml.safe_load(self.text(role, "tasks/main.yml"))
+        entry = next(t for t in tasks if t["name"].startswith("Validate every kind of work"))
+        conditions = entry["ansible.builtin.assert"]["that"]
+        # Adapter-owned run fields are only required to be a mapping here.
+        self.assertEqual([c for c in conditions if 'item.run' in c],
+                         ["item.run is not defined or item.run is mapping"])
+
     def test_the_photos_kinds_are_accepted(self):
         """Daybook main runs both Photos adapters, and ops-control declares them
         per machine; the role must not refuse a profile that names them."""
