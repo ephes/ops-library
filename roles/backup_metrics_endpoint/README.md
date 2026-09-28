@@ -69,6 +69,7 @@ with `systemctl reset-failed`.
 | `backup_metrics_endpoint_usb_enabled` | `false` | whether USB offsite is expected |
 | `backup_metrics_endpoint_usb_pool` | `vault` | USB pool name |
 | `backup_metrics_endpoint_usb_device` | `""` | optional `/dev/disk/by-id/...` path |
+| `backup_metrics_endpoint_usb_devices` | `[]` | rotating offsite drives (`/dev/disk/by-id/...`); any present drive sets `device_present`, and `usb_replication.devices` passes through the per-drive state. Falls back to `backup_metrics_endpoint_usb_device` when empty |
 | `backup_metrics_endpoint_usb_replication_status_path` | `/var/lib/zfs-usb-replication/status.json` | Durable state written by `zfs_usb_replication` |
 | `backup_metrics_endpoint_usb_capacity_warning_ratio` | `0.90` | Warning threshold for last-known USB utilization |
 | `backup_metrics_endpoint_usb_capacity_critical_ratio` | `0.95` | Critical threshold for last-known USB utilization |

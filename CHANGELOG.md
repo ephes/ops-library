@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased — USB offsite rotation (2.24.0)
+
+- `zfs_usb_replication` can rotate several offsite drives that share one pool
+  name (`zfs_usb_replication_devices`). Each attached drive is imported from
+  its own partitions (optionally pinned by `pool_guid`), replicated and
+  exported in turn; status is kept per drive under `devices` while the
+  top-level summary stays compatible. The new `bookmark` anchor mode
+  replicates with `--no-sync-snap` and keeps every drive's incremental base as
+  a source bookmark, pruned only once no drive of the rotation needs it.
+  Retention never prunes a bookmark-held anchor and skips targets that do not
+  exist yet. `backup_metrics_endpoint_usb_devices` reports any present drive
+  and passes the per-drive state through.
+
 ## Unreleased — mail organization (2.23.1)
 
 - Document opt-in `mail.review.v1` organization, quoted enrollment cutoff, scheduled

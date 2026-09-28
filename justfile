@@ -11,7 +11,7 @@ setup:
     @./setup-pre-commit.sh
 
 # Run the default contributor validation path
-test: venv test-daybook-operations test-macos-ssh-tunnel test-macos-smb-mount-keeper typecheck test-roles test-zfs-snapshot-file-attestation test-software-live test-software-estate test-debian13-compatibility test-os-apt-maintenance-refresh test-traefik-transactions test-openclaw-audio-transcription test-openclaw-codex-registration-backport test-openclaw-heartbeat-recovery test-network-recovery test-monitoring-pipeline-repair test-traefik-metrics-entrypoint test-os-apt-maintenance-failed-run test-tailscale-metrics-timer test-nyxmon-deploy test-certbot-dns-renewal-hooks test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-photos-archive-sync-deploy test-daybook-voice-memo-inbox-deploy test-daybook-voice-memo-work test-daybook-mail-work test-daybook-voice-memo-attention test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup test-takahe-deploy test-wagtail-deploy test-static-site-deploy test-voxhelm-csrf lint docs-build docs-lint
+test: venv test-daybook-operations test-macos-ssh-tunnel test-macos-smb-mount-keeper typecheck test-roles test-zfs-snapshot-file-attestation test-zfs-usb-replication test-software-live test-software-estate test-debian13-compatibility test-os-apt-maintenance-refresh test-traefik-transactions test-openclaw-audio-transcription test-openclaw-codex-registration-backport test-openclaw-heartbeat-recovery test-network-recovery test-monitoring-pipeline-repair test-traefik-metrics-entrypoint test-os-apt-maintenance-failed-run test-tailscale-metrics-timer test-nyxmon-deploy test-certbot-dns-renewal-hooks test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-photos-archive-sync-deploy test-daybook-voice-memo-inbox-deploy test-daybook-voice-memo-work test-daybook-mail-work test-daybook-voice-memo-attention test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-heis-production-backup test-takahe-deploy test-wagtail-deploy test-static-site-deploy test-voxhelm-csrf lint docs-build docs-lint
     @echo ""
     @echo "✅ Validation completed!"
 
@@ -40,6 +40,10 @@ test-openclaw-codex-registration-backport: venv
 test-zfs-snapshot-file-attestation: venv
     @echo "Testing read-only ZFS snapshot-file attestation..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run pytest -q tests/unit/test_zfs_snapshot_file_attestation.py
+
+test-zfs-usb-replication: venv
+    @echo "Testing USB offsite rotation, anchors, retention and health state..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run pytest -q tests/unit/test_zfs_usb_replication_script.py tests/unit/test_zfs_usb_bookmark_anchors.py tests/unit/test_zfs_usb_snapshot_retention.py tests/unit/test_usb_replication_health.py
 
 # Test a specific role
 test-role ROLE: venv
@@ -501,7 +505,7 @@ test-software-live: venv
 
 # Typed Python added by the software observation roles.
 typecheck: venv
-    @uv run --with mypy mypy --ignore-missing-imports --check-untyped-defs roles/software_estate/files/collect.py roles/software_estate/files/emit.py roles/software_estate/files/outbox.py roles/software_estate/files/send.py roles/software_estate/files/publish.py roles/software_estate/files/vector_inventory_config.py roles/software_estate/files/sbom.py roles/software_live/files/software_live.py roles/software_live/files/nyxmon_checks.py roles/traefik_deploy/files/traefik_transaction.py roles/traefik_deploy/files/traefik_control.py
+    @uv run --with mypy mypy --ignore-missing-imports --check-untyped-defs roles/software_estate/files/collect.py roles/software_estate/files/emit.py roles/software_estate/files/outbox.py roles/software_estate/files/send.py roles/software_estate/files/publish.py roles/software_estate/files/vector_inventory_config.py roles/software_estate/files/sbom.py roles/software_live/files/software_live.py roles/software_live/files/nyxmon_checks.py roles/traefik_deploy/files/traefik_transaction.py roles/traefik_deploy/files/traefik_control.py roles/zfs_usb_replication/files/zfs_usb_bookmark_anchors.py roles/zfs_usb_replication/files/zfs_usb_replication_state.py roles/zfs_usb_replication/files/zfs_usb_snapshot_retention.py
 
 # Exercise guarded binary/config transactions and controller failure journaling.
 test-traefik-transactions: venv

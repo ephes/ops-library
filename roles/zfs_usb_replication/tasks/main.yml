@@ -14,16 +14,66 @@
           - zfs_usb_replication_jobs | length > 0
         fail_msg: "zfs_usb_replication_jobs must be defined and non-empty"
 
-    - name: Validate USB device and pool
+    - name: Validate USB pool
+      ansible.builtin.assert:
+        that:
+          - zfs_usb_replication_pool is defined
+          - zfs_usb_replication_pool | length > 0
+          - zfs_usb_replication_pool != 'CHANGE_ME'
+        fail_msg: "zfs_usb_replication_pool must be set"
+
+    - name: Validate anchor mode
+      ansible.builtin.assert:
+        that:
+          - zfs_usb_replication_anchor_mode in ['sync_snapshot', 'bookmark']
+          - >-
+            not (zfs_usb_replication_bookmark_prune | bool) or
+            (zfs_usb_replication_bookmark_prune_prefixes | select('string') |
+            reject('equalto', '') | list | length) > 0
+        fail_msg: >-
+          zfs_usb_replication_anchor_mode must be sync_snapshot or bookmark, and
+          bookmark pruning needs non-empty prune prefixes.
+
+    - name: Validate single USB device
       ansible.builtin.assert:
         that:
           - zfs_usb_replication_device is defined
           - zfs_usb_replication_device | length > 0
           - zfs_usb_replication_device != 'CHANGE_ME'
-          - zfs_usb_replication_pool is defined
-          - zfs_usb_replication_pool | length > 0
-          - zfs_usb_replication_pool != 'CHANGE_ME'
-        fail_msg: "zfs_usb_replication_device and zfs_usb_replication_pool must be set"
+          - zfs_usb_replication_anchor_mode != 'bookmark'
+        fail_msg: >-
+          zfs_usb_replication_device must be set when zfs_usb_replication_devices
+          is empty; bookmark anchors need named drives in zfs_usb_replication_devices.
+      when: zfs_usb_replication_devices | length == 0
+
+    - name: Validate USB rotation devices
+      ansible.builtin.assert:
+        that:
+          - item.name is defined
+          - item.name is string
+          - item.name is match('^[a-z0-9][a-z0-9_-]*$')
+          - item.device is defined
+          - item.device is string
+          - item.device is match('^/dev/disk/by-id/[^/]+$')
+          - item.pool_guid is not defined or (item.pool_guid | string) is match('^[0-9]+$')
+        fail_msg: >-
+          Each zfs_usb_replication_devices entry needs a lowercase name and a
+          /dev/disk/by-id device path; pool_guid must be numeric when set.
+      loop: "{{ zfs_usb_replication_devices }}"
+      loop_control:
+        label: "{{ item.name | default('missing') }}"
+
+    - name: Validate USB rotation is unambiguous
+      ansible.builtin.assert:
+        that:
+          - (zfs_usb_replication_devices | map(attribute='name') | unique | list | length) == (zfs_usb_replication_devices | length)
+          - (zfs_usb_replication_devices | map(attribute='device') | unique | list | length) == (zfs_usb_replication_devices | length)
+          - zfs_usb_replication_devices | length == 1 or zfs_usb_replication_anchor_mode == 'bookmark'
+        fail_msg: >-
+          Drive names and devices must be unique, and a rotation of several
+          drives requires zfs_usb_replication_anchor_mode: bookmark (shared
+          syncoid sync snapshots would drop the other drives' incremental base).
+      when: zfs_usb_replication_devices | length > 0
 
     - name: Validate syncoid identifier
       ansible.builtin.assert:
@@ -35,7 +85,9 @@
     - name: Warn when syncoid identifier is not set
       ansible.builtin.debug:
         msg: "WARNING: zfs_usb_replication_identifier is empty; syncoid snapshots may collide across jobs."
-      when: zfs_usb_replication_identifier | default('') | length == 0
+      when:
+        - zfs_usb_replication_identifier | default('') | length == 0
+        - zfs_usb_replication_anchor_mode == 'sync_snapshot'
 
     - name: Validate job fields
       ansible.builtin.assert:
@@ -151,6 +203,15 @@
         group: root
         mode: "0755"
       when: zfs_usb_replication_snapshot_retention | length > 0
+
+    - name: Install USB bookmark anchor helper
+      ansible.builtin.copy:
+        src: zfs_usb_bookmark_anchors.py
+        dest: "{{ zfs_usb_replication_anchor_helper_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+      when: zfs_usb_replication_anchor_mode == 'bookmark'
 
     - name: Ensure key directory exists
       ansible.builtin.file:

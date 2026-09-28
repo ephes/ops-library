@@ -285,3 +285,92 @@ def test_disabled_usb_health_is_ok_without_state_or_capacity() -> None:
 
     assert health["ok"] is True
     assert health["issues"] == []
+
+
+def test_rotation_state_keeps_per_drive_history_and_a_summary(tmp_path: Path) -> None:
+    path = tmp_path / "status.json"
+    state_module.record_state(
+        path,
+        result="success",
+        exit_code=0,
+        device_path="/dev/a",
+        pool="vault",
+        device_name="a",
+        pool_guid="111",
+        occurred_at="2026-09-26T04:00:00+00:00",
+        size_bytes=1000,
+        alloc_bytes=800,
+        free_bytes=200,
+    )
+    # Drive a leaves, drive b is attached: a is recorded absent without
+    # overwriting the summary, then b fails.
+    state_module.record_state(
+        path,
+        result="skipped_absent",
+        exit_code=0,
+        device_path="/dev/a",
+        pool="vault",
+        device_name="a",
+        device_only=True,
+        occurred_at="2026-09-29T04:00:00+00:00",
+    )
+    state = state_module.record_state(
+        path,
+        result="failed",
+        exit_code=2,
+        device_path="/dev/b",
+        pool="vault",
+        device_name="b",
+        occurred_at="2026-09-29T04:00:01+00:00",
+    )
+
+    assert state["device_name"] == "b"
+    assert state["device_path"] == "/dev/b"
+    assert "pool_guid" not in state
+    assert state["last_present_attempt_result"] == "failed"
+    assert state["last_success_at"] == "2026-09-26T04:00:00+00:00"
+    assert state["devices"]["a"]["last_attempt_result"] == "skipped_absent"
+    assert state["devices"]["a"]["last_success_at"] == "2026-09-26T04:00:00+00:00"
+    assert state["devices"]["a"]["pool_guid"] == "111"
+    assert state["devices"]["a"]["last_known_used_ratio"] == 0.8
+    assert state["devices"]["b"]["last_present_attempt_exit_code"] == 2
+    assert "last_success_at" not in state["devices"]["b"]
+
+
+def test_device_only_record_requires_a_drive_name(tmp_path: Path) -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="device_only requires device_name"):
+        state_module.record_state(
+            tmp_path / "status.json",
+            result="skipped_absent",
+            exit_code=0,
+            device_path="/dev/a",
+            pool="vault",
+            device_only=True,
+        )
+
+
+def test_health_passes_through_per_drive_state() -> None:
+    devices = {"a": {"last_success_at": "2026-09-26T04:00:00+00:00"}}
+    health = health_module.build_usb_replication_health(
+        enabled=True,
+        device_present=False,
+        unit_ok=True,
+        state={
+            "last_present_attempt_result": "success",
+            "last_success_at": "2026-09-26T04:00:00+00:00",
+            "device_name": "a",
+            "devices": devices,
+        },
+        state_error=None,
+        selected_usage={"last_known_used_ratio": 0.5},
+        warning_ratio=0.9,
+        critical_ratio=0.95,
+        protection_max_age_hours=0,
+        now_epoch=1_790_500_000,
+    )
+
+    assert health["ok"] is True
+    assert health["device_name"] == "a"
+    assert health["devices"] == devices

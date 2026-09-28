@@ -5,7 +5,7 @@ Configure a scheduled USB-attached ZFS replication workflow using `syncoid`, wit
 ## Description
 
 This role installs `syncoid` (via the `sanoid` package), writes a USB replication script, and wires a systemd
-service + timer. The script checks for the configured USB device path, imports the ZFS pool when present,
+service + timer. The script checks for the configured USB device path (or each drive of a rotation), imports the ZFS pool when present,
 loads the encryption key from a key file, runs the configured syncoid jobs, and exports the pool afterwards.
 If the USB device is absent, the run logs a clean skip and exits successfully.
 Every attempt is also recorded in `/var/lib/zfs-usb-replication/status.json`.
@@ -23,6 +23,43 @@ Optional pre-sync retention policies prune old managed target-only snapshots
 before replication. A policy refuses to prune without a common source/target
 snapshot with the same name and ZFS GUID, and never removes snapshots that still
 exist on the source.
+
+### Rotating offsite drives
+
+`zfs_usb_replication_devices` lists several drives that each carry the same
+pool name (for example one drive at home, one offsite, swapped now and then).
+Every run replicates each attached drive in turn: the pool is imported only
+from that drive's own partitions (or by its pinned `pool_guid`), replicated,
+and exported before the next drive is touched. An attached drive whose pool
+GUID does not match its pin, or a pool that is already imported from another
+drive, fails that drive without touching the others.
+
+A rotation requires `zfs_usb_replication_anchor_mode: bookmark`. With shared
+syncoid sync snapshots every run would prune the sync snapshot another drive
+still depends on, and the source's own snapshot retention usually expires the
+last common snapshot long before a rotated drive comes back. In bookmark mode:
+
+- syncoid runs with `--no-sync-snap`, so it replicates existing source
+  snapshots and creates no snapshots on the source.
+- After a drive replicated successfully, the anchor helper bookmarks the
+  source snapshot matching the newest snapshot on each target dataset and
+  records it per drive in `zfs_usb_replication_anchor_state_path`. syncoid
+  falls back to such a bookmark when no common snapshot remains, so a drive
+  that was away for months still gets an incremental send. Bookmarks hold no
+  data, so no source space is pinned while a drive is away.
+- Bookmarks that no drive needs are destroyed, but only once every drive of
+  the rotation has a recorded anchor for that dataset, and only names that
+  match `zfs_usb_replication_bookmark_prune_prefixes`.
+- Snapshot retention treats a target snapshot whose GUID is held by a source
+  bookmark as an anchor and never prunes it.
+
+The target is rolled back to the newest common snapshot when a drive's newest
+snapshot was already pruned from the source, so rotation jobs should set
+`no_rollback: false`.
+
+Status is kept per drive under `devices` in the state file; the top-level
+fields keep summarizing the latest attempt of any drive, so existing monitoring
+keeps working.
 
 The role also installs an attended, read-only snapshot-file attestation helper.
 Given a closed request, it verifies that bounded files exist with exact byte
@@ -62,6 +99,34 @@ has drifted since the last successful run.
 `abort_partial_receive: true` aborts any leftover partial receive on the target dataset (and
 descendants for recursive jobs) before running syncoid. Uses the shared abort script installed
 by `zfs_syncoid_replication`. Default is `false`.
+
+### Offsite rotation
+
+```yaml
+zfs_usb_replication_pool: vault
+zfs_usb_replication_anchor_mode: bookmark
+zfs_usb_replication_devices:
+  - name: drive-a
+    device: /dev/disk/by-id/usb-EXAMPLE_A-0:0
+    pool_guid: "1234567890123456789"   # optional; import and verify by GUID
+  - name: drive-b
+    device: /dev/disk/by-id/usb-EXAMPLE_B-0:0
+```
+
+Related defaults:
+
+```yaml
+zfs_usb_replication_anchor_helper_path: /usr/local/bin/zfs_usb_bookmark_anchors.py
+zfs_usb_replication_anchor_state_path: /var/lib/zfs-usb-replication/anchors.json
+zfs_usb_replication_bookmark_prune: true
+zfs_usb_replication_bookmark_prune_prefixes: [autosnap_, syncoid_]
+```
+
+Switching an existing single-drive setup from `sync_snapshot` to `bookmark`
+mode leaves syncoid's last `syncoid_<identifier>_*` snapshot on each source
+dataset. Bookmark it (`zfs bookmark src@snap src#snap`) before destroying it,
+so the drive that last received it keeps an incremental base. A drive with no
+common snapshot or bookmark at all needs its target dataset reseeded once.
 
 ### Common
 
@@ -233,6 +298,7 @@ just test-role zfs_usb_replication
 
 ## Changelog
 
+- **1.4.0** (2026-09-28): Added offsite rotation across several drives (`zfs_usb_replication_devices`, per-drive import, optional pool GUID pin, per-drive state) and `bookmark` anchor mode, which keeps each drive's incremental base as a source bookmark. Retention never prunes a bookmark-held anchor and skips targets that do not exist yet.
 - **1.3.0** (2026-08-09): Added an attended, root-private, read-only snapshot-file replication attestation helper with bounded closed schemas and preserved-GUID verification.
 - **1.2.0** (2026-03-18): Added per-job `no_rollback` and `force_delete` controls so offsite USB replicas can auto-heal target drift the same way the primary syncoid role can.
 - **1.1.0** (2026-03-17): Added `abort_partial_receive` job option to self-heal stuck partial ZFS receives (uses shared script from `zfs_syncoid_replication`)

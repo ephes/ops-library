@@ -125,9 +125,12 @@ def build_usb_replication_health(
         if protection_fresh is False:
             issues.append("protection_stale_or_unknown")
 
+    devices = state.get("devices")
     return {
         "enabled": enabled,
         "ok": not issues,
+        "device_name": state.get("device_name"),
+        "devices": devices if isinstance(devices, dict) else {},
         "issues": issues,
         "state_error": state_error,
         "last_attempt_at": state.get("last_attempt_at"),

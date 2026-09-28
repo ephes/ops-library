@@ -12,6 +12,12 @@ Runs syncoid replication to a USB-attached ZFS pool on a schedule, skipping clea
 - For `recursive: true` + `readonly: true` jobs, existing target parents are auto-set to
   `canmount=off` before `zfs mount -a` to avoid read-only mountpoint creation failures.
 - Ensures `/etc/exports.d` exists before mounting to avoid exportfs lock-path errors.
+- Rotates several offsite drives that share one pool name: each attached
+  drive is imported from its own partitions (optionally pinned by pool GUID),
+  replicated and exported in turn, with status kept per drive.
+- `bookmark` anchor mode keeps every drive's incremental base as a source
+  bookmark, so a drive that was away longer than the source snapshot
+  retention still receives an incremental send without pinning source space.
 - Installs an attended root-private helper that can bind exact source-snapshot
   file bytes and SHA-256 digests to a corresponding replica snapshot GUID
   without modifying ZFS or joining the scheduled replication path.
@@ -20,6 +26,10 @@ Runs syncoid replication to a USB-attached ZFS pool on a schedule, skipping clea
 
 - `zfs_usb_replication_device` - stable USB device path (`/dev/disk/by-id/...`).
 - `zfs_usb_replication_pool` - ZFS pool name on the USB disk.
+- `zfs_usb_replication_devices` - rotation of named drives (`name`, `device`,
+  optional `pool_guid`); replaces `zfs_usb_replication_device` and requires
+  `zfs_usb_replication_anchor_mode: bookmark`.
+- `zfs_usb_replication_anchor_mode` - `sync_snapshot` (default) or `bookmark`.
 - `zfs_usb_replication_jobs` - list of syncoid jobs (source -> target).
 - `zfs_usb_replication_on_calendar` - schedule for the USB sync.
 - `zfs_usb_replication_key` - key material (when key management is enabled).

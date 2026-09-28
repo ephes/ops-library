@@ -22,6 +22,11 @@ USB_DATASETS = json.loads(r'''{{ backup_metrics_endpoint_usb_datasets | to_json 
 USB_ENABLED = {{ backup_metrics_endpoint_usb_enabled | bool | ternary('True', 'False') }}
 USB_POOL = {{ backup_metrics_endpoint_usb_pool | to_json }}
 USB_DEVICE = {{ backup_metrics_endpoint_usb_device | to_json }}
+USB_DEVICES = [
+    path
+    for path in json.loads(r'''{{ backup_metrics_endpoint_usb_devices | to_json }}''') or [USB_DEVICE]
+    if path
+]
 USB_REPLICATION_STATUS_PATH = {{ backup_metrics_endpoint_usb_replication_status_path | to_json }}
 USB_CAPACITY_WARNING_RATIO = {{ backup_metrics_endpoint_usb_capacity_warning_ratio | float }}
 USB_CAPACITY_CRITICAL_RATIO = {{ backup_metrics_endpoint_usb_capacity_critical_ratio | float }}
@@ -631,7 +636,9 @@ def main() -> int:
             "pool": USB_POOL,
             "pool_imported": None,
             "pool_imported_value": 0,
-            "device_path": USB_DEVICE or None,
+            "device_path": USB_DEVICES[0] if USB_DEVICES else None,
+            "device_paths": list(USB_DEVICES),
+            "present_device_paths": [],
             "device_present": None,
             "device_present_value": 0,
             "last_known_used_ratio": None,
@@ -689,8 +696,12 @@ def main() -> int:
         if isinstance(item, dict):
             payload["file_backups"].append(_file_backup_status(item, now_epoch))
 
-    if USB_DEVICE:
-        payload["usb"]["device_present"] = os.path.exists(USB_DEVICE)
+    if USB_DEVICES:
+        present_devices = [path for path in USB_DEVICES if os.path.exists(path)]
+        payload["usb"]["present_device_paths"] = present_devices
+        if present_devices:
+            payload["usb"]["device_path"] = present_devices[0]
+        payload["usb"]["device_present"] = bool(present_devices)
         payload["usb"]["device_present_value"] = 1 if payload["usb"]["device_present"] else 0
 
     usb_enabled = bool(USB_ENABLED)

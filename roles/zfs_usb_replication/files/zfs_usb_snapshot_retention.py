@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Prune old managed target-only snapshots before USB replication."""
+"""Prune old managed target-only snapshots before USB replication.
+
+Target snapshots whose GUID is still held by a source snapshot or bookmark are
+incremental anchors (for example of a rotated drive) and are never pruned.
+"""
 
 from __future__ import annotations
 
@@ -17,12 +21,23 @@ class Snapshot:
     guid: str
 
 
-def _snapshot_name(dataset: str, full_name: str) -> str | None:
-    prefix = f"{dataset}@"
+def _snapshot_name(dataset: str, full_name: str, separator: str = "@") -> str | None:
+    prefix = f"{dataset}{separator}"
     return full_name[len(prefix) :] if full_name.startswith(prefix) else None
 
 
-def list_snapshots(dataset: str) -> list[Snapshot]:
+def dataset_exists(dataset: str) -> bool:
+    result = subprocess.run(
+        ["zfs", "list", "-H", "-o", "name", dataset],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def list_snapshots(dataset: str, kind: str = "snapshot") -> list[Snapshot]:
+    separator = "#" if kind == "bookmark" else "@"
     result = subprocess.run(
         [
             "zfs",
@@ -30,12 +45,13 @@ def list_snapshots(dataset: str) -> list[Snapshot]:
             "-H",
             "-p",
             "-t",
-            "snapshot",
+            kind,
             "-o",
             "name,creation,guid",
             "-s",
             "creation",
-            "-r",
+            "-d",
+            "1",
             dataset,
         ],
         check=True,
@@ -46,7 +62,7 @@ def list_snapshots(dataset: str) -> list[Snapshot]:
     for line in result.stdout.splitlines():
         try:
             full_name, creation_raw, guid = line.split("\t", 2)
-            name = _snapshot_name(dataset, full_name)
+            name = _snapshot_name(dataset, full_name, separator)
             if name is not None:
                 snapshots.append(
                     Snapshot(name=name, creation_epoch=int(creation_raw), guid=guid)
@@ -62,12 +78,14 @@ def select_prunable_snapshots(
     target_snapshots: Iterable[Snapshot],
     cutoff_epoch: int,
     prefixes: tuple[str, ...],
+    anchor_guids: frozenset[str] = frozenset(),
 ) -> list[Snapshot]:
     return [
         snapshot
         for snapshot in target_snapshots
         if snapshot.creation_epoch < cutoff_epoch
         and snapshot.name not in source_names
+        and snapshot.guid not in anchor_guids
         and snapshot.name.startswith(prefixes)
     ]
 
@@ -86,12 +104,21 @@ def prune(
     ):
         raise ValueError("retention prefixes must be non-empty strings")
 
+    if not dataset_exists(target):
+        # Nothing to prune before the first (re)seed creates the target.
+        print(f"retention skipped for {target}: target does not exist yet")
+        return []
+
     source_snapshots = list_snapshots(source)
+    source_bookmarks = list_snapshots(source, kind="bookmark")
     target_snapshots = list_snapshots(target)
     source_names = {snapshot.name for snapshot in source_snapshots}
+    bookmark_guids = frozenset(bookmark.guid for bookmark in source_bookmarks)
     source_anchors = {(snapshot.name, snapshot.guid) for snapshot in source_snapshots}
     target_anchors = {(snapshot.name, snapshot.guid) for snapshot in target_snapshots}
-    common = source_anchors & target_anchors
+    common = (source_anchors & target_anchors) | {
+        anchor for anchor in target_anchors if anchor[1] in bookmark_guids
+    }
     if not common:
         raise RuntimeError(
             f"refusing retention for {target}: no common snapshot with {source}"
@@ -104,6 +131,7 @@ def prune(
         target_snapshots=target_snapshots,
         cutoff_epoch=cutoff_epoch,
         prefixes=prefixes,
+        anchor_guids=bookmark_guids,
     )
     for snapshot in selected:
         full_name = f"{target}@{snapshot.name}"

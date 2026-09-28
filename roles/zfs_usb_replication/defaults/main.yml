@@ -38,11 +38,38 @@ zfs_usb_replication_on_calendar: "Sun 04:00"
 zfs_usb_replication_randomized_delay_sec: "30m"
 zfs_usb_replication_timeout_sec: "8h"
 
-# USB device and pool
+# USB device and pool. Single-drive setups set zfs_usb_replication_device.
 zfs_usb_replication_device: ""
 zfs_usb_replication_pool: ""
 
+# Offsite rotation: several drives that each carry the same pool name.
+# Each entry supports:
+# - name (string, required) - stable drive name used in state and anchors
+# - device (string, required) - /dev/disk/by-id path of the whole disk
+# - pool_guid (string, optional) - pin the pool on this drive; import by GUID
+# When set, this list replaces zfs_usb_replication_device and requires
+# zfs_usb_replication_anchor_mode: bookmark.
+zfs_usb_replication_devices: []
+
+# Incremental anchor handling:
+# - sync_snapshot: syncoid creates and keeps its own sync snapshot on the
+#   source (fine for one drive that is always attached)
+# - bookmark: replicate existing snapshots only (--no-sync-snap) and keep the
+#   newest replicated snapshot of every drive as a source bookmark, so a drive
+#   that was away longer than the source snapshot retention still gets an
+#   incremental send without pinning source space
+zfs_usb_replication_anchor_mode: "sync_snapshot"
+zfs_usb_replication_anchor_helper_path: "/usr/local/bin/zfs_usb_bookmark_anchors.py"
+zfs_usb_replication_anchor_state_path: "{{ zfs_usb_replication_state_dir }}/anchors.json"
+# Prune bookmarks no drive of the rotation needs any more (only names with
+# these prefixes, and only once every drive has a recorded anchor).
+zfs_usb_replication_bookmark_prune: true
+zfs_usb_replication_bookmark_prune_prefixes:
+  - "autosnap_"
+  - "syncoid_"
+
 # Optional syncoid identifier to avoid snapshot name collisions
+# (sync_snapshot mode only)
 zfs_usb_replication_identifier: ""
 
 # Pool export behavior (auto = only export when imported by the script)
