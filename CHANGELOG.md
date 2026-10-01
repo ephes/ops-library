@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased — OpenClaw Doctor activation (2.25.0)
+
+- `openclaw_deploy` activates a new OpenClaw image through Doctor on
+  v2026.9.7 and later (`openclaw_doctor_activation_enabled`, default `true`).
+  When the gateway container is missing or runs a different image, the role
+  stops the gateway and runs the official entrypoint's
+  `openclaw doctor --fix --non-interactive` with the new image and host
+  networking, before plugin inspect/install or secrets apply open the state.
+  Without it, the first 9.7 CLI call migrated the shared state database from
+  schema 17 to 19 underneath the still running 9.4 gateway, and the pinned
+  Codex plugin install was refused until Doctor had converged the plugin's
+  data. A failed Doctor keeps the gateway stopped; deploys that keep the
+  running image are unaffected.
+
 ## Unreleased — USB offsite rotation (2.24.0)
 
 - `zfs_usb_replication` can rotate several offsite drives that share one pool

@@ -29,6 +29,15 @@
 - name: main | Render gateway config
   ansible.builtin.import_tasks: config.yml
 
+- name: main | Activate a new image through Doctor before CLI tasks touch state
+  ansible.builtin.import_tasks: doctor_activation.yml
+  when:
+    - openclaw_doctor_activation_enabled | bool
+    - not ansible_check_mode
+    - >-
+      (openclaw_version | regex_replace('^v', ''))
+      is version('2026.9.7', '>=', version_type='semver')
+
 - name: main | Install the official Codex runtime plugin
   ansible.builtin.import_tasks: plugins.yml
   when:
