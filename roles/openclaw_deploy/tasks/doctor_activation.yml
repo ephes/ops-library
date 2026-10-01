@@ -1,0 +1,76 @@
+---
+# From v2026.9.7, legacy-state and plugin data migrations belong to Doctor.
+# The official image entrypoint runs Doctor before the gateway starts, but the
+# role's own one-shot CLI containers (plugin inspect/install, secrets apply)
+# bypass it and would otherwise migrate shared state underneath the still
+# running previous release. Stop the gateway and run the entrypoint's Doctor
+# repair with the new image before any of those commands.
+- name: doctor_activation | Inspect image of the current gateway container
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{' }}.Config.Image{{ '}}' }}"
+      - "{{ openclaw_container_name }}"
+  register: _openclaw_doctor_current_image
+  changed_when: false
+  failed_when: false
+
+- name: doctor_activation | Determine whether the target image needs activation
+  ansible.builtin.set_fact:
+    _openclaw_doctor_activation_required: >-
+      {{
+        _openclaw_doctor_current_image.rc != 0
+        or (_openclaw_doctor_current_image.stdout | trim)
+        != (openclaw_image_name ~ ':' ~ openclaw_image_tag)
+      }}
+
+- name: doctor_activation | Activate the target image through Doctor
+  when: _openclaw_doctor_activation_required | bool
+  block:
+    - name: doctor_activation | Inspect managed service before activation
+      ansible.builtin.service_facts:
+
+    - name: doctor_activation | Stop gateway before Doctor migrates its state
+      ansible.builtin.systemd:
+        name: "{{ openclaw_service_name }}"
+        state: stopped
+      when: (openclaw_service_name ~ '.service') in ansible_facts.services
+
+    - name: doctor_activation | Run official entrypoint Doctor repair with the target image
+      ansible.builtin.command:
+        argv:
+          - docker
+          - run
+          - --rm
+          - --network
+          - host
+          - --user
+          - "1000:1000"
+          - --env-file
+          - "{{ openclaw_site_dir }}/.env"
+          - --volume
+          - "{{ openclaw_data_dir }}:/home/node/.openclaw"
+          - --entrypoint
+          - node
+          - "{{ openclaw_image_name }}:{{ openclaw_image_tag }}"
+          - openclaw.mjs
+          - doctor
+          - --fix
+          - --non-interactive
+      register: _openclaw_doctor_activation
+      changed_when: true
+      notify: restart openclaw
+
+  rescue:
+    - name: doctor_activation | Keep the gateway stopped after a failed Doctor repair
+      ansible.builtin.fail:
+        msg: >-
+          OpenClaw Doctor failed while activating
+          {{ openclaw_image_name }}:{{ openclaw_image_tag }}. The gateway stays
+          stopped because its state may be partially migrated and the previous
+          release cannot open newer databases. Inspect the Doctor output, then
+          either fix the reported problem and redeploy, or redeploy the previous
+          version and restore the pre-upgrade backup.
+          {{ _openclaw_doctor_activation.stdout_lines | default([]) | last | default('') }}

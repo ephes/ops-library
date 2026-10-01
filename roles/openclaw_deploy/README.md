@@ -215,6 +215,24 @@ backup. The role keeps OpenClaw's separate internal `backups/` directory owned
 by container uid/gid 1000 so Doctor can stage its own per-file safety copies.
 Config is reconciled again after Doctor so role-managed policy wins.
 
+From `v2026.9.7`, upstream moved legacy-state and plugin data repair into
+Doctor and requires it before a manually replaced release starts. The upstream
+image's entrypoint (`docker-entrypoint.mjs`) runs `openclaw doctor --fix
+--non-interactive` before every foreground `gateway` start, so the Compose
+gateway service must keep the image's default entrypoint. The role's own
+one-shot CLI containers (`plugins inspect`/`install`, `secrets apply`) bypass
+that entrypoint and would migrate the shared state database underneath the
+still running previous release. With `openclaw_doctor_activation_enabled`
+(default), whenever the gateway container is missing or runs a different
+image, the role therefore stops the gateway and runs the same Doctor repair
+with the new image and host networking before those tasks. Doctor needs
+network access because it refreshes configured npm plugins, including the
+official Codex plugin, to the new release. If Doctor fails, the gateway stays
+stopped: the previous release cannot open the migrated databases, so recover
+by fixing the reported problem or by redeploying the previous version and
+restoring the pre-upgrade backup. Deploys that keep the running image skip
+this step and cause no extra downtime.
+
 For subscription-backed OpenAI agent turns, enable the official Codex plugin, configure a canonical
 `openai/<model>` primary, and list the OAuth profile before any optional API-key backup:
 
@@ -717,6 +735,7 @@ Handler unit tests for managed OpenClaw integration handlers live at:
 | `openclaw_install_docker` | `true` | Install Docker via docker_install role |
 | `openclaw_manage_user` | `true` | Create system user/group |
 | `openclaw_upgrade_migrations_enabled` | `true` | On v2026.9.1+, detect runtime-blocking legacy workspace state and run the supported non-interactive Doctor repair with the gateway stopped |
+| `openclaw_doctor_activation_enabled` | `true` | On v2026.9.7+, when the target image differs from the running gateway, stop the gateway and run the entrypoint's `doctor --fix --non-interactive` with the new image before role CLI tasks open the state |
 | `openclaw_healthcheck_enabled` | `true` | Require TCP, a stable container, healthy gateway RPC, and configured Telegram readiness after deployment |
 
 For a complete list, see `defaults/main.yml`.
