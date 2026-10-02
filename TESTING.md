@@ -144,3 +144,13 @@ The Traefik Linux transaction integration also exercises pre-enrollment ownershi
 repair and inactive linked-service retirement against real systemd. It checks
 preserved proxy PID/data/middleware and refuses active services, route drift,
 invalid candidates, changed middleware, unresolved journals and enrollment.
+
+## Disposable Pyinfra economics trial
+
+The optional [authorized-keys comparison](experiments/pyinfra_authorized_keys/README.md)
+runs the real Ansible role and Pyinfra operations inside an automatically removed
+Docker container with no production inventory, secrets, SSH, or host-home mounts.
+Run `python3 experiments/pyinfra_authorized_keys/run.py` from the repository root.
+This is separate from the default contributor suite and requires Docker plus
+network access for the image build. See the experiment's evidence for its narrow
+file-state contract and the limits on extrapolating to production roles.

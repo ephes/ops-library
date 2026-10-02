@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — disposable Pyinfra economics trial
+
+- Add an opt-in Docker comparison of the unchanged `ssh_authorized_keys_manage`
+  role against a bounded Pyinfra implementation, with executable convergence,
+  idempotency, drift, key rotation and validation-recovery checks plus measured
+  evidence. This experiment does not change supported roles or deployment
+  workflows; collection version is unchanged.
+
 ## Unreleased — Daybook on a pinned uv-managed Python (2.25.0)
 
 - No Daybook role builds on Homebrew's Python any more. A `brew upgrade` whose

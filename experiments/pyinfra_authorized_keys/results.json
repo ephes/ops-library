@@ -1,0 +1,111 @@
+{
+  "engines": {
+    "ansible": {
+      "first": {
+        "seconds": 0.806,
+        "changed": 2,
+        "returncode": 0
+      },
+      "noop": {
+        "seconds": 0.687,
+        "changed": 0,
+        "returncode": 0
+      },
+      "dry_drift": {
+        "seconds": 0.574,
+        "changed": 2,
+        "returncode": 0
+      },
+      "repair": {
+        "seconds": 0.742,
+        "changed": 2,
+        "returncode": 0
+      },
+      "rotation": {
+        "seconds": 0.748,
+        "changed": 1,
+        "returncode": 0
+      },
+      "invalid_0": {
+        "seconds": 0.291,
+        "changed": null,
+        "returncode": 2
+      },
+      "invalid_1": {
+        "seconds": 0.268,
+        "changed": null,
+        "returncode": 2
+      },
+      "invalid_2": {
+        "seconds": 0.239,
+        "changed": null,
+        "returncode": 2
+      },
+      "recovery": {
+        "seconds": 0.677,
+        "changed": 0,
+        "returncode": 0
+      },
+      "disabled": {
+        "seconds": 0.253,
+        "changed": 0,
+        "returncode": 0
+      }
+    },
+    "pyinfra": {
+      "first": {
+        "seconds": 0.253,
+        "changed": 2,
+        "returncode": 0
+      },
+      "noop": {
+        "seconds": 0.18,
+        "changed": 0,
+        "returncode": 0
+      },
+      "dry_drift": {
+        "seconds": 0.162,
+        "changed": 0,
+        "returncode": 0
+      },
+      "repair": {
+        "seconds": 0.193,
+        "changed": 2,
+        "returncode": 0
+      },
+      "rotation": {
+        "seconds": 0.186,
+        "changed": 1,
+        "returncode": 0
+      },
+      "invalid_0": {
+        "seconds": 0.153,
+        "changed": null,
+        "returncode": 1
+      },
+      "invalid_1": {
+        "seconds": 0.152,
+        "changed": null,
+        "returncode": 1
+      },
+      "invalid_2": {
+        "seconds": 0.16,
+        "changed": null,
+        "returncode": 1
+      },
+      "recovery": {
+        "seconds": 0.203,
+        "changed": 0,
+        "returncode": 0
+      },
+      "disabled": {
+        "seconds": 0.188,
+        "changed": 0,
+        "returncode": 0
+      }
+    }
+  },
+  "scope": "Debian 12 Docker local connectors; actual unchanged Ansible role",
+  "final_state_equal": true,
+  "build_seconds": 0.592
+}
