@@ -13,7 +13,8 @@
       - daybook_voice_memo_attention_install_root == '/Library/Application Support/Daybook/voice-memo-attention'
       - daybook_voice_memo_attention_venv == daybook_voice_memo_attention_install_root ~ '/venv'
       - daybook_voice_memo_attention_uv_bin == '/opt/homebrew/bin/uv'
-      - daybook_voice_memo_attention_python_source == '/opt/homebrew/bin/python3.14'
+      - daybook_voice_memo_attention_python_version | string is match('^3\\.14\\.[0-9]+$')
+      - daybook_voice_memo_attention_python_install_dir == '/Library/Application Support/Daybook/python'
       - daybook_voice_memo_attention_runtime_dir == daybook_voice_memo_attention_service_home ~ '/.local/state/daybook/voice-memo-attention'
       - daybook_voice_memo_attention_config_path == daybook_voice_memo_attention_runtime_dir ~ '/config.json'
       - daybook_voice_memo_attention_launchd_label == 'de.wersdoerfer.daybook.voice-memo-attention'
@@ -138,16 +139,122 @@
     fail_msg: The copied Daybook wheel must have a readable destination SHA1 before installation.
   when: not ansible_check_mode
 
+# Installed and found by version, not path: a venv created from a version
+# request records the exact patch directory as its home, one created from a
+# path records uv's movable minor-version link.
+- name: Create the root-owned Daybook Python tree
+  ansible.builtin.file:
+    path: "{{ daybook_voice_memo_attention_python_install_dir }}"
+    state: directory
+    owner: root
+    group: wheel
+    mode: '0755'
+
+- name: Install the pinned Daybook Python for attention
+  ansible.builtin.command:
+    argv:
+      - "{{ daybook_voice_memo_attention_uv_bin }}"
+      - python
+      - install
+      - --no-bin
+      - "{{ daybook_voice_memo_attention_python_version }}"
+  register: daybook_voice_memo_attention_python_install
+  changed_when: "'Installed' in daybook_voice_memo_attention_python_install.stderr"
+  environment: &daybook_voice_memo_attention_uv_python_env
+    HOME: /var/root
+    UV_NO_PROGRESS: "1"
+    UV_PYTHON_INSTALL_DIR: "{{ daybook_voice_memo_attention_python_install_dir }}"
+    UV_PYTHON_PREFERENCE: only-managed
+  when: not ansible_check_mode
+
+- name: Find the pinned Daybook Python for attention
+  ansible.builtin.command:
+    argv:
+      - "{{ daybook_voice_memo_attention_uv_bin }}"
+      - python
+      - find
+      - --no-project
+      - "{{ daybook_voice_memo_attention_python_version }}"
+  register: daybook_voice_memo_attention_python_find
+  changed_when: false
+  environment:
+    <<: *daybook_voice_memo_attention_uv_python_env
+    UV_PYTHON_DOWNLOADS: never
+  when: not ansible_check_mode
+
+- name: Inspect the pinned Daybook Python for attention
+  ansible.builtin.stat:
+    path: "{{ daybook_voice_memo_attention_python_find.stdout | trim }}"
+    follow: false
+  register: daybook_voice_memo_attention_python_stat
+  when: not ansible_check_mode
+
+- name: Require a root-owned pinned Daybook Python for attention
+  ansible.builtin.assert:
+    that:
+      - daybook_voice_memo_attention_python_find.stdout | trim is match(
+          '^' ~ (daybook_voice_memo_attention_python_install_dir | regex_escape)
+          ~ '/cpython-' ~ (daybook_voice_memo_attention_python_version | regex_escape) ~ '-[^/]+/bin/python3\\.14$')
+      - daybook_voice_memo_attention_python_stat.stat.isreg | default(false)
+      - daybook_voice_memo_attention_python_stat.stat.pw_name | default('') == 'root'
+      - not daybook_voice_memo_attention_python_stat.stat.wgrp | default(true)
+      - not daybook_voice_memo_attention_python_stat.stat.woth | default(true)
+    fail_msg: >-
+      The attention interpreter must be the exact-patch CPython uv installed in
+      the root-owned Daybook Python tree.
+  when: not ansible_check_mode
+
+- name: Read the attention environment's interpreter home
+  ansible.builtin.slurp:
+    src: "{{ daybook_voice_memo_attention_venv }}/pyvenv.cfg"
+  register: daybook_voice_memo_attention_venv_cfg
+  failed_when: false
+  when: not ansible_check_mode
+
+# `creates:` below would keep an environment built on any interpreter, so one
+# whose home is not the pinned patch directory is removed first. Its creation
+# then reinstalls the wheel before success is recorded.
+- name: Remove an attention environment built on another interpreter
+  ansible.builtin.file:
+    path: "{{ daybook_voice_memo_attention_venv }}"
+    state: absent
+  when:
+    - not ansible_check_mode
+    - daybook_voice_memo_attention_venv_cfg.content is defined
+    - >-
+      (daybook_voice_memo_attention_venv_cfg.content | b64decode
+       | regex_search('(?m)^home = (.*)$', '\\1') | default([''], true) | first | trim)
+      != (daybook_voice_memo_attention_python_find.stdout | trim | dirname)
+
 - name: Create separate attention virtual environment
   ansible.builtin.command:
     argv:
       - "{{ daybook_voice_memo_attention_uv_bin }}"
       - venv
       - --python
-      - "{{ daybook_voice_memo_attention_python_source }}"
+      - "{{ daybook_voice_memo_attention_python_version }}"
       - "{{ daybook_voice_memo_attention_venv }}"
     creates: "{{ daybook_voice_memo_attention_venv }}/bin/python"
   register: daybook_voice_memo_attention_venv_created
+  environment:
+    <<: *daybook_voice_memo_attention_uv_python_env
+    UV_PYTHON_DOWNLOADS: never
+
+- name: Read the created attention environment's interpreter home
+  ansible.builtin.slurp:
+    src: "{{ daybook_voice_memo_attention_venv }}/pyvenv.cfg"
+  register: daybook_voice_memo_attention_venv_cfg_created
+  when: not ansible_check_mode
+
+- name: Require the attention environment to be built on the pinned Python
+  ansible.builtin.assert:
+    that:
+      - >-
+        (daybook_voice_memo_attention_venv_cfg_created.content | b64decode
+         | regex_search('(?m)^home = (.*)$', '\\1') | default([''], true) | first | trim)
+        == (daybook_voice_memo_attention_python_find.stdout | trim | dirname)
+    fail_msg: The attention environment does not use the exact pinned interpreter directory.
+  when: not ansible_check_mode
 
 - name: Inspect successful wheel installation receipt
   ansible.builtin.stat:

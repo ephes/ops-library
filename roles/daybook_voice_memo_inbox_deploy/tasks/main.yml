@@ -15,7 +15,8 @@
       - daybook_voice_memo_inbox_checkout_path == daybook_voice_memo_inbox_install_root ~ '/daybook'
       - daybook_voice_memo_inbox_repo_bundle_path == daybook_voice_memo_inbox_install_root ~ '/source.bundle'
       - daybook_voice_memo_inbox_uv_bin == '/opt/homebrew/bin/uv'
-      - daybook_voice_memo_inbox_python_source == '/opt/homebrew/bin/python3.14'
+      - daybook_voice_memo_inbox_python_version | string is match('^3\\.14\\.[0-9]+$')
+      - daybook_voice_memo_inbox_python_install_dir == '/Library/Application Support/Daybook/python'
       - daybook_voice_memo_inbox_python == daybook_voice_memo_inbox_checkout_path ~ '/.venv/bin/python'
       - daybook_voice_memo_inbox_source_dir == daybook_voice_memo_inbox_service_home ~ '/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings'
       - daybook_voice_memo_inbox_database_name == 'CloudRecordings.db'
@@ -123,7 +124,6 @@
   loop:
     - /usr/bin/git
     - "{{ daybook_voice_memo_inbox_uv_bin }}"
-    - "{{ daybook_voice_memo_inbox_python_source }}"
     - "{{ daybook_voice_memo_inbox_ffprobe_path }}"
     - "{{ daybook_voice_memo_inbox_ffmpeg_path }}"
   register: daybook_voice_memo_inbox_executables
@@ -694,6 +694,137 @@
     - daybook_voice_memo_inbox_enabled | bool
     - not ansible_check_mode
 
+# The interpreter is a uv-managed CPython of one exact patch version in a
+# root-owned tree (never Homebrew's, whose upgrade cleanup deletes the framework
+# a copied binary links to). It is installed and found by version, not by path:
+# a venv created from a version request records the exact patch directory as
+# its home, while one created from an interpreter path records uv's movable
+# minor-version link.
+- name: Create the root-owned Daybook Python tree
+  ansible.builtin.file:
+    path: "{{ daybook_voice_memo_inbox_python_install_dir }}"
+    state: directory
+    owner: root
+    group: "{{ daybook_voice_memo_inbox_system_group }}"
+    mode: "0755"
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Install the pinned Daybook Python
+  ansible.builtin.command:
+    argv:
+      - "{{ daybook_voice_memo_inbox_uv_bin }}"
+      - python
+      - install
+      - --no-bin
+      - "{{ daybook_voice_memo_inbox_python_version }}"
+  register: daybook_voice_memo_inbox_python_install
+  changed_when: "'Installed' in daybook_voice_memo_inbox_python_install.stderr"
+  failed_when: false
+  environment: &daybook_voice_memo_inbox_uv_python_env
+    HOME: /var/root
+    UV_NO_PROGRESS: "1"
+    UV_PYTHON_INSTALL_DIR: "{{ daybook_voice_memo_inbox_python_install_dir }}"
+    UV_PYTHON_PREFERENCE: only-managed
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Require the pinned Daybook Python to be installable
+  ansible.builtin.assert:
+    that:
+      - daybook_voice_memo_inbox_python_install.rc == 0
+    fail_msg: >-
+      uv could not install CPython {{ daybook_voice_memo_inbox_python_version }}
+      (rc={{ daybook_voice_memo_inbox_python_install.rc }}). The deploy-time uv
+      may not offer that patch yet; pin a version its catalog has
+      (`uv python list --only-downloads 3.14`). The installed runtime is unchanged.
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Find the pinned Daybook Python
+  ansible.builtin.command:
+    argv:
+      - "{{ daybook_voice_memo_inbox_uv_bin }}"
+      - python
+      - find
+      - --no-project
+      - "{{ daybook_voice_memo_inbox_python_version }}"
+  register: daybook_voice_memo_inbox_python_find
+  changed_when: false
+  environment:
+    <<: *daybook_voice_memo_inbox_uv_python_env
+    UV_PYTHON_DOWNLOADS: never
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Inspect the pinned Daybook Python
+  ansible.builtin.stat:
+    path: "{{ daybook_voice_memo_inbox_python_find.stdout | trim }}"
+    follow: false
+    get_checksum: true
+  register: daybook_voice_memo_inbox_python_source_stat
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Require a root-owned pinned Daybook Python
+  ansible.builtin.assert:
+    that:
+      - daybook_voice_memo_inbox_python_find.stdout | trim is match(
+          '^' ~ (daybook_voice_memo_inbox_python_install_dir | regex_escape)
+          ~ '/cpython-' ~ (daybook_voice_memo_inbox_python_version | regex_escape) ~ '-[^/]+/bin/python3\\.14$')
+      - daybook_voice_memo_inbox_python_source_stat.stat.isreg | default(false)
+      - not daybook_voice_memo_inbox_python_source_stat.stat.islnk | default(true)
+      - daybook_voice_memo_inbox_python_source_stat.stat.pw_name | default('') == 'root'
+      - not daybook_voice_memo_inbox_python_source_stat.stat.wgrp | default(true)
+      - not daybook_voice_memo_inbox_python_source_stat.stat.woth | default(true)
+    fail_msg: >-
+      The pinned interpreter must be the exact-patch CPython uv installed in the
+      root-owned Daybook Python tree, a regular root-owned file nobody else can
+      write.
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Resolve the pinned Daybook Python
+  ansible.builtin.set_fact:
+    daybook_voice_memo_inbox_python_source: "{{ daybook_voice_memo_inbox_python_find.stdout | trim }}"
+    daybook_voice_memo_inbox_python_home: "{{ daybook_voice_memo_inbox_python_find.stdout | trim | dirname }}"
+    daybook_voice_memo_inbox_python_source_checksum: "{{ daybook_voice_memo_inbox_python_source_stat.stat.checksum }}"
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+# uv replaces an environment built on another working interpreter by itself,
+# but aborts on one whose interpreter cannot start -- what the Homebrew upgrade
+# left behind. An environment whose home is not the pinned one is therefore
+# removed first; the label is quiesced, and the venv holds no state.
+- name: Read the Voice Memo inbox environment's interpreter home
+  ansible.builtin.slurp:
+    src: "{{ daybook_voice_memo_inbox_checkout_path }}/.venv/pyvenv.cfg"
+  register: daybook_voice_memo_inbox_venv_cfg
+  failed_when: false
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Remove a Voice Memo inbox environment built on another interpreter
+  ansible.builtin.file:
+    path: "{{ daybook_voice_memo_inbox_checkout_path }}/.venv"
+    state: absent
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+    - daybook_voice_memo_inbox_venv_cfg.content is defined
+    - >-
+      (daybook_voice_memo_inbox_venv_cfg.content | b64decode
+       | regex_search('(?m)^home = (.*)$', '\\1') | default([''], true) | first | trim)
+      != daybook_voice_memo_inbox_python_home
+
 - name: Synchronize locked Daybook runtime
   ansible.builtin.command:
     argv:
@@ -702,7 +833,7 @@
       - --frozen
       - --no-dev
       - --python
-      - "{{ daybook_voice_memo_inbox_python_source }}"
+      - "{{ daybook_voice_memo_inbox_python_version }}"
   args:
     chdir: "{{ daybook_voice_memo_inbox_checkout_path }}"
   register: daybook_voice_memo_inbox_sync
@@ -710,16 +841,33 @@
     'Installed' in daybook_voice_memo_inbox_sync.stderr or
     'Uninstalled' in daybook_voice_memo_inbox_sync.stderr
   environment:
-    HOME: /var/root
-    UV_NO_PROGRESS: "1"
+    <<: *daybook_voice_memo_inbox_uv_python_env
+    UV_PYTHON_DOWNLOADS: never
   when:
     - daybook_voice_memo_inbox_enabled | bool
-    - >-
-      not ansible_check_mode
-      or (
-        daybook_voice_memo_inbox_installed_ref.rc == 0
-        and daybook_voice_memo_inbox_installed_ref.stdout | trim == daybook_voice_memo_inbox_repo_ref
-      )
+    - not ansible_check_mode
+
+- name: Read the synchronized environment's interpreter home
+  ansible.builtin.slurp:
+    src: "{{ daybook_voice_memo_inbox_checkout_path }}/.venv/pyvenv.cfg"
+  register: daybook_voice_memo_inbox_venv_cfg_synced
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Require the environment to be built on the pinned Python
+  ansible.builtin.assert:
+    that:
+      - >-
+        (daybook_voice_memo_inbox_venv_cfg_synced.content | b64decode
+         | regex_search('(?m)^home = (.*)$', '\\1') | default([''], true) | first | trim)
+        == daybook_voice_memo_inbox_python_home
+    fail_msg: >-
+      The synchronized environment does not use the exact pinned interpreter
+      directory {{ daybook_voice_memo_inbox_python_home }}.
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
 
 - name: Inspect Voice Memo inbox virtualenv interpreter
   ansible.builtin.stat:
@@ -729,31 +877,23 @@
   register: daybook_voice_memo_inbox_python_stat
   when: daybook_voice_memo_inbox_enabled | bool
 
-- name: Resolve pinned Voice Memo inbox source interpreter checksum
+- name: Decide whether the protected interpreter must be copied
   ansible.builtin.set_fact:
-    daybook_voice_memo_inbox_python_source_checksum: >-
-      {{
-        daybook_voice_memo_inbox_executables.results
-        | selectattr('item', 'eq', daybook_voice_memo_inbox_python_source)
-        | map(attribute='stat.checksum') | first
-      }}
     # Materialize a root-owned copy when the venv still links to the shared
     # interpreter or when the copied binary no longer matches the pinned source
-    # (for example after a Homebrew Python upgrade).
+    # (after a version bump).
     daybook_voice_memo_inbox_python_needs_copy: >-
       {{
         daybook_voice_memo_inbox_python_stat.stat.islnk | default(false)
         or (
           daybook_voice_memo_inbox_python_stat.stat.exists
           and daybook_voice_memo_inbox_python_stat.stat.checksum | default('')
-              != (
-                daybook_voice_memo_inbox_executables.results
-                | selectattr('item', 'eq', daybook_voice_memo_inbox_python_source)
-                | map(attribute='stat.checksum') | first
-              )
+              != daybook_voice_memo_inbox_python_source_checksum
         )
       }}
-  when: daybook_voice_memo_inbox_enabled | bool
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
 
 - name: Copy pinned Voice Memo inbox interpreter into protected checkout
   ansible.builtin.command:
@@ -843,6 +983,32 @@
       - -I
       - -c
       - import daybook, sqlite3, ssl
+  args:
+    chdir: "{{ daybook_voice_memo_inbox_checkout_path }}"
+  changed_when: false
+  when:
+    - daybook_voice_memo_inbox_enabled | bool
+    - not ansible_check_mode
+
+- name: Require the protected interpreter to run the pinned Python
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/sudo
+      - -u
+      - "{{ daybook_voice_memo_inbox_service_user }}"
+      - /usr/bin/env
+      - "HOME={{ daybook_voice_memo_inbox_service_home }}"
+      - "{{ daybook_voice_memo_inbox_python }}"
+      - -B
+      - -I
+      - -c
+      - >-
+        import sys;
+        v = '%d.%d.%d' % sys.version_info[:3];
+        raise SystemExit(0 if (v, sys.base_prefix) == (sys.argv[1], sys.argv[2])
+        else 'runs %s from %s' % (v, sys.base_prefix))
+      - "{{ daybook_voice_memo_inbox_python_version }}"
+      - "{{ daybook_voice_memo_inbox_python_home | dirname }}"
   args:
     chdir: "{{ daybook_voice_memo_inbox_checkout_path }}"
   changed_when: false

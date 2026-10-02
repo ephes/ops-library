@@ -54,7 +54,10 @@ daybook_operations_runtime_host_application: Ghostty
 # revision -- on Studio the Voice Memo importer role does that.
 daybook_operations_runtime_code_bundle_src: ""
 daybook_operations_runtime_uv_bin: /opt/homebrew/bin/uv
-daybook_operations_runtime_python_version: "3.14"
+# The exact patch of the uv-managed CPython the environment is built on (never a
+# system or Homebrew Python); one the deploy-time uv can download. A bump is a
+# change of this value, deployed with the supervisor stopped.
+daybook_operations_runtime_python_version: "3.14.7"
 # The pool. `long` is how many workers long work may occupy at once, and it must
 # leave at least one it cannot take: that is the guarantee the separate long
 # thread used to give, now as a number. The client refuses a profile that breaks it.

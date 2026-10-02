@@ -190,8 +190,10 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
             tasks,
         )
         self.assertNotIn("stat.checksum | length == 40", tasks)
+        self.assertNotIn("/opt/homebrew/bin/python", tasks)
         self.assertIn(
-            "selectattr('item', 'eq', daybook_voice_memo_inbox_python_source)", tasks
+            "daybook_voice_memo_inbox_python_source_checksum: \"{{ daybook_voice_memo_inbox_python_source_stat.stat.checksum }}\"",
+            tasks,
         )
         self.assertIn("Require protected Voice Memo inbox interpreter boundary", tasks)
         self.assertIn("not daybook_voice_memo_inbox_protected_python.stat.islnk", tasks)
@@ -224,6 +226,56 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
             activation.count('chdir: "{{ daybook_voice_memo_inbox_checkout_path }}"'),
             3,
         )
+
+    def test_interpreter_is_an_exact_uv_managed_python_never_homebrew(self):
+        defaults = self.text(f"{ROLE}/defaults/main.yml")
+        tasks = self.text(f"{ROLE}/tasks/main.yml")
+        self.assertNotIn("homebrew/bin/python", defaults)
+        self.assertNotIn("homebrew/bin/python", tasks)
+        self.assertIn('daybook_voice_memo_inbox_python_version: "3.14.7"', defaults)
+        self.assertIn(
+            'daybook_voice_memo_inbox_python_install_dir: "/Library/Application Support/Daybook/python"',
+            defaults,
+        )
+        order = [
+            "- name: Require an unmodified protected Daybook checkout",
+            "- name: Create the root-owned Daybook Python tree",
+            "- name: Install the pinned Daybook Python",
+            "- name: Require the pinned Daybook Python to be installable",
+            "- name: Find the pinned Daybook Python",
+            "- name: Require a root-owned pinned Daybook Python",
+            "- name: Remove a Voice Memo inbox environment built on another interpreter",
+            "- name: Synchronize locked Daybook runtime",
+            "- name: Require the environment to be built on the pinned Python",
+            "- name: Copy pinned Voice Memo inbox interpreter into protected checkout",
+            "- name: Require protected Voice Memo inbox interpreter boundary",
+            "- name: Require the protected interpreter to run the pinned Python",
+        ]
+        positions = [tasks.index(name) for name in order]
+        self.assertEqual(positions, sorted(positions))
+        install = tasks[positions[2] : positions[3]]
+        self.assertIn("- --no-bin", install)
+        self.assertIn("UV_PYTHON_INSTALL_DIR", install)
+        self.assertIn("UV_PYTHON_PREFERENCE: only-managed", install)
+        self.assertIn("HOME: /var/root", install)
+        # Synchronized by version, never by path: a path request makes the venv
+        # record uv's movable minor-version link as its home.
+        sync = tasks[positions[7] : positions[8]]
+        self.assertIn('- "{{ daybook_voice_memo_inbox_python_version }}"', sync)
+        self.assertIn("UV_PYTHON_DOWNLOADS: never", sync)
+        self.assertNotIn("python_source", sync)
+        owned = tasks[positions[5] : positions[6]]
+        for check in (
+            ".stat.pw_name | default('') == 'root'",
+            "not daybook_voice_memo_inbox_python_source_stat.stat.wgrp",
+            "not daybook_voice_memo_inbox_python_source_stat.stat.woth",
+            "not daybook_voice_memo_inbox_python_source_stat.stat.islnk",
+        ):
+            self.assertIn(check, owned)
+        removal = tasks[positions[6] : positions[7]]
+        self.assertIn("state: absent", removal)
+        self.assertIn("!= daybook_voice_memo_inbox_python_home", removal)
+        self.assertNotIn("daybook_voice_memo_inbox_runtime_dir", removal)
 
     def test_protected_checkout_must_be_clean_before_runtime_sync(self):
         tasks = self.text("roles/daybook_voice_memo_inbox_deploy/tasks/main.yml")
@@ -484,13 +536,9 @@ class DaybookVoiceMemoInboxRoleTests(unittest.TestCase):
         sync_task = tasks.split("- name: Synchronize locked Daybook runtime", 1)[
             1
         ].split("- name: Inspect Voice Memo inbox virtualenv interpreter", 1)[0]
-        self.assertIn("not ansible_check_mode", sync_task)
-        self.assertIn("daybook_voice_memo_inbox_installed_ref.rc == 0", sync_task)
-        self.assertIn(
-            "daybook_voice_memo_inbox_installed_ref.stdout | trim == "
-            "daybook_voice_memo_inbox_repo_ref",
-            sync_task,
-        )
+        # The runtime is never synchronized in check mode: the pinned
+        # interpreter it is built on is only installed in a real run.
+        self.assertIn("- not ansible_check_mode", sync_task)
 
     def test_launch_agent_is_scoped_to_voice_memos_owner(self):
         defaults = self.text("roles/daybook_voice_memo_inbox_deploy/defaults/main.yml")

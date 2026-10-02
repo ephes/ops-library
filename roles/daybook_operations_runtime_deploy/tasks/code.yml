@@ -131,6 +131,39 @@
       ({{ daybook_operations_runtime_code_status.stdout_lines | length }} entries;
       paths withheld). Remove it so the next deployment installs the bundle again.
 
+# The environment is built on a uv-managed CPython of exactly the pinned patch,
+# found by version (a path request would make the venv record uv's movable
+# minor-version link as its home) and never a system or Homebrew Python. A
+# change of interpreter is drift `uv sync --check` does not report -- it answers
+# 0 while it would replace the environment -- so it is detected from the
+# environment's recorded home and handled like any other environment change.
+- name: code | Find the pinned interpreter
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_runtime_uv_bin }}", python, find, --no-project, "{{ daybook_operations_runtime_python_version }}"]
+  register: daybook_operations_runtime_code_python
+  changed_when: false
+  failed_when: false
+  environment: &daybook_operations_runtime_code_uv_env
+    UV_NO_PROGRESS: "1"
+    UV_PYTHON_PREFERENCE: only-managed
+    UV_PYTHON_DOWNLOADS: never
+
+- name: code | Read the environment's interpreter home
+  ansible.builtin.slurp:
+    src: "{{ daybook_operations_runtime_install_root }}/daybook/.venv/pyvenv.cfg"
+  register: daybook_operations_runtime_code_venv_cfg
+  failed_when: false
+
+- name: code | Decide whether the environment is built on another interpreter
+  # In a template the group reference is written `'\1'`; in a conditional
+  # (`when`, `that`), whose literals Jinja unescapes, it is `'\\1'`.
+  ansible.builtin.set_fact:
+    daybook_operations_runtime_code_interpreter_drift: >-
+      {{ daybook_operations_runtime_code_python.rc != 0
+         or (daybook_operations_runtime_code_venv_cfg.content | default('') | b64decode
+             | regex_search('(?m)^home = (.*)$', '\1') | default([''], true) | first | trim)
+            != (daybook_operations_runtime_code_python.stdout | trim | dirname) }}
+
 - name: code | Ask whether the environment already matches the lock
   ansible.builtin.command:
     argv: ["{{ daybook_operations_runtime_uv_bin }}", sync, --frozen, --no-dev, --python, "{{ daybook_operations_runtime_python_version }}", --check]
@@ -138,17 +171,51 @@
   register: daybook_operations_runtime_code_sync_check
   changed_when: false
   failed_when: daybook_operations_runtime_code_sync_check.rc not in [0, 1]
-  environment:
-    UV_NO_PROGRESS: "1"
+  environment: *daybook_operations_runtime_code_uv_env
+  when: not (daybook_operations_runtime_code_interpreter_drift | bool)
+
+- name: code | Decide whether the environment must change
+  ansible.builtin.set_fact:
+    daybook_operations_runtime_code_env_changes: >-
+      {{ daybook_operations_runtime_code_interpreter_drift | bool
+         or daybook_operations_runtime_code_sync_check.rc | default(0) == 1 }}
 
 - name: code | Refuse to change an environment a supervisor may be running
   ansible.builtin.assert:
     that:
       - not (daybook_operations_runtime_code_in_use | bool)
     fail_msg: >-
-      The installed environment differs from the lock and a supervisor may be
-      running it. Stop it as the ops-control runbook describes, then deploy again.
-  when: daybook_operations_runtime_code_sync_check.rc == 1
+      The installed environment differs from the lock or the pinned interpreter
+      and a supervisor may be running it. Stop it as the ops-control runbook
+      describes, then deploy again.
+  when: daybook_operations_runtime_code_env_changes | bool
+
+# Installing a patch moves uv's minor-version link, which other environments of
+# this user may follow; it happens only here, with the supervisor stopped.
+- name: code | Install the pinned interpreter
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_runtime_uv_bin }}", python, install, --no-bin, "{{ daybook_operations_runtime_python_version }}"]
+  register: daybook_operations_runtime_code_python_install
+  changed_when: "'Installed' in daybook_operations_runtime_code_python_install.stderr"
+  environment:
+    UV_NO_PROGRESS: "1"
+    UV_PYTHON_PREFERENCE: only-managed
+  when: daybook_operations_runtime_code_python.rc != 0
+
+- name: code | Find the installed pinned interpreter
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_runtime_uv_bin }}", python, find, --no-project, "{{ daybook_operations_runtime_python_version }}"]
+  register: daybook_operations_runtime_code_python_found
+  changed_when: false
+  environment: *daybook_operations_runtime_code_uv_env
+
+- name: code | Remove an environment built on another interpreter
+  ansible.builtin.file:
+    path: "{{ daybook_operations_runtime_install_root }}/daybook/.venv"
+    state: absent
+  # uv replaces an environment on another working interpreter itself, but aborts
+  # on one whose interpreter cannot start; the environment holds no state.
+  when: daybook_operations_runtime_code_interpreter_drift | bool
 
 - name: code | Synchronize the locked environment
   ansible.builtin.command:
@@ -156,6 +223,23 @@
     chdir: "{{ daybook_operations_runtime_install_root }}/daybook"
   register: daybook_operations_runtime_code_sync
   changed_when: "'Installed' in daybook_operations_runtime_code_sync.stderr or 'Uninstalled' in daybook_operations_runtime_code_sync.stderr"
-  environment:
-    UV_NO_PROGRESS: "1"
-  when: daybook_operations_runtime_code_sync_check.rc == 1
+  environment: *daybook_operations_runtime_code_uv_env
+  when: daybook_operations_runtime_code_env_changes | bool
+
+- name: code | Read the synchronized environment's interpreter home
+  ansible.builtin.slurp:
+    src: "{{ daybook_operations_runtime_install_root }}/daybook/.venv/pyvenv.cfg"
+  register: daybook_operations_runtime_code_venv_cfg_synced
+
+- name: code | Require the environment to run exactly the pinned interpreter
+  ansible.builtin.assert:
+    that:
+      - >-
+        (daybook_operations_runtime_code_venv_cfg_synced.content | b64decode
+         | regex_search('(?m)^home = (.*)$', '\\1') | default([''], true) | first | trim)
+        == (daybook_operations_runtime_code_python_found.stdout | trim | dirname)
+      - daybook_operations_runtime_code_python_found.stdout | trim is search(
+          '/cpython-' ~ (daybook_operations_runtime_python_version | regex_escape) ~ '-[^/]+/bin/python[0-9.]*$')
+    fail_msg: >-
+      The environment is not built on the exact pinned interpreter
+      {{ daybook_operations_runtime_python_version }}.

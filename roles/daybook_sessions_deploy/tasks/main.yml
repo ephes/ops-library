@@ -572,6 +572,29 @@
     - daybook_sessions_enabled | bool
     - daybook_sessions_repo_update | bool
 
+# uv replaces an environment on another working interpreter itself, but aborts
+# on one whose interpreter cannot start -- what a vanished base Python leaves.
+- name: runtime | Probe the existing environment's interpreter
+  ansible.builtin.command:
+    argv: ["{{ daybook_sessions_checkout_path }}/.venv/bin/python", -I, -c, ""]
+  register: daybook_sessions_venv_probe
+  changed_when: false
+  failed_when: false
+  become: "{{ ansible_user_id != daybook_sessions_service_user }}"
+  become_user: "{{ daybook_sessions_service_user }}"
+  when:
+    - daybook_sessions_enabled | bool
+
+- name: runtime | Remove an environment whose interpreter cannot start
+  ansible.builtin.file:
+    path: "{{ daybook_sessions_checkout_path }}/.venv"
+    state: absent
+  become: "{{ ansible_user_id != daybook_sessions_service_user }}"
+  become_user: "{{ daybook_sessions_service_user }}"
+  when:
+    - daybook_sessions_enabled | bool
+    - daybook_sessions_venv_probe.rc | default(0) != 0
+
 - name: runtime | Sync Daybook dependencies with uv
   ansible.builtin.command:
     argv: "{{ [daybook_sessions_uv_bin] + daybook_sessions_uv_sync_args }}"
@@ -579,6 +602,7 @@
   environment:
     PATH: "{{ daybook_sessions_launchd_path }}"
     UV_PROJECT_ENVIRONMENT: "{{ daybook_sessions_checkout_path }}/.venv"
+    UV_PYTHON_PREFERENCE: only-managed
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
   become: "{{ ansible_user_id != daybook_sessions_service_user }}"
   become_user: "{{ daybook_sessions_service_user }}"
@@ -591,6 +615,25 @@
     or 'Uninstalled' in ((daybook_sessions_uv_sync.stdout | default('')) ~ (daybook_sessions_uv_sync.stderr | default('')))
     or 'Built' in ((daybook_sessions_uv_sync.stdout | default('')) ~ (daybook_sessions_uv_sync.stderr | default('')))
   when: daybook_sessions_enabled | bool
+
+- name: runtime | Require the environment to run exactly the pinned Python
+  ansible.builtin.command:
+    argv:
+      - "{{ daybook_sessions_checkout_path }}/.venv/bin/python"
+      - -I
+      - -c
+      - >-
+        import sys;
+        v = '%d.%d.%d' % sys.version_info[:3];
+        raise SystemExit(0 if v == sys.argv[1] and '/uv/python/cpython-' + v + '-' in sys.base_prefix
+        else 'runs %s from %s' % (v, sys.base_prefix))
+      - "{{ daybook_sessions_python_version }}"
+  become: "{{ ansible_user_id != daybook_sessions_service_user }}"
+  become_user: "{{ daybook_sessions_service_user }}"
+  changed_when: false
+  when:
+    - daybook_sessions_enabled | bool
+    - not ansible_check_mode
 
 - name: runtime | Probe archive quote classifier command
   ansible.builtin.shell:

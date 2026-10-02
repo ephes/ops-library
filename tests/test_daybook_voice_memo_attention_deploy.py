@@ -203,7 +203,36 @@ class AttentionRoleTests(unittest.TestCase):
         private = next(t for t in tasks if t['name'] == 'Install disabled private attention configuration')
         self.assertTrue(private['no_log'])
         self.assertEqual(private['ansible.builtin.copy']['mode'], '0600')
-        self.assertNotIn('state: absent', (ROLE / 'tasks/main.yml').read_text())
+        # The only removal is an environment built on another interpreter; it
+        # holds no state and is rebuilt (and the wheel reinstalled) at once.
+        removals = [t for t in tasks
+                    if t.get('ansible.builtin.file', {}).get('state') == 'absent']
+        self.assertEqual([t['name'] for t in removals],
+                         ['Remove an attention environment built on another interpreter'])
+        self.assertEqual(removals[0]['ansible.builtin.file']['path'],
+                         '{{ daybook_voice_memo_attention_venv }}')
+
+    def test_environment_is_built_on_an_exact_uv_managed_python(self):
+        text = (ROLE / 'tasks/main.yml').read_text()
+        defaults = (ROLE / 'defaults/main.yml').read_text()
+        self.assertNotIn('homebrew/bin/python', text + defaults)
+        self.assertIn('daybook_voice_memo_attention_python_version: "3.14.7"', defaults)
+        tasks = yaml.safe_load(text)
+        names = [t['name'] for t in tasks]
+        order = ['Install the pinned Daybook Python for attention',
+                 'Find the pinned Daybook Python for attention',
+                 'Require a root-owned pinned Daybook Python for attention',
+                 'Remove an attention environment built on another interpreter',
+                 'Create separate attention virtual environment',
+                 'Require the attention environment to be built on the pinned Python',
+                 'Install provided Daybook wheel into attention environment']
+        self.assertEqual([names.index(n) for n in order],
+                         sorted(names.index(n) for n in order))
+        create = tasks[names.index('Create separate attention virtual environment')]
+        self.assertIn('{{ daybook_voice_memo_attention_python_version }}',
+                      create['ansible.builtin.command']['argv'])
+        self.assertEqual(create['environment']['UV_PYTHON_PREFERENCE'], 'only-managed')
+        self.assertEqual(create['environment']['UV_PYTHON_DOWNLOADS'], 'never')
 
     def test_launchctl_probes_do_not_log_private_environment(self):
         for role in (ROLE, REMOVE):

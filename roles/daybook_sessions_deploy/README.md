@@ -141,6 +141,11 @@ ownership, and non-empty unmarked profiles. Never configure or copy a normal
 Helium/Chromium user-data directory. A fresh empty dedicated profile is
 sufficient for public X pages that do not require authentication.
 
+The environment is built on a uv-managed CPython of exactly
+`daybook_sessions_python_version` (`UV_PYTHON_PREFERENCE=only-managed`, never
+Homebrew's Python); deployment asserts it runs exactly that version from a
+uv-managed prefix.
+
 `uv sync --frozen` installs the Python Playwright dependency from `uv.lock` with
 `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`. Daybook launches the configured Helium
 binary, so this role does not install Playwright's bundled Chromium.

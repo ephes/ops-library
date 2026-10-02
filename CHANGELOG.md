@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased — Daybook on a pinned uv-managed Python (2.25.0)
+
+- No Daybook role builds on Homebrew's Python any more. A `brew upgrade` whose
+  cleanup deleted the framework the Voice Memo importer's copied interpreter
+  linked to stopped every scheduled Studio run. `daybook_voice_memo_inbox_deploy`
+  and `daybook_voice_memo_attention_deploy` now install a uv-managed CPython of
+  exactly `*_python_version` (`3.14.7`) as root into the root-owned
+  `/Library/Application Support/Daybook/python`, assert the binary is root-owned
+  and not group- or world-writable, and replace `*_python_source` (removed).
+  `daybook_operations_runtime_deploy` (its own code path, as on Atlas),
+  `daybook_photos_offload_deploy`, `daybook_photos_archive_sync_deploy` and
+  `daybook_sessions_deploy` pin the same exact patch with
+  `UV_PYTHON_PREFERENCE=only-managed`.
+- Interpreters are requested by version, never by path: a venv created from a
+  path records uv's movable minor-version link as its home. Every role asserts
+  after the sync that the environment runs exactly the pinned version.
+- An environment built on another interpreter is removed and rebuilt (uv aborts
+  on one whose interpreter cannot start); the photos-offload, photos-archive-sync
+  and sessions roles remove an environment whose interpreter does not start. In the runtime role this counts as an
+  environment change and is refused while a supervisor may run it, because
+  `uv sync --check` answers 0 while it would replace such an environment.
+- The importer README now records that the scheduled path reads Voice Memos
+  through the capability host's Full Disk Access grant (`mode: host`); the
+  interpreter's own grant matters only for its direct label and first
+  activation.
+
 ## Unreleased — USB offsite rotation (2.24.0)
 
 - `zfs_usb_replication` can rotate several offsite drives that share one pool

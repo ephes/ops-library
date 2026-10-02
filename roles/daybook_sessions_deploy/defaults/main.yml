@@ -26,7 +26,9 @@ daybook_sessions_state_path: "{{ daybook_sessions_service_home }}/.daybook/sessi
 
 daybook_sessions_uv_install_dir: "/usr/local/bin"
 daybook_sessions_uv_bin: "{{ daybook_sessions_uv_install_dir }}/uv"
-daybook_sessions_python_version: "3.14"
+# The exact patch of the uv-managed CPython the environment is built on, never
+# a system or Homebrew Python (`UV_PYTHON_PREFERENCE=only-managed` on the sync).
+daybook_sessions_python_version: "3.14.7"
 daybook_sessions_uv_sync_args:
   - sync
   - --frozen

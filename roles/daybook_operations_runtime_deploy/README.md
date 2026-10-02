@@ -109,6 +109,21 @@ while the label is loaded running `serve` or `host-keep`, **and** while any
 boot out the keeper, send SIGTERM to the supervisor so owned work finishes and
 persists its receipt, wait for it to exit, then transition.
 
+**The interpreter, where this role installs the code** (Atlas). The
+environment is built on a uv-managed CPython of exactly
+`daybook_operations_runtime_python_version`, requested by version with
+`UV_PYTHON_PREFERENCE=only-managed` -- never a system or Homebrew Python, and
+never by path, which would make the venv record uv's movable minor-version link
+as its home. The role reads the environment's `pyvenv.cfg` home and treats any
+other interpreter as an environment change: `uv sync --check` answers 0 while it
+would replace such an environment, so without this the change would be skipped.
+Like any environment change it is refused while a supervisor may run the code;
+with the supervisor stopped the role installs the pinned patch (which moves
+uv's minor-version link for this user), removes the old environment, syncs, and
+asserts the home is the exact patch directory. On Studio the importer role owns
+the interpreter (its root-owned tree under `/Library/Application
+Support/Daybook/python`).
+
 **A machine whose label never ran anything** (Atlas: its old jobs were other
 labels, retired by their own roles). `cutover` saves no original command, because
 there is none; `rollback` then leaves the label with no command at all, and
@@ -174,7 +189,7 @@ daybook_operations_runtime_host_application: Ghostty
 # revision -- on Studio the Voice Memo importer role does that.
 daybook_operations_runtime_code_bundle_src: ""
 daybook_operations_runtime_uv_bin: /opt/homebrew/bin/uv
-daybook_operations_runtime_python_version: "3.14"
+daybook_operations_runtime_python_version: "3.14.7"
 # The pool. `long` is how many workers long work may occupy at once, and it must
 # leave at least one it cannot take: that is the guarantee the separate long
 # thread used to give, now as a number. The client refuses a profile that breaks it.

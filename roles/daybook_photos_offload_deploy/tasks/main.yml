@@ -1545,6 +1545,62 @@
       not ansible_check_mode
       or (daybook_photos_offload_checkout_before.stat.isdir | default(false))
 
+# uv replaces an environment on another working interpreter itself, but aborts
+# on one whose interpreter cannot start -- what a vanished base Python leaves.
+# The environment directory sits in the root-owned checkout, so root empties it
+# by removing and recreating it exactly as created above; a fresh, still empty
+# environment has no interpreter to probe and is left alone.
+- name: runtime | Inspect the existing environment's interpreter
+  ansible.builtin.stat:
+    path: "{{ daybook_photos_offload_venv_path }}/bin/python"
+    follow: false
+    get_checksum: false
+  register: daybook_photos_offload_venv_python
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
+
+- name: runtime | Probe the existing environment's interpreter
+  ansible.builtin.command:
+    argv: ["{{ daybook_photos_offload_venv_path }}/bin/python", -I, -c, ""]
+  register: daybook_photos_offload_venv_probe
+  changed_when: false
+  failed_when: false
+  become: true
+  become_user: "{{ daybook_photos_offload_service_user }}"
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
+    - daybook_photos_offload_venv_python.stat.exists | default(false)
+
+- name: runtime | Remove an environment whose interpreter cannot start
+  ansible.builtin.file:
+    path: "{{ daybook_photos_offload_venv_path }}"
+    state: absent
+  become: true
+  become_user: root
+  register: daybook_photos_offload_venv_removed
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
+    - daybook_photos_offload_venv_python.stat.exists | default(false)
+    - daybook_photos_offload_venv_probe.rc | default(0) != 0
+
+- name: runtime | Recreate the emptied Photos offload environment directory
+  ansible.builtin.file:
+    path: "{{ daybook_photos_offload_venv_path }}"
+    state: directory
+    owner: "{{ daybook_photos_offload_service_user }}"
+    group: "{{ daybook_photos_offload_service_group }}"
+    mode: "0700"
+    follow: false
+  become: true
+  become_user: root
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
+    - daybook_photos_offload_venv_removed is changed
+
 - name: runtime | Synchronize pinned Daybook runtime in an empty environment
   ansible.builtin.command:
     argv:
@@ -1555,6 +1611,7 @@
       - "LOGNAME={{ daybook_photos_offload_service_user }}"
       - "PATH={{ daybook_photos_offload_path }}"
       - UV_PROJECT_ENVIRONMENT=.venv
+      - UV_PYTHON_PREFERENCE=only-managed
       - "{{ daybook_photos_offload_uv_bin }}"
       - sync
       - --frozen
@@ -1574,6 +1631,25 @@
     - >-
       not ansible_check_mode
       or (daybook_photos_offload_venv_before.stat.isdir | default(false))
+
+- name: runtime | Require the environment to run exactly the pinned Python
+  ansible.builtin.command:
+    argv:
+      - "{{ daybook_photos_offload_venv_path }}/bin/python"
+      - -I
+      - -c
+      - >-
+        import sys;
+        v = '%d.%d.%d' % sys.version_info[:3];
+        raise SystemExit(0 if v == sys.argv[1] and '/uv/python/cpython-' + v + '-' in sys.base_prefix
+        else 'runs %s from %s' % (v, sys.base_prefix))
+      - "{{ daybook_photos_offload_python_version }}"
+  become: true
+  become_user: "{{ daybook_photos_offload_service_user }}"
+  changed_when: false
+  when:
+    - daybook_photos_offload_enabled | bool
+    - not ansible_check_mode
 
 - name: runtime | Inspect dedicated Photos offload environment
   ansible.builtin.stat:

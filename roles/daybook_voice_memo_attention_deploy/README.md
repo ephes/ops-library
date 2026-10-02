@@ -9,8 +9,14 @@ send a notification, or touch the independent voice-memo importer.
 ## Requirements
 
 - macOS with the selected non-root owner logged into an Aqua GUI session.
-- Root/become deployment privileges, `/opt/homebrew/bin/uv`, and
-  `/opt/homebrew/bin/python3.14` already installed.
+- Root/become deployment privileges and `/opt/homebrew/bin/uv` installed. The
+  environment is built on a uv-managed CPython of exactly `python_version`,
+  which the role installs as root into the root-owned
+  `/Library/Application Support/Daybook/python` (shared with the importer),
+  never on Homebrew's Python. It finds the interpreter by version so the
+  environment records the exact patch directory, removes an environment whose
+  `pyvenv.cfg` home is any other directory (which also reinstalls the wheel),
+  and asserts the home after creating it.
 - A controller-local `daybook-*.whl` wheel containing `daybook.attention`. Build and
   validate it in the application repo before deploying. The role installs the
   supplied wheel with its declared dependencies into a separate virtual
@@ -44,7 +50,8 @@ separate from Git checkouts, the synced vault, and importer state.
 | `install_root` | `/Library/Application Support/Daybook/voice-memo-attention` |
 | `venv` | `<install_root>/venv` |
 | `uv_bin` | `/opt/homebrew/bin/uv` |
-| `python_source` | `/opt/homebrew/bin/python3.14` |
+| `python_version` | `3.14.7`; exact patch, must be in the deploy-time uv's catalog |
+| `python_install_dir` | `/Library/Application Support/Daybook/python` (pinned, root-owned) |
 | `runtime_dir` | `<service_home>/.local/state/daybook/voice-memo-attention` (0700) |
 | `config_path` | `<runtime_dir>/config.json` (0600) |
 | `config` | `{}`; required mapping described below |

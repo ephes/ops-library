@@ -72,24 +72,37 @@ all environment-specific or secret values use rejected `CHANGEME` placeholders.
   They never appear in the plist, command arguments, policy, or logs.
 - The per-user LaunchAgent plist is installed only in the configured Voice
   Memos owner's `~/Library/LaunchAgents`; other console users never load it.
+- The interpreter is a uv-managed CPython of exactly
+  `daybook_voice_memo_inbox_python_version`, installed by root with
+  `uv python install --no-bin` into the root-owned tree
+  `/Library/Application Support/Daybook/python`. Homebrew never touches it: a
+  `brew upgrade` whose cleanup deleted the framework the former Homebrew copy
+  linked to once stopped every scheduled run. The role installs and finds the
+  interpreter by version, never by path (a venv created from a path records
+  uv's movable minor-version link as its home), asserts the found binary is a
+  regular root-owned file nobody else can write, removes an environment whose
+  `pyvenv.cfg` home is any other directory (uv aborts on one whose interpreter
+  cannot start), and after the sync asserts the home is the exact patch
+  directory. The version must be one the deploy-time uv can download; the role
+  fails before changing the runtime otherwise.
 - The scheduled executable is a root-owned, mode-0755 regular interpreter
-  inside the protected checkout, not a symlink to a user- or cache-managed
-  runtime. It is copied from the pinned Homebrew interpreter, staged
-  root-owned before it becomes live, re-copied when its checksum no longer
-  matches that source, and every deployment asserts the checksum equality.
-  It runs with Python isolated mode (`-I`) from a pinned root-owned working
-  directory, so GUI-domain `PYTHON*` variables and cwd injection cannot add
-  executable code. Grant Full Disk Access only to that exact executable.
-  When the interpreter is re-copied because the pinned Homebrew source
-  changed (for example after a `python3.14` upgrade), its code identity
-  changes and macOS silently invalidates the existing grant even though the
-  System Settings entry remains: remove and re-grant Full Disk Access for
-  `<checkout>/.venv/bin/python` before the next activation, otherwise every
-  scan reports `source_unavailable`.
-- The Homebrew prefix owner is inside the trust boundary: the role copies
-  whatever the pinned `/opt/homebrew/bin/python3.14` resolves to and can
-  detect drift from that source but not substitution of it. On a single-user
-  Studio the Homebrew owner and the service user are the same principal.
+  inside the protected checkout, not a symlink. It is copied from the pinned
+  interpreter (the standalone build is self-contained), staged root-owned
+  before it becomes live, re-copied when its checksum no longer matches that
+  source, and every deployment asserts the checksum equality and that it runs
+  exactly the pinned version from the pinned prefix. It runs with Python
+  isolated mode (`-I`) from a pinned root-owned working directory, so
+  GUI-domain `PYTHON*` variables and cwd injection cannot add executable code.
+- Full Disk Access. The scheduled path does not depend on this interpreter's
+  grant: the operations runtime runs the supervisor in `mode: host`, inside the
+  Ghostty-born capability host, and its tasks inherit Ghostty's grant (see
+  `daybook_operations_runtime_deploy`). The interpreter's own grant matters only
+  where it is started outside the host -- this role's own label when
+  activated directly, and the first-activation initialization through
+  `launchctl asuser`. For those paths grant Full Disk Access to
+  `<checkout>/.venv/bin/python`; when it is re-copied (a version bump) its code
+  identity changes and macOS silently invalidates that grant even though the
+  System Settings entry remains, so remove and re-grant it before using them.
 - Every deployment proves the protected checkout is clean (`git status
   --porcelain` empty, `.venv` and caches are ignored) before the runtime is
   synchronized. A modified or foreign file inside the checkout fails the
@@ -114,24 +127,21 @@ all environment-specific or secret values use rejected `CHANGEME` placeholders.
   rejected by the subsequent fetch, which runs after the old checkout was
   removed, so a failed upgrade fetch leaves no runtime until the next
   successful deployment (the ledger, markers, and credentials are unaffected;
-  re-grant Full Disk Access after the interpreter is recreated). If
+  re-grant the interpreter's Full Disk Access if a direct path needs it). If
   `/usr/bin/git` cannot read the revision, the role fails closed rather than
-  deleting the checkout together with the interpreter that holds the Full Disk
-  Access grant. `/usr/bin/git` is validated with the other executables.
+  deleting the checkout together with its protected interpreter. `/usr/bin/git` is validated with the other executables.
 - After the first successful scan, loss of the separate root-owned activation
   marker is a hard error; the importer will not reinterpret the ledger as a new
   first activation. The role also refuses a surviving proof marker without the
   corresponding activation marker instead of re-baselining.
 
-The protected Python interpreter needs Full Disk Access in System Settings for
-the Voice Memos group container. The role cannot grant or modify TCC access.
-Every deployment first disables and proves the label unloaded before replacing
-that interpreter, so the FDA identity cannot change beneath a running process.
-Deployments require the configured service user's Aqua login domain to be
-active; logging out safely pauses ingestion, but deployment must wait for the
-next login. The venv is built from the pinned Homebrew framework interpreter at
-`/opt/homebrew/bin/python3.14`, whose copied executable keeps an absolute
-framework linkage; uv-managed standalone interpreters are not supported.
+Reading the Voice Memos group container needs Full Disk Access; on the
+scheduled path it is the capability host's (above). The role cannot grant or
+modify TCC access. Every deployment first disables and proves the label unloaded
+before replacing the interpreter or its environment, so neither changes beneath
+a running process. Deployments require the configured service user's Aqua login
+domain to be active; logging out safely pauses ingestion, but deployment must
+wait for the next login.
 
 `daybook_voice_memo_inbox_enabled: false` makes the role skip every task; it
 does not disable, unload, or remove an existing installation. The only
@@ -181,7 +191,8 @@ model, and language/prompt values remain bounded operational configuration.
 | `daybook_voice_memo_inbox_request_timeout_seconds` | `100` (must be `> 0` and `< 300`) |
 | `daybook_voice_memo_inbox_ffprobe_path` | `/opt/homebrew/bin/ffprobe` |
 | `daybook_voice_memo_inbox_ffmpeg_path` | `/opt/homebrew/bin/ffmpeg` |
-| `daybook_voice_memo_inbox_python_source` | `/opt/homebrew/bin/python3.14` |
+| `daybook_voice_memo_inbox_python_version` | `3.14.7` (exact patch; must be in the deploy-time uv's catalog) |
+| `daybook_voice_memo_inbox_python_install_dir` | `/Library/Application Support/Daybook/python` (pinned, root-owned) |
 | `daybook_voice_memo_inbox_voxhelm_endpoint` | `http://127.0.0.1:8787/v1/audio/transcriptions` |
 | `daybook_voice_memo_inbox_model` | `gpt-4o-mini-transcribe` |
 | `daybook_voice_memo_inbox_prefix` | `Inbox/Voice Memos` |

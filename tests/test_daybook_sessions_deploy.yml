@@ -109,6 +109,8 @@
           - daybook_sessions_launchd_scope == "system"
           - daybook_sessions_path == "s3://agent-sessions"
           - daybook_sessions_schedule_interval_seconds == 1800
+          - daybook_sessions_python_version == "3.14.7"
+          - daybook_sessions_uv_sync_args[-1] == daybook_sessions_python_version
           - "'trufflehog' in daybook_sessions_brew_packages"
           - daybook_sessions_aws_access_key_id == "CHANGEME"
           - daybook_sessions_aws_secret_access_key == "CHANGEME"

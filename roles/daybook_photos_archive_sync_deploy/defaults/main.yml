@@ -18,7 +18,9 @@ daybook_photos_archive_sync_uv_bin: "/opt/homebrew/bin/uv"
 daybook_photos_archive_sync_timeout_bin: "/opt/homebrew/bin/timeout"
 daybook_photos_archive_sync_timeout_seconds: 5400
 daybook_photos_archive_sync_photos_access_timeout_seconds: 15
-daybook_photos_archive_sync_python_version: "3.14"
+# The exact patch of the uv-managed CPython the environment is built on, never
+# a system or Homebrew Python (`UV_PYTHON_PREFERENCE=only-managed` on the sync).
+daybook_photos_archive_sync_python_version: "3.14.7"
 daybook_photos_archive_sync_path: "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 daybook_photos_archive_sync_library_path: "{{ daybook_photos_archive_sync_service_home }}/Pictures/Photos Library.photoslibrary"

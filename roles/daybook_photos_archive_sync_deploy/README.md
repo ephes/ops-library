@@ -31,6 +31,12 @@ at one exact 40-character commit. A dirty managed checkout is rejected.
 An interrupted first `--no-checkout` clone has no Git index; the next deploy
 recognizes that role-created state, resumes the exact fetch/checkout, and then
 applies the normal clean-tree assertion.
+- The environment is built on a uv-managed CPython of exactly
+  `daybook_photos_archive_sync_python_version` (`UV_PYTHON_PREFERENCE=only-managed`,
+  never Homebrew's Python); an environment whose interpreter does not start is
+  removed and rebuilt, and deployment asserts the running version. A version
+  bump changes the interpreter the launchd job runs, so its Full Disk Access
+  must be re-granted after the deploy.
 - A GNU `timeout` watchdog terminates runs before the next two-hour interval.
 - A short same-runtime preflight opens one byte of `Photos.sqlite` before the
   full run. `daybook_photos_archive_sync_photos_access_timeout_seconds`

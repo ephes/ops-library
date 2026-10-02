@@ -61,8 +61,11 @@ environment on every run, then invokes
 Python with a fixed root-owned `src` import path and environment inheritance
 disabled. Deployment uses `uv sync --frozen --no-install-project`: dependencies
 are locked in the owner-only environment without asking the service user to
-write editable-install metadata into the protected source checkout. Bytecode
-writes into that checkout are disabled. All launcher, Git, uv, and Daybook
+write editable-install metadata into the protected source checkout. The
+environment is built on a uv-managed CPython of exactly
+`daybook_photos_offload_python_version` (`UV_PYTHON_PREFERENCE=only-managed`,
+never Homebrew's Python), and deployment asserts it runs exactly that version
+from a uv-managed prefix. Bytecode writes into that checkout are disabled. All launcher, Git, uv, and Daybook
 diagnostics are suppressed; a failed run emits one stable generic error.
 Scheduled output therefore contains only status,
 `state_changed`, and aggregate counts, or that generic failure—no Photos UUIDs,

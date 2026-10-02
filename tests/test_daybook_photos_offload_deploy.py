@@ -9,6 +9,35 @@ class DaybookPhotosOffloadDeployTests(unittest.TestCase):
     def text(self, relative: str) -> str:
         return (ROOT / relative).read_text(encoding="utf-8")
 
+    def test_environment_runs_an_exact_uv_managed_python(self):
+        defaults = self.text("roles/daybook_photos_offload_deploy/defaults/main.yml")
+        tasks = self.text("roles/daybook_photos_offload_deploy/tasks/main.yml")
+        self.assertIn('daybook_photos_offload_python_version: "3.14.7"', defaults)
+        sync = tasks.split("- name: runtime | Synchronize pinned Daybook runtime", 1)[1]
+        sync = sync.split("- name:", 1)[0]
+        self.assertIn("- UV_PYTHON_PREFERENCE=only-managed", sync)
+        self.assertLess(
+            tasks.index("- name: runtime | Remove an environment whose interpreter cannot start"),
+            tasks.index("- name: runtime | Recreate the emptied Photos offload environment directory"),
+        )
+        self.assertLess(
+            tasks.index("- name: runtime | Recreate the emptied Photos offload environment directory"),
+            tasks.index("- name: runtime | Synchronize pinned Daybook runtime"),
+        )
+        # The checkout is root-owned: the service user could not unlink .venv.
+        removal = tasks.split("- name: runtime | Remove an environment whose interpreter cannot start", 1)[1]
+        removal = removal.split("- name:", 1)[0]
+        self.assertIn("become_user: root", removal)
+        self.assertIn("daybook_photos_offload_venv_python.stat.exists", removal)
+        recreate = tasks.split("- name: runtime | Recreate the emptied Photos offload environment directory", 1)[1]
+        recreate = recreate.split("- name:", 1)[0]
+        self.assertIn('mode: "0700"', recreate)
+        self.assertIn('owner: "{{ daybook_photos_offload_service_user }}"', recreate)
+        self.assertLess(
+            tasks.index("- name: runtime | Synchronize pinned Daybook runtime"),
+            tasks.index("- name: runtime | Require the environment to run exactly the pinned Python"),
+        )
+
     def test_role_is_quiesce_first_and_user_scoped(self):
         defaults = self.text(
             "roles/daybook_photos_offload_deploy/defaults/main.yml"

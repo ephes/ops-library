@@ -298,6 +298,27 @@
   changed_when: false
   when: daybook_photos_archive_sync_enabled | bool
 
+# uv replaces an environment on another working interpreter itself, but aborts
+# on one whose interpreter cannot start -- what a vanished base Python leaves.
+- name: runtime | Probe the existing environment's interpreter
+  ansible.builtin.command:
+    argv: ["{{ daybook_photos_archive_sync_venv_path }}/bin/python", -I, -c, ""]
+  register: daybook_photos_archive_sync_venv_probe
+  changed_when: false
+  failed_when: false
+  when:
+    - daybook_photos_archive_sync_enabled | bool
+    - not ansible_check_mode
+
+- name: runtime | Remove an environment whose interpreter cannot start
+  ansible.builtin.file:
+    path: "{{ daybook_photos_archive_sync_venv_path }}"
+    state: absent
+  when:
+    - daybook_photos_archive_sync_enabled | bool
+    - not ansible_check_mode
+    - daybook_photos_archive_sync_venv_probe.rc | default(0) != 0
+
 - name: runtime | Synchronize pinned Daybook runtime
   ansible.builtin.command:
     argv:
@@ -312,6 +333,24 @@
   environment:
     HOME: "{{ daybook_photos_archive_sync_service_home }}"
     PATH: "{{ daybook_photos_archive_sync_path }}"
+    UV_PYTHON_PREFERENCE: only-managed
+  changed_when: false
+  when:
+    - daybook_photos_archive_sync_enabled | bool
+    - not ansible_check_mode
+
+- name: runtime | Require the environment to run exactly the pinned Python
+  ansible.builtin.command:
+    argv:
+      - "{{ daybook_photos_archive_sync_venv_path }}/bin/python"
+      - -I
+      - -c
+      - >-
+        import sys;
+        v = '%d.%d.%d' % sys.version_info[:3];
+        raise SystemExit(0 if v == sys.argv[1] and '/uv/python/cpython-' + v + '-' in sys.base_prefix
+        else 'runs %s from %s' % (v, sys.base_prefix))
+      - "{{ daybook_photos_archive_sync_python_version }}"
   changed_when: false
   when:
     - daybook_photos_archive_sync_enabled | bool

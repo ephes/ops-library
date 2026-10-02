@@ -162,3 +162,25 @@ def test_managed_path_overrides_use_actual_ansible_validation(tmp_path, variable
     else:
         assert result.returncode != 0, result.stdout
         assert "Nikon archive synchronization needs an exact Daybook" in result.stdout or "Nikon archive synchronization paths" in result.stdout, result.stdout + result.stderr
+
+
+def test_environment_runs_an_exact_uv_managed_python_and_survives_a_broken_one() -> None:
+    defaults = _text("roles/daybook_photos_archive_sync_deploy/defaults/main.yml")
+    tasks = yaml.safe_load(_text("roles/daybook_photos_archive_sync_deploy/tasks/main.yml"))
+    names = [task["name"] for task in tasks]
+    assert 'daybook_photos_archive_sync_python_version: "3.14.7"' in defaults
+    order = [
+        "runtime | Probe the existing environment's interpreter",
+        "runtime | Remove an environment whose interpreter cannot start",
+        "runtime | Synchronize pinned Daybook runtime",
+        "runtime | Require the environment to run exactly the pinned Python",
+    ]
+    positions = [names.index(name) for name in order]
+    assert positions == sorted(positions)
+    sync = tasks[positions[2]]
+    assert sync["environment"]["UV_PYTHON_PREFERENCE"] == "only-managed"
+    removal = tasks[positions[1]]
+    assert removal["ansible.builtin.file"] == {
+        "path": "{{ daybook_photos_archive_sync_venv_path }}",
+        "state": "absent",
+    }

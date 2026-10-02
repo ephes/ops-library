@@ -818,5 +818,38 @@ class RuntimeCodeReplacementTests(unittest.TestCase):
         self.assertLess(refuse, sync)
         self.assertEqual(tasks[refuse]["ansible.builtin.assert"]["that"],
                          ["not (daybook_operations_runtime_code_in_use | bool)"])
-        self.assertEqual(tasks[refuse]["when"], "daybook_operations_runtime_code_sync_check.rc == 1")
-        self.assertEqual(tasks[sync]["when"], "daybook_operations_runtime_code_sync_check.rc == 1")
+        self.assertEqual(tasks[refuse]["when"], "daybook_operations_runtime_code_env_changes | bool")
+        self.assertEqual(tasks[sync]["when"], "daybook_operations_runtime_code_env_changes | bool")
+        changes = tasks[names.index("code | Decide whether the environment must change")]
+        decided = changes["ansible.builtin.set_fact"]["daybook_operations_runtime_code_env_changes"]
+        self.assertIn("daybook_operations_runtime_code_interpreter_drift | bool", decided)
+        self.assertIn("daybook_operations_runtime_code_sync_check.rc | default(0) == 1", decided)
+        # Installing a patch moves uv's minor-version link; it happens only after
+        # the refusal, i.e. with the supervisor stopped.
+        self.assertLess(refuse, names.index("code | Install the pinned interpreter"))
+        self.assertLess(refuse, names.index("code | Remove an environment built on another interpreter"))
+
+    def test_the_environment_runs_exactly_the_pinned_uv_managed_interpreter(self):
+        # `uv sync --check` answers 0 while it would replace an environment built
+        # on another interpreter, so that drift is read from pyvenv.cfg instead.
+        tasks = yaml.safe_load(self.text(self.ROLE, "tasks/code.yml"))
+        names = [t["name"] for t in tasks]
+        defaults = self.text(self.ROLE, "defaults/main.yml")
+        self.assertIn('daybook_operations_runtime_python_version: "3.14.7"', defaults)
+        find = tasks[names.index("code | Find the pinned interpreter")]
+        self.assertEqual(find["environment"]["UV_PYTHON_PREFERENCE"], "only-managed")
+        self.assertEqual(find["environment"]["UV_PYTHON_DOWNLOADS"], "never")
+        self.assertLess(names.index("code | Decide whether the environment is built on another interpreter"),
+                        names.index("code | Refuse to change an environment a supervisor may be running"))
+        for name in ("code | Ask whether the environment already matches the lock",
+                     "code | Synchronize the locked environment"):
+            task = tasks[names.index(name)]
+            argv = task["ansible.builtin.command"]["argv"]
+            # By version, never by path: a path request records the minor link.
+            self.assertEqual(argv[argv.index("--python") + 1],
+                             "{{ daybook_operations_runtime_python_version }}")
+            self.assertEqual(task["environment"]["UV_PYTHON_PREFERENCE"], "only-managed")
+        remove = tasks[names.index("code | Remove an environment built on another interpreter")]
+        self.assertEqual(remove["when"], "daybook_operations_runtime_code_interpreter_drift | bool")
+        self.assertTrue(remove["ansible.builtin.file"]["path"].endswith("/daybook/.venv"))
+        self.assertEqual(names[-1], "code | Require the environment to run exactly the pinned interpreter")
