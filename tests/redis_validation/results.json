@@ -1,0 +1,43 @@
+{
+  "build_seconds": 0.071,
+  "checks": {
+    "baseline_service": {
+      "seconds": 2.495,
+      "rc": 0,
+      "changed": 5
+    },
+    "old_no_listener": {
+      "rc": 1,
+      "diagnosis": "Configured to not listen anywhere, exiting."
+    },
+    "valid_validation": {
+      "seconds": 2.162,
+      "rc": 0,
+      "changed": 0
+    },
+    "valid_change_restart": {
+      "seconds": 2.609,
+      "rc": 0,
+      "changed": 2
+    },
+    "invalid_validation": {
+      "seconds": 1.333,
+      "rc": 2,
+      "changed": null
+    },
+    "corrected_recovery": {
+      "seconds": 2.627,
+      "rc": 0,
+      "changed": 2
+    },
+    "validated_noop": {
+      "seconds": 2.081,
+      "rc": 0,
+      "changed": 0
+    }
+  },
+  "package": "5:7.0.15-1~deb12u10",
+  "real_systemd_pid1": true,
+  "invalid_preserved_running_service": true,
+  "no_leftover_validator_process": true
+}

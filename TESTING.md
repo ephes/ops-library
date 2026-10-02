@@ -144,3 +144,13 @@ The Traefik Linux transaction integration also exercises pre-enrollment ownershi
 repair and inactive linked-service retirement against real systemd. It checks
 preserved proxy PID/data/middleware and refuses active services, route drift,
 invalid candidates, changed middleware, unresolved journals and enrollment.
+
+## Redis optional validator regression
+
+The opt-in [Redis validation fixture](tests/redis_validation/README.md) diagnoses
+the old no-listener failure and tests actual valid/invalid configuration handling
+with Redis, Ansible and systemd in a disposable local Docker Linux VM. Run
+`python3 tests/redis_validation/run.py` from the repository root; see its README
+for privilege/isolation boundaries and runner safety checks. It is separate from
+the default contributor suite and needs macOS Docker plus image-build network
+access.

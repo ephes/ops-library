@@ -40,10 +40,18 @@ See `defaults/main.yml` for the full list. Key options:
 | `redis_install_loglevel` | `notice` | Redis log level |
 | `redis_install_log_dir` | `/var/log/redis` | Log directory |
 | `redis_install_logfile` | `/var/log/redis/redis-server.log` | Log destination |
-| `redis_install_validate_config` | `false` | Start a short-lived Redis instance (port 0, temp dir) to validate config syntax |
+| `redis_install_validate_config` | `false` | Start a short-lived Redis instance with TCP disabled and a private temporary Unix socket to validate config syntax |
 | `redis_install_validate_dir` | `/tmp/redis-config-test` | Temp directory for config validation |
 
-> Tip: enable `redis_install_validate_config: true` in production to catch syntax errors **before** the service restarts. When enabled, the deploy will stop if validation fails so Redis keeps running with the previous config.
+Validation uses a mode-0700 temporary subdirectory beneath
+`redis_install_validate_dir`, with an isolated Unix socket and no TCP listener.
+The validator disables systemd supervision, signals its process, polls for termination, escalates to SIGKILL if needed, and
+removes its socket, pidfile, log and temporary subdirectory on success or failure.
+The parent directory may remain empty. Choose a short validation path to stay
+within the platform Unix socket path limit. Logs are temporary and are not dumped
+into Ansible output because configuration diagnostics may contain secrets.
+
+> Tip: enable `redis_install_validate_config: true` in production to catch syntax errors **before** the service restarts. When enabled, the deploy stops if validation fails, keeping the running Redis process on its previous configuration. The newly rendered configuration remains on disk; correct it and rerun before a later service restart.
 
 ## Examples
 
@@ -113,5 +121,5 @@ ss -lntp | grep 6379
 | Issue | Steps |
 |-------|-------|
 | `redis-cli ping` fails | `journalctl -u redis-server -n 50`, ensure `bind` list matches interfaces |
-| Config validation fails | Check the validation log under `redis_install_validate_dir` (default: `/tmp/redis-config-test/redis-config-test.log`) |
+| Config validation fails | Check syntax in the desired configuration and rerun after correcting it; temporary validator logs are removed on exit |
 | Service fails to start after applying template | Verify `redis_install_maxmemory` format (e.g., `256mb`), confirm `redis_install_password` set when auth enabled |

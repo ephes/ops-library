@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — Redis optional config validation (2.25.1)
+
+- Fix `redis_install_validate_config=true` rejecting valid Redis configurations
+  because port 0 with no Unix socket provides no listener. Validation now uses a
+  private temporary Unix socket, disables supervision, and cleans up its process
+  and artifacts. Invalid configuration still stops before service restart; the
+  rendered file remains on disk and must be corrected before a later restart.
+
 ## Unreleased — Daybook on a pinned uv-managed Python (2.25.0)
 
 - No Daybook role builds on Homebrew's Python any more. A `brew upgrade` whose
