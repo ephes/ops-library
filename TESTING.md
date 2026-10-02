@@ -154,3 +154,14 @@ Run `python3 experiments/pyinfra_authorized_keys/run.py` from the repository roo
 This is separate from the default contributor suite and requires Docker plus
 network access for the image build. See the experiment's evidence for its narrow
 file-state contract and the limits on extrapolating to production roles.
+
+## Disposable Redis package/service comparison
+
+The optional [Redis comparison](experiments/pyinfra_redis/README.md) runs real apt,
+Redis and systemd PID1 in separate disposable privileged containers inside a local
+macOS Docker Linux VM. Run `python3 experiments/pyinfra_redis/run.py`; native Linux
+hosts and remote Docker transports are refused. It uses a staged public-file
+allowlist, no production inventories/secrets, no host cgroup namespace/mount and
+no published ports. See the evidence for scope, failure semantics and privilege
+limitations. Safety checks: `python3 -m unittest discover -s
+experiments/pyinfra_redis -p 'test_*.py'` (one line).

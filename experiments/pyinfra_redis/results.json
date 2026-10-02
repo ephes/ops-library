@@ -1,0 +1,274 @@
+{
+  "build_seconds": 0.074,
+  "engines": {
+    "ansible": {
+      "scenarios": {
+        "first": {
+          "successful_operations": [],
+          "seconds": 2.552,
+          "changed": 5,
+          "returncode": 0
+        },
+        "noop": {
+          "successful_operations": [],
+          "seconds": 1.777,
+          "changed": 0,
+          "returncode": 0
+        },
+        "service_drift_repair": {
+          "successful_operations": [],
+          "seconds": 2.004,
+          "changed": 1,
+          "returncode": 0
+        },
+        "config_restart": {
+          "successful_operations": [],
+          "seconds": 2.09,
+          "changed": 2,
+          "returncode": 0
+        },
+        "drift_repair": {
+          "successful_operations": [],
+          "seconds": 2.169,
+          "changed": 5,
+          "returncode": 0
+        },
+        "optional_validation_failure": {
+          "successful_operations": [],
+          "seconds": 6.498,
+          "changed": null,
+          "returncode": 2
+        },
+        "optional_validation_recovery": {
+          "successful_operations": [],
+          "seconds": 1.82,
+          "changed": 0,
+          "returncode": 0
+        },
+        "invalid_config_restart_failure": {
+          "successful_operations": [],
+          "seconds": 1.687,
+          "changed": null,
+          "returncode": 2
+        },
+        "invalid_config_recovery": {
+          "successful_operations": [],
+          "seconds": 2.112,
+          "changed": 2,
+          "returncode": 0
+        },
+        "restart_failure": {
+          "successful_operations": [],
+          "seconds": 1.789,
+          "changed": null,
+          "returncode": 2
+        },
+        "restart_recovery": {
+          "successful_operations": [],
+          "seconds": 1.952,
+          "changed": 1,
+          "returncode": 0
+        },
+        "final_noop": {
+          "successful_operations": [],
+          "seconds": 1.853,
+          "changed": 0,
+          "returncode": 0
+        }
+      },
+      "final_state": {
+        "directories": {
+          "/etc/redis": {
+            "mode": 493,
+            "uid": 0,
+            "gid": 0
+          },
+          "/var/log/redis": {
+            "mode": 493,
+            "uid": 101,
+            "gid": 102
+          },
+          "/var/lib/redis": {
+            "mode": 488,
+            "uid": 101,
+            "gid": 102
+          }
+        },
+        "active": "active",
+        "enabled": "enabled",
+        "ping": "PONG",
+        "memory": "50331648",
+        "config": "# Managed by Ansible (redis_install role)\n\nport 6379\ntcp-backlog 511\ntimeout 0\ntcp-keepalive 300\n\nbind 127.0.0.1\n\nprotected-mode yes\ndaemonize no\nsupervised systemd\ndatabases 16\n\n# requirepass disabled\n\ndir /var/lib/redis\n\nmaxmemory 48mb\nmaxmemory-policy noeviction\n\nsave \"\"\n\nappendonly no\nappendfilename \"appendonly.aof\"\nappendfsync everysec\n\nloglevel notice\nlogfile \"/var/log/redis/redis-server.log\"\nstop-writes-on-bgsave-error yes\n",
+        "mode": 420,
+        "uid": 0,
+        "gid": 0,
+        "package": "5:7.0.15-1~deb12u10"
+      },
+      "real_systemd_pid1": true,
+      "package_absent_before_first": true,
+      "noop_pid_stable": true
+    },
+    "pyinfra": {
+      "scenarios": {
+        "first": {
+          "successful_operations": [
+            "apt.packages (packages=['redis-server', 'redis-tools'], update=True)",
+            "files.directory (path=/var/log/redis, user=redis, group=redis, mode=755)",
+            "files.directory (path=/etc/redis, user=root, group=root, mode=755)",
+            "server.shell (commands=chmod 00755 /var/log/redis)",
+            "server.shell (commands=chmod 00755 /etc/redis)",
+            "files.put (src=StringIO(hash=93632ad5a14b350a1c703ac62176922a471b1bdd), dest=/etc/redis/redis.conf, user=root, group=root, mode=644)",
+            "systemd.service (service=redis-server, restarted=True)",
+            "server.shell (commands=redis-cli -p 6379 PING)"
+          ],
+          "seconds": 0.71,
+          "changed": 8,
+          "returncode": 0
+        },
+        "noop": {
+          "successful_operations": [
+            "apt.packages (packages=['redis-server', 'redis-tools'], update=True)",
+            "server.shell (commands=redis-cli -p 6379 PING)"
+          ],
+          "seconds": 0.236,
+          "changed": 2,
+          "returncode": 0
+        },
+        "service_drift_repair": {
+          "successful_operations": [
+            "apt.packages (packages=['redis-server', 'redis-tools'], update=True)",
+            "systemd.service (service=redis-server, enabled=True, running=True)",
+            "server.shell (commands=redis-cli -p 6379 PING)"
+          ],
+          "seconds": 0.43,
+          "changed": 3,
+          "returncode": 0
+        },
+        "config_restart": {
+          "successful_operations": [
+            "apt.packages (packages=['redis-server', 'redis-tools'], update=True)",
+            "files.put (src=StringIO(hash=6dda9c388ce26734e79700f504bf0ae45a436149), dest=/etc/redis/redis.conf, user=root, group=root, mode=644)",
+            "systemd.service (service=redis-server, restarted=True)",
+            "server.shell (commands=redis-cli -p 6379 PING)"
+          ],
+          "seconds": 0.404,
+          "changed": 4,
+          "returncode": 0
+        },
+        "drift_repair": {
+          "successful_operations": [
+            "apt.packages (packages=['redis-server', 'redis-tools'], update=True)",
+            "files.directory (path=/var/lib/redis, user=redis, group=redis, mode=750)",
+            "files.directory (path=/var/log/redis, user=redis, group=redis, mode=755)",
+            "files.directory (path=/etc/redis, user=root, group=root, mode=755)",
+            "server.shell (commands=chmod 00750 /var/lib/redis)",
+            "server.shell (commands=chmod 00755 /var/log/redis)",
+            "server.shell (commands=chmod 00755 /etc/redis)",
+            "files.put (src=StringIO(hash=6dda9c388ce26734e79700f504bf0ae45a436149), dest=/etc/redis/redis.conf, user=root, group=root, mode=644)",
+            "systemd.service (service=redis-server, restarted=True)",
+            "server.shell (commands=redis-cli -p 6379 PING)"
+          ],
+          "seconds": 0.333,
+          "changed": 10,
+          "returncode": 0
+        },
+        "optional_validation_failure": {
+          "successful_operations": [
+            "apt.packages (packages=['redis-server', 'redis-tools'], update=True)"
+          ],
+          "seconds": 5.441,
+          "changed": null,
+          "returncode": 1
+        },
+        "optional_validation_recovery": {
+          "successful_operations": [
+            "apt.packages (packages=['redis-server', 'redis-tools'], update=True)",
+            "server.shell (commands=redis-cli -p 6379 PING)"
+          ],
+          "seconds": 0.249,
+          "changed": 2,
+          "returncode": 0
+        },
+        "invalid_config_restart_failure": {
+          "successful_operations": [
+            "apt.packages (packages=['redis-server', 'redis-tools'], update=True)",
+            "files.put (src=StringIO(hash=e19917269752237e6173b190d5ca76ea027025f3), dest=/etc/redis/redis.conf, user=root, group=root, mode=644)"
+          ],
+          "seconds": 0.337,
+          "changed": null,
+          "returncode": 1
+        },
+        "invalid_config_recovery": {
+          "successful_operations": [
+            "apt.packages (packages=['redis-server', 'redis-tools'], update=True)",
+            "files.put (src=StringIO(hash=6dda9c388ce26734e79700f504bf0ae45a436149), dest=/etc/redis/redis.conf, user=root, group=root, mode=644)",
+            "systemd.service (service=redis-server, restarted=True)",
+            "server.shell (commands=redis-cli -p 6379 PING)"
+          ],
+          "seconds": 0.286,
+          "changed": 4,
+          "returncode": 0
+        },
+        "restart_failure": {
+          "successful_operations": [
+            "apt.packages (packages=['redis-server', 'redis-tools'], update=True)",
+            "files.put (src=StringIO(hash=b7865db507158f62a3c77507cd3bb6d3e5df21df), dest=/etc/redis/redis.conf, user=root, group=root, mode=644)"
+          ],
+          "seconds": 0.365,
+          "changed": null,
+          "returncode": 1
+        },
+        "restart_recovery": {
+          "successful_operations": [
+            "apt.packages (packages=['redis-server', 'redis-tools'], update=True)",
+            "systemd.service (service=redis-server, enabled=True, running=True)",
+            "server.shell (commands=redis-cli -p 6379 PING)"
+          ],
+          "seconds": 0.305,
+          "changed": 3,
+          "returncode": 0
+        },
+        "final_noop": {
+          "successful_operations": [
+            "apt.packages (packages=['redis-server', 'redis-tools'], update=True)",
+            "server.shell (commands=redis-cli -p 6379 PING)"
+          ],
+          "seconds": 0.252,
+          "changed": 2,
+          "returncode": 0
+        }
+      },
+      "final_state": {
+        "directories": {
+          "/etc/redis": {
+            "mode": 493,
+            "uid": 0,
+            "gid": 0
+          },
+          "/var/log/redis": {
+            "mode": 493,
+            "uid": 101,
+            "gid": 102
+          },
+          "/var/lib/redis": {
+            "mode": 488,
+            "uid": 101,
+            "gid": 102
+          }
+        },
+        "active": "active",
+        "enabled": "enabled",
+        "ping": "PONG",
+        "memory": "50331648",
+        "config": "# Managed by Ansible (redis_install role)\n\nport 6379\ntcp-backlog 511\ntimeout 0\ntcp-keepalive 300\n\nbind 127.0.0.1\n\nprotected-mode yes\ndaemonize no\nsupervised systemd\ndatabases 16\n\n# requirepass disabled\n\ndir /var/lib/redis\n\nmaxmemory 48mb\nmaxmemory-policy noeviction\n\nsave \"\"\n\nappendonly no\nappendfilename \"appendonly.aof\"\nappendfsync everysec\n\nloglevel notice\nlogfile \"/var/log/redis/redis-server.log\"\nstop-writes-on-bgsave-error yes\n",
+        "mode": 420,
+        "uid": 0,
+        "gid": 0,
+        "package": "5:7.0.15-1~deb12u10"
+      },
+      "real_systemd_pid1": true,
+      "package_absent_before_first": true,
+      "noop_pid_stable": true
+    }
+  }
+}

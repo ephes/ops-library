@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — disposable Redis package/service economics trial
+
+- Add a contrasting opt-in Pyinfra/unchanged-Ansible Redis comparison with real
+  apt installation, systemd lifecycle, restart/drift/failure recovery and measured
+  evidence in isolated local-VM containers. No production role/workflow changes
+  or collection version bump.
+
 ## Unreleased — disposable Pyinfra economics trial
 
 - Add an opt-in Docker comparison of the unchanged `ssh_authorized_keys_manage`
