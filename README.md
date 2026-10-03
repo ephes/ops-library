@@ -6,6 +6,11 @@ A collection of reusable Ansible roles for homelab automation and service deploy
 
 Reusable collection filters are documented in the [filter reference](./docs/source/zfs_size_filter.md).
 
+## Offline preparation
+
+The [synthetic company viewer package](docs/source/howto/opaq_offline_viewer.md)
+prepares hash-pinned offline Opaq HTML/configuration without deployment or data access.
+
 ## Quick Start
 
 ```bash

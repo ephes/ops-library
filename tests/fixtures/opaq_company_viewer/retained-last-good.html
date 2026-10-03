@@ -1,0 +1,77 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Opaq — fictional accepted store cash</title><style>body{font:16px system-ui;color:#172534;background:#f5f7fb;max-width:1080px;margin:32px auto;padding:0 20px}h1{font-size:2.2rem}a{color:#075985}section,aside,details{background:white;padding:20px;margin:18px 0;border-radius:12px}aside{border-left:5px solid #ca8a04}.metrics{display:flex;gap:32px;flex-wrap:wrap}.metrics strong{display:block;font-size:1.7rem}label{display:inline-block;margin:10px 20px 10px 0}input,select{display:block;font:inherit;padding:8px;max-width:180px}svg{width:100%;height:auto;min-width:650px}.chart-scroll{overflow:auto}table{border-collapse:collapse;width:100%}td,th{padding:10px;text-align:left;border-bottom:1px solid #ddd}.scroll{overflow:auto}.legend{display:flex;gap:20px;flex-wrap:wrap}#error{color:#9f1239}summary{cursor:pointer;font-weight:600}</style></head><body><h1>Opaq company cashflow — synthetic store proof</h1><aside><strong>All figures are fictional. SYNTHETIC ONLY.</strong> No real Opaq data or source applications.</aside><aside>Latest recorded import attempt: <strong>held-conflict</strong>. An existing source identity changed; revision held.</aside><p><strong>Retained last-good accepted snapshot.</strong> Latest rejected input does not change the observed history or forecast anchor.</p><p>Accepted observed cash: <strong>€1,100.00 as of 2026-09-30</strong>; snapshot revision 1. Collection age and bank refresh: unknown. Forecasts begin after this anchor; all future values are fictional assumptions.</p><section><h2>Twelve-month cash balance</h2><p class="legend"><span style="color:#64748b">Dashed: fixed baseline</span><span style="color:#0369a1">Blue: editable scenario</span></p><div class="chart-scroll" tabindex="0" aria-label="Cash balance chart; scroll horizontally on narrow screens"><svg id="balance-chart" viewBox="0 0 720 290" role="img"></svg></div><div class="metrics" aria-live="polite"><div>Scenario ending cash<strong id="ending"></strong></div><div>Minimum cash / first date<strong id="minimum"></strong></div><div>First cash shortfall<strong id="shortfall"></strong></div><div>Baseline ending cash<strong id="baseline-end"></strong></div></div><p>First shortfall means the first dated cash event strictly below €0; exactly €0 is not a shortfall. Charts scroll horizontally on narrow screens; exact values are available in the expandable table. The line shows monthly endings. Minimum cash includes the opening anchor and every dated event, and can fall below the monthly line.</p></section><section id="assumptions"><h2>Edit fictional future assumptions</h2><p>EUR amounts repeat monthly: customer inflow on the 5th, payroll on the 25th, operating outflow on the last calendar day. Unknown tax commitments, total employer costs, loans, investment, fees and interest are gaps in this model, not zero amounts. Payroll is a configurable cash assumption, not calculation of obligations.</p><label>Monthly inflow<input id="inflow" inputmode="decimal" value="8000.00"></label><label>Monthly payroll outflow<input id="payroll" inputmode="decimal" value="4500.00"></label><label>Monthly operating outflow<input id="operating" inputmode="decimal" value="500.00"></label><label>Months without inflow<select id="delay"><option value="0">No delay</option><option value="1">1 month</option><option value="2">2 months</option><option value="3">3 months</option></select></label><p>Delay suppresses inflows for the first selected months; no catch-up is assumed. Updates are immediate and are not saved after reload.</p><p id="error" role="alert"></p></section><section><h2>Monthly inflows and outflows</h2><p class="legend"><span style="color:#15803d">Green: inflow</span><span style="color:#a21caf">Purple: payroll</span><span style="color:#c2410c">Orange: operating</span></p><div class="chart-scroll" tabindex="0" aria-label="Monthly flow chart; scroll horizontally on narrow screens"><svg id="flow-chart" viewBox="0 0 720 290" role="img"></svg></div></section><details><summary>Accessible exact-value monthly table</summary><div class="scroll"><table><caption>Fictional projections, EUR</caption><thead><tr><th>Month</th><th>Inflow</th><th>Payroll</th><th>Operating</th><th>Baseline ending</th><th>Scenario ending</th></tr></thead><tbody id="monthly"></tbody></table></div></details><details><summary>Accepted period, snapshot provenance and observed history</summary><section><h2>Accepted observed company cash</h2><p><strong>Retained last-good accepted snapshot.</strong> Latest rejected input does not change the observed history or forecast anchor.</p><p>Period: 2026-09-01 to 2026-09-30 inclusive. As of 2026-09-30: <strong>€1,100.00</strong>.</p><p>Statement verified against independent fictional movements and exact balances. This is bank verification, separate from receipts (unassociated).</p><p>Snapshot revision: 1. SHA-256: <code style="overflow-wrap:anywhere">1549049727f6b6fcf605d0a5380159b3264baf3a032584963e961b77db129a8f</code>.</p><p>Collection timestamp: unknown. Bank refresh time: unknown. Freshness age: unknown. A recorded synthetic export is not evidence of a current bank connection; rendering does not refresh it.</p><p>Evidence SHA-256 (export, independent statement):</p><ul><li><code style="overflow-wrap:anywhere">407f318a51d8a9432432f96fa470e91b97f7255ce8e7cf5b35ebdd41a007b6cd</code></li><li><code style="overflow-wrap:anywhere">81a5e97652b90417ef8841231fcd9b2f8c025f0d4a1da5333c44544934c5a1c4</code></li></ul></section><section><h2>Observed synthetic booked history</h2><p>Opening €1,000.00; closing €1,100.00. Pending movements are excluded.</p><div class="scroll"><table><thead><tr><th>Date</th><th>Opaque event ID</th><th>Signed EUR</th></tr></thead><tbody><tr><td>2026-09-02</td><td style="overflow-wrap:anywhere">2be8baa4914b995af92bb9ca2814e69df56b85efe12adbc477abfd14c937d871</td><td>€100.00</td></tr><tr><td>2026-09-02</td><td style="overflow-wrap:anywhere">2f02e9306c44d56356962acc18873cc88345ee721d7eebddca2d8bdfec6cef2c</td><td>€100.00</td></tr><tr><td>2026-09-03</td><td style="overflow-wrap:anywhere">429d1ead377e1434b5700a0fe2c16c14858fb6d51bce9898aee6172d05d72bd6</td><td>−€100.00</td></tr></tbody></table></div></section><section><h2>Separate fictional forecast revisions</h2><p>Baseline synthetic-baseline-v1; initial scenario synthetic-scenario-v1. Both pin snapshot revision 1 / <code style="overflow-wrap:anywhere">1549049727f6b6fcf605d0a5380159b3264baf3a032584963e961b77db129a8f</code>. Forecasts begin after 2026-09-30. They are assumptions, not observed cash, invoices, tax or payroll obligations. Edits are unsaved what-if values and cannot change history, baseline or the immutable anchor.</p></section></details><noscript>Interactive forecasts require JavaScript; accepted cash remains visible.</noscript><script>const DATA = {"schema": "opaq.synthetic.store-forecast.v1", "synthetic": true, "company": "synthetic-opaq", "account": "synthetic-company-bank", "currency": "EUR", "anchorHash": "1549049727f6b6fcf605d0a5380159b3264baf3a032584963e961b77db129a8f", "anchorVersion": 1, "anchorDate": "2026-09-30", "horizonMonths": 12, "baselineRevision": "synthetic-baseline-v1", "scenarioRevision": "synthetic-scenario-v1", "author": "synthetic-fixture", "rationale": "Fictional recurring assumptions; no obligations inferred.", "baseline": {"inflow": "8000.00", "payroll": "4500.00", "operating": "500.00", "delay": 0}, "scenario": {"inflow": "8000.00", "payroll": "4500.00", "operating": "500.00", "delay": 2}, "paymentDays": {"inflow": 5, "payroll": 25, "operating": "month-end"}, "anchorCents": "110000", "months": ["2026-10", "2026-11", "2026-12", "2027-01", "2027-02", "2027-03", "2027-04", "2027-05", "2027-06", "2027-07", "2027-08", "2027-09"]};
+/* Fictional planning in integer cents. SVG coordinates alone use floating point. */
+function cents(value) {
+  if (!/^\d{1,12}(?:\.\d{1,2})?$/.test(value)) throw Error('Use a non-negative EUR amount with at most two decimals.');
+  const [whole, fraction = ''] = value.split('.');
+  return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
+}
+function euros(value) {
+  const sign = value < 0n ? '−' : ''; const n = value < 0n ? -value : value;
+  return sign + '€' + (n / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + '.' + (n % 100n).toString().padStart(2, '0');
+}
+function deepFreeze(object) {
+  Object.values(object).forEach(value => {if (value && typeof value === 'object') deepFreeze(value);});
+  return Object.freeze(object);
+}
+deepFreeze(DATA);
+function assumptions(source) {
+  if (!Number.isInteger(source.delay) || source.delay < 0 || source.delay > 3) throw Error('Choose 0–3 months without inflow.');
+  return {inflow:cents(source.inflow), payroll:cents(source.payroll), operating:cents(source.operating), delay:source.delay};
+}
+function forecast(config) {
+  for (const key of ['inflow','payroll','operating']) if (typeof config[key] !== 'bigint' || config[key] < 0n) throw Error('Invalid cash assumption.');
+  if (!Number.isInteger(config.delay) || config.delay < 0 || config.delay > 3) throw Error('Invalid inflow delay.');
+  let balance = BigInt(DATA.anchorCents), minimum = balance, minimumDate = DATA.anchorDate;
+  const months = [], events = [];
+  let firstShortfallDate = balance < 0n ? DATA.anchorDate : null;
+  for (let i = 0; i < 12; i++) {
+    const prefix = DATA.months[i];
+    const [year, month] = prefix.split('-').map(Number);
+    const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const inflow = i < config.delay ? 0n : config.inflow;
+    const entries = [{date: prefix + '-05', label: 'Customer inflow assumption', amount: inflow},
+      {date: prefix + '-25', label: 'Payroll cash assumption', amount: -config.payroll},
+      {date: prefix + '-' + last, label: 'Operating cash assumption', amount: -config.operating}];
+    for (const event of entries) { balance += event.amount; events.push({...event, balance}); if (firstShortfallDate === null && balance < 0n) firstShortfallDate = event.date; if (balance < minimum) { minimum = balance; minimumDate = event.date; } }
+    months.push({date: prefix, inflow, payroll: config.payroll, operating: config.operating, balance});
+  }
+  return {months, events, balance, minimum, minimumDate, firstShortfallDate};
+}
+function svgChart(target, title, description, series, bars = false) {
+  const ns = 'http://www.w3.org/2000/svg', svg = document.getElementById(target); svg.replaceChildren();
+  function add(tag, attrs, content) { const el = document.createElementNS(ns, tag); for (const [k,v] of Object.entries(attrs)) el.setAttribute(k, v); if (content !== undefined) el.textContent = content; svg.append(el); return el; }
+  add('title', {id: target + '-title'}, title); add('desc', {id: target + '-desc'}, description);
+  svg.setAttribute('aria-labelledby', target + '-title ' + target + '-desc');
+  const values = series.flatMap(s => s.values.map(Number)); const low = Math.min(0, ...values), high = Math.max(0, ...values);
+  const range = Math.max(10000, high - low), min = low - range * .12, max = high + range * .12;
+  const y = v => 235 - (Number(v) - min) / (max - min) * 200, x = i => 78 + i * 53;
+  add('line', {x1: 64, x2: 700, y1: y(0), y2: y(0), stroke: '#475569', 'stroke-width': 2});
+  add('text', {x: 5, y: y(0) - 6, fill: '#334155', 'font-size': 12}, '€0');
+  add('text', {x: 5, y: 24, fill: '#334155', 'font-size': 11}, euros(BigInt(Math.round(max))));
+  add('text', {x: 5, y: 253, fill: '#334155', 'font-size': 11}, euros(BigInt(Math.round(min))));
+  series.forEach((s, index) => {
+    if (bars) s.values.forEach((v,i) => { const rect = add('rect', {x: x(i) + index * 12 - 15, y: Math.min(y(v), y(0)), width: 10, height: Math.max(.5, Math.abs(y(v) - y(0))), fill: s.color}); const t = document.createElementNS(ns,'title'); t.textContent = DATA.months[i] + ' ' + s.name + ': ' + euros(v); rect.append(t); });
+    else { add('polyline', {points: s.values.map((v,i) => `${x(i)},${y(v)}`).join(' '), fill: 'none', stroke: s.color, 'stroke-width': 3, ...(index === 0 ? {'stroke-dasharray':'7 4'} : {})}); s.values.forEach((v,i) => {const c = add('circle', {cx:x(i), cy:y(v), r:4, fill:s.color});const t = document.createElementNS(ns,'title'); t.textContent=DATA.months[i]+' '+s.name+': '+euros(v); c.append(t);}); }
+  });
+  DATA.months.forEach((m,i) => add('text', {x:x(i), y:277, 'text-anchor':'middle', 'font-size':11, fill:'#334155'}, m.slice(5) + '/' + m.slice(2,4)));
+}
+function update() {
+  try {
+    const config = {inflow:cents(document.getElementById('inflow').value), payroll:cents(document.getElementById('payroll').value), operating:cents(document.getElementById('operating').value), delay:Number(document.getElementById('delay').value)};
+    const baseline = forecast(assumptions(DATA.baseline)), scenario = forecast(config);
+    document.getElementById('error').textContent='';
+    document.getElementById('ending').textContent=euros(scenario.balance);
+    document.getElementById('minimum').textContent=euros(scenario.minimum) + ' on ' + scenario.minimumDate;
+    document.getElementById('baseline-end').textContent=euros(baseline.balance);
+    document.getElementById('shortfall').textContent=scenario.firstShortfallDate || 'None within modeled horizon';
+    svgChart('balance-chart','Twelve month cash balance: fixed baseline and editable scenario','Monthly ending balances; zero line shown. Intra-month minimum is reported separately. Exact values in the table.', [{name:'Baseline',color:'#64748b',values:baseline.months.map(m=>m.balance)}, {name:'Scenario',color:'#0369a1',values:scenario.months.map(m=>m.balance)}]);
+    svgChart('flow-chart','Monthly assumed inflows and cash outflows','Inflows above zero; payroll and operating outflows below zero. These are fictional assumptions.', [{name:'Inflows',color:'#15803d',values:scenario.months.map(m=>m.inflow)}, {name:'Payroll',color:'#a21caf',values:scenario.months.map(m=>-m.payroll)}, {name:'Operating',color:'#c2410c',values:scenario.months.map(m=>-m.operating)}],true);
+    const body=document.getElementById('monthly');body.replaceChildren(); scenario.months.forEach((m,i)=>{const tr=document.createElement('tr'); [m.date,euros(m.inflow),euros(-m.payroll),euros(-m.operating),euros(baseline.months[i].balance),euros(m.balance)].forEach(v=>{const td=document.createElement('td');td.textContent=v;tr.append(td);});body.append(tr);});
+  } catch (e) {document.getElementById('error').textContent=e.message + ' Charts retain the last valid assumptions.';}
+}
+if (typeof document !== 'undefined') {
+  for (const key of ['inflow','payroll','operating','delay']) document.getElementById(key).value = DATA.scenario[key];
+  document.querySelectorAll('#assumptions input,#assumptions select').forEach(el=>el.addEventListener('input',update));
+  update();
+}
+</script></body></html>
