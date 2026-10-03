@@ -1,0 +1,2 @@
+---
+# The bounded engine manages only its own systemd unit; no proxy restart handler.

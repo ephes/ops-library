@@ -13,6 +13,7 @@ roles/index
 howto/service_lifecycle
 howto/opaq_offline_viewer
 releases/opaq_offline_viewer
+releases/opaq_viewer_installer
 howto/paperless_scanner
 howto/traefik_wildcard
 howto/otbr_zbt2

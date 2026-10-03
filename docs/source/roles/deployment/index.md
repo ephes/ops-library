@@ -48,6 +48,7 @@ mastodon_deploy
 mastodon_shared
 snappymail_deploy
 static_site_deploy
+opaq_company_viewer_deploy
 takahe_deploy
 takahe_shared
 mail_backend_deploy

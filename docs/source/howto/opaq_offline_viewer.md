@@ -66,6 +66,10 @@ logging is disabled; global proxy configuration is outside this offline bundle.
 
 ## Narrow later rollout and rollback
 
+The [synthetic viewer lifecycle role](../roles/deployment/opaq_company_viewer_deploy.md)
+now provides bounded install/verify/rollback logic; it does not enroll a target
+or activate the disabled FastDeploy registration draft.
+
 These are operator steps for a **separately authorized synthetic deployment**,
 not commands to run as part of preparing the bundle:
 
@@ -90,8 +94,8 @@ not commands to run as part of preparing the bundle:
    DB/evidence, manifest, auth file or status directory is served.
 5. Roll back by disabling the new route, stopping only this viewer, and restoring
    its previous verified code/config/content as a whole. Revalidate and restore
-   the route. First-install rollback removes only explicitly owned files/account
-   after checking ownership; no global proxy restart/removal or state deletion.
+   the route. The lifecycle role removes only explicitly owned files on first
+   rollback and retains its dedicated system identity; no global proxy restart/removal or state deletion.
 
 Data ingestion is a separate company producer capability on Atlas, not code CI,
 FastDeploy or a second macmini scheduler. No delivery/import endpoint is added.

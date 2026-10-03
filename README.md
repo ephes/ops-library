@@ -158,6 +158,7 @@ consumer repos depend on.
 | Service deployment | [`mailgun_relay_deploy`](roles/mailgun_relay_deploy/README.md) | Deploy the mailgun-relay FastAPI service (Mailgun-API-compatible HTTP→SMTP adapter for django-anymail clients). |
 | Service deployment | [`mailgun_relay_ingress_deploy`](roles/mailgun_relay_ingress_deploy/README.md) | Render Traefik dynamic config exposing mailgun-relay behind HTTPS. |
 | Service deployment | [`snappymail_deploy`](roles/snappymail_deploy/README.md) | Deploy SnappyMail webmail via PHP-FPM + nginx with Traefik exposure and IMAP/SMTP defaults. |
+| Service deployment | [`opaq_company_viewer_deploy`](roles/opaq_company_viewer_deploy/README.md) | Install, verify and roll back the exact synthetic company viewer; no enrollment or credentials. |
 | Service deployment | [`static_site_deploy`](roles/static_site_deploy/README.md) | Publish a generated static site through a read-only loopback service and Traefik. |
 | Service deployment | [`takahe_deploy`](roles/takahe_deploy/README.md) | Deploy Takahe with systemd, nginx cache/accel proxying, and Traefik exposure. |
 | Service deployment | [`wagtail_deploy`](roles/wagtail_deploy/README.md) | Deploy Wagtail Django sites with uv, systemd, and Traefik routing. |

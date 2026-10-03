@@ -1,0 +1,13 @@
+---
+galaxy_info:
+  role_name: opaq_company_viewer_deploy
+  author: Jochen Wersdörfer
+  description: Install and recover an exact synthetic company HTML viewer.
+  license: MIT
+  min_ansible_version: "2.20"
+  platforms:
+    - name: Debian
+      versions: [bookworm, trixie]
+    - name: Ubuntu
+      versions: [noble]
+dependencies: []

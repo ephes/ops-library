@@ -1,0 +1,130 @@
+---
+- name: Validate explicit synthetic viewer operation
+  ansible.builtin.assert:
+    that:
+      - not ansible_check_mode
+      - opaq_viewer_action in ['install', 'verify', 'rollback']
+      - opaq_viewer_proxy_group is match('^[a-z_][a-z0-9_-]{0,30}\Z')
+      - opaq_viewer_proxy_group != 'CHANGEME'
+      - opaq_viewer_action != 'install' or opaq_viewer_bundle is match('^/[A-Za-z0-9_./-]+\Z')
+    fail_msg: Explicit private configuration is required; check mode cannot prove recovery.
+
+- name: Admit exact controller bundle before any target transport
+  ansible.builtin.command:
+    argv:
+      - '{{ ansible_playbook_python }}'
+      - '{{ role_path }}/files/installer.py'
+      - --policy
+      - '{{ role_path }}/../../offline/opaq-company-viewer/package.py'
+      - --action
+      - admit
+      - --proxy-group
+      - '{{ opaq_viewer_proxy_group }}'
+      - --bundle
+      - '{{ opaq_viewer_bundle }}'
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  when: opaq_viewer_action == 'install'
+
+- name: Create invocation-owned transport directory
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: opaq-viewer-
+  register: opaq_viewer_transport
+  changed_when: false
+
+- name: Run bounded synthetic viewer lifecycle
+  block:
+    - name: Transport fixed lifecycle engine
+      ansible.builtin.copy:
+        src: installer.py
+        dest: '{{ opaq_viewer_transport.path }}/installer.py'
+        owner: root
+        group: root
+        mode: '0700'
+      changed_when: false
+
+    - name: Transport independently pinned package policy
+      ansible.builtin.copy:
+        src: '{{ role_path }}/../../offline/opaq-company-viewer/package.py'
+        dest: '{{ opaq_viewer_transport.path }}/package.py'
+        owner: root
+        group: root
+        mode: '0600'
+      changed_when: false
+
+    - name: Transport supplied synthetic bundle without filtering extra files
+      ansible.builtin.copy:
+        src: '{{ opaq_viewer_bundle }}/'
+        dest: '{{ opaq_viewer_transport.path }}/bundle/'
+        owner: root
+        group: root
+        mode: '0600'
+        directory_mode: '0700'
+        local_follow: false
+      changed_when: false
+      when: opaq_viewer_action == 'install'
+
+    - name: Admit exact synthetic content and refuse collisions before identity creation
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - '{{ opaq_viewer_transport.path }}/installer.py'
+          - --policy
+          - '{{ opaq_viewer_transport.path }}/package.py'
+          - --action
+          - validate
+          - --proxy-group
+          - '{{ opaq_viewer_proxy_group }}'
+          - --bundle
+          - '{{ opaq_viewer_transport.path }}/bundle'
+      changed_when: false
+      when: opaq_viewer_action == 'install'
+
+    - name: Create dedicated system group
+      ansible.builtin.group:
+        name: opaq-company-viewer
+        system: true
+      when: opaq_viewer_action == 'install'
+
+    - name: Inspect existing dedicated identity without modifying it
+      ansible.builtin.getent:
+        database: passwd
+        key: opaq-company-viewer
+        fail_key: false
+      when: opaq_viewer_action == 'install'
+
+    - name: Create nonlogin identity only when absent
+      ansible.builtin.user:
+        name: opaq-company-viewer
+        group: opaq-company-viewer
+        system: true
+        home: /nonexistent
+        create_home: false
+        shell: /usr/sbin/nologin
+      when:
+        - opaq_viewer_action == 'install'
+        - ansible_facts.getent_passwd['opaq-company-viewer'] is none
+
+    - name: Execute install verification or bounded rollback
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - '{{ opaq_viewer_transport.path }}/installer.py'
+          - --policy
+          - '{{ opaq_viewer_transport.path }}/package.py'
+          - --action
+          - '{{ opaq_viewer_action }}'
+          - --proxy-group
+          - '{{ opaq_viewer_proxy_group }}'
+          - --bundle
+          - '{{ opaq_viewer_transport.path }}/bundle'
+      register: opaq_viewer_result
+      changed_when: (opaq_viewer_result.stdout | from_json).changed | default(false)
+  always:
+    - name: Remove only invocation-owned transport files
+      ansible.builtin.file:
+        path: '{{ opaq_viewer_transport.path }}'
+        state: absent
+      changed_when: false
