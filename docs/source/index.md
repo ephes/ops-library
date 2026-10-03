@@ -12,6 +12,8 @@ zfs_size_filter
 roles/index
 howto/service_lifecycle
 howto/opaq_offline_viewer
+howto/opaq_offline_backup_adapter
+releases/opaq_offline_backup_adapter
 releases/opaq_offline_viewer
 releases/opaq_viewer_installer
 releases/opaq_viewer_runtime
