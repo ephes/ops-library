@@ -14,6 +14,7 @@ howto/service_lifecycle
 howto/opaq_offline_viewer
 releases/opaq_offline_viewer
 releases/opaq_viewer_installer
+releases/opaq_viewer_runtime
 howto/paperless_scanner
 howto/traefik_wildcard
 howto/otbr_zbt2
