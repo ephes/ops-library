@@ -21,7 +21,21 @@ are removed on exit.
 Assertions reproduce the old no-listener failure with a real Redis process and
 retained synthetic logfile, then exercise the changed role: valid validation,
 valid change/restart, invalid configuration rejection preserving running PID and
-PING, corrected recovery, validated no-op and no leftover validator process,
+PING and prior file/metadata/backups, corrected recovery, validated no-op,
+metadata-only repair, check-mode prediction, controlled TERM interruption after
+a real validator instance starts, and no leftover validator process,
 socket, log or temporary subdirectory. The invalid test directive must not appear
 in Ansible output. Authentication is disabled; there are no production inventories,
-secret files or SSH connections. See `EVIDENCE.md` for diagnosis and measured checks.
+secret files or SSH connections. The pass-through interruption wrapper exists
+only inside the disposable guest and calls the actual Redis binary.
+Local rendered-validator regressions also send repeated INT/TERM during EXIT
+cleanup against an owned slow-terminating synthetic process, covering both
+initial success and initial failure, with both shell-directed signals and
+process-group signals sent only to the fixture's own session. These fixtures stay under the checkout
+and work with deep review paths without relaxing the runner safety guards.
+Paused owned `cat`/`rm` wrappers exercise cleanup operations under group signals;
+a permanent removal-failure case checks the three-attempt bound and failure
+status.
+See `EVIDENCE.md` for the historical validator repair and
+[`TRANSACTIONAL_EVIDENCE.md`](TRANSACTIONAL_EVIDENCE.md) for the subsequent
+candidate-install boundary and measured checks.

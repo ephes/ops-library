@@ -51,7 +51,21 @@ The parent directory may remain empty. Choose a short validation path to stay
 within the platform Unix socket path limit. Logs are temporary and are not dumped
 into Ansible output because configuration diagnostics may contain secrets.
 
-> Tip: enable `redis_install_validate_config: true` in production to catch syntax errors **before** the service restarts. When enabled, the deploy stops if validation fails, keeping the running Redis process on its previous configuration. The newly rendered configuration remains on disk; correct it and rerun before a later service restart.
+> Tip: enable `redis_install_validate_config: true` in production to catch syntax errors **before** the service restarts. When enabled, the deploy stops if validation fails, keeping the running Redis process on its previous configuration. The candidate is validated before Ansible atomically replaces the active file, so rejection preserves both the prior on-disk configuration and the running process. Unchanged configurations are still validated without a restart. Validation remains disabled by default; when disabled, configuration is installed directly.
+
+An ephemeral root-owned mode-0700 validator script is removed in an Ansible
+`always` block. Its EXIT/INT/TERM handling removes validation process artifacts. Repeated INT/TERM
+while cleanup is running defer failure exit until process termination and artifact
+removal finish; an interrupted successful validation cannot be installed. PID
+reading uses a shell builtin; artifact removal ignores INT/TERM only in its owned
+subprocess and retries at most three times. Permanent removal failure rejects
+validation with a generic error and may leave artifacts for inspection.
+This is a candidate-install boundary, not a service-restart rollback: after a valid
+file is installed, interruption before the restart handler can leave disk and
+running Redis temporarily different. Abrupt host loss or an unreachable target
+can prevent cleanup; inspect temporary directories and rerun when connectivity
+returns. Check mode predicts the template change without starting the validator
+or creating its script.
 
 ## Examples
 
@@ -121,5 +135,5 @@ ss -lntp | grep 6379
 | Issue | Steps |
 |-------|-------|
 | `redis-cli ping` fails | `journalctl -u redis-server -n 50`, ensure `bind` list matches interfaces |
-| Config validation fails | Check syntax in the desired configuration and rerun after correcting it; temporary validator logs are removed on exit |
+| Config validation fails | Correct the desired variables and rerun; the previous active file is preserved and temporary validator logs are removed on exit |
 | Service fails to start after applying template | Verify `redis_install_maxmemory` format (e.g., `256mb`), confirm `redis_install_password` set when auth enabled |

@@ -1,0 +1,77 @@
+#!/bin/bash
+set -euo pipefail
+validate_root={{ redis_install_validate_dir | quote }}
+mkdir -p "${validate_root}"
+validate_dir=$(mktemp -d "${validate_root}/redis-config.XXXXXX")
+pidfile="${validate_dir}/redis-config-test.pid"
+logfile="${validate_dir}/redis-config-test.log"
+socket="${validate_dir}/v.sock"
+
+cleanup() {
+  cleanup_status=$?
+  # Signals during EXIT cleanup must not exit before polling/removal finish.
+  # Preserve an existing failure; interrupting successful cleanup fails validation.
+  trap 'if [[ "${cleanup_status}" -eq 0 ]]; then cleanup_status=1; fi' INT TERM
+  if [[ -s "${pidfile}" ]]; then
+    pid=""
+    IFS= read -r pid < "${pidfile}" || true
+    if [[ "${pid}" =~ ^[0-9]+$ ]]; then
+      kill "${pid}" 2>/dev/null || true
+      for _ in {1..50}; do
+        kill -0 "${pid}" 2>/dev/null || break
+        # A process-group signal may interrupt sleep; keep cleanup polling.
+        sleep 0.1 || true
+      done
+      if kill -0 "${pid}" 2>/dev/null; then
+        kill -KILL "${pid}" 2>/dev/null || true
+      fi
+    fi
+  fi
+  # Ignore signals in the owned removal subprocess, not in the validator.
+  # Guard failures under errexit and retry only a bounded number of times.
+  for _ in {1..3}; do
+    if (trap '' INT TERM; exec rm -rf -- "${validate_dir}"); then
+      break
+    fi
+  done
+  if [[ -e "${validate_dir}" ]]; then
+    if [[ "${cleanup_status}" -eq 0 ]]; then
+      cleanup_status=1
+    fi
+    echo "Redis validation cleanup failed." >&2
+  fi
+  exit "${cleanup_status}"
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+if ! redis-server "$1" \
+  --port 0 \
+  --unixsocket "${socket}" \
+  --unixsocketperm 700 \
+  --supervised no \
+  --pidfile "${pidfile}" \
+  --logfile "${logfile}" \
+  --dir "${validate_dir}" \
+  --save "" \
+  --appendonly no \
+  --daemonize yes >"${logfile}" 2>&1; then
+  echo "Redis validation rejected the configuration." >&2
+  exit 1
+fi
+
+for _ in {1..50}; do
+  if [[ -s "${pidfile}" && -S "${socket}" ]]; then
+    break
+  fi
+  sleep 0.1
+done
+
+if [[ ! -s "${pidfile}" || ! -S "${socket}" ]]; then
+  echo "Redis validation failed to start test instance." >&2
+  exit 1
+fi
+
+kill -0 "$(cat "${pidfile}")"

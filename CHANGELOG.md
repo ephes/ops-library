@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — Redis candidate configuration installation (2.25.2)
+
+- With `redis_install_validate_config=true`, render Redis configuration into a
+  private candidate, validate it, then atomically install it. Invalid candidates
+  and handled validator interruption preserve the running service, active file,
+  metadata and existing backups. Unchanged candidates are still validated without
+  a restart, and ephemeral candidate/script directories are removed. Check mode
+  predicts changes without starting validation. Validation remains opt-in; this
+  does not roll back a valid installation if a later restart fails. Signals during
+  validator cleanup now defer failure exit until termination and removal finish,
+  including interrupted polling sleeps.
+
 ## Unreleased — Redis optional config validation (2.25.1)
 
 - Fix `redis_install_validate_config=true` rejecting valid Redis configurations

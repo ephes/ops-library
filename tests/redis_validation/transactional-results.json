@@ -1,0 +1,68 @@
+{
+  "build_seconds": 0.076,
+  "checks": {
+    "baseline_service": {
+      "seconds": 2.569,
+      "rc": 0,
+      "changed": 5
+    },
+    "old_no_listener": {
+      "rc": 1,
+      "diagnosis": "Configured to not listen anywhere, exiting."
+    },
+    "valid_validation": {
+      "seconds": 2.711,
+      "rc": 0,
+      "changed": 0
+    },
+    "valid_change_restart": {
+      "seconds": 3.138,
+      "rc": 0,
+      "changed": 2
+    },
+    "invalid_validation": {
+      "seconds": 1.846,
+      "rc": 2,
+      "changed": null
+    },
+    "rejected_retry_valid_noop": {
+      "seconds": 2.699,
+      "rc": 0,
+      "changed": 0
+    },
+    "interrupted_validation": {
+      "seconds": 1.911,
+      "rc": 2
+    },
+    "interrupted_metadata_only": {
+      "seconds": 1.934,
+      "rc": 2
+    },
+    "metadata_only_repair": {
+      "seconds": 3.286,
+      "rc": 0,
+      "changed": 2
+    },
+    "corrected_recovery": {
+      "seconds": 2.947,
+      "rc": 0,
+      "changed": 2
+    },
+    "validated_noop": {
+      "seconds": 2.774,
+      "rc": 0,
+      "changed": 0
+    },
+    "check_mode_prediction": {
+      "seconds": 1.897,
+      "rc": 0,
+      "changed": 2
+    }
+  },
+  "package": "5:7.0.15-1~deb12u10",
+  "real_systemd_pid1": true,
+  "invalid_preserved_running_service": true,
+  "invalid_preserved_disk_config_and_metadata": true,
+  "interrupted_preserved_disk_config_and_service": true,
+  "no_leftover_validator_process": true
+}

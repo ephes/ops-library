@@ -21,6 +21,7 @@ ROLE_FILES = (
     "tasks/service.yml",
     "handlers/main.yml",
     "templates/redis.conf.j2",
+    "templates/validate-config.sh.j2",
 )
 MOUNT_FILES = tuple("roles/redis_install/" + name for name in ROLE_FILES) + (
     "tests/redis_validation/fixture.py",

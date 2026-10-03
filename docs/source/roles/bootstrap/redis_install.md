@@ -63,8 +63,22 @@ subdirectory. The parent directory may remain empty. Raw Redis diagnostics are
 kept in the temporary private log and are not dumped into Ansible output because
 configuration directives may contain secrets.
 
-Validation happens after the desired config is rendered, before restarting the
-service. Invalid configuration stops the deploy and leaves the existing Redis
-process running with its previous configuration, but the invalid rendered file
-remains on disk. Correct it and rerun the role before a later service restart.
-Validation remains disabled by default.
+Validation renders a root-owned mode-0600 candidate in a mode-0700 temporary
+directory and checks it before replacing the active configuration. Only accepted
+candidates are atomically installed, with the existing root:root mode-0644
+permissions and backup behavior. Invalid candidates leave the previous file and
+running Redis process intact. Unchanged candidates are still validated without
+a restart. The ephemeral script and candidate directory are removed in an
+Ansible `always` block, including normal validation failure.
+
+The validator handles INT/TERM by failing and cleaning up. Signals received
+during cleanup defer exit until termination and artifact removal finish, retaining
+a failure status; repeated signals cannot turn cleanup into successful validation.
+PID reading uses a shell builtin, and the owned removal subprocess ignores
+INT/TERM with at most three guarded attempts. Permanent removal failure rejects
+validation and may leave artifacts for inspection. This boundary does
+not roll back a valid configuration if a later service restart fails or execution
+stops between installation and the handler. Abrupt host loss or an unreachable
+target may prevent cleanup. Check mode predicts configuration changes without
+creating the validator or starting Redis. Validation remains disabled by default;
+when disabled, the configuration is installed directly as before.

@@ -1,5 +1,5 @@
 ---
-- name: Ensure Redis data directory exists
+- name: configure | Ensure Redis data directory exists
   ansible.builtin.file:
     path: "{{ redis_install_data_dir }}"
     state: directory
@@ -7,7 +7,7 @@
     group: "{{ redis_install_group }}"
     mode: "0750"
 
-- name: Ensure Redis log directory exists
+- name: configure | Ensure Redis log directory exists
   ansible.builtin.file:
     path: "{{ redis_install_log_dir }}"
     state: directory
@@ -15,7 +15,7 @@
     group: "{{ redis_install_group }}"
     mode: "0755"
 
-- name: Ensure Redis config directory exists
+- name: configure | Ensure Redis config directory exists
   ansible.builtin.file:
     path: "{{ redis_install_config_path | dirname }}"
     state: directory
@@ -23,76 +23,85 @@
     group: root
     mode: "0755"
 
-- name: Render Redis configuration
-  ansible.builtin.template:
-    src: redis.conf.j2
-    dest: "{{ redis_install_config_path }}"
-    owner: root
-    group: root
-    mode: "0644"
-    backup: true
-  notify: restart redis
+- name: configure | Configure Redis with optional candidate validation
+  block:
+    - name: configure | Create private Redis validator directory
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: .redis-validator
+      register: _redis_install_validator_dir
+      changed_when: false
+      when:
+        - redis_install_validate_config | bool
+        - not ansible_check_mode
 
-- name: Validate Redis configuration syntax
-  ansible.builtin.shell: |
-    set -euo pipefail
-    validate_root={{ redis_install_validate_dir | quote }}
-    mkdir -p "${validate_root}"
-    validate_dir=$(mktemp -d "${validate_root}/redis-config.XXXXXX")
-    pidfile="${validate_dir}/redis-config-test.pid"
-    logfile="${validate_dir}/redis-config-test.log"
-    socket="${validate_dir}/v.sock"
+    - name: configure | Render ephemeral Redis validator
+      ansible.builtin.template:
+        src: validate-config.sh.j2
+        dest: "{{ _redis_install_validator_dir.path }}/validate.sh"
+        owner: root
+        group: root
+        mode: "0700"
+      changed_when: false
+      when:
+        - redis_install_validate_config | bool
+        - not ansible_check_mode
 
-    cleanup() {
-      if [[ -s "${pidfile}" ]]; then
-        pid=$(cat "${pidfile}")
-        if [[ "${pid}" =~ ^[0-9]+$ ]]; then
-          kill "${pid}" 2>/dev/null || true
-          for _ in {1..50}; do
-            kill -0 "${pid}" 2>/dev/null || break
-            sleep 0.1
-          done
-          if kill -0 "${pid}" 2>/dev/null; then
-            kill -KILL "${pid}" 2>/dev/null || true
-          fi
-        fi
-      fi
-      rm -rf -- "${validate_dir}"
-    }
+    - name: configure | Render private Redis configuration candidate
+      ansible.builtin.template:
+        src: redis.conf.j2
+        dest: "{{ _redis_install_validator_dir.path }}/redis.conf"
+        owner: root
+        group: root
+        mode: "0600"
+      changed_when: false
+      no_log: true
+      when:
+        - redis_install_validate_config | bool
+        - not ansible_check_mode
 
-    trap cleanup EXIT
+    - name: configure | Validate Redis configuration candidate
+      ansible.builtin.command:
+        argv:
+          - /bin/bash
+          - "{{ _redis_install_validator_dir.path }}/validate.sh"
+          - "{{ _redis_install_validator_dir.path }}/redis.conf"
+      changed_when: false
+      when:
+        - redis_install_validate_config | bool
+        - not ansible_check_mode
 
-    if ! redis-server {{ redis_install_config_path | quote }} \
-      --port 0 \
-      --unixsocket "${socket}" \
-      --unixsocketperm 700 \
-      --supervised no \
-      --pidfile "${pidfile}" \
-      --logfile "${logfile}" \
-      --dir "${validate_dir}" \
-      --save "" \
-      --appendonly no \
-      --daemonize yes >"${logfile}" 2>&1; then
-      echo "Redis validation rejected the configuration." >&2
-      exit 1
-    fi
+    - name: configure | Atomically install validated Redis configuration
+      ansible.builtin.copy:
+        src: "{{ _redis_install_validator_dir.path }}/redis.conf"
+        remote_src: true
+        dest: "{{ redis_install_config_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      notify: restart redis
+      no_log: true
+      when:
+        - redis_install_validate_config | bool
+        - not ansible_check_mode
 
-    for _ in {1..50}; do
-      if [[ -s "${pidfile}" && -S "${socket}" ]]; then
-        break
-      fi
-      sleep 0.1
-    done
+    - name: configure | Render Redis configuration without execution validation
+      ansible.builtin.template:
+        src: redis.conf.j2
+        dest: "{{ redis_install_config_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      notify: restart redis
+      when: not redis_install_validate_config | bool or ansible_check_mode
 
-    if [[ ! -s "${pidfile}" || ! -S "${socket}" ]]; then
-      echo "Redis validation failed to start test instance." >&2
-      exit 1
-    fi
-
-    kill -0 "$(cat "${pidfile}")"
-  args:
-    executable: /bin/bash
-  when:
-    - redis_install_validate_config | bool
-    - not ansible_check_mode
-  changed_when: false
+  always:
+    - name: configure | Remove ephemeral Redis validator directory
+      ansible.builtin.file:
+        path: "{{ _redis_install_validator_dir.path }}"
+        state: absent
+      changed_when: false
+      when:
+        - _redis_install_validator_dir.path is defined
