@@ -29,7 +29,7 @@ navidrome_port: 4533
 navidrome_external_url: "https://music.example.com"
 
 # Version pinning (override when bumping)
-navidrome_version: "0.63.2"
+navidrome_version: "0.64.2"
 navidrome_arch_map:
   x86_64: amd64
   amd64: amd64
@@ -40,8 +40,8 @@ navidrome_download_url: "https://github.com/navidrome/navidrome/releases/downloa
 # Must be updated in the same change as navidrome_version.
 # From https://github.com/navidrome/navidrome/releases/download/v<version>/navidrome_checksums.txt
 navidrome_checksums:
-  amd64: "sha256:224c6d6fe5cc11a9c9387b97988666423de38bb5ef2e2f43ecc43d0a3dded4f0"
-  arm64: "sha256:5b74fb0eea5d48e3eb7565ea4116284232509e94431cb3756aaac2128dd50a43"
+  amd64: "sha256:fdd87fd107818667c2c50bc24dc6ce856962c795b3822a91f95c066cfad2c53e"
+  arm64: "sha256:6d1683428cb6d99cdabc3da815b94cc161de5904820130c5b9e2e42c34dcdb15"
 navidrome_download_checksum: "{{ navidrome_checksums[navidrome_download_arch] | default('sha256:') }}"
 
 # Application configuration

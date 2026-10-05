@@ -34,7 +34,7 @@ Deploys [Navidrome](https://www.navidrome.org/) as a systemd-managed service (no
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `navidrome_version` | `0.63.2` | Navidrome release to install (pinned). Bump `navidrome_checksums` in the same change. |
+| `navidrome_version` | `0.64.2` | Navidrome release to install (pinned). Bump `navidrome_checksums` in the same change. |
 | `navidrome_download_arch` | auto | Architecture suffix (`amd64`/`arm64`), derived from `ansible_architecture`. |
 | `navidrome_download_checksum` | per-arch | SHA256 for the selected tarball; override when bumping versions. |
 | `navidrome_music_folder` | `/mnt/cryptdata/media/music` | Path to music library (read-only). |

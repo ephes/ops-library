@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased — Navidrome 0.64.2 and Paperless-ngx 3.2.1 (2.26.1)
+
+- `navidrome_deploy` installs Navidrome 0.64.2 (was 0.63.2), with both
+  `navidrome_checksums` updated. 0.64.0, 0.64.1 and 0.64.2 fix several security
+  advisories, among them SQL injection in the Native API, share IDOR, unthrottled
+  Subsonic logins and an `X-Forwarded-For` rate-limit bypass. 0.64.0 re-encodes
+  every internal ID in a migration that touches every table, so take a
+  `navidrome_backup` first. Clients that cache item IDs may need to re-sync.
+  Negative config durations are now rejected and unknown options are logged;
+  the rendered `navidrome.toml` uses neither.
+- `paperless_deploy` installs Paperless-ngx 3.2.1 (was 3.0.4) and gains its
+  `paperless_release_checksums` entry. 3.1.2 fixes GHSA-2jhj-xqrq-rmrq. There are
+  no breaking changes for bare-metal installs between 3.0.4 and 3.2.1.
+
 ## Unreleased — OpenClaw Doctor activation (2.26.0)
 
 - `openclaw_deploy` activates a new OpenClaw image through Doctor on
