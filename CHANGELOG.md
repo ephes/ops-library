@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased — Python 3.14.8 and tool pin refresh (2.26.2)
+
+- `homeassistant_deploy`, `wagtail_deploy`, `voxhelm_deploy` and
+  `voxhelm_remote_worker_deploy` pin Python 3.14.8 (was 3.14.6/3.14.7). The
+  patch release fixes seven CVEs, among them tarfile extraction-filter bypasses,
+  a use-after-free in SSL SNI callbacks and urllib credential leakage. uv 0.12.22
+  is the first release whose catalog has 3.14.8; each role's uv install step
+  tracks `latest`, so older uv binaries are updated before the interpreter is
+  requested.
+- `homeassistant_deploy` and `wagtail_deploy` now restart their services when
+  they install a new Python patch. `uv python install` moves uv's
+  `cpython-<minor>` link, and virtualenvs created on that link immediately
+  report the new patch. The roles' version-mismatch checks therefore saw
+  nothing to rebuild, and the running processes stayed on the old
+  interpreter until some unrelated restart. Home Assistant now also restarts
+  the Matter server when `homeassistant_manage_matter_server` is set.
+- The Daybook roles stay on 3.14.7 for now. Their bump is a planned-window
+  procedure: stop the supervisor, deploy, replace, cutover. For
+  `daybook_photos_archive_sync_deploy` it also needs Full Disk Access granted
+  again (see ops-control `docs/DAYBOOK_PYTHON_RUNTIME_PLAN.md`).
+- `vibe_coding_deploy`: Neovim 0.12.4 -> 0.12.5, lazygit 0.63.1 -> 0.65.1.
+- `mastodon_shared`: nvm v0.40.6 -> v0.40.8.
+- `sops_dependencies`: age 1.3.1 -> 1.3.2.
+- `software_estate` stays on Syft 1.52.0: the SBOM adapter and its tests
+  must be updated before that version changes.
+
 ## Unreleased — Navidrome 0.64.2 and Paperless-ngx 3.2.1 (2.26.1)
 
 - `navidrome_deploy` installs Navidrome 0.64.2 (was 0.63.2), with both

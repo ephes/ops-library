@@ -15,6 +15,10 @@
   become: true
   become_user: "{{ homeassistant_user }}"
   when: _ha_uv_python_find.rc != 0
+  # A new patch moves uv's cpython-<minor> link, so the existing virtualenvs
+  # already report it and are not rebuilt. Restart so the running processes
+  # leave the old interpreter.
+  notify: "{{ ['restart homeassistant'] + (['restart matter server'] if homeassistant_manage_matter_server | bool else []) }}"
 
 - name: "Determine python executable path"
   ansible.builtin.command:

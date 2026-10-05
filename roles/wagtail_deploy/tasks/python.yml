@@ -25,6 +25,12 @@
   when:
     - wagtail_python_version | length > 0
     - _wagtail_uv_python_find.rc != 0
+  # A new patch moves uv's cpython-<minor> link, so the existing virtualenv
+  # already reports it and is not rebuilt. Restart so the running processes
+  # leave the old interpreter.
+  notify:
+    - restart wagtail
+    - restart wagtail db worker
 
 - name: python | Determine Python executable path
   ansible.builtin.command:
