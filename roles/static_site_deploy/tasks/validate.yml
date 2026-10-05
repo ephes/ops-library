@@ -5,8 +5,15 @@
       - static_site_service_name is match('^[a-z][a-z0-9-]{1,62}\Z')
       - static_site_user is match('^[a-z_][a-z0-9_-]{0,30}\Z')
       - static_site_group is match('^[a-z_][a-z0-9_-]{0,30}\Z')
-      - static_site_source_path is match('^/[A-Za-z0-9_./-]+\Z')
-      - static_site_source_path != '/'
+      - static_site_content_source in ['controller', 'external']
+      - static_site_content_source != 'controller' or static_site_source_path is match('^/[A-Za-z0-9_./-]+\Z')
+      - static_site_content_source != 'controller' or static_site_source_path != '/'
+      - static_site_content_source != 'controller' or static_site_path_owner == 'root'
+      - static_site_path_owner is match('^[a-z_][a-z0-9_-]{0,30}\Z')
+      - static_site_path_mode is string
+      - static_site_path_mode is match('^0?[0-7]{3,4}\Z')
+      - static_site_allowed_networks is sequence
+      - static_site_allowed_networks is not string
       - static_site_path is match('^/[A-Za-z0-9_./-]+\Z')
       - static_site_path != '/'
       - static_site_python_path is match('^/[A-Za-z0-9_./-]+\Z')
@@ -32,7 +39,9 @@
       - static_site_public_healthcheck_retries | int > 0
       - static_site_public_healthcheck_delay | int >= 0
     fail_msg: >-
-      static_site_deploy requires a safe absolute source/document root,
+      static_site_deploy requires a known content source (controller or
+      external; controller mode keeps a root-owned document root), a quoted
+      document-root mode, a safe absolute source/document root,
       loopback bind, unprivileged port, valid service identifiers, and a real
       Traefik hostname when ingress is enabled.
 
@@ -53,109 +62,11 @@
   loop: "{{ static_site_traefik_entrypoints }}"
   when: static_site_traefik_enabled | bool
 
-- name: validate | Inspect controller-side source directory
-  ansible.builtin.stat:
-    path: "{{ static_site_source_path }}"
-  delegate_to: localhost
-  become: false
-  register: static_site_source_stat
-
-- name: validate | Require a real controller-side source directory
+- name: validate | Validate allowed source networks
   ansible.builtin.assert:
     that:
-      - static_site_source_stat.stat.exists
-      - static_site_source_stat.stat.isdir
-      - not static_site_source_stat.stat.islnk
-    fail_msg: "Static site source is missing, not a directory, or a symlink: {{ static_site_source_path }}"
-
-- name: validate | Inspect required controller-side files
-  ansible.builtin.stat:
-    path: "{{ static_site_source_path }}/{{ item }}"
-    follow: false
-  delegate_to: localhost
-  become: false
-  register: static_site_required_file_stats
-  loop: "{{ static_site_required_files }}"
-
-- name: validate | Require regular publication files
-  ansible.builtin.assert:
-    that:
-      - item.stat.exists
-      - item.stat.isreg
-      - not item.stat.islnk
-    fail_msg: "Required static publication file is missing or unsafe: {{ item.item }}"
-  loop: "{{ static_site_required_file_stats.results }}"
-  loop_control:
-    label: "{{ item.item }}"
-
-- name: validate | Find symbolic links in source
-  ansible.builtin.find:
-    paths: "{{ static_site_source_path }}"
-    recurse: true
-    hidden: true
-    file_type: link
-  delegate_to: localhost
-  become: false
-  register: static_site_source_links
-
-- name: validate | Reject symbolic links in publication source
-  ansible.builtin.assert:
-    that:
-      - static_site_source_links.matched == 0
-    fail_msg: "Static publication source contains symbolic links; refusing to follow or publish them."
-
-- name: validate | Find all publication source entries
-  ansible.builtin.find:
-    paths: "{{ static_site_source_path }}"
-    recurse: true
-    hidden: true
-    file_type: any
-  delegate_to: localhost
-  become: false
-  register: static_site_source_entries
-
-- name: validate | Find regular publication files
-  ansible.builtin.find:
-    paths: "{{ static_site_source_path }}"
-    recurse: true
-    hidden: true
-    file_type: file
-  delegate_to: localhost
-  become: false
-  register: static_site_source_regular_files
-
-- name: validate | Find publication directories
-  ansible.builtin.find:
-    paths: "{{ static_site_source_path }}"
-    recurse: true
-    hidden: true
-    file_type: directory
-  delegate_to: localhost
-  become: false
-  register: static_site_source_directories
-
-- name: validate | Reject special publication source entries
-  ansible.builtin.assert:
-    that:
-      - >-
-        static_site_source_entries.matched
-        == (static_site_source_regular_files.matched + static_site_source_directories.matched)
-    fail_msg: >-
-      Static publication source contains a socket, FIFO, device, or another
-      unsupported entry; only regular files and directories are accepted.
-
-- name: validate | Enforce exact compact publication allowlist
-  ansible.builtin.assert:
-    that:
-      - static_site_source_directories.matched == 0
-      - static_site_source_regular_files.matched == (static_site_required_files | length)
-      - >-
-        static_site_source_regular_files.files
-        | map(attribute='path')
-        | map('basename')
-        | difference(static_site_required_files)
-        | length == 0
-    fail_msg: >-
-      Strict static publication accepts only the configured required regular
-      files at the source root; nested directories and extra files are refused.
-  when: static_site_restrict_to_required_files | bool
+      - item is string
+      - item is match('^[0-9A-Fa-f:.]+/[0-9]{1,3}\Z')
+    fail_msg: "Unsafe static_site_allowed_networks entry (expected CIDR): {{ item }}"
+  loop: "{{ static_site_allowed_networks }}"
+  when: static_site_traefik_enabled | bool

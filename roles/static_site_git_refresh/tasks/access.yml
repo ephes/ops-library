@@ -1,0 +1,35 @@
+---
+- name: access | Read deploy public key
+  ansible.builtin.slurp:
+    src: "{{ static_site_git_refresh_deploy_key_path }}.pub"
+  register: static_site_git_refresh_public_key
+
+- name: access | Probe repository read access with the deploy key
+  ansible.builtin.command:
+    argv:
+      - git
+      - ls-remote
+      - --exit-code
+      - --heads
+      - "{{ static_site_git_refresh_repo }}"
+      - "refs/heads/{{ static_site_git_refresh_branch }}"
+  environment:
+    GIT_TERMINAL_PROMPT: "0"
+    GIT_SSH_COMMAND: >-
+      ssh -i {{ static_site_git_refresh_deploy_key_path }}
+      -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes
+      -o UserKnownHostsFile={{ static_site_git_refresh_known_hosts_path }}
+  become: true
+  become_user: "{{ static_site_git_refresh_user }}"
+  register: static_site_git_refresh_access
+  changed_when: false
+  failed_when: false
+
+- name: access | Stop until the deploy key can read the branch
+  ansible.builtin.fail:
+    msg:
+      - "The refresh deploy key on {{ inventory_hostname }} cannot read {{ static_site_git_refresh_repo }} branch {{ static_site_git_refresh_branch }} (git exit {{ static_site_git_refresh_access.rc }})."
+      - "Add this public key as a read-only deploy key on the repository (GitHub: Settings > Deploy keys > Add deploy key, leave 'Allow write access' unchecked), then re-run the deployment:"
+      - "{{ static_site_git_refresh_public_key.content | b64decode | trim }}"
+      - "git stderr: {{ static_site_git_refresh_access.stderr | default('') | trim }}"
+  when: static_site_git_refresh_access.rc != 0

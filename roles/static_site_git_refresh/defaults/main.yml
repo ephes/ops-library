@@ -1,0 +1,44 @@
+---
+ops_library_documentation_category: deployment
+# Prefix for the service account, refresh script, and systemd service/timer.
+static_site_git_refresh_name: static-site-refresh
+static_site_git_refresh_user: "{{ static_site_git_refresh_name }}"
+static_site_git_refresh_group: "{{ static_site_git_refresh_user }}"
+static_site_git_refresh_home: "/var/lib/{{ static_site_git_refresh_name }}"
+
+# Required SSH clone URL (git@github.com:owner/repo.git) and branch.
+static_site_git_refresh_repo: ""
+static_site_git_refresh_branch: main
+static_site_git_refresh_checkout_path: "{{ static_site_git_refresh_home }}/checkout"
+
+# Read-only deploy key generated on the target; the private key never leaves it.
+static_site_git_refresh_deploy_key_path: "{{ static_site_git_refresh_home }}/.ssh/deploy_key"
+static_site_git_refresh_known_hosts_path: "{{ static_site_git_refresh_home }}/.ssh/known_hosts"
+# Pinned host keys; StrictHostKeyChecking=yes means no trust-on-first-use.
+# GitHub publishes this key at
+# https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints
+static_site_git_refresh_known_hosts:
+  - "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+
+# Build command (argv list) run in the checkout. The first element must be an
+# absolute path to an existing executable on the target.
+static_site_git_refresh_build_command: []
+static_site_git_refresh_build_environment: {}
+static_site_git_refresh_build_timeout_seconds: 600
+# Built file, relative to the checkout, published as one file.
+static_site_git_refresh_output_path: dist/index.html
+static_site_git_refresh_output_max_bytes: 20971520
+# Optional text the built file must contain before it replaces the live copy.
+static_site_git_refresh_output_marker: ""
+
+# Required document root (owned by the refresh user) and the group that serves it.
+static_site_git_refresh_publish_path: ""
+static_site_git_refresh_publish_group: ""
+static_site_git_refresh_publish_name: index.html
+
+static_site_git_refresh_script_path: "/usr/local/libexec/{{ static_site_git_refresh_name }}.sh"
+static_site_git_refresh_systemd_unit_name: "{{ static_site_git_refresh_name }}"
+static_site_git_refresh_interval: 5min
+# Run one refresh during deployment so the document root is populated before
+# the serving role verifies it.
+static_site_git_refresh_run_on_deploy: true

@@ -2,11 +2,16 @@
 - name: main | Validate configuration and source
   ansible.builtin.include_tasks: validate.yml
 
+- name: main | Validate controller-side publication source
+  ansible.builtin.include_tasks: validate_source.yml
+  when: static_site_content_source == 'controller'
+
 - name: main | Provision service account and directories
   ansible.builtin.include_tasks: user.yml
 
 - name: main | Publish generated site content
   ansible.builtin.include_tasks: content.yml
+  when: static_site_content_source == 'controller'
 
 - name: main | Configure static content service
   ansible.builtin.include_tasks: service.yml

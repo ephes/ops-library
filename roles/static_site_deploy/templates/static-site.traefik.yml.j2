@@ -9,6 +9,9 @@ http:
         - {{ entrypoint }}
 {% endfor %}
       middlewares:
+{% if static_site_allowed_networks | length > 0 %}
+        - {{ static_site_service_name }}-allowlist
+{% endif %}
         - {{ static_site_service_name }}-headers
         - {{ static_site_service_name }}-compress
       service: {{ static_site_service_name }}
@@ -24,10 +27,22 @@ http:
       entryPoints:
         - {{ static_site_traefik_http_entrypoint }}
       middlewares:
+{% if static_site_allowed_networks | length > 0 %}
+        - {{ static_site_service_name }}-allowlist
+{% endif %}
         - {{ static_site_service_name }}-redirect
       service: noop@internal
 
   middlewares:
+{% if static_site_allowed_networks | length > 0 %}
+    {{ static_site_service_name }}-allowlist:
+      ipAllowList:
+        sourceRange:
+{% for network in static_site_allowed_networks %}
+          - "{{ network }}"
+{% endfor %}
+
+{% endif %}
     {{ static_site_service_name }}-headers:
       headers:
         browserXssFilter: true

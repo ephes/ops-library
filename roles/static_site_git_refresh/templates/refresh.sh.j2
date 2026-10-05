@@ -1,0 +1,94 @@
+#!/bin/bash
+# Managed by Ansible - static_site_git_refresh {{ static_site_git_refresh_name }}
+# Fetch the configured branch, rebuild when the commit changed (or the published
+# file is missing), validate the single output file, and atomically replace the
+# live copy. A failed fetch, build, or validation leaves the last good file live.
+set -euo pipefail
+umask 0027
+
+readonly repo={{ static_site_git_refresh_repo | quote }}
+readonly branch={{ static_site_git_refresh_branch | quote }}
+readonly checkout={{ static_site_git_refresh_checkout_path | quote }}
+readonly state_dir={{ static_site_git_refresh_home | quote }}
+readonly output_rel={{ static_site_git_refresh_output_path | quote }}
+readonly max_bytes={{ static_site_git_refresh_output_max_bytes | int }}
+readonly marker={{ static_site_git_refresh_output_marker | quote }}
+readonly publish_dir={{ static_site_git_refresh_publish_path | quote }}
+readonly published="${publish_dir}/"{{ static_site_git_refresh_publish_name | quote }}
+readonly rev_file="${state_dir}/published-rev"
+readonly build_timeout={{ static_site_git_refresh_build_timeout_seconds | int }}
+readonly build_command=({% for arg in static_site_git_refresh_build_command %}{{ arg | quote }}{{ ' ' if not loop.last else '' }}{% endfor %})
+
+export GIT_SSH_COMMAND={{ ('ssh -i ' ~ static_site_git_refresh_deploy_key_path ~ ' -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=' ~ static_site_git_refresh_known_hosts_path) | quote }}
+export GIT_TERMINAL_PROMPT=0
+
+exec 9>"${state_dir}/refresh.lock"
+if ! flock -n 9; then
+    echo "Another refresh is running; skipping."
+    exit 0
+fi
+
+if [[ ! -d "${checkout}/.git" ]]; then
+    rm -rf -- "${checkout}"
+    git clone --quiet --no-checkout --single-branch --branch "${branch}" -- "${repo}" "${checkout}"
+fi
+
+# Follow repository URL changes on an existing checkout.
+if [[ "$(git -C "${checkout}" remote get-url origin)" != "${repo}" ]]; then
+    git -C "${checkout}" remote set-url origin "${repo}"
+fi
+git -C "${checkout}" fetch --quiet --prune --no-tags origin \
+    "+refs/heads/${branch}:refs/remotes/origin/${branch}"
+rev="$(git -C "${checkout}" rev-parse --verify "refs/remotes/origin/${branch}^{commit}")"
+
+if [[ -f "${published}" && -f "${rev_file}" ]] \
+    && [[ "$(cat -- "${rev_file}")" == "${rev}" ]]; then
+    echo "Published ${rev} is current."
+    exit 0
+fi
+
+git -C "${checkout}" checkout --quiet --force --detach "${rev}"
+git -C "${checkout}" clean -q -ffdx -e /.venv
+
+echo "Building ${rev}..."
+(
+    cd -- "${checkout}"
+{% for key, value in static_site_git_refresh_build_environment.items() %}
+    export {{ key }}={{ value | string | quote }}
+{% endfor %}
+    timeout --kill-after=30 "${build_timeout}" "${build_command[@]}"
+)
+
+output="${checkout}/${output_rel}"
+if [[ ! -f "${output}" || -L "${output}" ]]; then
+    echo "Build did not produce a regular file at ${output_rel}." >&2
+    exit 1
+fi
+resolved="$(realpath -- "${output}")"
+case "${resolved}" in
+    "${checkout}"/*) ;;
+    *)
+        echo "Build output resolves outside the checkout: ${resolved}" >&2
+        exit 1
+        ;;
+esac
+size="$(stat -c %s -- "${resolved}")"
+if (( size == 0 || size > max_bytes )); then
+    echo "Build output size ${size} is outside 1..${max_bytes} bytes." >&2
+    exit 1
+fi
+if [[ -n "${marker}" ]] && ! grep -qF -- "${marker}" "${resolved}"; then
+    echo "Build output does not contain the required marker." >&2
+    exit 1
+fi
+
+tmp="$(mktemp "${publish_dir}/.publish.XXXXXX")"
+trap 'rm -f -- "${tmp}"' EXIT
+cp -- "${resolved}" "${tmp}"
+chmod 0640 "${tmp}"
+mv -f -- "${tmp}" "${published}"
+trap - EXIT
+
+printf '%s\n' "${rev}" > "${rev_file}.tmp"
+mv -f -- "${rev_file}.tmp" "${rev_file}"
+echo "Published ${rev}."

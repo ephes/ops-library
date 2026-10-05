@@ -1,0 +1,79 @@
+---
+- name: service | Ensure script directory exists
+  ansible.builtin.file:
+    path: "{{ static_site_git_refresh_script_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: service | Install refresh script
+  ansible.builtin.template:
+    src: refresh.sh.j2
+    dest: "{{ static_site_git_refresh_script_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  register: static_site_git_refresh_script
+
+- name: service | Install refresh service unit
+  ansible.builtin.template:
+    src: refresh.service.j2
+    dest: "/etc/systemd/system/{{ static_site_git_refresh_systemd_unit_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  register: static_site_git_refresh_service_unit
+  notify: static site git refresh | Reload systemd
+
+- name: service | Install refresh timer unit
+  ansible.builtin.template:
+    src: refresh.timer.j2
+    dest: "/etc/systemd/system/{{ static_site_git_refresh_systemd_unit_name }}.timer"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: static site git refresh | Reload systemd
+
+- name: service | Apply systemd reload before the first refresh
+  ansible.builtin.meta: flush_handlers
+
+- name: service | Force a rebuild after refresh script or unit changes
+  ansible.builtin.file:
+    path: "{{ static_site_git_refresh_home }}/published-rev"
+    state: absent
+  when: static_site_git_refresh_script.changed or static_site_git_refresh_service_unit.changed
+
+- name: service | Run one refresh now
+  ansible.builtin.systemd:
+    name: "{{ static_site_git_refresh_systemd_unit_name }}.service"
+    state: started
+  when:
+    - static_site_git_refresh_run_on_deploy | bool
+    - not ansible_check_mode
+
+- name: service | Require a published file after the refresh
+  ansible.builtin.stat:
+    path: "{{ static_site_git_refresh_publish_path }}/{{ static_site_git_refresh_publish_name }}"
+  register: static_site_git_refresh_published
+  when:
+    - static_site_git_refresh_run_on_deploy | bool
+    - not ansible_check_mode
+
+- name: service | Fail when the first refresh published nothing
+  ansible.builtin.assert:
+    that:
+      - static_site_git_refresh_published.stat.exists
+      - static_site_git_refresh_published.stat.isreg
+    fail_msg: >-
+      No published file after the refresh; inspect
+      journalctl -u {{ static_site_git_refresh_systemd_unit_name }}.service
+  when:
+    - static_site_git_refresh_run_on_deploy | bool
+    - not ansible_check_mode
+
+- name: service | Enable and start refresh timer
+  ansible.builtin.systemd:
+    name: "{{ static_site_git_refresh_systemd_unit_name }}.timer"
+    enabled: true
+    state: started

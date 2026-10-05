@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased — Git-refreshed private static sites (2.27.0)
+
+- New `static_site_git_refresh` role: a systemd timer fetches one branch of a
+  private repository with a read-only ed25519 deploy key generated on the
+  target, rebuilds when the commit changed, validates the single output file
+  (regular, inside the checkout, size-bounded, optional marker) and atomically
+  replaces the live copy. Failed fetches or builds leave the last good page
+  live. The git host key is pinned (GitHub ed25519 by default, no
+  trust-on-first-use). Deployment stops with the public key and the
+  deploy-key steps when the key cannot yet read the branch.
+- `static_site_deploy` gains `static_site_content_source: external` (skip the
+  controller-side source checks and sync; another writer owns the document
+  root, configured with `static_site_path_owner` and `static_site_path_mode`)
+  and `static_site_allowed_networks`, which adds a Traefik `ipAllowList` to
+  the HTTPS router (403 for other sources) and the role's HTTP redirect router
+  (superseded by an entrypoint-level HTTP->HTTPS redirect when one is set). Defaults keep the existing
+  controller-sync, unrestricted behavior; controller-side checks moved to
+  `tasks/validate_source.yml`.
+
 ## Unreleased — Python 3.14.8 and tool pin refresh (2.26.2)
 
 - `homeassistant_deploy`, `wagtail_deploy`, `voxhelm_deploy` and
