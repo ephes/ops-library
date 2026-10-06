@@ -65,6 +65,14 @@
         - { dest: /var/lib/vaultwarden/data/attachments/existing.txt, content: "existing-attachment" }
         - { dest: /var/lib/vaultwarden/data/sends/existing.txt, content: "existing-send" }
 
+    - name: Seed a stale WAL sidecar that the restore must not replay
+      ansible.builtin.copy:
+        dest: /var/lib/vaultwarden/data/db.sqlite3-wal
+        owner: vaultwarden
+        group: vaultwarden
+        mode: "0640"
+        content: "stale-wal"
+
     - name: Seed RSA key placeholders
       ansible.builtin.copy:
         dest: "{{ item }}"

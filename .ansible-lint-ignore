@@ -354,7 +354,6 @@ roles/jellyfin_backup/tasks/main.yml command-instead-of-module skip
 roles/jellyfin_restore/tasks/main.yml command-instead-of-module skip
 roles/mail_backup/tasks/main.yml command-instead-of-module skip
 roles/mastodon_deploy/tasks/systemd.yml command-instead-of-module skip
-roles/mastodon_restore/tasks/main.yml command-instead-of-module skip
 roles/metube_backup/tasks/main.yml command-instead-of-module skip
 roles/metube_deploy/tasks/nodejs.yml command-instead-of-module skip
 roles/metube_restore/tasks/main.yml command-instead-of-module skip
@@ -382,7 +381,6 @@ roles/tailscale_backup/tasks/main.yml command-instead-of-module skip
 roles/tailscale_deploy/tasks/restore_state.yml command-instead-of-module skip
 roles/tailscale_restore/tasks/main.yml command-instead-of-module skip
 roles/takahe_backup/tasks/main.yml command-instead-of-module skip
-roles/takahe_restore/tasks/main.yml command-instead-of-module skip
 roles/unifi_backup/tasks/archive.yml command-instead-of-module skip
 roles/work_app_backup/tasks/main.yml command-instead-of-module skip
 roles/work_app_restore/tasks/main.yml command-instead-of-module skip

@@ -20,6 +20,7 @@ voxhelm_start_script_path: "{{ voxhelm_app_dir }}/start.sh"
 voxhelm_worker_script_path: "{{ voxhelm_app_dir }}/worker.sh"
 voxhelm_wyoming_stt_script_path: "{{ voxhelm_app_dir }}/wyoming-stt.sh"
 voxhelm_whisperkit_script_path: "{{ voxhelm_app_dir }}/whisperkit.sh"
+voxhelm_prune_script_path: "{{ voxhelm_app_dir }}/prune.sh"
 
 voxhelm_uv_bin: "/usr/local/bin/uv"
 voxhelm_python_version: "3.14.8"
@@ -44,6 +45,24 @@ voxhelm_wyoming_stt_label: "de.wersdoerfer.voxhelm-wyoming-stt"
 voxhelm_wyoming_stt_plist_path: "/Library/LaunchDaemons/{{ voxhelm_wyoming_stt_label }}.plist"
 voxhelm_wyoming_stt_stdout_log: "{{ voxhelm_log_dir }}/voxhelm-wyoming-stt.log"
 voxhelm_wyoming_stt_stderr_log: "{{ voxhelm_log_dir }}/voxhelm-wyoming-stt.err.log"
+# Hourly `manage.py prune_job_artifacts` (D-09 retention) on the control plane.
+# Off by default: the first real run deletes the whole backlog of expired source
+# media, extracted audio and old job rows. Enable it explicitly; with
+# voxhelm_prune_dry_run left true the scheduled run only logs what it would delete.
+voxhelm_prune_enabled: false
+voxhelm_prune_dry_run: true
+voxhelm_prune_interval_seconds: 3600
+voxhelm_prune_label: "de.wersdoerfer.voxhelm-prune"
+voxhelm_prune_plist_path: "/Library/LaunchDaemons/{{ voxhelm_prune_label }}.plist"
+voxhelm_prune_stdout_log: "{{ voxhelm_log_dir }}/voxhelm-prune.log"
+voxhelm_prune_stderr_log: "{{ voxhelm_log_dir }}/voxhelm-prune.err.log"
+# Optional Voxhelm settings. Empty means "not rendered", so Voxhelm uses its own
+# default (shown in the comment).
+voxhelm_source_artifact_retention_seconds: ""  # Voxhelm default 86400 (24 h)
+voxhelm_job_metadata_retention_seconds: ""  # Voxhelm default 7776000 (90 days); 0 disables
+voxhelm_staged_input_retention_seconds: ""  # Voxhelm default 86400 (24 h)
+voxhelm_wyoming_stt_max_audio_seconds: ""  # Voxhelm default 120
+voxhelm_private_url_hosts: []  # Voxhelm default: none
 voxhelm_batch_max_download_bytes: 536870912
 voxhelm_ffmpeg_bin: "/opt/homebrew/bin/ffmpeg"
 voxhelm_stt_backend: "whispercpp"

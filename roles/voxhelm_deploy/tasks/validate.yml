@@ -180,3 +180,41 @@
   loop_control:
     label: "{{ item.key }}"
   when: voxhelm_tts_language_routing_enabled | bool
+
+- name: validate | Validate optional Voxhelm retention and Wyoming limits
+  ansible.builtin.assert:
+    that:
+      - (item.value | string) is match('^[0-9]+\Z')
+    fail_msg: >-
+      {{ item.key }} must be empty (use the Voxhelm default) or a non-negative
+      whole number of seconds; got '{{ item.value }}'.
+    quiet: true
+  loop: "{{ voxhelm_optional_seconds | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: item.value | string | length > 0
+  vars:
+    voxhelm_optional_seconds:
+      voxhelm_source_artifact_retention_seconds: "{{ voxhelm_source_artifact_retention_seconds }}"
+      voxhelm_job_metadata_retention_seconds: "{{ voxhelm_job_metadata_retention_seconds }}"
+      voxhelm_staged_input_retention_seconds: "{{ voxhelm_staged_input_retention_seconds }}"
+      voxhelm_wyoming_stt_max_audio_seconds: "{{ voxhelm_wyoming_stt_max_audio_seconds }}"
+
+- name: validate | Validate the prune schedule and private URL hosts
+  ansible.builtin.assert:
+    that:
+      - (voxhelm_prune_interval_seconds | string) is match('^[0-9]+\Z')
+      - (voxhelm_prune_interval_seconds | int) >= 60
+      - voxhelm_private_url_hosts is sequence
+      - voxhelm_private_url_hosts is not string
+      - voxhelm_private_url_hosts is not mapping
+      - >-
+        (voxhelm_private_url_hosts | select('string') | list | length)
+        == (voxhelm_private_url_hosts | length)
+      - >-
+        (voxhelm_private_url_hosts | select('string') | select('match', '^[A-Za-z0-9._:-]+\Z') | list | length)
+        == (voxhelm_private_url_hosts | length)
+    fail_msg: >-
+      voxhelm_prune_interval_seconds must be a whole number of at least 60, and
+      voxhelm_private_url_hosts must be a list of host names (letters, digits,
+      '.', '-', '_', ':'; no commas or whitespace).

@@ -55,9 +55,21 @@ echoport_staging_db_refresh_hour: "2"
 echoport_staging_db_refresh_minute: "20"
 echoport_staging_db_refresh_targets: []
 echoport_staging_db_refresh_triggered_by: "staging-refresh-scheduler"
+
+# Optional; rendered into .env only when set (empty keeps Echoport's default)
+echoport_stale_run_grace_seconds: ""       # ECHOPORT_STALE_RUN_GRACE_SECONDS, default 900
+echoport_late_result_window_seconds: ""    # ECHOPORT_LATE_RESULT_WINDOW_SECONDS, default 86400
+echoport_health_overdue_grace_minutes: ""  # ECHOPORT_HEALTH_OVERDUE_GRACE_MINUTES, default 60
 ```
 
 ## Notes
+
+- The optional timing settings must be empty or non-negative whole numbers.
+  `echoport_stale_run_grace_seconds` is how long a pending/running run may
+  outlive its target timeout before it is reaped; `echoport_late_result_window_seconds`
+  is how long a timed-out backup is checked for a late result;
+  `echoport_health_overdue_grace_minutes` is how long after a cron time a target
+  without a successful run is reported overdue.
 
 - `echoport_allowed_path_prefixes` must be a non-empty list of absolute paths.
 - In `ops-control` playbooks, list variables replace role defaults (they do not merge), so

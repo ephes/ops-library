@@ -59,6 +59,24 @@
       - (echoport_allowed_path_prefixes | select('match', '^/.+') | list | length) == (echoport_allowed_path_prefixes | length)
     fail_msg: "echoport_allowed_path_prefixes must be a non-empty list of absolute paths"
 
+- name: Validate optional timing settings
+  assert:
+    that:
+      - (item.value | string) is match('^[0-9]+\Z')
+    fail_msg: >-
+      {{ item.key }} must be empty (use the Echoport default) or a non-negative
+      whole number; got '{{ item.value }}'.
+    quiet: true
+  loop: "{{ echoport_optional_timing | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: item.value | string | length > 0
+  vars:
+    echoport_optional_timing:
+      echoport_stale_run_grace_seconds: "{{ echoport_stale_run_grace_seconds }}"
+      echoport_late_result_window_seconds: "{{ echoport_late_result_window_seconds }}"
+      echoport_health_overdue_grace_minutes: "{{ echoport_health_overdue_grace_minutes }}"
+
 - name: Setup user and directories
   include_tasks: user.yml
 

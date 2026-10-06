@@ -1,0 +1,27 @@
+---
+# One refused case for tests/test_fastdeploy_service_token_settings.yml:
+# validate_tasks must fail with a message containing expected_message.
+- name: fastdeploy_service_token_refused | Run the validation
+  block:
+    - name: fastdeploy_service_token_refused | Validate the settings
+      ansible.builtin.include_tasks: "{{ validate_tasks }}"
+
+    - name: fastdeploy_service_token_refused | Fail because the invalid value was accepted
+      ansible.builtin.set_fact:
+        fastdeploy_token_case_accepted: true
+  rescue:
+    - name: fastdeploy_service_token_refused | Assert the expected refusal
+      ansible.builtin.assert:
+        that:
+          - expected_message in failure_text
+        fail_msg: "Expected a refusal containing '{{ expected_message }}', got: {{ failure_text }}"
+      vars:
+        failure_text: >-
+          {{ ansible_failed_result.msg | default('') ~ ' ' ~
+          (ansible_failed_result.results | default([]) | map(attribute='msg', default='') | list | join(' ')) }}
+
+- name: fastdeploy_service_token_refused | Assert the case was refused
+  ansible.builtin.assert:
+    that:
+      - not (fastdeploy_token_case_accepted | default(false))
+    fail_msg: "An invalid service token setting was accepted (expected '{{ expected_message }}')."

@@ -64,6 +64,18 @@ fastdeploy_initial_user: "admin"
 # REQUIRED - Must be provided (generate with openssl rand -hex 32), no default for security
 # fastdeploy_secret_key: ""
 
+# Service token settings (FastDeploy >= revocable service tokens). Empty means
+# "not rendered", so FastDeploy uses its own default.
+# LEGACY_SERVICE_TOKENS_ACCEPTED_UNTIL: ISO 8601 with offset, for example
+# "2026-11-01T00:00:00+00:00" (quote it). While set and in the future,
+# service tokens without "jti" (issued before revocation support) are still
+# accepted. Temporary: clear it once all tokens are re-issued.
+fastdeploy_legacy_service_tokens_accepted_until: ""
+# SERVICE_TOKEN_MAX_EXPIRE_DAYS (FastDeploy default 90)
+fastdeploy_service_token_max_expire_days: ""
+# SERVICE_TOKEN_RETENTION_DAYS (FastDeploy default 30)
+fastdeploy_service_token_retention_days: ""
+
 # Node.js and npm
 fastdeploy_nodejs_version: 24  # Major version for Node.js (LTS)
 fastdeploy_build_frontend: true
