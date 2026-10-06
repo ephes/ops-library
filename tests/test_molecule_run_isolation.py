@@ -99,7 +99,7 @@ FAKE_UV = textwrap.dedent(
             cat > "$job_dir/AnsiballZ_docker_container.py" <<'PY'
     import os, sys, time
     os.setsid()
-    time.sleep(2)
+    time.sleep(float(os.environ.get("FAKE_UV_DETACHED_SLEEP", "2")))
     with open(os.environ["FAKE_UV_LOG"], "a") as log:
         print("detached job finished", file=log)
     PY
@@ -281,6 +281,30 @@ class MoleculeRunWrapper(unittest.TestCase):
                 "molecule destroy -s default",
             ],
         )
+
+    def test_late_detached_job_gets_a_final_destroy(self) -> None:
+        result = self.run_wrapper(
+            self.role,
+            "default",
+            "test",
+            FAKE_UV_DETACHED_JOB="1",
+            FAKE_UV_DETACHED_SLEEP="3",
+            OPS_LIBRARY_MOLECULE_ASYNC_SETTLE_TIMEOUT="1",
+        )
+        self.assertEqual(result.returncode, 3, result.stderr)
+        lines = self.log.read_text().splitlines()
+        self.assertEqual(
+            [line.split("|")[0] for line in lines],
+            [
+                "molecule test -s default",
+                "molecule destroy -s default",
+                "detached job finished",
+                "molecule destroy -s default",
+            ],
+        )
+        self.assertEqual(lines[1].split("|")[1], lines[3].split("|")[1])
+        self.assertIn("final destroy", result.stderr)
+        self.assertEqual(list(self.state_root.iterdir()), [])
 
     def test_debug_commands_share_a_stable_checkout_id(self) -> None:
         for command in ("converge", "verify", "destroy"):

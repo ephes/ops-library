@@ -103,7 +103,7 @@ if [[ "$command" == "test" ]]; then
     # container after destroy. This only waits; it never signals processes,
     # so other runs' jobs (which may match too) are left alone.
     settle_async_jobs() {
-        local limit=${OPS_LIBRARY_MOLECULE_ASYNC_SETTLE_TIMEOUT:-120}
+        local limit=$1
         local deadline=$((SECONDS + limit))
         while ps axww -o command= 2>/dev/null | awk -v start="$run_started" '
             match($0, /ansible-tmp-[0-9]+/) {
@@ -111,8 +111,7 @@ if [[ "$command" == "test" ]]; then
             }
             END { exit !found }'; do
             if (( SECONDS >= deadline )); then
-                echo "Ansible async workers still running after ${limit}s; destroying anyway." >&2
-                return 0
+                return 1
             fi
             sleep 1
         done
@@ -122,8 +121,18 @@ if [[ "$command" == "test" ]]; then
         trap - EXIT INT TERM
         if [[ $status -ne 0 ]]; then
             echo "Molecule test failed or was interrupted; destroying run $MOLECULE_RUN_ID containers..." >&2
-            settle_async_jobs
-            uv run molecule destroy -s "$scenario" || true
+            if settle_async_jobs "${OPS_LIBRARY_MOLECULE_ASYNC_SETTLE_TIMEOUT:-120}"; then
+                uv run molecule destroy -s "$scenario" || true
+            else
+                # Destroy what exists now, then wait for the late workers (the
+                # docker driver lets them run up to 7200 s) and destroy again,
+                # so a container they create afterwards is not orphaned.
+                uv run molecule destroy -s "$scenario" || true
+                local max_wait=${OPS_LIBRARY_MOLECULE_ASYNC_MAX_WAIT:-7200}
+                echo "Ansible async workers are still running; waiting up to ${max_wait}s before a final destroy..." >&2
+                settle_async_jobs "$max_wait" || echo "Async workers still running after ${max_wait}s." >&2
+                uv run molecule destroy -s "$scenario" || true
+            fi
         fi
         remove_state
         exit "$status"

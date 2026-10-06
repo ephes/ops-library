@@ -189,8 +189,10 @@ sets `ANSIBLE_COLLECTIONS_PATH` in its provisioner env must start it with
   `OPS_LIBRARY_MOLECULE_STOP_TIMEOUT` seconds, default 30), waits for
   detached Ansible async workers started during the run (such as the docker
   driver's container creation; at most
-  `OPS_LIBRARY_MOLECULE_ASYNC_SETTLE_TIMEOUT` seconds, default 120), and then
-  runs `molecule destroy` for the same ID, which only touches that run's
+  `OPS_LIBRARY_MOLECULE_ASYNC_SETTLE_TIMEOUT` seconds, default 120; if they
+  are still running it destroys once, keeps waiting up to
+  `OPS_LIBRARY_MOLECULE_ASYNC_MAX_WAIT` seconds, default 7200, and destroys
+  again), and then runs `molecule destroy` for the same ID, which only touches that run's
   containers.
 - `molecule-converge`, `-verify`, `-login` and `-destroy` use an ID that is
   stable per checkout, role and scenario, so a debugging session across
