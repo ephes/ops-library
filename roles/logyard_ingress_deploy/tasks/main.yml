@@ -19,6 +19,36 @@
           Missing required logyard_ingress_* configuration. Ensure host, backend URL,
           internal IP ranges, and optional root redirect target are set.
 
+    - name: Validate allowed Loki paths
+      ansible.builtin.assert:
+        that:
+          - logyard_ingress_allowed_paths is sequence
+          - logyard_ingress_allowed_paths is not string
+          - logyard_ingress_allowed_paths | length > 0
+        fail_msg: >-
+          logyard_ingress_allowed_paths must be a non-empty list of
+          {path, methods} entries.
+
+    - name: Validate each allowed Loki path entry
+      ansible.builtin.assert:
+        that:
+          - item is mapping
+          - item.path is defined
+          - item.path is string
+          - item.path is match('^/[A-Za-z0-9._~/-]*$')
+          - item.methods is defined
+          - item.methods is sequence
+          - item.methods is not string
+          - item.methods | length > 0
+          - item.methods | select('string') | select('match', '^[A-Z]+$') | list | length == item.methods | length
+        fail_msg: >-
+          Each logyard_ingress_allowed_paths entry needs an absolute path made of
+          URL-safe characters and a non-empty list of upper-case HTTP methods.
+        quiet: true
+      loop: "{{ logyard_ingress_allowed_paths }}"
+      loop_control:
+        label: "{{ item.path | default(item) }}"
+
     - name: Ensure Traefik dynamic config directory exists
       ansible.builtin.file:
         path: "{{ logyard_ingress_traefik_config_path | dirname }}"

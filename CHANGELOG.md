@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased — Logyard ingress push-only (2.31.5)
+
+`logyard_ingress_deploy` no longer forwards the whole Loki API. Loki runs with
+`auth_enabled: false`, and the `logyard-int` router sent every path on the
+host to it, gated only by client IP. Any LAN or tailnet device, and any process
+on a VPS whose public IP is in the allow list, could query or tail every
+host's journald logs and reach the delete API (Loki 3.5's default
+`deletion_mode` is `filter-and-delete`, and the compactor has a delete request
+store).
+
+- The router now also requires a method and exact path from the new
+  `logyard_ingress_allowed_paths` list. The default allows
+  `POST /loki/api/v1/push` (Vector's `loki` sink) and `GET`/`HEAD /ready`
+  (Vector's healthcheck and the documented validation curl). Every other path
+  gets no route and returns `404`. The root redirect is unchanged.
+- The role validates each entry (absolute, URL-safe path; non-empty list of
+  upper-case methods) before rendering.
+- Grafana is not affected: its Logyard datasource reads Loki over the docker
+  network (`http://logyard-loki:3100`), and the health endpoint uses
+  `127.0.0.1:3101`. Anything that queried Loki through the ingress host now
+  gets `404`; query through Grafana or `127.0.0.1:3101` on the Loki host.
+- New `tests/test_logyard_ingress.py` (`just test-logyard-ingress`, part of
+  `just test`) and extended `tests/test_logyard_ingress_deploy.yml` check the
+  rendered rule, that no `web-secure` router forwards a host-only rule to
+  Loki, and that the root redirect is unchanged.
+
+Rollout: from ops-control, `just install-local-library` and then
+`just deploy-one logyard_ingress` (macmini, `deploy-logyard-ingress.yml`).
+Traefik reloads the dynamic file on its own; producers keep pushing.
+
 ## Unreleased — Backups restart stopped services on failure (2.31.3)
 
 A failed copy or dump step no longer leaves the service stopped. Rollout:
