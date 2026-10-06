@@ -1,0 +1,227 @@
+---
+# Regression tests for the homelab backup/restore/remove safety fixes
+# (same guards as the work_app lifecycle roles).
+
+- name: Test homelab_remove flags are parsed as booleans
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    remove_tasks: "{{ playbook_dir }}/../roles/homelab_remove/tasks"
+    fixture_home: "/tmp/test-homelab-remove-home"
+
+  tasks:
+    - name: Load shared and remove defaults
+      ansible.builtin.include_vars:
+        file: "{{ item }}"
+      loop:
+        - "{{ playbook_dir }}/../roles/homelab_shared/defaults/main.yml"
+        - "{{ playbook_dir }}/../roles/homelab_remove/defaults/main.yml"
+
+    # just remove-one passes extra vars as strings ("false"); a non-empty string
+    # must not count as true.
+    - name: String "false" confirmation blocks removal
+      block:
+        - name: Run validation with confirm passed as the string "false"
+          ansible.builtin.include_tasks: "{{ remove_tasks }}/validation.yml"
+          vars:
+            homelab_remove_confirm: "false"
+        - name: Record unexpected pass
+          ansible.builtin.set_fact:
+            homelab_remove_string_false_passed: true
+      rescue:
+        - name: Assert the confirmation guard fired
+          ansible.builtin.assert:
+            that:
+              - "'REMOVAL BLOCKED' in ansible_failed_result.msg"
+        - name: Record expected block
+          ansible.builtin.set_fact:
+            homelab_remove_string_false_blocked: true
+
+    - name: Keeping the database while deleting the home directory is refused
+      block:
+        - name: Run validation with inconsistent database flags
+          ansible.builtin.include_tasks: "{{ remove_tasks }}/validation.yml"
+          vars:
+            homelab_remove_confirm: "true"
+            homelab_remove_database: "false"
+            homelab_remove_home: true
+        - name: Record unexpected pass
+          ansible.builtin.set_fact:
+            homelab_remove_inconsistent_db_passed: true
+      rescue:
+        - name: Assert the preserve guard fired
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == "Refuse to delete the home directory while keeping the database or media"
+        - name: Record expected refusal
+          ansible.builtin.set_fact:
+            homelab_remove_inconsistent_db_refused: true
+
+    - name: Keeping media while deleting the user (and its home) is refused
+      block:
+        - name: Run validation with inconsistent media flags
+          ansible.builtin.include_tasks: "{{ remove_tasks }}/validation.yml"
+          vars:
+            homelab_remove_confirm: "true"
+            homelab_remove_media: "false"
+            homelab_remove_home: "false"
+            homelab_remove_user: "true"
+        - name: Record unexpected pass
+          ansible.builtin.set_fact:
+            homelab_remove_inconsistent_media_passed: true
+      rescue:
+        - name: Assert the preserve guard fired
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == "Refuse to delete the home directory while keeping the database or media"
+        - name: Record expected refusal
+          ansible.builtin.set_fact:
+            homelab_remove_inconsistent_media_refused: true
+
+    - name: Assert the guards held
+      ansible.builtin.assert:
+        that:
+          - homelab_remove_string_false_blocked | default(false)
+          - homelab_remove_inconsistent_db_refused | default(false)
+          - homelab_remove_inconsistent_media_refused | default(false)
+          - homelab_remove_string_false_passed is not defined
+          - homelab_remove_inconsistent_db_passed is not defined
+          - homelab_remove_inconsistent_media_passed is not defined
+
+    - name: Create a fixture site with a database and media
+      ansible.builtin.file:
+        path: "{{ fixture_home }}/site/media"
+        state: directory
+        mode: "0700"
+
+    - name: Create the fixture database file
+      ansible.builtin.copy:
+        dest: "{{ fixture_home }}/site/db.sqlite3"
+        content: ""
+        mode: "0600"
+
+    # auto_confirm passed as the string "true" skips the pause; the data
+    # deletion decision itself is computed from the string flags.
+    - name: Run validation with string flags against the fixture
+      ansible.builtin.include_tasks: "{{ remove_tasks }}/validation.yml"
+      vars:
+        homelab_home: "{{ fixture_home }}"
+        homelab_remove_confirm: "true"
+        homelab_remove_auto_confirm: "true"
+        homelab_remove_database: "true"
+        homelab_remove_media: "true"
+
+    - name: Assert existing data is flagged for the confirmation pause
+      ansible.builtin.assert:
+        that:
+          - homelab_db_check.stat.exists
+          - homelab_media_check.stat.exists
+          - homelab_remove_deletes_data | bool
+
+    - name: Run validation keeping all data (string "false" flags)
+      ansible.builtin.include_tasks: "{{ remove_tasks }}/validation.yml"
+      vars:
+        homelab_home: "{{ fixture_home }}"
+        homelab_remove_confirm: "true"
+        homelab_remove_database: "false"
+        homelab_remove_media: "false"
+        homelab_remove_home: "false"
+        homelab_remove_user: "false"
+
+    - name: Assert nothing irreversible is flagged when data is kept
+      ansible.builtin.assert:
+        that:
+          - not (homelab_remove_deletes_data | bool)
+
+    - name: Remove the fixture
+      ansible.builtin.file:
+        path: "{{ fixture_home }}"
+        state: absent
+
+    # Database and media paths may be overridden to live outside the home
+    # directory; their deletion must not depend on the home existing.
+    - name: Create external database and media fixtures (home absent)
+      ansible.builtin.file:
+        path: "{{ fixture_home }}-external/media"
+        state: directory
+        mode: "0700"
+
+    - name: Create the external database fixture
+      ansible.builtin.copy:
+        dest: "{{ fixture_home }}-external/{{ item }}"
+        content: ""
+        mode: "0600"
+      loop:
+        - db.sqlite3
+        - db.sqlite3-wal
+
+    - name: Run user/data removal with a missing home directory
+      ansible.builtin.include_tasks: "{{ remove_tasks }}/user.yml"
+      vars:
+        homelab_home: "{{ fixture_home }}-missing"
+        homelab_database_path: "{{ fixture_home }}-external/db.sqlite3"
+        homelab_media_root: "{{ fixture_home }}-external/media"
+        homelab_remove_database: "true"
+        homelab_remove_media: "true"
+        homelab_remove_home: "false"
+        homelab_remove_user: "false"
+
+    - name: Check the external fixtures
+      ansible.builtin.stat:
+        path: "{{ fixture_home }}-external/{{ item }}"
+      loop:
+        - db.sqlite3
+        - db.sqlite3-wal
+        - media
+      register: external_after
+
+    - name: Assert external database and media were deleted
+      ansible.builtin.assert:
+        that:
+          - external_after.results | selectattr('stat.exists') | list | length == 0
+
+    - name: Remove the external fixture directory
+      ansible.builtin.file:
+        path: "{{ fixture_home }}-external"
+        state: absent
+
+    - name: Assert boolean parsing of the auto-confirm pause and home removal
+      ansible.builtin.assert:
+        that:
+          - "'not (homelab_remove_auto_confirm | bool)' in validation_text"
+          - "'homelab_remove_home | bool' in user_text"
+          - "'remove: true' not in user_text"
+          - "'homelab_database_path' in user_text"
+          - "'homelab_remove_traefik_config | bool' in traefik_text"
+          - "'name: homelab\\n' not in service_text"
+      vars:
+        validation_text: "{{ lookup('file', remove_tasks ~ '/validation.yml') }}"
+        user_text: "{{ lookup('file', remove_tasks ~ '/user.yml') }}"
+        traefik_text: "{{ lookup('file', remove_tasks ~ '/traefik.yml') }}"
+        service_text: "{{ lookup('file', remove_tasks ~ '/service.yml') }}"
+
+- name: Test homelab backup/restore SQLite safety
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    backup_text: "{{ lookup('file', playbook_dir ~ '/../roles/homelab_backup/tasks/main.yml') }}"
+    restore_text: "{{ lookup('file', playbook_dir ~ '/../roles/homelab_restore/tasks/main.yml') }}"
+
+  tasks:
+    - name: Assert stop failures abort and integrity is checked
+      ansible.builtin.assert:
+        that:
+          # offline backup copy only runs after a successful stop
+          - "backup_text is not search('register. homelab_backup_systemd_stop\\n\\s+failed_when. false')"
+          # restore stops (hard) before the safety snapshot and before replacing the DB
+          - "restore_text is not search('register. homelab_restore_systemd_stop\\n\\s+failed_when. false')"
+          - restore_text.index('Stop Homelab service prior to restore') < restore_text.index('Create safety snapshot')
+          - restore_text.index('Stop Homelab service prior to restore') < restore_text.index('Restore SQLite database')
+          - restore_text.index('Require sqlite3 for the post-restore integrity check') < restore_text.index('Stop Homelab service prior to restore')
+          - restore_text.index('Remove stale SQLite journal files') < restore_text.index('Restore SQLite database')
+          # integrity_check output must be exactly "ok"
+          - "\"(homelab_restore_sqlite_check.stdout | trim) != 'ok'\" in restore_text"

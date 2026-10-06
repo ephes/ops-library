@@ -9,6 +9,8 @@ Destroys a Homelab deployment safely and idempotently. The role enforces explici
 - Removes the `homelab` user, home directory, SQLite DB, and media tree when the corresponding `homelab_remove_*` flags remain `true`.
 - Prints a removal plan and pauses when database/media deletion is requested, giving operators a chance to bail out and run a backup first.
 - Idempotent: skips steps automatically if files/users already disappeared.
+- All flags are parsed with `| bool`, so string values from `-e` (`"false"`) behave as expected; `-e homelab_remove_auto_confirm=false` keeps the pause.
+- The database and media live inside the home directory. Keeping either (`homelab_remove_database`/`homelab_remove_media: false`) requires `homelab_remove_home: false` and `homelab_remove_user: false`; the role refuses the inconsistent combination. With `homelab_remove_user: true` and `homelab_remove_home: false` the account is deleted but the home directory stays.
 
 ## Key Variables
 
@@ -29,4 +31,6 @@ Usage example:
         homelab_remove_confirm: true
         homelab_remove_database: false   # keep sqlite db
         homelab_remove_media: false      # keep uploaded files
+        homelab_remove_home: false       # required: db and media live in the home directory
+        homelab_remove_user: false
 ```

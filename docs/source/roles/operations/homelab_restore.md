@@ -10,6 +10,8 @@ Restores a Homelab deployment from archives created by `homelab_backup`. Validat
 - Safety snapshot (`/home/homelab/site.pre-restore-<ts>`) with configurable retention.
 - Restores SQLite DB, static/media/cache directories, `.env`, systemd unit, and Traefik config; optional static rebuild via `collectstatic`.
 - Post-restore checks: Django `check --deploy`, `showmigrations`, SQLite `PRAGMA integrity_check`, and HTTP validation (`homelab_restore_healthcheck_url`).
+- The service is stopped before the safety snapshot and before any file is replaced; if the stop fails, the restore aborts. Stale `-wal`/`-shm`/`-journal` files are removed before the database is replaced.
+- When the archive contains a database, `sqlite3` must be present on the target and `PRAGMA integrity_check` must return exactly `ok`; otherwise the restore fails and the service stays stopped (the safety snapshot is kept).
 
 ## Key Variables
 

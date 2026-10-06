@@ -51,5 +51,5 @@ homelab_backup_local_dir: "{{ lookup('env','HOME') }}/backups/homelab"
 ## Notes
 
 - The role requires `sqlite3` and `rsync` on the target host.
-- Hot backups keep Homelab online, but if `.backup` fails after `homelab_backup_sqlite_retries`, the role briefly stops the service, copies the DB, and restarts it.
+- Hot backups keep Homelab online, but if `.backup` fails after `homelab_backup_sqlite_retries`, the role briefly stops the service, copies the DB, and restarts it. If the service cannot be stopped, the backup aborts instead of copying a live database (the role still tries to start the service again).
 - Archives are named `<prefix>-<timestamp>.tar.gz` and stored under `homelab_backup_root`. When `homelab_backup_fetch_local` is true, the tarball is also fetched to `homelab_backup_local_dir` on the control node.

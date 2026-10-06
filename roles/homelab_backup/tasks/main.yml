@@ -119,7 +119,7 @@
 - name: "Initialise SQLite backup mode"
   ansible.builtin.set_fact:
     homelab_backup_offline_required: "{{ homelab_backup_force_stop | bool }}"
-    homelab_backup_sqlite_mode: "{{ 'offline' if homelab_backup_force_stop else 'hot' }}"
+    homelab_backup_sqlite_mode: "{{ 'offline' if homelab_backup_force_stop | bool else 'hot' }}"
 
 - block:
     - name: "Perform SQLite hot backup"
@@ -147,7 +147,6 @@
         name: "{{ homelab_service_name }}"
         state: stopped
       register: homelab_backup_systemd_stop
-      failed_when: false
 
     - name: "Copy SQLite database file (offline)"
       ansible.builtin.command:

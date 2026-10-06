@@ -5,7 +5,7 @@ Creates end-to-end snapshots of the Homelab Django service: SQLite database, sta
 ## Highlights
 
 - Validates required paths and records ops-library + git metadata for traceability.
-- Uses `sqlite3 ".backup"` with automatic fallback to an offline snapshot that stops Homelab briefly when needed.
+- Uses `sqlite3 ".backup"` with automatic fallback to an offline snapshot that stops Homelab briefly when needed. A failed stop aborts the backup instead of copying a live database.
 - Rsyncs static/media/cache directories to `/opt/backups/homelab/<prefix>-<timestamp>/`.
 - Copies `.env`, systemd unit, and Traefik config into the backup for audit and restore parity.
 - Generates `metadata.yml`, `manifest.sha256`, an optional `tar.gz` archive, and fetches it to `~/backups/homelab/` when enabled.

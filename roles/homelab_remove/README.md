@@ -13,6 +13,7 @@ Ansible role to remove the homelab Django service from a target host.
 - Safety checks and confirmation required
 - Interactive warning for irreversible data deletion
 - Idempotent - safe to run multiple times
+- All flags parsed with `| bool` (string `"false"` from `-e` is false)
 
 ## Requirements
 
@@ -51,6 +52,7 @@ homelab_remove_traefik_config: true    # Remove Traefik config
 
 ```yaml
 homelab_remove_confirm: false          # REQUIRED: Must be true for any removal
+homelab_remove_auto_confirm: false     # Skip the pause before deleting DB/media
 ```
 
 ## Default Behavior
@@ -66,6 +68,13 @@ homelab_remove_confirm: false          # REQUIRED: Must be true for any removal
 - ✓ Removes user account
 
 ## Preserving Data
+
+The database (`/home/homelab/site/db.sqlite3`) and media (`/home/homelab/site/media`)
+live inside the home directory. To keep either of them, also keep the home directory
+and the user; the role refuses `homelab_remove_database: false` or
+`homelab_remove_media: false` combined with `homelab_remove_home: true` or
+`homelab_remove_user: true`. With `homelab_remove_user: true` and
+`homelab_remove_home: false` the account is deleted but the home directory stays.
 
 To preserve data, explicitly override the removal flags:
 
@@ -125,11 +134,14 @@ To preserve data, explicitly override the removal flags:
     - role: local.ops_library.homelab_remove
       vars:
         homelab_remove_confirm: true
-        homelab_remove_user: true       # Remove user
-        homelab_remove_home: true       # Remove home
-        homelab_remove_database: false  # But preserve database
-        homelab_remove_media: false     # But preserve media
+        homelab_remove_user: true       # Remove the account
+        homelab_remove_home: false      # But keep /home/homelab
+        homelab_remove_database: false  # Not allowed together with user/home removal:
+        homelab_remove_media: false     # the role refuses this combination
 ```
+
+The example above is rejected: keep `homelab_remove_user: false` too, or take a
+backup first and let the role delete everything.
 
 ## Safety Features
 
@@ -150,25 +162,27 @@ Before any removal, the role displays exactly what will be removed and preserved
 🗑️  HOMELAB REMOVAL PLAN
 ═══════════════════════════════════════════════════════════════
 
-WILL BE REMOVED:
-✓ Systemd service: /etc/systemd/system/homelab.service
-✓ Traefik config: /etc/traefik/dynamic/homelab.yml
-✓ Database: /home/homelab/site/db.sqlite3 ⚠️  IRREVERSIBLE!
-✓ Media files: /home/homelab/site/media/ ⚠️  IRREVERSIBLE!
-✓ Home directory: /home/homelab
-✓ User account: homelab
+Systemd service: /etc/systemd/system/homelab.service
+Traefik config: /etc/traefik/dynamic/homelab.yml (remove)
+Database: /home/homelab/site/db.sqlite3 ⚠️  IRREVERSIBLE!
+Media files: /home/homelab/site/media/ ⚠️  IRREVERSIBLE!
+Home directory: /home/homelab (remove)
+User account: homelab (remove)
 
 ═══════════════════════════════════════════════════════════════
 ```
 
 ### Interactive Confirmation
 
-If database or media will be deleted, the role pauses for manual confirmation:
+If an existing database or media directory will be deleted, the role pauses for
+manual confirmation unless `homelab_remove_auto_confirm` is true (`"false"` passed
+with `-e` keeps the pause):
 
 ```
-⚠️  WARNING: DATABASE AND MEDIA WILL BE PERMANENTLY DELETED ⚠️
+⚠️  WARNING: DATABASE AND/OR MEDIA WILL BE PERMANENTLY DELETED ⚠️
 
-This operation is IRREVERSIBLE. Consider backing up data first.
+This operation is IRREVERSIBLE. Run `just backup homelab` (or trigger the
+Echoport `homelab` target) before continuing ...
 
 Press ENTER to continue with removal, or Ctrl+C to abort.
 ```

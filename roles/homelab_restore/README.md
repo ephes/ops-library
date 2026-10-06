@@ -17,6 +17,8 @@ manual recovery and compatibility, but it is not the default operator workflow.
 - Controlled restore of SQLite DB, static/media/cache directories, `.env`, systemd unit, and Traefik config
 - Optional static rebuild (`homelab_restore_rebuild_static: true`)
 - Post-restore verification: Django `check --deploy`, `showmigrations`, SQLite integrity, HTTP probe
+- The service is stopped before the safety snapshot and before any file is replaced; if the stop fails, the restore aborts. Stale `-wal`/`-shm`/`-journal` files are removed before the database is replaced.
+- When the archive contains a database, `sqlite3` must be present on the target and `PRAGMA integrity_check` must return exactly `ok`; otherwise the restore fails and the service stays stopped (the safety snapshot is kept).
 
 ## Key Variables
 

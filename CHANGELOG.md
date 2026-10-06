@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased — Homelab backup/restore/remove safety fixes (2.29.1)
+
+The homelab lifecycle roles get the fixes the review forced into their
+`work_app_*` copies (2.27.0).
+
+- `homelab_backup`: a failed service stop before the offline SQLite copy now
+  aborts the backup instead of copying a live database.
+  `homelab_backup_force_stop` is parsed with `| bool`.
+- `homelab_restore`: the service is stopped before the safety snapshot, and a
+  failed stop aborts the restore. Before that, the role requires `sqlite3` on
+  the target when the archive contains a database. Stale `-wal`/`-shm`/`-journal`
+  files are removed before the database is replaced. `PRAGMA integrity_check`
+  must return exactly `ok`; before, only the exit code counted, and the check
+  was skipped when `sqlite3` was missing.
+- `homelab_remove`: all flags are parsed with `| bool`. `just remove-one homelab`
+  passes `-e homelab_remove_auto_confirm=false` as a string, which skipped the
+  confirmation pause before deleting the database and media. The user module
+  only deletes the home directory when `homelab_remove_home` is true. The role
+  refuses to keep the database or media while deleting the home directory or
+  user they live in. The database path comes from `homelab_database_path`
+  (its `-wal`/`-shm` files are removed too), media from `homelab_media_root`,
+  and the service name from `homelab_service_name`.
+- New regression test `tests/test_homelab_lifecycle_safety.yml`
+  (`just test-homelab-lifecycle-safety`, part of `just test`).
+
 ## Unreleased — Private recursive resolver for rspamd (2.29.0)
 
 - `mail_spam_deploy` can run a private recursive unbound instance for rspamd

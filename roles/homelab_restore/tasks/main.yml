@@ -217,6 +217,28 @@
           ansible.builtin.set_fact:
             homelab_restore_safety_dir: "{{ homelab_site_path }}.{{ homelab_restore_safe_snapshot_prefix }}-{{ homelab_restore_timestamp }}"
 
+        - name: "Check if sqlite3 is available"
+          ansible.builtin.command:
+            cmd: which sqlite3
+          register: homelab_restore_sqlite3_check
+          changed_when: false
+          failed_when: false
+
+        - name: "Require sqlite3 for the post-restore integrity check"
+          ansible.builtin.assert:
+            that:
+              - homelab_restore_sqlite3_check.rc == 0
+            fail_msg: "sqlite3 is required on the target to verify the restored database"
+          when: homelab_restore_payload_exists.database | default(false)
+
+        # Stop first (and fail if that fails): neither the safety snapshot nor
+        # the database replacement may run against a live SQLite database.
+        - name: "Stop Homelab service prior to restore"
+          ansible.builtin.systemd:
+            name: "{{ homelab_service_name }}"
+            state: stopped
+          register: homelab_restore_systemd_stop
+
         - name: "Create safety snapshot"
           when:
             - homelab_restore_create_safe_snapshot
@@ -234,13 +256,6 @@
                   "{{ homelab_site_path }}/"
                   "{{ homelab_restore_safety_dir }}/"
               changed_when: true
-
-        - name: "Stop Homelab service prior to restore"
-          ansible.builtin.systemd:
-            name: "{{ homelab_service_name }}"
-            state: stopped
-          register: homelab_restore_systemd_stop
-          failed_when: false
 
         - name: "Ensure destination directories exist"
           ansible.builtin.file:
@@ -268,6 +283,16 @@
             - (item.condition | bool)
             - homelab_restore_payload_exists[item.key] | default(false)
           changed_when: true
+
+        - name: "Remove stale SQLite journal files before replacing the database"
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - "{{ homelab_database_path }}-wal"
+            - "{{ homelab_database_path }}-shm"
+            - "{{ homelab_database_path }}-journal"
+          when: homelab_restore_payload_exists.database | default(false)
 
         - name: "Restore SQLite database"
           ansible.builtin.copy:
@@ -400,20 +425,16 @@
           become_user: "{{ homelab_user }}"
           when: homelab_restore_env_stat.stat.exists | default(false)
 
-        - name: "Check if sqlite3 is available"
-          ansible.builtin.command:
-            cmd: which sqlite3
-          register: homelab_restore_sqlite3_check
-          changed_when: false
-          failed_when: false
-
         - name: "Verify SQLite integrity"
           ansible.builtin.command:
             cmd: >
               sqlite3 "{{ homelab_database_path }}" "PRAGMA integrity_check"
           register: homelab_restore_sqlite_check
           changed_when: false
-          when: homelab_restore_sqlite3_check.rc == 0
+          failed_when: >-
+            homelab_restore_sqlite_check.rc != 0 or
+            (homelab_restore_sqlite_check.stdout | trim) != 'ok'
+          when: homelab_restore_payload_exists.database | default(false)
 
         - name: "Start Homelab service"
           ansible.builtin.systemd:

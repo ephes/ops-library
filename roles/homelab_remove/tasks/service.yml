@@ -8,7 +8,7 @@
 
 - name: Stop homelab service
   ansible.builtin.systemd:
-    name: homelab
+    name: "{{ homelab_service_name }}"
     state: stopped
   when: homelab_service_file.stat.exists
   failed_when: false
@@ -16,7 +16,7 @@
 
 - name: Disable homelab service
   ansible.builtin.systemd:
-    name: homelab
+    name: "{{ homelab_service_name }}"
     enabled: false
   when: homelab_service_file.stat.exists
   failed_when: false
