@@ -1,0 +1,149 @@
+---
+# Private recursive resolver for rspamd (mail_spam_resolver_enabled)
+
+- name: resolver | Install unbound packages
+  ansible.builtin.apt:
+    name:
+      - unbound
+      - unbound-anchor
+      # dig, for the probe below
+      - bind9-dnsutils
+    state: present
+  when:
+    - mail_spam_resolver_enabled
+    - mail_spam_resolver_install_packages
+
+- name: resolver | Check for the unbound binaries
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /usr/sbin/unbound
+    - /usr/sbin/unbound-anchor
+    - /usr/sbin/unbound-checkconf
+    - /usr/bin/dig
+  register: _mail_spam_unbound_bins
+  when: mail_spam_resolver_enabled
+
+- name: resolver | Require the unbound binaries
+  ansible.builtin.assert:
+    that: _mail_spam_unbound_bins.results | map(attribute='stat.exists') | min
+    fail_msg: >-
+      mail_spam_resolver_enabled needs unbound, unbound-anchor and dig. Install them
+      (packages unbound, unbound-anchor, bind9-dnsutils) or set mail_spam_resolver_install_packages,
+      after checking that the distribution's unbound.service will not collide with
+      another DNS server on port 53.
+  when:
+    - mail_spam_resolver_enabled
+    - not ansible_check_mode
+
+- name: resolver | Create state directory
+  ansible.builtin.file:
+    path: "{{ mail_spam_resolver_state_dir }}"
+    state: directory
+    owner: unbound
+    group: unbound
+    mode: "0755"
+  when: mail_spam_resolver_enabled
+
+# unbound-checkconf (the template's validate step) refuses a config whose
+# auto-trust-anchor-file does not exist yet, so the anchor is bootstrapped
+# here, as the unbound user, before the first validation. unbound-anchor exits
+# 1 when it wrote or updated the file; anything else is an error.
+- name: resolver | Bootstrap the DNSSEC trust anchor
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/runuser
+      - -u
+      - unbound
+      - --
+      - /usr/sbin/unbound-anchor
+      - -a
+      - "{{ mail_spam_resolver_state_dir }}/root.key"
+    creates: "{{ mail_spam_resolver_state_dir }}/root.key"
+  register: _mail_spam_resolver_anchor
+  failed_when: _mail_spam_resolver_anchor.rc not in [0, 1]
+  when:
+    - mail_spam_resolver_enabled
+    - not ansible_check_mode
+
+- name: resolver | Configure private unbound instance
+  ansible.builtin.template:
+    src: unbound-rspamd.conf.j2
+    dest: "{{ mail_spam_resolver_config }}"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/unbound-checkconf %s
+  register: _mail_spam_resolver_conf
+  when: mail_spam_resolver_enabled
+
+- name: resolver | Install systemd unit
+  ansible.builtin.template:
+    src: unbound-rspamd.service.j2
+    dest: "/etc/systemd/system/{{ mail_spam_resolver_service }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  register: _mail_spam_resolver_unit
+  when: mail_spam_resolver_enabled
+
+- name: resolver | Enable and (re)start the private resolver
+  ansible.builtin.systemd:
+    name: "{{ mail_spam_resolver_service }}"
+    enabled: true
+    state: "{{ 'restarted' if (_mail_spam_resolver_conf is changed or _mail_spam_resolver_unit is changed) else 'started' }}"
+    daemon_reload: "{{ _mail_spam_resolver_unit is changed }}"
+  when:
+    - mail_spam_resolver_enabled
+    - not ansible_check_mode
+
+# Prove the resolver recurses and is answered by Spamhaus (127.0.0.2 is its
+# permanent test point) before rspamd is pointed at it.
+- name: resolver | Check that the private resolver answers DNSBL queries
+  ansible.builtin.command:
+    argv:
+      - dig
+      - +short
+      - +time=3
+      - +tries=3
+      - -p
+      - "{{ mail_spam_resolver_port }}"
+      - "@{{ mail_spam_resolver_listen }}"
+      - 2.0.0.127.zen.spamhaus.org
+      - A
+  register: _mail_spam_resolver_probe
+  changed_when: false
+  retries: 5
+  delay: 3
+  until: "'127.0.0.2' in _mail_spam_resolver_probe.stdout_lines"
+  when:
+    - mail_spam_resolver_enabled
+    - not ansible_check_mode
+
+- name: resolver | Stop and disable the private resolver when disabled
+  ansible.builtin.systemd:
+    name: "{{ mail_spam_resolver_service }}"
+    enabled: false
+    state: stopped
+  failed_when: false
+  when:
+    - not mail_spam_resolver_enabled
+    - not ansible_check_mode
+
+- name: resolver | Remove private resolver files when disabled
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "/etc/systemd/system/{{ mail_spam_resolver_service }}.service"
+    - "{{ mail_spam_resolver_config }}"
+  register: _mail_spam_resolver_removed
+  when: not mail_spam_resolver_enabled
+
+- name: resolver | Reload systemd after removing the unit
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when:
+    - not mail_spam_resolver_enabled
+    - _mail_spam_resolver_removed is changed
+    - not ansible_check_mode

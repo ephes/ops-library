@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased — Private recursive resolver for rspamd (2.29.0)
+
+- `mail_spam_deploy` can run a private recursive unbound instance for rspamd
+  (`mail_spam_resolver_enabled`, default `false`). rspamd's blocklists
+  (Spamhaus, SURBL, URIBL, DNSWL, Mailspike, ...) refuse lookups through public
+  resolvers. On a host whose resolver forwards to 8.8.8.8 or 1.1.1.1, every
+  blocklist symbol came back `*_BLOCKED` and scored nothing. The instance
+  listens on `127.0.0.1:5335` with its own config and systemd unit
+  (`unbound-rspamd`), leaving the host resolver untouched. rspamd uses it as
+  `master-slave` primary with the host resolver as fallback. The role checks
+  that it answers Spamhaus's test point before switching rspamd over. Package
+  installation is opt-in (`mail_spam_resolver_install_packages`), because the
+  `unbound` package also starts the distribution's instance on port 53.
+
 ## Unreleased — Edge recipient verification and spam filtering (2.28.0)
 
 - `mail_relay_deploy` can verify port-25 recipients against the backend

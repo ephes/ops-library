@@ -87,6 +87,35 @@ look at the relay. Put the relay in `mail_spam_local_addrs_extra` and enable
 `local` strategy, then takes the first `Received` hop that is not from a local
 address as the real sender.
 
+### Private DNS resolver for blocklist lookups
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `mail_spam_resolver_enabled` | `false` | Run a private recursive unbound instance for rspamd and point rspamd at it |
+| `mail_spam_resolver_install_packages` | `false` | Install `unbound`, `unbound-anchor` and `bind9-dnsutils` (see the warning below) |
+| `mail_spam_resolver_listen` / `mail_spam_resolver_port` | `127.0.0.1` / `5335` | Where the private instance listens |
+| `mail_spam_resolver_fallback` | `127.0.0.1:53` | rspamd's fallback server (`""` = none) |
+| `mail_spam_resolver_service` | `unbound-rspamd` | systemd unit name |
+| `mail_spam_resolver_config` | `/etc/unbound/rspamd-resolver.conf` | Instance config |
+| `mail_spam_resolver_state_dir` | `/var/lib/unbound/rspamd` | Trust anchor and working directory |
+
+Most lists rspamd queries refuse lookups that arrive through public resolvers:
+Spamhaus ZEN/DBL, SURBL, URIBL, DNSWL, Mailspike, SenderScore and others. If the
+host's resolver forwards to 8.8.8.8, 1.1.1.1 or similar, those symbols end in
+`*_BLOCKED` / `*_OPENRESOLVER` and contribute nothing. With
+`mail_spam_resolver_enabled`, the role runs a second unbound instance. It recurses
+from the root itself, listens only on loopback, and is a separate systemd unit with its
+own config. rspamd then uses it as `master-slave` primary, with the host resolver as
+fallback. The host's own resolver (and any LAN DNS service on it) is not touched. The
+role starts the instance and checks that it answers Spamhaus's `127.0.0.2` test point
+before rspamd is reconfigured.
+
+Paths default to locations Ubuntu's AppArmor profile for `/usr/sbin/unbound`
+allows. The config is deliberately outside `/etc/unbound/unbound.conf.d/`, which the
+distribution's own unbound instance includes. Installing the `unbound` package also
+enables that distribution instance on port 53, which can collide with
+systemd-resolved or another DNS server. That's why package installation is opt-in.
+
 ### Postfix milter
 
 This role appends `unix:rspamd/milter.sock` to `smtpd_milters` in
@@ -133,7 +162,9 @@ chain, leaving rspamd running but scanning nothing.
 | `/etc/rspamd/local.d/milter_headers.conf` | Header settings |
 | `/etc/rspamd/local.d/classifier-bayes.conf` | Bayes learning |
 | `/etc/rspamd/local.d/greylist.conf` | Greylist module on/off |
-| `/etc/rspamd/local.d/options.inc` | `local_addrs` |
+| `/etc/rspamd/local.d/options.inc` | `local_addrs`, and `dns` with the private resolver |
+| `/etc/unbound/rspamd-resolver.conf` | Private resolver config (with `mail_spam_resolver_enabled`) |
+| `/etc/systemd/system/unbound-rspamd.service` | Private resolver unit (with `mail_spam_resolver_enabled`) |
 | `/etc/rspamd/local.d/external_relay.conf` | Trusted-relay handling |
 
 `redis.conf` is mode `0640` because it may contain the Redis password.

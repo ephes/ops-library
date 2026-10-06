@@ -10,6 +10,9 @@
 - name: Install rspamd packages
   ansible.builtin.import_tasks: packages.yml
 
+- name: Configure private DNS resolver
+  ansible.builtin.import_tasks: resolver.yml
+
 - name: Configure rspamd
   ansible.builtin.import_tasks: config.yml
 

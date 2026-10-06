@@ -90,6 +90,36 @@ mail_spam_local_addrs_default:
   - "fe80::/10"
 mail_spam_local_addrs_extra: []
 
+# Dedicated recursive resolver for rspamd (DNSBL/URIBL lookups).
+# Spamhaus, SURBL, URIBL, DNSWL and most other lists rspamd queries refuse
+# lookups that come through public resolvers (8.8.8.8, 1.1.1.1, ...): the
+# symbols then end in *_BLOCKED / *_OPENRESOLVER and score nothing. When the
+# host's resolver forwards to such a service (common for LAN DNS servers), this
+# runs a second, private unbound instance that recurses from the root itself,
+# listening only on mail_spam_resolver_listen:mail_spam_resolver_port, and
+# points rspamd at it. The host's own resolver is left untouched.
+# Requires the unbound and unbound-anchor binaries (Debian/Ubuntu packages
+# unbound, unbound-anchor). The role installs them only when
+# mail_spam_resolver_install_packages is true: installing the unbound package
+# also enables the distribution's own unbound.service on port 53, which can
+# collide with systemd-resolved or an existing DNS server.
+mail_spam_resolver_enabled: false
+mail_spam_resolver_install_packages: false
+mail_spam_resolver_listen: "127.0.0.1"
+mail_spam_resolver_port: 5335
+# rspamd falls back to this server when the private resolver does not answer
+# ("master-slave" rotation, which returns to the primary once it recovers).
+# Blocklist lookups through a public-forwarding fallback come back as
+# *_BLOCKED (no score) rather than failing, so mail keeps flowing. "" = none.
+mail_spam_resolver_fallback: "127.0.0.1:53"
+mail_spam_resolver_service: "unbound-rspamd"
+# Paths inside the ones Ubuntu's AppArmor profile for /usr/sbin/unbound allows
+# (/etc/unbound/** read, /var/lib/unbound/** owner read-write). The config is
+# deliberately NOT in /etc/unbound/unbound.conf.d/, which the distribution's own
+# unbound instance includes.
+mail_spam_resolver_config: "/etc/unbound/rspamd-resolver.conf"
+mail_spam_resolver_state_dir: "/var/lib/unbound/rspamd"
+
 # Evaluate the sender behind a trusted relay instead of the relay itself.
 # Without this, rspamd behind an edge relay scores the relay's IP: no rDNS
 # (RDNS_NONE, HFILTER_HOSTNAME_UNKNOWN) on every message, and IP-based
