@@ -67,3 +67,10 @@
         name: mail_relay_deploy
       vars:
         mail_relay_recipient_rewrites: []
+        # Final state also exercises the filtering features. The local
+        # recursor stays off: the container has no recursive resolver.
+        mail_relay_verify_recipients: true
+        mail_relay_postscreen_enabled: true
+        mail_relay_postscreen_access_extra:
+          - "192.0.2.10/32"
+        mail_relay_submission_discard_spam: true

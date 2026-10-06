@@ -52,6 +52,12 @@
     daemon_reload: true
   when: not ansible_check_mode
 
+- name: Restart systemd-resolved
+  ansible.builtin.systemd:
+    name: systemd-resolved
+    state: restarted
+  when: not ansible_check_mode
+
 - name: Restart postgrey
   ansible.builtin.systemd:
     name: postgrey

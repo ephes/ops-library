@@ -104,6 +104,72 @@
           - smtputf8_enabled.stdout | trim == "no"
         fail_msg: "smtputf8_enable should be 'no' for relay/backend compatibility"
 
+    - name: Verify | Postfix configuration passes postfix check
+      ansible.builtin.command: postfix check
+      changed_when: false
+
+    - name: Verify | Read filtering settings
+      ansible.builtin.command:
+        argv: [postconf, -h, smtpd_recipient_restrictions, unverified_recipient_reject_code,
+               address_verify_default_transport, postscreen_dnsbl_sites, postscreen_access_list]
+      register: filtering_settings
+      changed_when: false
+
+    - name: Verify | Assert recipient verification and postscreen settings
+      ansible.builtin.assert:
+        that:
+          - "'reject_unverified_recipient' in filtering_settings.stdout_lines[0]"
+          - "filtering_settings.stdout_lines[0] | regex_search('reject_unauth_destination.*reject_unverified_recipient')"
+          - filtering_settings.stdout_lines[1] == "550"
+          - filtering_settings.stdout_lines[2] == "discard:verified-by-srs-reverse"
+          - "'zen.spamhaus.org=127.0.0.[2..11]*3' in filtering_settings.stdout_lines[3]"
+          - "'cidr:/etc/postfix/postscreen_access.cidr' in filtering_settings.stdout_lines[4]"
+        fail_msg: "Recipient verification / postscreen settings not rendered as expected: {{ filtering_settings.stdout_lines }}"
+
+    - name: Verify | Read master.cf services
+      ansible.builtin.command: postconf -M
+      register: master_services
+      changed_when: false
+
+    - name: Verify | Assert postscreen front end and submission cleanup
+      ansible.builtin.assert:
+        that:
+          - master_services.stdout is regex('(?m)^smtp\s+inet\s.*postscreen')
+          - master_services.stdout is regex('(?m)^smtpd\s+pass\s.*smtpd')
+          - master_services.stdout is regex('(?m)^dnsblog\s+unix\s')
+          - master_services.stdout is regex('(?m)^tlsproxy\s+unix\s')
+          - master_services.stdout is regex('(?m)^submission\s+inet\s.*cleanup_service_name=cleanup_submission')
+          - master_services.stdout is regex('(?m)^cleanup_submission\s+unix\s.*header_checks=regexp:/etc/postfix/submission_header_checks.*nested_header_checks= .*mime_header_checks=')
+        fail_msg: "master.cf does not have the expected postscreen/cleanup_submission services"
+
+    - name: Verify | Submission header check discards tagged spam only
+      ansible.builtin.command:
+        argv: [postmap, -q, "{{ item.header }}", "regexp:/etc/postfix/submission_header_checks"]
+      register: header_check_results
+      changed_when: false
+      failed_when: false
+      loop:
+        - {header: "X-Spam-Status: Yes, score=8.90", expect: true}
+        - {header: "X-Spam-Status: No, score=0.70", expect: false}
+        - {header: "Subject: X-Spam-Status: Yes, score=9", expect: false}
+
+    - name: Verify | Assert submission header check results
+      ansible.builtin.assert:
+        that:
+          - (item.stdout is search('^DISCARD')) == item.item.expect
+        fail_msg: "Unexpected header_checks result for {{ item.item.header }}: {{ item.stdout }}"
+      loop: "{{ header_check_results.results }}"
+
+    - name: Verify | No resolved drop-in when the local recursor is disabled
+      ansible.builtin.stat:
+        path: /etc/systemd/resolved.conf.d/10-mail-relay-local-recursor.conf
+      register: recursor_dropin
+
+    - name: Verify | Assert resolved drop-in absent
+      ansible.builtin.assert:
+        that:
+          - not recursor_dropin.stat.exists
+
     - name: Verify | Postfix is active
       ansible.builtin.command: systemctl is-active postfix
       register: postfix_status

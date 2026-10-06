@@ -29,3 +29,35 @@
   loop:
     - /etc/postfix
     - /etc/postfix/sasl
+
+- name: postfix | Create postscreen access list
+  ansible.builtin.template:
+    src: postscreen_access.cidr.j2
+    dest: /etc/postfix/postscreen_access.cidr
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload postfix
+  when: mail_relay_postscreen_enabled
+
+- name: postfix | Remove postscreen access list when postscreen is disabled
+  ansible.builtin.file:
+    path: /etc/postfix/postscreen_access.cidr
+    state: absent
+  when: not mail_relay_postscreen_enabled
+
+- name: postfix | Create submission header checks
+  ansible.builtin.template:
+    src: submission_header_checks.j2
+    dest: /etc/postfix/submission_header_checks
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload postfix
+  when: mail_relay_submission_discard_spam
+
+- name: postfix | Remove submission header checks when discarding is disabled
+  ansible.builtin.file:
+    path: /etc/postfix/submission_header_checks
+    state: absent
+  when: not mail_relay_submission_discard_spam

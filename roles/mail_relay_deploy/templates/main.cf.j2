@@ -120,8 +120,19 @@ smtpd_recipient_restrictions =
 {% if mail_relay_greylisting_enabled %}
     check_policy_service inet:127.0.0.1:{{ mail_relay_greylisting_port }},
 {% endif %}
-    reject_unauth_destination
+    reject_unauth_destination{{ ',' if mail_relay_verify_recipients else '' }}
+{% if mail_relay_verify_recipients %}
+    reject_unverified_recipient
+{% endif %}
 
+{% if mail_relay_verify_recipients %}
+# Recipient verification against the backend (see mail_relay_verify_recipients).
+# Unknown recipients get a permanent 550; when the backend is unreachable the
+# default unverified_recipient_tempfail_action (defer_if_permit) applies.
+unverified_recipient_reject_code = {{ mail_relay_unverified_recipient_reject_code }}
+address_verify_default_transport = {{ mail_relay_verify_external_transport }}
+
+{% endif %}
 smtpd_sender_restrictions =
     reject_unknown_sender_domain
 
@@ -131,6 +142,23 @@ smtpd_helo_restrictions =
     reject_invalid_helo_hostname,
     reject_non_fqdn_helo_hostname
 
+{% if mail_relay_postscreen_enabled %}
+# =============================================================================
+# postscreen (port 25)
+# =============================================================================
+
+postscreen_access_list = permit_mynetworks, cidr:/etc/postfix/postscreen_access.cidr
+postscreen_dnsbl_sites =
+{% for site in mail_relay_postscreen_dnsbl_sites %}
+    {{ site }}{{ ',' if not loop.last else '' }}
+{% endfor %}
+postscreen_dnsbl_threshold = {{ mail_relay_postscreen_dnsbl_threshold }}
+postscreen_dnsbl_action = {{ mail_relay_postscreen_dnsbl_action }}
+postscreen_greet_action = {{ mail_relay_postscreen_greet_action }}
+# Deep protocol tests stay off: they force a reconnect and gain little on top
+# of greylisting.
+
+{% endif %}
 # =============================================================================
 # Rate Limiting
 # =============================================================================

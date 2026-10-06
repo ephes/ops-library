@@ -5,10 +5,19 @@
 # =============================================================================
 # SMTP - Port 25 (inbound from internet)
 # =============================================================================
+{% if mail_relay_postscreen_enabled %}
+smtp      inet  n       -       y       -       1       postscreen
+smtpd     pass  -       -       y       -       -       smtpd
+{% else %}
 smtp      inet  n       -       y       -       -       smtpd
+{% endif %}
   -o smtpd_tls_security_level={{ mail_relay_smtpd_tls_security_level }}
   -o smtpd_sasl_auth_enable=no
   -o smtpd_relay_restrictions=permit_mynetworks,reject_unauth_destination
+{% if mail_relay_postscreen_enabled %}
+dnsblog   unix  -       -       y       -       0       dnsblog
+tlsproxy  unix  -       -       y       -       0       tlsproxy
+{% endif %}
 
 {% if mail_relay_submission_enabled %}
 # =============================================================================
@@ -25,6 +34,9 @@ submission inet n       -       n       -       -       smtpd
   -o smtpd_reject_unlisted_recipient=no
   -o smtpd_relay_restrictions=permit_sasl_authenticated,reject
   -o milter_macro_daemon_name=ORIGINATING
+{% if mail_relay_submission_discard_spam %}
+  -o cleanup_service_name=cleanup_submission
+{% endif %}
 
 # =============================================================================
 # SMTPS - Port 465 (implicit TLS submission)
@@ -37,6 +49,18 @@ smtps     inet  n       -       n       -       -       smtpd
   -o smtpd_reject_unlisted_recipient=no
   -o smtpd_relay_restrictions=permit_sasl_authenticated,reject
   -o milter_macro_daemon_name=ORIGINATING
+{% if mail_relay_submission_discard_spam %}
+  -o cleanup_service_name=cleanup_submission
+{% endif %}
+{% if mail_relay_submission_discard_spam %}
+
+# Cleanup for submission/smtps: discards mail the backend tagged as spam
+# (mail_relay_submission_discard_spam). Top-level header only.
+cleanup_submission unix n -     y       -       0       cleanup
+  -o header_checks=regexp:/etc/postfix/submission_header_checks
+  -o nested_header_checks=
+  -o mime_header_checks=
+{% endif %}
 {% endif %}
 
 # =============================================================================

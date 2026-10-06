@@ -15,6 +15,12 @@
       - mail_relay_postgrey_whitelist_clients_extra is iterable
       - mail_relay_postgrey_whitelist_clients_extra is not string
       - mail_relay_postgrey_whitelist_clients_extra is not mapping
+      - mail_relay_postscreen_access_extra is iterable
+      - mail_relay_postscreen_access_extra is not string
+      - mail_relay_postscreen_dnsbl_sites is iterable
+      - mail_relay_postscreen_dnsbl_sites is not string
+      - (not mail_relay_postscreen_enabled) or (mail_relay_postscreen_dnsbl_sites | length > 0)
+      - mail_relay_unverified_recipient_reject_code | int in [450, 550]
     fail_msg: |  # pragma: allowlist secret
       Required variables not set:
       - mail_relay_domains: List of domains to accept mail for
@@ -23,6 +29,8 @@
       - mail_relay_inet_protocols: one of all, ipv4, ipv6
       - mail_relay_smtp_address_preference: one of any, ipv4, ipv6
       - mail_relay_postgrey_whitelist_clients_extra: list of extra postgrey whitelist clients
+      - mail_relay_postscreen_access_extra / mail_relay_postscreen_dnsbl_sites: lists (sites non-empty when postscreen is enabled)
+      - mail_relay_unverified_recipient_reject_code: 450 or 550
 
 - name: Validate recipient rewrite entries
   ansible.builtin.assert:
@@ -57,6 +65,9 @@
 - name: Configure SRS
   ansible.builtin.import_tasks: srs.yml
   when: mail_relay_srs_enabled
+
+- name: Configure local recursive resolver
+  ansible.builtin.import_tasks: resolver.yml
 
 - name: Configure services
   ansible.builtin.import_tasks: services.yml

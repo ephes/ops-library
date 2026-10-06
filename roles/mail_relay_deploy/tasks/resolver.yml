@@ -1,0 +1,72 @@
+---
+# Local recursive resolver for DNSBL lookups (mail_relay_local_recursor_enabled)
+
+- name: resolver | Install dig for the recursor check
+  ansible.builtin.apt:
+    name: bind9-dnsutils
+    state: present
+  when: mail_relay_local_recursor_enabled
+
+# In check mode the apt task above does not install anything, so dig may be
+# missing on a fresh host. The probe is then skipped (and reported) in check
+# mode only; a real run always installs dig and always probes.
+- name: resolver | Check whether dig is available
+  ansible.builtin.stat:
+    path: /usr/bin/dig
+  register: _mail_relay_dig
+  when: mail_relay_local_recursor_enabled
+
+- name: resolver | Report skipped recursor check in check mode
+  ansible.builtin.debug:
+    msg: "dig is not installed yet; the local recursor check runs on the real deploy."
+  when:
+    - mail_relay_local_recursor_enabled
+    - ansible_check_mode
+    - not _mail_relay_dig.stat.exists
+
+# Refuse to make the local recursor the only host resolver unless it actually
+# recurses and is answered by Spamhaus (127.0.0.2 is Spamhaus's permanent test
+# point). Read-only, so it also runs in check mode.
+- name: resolver | Check that the local recursor answers DNSBL queries
+  ansible.builtin.command:
+    argv:
+      - dig
+      - +short
+      - +time=3
+      - +tries=2
+      - "@{{ mail_relay_local_recursor_address }}"
+      - 2.0.0.127.zen.spamhaus.org
+      - A
+  register: _mail_relay_recursor_probe
+  changed_when: false
+  failed_when: "'127.0.0.2' not in _mail_relay_recursor_probe.stdout_lines"
+  check_mode: false
+  when:
+    - mail_relay_local_recursor_enabled
+    - (not ansible_check_mode) or _mail_relay_dig.stat.exists
+
+- name: resolver | Ensure resolved drop-in directory exists
+  ansible.builtin.file:
+    path: "{{ mail_relay_local_recursor_dropin | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: mail_relay_local_recursor_enabled
+
+- name: resolver | Point systemd-resolved at the local recursor
+  ansible.builtin.template:
+    src: resolved-local-recursor.conf.j2
+    dest: "{{ mail_relay_local_recursor_dropin }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart systemd-resolved
+  when: mail_relay_local_recursor_enabled
+
+- name: resolver | Remove the local recursor drop-in when disabled
+  ansible.builtin.file:
+    path: "{{ mail_relay_local_recursor_dropin }}"
+    state: absent
+  notify: Restart systemd-resolved
+  when: not mail_relay_local_recursor_enabled

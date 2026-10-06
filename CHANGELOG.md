@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased — Edge recipient verification and spam filtering (2.28.0)
+
+- `mail_relay_deploy` can verify port-25 recipients against the backend
+  (`mail_relay_verify_recipients`, default `false`). Without it the edge accepted
+  any local part in its domains, and the backend refused unknown ones only after
+  that. The edge then bounced to the forged sender (backscatter): 20 such bounces
+  in one month for a single made-up address. Unknown recipients now get a `550`
+  at RCPT time. Probes for valid SRS bounce addresses are answered locally
+  (`address_verify_default_transport`), so legitimate bounces don't depend on
+  the original sender's MX accepting a probe.
+- `mail_relay_postscreen_enabled` puts postscreen with DNSBL (Spamhaus ZEN,
+  DNSWL as negative weight) and the pregreet test in front of port 25.
+- `mail_relay_local_recursor_enabled` points systemd-resolved at a local
+  recursor through a drop-in, with exactly one server, because DNSBLs refuse
+  public resolvers. The role checks that the recursor answers the Spamhaus test
+  point before switching.
+- `mail_relay_submission_discard_spam` discards mail submitted on 587/465 whose
+  top-level header carries the backend's spam verdict
+  (`X-Spam-Status: Yes, ...`). The backend's alias forwards then no longer relay
+  tagged spam to external addresses. Nested and MIME headers are not matched.
+- The Molecule scenario covers all of these except the recursor.
+
 ## Unreleased — Work app lifecycle roles (2.27.0)
 
 - New `work_app_shared`, `work_app_deploy`, `work_app_backup`,
