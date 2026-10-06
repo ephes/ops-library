@@ -84,7 +84,7 @@ class StaticSiteDeployContractTests(unittest.TestCase):
         )
 
     def test_strict_mode_rejects_extra_publication_content(self) -> None:
-        validation = (ROLE / "tasks/validate_source.yml").read_text()
+        validation = (ROLE / "tasks/validate.yml").read_text()
 
         self.assertIn("static_site_restrict_to_required_files", validation)
         self.assertIn("Enforce exact compact publication allowlist", validation)
@@ -147,7 +147,7 @@ class StaticSiteDeployContractTests(unittest.TestCase):
         self.assertNotIn("'::1'", validation)
 
     def test_source_rejects_special_entries(self) -> None:
-        validation = (ROLE / "tasks/validate_source.yml").read_text()
+        validation = (ROLE / "tasks/validate.yml").read_text()
 
         self.assertIn("file_type: any", validation)
         self.assertIn("Reject special publication source entries", validation)
@@ -163,34 +163,6 @@ class StaticSiteDeployContractTests(unittest.TestCase):
             "static_site_traefik_http_entrypoint not in static_site_traefik_entrypoints",
             validation,
         )
-
-    def test_external_content_mode_skips_controller_source_and_sync(self) -> None:
-        main = (ROLE / "tasks/main.yml").read_text()
-        validation = (ROLE / "tasks/validate.yml").read_text()
-
-        for include in ("validate_source.yml", "content.yml"):
-            start = main.index(f"include_tasks: {include}")
-            block = main[start : main.index("\n\n", start)]
-            self.assertIn("when: static_site_content_source == 'controller'", block)
-        self.assertIn(
-            "static_site_content_source in ['controller', 'external']", validation
-        )
-        self.assertIn(
-            "static_site_content_source != 'controller' or static_site_path_owner == 'root'",
-            validation,
-        )
-        self.assertNotIn("delegate_to: localhost", validation)
-
-    def test_document_root_owner_and_mode_are_configurable(self) -> None:
-        user = (ROLE / "tasks/user.yml").read_text()
-        defaults = (ROLE / "defaults/main.yml").read_text()
-
-        self.assertIn('owner: "{{ static_site_path_owner }}"', user)
-        self.assertIn('mode: "{{ static_site_path_mode }}"', user)
-        self.assertIn("static_site_path_owner: root", defaults)
-        self.assertIn('static_site_path_mode: "0755"', defaults)
-        self.assertIn("static_site_content_source: controller", defaults)
-        self.assertIn("static_site_allowed_networks: []", defaults)
 
 
 if __name__ == "__main__":

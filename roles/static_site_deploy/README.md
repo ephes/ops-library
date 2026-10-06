@@ -9,28 +9,6 @@ This role is intended for small generated archives such as benchmark reports.
 It does not build the site, accept uploads, or expose the source directory
 directly from the controller.
 
-With `static_site_content_source: external` the role skips the controller-side
-source checks and sync and only provisions, serves, and routes the document
-root; another writer owns the content. The companion
-[`static_site_git_refresh`](../static_site_git_refresh/README.md) role is that
-writer for a single page built from a private git repository. In external mode
-set `static_site_path_owner` to the writer's account and
-`static_site_path_mode: "2750"` so published files inherit the service group;
-`static_site_required_files` is not used. The local health check still requires
-an index page, so the writer must publish one before this role runs.
-
-`static_site_allowed_networks` adds a Traefik `ipAllowList` middleware to the
-HTTPS router and to this role's plain-HTTP redirect router. Clients outside the
-listed CIDR ranges receive 403 over HTTPS. When Traefik redirects HTTP to HTTPS
-at the entrypoint (`traefik_http_redirect_to_https`, the `traefik_deploy`
-default), that redirect wins over the role's HTTP router, so disallowed clients
-get a redirect on port 80 and then 403 on HTTPS; no content is served either
-way. Use it for private
-pages whose hostname has public DNS, for example a Tailnet-only page with
-`100.64.0.0/10` and `fd7a:115c:a1e0::/48`. The ranges are matched against the
-TCP peer address Traefik sees, so they are only meaningful when no proxy sits in
-front of Traefik.
-
 ## Requirements
 
 - A Debian 12/13 or Ubuntu target with systemd, Python 3, and rsync.
@@ -76,11 +54,8 @@ only the document root uses the service group.
 | `static_site_service_name` | `static-site` | systemd, user, and Traefik object prefix. |
 | `static_site_user` | service name | Dedicated system account. |
 | `static_site_group` | service user | Dedicated system group. |
-| `static_site_content_source` | `controller` | `controller` syncs `static_site_source_path`; `external` leaves content to another writer. |
-| `static_site_source_path` | `""` | Absolute controller-side generated site directory; required in controller mode. |
+| `static_site_source_path` | `""` | Required absolute controller-side generated site directory. |
 | `static_site_path` | `/srv/static-sites/<service>` | Remote document root. |
-| `static_site_path_owner` | `root` | Document root owner; must be `root` in controller mode. |
-| `static_site_path_mode` | `"0755"` | Document root mode (quoted string). |
 | `static_site_required_files` | `index.html`, `report.md`, `snapshot.json` | Regular files required before sync. |
 | `static_site_restrict_to_required_files` | `false` | Reject nested directories or files outside the required-file allowlist. |
 | `static_site_rsync_delete` | `true` | Remove remote content absent from the selected source. |
@@ -96,7 +71,6 @@ only the document root uses the service group.
 | `static_site_traefik_entrypoints` | `[web-secure]` | HTTPS entrypoints. |
 | `static_site_traefik_http_entrypoint` | `web` | Plain-HTTP entrypoint used only for HTTPS redirection; it must differ from every HTTPS entrypoint. |
 | `static_site_traefik_cert_resolver` | `""` | Optional named resolver; empty uses entrypoint defaults. |
-| `static_site_allowed_networks` | `[]` | Optional CIDR allowlist on the HTTPS and HTTP routers; empty allows every source. |
 | `static_site_traefik_config_path` | `/etc/traefik/dynamic/<service>.yml` | Dynamic configuration path. |
 | `static_site_verify_public` | `false` | Verify the public HTTPS route after deployment. |
 | `static_site_public_healthcheck_retries` | `20` | Public verification attempts. |

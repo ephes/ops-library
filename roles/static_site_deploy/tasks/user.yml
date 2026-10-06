@@ -29,6 +29,6 @@
   ansible.builtin.file:
     path: "{{ static_site_path }}"
     state: directory
-    owner: "{{ static_site_path_owner }}"
+    owner: root
     group: "{{ static_site_group }}"
-    mode: "{{ static_site_path_mode }}"
+    mode: "0755"
