@@ -47,6 +47,11 @@
           - 100.64.0.0/10
         logyard_ingress_middlewares: []
         logyard_ingress_traefik_cert_resolver: letsencrypt
+        logyard_ingress_allowed_paths:
+          - path: /loki/api/v1/push
+            methods: [POST]
+          - path: /ready
+            methods: [GET, HEAD]
 
     - name: Read rendered ingress template
       ansible.builtin.slurp:
@@ -64,6 +69,22 @@
           - "'url: \"http://127.0.0.1:3101\"' in rendered_text"
       vars:
         rendered_text: "{{ rendered_file.content | b64decode }}"
+
+    - name: Assert the internal router forwards only the push path and /ready
+      ansible.builtin.assert:
+        that:
+          - "routers['logyard-int'].rule.endswith(' && (((Method(`POST`)) && Path(`/loki/api/v1/push`)) || ((Method(`GET`) || Method(`HEAD`)) && Path(`/ready`)))')"
+          - "'PathPrefix' not in routers['logyard-int'].rule"
+          - "routers['logyard-root'].rule == 'Host(`logyard.home.xn--wersdrfer-47a.de`) && Path(`/`)'"
+          - "routers['logyard-root'].service == 'noop@internal'"
+          - >-
+            routers | dict2items
+            | selectattr('value.service', 'equalto', 'logyard')
+            | selectattr('value.entryPoints', 'contains', 'web-secure')
+            | rejectattr('value.rule', 'search', 'Path\\(`')
+            | list | length == 0
+      vars:
+        routers: "{{ (rendered_file.content | b64decode | from_yaml).http.routers }}"
 
     - name: Clean up rendered ingress template
       ansible.builtin.file:

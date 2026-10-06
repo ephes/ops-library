@@ -137,7 +137,7 @@ consumer repos depend on.
 | Service deployment | [`archive_deploy`](roles/archive_deploy/README.md) | Deploy the Archive Django service with SQLite, systemd, Traefik, and admin bootstrap. |
 | Service deployment | [`echoport_deploy`](roles/echoport_deploy/README.md) | Deploy the Echoport Django application and its scheduler/cleanup jobs. |
 | Service deployment | [`logyard_deploy`](roles/logyard_deploy/README.md) | Deploy Logyard core runtime (Loki, shared Grafana datasource wiring, retention, and Nyxmon-facing health endpoint). |
-| Service deployment | [`logyard_ingress_deploy`](roles/logyard_ingress_deploy/README.md) | Expose Logyard Loki through an internal-only Traefik route for trusted LAN/Tailscale producers. |
+| Service deployment | [`logyard_ingress_deploy`](roles/logyard_ingress_deploy/README.md) | Expose only the Logyard Loki push path and `/ready` through an internal-only Traefik route for trusted LAN/Tailscale producers. |
 | Service deployment | [`graphyard_deploy`](roles/graphyard_deploy/README.md) | Deploy Graphyard core app/runtime (source sync, uv env, migrate/collectstatic, systemd web+agent, health checks). |
 | Service deployment | [`graphyard_ingress_deploy`](roles/graphyard_ingress_deploy/README.md) | Expose Graphyard + Grafana through Traefik with LAN/Tailscale bypass and public basic auth. |
 | Service deployment | [`graphyard_auth_bootstrap_deploy`](roles/graphyard_auth_bootstrap_deploy/README.md) | Idempotently bootstrap Graphyard Django login and Grafana admin credentials from secrets. |

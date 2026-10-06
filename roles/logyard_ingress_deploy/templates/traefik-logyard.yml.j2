@@ -19,8 +19,12 @@ http:
       tls: {}
 {% endif %}
 {% endif %}
+    # Only the producer push path and the readiness probe are routed. Loki runs
+    # with auth_enabled: false, so query, tail, label and delete endpoints must
+    # never be reachable here; any other path on this host has no router (404).
+    # Grafana reads Loki over the docker network, not through this ingress.
     logyard-int:
-      rule: "Host(`{{ logyard_ingress_host }}`) && ({% for range in logyard_ingress_internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %})"
+      rule: "Host(`{{ logyard_ingress_host }}`) && ({% for range in logyard_ingress_internal_ip_ranges %}ClientIP(`{{ range }}`){{ ' || ' if not loop.last else '' }}{% endfor %}) && ({% for entry in logyard_ingress_allowed_paths %}(({% for method in entry.methods %}Method(`{{ method }}`){{ ' || ' if not loop.last else '' }}{% endfor %}) && Path(`{{ entry.path }}`)){{ ' || ' if not loop.last else '' }}{% endfor %})"
       entryPoints:
         - web-secure
       priority: 120
