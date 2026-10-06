@@ -35,6 +35,12 @@ echoport_allowed_path_prefixes:
   - "/var/lib/"
   - "/mnt/cryptdata/"
 
+# Optional Echoport timing settings. Empty means "not rendered", so Echoport
+# uses its own default (shown in the comment).
+echoport_stale_run_grace_seconds: ""        # Echoport default 900
+echoport_late_result_window_seconds: ""     # Echoport default 86400
+echoport_health_overdue_grace_minutes: ""   # Echoport default 60
+
 # Django settings
 echoport_django_settings_module: "config.settings.production"
 echoport_django_allowed_hosts: "127.0.0.1"

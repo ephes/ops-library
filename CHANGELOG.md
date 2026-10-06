@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased — Voxhelm prune job and new service settings (2.31.7)
+
+Nothing changes on deploy until the owner sets the new variables: the prune
+job is off, and every new setting is left out of the env files (so each app
+keeps its own default) unless it is set. Rollout: install this collection
+version in ops-control; redeploy voxhelm, echoport or mailgun-relay only when
+setting one of the new variables.
+
+- `voxhelm_deploy`: optional hourly launchd job
+  `de.wersdoerfer.voxhelm-prune` for `manage.py prune_job_artifacts` (Voxhelm
+  D-09 retention). New `prune.sh` sources `voxhelm.env` like the worker; the
+  plist uses `StartInterval` (`voxhelm_prune_interval_seconds`, default 3600)
+  with `RunAtLoad` and `KeepAlive` false, and a deploy never kickstarts it.
+  `voxhelm_prune_enabled` defaults to `false` because the first real run deletes
+  the whole backlog; `voxhelm_prune_dry_run` defaults to `true`, so enabling the
+  job alone only logs what it would delete. Disabling it unloads the job, fails
+  if launchd still has it loaded, and then removes the plist and script. Enable steps are in the role README ("Job Artifact
+  Pruning"). `voxhelm_remote_worker_deploy` never schedules pruning.
+- `voxhelm_deploy`: optional `voxhelm_source_artifact_retention_seconds`,
+  `voxhelm_job_metadata_retention_seconds`,
+  `voxhelm_staged_input_retention_seconds`,
+  `voxhelm_wyoming_stt_max_audio_seconds` and `voxhelm_private_url_hosts`,
+  rendered as the matching `VOXHELM_*` settings only when set and validated
+  before deployment.
+- `echoport_deploy`: optional `echoport_stale_run_grace_seconds`,
+  `echoport_late_result_window_seconds` and
+  `echoport_health_overdue_grace_minutes` (`ECHOPORT_*` in `.env`), rendered
+  only when set and validated as non-negative whole numbers.
+- `mailgun_relay_deploy`: optional `mailgun_relay_smtp_max_concurrency`
+  (`MAILGUN_RELAY_SMTP_MAX_CONCURRENCY`), rendered only when set; must be at
+  least 1.
+- New `tests/test_voxhelm_prune_and_service_knobs.py`
+  (`just test-voxhelm-prune-and-service-knobs`, part of `just test`) renders
+  the prune script and plist, the task gating, and the env files with and
+  without the new settings, and runs the new validation tasks.
+
 ## Unreleased — FastDeploy legacy service token window (2.31.6)
 
 FastDeploy now rejects service tokens without `jti` unless

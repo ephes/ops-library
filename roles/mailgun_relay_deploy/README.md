@@ -52,6 +52,7 @@ expose the service publicly behind TLS.
 | `mailgun_relay_smtp_host` | `smtp.home.xn--wersdrfer-47a.de` | |
 | `mailgun_relay_smtp_port` | `587` | |
 | `mailgun_relay_smtp_starttls` | `true` | |
+| `mailgun_relay_smtp_max_concurrency` | `""` | optional; empty keeps the relay default (8). Rendered as `MAILGUN_RELAY_SMTP_MAX_CONCURRENCY`, must be a whole number of at least 1 |
 | `mailgun_relay_max_body_bytes` | `26_214_400` | 25 MiB cap (HTTP request) |
 | `mailgun_relay_max_attachments` | `10` | |
 | `mailgun_relay_max_attachment_bytes` | `10_485_760` | 10 MiB per file |
