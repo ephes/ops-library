@@ -28,6 +28,12 @@ fd_self_uvicorn_workers: 1  # Uvicorn recommends 1 worker, use multiple processe
 # Password hashing algorithm
 fd_self_password_hash_algorithm: "bcrypt"
 
+# Service token settings rendered into .env only when non-empty (see the
+# fastdeploy_deploy role for the meaning). Quote the ISO 8601 timestamp.
+fd_self_legacy_service_tokens_accepted_until: ""
+fd_self_service_token_max_expire_days: ""
+fd_self_service_token_retention_days: ""
+
 # Cleanup configuration
 fd_self_cleanup_old_deployments: true
 fd_self_cleanup_days: 7

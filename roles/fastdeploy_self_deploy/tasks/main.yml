@@ -14,6 +14,9 @@
     quiet: true
   no_log: true
 
+- name: Validate service token settings
+  include_tasks: validate_service_token_settings.yml
+
 - name: Ensure deployment directories exist
   file:
     path: "{{ item }}"
