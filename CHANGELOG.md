@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased — Restore safety (2.31.4)
+
+- `vaultwarden_restore` (legacy path; Echoport stays the preferred restore)
+  no longer overwrites the vault blind:
+  - the staged `db.sqlite3` must exist and pass `PRAGMA integrity_check`
+    before the service is touched;
+  - symlinked `attachments`, `sends`, `db.sqlite3` or key files are refused
+    before the stop, since the safety copy would only keep the link;
+  - a failed stop aborts the run with the live data untouched (it was
+    `failed_when: false`, so the DB could be copied under a running
+    Vaultwarden);
+  - after the stop it takes a timestamped safety copy of the data directory
+    (DB with `-wal`/`-shm`, keys, attachments, sends) and of the config,
+    systemd override and Traefik file under
+    `vaultwarden_restore_safety_root` (default
+    `/var/backups/vaultwarden-pre-restore`) and reports its path;
+  - stale `db.sqlite3-wal`/`-shm`/`-journal` are removed before the copy, so
+    SQLite cannot replay an old WAL over the restored database;
+  - rsync and key copy failures are fatal (they were ignored, so a partial
+    restore reported success);
+  - any failure while overwriting puts the safety copy back and fails with
+    Vaultwarden left stopped;
+  - the decrypted archive on the controller and the remote staging directory
+    are removed in `always`, also after a failure.
+  `sqlite3` is now installed with `rsync`. New static test
+  `tests/test_vaultwarden_restore_safety.py` (`just test-restore-safety`, part
+  of `just test`); the molecule scenario now restores a real SQLite file and
+  checks the WAL removal and the safety copy.
+
 ## Unreleased — Backups restart stopped services on failure (2.31.3)
 
 A failed copy or dump step no longer leaves the service stopped. Rollout:

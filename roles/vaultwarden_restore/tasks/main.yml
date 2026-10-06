@@ -1,17 +1,37 @@
 ---
 # Vaultwarden restore tasks
-# Restores from local backup archives (fetched during backup) to remote server
+# Restores from local backup archives (fetched during backup) to remote server.
+#
+# Safety contract (legacy path; Echoport is the preferred restore runner):
+# - the staged database must pass `PRAGMA integrity_check` before anything is
+#   stopped or overwritten;
+# - a failed service stop aborts the restore with the live data untouched;
+# - a timestamped safety copy of the data directory (DB with -wal/-shm, keys,
+#   attachments, sends) and of the config, systemd override and Traefik file is
+#   taken after the stop and before the first overwrite;
+# - stale -wal/-shm files are removed before the database is copied;
+# - any failure while restoring puts the safety copy back and leaves the
+#   service stopped;
+# - the decrypted archive on the controller and the remote staging directory
+#   are removed whether the restore succeeds or fails.
 
 - name: Validate restore inputs
   ansible.builtin.assert:
     that:
       - vaultwarden_restore_local_dir | length > 0
       - vaultwarden_restore_archive | length > 0
-    fail_msg: "vaultwarden_restore_local_dir and vaultwarden_restore_archive are required"
+      - vaultwarden_restore_safety_root | length > 0
+      - vaultwarden_restore_safety_root.startswith('/')
+      - vaultwarden_restore_safety_root | trim('/') | length > 0
+    fail_msg: >-
+      vaultwarden_restore_local_dir and vaultwarden_restore_archive are required,
+      and vaultwarden_restore_safety_root must be an absolute path other than /
 
 - name: Ensure restore dependencies are installed
   ansible.builtin.apt:
-    name: rsync
+    name:
+      - rsync
+      - sqlite3
     state: present
     update_cache: true
     cache_valid_time: 3600
@@ -62,237 +82,474 @@
     msg: "Vaultwarden restore archive not found: {{ vaultwarden_restore_selected_archive }}"
   when: not vaultwarden_restore_selected_stat.stat.exists
 
-- name: Check if archive is encrypted
+- name: Check if archive is encrypted and name the safety copy
   ansible.builtin.set_fact:
     vaultwarden_restore_is_encrypted: "{{ vaultwarden_restore_selected_archive.endswith('.age') }}"
+    vaultwarden_restore_safety_dir: >-
+      {{ vaultwarden_restore_safety_root | regex_replace('/+$', '') }}/{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}
 
 - name: Display restore info
   ansible.builtin.debug:
     msg: "Restoring Vaultwarden from {{ vaultwarden_restore_selected_archive }} (encrypted: {{ vaultwarden_restore_is_encrypted }})"
 
-# --- Decrypt archive on localhost if needed ---
+- name: Restore with plaintext cleanup
+  block:
+    # --- Decrypt archive on localhost if needed ---
 
-- name: Create local temp directory for decryption
-  delegate_to: localhost
-  become: false
-  ansible.builtin.tempfile:
-    state: directory
-    prefix: vaultwarden_restore_
-  register: vaultwarden_restore_local_temp
-  when: vaultwarden_restore_is_encrypted | bool
+    - name: Create local temp directory for decryption
+      delegate_to: localhost
+      become: false
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: vaultwarden_restore_
+      register: vaultwarden_restore_local_temp
+      when: vaultwarden_restore_is_encrypted | bool
 
-- name: Decrypt backup archive with age
-  delegate_to: localhost
-  become: false
-  ansible.builtin.command:
-    cmd: >
-      age --decrypt
-      --identity {{ vaultwarden_restore_age_identity }}
-      --output {{ vaultwarden_restore_local_temp.path }}/backup.tar.gz
-      {{ vaultwarden_restore_selected_archive }}
-  when: vaultwarden_restore_is_encrypted | bool
+    - name: Decrypt backup archive with age
+      delegate_to: localhost
+      become: false
+      ansible.builtin.command:
+        argv:
+          - age
+          - --decrypt
+          - --identity
+          - "{{ vaultwarden_restore_age_identity }}"
+          - --output
+          - "{{ vaultwarden_restore_local_temp.path }}/backup.tar.gz"
+          - "{{ vaultwarden_restore_selected_archive }}"
+      changed_when: true
+      when: vaultwarden_restore_is_encrypted | bool
 
-- name: Set archive path for upload
-  ansible.builtin.set_fact:
-    vaultwarden_restore_upload_archive: >-
-      {{ vaultwarden_restore_local_temp.path ~ '/backup.tar.gz'
-         if vaultwarden_restore_is_encrypted | bool
-         else vaultwarden_restore_selected_archive }}
+    - name: Set archive path for upload
+      ansible.builtin.set_fact:
+        vaultwarden_restore_upload_archive: >-
+          {{ vaultwarden_restore_local_temp.path ~ '/backup.tar.gz'
+             if vaultwarden_restore_is_encrypted | bool
+             else vaultwarden_restore_selected_archive }}
 
-# --- Prepare remote staging area ---
+    # --- Prepare remote staging area ---
 
-- name: Reset staging directory on remote
-  ansible.builtin.file:
-    path: "{{ vaultwarden_restore_staging_dir }}"
-    state: absent
+    - name: Reset staging directory on remote
+      ansible.builtin.file:
+        path: "{{ vaultwarden_restore_staging_dir }}"
+        state: absent
 
-- name: Create staging directory on remote
-  ansible.builtin.file:
-    path: "{{ vaultwarden_restore_staging_dir }}"
-    state: directory
-    mode: "0700"
+    - name: Create staging directory on remote
+      ansible.builtin.file:
+        path: "{{ vaultwarden_restore_staging_dir }}"
+        state: directory
+        mode: "0700"
 
-# --- Copy and extract archive on remote ---
+    # --- Copy and extract archive on remote ---
 
-- name: Copy backup archive to remote
-  ansible.builtin.copy:
-    src: "{{ vaultwarden_restore_upload_archive }}"
-    dest: "{{ vaultwarden_restore_staging_dir }}/backup.tar.gz"
-    mode: "0600"
+    - name: Copy backup archive to remote
+      ansible.builtin.copy:
+        src: "{{ vaultwarden_restore_upload_archive }}"
+        dest: "{{ vaultwarden_restore_staging_dir }}/backup.tar.gz"
+        mode: "0600"
 
-- name: Extract archive on remote
-  ansible.builtin.unarchive:
-    src: "{{ vaultwarden_restore_staging_dir }}/backup.tar.gz"
-    dest: "{{ vaultwarden_restore_staging_dir }}"
-    remote_src: true
+    - name: Extract archive on remote
+      ansible.builtin.unarchive:
+        src: "{{ vaultwarden_restore_staging_dir }}/backup.tar.gz"
+        dest: "{{ vaultwarden_restore_staging_dir }}"
+        remote_src: true
 
-# --- Cleanup local temp ---
+    # --- Cleanup local temp early (the always section repeats it on failure) ---
 
-- name: Cleanup local temp directory
-  delegate_to: localhost
-  become: false
-  ansible.builtin.file:
-    path: "{{ vaultwarden_restore_local_temp.path }}"
-    state: absent
-  when:
-    - vaultwarden_restore_is_encrypted | bool
-    - vaultwarden_restore_local_temp is defined
+    - name: Cleanup local temp directory
+      delegate_to: localhost
+      become: false
+      ansible.builtin.file:
+        path: "{{ vaultwarden_restore_local_temp.path }}"
+        state: absent
+      when:
+        - vaultwarden_restore_is_encrypted | bool
+        - vaultwarden_restore_local_temp.path is defined
 
-# --- Locate payload and restore ---
+    # --- Locate and validate the payload before touching the live service ---
 
-- name: Locate extracted payload directory
-  ansible.builtin.find:
-    paths: "{{ vaultwarden_restore_staging_dir }}"
-    file_type: directory
-    depth: 1
-  register: vaultwarden_restore_payload_dirs
+    - name: Locate extracted payload directory
+      ansible.builtin.find:
+        paths: "{{ vaultwarden_restore_staging_dir }}"
+        file_type: directory
+        depth: 1
+      register: vaultwarden_restore_payload_dirs
 
-- name: Set Vaultwarden payload path
-  ansible.builtin.set_fact:
-    vaultwarden_restore_payload_dir: >-
-      {{ (vaultwarden_restore_payload_dirs.files
-          | rejectattr('path', 'equalto', vaultwarden_restore_staging_dir)
-          | map(attribute='path')
-          | list
-          | first) | default('') }}
+    - name: Set Vaultwarden payload path
+      ansible.builtin.set_fact:
+        vaultwarden_restore_payload_dir: >-
+          {{ (vaultwarden_restore_payload_dirs.files
+              | rejectattr('path', 'equalto', vaultwarden_restore_staging_dir)
+              | map(attribute='path')
+              | list
+              | first) | default('') }}
 
-- name: Abort when payload directory missing
-  ansible.builtin.fail:
-    msg: "Unable to locate payload directory inside restore archive"
-  when: vaultwarden_restore_payload_dir | length == 0
+    - name: Abort when payload directory missing
+      ansible.builtin.fail:
+        msg: "Unable to locate payload directory inside restore archive"
+      when: vaultwarden_restore_payload_dir | length == 0
 
-- name: Gather payload content facts
-  ansible.builtin.stat:
-    path: "{{ item.path }}"
-  register: vaultwarden_restore_payload_stats
-  loop:
-    - { path: "{{ vaultwarden_restore_payload_dir }}/data", label: "data" }
-    - { path: "{{ vaultwarden_restore_payload_dir }}/config/{{ vaultwarden_config_file | basename }}", label: "config" }
-    - { path: "{{ vaultwarden_restore_payload_dir }}/systemd/override.conf", label: "systemd override" }
-    - { path: "{{ vaultwarden_restore_payload_dir }}/traefik/{{ vaultwarden_traefik_config_path | basename }}", label: "traefik config" }
-  loop_control:
-    label: "{{ item.label }}"
+    - name: Gather payload content facts
+      ansible.builtin.stat:
+        path: "{{ item.path }}"
+      register: vaultwarden_restore_payload_stats
+      loop:
+        - { path: "{{ vaultwarden_restore_payload_dir }}/data", label: "data" }
+        - { path: "{{ vaultwarden_restore_payload_dir }}/config/{{ vaultwarden_config_file | basename }}", label: "config" }
+        - { path: "{{ vaultwarden_restore_payload_dir }}/systemd/override.conf", label: "systemd override" }
+        - { path: "{{ vaultwarden_restore_payload_dir }}/traefik/{{ vaultwarden_traefik_config_path | basename }}", label: "traefik config" }
+        - { path: "{{ vaultwarden_restore_payload_dir }}/data/db.sqlite3", label: "database" }
+        - { path: "{{ vaultwarden_restore_payload_dir }}/data/attachments", label: "attachments" }
+        - { path: "{{ vaultwarden_restore_payload_dir }}/data/sends", label: "sends" }
+        - { path: "{{ vaultwarden_restore_payload_dir }}/data/rsa_key.pem", label: "rsa key" }
+        - { path: "{{ vaultwarden_restore_payload_dir }}/data/rsa_key.pub.pem", label: "rsa public key" }
+      loop_control:
+        label: "{{ item.label }}"
 
-- name: Abort when Vaultwarden data payload is missing
-  ansible.builtin.fail:
-    msg: "Vaultwarden data directory missing inside archive: {{ vaultwarden_restore_payload_dir }}/data"
-  when: not vaultwarden_restore_payload_stats.results[0].stat.exists
+    - name: Abort when Vaultwarden data payload is missing
+      ansible.builtin.fail:
+        msg: "Vaultwarden data directory missing inside archive: {{ vaultwarden_restore_payload_dir }}/data"
+      when: not vaultwarden_restore_payload_stats.results[0].stat.exists
 
-- name: Ensure Vaultwarden directories exist
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    state: directory
-    owner: "{{ item.owner }}"
-    group: "{{ item.group }}"
-    mode: "{{ item.mode }}"
-  loop:
-    - { path: "{{ vaultwarden_data_dir }}", owner: "{{ vaultwarden_user }}", group: "{{ vaultwarden_group }}", mode: "0750" }
-    - { path: "{{ vaultwarden_data_dir }}/attachments", owner: "{{ vaultwarden_user }}", group: "{{ vaultwarden_group }}", mode: "0750" }
-    - { path: "{{ vaultwarden_data_dir }}/sends", owner: "{{ vaultwarden_user }}", group: "{{ vaultwarden_group }}", mode: "0750" }
-    - { path: "{{ vaultwarden_log_dir }}", owner: "{{ vaultwarden_user }}", group: "{{ vaultwarden_group }}", mode: "0750" }
-    - { path: "{{ vaultwarden_service_override_dir }}", owner: "root", group: "root", mode: "0755" }
-    - { path: "{{ vaultwarden_traefik_config_path | dirname }}", owner: "root", group: "root", mode: "0755" }
+    - name: Abort when Vaultwarden database is missing from the archive
+      ansible.builtin.fail:
+        msg: "Vaultwarden database missing inside archive: {{ vaultwarden_restore_payload_dir }}/data/db.sqlite3"
+      when: not vaultwarden_restore_payload_stats.results[4].stat.exists
 
-- name: Stop Vaultwarden before restore
-  ansible.builtin.systemd:
-    name: "{{ vaultwarden_service_name }}"
-    state: stopped
-  failed_when: false
+    - name: Check staged database integrity before stopping anything
+      ansible.builtin.command:
+        argv:
+          - sqlite3
+          - "{{ vaultwarden_restore_payload_dir }}/data/db.sqlite3"
+          - "PRAGMA integrity_check;"
+      register: vaultwarden_restore_db_integrity
+      changed_when: false
+      failed_when: >-
+        vaultwarden_restore_db_integrity.rc != 0
+        or (vaultwarden_restore_db_integrity.stdout | trim) != 'ok'
 
-- name: Restore SQLite database
-  ansible.builtin.copy:
-    src: "{{ vaultwarden_restore_payload_dir }}/data/db.sqlite3"
-    dest: "{{ vaultwarden_data_dir }}/db.sqlite3"
-    owner: "{{ vaultwarden_user }}"
-    group: "{{ vaultwarden_group }}"
-    mode: "0640"
-    remote_src: true
-  when: vaultwarden_restore_payload_stats.results[0].stat.exists
+    - name: Ensure Vaultwarden directories exist
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ vaultwarden_data_dir }}", owner: "{{ vaultwarden_user }}", group: "{{ vaultwarden_group }}", mode: "0750" }
+        - { path: "{{ vaultwarden_data_dir }}/attachments", owner: "{{ vaultwarden_user }}", group: "{{ vaultwarden_group }}", mode: "0750" }
+        - { path: "{{ vaultwarden_data_dir }}/sends", owner: "{{ vaultwarden_user }}", group: "{{ vaultwarden_group }}", mode: "0750" }
+        - { path: "{{ vaultwarden_log_dir }}", owner: "{{ vaultwarden_user }}", group: "{{ vaultwarden_group }}", mode: "0750" }
+        - { path: "{{ vaultwarden_service_override_dir }}", owner: "root", group: "root", mode: "0755" }
+        - { path: "{{ vaultwarden_traefik_config_path | dirname }}", owner: "root", group: "root", mode: "0755" }
 
-- name: Restore attachments directory  # noqa: command-instead-of-module
-  ansible.builtin.command:
-    cmd: >
-      rsync -a "{{ vaultwarden_restore_payload_dir }}/data/attachments/" "{{ vaultwarden_data_dir }}/attachments/"
-  changed_when: true
-  failed_when: false
+    # The safety copy keeps symlinks as links; a restore through a linked
+    # path would overwrite the very files the safety copy points to.
+    - name: Check live data paths for symlinks
+      ansible.builtin.stat:
+        path: "{{ vaultwarden_data_dir }}/{{ item }}"
+        follow: false
+      loop:
+        - attachments
+        - sends
+        - db.sqlite3
+        - rsa_key.pem
+        - rsa_key.pub.pem
+      register: vaultwarden_restore_live_link_stats
 
-- name: Restore sends directory  # noqa: command-instead-of-module
-  ansible.builtin.command:
-    cmd: >
-      rsync -a "{{ vaultwarden_restore_payload_dir }}/data/sends/" "{{ vaultwarden_data_dir }}/sends/"
-  changed_when: true
-  failed_when: false
+    - name: Refuse to restore through symlinked data paths
+      ansible.builtin.fail:
+        msg: >-
+          Refusing the restore: {{ vaultwarden_restore_live_links | join(', ') }} under
+          {{ vaultwarden_data_dir }} is a symlink, so the safety copy would not protect
+          its contents. Replace the link with the real directory or file first.
+      vars:
+        vaultwarden_restore_live_links: >-
+          {{ vaultwarden_restore_live_link_stats.results
+             | selectattr('stat.islnk', 'defined') | selectattr('stat.islnk')
+             | map(attribute='item') | list }}
+      when: vaultwarden_restore_live_links | length > 0
 
-- name: Restore RSA key files
-  ansible.builtin.copy:
-    src: "{{ item }}"
-    dest: "{{ vaultwarden_data_dir }}/"
-    owner: "{{ vaultwarden_user }}"
-    group: "{{ vaultwarden_group }}"
-    mode: "0600"
-    remote_src: true
-  loop:
-    - "{{ vaultwarden_restore_payload_dir }}/data/rsa_key.pem"
-    - "{{ vaultwarden_restore_payload_dir }}/data/rsa_key.pub.pem"
-  failed_when: false
+    # --- Stop (fail closed) and take the safety copy ---
 
-- name: Restore Vaultwarden config file
-  ansible.builtin.copy:
-    src: "{{ vaultwarden_restore_payload_dir }}/config/{{ vaultwarden_config_file | basename }}"
-    dest: "{{ vaultwarden_config_file }}"
-    owner: root
-    group: vaultwarden
-    mode: "0640"
-    remote_src: true
-  when: vaultwarden_restore_payload_stats.results[1].stat.exists
+    - name: Gather service facts
+      ansible.builtin.service_facts:
 
-- name: Restore systemd override when present
-  ansible.builtin.copy:
-    src: "{{ vaultwarden_restore_payload_dir }}/systemd/override.conf"
-    dest: "{{ vaultwarden_service_override_dir }}/override.conf"
-    owner: root
-    group: root
-    mode: "0644"
-    remote_src: true
-  register: vaultwarden_restore_override_copy
-  when: vaultwarden_restore_payload_stats.results[2].stat.exists
+    - name: Record whether the Vaultwarden unit is installed
+      ansible.builtin.set_fact:
+        vaultwarden_restore_unit_installed: >-
+          {{ (vaultwarden_service_name | regex_replace('[.]service$', ''))
+             in (ansible_facts.services.keys() | map('regex_replace', '[.]service$', '') | list) }}
 
-- name: Restore Traefik configuration when present
-  ansible.builtin.copy:
-    src: "{{ vaultwarden_restore_payload_dir }}/traefik/{{ vaultwarden_traefik_config_path | basename }}"
-    dest: "{{ vaultwarden_traefik_config_path }}"
-    owner: root
-    group: root
-    mode: "0644"
-    remote_src: true
-  register: vaultwarden_restore_traefik_copy
-  when: vaultwarden_restore_payload_stats.results[3].stat.exists
+    - name: Stop Vaultwarden and take a safety copy
+      block:
+        - name: Stop Vaultwarden before restore
+          ansible.builtin.systemd:
+            name: "{{ vaultwarden_service_name }}"
+            state: stopped
+          when: vaultwarden_restore_unit_installed | bool
 
-- name: Reload systemd
-  ansible.builtin.systemd:
-    daemon_reload: true
+        - name: Confirm Vaultwarden is stopped
+          ansible.builtin.command:
+            argv: [systemctl, is-active, "{{ vaultwarden_service_name }}"]
+          register: vaultwarden_restore_is_active
+          changed_when: false
+          failed_when: (vaultwarden_restore_is_active.stdout | trim) not in ['inactive', 'failed']
+          when: vaultwarden_restore_unit_installed | bool
 
-- name: Ensure Vaultwarden permissions on data directory
-  ansible.builtin.file:
-    path: "{{ vaultwarden_data_dir }}"
-    state: directory
-    owner: "{{ vaultwarden_user }}"
-    group: "{{ vaultwarden_group }}"
-    recurse: true
+        - name: Take safety copy of live Vaultwarden data and config
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              safety="$SAFETY_DIR"
+              if [ -e "$safety" ]; then
+                echo "safety directory already exists: $safety" >&2
+                exit 1
+              fi
+              install -d -m 0700 -o root -g root "$SAFETY_ROOT"
+              install -d -m 0700 -o root -g root "$safety" "$safety/files"
+              if [ -d "$DATA_DIR" ]; then
+                # Copy the contents ("/."), so a symlinked data dir is followed
+                # instead of being saved as a link to the live tree.
+                mkdir -m 0700 "$safety/data"
+                cp -a "$DATA_DIR/." "$safety/data/"
+                echo present > "$safety/data.state"
+              else
+                echo absent > "$safety/data.state"
+              fi
+              for name in config override traefik; do
+                case "$name" in
+                  config) src="$CONFIG_FILE" ;;
+                  override) src="$OVERRIDE_FILE" ;;
+                  traefik) src="$TRAEFIK_FILE" ;;
+                esac
+                if [ -e "$src" ] || [ -L "$src" ]; then
+                  cp -a "$src" "$safety/files/$name"
+                fi
+              done
+              sync
+            executable: /bin/bash
+          environment:
+            SAFETY_ROOT: "{{ vaultwarden_restore_safety_root }}"
+            SAFETY_DIR: "{{ vaultwarden_restore_safety_dir }}"
+            DATA_DIR: "{{ vaultwarden_data_dir }}"
+            CONFIG_FILE: "{{ vaultwarden_config_file }}"
+            OVERRIDE_FILE: "{{ vaultwarden_service_override_dir }}/override.conf"
+            TRAEFIK_FILE: "{{ vaultwarden_traefik_config_path }}"
+          changed_when: true
 
-- name: Start Vaultwarden service after restore
-  ansible.builtin.systemd:
-    name: "{{ vaultwarden_service_name }}"
-    enabled: true
-    state: "{{ vaultwarden_restore_restart | bool | ternary('restarted', 'started') }}"
-    daemon_reload: true
+        - name: Report safety copy location
+          ansible.builtin.debug:
+            msg: "Pre-restore safety copy of Vaultwarden data and config: {{ vaultwarden_restore_safety_dir }}"
 
-- name: Cleanup Vaultwarden restore staging directory
-  ansible.builtin.file:
-    path: "{{ vaultwarden_restore_staging_dir }}"
-    state: absent
-  when: vaultwarden_restore_cleanup | bool
+      rescue:
+        - name: Fail without restoring (live data untouched)
+          ansible.builtin.fail:
+            msg: >-
+              Vaultwarden restore aborted before any live file was overwritten
+              ({{ ansible_failed_task.name | default('unknown task') }}): the service
+              did not stop cleanly or the safety copy at {{ vaultwarden_restore_safety_dir }}
+              could not be taken. The live data is untouched. Check
+              `systemctl status {{ vaultwarden_service_name }}` and start it again
+              with `systemctl start {{ vaultwarden_service_name }}` if it is stopped.
+
+    # --- Overwrite; any failure rolls back to the safety copy ---
+
+    - name: Restore Vaultwarden data with rollback
+      block:
+        - name: Remove stale SQLite sidecar files before the database copy
+          ansible.builtin.file:
+            path: "{{ vaultwarden_data_dir }}/db.sqlite3{{ item }}"
+            state: absent
+          loop:
+            - "-wal"
+            - "-shm"
+            - "-journal"
+
+        - name: Restore SQLite database
+          ansible.builtin.copy:
+            src: "{{ vaultwarden_restore_payload_dir }}/data/db.sqlite3"
+            dest: "{{ vaultwarden_data_dir }}/db.sqlite3"
+            owner: "{{ vaultwarden_user }}"
+            group: "{{ vaultwarden_group }}"
+            mode: "0640"
+            remote_src: true
+
+        - name: Restore attachments directory  # noqa: command-instead-of-module
+          ansible.builtin.command:
+            argv:
+              - rsync
+              - -a
+              - "{{ vaultwarden_restore_payload_dir }}/data/attachments/"
+              - "{{ vaultwarden_data_dir }}/attachments/"
+          changed_when: true
+          when: vaultwarden_restore_payload_stats.results[5].stat.exists
+
+        - name: Restore sends directory  # noqa: command-instead-of-module
+          ansible.builtin.command:
+            argv:
+              - rsync
+              - -a
+              - "{{ vaultwarden_restore_payload_dir }}/data/sends/"
+              - "{{ vaultwarden_data_dir }}/sends/"
+          changed_when: true
+          when: vaultwarden_restore_payload_stats.results[6].stat.exists
+
+        - name: Restore RSA key files
+          ansible.builtin.copy:
+            src: "{{ vaultwarden_restore_payload_dir }}/data/{{ item.name }}"
+            dest: "{{ vaultwarden_data_dir }}/{{ item.name }}"
+            owner: "{{ vaultwarden_user }}"
+            group: "{{ vaultwarden_group }}"
+            mode: "0600"
+            remote_src: true
+          loop:
+            - { name: rsa_key.pem, present: "{{ vaultwarden_restore_payload_stats.results[7].stat.exists }}" }
+            - { name: rsa_key.pub.pem, present: "{{ vaultwarden_restore_payload_stats.results[8].stat.exists }}" }
+          loop_control:
+            label: "{{ item.name }}"
+          when: item.present | bool
+
+        - name: Restore Vaultwarden config file
+          ansible.builtin.copy:
+            src: "{{ vaultwarden_restore_payload_dir }}/config/{{ vaultwarden_config_file | basename }}"
+            dest: "{{ vaultwarden_config_file }}"
+            owner: root
+            group: "{{ vaultwarden_group }}"
+            mode: "0640"
+            remote_src: true
+          when: vaultwarden_restore_payload_stats.results[1].stat.exists
+
+        - name: Restore systemd override when present
+          ansible.builtin.copy:
+            src: "{{ vaultwarden_restore_payload_dir }}/systemd/override.conf"
+            dest: "{{ vaultwarden_service_override_dir }}/override.conf"
+            owner: root
+            group: root
+            mode: "0644"
+            remote_src: true
+          register: vaultwarden_restore_override_copy
+          when: vaultwarden_restore_payload_stats.results[2].stat.exists
+
+        - name: Restore Traefik configuration when present
+          ansible.builtin.copy:
+            src: "{{ vaultwarden_restore_payload_dir }}/traefik/{{ vaultwarden_traefik_config_path | basename }}"
+            dest: "{{ vaultwarden_traefik_config_path }}"
+            owner: root
+            group: root
+            mode: "0644"
+            remote_src: true
+          register: vaultwarden_restore_traefik_copy
+          when: vaultwarden_restore_payload_stats.results[3].stat.exists
+
+        - name: Reload systemd
+          ansible.builtin.systemd:
+            daemon_reload: true
+
+        - name: Ensure Vaultwarden permissions on data directory
+          ansible.builtin.file:
+            path: "{{ vaultwarden_data_dir }}"
+            state: directory
+            owner: "{{ vaultwarden_user }}"
+            group: "{{ vaultwarden_group }}"
+            recurse: true
+
+        - name: Start Vaultwarden service after restore
+          ansible.builtin.systemd:
+            name: "{{ vaultwarden_service_name }}"
+            enabled: true
+            state: "{{ vaultwarden_restore_restart | bool | ternary('restarted', 'started') }}"
+            daemon_reload: true
+
+      rescue:
+        - name: Make sure Vaultwarden is stopped before rolling back
+          ansible.builtin.systemd:
+            name: "{{ vaultwarden_service_name }}"
+            state: stopped
+          failed_when: false
+
+        - name: Check that Vaultwarden is down before rolling back
+          ansible.builtin.command:
+            argv: [systemctl, is-active, "{{ vaultwarden_service_name }}"]
+          register: vaultwarden_restore_rescue_state
+          changed_when: false
+          failed_when: false
+
+        - name: Record whether rollback is safe
+          ansible.builtin.set_fact:
+            # Only a positively confirmed stop makes the rollback safe; a failed
+            # query (empty output) counts as "maybe running".
+            vaultwarden_restore_rescue_running: >-
+              {{ (vaultwarden_restore_rescue_state.stdout | default('') | trim)
+                 not in ['inactive', 'failed'] }}
+
+        - name: Put the safety copy back
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              safety="$SAFETY_DIR"
+              if [ "$(cat "$safety/data.state")" = present ]; then
+                rsync -a --delete --checksum "$safety/data/" "$DATA_DIR/"
+              fi
+              for name in config override traefik; do
+                case "$name" in
+                  config) dest="$CONFIG_FILE" ;;
+                  override) dest="$OVERRIDE_FILE" ;;
+                  traefik) dest="$TRAEFIK_FILE" ;;
+                esac
+                if [ -e "$safety/files/$name" ] || [ -L "$safety/files/$name" ]; then
+                  rm -f "$dest"
+                  cp -a "$safety/files/$name" "$dest"
+                else
+                  rm -f "$dest"
+                fi
+              done
+              systemctl daemon-reload
+            executable: /bin/bash
+          environment:
+            SAFETY_DIR: "{{ vaultwarden_restore_safety_dir }}"
+            DATA_DIR: "{{ vaultwarden_data_dir }}"
+            CONFIG_FILE: "{{ vaultwarden_config_file }}"
+            OVERRIDE_FILE: "{{ vaultwarden_service_override_dir }}/override.conf"
+            TRAEFIK_FILE: "{{ vaultwarden_traefik_config_path }}"
+          register: vaultwarden_restore_rollback
+          changed_when: true
+          failed_when: false
+          when: not (vaultwarden_restore_rescue_running | bool)
+
+        - name: Fail after rollback and leave Vaultwarden stopped
+          ansible.builtin.fail:
+            msg: >-
+              Vaultwarden restore failed while overwriting live files
+              ({{ ansible_failed_task.name | default('unknown task') }}).
+              {{ 'Vaultwarden could not be stopped, so the safety copy was NOT put back'
+                 if (vaultwarden_restore_rescue_running | bool)
+                 else ('The pre-restore safety copy was put back'
+                       if (vaultwarden_restore_rollback.rc | default(1)) == 0
+                       else 'Putting the safety copy back FAILED: '
+                            ~ (vaultwarden_restore_rollback.stderr | default('') | trim)) }}.
+              Safety copy: {{ vaultwarden_restore_safety_dir }}.
+              Vaultwarden is left stopped; check the data, then run
+              `systemctl start {{ vaultwarden_service_name }}`.
+
+  always:
+    - name: Remove decrypted archive from controller
+      delegate_to: localhost
+      become: false
+      ansible.builtin.file:
+        path: "{{ vaultwarden_restore_local_temp.path }}"
+        state: absent
+      when: vaultwarden_restore_local_temp.path is defined
+
+    - name: Cleanup Vaultwarden restore staging directory
+      ansible.builtin.file:
+        path: "{{ vaultwarden_restore_staging_dir }}"
+        state: absent
+      when: vaultwarden_restore_cleanup | bool
 
 - name: Report restore completion
   ansible.builtin.debug:
-    msg: "Vaultwarden restored from {{ vaultwarden_restore_selected_archive }}"
+    msg: >-
+      Vaultwarden restored from {{ vaultwarden_restore_selected_archive }}.
+      Pre-restore safety copy: {{ vaultwarden_restore_safety_dir }}
+      (remove it once the restored vault is verified).
