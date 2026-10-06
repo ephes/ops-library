@@ -19,3 +19,12 @@ daybook_operations_api_backup_echoport_root: /home/echoport/site
 daybook_operations_api_backup_schedule: ""
 daybook_operations_api_backup_retention_days: 30
 daybook_operations_api_backup_update_schedule: false
+# FastDeploy service token stored in the Echoport target. It is issued with
+# "commands.py issueservicetoken" (recorded, revocable) and only when the stored
+# token is missing, has no jti, has the wrong scope or expires within the
+# renewal window; set ..._rotate_service_token: true to force a new one.
+daybook_operations_api_backup_token_user: ""  # required: an existing FastDeploy user
+daybook_operations_api_backup_token_origin: echoport
+daybook_operations_api_backup_token_days: 90
+daybook_operations_api_backup_token_renewal_days: 30
+daybook_operations_api_backup_rotate_service_token: false
