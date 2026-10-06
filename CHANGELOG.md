@@ -59,7 +59,7 @@
   `paperless_release_checksums` entry. 3.1.2 fixes GHSA-2jhj-xqrq-rmrq. There are
   no breaking changes for bare-metal installs between 3.0.4 and 3.2.1.
 
-## Unreleased — OpenClaw Doctor activation (2.27.0)
+## Unreleased — OpenClaw Doctor activation (2.26.0)
 
 - `openclaw_deploy` activates a new OpenClaw image through Doctor on
   v2026.9.7 and later (`openclaw_doctor_activation_enabled`, default `true`).
