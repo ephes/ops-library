@@ -129,3 +129,70 @@
   when:
     - voxhelm_whisperkit_enabled | bool
     - voxhelm_launchd_manage_state | bool
+
+- name: launchd | Render Voxhelm prune plist
+  ansible.builtin.template:
+    src: voxhelm-prune.launchd.plist.j2
+    dest: "{{ voxhelm_prune_plist_path }}"
+    owner: root
+    group: wheel
+    mode: "0644"
+  register: voxhelm_prune_launchd_template
+  when: voxhelm_prune_enabled | bool
+
+# The prune job is periodic: load it, but never kickstart it from a deploy.
+# launchd runs it every voxhelm_prune_interval_seconds (RunAtLoad is false).
+- name: launchd | Manage Voxhelm prune launchd state
+  ansible.builtin.include_tasks: manage_launchd_unit.yml
+  vars:
+    voxhelm_launchd_label: "{{ voxhelm_prune_label }}"
+    voxhelm_launchd_plist_path: "{{ voxhelm_prune_plist_path }}"
+    voxhelm_launchd_template_changed: "{{ voxhelm_prune_launchd_template.changed }}"
+    voxhelm_launchd_start_service: false
+    voxhelm_launchd_force_restart: false
+  when:
+    - voxhelm_prune_enabled | bool
+    - voxhelm_launchd_manage_state | bool
+
+- name: launchd | Check whether the disabled Voxhelm prune job is loaded
+  ansible.builtin.command: "launchctl print system/{{ voxhelm_prune_label }}"
+  register: voxhelm_prune_status
+  changed_when: false
+  failed_when: false
+  when:
+    - not (voxhelm_prune_enabled | bool)
+    - voxhelm_launchd_manage_state | bool
+
+# bootout also stops a prune run in progress. Fail instead of removing the
+# files when launchd refuses, so a still-loaded job is never reported disabled.
+- name: launchd | Unload the disabled Voxhelm prune job
+  ansible.builtin.command: "launchctl bootout system/{{ voxhelm_prune_label }}"
+  register: voxhelm_prune_bootout
+  changed_when: voxhelm_prune_bootout.rc == 0
+  when:
+    - not (voxhelm_prune_enabled | bool)
+    - voxhelm_launchd_manage_state | bool
+    - voxhelm_prune_status.rc == 0
+
+- name: launchd | Confirm the disabled Voxhelm prune job is unloaded
+  ansible.builtin.command: "launchctl print system/{{ voxhelm_prune_label }}"
+  register: voxhelm_prune_status_after
+  changed_when: false
+  failed_when: voxhelm_prune_status_after.rc == 0
+  when:
+    - not (voxhelm_prune_enabled | bool)
+    - voxhelm_launchd_manage_state | bool
+    - voxhelm_prune_status.rc == 0
+
+# With voxhelm_launchd_manage_state false the role leaves launchd alone, so it
+# also leaves the files of a possibly loaded job in place.
+- name: launchd | Remove the disabled Voxhelm prune plist and script
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ voxhelm_prune_plist_path }}"
+    - "{{ voxhelm_prune_script_path }}"
+  when:
+    - not (voxhelm_prune_enabled | bool)
+    - voxhelm_launchd_manage_state | bool

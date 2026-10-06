@@ -1,0 +1,48 @@
+---
+# Validate the optional service token settings before they reach the .env
+# file: a value FastDeploy cannot parse would stop the service from starting.
+# This runs after the postgres_install meta dependency (as do the secret
+# checks), but before .env is written or the service is restarted.
+# The timestamp may use a space instead of "T" (an unquoted YAML timestamp
+# becomes a datetime whose string form has one); the template writes "T".
+
+- name: validate_service_token_settings | Check the legacy service token grace period
+  when: fastdeploy_legacy_service_tokens_accepted_until | string | length > 0
+  block:
+    - name: validate_service_token_settings | Check the timestamp format
+      ansible.builtin.assert:
+        that:
+          - >-
+            fastdeploy_legacy_service_tokens_accepted_until | string
+            is match('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])[T ]([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9]([.][0-9]+)?)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$')
+        quiet: true
+
+    # The format check allows impossible calendar dates (2026-02-30); parsing
+    # the date part refuses them (and year 0000) like FastDeploy would.
+    - name: validate_service_token_settings | Check the timestamp is a real date
+      ansible.builtin.assert:
+        that:
+          - (fastdeploy_legacy_service_tokens_accepted_until | string)[:10] | to_datetime('%Y-%m-%d') is not none
+        quiet: true
+  rescue:
+    - name: validate_service_token_settings | Refuse the legacy service token grace period
+      ansible.builtin.fail:
+        msg: >-
+          fastdeploy_legacy_service_tokens_accepted_until must be an ISO 8601
+          timestamp with a UTC offset, for example "2026-11-01T00:00:00+00:00"
+          (got "{{ fastdeploy_legacy_service_tokens_accepted_until }}").
+
+- name: validate_service_token_settings | Check the service token day counts
+  ansible.builtin.assert:
+    that:
+      - item.value | string is match('^[1-9][0-9]*$')
+    fail_msg: "{{ item.name }} must be a positive whole number of days (got \"{{ item.value }}\")."
+    quiet: true
+  loop:
+    - name: fastdeploy_service_token_max_expire_days
+      value: "{{ fastdeploy_service_token_max_expire_days }}"
+    - name: fastdeploy_service_token_retention_days
+      value: "{{ fastdeploy_service_token_retention_days }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.value | string | length > 0

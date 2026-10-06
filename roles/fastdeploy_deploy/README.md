@@ -88,6 +88,47 @@ fastdeploy_rollout_validation_user: "{{ fastdeploy_initial_user }}"
 
 For a complete list of variables, see `defaults/main.yml`.
 
+### Service token settings
+
+FastDeploy service tokens carry a `jti` and are recorded so they can be revoked. Tokens issued
+before that (no `jti`) are rejected unless `LEGACY_SERVICE_TOKENS_ACCEPTED_UNTIL` is set. These
+variables are empty by default, and an empty variable is not written to `.env` (FastDeploy then
+uses its own default). Invalid values fail the role before `.env` is written or the service is
+restarted. They are checked after the `postgres_install` meta dependency has run, like the secret
+checks, so PostgreSQL provisioning still happens on a run that is then refused.
+
+```yaml
+# ISO 8601 with a UTC offset; quote it. Temporary: clear it after the cutover.
+fastdeploy_legacy_service_tokens_accepted_until: "2026-11-01T00:00:00+00:00"
+fastdeploy_service_token_max_expire_days: 90   # SERVICE_TOKEN_MAX_EXPIRE_DAYS (FastDeploy default 90)
+fastdeploy_service_token_retention_days: 30    # SERVICE_TOKEN_RETENTION_DAYS (FastDeploy default 30)
+```
+
+Edit these through the role, not on the host: the role rewrites `.env` on every run.
+
+#### Legacy token cutover
+
+Deploying a FastDeploy with revocable service tokens rejects every older token at once (for example
+Echoport's `FASTDEPLOY_SERVICE_TOKEN` and tokens minted by playbooks). Order:
+
+1. The owner picks the end of the grace period. Set
+   `fastdeploy_legacy_service_tokens_accepted_until` to it in the deploy playbook.
+2. Deploy FastDeploy with this role. Legacy tokens keep working until that time.
+3. Re-issue each token in use on the FastDeploy host and replace the stored secret, then roll out
+   its consumer and check that it still triggers deployments:
+
+   ```bash
+   cd /home/fastdeploy/site
+   sudo -u fastdeploy .venv/bin/python commands.py issueservicetoken \
+     --service <service> --user <existing user> --days 90 --origin <consumer>
+   sudo -u fastdeploy .venv/bin/python commands.py listservicetokens
+   ```
+
+   `issueservicetoken` prints only the token on stdout; `--days` is capped by
+   `SERVICE_TOKEN_MAX_EXPIRE_DAYS`.
+4. Before the grace period ends, set the variable back to `""` and deploy again. Once the variable
+   is cleared (or the time has passed), tokens without `jti` get 401.
+
 ### Rollout behavior
 
 Every successful role run is treated as a rollout of the live FastDeploy service:
