@@ -25,6 +25,16 @@
       smtp_password, envelope_sender, and at least one entry in mailgun_relay_tokens
       from ops-control SOPS secrets. CHANGEME placeholders are rejected.
 
+- name: main | Validate the optional SMTP concurrency cap
+  ansible.builtin.assert:
+    that:
+      - (mailgun_relay_smtp_max_concurrency | string) is match('^[0-9]+\Z')
+      - (mailgun_relay_smtp_max_concurrency | int) >= 1
+    fail_msg: >-
+      mailgun_relay_smtp_max_concurrency must be empty (relay default 8) or a
+      whole number of at least 1; got '{{ mailgun_relay_smtp_max_concurrency }}'.
+  when: mailgun_relay_smtp_max_concurrency | string | length > 0
+
 - name: main | Validate every token entry has the required shape
   ansible.builtin.assert:
     that:

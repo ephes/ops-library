@@ -61,7 +61,6 @@
         mode: "{{ item.mode }}"
         content: "{{ item.content }}"
       loop:
-        - { dest: "{{ vaultwarden_restore_payload_src.path }}/data/db.sqlite3", mode: "0640", content: "restored-db" }
         - { dest: "{{ vaultwarden_restore_payload_src.path }}/data/attachments/restored.txt", mode: "0640", content: "restored-attachment" }
         - { dest: "{{ vaultwarden_restore_payload_src.path }}/data/sends/restored.txt", mode: "0640", content: "restored-send" }
         - { dest: "{{ vaultwarden_restore_payload_src.path }}/data/rsa_key.pem", mode: "0600", content: "restored-key" }
@@ -69,6 +68,16 @@
         - { dest: "{{ vaultwarden_restore_payload_src.path }}/config/vaultwarden.env", mode: "0640", content: "DOMAIN=https://restored.example" }
         - { dest: "{{ vaultwarden_restore_payload_src.path }}/systemd/override.conf", mode: "0644", content: "[Service]\nAmbientCapabilities=CAP_NET_BIND_SERVICE" }
         - { dest: "{{ vaultwarden_restore_payload_src.path }}/traefik/vaultwarden.yml", mode: "0644", content: "http:\n  routers:\n    vaultwarden:\n      rule: Host(`restored.example`)" }
+
+    - name: Seed a real SQLite database into the payload
+      delegate_to: localhost
+      become: false
+      ansible.builtin.command:
+        argv:
+          - sqlite3
+          - "{{ vaultwarden_restore_payload_src.path }}/data/db.sqlite3"
+          - "create table items(name text); insert into items values ('restored-db');"
+      changed_when: true
 
     - name: Create restore archive locally
       delegate_to: localhost

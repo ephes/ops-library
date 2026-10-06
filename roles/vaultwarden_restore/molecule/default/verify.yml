@@ -6,15 +6,47 @@
 
   tasks:
     - name: Verify | Data file contains restored content
-      ansible.builtin.slurp:
-        path: /var/lib/vaultwarden/data/db.sqlite3
+      ansible.builtin.command:
+        argv: [sqlite3, /var/lib/vaultwarden/data/db.sqlite3, "select name from items;"]
       register: vaultwarden_db
+      changed_when: false
 
     - name: Verify | Assert db content
       ansible.builtin.assert:
         that:
-          - "'restored-db' in (vaultwarden_db.content | b64decode)"
+          - vaultwarden_db.stdout | trim == 'restored-db'
         fail_msg: "Database file not restored"
+
+    - name: Verify | Stale WAL removed from the live data dir
+      ansible.builtin.stat:
+        path: /var/lib/vaultwarden/data/db.sqlite3-wal
+      register: vaultwarden_live_wal
+
+    - name: Verify | Find the pre-restore safety copy
+      ansible.builtin.find:
+        paths: /var/backups/vaultwarden-pre-restore
+        file_type: directory
+        depth: 1
+      register: vaultwarden_safety_dirs
+
+    - name: Verify | Read the safety copy of the old WAL and attachment
+      ansible.builtin.slurp:
+        path: "{{ (vaultwarden_safety_dirs.files | first).path }}/{{ item }}"
+      register: vaultwarden_safety_files
+      loop:
+        - data/db.sqlite3-wal
+        - data/attachments/existing.txt
+        - files/config
+
+    - name: Verify | Assert WAL removal and safety copy content
+      ansible.builtin.assert:
+        that:
+          - not vaultwarden_live_wal.stat.exists
+          - vaultwarden_safety_dirs.files | length == 1
+          - (vaultwarden_safety_files.results[0].content | b64decode) == 'stale-wal'
+          - (vaultwarden_safety_files.results[1].content | b64decode) == 'existing-attachment'
+          - "'vault.molecule.test' in (vaultwarden_safety_files.results[2].content | b64decode)"
+        fail_msg: "Stale WAL left in place or safety copy incomplete"
 
     - name: Verify | Attachments and sends restored
       ansible.builtin.stat:

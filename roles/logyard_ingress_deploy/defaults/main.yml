@@ -11,6 +11,18 @@ logyard_ingress_backend_url: "http://127.0.0.1:3101"
 logyard_ingress_root_redirect_enabled: true
 logyard_ingress_root_redirect_url: "https://grafana.home.xn--wersdrfer-47a.de/d/logyard-home/logyard-overview"
 logyard_ingress_middlewares: []
+# Exact paths (and HTTP methods) routed to Loki. Loki runs without auth, so
+# keep this to what producers need: Vector's loki sink pushes to
+# /loki/api/v1/push and its healthcheck reads /ready. Every other path on the
+# host (query, query_range, tail, labels, delete, ...) gets no route (404).
+logyard_ingress_allowed_paths:
+  - path: "/loki/api/v1/push"
+    methods:
+      - "POST"
+  - path: "/ready"
+    methods:
+      - "GET"
+      - "HEAD"
 logyard_ingress_internal_ip_ranges:
   - "192.168.0.0/16"
   - "10.0.0.0/8"

@@ -14,9 +14,20 @@
       - voxhelm_source_path_stat.stat.isdir
     fail_msg: "voxhelm_source_path {{ voxhelm_source_path }} does not exist or is not a directory."
 
+# The generated prune.sh is rendered only while pruning is enabled, so the
+# delete:true sync must not remove it (a disabled job is unloaded before its
+# script is removed in launchd.yml).
 - name: source | Build rsync exclude options
   ansible.builtin.set_fact:
-    voxhelm_rsync_exclude_opts: "{{ voxhelm_sync_excludes | map('regex_replace', '^', '--exclude=') | list }}"
+    voxhelm_rsync_exclude_opts: >-
+      {{
+        (voxhelm_sync_excludes | map('regex_replace', '^', '--exclude=') | list)
+        + (
+          ['--exclude=/' ~ (voxhelm_prune_script_path | basename)]
+          if (voxhelm_prune_script_path | dirname) == (voxhelm_app_dir | regex_replace('/+$', ''))
+          else []
+        )
+      }}
 
 - name: source | Sync local Voxhelm source to target
   ansible.posix.synchronize:

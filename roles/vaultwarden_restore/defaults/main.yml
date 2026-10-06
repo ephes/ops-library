@@ -18,3 +18,9 @@ vaultwarden_restore_restart: true
 
 # Whether to cleanup staging directory after restore
 vaultwarden_restore_cleanup: true
+
+# Remote directory for the pre-restore safety copy. Each run writes a new
+# timestamped subdirectory (data dir incl. db.sqlite3-wal/-shm, keys,
+# attachments, sends, plus config, systemd override and Traefik file).
+# Needs free space for one copy of the data directory; nothing prunes it.
+vaultwarden_restore_safety_root: /var/backups/vaultwarden-pre-restore

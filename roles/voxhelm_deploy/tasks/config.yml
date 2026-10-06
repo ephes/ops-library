@@ -47,3 +47,12 @@
     mode: "0755"
   register: voxhelm_whisperkit_script_template
   when: voxhelm_whisperkit_enabled | bool
+
+- name: config | Render Voxhelm prune script
+  ansible.builtin.template:
+    src: prune.sh.j2
+    dest: "{{ voxhelm_prune_script_path }}"
+    owner: root
+    group: wheel
+    mode: "0755"
+  when: voxhelm_prune_enabled | bool
