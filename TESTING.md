@@ -74,6 +74,17 @@ mv .ansible-lint-ignore /tmp/ansible-lint-ignore && \
 Run `ansible-lint` with `</dev/null` from non-interactive shells (agents, CI wrappers): it aborts at
 startup when stdin is a non-blocking handle.
 
+## Secret file modes
+
+`just test-secret-file-modes` (part of `just test`) scans every `template`/`copy` task. When the
+template source or inline `content` uses a secret-named variable (`*password*`, `*secret*`,
+`*token*`, `*api_key*`, `*private_key*`, `*access_key*`; names ending in `_path`, `_file`,
+`_hash` and similar do not count), the task must set an explicit octal `mode` with no "other"
+bits, such as `0600` or `0640` with the service group. A `{{ var }}` mode is resolved from the
+role defaults. systemd unit templates (`*.service.j2`, `systemd_service*.j2`) must not reference secrets at all: unit
+files are world-readable and `systemctl show` prints `Environment=`. Use an `EnvironmentFile=`
+or a credentials file instead.
+
 ## SSH forwarding identity fixtures
 
 `just test-ssh-forwarding-roles` runs the descriptor, ownership, recovery and race

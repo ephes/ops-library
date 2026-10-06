@@ -9,6 +9,7 @@ unifi_data_dir: "{{ unifi_install_dir }}/data"
 unifi_logs_dir: "{{ unifi_install_dir }}/logs"
 unifi_backup_dir: "{{ unifi_data_dir }}/backup"
 unifi_systemd_unit_path: "/etc/systemd/system/{{ unifi_service_name }}.service"
+unifi_mongodb_jvm_args_path: "/etc/{{ unifi_service_name }}-secrets/mongodb.jvmargs"
 unifi_traefik_config_path: "/etc/traefik/dynamic/unifi.yml"
 unifi_firewall_rules:
   - { port: 8080, proto: "tcp", comment: "UniFi device communication" }

@@ -16,7 +16,9 @@
     state: directory
     owner: root
     group: root
-    mode: "0755"
+    # The archive module applies its mode only after writing; keep the
+    # directory private so archives are never reachable in between.
+    mode: "0700"
 
 - name: Check if server is running
   ansible.builtin.shell: pgrep -f "server.jar" || true
@@ -38,7 +40,9 @@
     # Save coordination - only if server is running
     - name: Disable auto-save
       ansible.builtin.shell: |
-        /usr/local/bin/mcrcon -H 127.0.0.1 -P {{ minecraft_java_rcon_port }} -p "{{ minecraft_java_rcon_password }}" "save-off"
+        /usr/local/bin/mcrcon -H 127.0.0.1 -P {{ minecraft_java_rcon_port }} "save-off"
+      environment:
+        MCRCON_PASS: "{{ minecraft_java_rcon_password }}"
       register: save_off_result
       changed_when: true
       when: minecraft_server_is_running
@@ -50,7 +54,9 @@
 
     - name: Flush world to disk
       ansible.builtin.shell: |
-        timeout 30 /usr/local/bin/mcrcon -H 127.0.0.1 -P {{ minecraft_java_rcon_port }} -p "{{ minecraft_java_rcon_password }}" "save-all"
+        timeout 30 /usr/local/bin/mcrcon -H 127.0.0.1 -P {{ minecraft_java_rcon_port }} "save-all"
+      environment:
+        MCRCON_PASS: "{{ minecraft_java_rcon_password }}"
       register: save_all_result
       changed_when: true
       when: minecraft_server_is_running
@@ -106,14 +112,17 @@
         format: gz
         owner: root
         group: root
-        mode: "0644"
+        # Includes server.properties with the RCON password.
+        mode: "0600"
       register: archive_result
 
   always:
     # CRITICAL: Always re-enable saves if they were disabled
     - name: Re-enable auto-save
       ansible.builtin.shell: |
-        /usr/local/bin/mcrcon -H 127.0.0.1 -P {{ minecraft_java_rcon_port }} -p "{{ minecraft_java_rcon_password }}" "save-on"
+        /usr/local/bin/mcrcon -H 127.0.0.1 -P {{ minecraft_java_rcon_port }} "save-on"
+      environment:
+        MCRCON_PASS: "{{ minecraft_java_rcon_password }}"
       when: minecraft_saves_disabled | default(false)
       changed_when: true
       ignore_errors: true
@@ -142,6 +151,14 @@
     patterns: "*.tar.gz"
     file_type: file
   register: existing_backups
+
+- name: Restrict existing backups (they include server.properties)
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    mode: "0600"
+  loop: "{{ existing_backups.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
 
 - name: Sort backups by modification time
   ansible.builtin.set_fact:

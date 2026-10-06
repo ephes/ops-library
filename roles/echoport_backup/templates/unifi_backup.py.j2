@@ -9,6 +9,7 @@ Service-owned same-host script:
   service restart and health checks.
 """
 
+import grp
 import hashlib
 import json
 import os
@@ -41,6 +42,8 @@ SYSTEM_PROPERTIES = "{{ unifi_echoport_backup_system_properties }}"
 KEYSTORE_PATH = "{{ unifi_echoport_backup_keystore_path }}"
 ENV_FILE = "{{ unifi_echoport_backup_env_file }}"
 SYSTEMD_UNIT = "{{ unifi_echoport_backup_systemd_unit }}"
+# Java @argfile with the Mongo URI written by unifi_deploy (contains the password).
+JVM_ARGS_FILE = "{{ unifi_echoport_backup_jvm_args_file | default('/etc/unifi-secrets/mongodb.jvmargs') }}"
 TRAEFIK_CONFIG = "{{ unifi_echoport_backup_traefik_config }}"
 MONGO_CREDENTIALS_FILE = "{{ unifi_echoport_backup_credentials_file }}"
 
@@ -261,6 +264,29 @@ def copy_file_optional(src: Path, dst: Path) -> bool:
         return False
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
+    return True
+
+
+def restore_private_file(src: Path, dst: Path) -> bool:
+    """Restore a root:UNIFI_GROUP 0640 file; a missing parent is created 0750."""
+    if not src.exists() or not src.is_file():
+        return False
+    if not dst.parent.exists():
+        dst.parent.mkdir(parents=True, mode=0o750)
+        run_cmd(["chown", f"root:{UNIFI_GROUP}", str(dst.parent)])
+        run_cmd(["chmod", "0750", str(dst.parent)])
+    # mkstemp creates a new 0600 file exclusively (no symlink following); set
+    # ownership and mode through the descriptor, then atomically replace dst.
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{dst.name}.", dir=dst.parent)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(src.read_bytes())
+            os.fchown(handle.fileno(), 0, grp.getgrnam(UNIFI_GROUP).gr_gid)
+            os.fchmod(handle.fileno(), 0o640)
+        os.replace(tmp_name, dst)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
     return True
 
 
@@ -546,6 +572,7 @@ def backup_flow(cenv: Dict) -> int:
         copy_file_optional(Path(KEYSTORE_PATH), config_out / "keystore")
         copy_file_optional(Path(ENV_FILE), config_out / "unifi.env")
         copy_file_optional(Path(SYSTEMD_UNIT), system_out / "unifi.service")
+        copy_file_optional(Path(JVM_ARGS_FILE), system_out / "mongodb.jvmargs")
         copy_file_optional(Path(TRAEFIK_CONFIG), system_out / "unifi.yml")
         emit_step("copy_config", "success", "Config/system files copied")
 
@@ -572,6 +599,7 @@ def backup_flow(cenv: Dict) -> int:
                 "keystore_path": KEYSTORE_PATH,
                 "env_file": ENV_FILE,
                 "systemd_unit": SYSTEMD_UNIT,
+                "jvm_args_file": JVM_ARGS_FILE,
                 "traefik_config": TRAEFIK_CONFIG,
             },
         }
@@ -697,6 +725,7 @@ def restore_flow(cenv: Dict) -> int:
             run_cmd(["chmod", "0640", ENV_FILE])
         if copy_file_optional(extract_dir / "system" / "unifi.service", Path(SYSTEMD_UNIT)):
             run_cmd(["chmod", "0644", SYSTEMD_UNIT])
+        restore_private_file(extract_dir / "system" / "mongodb.jvmargs", Path(JVM_ARGS_FILE))
         if copy_file_optional(extract_dir / "system" / "unifi.yml", Path(TRAEFIK_CONFIG)):
             run_cmd(["chmod", "0644", TRAEFIK_CONFIG])
         apply_ownership(Path(DATA_DIR))

@@ -6,6 +6,8 @@
 # to prevent world corruption during backup.
 
 set -euo pipefail
+# Archives include server.properties (RCON password): keep them private.
+umask 077
 
 # Configuration
 BACKUP_DIR="{{ minecraft_java_backup_dir }}"
@@ -14,7 +16,8 @@ WORLD_NAME="{{ minecraft_java_world_name }}"
 RETENTION_MINUTES="{{ minecraft_java_cron_backup_retention_minutes }}"
 RCON_HOST="127.0.0.1"
 RCON_PORT="{{ minecraft_java_rcon_port }}"
-RCON_PASSWORD="{{ minecraft_java_rcon_password }}"
+# mcrcon reads the password from MCRCON_PASS, which keeps it out of `ps`.
+export MCRCON_PASS={{ minecraft_java_rcon_password | quote }}
 
 # Timestamp for backup filename
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
@@ -35,7 +38,7 @@ log() {
 cleanup() {
     if [[ "$SAVES_DISABLED" == "true" ]]; then
         log "Re-enabling auto-save..."
-        "$MCRCON" -H "$RCON_HOST" -P "$RCON_PORT" -p "$RCON_PASSWORD" "save-on" 2>/dev/null || \
+        "$MCRCON" -H "$RCON_HOST" -P "$RCON_PORT" "save-on" 2>/dev/null || \
             log "WARNING: Failed to re-enable saves! Manual intervention may be required."
     fi
 }
@@ -51,7 +54,7 @@ log "Starting world backup..."
 
 # Disable auto-save
 log "Disabling auto-save..."
-"$MCRCON" -H "$RCON_HOST" -P "$RCON_PORT" -p "$RCON_PASSWORD" "save-off" || {
+"$MCRCON" -H "$RCON_HOST" -P "$RCON_PORT" "save-off" || {
     log "ERROR: Failed to disable auto-save"
     exit 1
 }
@@ -59,7 +62,7 @@ SAVES_DISABLED=true
 
 # Flush world to disk with timeout
 log "Flushing world to disk..."
-SAVE_OUTPUT=$(timeout 30 "$MCRCON" -H "$RCON_HOST" -P "$RCON_PORT" -p "$RCON_PASSWORD" "save-all" 2>&1) || {
+SAVE_OUTPUT=$(timeout 30 "$MCRCON" -H "$RCON_HOST" -P "$RCON_PORT" "save-all" 2>&1) || {
     log "ERROR: save-all command timed out"
     exit 1
 }

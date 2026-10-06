@@ -6,7 +6,7 @@ Installs the UniFi Network Application on the macmini controller (or any Debian/
 
 - Installs MongoDB 8.0 from the upstream repo, enables authentication, configures quiet logging, logrotate, and an optional cron-based log monitor.
 - Creates the `unifi` unix user, directory layout, cache path, and version-pinned UniFi `.deb` download/install logic.
-- Ships a hardened custom systemd service that injects Mongo URI + JVM tuning via environment variables to avoid `system.properties` corruption.
+- Ships a hardened custom systemd service that passes the Mongo URI and JVM tuning on the Java command line to avoid `system.properties` corruption. The Mongo URI (with the password) lives in a Java `@argfile` at `unifi_mongodb_jvm_args_path` (default `/etc/unifi-secrets/mongodb.jvmargs`, `root:unifi` `0640`, directory `0750`), so it is not in the world-readable unit file, `systemctl show`, or `ps` output.
 - Emits a Traefik dynamic configuration file (and optional static entrypoint tweak) that matches the production router/service layout.
 - Opens the canonical UniFi ports with `ufw` and optionally reconciles a read-only Home Assistant account inside Mongo/UniFi.
 
@@ -17,6 +17,8 @@ All tunables live in `defaults/main.yml`. The highlights:
 | Variable | Default | Description |
 | --- | --- | --- |
 | `unifi_mongodb_password` | **(required)** | MongoDB SCRAM password used for the admin + UniFi databases (store with SOPS/Vault). |
+| `unifi_mongodb_jvm_args_path` | `/etc/{{ unifi_service_name }}-secrets/mongodb.jvmargs` | Root-owned, group-readable Java `@argfile` holding the Mongo URI with credentials. The role creates and locks down only the default directory; a custom path must point into an existing directory. `unifi_backup`, `unifi_restore` and the Echoport UniFi backup carry the file (`unifi_mongodb_jvm_args_path` / `unifi_echoport_backup_jvm_args_file`). |
+| `unifi_systemd_extra_env` | `[]` | Extra `Environment=` lines for the unit. The unit is world-readable: never put secrets here. |
 | `unifi_deb_url` | `https://dl.ui.com/.../unifi_sysvinit_all.deb` | URL for the UniFi package. Keep in sync with `unifi_version`. |
 | `unifi_deb_checksum` | `""` | Optional checksum (sha256:xxxx). Set to enforce artifact integrity. |
 | `unifi_jvm_min_heap_mb` / `unifi_jvm_max_heap_mb` | `1024 / 2048` | Heap sizes used in the systemd service. |
@@ -48,5 +50,6 @@ Review the defaults file for Traefik entrypoints, MongoDB repo release, logrotat
 
 - The role assumes Debian/Ubuntu + systemd. It performs a hard fail on other platforms to avoid half-configured hosts.
 - MongoDB authentication is mandatory: define `unifi_mongodb_password` via SOPS/Ansible Vault before running the role.
+- Upgrading from a release that inlined `MONGO_URI` in the unit: one `unifi_deploy` run writes the argument file, rewrites the unit without the password, and restarts UniFi. Backups taken earlier by `unifi_backup` still contain the old unit with the password (archive files are `0600`). Restoring such an old unit with `unifi_restore` brings the inline password back; rerun `unifi_deploy` afterwards. A unit restored from a newer backup needs the argument file, which `unifi_deploy` creates.
 - If you already manage Traefik entrypoints elsewhere, keep `unifi_traefik_manage_api_entrypoint: false` to avoid editing `traefik.toml`.
 - For production cutovers, run `unifi_backup` prior to `unifi_deploy` and keep `unifi_remove` ready for clean rollbacks.

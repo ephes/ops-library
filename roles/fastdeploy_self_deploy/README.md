@@ -22,6 +22,12 @@ Key variables for uv provisioning:
 - `fd_self_uv_install_dir` (default: `/usr/local/bin`)
 - `fd_self_uv_binary` (default: `{{ fd_self_uv_install_dir }}/uv`)
 
+Secrets: the `fastdeploy` and `fastdeploy-staging` units no longer inline
+`DATABASE_URL` and `SECRET_KEY`. Each unit loads them with `EnvironmentFile=`
+from `/etc/default/<service>` (`root:root 0600`, values double-quoted with
+systemd escaping), so the world-readable unit files and `systemctl show` do not
+expose them. The release `.env` (`0600`, service user) is unchanged.
+
 ## Architecture
 
 ```

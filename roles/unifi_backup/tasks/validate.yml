@@ -18,6 +18,7 @@
     - { name: "keystore", path: "{{ unifi_keystore_path }}", optional: "{{ not unifi_backup_include_keystore }}", description: "UniFi keystore" }
     - { name: "env_file", path: "{{ unifi_env_file }}", optional: "{{ not unifi_backup_include_env }}", description: ".env file" }
     - { name: "systemd_unit", path: "{{ unifi_systemd_unit_path }}", optional: true, description: "systemd unit file" }
+    - { name: "mongodb_jvm_args", path: "{{ unifi_mongodb_jvm_args_path }}", optional: true, description: "MongoDB JVM argument file" }
     - { name: "traefik_config", path: "{{ unifi_traefik_config_path }}", optional: "{{ not unifi_backup_include_traefik }}", description: "Traefik dynamic config" }
   loop_control:
     label: "{{ item.description }}"

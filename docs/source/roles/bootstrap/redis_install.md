@@ -65,8 +65,10 @@ configuration directives may contain secrets.
 
 Validation renders a root-owned mode-0600 candidate in a mode-0700 temporary
 directory and checks it before replacing the active configuration. Only accepted
-candidates are atomically installed, with the existing root:root mode-0644
-permissions and backup behavior. Invalid candidates leave the previous file and
+candidates are atomically installed as `root:<redis_install_group>` mode `0640`
+(the file may contain `requirepass`; redis-server reads it through its group),
+with the existing backup behavior. Earlier `redis.conf.*~` backups are tightened
+to the same owner and mode. Invalid candidates leave the previous file and
 running Redis process intact. Unchanged candidates are still validated without
 a restart. The ephemeral script and candidate directory are removed in an
 Ansible `always` block, including normal validation failure.

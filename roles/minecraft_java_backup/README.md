@@ -21,6 +21,9 @@ The backup process coordinates with the running server via RCON to ensure data c
 3. Create archive
 4. Re-enable auto-save (`save-on`)
 
+Archives contain `server.properties` (RCON password) and are created `root:root 0600` in a `0700` backup directory; each run also tightens older archives in the backup directory to `0600`.
+The RCON password reaches mcrcon through the `MCRCON_PASS` environment variable, not the command line.
+
 ## Requirements
 
 - Minecraft Java server deployed via `minecraft_java_deploy` role

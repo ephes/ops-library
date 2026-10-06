@@ -180,7 +180,7 @@ Forge:
 ```bash
 systemctl status minecraft-java
 journalctl -u minecraft-java -f
-mcrcon -H 127.0.0.1 -P 25575 -p "PASSWORD" -t
+MCRCON_PASS="PASSWORD" mcrcon -H 127.0.0.1 -P 25575 -t
 ```
 
 ## Security Notes
@@ -189,6 +189,11 @@ mcrcon -H 127.0.0.1 -P 25575 -p "PASSWORD" -t
 - Game port (25565) allowed only from configured networks
 - Service runs as dedicated `minecraft` user
 - Systemd hardening enabled (`NoNewPrivileges`, `PrivateTmp`, `ProtectSystem`)
+- The RCON password is only in files the `minecraft` user owns: `server.properties`
+  (`0640`), `backup-world.sh` (`0750`) and `.env` (`0600`). The backup script passes
+  it to mcrcon via `MCRCON_PASS`, not `-p`, so it does not show up in `ps`.
+- Hourly backup archives include `server.properties`; the script creates them `0600`
+  (`umask 077`), and each deploy tightens existing archives to `0600`.
 
 ## License
 

@@ -53,6 +53,8 @@ unifi_backup_mongodb_backup: true
 
 # System integration paths
 unifi_systemd_unit_path: /etc/systemd/system/unifi.service
+# Java @argfile with the Mongo URI written by unifi_deploy (contains the password)
+unifi_mongodb_jvm_args_path: /etc/unifi-secrets/mongodb.jvmargs
 unifi_traefik_config_path: /etc/traefik/dynamic/unifi.yml
 
 # Disk validation

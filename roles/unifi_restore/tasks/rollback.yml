@@ -120,8 +120,38 @@
   ansible.builtin.copy:
     src: "{{ unifi_safety_backup_path }}/systemd/unifi.service"
     dest: /etc/systemd/system/unifi.service
+    owner: root
+    group: root
+    mode: "0644"
     remote_src: true
   when: unifi_rollback_systemd_stat.stat.exists
+
+- name: Stat safety MongoDB JVM argument file
+  ansible.builtin.stat:
+    path: "{{ unifi_safety_backup_path }}/systemd/mongodb.jvmargs"
+  register: unifi_rollback_jvm_args_stat
+
+- name: Ensure default MongoDB credentials directory exists for safety argument file
+  ansible.builtin.file:
+    path: /etc/unifi-secrets
+    state: directory
+    owner: root
+    group: "{{ unifi_mongodb_jvm_args_group }}"
+    mode: "0750"
+  when:
+    - unifi_rollback_jvm_args_stat.stat.exists
+    - (unifi_mongodb_jvm_args_path | dirname) == '/etc/unifi-secrets'
+
+- name: Restore safety MongoDB JVM argument file
+  ansible.builtin.copy:
+    src: "{{ unifi_safety_backup_path }}/systemd/mongodb.jvmargs"
+    dest: "{{ unifi_mongodb_jvm_args_path }}"
+    owner: root
+    group: "{{ unifi_mongodb_jvm_args_group }}"
+    mode: "0640"
+    remote_src: true
+  no_log: true
+  when: unifi_rollback_jvm_args_stat.stat.exists
 
 - name: Stat safety Traefik config
   ansible.builtin.stat:

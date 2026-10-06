@@ -1,5 +1,53 @@
 # Changelog
 
+## Unreleased — Secret file modes (2.30.2)
+
+Files rendered with passwords or keys are no longer world-readable. Rollout:
+rerun each changed role on its hosts (see the per-role notes); nothing changes
+until then.
+
+- `unifi_deploy`: the Mongo URI with the password is no longer an inline
+  `Environment=MONGO_URI=...` in the `0644` unit (readable by every local user,
+  also through `systemctl show`) and no longer appears in `ps`. It moves to a
+  Java `@argfile` at `unifi_mongodb_jvm_args_path`
+  (`/etc/unifi-secrets/mongodb.jvmargs`, `root:unifi 0640`, directory `0750`,
+  `no_log`). Only the default directory is created; a custom path must point
+  into an existing directory. `unifi_remove` deletes the file; `unifi_backup`,
+  `unifi_restore` (restore and rollback) and the Echoport UniFi backup script
+  carry it (`root:unifi 0640` on restore, written privately before it is moved
+  into place). Backups taken before this release still hold the old unit;
+  restoring one brings the inline password back, so rerun `unifi_deploy` after
+  such a restore. Restored unit files are now explicitly `root:root 0644`.
+- `fastdeploy_self_deploy`: the `fastdeploy` and `fastdeploy-staging` units load
+  `DATABASE_URL` and `SECRET_KEY` from `/etc/default/<service>`
+  (`root:root 0600`, `no_log`, values double-quoted with systemd escaping,
+  checked against systemd's parser for quotes, backslashes, `$`, `%` and `#`)
+  instead of inlining them. Unit files get explicit `root:root 0644`.
+- `livekit_deploy`: `egress.yaml` (API secret, S3 keys, Redis password) is
+  `root:root 0640` instead of `0644`. The egress image runs as user `egress`
+  with primary group `root`, so it still reads the bind-mounted file. Both
+  config templates are `no_log`.
+- `minecraft_java_deploy`: `server.properties` is `0640` and `backup-world.sh`
+  `0750` (both hold the RCON password, `no_log`). The script passes the
+  password to mcrcon via `MCRCON_PASS` instead of `-p`, creates archives with
+  `umask 077`, and each deploy tightens existing world backups to `0600`.
+  `minecraft_java_backup` also uses `MCRCON_PASS`, writes archives `0600`
+  (they contain `server.properties`) into a `0700` backup directory (the
+  archive module sets the mode only after writing), and tightens older
+  archives.
+- `redis_install`: `redis.conf` (may contain `requirepass`) is
+  `root:redis 0640` instead of `root:root 0644`, the direct-render path is
+  `no_log`, and earlier `redis.conf.*~` backups are tightened the same way. The
+  Docker validation fixture expects the new mode (not run for this change).
+  README and docs page updated.
+- `graphyard_vector_deploy`: the staged validation copies (ingest token, other
+  fragments) are `0640` like the deployed files. They already lived in a
+  private temporary directory.
+- New `just test-secret-file-modes` (in `just test`): every template/copy task
+  whose source uses a secret-named variable must set an octal mode without
+  "other" bits, and systemd unit templates must not reference secrets.
+  `TESTING.md` describes the rule.
+
 ## Unreleased — Strict ansible-lint baseline (2.30.1)
 
 - `just lint-strict` now passes and fails on new findings. Existing debt is

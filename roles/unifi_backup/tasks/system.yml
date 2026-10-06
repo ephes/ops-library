@@ -45,6 +45,17 @@
     remote_src: true
   when: unifi_backup_path_map.systemd_unit.exists | default(false)
 
+- name: Copy MongoDB JVM argument file
+  ansible.builtin.copy:
+    src: "{{ unifi_mongodb_jvm_args_path }}"
+    dest: "{{ unifi_backup_dir }}/systemd/mongodb.jvmargs"
+    owner: "{{ unifi_backup_owner }}"
+    group: "{{ unifi_backup_group }}"
+    mode: "{{ unifi_backup_file_mode }}"
+    remote_src: true
+  no_log: true
+  when: unifi_backup_path_map.mongodb_jvm_args.exists | default(false)
+
 - name: Copy Traefik dynamic config
   ansible.builtin.copy:
     src: "{{ unifi_traefik_config_path }}"

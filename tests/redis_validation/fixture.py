@@ -1,4 +1,5 @@
 """Actual Ansible/Redis regression in an isolated systemd container."""
+import grp
 import json
 import os
 from pathlib import Path
@@ -244,8 +245,9 @@ def main():
         == "33554432"
     )
     previous_config = disk_snapshot()
-    assert previous_config["mode"] == 0o644
-    assert previous_config["uid"] == previous_config["gid"] == 0
+    assert previous_config["mode"] == 0o640
+    assert previous_config["uid"] == 0
+    assert previous_config["gid"] == grp.getgrnam("redis").gr_gid
     checks["invalid_validation"] = deploy(
         dict(config, redis_install_loglevel="invalid-test-value"), fail=True
     )
@@ -261,11 +263,12 @@ def main():
         dict(config, redis_install_maxmemory="48mb")
     )
     active_path = Path("/etc/redis/redis.conf")
-    active_path.chmod(0o640)
+    active_path.chmod(0o644)
     checks["interrupted_metadata_only"] = interrupted_validation(config)
     checks["metadata_only_repair"] = deploy(config)
-    assert stat.S_IMODE(active_path.stat().st_mode) == 0o644
-    assert active_path.stat().st_uid == active_path.stat().st_gid == 0
+    assert stat.S_IMODE(active_path.stat().st_mode) == 0o640
+    assert active_path.stat().st_uid == 0
+    assert active_path.stat().st_gid == grp.getgrnam("redis").gr_gid
     clean_validator()
     before_recovery = pid()
     config["redis_install_maxmemory"] = "48mb"

@@ -5,7 +5,7 @@ Destructively removes the UniFi Network Application plus the supporting MongoDB/
 ## Features
 
 - Optional pre-removal `local.ops_library.unifi_backup` execution to capture the last known-good snapshot.
-- Graceful stop/disable of UniFi + MongoDB services, systemd unit removal, and Traefik/ufw cleanup.
+- Graceful stop/disable of UniFi + MongoDB services, systemd unit and MongoDB credentials file (`unifi_mongodb_jvm_args_path`) removal, and Traefik/ufw cleanup.
 - Package purge blocks for UniFi, MongoDB, and OpenJDK (toggle via `unifi_remove_packages`).
 - Fine-grained directory cleanup flags (cache, logs, data, home) and optional MongoDB database/user drop commands.
 - Human-readable summary at the end so you know exactly which destructive toggles fired.

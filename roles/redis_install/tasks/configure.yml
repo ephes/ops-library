@@ -77,8 +77,9 @@
         remote_src: true
         dest: "{{ redis_install_config_path }}"
         owner: root
-        group: root
-        mode: "0644"
+        group: "{{ redis_install_group }}"
+        # May contain requirepass; redis-server reads it via its group.
+        mode: "0640"
         backup: true
       notify: restart redis
       no_log: true
@@ -91,10 +92,11 @@
         src: redis.conf.j2
         dest: "{{ redis_install_config_path }}"
         owner: root
-        group: root
-        mode: "0644"
+        group: "{{ redis_install_group }}"
+        mode: "0640"
         backup: true
       notify: restart redis
+      no_log: true
       when: not redis_install_validate_config | bool or ansible_check_mode
 
   always:
@@ -105,3 +107,20 @@
       changed_when: false
       when:
         - _redis_install_validator_dir.path is defined
+
+- name: configure | Find earlier Redis configuration backups
+  ansible.builtin.find:
+    paths: "{{ redis_install_config_path | dirname }}"
+    patterns: "{{ redis_install_config_path | basename }}.*~"
+    file_type: file
+  register: _redis_install_config_backups
+
+- name: configure | Restrict earlier Redis configuration backups
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: root
+    group: "{{ redis_install_group }}"
+    mode: "0640"
+  loop: "{{ _redis_install_config_backups.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"

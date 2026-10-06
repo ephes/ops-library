@@ -7,7 +7,9 @@
     dest: "{{ minecraft_java_server_dir }}/server.properties"
     owner: "{{ minecraft_java_user }}"
     group: "{{ minecraft_java_group }}"
-    mode: "0644"
+    # Contains the RCON password.
+    mode: "0640"
+  no_log: true
   notify: restart minecraft-java
 
 - name: Accept EULA

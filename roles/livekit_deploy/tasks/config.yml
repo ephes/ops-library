@@ -6,6 +6,7 @@
     owner: root
     group: root
     mode: "0600"
+  no_log: true
   notify: restart livekit
 
 - name: config | Render egress.yaml
@@ -14,6 +15,8 @@
     dest: "{{ livekit_config_dir }}/egress.yaml"
     owner: root
     group: root
-    # The egress container runs as a non-root user and must read this file.
-    mode: "0644"
+    # The egress container runs as user "egress", whose primary group is root
+    # (gid 0, `useradd -g root` in the upstream image), so group-read is enough.
+    mode: "0640"
+  no_log: true
   notify: restart livekit

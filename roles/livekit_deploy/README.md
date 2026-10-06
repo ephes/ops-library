@@ -22,7 +22,7 @@ Deploys a self-hosted LiveKit stack (livekit-server + Egress) on Ubuntu using Do
 
 - livekit-server and livekit-egress run as Docker containers managed by a systemd oneshot unit.
 - Both services bind to `network_mode: host` — required for WebRTC UDP/TCP media ports and for reaching host-local Redis and MinIO without port-mapping.
-- Config files (`livekit.yaml`, `egress.yaml`) are rendered from Ansible templates into `{{ livekit_config_dir }}` (default `/etc/livekit`) and bind-mounted read-only into each container.
+- Config files (`livekit.yaml`, `egress.yaml`) are rendered from Ansible templates into `{{ livekit_config_dir }}` (default `/etc/livekit`) and bind-mounted read-only into each container. Both hold secrets: `livekit.yaml` is `root:root 0600` (the server container runs as root), `egress.yaml` is `root:root 0640` because the egress image runs as user `egress` with primary group `root` (gid 0). Docker user-namespace remapping would break that group read.
 - The LiveKit HTTP/signalling port (default 7880) is proxied by Traefik for external access. WebSocket upgrades are handled transparently.
 - Egress records to an S3-compatible bucket (MinIO by default at 127.0.0.1:9001).
 
@@ -43,9 +43,9 @@ Deploys a self-hosted LiveKit stack (livekit-server + Egress) on Ubuntu using Do
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `livekit_server_image` | `livekit/livekit-server` | LiveKit server image |
-| `livekit_server_tag` | `v1.8.0` | LiveKit server image tag |
+| `livekit_server_tag` | `v1.12.0` | LiveKit server image tag |
 | `livekit_egress_image` | `livekit/egress` | LiveKit egress image |
-| `livekit_egress_tag` | `v1.8.4` | LiveKit egress image tag |
+| `livekit_egress_tag` | `v1.13.0` | LiveKit egress image tag |
 
 ### Directories
 

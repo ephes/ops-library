@@ -1,0 +1,4 @@
+# Managed by Ansible (fastdeploy_self_deploy). Loaded by {{ service_name }}.service
+# via EnvironmentFile=; values are double-quoted with systemd escaping.
+DATABASE_URL="{{ ('postgresql+asyncpg://' ~ (postgres_user | default('fastdeploy')) ~ ':' ~ postgres_password ~ '@' ~ postgres_host ~ ':' ~ (postgres_port | default('5432')) ~ '/' ~ postgres_db_name) | replace('\\', '\\\\') | replace('"', '\\"') }}"
+SECRET_KEY="{{ secret_key | string | replace('\\', '\\\\') | replace('"', '\\"') }}"

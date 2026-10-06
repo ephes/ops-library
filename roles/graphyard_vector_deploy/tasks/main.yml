@@ -371,7 +371,8 @@
             dest: "{{ graphyard_vector_validation_dir.path }}/{{ item.path | basename }}"
             owner: root
             group: "{{ graphyard_vector_validation_group }}"
-            mode: "0644"
+            # Other fragments may carry their own credentials.
+            mode: "0640"
           loop: "{{ graphyard_vector_existing_configs.files }}"
           when:
             - item.path != graphyard_vector_config_path
@@ -392,7 +393,8 @@
             dest: "{{ graphyard_vector_validation_dir.path }}/{{ graphyard_vector_config_path | basename }}"
             owner: root
             group: "{{ graphyard_vector_validation_group }}"
-            mode: "0644"
+            # Holds the ingest bearer token, like the deployed 0640 fragment.
+            mode: "0640"
 
         - name: Validate staged Vector configuration directory
           ansible.builtin.command:

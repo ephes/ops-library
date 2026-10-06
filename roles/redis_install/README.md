@@ -43,6 +43,8 @@ See `defaults/main.yml` for the full list. Key options:
 | `redis_install_validate_config` | `false` | Start a short-lived Redis instance with TCP disabled and a private temporary Unix socket to validate config syntax |
 | `redis_install_validate_dir` | `/tmp/redis-config-test` | Temp directory for config validation |
 
+The active `redis.conf` may contain `requirepass`, so it is installed `root:<redis_install_group>` mode `0640` (not world-readable). Earlier Ansible backups (`redis.conf.*~`) are tightened to the same owner and mode.
+
 Validation uses a mode-0700 temporary subdirectory beneath
 `redis_install_validate_dir`, with an isolated Unix socket and no TCP listener.
 The validator disables systemd supervision, signals its process, polls for termination, escalates to SIGKILL if needed, and

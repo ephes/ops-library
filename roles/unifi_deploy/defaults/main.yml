@@ -61,6 +61,8 @@ unifi_mongodb_port: 27017
 unifi_mongodb_database: "unifi"
 unifi_mongodb_user: "unifi"
 unifi_mongodb_password: ""
+# Root-owned, group-readable Java @argfile holding the Mongo URI with credentials.
+unifi_mongodb_jvm_args_path: "/etc/{{ unifi_service_name }}-secrets/mongodb.jvmargs"
 unifi_mongodb_logrotate_enabled: true
 unifi_mongodb_logrotate_path: "/etc/logrotate.d/mongodb"
 unifi_mongodb_monitor_script_enabled: true

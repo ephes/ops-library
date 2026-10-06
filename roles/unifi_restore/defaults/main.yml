@@ -48,6 +48,8 @@ unifi_restore_staging_dir: /tmp/unifi-restore
 unifi_install_root: /usr/lib/unifi
 unifi_data_path: "{{ unifi_install_root }}/data"
 unifi_systemd_unit_path: /etc/systemd/system/unifi.service
+unifi_mongodb_jvm_args_path: /etc/unifi-secrets/mongodb.jvmargs
+unifi_mongodb_jvm_args_group: unifi
 unifi_traefik_config_path: /etc/traefik/dynamic/unifi.yml
 
 # Required packages to manipulate archives/database

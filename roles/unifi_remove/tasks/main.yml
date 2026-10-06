@@ -35,6 +35,20 @@
     state: absent
   when: unifi_remove_service_units | bool
 
+- name: Remove MongoDB JVM argument file
+  ansible.builtin.file:
+    path: "{{ unifi_mongodb_jvm_args_path }}"
+    state: absent
+  when: unifi_remove_service_units | bool
+
+- name: Remove default MongoDB credentials directory
+  ansible.builtin.file:
+    path: "/etc/{{ unifi_service_name }}-secrets"
+    state: absent
+  when:
+    - unifi_remove_service_units | bool
+    - (unifi_mongodb_jvm_args_path | dirname) == ('/etc/' ~ unifi_service_name ~ '-secrets')
+
 - name: Reload systemd
   ansible.builtin.systemd:
     daemon_reload: true

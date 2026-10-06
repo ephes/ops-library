@@ -15,12 +15,15 @@ Environment="PATH={{ unifi_java_home }}/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="JVM_INIT_HEAP_SIZE={{ unifi_jvm_min_heap_mb }}M"
 Environment="JVM_MAX_HEAP_SIZE={{ unifi_jvm_max_heap_mb }}M"
 Environment="UNIFI_JVM_OPTS={{ unifi_java_opts }}"
-Environment="MONGO_URI=mongodb://{{ unifi_mongodb_user }}:{{ unifi_mongodb_password }}@{{ unifi_mongodb_host }}:{{ unifi_mongodb_port }}/{{ unifi_mongodb_database }}?authSource=admin"
 {% for env in unifi_systemd_extra_env %}
 Environment="{{ env }}"
 {% endfor %}
 
+# The Mongo URI (with credentials) is read from a root:{{ unifi_group }} 0640
+# Java @argfile so it stays out of this world-readable unit, `systemctl show`
+# and the process command line.
 ExecStart=/usr/bin/java \
+    @{{ unifi_mongodb_jvm_args_path }} \
     --add-opens java.base/java.time=ALL-UNNAMED \
     --add-opens java.base/java.lang=ALL-UNNAMED \
     -Xms{{ unifi_jvm_min_heap_mb }}M \
@@ -31,7 +34,6 @@ ExecStart=/usr/bin/java \
     -Dunifi.mongodb.service.enabled=false \
     -Dlog4j2.formatMsgNoLookups=true \
     -Ddb.mongo.local=false \
-    -Ddb.mongo.uri=${MONGO_URI} \
     -Dunifi.db.name={{ unifi_mongodb_database }} \
     -jar {{ unifi_install_dir }}/lib/ace.jar start
 

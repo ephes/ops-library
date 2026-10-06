@@ -19,10 +19,25 @@
     mv "{{ fd_staging_dir }}" "{{ fd_current_dir }}"
   become: true
 
+- name: Render fastdeploy systemd environment file
+  template:
+    src: systemd_env.j2
+    dest: "/etc/default/fastdeploy"
+    owner: root
+    group: root
+    mode: "0600"
+  vars:
+    service_name: "fastdeploy"
+  no_log: true
+  become: true
+
 - name: Update production systemd service
   template:
     src: systemd_service.j2
     dest: "/etc/systemd/system/fastdeploy.service"
+    owner: root
+    group: root
+    mode: "0644"
   vars:
     service_name: "fastdeploy"
     service_dir: "{{ fd_current_dir }}"

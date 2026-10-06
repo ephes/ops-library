@@ -1,4 +1,41 @@
 ---
+# Only the dedicated default directory is created and locked down; a custom
+# path must point into an existing directory the role does not re-permission.
+- name: "systemd | Ensure default credentials directory exists"
+  ansible.builtin.file:
+    path: "/etc/{{ unifi_service_name }}-secrets"
+    state: directory
+    owner: root
+    group: "{{ unifi_group }}"
+    mode: "0750"
+  when: (unifi_mongodb_jvm_args_path | dirname) == ('/etc/' ~ unifi_service_name ~ '-secrets')
+
+- name: "systemd | Check custom credentials directory"
+  ansible.builtin.stat:
+    path: "{{ unifi_mongodb_jvm_args_path | dirname }}"
+  register: unifi_jvm_args_dir_stat
+  when: (unifi_mongodb_jvm_args_path | dirname) != ('/etc/' ~ unifi_service_name ~ '-secrets')
+
+- name: "systemd | Require existing custom credentials directory"
+  ansible.builtin.assert:
+    that:
+      - unifi_jvm_args_dir_stat.stat.isdir | default(false)
+    fail_msg: >-
+      {{ unifi_mongodb_jvm_args_path | dirname }} must exist and be a directory;
+      the role only creates the default /etc/{{ unifi_service_name }}-secrets.
+  when: (unifi_mongodb_jvm_args_path | dirname) != ('/etc/' ~ unifi_service_name ~ '-secrets')
+
+- name: "systemd | Deploy MongoDB JVM argument file"
+  ansible.builtin.template:
+    src: mongodb.jvmargs.j2
+    dest: "{{ unifi_mongodb_jvm_args_path }}"
+    owner: root
+    group: "{{ unifi_group }}"
+    mode: "0640"
+  no_log: true
+  notify:
+    - Restart UniFi
+
 - name: "systemd | Deploy service"
   ansible.builtin.template:
     src: unifi.service.j2
