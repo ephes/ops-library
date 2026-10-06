@@ -37,6 +37,15 @@ This role restores mail server data from a backup created by `mail_backup`:
 | `mail_restore_database` | `true` | Restore PostgreSQL |
 | `mail_restore_config` | `false` | Restore config files |
 
+## Dump Checks
+
+Before the database is dropped, the role checks `database.sql.gz` with
+`gzip -t` and fails if it is corrupt or decompresses to nothing, so a broken
+backup stops the restore while the current database is still intact. The
+`gunzip | psql` restore runs under `bash` with `set -euo pipefail`. `psql`
+itself still runs without `ON_ERROR_STOP`, so individual SQL errors inside a
+valid dump are reported but do not fail the task.
+
 ## Example Playbook
 
 ```yaml

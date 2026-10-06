@@ -51,6 +51,26 @@ Each backup creates a timestamped directory:
 └── config.tar.gz     # Configuration files
 ```
 
+## Failure Handling
+
+A backup run either completes or fails loudly; it never keeps a partial
+backup:
+
+- `pg_dump | gzip` runs under `bash` with `set -euo pipefail`, so a failed
+  dump (database down, authentication error, missing database) fails the task
+  instead of leaving an empty `database.sql.gz`. The dump is written to
+  `database.sql.gz.tmp`, checked with `gzip -t`, rejected if it decompresses
+  to nothing, and only then renamed to `database.sql.gz`.
+- The maildir archive is written to `maildir.tar.gz.tmp`, checked with
+  `gzip -t` and then renamed.
+- If any backup or archive step fails, the role removes the incomplete
+  timestamped directory and its archive, then fails the play. Before it
+  starts, the role refuses to run if this run's directory or archive already
+  exists (for example a second run in the same play, which reuses the
+  gathered timestamp), so the cleanup can only ever remove this run's files. Retention runs
+  only after a complete backup, so a failing database never ages out the
+  older good backups, and a `latest` restore never picks a half-written one.
+
 ## Scheduled Backups
 
 Create a systemd timer for automated backups:

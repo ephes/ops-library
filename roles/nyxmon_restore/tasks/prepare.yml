@@ -1,7 +1,10 @@
 ---
 - name: Collect staging usage
   ansible.builtin.shell: |
+    set -euo pipefail
     du -sb "{{ nyxmon_restore_content_path }}" | awk '{print $1}'
+  args:
+    executable: /bin/bash
   register: nyxmon_restore_staging_size
   changed_when: false
 
