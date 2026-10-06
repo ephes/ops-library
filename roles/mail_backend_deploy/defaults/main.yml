@@ -102,6 +102,15 @@ mail_backend_sieve_enabled: true
 mail_backend_sieve_dir: "{{ mail_backend_vmail_path }}/%d/%n/sieve"
 mail_backend_sieve_active: "{{ mail_backend_vmail_path }}/%d/%n/.dovecot.sieve"
 
+# Global sieve script that runs before each user's own script and files mail
+# a spam filter marked as spam into the Junk mailbox. It matches the headers
+# rspamd adds ("X-Spam-Status: Yes, ..." from milter_headers, "X-Spam: Yes"
+# from the add_header action), so it only does something when a spam milter
+# is wired in via mail_backend_extra_milters.
+mail_backend_spam_to_junk_enabled: false
+mail_backend_spam_junk_mailbox: "Junk"
+mail_backend_sieve_before_dir: "/etc/dovecot/sieve/before.d"
+
 # =============================================================================
 # DKIM Configuration
 # =============================================================================
@@ -110,6 +119,13 @@ mail_backend_dkim_enabled: true
 mail_backend_dkim_selector: "mail"
 mail_backend_dkim_key_path: "/etc/opendkim/keys"
 mail_backend_dkim_key_bits: 2048
+
+# Additional Postfix milters, appended after OpenDKIM in smtpd_milters and
+# non_smtpd_milters. main.cf is fully templated, so a milter that another role
+# adds with postconf/lineinfile (e.g. mail_spam_deploy's rspamd) is removed on
+# the next backend deploy unless it is listed here too.
+# Example: ["unix:rspamd/milter.sock"]
+mail_backend_extra_milters: []
 
 # =============================================================================
 # Sender-only Domains

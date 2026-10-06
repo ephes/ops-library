@@ -45,9 +45,29 @@
     dest: "{{ mail_spam_local_config_path }}/redis.conf"
     owner: _rspamd
     group: _rspamd
+    # May contain the Redis password
+    mode: "0640"
+  notify: Restart rspamd
+  no_log: true
+  when: mail_spam_redis_enabled
+
+- name: config | Configure global options (local_addrs)
+  ansible.builtin.template:
+    src: local.d/options.inc.j2
+    dest: "{{ mail_spam_local_config_path }}/options.inc"
+    owner: _rspamd
+    group: _rspamd
     mode: "0644"
   notify: Restart rspamd
-  when: mail_spam_redis_enabled
+
+- name: config | Configure external_relay
+  ansible.builtin.template:
+    src: local.d/external_relay.conf.j2
+    dest: "{{ mail_spam_local_config_path }}/external_relay.conf"
+    owner: _rspamd
+    group: _rspamd
+    mode: "0644"
+  notify: Restart rspamd
 
 - name: config | Configure worker-normal
   ansible.builtin.template:
@@ -105,6 +125,15 @@
     mode: "0644"
   notify: Restart rspamd
 
+- name: config | Configure greylist module
+  ansible.builtin.template:
+    src: local.d/greylist.conf.j2
+    dest: "{{ mail_spam_local_config_path }}/greylist.conf"
+    owner: _rspamd
+    group: _rspamd
+    mode: "0644"
+  notify: Restart rspamd
+
 - name: config | Configure milter headers
   ansible.builtin.template:
     src: local.d/milter_headers.conf.j2
@@ -123,3 +152,11 @@
     mode: "0644"
   notify: Restart rspamd
   when: mail_spam_redis_enabled
+
+- name: config | Validate rspamd configuration
+  ansible.builtin.command:
+    cmd: rspamadm configtest
+  register: _mail_spam_configtest
+  changed_when: false
+  failed_when: _mail_spam_configtest.rc != 0 or 'syntax OK' not in _mail_spam_configtest.stdout
+  when: not ansible_check_mode

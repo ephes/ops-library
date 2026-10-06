@@ -91,3 +91,50 @@
     mode: "0644"
   notify: Restart dovecot
   when: mail_backend_sieve_enabled
+
+- name: Ensure global sieve_before directory exists
+  ansible.builtin.file:
+    path: "{{ mail_backend_sieve_before_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - mail_backend_sieve_enabled
+    - mail_backend_spam_to_junk_enabled
+
+- name: Install spam-to-Junk global sieve script
+  ansible.builtin.template:
+    src: dovecot/sieve/10-spam-to-junk.sieve.j2
+    dest: "{{ mail_backend_sieve_before_dir }}/10-spam-to-junk.sieve"
+    owner: root
+    group: root
+    mode: "0644"
+  register: _mail_backend_spam_sieve
+  when:
+    - mail_backend_sieve_enabled
+    - mail_backend_spam_to_junk_enabled
+
+# Global scripts live in a root-owned directory the vmail user cannot write
+# to, so Dovecot cannot compile them on first use; precompile the .svbin here.
+- name: Compile spam-to-Junk global sieve script
+  ansible.builtin.command:
+    argv:
+      - sievec
+      - "{{ mail_backend_sieve_before_dir }}/10-spam-to-junk.sieve"
+  changed_when: true
+  when:
+    - mail_backend_sieve_enabled
+    - mail_backend_spam_to_junk_enabled
+    - _mail_backend_spam_sieve is changed
+    - not ansible_check_mode
+  notify: Restart dovecot
+
+- name: Remove spam-to-Junk global sieve script when disabled
+  ansible.builtin.file:
+    path: "{{ mail_backend_sieve_before_dir }}/{{ item }}"
+    state: absent
+  loop:
+    - 10-spam-to-junk.sieve
+    - 10-spam-to-junk.svbin
+  when: not (mail_backend_sieve_enabled and mail_backend_spam_to_junk_enabled)

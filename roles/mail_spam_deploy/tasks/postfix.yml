@@ -8,6 +8,9 @@
   register: current_smtpd_milters
   changed_when: false
   failed_when: false
+  # Read-only; without this, check mode starts from an empty list and shows
+  # a diff that drops every existing milter (e.g. OpenDKIM).
+  check_mode: false
 
 # Build clean milter list: remove old absolute path, add new relative path
 - name: postfix | Build cleaned milter list

@@ -49,6 +49,12 @@ mail_spam_rewrite_subject_score: 8
 # Subject rewrite prefix
 mail_spam_subject_prefix: "[SPAM]"
 
+# Set a threshold to null (~) to disable that action. On a backend that sits
+# behind a relay which has already accepted the mail, reject and greylist do
+# more harm than good: a reject makes the relay bounce to a (usually forged)
+# sender, and greylisting only delays the relay's retry. Disable both there and
+# let the add_header / X-Spam-Status headers drive delivery into Junk.
+
 # =============================================================================
 # DKIM Integration
 # =============================================================================
@@ -62,6 +68,35 @@ mail_spam_dkim_signing_enabled: false
 
 mail_spam_learn_spam_header: "X-Spam-Learn: spam"
 mail_spam_learn_ham_header: "X-Spam-Learn: ham"
+
+# milter_headers routines. x-spam-status ("X-Spam-Status: Yes, score=...")
+# reflects the verdict for every action, unlike the add_header action's
+# "X-Spam: Yes", which a higher action such as rewrite_subject replaces.
+mail_spam_milter_headers:
+  - x-spamd-bar
+  - x-spam-level
+  - x-spam-status
+  - authentication-results
+
+# Networks rspamd treats as local, in addition to its built-in defaults
+# (RFC 1918, link-local, fd00::/8). Add the address of every relay that hands
+# mail to this host, e.g. a Tailscale (100.64.0.0/10) edge relay.
+mail_spam_local_addrs_default:
+  - "192.168.0.0/16"
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"
+  - "fd00::/8"
+  - "169.254.0.0/16"
+  - "fe80::/10"
+mail_spam_local_addrs_extra: []
+
+# Evaluate the sender behind a trusted relay instead of the relay itself.
+# Without this, rspamd behind an edge relay scores the relay's IP: no rDNS
+# (RDNS_NONE, HFILTER_HOSTNAME_UNKNOWN) on every message, and IP-based
+# checks (SPF, RBLs) look at the wrong host. Uses rspamd's external_relay
+# module with the "local" strategy, which skips Received hops from local_addrs,
+# so the relay must be in mail_spam_local_addrs_extra.
+mail_spam_external_relay_enabled: false
 
 # =============================================================================
 # Local Configuration

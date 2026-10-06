@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased — Keep rspamd in the Postfix milter chain (2.26.4)
+
+- `mail_backend_deploy` gains `mail_backend_extra_milters` (default `[]`).
+  It templates the whole `main.cf`, and its `smtpd_milters` used to be
+  hard-coded to OpenDKIM. So every backend deploy dropped the rspamd milter
+  that `mail_spam_deploy` had appended. rspamd kept running and passed its
+  health checks, but scanned nothing. List `unix:rspamd/milter.sock` here
+  wherever both roles run. `non_smtpd_milters` is now `$smtpd_milters`, the
+  form `mail_spam_deploy` writes, so the two roles no longer rewrite each
+  other's line.
+- `mail_backend_deploy` can install a global `sieve_before` script that files
+  mail tagged `X-Spam-Status: Yes` or `X-Spam: Yes` into Junk
+  (`mail_backend_spam_to_junk_enabled`, default `false`;
+  `mail_backend_spam_junk_mailbox`, `mail_backend_sieve_before_dir`).
+- `mail_spam_deploy`:
+  - An action threshold set to `null` disables that action. A backend behind
+    a relay should disable `reject` (it causes backscatter) and `greylist`.
+    A `null` greylist threshold also disables the greylist module, which
+    otherwise forces `soft reject` on its own.
+  - `mail_spam_local_addrs_extra` and `mail_spam_external_relay_enabled` make
+    rspamd score the real sender behind a trusted relay instead of the relay
+    itself. Without them, a relay without rDNS adds 4.5 points to every
+    message.
+  - `x-spam-status` is added to the default `milter_headers`
+    (`mail_spam_milter_headers`).
+  - `redis.conf` is written with mode `0640`, since it can hold the Redis
+    password.
+  - The configuration is validated with `rspamadm configtest`.
+  - Check mode reads the current `smtpd_milters`. It used to start from an
+    empty list, so `--check --diff` showed OpenDKIM being dropped.
+  - The README no longer claims that moving mail into Junk trains the filter.
+
 ## Unreleased — Never rsync Ansible Vault passwords (2.26.3)
 
 - Every role that rsyncs a project tree now excludes `.vault_password` by

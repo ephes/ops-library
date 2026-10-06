@@ -6,8 +6,12 @@ plugin {
   # Sieve script directory
   sieve = file:{{ mail_backend_sieve_dir }};active={{ mail_backend_sieve_active }}
 
-  # Global sieve scripts (optional)
+  # Global sieve scripts
+{% if mail_backend_spam_to_junk_enabled %}
+  sieve_before = {{ mail_backend_sieve_before_dir }}
+{% else %}
   # sieve_before = /etc/dovecot/sieve/before.d
+{% endif %}
   # sieve_after = /etc/dovecot/sieve/after.d
 
   # Sieve extensions

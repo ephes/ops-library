@@ -166,6 +166,34 @@ pointing the application at the backend.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `mail_backend_sieve_enabled` | `true` | Enable Sieve filtering |
+| `mail_backend_spam_to_junk_enabled` | `false` | Install a global `sieve_before` script that files spam into Junk |
+| `mail_backend_spam_junk_mailbox` | `Junk` | Mailbox the spam-to-Junk script files into (created if missing) |
+| `mail_backend_sieve_before_dir` | `/etc/dovecot/sieve/before.d` | Directory for global `sieve_before` scripts |
+
+The spam-to-Junk script matches `X-Spam-Status: Yes, ...` (rspamd
+`milter_headers` routine `x-spam-status`) or `X-Spam: Yes` (rspamd's
+`add_header` action). It only does anything once a spam milter adds those
+headers, see [Spam filtering](#spam-filtering). It runs before the user's own
+script, so user rules cannot rescue mail it has filed.
+
+### Spam filtering
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `mail_backend_extra_milters` | `[]` | Milters appended after OpenDKIM, e.g. `["unix:rspamd/milter.sock"]` |
+
+`main.cf` is fully templated by this role. A milter that another role adds by
+editing `main.cf` (such as `mail_spam_deploy`, which appends rspamd) is
+**removed again by the next backend deploy** unless it is also listed in
+`mail_backend_extra_milters`. Postfix keeps accepting mail when a listed
+milter is not running (`milter_default_action = accept`), so listing rspamd
+before it is installed is harmless.
+
+```yaml
+mail_backend_extra_milters:
+  - "unix:rspamd/milter.sock"
+mail_backend_spam_to_junk_enabled: true
+```
 
 ## Example Playbook
 
@@ -253,6 +281,7 @@ FROM mail_domains WHERE name = 'wersdoerfer.de';
 | `/etc/dovecot/dovecot.conf` | Dovecot main config |
 | `/etc/dovecot/dovecot-sql.conf.ext` | Dovecot SQL auth |
 | `/etc/dovecot/conf.d/*.conf` | Dovecot modules |
+| `/etc/dovecot/sieve/before.d/10-spam-to-junk.sieve` | Spam-to-Junk global script (only with `mail_backend_spam_to_junk_enabled`) |
 | `/etc/opendkim.conf` | DKIM configuration |
 | `/etc/opendkim/*.table` | DKIM signing tables |
 
