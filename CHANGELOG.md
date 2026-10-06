@@ -27,6 +27,48 @@
   New test `tests/test_wagtail_restore_safety.py` (part of
   `just test-restore-safety`).
 
+- `jellyfin_restore`, `navidrome_restore`, `metube_restore`,
+  `minecraft_java_restore` and `snappymail_restore` no longer delete live data
+  before they have a copy:
+  - the archive is unpacked and checked in staging before the service stops
+    (SnappyMail used to unpack it over the live parent directory after
+    deleting the data directory; Minecraft now checks the world in dry runs
+    too);
+  - the stop must succeed and the service must be confirmed
+    `inactive`/`failed` (Jellyfin and Navidrome ignored stop failures,
+    Minecraft ignored a failed status query);
+  - the config files the restore replaces (systemd unit, Traefik file,
+    `navidrome.toml`, MeTube env file, `server.properties` and the Minecraft
+    ops/whitelist/ban lists) are copied to `<svc>_restore_safety_root`
+    (default `/var/backups/<svc>-pre-restore`);
+  - the live data directory (Jellyfin data and config, Navidrome data,
+    MeTube state, the Minecraft world, the SnappyMail data dir) is renamed to
+    `<dir>.pre-restore-<UTC timestamp>` next to itself instead of
+    `rsync --delete` or `state: absent`, and the archive is restored into a
+    fresh directory. A directory that is or contains a mount point (bind
+    mounts included; the rollback never deletes through one) or a safety root
+    inside a live directory is refused before anything moves; a symlinked
+    directory moves its target, and nested listed directories are refused.
+    With
+    `snappymail_restore_clean: false` the directory is copied aside and the
+    backup merged as before;
+  - a failure from the move to the service start moves the old directories
+    and config files back (a directory that did not exist before is
+    removed again), starts the service again after a successful rollback
+    and fails with the outcome and the safety paths;
+  - a successful run keeps only its own pre-restore copies (one generation)
+    and deletes older ones, except an old copy that is or contains a mount point,
+    which is logged and kept; the restored data needs free space for one copy
+    of the archive's data;
+  - staging and temp directories are removed in `always`.
+  Minecraft's `stop_service.yml`, `restore_data.yml` and `start_service.yml`
+  are folded into `main.yml`; extra files are copied only when present
+  instead of `ignore_errors`. SnappyMail directory sources are copied with
+  `cp -a` instead of `synchronize`. New test
+  `tests/test_file_restore_safety.py` (part of `just test-restore-safety`)
+  checks the order statically and runs the shared move-aside, rollback and
+  prune snippets against temp directories.
+
 ## Unreleased — Restore safety (2.31.4)
 
 - `vaultwarden_restore` (legacy path; Echoport stays the preferred restore)

@@ -3,3 +3,10 @@ metube_restore_staging_dir: /tmp/metube-restore
 metube_restore_cleanup: true
 metube_restore_restart: true
 metube_restore_stop_service: true
+
+# Pre-restore safety copies. The live data directory is renamed to
+# <dir>.pre-restore-<UTC timestamp> next to itself (free on the same
+# filesystem); the config files the restore replaces are copied to
+# <safety_root>/<timestamp>/files. A successful run removes older generations
+# and keeps only its own copies.
+metube_restore_safety_root: /var/backups/metube-pre-restore

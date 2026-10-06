@@ -3,3 +3,10 @@
 
 navidrome_restore_staging_dir: /tmp/navidrome-restore
 navidrome_restore_force_full_rescan: false
+
+# Pre-restore safety copies. The live data directory is renamed to
+# <dir>.pre-restore-<UTC timestamp> next to itself (free on the same
+# filesystem); the config files the restore replaces are copied to
+# <safety_root>/<timestamp>/files. A successful run removes older generations
+# and keeps only its own copies.
+navidrome_restore_safety_root: /var/backups/navidrome-pre-restore

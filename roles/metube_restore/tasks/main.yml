@@ -1,10 +1,27 @@
 ---
+# MeTube restore tasks
+#
+# Safety contract:
+# - the archive is unpacked and checked in staging before MeTube stops;
+# - the stop must succeed (MeTube is confirmed inactive);
+# - the env file, systemd unit and Traefik file are copied to the safety
+#   directory;
+# - the live state directory is renamed to `<dir>.pre-restore-<ts>` instead of
+#   being overwritten with rsync --delete, and the archive is restored into a
+#   fresh directory;
+# - any failure moves the old directory and files back and starts MeTube
+#   again; a successful run keeps only this run's pre-restore copies;
+# - the staging directory is removed in `always`.
+
 - name: Validate restore inputs
   ansible.builtin.assert:
     that:
       - metube_restore_root | length > 0
       - metube_restore_archive | length > 0
-    fail_msg: "metube_restore_root and metube_restore_archive are required"
+      - metube_restore_safety_root is match('^/.*[^/]')
+    fail_msg: >-
+      metube_restore_root and metube_restore_archive are required, and
+      metube_restore_safety_root must be an absolute path other than /
 
 - name: Discover latest archive when requested
   ansible.builtin.find:
@@ -14,17 +31,17 @@
   register: metube_restore_candidates
   when: metube_restore_archive == "latest"
 
+- name: Fail if no archive found
+  ansible.builtin.fail:
+    msg: "No MeTube backup archives found in {{ metube_restore_root }}"
+  when: metube_restore_archive == "latest" and (metube_restore_candidates.files | default([]) | length) == 0
+
 - name: Choose restore archive
   ansible.builtin.set_fact:
     metube_restore_selected_archive: >-
       {{ (metube_restore_candidates.files | sort(attribute='mtime', reverse=true) | first).path
          if metube_restore_archive == "latest"
          else (metube_restore_archive if metube_restore_archive.startswith('/') else metube_restore_root ~ '/' ~ metube_restore_archive) }}
-
-- name: Fail if no archive found
-  ansible.builtin.fail:
-    msg: "No MeTube backup archives found in {{ metube_restore_root }}"
-  when: metube_restore_archive == "latest" and (metube_restore_candidates.files | default([]) | length) == 0
 
 - name: Check selected archive exists
   ansible.builtin.stat:
@@ -36,129 +53,523 @@
     msg: "MeTube restore archive not found: {{ metube_restore_selected_archive }}"
   when: not metube_restore_selected_stat.stat.exists
 
-- name: Prepare staging directory
-  ansible.builtin.file:
-    path: "{{ metube_restore_staging_dir }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
-
-- name: Unpack archive into staging
-  ansible.builtin.unarchive:
-    src: "{{ metube_restore_selected_archive }}"
-    dest: "{{ metube_restore_staging_dir }}"
-    remote_src: true
-    extra_opts: []
-
-- name: Locate payload directory
-  ansible.builtin.find:
-    paths: "{{ metube_restore_staging_dir }}"
-    file_type: directory
-    depth: 1
-  register: metube_restore_payload_dirs
-
-- name: Set payload directory fact
+- name: Fix the safety copy timestamp
   ansible.builtin.set_fact:
-    metube_restore_payload_dir: "{{ (metube_restore_payload_dirs.files | map(attribute='path') | list | first) | default('') }}"
+    metube_restore_timestamp: "{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}"
 
-- name: Fail when payload directory missing
-  ansible.builtin.fail:
-    msg: "Could not locate payload directory under {{ metube_restore_staging_dir }}"
-  when: metube_restore_payload_dir | length == 0
+- name: Name the safety copies
+  ansible.builtin.set_fact:
+    metube_restore_safety_root_clean: "{{ metube_restore_safety_root | regex_replace('/+$', '') }}"
+    metube_restore_safety_dir: "{{ metube_restore_safety_root | regex_replace('/+$', '') }}/{{ metube_restore_timestamp }}"
 
-- name: Stat payload contents
-  ansible.builtin.stat:
-    path: "{{ item.path }}"
-  register: metube_restore_payload_stats
-  loop:
-    - { path: "{{ metube_restore_payload_dir }}/state", label: "state" }
-    - { path: "{{ metube_restore_payload_dir }}/config/{{ metube_env_file | basename }}", label: "config" }
-    - { path: "{{ metube_restore_payload_dir }}/systemd/{{ metube_service_unit | basename }}", label: "systemd unit" }
-    - { path: "{{ metube_restore_payload_dir }}/traefik/{{ metube_traefik_config_path | basename }}", label: "traefik config" }
+- name: Restore with staging cleanup
+  block:
+    # Start from an empty staging directory, so a payload left by an earlier
+    # run cannot be picked up instead of this archive.
+    - name: Reset staging directory
+      ansible.builtin.file:
+        path: "{{ metube_restore_staging_dir }}"
+        state: absent
 
-- name: Ensure required payload pieces exist
-  ansible.builtin.assert:
-    that:
-      - metube_restore_payload_stats.results[0].stat.exists
-    fail_msg: "MeTube state directory missing inside archive: {{ metube_restore_payload_dir }}/state"
+    - name: Prepare staging directory
+      ansible.builtin.file:
+        path: "{{ metube_restore_staging_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
 
-- name: Ensure target directories exist
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    state: directory
-    owner: "{{ item.owner | default(metube_user) }}"
-    group: "{{ item.group | default(metube_group) }}"
-    mode: "{{ item.mode | default('0755') }}"
-  loop:
-    - { path: "{{ metube_state_dir }}", owner: "{{ metube_user }}", group: "{{ metube_group }}", mode: "0755" }
-    - { path: "{{ metube_env_dir }}", owner: "root", group: "root", mode: "0755" }
-    - { path: "{{ metube_traefik_config_path | dirname }}", owner: "root", group: "root", mode: "0755" }
+    - name: Unpack archive into staging
+      ansible.builtin.unarchive:
+        src: "{{ metube_restore_selected_archive }}"
+        dest: "{{ metube_restore_staging_dir }}"
+        remote_src: true
+        extra_opts: []
 
-- name: Stop metube service before restore
-  ansible.builtin.systemd:
-    name: "{{ metube_service_name }}"
-    state: stopped
-  when: metube_restore_stop_service | bool
+    - name: Locate payload directory
+      ansible.builtin.find:
+        paths: "{{ metube_restore_staging_dir }}"
+        file_type: directory
+        depth: 1
+      register: metube_restore_payload_dirs
 
-- name: Restore state directory
-  ansible.builtin.command:
-    cmd: >
-      rsync -a --delete "{{ metube_restore_payload_dir }}/state/" "{{ metube_state_dir }}/"
-  changed_when: true
+    - name: Set payload directory fact
+      ansible.builtin.set_fact:
+        metube_restore_payload_dir: "{{ (metube_restore_payload_dirs.files | map(attribute='path') | list | first) | default('') }}"
 
-- name: Restore environment file
-  ansible.builtin.copy:
-    src: "{{ metube_restore_payload_dir }}/config/{{ metube_env_file | basename }}"
-    dest: "{{ metube_env_file }}"
-    owner: root
-    group: root
-    mode: "0644"
-    remote_src: true
-  when: metube_restore_payload_stats.results[1].stat.exists
+    - name: Fail when payload directory missing
+      ansible.builtin.fail:
+        msg: "Could not locate payload directory under {{ metube_restore_staging_dir }}"
+      when: metube_restore_payload_dir | length == 0
 
-- name: Restore systemd unit
-  ansible.builtin.copy:
-    src: "{{ metube_restore_payload_dir }}/systemd/{{ metube_service_unit | basename }}"
-    dest: "{{ metube_service_unit }}"
-    owner: root
-    group: root
-    mode: "0644"
-    remote_src: true
-  register: metube_restore_unit_copy
-  when: metube_restore_payload_stats.results[2].stat.exists
+    - name: Stat payload contents
+      ansible.builtin.stat:
+        path: "{{ item.path }}"
+      register: metube_restore_payload_stats
+      loop:
+        - { path: "{{ metube_restore_payload_dir }}/state", label: "state" }
+        - { path: "{{ metube_restore_payload_dir }}/config/{{ metube_env_file | basename }}", label: "config" }
+        - { path: "{{ metube_restore_payload_dir }}/systemd/{{ metube_service_unit | basename }}", label: "systemd unit" }
+        - { path: "{{ metube_restore_payload_dir }}/traefik/{{ metube_traefik_config_path | basename }}", label: "traefik config" }
+      loop_control:
+        label: "{{ item.label }}"
 
-- name: Restore Traefik config
-  ansible.builtin.copy:
-    src: "{{ metube_restore_payload_dir }}/traefik/{{ metube_traefik_config_path | basename }}"
-    dest: "{{ metube_traefik_config_path }}"
-    owner: root
-    group: root
-    mode: "0644"
-    remote_src: true
-  register: metube_restore_traefik_copy
-  when: metube_restore_payload_stats.results[3].stat.exists
+    - name: Ensure required payload pieces exist
+      ansible.builtin.assert:
+        that:
+          - metube_restore_payload_stats.results[0].stat.isdir | default(false)
+        fail_msg: "MeTube state directory missing inside archive: {{ metube_restore_payload_dir }}/state"
 
-- name: Reload systemd if unit changed
-  ansible.builtin.systemd:
-    daemon_reload: true
-  when: metube_restore_unit_copy is defined and metube_restore_unit_copy.changed
+    - name: Ensure target directories exist
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner | default(metube_user) }}"
+        group: "{{ item.group | default(metube_group) }}"
+        mode: "{{ item.mode | default('0755') }}"
+      loop:
+        - { path: "{{ metube_state_dir }}", owner: "{{ metube_user }}", group: "{{ metube_group }}", mode: "0755" }
+        - { path: "{{ metube_env_dir }}", owner: "root", group: "root", mode: "0755" }
+        - { path: "{{ metube_traefik_config_path | dirname }}", owner: "root", group: "root", mode: "0755" }
 
-- name: Reload traefik if config changed
-  ansible.builtin.service:
-    name: traefik
-    state: reloaded
-  failed_when: false
-  when: metube_restore_traefik_copy is defined and metube_restore_traefik_copy.changed
+    - name: List the directories to keep aside
+      ansible.builtin.set_fact:
+        # path, owner, group, mode of the fresh directory
+        metube_restore_aside_dirs:
+          - ["{{ metube_state_dir }}", "{{ metube_user }}", "{{ metube_group }}", "0755"]
+        metube_restore_config_files:
+          - "{{ metube_env_file }}"
+          - "{{ metube_service_unit }}"
+          - "{{ metube_traefik_config_path }}"
 
-- name: Start/restart metube service
-  ansible.builtin.systemd:
-    name: "{{ metube_service_name }}"
-    state: "{{ 'restarted' if metube_restore_restart else 'started' }}"
-    enabled: "{{ metube_service_enabled }}"
+    # --- Stop (fail closed) and copy the config files ---
 
-- name: Cleanup staging directory
-  ansible.builtin.file:
-    path: "{{ metube_restore_staging_dir }}"
-    state: absent
-  when: metube_restore_cleanup | bool
+    - name: Stop MeTube and copy config files
+      block:
+        - name: Stop metube service before restore
+          ansible.builtin.systemd:
+            name: "{{ metube_service_name }}"
+            state: stopped
+          when: metube_restore_stop_service | bool
+
+        # Also with metube_restore_stop_service: false - state is never
+        # replaced under a running service.
+        - name: Confirm MeTube is stopped
+          ansible.builtin.command:
+            argv: [systemctl, is-active, "{{ metube_service_name }}"]
+          register: metube_restore_stop_state
+          changed_when: false
+          failed_when: (metube_restore_stop_state.stdout | trim) not in ['inactive', 'failed']
+
+        - name: Create safety directories
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            owner: root
+            mode: "0700"
+          loop:
+            - "{{ metube_restore_safety_root_clean }}"
+            - "{{ metube_restore_safety_dir }}"
+
+        - name: Copy config files aside
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              files="$SAFETY_DIR/files"
+              mkdir -p "$files"
+              chmod 0700 "$files"
+              : > "$SAFETY_DIR/files.manifest"
+              while IFS= read -r path; do
+                [ -n "$path" ] || continue
+                printf '%s\n' "$path" >> "$SAFETY_DIR/files.manifest"
+                if [ -e "$path" ] || [ -L "$path" ]; then
+                  mkdir -p "$files$(dirname "$path")"
+                  cp -a "$path" "$files$path"
+                fi
+              done <<< "$CONFIG_FILES"
+              sync
+            executable: /bin/bash
+          environment:
+            SAFETY_DIR: "{{ metube_restore_safety_dir }}"
+            CONFIG_FILES: "{{ metube_restore_config_files | join('\n') }}"
+          changed_when: true
+
+      rescue:
+        - name: Fail without restoring (live data untouched)
+          ansible.builtin.fail:
+            msg: >-
+              MeTube restore aborted before anything was overwritten
+              ({{ ansible_failed_task.name | default('unknown task') }}): MeTube did
+              not stop or the config files could not be copied to
+              {{ metube_restore_safety_dir }}. The live state is untouched. MeTube
+              may be stopped; start it with `systemctl start {{ metube_service_name }}`.
+
+    # --- Move the live state aside and restore; any failure moves it back ---
+
+    - name: Restore MeTube with rollback
+      block:
+        - name: Move live data aside
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              mountinfo="${MOUNTINFO:-/proc/self/mountinfo}"
+              dev() { stat -c %d -- "$1" 2>/dev/null || stat -f %d -- "$1"; }
+              # has_mount DIR: DIR itself or anything inside it is a mount point. rm -rf
+              # would delete the mounted files, so such a tree is never removed.
+              has_mount() {
+                local esc path
+                # mountinfo lists canonical paths; resolve symlinked ancestors first.
+                path="$(readlink -f -- "$1")" || return 0
+                if [ -r "$mountinfo" ]; then
+                  # mountinfo escapes space and backslash as octal.
+                  esc="$(printf '%s' "$path" | sed -e 's/\\/\\134/g' -e 's/ /\\040/g')"
+                  P="$esc" awk '$5 == ENVIRON["P"] || index($5, ENVIRON["P"] "/") == 1 { found = 1 } END { exit !found }' "$mountinfo"
+                  return
+                fi
+                # Without a mount table: the root on another device than its parent, or
+                # entries below it on other devices.
+                [ "$(dev "$path")" != "$(dev "$(dirname -- "$path")")" ] && return 0
+                [ "$(find "$path" 2>/dev/null | wc -l)" != "$(find "$path" -xdev 2>/dev/null | wc -l)" ]
+              }
+              # under A B: A is B or lies inside it.
+              under() { case "$1/" in "$2"/*) return 0 ;; *) return 1 ;; esac; }
+              safety="$(readlink -f -- "$SAFETY_DIR")"
+              manifest="$SAFETY_DIR/dirs.manifest"
+              done_list="$SAFETY_DIR/dirs.done"
+              : > "$manifest"
+              : > "$done_list"
+              # Check every directory before the first one is touched.
+              reals=()
+              specs=()
+              while IFS=$'\t' read -r dir owner group mode; do
+                [ -n "$dir" ] || continue
+                if [ ! -e "$dir" ] && [ ! -L "$dir" ]; then
+                  # Recorded, so a failed restore removes what it created there.
+                  printf '%s\t-\n' "$dir" >> "$manifest"
+                  echo "nothing to keep: $dir does not exist"
+                  continue
+                fi
+                real="$(readlink -f -- "$dir")"
+                if [ ! -d "$real" ]; then
+                  echo "$dir is not a directory" >&2
+                  exit 1
+                fi
+                # The manifests must stay put while the directory moves.
+                if under "$safety" "$real"; then
+                  echo "the safety directory $safety lies inside $real" >&2
+                  exit 1
+                fi
+                reals+=("$real")
+                specs+=("$owner"$'\t'"$group"$'\t'"$mode")
+              done <<< "$DIRS"
+              plan=()
+              for i in "${!reals[@]}"; do
+                real="${reals[$i]}"
+                # Each directory is moved on its own, so none may contain another.
+                for j in "${!reals[@]}"; do
+                  [ "$i" != "$j" ] || continue
+                  if under "$real" "${reals[$j]}"; then
+                    echo "$real is ${reals[$j]} or lies inside it; list only one of them" >&2
+                    exit 1
+                  fi
+                done
+                aside="$real.pre-restore-$STAMP"
+                if [ -e "$aside" ] || [ -L "$aside" ]; then
+                  echo "safety path already exists: $aside" >&2
+                  exit 1
+                fi
+                # A rename is only free (and atomic) within one filesystem, and the
+                # rollback removes and renames the directory even after a merge, so no
+                # mount point of any kind (bind mounts share the parent's device).
+                # Nested mounts too: the rollback deletes the restored (or merged) tree.
+                if has_mount "$real" \
+                  || { command -v mountpoint >/dev/null 2>&1 && mountpoint -q -- "$real"; }; then
+                  echo "$real is or contains a mount point and cannot be moved aside" >&2
+                  exit 1
+                fi
+                plan+=("$real"$'\t'"$aside"$'\t'"${specs[$i]}")
+              done
+              for entry in "${plan[@]}"; do
+                IFS=$'\t' read -r real aside owner group mode <<< "$entry"
+                printf '%s\t%s\n' "$real" "$aside" >> "$manifest"
+                if [ "$KEEP_LIVE" = "true" ]; then
+                  # The restore merges into the live tree, so keep a full copy.
+                  cp -a -- "$real" "$aside"
+                  printf '%s\t%s\n' "$real" "$aside" >> "$done_list"
+                else
+                  mv -- "$real" "$aside"
+                  printf '%s\t%s\n' "$real" "$aside" >> "$done_list"
+                  mkdir -- "$real"
+                  chown -- "$owner:$group" "$real"
+                  chmod -- "$mode" "$real"
+                fi
+                echo "kept $real as $aside"
+              done
+              sync
+            executable: /bin/bash
+          environment:
+            SAFETY_DIR: "{{ metube_restore_safety_dir }}"
+            STAMP: "{{ metube_restore_timestamp }}"
+            KEEP_LIVE: "false"
+            DIRS: "{{ metube_restore_aside_dirs | map('join', '\t') | join('\n') }}"
+          register: metube_restore_aside
+          changed_when: true
+
+        - name: Restore state directory
+          ansible.builtin.command:
+            argv: [rsync, -a, "{{ metube_restore_payload_dir }}/state/", "{{ metube_state_dir }}/"]
+          changed_when: true
+
+        - name: Restore environment file
+          ansible.builtin.copy:
+            src: "{{ metube_restore_payload_dir }}/config/{{ metube_env_file | basename }}"
+            dest: "{{ metube_env_file }}"
+            owner: root
+            group: root
+            mode: "0644"
+            remote_src: true
+          when: metube_restore_payload_stats.results[1].stat.exists
+
+        - name: Restore systemd unit
+          ansible.builtin.copy:
+            src: "{{ metube_restore_payload_dir }}/systemd/{{ metube_service_unit | basename }}"
+            dest: "{{ metube_service_unit }}"
+            owner: root
+            group: root
+            mode: "0644"
+            remote_src: true
+          register: metube_restore_unit_copy
+          when: metube_restore_payload_stats.results[2].stat.exists
+
+        - name: Restore Traefik config
+          ansible.builtin.copy:
+            src: "{{ metube_restore_payload_dir }}/traefik/{{ metube_traefik_config_path | basename }}"
+            dest: "{{ metube_traefik_config_path }}"
+            owner: root
+            group: root
+            mode: "0644"
+            remote_src: true
+          register: metube_restore_traefik_copy
+          when: metube_restore_payload_stats.results[3].stat.exists
+
+        - name: Reload systemd if unit changed
+          ansible.builtin.systemd:
+            daemon_reload: true
+          when: metube_restore_unit_copy is changed
+
+        - name: Start/restart metube service
+          ansible.builtin.systemd:
+            name: "{{ metube_service_name }}"
+            state: "{{ 'restarted' if metube_restore_restart else 'started' }}"
+            enabled: "{{ metube_service_enabled }}"
+
+      rescue:
+        - name: Make sure MeTube is stopped before rolling back
+          ansible.builtin.systemd:
+            name: "{{ metube_service_name }}"
+            state: stopped
+          failed_when: false
+
+        - name: Check that MeTube is down before rolling back
+          ansible.builtin.command:
+            argv: [systemctl, is-active, "{{ metube_service_name }}"]
+          register: metube_restore_rescue_state
+          changed_when: false
+          failed_when: false
+
+        - name: Roll back data and config files
+          ansible.builtin.shell:
+            cmd: |
+              set -uo pipefail
+              mountinfo="${MOUNTINFO:-/proc/self/mountinfo}"
+              dev() { stat -c %d -- "$1" 2>/dev/null || stat -f %d -- "$1"; }
+              # has_mount DIR: DIR itself or anything inside it is a mount point. rm -rf
+              # would delete the mounted files, so such a tree is never removed.
+              has_mount() {
+                local esc path
+                # mountinfo lists canonical paths; resolve symlinked ancestors first.
+                path="$(readlink -f -- "$1")" || return 0
+                if [ -r "$mountinfo" ]; then
+                  # mountinfo escapes space and backslash as octal.
+                  esc="$(printf '%s' "$path" | sed -e 's/\\/\\134/g' -e 's/ /\\040/g')"
+                  P="$esc" awk '$5 == ENVIRON["P"] || index($5, ENVIRON["P"] "/") == 1 { found = 1 } END { exit !found }' "$mountinfo"
+                  return
+                fi
+                # Without a mount table: the root on another device than its parent, or
+                # entries below it on other devices.
+                [ "$(dev "$path")" != "$(dev "$(dirname -- "$path")")" ] && return 0
+                [ "$(find "$path" 2>/dev/null | wc -l)" != "$(find "$path" -xdev 2>/dev/null | wc -l)" ]
+              }
+              failed=0
+              manifest="$SAFETY_DIR/dirs.manifest"
+              done_list="$SAFETY_DIR/dirs.done"
+              if [ ! -f "$manifest" ]; then
+                # Without the manifest nothing proves the live directories are in place.
+                echo "rollback manifest $manifest is missing; check the directories by hand" >&2
+                failed=1
+              else
+                while IFS=$'\t' read -r real aside; do
+                  [ -n "$real" ] || continue
+                  if [ "$aside" = "-" ]; then
+                    # Did not exist before the restore: remove what the restore created.
+                    if [ -L "$real" ]; then
+                      echo "$real is a symlink now; remove the restored data by hand" >&2
+                      failed=1
+                    elif [ -e "$real" ]; then
+                      if has_mount "$real"; then
+                        echo "$real is or contains a mount point; not removed" >&2
+                        failed=1
+                      else
+                        rm -rf -- "$real" || failed=1
+                      fi
+                    fi
+                    continue
+                  fi
+                  if [ ! -e "$aside" ] && [ ! -L "$aside" ]; then
+                    continue
+                  fi
+                  if [ ! -e "$real" ] && [ ! -L "$real" ]; then
+                    mv -- "$aside" "$real" || failed=1
+                  elif grep -Fxq -- "$real"$'\t'"$aside" "$done_list" 2>/dev/null; then
+                    # $real holds only what this run restored from the archive.
+                    if has_mount "$real"; then
+                      echo "$real is or contains a mount point; not replaced, the old copy stays at $aside" >&2
+                      failed=1
+                    else
+                      { rm -rf -- "$real" && mv -- "$aside" "$real"; } || failed=1
+                    fi
+                  else
+                    # The copy did not finish; the live directory was never touched.
+                    if has_mount "$aside"; then
+                      echo "$aside is or contains a mount point; not removed" >&2
+                      failed=1
+                    else
+                      rm -rf -- "$aside" || failed=1
+                    fi
+                  fi
+                done < "$manifest"
+              fi
+              files="$SAFETY_DIR/files"
+              if [ -s "$SAFETY_DIR/files.manifest" ]; then
+                while IFS= read -r path; do
+                  [ -n "$path" ] || continue
+                  if [ -e "$files$path" ] || [ -L "$files$path" ]; then
+                    { rm -f "$path" && cp -a "$files$path" "$path"; } || failed=1
+                  else
+                    rm -f "$path" || failed=1
+                  fi
+                done < "$SAFETY_DIR/files.manifest"
+                systemctl daemon-reload || failed=1
+              fi
+              exit "$failed"
+            executable: /bin/bash
+          environment:
+            SAFETY_DIR: "{{ metube_restore_safety_dir }}"
+          register: metube_restore_rollback
+          changed_when: true
+          failed_when: false
+          when: (metube_restore_rescue_state.stdout | default('') | trim) in ['inactive', 'failed']
+
+        - name: Start MeTube again on the old data
+          ansible.builtin.systemd:
+            name: "{{ metube_service_name }}"
+            state: started
+          register: metube_restore_rescue_start
+          failed_when: false
+          when: (metube_restore_rollback.rc | default(1)) == 0
+
+        - name: Check whether MeTube runs again
+          ansible.builtin.command:
+            argv: [systemctl, is-active, "{{ metube_service_name }}"]
+          register: metube_restore_rescue_active
+          changed_when: false
+          failed_when: false
+          when: metube_restore_rescue_start is not skipped
+
+        - name: Fail after rollback
+          ansible.builtin.fail:
+            msg: >-
+              MeTube restore failed ({{ ansible_failed_task.name | default('unknown task') }}).
+              Rollback: {{ 'SKIPPED - MeTube could not be confirmed stopped; move the directory back by hand'
+                if metube_restore_rollback is skipped
+                else 'done' if metube_restore_rollback.rc == 0
+                else 'FAILED: ' ~ (metube_restore_rollback.stderr | default('') | trim) }}.
+              MeTube {{ 'was started again on the old data'
+                if (metube_restore_rescue_active.stdout | default('') | trim) == 'active'
+                else 'is not running (check systemctl status)' }}.
+              Pre-restore copies: the state directory as <dir>.pre-restore-{{ metube_restore_timestamp }}
+              (moved back if the rollback is done), config files in {{ metube_restore_safety_dir }}/files.
+
+    - name: Prune older pre-restore copies
+      ansible.builtin.shell:
+        cmd: |
+          set -uo pipefail
+          shopt -s nullglob
+          mountinfo="${MOUNTINFO:-/proc/self/mountinfo}"
+          dev() { stat -c %d -- "$1" 2>/dev/null || stat -f %d -- "$1"; }
+          # has_mount DIR: DIR itself or anything inside it is a mount point. rm -rf
+          # would delete the mounted files, so such a tree is never removed.
+          has_mount() {
+            local esc path
+            # mountinfo lists canonical paths; resolve symlinked ancestors first.
+            path="$(readlink -f -- "$1")" || return 0
+            if [ -r "$mountinfo" ]; then
+              # mountinfo escapes space and backslash as octal.
+              esc="$(printf '%s' "$path" | sed -e 's/\\/\\134/g' -e 's/ /\\040/g')"
+              P="$esc" awk '$5 == ENVIRON["P"] || index($5, ENVIRON["P"] "/") == 1 { found = 1 } END { exit !found }' "$mountinfo"
+              return
+            fi
+            # Without a mount table: the root on another device than its parent, or
+            # entries below it on other devices.
+            [ "$(dev "$path")" != "$(dev "$(dirname -- "$path")")" ] && return 0
+            [ "$(find "$path" 2>/dev/null | wc -l)" != "$(find "$path" -xdev 2>/dev/null | wc -l)" ]
+          }
+          remove() {
+            if has_mount "$1"; then
+              echo "keeping $1: a mount point lies inside it; unmount it and remove the copy by hand" >&2
+              return
+            fi
+            rm -rf -- "$1" || echo "could not remove $1" >&2
+          }
+          # Keep one generation: this run's copies. Failures here only warn.
+          if [ -f "$SAFETY_DIR/dirs.done" ]; then
+            while IFS=$'\t' read -r real aside; do
+              [ -n "$real" ] || continue
+              for old in "$real".pre-restore-[0-9]*T[0-9]*Z; do
+                [ "$old" = "$aside" ] && continue
+                remove "$old"
+              done
+            done < "$SAFETY_DIR/dirs.done"
+          fi
+          for old in "$SAFETY_ROOT"/[0-9]*T[0-9]*Z; do
+            [ "$old" = "$SAFETY_DIR" ] && continue
+            remove "$old"
+          done
+          exit 0
+        executable: /bin/bash
+      environment:
+        SAFETY_DIR: "{{ metube_restore_safety_dir }}"
+        SAFETY_ROOT: "{{ metube_restore_safety_root_clean }}"
+      changed_when: true
+
+    - name: Reload traefik if config changed
+      ansible.builtin.service:
+        name: traefik
+        state: reloaded
+      failed_when: false
+      when: metube_restore_traefik_copy is changed
+
+  always:
+    - name: Cleanup staging directory
+      ansible.builtin.file:
+        path: "{{ metube_restore_staging_dir }}"
+        state: absent
+      when: metube_restore_cleanup | bool
+
+- name: Report restore completion
+  ansible.builtin.debug:
+    msg:
+      - "MeTube restored from {{ metube_restore_selected_archive }}."
+      - "{{ metube_restore_aside.stdout_lines | default([]) | join('; ') }}"
+      - "Config files before the restore: {{ metube_restore_safety_dir }}/files"
+      - "Only this run's pre-restore copies are kept; remove them once MeTube is verified."

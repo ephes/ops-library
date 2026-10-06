@@ -123,8 +123,11 @@ at that site (this is how `unifi_backup/tasks/services.yml` is checked).
 `just test-restore-safety` (part of `just test`) checks the restore roles statically: the dump or
 database is validated before the service stops, the stop fails closed, a safety copy is taken
 before the first overwrite, no restore step ignores failures, and `rescue` puts the safety copy
-back and leaves the service stopped. Molecule (`just molecule-test vaultwarden_restore`) covers
-the successful path in Docker.
+back. The database roles (Vaultwarden, Mastodon, Takahe, Wagtail) leave the service stopped after
+a rollback; the file roles (Jellyfin, Navidrome, MeTube, Minecraft, SnappyMail) move the live
+directory aside instead of deleting it and start the service again once the old data is back.
+The shared shell snippets run against temp directories with stub binaries. Molecule
+(`just molecule-test vaultwarden_restore`) covers the successful path in Docker.
 
 ## SSH forwarding identity fixtures
 

@@ -1,9 +1,27 @@
 ---
+# SnappyMail restore tasks
+#
+# Safety contract:
+# - an archive is unpacked into a staging directory next to the data
+#   directory and must contain it before anything live is touched;
+# - the live data directory is renamed to `<dir>.pre-restore-<ts>` (or, with
+#   snappymail_restore_clean: false, copied there) instead of being deleted,
+#   and the backup is copied into a fresh directory;
+# - any failure moves the old directory back; a successful run keeps only
+#   this run's pre-restore copy;
+# - the staging directory is removed in `always`.
+# SnappyMail has no service of its own; nginx and PHP-FPM keep running and
+# are restarted at the end as before.
+
 - name: Validate restore inputs
   ansible.builtin.assert:
     that:
       - snappymail_data_dir | length > 0
-    fail_msg: "snappymail_data_dir must be set"
+      - snappymail_data_dir is match('^/.*[^/]')
+      - snappymail_restore_safety_root is match('^/.*[^/]')
+    fail_msg: >-
+      snappymail_data_dir and snappymail_restore_safety_root must be absolute
+      paths other than /
 
 - name: Resolve restore source
   ansible.builtin.set_fact:
@@ -58,26 +76,6 @@
     msg: "Restore source not found at {{ snappymail_restore_source_effective }}"
   when: not snappymail_restore_source_stat.stat.exists
 
-- name: Ensure data parent exists
-  ansible.builtin.file:
-    path: "{{ snappymail_data_dir | dirname }}"
-    state: directory
-    mode: "0755"
-
-- name: Clean existing data directory
-  ansible.builtin.file:
-    path: "{{ snappymail_data_dir }}"
-    state: absent
-  when: snappymail_restore_clean | bool
-
-- name: Recreate data directory
-  ansible.builtin.file:
-    path: "{{ snappymail_data_dir }}"
-    state: directory
-    owner: "{{ snappymail_restore_owner }}"
-    group: "{{ snappymail_restore_group }}"
-    mode: "{{ snappymail_restore_mode }}"
-
 - name: Determine if source is archive
   ansible.builtin.set_fact:
     snappymail_restore_is_archive: "{{ snappymail_restore_source_effective | regex_search('\\.tar\\.(gz|zst)$') is not none }}"
@@ -92,32 +90,372 @@
     - snappymail_restore_packages | length > 0
     - not snappymail_restore_is_archive
 
-- name: Restore from archive
-  ansible.builtin.unarchive:
-    src: "{{ snappymail_restore_source_effective }}"
-    dest: "{{ snappymail_data_dir | dirname }}"
-    remote_src: true
-    extra_opts: "{{ ['--use-compress-program=unzstd'] if snappymail_restore_source_effective.endswith('.tar.zst') else [] }}"
-  when: snappymail_restore_is_archive
+- name: Fix the safety copy timestamp
+  ansible.builtin.set_fact:
+    snappymail_restore_timestamp: "{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}"
 
-- name: Restore from directory copy
-  ansible.posix.synchronize:
-    src: "{{ snappymail_restore_source_effective }}/"
-    dest: "{{ snappymail_data_dir }}/"
-    archive: true
-    recursive: true
-    delete: true
-  delegate_to: "{{ inventory_hostname }}"
-  when: not snappymail_restore_is_archive
+- name: Name the safety copies
+  ansible.builtin.set_fact:
+    snappymail_restore_safety_root_clean: "{{ snappymail_restore_safety_root | regex_replace('/+$', '') }}"
+    snappymail_restore_safety_dir: "{{ snappymail_restore_safety_root | regex_replace('/+$', '') }}/{{ snappymail_restore_timestamp }}"
+    snappymail_restore_payload_dir: >-
+      {{ (snappymail_restore_staging_dir ~ '/' ~ (snappymail_data_dir | basename))
+         if snappymail_restore_is_archive else snappymail_restore_source_effective }}
 
-- name: Ensure ownership and permissions on restored data
-  ansible.builtin.file:
-    path: "{{ snappymail_data_dir }}"
-    state: directory
-    owner: "{{ snappymail_restore_owner }}"
-    group: "{{ snappymail_restore_group }}"
-    mode: "{{ snappymail_restore_mode }}"
-    recurse: true
+- name: Restore with staging cleanup
+  block:
+    - name: Ensure data parent exists
+      ansible.builtin.file:
+        path: "{{ snappymail_data_dir | dirname }}"
+        state: directory
+        mode: "0755"
+
+    - name: Reset staging directory
+      ansible.builtin.file:
+        path: "{{ snappymail_restore_staging_dir }}"
+        state: absent
+      when: snappymail_restore_is_archive
+
+    - name: Create staging directory
+      ansible.builtin.file:
+        path: "{{ snappymail_restore_staging_dir }}"
+        state: directory
+        mode: "0700"
+      when: snappymail_restore_is_archive
+
+    # The archive used to be unpacked straight over the live parent
+    # directory; a broken archive then left a half-written data directory.
+    - name: Unpack archive into staging
+      ansible.builtin.unarchive:
+        src: "{{ snappymail_restore_source_effective }}"
+        dest: "{{ snappymail_restore_staging_dir }}"
+        remote_src: true
+        extra_opts: "{{ ['--use-compress-program=unzstd'] if snappymail_restore_source_effective.endswith('.tar.zst') else [] }}"
+      when: snappymail_restore_is_archive
+
+    - name: Stat restore payload
+      ansible.builtin.stat:
+        path: "{{ snappymail_restore_payload_dir }}"
+      register: snappymail_restore_payload_stat
+
+    - name: Fail if the payload has no data directory
+      ansible.builtin.fail:
+        msg: >-
+          {{ snappymail_restore_payload_dir }} is not a directory: the archive must
+          contain '{{ snappymail_data_dir | basename }}/' at its top level.
+      when: not (snappymail_restore_payload_stat.stat.isdir | default(false))
+
+    - name: Create safety directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        mode: "0700"
+      loop:
+        - "{{ snappymail_restore_safety_root_clean }}"
+        - "{{ snappymail_restore_safety_dir }}"
+
+    - name: List the directories to keep aside
+      ansible.builtin.set_fact:
+        # path, owner, group, mode of the fresh directory
+        snappymail_restore_aside_dirs:
+          - ["{{ snappymail_data_dir }}", "{{ snappymail_restore_owner }}", "{{ snappymail_restore_group }}", "{{ snappymail_restore_mode }}"]
+
+    # --- Move the live data aside and restore; any failure moves it back ---
+
+    - name: Restore SnappyMail with rollback
+      block:
+        - name: Move live data aside
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              mountinfo="${MOUNTINFO:-/proc/self/mountinfo}"
+              dev() { stat -c %d -- "$1" 2>/dev/null || stat -f %d -- "$1"; }
+              # has_mount DIR: DIR itself or anything inside it is a mount point. rm -rf
+              # would delete the mounted files, so such a tree is never removed.
+              has_mount() {
+                local esc path
+                # mountinfo lists canonical paths; resolve symlinked ancestors first.
+                path="$(readlink -f -- "$1")" || return 0
+                if [ -r "$mountinfo" ]; then
+                  # mountinfo escapes space and backslash as octal.
+                  esc="$(printf '%s' "$path" | sed -e 's/\\/\\134/g' -e 's/ /\\040/g')"
+                  P="$esc" awk '$5 == ENVIRON["P"] || index($5, ENVIRON["P"] "/") == 1 { found = 1 } END { exit !found }' "$mountinfo"
+                  return
+                fi
+                # Without a mount table: the root on another device than its parent, or
+                # entries below it on other devices.
+                [ "$(dev "$path")" != "$(dev "$(dirname -- "$path")")" ] && return 0
+                [ "$(find "$path" 2>/dev/null | wc -l)" != "$(find "$path" -xdev 2>/dev/null | wc -l)" ]
+              }
+              # under A B: A is B or lies inside it.
+              under() { case "$1/" in "$2"/*) return 0 ;; *) return 1 ;; esac; }
+              safety="$(readlink -f -- "$SAFETY_DIR")"
+              manifest="$SAFETY_DIR/dirs.manifest"
+              done_list="$SAFETY_DIR/dirs.done"
+              : > "$manifest"
+              : > "$done_list"
+              # Check every directory before the first one is touched.
+              reals=()
+              specs=()
+              while IFS=$'\t' read -r dir owner group mode; do
+                [ -n "$dir" ] || continue
+                if [ ! -e "$dir" ] && [ ! -L "$dir" ]; then
+                  # Recorded, so a failed restore removes what it created there.
+                  printf '%s\t-\n' "$dir" >> "$manifest"
+                  echo "nothing to keep: $dir does not exist"
+                  continue
+                fi
+                real="$(readlink -f -- "$dir")"
+                if [ ! -d "$real" ]; then
+                  echo "$dir is not a directory" >&2
+                  exit 1
+                fi
+                # The manifests must stay put while the directory moves.
+                if under "$safety" "$real"; then
+                  echo "the safety directory $safety lies inside $real" >&2
+                  exit 1
+                fi
+                reals+=("$real")
+                specs+=("$owner"$'\t'"$group"$'\t'"$mode")
+              done <<< "$DIRS"
+              plan=()
+              for i in "${!reals[@]}"; do
+                real="${reals[$i]}"
+                # Each directory is moved on its own, so none may contain another.
+                for j in "${!reals[@]}"; do
+                  [ "$i" != "$j" ] || continue
+                  if under "$real" "${reals[$j]}"; then
+                    echo "$real is ${reals[$j]} or lies inside it; list only one of them" >&2
+                    exit 1
+                  fi
+                done
+                aside="$real.pre-restore-$STAMP"
+                if [ -e "$aside" ] || [ -L "$aside" ]; then
+                  echo "safety path already exists: $aside" >&2
+                  exit 1
+                fi
+                # A rename is only free (and atomic) within one filesystem, and the
+                # rollback removes and renames the directory even after a merge, so no
+                # mount point of any kind (bind mounts share the parent's device).
+                # Nested mounts too: the rollback deletes the restored (or merged) tree.
+                if has_mount "$real" \
+                  || { command -v mountpoint >/dev/null 2>&1 && mountpoint -q -- "$real"; }; then
+                  echo "$real is or contains a mount point and cannot be moved aside" >&2
+                  exit 1
+                fi
+                plan+=("$real"$'\t'"$aside"$'\t'"${specs[$i]}")
+              done
+              for entry in "${plan[@]}"; do
+                IFS=$'\t' read -r real aside owner group mode <<< "$entry"
+                printf '%s\t%s\n' "$real" "$aside" >> "$manifest"
+                if [ "$KEEP_LIVE" = "true" ]; then
+                  # The restore merges into the live tree, so keep a full copy.
+                  cp -a -- "$real" "$aside"
+                  printf '%s\t%s\n' "$real" "$aside" >> "$done_list"
+                else
+                  mv -- "$real" "$aside"
+                  printf '%s\t%s\n' "$real" "$aside" >> "$done_list"
+                  mkdir -- "$real"
+                  chown -- "$owner:$group" "$real"
+                  chmod -- "$mode" "$real"
+                fi
+                echo "kept $real as $aside"
+              done
+              sync
+            executable: /bin/bash
+          environment:
+            SAFETY_DIR: "{{ snappymail_restore_safety_dir }}"
+            STAMP: "{{ snappymail_restore_timestamp }}"
+            KEEP_LIVE: "{{ (not (snappymail_restore_clean | bool)) | string | lower }}"
+            DIRS: "{{ snappymail_restore_aside_dirs | map('join', '\t') | join('\n') }}"
+          register: snappymail_restore_aside
+          changed_when: true
+
+        - name: Ensure data directory exists
+          ansible.builtin.file:
+            path: "{{ snappymail_data_dir }}"
+            state: directory
+            owner: "{{ snappymail_restore_owner }}"
+            group: "{{ snappymail_restore_group }}"
+            mode: "{{ snappymail_restore_mode }}"
+
+        - name: Copy restored data into place
+          ansible.builtin.command:
+            argv: [cp, -a, "{{ snappymail_restore_payload_dir }}/.", "{{ snappymail_data_dir }}/"]
+          changed_when: true
+
+        - name: Ensure ownership and permissions on restored data
+          ansible.builtin.file:
+            path: "{{ snappymail_data_dir }}"
+            state: directory
+            owner: "{{ snappymail_restore_owner }}"
+            group: "{{ snappymail_restore_group }}"
+            mode: "{{ snappymail_restore_mode }}"
+            recurse: true
+
+      rescue:
+        - name: Roll back data and config files
+          ansible.builtin.shell:
+            cmd: |
+              set -uo pipefail
+              mountinfo="${MOUNTINFO:-/proc/self/mountinfo}"
+              dev() { stat -c %d -- "$1" 2>/dev/null || stat -f %d -- "$1"; }
+              # has_mount DIR: DIR itself or anything inside it is a mount point. rm -rf
+              # would delete the mounted files, so such a tree is never removed.
+              has_mount() {
+                local esc path
+                # mountinfo lists canonical paths; resolve symlinked ancestors first.
+                path="$(readlink -f -- "$1")" || return 0
+                if [ -r "$mountinfo" ]; then
+                  # mountinfo escapes space and backslash as octal.
+                  esc="$(printf '%s' "$path" | sed -e 's/\\/\\134/g' -e 's/ /\\040/g')"
+                  P="$esc" awk '$5 == ENVIRON["P"] || index($5, ENVIRON["P"] "/") == 1 { found = 1 } END { exit !found }' "$mountinfo"
+                  return
+                fi
+                # Without a mount table: the root on another device than its parent, or
+                # entries below it on other devices.
+                [ "$(dev "$path")" != "$(dev "$(dirname -- "$path")")" ] && return 0
+                [ "$(find "$path" 2>/dev/null | wc -l)" != "$(find "$path" -xdev 2>/dev/null | wc -l)" ]
+              }
+              failed=0
+              manifest="$SAFETY_DIR/dirs.manifest"
+              done_list="$SAFETY_DIR/dirs.done"
+              if [ ! -f "$manifest" ]; then
+                # Without the manifest nothing proves the live directories are in place.
+                echo "rollback manifest $manifest is missing; check the directories by hand" >&2
+                failed=1
+              else
+                while IFS=$'\t' read -r real aside; do
+                  [ -n "$real" ] || continue
+                  if [ "$aside" = "-" ]; then
+                    # Did not exist before the restore: remove what the restore created.
+                    if [ -L "$real" ]; then
+                      echo "$real is a symlink now; remove the restored data by hand" >&2
+                      failed=1
+                    elif [ -e "$real" ]; then
+                      if has_mount "$real"; then
+                        echo "$real is or contains a mount point; not removed" >&2
+                        failed=1
+                      else
+                        rm -rf -- "$real" || failed=1
+                      fi
+                    fi
+                    continue
+                  fi
+                  if [ ! -e "$aside" ] && [ ! -L "$aside" ]; then
+                    continue
+                  fi
+                  if [ ! -e "$real" ] && [ ! -L "$real" ]; then
+                    mv -- "$aside" "$real" || failed=1
+                  elif grep -Fxq -- "$real"$'\t'"$aside" "$done_list" 2>/dev/null; then
+                    # $real holds only what this run restored from the archive.
+                    if has_mount "$real"; then
+                      echo "$real is or contains a mount point; not replaced, the old copy stays at $aside" >&2
+                      failed=1
+                    else
+                      { rm -rf -- "$real" && mv -- "$aside" "$real"; } || failed=1
+                    fi
+                  else
+                    # The copy did not finish; the live directory was never touched.
+                    if has_mount "$aside"; then
+                      echo "$aside is or contains a mount point; not removed" >&2
+                      failed=1
+                    else
+                      rm -rf -- "$aside" || failed=1
+                    fi
+                  fi
+                done < "$manifest"
+              fi
+              files="$SAFETY_DIR/files"
+              if [ -s "$SAFETY_DIR/files.manifest" ]; then
+                while IFS= read -r path; do
+                  [ -n "$path" ] || continue
+                  if [ -e "$files$path" ] || [ -L "$files$path" ]; then
+                    { rm -f "$path" && cp -a "$files$path" "$path"; } || failed=1
+                  else
+                    rm -f "$path" || failed=1
+                  fi
+                done < "$SAFETY_DIR/files.manifest"
+                systemctl daemon-reload || failed=1
+              fi
+              exit "$failed"
+            executable: /bin/bash
+          environment:
+            SAFETY_DIR: "{{ snappymail_restore_safety_dir }}"
+          register: snappymail_restore_rollback
+          changed_when: true
+          failed_when: false
+
+        - name: Fail after rollback
+          ansible.builtin.fail:
+            msg: >-
+              SnappyMail restore failed ({{ ansible_failed_task.name | default('unknown task') }}).
+              Rollback: {{ 'done' if snappymail_restore_rollback.rc == 0
+                else 'FAILED: ' ~ (snappymail_restore_rollback.stderr | default('') | trim) }}.
+              Pre-restore copy: {{ snappymail_data_dir }}.pre-restore-{{ snappymail_restore_timestamp }}
+              (moved back if the rollback is done).
+
+    - name: Prune older pre-restore copies
+      ansible.builtin.shell:
+        cmd: |
+          set -uo pipefail
+          shopt -s nullglob
+          mountinfo="${MOUNTINFO:-/proc/self/mountinfo}"
+          dev() { stat -c %d -- "$1" 2>/dev/null || stat -f %d -- "$1"; }
+          # has_mount DIR: DIR itself or anything inside it is a mount point. rm -rf
+          # would delete the mounted files, so such a tree is never removed.
+          has_mount() {
+            local esc path
+            # mountinfo lists canonical paths; resolve symlinked ancestors first.
+            path="$(readlink -f -- "$1")" || return 0
+            if [ -r "$mountinfo" ]; then
+              # mountinfo escapes space and backslash as octal.
+              esc="$(printf '%s' "$path" | sed -e 's/\\/\\134/g' -e 's/ /\\040/g')"
+              P="$esc" awk '$5 == ENVIRON["P"] || index($5, ENVIRON["P"] "/") == 1 { found = 1 } END { exit !found }' "$mountinfo"
+              return
+            fi
+            # Without a mount table: the root on another device than its parent, or
+            # entries below it on other devices.
+            [ "$(dev "$path")" != "$(dev "$(dirname -- "$path")")" ] && return 0
+            [ "$(find "$path" 2>/dev/null | wc -l)" != "$(find "$path" -xdev 2>/dev/null | wc -l)" ]
+          }
+          remove() {
+            if has_mount "$1"; then
+              echo "keeping $1: a mount point lies inside it; unmount it and remove the copy by hand" >&2
+              return
+            fi
+            rm -rf -- "$1" || echo "could not remove $1" >&2
+          }
+          # Keep one generation: this run's copies. Failures here only warn.
+          if [ -f "$SAFETY_DIR/dirs.done" ]; then
+            while IFS=$'\t' read -r real aside; do
+              [ -n "$real" ] || continue
+              for old in "$real".pre-restore-[0-9]*T[0-9]*Z; do
+                [ "$old" = "$aside" ] && continue
+                remove "$old"
+              done
+            done < "$SAFETY_DIR/dirs.done"
+          fi
+          for old in "$SAFETY_ROOT"/[0-9]*T[0-9]*Z; do
+            [ "$old" = "$SAFETY_DIR" ] && continue
+            remove "$old"
+          done
+          exit 0
+        executable: /bin/bash
+      environment:
+        SAFETY_DIR: "{{ snappymail_restore_safety_dir }}"
+        SAFETY_ROOT: "{{ snappymail_restore_safety_root_clean }}"
+      changed_when: true
+
+  always:
+    - name: Cleanup restore staging directory
+      ansible.builtin.file:
+        path: "{{ snappymail_restore_staging_dir }}"
+        state: absent
+      when:
+        - snappymail_restore_is_archive
+        - snappymail_restore_cleanup | bool
 
 - name: Find PHP-FPM service for SnappyMail
   ansible.builtin.find:
@@ -153,4 +491,7 @@
 
 - name: Report restore completion
   ansible.builtin.debug:
-    msg: "SnappyMail data restored from {{ snappymail_restore_source_effective }} into {{ snappymail_data_dir }}"
+    msg:
+      - "SnappyMail data restored from {{ snappymail_restore_source_effective }} into {{ snappymail_data_dir }}"
+      - "{{ snappymail_restore_aside.stdout_lines | default([]) | join('; ') }}"
+      - "Only this run's pre-restore copy is kept; remove it once SnappyMail is verified."

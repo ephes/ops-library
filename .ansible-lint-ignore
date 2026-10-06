@@ -158,9 +158,6 @@ roles/minecraft_java_deploy/tasks/user.yml name[prefix] skip
 roles/minecraft_java_deploy/tasks/validate.yml name[prefix] skip
 roles/minecraft_java_deploy/tasks/verify.yml name[prefix] skip
 roles/minecraft_java_restore/tasks/resolve_archive.yml name[prefix] skip
-roles/minecraft_java_restore/tasks/restore_data.yml name[prefix] skip
-roles/minecraft_java_restore/tasks/start_service.yml name[prefix] skip
-roles/minecraft_java_restore/tasks/stop_service.yml name[prefix] skip
 roles/minio_backup/tasks/archive.yml name[prefix] skip
 roles/minio_backup/tasks/cold_backup.yml name[prefix] skip
 roles/minio_backup/tasks/config.yml name[prefix] skip

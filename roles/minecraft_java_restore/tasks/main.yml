@@ -1,5 +1,26 @@
 ---
 # minecraft_java_restore - Restore from backup
+#
+# Safety contract:
+# - the archive is extracted to a temp directory and must contain the world
+#   before the server stops (also in dry-run mode);
+# - the stop must succeed (the unit is confirmed inactive);
+# - server.properties and the ops/whitelist/ban lists are copied to the
+#   safety directory;
+# - the live world is renamed to `<world>.pre-restore-<ts>` instead of being
+#   deleted, and the archive's world is copied into a fresh directory;
+# - any failure moves the old world and files back and starts the server
+#   again; a successful run keeps only this run's pre-restore copies;
+# - the temp directory is removed in `always`.
+
+- name: Validate restore inputs
+  ansible.builtin.assert:
+    that:
+      - minecraft_java_world_name | length > 0
+      - minecraft_java_restore_safety_root is match('^/.*[^/]')
+    fail_msg: >-
+      minecraft_java_world_name is required, and
+      minecraft_java_restore_safety_root must be an absolute path other than /
 
 - name: Resolve archive path
   ansible.builtin.include_tasks: resolve_archive.yml
@@ -15,25 +36,520 @@
       Target: {{ minecraft_java_server_dir }}
       ================================================
 
-- name: Stop service
-  ansible.builtin.include_tasks: stop_service.yml
-  when: not minecraft_java_restore_dry_run
+- name: Fix the safety copy timestamp
+  ansible.builtin.set_fact:
+    minecraft_restore_timestamp: "{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}"
 
-- name: Restore data
-  ansible.builtin.include_tasks: restore_data.yml
-  when: not minecraft_java_restore_dry_run
+- name: Name the safety copies
+  ansible.builtin.set_fact:
+    minecraft_restore_safety_root_clean: "{{ minecraft_java_restore_safety_root | regex_replace('/+$', '') }}"
+    minecraft_restore_safety_dir: "{{ minecraft_java_restore_safety_root | regex_replace('/+$', '') }}/{{ minecraft_restore_timestamp }}"
+    minecraft_restore_world_dir: "{{ minecraft_java_server_dir }}/{{ minecraft_java_world_name }}"
+    minecraft_restore_extra_files:
+      - ops.json
+      - whitelist.json
+      - banned-ips.json
+      - banned-players.json
 
-- name: Start service
-  ansible.builtin.include_tasks: start_service.yml
-  when: not minecraft_java_restore_dry_run
+- name: Restore with temp cleanup
+  block:
+    - name: Create temporary extraction directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: minecraft_restore_
+      register: minecraft_restore_temp_dir
+
+    - name: Extract archive to temporary directory
+      ansible.builtin.unarchive:
+        src: "{{ minecraft_restore_archive_path }}"
+        dest: "{{ minecraft_restore_temp_dir.path }}"
+        remote_src: true
+
+    - name: Find extracted world directory
+      ansible.builtin.find:
+        paths: "{{ minecraft_restore_temp_dir.path }}"
+        patterns: "{{ minecraft_java_world_name }}"
+        file_type: directory
+        recurse: true
+      register: minecraft_restore_extracted_world
+
+    - name: Fail if world not found in archive
+      ansible.builtin.fail:
+        msg: "World directory '{{ minecraft_java_world_name }}' not found in archive"
+      when: minecraft_restore_extracted_world.files | length == 0
+
+    - name: Set extracted paths
+      ansible.builtin.set_fact:
+        minecraft_restore_extracted_base: "{{ (minecraft_restore_extracted_world.files | map(attribute='path') | sort | first) | dirname }}"
+
+    - name: Check for optional files in archive
+      ansible.builtin.stat:
+        path: "{{ minecraft_restore_extracted_base }}/{{ item }}"
+      loop: "{{ ['server.properties'] + minecraft_restore_extra_files }}"
+      register: minecraft_restore_extracted_files
+
+    - name: Restore the server
+      when: not minecraft_java_restore_dry_run | bool
+      block:
+        - name: Check if service exists
+          ansible.builtin.stat:
+            path: /etc/systemd/system/{{ minecraft_java_service_name }}.service
+          register: minecraft_restore_service_file
+
+        - name: List the directories to keep aside
+          ansible.builtin.set_fact:
+            # path, owner, group, mode of the fresh directory
+            minecraft_restore_aside_dirs:
+              - ["{{ minecraft_restore_world_dir }}", "{{ minecraft_java_user }}", "{{ minecraft_java_group }}", "0755"]
+            minecraft_restore_config_files: >-
+              {{ (['server.properties'] + minecraft_restore_extra_files)
+                 | map('regex_replace', '^', minecraft_java_server_dir ~ '/') | list }}
+
+        # --- Stop (fail closed) and copy the config files ---
+
+        - name: Stop Minecraft and copy config files
+          block:
+            - name: Stop minecraft service
+              ansible.builtin.systemd:
+                name: "{{ minecraft_java_service_name }}"
+                state: stopped
+              when: minecraft_restore_service_file.stat.exists
+
+            - name: Confirm Minecraft is stopped
+              ansible.builtin.command:
+                argv: [systemctl, is-active, "{{ minecraft_java_service_name }}"]
+              register: minecraft_restore_stop_state
+              changed_when: false
+              failed_when: (minecraft_restore_stop_state.stdout | trim) not in ['inactive', 'failed']
+
+            - name: Create safety directories
+              ansible.builtin.file:
+                path: "{{ item }}"
+                state: directory
+                owner: root
+                mode: "0700"
+              loop:
+                - "{{ minecraft_restore_safety_root_clean }}"
+                - "{{ minecraft_restore_safety_dir }}"
+
+            - name: Copy config files aside
+              ansible.builtin.shell:
+                cmd: |
+                  set -euo pipefail
+                  files="$SAFETY_DIR/files"
+                  mkdir -p "$files"
+                  chmod 0700 "$files"
+                  : > "$SAFETY_DIR/files.manifest"
+                  while IFS= read -r path; do
+                    [ -n "$path" ] || continue
+                    printf '%s\n' "$path" >> "$SAFETY_DIR/files.manifest"
+                    if [ -e "$path" ] || [ -L "$path" ]; then
+                      mkdir -p "$files$(dirname "$path")"
+                      cp -a "$path" "$files$path"
+                    fi
+                  done <<< "$CONFIG_FILES"
+                  sync
+                executable: /bin/bash
+              environment:
+                SAFETY_DIR: "{{ minecraft_restore_safety_dir }}"
+                CONFIG_FILES: "{{ minecraft_restore_config_files | join('\n') }}"
+              changed_when: true
+
+          rescue:
+            - name: Fail without restoring (live world untouched)
+              ansible.builtin.fail:
+                msg: >-
+                  Minecraft restore aborted before anything was overwritten
+                  ({{ ansible_failed_task.name | default('unknown task') }}): the server
+                  did not stop or the config files could not be copied to
+                  {{ minecraft_restore_safety_dir }}. The live world is untouched. The
+                  server may be stopped; start it with
+                  `systemctl start {{ minecraft_java_service_name }}`.
+
+        # --- Move the live world aside and restore; any failure moves it back ---
+
+        - name: Restore Minecraft with rollback
+          block:
+            - name: Move live data aside
+              ansible.builtin.shell:
+                cmd: |
+                  set -euo pipefail
+                  mountinfo="${MOUNTINFO:-/proc/self/mountinfo}"
+                  dev() { stat -c %d -- "$1" 2>/dev/null || stat -f %d -- "$1"; }
+                  # has_mount DIR: DIR itself or anything inside it is a mount point. rm -rf
+                  # would delete the mounted files, so such a tree is never removed.
+                  has_mount() {
+                    local esc path
+                    # mountinfo lists canonical paths; resolve symlinked ancestors first.
+                    path="$(readlink -f -- "$1")" || return 0
+                    if [ -r "$mountinfo" ]; then
+                      # mountinfo escapes space and backslash as octal.
+                      esc="$(printf '%s' "$path" | sed -e 's/\\/\\134/g' -e 's/ /\\040/g')"
+                      P="$esc" awk '$5 == ENVIRON["P"] || index($5, ENVIRON["P"] "/") == 1 { found = 1 } END { exit !found }' "$mountinfo"
+                      return
+                    fi
+                    # Without a mount table: the root on another device than its parent, or
+                    # entries below it on other devices.
+                    [ "$(dev "$path")" != "$(dev "$(dirname -- "$path")")" ] && return 0
+                    [ "$(find "$path" 2>/dev/null | wc -l)" != "$(find "$path" -xdev 2>/dev/null | wc -l)" ]
+                  }
+                  # under A B: A is B or lies inside it.
+                  under() { case "$1/" in "$2"/*) return 0 ;; *) return 1 ;; esac; }
+                  safety="$(readlink -f -- "$SAFETY_DIR")"
+                  manifest="$SAFETY_DIR/dirs.manifest"
+                  done_list="$SAFETY_DIR/dirs.done"
+                  : > "$manifest"
+                  : > "$done_list"
+                  # Check every directory before the first one is touched.
+                  reals=()
+                  specs=()
+                  while IFS=$'\t' read -r dir owner group mode; do
+                    [ -n "$dir" ] || continue
+                    if [ ! -e "$dir" ] && [ ! -L "$dir" ]; then
+                      # Recorded, so a failed restore removes what it created there.
+                      printf '%s\t-\n' "$dir" >> "$manifest"
+                      echo "nothing to keep: $dir does not exist"
+                      continue
+                    fi
+                    real="$(readlink -f -- "$dir")"
+                    if [ ! -d "$real" ]; then
+                      echo "$dir is not a directory" >&2
+                      exit 1
+                    fi
+                    # The manifests must stay put while the directory moves.
+                    if under "$safety" "$real"; then
+                      echo "the safety directory $safety lies inside $real" >&2
+                      exit 1
+                    fi
+                    reals+=("$real")
+                    specs+=("$owner"$'\t'"$group"$'\t'"$mode")
+                  done <<< "$DIRS"
+                  plan=()
+                  for i in "${!reals[@]}"; do
+                    real="${reals[$i]}"
+                    # Each directory is moved on its own, so none may contain another.
+                    for j in "${!reals[@]}"; do
+                      [ "$i" != "$j" ] || continue
+                      if under "$real" "${reals[$j]}"; then
+                        echo "$real is ${reals[$j]} or lies inside it; list only one of them" >&2
+                        exit 1
+                      fi
+                    done
+                    aside="$real.pre-restore-$STAMP"
+                    if [ -e "$aside" ] || [ -L "$aside" ]; then
+                      echo "safety path already exists: $aside" >&2
+                      exit 1
+                    fi
+                    # A rename is only free (and atomic) within one filesystem, and the
+                    # rollback removes and renames the directory even after a merge, so no
+                    # mount point of any kind (bind mounts share the parent's device).
+                    # Nested mounts too: the rollback deletes the restored (or merged) tree.
+                    if has_mount "$real" \
+                      || { command -v mountpoint >/dev/null 2>&1 && mountpoint -q -- "$real"; }; then
+                      echo "$real is or contains a mount point and cannot be moved aside" >&2
+                      exit 1
+                    fi
+                    plan+=("$real"$'\t'"$aside"$'\t'"${specs[$i]}")
+                  done
+                  for entry in "${plan[@]}"; do
+                    IFS=$'\t' read -r real aside owner group mode <<< "$entry"
+                    printf '%s\t%s\n' "$real" "$aside" >> "$manifest"
+                    if [ "$KEEP_LIVE" = "true" ]; then
+                      # The restore merges into the live tree, so keep a full copy.
+                      cp -a -- "$real" "$aside"
+                      printf '%s\t%s\n' "$real" "$aside" >> "$done_list"
+                    else
+                      mv -- "$real" "$aside"
+                      printf '%s\t%s\n' "$real" "$aside" >> "$done_list"
+                      mkdir -- "$real"
+                      chown -- "$owner:$group" "$real"
+                      chmod -- "$mode" "$real"
+                    fi
+                    echo "kept $real as $aside"
+                  done
+                  sync
+                executable: /bin/bash
+              environment:
+                SAFETY_DIR: "{{ minecraft_restore_safety_dir }}"
+                STAMP: "{{ minecraft_restore_timestamp }}"
+                KEEP_LIVE: "false"
+                DIRS: "{{ minecraft_restore_aside_dirs | map('join', '\t') | join('\n') }}"
+              register: minecraft_restore_aside
+              changed_when: true
+
+            - name: Restore world directory
+              ansible.builtin.copy:
+                src: "{{ minecraft_restore_extracted_base }}/{{ minecraft_java_world_name }}/"
+                dest: "{{ minecraft_restore_world_dir }}/"
+                owner: "{{ minecraft_java_user }}"
+                group: "{{ minecraft_java_group }}"
+                mode: preserve
+                remote_src: true
+
+            - name: Restore server.properties (if present)
+              ansible.builtin.copy:
+                src: "{{ minecraft_restore_extracted_base }}/server.properties"
+                dest: "{{ minecraft_java_server_dir }}/server.properties"
+                owner: "{{ minecraft_java_user }}"
+                group: "{{ minecraft_java_group }}"
+                mode: "0644"
+                remote_src: true
+              when: minecraft_restore_extracted_files.results[0].stat.exists
+
+            - name: Restore additional files if present
+              ansible.builtin.copy:
+                src: "{{ item.stat.path }}"
+                dest: "{{ minecraft_java_server_dir }}/{{ item.item }}"
+                owner: "{{ minecraft_java_user }}"
+                group: "{{ minecraft_java_group }}"
+                mode: "0644"
+                remote_src: true
+              loop: "{{ minecraft_restore_extracted_files.results[1:] }}"
+              loop_control:
+                label: "{{ item.item }}"
+              when: item.stat.exists
+
+            - name: Fix ownership recursively
+              ansible.builtin.file:
+                path: "{{ minecraft_java_server_dir }}"
+                owner: "{{ minecraft_java_user }}"
+                group: "{{ minecraft_java_group }}"
+                recurse: true
+
+            - name: Start minecraft service
+              ansible.builtin.systemd:
+                name: "{{ minecraft_java_service_name }}"
+                state: started
+                enabled: true
+              when: minecraft_restore_service_file.stat.exists
+
+          rescue:
+            - name: Make sure Minecraft is stopped before rolling back
+              ansible.builtin.systemd:
+                name: "{{ minecraft_java_service_name }}"
+                state: stopped
+              failed_when: false
+              when: minecraft_restore_service_file.stat.exists
+
+            - name: Check that Minecraft is down before rolling back
+              ansible.builtin.command:
+                argv: [systemctl, is-active, "{{ minecraft_java_service_name }}"]
+              register: minecraft_restore_rescue_state
+              changed_when: false
+              failed_when: false
+
+            - name: Roll back data and config files
+              ansible.builtin.shell:
+                cmd: |
+                  set -uo pipefail
+                  mountinfo="${MOUNTINFO:-/proc/self/mountinfo}"
+                  dev() { stat -c %d -- "$1" 2>/dev/null || stat -f %d -- "$1"; }
+                  # has_mount DIR: DIR itself or anything inside it is a mount point. rm -rf
+                  # would delete the mounted files, so such a tree is never removed.
+                  has_mount() {
+                    local esc path
+                    # mountinfo lists canonical paths; resolve symlinked ancestors first.
+                    path="$(readlink -f -- "$1")" || return 0
+                    if [ -r "$mountinfo" ]; then
+                      # mountinfo escapes space and backslash as octal.
+                      esc="$(printf '%s' "$path" | sed -e 's/\\/\\134/g' -e 's/ /\\040/g')"
+                      P="$esc" awk '$5 == ENVIRON["P"] || index($5, ENVIRON["P"] "/") == 1 { found = 1 } END { exit !found }' "$mountinfo"
+                      return
+                    fi
+                    # Without a mount table: the root on another device than its parent, or
+                    # entries below it on other devices.
+                    [ "$(dev "$path")" != "$(dev "$(dirname -- "$path")")" ] && return 0
+                    [ "$(find "$path" 2>/dev/null | wc -l)" != "$(find "$path" -xdev 2>/dev/null | wc -l)" ]
+                  }
+                  failed=0
+                  manifest="$SAFETY_DIR/dirs.manifest"
+                  done_list="$SAFETY_DIR/dirs.done"
+                  if [ ! -f "$manifest" ]; then
+                    # Without the manifest nothing proves the live directories are in place.
+                    echo "rollback manifest $manifest is missing; check the directories by hand" >&2
+                    failed=1
+                  else
+                    while IFS=$'\t' read -r real aside; do
+                      [ -n "$real" ] || continue
+                      if [ "$aside" = "-" ]; then
+                        # Did not exist before the restore: remove what the restore created.
+                        if [ -L "$real" ]; then
+                          echo "$real is a symlink now; remove the restored data by hand" >&2
+                          failed=1
+                        elif [ -e "$real" ]; then
+                          if has_mount "$real"; then
+                            echo "$real is or contains a mount point; not removed" >&2
+                            failed=1
+                          else
+                            rm -rf -- "$real" || failed=1
+                          fi
+                        fi
+                        continue
+                      fi
+                      if [ ! -e "$aside" ] && [ ! -L "$aside" ]; then
+                        continue
+                      fi
+                      if [ ! -e "$real" ] && [ ! -L "$real" ]; then
+                        mv -- "$aside" "$real" || failed=1
+                      elif grep -Fxq -- "$real"$'\t'"$aside" "$done_list" 2>/dev/null; then
+                        # $real holds only what this run restored from the archive.
+                        if has_mount "$real"; then
+                          echo "$real is or contains a mount point; not replaced, the old copy stays at $aside" >&2
+                          failed=1
+                        else
+                          { rm -rf -- "$real" && mv -- "$aside" "$real"; } || failed=1
+                        fi
+                      else
+                        # The copy did not finish; the live directory was never touched.
+                        if has_mount "$aside"; then
+                          echo "$aside is or contains a mount point; not removed" >&2
+                          failed=1
+                        else
+                          rm -rf -- "$aside" || failed=1
+                        fi
+                      fi
+                    done < "$manifest"
+                  fi
+                  files="$SAFETY_DIR/files"
+                  if [ -s "$SAFETY_DIR/files.manifest" ]; then
+                    while IFS= read -r path; do
+                      [ -n "$path" ] || continue
+                      if [ -e "$files$path" ] || [ -L "$files$path" ]; then
+                        { rm -f "$path" && cp -a "$files$path" "$path"; } || failed=1
+                      else
+                        rm -f "$path" || failed=1
+                      fi
+                    done < "$SAFETY_DIR/files.manifest"
+                    systemctl daemon-reload || failed=1
+                  fi
+                  exit "$failed"
+                executable: /bin/bash
+              environment:
+                SAFETY_DIR: "{{ minecraft_restore_safety_dir }}"
+              register: minecraft_restore_rollback
+              changed_when: true
+              failed_when: false
+              when: (minecraft_restore_rescue_state.stdout | default('') | trim) in ['inactive', 'failed']
+
+            - name: Start Minecraft again on the old world
+              ansible.builtin.systemd:
+                name: "{{ minecraft_java_service_name }}"
+                state: started
+              register: minecraft_restore_rescue_start
+              failed_when: false
+              when:
+                - minecraft_restore_service_file.stat.exists
+                - (minecraft_restore_rollback.rc | default(1)) == 0
+
+            - name: Check whether Minecraft runs again
+              ansible.builtin.command:
+                argv: [systemctl, is-active, "{{ minecraft_java_service_name }}"]
+              register: minecraft_restore_rescue_active
+              changed_when: false
+              failed_when: false
+              when: minecraft_restore_rescue_start is not skipped
+
+            - name: Fail after rollback
+              ansible.builtin.fail:
+                msg: >-
+                  Minecraft restore failed ({{ ansible_failed_task.name | default('unknown task') }}).
+                  Rollback: {{ 'SKIPPED - the server could not be confirmed stopped; move the world back by hand'
+                    if minecraft_restore_rollback is skipped
+                    else 'done' if minecraft_restore_rollback.rc == 0
+                    else 'FAILED: ' ~ (minecraft_restore_rollback.stderr | default('') | trim) }}.
+                  The server {{ 'was started again on the old world'
+                    if (minecraft_restore_rescue_active.stdout | default('') | trim) == 'active'
+                    else 'is not running (check systemctl status)' }}.
+                  Pre-restore copies: the world as {{ minecraft_restore_world_dir }}.pre-restore-{{ minecraft_restore_timestamp }}
+                  (moved back if the rollback is done), config files in {{ minecraft_restore_safety_dir }}/files.
+
+        - name: Prune older pre-restore copies
+          ansible.builtin.shell:
+            cmd: |
+              set -uo pipefail
+              shopt -s nullglob
+              mountinfo="${MOUNTINFO:-/proc/self/mountinfo}"
+              dev() { stat -c %d -- "$1" 2>/dev/null || stat -f %d -- "$1"; }
+              # has_mount DIR: DIR itself or anything inside it is a mount point. rm -rf
+              # would delete the mounted files, so such a tree is never removed.
+              has_mount() {
+                local esc path
+                # mountinfo lists canonical paths; resolve symlinked ancestors first.
+                path="$(readlink -f -- "$1")" || return 0
+                if [ -r "$mountinfo" ]; then
+                  # mountinfo escapes space and backslash as octal.
+                  esc="$(printf '%s' "$path" | sed -e 's/\\/\\134/g' -e 's/ /\\040/g')"
+                  P="$esc" awk '$5 == ENVIRON["P"] || index($5, ENVIRON["P"] "/") == 1 { found = 1 } END { exit !found }' "$mountinfo"
+                  return
+                fi
+                # Without a mount table: the root on another device than its parent, or
+                # entries below it on other devices.
+                [ "$(dev "$path")" != "$(dev "$(dirname -- "$path")")" ] && return 0
+                [ "$(find "$path" 2>/dev/null | wc -l)" != "$(find "$path" -xdev 2>/dev/null | wc -l)" ]
+              }
+              remove() {
+                if has_mount "$1"; then
+                  echo "keeping $1: a mount point lies inside it; unmount it and remove the copy by hand" >&2
+                  return
+                fi
+                rm -rf -- "$1" || echo "could not remove $1" >&2
+              }
+              # Keep one generation: this run's copies. Failures here only warn.
+              if [ -f "$SAFETY_DIR/dirs.done" ]; then
+                while IFS=$'\t' read -r real aside; do
+                  [ -n "$real" ] || continue
+                  for old in "$real".pre-restore-[0-9]*T[0-9]*Z; do
+                    [ "$old" = "$aside" ] && continue
+                    remove "$old"
+                  done
+                done < "$SAFETY_DIR/dirs.done"
+              fi
+              for old in "$SAFETY_ROOT"/[0-9]*T[0-9]*Z; do
+                [ "$old" = "$SAFETY_DIR" ] && continue
+                remove "$old"
+              done
+              exit 0
+            executable: /bin/bash
+          environment:
+            SAFETY_DIR: "{{ minecraft_restore_safety_dir }}"
+            SAFETY_ROOT: "{{ minecraft_restore_safety_root_clean }}"
+          changed_when: true
+
+        - name: Wait for server to start
+          ansible.builtin.wait_for:
+            port: "{{ minecraft_java_port }}"
+            host: 127.0.0.1
+            state: started
+            timeout: 60
+            delay: 5
+          when: minecraft_restore_service_file.stat.exists
+
+  always:
+    - name: Clean up temporary directory
+      ansible.builtin.file:
+        path: "{{ minecraft_restore_temp_dir.path }}"
+        state: absent
+      when: minecraft_restore_temp_dir.path is defined
+
+- name: Display restore summary
+  ansible.builtin.debug:
+    msg: |
+      Restore complete!
+      Archive: {{ minecraft_restore_archive_path | basename }}
+      World: {{ minecraft_java_world_name }}
+      Target: {{ minecraft_java_server_dir }}
+      {{ minecraft_restore_aside.stdout_lines | default([]) | join('; ') }}
+      Config files before the restore: {{ minecraft_restore_safety_dir }}/files
+      Only this run's pre-restore copies are kept; remove them once the world is verified.
+  when: not minecraft_java_restore_dry_run | bool
 
 - name: Dry run summary
   ansible.builtin.debug:
     msg: |
       DRY RUN COMPLETE - No changes made
 
-      Would restore from: {{ minecraft_restore_archive_path }}
-      To: {{ minecraft_java_server_dir }}
+      Archive checked: {{ minecraft_restore_archive_path }} (world '{{ minecraft_java_world_name }}' found)
+      Would restore to: {{ minecraft_java_server_dir }}
 
       Run without dry_run=true to perform actual restore.
-  when: minecraft_java_restore_dry_run
+  when: minecraft_java_restore_dry_run | bool

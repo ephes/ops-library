@@ -14,3 +14,10 @@ minecraft_java_server_dir: "{{ minecraft_java_home }}/server"
 minecraft_java_world_name: world
 minecraft_java_service_name: minecraft-java
 minecraft_java_port: 25565
+
+# Pre-restore safety copies. The live world is renamed to
+# <world>.pre-restore-<UTC timestamp> next to itself (free on the same
+# filesystem); server.properties and the ops/whitelist/ban lists are copied
+# to <safety_root>/<timestamp>/files. A successful run removes older
+# generations and keeps only its own copies.
+minecraft_java_restore_safety_root: /var/backups/minecraft-java-pre-restore

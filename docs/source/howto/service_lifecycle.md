@@ -138,7 +138,7 @@ Do not force other restore roles into this shape just because they also have mul
 - controller-fallback variants: `homeassistant_restore`, `paperless_restore`
 - object-storage exception: `minio_restore`
 - incomplete scaffold: `nyxmon_restore`
-- hybrid split restore: `minecraft_java_restore`
+- file restore with its own move-aside rollback: `minecraft_java_restore`
 - controller-local or mail-adjacent narrow restores: `vaultwarden_restore`, `mail_restore`, `postfixadmin_restore`, `snappymail_restore`
 
 Do not treat that helper as a generic restore framework. Delayed roles stay out

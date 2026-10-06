@@ -1,10 +1,26 @@
 ---
+# Jellyfin restore tasks
+#
+# Safety contract:
+# - the archive is unpacked and checked in staging before Jellyfin stops;
+# - the stop must succeed (Jellyfin is confirmed inactive);
+# - the systemd unit and Traefik file are copied to the safety directory;
+# - the live data (and config) directory is renamed to
+#   `<dir>.pre-restore-<ts>` instead of being overwritten with rsync --delete,
+#   and the archive is restored into a fresh directory;
+# - any failure moves the old directories and files back and starts Jellyfin
+#   again; a successful run keeps only this run's pre-restore copies;
+# - the staging directory is removed in `always`.
+
 - name: Validate restore inputs
   ansible.builtin.assert:
     that:
       - jellyfin_restore_root | length > 0
       - jellyfin_restore_archive | length > 0
-    fail_msg: "jellyfin_restore_root and jellyfin_restore_archive are required"
+      - jellyfin_restore_safety_root is match('^/.*[^/]')
+    fail_msg: >-
+      jellyfin_restore_root and jellyfin_restore_archive are required, and
+      jellyfin_restore_safety_root must be an absolute path other than /
 
 - name: Determine Jellyfin archive when set to latest
   ansible.builtin.find:
@@ -20,6 +36,7 @@
       {{ (jellyfin_restore_candidates.files | sort(attribute='mtime', reverse=true) | first).path
          if jellyfin_restore_archive == "latest"
          else (jellyfin_restore_archive if jellyfin_restore_archive.startswith('/') else jellyfin_restore_root ~ '/' ~ jellyfin_restore_archive) }}
+  when: jellyfin_restore_archive != 'latest' or (jellyfin_restore_candidates.files | length > 0)
 
 - name: Fail when no archive is available
   ansible.builtin.fail:
@@ -37,162 +54,546 @@
     msg: "Jellyfin restore archive not found: {{ jellyfin_restore_selected_archive }}"
   when: not jellyfin_restore_selected_stat.stat.exists
 
-- name: Reset staging directory
-  ansible.builtin.file:
-    path: "{{ jellyfin_restore_staging_dir }}"
-    state: absent
-
-- name: Create staging directory
-  ansible.builtin.file:
-    path: "{{ jellyfin_restore_staging_dir }}"
-    state: directory
-    mode: "0700"
-
-- name: Unpack Jellyfin archive into staging
-  ansible.builtin.unarchive:
-    src: "{{ jellyfin_restore_selected_archive }}"
-    dest: "{{ jellyfin_restore_staging_dir }}"
-    remote_src: true
-
-- name: Locate extracted payload directory
-  ansible.builtin.find:
-    paths: "{{ jellyfin_restore_staging_dir }}"
-    file_type: directory
-    depth: 1
-  register: jellyfin_restore_payload_dirs
-
-- name: Set Jellyfin payload path
+- name: Fix the safety copy timestamp
   ansible.builtin.set_fact:
-    jellyfin_restore_payload_dir: "{{ (jellyfin_restore_payload_dirs.files | map(attribute='path') | list | first) | default('') }}"
+    jellyfin_restore_timestamp: "{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}"
 
-- name: Abort when payload directory missing
-  ansible.builtin.fail:
-    msg: "Unable to locate payload directory inside restore archive"
-  when: jellyfin_restore_payload_dir | length == 0
+- name: Name the safety copies
+  ansible.builtin.set_fact:
+    jellyfin_restore_safety_root_clean: "{{ jellyfin_restore_safety_root | regex_replace('/+$', '') }}"
+    jellyfin_restore_safety_dir: "{{ jellyfin_restore_safety_root | regex_replace('/+$', '') }}/{{ jellyfin_restore_timestamp }}"
 
-- name: Gather payload content facts
-  ansible.builtin.stat:
-    path: "{{ item.path }}"
-  register: jellyfin_restore_payload_stats
-  loop:
-    - { path: "{{ jellyfin_restore_payload_dir }}/data", label: "data" }
-    - { path: "{{ jellyfin_restore_payload_dir }}/config", label: "config" }
-    - { path: "{{ jellyfin_restore_payload_dir }}/systemd/{{ jellyfin_service_unit | basename }}", label: "systemd unit" }
-    - { path: "{{ jellyfin_restore_payload_dir }}/traefik/{{ jellyfin_traefik_config_path | basename }}", label: "traefik config" }
-    - { path: "{{ jellyfin_restore_payload_dir }}/logs", label: "logs" }
-  loop_control:
-    label: "{{ item.label }}"
+- name: Restore with staging cleanup
+  block:
+    - name: Reset staging directory
+      ansible.builtin.file:
+        path: "{{ jellyfin_restore_staging_dir }}"
+        state: absent
 
-- name: Abort when Jellyfin data payload is missing
-  ansible.builtin.fail:
-    msg: "Jellyfin data directory missing inside archive: {{ jellyfin_restore_payload_dir }}/data"
-  when: not jellyfin_restore_payload_stats.results[0].stat.exists
+    - name: Create staging directory
+      ansible.builtin.file:
+        path: "{{ jellyfin_restore_staging_dir }}"
+        state: directory
+        mode: "0700"
 
-- name: Ensure Jellyfin directories exist
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    state: directory
-    owner: "{{ item.owner }}"
-    group: "{{ item.group }}"
-    mode: "{{ item.mode }}"
-  loop:
-    - { path: "{{ jellyfin_data_dir }}", owner: "{{ jellyfin_user }}", group: "{{ jellyfin_group }}", mode: "0750" }
-    - { path: "{{ jellyfin_log_dir }}", owner: "{{ jellyfin_user }}", group: "{{ jellyfin_group }}", mode: "0750" }
-    - { path: "{{ jellyfin_config_dir }}", owner: "{{ jellyfin_user }}", group: "{{ jellyfin_group }}", mode: "0750" }
-    - { path: "{{ jellyfin_traefik_config_path | dirname }}", owner: "root", group: "root", mode: "0755" }
+    - name: Unpack Jellyfin archive into staging
+      ansible.builtin.unarchive:
+        src: "{{ jellyfin_restore_selected_archive }}"
+        dest: "{{ jellyfin_restore_staging_dir }}"
+        remote_src: true
 
-- name: Stop Jellyfin before restore
-  ansible.builtin.systemd:
-    name: "{{ jellyfin_service_name }}"
-    state: stopped
-  failed_when: false
-  when: jellyfin_restore_stop_service | bool
+    - name: Locate extracted payload directory
+      ansible.builtin.find:
+        paths: "{{ jellyfin_restore_staging_dir }}"
+        file_type: directory
+        depth: 1
+      register: jellyfin_restore_payload_dirs
 
-- name: Restore Jellyfin data directory
-  ansible.builtin.command:
-    cmd: >
-      rsync -a --delete "{{ jellyfin_restore_payload_dir }}/data/" "{{ jellyfin_data_dir }}/"
-  changed_when: true
+    - name: Set Jellyfin payload path
+      ansible.builtin.set_fact:
+        jellyfin_restore_payload_dir: "{{ (jellyfin_restore_payload_dirs.files | map(attribute='path') | list | first) | default('') }}"
 
-- name: Restore Jellyfin config directory
-  ansible.builtin.command:
-    cmd: >
-      rsync -a --delete "{{ jellyfin_restore_payload_dir }}/config/" "{{ jellyfin_config_dir }}/"
-  changed_when: true
-  when: jellyfin_restore_payload_stats.results[1].stat.exists
+    - name: Abort when payload directory missing
+      ansible.builtin.fail:
+        msg: "Unable to locate payload directory inside restore archive"
+      when: jellyfin_restore_payload_dir | length == 0
 
-- name: Restore Jellyfin systemd unit when present
-  ansible.builtin.copy:
-    src: "{{ jellyfin_restore_payload_dir }}/systemd/{{ jellyfin_service_unit | basename }}"
-    dest: "{{ jellyfin_service_unit }}"
-    owner: root
-    group: root
-    mode: "0644"
-    remote_src: true
-  register: jellyfin_restore_unit_copy
-  when: jellyfin_restore_payload_stats.results[2].stat.exists
+    - name: Gather payload content facts
+      ansible.builtin.stat:
+        path: "{{ item.path }}"
+      register: jellyfin_restore_payload_stats
+      loop:
+        - { path: "{{ jellyfin_restore_payload_dir }}/data", label: "data" }
+        - { path: "{{ jellyfin_restore_payload_dir }}/config", label: "config" }
+        - { path: "{{ jellyfin_restore_payload_dir }}/systemd/{{ jellyfin_service_unit | basename }}", label: "systemd unit" }
+        - { path: "{{ jellyfin_restore_payload_dir }}/traefik/{{ jellyfin_traefik_config_path | basename }}", label: "traefik config" }
+        - { path: "{{ jellyfin_restore_payload_dir }}/logs", label: "logs" }
+      loop_control:
+        label: "{{ item.label }}"
 
-- name: Restore Traefik configuration when present
-  ansible.builtin.copy:
-    src: "{{ jellyfin_restore_payload_dir }}/traefik/{{ jellyfin_traefik_config_path | basename }}"
-    dest: "{{ jellyfin_traefik_config_path }}"
-    owner: root
-    group: root
-    mode: "0644"
-    remote_src: true
-  register: jellyfin_restore_traefik_copy
-  when: jellyfin_restore_payload_stats.results[3].stat.exists
+    - name: Abort when Jellyfin data payload is missing
+      ansible.builtin.fail:
+        msg: "Jellyfin data directory missing inside archive: {{ jellyfin_restore_payload_dir }}/data"
+      when: not (jellyfin_restore_payload_stats.results[0].stat.isdir | default(false))
 
-- name: Restore Jellyfin logs when present
-  ansible.builtin.command:
-    cmd: >
-      rsync -a "{{ jellyfin_restore_payload_dir }}/logs/" "{{ jellyfin_log_dir }}/"
-  changed_when: true
-  when: jellyfin_restore_payload_stats.results[4].stat.exists
+    - name: Ensure Jellyfin directories exist
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ jellyfin_data_dir }}", owner: "{{ jellyfin_user }}", group: "{{ jellyfin_group }}", mode: "0750" }
+        - { path: "{{ jellyfin_log_dir }}", owner: "{{ jellyfin_user }}", group: "{{ jellyfin_group }}", mode: "0750" }
+        - { path: "{{ jellyfin_config_dir }}", owner: "{{ jellyfin_user }}", group: "{{ jellyfin_group }}", mode: "0750" }
+        - { path: "{{ jellyfin_traefik_config_path | dirname }}", owner: "root", group: "root", mode: "0755" }
 
-- name: Reload systemd if unit changed
-  ansible.builtin.systemd:
-    daemon_reload: true
-  when: jellyfin_restore_unit_copy is defined and jellyfin_restore_unit_copy.changed
+    - name: List the directories to keep aside
+      ansible.builtin.set_fact:
+        # path, owner, group, mode of the fresh directory
+        jellyfin_restore_aside_dirs: >-
+          {{ [[jellyfin_data_dir, jellyfin_user, jellyfin_group, '0750']]
+             + ([[jellyfin_config_dir, jellyfin_user, jellyfin_group, '0750']]
+                if jellyfin_restore_payload_stats.results[1].stat.exists else []) }}
+        jellyfin_restore_config_files:
+          - "{{ jellyfin_service_unit }}"
+          - "{{ jellyfin_traefik_config_path }}"
 
-- name: Ensure Jellyfin permissions on data directories
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: directory
-    owner: "{{ jellyfin_user }}"
-    group: "{{ jellyfin_group }}"
-    recurse: true
-  loop:
-    - "{{ jellyfin_data_dir }}"
-    - "{{ jellyfin_log_dir }}"
-    - "{{ jellyfin_config_dir }}"
+    # --- Stop (fail closed) and copy the config files ---
 
-- name: Start Jellyfin service after restore
-  ansible.builtin.systemd:
-    name: "{{ jellyfin_service_name }}"
-    enabled: true
-    state: "{{ jellyfin_restore_restart | bool | ternary('restarted', 'started') }}"
-    daemon_reload: true
+    - name: Stop Jellyfin and copy config files
+      block:
+        - name: Stop Jellyfin before restore
+          ansible.builtin.systemd:
+            name: "{{ jellyfin_service_name }}"
+            state: stopped
+          when: jellyfin_restore_stop_service | bool
 
-- name: Reload Traefik when configuration changed
-  ansible.builtin.service:
-    name: traefik
-    state: reloaded
-  failed_when: false
-  register: jellyfin_restore_traefik_reload
-  when: jellyfin_restore_traefik_copy is defined and jellyfin_restore_traefik_copy.changed
+        # Also with jellyfin_restore_stop_service: false - data is never
+        # replaced under a running server.
+        - name: Confirm Jellyfin is stopped
+          ansible.builtin.command:
+            argv: [systemctl, is-active, "{{ jellyfin_service_name }}"]
+          register: jellyfin_restore_stop_state
+          changed_when: false
+          failed_when: (jellyfin_restore_stop_state.stdout | trim) not in ['inactive', 'failed']
 
-- name: Restart Traefik when reload is not supported
-  ansible.builtin.service:
-    name: traefik
-    state: restarted
-  when:
-    - jellyfin_restore_traefik_copy is defined and jellyfin_restore_traefik_copy.changed
-    - jellyfin_restore_traefik_reload.rc is defined
-    - jellyfin_restore_traefik_reload.rc != 0
+        - name: Create safety directories
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            owner: root
+            mode: "0700"
+          loop:
+            - "{{ jellyfin_restore_safety_root_clean }}"
+            - "{{ jellyfin_restore_safety_dir }}"
 
-- name: Cleanup Jellyfin restore staging directory
-  ansible.builtin.file:
-    path: "{{ jellyfin_restore_staging_dir }}"
-    state: absent
-  when: jellyfin_restore_cleanup | bool
+        - name: Copy config files aside
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              files="$SAFETY_DIR/files"
+              mkdir -p "$files"
+              chmod 0700 "$files"
+              : > "$SAFETY_DIR/files.manifest"
+              while IFS= read -r path; do
+                [ -n "$path" ] || continue
+                printf '%s\n' "$path" >> "$SAFETY_DIR/files.manifest"
+                if [ -e "$path" ] || [ -L "$path" ]; then
+                  mkdir -p "$files$(dirname "$path")"
+                  cp -a "$path" "$files$path"
+                fi
+              done <<< "$CONFIG_FILES"
+              sync
+            executable: /bin/bash
+          environment:
+            SAFETY_DIR: "{{ jellyfin_restore_safety_dir }}"
+            CONFIG_FILES: "{{ jellyfin_restore_config_files | join('\n') }}"
+          changed_when: true
+
+      rescue:
+        - name: Fail without restoring (live data untouched)
+          ansible.builtin.fail:
+            msg: >-
+              Jellyfin restore aborted before anything was overwritten
+              ({{ ansible_failed_task.name | default('unknown task') }}): Jellyfin did
+              not stop or the config files could not be copied to
+              {{ jellyfin_restore_safety_dir }}. The live data is untouched. Jellyfin
+              may be stopped; start it with `systemctl start {{ jellyfin_service_name }}`.
+
+    # --- Move the live data aside and restore; any failure moves it back ---
+
+    - name: Restore Jellyfin with rollback
+      block:
+        - name: Move live data aside
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              mountinfo="${MOUNTINFO:-/proc/self/mountinfo}"
+              dev() { stat -c %d -- "$1" 2>/dev/null || stat -f %d -- "$1"; }
+              # has_mount DIR: DIR itself or anything inside it is a mount point. rm -rf
+              # would delete the mounted files, so such a tree is never removed.
+              has_mount() {
+                local esc path
+                # mountinfo lists canonical paths; resolve symlinked ancestors first.
+                path="$(readlink -f -- "$1")" || return 0
+                if [ -r "$mountinfo" ]; then
+                  # mountinfo escapes space and backslash as octal.
+                  esc="$(printf '%s' "$path" | sed -e 's/\\/\\134/g' -e 's/ /\\040/g')"
+                  P="$esc" awk '$5 == ENVIRON["P"] || index($5, ENVIRON["P"] "/") == 1 { found = 1 } END { exit !found }' "$mountinfo"
+                  return
+                fi
+                # Without a mount table: the root on another device than its parent, or
+                # entries below it on other devices.
+                [ "$(dev "$path")" != "$(dev "$(dirname -- "$path")")" ] && return 0
+                [ "$(find "$path" 2>/dev/null | wc -l)" != "$(find "$path" -xdev 2>/dev/null | wc -l)" ]
+              }
+              # under A B: A is B or lies inside it.
+              under() { case "$1/" in "$2"/*) return 0 ;; *) return 1 ;; esac; }
+              safety="$(readlink -f -- "$SAFETY_DIR")"
+              manifest="$SAFETY_DIR/dirs.manifest"
+              done_list="$SAFETY_DIR/dirs.done"
+              : > "$manifest"
+              : > "$done_list"
+              # Check every directory before the first one is touched.
+              reals=()
+              specs=()
+              while IFS=$'\t' read -r dir owner group mode; do
+                [ -n "$dir" ] || continue
+                if [ ! -e "$dir" ] && [ ! -L "$dir" ]; then
+                  # Recorded, so a failed restore removes what it created there.
+                  printf '%s\t-\n' "$dir" >> "$manifest"
+                  echo "nothing to keep: $dir does not exist"
+                  continue
+                fi
+                real="$(readlink -f -- "$dir")"
+                if [ ! -d "$real" ]; then
+                  echo "$dir is not a directory" >&2
+                  exit 1
+                fi
+                # The manifests must stay put while the directory moves.
+                if under "$safety" "$real"; then
+                  echo "the safety directory $safety lies inside $real" >&2
+                  exit 1
+                fi
+                reals+=("$real")
+                specs+=("$owner"$'\t'"$group"$'\t'"$mode")
+              done <<< "$DIRS"
+              plan=()
+              for i in "${!reals[@]}"; do
+                real="${reals[$i]}"
+                # Each directory is moved on its own, so none may contain another.
+                for j in "${!reals[@]}"; do
+                  [ "$i" != "$j" ] || continue
+                  if under "$real" "${reals[$j]}"; then
+                    echo "$real is ${reals[$j]} or lies inside it; list only one of them" >&2
+                    exit 1
+                  fi
+                done
+                aside="$real.pre-restore-$STAMP"
+                if [ -e "$aside" ] || [ -L "$aside" ]; then
+                  echo "safety path already exists: $aside" >&2
+                  exit 1
+                fi
+                # A rename is only free (and atomic) within one filesystem, and the
+                # rollback removes and renames the directory even after a merge, so no
+                # mount point of any kind (bind mounts share the parent's device).
+                # Nested mounts too: the rollback deletes the restored (or merged) tree.
+                if has_mount "$real" \
+                  || { command -v mountpoint >/dev/null 2>&1 && mountpoint -q -- "$real"; }; then
+                  echo "$real is or contains a mount point and cannot be moved aside" >&2
+                  exit 1
+                fi
+                plan+=("$real"$'\t'"$aside"$'\t'"${specs[$i]}")
+              done
+              for entry in "${plan[@]}"; do
+                IFS=$'\t' read -r real aside owner group mode <<< "$entry"
+                printf '%s\t%s\n' "$real" "$aside" >> "$manifest"
+                if [ "$KEEP_LIVE" = "true" ]; then
+                  # The restore merges into the live tree, so keep a full copy.
+                  cp -a -- "$real" "$aside"
+                  printf '%s\t%s\n' "$real" "$aside" >> "$done_list"
+                else
+                  mv -- "$real" "$aside"
+                  printf '%s\t%s\n' "$real" "$aside" >> "$done_list"
+                  mkdir -- "$real"
+                  chown -- "$owner:$group" "$real"
+                  chmod -- "$mode" "$real"
+                fi
+                echo "kept $real as $aside"
+              done
+              sync
+            executable: /bin/bash
+          environment:
+            SAFETY_DIR: "{{ jellyfin_restore_safety_dir }}"
+            STAMP: "{{ jellyfin_restore_timestamp }}"
+            KEEP_LIVE: "false"
+            DIRS: "{{ jellyfin_restore_aside_dirs | map('join', '\t') | join('\n') }}"
+          register: jellyfin_restore_aside
+          changed_when: true
+
+        - name: Restore Jellyfin data directory
+          ansible.builtin.command:
+            argv: [rsync, -a, "{{ jellyfin_restore_payload_dir }}/data/", "{{ jellyfin_data_dir }}/"]
+          changed_when: true
+
+        - name: Restore Jellyfin config directory
+          ansible.builtin.command:
+            argv: [rsync, -a, "{{ jellyfin_restore_payload_dir }}/config/", "{{ jellyfin_config_dir }}/"]
+          changed_when: true
+          when: jellyfin_restore_payload_stats.results[1].stat.exists
+
+        - name: Restore Jellyfin systemd unit when present
+          ansible.builtin.copy:
+            src: "{{ jellyfin_restore_payload_dir }}/systemd/{{ jellyfin_service_unit | basename }}"
+            dest: "{{ jellyfin_service_unit }}"
+            owner: root
+            group: root
+            mode: "0644"
+            remote_src: true
+          register: jellyfin_restore_unit_copy
+          when: jellyfin_restore_payload_stats.results[2].stat.exists
+
+        - name: Restore Traefik configuration when present
+          ansible.builtin.copy:
+            src: "{{ jellyfin_restore_payload_dir }}/traefik/{{ jellyfin_traefik_config_path | basename }}"
+            dest: "{{ jellyfin_traefik_config_path }}"
+            owner: root
+            group: root
+            mode: "0644"
+            remote_src: true
+          register: jellyfin_restore_traefik_copy
+          when: jellyfin_restore_payload_stats.results[3].stat.exists
+
+        # Logs are merged, not replaced, and not rolled back.
+        - name: Restore Jellyfin logs when present
+          ansible.builtin.command:
+            argv: [rsync, -a, "{{ jellyfin_restore_payload_dir }}/logs/", "{{ jellyfin_log_dir }}/"]
+          changed_when: true
+          when: jellyfin_restore_payload_stats.results[4].stat.exists
+
+        - name: Reload systemd if unit changed
+          ansible.builtin.systemd:
+            daemon_reload: true
+          when: jellyfin_restore_unit_copy is changed
+
+        - name: Ensure Jellyfin permissions on data directories
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            owner: "{{ jellyfin_user }}"
+            group: "{{ jellyfin_group }}"
+            recurse: true
+          loop:
+            - "{{ jellyfin_data_dir }}"
+            - "{{ jellyfin_log_dir }}"
+            - "{{ jellyfin_config_dir }}"
+
+        - name: Start Jellyfin service after restore
+          ansible.builtin.systemd:
+            name: "{{ jellyfin_service_name }}"
+            enabled: true
+            state: "{{ jellyfin_restore_restart | bool | ternary('restarted', 'started') }}"
+            daemon_reload: true
+
+      rescue:
+        - name: Make sure Jellyfin is stopped before rolling back
+          ansible.builtin.systemd:
+            name: "{{ jellyfin_service_name }}"
+            state: stopped
+          failed_when: false
+
+        - name: Check that Jellyfin is down before rolling back
+          ansible.builtin.command:
+            argv: [systemctl, is-active, "{{ jellyfin_service_name }}"]
+          register: jellyfin_restore_rescue_state
+          changed_when: false
+          failed_when: false
+
+        - name: Roll back data and config files
+          ansible.builtin.shell:
+            cmd: |
+              set -uo pipefail
+              mountinfo="${MOUNTINFO:-/proc/self/mountinfo}"
+              dev() { stat -c %d -- "$1" 2>/dev/null || stat -f %d -- "$1"; }
+              # has_mount DIR: DIR itself or anything inside it is a mount point. rm -rf
+              # would delete the mounted files, so such a tree is never removed.
+              has_mount() {
+                local esc path
+                # mountinfo lists canonical paths; resolve symlinked ancestors first.
+                path="$(readlink -f -- "$1")" || return 0
+                if [ -r "$mountinfo" ]; then
+                  # mountinfo escapes space and backslash as octal.
+                  esc="$(printf '%s' "$path" | sed -e 's/\\/\\134/g' -e 's/ /\\040/g')"
+                  P="$esc" awk '$5 == ENVIRON["P"] || index($5, ENVIRON["P"] "/") == 1 { found = 1 } END { exit !found }' "$mountinfo"
+                  return
+                fi
+                # Without a mount table: the root on another device than its parent, or
+                # entries below it on other devices.
+                [ "$(dev "$path")" != "$(dev "$(dirname -- "$path")")" ] && return 0
+                [ "$(find "$path" 2>/dev/null | wc -l)" != "$(find "$path" -xdev 2>/dev/null | wc -l)" ]
+              }
+              failed=0
+              manifest="$SAFETY_DIR/dirs.manifest"
+              done_list="$SAFETY_DIR/dirs.done"
+              if [ ! -f "$manifest" ]; then
+                # Without the manifest nothing proves the live directories are in place.
+                echo "rollback manifest $manifest is missing; check the directories by hand" >&2
+                failed=1
+              else
+                while IFS=$'\t' read -r real aside; do
+                  [ -n "$real" ] || continue
+                  if [ "$aside" = "-" ]; then
+                    # Did not exist before the restore: remove what the restore created.
+                    if [ -L "$real" ]; then
+                      echo "$real is a symlink now; remove the restored data by hand" >&2
+                      failed=1
+                    elif [ -e "$real" ]; then
+                      if has_mount "$real"; then
+                        echo "$real is or contains a mount point; not removed" >&2
+                        failed=1
+                      else
+                        rm -rf -- "$real" || failed=1
+                      fi
+                    fi
+                    continue
+                  fi
+                  if [ ! -e "$aside" ] && [ ! -L "$aside" ]; then
+                    continue
+                  fi
+                  if [ ! -e "$real" ] && [ ! -L "$real" ]; then
+                    mv -- "$aside" "$real" || failed=1
+                  elif grep -Fxq -- "$real"$'\t'"$aside" "$done_list" 2>/dev/null; then
+                    # $real holds only what this run restored from the archive.
+                    if has_mount "$real"; then
+                      echo "$real is or contains a mount point; not replaced, the old copy stays at $aside" >&2
+                      failed=1
+                    else
+                      { rm -rf -- "$real" && mv -- "$aside" "$real"; } || failed=1
+                    fi
+                  else
+                    # The copy did not finish; the live directory was never touched.
+                    if has_mount "$aside"; then
+                      echo "$aside is or contains a mount point; not removed" >&2
+                      failed=1
+                    else
+                      rm -rf -- "$aside" || failed=1
+                    fi
+                  fi
+                done < "$manifest"
+              fi
+              files="$SAFETY_DIR/files"
+              if [ -s "$SAFETY_DIR/files.manifest" ]; then
+                while IFS= read -r path; do
+                  [ -n "$path" ] || continue
+                  if [ -e "$files$path" ] || [ -L "$files$path" ]; then
+                    { rm -f "$path" && cp -a "$files$path" "$path"; } || failed=1
+                  else
+                    rm -f "$path" || failed=1
+                  fi
+                done < "$SAFETY_DIR/files.manifest"
+                systemctl daemon-reload || failed=1
+              fi
+              exit "$failed"
+            executable: /bin/bash
+          environment:
+            SAFETY_DIR: "{{ jellyfin_restore_safety_dir }}"
+          register: jellyfin_restore_rollback
+          changed_when: true
+          failed_when: false
+          when: (jellyfin_restore_rescue_state.stdout | default('') | trim) in ['inactive', 'failed']
+
+        - name: Start Jellyfin again on the old data
+          ansible.builtin.systemd:
+            name: "{{ jellyfin_service_name }}"
+            state: started
+          register: jellyfin_restore_rescue_start
+          failed_when: false
+          when: (jellyfin_restore_rollback.rc | default(1)) == 0
+
+        - name: Check whether Jellyfin runs again
+          ansible.builtin.command:
+            argv: [systemctl, is-active, "{{ jellyfin_service_name }}"]
+          register: jellyfin_restore_rescue_active
+          changed_when: false
+          failed_when: false
+          when: jellyfin_restore_rescue_start is not skipped
+
+        - name: Fail after rollback
+          ansible.builtin.fail:
+            msg: >-
+              Jellyfin restore failed ({{ ansible_failed_task.name | default('unknown task') }}).
+              Rollback: {{ 'SKIPPED - Jellyfin could not be confirmed stopped; move the directories back by hand'
+                if jellyfin_restore_rollback is skipped
+                else 'done' if jellyfin_restore_rollback.rc == 0
+                else 'FAILED: ' ~ (jellyfin_restore_rollback.stderr | default('') | trim) }}.
+              Jellyfin {{ 'was started again on the old data'
+                if (jellyfin_restore_rescue_active.stdout | default('') | trim) == 'active'
+                else 'is not running (check systemctl status)' }}.
+              Pre-restore copies: the data and config directories as <dir>.pre-restore-{{ jellyfin_restore_timestamp }}
+              (moved back if the rollback is done), config files in {{ jellyfin_restore_safety_dir }}/files.
+
+    - name: Prune older pre-restore copies
+      ansible.builtin.shell:
+        cmd: |
+          set -uo pipefail
+          shopt -s nullglob
+          mountinfo="${MOUNTINFO:-/proc/self/mountinfo}"
+          dev() { stat -c %d -- "$1" 2>/dev/null || stat -f %d -- "$1"; }
+          # has_mount DIR: DIR itself or anything inside it is a mount point. rm -rf
+          # would delete the mounted files, so such a tree is never removed.
+          has_mount() {
+            local esc path
+            # mountinfo lists canonical paths; resolve symlinked ancestors first.
+            path="$(readlink -f -- "$1")" || return 0
+            if [ -r "$mountinfo" ]; then
+              # mountinfo escapes space and backslash as octal.
+              esc="$(printf '%s' "$path" | sed -e 's/\\/\\134/g' -e 's/ /\\040/g')"
+              P="$esc" awk '$5 == ENVIRON["P"] || index($5, ENVIRON["P"] "/") == 1 { found = 1 } END { exit !found }' "$mountinfo"
+              return
+            fi
+            # Without a mount table: the root on another device than its parent, or
+            # entries below it on other devices.
+            [ "$(dev "$path")" != "$(dev "$(dirname -- "$path")")" ] && return 0
+            [ "$(find "$path" 2>/dev/null | wc -l)" != "$(find "$path" -xdev 2>/dev/null | wc -l)" ]
+          }
+          remove() {
+            if has_mount "$1"; then
+              echo "keeping $1: a mount point lies inside it; unmount it and remove the copy by hand" >&2
+              return
+            fi
+            rm -rf -- "$1" || echo "could not remove $1" >&2
+          }
+          # Keep one generation: this run's copies. Failures here only warn.
+          if [ -f "$SAFETY_DIR/dirs.done" ]; then
+            while IFS=$'\t' read -r real aside; do
+              [ -n "$real" ] || continue
+              for old in "$real".pre-restore-[0-9]*T[0-9]*Z; do
+                [ "$old" = "$aside" ] && continue
+                remove "$old"
+              done
+            done < "$SAFETY_DIR/dirs.done"
+          fi
+          for old in "$SAFETY_ROOT"/[0-9]*T[0-9]*Z; do
+            [ "$old" = "$SAFETY_DIR" ] && continue
+            remove "$old"
+          done
+          exit 0
+        executable: /bin/bash
+      environment:
+        SAFETY_DIR: "{{ jellyfin_restore_safety_dir }}"
+        SAFETY_ROOT: "{{ jellyfin_restore_safety_root_clean }}"
+      changed_when: true
+
+    - name: Reload Traefik when configuration changed
+      ansible.builtin.service:
+        name: traefik
+        state: reloaded
+      failed_when: false
+      register: jellyfin_restore_traefik_reload
+      when: jellyfin_restore_traefik_copy is changed
+
+    - name: Restart Traefik when reload is not supported
+      ansible.builtin.service:
+        name: traefik
+        state: restarted
+      when:
+        - jellyfin_restore_traefik_copy is changed
+        - jellyfin_restore_traefik_reload.rc is defined
+        - jellyfin_restore_traefik_reload.rc != 0
+
+  always:
+    - name: Cleanup Jellyfin restore staging directory
+      ansible.builtin.file:
+        path: "{{ jellyfin_restore_staging_dir }}"
+        state: absent
+      when: jellyfin_restore_cleanup | bool
+
+- name: Report restore completion
+  ansible.builtin.debug:
+    msg:
+      - "Jellyfin restored from {{ jellyfin_restore_selected_archive }}."
+      - "{{ jellyfin_restore_aside.stdout_lines | default([]) | join('; ') }}"
+      - "Config files before the restore: {{ jellyfin_restore_safety_dir }}/files"
+      - "Only this run's pre-restore copies are kept; remove them once Jellyfin is verified."
