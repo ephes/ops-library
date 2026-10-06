@@ -1,0 +1,52 @@
+---
+# Configure Django application
+
+- name: Create environment file for Django
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ work_app_env_file }}"
+    owner: "{{ work_app_user }}"
+    group: "{{ work_app_group }}"
+    mode: "0600"
+  no_log: true
+  notify: restart work app
+
+- name: Run Django migrations
+  ansible.builtin.shell: |
+    set -a
+    . {{ work_app_env_file }}
+    set +a
+    {{ work_app_venv_bin }}/python manage.py migrate --noinput
+  args:
+    chdir: "{{ work_app_site_path }}"
+    executable: /bin/bash
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ work_app_django_settings_module }}"
+  become: true
+  become_user: "{{ work_app_user }}"
+  register: work_app_migrate_result
+  changed_when: "'No migrations to apply' not in work_app_migrate_result.stdout"
+
+- name: Restrict database permissions
+  ansible.builtin.file:
+    path: "{{ work_app_database_path }}"
+    owner: "{{ work_app_user }}"
+    group: "{{ work_app_group }}"
+    mode: "0600"
+
+- name: Collect static files
+  ansible.builtin.shell: |
+    set -a
+    . {{ work_app_env_file }}
+    set +a
+    {{ work_app_venv_bin }}/python manage.py collectstatic --noinput
+  args:
+    chdir: "{{ work_app_site_path }}"
+    executable: /bin/bash
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{ work_app_django_settings_module }}"
+  become: true
+  become_user: "{{ work_app_user }}"
+  register: work_app_collectstatic_result
+  changed_when: "'0 static files copied' not in work_app_collectstatic_result.stdout"
+  notify: restart work app

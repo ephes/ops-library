@@ -1,0 +1,472 @@
+---
+- name: "Initialise work app restore context"
+  ansible.builtin.set_fact:
+    work_app_restore_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+    work_app_restore_success: false
+    work_app_restore_safety_dir: ""
+
+- name: "Detect ops-library galaxy file"
+  ansible.builtin.stat:
+    path: "{{ role_path | dirname | dirname }}/galaxy.yml"
+  register: work_app_restore_galaxy_file
+
+- name: "Determine ops-library version"
+  ansible.builtin.set_fact:
+    work_app_ops_library_version: "{{ (lookup('file', work_app_restore_galaxy_file.stat.path) | from_yaml).version }}"
+  when:
+    - work_app_ops_library_version is not defined
+    - work_app_restore_galaxy_file.stat.exists
+
+- name: "Default ops-library version when metadata missing"
+  ansible.builtin.set_fact:
+    work_app_ops_library_version: "{{ work_app_ops_library_version | default('unknown') }}"
+
+- block:
+    - name: "Reset staging directory"
+      ansible.builtin.file:
+        path: "{{ work_app_restore_staging_dir }}"
+        state: absent
+
+    - ansible.builtin.file:
+        path: "{{ work_app_restore_staging_dir }}"
+        state: directory
+        mode: "{{ work_app_restore_staging_mode }}"
+
+    - name: "Locate latest archive"
+      when: work_app_restore_archive == 'latest'
+      block:
+        - ansible.builtin.find:
+            paths: "{{ work_app_restore_root }}"
+            patterns: "{{ work_app_restore_archive_pattern }}"
+            file_type: file
+          register: work_app_restore_found_archives
+
+        - ansible.builtin.assert:
+            that:
+              - (work_app_restore_found_archives.files | length) > 0
+            fail_msg: "No work app backup archives found under {{ work_app_restore_root }}"
+
+        - ansible.builtin.set_fact:
+            work_app_restore_archive_path: "{{ ((work_app_restore_found_archives.files | sort(attribute='mtime')) | last).path }}"
+
+    - name: "Use explicit archive path"
+      ansible.builtin.set_fact:
+        work_app_restore_archive_path: >-
+          {{
+            work_app_restore_archive
+            if work_app_restore_archive | regex_search('^/')
+            else work_app_restore_root ~ '/' ~ work_app_restore_archive
+          }}
+      when: work_app_restore_archive != 'latest'
+
+    - name: "Validate archive path"
+      ansible.builtin.stat:
+        path: "{{ work_app_restore_archive_path }}"
+      register: work_app_restore_archive_stat
+
+    - ansible.builtin.assert:
+        that:
+          - work_app_restore_archive_stat.stat.exists
+          - work_app_restore_archive_stat.stat.isreg
+        fail_msg: "Restore archive {{ work_app_restore_archive_path }} does not exist"
+
+    - name: "Set archive basename"
+      ansible.builtin.set_fact:
+        work_app_restore_archive_basename: "{{ work_app_restore_archive_path | basename }}"
+
+    - name: "Set payload directory path"
+      ansible.builtin.set_fact:
+        work_app_restore_payload_dir: "{{ work_app_restore_staging_dir }}/{{ work_app_restore_archive_basename | regex_replace('\\\\.tar\\\\.gz$', '') }}"
+
+    - name: "Extract archive into staging directory"
+      ansible.builtin.unarchive:
+        src: "{{ work_app_restore_archive_path }}"
+        dest: "{{ work_app_restore_staging_dir }}"
+        remote_src: true
+
+    - name: "Discover extracted payload directories"
+      ansible.builtin.find:
+        paths: "{{ work_app_restore_staging_dir }}"
+        file_type: directory
+        depth: 1
+      register: work_app_restore_stage_dirs
+
+    - name: "Ensure payload directory exists"
+      ansible.builtin.stat:
+        path: "{{ work_app_restore_payload_dir }}"
+      register: work_app_restore_payload_dir_stat
+
+    - name: "Fallback to discovered payload directory"
+      when: not (work_app_restore_payload_dir_stat.stat.exists | default(false))
+      block:
+        - name: "Use first extracted directory as payload"
+          ansible.builtin.set_fact:
+            work_app_restore_payload_dir: "{{ (work_app_restore_stage_dirs.files | map(attribute='path') | list | first) | default(work_app_restore_payload_dir) }}"
+
+        - name: "Re-stat payload directory"
+          ansible.builtin.stat:
+            path: "{{ work_app_restore_payload_dir }}"
+          register: work_app_restore_payload_dir_stat
+
+    - ansible.builtin.assert:
+        that:
+          - work_app_restore_payload_dir_stat.stat.exists | default(false)
+          - work_app_restore_payload_dir_stat.stat.isdir | default(false)
+        fail_msg: "Archive {{ work_app_restore_archive_basename }} did not contain the expected payload directory"
+
+    - name: "Inspect payload contents"
+      ansible.builtin.stat:
+        path: "{{ work_app_restore_payload_dir }}/{{ item.path }}"
+      register: work_app_restore_payload_stats
+      loop:
+        - { key: "database", path: "database/{{ work_app_database_path | basename }}" }
+        - { key: "static", path: "static" }
+        - { key: "env", path: "env/.env" }
+        - { key: "systemd", path: "configs/work-app.service" }
+        - { key: "traefik", path: "configs/traefik.yml" }
+        - { key: "manifest", path: "manifest.sha256" }
+        - { key: "metadata", path: "metadata.yml" }
+
+    - name: "Build payload existence map"
+      ansible.builtin.set_fact:
+        work_app_restore_payload_exists: "{{ work_app_restore_payload_exists | default({}) | combine({ item.item.key: item.stat.exists }) }}"
+      loop: "{{ work_app_restore_payload_stats.results }}"
+      loop_control:
+        label: "{{ item.item.key }}"
+
+    - name: "Load backup metadata"
+      ansible.builtin.slurp:
+        src: "{{ work_app_restore_payload_dir }}/metadata.yml"
+      register: work_app_restore_metadata_raw
+
+    - name: "Parse backup metadata"
+      ansible.builtin.set_fact:
+        work_app_restore_metadata: "{{ work_app_restore_metadata_raw.content | b64decode | from_yaml }}"
+
+    - ansible.builtin.assert:
+        that:
+          - work_app_restore_metadata.slug == work_app_slug
+        fail_msg: "Archive slug ({{ work_app_restore_metadata.slug }}) does not match expected work app slug ({{ work_app_slug }})"
+
+    - name: "Validate metadata fields"
+      ansible.builtin.assert:
+        that:
+          - work_app_restore_metadata[ item ] is defined
+        fail_msg: "metadata.yml missing required field '{{ item }}'"
+      loop: "{{ work_app_restore_metadata_required_fields }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: "Check ops-library version compatibility"
+      ansible.builtin.set_fact:
+        work_app_restore_version_mismatch: "{{ (work_app_restore_metadata.ops_library_version | default('unknown')) != (work_app_ops_library_version | default('unknown')) }}"
+
+    - name: "Fail on version mismatch"
+      ansible.builtin.fail:
+        msg: >-
+          Archive was produced with ops-library {{ work_app_restore_metadata.ops_library_version | default('unknown') }},
+          but current control host is running {{ work_app_ops_library_version }}. Override with work_app_restore_allow_version_mismatch=true to continue.
+      when:
+        - work_app_restore_version_mismatch
+        - not work_app_restore_allow_version_mismatch
+
+    - name: "Warn on version mismatch"
+      ansible.builtin.debug:
+        msg: >-
+          Version mismatch detected (archive={{ work_app_restore_metadata.ops_library_version | default('unknown') }},
+          current={{ work_app_ops_library_version | default('unknown') }}) - continuing due to work_app_restore_allow_version_mismatch=true.
+      when:
+        - work_app_restore_version_mismatch
+        - work_app_restore_allow_version_mismatch
+
+    - name: "Validate checksum manifest"
+      ansible.builtin.command:
+        cmd: sha256sum -c manifest.sha256
+      args:
+        chdir: "{{ work_app_restore_payload_dir }}"
+      register: work_app_restore_manifest_check
+      changed_when: false
+      when:
+        - work_app_restore_validate_checksums
+        - work_app_restore_payload_exists.manifest | default(false)
+
+    - name: "Summarise restore plan"
+      ansible.builtin.set_fact:
+        work_app_restore_plan_summary:
+          archive: "{{ work_app_restore_archive_basename }}"
+          database: "{{ work_app_restore_payload_exists.database | default(false) }}"
+          static: "{{ work_app_restore_payload_exists.static | default(false) }}"
+          env: "{{ work_app_restore_payload_exists.env | default(false) and work_app_restore_restore_env }}"
+          systemd: "{{ work_app_restore_payload_exists.systemd | default(false) }}"
+          traefik: "{{ work_app_restore_payload_exists.traefik | default(false) }}"
+          dry_run: "{{ work_app_restore_dry_run }}"
+
+    - name: "Display restore plan"
+      ansible.builtin.debug:
+        msg:
+          - "Archive: {{ work_app_restore_plan_summary.archive }}"
+          - "Components -> database={{ work_app_restore_plan_summary.database }}, static={{ work_app_restore_plan_summary.static }}, env={{ work_app_restore_plan_summary.env }}"
+          - "Dry-run: {{ work_app_restore_plan_summary.dry_run }}"
+          - "Expected downtime: {{ 'Short (service restart only)' if work_app_restore_plan_summary.database else 'Moderate (full rsync + DB replace)' }}"
+
+    - block:
+        - name: "Set safety snapshot directory"
+          ansible.builtin.set_fact:
+            work_app_restore_safety_dir: "{{ work_app_site_path }}.{{ work_app_restore_safe_snapshot_prefix }}-{{ work_app_restore_timestamp }}"
+
+        - name: "Check if sqlite3 is available"
+          ansible.builtin.command:
+            cmd: which sqlite3
+          register: work_app_restore_sqlite3_check
+          changed_when: false
+          failed_when: false
+
+        - name: "Require sqlite3 for the post-restore integrity check"
+          ansible.builtin.assert:
+            that:
+              - work_app_restore_sqlite3_check.rc == 0
+            fail_msg: "sqlite3 is required on the target to verify the restored database"
+          when: work_app_restore_payload_exists.database | default(false)
+
+        # Stop first (and fail if that fails): neither the safety snapshot nor
+        # the database replacement may run against a live SQLite database.
+        - name: "Stop Work app service prior to restore"
+          ansible.builtin.systemd:
+            name: "{{ work_app_service_name }}"
+            state: stopped
+          register: work_app_restore_systemd_stop
+
+        - name: "Create safety snapshot"
+          when:
+            - work_app_restore_create_safe_snapshot
+          block:
+            - ansible.builtin.file:
+                path: "{{ work_app_restore_safety_dir }}"
+                state: directory
+                owner: "{{ work_app_user }}"
+                group: "{{ work_app_group }}"
+                mode: "0750"
+
+            - ansible.builtin.command:
+                cmd: >
+                  rsync -a
+                  "{{ work_app_site_path }}/"
+                  "{{ work_app_restore_safety_dir }}/"
+              changed_when: true
+
+        - name: "Ensure destination directories exist"
+          ansible.builtin.file:
+            path: "{{ item.path }}"
+            state: directory
+            owner: "{{ work_app_user }}"
+            group: "{{ work_app_group }}"
+            mode: "{{ item.mode }}"
+          loop:
+            - { path: "{{ work_app_static_root }}", mode: "0750" }
+
+        - name: "Restore directories from payload"
+          ansible.builtin.command:
+            cmd: >
+              rsync -a{{ ' --delete' if work_app_restore_use_rsync_delete else '' }}
+              "{{ work_app_restore_payload_dir }}/{{ item.src }}/"
+              "{{ item.dest }}/"
+          loop:
+            - { src: "static", dest: "{{ work_app_static_root }}", key: "static", condition: "{{ not work_app_restore_rebuild_static }}" }
+          when:
+            - (item.condition | bool)
+            - work_app_restore_payload_exists[item.key] | default(false)
+          changed_when: true
+
+        - name: "Remove stale SQLite journal files before replacing the database"
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - "{{ work_app_database_path }}-wal"
+            - "{{ work_app_database_path }}-shm"
+            - "{{ work_app_database_path }}-journal"
+          when: work_app_restore_payload_exists.database | default(false)
+
+        - name: "Restore SQLite database"
+          ansible.builtin.copy:
+            src: "{{ work_app_restore_payload_dir }}/database/{{ work_app_database_path | basename }}"
+            dest: "{{ work_app_database_path }}"
+            owner: "{{ work_app_user }}"
+            group: "{{ work_app_group }}"
+            mode: "0600"
+            remote_src: true
+          when: work_app_restore_payload_exists.database | default(false)
+
+        - name: "Restore .env file"
+          ansible.builtin.copy:
+            src: "{{ work_app_restore_payload_dir }}/env/.env"
+            dest: "{{ work_app_env_file }}"
+            owner: "{{ work_app_user }}"
+            group: "{{ work_app_group }}"
+            mode: "{{ work_app_restore_env_mode }}"
+            remote_src: true
+          when:
+            - work_app_restore_restore_env | bool
+            - work_app_restore_payload_exists.env | default(false)
+
+        - name: "Check .env availability"
+          ansible.builtin.stat:
+            path: "{{ work_app_env_file }}"
+          register: work_app_restore_env_stat
+
+        - name: "Warn when .env is missing for Django commands"
+          ansible.builtin.debug:
+            msg: >
+              Work app restore: {{ work_app_env_file }} not found, skipping Django management commands.
+              Set work_app_restore_restore_env=true or ensure the file exists before running verification.
+          when: not (work_app_restore_env_stat.stat.exists | default(false))
+
+        - name: "Restore systemd unit file"
+          ansible.builtin.copy:
+            src: "{{ work_app_restore_payload_dir }}/configs/work-app.service"
+            dest: "{{ work_app_systemd_unit_path }}"
+            owner: root
+            group: root
+            mode: "0644"
+            remote_src: true
+          register: work_app_restore_systemd_copy
+          when: work_app_restore_payload_exists.systemd | default(false)
+
+        - name: "Restore Traefik config"
+          ansible.builtin.copy:
+            src: "{{ work_app_restore_payload_dir }}/configs/traefik.yml"
+            dest: "{{ work_app_traefik_config_path }}"
+            owner: root
+            group: root
+            mode: "0644"
+            remote_src: true
+          register: work_app_restore_traefik_copy
+          when: work_app_restore_payload_exists.traefik | default(false)
+
+        - name: "Rebuild static files via manage.py"
+          shell: |
+            set -a
+            . {{ work_app_env_file }}
+            set +a
+            {{ work_app_venv_bin }}/python manage.py collectstatic --noinput
+          args:
+            chdir: "{{ work_app_site_path }}"
+            executable: /bin/bash
+          environment:
+            DJANGO_SETTINGS_MODULE: "{{ work_app_django_settings_module }}"
+          become: true
+          become_user: "{{ work_app_user }}"
+          when:
+            - work_app_restore_rebuild_static | bool
+            - work_app_restore_env_stat.stat.exists | default(false)
+
+        - name: "Fix ownership recursively"
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            owner: "{{ work_app_user }}"
+            group: "{{ work_app_group }}"
+            recurse: true
+          loop:
+            - "{{ work_app_static_root }}"
+          when: work_app_restore_fix_permissions | bool
+
+        - name: "Reload systemd daemon if unit changed"
+          ansible.builtin.systemd:
+            daemon_reload: true
+          when:
+            - work_app_restore_reload_systemd | bool
+            - work_app_restore_systemd_copy is defined
+            - work_app_restore_systemd_copy.changed
+
+        - name: "Reload Traefik when config changed"
+          ansible.builtin.systemd:
+            name: "{{ work_app_traefik_service_name }}"
+            state: reloaded
+          failed_when: false
+          when:
+            - work_app_restore_reload_traefik | bool
+            - work_app_restore_traefik_copy is defined
+            - work_app_restore_traefik_copy.changed
+
+        - name: "Run Django system checks"
+          shell: |
+            set -a
+            . {{ work_app_env_file }}
+            set +a
+            {{ work_app_venv_bin }}/python manage.py check --deploy
+          args:
+            chdir: "{{ work_app_site_path }}"
+            executable: /bin/bash
+          environment:
+            DJANGO_SETTINGS_MODULE: "{{ work_app_django_settings_module }}"
+          become: true
+          become_user: "{{ work_app_user }}"
+          when: work_app_restore_env_stat.stat.exists | default(false)
+
+        - name: "Show migrations for audit"
+          shell: |
+            set -a
+            . {{ work_app_env_file }}
+            set +a
+            {{ work_app_venv_bin }}/python manage.py showmigrations
+          args:
+            chdir: "{{ work_app_site_path }}"
+            executable: /bin/bash
+          environment:
+            DJANGO_SETTINGS_MODULE: "{{ work_app_django_settings_module }}"
+          become: true
+          become_user: "{{ work_app_user }}"
+          when: work_app_restore_env_stat.stat.exists | default(false)
+
+        - name: "Verify SQLite integrity"
+          ansible.builtin.command:
+            cmd: >
+              sqlite3 "{{ work_app_database_path }}" "PRAGMA integrity_check"
+          register: work_app_restore_sqlite_check
+          changed_when: false
+          failed_when: >-
+            work_app_restore_sqlite_check.rc != 0 or
+            (work_app_restore_sqlite_check.stdout | trim) != 'ok'
+          when: work_app_restore_payload_exists.database | default(false)
+
+        - name: "Start Work app service"
+          ansible.builtin.systemd:
+            name: "{{ work_app_service_name }}"
+            state: restarted
+
+        - name: "HTTP health check"
+          ansible.builtin.uri:
+            url: "{{ work_app_restore_healthcheck_url }}"
+            return_content: true
+            status_code: 200
+            validate_certs: false
+          register: work_app_restore_http_check
+          retries: "{{ work_app_restore_healthcheck_retries }}"
+          delay: "{{ work_app_restore_healthcheck_delay }}"
+          until:
+            - work_app_restore_http_check.status == 200
+            - (work_app_restore_expected_content | length == 0) or
+              (work_app_restore_expected_content in (work_app_restore_http_check.content | default('')))
+          when: work_app_restore_verify_http | bool
+
+        - ansible.builtin.set_fact:
+            work_app_restore_success: true
+      when: not work_app_restore_dry_run
+
+  always:
+    - name: "Cleanup staging directory"
+      ansible.builtin.file:
+        path: "{{ work_app_restore_staging_dir }}"
+        state: absent
+      when: work_app_restore_cleanup | bool
+
+    - name: "Cleanup safety snapshot"
+      ansible.builtin.file:
+        path: "{{ work_app_restore_safety_dir }}"
+        state: absent
+      when:
+        - work_app_restore_create_safe_snapshot | bool
+        - work_app_restore_safe_snapshot_delete | bool
+        - work_app_restore_safety_dir | length > 0
+        - work_app_restore_success | bool

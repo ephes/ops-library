@@ -1,0 +1,26 @@
+---
+galaxy_info:
+  role_name: work_app_deploy
+  author: ops-library
+  description: Deploy the work app (Django + SQLite) with dual router Traefik authentication
+  license: MIT
+
+  min_ansible_version: "2.15"
+
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bookworm
+        - trixie
+
+  galaxy_tags:
+    - django
+    - deployment
+    - traefik
+
+dependencies:
+  - role: local.ops_library.work_app_shared

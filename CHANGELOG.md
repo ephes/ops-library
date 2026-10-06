@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased — Work app lifecycle roles (2.27.0)
+
+- New `work_app_shared`, `work_app_deploy`, `work_app_backup`,
+  `work_app_restore` and `work_app_remove` roles for the work app (private
+  `work-ledger` repository: Django + SQLite owner UI and coordinator API),
+  modelled on the `homelab_*` roles. `work_app_deploy` rsyncs `src/` and
+  `ledger/` from a local checkout into `/home/work/site`, runs
+  `uv sync --frozen --no-dev --no-install-project`, renders `.env` (mode 0600),
+  migrates, collects static files, and runs gunicorn
+  (`src.config.wsgi:application`) as the `work-app` unit on `127.0.0.1:10011`.
+  The systemd unit and the dual router Traefik config (LAN/Tailscale without
+  auth, public with the shared basic auth) go through `webapp_deploy_internal`.
+  The deploy ends with an HTTP check of `/accounts/login/`. Backup, restore
+  and remove follow `homelab_backup`, `homelab_restore` and `homelab_remove`
+  without the media and cache parts the app does not have; remove refuses to
+  delete the home directory while keeping the database inside it. Unlike the
+  homelab originals, a failed service stop aborts the offline backup and the
+  restore (which now stops the service before its safety snapshot), restore
+  requires `PRAGMA integrity_check` to return `ok`, and remove parses its flags
+  with `| bool` and keeps the home directory when `work_app_remove_home` is false.
+  `tests/test_work_app_deploy.yml` (`just test-work-app-deploy`) covers the
+  defaults, the rendered env, unit and Traefik files, and the secret-key guard.
+
 ## Unreleased — Keep rspamd in the Postfix milter chain (2.26.4)
 
 - `mail_backend_deploy` gains `mail_backend_extra_milters` (default `[]`).

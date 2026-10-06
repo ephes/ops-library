@@ -15,6 +15,7 @@ traefik_remove
 dns_remove
 homeassistant_remove
 homelab_remove
+work_app_remove
 unifi_remove
 paperless_remove
 minio_remove

@@ -1,0 +1,79 @@
+---
+# Validation and safety checks
+
+- name: Fail if confirmation flag is not set
+  ansible.builtin.fail:
+    msg: |
+      ❌ REMOVAL BLOCKED: work_app_remove_confirm must be set to true
+
+      This role will remove the work app service and potentially delete data.
+      Set work_app_remove_confirm: true to proceed.
+  when: not (work_app_remove_confirm | bool)
+
+- name: Refuse to delete the home directory while keeping the database
+  ansible.builtin.fail:
+    msg: >-
+      work_app_remove_database=false keeps {{ work_app_database_path }}, which lives inside
+      {{ work_app_home }}. Also set work_app_remove_home=false and work_app_remove_user=false
+      (or take a backup first) to preserve it.
+  when:
+    - not (work_app_remove_database | bool)
+    - (work_app_remove_home | bool) or (work_app_remove_user | bool)
+
+- name: Check if systemd service exists
+  ansible.builtin.stat:
+    path: "{{ work_app_systemd_unit_path }}"
+  register: work_app_service_file
+
+- name: Check if user exists
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ work_app_user }}"
+  failed_when: false
+  register: work_app_user_check
+
+- name: Check if database exists
+  ansible.builtin.stat:
+    path: "{{ work_app_database_path }}"
+  register: work_app_db_check
+
+- name: Display removal plan
+  ansible.builtin.debug:
+    msg: |
+
+      ═══════════════════════════════════════════════════════════════
+      🗑️  WORK APP REMOVAL PLAN
+      ═══════════════════════════════════════════════════════════════
+
+      Systemd service: {{ work_app_systemd_unit_path if work_app_service_file.stat.exists else 'not found (already removed)' }}
+      Traefik config: {{ work_app_traefik_config_path ~ ' (remove)' if work_app_remove_traefik_config | bool else 'preserved' }}
+      Database: {{ (work_app_database_path ~ ' ⚠️  IRREVERSIBLE!') if ((work_app_remove_database | bool) and work_app_db_check.stat.exists) else ('preserved' if work_app_db_check.stat.exists else 'not found') }}
+      Home directory: {{ work_app_home ~ ' (remove)' if work_app_remove_home | bool else 'preserved' }}
+      User account: {{ work_app_user ~ ' (remove)' if ((work_app_remove_user | bool) and work_app_user_check.ansible_facts.getent_passwd is defined) else 'preserved / not found' }}
+
+      ═══════════════════════════════════════════════════════════════
+
+- name: Warn about irreversible data deletion
+  ansible.builtin.debug:
+    msg: |
+
+      ⚠️  WARNING: THE DATABASE WILL BE PERMANENTLY DELETED ⚠️
+
+      This operation is IRREVERSIBLE. Run `just backup work_app` (or trigger the
+      Echoport `work_app` target) before continuing if you have not already captured a snapshot.
+
+      To preserve data, set:
+        work_app_remove_database: false
+        work_app_remove_home: false
+        work_app_remove_user: false
+  when: (work_app_remove_database | bool) and work_app_db_check.stat.exists
+
+- name: Pause for confirmation (if data will be deleted)
+  ansible.builtin.pause:
+    prompt: |
+
+      Press ENTER to continue with removal, or Ctrl+C to abort.
+  when:
+    - not (work_app_remove_auto_confirm | bool)
+    - work_app_remove_database | bool
+    - work_app_db_check.stat.exists

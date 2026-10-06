@@ -1,0 +1,51 @@
+---
+# Setup Python environment for the work app
+
+- name: Ensure uv binary is installed
+  ansible.builtin.import_role:
+    name: uv_install
+  vars:
+    uv_install_dir: "{{ work_app_uv_path | dirname }}"
+
+- name: Test if venv Python is usable
+  ansible.builtin.command: "{{ work_app_venv_bin }}/python --version"
+  register: work_app_venv_python_test
+  become: true
+  become_user: "{{ work_app_user }}"
+  failed_when: false
+  changed_when: false
+
+- name: Extract current venv Python version
+  ansible.builtin.set_fact:
+    work_app_venv_python_current: "{{ work_app_venv_python_test.stdout | regex_replace('^Python (\\d+\\.\\d+).*$', '\\1') }}"
+  when: work_app_venv_python_test.rc == 0
+
+- name: Remove broken or outdated venv
+  ansible.builtin.file:
+    path: "{{ work_app_venv_path }}"
+    state: absent
+  when: >-
+    work_app_venv_python_test.rc != 0 or
+    (work_app_venv_python_current | default(work_app_python_version)) != work_app_python_version
+
+- name: Create virtual environment using uv
+  ansible.builtin.command: "{{ work_app_uv_path }} venv --python {{ work_app_python_version }} {{ work_app_venv_path }}"
+  args:
+    chdir: "{{ work_app_site_path }}"
+    creates: "{{ work_app_venv_bin }}/python"
+  become: true
+  become_user: "{{ work_app_user }}"
+
+# --no-install-project: the server only needs the locked dependencies;
+# gunicorn and manage.py put src/ on sys.path themselves.
+- name: Install dependencies with uv sync
+  ansible.builtin.command: "{{ work_app_uv_path }} sync --frozen --no-dev --no-install-project"
+  args:
+    chdir: "{{ work_app_site_path }}"
+  environment:
+    VIRTUAL_ENV: "{{ work_app_venv_path }}"
+  become: true
+  become_user: "{{ work_app_user }}"
+  register: work_app_uv_sync_result
+  changed_when: "'Installed' in work_app_uv_sync_result.stderr or 'Uninstalled' in work_app_uv_sync_result.stderr"
+  notify: restart work app

@@ -1,0 +1,50 @@
+---
+# Remove user and data (conditional)
+
+- name: Check if home directory exists
+  ansible.builtin.stat:
+    path: "{{ work_app_home }}"
+  register: work_app_home_check
+
+- name: Remove database file
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ work_app_database_path }}"
+    - "{{ work_app_database_path }}-wal"
+    - "{{ work_app_database_path }}-shm"
+  when:
+    - work_app_remove_database | bool
+    - work_app_home_check.stat.exists
+
+- name: Remove home directory
+  ansible.builtin.file:
+    path: "{{ work_app_home }}"
+    state: absent
+  when:
+    - work_app_remove_home | bool
+    - work_app_home_check.stat.exists
+    - not (work_app_remove_user | bool)  # If removing user, the user module removes the home
+
+- name: Remove user account
+  ansible.builtin.user:
+    name: "{{ work_app_user }}"
+    state: absent
+    remove: "{{ work_app_remove_home | bool }}"  # only delete the home directory when asked to
+  when: work_app_remove_user | bool
+
+- name: Remove group
+  ansible.builtin.group:
+    name: "{{ work_app_group }}"
+    state: absent
+  when: work_app_remove_user | bool
+
+- name: Verify removal
+  ansible.builtin.debug:
+    msg: |
+      ✓ Removal complete
+
+      Database: {{ 'DELETED' if work_app_remove_database | bool else 'Preserved (if existed)' }}
+      Home directory: {{ 'DELETED' if work_app_remove_home | bool else 'Preserved (if existed)' }}
+      User account: {{ 'DELETED' if work_app_remove_user | bool else 'Preserved (if existed)' }}

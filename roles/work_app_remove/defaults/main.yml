@@ -1,0 +1,16 @@
+---
+# work_app_remove role - Default variables
+#
+# WARNING: This role is DESTRUCTIVE by default
+# All removal flags default to true for complete service removal.
+# To keep the database set work_app_remove_database, work_app_remove_home and
+# work_app_remove_user to false (the database lives inside the home directory).
+
+work_app_remove_user: true              # Remove user account (and home) by default
+work_app_remove_home: true              # Remove home directory by default
+work_app_remove_database: true          # Remove SQLite database by default (IRREVERSIBLE!)
+work_app_remove_traefik_config: true    # Remove Traefik config
+
+# Safety options
+work_app_remove_confirm: false          # REQUIRED: Must be true for any removal
+work_app_remove_auto_confirm: false     # Skip pause when deleting the DB (non-interactive mode)

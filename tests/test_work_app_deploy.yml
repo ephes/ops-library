@@ -1,0 +1,260 @@
+---
+# Test playbook for the work_app lifecycle roles: defaults, rendered templates
+# and the validation guard of work_app_deploy.
+
+- name: Test work_app_deploy role components
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    shared_role_path: "{{ playbook_dir }}/../roles/work_app_shared"
+    role_path: "{{ playbook_dir }}/../roles/work_app_deploy"
+    rendered_env: "/tmp/test-work-app.env"
+    rendered_service: "/tmp/test-work-app.service"
+    rendered_traefik: "/tmp/test-work-app.traefik.yml"
+
+  tasks:
+    - name: Load role defaults
+      ansible.builtin.include_vars:
+        file: "{{ item }}"
+      loop:
+        - "{{ shared_role_path }}/defaults/main.yml"
+        - "{{ role_path }}/defaults/main.yml"
+
+    - name: Assert safe defaults
+      ansible.builtin.assert:
+        that:
+          - work_app_user == "work"
+          - work_app_service_name == "work-app"
+          - work_app_app_host == "127.0.0.1"
+          - work_app_app_port == 10011
+          - work_app_secret_key == ""
+          - work_app_source_path == ""
+          - work_app_basic_auth_enabled | bool
+          - work_app_basic_auth_password == ""
+          - work_app_wsgi_module == "src.config.wsgi:application"
+          - work_app_django_settings_module == "config.settings.production"
+          - work_app_database_path == "/home/work/site/db.sqlite3"
+          - work_app_backup_root == "/opt/backups/work_app"
+          - work_app_source_dirs == ["src", "ledger"]
+          - "'.env' in work_app_rsync_excludes"
+          - "'*.sqlite3' in work_app_rsync_excludes"
+          - "'.vault_password' in work_app_rsync_excludes"
+          - "'100.64.0.0/10' in work_app_internal_ip_ranges"
+          - "'fd7a:115c:a1e0::/48' in work_app_internal_ip_ranges"
+
+    - name: Set template test values
+      ansible.builtin.set_fact:
+        work_app_secret_key: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+        work_app_traefik_host: "work.home.example"
+        work_app_django_allowed_hosts:
+          - "127.0.0.1"
+          - "localhost"
+          - "work.home.example"
+        work_app_django_csrf_trusted_origins:
+          - "https://work.home.example"
+        work_app_basic_auth_user: "admin"
+        work_app_basic_auth_password_hash: "$2y$05$testhash"
+
+    - name: Render templates
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/{{ item.src }}"
+        dest: "{{ item.dest }}"
+        mode: "0600"
+      loop:
+        - { src: env.j2, dest: "{{ rendered_env }}" }
+        - { src: work-app.service.j2, dest: "{{ rendered_service }}" }
+        - { src: traefik.yml.j2, dest: "{{ rendered_traefik }}" }
+
+    - name: Read rendered files
+      ansible.builtin.slurp:
+        path: "{{ item }}"
+      loop:
+        - "{{ rendered_env }}"
+        - "{{ rendered_service }}"
+        - "{{ rendered_traefik }}"
+      register: rendered_files
+
+    - name: Assert rendered env and unit
+      ansible.builtin.assert:
+        that:
+          - "'DJANGO_SETTINGS_MODULE=config.settings.production' in env_text"
+          - "'DJANGO_SECRET_KEY=' ~ work_app_secret_key in env_text"
+          - "'DJANGO_DEBUG=false' in env_text"
+          - "'DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost,work.home.example' in env_text"
+          - "'DJANGO_CSRF_TRUSTED_ORIGINS=https://work.home.example' in env_text"
+          - "'DATABASE_URL=sqlite:////home/work/site/db.sqlite3' in env_text"
+          - "'DJANGO_STATIC_ROOT=/home/work/site/staticfiles' in env_text"
+          - "'DJANGO_SECURE_SSL_REDIRECT=False' in env_text"
+          - "'User=work' in service_text"
+          - "'EnvironmentFile=/home/work/site/.env' in service_text"
+          - "'/home/work/site/.venv/bin/gunicorn --workers 2 --bind 127.0.0.1:10011' in service_text"
+          - "'src.config.wsgi:application' in service_text"
+          - "'ProtectSystem=strict' in service_text"
+          - "'ReadWritePaths=/home/work/site' in service_text"
+          - "'uv run' not in service_text"
+      vars:
+        env_text: "{{ rendered_files.results[0].content | b64decode }}"
+        service_text: "{{ rendered_files.results[1].content | b64decode }}"
+
+    - name: Parse rendered Traefik config
+      ansible.builtin.set_fact:
+        traefik_config: "{{ rendered_files.results[2].content | b64decode | from_yaml }}"
+
+    - name: Assert dual router pattern
+      ansible.builtin.assert:
+        that:
+          - routers['work-app-int'].priority == 120
+          - routers['work-app-ext'].priority == 100
+          - "'work-app-auth' not in routers['work-app-int'].middlewares"
+          - routers['work-app-ext'].middlewares[0] == 'work-app-auth'
+          - routers['work-app-int'].rule is search('ClientIP\\(`100.64.0.0/10`\\)')
+          - routers['work-app-int'].rule is search('^Host\\(`work.home.example`\\) && \\(')
+          - routers['work-app-ext'].rule == 'Host(`work.home.example`)'
+          - routers['work-app-http'].middlewares == ['work-app-redirect']
+          - traefik_config.http.middlewares['work-app-auth'].basicAuth.users == ['admin:$2y$05$testhash']
+          - traefik_config.http.middlewares['work-app-auth'].basicAuth.removeHeader
+          - traefik_config.http.services['work-app'].loadBalancer.servers[0].url == 'http://127.0.0.1:10011'
+      vars:
+        routers: "{{ traefik_config.http.routers }}"
+
+    - name: Clean up rendered files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ rendered_env }}"
+        - "{{ rendered_service }}"
+        - "{{ rendered_traefik }}"
+
+- name: Test work_app_deploy validation guard
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Load role defaults
+      ansible.builtin.include_vars:
+        file: "{{ item }}"
+      loop:
+        - "{{ playbook_dir }}/../roles/work_app_shared/defaults/main.yml"
+        - "{{ playbook_dir }}/../roles/work_app_deploy/defaults/main.yml"
+
+    - name: Run the role tasks with a placeholder secret key
+      block:
+        - name: Include work_app_deploy tasks with invalid secrets
+          ansible.builtin.include_tasks: "{{ playbook_dir }}/../roles/work_app_deploy/tasks/main.yml"
+          vars:
+            work_app_secret_key: "CHANGEME"
+            work_app_source_path: "/nonexistent"
+        - name: Validation should have failed
+          ansible.builtin.set_fact:
+            work_app_guard_passed: true
+      rescue:
+        - name: Assert the validation task failed
+          ansible.builtin.assert:
+            that:
+              - work_app_guard_passed is not defined
+              - ansible_failed_task.name == "Validate required variables"
+
+        - name: Record that the guard rejected the input
+          ansible.builtin.set_fact:
+            work_app_guard_rescued: true
+
+    - name: Assert the guard rejected the placeholder secret key
+      ansible.builtin.assert:
+        that:
+          - work_app_guard_rescued | default(false)
+
+- name: Test work_app_remove confirmation flags are parsed as booleans
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    remove_tasks: "{{ playbook_dir }}/../roles/work_app_remove/tasks"
+
+  tasks:
+    - name: Load shared and remove defaults
+      ansible.builtin.include_vars:
+        file: "{{ item }}"
+      loop:
+        - "{{ playbook_dir }}/../roles/work_app_shared/defaults/main.yml"
+        - "{{ playbook_dir }}/../roles/work_app_remove/defaults/main.yml"
+
+    # just remove-one passes extra vars as strings ("false"); a non-empty string
+    # must not count as true.
+    - name: String "false" confirmation blocks removal
+      block:
+        - name: Run validation with confirm passed as the string "false"
+          ansible.builtin.include_tasks: "{{ remove_tasks }}/validation.yml"
+          vars:
+            work_app_remove_confirm: "false"
+        - name: Record unexpected pass
+          ansible.builtin.set_fact:
+            work_app_remove_string_false_passed: true
+      rescue:
+        - name: Assert the confirmation guard fired
+          ansible.builtin.assert:
+            that:
+              - "'REMOVAL BLOCKED' in ansible_failed_result.msg"
+        - name: Record expected block
+          ansible.builtin.set_fact:
+            work_app_remove_string_false_blocked: true
+
+    - name: Keeping the database while deleting the home directory is refused
+      block:
+        - name: Run validation with inconsistent preserve flags
+          ansible.builtin.include_tasks: "{{ remove_tasks }}/validation.yml"
+          vars:
+            work_app_remove_confirm: "true"
+            work_app_remove_database: "false"
+            work_app_remove_home: true
+        - name: Record unexpected pass
+          ansible.builtin.set_fact:
+            work_app_remove_inconsistent_passed: true
+      rescue:
+        - name: Record expected refusal
+          ansible.builtin.set_fact:
+            work_app_remove_inconsistent_refused: true
+
+    - name: Assert both guards held
+      ansible.builtin.assert:
+        that:
+          - work_app_remove_string_false_blocked | default(false)
+          - work_app_remove_inconsistent_refused | default(false)
+          - work_app_remove_string_false_passed is not defined
+          - work_app_remove_inconsistent_passed is not defined
+
+    - name: Assert boolean parsing of the auto-confirm pause and home removal
+      ansible.builtin.assert:
+        that:
+          - "'not (work_app_remove_auto_confirm | bool)' in validation_text"
+          - "'work_app_remove_home | bool' in user_text"
+          - "'remove: true' not in user_text"
+      vars:
+        validation_text: "{{ lookup('file', remove_tasks ~ '/validation.yml') }}"
+        user_text: "{{ lookup('file', remove_tasks ~ '/user.yml') }}"
+
+- name: Test work_app backup/restore SQLite safety
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    backup_text: "{{ lookup('file', playbook_dir ~ '/../roles/work_app_backup/tasks/main.yml') }}"
+    restore_text: "{{ lookup('file', playbook_dir ~ '/../roles/work_app_restore/tasks/main.yml') }}"
+
+  tasks:
+    - name: Assert stop failures abort and integrity is checked
+      ansible.builtin.assert:
+        that:
+          # offline backup copy only runs after a successful stop
+          - "backup_text is not search('register. work_app_backup_systemd_stop\\n\\s+failed_when. false')"
+          # restore stops (hard) before the safety snapshot and before replacing the DB
+          - "restore_text is not search('register. work_app_restore_systemd_stop\\n\\s+failed_when. false')"
+          - restore_text.index('Stop Work app service prior to restore') < restore_text.index('Create safety snapshot')
+          - restore_text.index('Stop Work app service prior to restore') < restore_text.index('Restore SQLite database')
+          # integrity_check output must be exactly "ok"
+          - "\"(work_app_restore_sqlite_check.stdout | trim) != 'ok'\" in restore_text"

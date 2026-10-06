@@ -1,0 +1,63 @@
+---
+# Work app deployment main tasks
+
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - work_app_secret_key is defined
+      - work_app_secret_key | length >= 50
+      - work_app_secret_key != "CHANGEME"
+      - work_app_secret_key is match('^[A-Za-z0-9_-]+$')
+      - work_app_source_path is defined
+      - work_app_source_path | length > 0
+      - work_app_django_allowed_hosts | length > 0
+    fail_msg: |
+      Required variables are missing or contain placeholder values.
+
+      - work_app_secret_key: at least 50 characters from [A-Za-z0-9_-]
+        (stored in secrets/prod/work_app.yml as django_secret_key)
+      - work_app_source_path: local path to the work-ledger checkout
+      - work_app_django_allowed_hosts: non-empty list
+  no_log: true
+
+- name: Validate Traefik basic auth password if enabled
+  ansible.builtin.assert:
+    that:
+      - work_app_basic_auth_password is defined
+      - work_app_basic_auth_password | length > 0
+      - work_app_basic_auth_password != "CHANGEME"
+      - work_app_traefik_host | length > 0
+    fail_msg: "work_app_basic_auth_password and work_app_traefik_host must be set when Traefik basic auth is enabled"
+  no_log: true
+  when: work_app_traefik_enabled and work_app_basic_auth_enabled
+
+- name: Setup user and directories
+  ansible.builtin.include_tasks: user.yml
+
+- name: Deploy source code
+  ansible.builtin.include_tasks: source.yml
+
+- name: Setup Python environment
+  ansible.builtin.include_tasks: python.yml
+
+- name: Configure Django application
+  ansible.builtin.include_tasks: django.yml
+
+- name: Setup systemd service
+  ansible.builtin.include_tasks: service.yml
+
+- name: Configure Traefik
+  ansible.builtin.include_tasks: traefik.yml
+  when: work_app_traefik_enabled
+
+- name: Apply pending work app handlers before health check
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify work app answers on its local port
+  ansible.builtin.uri:
+    url: "http://{{ work_app_app_host }}:{{ work_app_app_port }}{{ work_app_healthcheck_path }}"
+    status_code: 200
+  register: work_app_healthcheck
+  retries: 20
+  delay: 3
+  until: work_app_healthcheck.status == 200

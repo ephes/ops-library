@@ -1,0 +1,28 @@
+---
+# Setup user and directories for the work app
+
+- name: Ensure work app group exists
+  ansible.builtin.group:
+    name: "{{ work_app_group }}"
+    state: present
+
+- name: Ensure work app user exists
+  ansible.builtin.user:
+    name: "{{ work_app_user }}"
+    group: "{{ work_app_group }}"
+    home: "{{ work_app_home }}"
+    shell: /usr/sbin/nologin
+    create_home: true
+    system: true
+
+- name: Create application directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ work_app_user }}"
+    group: "{{ work_app_group }}"
+    mode: "0750"
+  loop:
+    - "{{ work_app_home }}"
+    - "{{ work_app_site_path }}"
+    - "{{ work_app_static_root }}"

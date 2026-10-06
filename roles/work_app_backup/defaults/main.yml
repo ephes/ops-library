@@ -1,0 +1,6 @@
+---
+# Role-specific defaults (shared ones located in work_app_shared)
+work_app_backup_include_systemd: true
+work_app_backup_include_traefik: true
+work_app_backup_rsync_use_delete: true
+work_app_backup_sqlite_command: sqlite3

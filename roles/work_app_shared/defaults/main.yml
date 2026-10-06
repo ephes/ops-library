@@ -1,0 +1,97 @@
+---
+# Work app shared defaults (used by all work_app lifecycle roles)
+
+# Service identity
+work_app_slug: work_app
+work_app_user: work
+work_app_group: "{{ work_app_user }}"
+
+# Paths (SQLite lives in the site directory on the persistent /home disk, like homelab)
+work_app_home: /home/{{ work_app_user }}
+work_app_site_path: "{{ work_app_home }}/site"
+work_app_venv_path: "{{ work_app_site_path }}/.venv"
+work_app_venv_bin: "{{ work_app_venv_path }}/bin"
+work_app_database_path: "{{ work_app_site_path }}/db.sqlite3"
+work_app_env_file: "{{ work_app_site_path }}/.env"
+work_app_static_root: "{{ work_app_site_path }}/staticfiles"
+
+# Application settings (used by env template + restore checks)
+work_app_app_port: 10011
+work_app_app_host: "127.0.0.1"
+work_app_workers: 2
+work_app_wsgi_module: "src.config.wsgi:application"
+work_app_django_settings_module: "config.settings.production"
+work_app_django_allowed_hosts:
+  - "127.0.0.1"
+work_app_django_csrf_trusted_origins: []
+work_app_django_admin_url: "admin/"
+work_app_django_debug: false
+work_app_secret_key: ""
+work_app_evidence_base_url: "https://github.com/ephes/work-ledger/blob/main/"
+work_app_healthcheck_path: "/accounts/login/"
+
+# Python / uv
+work_app_uv_path: "/usr/local/bin/uv"
+work_app_python_version: "3.14"
+
+# Systemd / Traefik
+work_app_service_name: work-app
+work_app_systemd_unit_path: "/etc/systemd/system/{{ work_app_service_name }}.service"
+work_app_traefik_enabled: true
+work_app_traefik_host: "work.home.example.com"
+work_app_traefik_cert_resolver: ""  # empty -> use file-provider certs
+work_app_traefik_config_path: "/etc/traefik/dynamic/work-app.yml"
+work_app_traefik_service_name: traefik
+work_app_basic_auth_enabled: true
+work_app_basic_auth_user: "admin"
+work_app_basic_auth_password: ""
+work_app_internal_ip_ranges:
+  - "192.168.0.0/16"
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"
+  - "100.64.0.0/10"
+  - "fd7a:115c:a1e0::/48"
+  - "fd50:3e45:c454:0::/64"
+
+# Backup defaults shared across roles
+work_app_backup_prefix: manual
+work_app_backup_include_static: true
+work_app_backup_include_env: true
+work_app_backup_manifest_enabled: true
+work_app_backup_archive_format: tar.gz
+work_app_backup_create_archive: true
+work_app_backup_fetch_local: true
+work_app_backup_local_dir: "{{ lookup('env', 'HOME') }}/backups/{{ work_app_slug }}"
+work_app_backup_local_dir_mode: "0700"
+work_app_backup_force_stop: false
+work_app_backup_sqlite_retries: 3
+work_app_backup_owner: root
+work_app_backup_group: root
+work_app_backup_dir_mode: "0700"
+work_app_backup_file_mode: "0600"
+work_app_backup_root: "{{ backup_root_prefix | default('/opt/backups') }}/{{ work_app_slug }}"
+
+# Restore defaults
+work_app_restore_archive: latest
+work_app_restore_root: "{{ work_app_backup_root }}"
+work_app_restore_dry_run: false
+work_app_restore_validate_checksums: true
+work_app_restore_cleanup: true
+work_app_restore_allow_version_mismatch: false
+work_app_restore_restore_env: true
+work_app_restore_rebuild_static: false
+work_app_restore_staging_dir: /tmp/work-app-restore
+work_app_restore_staging_mode: "0700"
+work_app_restore_safe_snapshot_prefix: "pre-restore"
+work_app_restore_safe_snapshot_delete: true  # delete the safety snapshot automatically after a successful restore
+work_app_restore_create_safe_snapshot: true
+work_app_restore_restart_service: true
+work_app_restore_reload_traefik: true
+work_app_restore_reload_systemd: true
+work_app_restore_verify_http: true
+work_app_restore_healthcheck_url: "http://{{ work_app_app_host }}:{{ work_app_app_port }}{{ work_app_healthcheck_path }}"
+work_app_restore_healthcheck_retries: 5
+work_app_restore_healthcheck_delay: 3
+work_app_restore_expected_content: ""
+work_app_restore_fix_permissions: true
+work_app_restore_env_mode: "0600"

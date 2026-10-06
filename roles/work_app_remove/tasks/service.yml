@@ -1,0 +1,33 @@
+---
+# Stop and remove systemd service
+
+- name: Check if systemd service exists
+  ansible.builtin.stat:
+    path: "{{ work_app_systemd_unit_path }}"
+  register: work_app_service_file
+
+- name: Stop work app service
+  ansible.builtin.systemd:
+    name: "{{ work_app_service_name }}"
+    state: stopped
+  when: work_app_service_file.stat.exists
+  failed_when: false
+  register: work_app_service_stop
+
+- name: Disable work app service
+  ansible.builtin.systemd:
+    name: "{{ work_app_service_name }}"
+    enabled: false
+  when: work_app_service_file.stat.exists
+  failed_when: false
+
+- name: Remove systemd unit file
+  ansible.builtin.file:
+    path: "{{ work_app_systemd_unit_path }}"
+    state: absent
+  when: work_app_service_file.stat.exists
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: work_app_service_file.stat.exists

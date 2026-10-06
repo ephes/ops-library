@@ -31,6 +31,7 @@ bind_authoritative_deploy
 dns_metrics_endpoint
 tailscale_deploy
 homelab_deploy
+work_app_deploy
 homeassistant_deploy
 otbr_deploy
 unifi_deploy

@@ -14,6 +14,8 @@ Available runbooks:
 - [Nyxmon Restore](https://github.com/ephes/ops-library/blob/main/roles/nyxmon_restore/README.md)
 - [Homelab Backup](https://github.com/ephes/ops-library/blob/main/roles/homelab_backup/README.md)
 - [Homelab Restore](https://github.com/ephes/ops-library/blob/main/roles/homelab_restore/README.md)
+- [Work App Backup](https://github.com/ephes/ops-library/blob/main/roles/work_app_backup/README.md)
+- [Work App Restore](https://github.com/ephes/ops-library/blob/main/roles/work_app_restore/README.md)
 - [UniFi Backup](https://github.com/ephes/ops-library/blob/main/roles/unifi_backup/README.md)
 - [UniFi Restore](https://github.com/ephes/ops-library/blob/main/roles/unifi_restore/README.md)
 - [MinIO Backup](https://github.com/ephes/ops-library/blob/main/roles/minio_backup/README.md)
@@ -63,6 +65,8 @@ nyxmon_backup
 nyxmon_restore
 homelab_backup
 homelab_restore
+work_app_backup
+work_app_restore
 unifi_backup
 unifi_restore
 minio_backup

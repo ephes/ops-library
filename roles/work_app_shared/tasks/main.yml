@@ -1,0 +1,14 @@
+---
+- name: "Expose work app shared paths"
+  ansible.builtin.set_fact:
+    work_app_paths:
+      home: "{{ work_app_home }}"
+      site: "{{ work_app_site_path }}"
+      venv: "{{ work_app_venv_path }}"
+      database: "{{ work_app_database_path }}"
+      static: "{{ work_app_static_root }}"
+      systemd_unit: "{{ work_app_systemd_unit_path }}"
+      traefik_config: "{{ work_app_traefik_config_path }}"
+      backup_root: "{{ work_app_backup_root }}"
+      backup_local_dir: "{{ work_app_backup_local_dir }}"
+  when: work_app_paths is not defined

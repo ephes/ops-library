@@ -1,0 +1,8 @@
+---
+work_app_restore_archive_pattern: "*.tar.gz"
+work_app_restore_use_rsync_delete: true
+work_app_restore_metadata_required_fields:
+  - slug
+  - timestamp
+  - host
+work_app_restore_disk_space_multiplier: 2.0

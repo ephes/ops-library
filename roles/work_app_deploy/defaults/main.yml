@@ -1,0 +1,29 @@
+---
+# Deploy-specific defaults (shared ones are in work_app_shared)
+
+# Local path to the work-ledger checkout (required)
+work_app_source_path: ""
+
+# Directories rsynced into the site directory (each with --delete inside it)
+work_app_source_dirs:
+  - src
+  - ledger
+
+# Top-level files copied into the site directory
+work_app_source_files:
+  - manage.py
+  - pyproject.toml
+  - uv.lock
+
+work_app_rsync_excludes:
+  - __pycache__
+  - "*.pyc"
+  - .pytest_cache
+  - .ruff_cache
+  - .mypy_cache
+  - .coverage
+  - htmlcov
+  - .env
+  - .vault_password
+  - "*.sqlite3"
+  - "*.sqlite3-*"

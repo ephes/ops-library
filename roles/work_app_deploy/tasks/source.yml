@@ -1,0 +1,63 @@
+---
+# Deploy work app source code using rsync (development workflow, like homelab)
+
+- name: Ensure source directory exists
+  ansible.builtin.stat:
+    path: "{{ work_app_source_path }}"
+  register: work_app_source_dir
+  delegate_to: localhost
+  become: false
+
+- name: Fail if source directory doesn't exist
+  ansible.builtin.fail:
+    msg: "Source directory {{ work_app_source_path }} does not exist"
+  when: not work_app_source_dir.stat.exists or not work_app_source_dir.stat.isdir
+
+- name: Validate required source paths exist
+  ansible.builtin.stat:
+    path: "{{ work_app_source_path }}/{{ item }}"
+  register: work_app_source_path_stats
+  delegate_to: localhost
+  become: false
+  loop: "{{ work_app_source_dirs + work_app_source_files }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Fail if required source paths are missing
+  ansible.builtin.assert:
+    that: item.stat.exists
+    fail_msg: "Missing required path for rsync deployment: {{ work_app_source_path }}/{{ item.item }}"
+  loop: "{{ work_app_source_path_stats.results }}"
+  loop_control:
+    label: "{{ work_app_source_path }}/{{ item.item }}"
+
+# Only the application code and the YAML ledger (read by import_ledger) are
+# shipped. The SQLite database, .env and staticfiles live next to them in the
+# site directory and are never part of a synced tree.
+- name: Sync application directories to target
+  ansible.posix.synchronize:
+    src: "{{ work_app_source_path }}/{{ item }}/"
+    dest: "{{ work_app_site_path }}/{{ item }}/"
+    delete: true
+    rsync_opts: "{{ work_app_rsync_excludes | map('regex_replace', '^', '--exclude=') | list }}"
+  become: false
+  delegate_to: localhost
+  loop: "{{ work_app_source_dirs }}"
+  notify: restart work app
+
+- name: Copy top-level project files to site directory
+  ansible.builtin.copy:
+    src: "{{ work_app_source_path }}/{{ item }}"
+    dest: "{{ work_app_site_path }}/{{ item }}"
+    owner: "{{ work_app_user }}"
+    group: "{{ work_app_group }}"
+    mode: "0644"
+  loop: "{{ work_app_source_files }}"
+  notify: restart work app
+
+- name: Set ownership for synced files
+  ansible.builtin.file:
+    path: "{{ work_app_site_path }}"
+    owner: "{{ work_app_user }}"
+    group: "{{ work_app_group }}"
+    recurse: true
