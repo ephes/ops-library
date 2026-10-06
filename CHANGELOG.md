@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — Logyard ingress push-only (2.31.5)
+## Unreleased — Logyard ingress push-only (2.31.4)
 
 `logyard_ingress_deploy` no longer forwards the whole Loki API. Loki runs with
 `auth_enabled: false`, and the `logyard-int` router sent every path on the
