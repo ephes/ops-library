@@ -1,5 +1,49 @@
 # Changelog
 
+## Unreleased — python-podcast private media in the production DB backup (2.31.9)
+
+python-podcast keeps contributor voice references and the known-speaker
+suggestion sidecar on the server filesystem
+(`<site>/private_media/cast_voice_references`), deliberately off the public S3
+bucket. The deploy keeps that directory across `rsync --delete`, but neither
+backup covered it: the media runner copies only the S3 bucket and the
+production DB runner only ran `pg_dump`. Losing the host lost the clips, and
+the `ContributorVoiceReference` rows would point at missing files.
+
+- `python_podcast_production_db_backup.py.j2` now also tars
+  `pp_prod_db_backup_private_media_path` (default
+  `/home/python-podcast/site/private_media`) on production, read-only and into
+  a fresh private `mktemp -d` directory, after a `du` size guard
+  (`pp_prod_db_backup_private_media_max_bytes`, default 2 GiB). It copies the
+  archive back, checks every member (no traversal, links or special files,
+  everything under the directory's own name, uncompressed size within the
+  guard) and ships it as `private_media/private_media.tar.gz` inside the same
+  uploaded archive, with its own `private_media` entry and SHA-256 in
+  `manifest.json`. An empty path disables the step. A missing directory is a
+  warning recorded in the manifest, not a failure; a failed probe, a symlink,
+  or an oversized tree fails the backup.
+- The staging restore skips private media by default and does not even
+  extract it. The outer archive may no longer contain symlinks or hardlinks
+  (this runner never writes any), so no link can route private media past
+  that filter. Opt in with the locked role var
+  `pp_prod_db_backup_restore_private_media: true` or `--include-private-media`
+  on a manual run; Echoport's restore context cannot switch it on. When opted
+  in, the archive checksum and members are verified before anything
+  destructive, and the tree is swapped into
+  `pp_prod_db_backup_restore_private_media_path` (owned by
+  `pp_prod_db_backup_restore_private_media_owner`) while the services are
+  stopped, keeping the old tree until the swap succeeds.
+- New `tests/test_python_podcast_production_db_backup.py`
+  (`just test-python-podcast-production-db-backup`, part of `just test`).
+
+Rollout: the register playbook templates this runner straight from the
+sibling `ops-library` checkout (`../../ops-library/roles/echoport_backup/...`),
+so update that checkout to a release containing this change, then from
+ops-control re-run `register-python-podcast-production-db-backup.yml`. No
+ops-control variable is needed for the defaults. Optionally add the
+`backup_private_media` and `restore_private_media` steps to the service's
+`config.json` step list; FastDeploy creates unknown steps on the fly.
+
 ## Unreleased — Logyard ingress push-only (2.31.4)
 
 `logyard_ingress_deploy` no longer forwards the whole Loki API. Loki runs with
