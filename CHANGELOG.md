@@ -1,5 +1,67 @@
 # Changelog
 
+## Unreleased — Restore safety (2.31.5)
+
+- `vaultwarden_restore` (legacy path; Echoport stays the preferred restore)
+  no longer overwrites the vault blind:
+  - the staged `db.sqlite3` must exist and pass `PRAGMA integrity_check`
+    before the service is touched;
+  - symlinked `attachments`, `sends`, `db.sqlite3` or key files are refused
+    before the stop, since the safety copy would only keep the link;
+  - a failed stop aborts the run with the live data untouched (it was
+    `failed_when: false`, so the DB could be copied under a running
+    Vaultwarden);
+  - after the stop it takes a timestamped safety copy of the data directory
+    (DB with `-wal`/`-shm`, keys, attachments, sends) and of the config,
+    systemd override and Traefik file under
+    `vaultwarden_restore_safety_root` (default
+    `/var/backups/vaultwarden-pre-restore`) and reports its path;
+  - stale `db.sqlite3-wal`/`-shm`/`-journal` are removed before the copy, so
+    SQLite cannot replay an old WAL over the restored database;
+  - rsync and key copy failures are fatal (they were ignored, so a partial
+    restore reported success);
+  - any failure while overwriting puts the safety copy back and fails with
+    Vaultwarden left stopped;
+  - the decrypted archive on the controller and the remote staging directory
+    are removed in `always`, also after a failure.
+  `sqlite3` is now installed with `rsync`. New static test
+  `tests/test_vaultwarden_restore_safety.py` (`just test-restore-safety`, part
+  of `just test`); the molecule scenario now restores a real SQLite file and
+  checks the WAL removal and the safety copy.
+
+- `mastodon_restore` and `takahe_restore` no longer drop a live database
+  for an unchecked dump:
+  - the dump must pass `pg_restore --list` (with `TABLE DATA` entries) and a
+    full `pg_restore --file=/dev/null` read before any service stops;
+  - a failed service stop aborts the run before anything is dropped (it was
+    `failed_when: false`); units that are not installed are skipped. With
+    `<svc>_restore_stop_services: false` the services must already be
+    stopped, or the run aborts;
+  - after the stop the roles take a `pg_dump -Fc` of the live database
+    (`<svc>_restore_safety_root`, default `/var/backups/<svc>-pre-restore`),
+    a hard-link snapshot of the media (`<svc>_restore_media_safety_root`,
+    default `/home/<svc>/media-pre-restore`; full copy across filesystems)
+    and copies of the env, systemd, Traefik and nginx files, and report the
+    paths. Media uploaded after the backup was lost to `rsync --delete`
+    before;
+  - `pg_restore` runs with `--single-transaction`;
+  - the media `rsync --delete` adds `--ignore-times`, so every file gets a
+    new inode and a metadata-only change cannot reach the hard-linked
+    snapshot (the restore now rewrites all media files);
+  - any failure while restoring (including migrations and the final start)
+    restores the safety dump, media and config files, leaves the services
+    stopped and fails with both safety paths. The rollback runs only when
+    every service is confirmed stopped. The start no longer ignores
+    failures;
+  - the staging directory with the unpacked dump is removed in `always`.
+  `takahe_restore` now also makes the staged dump traversable for the
+  Postgres OS user, as `mastodon_restore` did. New defaults
+  `<svc>_restore_postgres_dump_binary` and `<svc>_restore_postgres_psql_binary`.
+  The safety dump needs free space for one compressed dump. New test
+  `tests/test_fedi_restore_safety.py` (part of `just test-restore-safety`)
+  checks the order statically and runs the snapshot, rollback and dump
+  validation snippets against temp directories with stub binaries.
+
 ## Unreleased — Logyard ingress push-only (2.31.4)
 
 `logyard_ingress_deploy` no longer forwards the whole Loki API. Loki runs with

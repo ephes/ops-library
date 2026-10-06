@@ -1,2 +1,14 @@
 ---
 # Role-specific defaults for mastodon_restore (shared defaults in mastodon_shared)
+
+# Pre-restore safety copies. Each run writes a new timestamped subdirectory;
+# nothing prunes them. The safety root holds a pg_dump -Fc of the live
+# database (needs free space for one compressed dump) and copies of the env,
+# systemd, Traefik and nginx files.
+mastodon_restore_safety_root: /var/backups/mastodon-pre-restore
+# Media snapshot root. Keep it on the same filesystem as the media directory:
+# the snapshot is then a hard-link copy (cp -al) that costs almost no space.
+# On another filesystem the role falls back to a full copy.
+mastodon_restore_media_safety_root: "{{ mastodon_home_path }}/media-pre-restore"
+mastodon_restore_postgres_dump_binary: pg_dump
+mastodon_restore_postgres_psql_binary: psql
