@@ -56,73 +56,81 @@
   loop_control:
     label: "{{ item.item.path }}"
 
-- name: Stop Navidrome service for consistent backup
-  ansible.builtin.systemd:
-    name: "{{ navidrome_service_name }}"
-    state: stopped
-  when: navidrome_backup_stop_service | bool
+- name: Copy Navidrome data with the service stopped
+  block:
+    - name: Stop Navidrome service for consistent backup
+      ansible.builtin.systemd:
+        name: "{{ navidrome_service_name }}"
+        state: stopped
+      register: navidrome_backup_stop_result
+      when: navidrome_backup_stop_service | bool
 
-- name: Sync Navidrome data directory
-  ansible.builtin.command:
-    cmd: >
-      rsync -a{{ ' --delete' if navidrome_backup_use_delete else '' }}
-      "{{ navidrome_data_dir }}/" "{{ navidrome_backup_dir }}/data/"
-  changed_when: true
-  when:
-    - navidrome_backup_include_data | bool
-    - navidrome_backup_stats.results[0].stat.exists
+    - name: Sync Navidrome data directory
+      ansible.builtin.command:
+        cmd: >
+          rsync -a{{ ' --delete' if navidrome_backup_use_delete else '' }}
+          "{{ navidrome_data_dir }}/" "{{ navidrome_backup_dir }}/data/"
+      changed_when: true
+      when:
+        - navidrome_backup_include_data | bool
+        - navidrome_backup_stats.results[0].stat.exists
 
-- name: Copy Navidrome config file
-  ansible.builtin.copy:
-    src: "{{ navidrome_config_path }}"
-    dest: "{{ navidrome_backup_dir }}/config/{{ navidrome_config_path | basename }}"
-    owner: "{{ navidrome_backup_owner }}"
-    group: "{{ navidrome_backup_group }}"
-    mode: "{{ navidrome_backup_file_mode }}"
-    remote_src: true
-  when:
-    - navidrome_backup_include_config | bool
-    - navidrome_backup_stats.results[1].stat.exists
+    - name: Copy Navidrome config file
+      ansible.builtin.copy:
+        src: "{{ navidrome_config_path }}"
+        dest: "{{ navidrome_backup_dir }}/config/{{ navidrome_config_path | basename }}"
+        owner: "{{ navidrome_backup_owner }}"
+        group: "{{ navidrome_backup_group }}"
+        mode: "{{ navidrome_backup_file_mode }}"
+        remote_src: true
+      when:
+        - navidrome_backup_include_config | bool
+        - navidrome_backup_stats.results[1].stat.exists
 
-- name: Copy Navidrome systemd unit
-  ansible.builtin.copy:
-    src: "{{ navidrome_service_unit }}"
-    dest: "{{ navidrome_backup_dir }}/systemd/{{ navidrome_service_unit | basename }}"
-    owner: "{{ navidrome_backup_owner }}"
-    group: "{{ navidrome_backup_group }}"
-    mode: "{{ navidrome_backup_file_mode }}"
-    remote_src: true
-  when:
-    - navidrome_backup_include_systemd | bool
-    - navidrome_backup_stats.results[2].stat.exists
+    - name: Copy Navidrome systemd unit
+      ansible.builtin.copy:
+        src: "{{ navidrome_service_unit }}"
+        dest: "{{ navidrome_backup_dir }}/systemd/{{ navidrome_service_unit | basename }}"
+        owner: "{{ navidrome_backup_owner }}"
+        group: "{{ navidrome_backup_group }}"
+        mode: "{{ navidrome_backup_file_mode }}"
+        remote_src: true
+      when:
+        - navidrome_backup_include_systemd | bool
+        - navidrome_backup_stats.results[2].stat.exists
 
-- name: Copy Traefik dynamic config
-  ansible.builtin.copy:
-    src: "{{ navidrome_traefik_config_path }}"
-    dest: "{{ navidrome_backup_dir }}/traefik/{{ navidrome_traefik_config_path | basename }}"
-    owner: "{{ navidrome_backup_owner }}"
-    group: "{{ navidrome_backup_group }}"
-    mode: "{{ navidrome_backup_file_mode }}"
-    remote_src: true
-  when:
-    - navidrome_backup_include_traefik | bool
-    - navidrome_backup_stats.results[3].stat.exists
+    - name: Copy Traefik dynamic config
+      ansible.builtin.copy:
+        src: "{{ navidrome_traefik_config_path }}"
+        dest: "{{ navidrome_backup_dir }}/traefik/{{ navidrome_traefik_config_path | basename }}"
+        owner: "{{ navidrome_backup_owner }}"
+        group: "{{ navidrome_backup_group }}"
+        mode: "{{ navidrome_backup_file_mode }}"
+        remote_src: true
+      when:
+        - navidrome_backup_include_traefik | bool
+        - navidrome_backup_stats.results[3].stat.exists
 
-- name: Copy Navidrome logs
-  ansible.builtin.command:
-    cmd: >
-      rsync -a "{{ navidrome_log_dir }}/" "{{ navidrome_backup_dir }}/logs/"
-  changed_when: true
-  when:
-    - navidrome_backup_include_logs | bool
-    - navidrome_backup_stats.results[4].stat.exists
-
-- name: Start Navidrome service after backup
-  ansible.builtin.systemd:
-    name: "{{ navidrome_service_name }}"
-    state: started
-    daemon_reload: true
-  when: navidrome_backup_stop_service | bool
+    - name: Copy Navidrome logs
+      ansible.builtin.command:
+        cmd: >
+          rsync -a "{{ navidrome_log_dir }}/" "{{ navidrome_backup_dir }}/logs/"
+      changed_when: true
+      when:
+        - navidrome_backup_include_logs | bool
+        - navidrome_backup_stats.results[4].stat.exists
+  always:
+    - name: Start Navidrome service after backup
+      ansible.builtin.systemd:
+        name: "{{ navidrome_service_name }}"
+        state: started
+        daemon_reload: true
+      # Restart only what this role stopped (or failed to stop); a service that
+      # was already stopped before the backup stays stopped.
+      when:
+        - navidrome_backup_stop_service | bool
+        - navidrome_backup_stop_result is defined
+        - navidrome_backup_stop_result is changed or navidrome_backup_stop_result is failed
 
 - name: Build Navidrome backup manifest
   ansible.builtin.copy:

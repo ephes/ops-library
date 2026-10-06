@@ -45,16 +45,16 @@
     path: "{{ mastodon_media_path }}"
   register: mastodon_backup_media_stat
 
-- name: Stop Mastodon services for backup
-  ansible.builtin.systemd:
-    name: "{{ item }}"
-    state: stopped
-  loop: "{{ mastodon_systemd_services }}"
-  failed_when: false
-  when: mastodon_backup_stop_services | bool
-
 - name: Capture Mastodon backup payload
   block:
+    - name: Stop Mastodon services for backup
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+      loop: "{{ mastodon_systemd_services }}"
+      failed_when: false
+      when: mastodon_backup_stop_services | bool
+
     - name: Build pg_dump connection flags
       ansible.builtin.set_fact:
         mastodon_backup_pg_dump_host_flag: "{{ (mastodon_backup_postgres_host | default('') | string | length > 0) | ternary('--host=' ~ mastodon_backup_postgres_host, '') }}"

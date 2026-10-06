@@ -27,7 +27,7 @@ Creates on-host Jellyfin backups (data, config, systemd unit, Traefik config, op
 | `jellyfin_backup_prefix` | `manual` | Prefix for backup directory/archive names. |
 | `jellyfin_backup_create_archive` | `true` | Create compressed archive of the backup directory. |
 | `jellyfin_backup_fetch_local` | `true` | Fetch archive to the controller. |
-| `jellyfin_backup_stop_service` | `true` | Stop Jellyfin during backup for data consistency. |
+| `jellyfin_backup_stop_service` | `true` | Stop Jellyfin during backup for data consistency. The restart runs in an `always` section, so a failed copy still restarts it; a service that was already stopped stays stopped. |
 | `jellyfin_backup_include_logs` | `true` | Include `/var/log/jellyfin`. |
 | `jellyfin_backup_retain` | `7` | Keep this many most recent archives (older ones are pruned). |
 

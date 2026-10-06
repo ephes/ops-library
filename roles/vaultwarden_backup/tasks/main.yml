@@ -66,117 +66,125 @@
   loop_control:
     label: "{{ item.item.path }}"
 
-- name: Stop Vaultwarden service for consistent backup
-  ansible.builtin.systemd:
-    name: "{{ vaultwarden_service_name }}"
-    state: stopped
-  when: vaultwarden_backup_stop_service | bool
+- name: Copy Vaultwarden data with the service stopped
+  block:
+    - name: Stop Vaultwarden service for consistent backup
+      ansible.builtin.systemd:
+        name: "{{ vaultwarden_service_name }}"
+        state: stopped
+      register: vaultwarden_backup_stop_result
+      when: vaultwarden_backup_stop_service | bool
 
-- name: Backup SQLite database using sqlite3 .backup command
-  ansible.builtin.command:
-    cmd: sqlite3 "{{ vaultwarden_data_dir }}/db.sqlite3" ".backup '{{ vaultwarden_backup_dir }}/data/db.sqlite3'"
-  changed_when: true
-  when:
-    - vaultwarden_backup_include_data | bool
-    - vaultwarden_backup_stats.results[0].stat.exists
+    - name: Backup SQLite database using sqlite3 .backup command
+      ansible.builtin.command:
+        cmd: sqlite3 "{{ vaultwarden_data_dir }}/db.sqlite3" ".backup '{{ vaultwarden_backup_dir }}/data/db.sqlite3'"
+      changed_when: true
+      when:
+        - vaultwarden_backup_include_data | bool
+        - vaultwarden_backup_stats.results[0].stat.exists
 
-- name: Check Vaultwarden attachments directory
-  ansible.builtin.stat:
-    path: "{{ vaultwarden_data_dir }}/attachments"
-  register: vaultwarden_backup_attachments_stat
-  when:
-    - vaultwarden_backup_include_data | bool
-    - vaultwarden_backup_stats.results[0].stat.exists
+    - name: Check Vaultwarden attachments directory
+      ansible.builtin.stat:
+        path: "{{ vaultwarden_data_dir }}/attachments"
+      register: vaultwarden_backup_attachments_stat
+      when:
+        - vaultwarden_backup_include_data | bool
+        - vaultwarden_backup_stats.results[0].stat.exists
 
-- name: Check Vaultwarden sends directory
-  ansible.builtin.stat:
-    path: "{{ vaultwarden_data_dir }}/sends"
-  register: vaultwarden_backup_sends_stat
-  when:
-    - vaultwarden_backup_include_data | bool
-    - vaultwarden_backup_stats.results[0].stat.exists
+    - name: Check Vaultwarden sends directory
+      ansible.builtin.stat:
+        path: "{{ vaultwarden_data_dir }}/sends"
+      register: vaultwarden_backup_sends_stat
+      when:
+        - vaultwarden_backup_include_data | bool
+        - vaultwarden_backup_stats.results[0].stat.exists
 
-- name: Sync Vaultwarden attachments directory
-  ansible.posix.synchronize:
-    src: "{{ vaultwarden_data_dir }}/attachments/"
-    dest: "{{ vaultwarden_backup_dir }}/data/attachments/"
-    archive: true
-    recursive: true
-  delegate_to: "{{ inventory_hostname }}"
-  when:
-    - vaultwarden_backup_include_data | bool
-    - vaultwarden_backup_stats.results[0].stat.exists
-    - vaultwarden_backup_attachments_stat.stat.exists
+    - name: Sync Vaultwarden attachments directory
+      ansible.posix.synchronize:
+        src: "{{ vaultwarden_data_dir }}/attachments/"
+        dest: "{{ vaultwarden_backup_dir }}/data/attachments/"
+        archive: true
+        recursive: true
+      delegate_to: "{{ inventory_hostname }}"
+      when:
+        - vaultwarden_backup_include_data | bool
+        - vaultwarden_backup_stats.results[0].stat.exists
+        - vaultwarden_backup_attachments_stat.stat.exists
 
-- name: Sync Vaultwarden sends directory
-  ansible.posix.synchronize:
-    src: "{{ vaultwarden_data_dir }}/sends/"
-    dest: "{{ vaultwarden_backup_dir }}/data/sends/"
-    archive: true
-    recursive: true
-  delegate_to: "{{ inventory_hostname }}"
-  when:
-    - vaultwarden_backup_include_data | bool
-    - vaultwarden_backup_stats.results[0].stat.exists
-    - vaultwarden_backup_sends_stat.stat.exists
+    - name: Sync Vaultwarden sends directory
+      ansible.posix.synchronize:
+        src: "{{ vaultwarden_data_dir }}/sends/"
+        dest: "{{ vaultwarden_backup_dir }}/data/sends/"
+        archive: true
+        recursive: true
+      delegate_to: "{{ inventory_hostname }}"
+      when:
+        - vaultwarden_backup_include_data | bool
+        - vaultwarden_backup_stats.results[0].stat.exists
+        - vaultwarden_backup_sends_stat.stat.exists
 
-- name: Copy RSA key files
-  ansible.builtin.copy:
-    src: "{{ item }}"
-    dest: "{{ vaultwarden_backup_dir }}/data/"
-    owner: "{{ vaultwarden_backup_owner }}"
-    group: "{{ vaultwarden_backup_group }}"
-    mode: "{{ vaultwarden_backup_file_mode }}"
-    remote_src: true
-  loop:
-    - "{{ vaultwarden_data_dir }}/rsa_key.pem"
-    - "{{ vaultwarden_data_dir }}/rsa_key.pub.pem"
-  failed_when: false
-  when:
-    - vaultwarden_backup_include_data | bool
-    - vaultwarden_backup_stats.results[0].stat.exists
+    - name: Copy RSA key files
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ vaultwarden_backup_dir }}/data/"
+        owner: "{{ vaultwarden_backup_owner }}"
+        group: "{{ vaultwarden_backup_group }}"
+        mode: "{{ vaultwarden_backup_file_mode }}"
+        remote_src: true
+      loop:
+        - "{{ vaultwarden_data_dir }}/rsa_key.pem"
+        - "{{ vaultwarden_data_dir }}/rsa_key.pub.pem"
+      failed_when: false
+      when:
+        - vaultwarden_backup_include_data | bool
+        - vaultwarden_backup_stats.results[0].stat.exists
 
-- name: Copy Vaultwarden config file
-  ansible.builtin.copy:
-    src: "{{ vaultwarden_config_file }}"
-    dest: "{{ vaultwarden_backup_dir }}/config/{{ vaultwarden_config_file | basename }}"
-    owner: "{{ vaultwarden_backup_owner }}"
-    group: "{{ vaultwarden_backup_group }}"
-    mode: "{{ vaultwarden_backup_file_mode }}"
-    remote_src: true
-  when:
-    - vaultwarden_backup_include_config | bool
-    - vaultwarden_backup_stats.results[1].stat.exists
+    - name: Copy Vaultwarden config file
+      ansible.builtin.copy:
+        src: "{{ vaultwarden_config_file }}"
+        dest: "{{ vaultwarden_backup_dir }}/config/{{ vaultwarden_config_file | basename }}"
+        owner: "{{ vaultwarden_backup_owner }}"
+        group: "{{ vaultwarden_backup_group }}"
+        mode: "{{ vaultwarden_backup_file_mode }}"
+        remote_src: true
+      when:
+        - vaultwarden_backup_include_config | bool
+        - vaultwarden_backup_stats.results[1].stat.exists
 
-- name: Copy systemd override if exists
-  ansible.builtin.copy:
-    src: "{{ vaultwarden_service_override_dir }}/override.conf"
-    dest: "{{ vaultwarden_backup_dir }}/systemd/override.conf"
-    owner: "{{ vaultwarden_backup_owner }}"
-    group: "{{ vaultwarden_backup_group }}"
-    mode: "{{ vaultwarden_backup_file_mode }}"
-    remote_src: true
-  failed_when: false
-  when: vaultwarden_backup_include_systemd | bool
+    - name: Copy systemd override if exists
+      ansible.builtin.copy:
+        src: "{{ vaultwarden_service_override_dir }}/override.conf"
+        dest: "{{ vaultwarden_backup_dir }}/systemd/override.conf"
+        owner: "{{ vaultwarden_backup_owner }}"
+        group: "{{ vaultwarden_backup_group }}"
+        mode: "{{ vaultwarden_backup_file_mode }}"
+        remote_src: true
+      failed_when: false
+      when: vaultwarden_backup_include_systemd | bool
 
-- name: Copy Traefik dynamic config
-  ansible.builtin.copy:
-    src: "{{ vaultwarden_traefik_config_path }}"
-    dest: "{{ vaultwarden_backup_dir }}/traefik/{{ vaultwarden_traefik_config_path | basename }}"
-    owner: "{{ vaultwarden_backup_owner }}"
-    group: "{{ vaultwarden_backup_group }}"
-    mode: "{{ vaultwarden_backup_file_mode }}"
-    remote_src: true
-  when:
-    - vaultwarden_backup_include_traefik | bool
-    - vaultwarden_backup_stats.results[3].stat.exists
-
-- name: Start Vaultwarden service after backup
-  ansible.builtin.systemd:
-    name: "{{ vaultwarden_service_name }}"
-    state: started
-    daemon_reload: true
-  when: vaultwarden_backup_stop_service | bool
+    - name: Copy Traefik dynamic config
+      ansible.builtin.copy:
+        src: "{{ vaultwarden_traefik_config_path }}"
+        dest: "{{ vaultwarden_backup_dir }}/traefik/{{ vaultwarden_traefik_config_path | basename }}"
+        owner: "{{ vaultwarden_backup_owner }}"
+        group: "{{ vaultwarden_backup_group }}"
+        mode: "{{ vaultwarden_backup_file_mode }}"
+        remote_src: true
+      when:
+        - vaultwarden_backup_include_traefik | bool
+        - vaultwarden_backup_stats.results[3].stat.exists
+  always:
+    - name: Start Vaultwarden service after backup
+      ansible.builtin.systemd:
+        name: "{{ vaultwarden_service_name }}"
+        state: started
+        daemon_reload: true
+      # Restart only what this role stopped (or failed to stop); a service that
+      # was already stopped before the backup stays stopped.
+      when:
+        - vaultwarden_backup_stop_service | bool
+        - vaultwarden_backup_stop_result is defined
+        - vaultwarden_backup_stop_result is changed or vaultwarden_backup_stop_result is failed
 
 - name: Build Vaultwarden backup manifest
   ansible.builtin.copy:

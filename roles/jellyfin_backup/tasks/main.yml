@@ -58,71 +58,79 @@
   loop_control:
     label: "{{ item.item.path }}"
 
-- name: Stop Jellyfin service for consistent backup
-  ansible.builtin.systemd:
-    name: "{{ jellyfin_service_name }}"
-    state: stopped
-  when: jellyfin_backup_stop_service | bool
+- name: Copy Jellyfin data with the service stopped
+  block:
+    - name: Stop Jellyfin service for consistent backup
+      ansible.builtin.systemd:
+        name: "{{ jellyfin_service_name }}"
+        state: stopped
+      register: jellyfin_backup_stop_result
+      when: jellyfin_backup_stop_service | bool
 
-- name: Sync Jellyfin data directory
-  ansible.builtin.command:
-    cmd: >
-      rsync -a{{ ' --delete' if jellyfin_backup_use_delete else '' }}
-      "{{ jellyfin_data_dir }}/" "{{ jellyfin_backup_dir }}/data/"
-  changed_when: true
-  when:
-    - jellyfin_backup_include_data | bool
-    - jellyfin_backup_stats.results[0].stat.exists
+    - name: Sync Jellyfin data directory
+      ansible.builtin.command:
+        cmd: >
+          rsync -a{{ ' --delete' if jellyfin_backup_use_delete else '' }}
+          "{{ jellyfin_data_dir }}/" "{{ jellyfin_backup_dir }}/data/"
+      changed_when: true
+      when:
+        - jellyfin_backup_include_data | bool
+        - jellyfin_backup_stats.results[0].stat.exists
 
-- name: Sync Jellyfin config directory
-  ansible.builtin.command:
-    cmd: >
-      rsync -a{{ ' --delete' if jellyfin_backup_use_delete else '' }}
-      "{{ jellyfin_config_dir }}/" "{{ jellyfin_backup_dir }}/config/"
-  changed_when: true
-  when:
-    - jellyfin_backup_include_config | bool
-    - jellyfin_backup_stats.results[1].stat.exists
+    - name: Sync Jellyfin config directory
+      ansible.builtin.command:
+        cmd: >
+          rsync -a{{ ' --delete' if jellyfin_backup_use_delete else '' }}
+          "{{ jellyfin_config_dir }}/" "{{ jellyfin_backup_dir }}/config/"
+      changed_when: true
+      when:
+        - jellyfin_backup_include_config | bool
+        - jellyfin_backup_stats.results[1].stat.exists
 
-- name: Copy Jellyfin systemd unit
-  ansible.builtin.copy:
-    src: "{{ jellyfin_service_unit }}"
-    dest: "{{ jellyfin_backup_dir }}/systemd/{{ jellyfin_service_unit | basename }}"
-    owner: "{{ jellyfin_backup_owner }}"
-    group: "{{ jellyfin_backup_group }}"
-    mode: "{{ jellyfin_backup_file_mode }}"
-    remote_src: true
-  when:
-    - jellyfin_backup_include_systemd | bool
-    - jellyfin_backup_stats.results[2].stat.exists
+    - name: Copy Jellyfin systemd unit
+      ansible.builtin.copy:
+        src: "{{ jellyfin_service_unit }}"
+        dest: "{{ jellyfin_backup_dir }}/systemd/{{ jellyfin_service_unit | basename }}"
+        owner: "{{ jellyfin_backup_owner }}"
+        group: "{{ jellyfin_backup_group }}"
+        mode: "{{ jellyfin_backup_file_mode }}"
+        remote_src: true
+      when:
+        - jellyfin_backup_include_systemd | bool
+        - jellyfin_backup_stats.results[2].stat.exists
 
-- name: Copy Traefik dynamic config
-  ansible.builtin.copy:
-    src: "{{ jellyfin_traefik_config_path }}"
-    dest: "{{ jellyfin_backup_dir }}/traefik/{{ jellyfin_traefik_config_path | basename }}"
-    owner: "{{ jellyfin_backup_owner }}"
-    group: "{{ jellyfin_backup_group }}"
-    mode: "{{ jellyfin_backup_file_mode }}"
-    remote_src: true
-  when:
-    - jellyfin_backup_include_traefik | bool
-    - jellyfin_backup_stats.results[3].stat.exists
+    - name: Copy Traefik dynamic config
+      ansible.builtin.copy:
+        src: "{{ jellyfin_traefik_config_path }}"
+        dest: "{{ jellyfin_backup_dir }}/traefik/{{ jellyfin_traefik_config_path | basename }}"
+        owner: "{{ jellyfin_backup_owner }}"
+        group: "{{ jellyfin_backup_group }}"
+        mode: "{{ jellyfin_backup_file_mode }}"
+        remote_src: true
+      when:
+        - jellyfin_backup_include_traefik | bool
+        - jellyfin_backup_stats.results[3].stat.exists
 
-- name: Copy Jellyfin logs
-  ansible.builtin.command:
-    cmd: >
-      rsync -a "{{ jellyfin_log_dir }}/" "{{ jellyfin_backup_dir }}/logs/"
-  changed_when: true
-  when:
-    - jellyfin_backup_include_logs | bool
-    - jellyfin_backup_stats.results[4].stat.exists
-
-- name: Start Jellyfin service after backup
-  ansible.builtin.systemd:
-    name: "{{ jellyfin_service_name }}"
-    state: started
-    daemon_reload: true
-  when: jellyfin_backup_stop_service | bool
+    - name: Copy Jellyfin logs
+      ansible.builtin.command:
+        cmd: >
+          rsync -a "{{ jellyfin_log_dir }}/" "{{ jellyfin_backup_dir }}/logs/"
+      changed_when: true
+      when:
+        - jellyfin_backup_include_logs | bool
+        - jellyfin_backup_stats.results[4].stat.exists
+  always:
+    - name: Start Jellyfin service after backup
+      ansible.builtin.systemd:
+        name: "{{ jellyfin_service_name }}"
+        state: started
+        daemon_reload: true
+      # Restart only what this role stopped (or failed to stop); a service that
+      # was already stopped before the backup stays stopped.
+      when:
+        - jellyfin_backup_stop_service | bool
+        - jellyfin_backup_stop_result is defined
+        - jellyfin_backup_stop_result is changed or jellyfin_backup_stop_result is failed
 
 - name: Build Jellyfin backup manifest
   ansible.builtin.copy:

@@ -31,7 +31,7 @@ existing playbooks and legacy/manual workflows.
 |----------|---------|-------------|
 | `vaultwarden_backup_root` | `/opt/backups/vaultwarden` | Backup storage directory |
 | `vaultwarden_backup_prefix` | `manual` | Backup file prefix |
-| `vaultwarden_backup_stop_service` | `true` | Stop service during backup |
+| `vaultwarden_backup_stop_service` | `true` | Stop service during backup. The restart runs in an `always` section, so a failed copy still restarts it; a service that was already stopped stays stopped. |
 | `vaultwarden_backup_create_archive` | `true` | Create tar.gz archive |
 | `vaultwarden_backup_fetch_local` | `true` | Download backup to local machine |
 | `vaultwarden_backup_local_dir` | `~/backups/vaultwarden` | Local backup destination |

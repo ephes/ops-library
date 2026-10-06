@@ -85,6 +85,17 @@ role defaults. systemd unit templates (`*.service.j2`, `systemd_service*.j2`) mu
 files are world-readable and `systemctl show` prints `Environment=`. Use an `EnvironmentFile=`
 or a credentials file instead.
 
+## Backup service restart
+
+`just test-backup-service-restart` (part of `just test`) loads every
+`roles/*_backup/tasks/*.yml` file. Each `systemd`/`service` task with
+`state: stopped` must sit inside a `block` whose `always` section starts the
+same unit (the same `name`, or a loop over the stop task's registered results).
+Otherwise a failed copy or dump step would leave the service down. Static
+`import_tasks`/`include_tasks` files are checked where they are imported, and a
+`when: var == 'value'` item that contradicts the import's `vars` drops the task
+at that site (this is how `unifi_backup/tasks/services.yml` is checked).
+
 ## SSH forwarding identity fixtures
 
 `just test-ssh-forwarding-roles` runs the descriptor, ownership, recovery and race

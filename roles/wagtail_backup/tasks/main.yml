@@ -34,32 +34,40 @@
     - "{{ wagtail_backup_dir }}"
     - "{{ wagtail_backup_dir }}/database"
 
-- name: Stop Wagtail service for backup
-  ansible.builtin.systemd:
-    name: "{{ wagtail_backup_systemd_unit_name }}"
-    state: stopped
-  when: wagtail_backup_stop_service | bool
+- name: Dump the Wagtail database with the service stopped
+  block:
+    - name: Stop Wagtail service for backup
+      ansible.builtin.systemd:
+        name: "{{ wagtail_backup_systemd_unit_name }}"
+        state: stopped
+      register: wagtail_backup_stop_result
+      when: wagtail_backup_stop_service | bool
 
-- name: Dump PostgreSQL database
-  community.postgresql.postgresql_db:
-    name: "{{ wagtail_backup_postgres_database }}"
-    state: dump
-    target: "{{ wagtail_backup_db_dump }}"
-    target_opts: "{{ wagtail_backup_postgres_target_opts if (wagtail_backup_postgres_target_opts | default('') | length > 0) else omit }}"
-    login_host: "{{ wagtail_backup_postgres_host if (wagtail_backup_postgres_host | default('') | length > 0) else omit }}"
-    login_port: "{{ wagtail_backup_postgres_port if (wagtail_backup_postgres_port | default('') | length > 0) else omit }}"
-    login_user: "{{ wagtail_backup_postgres_user }}"
-    login_password: "{{ wagtail_backup_postgres_password if (wagtail_backup_postgres_password | default('') | length > 0) else omit }}"
-  become: true
-  become_user: "{{ wagtail_backup_postgres_become_user }}"
-  no_log: "{{ (wagtail_backup_postgres_password | default('') | length > 0) }}"
-
-- name: Start Wagtail service after backup
-  ansible.builtin.systemd:
-    name: "{{ wagtail_backup_systemd_unit_name }}"
-    state: started
-    daemon_reload: true
-  when: wagtail_backup_stop_service | bool
+    - name: Dump PostgreSQL database
+      community.postgresql.postgresql_db:
+        name: "{{ wagtail_backup_postgres_database }}"
+        state: dump
+        target: "{{ wagtail_backup_db_dump }}"
+        target_opts: "{{ wagtail_backup_postgres_target_opts if (wagtail_backup_postgres_target_opts | default('') | length > 0) else omit }}"
+        login_host: "{{ wagtail_backup_postgres_host if (wagtail_backup_postgres_host | default('') | length > 0) else omit }}"
+        login_port: "{{ wagtail_backup_postgres_port if (wagtail_backup_postgres_port | default('') | length > 0) else omit }}"
+        login_user: "{{ wagtail_backup_postgres_user }}"
+        login_password: "{{ wagtail_backup_postgres_password if (wagtail_backup_postgres_password | default('') | length > 0) else omit }}"
+      become: true
+      become_user: "{{ wagtail_backup_postgres_become_user }}"
+      no_log: "{{ (wagtail_backup_postgres_password | default('') | length > 0) }}"
+  always:
+    - name: Start Wagtail service after backup
+      ansible.builtin.systemd:
+        name: "{{ wagtail_backup_systemd_unit_name }}"
+        state: started
+        daemon_reload: true
+      # Restart only what this role stopped (or failed to stop); a service that
+      # was already stopped before the backup stays stopped.
+      when:
+        - wagtail_backup_stop_service | bool
+        - wagtail_backup_stop_result is defined
+        - wagtail_backup_stop_result is changed or wagtail_backup_stop_result is failed
 
 - name: Write backup manifest
   ansible.builtin.copy:
