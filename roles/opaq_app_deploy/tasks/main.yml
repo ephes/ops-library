@@ -1,0 +1,58 @@
+---
+- name: Validate configuration
+  ansible.builtin.assert:
+    that:
+      - opaq_app_secret_key | length >= 50
+      - opaq_app_secret_key is match('^[A-Za-z0-9_-]+$')
+      - opaq_app_upload_token_sha256 is match('^[0-9a-f]{64}$')
+      - opaq_app_source_path is match('^/')
+      - opaq_app_app_host == '127.0.0.1'
+      - opaq_app_app_port | int >= 1024
+      - not (opaq_app_traefik_enabled | bool) or opaq_app_traefik_host is match('^[a-z0-9.-]+$')
+      - not (opaq_app_traefik_enabled | bool) or opaq_app_allowed_networks | length > 0
+    fail_msg: >-
+      opaq_app_deploy needs a secret key (50+ of [A-Za-z0-9_-]), the upload token's
+      SHA-256 digest, an absolute daybook source path, a loopback port and, with
+      Traefik enabled, a host name and a non-empty allowlist.
+  no_log: true
+
+- name: Validate allowed networks
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item | local.ops_library.is_cidr
+    fail_msg: "opaq_app_allowed_networks entries must be CIDR ranges: {{ item }}"
+  loop: "{{ opaq_app_allowed_networks }}"
+
+- name: Setup user and directories
+  ansible.builtin.include_tasks: user.yml
+
+- name: Deploy source code
+  ansible.builtin.include_tasks: source.yml
+
+- name: Setup Python environment
+  ansible.builtin.include_tasks: python.yml
+
+- name: Configure Django
+  ansible.builtin.include_tasks: django.yml
+
+- name: Setup systemd service
+  ansible.builtin.include_tasks: service.yml
+
+- name: Configure Traefik
+  ansible.builtin.include_tasks: traefik.yml
+  when: opaq_app_traefik_enabled | bool
+
+- name: Apply pending handlers before the health check
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify the app answers on its loopback port
+  ansible.builtin.uri:
+    url: "http://{{ opaq_app_app_host }}:{{ opaq_app_app_port }}/healthz"
+    return_content: true
+    status_code: 200
+  register: opaq_app_healthcheck
+  retries: 20
+  delay: 3
+  until: opaq_app_healthcheck.status == 200 and opaq_app_healthcheck.content == 'ok'
+  when: not ansible_check_mode

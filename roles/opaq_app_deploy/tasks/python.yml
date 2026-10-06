@@ -1,0 +1,31 @@
+---
+- name: python | Ensure uv is installed
+  ansible.builtin.import_role:
+    name: uv_install
+  vars:
+    uv_install_dir: "{{ opaq_app_uv_path | dirname }}"
+
+# Only the app's dependency group: Django, gunicorn, WhiteNoise. daybook's own
+# modules come from the synced src/ via PYTHONPATH, so none of daybook's
+# desktop dependencies are installed on the server.
+- name: python | Install the locked opaq-app dependency group
+  ansible.builtin.command:
+    argv:
+      - "{{ opaq_app_uv_path }}"
+      - sync
+      - --frozen
+      - --only-group
+      - "{{ opaq_app_dependency_group }}"
+      - --no-install-project
+      - --python
+      - "{{ opaq_app_python_version }}"
+  args:
+    chdir: "{{ opaq_app_site_path }}"
+  environment:
+    UV_PROJECT_ENVIRONMENT: "{{ opaq_app_venv_path }}"
+    UV_PYTHON_INSTALL_DIR: "{{ opaq_app_home }}/python"
+  become: true
+  become_user: "{{ opaq_app_user }}"
+  register: opaq_app_uv_sync
+  changed_when: "'Installed' in opaq_app_uv_sync.stderr or 'Uninstalled' in opaq_app_uv_sync.stderr"
+  notify: restart opaq app

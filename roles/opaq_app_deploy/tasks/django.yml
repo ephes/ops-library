@@ -1,0 +1,35 @@
+---
+- name: django | Render the environment file
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ opaq_app_env_file }}"
+    owner: "{{ opaq_app_user }}"
+    group: "{{ opaq_app_group }}"
+    mode: "0600"
+  no_log: true
+  notify: restart opaq app
+
+- name: django | Run migrations and collect static files
+  ansible.builtin.shell: |
+    set -euo pipefail
+    set -a
+    . {{ opaq_app_env_file }}
+    set +a
+    {{ opaq_app_venv_bin }}/python manage.py migrate --noinput
+    {{ opaq_app_venv_bin }}/python manage.py collectstatic --noinput --clear
+  args:
+    chdir: "{{ opaq_app_app_dir }}"
+    executable: /bin/bash
+  become: true
+  become_user: "{{ opaq_app_user }}"
+  register: opaq_app_manage
+  changed_when: "'Applying ' in opaq_app_manage.stdout"
+  no_log: true
+  notify: restart opaq app
+
+- name: django | Restrict the database
+  ansible.builtin.file:
+    path: "{{ opaq_app_database_path }}"
+    owner: "{{ opaq_app_user }}"
+    group: "{{ opaq_app_group }}"
+    mode: "0600"

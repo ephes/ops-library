@@ -32,6 +32,7 @@ dns_metrics_endpoint
 tailscale_deploy
 homelab_deploy
 work_app_deploy
+opaq_app_deploy
 homeassistant_deploy
 otbr_deploy
 unifi_deploy

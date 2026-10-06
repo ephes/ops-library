@@ -1,0 +1,16 @@
+---
+- name: traefik | Ensure the Traefik dynamic directory exists
+  ansible.builtin.file:
+    path: "{{ opaq_app_traefik_config_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: traefik | Publish the route (tailnet allowlist, then the Django login)
+  ansible.builtin.template:
+    src: traefik.yml.j2
+    dest: "{{ opaq_app_traefik_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"

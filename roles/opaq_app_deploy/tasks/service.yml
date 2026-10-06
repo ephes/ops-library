@@ -1,0 +1,18 @@
+---
+- name: service | Render the systemd unit
+  ansible.builtin.template:
+    src: opaq-app.service.j2
+    dest: "{{ opaq_app_systemd_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart opaq app
+
+- name: service | Enable and start the service
+  ansible.builtin.systemd:
+    name: "{{ opaq_app_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true

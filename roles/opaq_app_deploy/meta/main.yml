@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  role_name: opaq_app_deploy
+  author: ops-library
+  description: Deploy the Opaq app (Django + SQLite) behind a Traefik allowlist and a Django login
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions: [jammy, noble]
+    - name: Debian
+      versions: [bookworm, trixie]
+  galaxy_tags: [django, deployment, traefik]
+dependencies: []

@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — Opaq app deployment (2.31.0)
+
+- New `opaq_app_deploy` deploys daybook's Opaq app, the company cash page,
+  as Django + SQLite + WhiteNoise under gunicorn on loopback. The route has a
+  Traefik `ipAllowList` on the HTTPS and HTTP routers, in front of the app's
+  own password login.
+  - The database lives outside the rsynced tree, so a sync can never remove
+    it.
+  - Only the `opaq-app` dependency group is installed; daybook's modules come
+    from the synced `src/`.
+  - The home, site, data and static directories are `0700`, and the env file
+    and database `0600`. The unit runs with `ProtectSystem=strict`, only
+    `data/` writable, no capabilities and `UMask=0077`.
+  - The role creates no user and stores no password. The server gets only the
+    upload token's SHA-256 digest.
+
 ## Unreleased — Secret file modes (2.30.2)
 
 Files rendered with passwords or keys are no longer world-readable. Rollout:

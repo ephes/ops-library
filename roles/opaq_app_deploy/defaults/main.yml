@@ -1,0 +1,59 @@
+---
+# Opaq app (daybook services/opaq_app): the company cash page behind a Django
+# login. Design: daybook docs/specs/2026-10-06-opaq-app.md.
+
+# Local path to the daybook checkout (required)
+opaq_app_source_path: ""
+
+# Required secrets (from SOPS in the playbook)
+opaq_app_secret_key: ""
+# SHA-256 hex digest of the upload token; the token itself never reaches the host.
+opaq_app_upload_token_sha256: ""
+
+# Identity and paths. The database lives outside the synced site, so no rsync
+# --delete can ever touch it.
+opaq_app_user: opaq-app
+opaq_app_group: "{{ opaq_app_user }}"
+opaq_app_home: "/home/{{ opaq_app_user }}"
+opaq_app_site_path: "{{ opaq_app_home }}/site"
+opaq_app_data_path: "{{ opaq_app_home }}/data"
+opaq_app_database_path: "{{ opaq_app_data_path }}/db.sqlite3"
+opaq_app_static_root: "{{ opaq_app_home }}/static"
+opaq_app_env_file: "{{ opaq_app_home }}/opaq-app.env"
+opaq_app_venv_path: "{{ opaq_app_home }}/venv"
+opaq_app_venv_bin: "{{ opaq_app_venv_path }}/bin"
+opaq_app_app_dir: "{{ opaq_app_site_path }}/services/opaq_app"
+
+# What is shipped from the daybook checkout
+opaq_app_source_dirs:
+  - src
+  - services/opaq_app
+opaq_app_source_files:
+  - pyproject.toml
+  - uv.lock
+opaq_app_rsync_excludes:
+  - __pycache__
+  - "*.pyc"
+  - .pytest_cache
+  - "*.sqlite3"
+  - "*.sqlite3-*"
+  - staticfiles
+  - .env
+
+# Runtime
+opaq_app_app_host: "127.0.0.1"
+opaq_app_app_port: 10065
+opaq_app_workers: 2
+opaq_app_uv_path: /usr/local/bin/uv
+opaq_app_python_version: "3.14"
+opaq_app_dependency_group: opaq-app
+opaq_app_service_name: opaq-app
+opaq_app_systemd_unit_path: "/etc/systemd/system/{{ opaq_app_service_name }}.service"
+
+# Ingress: tailnet allowlist in front of the Django login
+opaq_app_traefik_enabled: true
+opaq_app_traefik_host: ""
+opaq_app_traefik_config_path: /etc/traefik/dynamic/opaq-app.yml
+opaq_app_traefik_entrypoint: web-secure
+opaq_app_traefik_http_entrypoint: web
+opaq_app_allowed_networks: []

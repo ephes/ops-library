@@ -1,0 +1,28 @@
+---
+- name: user | Ensure group exists
+  ansible.builtin.group:
+    name: "{{ opaq_app_group }}"
+    system: true
+
+- name: user | Ensure user exists
+  ansible.builtin.user:
+    name: "{{ opaq_app_user }}"
+    group: "{{ opaq_app_group }}"
+    home: "{{ opaq_app_home }}"
+    shell: /usr/sbin/nologin
+    create_home: true
+    system: true
+
+# Real figures live here: nothing is readable by others.
+- name: user | Create private directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ opaq_app_user }}"
+    group: "{{ opaq_app_group }}"
+    mode: "0700"
+  loop:
+    - "{{ opaq_app_home }}"
+    - "{{ opaq_app_site_path }}"
+    - "{{ opaq_app_data_path }}"
+    - "{{ opaq_app_static_root }}"

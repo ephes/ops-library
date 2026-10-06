@@ -1,0 +1,10 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart opaq app
+  ansible.builtin.systemd:
+    name: "{{ opaq_app_service_name }}"
+    state: restarted
+    daemon_reload: true

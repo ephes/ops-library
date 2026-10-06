@@ -1,0 +1,55 @@
+---
+- name: source | Inspect required source paths
+  ansible.builtin.stat:
+    path: "{{ opaq_app_source_path }}/{{ item }}"
+  register: opaq_app_source_stats
+  delegate_to: localhost
+  become: false
+  loop: "{{ opaq_app_source_dirs + opaq_app_source_files + ['services/opaq_app/manage.py', 'src/daybook/opaq_site.py'] }}"
+
+- name: source | Require the daybook paths the app needs
+  ansible.builtin.assert:
+    that: item.stat.exists
+    fail_msg: "Missing in the daybook checkout: {{ item.item }}"
+  loop: "{{ opaq_app_source_stats.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: source | Ensure parent directories of synced trees exist
+  ansible.builtin.file:
+    path: "{{ opaq_app_site_path }}/{{ item | dirname }}"
+    state: directory
+    owner: "{{ opaq_app_user }}"
+    group: "{{ opaq_app_group }}"
+    mode: "0700"
+  loop: "{{ opaq_app_source_dirs }}"
+  when: item | dirname | length > 0
+
+- name: source | Sync application directories
+  ansible.posix.synchronize:
+    src: "{{ opaq_app_source_path }}/{{ item }}/"
+    dest: "{{ opaq_app_site_path }}/{{ item }}/"
+    delete: true
+    rsync_opts: "{{ opaq_app_rsync_excludes | map('regex_replace', '^', '--exclude=') | list }}"
+  become: false
+  delegate_to: localhost
+  loop: "{{ opaq_app_source_dirs }}"
+  notify: restart opaq app
+
+- name: source | Copy project files
+  ansible.builtin.copy:
+    src: "{{ opaq_app_source_path }}/{{ item }}"
+    dest: "{{ opaq_app_site_path }}/{{ item }}"
+    owner: "{{ opaq_app_user }}"
+    group: "{{ opaq_app_group }}"
+    mode: "0600"
+  loop: "{{ opaq_app_source_files }}"
+  notify: restart opaq app
+
+- name: source | Own and privatize the synced tree
+  ansible.builtin.file:
+    path: "{{ opaq_app_site_path }}"
+    owner: "{{ opaq_app_user }}"
+    group: "{{ opaq_app_group }}"
+    mode: "u+rwX,go-rwx"
+    recurse: true
