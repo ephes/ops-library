@@ -44,3 +44,21 @@
     - static_site_traefik_enabled | bool
     - static_site_verify_public | bool
     - static_site_healthcheck_contains | length > 0
+
+- name: verify | Find published entries readable by others
+  ansible.builtin.command:
+    argv: [find, "{{ static_site_path }}", -perm, /o=rwx]
+  register: static_site_world_accessible
+  changed_when: false
+  when:
+    - not ansible_check_mode
+    - static_site_private | bool
+
+- name: verify | Require private publication modes
+  ansible.builtin.assert:
+    that:
+      - static_site_world_accessible.stdout_lines | length == 0
+    fail_msg: "Private static site has entries accessible to others: {{ static_site_world_accessible.stdout_lines }}"
+  when:
+    - not ansible_check_mode
+    - static_site_private | bool

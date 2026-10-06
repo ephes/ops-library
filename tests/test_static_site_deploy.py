@@ -1,3 +1,4 @@
+import json
 import runpy
 import unittest
 from functools import partial
@@ -7,7 +8,8 @@ from threading import Thread
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from jinja2 import Template
+import yaml
+from jinja2 import Environment, Template
 
 ROOT = Path(__file__).resolve().parents[1]
 ROLE = ROOT / "roles/static_site_deploy"
@@ -113,7 +115,10 @@ class StaticSiteDeployContractTests(unittest.TestCase):
         self.assertIn("group: false", sync_task)
         self.assertIn('delete: "{{ static_site_rsync_delete | bool }}"', sync_task)
         self.assertIn('rsync_path: "sudo -n rsync"', sync_task)
-        self.assertIn('"--chmod=D0755,F0644"', sync_task)
+        self.assertIn(
+            "\"--chmod={{ 'D0750,F0640' if static_site_private | bool else 'D0755,F0644' }}\"",
+            sync_task,
+        )
 
     def test_content_ownership_task_declares_directory_state(self) -> None:
         content = (ROLE / "tasks/content.yml").read_text()
@@ -163,6 +168,108 @@ class StaticSiteDeployContractTests(unittest.TestCase):
             "static_site_traefik_http_entrypoint not in static_site_traefik_entrypoints",
             validation,
         )
+
+
+def _render_route(**overrides) -> dict:
+    environment = Environment()
+    environment.filters["to_json"] = json.dumps
+    template = environment.from_string(
+        (ROLE / "templates/static-site.traefik.yml.j2").read_text()
+    )
+    values = {
+        "static_site_service_name": "opaq",
+        "static_site_host": "opaq.home.example.test",
+        "static_site_traefik_entrypoints": ["web-secure"],
+        "static_site_traefik_http_entrypoint": "web",
+        "static_site_traefik_cert_resolver": "",
+        "static_site_bind_host": "127.0.0.1",
+        "static_site_port": 10064,
+        "static_site_traefik_allowed_networks": [],
+    }
+    values.update(overrides)
+    return yaml.safe_load(template.render(**values))
+
+
+class StaticSitePrivateAccessTests(unittest.TestCase):
+    NETWORKS = ["100.64.0.0/10", "fd7a:115c:a1e0::/48"]
+
+    def test_default_route_has_no_allowlist(self) -> None:
+        http = _render_route()["http"]
+
+        self.assertNotIn("opaq-allowlist", http["middlewares"])
+        self.assertEqual(
+            http["routers"]["opaq-secure"]["middlewares"],
+            ["opaq-headers", "opaq-compress"],
+        )
+        self.assertEqual(http["routers"]["opaq-http"]["middlewares"], ["opaq-redirect"])
+
+    def test_allowlist_guards_both_routers_first(self) -> None:
+        http = _render_route(static_site_traefik_allowed_networks=self.NETWORKS)["http"]
+
+        self.assertEqual(
+            http["middlewares"]["opaq-allowlist"],
+            {"ipAllowList": {"sourceRange": self.NETWORKS}},
+        )
+        self.assertEqual(
+            http["routers"]["opaq-secure"]["middlewares"][0], "opaq-allowlist"
+        )
+        # A refused source must get 403, not a redirect to the HTTPS router.
+        self.assertEqual(
+            http["routers"]["opaq-http"]["middlewares"], ["opaq-allowlist", "opaq-redirect"]
+        )
+
+    def test_private_defaults_keep_existing_behaviour(self) -> None:
+        defaults = yaml.safe_load((ROLE / "defaults/main.yml").read_text())
+
+        self.assertIs(defaults["static_site_private"], False)
+        self.assertEqual(defaults["static_site_traefik_allowed_networks"], [])
+
+    def test_private_document_root_and_verification(self) -> None:
+        user = (ROLE / "tasks/user.yml").read_text()
+        verification = (ROLE / "tasks/verify.yml").read_text()
+
+        self.assertIn("mode: \"{{ '0750' if static_site_private | bool else '0755' }}\"", user)
+        start = verification.index("- name: verify | Find published entries readable by others")
+        private_checks = verification[start:]
+        self.assertIn("argv: [find, \"{{ static_site_path }}\", -perm, /o=rwx]", private_checks)
+        self.assertEqual(private_checks.count("static_site_private | bool"), 2)
+        self.assertEqual(private_checks.count("not ansible_check_mode"), 2)
+        self.assertIn("stdout_lines | length == 0", private_checks)
+
+    def test_allowed_networks_are_validated_as_cidr_list(self) -> None:
+        validation = (ROLE / "tasks/validate.yml").read_text()
+
+        self.assertIn("static_site_traefik_allowed_networks is sequence", validation)
+        self.assertIn("static_site_traefik_allowed_networks is not string", validation)
+        self.assertIn("static_site_private is boolean", validation)
+        self.assertIn("Validate allowed source networks", validation)
+
+    def test_allowed_networks_are_parsed_as_real_networks(self) -> None:
+        tasks = yaml.safe_load((ROLE / "tasks/validate.yml").read_text())
+        task = next(t for t in tasks if t["name"] == "validate | Validate allowed source networks")
+        self.assertIn("item | local.ops_library.is_cidr", task["ansible.builtin.assert"]["that"])
+
+        namespace = runpy.run_path(str(ROOT / "plugins/filter/network.py"))
+        is_cidr = namespace["FilterModule"]().filters()["is_cidr"]
+        for good in ("100.64.0.0/10", "fd7a:115c:a1e0::/48", "192.168.178.94/32", "::1/128"):
+            self.assertTrue(is_cidr(good), good)
+        for bad in (
+            "999.999.999.999/99",
+            "100.64.0.0/33",
+            "fd7a:115c:a1e0::/129",
+            "abcd/48",
+            "100.64.0.1/10",  # host bits under the prefix
+            "10.0.0.0/255.0.0.0",  # netmask: Go's ParseCIDR refuses it
+            "fe80::%eth0/64",  # scoped IPv6: Go's ParseCIDR refuses it
+            "10.0.0.0/٨",  # non-ASCII digit
+            "100.64.0.0",
+            " 100.64.0.0/10",
+            "fd7a::/48\n10.0.0.0/8",
+            "",
+            None,
+            ["100.64.0.0/10"],
+        ):
+            self.assertFalse(is_cidr(bad), repr(bad))
 
 
 if __name__ == "__main__":

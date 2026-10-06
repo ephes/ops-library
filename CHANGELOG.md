@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased — private static sites (2.30.0)
+
+- `static_site_deploy` can publish private content. `static_site_private: true`
+  syncs directories `0750` and files `0640` (root, service group) instead of
+  world-readable `0755`/`0644`, creates the document root `0750`, and fails the
+  run when anything under it is still accessible to others — on the first
+  deploy and on every refresh. `static_site_traefik_allowed_networks` adds an
+  `ipAllowList` to both the HTTPS and the HTTP-redirect router; where the
+  Traefik entrypoint itself redirects HTTP to HTTPS (the macmini), that
+  content-free redirect comes first and HTTPS enforces the list. Entries must
+  pass the new `is_cidr` filter (strict `ipaddress` parsing, decimal prefix,
+  unscoped address — what Traefik's Go parser accepts). Both default to today's
+  behaviour; the benchmarks site renders and syncs exactly as before. First
+  user: the private Opaq cash page on the macmini, tailnet only.
+
 ## Unreleased — Homelab backup/restore/remove safety fixes (2.29.1)
 
 The homelab lifecycle roles get the fixes the review forced into their

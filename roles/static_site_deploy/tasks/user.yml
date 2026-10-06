@@ -31,4 +31,4 @@
     state: directory
     owner: root
     group: "{{ static_site_group }}"
-    mode: "0755"
+    mode: "{{ '0750' if static_site_private | bool else '0755' }}"

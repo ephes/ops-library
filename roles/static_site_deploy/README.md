@@ -47,6 +47,26 @@ limited to 128 tasks and 256 MiB of memory. Public verification uses normal
 certificate validation. Shared parent directories remain owned by root:root;
 only the document root uses the service group.
 
+## Private sites
+
+For content that must not be world-readable — for example private figures served
+only to a tailnet — set both:
+
+```yaml
+static_site_private: true
+static_site_traefik_allowed_networks:
+  - 100.64.0.0/10
+  - fd7a:115c:a1e0::/48
+```
+
+The allowlist is attached to the HTTP router too, so a refused source gets 403
+rather than a redirect — unless the Traefik `web` entrypoint already redirects
+all HTTP to HTTPS (as on the macmini). That entrypoint-wide redirect answers
+before any router, for every source, with a content-free redirect to the same
+host; the HTTPS router then enforces the allowlist. Entries are validated with
+`local.ops_library.is_cidr` (strict `ipaddress` parsing). Public verification
+has to run from an allowed address.
+
 ## Variables
 
 | Variable | Default | Description |
@@ -58,6 +78,8 @@ only the document root uses the service group.
 | `static_site_path` | `/srv/static-sites/<service>` | Remote document root. |
 | `static_site_required_files` | `index.html`, `report.md`, `snapshot.json` | Regular files required before sync. |
 | `static_site_restrict_to_required_files` | `false` | Reject nested directories or files outside the required-file allowlist. |
+| `static_site_private` | `false` | Publish directories `0750` and files `0640` (root, service group) instead of `0755`/`0644`, and verify after every run that nothing is accessible to others. |
+| `static_site_traefik_allowed_networks` | `[]` | CIDR ranges allowed by an `ipAllowList` on both the HTTPS and the HTTP-redirect router; empty leaves the routes open as before. |
 | `static_site_rsync_delete` | `true` | Remove remote content absent from the selected source. |
 | `static_site_python_path` | `/usr/bin/python3` | Target Python interpreter. |
 | `static_site_server_path` | `/usr/local/libexec/<service>-httpd.py` | Managed static server. |

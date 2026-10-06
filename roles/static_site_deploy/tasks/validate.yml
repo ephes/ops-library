@@ -29,6 +29,9 @@
       - not (static_site_traefik_enabled | bool) or static_site_traefik_http_entrypoint is match('^[A-Za-z0-9_.-]+\Z')
       - not (static_site_traefik_enabled | bool) or static_site_traefik_http_entrypoint not in static_site_traefik_entrypoints
       - not (static_site_traefik_enabled | bool) or static_site_traefik_config_path is match('^/[A-Za-z0-9_./-]+[.]ya?ml\Z')
+      - static_site_private is boolean
+      - static_site_traefik_allowed_networks is sequence
+      - static_site_traefik_allowed_networks is not string
       - static_site_public_healthcheck_retries | int > 0
       - static_site_public_healthcheck_delay | int >= 0
     fail_msg: >-
@@ -43,6 +46,15 @@
       - item is match('^[A-Za-z0-9_.-]+\Z')
     fail_msg: "Unsafe static_site_required_files entry: {{ item }}"
   loop: "{{ static_site_required_files }}"
+
+- name: validate | Validate allowed source networks
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item | local.ops_library.is_cidr
+    fail_msg: "static_site_traefik_allowed_networks entries must be CIDR ranges: {{ item }}"
+  loop: "{{ static_site_traefik_allowed_networks }}"
+  when: static_site_traefik_enabled | bool
 
 - name: validate | Validate HTTPS entrypoint names
   ansible.builtin.assert:
