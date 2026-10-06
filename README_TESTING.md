@@ -20,13 +20,15 @@ just molecule-test fastdeploy_register_service
 ## What `just test` Covers
 
 - role test harness (`just test-roles`)
+- no_log check for credential-carrying tasks (`just test-secret-no-log`)
 - non-failing lint summary (`just lint`)
 - strict Sphinx build (`just docs-build`)
 - docs consistency checks (`just docs-lint`)
 
 `just validate-strict` uses `just lint-strict` in the same sequence. `just lint-strict` fails on any
 `ansible-lint` finding not listed in the reviewed baseline `.ansible-lint-ignore`; see
-"Strict lint baseline" in `TESTING.md`.
+"Strict lint baseline" in `TESTING.md`. It also runs `just test-secret-no-log`, which fails when a
+task sends a bearer token or password over HTTP without `no_log: true` (see "Credentials and no_log").
 
 ## Molecule Quick Start
 

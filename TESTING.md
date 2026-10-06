@@ -41,6 +41,28 @@ just molecule-test unifi_restore
 `just validate-strict` swaps in `just lint-strict` for the same sequence.
 Use `just lint` only as a quick summary helper. It intentionally does not fail the run.
 
+## Credentials and no_log
+
+`just test` and `just lint-strict` run `just test-secret-no-log`, a static check
+(`scripts/check_secret_no_log.py`) over every YAML file under `roles/` except Molecule scenarios.
+It fails when a task sends a credential without `no_log: true`:
+
+- a `uri` task with an `Authorization`, token, API-key, secret, password or cookie header, a header
+  value or URL that renders a secret-named variable, `url_password`, or a `body`/`src` that renders a
+  secret-named variable (`*password*`, `*secret*`, `*token*`, `*api_key*`, `*private_key*`,
+  `*access_key*`; names ending in `_file`, `_path`, `_hash`, `_dir` or `_name` do not count);
+- a `command`/`shell`/`raw` task whose command line has an `Authorization:` header or a `Bearer` token.
+
+The check also reads `action:`/`local_action:` forms (including `k=v` arguments and a nested `args`) and
+task-level `args:`; a `uri` task whose arguments come from a bare `{{ template }}` counts as
+credential-carrying, and free-form `k=v` arguments count when they mention any credential-like word. It accepts Ansible tags such as
+`!vault`, and fails on any file it cannot parse rather than skipping it.
+`no_log: true` may come from the task or an enclosing block or play. A templated `no_log` does not
+count. `ansible-playbook -vvv` prints every module argument, headers included, so `failed_when:
+false` alone does not keep a token private. To keep failures debuggable, add a separate task that
+prints only `status` and `json` (the server's response body) of the registered result. Do not print
+`msg`: for a malformed header value it quotes the header, token included.
+
 ## Strict lint baseline
 
 `just lint-strict` runs `ansible-lint roles/` and exits non-zero on any finding that is not

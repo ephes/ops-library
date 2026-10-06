@@ -91,6 +91,7 @@ roles/servicename_deploy/
 
 - **Public Repository**: Review all changes for sensitive information
 - **Variable Validation**: All secrets must be validated with assert tasks
+- **No secrets in logs**: Tasks that send a token or password (`uri` auth headers, `url_password`, `curl -H Authorization`) need `no_log: true`; report failures with a separate task that prints only `status`/`json` (never `msg`, which can quote request headers). `just test` and `just lint-strict` enforce this.
 - **Documentation First**: Update role README before implementation
 - **Test Coverage**: Add tests for new functionality
 - **Semantic Versioning**: Update galaxy.yml version appropriately

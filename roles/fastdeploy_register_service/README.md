@@ -116,6 +116,8 @@ Notes:
   mapping value can be either a string key path or an object with `path` and optional `default`.
 - `fd_ops_control_local_path` is required when `fd_ops_control_method == "rsync"`.
 - If `fd_api_token` is empty, the service sync call is skipped.
+- The sync call runs with `no_log: true` because it carries `fd_api_token`; a failed sync does not fail
+  the play and is reported by a separate task that prints only the HTTP status and response body.
 
 ## Example
 
