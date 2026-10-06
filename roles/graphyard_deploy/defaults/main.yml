@@ -21,6 +21,7 @@ graphyard_source_path: ""  # REQUIRED when graphyard_deploy_method=rsync
 graphyard_git_repo: "https://github.com/ephes/graphyard.git"
 graphyard_git_version: "main"
 graphyard_rsync_excludes:
+  - ".vault_password"  # Ansible Vault passwords in legacy deploy/ dirs; never ship them
   - ".git/"
   - ".venv/"
   - ".dev/"

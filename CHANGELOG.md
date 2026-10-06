@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — Never rsync Ansible Vault passwords (2.26.3)
+
+- Every role that rsyncs a project tree now excludes `.vault_password` by
+  default: `wagtail_deploy`, `takahe` (`takahe_rsync_excludes`), `marina_deploy`,
+  `heis_deploy`, `nyxmon_deploy` (both lists), `graphyard_deploy`,
+  `logyard_deploy`, `opsgate_deploy`, `mailgun_relay_deploy`, `voxhelm_deploy`
+  (`voxhelm_sync_excludes`) and `fastdeploy_deploy`. Project checkouts still
+  carried gitignored `deploy/.vault_password` files from their pre-ops-control
+  Ansible flows, and rsync shipped them as world-readable files (mode 644)
+  into the service's site directory, next to the vault-encrypted
+  `deploy/secrets*.yml` they unlock.
+
 ## Unreleased — Python 3.14.8 and tool pin refresh (2.26.2)
 
 - `homeassistant_deploy`, `wagtail_deploy`, `voxhelm_deploy` and

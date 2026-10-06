@@ -22,6 +22,7 @@ wagtail_source_path: ""
 wagtail_rsync_delete: true
 wagtail_rsync_excludes_extra: []
 wagtail_rsync_excludes:
+  - ".vault_password"  # Ansible Vault passwords in legacy deploy/ dirs; never ship them
   - "{{ wagtail_project_slug }}/media"
   - ".env"
   - "/staticfiles"

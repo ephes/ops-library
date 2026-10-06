@@ -16,6 +16,7 @@ takahe_git_repo: ""
 takahe_git_ref: main
 takahe_git_dest: "{{ takahe_site_path }}"
 takahe_rsync_excludes:
+  - ".vault_password"  # Ansible Vault passwords in legacy deploy/ dirs; never ship them
   - ".git"
   - ".venv"
   - "__pycache__"

@@ -114,6 +114,7 @@ fastdeploy_internal_ip_ranges:
 
 # rsync options for deployment
 fastdeploy_rsync_excludes:
+  - ".vault_password"  # Ansible Vault passwords in legacy deploy/ dirs; never ship them
   - ".git"
   - "__pycache__"
   - "*.pyc"

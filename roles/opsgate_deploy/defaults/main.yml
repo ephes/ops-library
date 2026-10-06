@@ -51,6 +51,7 @@ opsgate_db_path: "{{ opsgate_state_dir }}/opsgate.sqlite3"
 opsgate_source_path: ""
 opsgate_uv_bin: "uv"
 opsgate_rsync_excludes:
+  - ".vault_password"  # Ansible Vault passwords in legacy deploy/ dirs; never ship them
   - ".git"
   - ".venv"
   - ".pytest_cache"

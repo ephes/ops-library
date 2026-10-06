@@ -25,6 +25,7 @@ mailgun_relay_source_path: ""  # REQUIRED when method=rsync
 mailgun_relay_git_repo: "https://github.com/ephes/mailgun-relay.git"
 mailgun_relay_git_version: "main"
 mailgun_relay_rsync_excludes:
+  - ".vault_password"  # Ansible Vault passwords in legacy deploy/ dirs; never ship them
   - ".git/"
   - ".venv/"
   - "__pycache__/"

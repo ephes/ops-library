@@ -67,6 +67,7 @@ heis_traefik_canonical_redirect_replacement: ""
 
 # Rsync
 heis_rsync_excludes:
+  - ".vault_password"  # Ansible Vault passwords in legacy deploy/ dirs; never ship them
   - "db.sqlite3"
   - "db.sqlite3-wal"
   - "db.sqlite3-shm"

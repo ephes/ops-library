@@ -3,6 +3,7 @@ voxhelm_service_name: "voxhelm"
 
 voxhelm_source_path: ""
 voxhelm_sync_excludes:
+  - ".vault_password"  # Ansible Vault passwords in legacy deploy/ dirs; never ship them
   - ".git"
   - ".venv"
   - ".pytest_cache"

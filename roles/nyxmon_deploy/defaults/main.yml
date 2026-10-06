@@ -111,6 +111,7 @@ nyxmon_service_restart_on_change: true
 # Persistent runtime data (database, sidecars, media, generated static files,
 # the rendered environment file) must survive `rsync --delete`.
 nyxmon_rsync_excludes:
+  - ".vault_password"  # Ansible Vault passwords in legacy deploy/ dirs; never ship them
   - ".git"
   - ".venv"
   - "__pycache__"
@@ -131,6 +132,7 @@ nyxmon_rsync_excludes:
   - "*.sqlite3"
 # Additional excludes applied only to the Django source sync
 nyxmon_rsync_django_excludes:
+  - ".vault_password"  # Ansible Vault passwords in legacy deploy/ dirs; never ship them
   - "src/"
   - "media/"
   - "staticfiles/"

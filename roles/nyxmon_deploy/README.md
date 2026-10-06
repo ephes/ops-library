@@ -143,7 +143,7 @@ source sync is what has to be careful about it:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `nyxmon_rsync_excludes` | database, sidecars, `.env`, caches, VCS dirs | Never copied or deleted by the source sync. |
+| `nyxmon_rsync_excludes` | database, sidecars, `.env`, `.vault_password`, caches, VCS dirs | Never copied or deleted by the source sync. |
 | `nyxmon_rsync_django_excludes` | `src/`, `media/`, `staticfiles/` | Additional excludes for the Django sync only. |
 
 > Relocating the database onto a dedicated persistent path (e.g. `/var/lib/nyxmon`)

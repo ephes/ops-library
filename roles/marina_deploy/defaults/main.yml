@@ -49,6 +49,7 @@ marina_traefik_config_path: "{{ marina_traefik_config_dir }}/{{ marina_user }}.t
 
 # Rsync
 marina_rsync_excludes:
+  - ".vault_password"  # Ansible Vault passwords in legacy deploy/ dirs; never ship them
   - "db.sqlite3"
   - "db.sqlite3-wal"
   - "db.sqlite3-shm"
