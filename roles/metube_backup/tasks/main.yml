@@ -58,64 +58,72 @@
   loop: "{{ metube_backup_stats.results }}"
   when: item.item.mandatory | default(false)
 
-- name: Stop metube service for consistent backup
-  ansible.builtin.systemd:
-    name: "{{ metube_service_name }}"
-    state: stopped
-  when: metube_backup_stop_service | bool
+- name: Copy metube data with the service stopped
+  block:
+    - name: Stop metube service for consistent backup
+      ansible.builtin.systemd:
+        name: "{{ metube_service_name }}"
+        state: stopped
+      register: metube_backup_stop_result
+      when: metube_backup_stop_service | bool
 
-- name: Sync metube state directory
-  ansible.builtin.command:
-    cmd: >
-      rsync -a{{ ' --delete' if metube_backup_use_delete else '' }}
-      "{{ metube_state_dir }}/" "{{ metube_backup_dir }}/state/"
-  changed_when: true
-  when:
-    - metube_backup_include_state | bool
-    - metube_backup_stats.results[0].stat.exists
+    - name: Sync metube state directory
+      ansible.builtin.command:
+        cmd: >
+          rsync -a{{ ' --delete' if metube_backup_use_delete else '' }}
+          "{{ metube_state_dir }}/" "{{ metube_backup_dir }}/state/"
+      changed_when: true
+      when:
+        - metube_backup_include_state | bool
+        - metube_backup_stats.results[0].stat.exists
 
-- name: Copy metube env file
-  ansible.builtin.copy:
-    src: "{{ metube_env_file }}"
-    dest: "{{ metube_backup_dir }}/config/{{ metube_env_file | basename }}"
-    owner: "{{ metube_backup_owner }}"
-    group: "{{ metube_backup_group }}"
-    mode: "{{ metube_backup_file_mode }}"
-    remote_src: true
-  when:
-    - metube_backup_include_config | bool
-    - metube_backup_stats.results[1].stat.exists
+    - name: Copy metube env file
+      ansible.builtin.copy:
+        src: "{{ metube_env_file }}"
+        dest: "{{ metube_backup_dir }}/config/{{ metube_env_file | basename }}"
+        owner: "{{ metube_backup_owner }}"
+        group: "{{ metube_backup_group }}"
+        mode: "{{ metube_backup_file_mode }}"
+        remote_src: true
+      when:
+        - metube_backup_include_config | bool
+        - metube_backup_stats.results[1].stat.exists
 
-- name: Copy metube systemd unit
-  ansible.builtin.copy:
-    src: "{{ metube_service_unit }}"
-    dest: "{{ metube_backup_dir }}/systemd/{{ metube_service_unit | basename }}"
-    owner: "{{ metube_backup_owner }}"
-    group: "{{ metube_backup_group }}"
-    mode: "{{ metube_backup_file_mode }}"
-    remote_src: true
-  when:
-    - metube_backup_include_systemd | bool
-    - metube_backup_stats.results[2].stat.exists
+    - name: Copy metube systemd unit
+      ansible.builtin.copy:
+        src: "{{ metube_service_unit }}"
+        dest: "{{ metube_backup_dir }}/systemd/{{ metube_service_unit | basename }}"
+        owner: "{{ metube_backup_owner }}"
+        group: "{{ metube_backup_group }}"
+        mode: "{{ metube_backup_file_mode }}"
+        remote_src: true
+      when:
+        - metube_backup_include_systemd | bool
+        - metube_backup_stats.results[2].stat.exists
 
-- name: Copy Traefik dynamic config
-  ansible.builtin.copy:
-    src: "{{ metube_traefik_config_path }}"
-    dest: "{{ metube_backup_dir }}/traefik/{{ metube_traefik_config_path | basename }}"
-    owner: "{{ metube_backup_owner }}"
-    group: "{{ metube_backup_group }}"
-    mode: "{{ metube_backup_file_mode }}"
-    remote_src: true
-  when:
-    - metube_backup_include_traefik | bool
-    - metube_backup_stats.results[3].stat.exists
-
-- name: Start metube service after backup
-  ansible.builtin.systemd:
-    name: "{{ metube_service_name }}"
-    state: started
-    daemon_reload: true
-  when: metube_backup_stop_service | bool
+    - name: Copy Traefik dynamic config
+      ansible.builtin.copy:
+        src: "{{ metube_traefik_config_path }}"
+        dest: "{{ metube_backup_dir }}/traefik/{{ metube_traefik_config_path | basename }}"
+        owner: "{{ metube_backup_owner }}"
+        group: "{{ metube_backup_group }}"
+        mode: "{{ metube_backup_file_mode }}"
+        remote_src: true
+      when:
+        - metube_backup_include_traefik | bool
+        - metube_backup_stats.results[3].stat.exists
+  always:
+    - name: Start metube service after backup
+      ansible.builtin.systemd:
+        name: "{{ metube_service_name }}"
+        state: started
+        daemon_reload: true
+      # Restart only what this role stopped (or failed to stop); a service that
+      # was already stopped before the backup stays stopped.
+      when:
+        - metube_backup_stop_service | bool
+        - metube_backup_stop_result is defined
+        - metube_backup_stop_result is changed or metube_backup_stop_result is failed
 
 - name: Build metube backup manifest
   ansible.builtin.copy:

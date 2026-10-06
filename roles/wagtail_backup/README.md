@@ -4,7 +4,7 @@ Create database-only backups for Wagtail services with optional archive and fetc
 
 ## Description
 
-This role snapshots the PostgreSQL database for a Wagtail service into a timestamped backup directory under `/opt/backups/<service>`. It writes a manifest, optionally creates a tar archive, and can fetch the archive to the control machine. By default it does not stop the systemd service.
+This role snapshots the PostgreSQL database for a Wagtail service into a timestamped backup directory under `/opt/backups/<service>`. It writes a manifest, optionally creates a tar archive, and can fetch the archive to the control machine. By default it does not stop the systemd service. With `wagtail_backup_stop_service: true` the restart runs in an `always` section, so a failed dump still restarts the service (unless it was already stopped before the backup).
 
 ## Requirements
 

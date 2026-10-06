@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased — Backups restart stopped services on failure (2.31.3)
+
+A failed copy or dump step no longer leaves the service stopped. Rollout:
+install this collection version in ops-control; the next backup run uses it. No
+service needs a redeploy.
+
+- `vaultwarden_backup`, `jellyfin_backup`, `navidrome_backup`,
+  `metube_backup`, `takahe_backup`, `wagtail_backup` and `snappymail_backup`
+  stop the service and copy the data inside one `block`; the restart is in its
+  `always` section. Before, the restart was a later plain task, so an rsync,
+  sqlite `.backup`, `pg_dump` or full-disk error aborted the play with the
+  service down (Vaultwarden, Jellyfin, Navidrome, MeTube and Takahe stop by
+  default). The play still fails, and the manifest, archive, fetch and
+  retention steps still run only after a successful copy.
+- These roles now restart only what they stopped: the stop result is
+  registered, and a unit that was already inactive before the backup stays
+  stopped instead of being started by the backup. A unit whose stop failed is
+  still started.
+- `mastodon_backup`: the service stop moves into the existing payload block, so
+  the `always` restart also covers it.
+- New static test `tests/test_backup_service_restart.py`
+  (`just test-backup-service-restart`, part of `just test`): every backup task
+  with `state: stopped` must sit in a `block` whose `always` starts the same
+  unit.
+
 ## Unreleased — Failed mail dumps fail the backup (2.31.2)
 
 - `mail_backup`: `pg_dump | gzip` ran without `pipefail`, so a failed dump

@@ -19,4 +19,5 @@ operator workflow and should not be treated as an auto-removal candidate.
 ## Notes
 
 - Fails if the data directory is missing.
+- With `snappymail_backup_stop_services: true`, nginx and PHP-FPM are stopped while the archive is written and restarted in an `always` section, so a failed archive step still restarts them. Units that were already stopped stay stopped.
 - Produces an archive named `<prefix>-<timestamp>.<ext>` under `snappymail_backup_root`.

@@ -27,7 +27,7 @@ Creates on-host Navidrome backups (data, config, systemd unit, Traefik config, o
 | `navidrome_backup_prefix` | `manual` | Prefix for backup directory/archive names. |
 | `navidrome_backup_create_archive` | `true` | Create compressed archive of the backup directory. |
 | `navidrome_backup_fetch_local` | `true` | Fetch archive to the controller. |
-| `navidrome_backup_stop_service` | `true` | Stop Navidrome during backup for SQLite safety. |
+| `navidrome_backup_stop_service` | `true` | Stop Navidrome during backup for SQLite safety. The restart runs in an `always` section, so a failed copy still restarts it; a service that was already stopped stays stopped. |
 | `navidrome_backup_include_logs` | `true` | Include `/var/log/navidrome`. |
 | `navidrome_backup_retain` | `7` | Keep this many most recent archives (older ones are pruned). |
 
