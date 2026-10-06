@@ -21,5 +21,6 @@ roles=(
 
 for role in "${roles[@]}"; do
   echo "==> Running molecule for ${role}"
-  (cd "roles/${role}" && molecule test -s default)
+  # Run-scoped container names and Molecule state; see scripts/molecule-run.sh.
+  scripts/molecule-run.sh "${role}" default test
 done

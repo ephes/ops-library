@@ -9,10 +9,12 @@
 
   vars:
     role_path: "{{ playbook_dir }}/../roles/voxhelm_deploy"
-    rendered_env: "/tmp/test-voxhelm.env"
-    rendered_start: "/tmp/test-voxhelm-start.sh"
-    rendered_worker: "/tmp/test-voxhelm-worker.sh"
-    rendered_wyoming: "/tmp/test-voxhelm-wyoming.sh"
+    # Per-checkout prefix: parallel runs from other worktrees use other paths.
+    ops_test_tmp_prefix: "ops-library-{{ (playbook_dir | hash('sha1'))[:10] }}-"
+    rendered_env: "/tmp/{{ ops_test_tmp_prefix }}test-voxhelm.env"
+    rendered_start: "/tmp/{{ ops_test_tmp_prefix }}test-voxhelm-start.sh"
+    rendered_worker: "/tmp/{{ ops_test_tmp_prefix }}test-voxhelm-worker.sh"
+    rendered_wyoming: "/tmp/{{ ops_test_tmp_prefix }}test-voxhelm-wyoming.sh"
 
   tasks:
     - name: Load role defaults

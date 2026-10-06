@@ -6,9 +6,11 @@
 
   vars:
     role_path: "{{ playbook_dir }}/../roles/logyard_deploy"
-    rendered_dir: "/tmp/test-logyard-deploy"
-    rendered_config: "/tmp/test-logyard-deploy/loki-config.yml"
-    rendered_datasource: "/tmp/test-logyard-deploy/logyard-datasource.yml"
+    # Per-checkout prefix: parallel runs from other worktrees use other paths.
+    ops_test_tmp_prefix: "ops-library-{{ (playbook_dir | hash('sha1'))[:10] }}-"
+    rendered_dir: "/tmp/{{ ops_test_tmp_prefix }}test-logyard-deploy"
+    rendered_config: "/tmp/{{ ops_test_tmp_prefix }}test-logyard-deploy/loki-config.yml"
+    rendered_datasource: "/tmp/{{ ops_test_tmp_prefix }}test-logyard-deploy/logyard-datasource.yml"
 
   tasks:
     - name: Verify role files exist

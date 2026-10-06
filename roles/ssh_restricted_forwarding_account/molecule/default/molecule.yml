@@ -2,7 +2,7 @@
 driver:
   name: docker
 platforms:
-  - name: instance
+  - name: "instance-${MOLECULE_RUN_ID:-local}"
     image: geerlingguy/docker-ubuntu2404-ansible
     pre_build_image: true
     privileged: true
