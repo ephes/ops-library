@@ -29,6 +29,39 @@
   of `just test`); the molecule scenario now restores a real SQLite file and
   checks the WAL removal and the safety copy.
 
+- `mastodon_restore` and `takahe_restore` no longer drop a live database
+  for an unchecked dump:
+  - the dump must pass `pg_restore --list` (with `TABLE DATA` entries) and a
+    full `pg_restore --file=/dev/null` read before any service stops;
+  - a failed service stop aborts the run before anything is dropped (it was
+    `failed_when: false`); units that are not installed are skipped. With
+    `<svc>_restore_stop_services: false` the services must already be
+    stopped, or the run aborts;
+  - after the stop the roles take a `pg_dump -Fc` of the live database
+    (`<svc>_restore_safety_root`, default `/var/backups/<svc>-pre-restore`),
+    a hard-link snapshot of the media (`<svc>_restore_media_safety_root`,
+    default `/home/<svc>/media-pre-restore`; full copy across filesystems)
+    and copies of the env, systemd, Traefik and nginx files, and report the
+    paths. Media uploaded after the backup was lost to `rsync --delete`
+    before;
+  - `pg_restore` runs with `--single-transaction`;
+  - the media `rsync --delete` adds `--ignore-times`, so every file gets a
+    new inode and a metadata-only change cannot reach the hard-linked
+    snapshot (the restore now rewrites all media files);
+  - any failure while restoring (including migrations and the final start)
+    restores the safety dump, media and config files, leaves the services
+    stopped and fails with both safety paths. The rollback runs only when
+    every service is confirmed stopped. The start no longer ignores
+    failures;
+  - the staging directory with the unpacked dump is removed in `always`.
+  `takahe_restore` now also makes the staged dump traversable for the
+  Postgres OS user, as `mastodon_restore` did. New defaults
+  `<svc>_restore_postgres_dump_binary` and `<svc>_restore_postgres_psql_binary`.
+  The safety dump needs free space for one compressed dump. New test
+  `tests/test_fedi_restore_safety.py` (part of `just test-restore-safety`)
+  checks the order statically and runs the snapshot, rollback and dump
+  validation snippets against temp directories with stub binaries.
+
 ## Unreleased — Backups restart stopped services on failure (2.31.3)
 
 A failed copy or dump step no longer leaves the service stopped. Rollout:
