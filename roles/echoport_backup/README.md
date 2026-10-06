@@ -47,6 +47,11 @@ echoport_backup_api_base: "http://localhost:8000"
 echoport_backup_api_token: ""
 ```
 
+When `echoport_backup_sync_services` is true and the token is set, the role calls
+`POST <echoport_backup_api_base>/services/sync`. The call runs with `no_log: true` so the bearer token
+never appears in verbose output; a failed sync does not fail the play and is reported by a separate
+task that prints only the HTTP status and response body.
+
 ## Dependencies
 
 None.

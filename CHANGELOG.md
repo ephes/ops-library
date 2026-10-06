@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — Bearer tokens kept out of verbose output (2.31.1)
+
+- `fastdeploy_register_service` and `echoport_backup`: the `POST
+  /services/sync` call sends `Authorization: Bearer <token>` and now runs with
+  `no_log: true`. Before, `ansible-playbook -vvv` printed the FastDeploy API
+  token with the module arguments. A failed sync still does not fail the play;
+  a new "Report failed service sync" task prints only the HTTP status and the
+  response body, never the module's `msg` (it can quote request headers).
+  Rollout: rerun either role; nothing on the
+  host changes.
+- New static check `just test-secret-no-log`
+  (`scripts/check_secret_no_log.py`), run by `just test` and `just lint-strict`: a `uri` task
+  that sends a credential (auth/token/API-key/cookie header, `url_password`,
+  or a secret variable in the header value, URL or body) and a
+  `command`/`shell`/`raw` task with an `Authorization:`/`Bearer` command line
+  must have `no_log: true` on the task or an enclosing block. Molecule
+  scenarios are not scanned. `TESTING.md` documents the rule.
+
 ## Unreleased — Opaq app deployment (2.31.0)
 
 - New `opaq_app_deploy` deploys daybook's Opaq app, the company cash page,

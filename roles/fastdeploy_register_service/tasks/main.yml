@@ -214,6 +214,7 @@
     - fd_api_token | length > 0
   register: sync_result
   failed_when: false  # Don't fail the play if sync fails
+  no_log: true  # the request carries the API bearer token
 
 - name: Display sync result
   debug:
@@ -223,3 +224,17 @@
     - sync_result is not skipped
     - sync_result.status is defined
     - sync_result.status in [200, 201]
+
+# Print only the HTTP status and the server's response body: the module's msg
+# can quote the request headers (for example an invalid header value), which
+# would leak the bearer token that no_log hides above.
+- name: Report failed service sync
+  debug:
+    msg: >-
+      {% if (sync_result.status | default(-1) | int) <= 0 %}Service sync failed before an HTTP
+      response (connection, TLS or request error).{% else %}Service sync failed (HTTP status
+      {{ sync_result.status }}): {{ sync_result.json | default('no JSON response body') }}{% endif %}
+  when:
+    - sync_result is defined
+    - sync_result is not skipped
+    - (sync_result.status | default(-1)) not in [200, 201]
