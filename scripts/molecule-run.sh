@@ -92,11 +92,37 @@ remove_state() {
 }
 
 if [[ "$command" == "test" ]]; then
+    # Seconds since the epoch, so Ansible temp dirs created by this run
+    # (ansible-tmp-<epoch>.<frac>-<pid>-<rand>) can be told from older ones.
+    run_started=$(date +%s)
+    # Molecule's docker driver creates containers with `async: ..., poll: 0`.
+    # Ansible's async_wrapper calls setsid(), so those workers leave our
+    # process group and survive stop_child. Wait for every async worker that
+    # started during this run (its argv names an ansible-tmp-<epoch> dir no
+    # older than the run) before destroying, or a late worker could create a
+    # container after destroy. This only waits; it never signals processes,
+    # so other runs' jobs (which may match too) are left alone.
+    settle_async_jobs() {
+        local limit=${OPS_LIBRARY_MOLECULE_ASYNC_SETTLE_TIMEOUT:-120}
+        local deadline=$((SECONDS + limit))
+        while ps axww -o command= 2>/dev/null | awk -v start="$run_started" '
+            match($0, /ansible-tmp-[0-9]+/) {
+                if (substr($0, RSTART + 12, RLENGTH - 12) + 0 >= start) found = 1
+            }
+            END { exit !found }'; do
+            if (( SECONDS >= deadline )); then
+                echo "Ansible async workers still running after ${limit}s; destroying anyway." >&2
+                return 0
+            fi
+            sleep 1
+        done
+    }
     finish() {
         local status=$?
         trap - EXIT INT TERM
         if [[ $status -ne 0 ]]; then
             echo "Molecule test failed or was interrupted; destroying run $MOLECULE_RUN_ID containers..." >&2
+            settle_async_jobs
             uv run molecule destroy -s "$scenario" || true
         fi
         remove_state

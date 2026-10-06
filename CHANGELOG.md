@@ -22,8 +22,10 @@ time destroyed or reused each other's containers and collection install
   leaks between checkouts through) `~/.ansible/collections`. The five
   scenarios that set `ANSIBLE_COLLECTIONS_PATH` now extend the wrapper's
   path instead of putting `~/.ansible/collections` first. After a failed or
-  interrupted test the wrapper stops the whole Molecule process group and
-  then destroys only its own run's containers.
+  interrupted test the wrapper stops the whole Molecule process group, waits
+  for detached Ansible async workers (the docker driver creates containers
+  with `poll: 0`) so none can create a container after cleanup, and then
+  destroys only its own run's containers.
 - New `tests/test_molecule_run_isolation.py` (`just
   test-molecule-run-isolation`, part of `just test`) fails when a
   `molecule.yml` uses a fixed platform or network name such as

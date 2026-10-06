@@ -91,6 +91,23 @@ FAKE_UV = textwrap.dedent(
     [[ "$1" == run ]] && shift
     printf '%s|%s|%s|%s|%s|%s\\n' "$*" "$MOLECULE_RUN_ID" "$MOLECULE_EPHEMERAL_DIRECTORY" "$PWD" "$ANSIBLE_HOME" "$ANSIBLE_COLLECTIONS_PATH" >> "$FAKE_UV_LOG"
     if [[ "$2" == test ]]; then
+        if [[ -n "${FAKE_UV_DETACHED_JOB:-}" ]]; then
+            # Like Ansible's async_wrapper: setsid() leaves the process group,
+            # and the argv names this run's ansible-tmp-<epoch> directory.
+            job_dir="$FAKE_UV_LOG.d/ansible-tmp-$(date +%s).5-$$-1"
+            mkdir -p "$job_dir"
+            cat > "$job_dir/AnsiballZ_docker_container.py" <<'PY'
+    import os, sys, time
+    os.setsid()
+    time.sleep(2)
+    with open(os.environ["FAKE_UV_LOG"], "a") as log:
+        print("detached job finished", file=log)
+    PY
+            python3 "$job_dir/AnsiballZ_docker_container.py" >/dev/null 2>&1 &
+            echo "$!" > "$FAKE_UV_LOG.sleeper"
+            sleep 0.2
+            exit 3
+        fi
         if [[ -n "${FAKE_UV_TEST_BLOCK:-}" ]]; then
             # A descendant that ignores the parent's exit, like ansible-playbook
             # under Molecule; the wrapper must stop the whole process group.
@@ -251,6 +268,19 @@ class MoleculeRunWrapper(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
         run_ids = [call[1] for call in self.calls()]
         self.assertEqual(len(set(run_ids)), 4, run_ids)
+
+    def test_failed_test_waits_for_detached_async_jobs_before_destroy(self) -> None:
+        result = self.run_wrapper(self.role, "default", "test", FAKE_UV_DETACHED_JOB="1")
+        self.assertEqual(result.returncode, 3, result.stderr)
+        lines = self.log.read_text().splitlines()
+        self.assertEqual(
+            [line.split("|")[0] for line in lines],
+            [
+                "molecule test -s default",
+                "detached job finished",
+                "molecule destroy -s default",
+            ],
+        )
 
     def test_debug_commands_share_a_stable_checkout_id(self) -> None:
         for command in ("converge", "verify", "destroy"):
