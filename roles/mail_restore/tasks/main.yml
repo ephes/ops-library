@@ -188,6 +188,21 @@
 - name: Restore PostgreSQL database
   when: mail_restore_database
   block:
+    # Check the dump before dropping anything: a truncated or empty dump must
+    # fail here, while the current database is still intact.
+    - name: Verify database dump before dropping the database
+      ansible.builtin.shell: |
+        set -euo pipefail
+        dump="{{ mail_restore_source }}/database.sql.gz"
+        gzip -t "$dump"
+        if [ "$(gzip -cd "$dump" | wc -c)" -eq 0 ]; then
+          echo "database dump $dump is empty" >&2
+          exit 1
+        fi
+      args:
+        executable: /bin/bash
+      changed_when: false
+
     - name: Drop existing database
       community.postgresql.postgresql_db:
         name: "{{ mail_restore_postgres_database }}"
@@ -205,8 +220,11 @@
 
     - name: Restore database from backup
       ansible.builtin.shell: |
+        set -euo pipefail
         gunzip -c "{{ mail_restore_source }}/database.sql.gz" | \
           psql -U postgres "{{ mail_restore_postgres_database }}"
+      args:
+        executable: /bin/bash
       become: true
       become_user: postgres
       changed_when: true

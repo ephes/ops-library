@@ -19,7 +19,10 @@
 
 - name: Generate basic auth password hash
   shell: |
+    set -o pipefail
     echo '{{ homelab_basic_auth_password }}' | htpasswd -nBi {{ homelab_basic_auth_user }} | cut -d: -f2
+  args:
+    executable: /bin/bash
   register: password_hash
   changed_when: false
   no_log: true

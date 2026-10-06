@@ -19,7 +19,10 @@
 
 - name: Generate basic auth password hash for MinIO Console
   shell: |
+    set -o pipefail
     echo '{{ minio_console_basic_auth_password }}' | htpasswd -nBi {{ minio_console_basic_auth_user }} | cut -d: -f2
+  args:
+    executable: /bin/bash
   register: console_password_hash
   changed_when: false
   no_log: true

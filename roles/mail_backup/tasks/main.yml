@@ -9,6 +9,7 @@
   ansible.builtin.set_fact:
     mail_backup_dir_name: "{{ mail_backup_prefix }}-{{ mail_backup_timestamp }}"
     mail_backup_dir: "{{ mail_backup_destination }}/{{ mail_backup_prefix }}-{{ mail_backup_timestamp }}"
+    mail_backup_archive_path: "{{ mail_backup_destination }}/{{ mail_backup_prefix }}-{{ mail_backup_timestamp }}.{{ mail_backup_archive_format }}"
 
 - name: Ensure backup parent directory exists
   ansible.builtin.file:
@@ -26,6 +27,23 @@
     group: "{{ mail_backup_group }}"
     mode: "{{ mail_backup_dir_mode }}"
 
+# The rescue below deletes this run's directory and archive. Refuse to start
+# if either already exists (for example a second run in the same play reuses
+# the cached timestamp), so a failure can never delete an earlier backup.
+- name: Check that this run's backup paths are new
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ [mail_backup_dir] + ([mail_backup_archive_path] if mail_backup_create_archive else []) }}"
+  register: mail_backup_existing_paths
+
+- name: Refuse to overwrite an existing backup
+  ansible.builtin.fail:
+    msg: >-
+      {{ mail_backup_existing_paths.results | selectattr('stat.exists') | map(attribute='item') | join(', ') }}
+      already exists; refusing to reuse it. Re-gather facts or use a different
+      mail_backup_prefix for a second backup in the same play.
+  when: mail_backup_existing_paths.results | selectattr('stat.exists') | list | length > 0
+
 - name: Create timestamped backup directory
   ansible.builtin.file:
     path: "{{ mail_backup_dir }}"
@@ -34,90 +52,126 @@
     group: "{{ mail_backup_group }}"
     mode: "{{ mail_backup_dir_mode }}"
 
-- name: Backup PostgreSQL database
-  ansible.builtin.shell: |
-    pg_dump -U postgres "{{ mail_backup_postgres_database }}" | gzip > \
-      "{{ mail_backup_dir }}/database.sql.gz"
-  become: true
-  become_user: postgres
-  when: mail_backup_database
-  changed_when: true
+# Each component is written to a temporary file and renamed into place only
+# once it is complete and verified. If any step fails, the rescue removes the
+# incomplete timestamped directory and archive and fails the play, so the
+# retention steps below never run after a failed backup and a "latest"
+# restore never picks up a half-written backup.
+- name: Create backup
+  block:
+    - name: Backup PostgreSQL database
+      ansible.builtin.shell: |
+        set -euo pipefail
+        dest="{{ mail_backup_dir }}/database.sql.gz"
+        tmp="${dest}.tmp"
+        trap 'rm -f -- "$tmp"' EXIT
+        pg_dump -U postgres "{{ mail_backup_postgres_database }}" | gzip > "$tmp"
+        gzip -t "$tmp"
+        if [ "$(gzip -cd "$tmp" | wc -c)" -eq 0 ]; then
+          echo "pg_dump produced an empty dump" >&2
+          exit 1
+        fi
+        mv -- "$tmp" "$dest"
+      args:
+        executable: /bin/bash
+      become: true
+      become_user: postgres
+      when: mail_backup_database
+      changed_when: true
 
-- name: Backup maildir
-  ansible.builtin.shell: |
-    tar -czf "{{ mail_backup_dir }}/maildir.tar.gz" \
-      -C "{{ mail_backup_vmail_path | dirname }}" "{{ mail_backup_vmail_path | basename }}"
-  when: mail_backup_maildir
-  changed_when: true
+    - name: Backup maildir
+      ansible.builtin.shell: |
+        set -euo pipefail
+        dest="{{ mail_backup_dir }}/maildir.tar.gz"
+        tmp="${dest}.tmp"
+        trap 'rm -f -- "$tmp"' EXIT
+        tar -czf "$tmp" \
+          -C "{{ mail_backup_vmail_path | dirname }}" "{{ mail_backup_vmail_path | basename }}"
+        gzip -t "$tmp"
+        mv -- "$tmp" "$dest"
+      args:
+        executable: /bin/bash
+      when: mail_backup_maildir
+      changed_when: true
 
-- name: Backup configuration files
-  ansible.builtin.archive:
-    path: "{{ mail_backup_config_paths }}"
-    dest: "{{ mail_backup_dir }}/config.tar.gz"
-    format: gz
-  when: mail_backup_config
+    - name: Backup configuration files
+      ansible.builtin.archive:
+        path: "{{ mail_backup_config_paths }}"
+        dest: "{{ mail_backup_dir }}/config.tar.gz"
+        format: gz
+      when: mail_backup_config
 
-- name: Create backup manifest
-  ansible.builtin.copy:
-    content: |
-      # Mail Backup Manifest
-      timestamp: {{ mail_backup_timestamp }}
-      prefix: {{ mail_backup_prefix }}
-      created: {{ ansible_date_time.iso8601 }}
-      host: {{ inventory_hostname }}
-      components:
-        database: {{ mail_backup_database }}
-        maildir: {{ mail_backup_maildir }}
-        config: {{ mail_backup_config }}
-      paths:
-        vmail: {{ mail_backup_vmail_path }}
-        database: {{ mail_backup_postgres_database }}
-        config_paths: {{ mail_backup_config_paths | to_json }}
-    dest: "{{ mail_backup_dir }}/manifest.yml"
-    owner: "{{ mail_backup_owner }}"
-    group: "{{ mail_backup_owner }}"
-    mode: "{{ mail_backup_file_mode }}"
+    - name: Create backup manifest
+      ansible.builtin.copy:
+        content: |
+          # Mail Backup Manifest
+          timestamp: {{ mail_backup_timestamp }}
+          prefix: {{ mail_backup_prefix }}
+          created: {{ ansible_date_time.iso8601 }}
+          host: {{ inventory_hostname }}
+          components:
+            database: {{ mail_backup_database }}
+            maildir: {{ mail_backup_maildir }}
+            config: {{ mail_backup_config }}
+          paths:
+            vmail: {{ mail_backup_vmail_path }}
+            database: {{ mail_backup_postgres_database }}
+            config_paths: {{ mail_backup_config_paths | to_json }}
+        dest: "{{ mail_backup_dir }}/manifest.yml"
+        owner: "{{ mail_backup_owner }}"
+        group: "{{ mail_backup_owner }}"
+        mode: "{{ mail_backup_file_mode }}"
 
-# =============================================================================
-# Archive Creation
-# =============================================================================
+    # =============================================================================
+    # Archive Creation
+    # =============================================================================
 
-- name: Compute archive path
-  ansible.builtin.set_fact:
-    mail_backup_archive_path: "{{ mail_backup_destination }}/{{ mail_backup_dir_name }}.{{ mail_backup_archive_format }}"
-  when: mail_backup_create_archive
+    - name: Create tar.gz archive
+      ansible.builtin.command:
+        cmd: >
+          tar -C "{{ mail_backup_destination }}"
+          -czf "{{ mail_backup_archive_path }}"
+          "{{ mail_backup_dir_name }}"
+      when:
+        - mail_backup_create_archive
+        - mail_backup_archive_format == 'tar.gz'
+      changed_when: true
 
-- name: Create tar.gz archive
-  ansible.builtin.command:
-    cmd: >
-      tar -C "{{ mail_backup_destination }}"
-      -czf "{{ mail_backup_archive_path }}"
-      "{{ mail_backup_dir_name }}"
-  when:
-    - mail_backup_create_archive
-    - mail_backup_archive_format == 'tar.gz'
-  changed_when: true
+    - name: Create tar.zst archive
+      ansible.builtin.command:
+        cmd: >
+          tar -C "{{ mail_backup_destination }}"
+          --zstd -cf "{{ mail_backup_archive_path }}"
+          "{{ mail_backup_dir_name }}"
+      when:
+        - mail_backup_create_archive
+        - mail_backup_archive_format == 'tar.zst'
+      changed_when: true
 
-- name: Create tar.zst archive
-  ansible.builtin.command:
-    cmd: >
-      tar -C "{{ mail_backup_destination }}"
-      --zstd -cf "{{ mail_backup_archive_path }}"
-      "{{ mail_backup_dir_name }}"
-  when:
-    - mail_backup_create_archive
-    - mail_backup_archive_format == 'tar.zst'
-  changed_when: true
+    - name: Set archive permissions for fetch (owner-only read)
+      ansible.builtin.file:
+        path: "{{ mail_backup_archive_path }}"
+        owner: "{{ mail_backup_owner }}"
+        group: "{{ mail_backup_group }}"
+        mode: "0600"
+      when:
+        - mail_backup_create_archive
+        - mail_backup_fetch_local
 
-- name: Set archive permissions for fetch (owner-only read)
-  ansible.builtin.file:
-    path: "{{ mail_backup_archive_path }}"
-    owner: "{{ mail_backup_owner }}"
-    group: "{{ mail_backup_group }}"
-    mode: "0600"
-  when:
-    - mail_backup_create_archive
-    - mail_backup_fetch_local
+  rescue:
+    - name: Remove incomplete backup directory and archive
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ [mail_backup_dir] + ([mail_backup_archive_path] if mail_backup_create_archive else []) }}"
+
+    - name: Fail the backup run
+      ansible.builtin.fail:
+        msg: >-
+          Mail backup failed in task '{{ ansible_failed_task.name | default('unknown') }}';
+          removed the incomplete backup {{ mail_backup_dir }}. Older backups were not
+          touched and retention did not run. Error:
+          {{ ansible_failed_result.stderr | default(ansible_failed_result.msg, true) | default('n/a', true) }}
 
 # =============================================================================
 # Fetch to Controller
