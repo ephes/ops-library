@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased — More restore safety (2.31.8)
+
+- `wagtail_restore` (weeknotes.home) no longer drops the live database for an
+  unchecked dump:
+  - the gzipped SQL dump must pass `gzip -t` and end with pg_dump's
+    `PostgreSQL database dump complete` trailer before any unit stops; the
+    dry run now runs this check too;
+  - a failed stop of the web service aborts the run before anything is
+    dropped (it was `failed_when: false`); every unit is confirmed
+    `inactive`/`failed`, also with `wagtail_restore_stop_service: false`;
+  - after the stop the role takes a `pg_dump -Fc` of the live database
+    (`wagtail_restore_safety_root`, default
+    `/var/backups/<service>-pre-restore`; needs space for one compressed
+    dump), checks it with `pg_restore --list` and reports the path;
+  - the dump is loaded into the freshly created database with
+    `psql --single-transaction -v ON_ERROR_STOP=1` (`target_opts` are now
+    extra psql options);
+  - any failure from the drop to the final start (which no longer ignores
+    failures) recreates the database from the safety dump and fails with
+    the units left stopped; before, the rescue restarted the site on a
+    possibly empty database;
+  - the staging directory is removed in `always`, and the staged dump is
+    made traversable for the Postgres OS user.
+  New defaults `wagtail_restore_postgres_{psql,dump,restore,dropdb,createdb}_binary`.
+  New test `tests/test_wagtail_restore_safety.py` (part of
+  `just test-restore-safety`).
+
 ## Unreleased — Restore safety (2.31.4)
 
 - `vaultwarden_restore` (legacy path; Echoport stays the preferred restore)

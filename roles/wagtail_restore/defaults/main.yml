@@ -50,4 +50,17 @@ wagtail_restore_postgres_port: 5432
 wagtail_restore_postgres_admin_user: "{{ wagtail_restore_postgres_user }}"
 wagtail_restore_postgres_admin_password: "{{ wagtail_restore_postgres_password }}"
 wagtail_restore_postgres_become_user: "postgres"
+# Extra psql options for the restore, split on whitespace. The restore always
+# runs with --single-transaction -v ON_ERROR_STOP=1.
 wagtail_restore_postgres_target_opts: ""
+
+# Pre-restore safety dump. Each real (non-dry) run writes a pg_dump -Fc of the
+# live database to <root>/<UTC timestamp>/<database>.dump after the units are
+# stopped and before the drop. It needs free space for one compressed dump;
+# nothing prunes these, remove them once the restored site is verified.
+wagtail_restore_safety_root: "/var/backups/{{ wagtail_service_name }}-pre-restore"
+wagtail_restore_postgres_psql_binary: psql
+wagtail_restore_postgres_dump_binary: pg_dump
+wagtail_restore_postgres_restore_binary: pg_restore
+wagtail_restore_postgres_dropdb_binary: dropdb
+wagtail_restore_postgres_createdb_binary: createdb
