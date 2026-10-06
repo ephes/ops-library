@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased — FastDeploy legacy service token window (2.31.6)
+
+FastDeploy now rejects service tokens without `jti` unless
+`LEGACY_SERVICE_TOKENS_ACCEPTED_UNTIL` is set, and the deploy roles could not
+set it. Rollout: install this collection version in ops-control before the
+FastDeploy deploy; nothing changes until a variable is set.
+
+- `fastdeploy_deploy`: new variables
+  `fastdeploy_legacy_service_tokens_accepted_until`,
+  `fastdeploy_service_token_max_expire_days` and
+  `fastdeploy_service_token_retention_days`, rendered into `.env` as
+  `LEGACY_SERVICE_TOKENS_ACCEPTED_UNTIL`, `SERVICE_TOKEN_MAX_EXPIRE_DAYS` and
+  `SERVICE_TOKEN_RETENTION_DAYS` only when non-empty (all empty by default).
+- `fastdeploy_self_deploy`: the same settings as `fd_self_*` variables in the
+  release `.env`.
+- Both roles validate the values before the `.env` file is written: the
+  timestamp must be ISO 8601 with a UTC offset and a real calendar date, the
+  day counts positive integers. In `fastdeploy_deploy` the check runs after
+  the `postgres_install` dependency, like the existing secret checks.
+- The `fastdeploy_deploy` README documents the cutover: set the grace period,
+  deploy, re-issue tokens with `commands.py issueservicetoken`, clear the
+  variable and deploy again.
+- New test `tests/test_fastdeploy_service_token_settings.yml`
+  (`just test-fastdeploy-service-token-settings`, part of `just test`).
+
 ## Unreleased — Backups restart stopped services on failure (2.31.3)
 
 A failed copy or dump step no longer leaves the service stopped. Rollout:
