@@ -90,7 +90,7 @@
     owner: root
     group: root
     mode: "0755"
-  loop: "{{ [ {'path': logyard_grafana_dashboard_target_dir} ] + logyard_dashboard_directories.files }}"
+  loop: "{{ [{'path': logyard_grafana_dashboard_target_dir}] + logyard_dashboard_directories.files }}"
   loop_control:
     label: "{{ item.path }}"
   notify: restart graphyard grafana container

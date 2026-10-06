@@ -148,7 +148,8 @@
   ansible.builtin.set_fact:
     minio_restore_content_path: "{{ minio_restore_archive_path }}"
 
-- block:
+- when: not minio_restore_source_is_directory | bool
+  block:
     - name: Ensure staging directory exists
       ansible.builtin.file:
         path: "{{ minio_restore_staging_path }}"
@@ -185,7 +186,6 @@
       ansible.builtin.set_fact:
         minio_restore_content_path: "{{ minio_restore_stage_dirs.files | map(attribute='path') | list | first }}"
 
-  when: not minio_restore_source_is_directory | bool
 
 - name: Ensure metadata file exists
   ansible.builtin.stat:
@@ -249,5 +249,5 @@
 
 - name: Build helper metadata for data directories
   ansible.builtin.set_fact:
-    minio_restore_target_data_dirs_helper: "{{ (minio_restore_target_data_dirs_helper | default([])) + [ { 'path': item, 'relative': (item | regex_replace('^/', '')) } ] }}"
+    minio_restore_target_data_dirs_helper: "{{ (minio_restore_target_data_dirs_helper | default([])) + [{'path': item, 'relative': (item | regex_replace('^/', ''))}] }}"
   loop: "{{ minio_restore_target_data_dirs }}"

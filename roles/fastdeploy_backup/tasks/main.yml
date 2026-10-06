@@ -15,7 +15,7 @@
 
 - name: "Build path existence map"
   ansible.builtin.set_fact:
-    fastdeploy_backup_path_exists: "{{ fastdeploy_backup_path_exists | default({}) | combine({ item.item.path: item.stat.exists }) }}"
+    fastdeploy_backup_path_exists: "{{ fastdeploy_backup_path_exists | default({}) | combine({item.item.path: item.stat.exists}) }}"
   loop: "{{ fastdeploy_backup_path_stats.results }}"
   loop_control:
     label: "{{ item.item.path }}"

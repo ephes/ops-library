@@ -1,3 +1,4 @@
+---
 - name: Ensure required packages are installed
   ansible.builtin.package:
     name: "{{ unifi_restore_required_packages }}"

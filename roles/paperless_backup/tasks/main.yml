@@ -18,7 +18,7 @@
 
 - name: "Build path existence map"
   ansible.builtin.set_fact:
-    paperless_backup_path_exists: "{{ paperless_backup_path_exists | default({}) | combine({ item.item.path: item.stat.exists }) }}"
+    paperless_backup_path_exists: "{{ paperless_backup_path_exists | default({}) | combine({item.item.path: item.stat.exists}) }}"
   loop: "{{ paperless_backup_path_stats.results }}"
   loop_control:
     label: "{{ item.item.path }}"

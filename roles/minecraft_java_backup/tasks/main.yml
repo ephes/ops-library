@@ -147,7 +147,7 @@
   ansible.builtin.set_fact:
     sorted_backups: "{{ existing_backups.files | sort(attribute='mtime', reverse=true) }}"
 
-- name: Identify backups to remove (keep {{ minecraft_java_backup_retention_count }} most recent)
+- name: Identify backups to remove beyond retention count {{ minecraft_java_backup_retention_count }}
   ansible.builtin.set_fact:
     backups_to_remove: "{{ sorted_backups[minecraft_java_backup_retention_count:] }}"
   when: sorted_backups | length > minecraft_java_backup_retention_count

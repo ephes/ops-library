@@ -2,7 +2,7 @@
 # Archive selection
 nyxmon_restore_archive: latest
 nyxmon_restore_archive_search_root: /opt/backups/nyxmon
-nyxmon_restore_local_cache: "{{ lookup('env','HOME') }}/backups/nyxmon"
+nyxmon_restore_local_cache: "{{ lookup('env', 'HOME') }}/backups/nyxmon"
 nyxmon_restore_upload_target: "{{ nyxmon_restore_archive_search_root }}"
 nyxmon_restore_staging_dir: /tmp/nyxmon-restore
 nyxmon_restore_staging_mode: "0700"

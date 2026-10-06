@@ -7,6 +7,7 @@
   register: systemd_resolved_exists
 
 - name: Restore systemd-resolved
+  when: systemd_resolved_exists.stat.exists
   block:
     - name: Enable and start systemd-resolved
       systemd:
@@ -30,9 +31,9 @@
         state: link
         force: yes
 
-  when: systemd_resolved_exists.stat.exists
 
 - name: Configure fallback DNS if systemd-resolved not available
+  when: not systemd_resolved_exists.stat.exists
   block:
     - name: Create static resolv.conf
       copy:
@@ -43,5 +44,3 @@
           nameserver 8.8.8.8
         dest: /etc/resolv.conf
         mode: '0644'
-
-  when: not systemd_resolved_exists.stat.exists

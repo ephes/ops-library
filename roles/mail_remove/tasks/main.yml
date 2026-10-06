@@ -13,21 +13,21 @@
 
 - name: Build removal target lists
   ansible.builtin.set_fact:
-    mail_remove_target_services: "{{ [] 
-      | union(mail_remove_backend_services if (mail_remove_backend | bool) else []) 
-      | union(mail_remove_relay_services if (mail_remove_relay | bool) else []) 
+    mail_remove_target_services: "{{ []
+      | union(mail_remove_backend_services if (mail_remove_backend | bool) else [])
+      | union(mail_remove_relay_services if (mail_remove_relay | bool) else [])
       | union(mail_remove_spam_services if (mail_remove_spam | bool) else []) }}"
-    mail_remove_target_packages: "{{ [] 
-      | union(mail_remove_packages_backend if (mail_remove_backend | bool) else []) 
-      | union(mail_remove_packages_relay if (mail_remove_relay | bool) else []) 
+    mail_remove_target_packages: "{{ []
+      | union(mail_remove_packages_backend if (mail_remove_backend | bool) else [])
+      | union(mail_remove_packages_relay if (mail_remove_relay | bool) else [])
       | union(mail_remove_packages_spam if (mail_remove_spam | bool) else []) }}"
-    mail_remove_target_config_paths: "{{ [] 
-      | union(mail_remove_config_paths_backend if (mail_remove_backend | bool) else []) 
-      | union(mail_remove_config_paths_relay if (mail_remove_relay | bool) else []) 
+    mail_remove_target_config_paths: "{{ []
+      | union(mail_remove_config_paths_backend if (mail_remove_backend | bool) else [])
+      | union(mail_remove_config_paths_relay if (mail_remove_relay | bool) else [])
       | union(mail_remove_config_paths_spam if (mail_remove_spam | bool) else []) }}"
-    mail_remove_target_state_paths: "{{ [] 
-      | union(mail_remove_state_paths_backend if (mail_remove_backend | bool) else []) 
-      | union(mail_remove_state_paths_relay if (mail_remove_relay | bool) else []) 
+    mail_remove_target_state_paths: "{{ []
+      | union(mail_remove_state_paths_backend if (mail_remove_backend | bool) else [])
+      | union(mail_remove_state_paths_relay if (mail_remove_relay | bool) else [])
       | union(mail_remove_state_paths_spam if (mail_remove_spam | bool) else []) }}"
 
 - name: Warn if mail queue is not empty

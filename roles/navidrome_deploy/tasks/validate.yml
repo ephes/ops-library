@@ -1,3 +1,4 @@
+---
 - name: Set effective architecture fact
   ansible.builtin.set_fact:
     navidrome_effective_arch: "{{ ansible_facts.architecture | default(ansible_architecture | default('')) }}"

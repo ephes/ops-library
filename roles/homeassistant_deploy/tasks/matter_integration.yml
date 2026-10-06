@@ -71,6 +71,7 @@
       no_log: true
 
     - name: "Handle Matter config flow aborts"
+      when: (_ha_matter_flow.json.type | default('')) == 'abort'
       block:
         - name: "Skip Matter config flow when already configured"
           ansible.builtin.debug:
@@ -81,7 +82,6 @@
           ansible.builtin.fail:
             msg: "Matter config flow aborted: {{ _ha_matter_flow.json.reason | default('unknown') }}."
           when: (_ha_matter_flow.json.reason | default('')) != 'already_configured'
-      when: (_ha_matter_flow.json.type | default('')) == 'abort'
 
     - name: "Submit Matter config flow"
       ansible.builtin.uri:

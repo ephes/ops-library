@@ -24,7 +24,9 @@ just molecule-test fastdeploy_register_service
 - strict Sphinx build (`just docs-build`)
 - docs consistency checks (`just docs-lint`)
 
-`just validate-strict` uses `just lint-strict` in the same sequence.
+`just validate-strict` uses `just lint-strict` in the same sequence. `just lint-strict` fails on any
+`ansible-lint` finding not listed in the reviewed baseline `.ansible-lint-ignore`; see
+"Strict lint baseline" in `TESTING.md`.
 
 ## Molecule Quick Start
 

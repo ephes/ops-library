@@ -54,6 +54,6 @@
       host_formatted: "{{ mc_helper_host_formatted }}"
       env_key: "{{ _mc_helper_env_key }}"
       host_url: "{{ _mc_helper_host_url }}"
-      env_map: "{{ { _mc_helper_env_key: _mc_helper_host_url } }}"
+      env_map: "{{ {_mc_helper_env_key: _mc_helper_host_url} }}"
       extra_args: "{{ _mc_helper_extra_args }}"
   no_log: "{{ mc_helper_no_log | default(true) }}"

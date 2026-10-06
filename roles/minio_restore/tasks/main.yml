@@ -12,13 +12,13 @@
 - name: Prepare host for MinIO restore
   ansible.builtin.import_tasks: prepare.yml
 
-- block:
+- when: not minio_restore_dry_run | bool
+  block:
     - name: Restore MinIO snapshot
       ansible.builtin.import_tasks: restore.yml
 
     - name: Verify restored MinIO instance
       ansible.builtin.import_tasks: verify.yml
-  when: not minio_restore_dry_run | bool
 
 - name: Cleanup restore artifacts
   ansible.builtin.import_tasks: cleanup.yml

@@ -33,7 +33,7 @@
 
 - name: Build UniFi path map
   ansible.builtin.set_fact:
-    unifi_backup_path_map: "{{ unifi_backup_path_map | default({}) | combine({ item.item.name: item.stat }) }}"
+    unifi_backup_path_map: "{{ unifi_backup_path_map | default({}) | combine({item.item.name: item.stat}) }}"
   loop: "{{ unifi_backup_path_stats.results }}"
 
 - name: Check UniFi service status (required for mongodump)

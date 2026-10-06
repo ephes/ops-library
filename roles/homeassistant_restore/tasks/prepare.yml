@@ -105,7 +105,8 @@
         msg: "Skipping safety backup; {{ homeassistant_site_root }} does not exist."
       when: not _ha_restore_site_stat.stat.exists
 
-    - block:
+    - when: _ha_restore_site_stat.stat.exists
+      block:
         - name: Prepare pre-restore directory
           ansible.builtin.file:
             path: "{{ homeassistant_restore_safety_backup_path }}"
@@ -130,4 +131,3 @@
         - name: Report safety snapshot location
           ansible.builtin.debug:
             msg: "Created safety snapshot at {{ homeassistant_restore_safety_backup_path }}"
-      when: _ha_restore_site_stat.stat.exists

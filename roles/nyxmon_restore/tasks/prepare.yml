@@ -22,7 +22,8 @@
     fail_msg: "Insufficient disk space for restore."
   when: nyxmon_restore_check_disk_space
 
-- block:
+- when: nyxmon_restore_dry_run
+  block:
     - name: Dry-run note
       ansible.builtin.debug:
         msg: "Dry run enabled, stopping before changes."
@@ -31,7 +32,6 @@
         path: "{{ nyxmon_restore_staging_path }}"
         state: absent
     - ansible.builtin.meta: end_play
-  when: nyxmon_restore_dry_run
 
 - name: Create safety snapshot path
   ansible.builtin.set_fact:

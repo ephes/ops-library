@@ -19,12 +19,13 @@
   register: dest_dir
 
 - name: Handle existing non-git directory
+  when: not git_dir.stat.exists
   block:
     - name: Backup existing directory if it's not a git repo
       ansible.builtin.command:
         cmd: "mv {{ fastdeploy_git_dest }} {{ fastdeploy_git_dest }}.backup.{{ ansible_date_time.epoch }}"
       when: dest_dir.stat.exists
-      
+
     - name: Create parent directory if needed
       ansible.builtin.file:
         path: "{{ fastdeploy_git_dest | dirname }}"
@@ -32,7 +33,6 @@
         owner: "{{ fastdeploy_user }}"
         group: "{{ fastdeploy_group }}"
         mode: '0755'
-  when: not git_dir.stat.exists
 
 - name: Clone or update FastDeploy repository
   ansible.builtin.git:

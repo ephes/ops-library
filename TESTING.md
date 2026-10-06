@@ -1,8 +1,8 @@
 # Testing Guide for ops-library
 
-`ops-library` uses a few different validation layers. The contributor workflow should make the
-practical path and the strict path explicit instead of pretending repo-wide `ansible-lint` is clean
-when it is not.
+`ops-library` uses a few different validation layers. The contributor workflow keeps the
+practical path and the strict path explicit. Repo-wide `ansible-lint` is clean only against the
+reviewed baseline in `.ansible-lint-ignore` (see [Strict lint baseline](#strict-lint-baseline)).
 
 ## Prerequisites
 
@@ -40,6 +40,39 @@ just molecule-test unifi_restore
 
 `just validate-strict` swaps in `just lint-strict` for the same sequence.
 Use `just lint` only as a quick summary helper. It intentionally does not fail the run.
+
+## Strict lint baseline
+
+`just lint-strict` runs `ansible-lint roles/` and exits non-zero on any finding that is not
+covered by `.ansible-lint-ignore`. The baseline lists existing debt as `<file> <rule> skip`
+entries, grouped by rule with a note on why each group was not fixed mechanically:
+
+- `name[prefix]`: task names in included task files without the `<file stem> | ` prefix.
+- `command-instead-of-module`, `command-instead-of-shell`, `partial-become[task]`: fixing these
+  changes behaviour (idempotence, change reporting, privilege escalation) and needs a reviewed
+  change per task.
+- `jinja[spacing]`: multi-line expressions and Jinja blocks inside shell scripts.
+- every finding in `roles/homelab_*`, pending the homelab lifecycle rework.
+
+An entry suppresses its rule for the whole file, so a new violation fails the gate unless the same
+rule is already listed for that file. Rules:
+
+- Do not add entries for new code. Fix the finding instead.
+- When you clear a file's findings for a rule, delete that entry.
+- `just lint-strict` is not part of `just test`. Run it (or `just validate-strict`) before
+  committing changes to roles; the pre-commit `ansible-lint` hook reads the same baseline.
+
+Some baselined findings still print as `(warning) # ignored`: ansible-lint 25.11 honours `skip`
+reliably only when a file has a single baselined rule. They do not fail the run. To see all
+suppressed findings, move the file aside and run the linter:
+
+```bash
+mv .ansible-lint-ignore /tmp/ansible-lint-ignore && \
+  uv run ansible-lint roles/ </dev/null; mv /tmp/ansible-lint-ignore .ansible-lint-ignore
+```
+
+Run `ansible-lint` with `</dev/null` from non-interactive shells (agents, CI wrappers): it aborts at
+startup when stdin is a non-blocking handle.
 
 ## SSH forwarding identity fixtures
 

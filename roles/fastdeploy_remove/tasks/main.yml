@@ -6,16 +6,16 @@
   fail:
     msg: |
       SAFETY CHECK: FastDeploy removal not confirmed!
-      
+
       This role will completely remove:
       - FastDeploy systemd service
       - FastDeploy PostgreSQL database and user
-      - FastDeploy user and group  
+      - FastDeploy user and group
       - Deploy user and group
       - All home directories (/home/fastdeploy, /home/deploy)
       - Traefik configuration
       - All sudoers rules for FastDeploy services
-      
+
       To proceed, set: fastdeploy_confirm_removal: true
   when: not fastdeploy_confirm_removal
 
@@ -70,7 +70,7 @@
   shell: pkill -u {{ fastdeploy_user }} || true
   ignore_errors: yes
 
-- name: Stop any processes running as deploy user  
+- name: Stop any processes running as deploy user
   shell: pkill -u {{ deploy_user }} || true
   ignore_errors: yes
 
@@ -120,7 +120,7 @@
   debug:
     msg: |
       FastDeploy removal completed successfully!
-      
+
       Removed components:
       - SystemD service: {{ fastdeploy_service_name }}
       - Database: {{ fastdeploy_postgres_database }}
@@ -130,5 +130,5 @@
       - Home directories: {{ fastdeploy_home }}, {{ deploy_home }}
       - Traefik configuration: {{ traefik_config_file }}
       - All sudoers rules (fastdeploy_*)
-      
+
       The system is now clean and ready for fresh FastDeploy installation.

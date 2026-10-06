@@ -108,9 +108,9 @@
 
 - name: Normalize block mapping information
   set_fact:
-    encrypted_volume_mapper_entries: "{{ encrypted_volume_mapper_entries | default([]) + [ {'name': entry_parts[0], 'type': entry_parts[1] | default(''), 'pkname': (entry_parts | length > 2) | ternary(entry_parts[2], '') } ] }}"
+    encrypted_volume_mapper_entries: "{{ encrypted_volume_mapper_entries | default([]) + [{'name': entry_parts[0], 'type': entry_parts[1] | default(''), 'pkname': (entry_parts | length > 2) | ternary(entry_parts[2], '')}] }}"
   vars:
-    entry_parts: "{{ (item.split() + ['','',''])[:3] }}"
+    entry_parts: "{{ (item.split() + ['', '', ''])[:3] }}"
   loop: "{{ encrypted_volume_lsblk.stdout_lines }}"
   when: item | length > 0
 

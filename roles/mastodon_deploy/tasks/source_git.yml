@@ -15,6 +15,7 @@
   register: mastodon_git_dest_dir
 
 - name: Handle existing non-git directory
+  when: not mastodon_git_dir.stat.exists
   block:
     - name: Backup existing directory
       ansible.builtin.command:
@@ -28,7 +29,6 @@
         owner: "{{ mastodon_user }}"
         group: "{{ mastodon_group }}"
         mode: "0755"
-  when: not mastodon_git_dir.stat.exists
 
 - name: Clone or update Mastodon repository
   ansible.builtin.git:

@@ -21,7 +21,7 @@
 
 - name: "Build existence lookup"
   ansible.builtin.set_fact:
-    work_app_backup_exists: "{{ work_app_backup_exists | default({}) | combine({ item.item.name: item.stat.exists }) }}"
+    work_app_backup_exists: "{{ work_app_backup_exists | default({}) | combine({item.item.name: item.stat.exists}) }}"
   loop: "{{ _work_app_backup_stats.results }}"
   loop_control:
     label: "{{ item.item.name }}"
@@ -95,7 +95,10 @@
     work_app_backup_offline_required: "{{ work_app_backup_force_stop | bool }}"
     work_app_backup_sqlite_mode: "{{ 'offline' if work_app_backup_force_stop else 'hot' }}"
 
-- block:
+- when:
+    - not work_app_backup_offline_required
+    - work_app_backup_exists.database | default(false)
+  block:
     - name: "Perform SQLite hot backup"
       ansible.builtin.command:
         cmd: >
@@ -111,11 +114,11 @@
       ansible.builtin.set_fact:
         work_app_backup_offline_required: true
         work_app_backup_sqlite_mode: offline
-  when:
-    - not work_app_backup_offline_required
-    - work_app_backup_exists.database | default(false)
 
-- block:
+- when:
+    - work_app_backup_offline_required
+    - work_app_backup_exists.database | default(false)
+  block:
     - name: "Stop Work app service for offline SQLite snapshot"
       ansible.builtin.systemd:
         name: "{{ work_app_service_name }}"
@@ -135,9 +138,6 @@
         name: "{{ work_app_service_name }}"
         state: started
       failed_when: false
-  when:
-    - work_app_backup_offline_required
-    - work_app_backup_exists.database | default(false)
 
 - name: "Rsync work app static files"
   ansible.builtin.command:

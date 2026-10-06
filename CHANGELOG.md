@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased — Strict ansible-lint baseline (2.30.1)
+
+- `just lint-strict` now passes and fails on new findings. Existing debt is
+  listed per file and rule in `.ansible-lint-ignore`, grouped with the reason
+  it was not fixed: task-name prefixes, command/shell-instead-of-module,
+  partial become, a few multi-line Jinja expressions, and all `roles/homelab_*`
+  findings until the homelab lifecycle rework lands. `TESTING.md` documents
+  the policy: fix new findings, delete entries as files are cleaned up.
+  `just test` still runs only the lint summary.
+- `paperless_restore`: the ownership reconciliation task passes its script as
+  `shell: cmd: |`. ansible-lint could not split the free-form script (quotes
+  in the SQL heredoc), so the whole `restore.yml` was never linted. The
+  rendered command is unchanged.
+- Meta fixes: platform names `Darwin`/`MacOS` become `MacOSX`
+  (`fastdeploy_register_service`, `ollama_install`, `ollama_remove`,
+  `uv_install`); `min_ansible_version` is quoted in the `ollama_proxy_*` and
+  `open_webui_*` roles.
+- Formatting only, no behaviour change: `block`/`rescue`/`always` moved after
+  `when` in 31 tasks, Jinja spacing in 20 expressions, trailing spaces,
+  missing `---` and extra blank lines removed, and the template moved to the
+  end of a `minecraft_java_backup` task name.
+
 ## Unreleased — private static sites (2.30.0)
 
 - `static_site_deploy` can publish private content. `static_site_private: true`

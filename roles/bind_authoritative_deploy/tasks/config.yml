@@ -100,4 +100,3 @@
     state: absent
   when: bind_tsig_keys | length == 0
   notify: reload bind
-

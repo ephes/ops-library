@@ -129,7 +129,7 @@
 
     - name: "Build payload existence map"
       ansible.builtin.set_fact:
-        work_app_restore_payload_exists: "{{ work_app_restore_payload_exists | default({}) | combine({ item.item.key: item.stat.exists }) }}"
+        work_app_restore_payload_exists: "{{ work_app_restore_payload_exists | default({}) | combine({item.item.key: item.stat.exists}) }}"
       loop: "{{ work_app_restore_payload_stats.results }}"
       loop_control:
         label: "{{ item.item.key }}"
@@ -209,7 +209,8 @@
           - "Dry-run: {{ work_app_restore_plan_summary.dry_run }}"
           - "Expected downtime: {{ 'Short (service restart only)' if work_app_restore_plan_summary.database else 'Moderate (full rsync + DB replace)' }}"
 
-    - block:
+    - when: not work_app_restore_dry_run
+      block:
         - name: "Set safety snapshot directory"
           ansible.builtin.set_fact:
             work_app_restore_safety_dir: "{{ work_app_site_path }}.{{ work_app_restore_safe_snapshot_prefix }}-{{ work_app_restore_timestamp }}"
@@ -452,7 +453,6 @@
 
         - ansible.builtin.set_fact:
             work_app_restore_success: true
-      when: not work_app_restore_dry_run
 
   always:
     - name: "Cleanup staging directory"

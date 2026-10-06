@@ -11,6 +11,9 @@
   when: dns_firewall_enable | default(false)
 
 - name: Configure DNS firewall rules (if UFW exists and enabled)
+  when:
+    - dns_firewall_enable | default(false)
+    - ufw_installed.rc == 0
   block:
     # CRITICAL: Ensure SSH is allowed to prevent lockout
     - name: Allow SSH to prevent lockout
@@ -44,6 +47,3 @@
           WARNING: DNS firewall rules have been configured but UFW is NOT automatically enabled.
           To enable the firewall, run: sudo ufw enable
           Make sure SSH access is allowed first!
-  when:
-    - dns_firewall_enable | default(false)
-    - ufw_installed.rc == 0

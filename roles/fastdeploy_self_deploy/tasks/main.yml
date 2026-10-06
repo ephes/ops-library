@@ -24,7 +24,7 @@
   loop:
     - "{{ fd_self_base_dir }}"
     - "{{ fd_self_base_dir }}/fastdeploy-staging"
-  
+
 - name: Ensure log directory exists
   file:
     path: "{{ fd_self_log_dir }}"

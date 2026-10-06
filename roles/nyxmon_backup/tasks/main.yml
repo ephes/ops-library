@@ -35,13 +35,13 @@
 
 - name: Merge systemd unit facts
   ansible.builtin.set_fact:
-    nyxmon_backup_exists: "{{ nyxmon_backup_exists | default({}) | combine({ item.item.src: item.stat.exists }) }}"
+    nyxmon_backup_exists: "{{ nyxmon_backup_exists | default({}) | combine({item.item.src: item.stat.exists}) }}"
   loop: "{{ nyxmon_backup_unit_stats.results | default([]) }}"
   when: nyxmon_backup_unit_stats is defined
 
 - name: Build Nyxmon path existence map
   ansible.builtin.set_fact:
-    nyxmon_backup_exists: "{{ nyxmon_backup_exists | default({}) | combine({ item.item.path: item.stat.exists }) }}"
+    nyxmon_backup_exists: "{{ nyxmon_backup_exists | default({}) | combine({item.item.path: item.stat.exists}) }}"
   loop: "{{ nyxmon_backup_path_stats.results }}"
   loop_control:
     label: "{{ item.item.path }}"

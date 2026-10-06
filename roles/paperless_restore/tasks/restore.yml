@@ -4,7 +4,8 @@
     msg: "paperless_restore_dry_run=true - skipping service stop and data restore"
   when: paperless_restore_dry_run | bool
 
-- block:
+- when: not paperless_restore_dry_run | bool
+  block:
     - name: Compute staged database path
       ansible.builtin.set_fact:
         paperless_restore_staged_database_path: "{{ paperless_restore_staging_path }}/paperless.sql"
@@ -85,7 +86,9 @@
         - not paperless_restore_attempt_importer | bool
         - paperless_restore_use_importer | bool
 
-    - block:
+    - when:
+        - paperless_restore_attempt_importer | bool
+      block:
         - name: Ensure importer source directory exists
           ansible.builtin.stat:
             path: "{{ paperless_restore_importer_source_path }}"
@@ -112,8 +115,6 @@
           ansible.builtin.set_fact:
             paperless_restore_used_importer: true
             paperless_restore_data_strategy: importer
-      when:
-        - paperless_restore_attempt_importer | bool
       rescue:
         - name: Log importer failure
           ansible.builtin.debug:
@@ -146,77 +147,78 @@
       when: not paperless_restore_used_importer | bool
 
     - name: Reconcile PostgreSQL ownership and privileges after SQL restore
-      ansible.builtin.shell: |
-        set -euo pipefail
-        {{ paperless_restore_psql_binary }} \
-          {% if paperless_restore_postgres_admin_host | default('') | string | length > 0 -%}
-          --host={{ paperless_restore_postgres_admin_host }} \
-          {%- endif %}
-          {% if paperless_restore_postgres_admin_port | default('') | string | length > 0 -%}
-          --port={{ paperless_restore_postgres_admin_port }} \
-          {%- endif %}
-          --username={{ paperless_restore_postgres_admin_user }} \
-          --dbname={{ paperless_restore_postgres_database }} \
-          --set ON_ERROR_STOP=1 <<'SQL'
-        DO $$
-        DECLARE
-          _owner text := '{{ paperless_restore_postgres_owner | replace("'", "''") }}';
-          r record;
-        BEGIN
-          EXECUTE format('ALTER SCHEMA public OWNER TO %I', _owner);
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          {{ paperless_restore_psql_binary }} \
+            {% if paperless_restore_postgres_admin_host | default('') | string | length > 0 -%}
+            --host={{ paperless_restore_postgres_admin_host }} \
+            {%- endif %}
+            {% if paperless_restore_postgres_admin_port | default('') | string | length > 0 -%}
+            --port={{ paperless_restore_postgres_admin_port }} \
+            {%- endif %}
+            --username={{ paperless_restore_postgres_admin_user }} \
+            --dbname={{ paperless_restore_postgres_database }} \
+            --set ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          DECLARE
+            _owner text := '{{ paperless_restore_postgres_owner | replace("'", "''") }}';
+            r record;
+          BEGIN
+            EXECUTE format('ALTER SCHEMA public OWNER TO %I', _owner);
 
-          FOR r IN
-            SELECT schemaname, tablename
-            FROM pg_tables
-            WHERE schemaname='public'
-          LOOP
-            EXECUTE format('ALTER TABLE %I.%I OWNER TO %I', r.schemaname, r.tablename, _owner);
-          END LOOP;
+            FOR r IN
+              SELECT schemaname, tablename
+              FROM pg_tables
+              WHERE schemaname='public'
+            LOOP
+              EXECUTE format('ALTER TABLE %I.%I OWNER TO %I', r.schemaname, r.tablename, _owner);
+            END LOOP;
 
-          FOR r IN
-            SELECT schemaname, viewname
-            FROM pg_views
-            WHERE schemaname='public'
-          LOOP
-            EXECUTE format('ALTER VIEW %I.%I OWNER TO %I', r.schemaname, r.viewname, _owner);
-          END LOOP;
+            FOR r IN
+              SELECT schemaname, viewname
+              FROM pg_views
+              WHERE schemaname='public'
+            LOOP
+              EXECUTE format('ALTER VIEW %I.%I OWNER TO %I', r.schemaname, r.viewname, _owner);
+            END LOOP;
 
-          FOR r IN
-            SELECT schemaname, matviewname
-            FROM pg_matviews
-            WHERE schemaname='public'
-          LOOP
-            EXECUTE format('ALTER MATERIALIZED VIEW %I.%I OWNER TO %I', r.schemaname, r.matviewname, _owner);
-          END LOOP;
+            FOR r IN
+              SELECT schemaname, matviewname
+              FROM pg_matviews
+              WHERE schemaname='public'
+            LOOP
+              EXECUTE format('ALTER MATERIALIZED VIEW %I.%I OWNER TO %I', r.schemaname, r.matviewname, _owner);
+            END LOOP;
 
-          FOR r IN
-            SELECT sequence_schema, sequence_name
-            FROM information_schema.sequences
-            WHERE sequence_schema='public'
-          LOOP
-            EXECUTE format('ALTER SEQUENCE %I.%I OWNER TO %I', r.sequence_schema, r.sequence_name, _owner);
-          END LOOP;
+            FOR r IN
+              SELECT sequence_schema, sequence_name
+              FROM information_schema.sequences
+              WHERE sequence_schema='public'
+            LOOP
+              EXECUTE format('ALTER SEQUENCE %I.%I OWNER TO %I', r.sequence_schema, r.sequence_name, _owner);
+            END LOOP;
 
-          EXECUTE format('GRANT USAGE ON SCHEMA public TO %I', _owner);
-          EXECUTE format(
-            'GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public TO %I',
-            _owner
-          );
-          EXECUTE format(
-            'GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO %I',
-            _owner
-          );
+            EXECUTE format('GRANT USAGE ON SCHEMA public TO %I', _owner);
+            EXECUTE format(
+              'GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public TO %I',
+              _owner
+            );
+            EXECUTE format(
+              'GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO %I',
+              _owner
+            );
 
-          EXECUTE format(
-            'ALTER DEFAULT PRIVILEGES FOR USER postgres IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLES TO %I',
-            _owner
-          );
-          EXECUTE format(
-            'ALTER DEFAULT PRIVILEGES FOR USER postgres IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO %I',
-            _owner
-          );
-        END $$;
-        SQL
+            EXECUTE format(
+              'ALTER DEFAULT PRIVILEGES FOR USER postgres IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLES TO %I',
+              _owner
+            );
+            EXECUTE format(
+              'ALTER DEFAULT PRIVILEGES FOR USER postgres IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO %I',
+              _owner
+            );
+          END $$;
+          SQL
       args:
         executable: /bin/bash
       become: true
@@ -301,7 +303,7 @@
 
     - name: Build auxiliary system file map
       ansible.builtin.set_fact:
-        paperless_restore_system_extra_map: "{{ paperless_restore_system_extra_map | default({}) | combine({ item.item.src: item.stat.exists | default(false) }) }}"
+        paperless_restore_system_extra_map: "{{ paperless_restore_system_extra_map | default({}) | combine({item.item.src: item.stat.exists | default(false)}) }}"
       loop: "{{ _paperless_restore_system_extra.results }}"
       when: paperless_restore_system_files | bool
 
@@ -348,4 +350,3 @@
     - name: Mark restore files applied
       ansible.builtin.set_fact:
         paperless_restore_files_restored: true
-  when: not paperless_restore_dry_run | bool

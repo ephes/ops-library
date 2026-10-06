@@ -29,6 +29,9 @@
     - ansible_user_id == 'root'
 
 - name: Resolve Homebrew path when not provided
+  when:
+    - ollama_remove_brew_package | bool
+    - ollama_brew_bin | length == 0
   block:
     - name: Check Homebrew at /opt/homebrew/bin/brew
       ansible.builtin.stat:
@@ -50,9 +53,6 @@
               | ternary('/usr/local/bin/brew', '')
             )
           }}
-  when:
-    - ollama_remove_brew_package | bool
-    - ollama_brew_bin | length == 0
 
 - name: Use provided Homebrew binary path
   ansible.builtin.set_fact:

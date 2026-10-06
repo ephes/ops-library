@@ -55,9 +55,9 @@
       FastDeploy service registration completed!
       Service: {{ test_dummy_fastdeploy_service_name }}
       Location: {{ test_dummy_fastdeploy_services_root }}/{{ test_dummy_fastdeploy_service_name }}
-      
+
       The service is now ready to be deployed through the FastDeploy UI.
-      
+
       Files created:
       - config.json (service metadata)
       - deploy.py (Python deployment script)

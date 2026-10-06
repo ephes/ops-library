@@ -248,7 +248,8 @@ ansible-playbook tests/test_traefik_deploy.yml -i tests/inventory/test.yml
 
 `just test` now runs role tests, the non-failing lint summary, a strict Sphinx build, and docs validation.
 Use `just validate-strict` when you want `ansible-lint` failures to stop the run, and use `just lint`
-only as a quick summary helper.
+only as a quick summary helper. `just lint-strict` passes against the reviewed baseline in
+`.ansible-lint-ignore`; new findings fail it (see `TESTING.md`).
 
 ### Developer Setup
 

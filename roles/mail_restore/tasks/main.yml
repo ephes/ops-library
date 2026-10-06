@@ -186,6 +186,7 @@
 # =============================================================================
 
 - name: Restore PostgreSQL database
+  when: mail_restore_database
   block:
     - name: Drop existing database
       community.postgresql.postgresql_db:
@@ -209,9 +210,9 @@
       become: true
       become_user: postgres
       changed_when: true
-  when: mail_restore_database
 
 - name: Restore maildir
+  when: mail_restore_maildir
   block:
     - name: Remove existing maildir
       ansible.builtin.file:
@@ -237,16 +238,15 @@
         owner: "{{ mail_restore_vmail_owner }}"
         group: "{{ mail_restore_vmail_group }}"
         recurse: true
-  when: mail_restore_maildir
 
 - name: Restore configuration
+  when: mail_restore_config
   block:
     - name: Extract config from backup
       ansible.builtin.unarchive:
         src: "{{ mail_restore_source }}/config.tar.gz"
         dest: /
         remote_src: true
-  when: mail_restore_config
 
 # =============================================================================
 # Start services after restore

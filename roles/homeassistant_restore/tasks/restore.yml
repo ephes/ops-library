@@ -137,7 +137,7 @@
 
         - name: Build system file availability map
           ansible.builtin.set_fact:
-            _ha_restore_system_file_map: "{{ _ha_restore_system_file_map | default({}) | combine({ item.item: item.stat.exists | default(false) }) }}"
+            _ha_restore_system_file_map: "{{ _ha_restore_system_file_map | default({}) | combine({item.item: item.stat.exists | default(false)}) }}"
           loop: "{{ _ha_restore_system_files.results }}"
 
         - name: Copy systemd unit file if present

@@ -1,3 +1,4 @@
+---
 - name: "Template secrets.yaml"
   ansible.builtin.template:
     src: secrets.yaml.j2
@@ -87,7 +88,7 @@
 
 - name: "Build include map"
   ansible.builtin.set_fact:
-    _ha_include_exists: "{{ _ha_include_exists | default({}) | combine({ item.item: item.stat.exists }) }}"
+    _ha_include_exists: "{{ _ha_include_exists | default({}) | combine({item.item: item.stat.exists}) }}"
   loop: "{{ _ha_include_stats.results | default([]) }}"
   when: homeassistant_manage_includes | bool
 

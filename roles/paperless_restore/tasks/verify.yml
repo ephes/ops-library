@@ -4,7 +4,8 @@
     msg: "paperless_restore_dry_run=true - skipping service start and health checks"
   when: paperless_restore_dry_run | bool
 
-- block:
+- when: not paperless_restore_dry_run | bool
+  block:
     - name: Start Paperless services
       ansible.builtin.systemd:
         name: "{{ item }}"
@@ -62,7 +63,6 @@
     - name: Mark restore as successful
       ansible.builtin.set_fact:
         paperless_restore_operation_successful: true
-  when: not paperless_restore_dry_run | bool
   rescue:
     - name: Flag verification failure
       ansible.builtin.set_fact:

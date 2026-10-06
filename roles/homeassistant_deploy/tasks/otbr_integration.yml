@@ -64,6 +64,7 @@
       no_log: true
 
     - name: "Handle OTBR config flow aborts"
+      when: (_ha_otbr_flow.json.type | default('')) == 'abort'
       block:
         - name: "Skip OTBR config flow when already configured"
           ansible.builtin.debug:
@@ -74,7 +75,6 @@
           ansible.builtin.fail:
             msg: "OTBR config flow aborted: {{ _ha_otbr_flow.json.reason | default('unknown') }}."
           when: (_ha_otbr_flow.json.reason | default('')) != 'already_configured'
-      when: (_ha_otbr_flow.json.type | default('')) == 'abort'
 
     - name: "Submit OTBR config flow"
       ansible.builtin.uri:

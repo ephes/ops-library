@@ -8,6 +8,7 @@
   changed_when: false
 
 - name: Remove DNS firewall rules
+  when: ufw_installed.rc == 0
   block:
     - name: Remove DNS port 53 rules
       ufw:
@@ -38,5 +39,3 @@
         - tcp
         - udp
       failed_when: false
-
-  when: ufw_installed.rc == 0

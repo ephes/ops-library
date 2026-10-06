@@ -16,7 +16,7 @@
 
 - name: "Build path existence map"
   ansible.builtin.set_fact:
-    _ha_backup_exists: "{{ _ha_backup_exists | default({}) | combine({ item.item.path: item.stat.exists }) }}"
+    _ha_backup_exists: "{{ _ha_backup_exists | default({}) | combine({item.item.path: item.stat.exists}) }}"
   loop: "{{ _ha_backup_path_stats.results }}"
   loop_control:
     label: "{{ item.item.path }}"
@@ -40,7 +40,7 @@
 
 - name: "Update path existence map with extra paths"
   ansible.builtin.set_fact:
-    _ha_backup_exists: "{{ _ha_backup_exists | combine({ item.item.src: item.stat.exists | default(false) }) }}"
+    _ha_backup_exists: "{{ _ha_backup_exists | combine({item.item.src: item.stat.exists | default(false)}) }}"
   loop: "{{ _ha_backup_extra_stats.results | default([]) }}"
 
 - name: "Set backup timestamp"

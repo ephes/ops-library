@@ -8,7 +8,8 @@
   ansible.builtin.pause:
     seconds: "{{ unifi_restore_service_stop_pause | int }}"
 
-- block:
+- when: unifi_restore_include_mongodb | bool
+  block:
     - name: "mongodb | Determine backup dump directory"
       ansible.builtin.set_fact:
         unifi_restore_mongodb_dump_dir: "{{ unifi_restore_extracted_dir }}/database/{{ unifi_restore_mongodb_database }}"
@@ -96,10 +97,10 @@
       when: unifi_restore_mongodb_dump_available
       no_log: "{{ unifi_restore_mongodb_password | default('', true) | length > 0 }}"
 
-  when: unifi_restore_include_mongodb | bool
 
 # Automated restore path: rsync data directory
-- block:
+- when: unifi_restore_method == 'automated'
+  block:
     - name: Rsync UniFi data directory
       ansible.builtin.command:
         cmd: >
@@ -112,10 +113,10 @@
       ansible.builtin.command: |
         find "{{ unifi_data_path }}" -exec chown unifi:unifi {} +
       changed_when: true
-  when: unifi_restore_method == 'automated'
 
 # Manual .unf preparation path
-- block:
+- when: unifi_restore_method == 'manual-unf-prep'
+  block:
     - name: Find latest .unf file in backup
       ansible.builtin.find:
         paths: "{{ unifi_restore_extracted_dir }}/autobackups"
@@ -147,7 +148,6 @@
           5. Upload /tmp/unifi-restore.unf
           6. Follow the web UI prompts
           (File is removed automatically during cleanup; download it now if you need a local copy.)
-  when: unifi_restore_method == 'manual-unf-prep'
 
 - name: Stat extracted systemd unit
   ansible.builtin.stat:

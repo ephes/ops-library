@@ -9,7 +9,8 @@
     name: "{{ unifi_service_name }}"
     state: stopped
 
-- block:
+- when: unifi_restore_include_mongodb | bool
+  block:
     - name: "mongodb rollback | Determine safety backup dump directory"
       ansible.builtin.set_fact:
         unifi_rollback_mongodb_dump_dir: "{{ unifi_safety_backup_path }}/database/{{ unifi_restore_mongodb_database }}"
@@ -101,7 +102,6 @@
       when: unifi_rollback_mongodb_dump_available
       no_log: "{{ unifi_restore_mongodb_password | default('', true) | length > 0 }}"
 
-  when: unifi_restore_include_mongodb | bool
 
 - name: Restore UniFi data directory from safety backup
   ansible.builtin.command:

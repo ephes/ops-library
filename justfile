@@ -187,11 +187,11 @@ syntax-check: venv
 # Run ansible-lint summary (non-failing convenience helper)
 lint: venv
     @echo "Running ansible-lint..."
-    @echo "Note: this is a summary-only helper. Use 'just lint-strict' or 'just test' for a failing validation gate."
+    @echo "Note: this is a summary-only helper. Use 'just lint-strict' or 'just validate-strict' for a failing validation gate."
     @echo "Linting roles..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-lint roles/ 2>&1 | tail -3 || true
 
-# Run strict ansible-lint (will fail on errors)
+# Run strict ansible-lint (fails on any finding not listed in .ansible-lint-ignore)
 lint-strict: venv
     @echo "Running ansible-lint (strict mode)..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-lint roles/

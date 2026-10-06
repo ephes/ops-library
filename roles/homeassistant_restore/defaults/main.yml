@@ -2,7 +2,7 @@
 # Archive selection
 homeassistant_restore_archive: "latest"
 homeassistant_restore_archive_search_root: /opt/backups/homeassistant
-homeassistant_restore_local_cache: "{{ lookup('env','HOME') }}/backups/homeassistant"
+homeassistant_restore_local_cache: "{{ lookup('env', 'HOME') }}/backups/homeassistant"
 homeassistant_restore_upload_target: "{{ homeassistant_restore_archive_search_root }}"
 homeassistant_restore_staging_dir: /tmp/homeassistant-restore
 homeassistant_restore_staging_mode: '0700'

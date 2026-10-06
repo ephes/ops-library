@@ -12,6 +12,7 @@
       This will remove Unbound DNS from the system.
 
 - name: Include removal tasks
+  when: dns_confirm_removal | bool
   block:
     - name: Stop DNS services
       include_tasks: stop_services.yml
@@ -31,5 +32,3 @@
 
     - name: Final cleanup
       include_tasks: final_cleanup.yml
-
-  when: dns_confirm_removal | bool

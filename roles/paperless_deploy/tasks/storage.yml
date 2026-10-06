@@ -1,3 +1,4 @@
+---
 - name: Verify encrypted storage is mounted
   ansible.builtin.assert:
     that:

@@ -46,6 +46,8 @@
   notify: "Restart fail2ban"
 
 - name: Configure sshd drop-in hardening
+  when: ssh_guard_sshd_dropin_enabled | bool
+  notify: "Reload ssh"
   block:
     - name: Write sshd drop-in
       ansible.builtin.template:
@@ -68,5 +70,3 @@
     - name: Fail due to invalid sshd config
       ansible.builtin.fail:
         msg: "Invalid sshd config; removed {{ ssh_guard_sshd_dropin_path }}."
-  when: ssh_guard_sshd_dropin_enabled | bool
-  notify: "Reload ssh"
