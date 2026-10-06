@@ -16,6 +16,10 @@
   the cleanup can never remove an earlier backup.
   Rollout: none needed; the next scheduled backup picks it up. A broken
   database now fails the backup run loudly instead of passing quietly.
+- `mail_backup`: `manifest.yml` now gets group `mail_backup_group` (default
+  `postgres`, like the rest of the backup) instead of `mail_backup_owner`,
+  which was a typo. With the default owner `root` it was group `root`; with
+  a non-root owner that has no group of the same name, the task failed.
 - `mail_restore`: `database.sql.gz` is checked (`gzip -t`, not empty) before
   the existing database is dropped, and `gunzip | psql` runs with `pipefail`.
 - `nyxmon_restore` ("Collect staging usage") and the Traefik basic-auth hash

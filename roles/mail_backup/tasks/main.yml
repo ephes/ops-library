@@ -119,7 +119,7 @@
             config_paths: {{ mail_backup_config_paths | to_json }}
         dest: "{{ mail_backup_dir }}/manifest.yml"
         owner: "{{ mail_backup_owner }}"
-        group: "{{ mail_backup_owner }}"
+        group: "{{ mail_backup_group }}"
         mode: "{{ mail_backup_file_mode }}"
 
     # =============================================================================

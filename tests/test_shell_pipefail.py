@@ -438,6 +438,19 @@ class MailBackupStructureTest(unittest.TestCase):
                 "mail_backup_archive_path", task.get("ansible.builtin.set_fact", {})
             )
 
+    def test_backup_files_use_backup_owner_and_group(self):
+        for task in iter_tasks(self.top):
+            for module in ("ansible.builtin.file", "ansible.builtin.copy"):
+                args = task.get(module) or {}
+                if "group" in args:
+                    self.assertEqual(
+                        args["group"], "{{ mail_backup_group }}", task.get("name")
+                    )
+                if "owner" in args:
+                    self.assertEqual(
+                        args["owner"], "{{ mail_backup_owner }}", task.get("name")
+                    )
+
     def test_retention_runs_only_after_backup_block(self):
         block_index = self.index_of("Create backup")
         for name in (
