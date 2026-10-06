@@ -61,3 +61,35 @@
       When delve_storekit_root_certs_path is set, delve_storekit_bundle_id,
       delve_storekit_product_ids, and delve_storekit_root_certs_src are also
       required (the binary refuses to boot without the bundle id/product ids).
+
+# Optional boolean flags: empty (unset) or a real boolean / "true" / "false".
+# Anything else (a typo such as "ture", "yes please", 1) would otherwise render
+# as false through the bool filter and silently disable the flag.
+- name: validate | Validate optional Delve boolean flags
+  ansible.builtin.assert:
+    that:
+      - item.value is boolean or (item.value | string | lower) in ['', 'true', 'false']
+    fail_msg: >-
+      {{ item.name }} must be empty (unset), true or false; got
+      {{ item.value | string | to_json }}.
+    quiet: true
+  loop:
+    - name: delve_apple_server_notifications
+      value: "{{ delve_apple_server_notifications }}"
+    - name: delve_profile_legacy_reregister
+      value: "{{ delve_profile_legacy_reregister }}"
+    - name: delve_apple_signin_legacy_no_nonce
+      value: "{{ delve_apple_signin_legacy_no_nonce }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: validate | Validate Apple server notifications have a client id
+  ansible.builtin.assert:
+    that:
+      - (delve_apple_server_notifications | string | length == 0) or
+        (not (delve_apple_server_notifications | bool)) or
+        (delve_apple_client_id | length > 0)
+    fail_msg: >-
+      delve_apple_server_notifications requires delve_apple_client_id (the
+      binary refuses to boot without DELVE_APPLE_CLIENT_ID when Apple server
+      notifications are enabled).

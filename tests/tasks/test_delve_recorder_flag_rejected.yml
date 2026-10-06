@@ -1,0 +1,42 @@
+---
+# Assert that a delve_deploy / recorder_deploy validate.yml rejects one invalid
+# optional flag value in the expected task.
+#
+# The caller supplies:
+#   flag_validate_tasks - path to the role's tasks/validate.yml
+#   flag_case           - dict: name, expected_task and the role variables to
+#                         override (missing keys default to empty/unset)
+#
+# The verdict is recorded as a fact and asserted outside the rescued block, so
+# the assertion itself cannot be swallowed by the rescue, and the failed task
+# name is checked so an unrelated failure cannot pass as a rejection.
+- name: "test_delve_recorder_flag_rejected | Attempt validation with {{ flag_case.name }}"
+  block:
+    - name: "test_delve_recorder_flag_rejected | Run validation with {{ flag_case.name }}"
+      ansible.builtin.include_tasks: "{{ flag_validate_tasks }}"
+      vars:
+        delve_apple_client_id: "{{ flag_case.delve_apple_client_id | default('') }}"
+        delve_apple_server_notifications: "{{ flag_case.delve_apple_server_notifications | default('') }}"
+        delve_profile_legacy_reregister: "{{ flag_case.delve_profile_legacy_reregister | default('') }}"
+        delve_apple_signin_legacy_no_nonce: "{{ flag_case.delve_apple_signin_legacy_no_nonce | default('') }}"
+        recorder_max_chunk_bytes: "{{ flag_case.recorder_max_chunk_bytes | default('') }}"
+
+    - name: "test_delve_recorder_flag_rejected | Record that validation accepted {{ flag_case.name }}"
+      ansible.builtin.set_fact:
+        flag_case_rejected: false
+        flag_case_failed_task: ""
+
+  rescue:
+    - name: "test_delve_recorder_flag_rejected | Record that validation rejected {{ flag_case.name }}"
+      ansible.builtin.set_fact:
+        flag_case_rejected: true
+        flag_case_failed_task: "{{ ansible_failed_task.name }}"
+
+- name: "test_delve_recorder_flag_rejected | Assert validation rejected {{ flag_case.name }}"
+  ansible.builtin.assert:
+    that:
+      - flag_case_rejected | bool
+      - flag_case_failed_task == flag_case.expected_task
+    fail_msg: >-
+      validate.yml must reject {{ flag_case.name }} in '{{ flag_case.expected_task }}'.
+      rejected={{ flag_case_rejected }} failed_task={{ flag_case_failed_task | default('<none>') }}

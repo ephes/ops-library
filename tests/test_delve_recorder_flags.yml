@@ -1,0 +1,217 @@
+---
+# Test playbook for the optional delve_deploy transition/feature flags and the
+# recorder_deploy upload chunk cap: empty defaults, env-file rendering only when
+# set, and validation of the values.
+#
+# Names verified against ephes/podcast main:
+#   apps/delve-backend/internal/config/config.go (envBool)
+#     DELVE_PROFILE_LEGACY_REREGISTER, DELVE_APPLE_SIGNIN_LEGACY_NO_NONCE,
+#     DELVE_APPLE_SERVER_NOTIFICATIONS
+#   apps/recorder/internal/config/config.go (envPositiveInt64)
+#     RECORDER_MAX_CHUNK_BYTES
+
+- name: Test delve_deploy and recorder_deploy optional flags
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  # Defaults are loaded as play vars_files (lower precedence than task vars) so
+  # the per-task overrides below take effect; include_vars would outrank them.
+  vars_files:
+    - ../roles/delve_deploy/defaults/main.yml
+    - ../roles/recorder_deploy/defaults/main.yml
+
+  vars:
+    delve_role: "{{ playbook_dir }}/../roles/delve_deploy"
+    recorder_role: "{{ playbook_dir }}/../roles/recorder_deploy"
+    delve_flag_names:
+      - DELVE_APPLE_SERVER_NOTIFICATIONS
+      - DELVE_PROFILE_LEGACY_REREGISTER
+      - DELVE_APPLE_SIGNIN_LEGACY_NO_NONCE
+    delve_flags_task: "validate | Validate optional Delve boolean flags"
+    delve_notifications_task: "validate | Validate Apple server notifications have a client id"
+    recorder_chunk_task: "Validate optional recorder upload chunk cap"
+
+  tasks:
+    - name: Create a scratch directory
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: delve-flags
+      register: flag_scratch
+
+    - name: Create placeholder binaries for the validation binary checks
+      ansible.builtin.copy:
+        content: "placeholder\n"
+        dest: "{{ flag_scratch.path }}/{{ item }}"
+        mode: "0600"
+      loop:
+        - delved
+        - recorderd
+
+    - name: Assert the new variables default to empty (unset)
+      ansible.builtin.assert:
+        that:
+          - delve_apple_server_notifications == ""
+          - delve_profile_legacy_reregister == ""
+          - delve_apple_signin_legacy_no_nonce == ""
+          - recorder_max_chunk_bytes == ""
+
+    - name: Set shared test values
+      ansible.builtin.set_fact:
+        delve_binary_src: "{{ flag_scratch.path }}/delved"
+        delve_session_secret: "0123456789abcdef0123456789abcdef"
+        recorder_binary_src: "{{ flag_scratch.path }}/recorderd"
+
+    # --- Rendering -----------------------------------------------------------
+
+    - name: Render env files with defaults
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "{{ flag_scratch.path }}/{{ item.dest }}"
+        mode: "0600"
+      loop:
+        - { src: "{{ delve_role }}/templates/delve.env.j2", dest: delve-default.env }
+        - { src: "{{ recorder_role }}/templates/recorder.env.j2", dest: recorder-default.env }
+
+    - name: Render the delve env file with the transition flags on (booleans)
+      ansible.builtin.template:
+        src: "{{ delve_role }}/templates/delve.env.j2"
+        dest: "{{ flag_scratch.path }}/delve-on.env"
+        mode: "0600"
+      vars:
+        delve_apple_client_id: "com.example.delve"
+        delve_apple_server_notifications: true
+        delve_profile_legacy_reregister: true
+        delve_apple_signin_legacy_no_nonce: true
+
+    - name: Render the delve env file with the flags off (extra-vars strings)
+      ansible.builtin.template:
+        src: "{{ delve_role }}/templates/delve.env.j2"
+        dest: "{{ flag_scratch.path }}/delve-off.env"
+        mode: "0600"
+      vars:
+        delve_apple_server_notifications: "False"
+        delve_profile_legacy_reregister: "false"
+        delve_apple_signin_legacy_no_nonce: false
+
+    - name: Render the recorder env file with a chunk cap
+      ansible.builtin.template:
+        src: "{{ recorder_role }}/templates/recorder.env.j2"
+        dest: "{{ flag_scratch.path }}/recorder-chunk.env"
+        mode: "0600"
+      vars:
+        recorder_max_chunk_bytes: "8388608"
+
+    - name: Read rendered env files
+      ansible.builtin.slurp:
+        path: "{{ flag_scratch.path }}/{{ item }}"
+      loop:
+        - delve-default.env
+        - recorder-default.env
+        - delve-on.env
+        - delve-off.env
+        - recorder-chunk.env
+      register: flag_rendered
+
+    - name: Assert unset variables are left out of the env files
+      ansible.builtin.assert:
+        that:
+          - delve_default is not search(item)
+        quiet: true
+      loop: "{{ delve_flag_names }}"
+      vars:
+        delve_default: "{{ flag_rendered.results[0].content | b64decode }}"
+
+    - name: Assert the default recorder env has no chunk cap
+      ansible.builtin.assert:
+        that:
+          - recorder_default is not search('RECORDER_MAX_CHUNK_BYTES')
+      vars:
+        recorder_default: "{{ flag_rendered.results[1].content | b64decode }}"
+
+    - name: Assert set flags are rendered with normalized values
+      ansible.builtin.assert:
+        that:
+          - (item ~ '="true"') in delve_on.splitlines()
+          - (item ~ '="false"') in delve_off.splitlines()
+        quiet: true
+      loop: "{{ delve_flag_names }}"
+      vars:
+        delve_on: "{{ flag_rendered.results[2].content | b64decode }}"
+        delve_off: "{{ flag_rendered.results[3].content | b64decode }}"
+
+    - name: Assert the recorder chunk cap is rendered
+      ansible.builtin.assert:
+        that:
+          - "'RECORDER_MAX_CHUNK_BYTES=\"8388608\"' in recorder_chunk.splitlines()"
+      vars:
+        recorder_chunk: "{{ flag_rendered.results[4].content | b64decode }}"
+
+    # --- Validation: accepted values ----------------------------------------
+
+    - name: Validate delve with the documented transition settings
+      ansible.builtin.include_tasks: "{{ delve_role }}/tasks/validate.yml"
+      vars:
+        delve_profile_legacy_reregister: true
+        delve_apple_signin_legacy_no_nonce: "true"
+
+    - name: Validate delve with notifications on and a client id
+      ansible.builtin.include_tasks: "{{ delve_role }}/tasks/validate.yml"
+      vars:
+        delve_apple_client_id: "com.example.delve"
+        delve_apple_server_notifications: "True"
+        delve_profile_legacy_reregister: "false"
+        delve_apple_signin_legacy_no_nonce: false
+
+    - name: Validate delve with notifications explicitly off and no client id
+      ansible.builtin.include_tasks: "{{ delve_role }}/tasks/validate.yml"
+      vars:
+        delve_apple_server_notifications: false
+
+    - name: Validate recorder with a chunk cap
+      ansible.builtin.include_tasks: "{{ recorder_role }}/tasks/validate.yml"
+      vars:
+        recorder_max_chunk_bytes: 4194304
+
+    # --- Validation: rejected values ----------------------------------------
+
+    - name: Assert delve rejects invalid flag values
+      ansible.builtin.include_tasks: tasks/test_delve_recorder_flag_rejected.yml
+      vars:
+        flag_validate_tasks: "{{ delve_role }}/tasks/validate.yml"
+      loop:
+        - name: a typo in the reregister flag
+          delve_profile_legacy_reregister: "ture"
+          expected_task: "{{ delve_flags_task }}"
+        - name: an integer nonce flag
+          delve_apple_signin_legacy_no_nonce: 1
+          expected_task: "{{ delve_flags_task }}"
+        - name: a yes/no notifications value
+          delve_apple_server_notifications: "yes"
+          delve_apple_client_id: "com.example.delve"
+          expected_task: "{{ delve_flags_task }}"
+        - name: notifications without a client id
+          delve_apple_server_notifications: true
+          expected_task: "{{ delve_notifications_task }}"
+      loop_control:
+        loop_var: flag_case
+        label: "{{ flag_case.name }}"
+
+    - name: Assert recorder rejects invalid chunk caps
+      ansible.builtin.include_tasks: tasks/test_delve_recorder_flag_rejected.yml
+      vars:
+        flag_validate_tasks: "{{ recorder_role }}/tasks/validate.yml"
+      loop:
+        - { name: a zero chunk cap, recorder_max_chunk_bytes: 0, expected_task: "{{ recorder_chunk_task }}" }
+        - { name: a negative chunk cap, recorder_max_chunk_bytes: -1, expected_task: "{{ recorder_chunk_task }}" }
+        - { name: a unit suffix, recorder_max_chunk_bytes: "4MiB", expected_task: "{{ recorder_chunk_task }}" }
+        - { name: a boolean chunk cap, recorder_max_chunk_bytes: true, expected_task: "{{ recorder_chunk_task }}" }
+        - { name: an int64 overflow, recorder_max_chunk_bytes: "99999999999999999999", expected_task: "{{ recorder_chunk_task }}" }
+      loop_control:
+        loop_var: flag_case
+        label: "{{ flag_case.name }}"
+
+    - name: Remove the scratch directory
+      ansible.builtin.file:
+        path: "{{ flag_scratch.path }}"
+        state: absent

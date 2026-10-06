@@ -29,3 +29,15 @@
       - recorder_port | int > 0
       - (not recorder_traefik_enabled) or (recorder_traefik_host | length > 0)
     fail_msg: "recorder_public_url, recorder_port, and (when Traefik is enabled) recorder_traefik_host are required."
+
+# The binary silently ignores a non-positive or unparseable value and falls back
+# to its default, so reject it here instead.
+- name: Validate optional recorder upload chunk cap
+  ansible.builtin.assert:
+    that:
+      - recorder_max_chunk_bytes is not boolean
+      - (recorder_max_chunk_bytes | string | length == 0) or
+        (recorder_max_chunk_bytes | string is match('^[1-9][0-9]{0,17}$'))
+    fail_msg: >-
+      recorder_max_chunk_bytes must be empty (binary default) or a positive
+      integer number of bytes; got {{ recorder_max_chunk_bytes | string | to_json }}.
