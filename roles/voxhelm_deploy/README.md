@@ -17,6 +17,8 @@ Current default runtime:
 - one Django Tasks `db_worker` process
 - one Wyoming STT/TTS sidecar process on port `10300`
 - optional WhisperKit local-server sidecar on port `50060` when explicitly enabled
+- optional hourly `manage.py prune_job_artifacts` launchd job, off by default
+  (see "Job Artifact Pruning" below)
 - `whisper.cpp` as the default STT backend on `studio`, with `mlx-whisper` as fallback
 - `mlx-whisper` as the default Wyoming STT backend for short interactive speech
 - `piper` as the default TTS backend on `studio`
@@ -140,7 +142,21 @@ voxhelm_csrf_trusted_origins: []
 voxhelm_allowed_url_hosts: []
 voxhelm_trusted_http_hosts: []
 voxhelm_uvicorn_log_level: "info"
+voxhelm_prune_enabled: false
+voxhelm_prune_dry_run: true
+voxhelm_prune_interval_seconds: 3600
+# Rendered into voxhelm.env only when set; empty/[] keeps Voxhelm's default.
+voxhelm_source_artifact_retention_seconds: ""  # Voxhelm default 86400
+voxhelm_job_metadata_retention_seconds: ""     # Voxhelm default 7776000 (90 days); 0 disables
+voxhelm_staged_input_retention_seconds: ""     # Voxhelm default 86400
+voxhelm_wyoming_stt_max_audio_seconds: ""      # Voxhelm default 120
+voxhelm_private_url_hosts: []                  # allowlisted hosts that may resolve to private IPs
 ```
+
+The optional retention and Wyoming values must be non-negative whole numbers;
+`voxhelm_private_url_hosts` must be a list of host names without commas or
+whitespace (it is rendered as `VOXHELM_PRIVATE_URL_HOSTS`, comma-separated). Validation rejects anything else
+before deployment.
 
 For the full list, see `defaults/main.yml`.
 
@@ -280,6 +296,51 @@ its Django settings.
   by one holder, which is a transient GPU-share effect only.
 - The role verifies the sidecar by checking the launchd unit state and waiting
   for the configured TCP port to listen locally on the target host.
+
+## Job Artifact Pruning
+
+Voxhelm's `manage.py prune_job_artifacts` (D-09) deletes expired job source
+media, extracted audio, queued artifact deletions and, after
+`VOXHELM_JOB_METADATA_RETENTION_SECONDS`, old terminal job rows. Transcript and
+speech artifacts are never pruned. The role can schedule it on the control
+plane as a fourth launchd job, `de.wersdoerfer.voxhelm-prune`
+(`voxhelm_prune_label`), which runs `prune.sh` every
+`voxhelm_prune_interval_seconds` (default `3600`, minimum `60`) through
+`StartInterval`; `RunAtLoad` and `KeepAlive` are false. `prune.sh` sources
+`voxhelm.env` like the worker. Output goes to
+`/var/log/voxhelm/voxhelm-prune.log` and `voxhelm-prune.err.log`. A deploy loads
+the job but never kickstarts it, and the source sync keeps `prune.sh` (it is
+excluded from the `delete: true` rsync when it lives in `voxhelm_app_dir`). `voxhelm_remote_worker_deploy` never schedules
+pruning.
+
+The job is **off by default** (`voxhelm_prune_enabled: false`): the first real
+run deletes the whole backlog of expired intermediates and old job rows at
+once. With `voxhelm_prune_enabled: false` the role also unloads a prune job
+left by an earlier deploy (stopping a run in progress), fails if launchd still
+has it loaded, and only then removes its plist and script. With
+`voxhelm_launchd_manage_state: false` the role leaves launchd and these files
+alone. `voxhelm_prune_dry_run`
+defaults to `true`, so enabling the job alone only logs what each run would
+delete.
+
+To enable it:
+
+1. Preview the backlog by hand on the control plane:
+
+   ```bash
+   sudo bash -c 'set -a; source /etc/voxhelm/voxhelm.env; set +a; \
+     cd /opt/apps/voxhelm/site && .venv/bin/python manage.py prune_job_artifacts --dry-run'
+   ```
+
+2. Optionally set `voxhelm_source_artifact_retention_seconds` /
+   `voxhelm_job_metadata_retention_seconds`, then set
+   `voxhelm_prune_enabled: true` (keeping `voxhelm_prune_dry_run: true`) and
+   deploy. Check `voxhelm-prune.log` after the next hourly run.
+3. When the dry-run output looks right, set `voxhelm_prune_dry_run: false` and
+   deploy again. The next scheduled run deletes for real; to run it right away,
+   use `sudo launchctl kickstart system/de.wersdoerfer.voxhelm-prune`.
+
+To switch it off again, set `voxhelm_prune_enabled: false` and deploy.
 
 ## Kokoro TTS and Language Routing Notes
 

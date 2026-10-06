@@ -43,6 +43,129 @@ time destroyed or reused each other's containers and collection install
 No role behavior changes. Branches that add Molecule scenarios must rename
 their platforms the same way before merging.
 
+## Unreleased — Voxhelm prune job and new service settings (2.31.7)
+
+Nothing changes on deploy until the owner sets the new variables: the prune
+job is off, and every new setting is left out of the env files (so each app
+keeps its own default) unless it is set. Rollout: install this collection
+version in ops-control; redeploy voxhelm, echoport or mailgun-relay only when
+setting one of the new variables.
+
+- `voxhelm_deploy`: optional hourly launchd job
+  `de.wersdoerfer.voxhelm-prune` for `manage.py prune_job_artifacts` (Voxhelm
+  D-09 retention). New `prune.sh` sources `voxhelm.env` like the worker; the
+  plist uses `StartInterval` (`voxhelm_prune_interval_seconds`, default 3600)
+  with `RunAtLoad` and `KeepAlive` false, and a deploy never kickstarts it.
+  `voxhelm_prune_enabled` defaults to `false` because the first real run deletes
+  the whole backlog; `voxhelm_prune_dry_run` defaults to `true`, so enabling the
+  job alone only logs what it would delete. Disabling it unloads the job, fails
+  if launchd still has it loaded, and then removes the plist and script. Enable steps are in the role README ("Job Artifact
+  Pruning"). `voxhelm_remote_worker_deploy` never schedules pruning.
+- `voxhelm_deploy`: optional `voxhelm_source_artifact_retention_seconds`,
+  `voxhelm_job_metadata_retention_seconds`,
+  `voxhelm_staged_input_retention_seconds`,
+  `voxhelm_wyoming_stt_max_audio_seconds` and `voxhelm_private_url_hosts`,
+  rendered as the matching `VOXHELM_*` settings only when set and validated
+  before deployment.
+- `echoport_deploy`: optional `echoport_stale_run_grace_seconds`,
+  `echoport_late_result_window_seconds` and
+  `echoport_health_overdue_grace_minutes` (`ECHOPORT_*` in `.env`), rendered
+  only when set and validated as non-negative whole numbers.
+- `mailgun_relay_deploy`: optional `mailgun_relay_smtp_max_concurrency`
+  (`MAILGUN_RELAY_SMTP_MAX_CONCURRENCY`), rendered only when set; must be at
+  least 1.
+- New `tests/test_voxhelm_prune_and_service_knobs.py`
+  (`just test-voxhelm-prune-and-service-knobs`, part of `just test`) renders
+  the prune script and plist, the task gating, and the env files with and
+  without the new settings, and runs the new validation tasks.
+
+## Unreleased — FastDeploy legacy service token window (2.31.6)
+
+FastDeploy now rejects service tokens without `jti` unless
+`LEGACY_SERVICE_TOKENS_ACCEPTED_UNTIL` is set, and the deploy roles could not
+set it. Rollout: install this collection version in ops-control before the
+FastDeploy deploy; nothing changes until a variable is set.
+
+- `fastdeploy_deploy`: new variables
+  `fastdeploy_legacy_service_tokens_accepted_until`,
+  `fastdeploy_service_token_max_expire_days` and
+  `fastdeploy_service_token_retention_days`, rendered into `.env` as
+  `LEGACY_SERVICE_TOKENS_ACCEPTED_UNTIL`, `SERVICE_TOKEN_MAX_EXPIRE_DAYS` and
+  `SERVICE_TOKEN_RETENTION_DAYS` only when non-empty (all empty by default).
+- `fastdeploy_self_deploy`: the same settings as `fd_self_*` variables in the
+  release `.env`.
+- Both roles validate the values before the `.env` file is written: the
+  timestamp must be ISO 8601 with a UTC offset and a real calendar date, the
+  day counts positive integers. In `fastdeploy_deploy` the check runs after
+  the `postgres_install` dependency, like the existing secret checks.
+- The `fastdeploy_deploy` README documents the cutover: set the grace period,
+  deploy, re-issue tokens with `commands.py issueservicetoken`, clear the
+  variable and deploy again.
+- New test `tests/test_fastdeploy_service_token_settings.yml`
+  (`just test-fastdeploy-service-token-settings`, part of `just test`).
+
+## Unreleased — Restore safety (2.31.5)
+
+- `vaultwarden_restore` (legacy path; Echoport stays the preferred restore)
+  no longer overwrites the vault blind:
+  - the staged `db.sqlite3` must exist and pass `PRAGMA integrity_check`
+    before the service is touched;
+  - symlinked `attachments`, `sends`, `db.sqlite3` or key files are refused
+    before the stop, since the safety copy would only keep the link;
+  - a failed stop aborts the run with the live data untouched (it was
+    `failed_when: false`, so the DB could be copied under a running
+    Vaultwarden);
+  - after the stop it takes a timestamped safety copy of the data directory
+    (DB with `-wal`/`-shm`, keys, attachments, sends) and of the config,
+    systemd override and Traefik file under
+    `vaultwarden_restore_safety_root` (default
+    `/var/backups/vaultwarden-pre-restore`) and reports its path;
+  - stale `db.sqlite3-wal`/`-shm`/`-journal` are removed before the copy, so
+    SQLite cannot replay an old WAL over the restored database;
+  - rsync and key copy failures are fatal (they were ignored, so a partial
+    restore reported success);
+  - any failure while overwriting puts the safety copy back and fails with
+    Vaultwarden left stopped;
+  - the decrypted archive on the controller and the remote staging directory
+    are removed in `always`, also after a failure.
+  `sqlite3` is now installed with `rsync`. New static test
+  `tests/test_vaultwarden_restore_safety.py` (`just test-restore-safety`, part
+  of `just test`); the molecule scenario now restores a real SQLite file and
+  checks the WAL removal and the safety copy.
+
+- `mastodon_restore` and `takahe_restore` no longer drop a live database
+  for an unchecked dump:
+  - the dump must pass `pg_restore --list` (with `TABLE DATA` entries) and a
+    full `pg_restore --file=/dev/null` read before any service stops;
+  - a failed service stop aborts the run before anything is dropped (it was
+    `failed_when: false`); units that are not installed are skipped. With
+    `<svc>_restore_stop_services: false` the services must already be
+    stopped, or the run aborts;
+  - after the stop the roles take a `pg_dump -Fc` of the live database
+    (`<svc>_restore_safety_root`, default `/var/backups/<svc>-pre-restore`),
+    a hard-link snapshot of the media (`<svc>_restore_media_safety_root`,
+    default `/home/<svc>/media-pre-restore`; full copy across filesystems)
+    and copies of the env, systemd, Traefik and nginx files, and report the
+    paths. Media uploaded after the backup was lost to `rsync --delete`
+    before;
+  - `pg_restore` runs with `--single-transaction`;
+  - the media `rsync --delete` adds `--ignore-times`, so every file gets a
+    new inode and a metadata-only change cannot reach the hard-linked
+    snapshot (the restore now rewrites all media files);
+  - any failure while restoring (including migrations and the final start)
+    restores the safety dump, media and config files, leaves the services
+    stopped and fails with both safety paths. The rollback runs only when
+    every service is confirmed stopped. The start no longer ignores
+    failures;
+  - the staging directory with the unpacked dump is removed in `always`.
+  `takahe_restore` now also makes the staged dump traversable for the
+  Postgres OS user, as `mastodon_restore` did. New defaults
+  `<svc>_restore_postgres_dump_binary` and `<svc>_restore_postgres_psql_binary`.
+  The safety dump needs free space for one compressed dump. New test
+  `tests/test_fedi_restore_safety.py` (part of `just test-restore-safety`)
+  checks the order statically and runs the snapshot, rollback and dump
+  validation snippets against temp directories with stub binaries.
+
 ## Unreleased — Logyard ingress push-only (2.31.4)
 
 `logyard_ingress_deploy` no longer forwards the whole Loki API. Loki runs with

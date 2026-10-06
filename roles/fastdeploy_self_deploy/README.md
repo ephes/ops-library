@@ -28,6 +28,16 @@ from `/etc/default/<service>` (`root:root 0600`, values double-quoted with
 systemd escaping), so the world-readable unit files and `systemctl show` do not
 expose them. The release `.env` (`0600`, service user) is unchanged.
 
+Service token settings (empty by default; only set ones are written to the
+release `.env`, and invalid values fail the run before anything is deployed):
+
+- `fd_self_legacy_service_tokens_accepted_until` -> `LEGACY_SERVICE_TOKENS_ACCEPTED_UNTIL`
+  (quoted ISO 8601 with offset, e.g. `"2026-11-01T00:00:00+00:00"`)
+- `fd_self_service_token_max_expire_days` -> `SERVICE_TOKEN_MAX_EXPIRE_DAYS`
+- `fd_self_service_token_retention_days` -> `SERVICE_TOKEN_RETENTION_DAYS`
+
+See the `fastdeploy_deploy` README for the legacy token cutover order.
+
 ## Architecture
 
 ```

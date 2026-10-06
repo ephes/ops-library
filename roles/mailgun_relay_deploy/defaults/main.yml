@@ -56,6 +56,9 @@ mailgun_relay_smtp_host: "smtp.home.xn--wersdrfer-47a.de"
 mailgun_relay_smtp_port: 587
 mailgun_relay_smtp_starttls: true
 mailgun_relay_smtp_timeout_s: 30
+# Optional cap on concurrent SMTP submissions. Empty means "not rendered", so
+# the relay uses its own default (8).
+mailgun_relay_smtp_max_concurrency: ""
 
 # Limits (per-token rate limiting belongs at the reverse proxy)
 mailgun_relay_max_body_bytes: 26214400      # 25 MiB

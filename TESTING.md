@@ -118,6 +118,14 @@ Otherwise a failed copy or dump step would leave the service down. Static
 `when: var == 'value'` item that contradicts the import's `vars` drops the task
 at that site (this is how `unifi_backup/tasks/services.yml` is checked).
 
+## Restore safety
+
+`just test-restore-safety` (part of `just test`) checks the restore roles statically: the dump or
+database is validated before the service stops, the stop fails closed, a safety copy is taken
+before the first overwrite, no restore step ignores failures, and `rescue` puts the safety copy
+back and leaves the service stopped. Molecule (`just molecule-test vaultwarden_restore`) covers
+the successful path in Docker.
+
 ## SSH forwarding identity fixtures
 
 `just test-ssh-forwarding-roles` runs the descriptor, ownership, recovery and race

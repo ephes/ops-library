@@ -46,6 +46,9 @@
 
       Or disable basic auth with: fastdeploy_basic_auth_enabled: false
 
+- name: Validate service token settings
+  include_tasks: validate_service_token_settings.yml
+
 - name: Setup user and directories
   include_tasks: user.yml
 
