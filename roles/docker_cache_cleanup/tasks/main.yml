@@ -1,0 +1,55 @@
+---
+- name: Validate Docker cache cleanup configuration
+  ansible.builtin.assert:
+    that:
+      - ansible_service_mgr == "systemd"
+      - docker_cache_cleanup_enabled is boolean
+      - docker_cache_cleanup_unused_hours | string is match('^[1-9][0-9]*$')
+      - docker_cache_cleanup_calendar | string is match('^[^\r\n]+$')
+      - docker_cache_cleanup_randomized_delay | string is match('^[0-9]+(s|min|m|h|d)$')
+    fail_msg: "Cache cleanup requires systemd, positive whole hours, and single-line timer settings."
+
+- name: Verify Docker builder is available
+  ansible.builtin.command:
+    argv: [/usr/bin/docker, builder, prune, --help]
+  changed_when: false
+  check_mode: false
+  when: docker_cache_cleanup_enabled
+
+- name: Check whether Docker cache cleanup timer exists
+  ansible.builtin.stat:
+    path: /etc/systemd/system/docker-cache-cleanup.timer
+  register: _docker_cache_cleanup_timer
+
+- name: Install Docker cache cleanup units
+  ansible.builtin.template:
+    src: "docker-cache-cleanup.{{ item }}.j2"
+    dest: "/etc/systemd/system/docker-cache-cleanup.{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: [service, timer]
+  register: _docker_cache_cleanup_units
+  notify: Reload systemd for Docker cache cleanup
+  when: docker_cache_cleanup_enabled
+
+- name: Reload units before enabling the timer
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable daily Docker cache cleanup
+  ansible.builtin.systemd_service:
+    name: docker-cache-cleanup.timer
+    enabled: true
+    state: "{{ 'restarted' if _docker_cache_cleanup_units.changed else 'started' }}"
+  when:
+    - docker_cache_cleanup_enabled
+    - not ansible_check_mode or _docker_cache_cleanup_timer.stat.exists
+
+- name: Disable Docker cache cleanup timer
+  ansible.builtin.systemd_service:
+    name: docker-cache-cleanup.timer
+    enabled: false
+    state: stopped
+  when:
+    - not docker_cache_cleanup_enabled
+    - _docker_cache_cleanup_timer.stat.exists

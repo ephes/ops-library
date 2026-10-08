@@ -1,0 +1,13 @@
+# Managed by Ansible: docker_cache_cleanup
+[Unit]
+Description=Remove Docker build cache unused for {{ docker_cache_cleanup_unused_hours }} hours
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker builder prune --all --force --filter until={{ docker_cache_cleanup_unused_hours }}h
+TimeoutStartSec=30min
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

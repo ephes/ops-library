@@ -204,6 +204,7 @@ consumer repos depend on.
 | Service removal | [`ollama_remove`](roles/ollama_remove/README.md) | Remove Ollama launchd service on macOS with optional data/user/brew cleanup. |
 | Service registration | [`apt_upgrade_register`](roles/apt_upgrade_register/README.md) | Register apt-upgrade maintenance runners with FastDeploy. |
 | Service registration | [`fastdeploy_register_service`](roles/fastdeploy_register_service/README.md) | Generic FastDeploy service registration helper. |
+| Operations | [`docker_cache_cleanup`](roles/docker_cache_cleanup/README.md) | Daily cleanup of Docker build cache unused for seven days. |
 | Bootstrap | [`ansible_install`](roles/ansible_install/README.md) | Ensure controller has Ansible and required plugins. |
 | Bootstrap | [`shell_basics_deploy`](roles/shell_basics_deploy/README.md) | Install fish, modern CLI tools (btop, bmon, sysstat/iotop, tealdeer, eza), set shell/editor defaults, and keep chezmoi current from upstream. |
 | Bootstrap | [`docker_install`](roles/docker_install/README.md) | Install Docker Engine + Docker Compose v2 (plugin) from the official Docker apt repository. |

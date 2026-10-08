@@ -1,0 +1,11 @@
+# Managed by Ansible: docker_cache_cleanup
+[Unit]
+Description=Daily Docker build cache maintenance
+
+[Timer]
+OnCalendar={{ docker_cache_cleanup_calendar }}
+RandomizedDelaySec={{ docker_cache_cleanup_randomized_delay }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -3,6 +3,11 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Docker build cache maintenance
+
+- Add `docker_cache_cleanup`: a configurable daily systemd timer for age-filtered
+  build cache cleanup, preserving images, containers and volumes.
+
 ## Unreleased — Paperless search index recovery (2.31.13)
 
 - `paperless_deploy` rebuilds the full search index after migrations on every

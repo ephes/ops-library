@@ -47,6 +47,8 @@ Available runbooks:
 ```{toctree}
 :maxdepth: 1
 
+docker_cache_cleanup
+
 daybook_operations_api_restore
 
 daybook_operations_api_backup

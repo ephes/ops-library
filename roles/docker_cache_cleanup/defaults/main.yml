@@ -1,0 +1,6 @@
+---
+# Explicit role invocation opts into cache cleanup; false disables the schedule.
+docker_cache_cleanup_enabled: true
+docker_cache_cleanup_unused_hours: 168
+docker_cache_cleanup_calendar: "*-*-* 03:30:00"
+docker_cache_cleanup_randomized_delay: "30m"
