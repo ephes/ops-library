@@ -48,6 +48,21 @@ delve_admin_emails: ""
 # POST /v1/accounts/apple; empty keeps it disabled (tolerant dev).
 delve_apple_client_id: ""
 
+# Sign in with Apple server-to-server notifications (POST /v1/apple/notifications,
+# DELVE_APPLE_SERVER_NOTIFICATIONS). Empty leaves the variable out of the env
+# file (the binary treats that as disabled). When true, delve_apple_client_id is
+# required: the binary refuses to boot without it.
+delve_apple_server_notifications: ""
+
+# Transition flags for iOS builds that predate the registration proof and the
+# Sign in with Apple nonce. Empty leaves them out of the env file (disabled).
+# Set both to true while current iOS builds are still in use, then switch them
+# off once the new build is out; see "Legacy iOS transition" in the README.
+#   DELVE_PROFILE_LEGACY_REREGISTER: resume a legacy profile without proof.
+#   DELVE_APPLE_SIGNIN_LEGACY_NO_NONCE: accept Apple sign-in without a nonce.
+delve_profile_legacy_reregister: ""
+delve_apple_signin_legacy_no_nonce: ""
+
 # StoreKit. Set the root-certs PATH (a PEM file on the host) to enable the
 # endpoint; bundle id + product ids are then required by the binary at startup.
 # The public Apple Root CA - G3 bundle ships with this role and is copied to the

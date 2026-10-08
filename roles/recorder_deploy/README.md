@@ -41,7 +41,12 @@ the podcast repo (`docs/recorder/`, `docs/decisions/0005`–`0009`).
 (guards host/dashboard endpoints), the `recorder_s3_*` MinIO settings (when
 empty the binary falls back to a local filesystem object store — not for
 production), and the `recorder_livekit_*` settings (when empty the live path is
-disabled and only the local-master path runs). See `defaults/main.yml`.
+disabled and only the local-master path runs). `recorder_max_chunk_bytes`
+(`RECORDER_MAX_CHUNK_BYTES`) caps one take upload chunk
+(`PATCH /api/takes/{id}/upload` body) in bytes; empty (the default) leaves it out
+of the env file so the binary uses its 4 MiB default, and a set value must be a
+positive integer (the binary would silently ignore anything else). See
+`defaults/main.yml`.
 
 ## Runtime contract satisfied
 

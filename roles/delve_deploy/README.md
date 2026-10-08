@@ -40,6 +40,20 @@ the control node rather than an upstream release.
 - `delve_port` — loopback port Traefik proxies to (default `10026`).
 - `delve_dogfood_token` — enables the interim `dogfoodGrant` path.
 - `delve_apple_client_id` — enables `POST /v1/accounts/apple` (the app bundle id).
+- `delve_apple_server_notifications` — `DELVE_APPLE_SERVER_NOTIFICATIONS`:
+  `true` enables the Sign in with Apple server-to-server notification webhook
+  (`POST /v1/apple/notifications`). Requires `delve_apple_client_id`; the role
+  refuses `true` without it because the binary would not boot.
+- `delve_profile_legacy_reregister` / `delve_apple_signin_legacy_no_nonce` —
+  `DELVE_PROFILE_LEGACY_REREGISTER` / `DELVE_APPLE_SIGNIN_LEGACY_NO_NONCE`,
+  transition switches for iOS builds that send no registration secret or no
+  Sign in with Apple nonce. See [Legacy iOS transition](#legacy-ios-transition).
+
+These three flags default to empty, which leaves them out of `delve.env` (the
+binary then treats them as `false`). When set, they must be a boolean or the
+string `true`/`false` (any case), and are written as `"true"`/`"false"`. Any
+other value (`yes`, `1`, a typo) fails validation instead of silently turning
+the flag off.
 - `delve_storekit_root_certs_path` + `delve_storekit_bundle_id` +
   `delve_storekit_product_ids` — enable StoreKit verification. When the certs
   path is set, the role copies its bundled public Apple Root CA - G3 PEM to that
@@ -64,6 +78,38 @@ the control node rather than an upstream release.
   active episode TTL, 100 items per feed/run, and 100 sources per run. The source
   cap plus collector concurrency floor keeps the app lock and 35-minute systemd
   timeout coherent.
+
+## Legacy iOS transition
+
+The Delve backend now requires a registration proof when an anonymous profile
+re-registers, and a server-issued nonce on Sign in with Apple. iOS builds
+released before those client changes send neither, so without the switches
+below they get `409 profile registration proof required` after losing their
+session and `401 sign-in nonce required` on Apple sign-in.
+
+1. **Deploy with both switches on.** In the ops-control delve vars (or as
+   extra vars) set:
+
+   ```yaml
+   delve_profile_legacy_reregister: true
+   delve_apple_signin_legacy_no_nonce: true
+   ```
+
+   Deploy, then confirm `/etc/delve/delve.env` on the host contains
+   `DELVE_PROFILE_LEGACY_REREGISTER="true"` and
+   `DELVE_APPLE_SIGNIN_LEGACY_NO_NONCE="true"`. Changing the env file restarts
+   the service. Each legacy request is logged by `delved` as
+   `legacy profile <prefix> resumed without proof` or
+   `apple sign-in without nonce accepted`.
+2. **Ship the new iOS build** (registration secret and Sign in with Apple
+   nonce) and wait until it has been adopted. The two log lines above show
+   how much legacy traffic is left.
+3. **Switch both off.** Set both variables to `false` (or remove them, which
+   leaves them out of the env file with the same effect) and redeploy. From
+   then on, builds that predate the change get the `409`/`401` above.
+
+The switches are independent, so one can be turned off before the other if the
+client changes ship separately.
 
 See `defaults/main.yml` for the full list. Secrets are passed by the playbook
 (`ops-control/playbooks/delve/deploy.yml`), never defaulted here. This role does

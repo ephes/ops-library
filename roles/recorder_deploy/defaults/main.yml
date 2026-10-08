@@ -64,6 +64,11 @@ recorder_livekit_api_key: ""
 recorder_livekit_api_secret: ""
 recorder_live_room_prefix: "rec-"
 
+# Cap for one take upload chunk (PATCH /api/takes/{id}/upload body), in bytes
+# (RECORDER_MAX_CHUNK_BYTES). Empty leaves it out of the env file, so the binary
+# uses its 4 MiB default. Set a positive integer to override.
+recorder_max_chunk_bytes: ""
+
 # systemd
 recorder_service_enabled: true
 recorder_service_state: started

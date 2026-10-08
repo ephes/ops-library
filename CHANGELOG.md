@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased — Delve legacy iOS flags and recorder chunk cap (2.31.9)
+
+`delve_deploy` could not set the backend's legacy switches, so a deploy of the
+current Delve backend breaks sign-in for iOS builds that predate the
+registration proof and the Sign in with Apple nonce.
+
+- New `delve_profile_legacy_reregister` (`DELVE_PROFILE_LEGACY_REREGISTER`) and
+  `delve_apple_signin_legacy_no_nonce` (`DELVE_APPLE_SIGNIN_LEGACY_NO_NONCE`).
+  Set both to `true` for the deploy and switch them off once the new iOS build
+  has been adopted; the role README documents the procedure under "Legacy iOS
+  transition".
+- New `delve_apple_server_notifications` (`DELVE_APPLE_SERVER_NOTIFICATIONS`)
+  for the Sign in with Apple server-to-server webhook. `true` requires
+  `delve_apple_client_id`, as the binary does.
+- New `recorder_max_chunk_bytes` (`RECORDER_MAX_CHUNK_BYTES`) in
+  `recorder_deploy` for the take upload chunk cap.
+- All four default to empty and are written to the env file only when set.
+  The Delve flags must be a boolean or `true`/`false` and are rendered as
+  `"true"`/`"false"`; the chunk cap must be a positive integer. Other values
+  fail validation instead of being silently ignored by the binaries.
+- Variable names checked against ephes/podcast main
+  (`apps/delve-backend/internal/config/config.go`,
+  `apps/recorder/internal/config/config.go`).
+- New `tests/test_delve_recorder_flags.yml` (`just test-delve-recorder-flags`,
+  part of `just test`) covers defaults, rendering and validation.
+
+Rollout: from ops-control, `just install-local-library`, set
+`delve_profile_legacy_reregister: true` and
+`delve_apple_signin_legacy_no_nonce: true` in the delve vars, then deploy
+Delve. Recorder needs no redeploy unless the chunk cap is set.
+
 ## Unreleased — Run-scoped Molecule containers (2.31.8)
 
 Molecule scenarios no longer use fixed Docker container names. 39 scenarios
