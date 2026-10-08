@@ -3,6 +3,12 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Monitoring delivery probes (2.31.15)
+
+- `mail_spam_deploy` adds an optional original-source-IP, sender, recipient and
+  subject scoped exemption from spam actions. Scanning/logging continues;
+  `{}` disables the exemption. The role manages `local.d/settings.conf`.
+
 ## Unreleased — OpenClaw reasoning default (2.31.14)
 
 - `openclaw_deploy` optionally manages `agents.defaults.thinkingDefault` with

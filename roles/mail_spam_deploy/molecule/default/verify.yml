@@ -11,6 +11,7 @@
       - /etc/rspamd/local.d/worker-proxy.inc
       - /etc/rspamd/local.d/actions.conf
       - /etc/rspamd/local.d/milter_headers.conf
+      - /etc/rspamd/local.d/settings.conf
       - /etc/rspamd/local.d/classifier-bayes.conf
 
   tasks:

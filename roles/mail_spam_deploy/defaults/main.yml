@@ -128,6 +128,11 @@ mail_spam_resolver_state_dir: "/var/lib/unbound/rspamd"
 # so the relay must be in mail_spam_local_addrs_extra.
 mail_spam_external_relay_enabled: false
 
+# Optional delivery-probe exemption. All four conditions must match; the IP is
+# the original sender after external_relay processing, never the relay IP.
+# Empty disables the exemption. Use a single literal source IPv4 address, not a network.
+mail_spam_monitoring_probe: {}
+
 # =============================================================================
 # Local Configuration
 # =============================================================================

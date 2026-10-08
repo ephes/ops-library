@@ -69,6 +69,15 @@
     mode: "0644"
   notify: Restart rspamd
 
+- name: config | Configure monitoring probe settings
+  ansible.builtin.template:
+    src: local.d/settings.conf.j2
+    dest: "{{ mail_spam_local_config_path }}/settings.conf"
+    owner: _rspamd
+    group: _rspamd
+    mode: "0644"
+  notify: Restart rspamd
+
 - name: config | Configure worker-normal
   ansible.builtin.template:
     src: local.d/worker-normal.inc.j2

@@ -13,7 +13,7 @@ This role deploys rspamd on the mail backend for spam filtering:
 
 ## Architecture
 
-```
+```text
 [Postfix] ────► [rspamd milter] ────► [Dovecot LMTP]
                      │
                      ▼
@@ -73,6 +73,7 @@ mail into Junk (`mail_backend_spam_to_junk_enabled`).
 | `mail_spam_milter_headers` | `[x-spamd-bar, x-spam-level, x-spam-status, authentication-results]` | `milter_headers` routines to add |
 | `mail_spam_local_addrs_default` | rspamd's built-in list | Base `local_addrs` (RFC 1918, link-local, `fd00::/8`) |
 | `mail_spam_local_addrs_extra` | `[]` | Extra networks treated as local, e.g. the relay's Tailscale `/32` |
+| `mail_spam_monitoring_probe` | `{}` | Optional exact original IPv4/sender/recipient/subject exemption from spam actions |
 | `mail_spam_external_relay_enabled` | `false` | Score the sender behind a trusted relay instead of the relay |
 
 `X-Spam-Status: Yes, score=...` is added for every spam verdict. The
@@ -165,6 +166,7 @@ chain, leaving rspamd running but scanning nothing.
 | `/etc/rspamd/local.d/options.inc` | `local_addrs`, and `dns` with the private resolver |
 | `/etc/unbound/rspamd-resolver.conf` | Private resolver config (with `mail_spam_resolver_enabled`) |
 | `/etc/systemd/system/unbound-rspamd.service` | Private resolver unit (with `mail_spam_resolver_enabled`) |
+| `/etc/rspamd/local.d/settings.conf` | Managed probe settings; replaces existing file |
 | `/etc/rspamd/local.d/external_relay.conf` | Trusted-relay handling |
 
 `redis.conf` is mode `0640` because it may contain the Redis password.
@@ -217,24 +219,54 @@ ssh -L 11334:localhost:11334 macmini
 ## Troubleshooting
 
 ### Check service status
+
 ```bash
 systemctl status rspamd
 ```
 
 ### View logs
+
 ```bash
 journalctl -u rspamd -f
 ```
 
 ### Test spam detection
+
 ```bash
 rspamc < /path/to/email.eml
 ```
 
 ### Check Redis connection
+
 ```bash
 rspamc stat
 ```
+
+## Delivery probe exemption
+
+`mail_spam_monitoring_probe` defaults to `{}` (disabled). To keep a trusted
+synthetic delivery probe out of Junk, set all four fields:
+
+```yaml
+mail_spam_monitoring_probe:
+  source_ip: "100.64.0.10"
+  sender: "delivery-probe@example.com"
+  recipient: "monitor@example.com"
+  subject_prefix: "[delivery-probe]"
+```
+
+The rule in managed `local.d/settings.conf` requires all conditions to match.
+`source_ip` must be a single literal IPv4 address, not a CIDR or the shared relay's address:
+with `external_relay` enabled it matches the original sending IP. The role rejects
+source addresses in configured local/relay networks or loopback. Subject matching
+is anchored at the beginning and requires a space or end after the literal prefix.
+Matching mail is still scanned and logged, but score-based spam-tagging, subject rewriting,
+reject and greylist actions are disabled. Ordinary mail keeps normal filtering.
+The role owns `settings.conf`; put additional settings in a separate included file.
+Setting `{}` again renders an empty managed file and removes the exemption.
+
+This tests delivery availability independently of spam classification. It does
+not test whether ordinary legitimate mail avoids Junk; use separate filter tests.
 
 ## License
 

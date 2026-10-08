@@ -7,6 +7,41 @@
       - (not mail_spam_web_enabled | bool) or (mail_spam_web_password is defined and (mail_spam_web_password | length > 0))
     fail_msg: "mail_spam_web_password must be set when mail_spam_web_enabled=true"
 
+- name: Validate optional monitoring probe exemption
+  ansible.builtin.assert:
+    that:
+      - mail_spam_monitoring_probe is mapping
+      - mail_spam_monitoring_probe.source_ip is defined
+      - mail_spam_monitoring_probe.source_ip is string
+      - >-
+        mail_spam_monitoring_probe.source_ip is match('^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$')
+      - "'/' not in mail_spam_monitoring_probe.source_ip"
+      - mail_spam_monitoring_probe.sender is defined
+      - mail_spam_monitoring_probe.sender | length > 0
+      - mail_spam_monitoring_probe.recipient is defined
+      - mail_spam_monitoring_probe.recipient | length > 0
+      - mail_spam_monitoring_probe.subject_prefix is defined
+      - mail_spam_monitoring_probe.subject_prefix | length > 0
+    fail_msg: "Monitoring exemption requires a literal source IPv4 address, sender, recipient and subject prefix."
+  when: mail_spam_monitoring_probe | length > 0
+
+- name: Validate probe source is not a local or relay network
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_facts.python.executable }}"
+      - -c
+      - |
+        import ipaddress, json, sys
+        source = ipaddress.ip_address(sys.argv[1])
+        networks = json.loads(sys.argv[2])
+        if any(source in ipaddress.ip_network(net, strict=False) for net in networks):
+            sys.exit("Probe source must not be a local or trusted-relay address")
+      - "{{ mail_spam_monitoring_probe.source_ip }}"
+      - "{{ (mail_spam_local_addrs_default + mail_spam_local_addrs_extra + ['127.0.0.0/8', '::1/128']) | to_json }}"
+  changed_when: false
+  check_mode: false
+  when: mail_spam_monitoring_probe | length > 0
+
 - name: Install rspamd packages
   ansible.builtin.import_tasks: packages.yml
 

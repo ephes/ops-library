@@ -53,6 +53,7 @@ static_site_deploy
 takahe_deploy
 takahe_shared
 mail_backend_deploy
+mail_spam_deploy
 mail_relay_deploy
 certbot_dns_deploy
 voxhelm_deploy
