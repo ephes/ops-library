@@ -3,6 +3,14 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — OpenClaw reasoning default (2.31.14)
+
+- `openclaw_deploy` optionally manages `agents.defaults.thinkingDefault` with
+  `openclaw_agent_thinking_default`; empty preserves the runtime setting.
+- Add the configured primary to an existing non-empty model allowlist while
+  preserving model entries and parameters. Configs without an allowlist remain
+  unrestricted.
+
 ## Unreleased — Docker build cache maintenance
 
 - Add `docker_cache_cleanup`: a configurable daily systemd timer for age-filtered

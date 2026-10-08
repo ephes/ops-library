@@ -82,6 +82,13 @@
     fail_msg: >-
       openclaw_anthropic_api_key is required. Set it in the playbook or via SOPS secrets.
 
+- name: validate | Optional default reasoning level
+  ansible.builtin.assert:
+    that:
+      - openclaw_agent_thinking_default is string
+      - openclaw_agent_thinking_default | trim in ['', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'adaptive', 'max', 'ultra']
+    fail_msg: "openclaw_agent_thinking_default must be empty or a supported OpenClaw thinking level."
+
 - name: validate | Optional OpenAI API key is not placeholder
   ansible.builtin.assert:
     that:

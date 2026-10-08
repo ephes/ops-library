@@ -136,6 +136,7 @@ changes, so newly deployed instructions become visible to new session bindings.
 |----------|---------|-------------|
 | `openclaw_agent_model_primary` | `""` | Optional default model (`provider/model`) patched to `agents.defaults.model.primary` |
 | `openclaw_agent_model_fallbacks` | `[]` | Optional ordered fallback list (`provider/model` entries) patched to `agents.defaults.model.fallbacks` |
+| `openclaw_agent_thinking_default` | `""` | Optional reasoning level patched to `agents.defaults.thinkingDefault`; empty preserves the runtime setting. Supported values: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `adaptive`, `max`, `ultra`; model support varies |
 | `openclaw_openai_auth_order` | `[]` | Optional ordered canonical OpenAI auth profiles patched to `auth.order.openai`; use an OAuth-only list such as `["openai:default"]` to require ChatGPT/Codex subscription auth for agent turns |
 | `openclaw_heartbeat_recovery_managed` | `false` | Manage the v2026.9.1 heartbeat recovery extension and its enabled state |
 | `openclaw_heartbeat_recovery_enabled` | `true` | When managed, keep incomplete-heartbeat retries on `heartbeat_respond` and block direct message sends during recovery |
@@ -145,6 +146,20 @@ changes, so newly deployed instructions become visible to new session bindings.
 | `openclaw_codex_plugin_version` | OpenClaw version without leading `v` | Exact plugin version; override only when upstream does not publish the plugin in release lockstep |
 | `openclaw_codex_v2026_9_1_registration_backport_managed` | `false` | Manage the exact-version upstream commit `26e5c2858a` backport for `@openclaw/codex@2026.9.1` |
 | `openclaw_codex_v2026_9_1_registration_backport_enabled` | `true` | When management is enabled, apply the backport; set false to atomically restore the pinned pristine bundle |
+
+When an existing `agents.defaults.models` allowlist is non-empty, the configured
+primary is added while existing model entries and parameters are preserved.
+Configured fallback models must already be present in that allowlist.
+Configs without an allowlist remain unrestricted. The reasoning default is applied to both
+seeded and existing runtime configs when `openclaw_gateway_config` is empty.
+An explicit gateway config remains authoritative. Sessions with explicit model
+or reasoning overrides retain those overrides.
+
+```yaml
+openclaw_agent_model_primary: openai/gpt-6.1-sol
+openclaw_agent_model_fallbacks: []
+openclaw_agent_thinking_default: low
+```
 
 ### Audio Transcription
 

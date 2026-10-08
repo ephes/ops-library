@@ -219,6 +219,16 @@
     - openclaw_gateway_config | length == 0
     - openclaw_agent_model_primary | trim | length > 0
 
+- name: config | Build optional reasoning policy patch
+  ansible.builtin.set_fact:
+    _openclaw_thinking_policy_patch: >-
+      {{
+        {"agents": {"defaults": {"thinkingDefault": openclaw_agent_thinking_default | trim}}}
+      }}
+  when:
+    - openclaw_gateway_config | length == 0
+    - openclaw_agent_thinking_default | trim | length > 0
+
 - name: config | Build optional OpenAI auth-order patch
   ansible.builtin.set_fact:
     _openclaw_openai_auth_order_patch: >-
@@ -362,6 +372,7 @@
           )
         | combine(_openclaw_gateway_access_patch, recursive=True)
         | combine(_openclaw_model_policy_patch | default({}), recursive=True)
+        | combine(_openclaw_thinking_policy_patch | default({}), recursive=True)
         | combine(_openclaw_openai_auth_order_patch | default({}), recursive=True)
         | combine(_openclaw_audio_config_patch | default({}), recursive=True)
       }}
@@ -390,6 +401,19 @@
     - name: config | Parse existing gateway config
       ansible.builtin.set_fact:
         _openclaw_existing_config: "{{ _openclaw_existing_config_raw.content | b64decode | from_json }}"
+
+    - name: config | Add primary to an existing model allowlist
+      ansible.builtin.set_fact:
+        _openclaw_model_allowlist_patch: >-
+          {{
+            {"agents": {"defaults": {"models": {(openclaw_agent_model_primary | trim): {}}}}}
+            if (
+              openclaw_gateway_config | length == 0
+              and openclaw_agent_model_primary | trim | length > 0
+              and _openclaw_existing_config.get('agents', {}).get('defaults', {}).get('models', {}) | length > 0
+            )
+            else {}
+          }}
 
     - name: config | Initialize preserved unmanaged media models
       ansible.builtin.set_fact:
@@ -609,6 +633,8 @@
                 recursive=True
               )
             | combine(_openclaw_model_policy_patch | default({}), recursive=True)
+            | combine(_openclaw_model_allowlist_patch | default({}), recursive=True)
+            | combine(_openclaw_thinking_policy_patch | default({}), recursive=True)
             | combine(_openclaw_openai_auth_order_patch | default({}), recursive=True)
             | combine(_openclaw_audio_runtime_patch | default({}), recursive=True)
           }}
