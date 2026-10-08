@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased — Daybook operations backup issues revocable FastDeploy tokens (2.31.11)
+
+`daybook_operations_api_backup` (`tasks_from: register_echoport`) minted its
+Echoport token with `deploy.auth.create_access_token`: 180 days, no `jti`, not
+recorded in FastDeploy, so it could not be revoked and is rejected once
+FastDeploy stops accepting legacy tokens. It also minted a new token on every
+run. Rollout: requires FastDeploy with `commands.py issueservicetoken`; callers
+must set `daybook_operations_api_backup_token_user` (ops-control does).
+
+- The token is issued with `commands.py issueservicetoken` (argv, as the
+  `fastdeploy` user, `no_log`), for `daybook_operations_api_backup_token_user`
+  (required, an existing FastDeploy user), with
+  `daybook_operations_api_backup_token_origin` (default `echoport`) and
+  `daybook_operations_api_backup_token_days` (default 90, down from 180;
+  values over 90 are refused before any change).
+- Idempotent per run: the token stored in the Echoport target is inspected
+  first (metadata only, never printed) and a new one is issued only when it is
+  missing, undecodable, scoped to another service, has no `jti`, or expires
+  within `daybook_operations_api_backup_token_renewal_days` (default 30).
+  `daybook_operations_api_backup_rotate_service_token: true` forces a new one.
+  The play reports the decision and the replaced token's id for
+  `revokeservicetoken`.
+- README: token section with the rotation steps.
+- New test `tests/test_daybook_operations_service_token.py` (part of
+  `just test-daybook-operations`): reuse decision, argv/`no_log`, task order,
+  and that no role uses `create_access_token`.
+
 ## Unreleased — python-podcast private media in the production DB backup (2.31.10)
 
 python-podcast keeps contributor voice references and the known-speaker

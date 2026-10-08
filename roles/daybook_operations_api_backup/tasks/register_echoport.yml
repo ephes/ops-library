@@ -12,6 +12,22 @@
       - daybook_operations_api_backup_retention_days | int >= 1
     fail_msg: Registration requires live execution on Linux with the fixed backup policy; check mode is not supported.
 
+- name: register_echoport | Validate the FastDeploy service token settings
+  ansible.builtin.assert:
+    that:
+      - daybook_operations_api_backup_token_user | string | length > 0
+      - daybook_operations_api_backup_token_origin | string | length > 0
+      - daybook_operations_api_backup_token_days | int >= 1
+      - daybook_operations_api_backup_token_days | int <= 90
+      - daybook_operations_api_backup_token_renewal_days | int >= 1
+      - daybook_operations_api_backup_token_renewal_days | int < daybook_operations_api_backup_token_days | int
+    fail_msg: >-
+      Set daybook_operations_api_backup_token_user to an existing FastDeploy user
+      (the token is issued for it) and keep
+      daybook_operations_api_backup_token_renewal_days below
+      daybook_operations_api_backup_token_days, which may not exceed 90 days
+      (FastDeploy also refuses lifetimes over SERVICE_TOKEN_MAX_EXPIRE_DAYS).
+
 - name: register_echoport | Create root-controlled runner and upload directories
   ansible.builtin.file:
     path: "{{ item.path }}"
@@ -79,21 +95,78 @@
   register: daybook_operations_api_backup_service_row
   changed_when: daybook_operations_api_backup_service_row.rowcount > 0
 
-- name: register_echoport | Mint a token scoped to the backup bridge as the FastDeploy account
+- name: register_echoport | Inspect the FastDeploy token stored in Echoport
   ansible.builtin.command:
-    argv: ['{{ daybook_operations_api_backup_fastdeploy_root }}/.venv/bin/python', '-']
+    argv: ['{{ daybook_operations_api_backup_echoport_root }}/.venv/bin/python', '{{ daybook_operations_api_backup_echoport_root }}/manage.py', shell]
+    chdir: '{{ daybook_operations_api_backup_echoport_root }}'
+    stdin: "{{ lookup('ansible.builtin.file', 'service_token_status.py') }}"
+  environment:
+    SERVICE_TOKEN_STATUS_TARGETS: "{{ [daybook_operations_api_backup_target] | to_json }}"
+    SERVICE_TOKEN_STATUS_SERVICE: "{{ daybook_operations_api_backup_fastdeploy_service }}"
+    SERVICE_TOKEN_STATUS_RENEWAL_DAYS: "{{ daybook_operations_api_backup_token_renewal_days | int }}"
+  become: true
+  become_user: echoport
+  register: daybook_operations_api_backup_token_inspection
+  changed_when: false
+
+- name: register_echoport | Decide whether a new FastDeploy token is needed
+  ansible.builtin.set_fact:
+    daybook_operations_api_backup_token_status: "{{ daybook_operations_api_backup_token_inspection.stdout_lines | last | from_json }}"
+
+- name: register_echoport | Issue a revocable token scoped to the backup bridge
+  ansible.builtin.command:
+    argv:
+      - '{{ daybook_operations_api_backup_fastdeploy_root }}/.venv/bin/python'
+      - commands.py
+      - issueservicetoken
+      - --service
+      - '{{ daybook_operations_api_backup_fastdeploy_service }}'
+      - --user
+      - '{{ daybook_operations_api_backup_token_user }}'
+      - --days
+      - '{{ daybook_operations_api_backup_token_days | int }}'
+      - --origin
+      - '{{ daybook_operations_api_backup_token_origin }}'
     chdir: '{{ daybook_operations_api_backup_fastdeploy_root }}'
-    stdin: |
-      from datetime import timedelta
-      from dotenv import load_dotenv
-      load_dotenv('.env')
-      from deploy.auth import create_access_token
-      print(create_access_token(payload={'type': 'service', 'service': {{ daybook_operations_api_backup_fastdeploy_service | to_json }}, 'origin': 'echoport', 'user': 'ops-control'}, expires_delta=timedelta(days=180)))
   become: true
   become_user: fastdeploy
   register: daybook_operations_api_backup_service_token
-  changed_when: false
+  when: >-
+    daybook_operations_api_backup_rotate_service_token | bool
+    or daybook_operations_api_backup_token_status.requires_rotation | bool
+  changed_when: true
   no_log: true
+
+- name: register_echoport | Check the issued token without showing it
+  ansible.builtin.set_fact:
+    daybook_operations_api_backup_token_issued: "{{ daybook_operations_api_backup_service_token is not skipped }}"
+    daybook_operations_api_backup_token_format_valid: >-
+      {{
+        daybook_operations_api_backup_service_token is skipped
+        or (
+          daybook_operations_api_backup_service_token.stdout_lines | length == 1
+          and (daybook_operations_api_backup_service_token.stdout_lines | last)
+          is match('^[A-Za-z0-9_-]+[.][A-Za-z0-9_-]+[.][A-Za-z0-9_-]+$')
+        )
+      }}
+  no_log: true
+
+- name: register_echoport | Require exactly one JWT from issueservicetoken
+  ansible.builtin.assert:
+    that:
+      - daybook_operations_api_backup_token_format_valid | bool
+    fail_msg: issueservicetoken did not print exactly one JWT-formatted line. The token value remains hidden.
+
+- name: register_echoport | Report the token decision (never the token)
+  ansible.builtin.debug:
+    msg: >-
+      FastDeploy token for {{ daybook_operations_api_backup_fastdeploy_service }}:
+      {{ 'issued a new token' if daybook_operations_api_backup_token_issued | bool else 'reused the stored token' }}
+      (stored token: {{ daybook_operations_api_backup_token_status.reason }}).
+      {{ ('Replaced token id ' ~ daybook_operations_api_backup_token_status.previous_jti
+          ~ ' stays valid until it expires; revoke it with commands.py revokeservicetoken once Echoport uses the new token.')
+         if daybook_operations_api_backup_token_issued | bool and daybook_operations_api_backup_token_status.previous_jti
+         else '' }}
 
 - name: register_echoport | Register the backup schedule and retention in Echoport
   ansible.builtin.command:
@@ -106,7 +179,11 @@
       with transaction.atomic():
           target, created = BackupTarget.objects.get_or_create(name={{ daybook_operations_api_backup_target | to_json }}, defaults={'fastdeploy_service': {{ daybook_operations_api_backup_fastdeploy_service | to_json }}, 'target_mode': 'service_owned'})
           target.fastdeploy_service = {{ daybook_operations_api_backup_fastdeploy_service | to_json }}
-          target.service_token = {{ daybook_operations_api_backup_service_token.stdout | trim | to_json }}
+          issued_token = {{ ((daybook_operations_api_backup_service_token.stdout | default('') | trim) if daybook_operations_api_backup_token_issued | bool else '') | to_json }}
+          if issued_token:
+              target.service_token = issued_token
+          elif not target.service_token:
+              raise RuntimeError('no FastDeploy service token to store')
           target.target_mode = 'service_owned'
           target.service_name = 'daybook-operations'
           target.description = 'Database and replay keyring; restore only through attended operations lifecycle'

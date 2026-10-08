@@ -44,6 +44,11 @@ daybook_operations_api_backup_echoport_root: /home/echoport/site
 daybook_operations_api_backup_schedule: ""
 daybook_operations_api_backup_update_schedule: false
 daybook_operations_api_backup_retention_days: 30
+daybook_operations_api_backup_token_user: ""  # required for register_echoport
+daybook_operations_api_backup_token_origin: echoport
+daybook_operations_api_backup_token_days: 90
+daybook_operations_api_backup_token_renewal_days: 30
+daybook_operations_api_backup_rotate_service_token: false
 ```
 
 ## Validation
@@ -59,11 +64,38 @@ Include this role with `tasks_from: register_echoport` after the API, FastDeploy
 Echoport and root mc alias exist. The default schedule is empty for manual
 validation. Set the schedule only after upload/restore and off-host replication
 checks. Echoport owns scheduling and remote retention; no additional timer is
-installed. Re-register at least every 90 days to renew the 180-day scoped token.
+installed.
 An existing target retains its schedule and active/paused/disabled state. To
 change its schedule explicitly, also set `daybook_operations_api_backup_update_schedule: true`;
 reactivation remains a separate attended Echoport action. Registration requires
 live execution and rejects Ansible check mode before mutation.
+
+### FastDeploy service token
+
+The target's FastDeploy token is issued with FastDeploy's
+`commands.py issueservicetoken` (FastDeploy with that command is required), so it
+carries a `jti`, is recorded in FastDeploy and can be revoked. It is issued for
+`daybook_operations_api_backup_token_user`, which must be an existing FastDeploy
+user (the play fails with "unknown user" otherwise), and lives
+`daybook_operations_api_backup_token_days` (default and maximum 90; FastDeploy also
+refuses more than `SERVICE_TOKEN_MAX_EXPIRE_DAYS`).
+
+Registration is idempotent: it first reads the token stored in the Echoport target
+and issues a new one only when that token is missing, undecodable, scoped to another
+service, a legacy token without `jti`, or expires within
+`daybook_operations_api_backup_token_renewal_days` (default 30). Otherwise the stored
+token is kept and nothing is issued. The play reports the decision and the reason,
+never the token.
+
+Rotation: re-run the registration at least every
+`daybook_operations_api_backup_token_renewal_days` (30 days), so one run always
+lands inside the renewal window before the token expires; that run issues the
+replacement. To
+rotate at once (for example after a leak), set
+`daybook_operations_api_backup_rotate_service_token: true` for one run. The replaced
+token stays valid until it expires; the play prints its id, and
+`commands.py revokeservicetoken <jti>` on the FastDeploy host revokes it once no
+backup run is using it any more.
 
 The root-owned bridge in `/usr/local/libexec` accepts only backup requests for its
 fixed target/bucket. It invokes application Python and reads source archives as
