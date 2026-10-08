@@ -34,5 +34,8 @@
   ansible.builtin.import_tasks: traefik.yml
   when: paperless_traefik_enabled
 
+- name: Rebuild Paperless search index
+  ansible.builtin.import_tasks: search_index.yml
+
 - name: Ensure service state
   ansible.builtin.import_tasks: service.yml

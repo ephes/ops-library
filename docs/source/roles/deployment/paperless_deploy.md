@@ -9,6 +9,15 @@ Deploy [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) using uv-
 - Manages uv virtualenvs, requires SHA-256-verified release artifacts, stages extraction before switching the stable release symlink, and downloads NLTK datasets
 - Renders `.env`, gunicorn config, systemd units, Traefik dynamic config, and scanner SSH drop-ins
 - Performs health checks (`systemctl` + HTTP `/api/`) before finishing
+- Fully reindexes database documents on every deploy after migrations, with
+  all configured Paperless services briefly paused to avoid concurrent index access.
+  This also repairs empty indexes whose schema marker looks current.
+
+Reindexing reports a change even on repeat deployments. Check mode skips the
+rebuild and service pause. Previously running services resume on indexing
+failure, but deployment fails and the index may need recovery; correct the
+reported cause and rerun deployment. Plan a maintenance window for large
+collections. See the role README's search index maintenance section for details.
 
 ## Usage
 

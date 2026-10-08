@@ -1,5 +1,16 @@
 # Changelog
 
+<!-- Historical release notes repeat category headings within a release. -->
+<!-- markdownlint-disable MD024 -->
+
+## Unreleased — Paperless search index recovery (2.31.13)
+
+- `paperless_deploy` rebuilds the full search index after migrations on every
+  deploy, briefly pausing all configured Paperless services. This repairs empty indexes
+  whose schema sentinels already look current after an upstream schema change.
+  Previously running services resume on failure, but deployment fails until
+  indexing succeeds. Check mode skips indexing and service pauses.
+
 ## Unreleased — Daybook operations backup issues revocable FastDeploy tokens (2.31.11)
 
 `daybook_operations_api_backup` (`tasks_from: register_echoport`) minted its

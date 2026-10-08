@@ -1,0 +1,49 @@
+---
+# Rebuild unconditionally: upstream can write current schema sentinels while
+# creating an empty index, so --if-needed alone cannot repair that state.
+- name: search_index | Rebuild search index with Paperless services paused
+  when: not ansible_check_mode
+  block:
+    - name: search_index | Gather Paperless service state before reindexing
+      ansible.builtin.service_facts:
+
+    - name: search_index | Record previously running Paperless services
+      ansible.builtin.set_fact:
+        paperless_deploy_reindex_running_units: >-
+          {{ ansible_facts.services.values()
+             | selectattr('name', 'in', paperless_service_units | map('regex_replace', '$', '.service') | list)
+             | selectattr('state', 'equalto', 'running')
+             | map(attribute='name') | list }}
+
+    - name: search_index | Pause Paperless services and rebuild search data
+      block:
+        - name: search_index | Stop all configured Paperless services before reindexing
+          ansible.builtin.systemd:
+            name: "{{ item }}"
+            state: stopped
+            daemon_reload: true
+          loop: "{{ paperless_service_units }}"
+          become: true
+
+        - name: search_index | Reindex all Paperless documents
+          ansible.builtin.shell: |
+            set -e
+            set -a
+            . {{ paperless_env_file | quote }}
+            set +a
+            {{ paperless_python_bin | quote }} manage.py document_index reindex
+          args:
+            chdir: "{{ paperless_manage_dir }}"
+            executable: /bin/bash
+          become: true
+          become_user: "{{ paperless_username }}"
+          changed_when: true
+
+      always:
+        - name: search_index | Resume previously running Paperless services after reindexing
+          ansible.builtin.systemd:
+            name: "{{ item }}"
+            state: started
+            daemon_reload: true
+          loop: "{{ paperless_deploy_reindex_running_units }}"
+          become: true

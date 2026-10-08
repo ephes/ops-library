@@ -9,6 +9,7 @@ Deploy [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) on bare m
 - Configures the scanner SFTP chroot (bind mount, ACLs, legacy cipher suites) so Brother devices can upload directly into the `consume/` directory.
 - Creates a uv virtualenv, downloads the Paperless release, installs Python dependencies idempotently, and fetches the required NLTK datasets.
 - Renders `.env`, `gunicorn.conf.py`, four systemd service units, Traefik config, and the SSH scanner drop-in; services are started and verified alongside an HTTP `/api/` health check.
+- Rebuilds the full search index from database documents on every deploy, with all configured Paperless services briefly paused to avoid concurrent index access.
 - Integrates with existing `uv_install`, `redis_install`, and `postgres_install` roles. Redis authentication is optional (default: disabled per migration spec); when a password is provided the template emits `redis://:password@â€¦`.
 
 ## Requirements
@@ -114,6 +115,25 @@ When every candidate date is ignored, Paperless falls back to the file's mtime â
 Changing these values only affects documents ingested afterwards. Documents already filed under a wrong date keep it until corrected in the UI.
 
 ## Troubleshooting
+
+### Search index maintenance
+
+Every deployment runs `manage.py document_index reindex` after migrations and
+runtime configuration, as the Paperless user with the deployed environment.
+This is unconditional: Paperless can recreate an empty index on a schema change
+and mark its schema current without adding database documents. `--if-needed`
+would then incorrectly skip recovery. Reindexing changes derived search data,
+not document content, and intentionally reports a change on repeat deployments.
+
+All configured Paperless services are stopped for the rebuild, including units
+waiting to auto-restart. Previously running services are resumed
+even if it fails; the deployment still fails on a reindex error. New installations
+start their services in the following service phase. Check mode skips the rebuild
+and service pause. Large collections need a maintenance window proportional to
+their full indexing time. After an error, inspect the task output, correct the
+cause, and rerun deployment; the existing index may be incomplete until recovery.
+
+### Other failures
 
 - **PostgreSQL packages fail to install**: Ensure outbound network access to `apt.postgresql.org` or disable `paperless_postgres_repo_enabled` and adjust `paperless_postgres_version` to what the distro provides.
 - **Encrypted storage assertion fails**: Mount `/mnt/cryptdata` (or change `paperless_external_storage_root`) before running the role, or temporarily set `paperless_verify_storage_mount: false` if you are running in a lab environment without the encrypted disk.
