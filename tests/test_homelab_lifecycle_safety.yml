@@ -9,7 +9,9 @@
 
   vars:
     remove_tasks: "{{ playbook_dir }}/../roles/homelab_remove/tasks"
-    fixture_home: "/tmp/test-homelab-remove-home"
+    # Per-checkout prefix: parallel runs from other worktrees use other paths.
+    ops_test_tmp_prefix: "ops-library-{{ (playbook_dir | hash('sha1'))[:10] }}-"
+    fixture_home: "/tmp/{{ ops_test_tmp_prefix }}test-homelab-remove-home"
 
   tasks:
     - name: Load shared and remove defaults

@@ -48,4 +48,9 @@ just molecule-test fastdeploy_restore
 just molecule-test unifi_restore
 ```
 
+Molecule container names are scoped to the run, so `just test` can run from
+several checkouts at once. New scenarios must name platforms
+`<name>-${MOLECULE_RUN_ID:-local}`; see "Run-scoped container names" in
+`TESTING.md`.
+
 Use `just lint` only as a summary helper. It does not fail the run.

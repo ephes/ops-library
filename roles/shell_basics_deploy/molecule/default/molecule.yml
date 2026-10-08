@@ -3,7 +3,7 @@ driver:
   name: docker
 
 platforms:
-  - name: instance
+  - name: "instance-${MOLECULE_RUN_ID:-local}"
     image: geerlingguy/docker-ubuntu2404-ansible
     pre_build_image: true
     privileged: true
@@ -11,7 +11,7 @@ platforms:
     tmpfs:
       - /run
       - /tmp
-  - name: debian13
+  - name: "debian13-${MOLECULE_RUN_ID:-local}"
     image: geerlingguy/docker-debian13-ansible
     pre_build_image: true
     privileged: true
@@ -24,9 +24,9 @@ provisioner:
   name: ansible
   inventory:
     host_vars:
-      instance:
+      "instance-${MOLECULE_RUN_ID:-local}":
         ansible_user: root
-      debian13:
+      "debian13-${MOLECULE_RUN_ID:-local}":
         ansible_user: root
   playbooks:
     converge: converge.yml

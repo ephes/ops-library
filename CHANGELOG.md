@@ -1,5 +1,48 @@
 # Changelog
 
+## Unreleased — Run-scoped Molecule containers (2.31.8)
+
+Molecule scenarios no longer use fixed Docker container names. 39 scenarios
+named their platform `instance` (plus `debian13` and
+`tailscale-metrics-endpoint`), and Molecule keyed its state directory by role
+name only and its prerun reinstalled the checkout into the shared
+`~/.ansible/collections`, so `just test` runs from two checkouts at the same
+time destroyed or reused each other's containers and collection install
+(`UNREACHABLE: Failed to create temporary directory`, rc 137 in
+`os_apt_maintenance` and `ssh_restricted_forwarding_account`).
+
+- Every `molecule.yml` platform name and `host_vars` key now ends in
+  `-${MOLECULE_RUN_ID:-local}`.
+- New `scripts/molecule-run.sh` runs every `just molecule-*` recipe (and
+  `scripts/run-vaultwarden-molecule.sh`). It exports `MOLECULE_RUN_ID` (fresh
+  per `molecule-test*` invocation, stable per checkout, role and scenario for
+  converge, verify, login and destroy) and a run-scoped
+  `MOLECULE_EPHEMERAL_DIRECTORY` and `ANSIBLE_HOME`, so Molecule's prerun
+  install of the checkout as `local.ops_library` no longer races on (or
+  leaks between checkouts through) `~/.ansible/collections`. The five
+  scenarios that set `ANSIBLE_COLLECTIONS_PATH` now extend the wrapper's
+  path instead of putting `~/.ansible/collections` first. After a failed or
+  interrupted test the wrapper stops the whole Molecule process group, waits
+  for detached Ansible async workers (the docker driver creates containers
+  with `poll: 0`) so none can create a container after cleanup, and then
+  destroys only its own run's containers.
+- New `tests/test_molecule_run_isolation.py` (`just
+  test-molecule-run-isolation`, part of `just test`) fails when a
+  `molecule.yml` uses a fixed platform or network name such as
+  `name: instance`, or keeps `host_vars` keys that match no platform, and
+  checks the wrapper's run ID, state directory and cleanup behavior.
+- The playbook-based tests in `tests/*.yml` no longer render to fixed `/tmp`
+  paths, which a parallel run from another checkout overwrote or deleted
+  mid-test (seen in the BIND secondary and Daybook photos symlink-safety
+  tests). Their scratch paths now carry a per-checkout
+  `ops_test_tmp_prefix` (a hash of `playbook_dir`), and
+  `just test-bind-authoritative-secondary` renders into a private `mktemp`
+  directory.
+- `TESTING.md` documents how new scenarios name their platforms.
+
+No role behavior changes. Branches that add Molecule scenarios must rename
+their platforms the same way before merging.
+
 ## Unreleased — Voxhelm prune job and new service settings (2.31.7)
 
 Nothing changes on deploy until the owner sets the new variables: the prune

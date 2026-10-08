@@ -2,7 +2,7 @@ driver:
   name: docker
 
 platforms:
-  - name: instance
+  - name: "instance-${MOLECULE_RUN_ID:-local}"
     image: geerlingguy/docker-ubuntu2404-ansible
     pre_build_image: true
     privileged: true
@@ -15,7 +15,7 @@ provisioner:
   name: ansible
   inventory:
     host_vars:
-      instance:
+      "instance-${MOLECULE_RUN_ID:-local}":
         ansible_user: root
   playbooks:
     converge: converge.yml

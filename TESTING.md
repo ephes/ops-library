@@ -154,6 +154,68 @@ just molecule-destroy <role>
 just molecule-login <role>
 ```
 
+### Run-scoped container names
+
+Docker container names are global to the daemon, so two checkouts running the
+same scenario must not use the same platform name. Every `molecule.yml` names
+its platforms with the `${MOLECULE_RUN_ID:-local}` token, and keys
+`host_vars` by the same names:
+
+```yaml
+platforms:
+  - name: "instance-${MOLECULE_RUN_ID:-local}"
+    image: geerlingguy/docker-ubuntu2404-ansible
+provisioner:
+  inventory:
+    host_vars:
+      "instance-${MOLECULE_RUN_ID:-local}":
+        ansible_user: root
+```
+
+New scenarios must follow the same pattern: append `-${MOLECULE_RUN_ID:-local}`
+to every platform `name`, to every `host_vars` key, and to the `name` of any
+Docker network listed under a platform's `networks`. Target hosts in
+playbooks with `hosts: all` (or a group), never with a literal platform name.
+`just test-molecule-run-isolation` (part of `just test`) fails on a fixed name
+such as `name: instance`.
+
+All `just molecule-*` recipes run Molecule through `scripts/molecule-run.sh`,
+which exports `MOLECULE_RUN_ID`, a matching `MOLECULE_EPHEMERAL_DIRECTORY` and
+a run-scoped `ANSIBLE_HOME`, all under
+`~/.cache/ops-library-molecule/<run-id>/<role>/<scenario>/`. Molecule's
+prerun installs the checkout as the `local.ops_library` collection into
+`$ANSIBLE_HOME/collections`; with a shared `~/.ansible` parallel checkouts
+raced on that install and ran each other's role code. The wrapper puts the
+run's collections first on `ANSIBLE_COLLECTIONS_PATH`, followed by the shared
+`~/.ansible/collections` (for `community.docker` and friends). A scenario that
+sets `ANSIBLE_COLLECTIONS_PATH` in its provisioner env must start it with
+`${ANSIBLE_COLLECTIONS_PATH:-~/.ansible/collections:/usr/share/ansible/collections}`.
+
+- `just molecule-test*` uses a fresh random ID per invocation. The scenario's
+  destroy step removes its containers. After a failure, or on INT/TERM, the
+  wrapper first stops the whole Molecule process group (TERM, then KILL after
+  `OPS_LIBRARY_MOLECULE_STOP_TIMEOUT` seconds, default 30), waits for
+  detached Ansible async workers started during the run (such as the docker
+  driver's container creation; at most
+  `OPS_LIBRARY_MOLECULE_ASYNC_SETTLE_TIMEOUT` seconds, default 120; if they
+  are still running it destroys once, keeps waiting up to
+  `OPS_LIBRARY_MOLECULE_ASYNC_MAX_WAIT` seconds, default 7200, and destroys
+  again), and then runs `molecule destroy` for the same ID, which only touches that run's
+  containers.
+- `molecule-converge`, `-verify`, `-login` and `-destroy` use an ID that is
+  stable per checkout, role and scenario, so a debugging session across
+  separate invocations addresses the same containers.
+- An exported `MOLECULE_RUN_ID` (lowercase letters, digits, `-`; at most 24
+  characters) overrides both; give each scenario that runs at the same time
+  its own value. Running `molecule` directly without the wrapper falls back to
+  the shared `local` suffix and is not isolated.
+
+Playbook-based tests under `tests/*.yml` follow the same rule for scratch
+files: build `/tmp` paths from the play variable
+`ops_test_tmp_prefix: "ops-library-{{ (playbook_dir | hash('sha1'))[:10] }}-"`
+(for example `"/tmp/{{ ops_test_tmp_prefix }}test-my-role.env"`) instead of a
+fixed `/tmp/test-...` name.
+
 Current role-local scenarios include infrastructure and restore boundaries such as:
 
 - `apt_upgrade_register`

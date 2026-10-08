@@ -10,9 +10,11 @@
   vars:
     shared_role_path: "{{ playbook_dir }}/../roles/work_app_shared"
     role_path: "{{ playbook_dir }}/../roles/work_app_deploy"
-    rendered_env: "/tmp/test-work-app.env"
-    rendered_service: "/tmp/test-work-app.service"
-    rendered_traefik: "/tmp/test-work-app.traefik.yml"
+    # Per-checkout prefix: parallel runs from other worktrees use other paths.
+    ops_test_tmp_prefix: "ops-library-{{ (playbook_dir | hash('sha1'))[:10] }}-"
+    rendered_env: "/tmp/{{ ops_test_tmp_prefix }}test-work-app.env"
+    rendered_service: "/tmp/{{ ops_test_tmp_prefix }}test-work-app.service"
+    rendered_traefik: "/tmp/{{ ops_test_tmp_prefix }}test-work-app.traefik.yml"
 
   tasks:
     - name: Load role defaults
