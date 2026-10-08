@@ -138,6 +138,49 @@ Sentry as the misleading `current transaction is aborted, commands ignored until
 end of transaction block` — `django_tasks_db` retries the query inside the same
 already-aborted transaction.
 
+## Python Podcast Private Media
+
+`templates/python_podcast_production_db_backup.py.j2` also backs up
+python-podcast's private media: contributor voice references and the
+known-speaker suggestion sidecar, kept on the server filesystem and off the
+public S3 bucket, so neither `pg_dump` nor the S3 media backup covers them.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `pp_prod_db_backup_private_media_path` | `/home/python-podcast/site/private_media` | Directory on the backup host; `""` disables the step |
+| `pp_prod_db_backup_private_media_max_bytes` | `2147483648` | `du` size guard; a larger tree fails the backup |
+| `pp_prod_db_backup_restore_private_media` | `false` | Restore private media to staging by default |
+| `pp_prod_db_backup_restore_private_media_path` | `/home/python-podcast/site/private_media` | Restore target on the staging host |
+| `pp_prod_db_backup_restore_private_media_owner` | `python-podcast:python-podcast` | Owner of the restored tree |
+
+Backup:
+
+- The directory is probed first. Missing is a warning (recorded as
+  `"included": false` in the manifest); a failed probe, a symlink or a
+  non-directory fails the backup rather than silently dropping the clips.
+- `tar -C <parent> -czf` runs read-only on the source and writes into a fresh
+  `mktemp -d` directory (0700, removed afterwards), never a predictable `/tmp`
+  file name; the archive is copied back, every member is checked (same safety check as the
+  outer archive, plus: under the directory's own name, regular files and
+  directories only, uncompressed size within the guard) and it is shipped as
+  `private_media/private_media.tar.gz` in the same uploaded archive. The
+  manifest's `private_media` entry carries its own `checksum_sha256`.
+
+Restore (staging):
+
+- Skipped by default, and the private media members are not even extracted
+  (names are normalized first, and the outer archive may not contain links,
+  which this runner never writes), so
+  production voice clips do not spread to staging unasked. Staging's own
+  private media stays untouched.
+- Opt in with `pp_prod_db_backup_restore_private_media: true` or by running
+  the runner manually with `--include-private-media`. Nothing in the Echoport
+  restore context can switch it on.
+- When opted in, the nested archive's checksum and members are verified
+  before any service is stopped. The tree is swapped in after `pg_restore`
+  while the services are still stopped; the previous tree is moved back if
+  the swap fails.
+
 ## Graphyard Template Notes
 
 `templates/graphyard_backup.py.j2` is the service-owned same-host runner for Graphyard:
