@@ -211,3 +211,8 @@ authentication or Basic username `inventory-monitor` and this secret as password
 This credential grants no ingest, UI-session or admin access. An external monitor
 must check expected host/source identities and freshness, not only zero failures.
 This role configures receiver access; check provisioning belongs to orchestration.
+
+## Restart behavior
+
+Source and dependency changes notify the existing restart handlers after deployment.
+Graphyard restarts both its web and agent services. Unchanged syncs do not request a restart.

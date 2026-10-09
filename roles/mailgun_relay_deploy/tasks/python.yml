@@ -27,6 +27,8 @@
     creates: "{{ mailgun_relay_venv_bin }}/python"
   become: true
   become_user: "{{ mailgun_relay_user }}"
+  notify:
+    - restart mailgun-relay
 
 - name: python | Sync runtime dependencies with uv
   ansible.builtin.command:
@@ -38,6 +40,9 @@
   become: true
   become_user: "{{ mailgun_relay_user }}"
   register: mailgun_relay_uv_sync_result
-  changed_when: "'Installed' in mailgun_relay_uv_sync_result.stdout or 'Updated' in mailgun_relay_uv_sync_result.stdout"
+  changed_when: >-
+    'Installed ' in (mailgun_relay_uv_sync_result.stdout ~ mailgun_relay_uv_sync_result.stderr) or
+    'Uninstalled ' in (mailgun_relay_uv_sync_result.stdout ~ mailgun_relay_uv_sync_result.stderr) or
+    'Updated ' in (mailgun_relay_uv_sync_result.stdout ~ mailgun_relay_uv_sync_result.stderr)
   notify:
     - restart mailgun-relay

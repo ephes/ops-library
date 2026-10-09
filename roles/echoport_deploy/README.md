@@ -100,3 +100,9 @@ echoport_health_overdue_grace_minutes: ""  # ECHOPORT_HEALTH_OVERDUE_GRACE_MINUT
         echoport_fastdeploy_service_token: "{{ echoport_secrets.fastdeploy_service_token }}"
         echoport_traefik_host: "echoport.home.xn--wersdrfer-47a.de"
 ```
+
+## Restart behavior
+
+Source and dependency changes notify the existing restart handlers after deployment.
+Echoport restarts its systemd service. Unchanged syncs do not request a restart.
+The `echoport_service_restart_on_change` setting (default `true`) controls these handlers.

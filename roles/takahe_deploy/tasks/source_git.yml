@@ -40,6 +40,9 @@
   become: true
   become_user: "{{ takahe_user }}"
   register: takahe_git_result
+  notify:
+    - restart takahe-gunicorn
+    - restart takahe-stator
 
 - name: source_git | Ensure correct ownership of repository
   ansible.builtin.file:

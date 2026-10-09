@@ -59,3 +59,9 @@ See `defaults/main.yml` for the full list of tunables.
 cd /path/to/ops-library
 just test-role otbr_deploy
 ```
+
+## Restart behavior
+
+Build changes notify the existing restart handlers after deployment.
+A rebuild (source checkout or build settings changed, or a forced rebuild) restarts otbr-agent and, when enabled, otbr-web. Runs without a rebuild do not request a restart.
+The `otbr_restart_on_change` setting (default `true`) controls these handlers.

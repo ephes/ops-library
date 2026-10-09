@@ -18,10 +18,13 @@
     src: "{{ heis_source_path }}/"
     dest: "{{ heis_site_path }}/"
     delete: false
-    rsync_opts: "{{ heis_rsync_excludes | map('regex_replace', '^(.*)$', '--exclude=\\1') | list }}"
+    rsync_opts: "{{ heis_rsync_excludes | map('regex_replace', '^(.*)$', '--exclude=\\1') | list + ['--omit-dir-times'] }}"
+    owner: false
+    group: false
   become: false
   delegate_to: localhost
-  notify: restart heis
+  notify:
+    - restart heis
 
 - name: Set ownership for synced files
   file:

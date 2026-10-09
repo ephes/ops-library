@@ -36,7 +36,9 @@
 
 - name: source_rsync | Build rsync exclude list
   ansible.builtin.set_fact:
-    wagtail_rsync_excludes_all: "{{ wagtail_rsync_excludes + wagtail_rsync_excludes_extra }}"
+    # /venv is the role-managed symlink to the virtualenv; delete: true would
+    # otherwise remove it on every sync and report a change (and a restart).
+    wagtail_rsync_excludes_all: "{{ wagtail_rsync_excludes + wagtail_rsync_excludes_extra + ['/venv'] }}"
 
 - name: source_rsync | Build rsync exclude args
   ansible.builtin.set_fact:
@@ -47,7 +49,9 @@
     src: "{{ wagtail_source_path }}/"
     dest: "{{ wagtail_site_path }}/"
     delete: "{{ wagtail_rsync_delete }}"
-    rsync_opts: "{{ wagtail_rsync_exclude_args }}"
+    rsync_opts: "{{ wagtail_rsync_exclude_args + ['--omit-dir-times'] }}"
+    owner: false
+    group: false
   delegate_to: localhost
   become: false
   notify:

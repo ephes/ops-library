@@ -63,3 +63,6 @@
     otbr_build_config.changed or
     not otbr_agent_bin_stat.stat.exists
   changed_when: true
+  notify:
+    - restart otbr-agent
+    - restart otbr-web

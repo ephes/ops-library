@@ -120,3 +120,8 @@ ansible-playbook -e skip_preflight_ports=true playbooks/deploy-open-webui.yml
 ## Removal
 
 Use the `open_webui_venv_remove` role to stop the service and clean up data when desired.
+
+## Restart behavior
+
+Source and dependency changes notify the existing restart handlers after deployment.
+Open WebUI restarts its systemd service. Unchanged syncs do not request a restart.

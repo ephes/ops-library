@@ -67,3 +67,8 @@ For the full list, see `defaults/main.yml`.
 ## License
 
 MIT
+
+## Restart behavior
+
+Source and dependency changes notify the existing restart handlers after deployment.
+Marina restarts its systemd service. Unchanged syncs do not request a restart.

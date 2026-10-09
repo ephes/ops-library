@@ -96,6 +96,9 @@
     creates: "{{ wagtail_venv_path }}/bin/python"
   become: true
   become_user: "{{ wagtail_user }}"
+  notify:
+    - restart wagtail
+    - restart wagtail db worker
 
 - name: python | Create venv symlink
   ansible.builtin.file:
@@ -116,7 +119,10 @@
   become: true
   become_user: "{{ wagtail_user }}"
   register: wagtail_uv_sync
-  changed_when: "'Installed' in wagtail_uv_sync.stdout or 'Updated' in wagtail_uv_sync.stdout"
+  changed_when: >-
+    'Installed ' in (wagtail_uv_sync.stdout ~ wagtail_uv_sync.stderr) or
+    'Uninstalled ' in (wagtail_uv_sync.stdout ~ wagtail_uv_sync.stderr) or
+    'Updated ' in (wagtail_uv_sync.stdout ~ wagtail_uv_sync.stderr)
   notify:
     - restart wagtail
     - restart wagtail db worker

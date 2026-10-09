@@ -167,3 +167,8 @@ error-mail configuration.
 ## License
 
 MIT
+
+## Restart behavior
+
+Source and dependency changes notify the existing restart handlers after deployment.
+Takahe restarts both the gunicorn web service and the stator worker. Unchanged syncs do not request a restart.

@@ -19,6 +19,8 @@
     creates: "{{ chesslab_venv_path }}/bin/python"
   become: true
   become_user: "{{ chesslab_user }}"
+  notify:
+    - restart chesslab
 
 - name: python | Install chesslab dependencies
   ansible.builtin.command:
@@ -26,8 +28,10 @@
   args:
     chdir: "{{ chesslab_site_path }}"
   register: chesslab_uv_sync_result
-  changed_when:
-    - "'Installed ' in chesslab_uv_sync_result.stdout or 'Uninstalled ' in chesslab_uv_sync_result.stdout"
+  changed_when: >-
+    'Installed ' in (chesslab_uv_sync_result.stdout ~ chesslab_uv_sync_result.stderr) or
+    'Uninstalled ' in (chesslab_uv_sync_result.stdout ~ chesslab_uv_sync_result.stderr) or
+    'Updated ' in (chesslab_uv_sync_result.stdout ~ chesslab_uv_sync_result.stderr)
   environment:
     VIRTUAL_ENV: "{{ chesslab_venv_path }}"
   become: true

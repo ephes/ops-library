@@ -28,6 +28,8 @@
     creates: "{{ weeknotes_home_venv_path }}/bin/python"
   become: true
   become_user: "{{ weeknotes_home_user }}"
+  notify:
+    - restart weeknotes home
 
 - name: python | Install weeknotes.home dependencies
   ansible.builtin.command:
@@ -45,5 +47,8 @@
   become: true
   become_user: "{{ weeknotes_home_user }}"
   register: weeknotes_home_uv_sync
-  changed_when: "'Installed' in weeknotes_home_uv_sync.stdout or 'Updated' in weeknotes_home_uv_sync.stdout"
+  changed_when: >-
+    'Installed ' in (weeknotes_home_uv_sync.stdout ~ weeknotes_home_uv_sync.stderr) or
+    'Uninstalled ' in (weeknotes_home_uv_sync.stdout ~ weeknotes_home_uv_sync.stderr) or
+    'Updated ' in (weeknotes_home_uv_sync.stdout ~ weeknotes_home_uv_sync.stderr)
   notify: restart weeknotes home

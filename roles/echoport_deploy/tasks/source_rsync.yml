@@ -74,7 +74,11 @@
     src: "{{ echoport_source_path }}/src/django/"
     dest: "{{ echoport_site_path }}/"
     delete: true
-    rsync_opts:
+    owner: false
+    group: false
+    rsync_opts: "{{ echoport_rsync_django_opts + (echoport_rsync_role_managed | map('regex_replace', '^', '--exclude=/') | list) }}"
+  vars:
+    echoport_rsync_django_opts:
       - "--exclude=.git"
       - "--exclude=.venv"
       - "--exclude=__pycache__"
@@ -88,16 +92,31 @@
       - "--exclude=cache"
       - "--exclude=src/"  # Preserve package sources; synced explicitly later
       - "--exclude=db.sqlite3"  # Don't overwrite the database
+      - "--exclude=db.sqlite3-*"  # Nor its WAL/SHM files
       - "--exclude=media/"
       - "--exclude=staticfiles/"
+      # The role rewrites uv.lock and other site-root files after this sync,
+      # which bumps directory mtimes; do not treat those as source changes.
+      - "--omit-dir-times"
+    # Site-root files this role creates after the sync. Without these excludes,
+    # delete: true removes them on every run, so every deploy would report a
+    # change and restart the service.
+    echoport_rsync_role_managed: >-
+      {{ ['.env', 'venv', 'uv.lock', 'staging-db-refresh.sh']
+         + (['pyproject.toml'] if echoport_use_source_pyproject else [])
+         + (echoport_rsync_extra_files | default([])) }}
   become: false
   delegate_to: localhost
+  notify:
+    - restart echoport
 
 - name: Sync additional Echoport source directories
   ansible.posix.synchronize:
     src: "{{ echoport_source_path }}/{{ item }}"
     dest: "{{ echoport_site_path }}/{{ item }}"
     delete: true
+    owner: false
+    group: false
     rsync_opts:
       - "--exclude=.git"
       - "--exclude=.venv"
@@ -110,6 +129,7 @@
       - "--exclude=.mypy_cache"
       - "--exclude=node_modules"
       - "--exclude=cache"
+      - "--omit-dir-times"
   become: false
   delegate_to: localhost
   loop: "{{ echoport_rsync_additional_paths }}"
@@ -118,6 +138,8 @@
   when:
     - echoport_rsync_additional_paths is defined
     - echoport_rsync_additional_paths | length > 0
+  notify:
+    - restart echoport
 
 - name: Copy pyproject.toml from source
   copy:
@@ -128,6 +150,8 @@
     mode: '0644'
   when:
     - echoport_use_source_pyproject
+  notify:
+    - restart echoport
 
 - name: Copy extra files from source
   copy:
@@ -142,6 +166,8 @@
   when:
     - echoport_rsync_extra_files is defined
     - echoport_rsync_extra_files | length > 0
+  notify:
+    - restart echoport
 
 - name: Set ownership for synced files
   file:

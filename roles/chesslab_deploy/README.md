@@ -24,3 +24,8 @@ due cards and reviews to the logged-in user's `accounts.Profile.lichess_username
 
 Traefik basic auth may still be enabled as an edge middleware, but it is no
 longer the Chesslab application login.
+
+## Restart behavior
+
+Source and dependency changes notify the existing restart handlers after deployment.
+Chesslab restarts its systemd service. Unchanged syncs do not request a restart.
