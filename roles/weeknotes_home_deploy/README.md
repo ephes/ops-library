@@ -90,3 +90,9 @@ This deploy role intentionally does not create backup or monitoring jobs. Wire
 the deployed PostgreSQL database into Echoport and add a Nyxmon `/healthz` check
 from the private ops-control repo, where service inventory, secrets, and backup
 topology live.
+
+## Restart behavior
+
+Source and dependency changes notify the existing restart handlers after deployment.
+weeknotes.home restarts its systemd service. Unchanged syncs do not request a restart.
+The `weeknotes_home_service_restart_on_change` setting (default `true`) controls these handlers.

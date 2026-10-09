@@ -19,6 +19,9 @@
     creates: "{{ archive_venv_path }}/bin/python"
   become: true
   become_user: "{{ archive_user }}"
+  notify:
+    - restart archive
+    - restart archive metadata worker
 
 - name: python | Install archive dependencies
   ansible.builtin.command:
@@ -26,8 +29,10 @@
   args:
     chdir: "{{ archive_site_path }}"
   register: archive_uv_sync_result
-  changed_when:
-    - "'Installed ' in archive_uv_sync_result.stdout or 'Uninstalled ' in archive_uv_sync_result.stdout"
+  changed_when: >-
+    'Installed ' in (archive_uv_sync_result.stdout ~ archive_uv_sync_result.stderr) or
+    'Uninstalled ' in (archive_uv_sync_result.stdout ~ archive_uv_sync_result.stderr) or
+    'Updated ' in (archive_uv_sync_result.stdout ~ archive_uv_sync_result.stderr)
   environment:
     VIRTUAL_ENV: "{{ archive_venv_path }}"
   become: true

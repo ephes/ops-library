@@ -19,9 +19,17 @@
   ansible.posix.synchronize:
     src: "{{ takahe_source_path }}/"
     dest: "{{ takahe_site_path }}/"
-    rsync_opts: "{{ takahe_rsync_exclude_opts }}"
+    owner: false
+    group: false
+    # directories.yml owns the site and runtime directory modes (0750);
+    # preserving controller modes would flip them on every sync and restart.
+    perms: false
+    rsync_opts: "{{ takahe_rsync_exclude_opts + ['--omit-dir-times'] }}"
   delegate_to: localhost
   become: false
+  notify:
+    - restart takahe-gunicorn
+    - restart takahe-stator
 
 - name: source_rsync | Ensure correct ownership of synced files
   ansible.builtin.file:

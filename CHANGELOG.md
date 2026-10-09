@@ -3,6 +3,31 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Application code change restarts
+
+- `homelab_deploy` and `nyxmon_deploy` now notify restart handlers when source
+  code, dependency inputs, or installed dependencies change. Nyxmon restarts both
+  its web and enabled monitoring units; uv change detection includes stderr and
+  package removals. Existing restart-on-change settings remain respected.
+- `echoport_deploy`, `takahe_deploy`, `heis_deploy` and `marina_deploy` now
+  restart their services when synced source, the virtualenv or installed
+  dependencies change; Takahe restarts both gunicorn and stator.
+- `otbr_deploy` restarts otbr-agent (and otbr-web when enabled) after a rebuild.
+- `graphyard_deploy`, `mailgun_relay_deploy`, `wagtail_deploy`,
+  `weeknotes_home_deploy`, `archive_deploy`, `chesslab_deploy` and
+  `open_webui_venv_deploy` detect uv dependency changes from stderr (where uv
+  reports them) including removals, and restart on virtualenv creation;
+  Graphyard now restarts web and agent after dependency changes.
+- Controller-push rsync tasks in these roles no longer copy controller
+  ownership, so the later ownership fix-up does not make every sync report a
+  change and restart the service unconditionally. Takahe also stops copying
+  controller modes over its 0750 site directories, Echoport's deleting sync
+  keeps role-managed site files (`.env`, `venv`, `uv.lock`, the separately
+  copied `pyproject.toml` and extra files, the staging helper and SQLite
+  WAL/SHM files), and Wagtail's deleting sync keeps its `venv` symlink.
+  These syncs also pass `--omit-dir-times`, so directory mtime bumps from
+  role-side writes (such as the regenerated `uv.lock`) are not source changes.
+
 ## Unreleased — Monitoring delivery probes (2.31.15)
 
 - `mail_spam_deploy` adds an optional original-source-IP, sender, recipient and

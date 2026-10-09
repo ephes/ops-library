@@ -114,3 +114,8 @@ archive_media_storage_addressing_style: "path"
 When `archive_deploy_method: rsync`, the role excludes `archive-media/`, `db.sqlite3`, and
 other runtime state from the sync/delete set. That keeps a fallback local media tree from
 being deleted during redeploys even when the environment has already migrated to MinIO/S3.
+
+## Restart behavior
+
+Source and dependency changes notify the existing restart handlers after deployment.
+Archive restarts both its web service and the metadata worker. Unchanged syncs do not request a restart.

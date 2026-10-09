@@ -27,6 +27,9 @@
     creates: "{{ graphyard_venv_bin }}/python"
   become: true
   become_user: "{{ graphyard_user }}"
+  notify:
+    - restart graphyard web
+    - restart graphyard agent
 
 - name: python | Sync runtime dependencies with uv
   ansible.builtin.command:
@@ -38,4 +41,10 @@
   become: true
   become_user: "{{ graphyard_user }}"
   register: graphyard_uv_sync_result
-  changed_when: "'Installed' in graphyard_uv_sync_result.stdout or 'Updated' in graphyard_uv_sync_result.stdout"
+  changed_when: >-
+    'Installed ' in (graphyard_uv_sync_result.stdout ~ graphyard_uv_sync_result.stderr) or
+    'Uninstalled ' in (graphyard_uv_sync_result.stdout ~ graphyard_uv_sync_result.stderr) or
+    'Updated ' in (graphyard_uv_sync_result.stdout ~ graphyard_uv_sync_result.stderr)
+  notify:
+    - restart graphyard web
+    - restart graphyard agent

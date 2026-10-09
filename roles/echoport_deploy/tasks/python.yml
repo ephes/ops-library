@@ -96,6 +96,8 @@
     creates: "{{ echoport_venv_path }}/bin/python"
   become_user: "{{ echoport_user }}"
   when: echoport_use_uv
+  notify:
+    - restart echoport
 
 - name: Check if venv symlink exists
   stat:
@@ -119,6 +121,8 @@
     creates: "{{ echoport_venv_path }}/bin/python"
   become_user: "{{ echoport_user }}"
   when: not echoport_use_uv
+  notify:
+    - restart echoport
 
 - name: Install dependencies using uv
   command: "{{ echoport_uv_sync_cmd }}"
@@ -129,6 +133,12 @@
   become_user: "{{ echoport_user }}"
   when: echoport_use_uv
   register: uv_sync
+  changed_when: >-
+    'Installed ' in (uv_sync.stdout ~ uv_sync.stderr) or
+    'Uninstalled ' in (uv_sync.stdout ~ uv_sync.stderr) or
+    'Updated ' in (uv_sync.stdout ~ uv_sync.stderr)
+  notify:
+    - restart echoport
 
 - name: Install dependencies using pip
   pip:
@@ -137,3 +147,5 @@
     state: present
   become_user: "{{ echoport_user }}"
   when: not echoport_use_uv
+  notify:
+    - restart echoport

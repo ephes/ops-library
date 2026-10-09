@@ -98,9 +98,9 @@
     UV_NO_PROGRESS: "1"
   register: open_webui_uv_install
   changed_when: >-
-    'installed' in open_webui_uv_install.stdout | lower or
-    'updated' in open_webui_uv_install.stdout | lower or
-    'installing' in open_webui_uv_install.stdout | lower
+    'Installed ' in (open_webui_uv_install.stdout ~ open_webui_uv_install.stderr) or
+    'Uninstalled ' in (open_webui_uv_install.stdout ~ open_webui_uv_install.stderr) or
+    'Updated ' in (open_webui_uv_install.stdout ~ open_webui_uv_install.stderr)
   notify: restart open webui
   become: true
   become_user: "{{ open_webui_user }}"

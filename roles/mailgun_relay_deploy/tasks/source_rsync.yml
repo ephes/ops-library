@@ -38,7 +38,9 @@
     src: "{{ mailgun_relay_source_path }}/"
     dest: "{{ mailgun_relay_site_path }}/"
     delete: true
-    rsync_opts: "{{ mailgun_relay_rsync_excludes | map('regex_replace', '^(.*)$', '--exclude=\\1') | list }}"
+    rsync_opts: "{{ mailgun_relay_rsync_excludes | map('regex_replace', '^(.*)$', '--exclude=\\1') | list + ['--omit-dir-times'] }}"
+    owner: false
+    group: false
   delegate_to: localhost
   become: false
   notify:

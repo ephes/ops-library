@@ -383,3 +383,9 @@ See repository license.
 ## Author
 
 Infrastructure Team
+
+## Restart behavior
+
+Source and dependency changes notify the existing restart handlers after deployment.
+Nyxmon restarts both the web service and the enabled monitoring service; unchanged syncs do not request a restart.
+The `nyxmon_service_restart_on_change` setting (default `true`) controls these handlers.

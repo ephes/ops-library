@@ -152,3 +152,8 @@ pipeline. Work through it in this order:
 ## Companion playbook
 
 See `ops-control/playbooks/deploy-mailgun-relay.yml`.
+
+## Restart behavior
+
+Source and dependency changes notify the existing restart handlers after deployment.
+mailgun-relay restarts its systemd service. Unchanged syncs do not request a restart.

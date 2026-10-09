@@ -46,6 +46,8 @@
     chdir: "{{ homelab_site_path }}"
     creates: "{{ homelab_venv_path }}/bin/python"
   become_user: "{{ homelab_user }}"
+  notify:
+    - restart homelab
 
 - name: Check if venv symlink exists
   stat:
@@ -69,4 +71,9 @@
     VIRTUAL_ENV: "{{ homelab_venv_path }}"
   become_user: "{{ homelab_user }}"
   register: uv_sync_result
-  changed_when: "'Installed' in uv_sync_result.stdout or 'Updated' in uv_sync_result.stdout"
+  changed_when: >-
+    'Installed ' in (uv_sync_result.stdout ~ uv_sync_result.stderr) or
+    'Uninstalled ' in (uv_sync_result.stdout ~ uv_sync_result.stderr) or
+    'Updated ' in (uv_sync_result.stdout ~ uv_sync_result.stderr)
+  notify:
+    - restart homelab

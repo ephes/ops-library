@@ -242,3 +242,9 @@ names at all. It is part of `just test`.
 ## License
 
 MIT
+
+## Restart behavior
+
+Source and dependency changes notify the existing restart handlers after deployment.
+Wagtail restarts its web service and, when enabled, the database worker. Unchanged syncs do not request a restart.
+The `wagtail_service_restart_on_change` setting (default `true`) controls these handlers.

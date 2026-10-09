@@ -16,6 +16,9 @@
     creates: "{{ takahe_venv_path }}/bin/python"
   become: true
   become_user: "{{ takahe_user }}"
+  notify:
+    - restart takahe-gunicorn
+    - restart takahe-stator
 
 - name: python | Upgrade pip inside virtualenv
   ansible.builtin.pip:
@@ -32,3 +35,6 @@
     virtualenv: "{{ takahe_venv_path }}"
   become: true
   become_user: "{{ takahe_user }}"
+  notify:
+    - restart takahe-gunicorn
+    - restart takahe-stator

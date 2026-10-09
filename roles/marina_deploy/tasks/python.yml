@@ -26,6 +26,8 @@
   become: true
   become_user: "{{ marina_user }}"
   when: marina_use_uv
+  notify:
+    - restart marina
 
 - name: Check if venv symlink exists
   stat:
@@ -50,6 +52,8 @@
   become: true
   become_user: "{{ marina_user }}"
   when: not marina_use_uv
+  notify:
+    - restart marina
 
 - name: Install dependencies using uv
   command: "{{ marina_uv_path }} sync --no-dev"
@@ -60,6 +64,13 @@
   become: true
   become_user: "{{ marina_user }}"
   when: marina_use_uv
+  register: marina_uv_sync
+  changed_when: >-
+    'Installed ' in (marina_uv_sync.stdout ~ marina_uv_sync.stderr) or
+    'Uninstalled ' in (marina_uv_sync.stdout ~ marina_uv_sync.stderr) or
+    'Updated ' in (marina_uv_sync.stdout ~ marina_uv_sync.stderr)
+  notify:
+    - restart marina
 
 - name: Install dependencies using pip
   pip:
@@ -69,3 +80,5 @@
   become: true
   become_user: "{{ marina_user }}"
   when: not marina_use_uv
+  notify:
+    - restart marina

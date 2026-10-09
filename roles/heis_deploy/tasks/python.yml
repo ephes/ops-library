@@ -26,6 +26,8 @@
   become: true
   become_user: "{{ heis_user }}"
   when: heis_use_uv
+  notify:
+    - restart heis
 
 - name: Check if venv symlink exists
   stat:
@@ -50,6 +52,8 @@
   become: true
   become_user: "{{ heis_user }}"
   when: not heis_use_uv
+  notify:
+    - restart heis
 
 - name: Install dependencies using uv
   command: "{{ heis_uv_path }} sync --no-dev"
@@ -60,6 +64,13 @@
   become: true
   become_user: "{{ heis_user }}"
   when: heis_use_uv
+  register: heis_uv_sync
+  changed_when: >-
+    'Installed ' in (heis_uv_sync.stdout ~ heis_uv_sync.stderr) or
+    'Uninstalled ' in (heis_uv_sync.stdout ~ heis_uv_sync.stderr) or
+    'Updated ' in (heis_uv_sync.stdout ~ heis_uv_sync.stderr)
+  notify:
+    - restart heis
 
 - name: Install dependencies using pip
   pip:
@@ -69,3 +80,5 @@
   become: true
   become_user: "{{ heis_user }}"
   when: not heis_use_uv
+  notify:
+    - restart heis

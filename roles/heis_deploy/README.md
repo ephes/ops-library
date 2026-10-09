@@ -95,3 +95,8 @@ Wagtail or an explicit promotion workflow.
 ## License
 
 MIT
+
+## Restart behavior
+
+Source and dependency changes notify the existing restart handlers after deployment.
+Heis restarts its systemd service. Unchanged syncs do not request a restart.
