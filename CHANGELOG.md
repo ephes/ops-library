@@ -3,6 +3,13 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Daybook Paperless scan intake adapter (2.31.17)
+
+- `daybook_operations_runtime_deploy` accepts the `paperless.intake.v1` kind
+  (Daybook's Paperless scan intake, on Atlas), so a profile that names it is
+  not refused. Nothing runs until ops-control declares the kind and the server
+  has an enabled source for it.
+
 ## Unreleased — Application code change restarts (2.31.16)
 
 - `homelab_deploy` and `nyxmon_deploy` now notify restart handlers when source

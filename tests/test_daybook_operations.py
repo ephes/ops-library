@@ -139,6 +139,8 @@ class OperationsRoleTests(unittest.TestCase):
         # The vault catalogue, on Atlas: three sources share this one kind.
         self.assertIn("catalog.work.v1", adapters)
         self.assertIn("mail.review.v1", adapters)
+        # The Paperless scan intake, on Atlas.
+        self.assertIn("paperless.intake.v1", adapters)
         self.assertEqual(len(adapters), len(set(adapters)))
 
     def test_the_role_refuses_a_profile_that_would_stop_at_load(self):
