@@ -40,6 +40,8 @@
     src: "{{ homelab_source_path }}/src"
     dest: "{{ homelab_site_path }}/"
     delete: false
+    owner: false
+    group: false
     rsync_opts:
       - "--exclude=__pycache__"
       - "--exclude=*.pyc"
@@ -49,6 +51,8 @@
       - "--exclude=.mypy_cache"
   become: false
   delegate_to: localhost
+  notify:
+    - restart homelab
 
 - name: Copy manage.py to site directory
   copy:
@@ -57,6 +61,8 @@
     owner: "{{ homelab_user }}"
     group: "{{ homelab_group }}"
     mode: '0755'
+  notify:
+    - restart homelab
 
 - name: Copy pyproject.toml to site directory
   copy:
@@ -65,6 +71,8 @@
     owner: "{{ homelab_user }}"
     group: "{{ homelab_group }}"
     mode: '0644'
+  notify:
+    - restart homelab
 
 - name: Copy uv.lock to site directory
   copy:
@@ -73,6 +81,8 @@
     owner: "{{ homelab_user }}"
     group: "{{ homelab_group }}"
     mode: '0644'
+  notify:
+    - restart homelab
 
 - name: Check if media directory exists in source
   stat:

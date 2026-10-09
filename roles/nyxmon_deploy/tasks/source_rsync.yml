@@ -89,6 +89,9 @@
       }}
   become: false
   delegate_to: localhost
+  notify:
+    - restart nyxmon
+    - restart nyxmon-monitor
 
 - name: source_rsync | Sync additional Nyxmon source directories
   ansible.posix.synchronize:
@@ -111,6 +114,9 @@
   when:
     - nyxmon_rsync_additional_paths is defined
     - nyxmon_rsync_additional_paths | length > 0
+  notify:
+    - restart nyxmon
+    - restart nyxmon-monitor
 
 - name: source_rsync | Copy pyproject.toml from source
   copy:
@@ -121,6 +127,9 @@
     mode: '0644'
   when:
     - nyxmon_use_source_pyproject
+  notify:
+    - restart nyxmon
+    - restart nyxmon-monitor
 
 - name: source_rsync | Copy extra files from source
   copy:
@@ -136,6 +145,10 @@
     - nyxmon_rsync_extra_files is defined
     - nyxmon_rsync_extra_files | length > 0
 
+  notify:
+    - restart nyxmon
+    - restart nyxmon-monitor
+
 # This walks the live database, which lives in the site tree. That is safe: it
 # only sets owner/group to the service user the database already belongs to, and
 # it does not touch modes. The readonly-database failure came from the syncs
@@ -144,6 +157,7 @@
 # service user mid-sync - SQLITE_READONLY_DIRECTORY, because SQLite must create
 # a journal file there. Hence `owner: false` / `group: false` on both syncs, plus
 # the db.sqlite3* excludes in nyxmon_rsync_excludes.
+
 - name: source_rsync | Set ownership for synced files
   file:
     path: "{{ nyxmon_site_path }}"

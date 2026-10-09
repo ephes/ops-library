@@ -395,3 +395,9 @@ Created for homelab infrastructure automation.
 - [Traefik Documentation](https://doc.traefik.io/traefik/)
 - [Traefik ClientIP Matcher](https://doc.traefik.io/traefik/routing/routers/#clientip)
 - [Granian WSGI Server](https://github.com/emmett-framework/granian)
+
+## Restart behavior
+
+Source and dependency changes notify the existing restart handlers after deployment.
+Homelab restarts its systemd service; unchanged syncs do not request a restart.
+The `homelab_service_restart_on_change` setting (default `true`) controls these handlers.

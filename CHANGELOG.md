@@ -3,6 +3,13 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Application code change restarts
+
+- `homelab_deploy` and `nyxmon_deploy` now notify restart handlers when source
+  code, dependency inputs, or installed dependencies change. Nyxmon restarts both
+  its web and enabled monitoring units; uv change detection includes stderr and
+  package removals. Existing restart-on-change settings remain respected.
+
 ## Unreleased — Monitoring delivery probes (2.31.15)
 
 - `mail_spam_deploy` adds an optional original-source-IP, sender, recipient and

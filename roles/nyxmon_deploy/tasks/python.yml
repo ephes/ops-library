@@ -51,6 +51,9 @@
   when:
     - nyxmon_use_uv
     - not nyxmon_use_source_pyproject
+  notify:
+    - restart nyxmon
+    - restart nyxmon-monitor
 
 - name: python | Remove stale uv.lock before syncing
   file:
@@ -105,6 +108,9 @@
   become: true
   become_user: "{{ nyxmon_user }}"
   when: nyxmon_use_uv
+  notify:
+    - restart nyxmon
+    - restart nyxmon-monitor
 
 - name: python | Check if venv symlink exists
   stat:
@@ -129,6 +135,9 @@
   become: true
   become_user: "{{ nyxmon_user }}"
   when: not nyxmon_use_uv
+  notify:
+    - restart nyxmon
+    - restart nyxmon-monitor
 
 - name: python | Install dependencies using uv
   command: "{{ nyxmon_uv_sync_cmd }}"
@@ -140,6 +149,13 @@
   become_user: "{{ nyxmon_user }}"
   when: nyxmon_use_uv
   register: uv_sync
+  changed_when: >-
+    'Installed ' in (uv_sync.stdout ~ uv_sync.stderr) or
+    'Uninstalled ' in (uv_sync.stdout ~ uv_sync.stderr) or
+    'Updated ' in (uv_sync.stdout ~ uv_sync.stderr)
+  notify:
+    - restart nyxmon
+    - restart nyxmon-monitor
 
 - name: python | Install dependencies using pip
   pip:
@@ -149,3 +165,6 @@
   become: true
   become_user: "{{ nyxmon_user }}"
   when: not nyxmon_use_uv
+  notify:
+    - restart nyxmon
+    - restart nyxmon-monitor
