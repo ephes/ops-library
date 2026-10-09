@@ -3,7 +3,7 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
-## Unreleased — Application code change restarts
+## Unreleased — Application code change restarts (2.31.16)
 
 - `homelab_deploy` and `nyxmon_deploy` now notify restart handlers when source
   code, dependency inputs, or installed dependencies change. Nyxmon restarts both
