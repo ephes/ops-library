@@ -7,4 +7,4 @@
     dest: "{{ fastdeploy_site_path }}/.env"
     owner: "{{ fastdeploy_user }}"
     group: "{{ fastdeploy_group }}"
-    mode: '0640'  # Group-readable so deploy user can read it
+    mode: '0600'  # Only the FastDeploy service owner needs access

@@ -102,7 +102,7 @@
         mode: "{{ item.mode }}"
         content: "{{ item.content }}"
       loop:
-        - { dest: "/home/fastdeploy/site/.env", owner: "fastdeploy", group: "fastdeploy", mode: "0640", content: "RESTORE_MARKER=pre-failure\n" }
+        - { dest: "/home/fastdeploy/site/.env", owner: "fastdeploy", group: "fastdeploy", mode: "0600", content: "RESTORE_MARKER=pre-failure\n" }
         - { dest: "/home/deploy/_workspace/workspace.txt", owner: "deploy", group: "deploy", mode: "0644", content: "pre-failure-workspace\n" }
 
     - name: Trigger FastDeploy restore failure to exercise scaffold rescue
@@ -169,7 +169,7 @@
         mode: "{{ item.mode }}"
         content: "{{ item.content }}"
       loop:
-        - { dest: "/home/fastdeploy/site/.env", mode: "0640", content: "RESTORE_MARKER=broken\n" }
+        - { dest: "/home/fastdeploy/site/.env", mode: "0600", content: "RESTORE_MARKER=broken\n" }
         - { dest: "/tmp/mock-fastdeploy-db/service_count", mode: "0644", content: "99\n" }
 
     - name: Remove restored FastDeploy service directories before rollback

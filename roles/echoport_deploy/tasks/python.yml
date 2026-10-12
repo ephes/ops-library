@@ -45,16 +45,10 @@
     - echoport_use_uv
     - echoport_use_source_pyproject
 
-- name: Remove stale uv.lock before syncing
-  file:
-    path: "{{ echoport_site_path }}/uv.lock"
-    state: absent
-  when: echoport_use_uv
-
 - name: Build uv sync command arguments
   set_fact:
     echoport_uv_sync_cmd: >-
-      uv sync --no-default-groups --no-dev
+      uv sync --no-default-groups --no-dev{{ ' --frozen' if echoport_use_source_pyproject else '' }}
   when: echoport_use_uv
 
 - name: Test if venv Python is usable
