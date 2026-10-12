@@ -86,7 +86,9 @@ http:
         stsIncludeSubdomains: true
         stsPreload: true
         stsSeconds: 15552000
-        customFrameOptionsValue: SAMEORIGIN
+        # The backend answers X-Frame-Options: DENY itself. Traefik replaces
+        # the backend's header with this value, so it must not be weaker.
+        customFrameOptionsValue: DENY
         customRequestHeaders:
           X-Forwarded-Proto: https
           X-Forwarded-Host: "{{ chesslab_traefik_host }}"

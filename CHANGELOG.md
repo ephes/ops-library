@@ -3,6 +3,25 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Edge frame options match the backends (VERSION_AT_MERGE)
+
+- The Traefik headers middleware of `archive_deploy`, `chesslab_deploy`,
+  `echoport_deploy`, `homelab_deploy`, `minio_deploy` (console),
+  `navidrome_deploy`, `nyxmon_deploy`, `weeknotes_home_deploy`,
+  `work_app_deploy` and the Grafana router of `graphyard_ingress_deploy` now
+  sets `X-Frame-Options: DENY` instead of `SAMEORIGIN`. Each of these backends
+  answers `DENY` itself and Traefik replaces the backend's value, so the edge
+  had been weakening it. None of them frames its own pages. Takes effect with
+  each service's next deploy.
+- `SAMEORIGIN` stays where the backend sends `SAMEORIGIN` or no header
+  (fastdeploy, homeassistant, jellyfin, metube, ollama-proxy, open-webui,
+  opsgate, static-site, vaultwarden) and for `wagtail_deploy`, whose admin
+  previews pages in same-origin frames. `takahe_deploy` is unchanged until what
+  the deployed Takahe sends has been checked.
+- `tests/test_traefik_frame_options.py` records the value and the reason for
+  every headers middleware; a template that adds or changes one fails until the
+  table is updated.
+
 ## Unreleased — Voxhelm worker private URL hosts and edge frame options (2.31.18)
 
 - `voxhelm_remote_worker_deploy` adds `voxhelm_remote_worker_private_url_hosts`
