@@ -2,7 +2,7 @@
 import os
 
 # Server socket
-bind = "0.0.0.0:{{ paperless_app_port }}"
+bind = "{{ paperless_bind_address }}:{{ paperless_app_port }}"
 backlog = 2048
 
 # Worker processes

@@ -51,6 +51,11 @@ paperless_local_export_path: "{{ paperless_site_root }}/export"
 
 # Application configuration
 paperless_app_port: 10030
+# Address gunicorn listens on. The role's Traefik route and health check use
+# 127.0.0.1; "0.0.0.0" (the long-standing behaviour) also answers plain HTTP on
+# the LAN and tailnet addresses. Set "127.0.0.1" unless a client needs to reach
+# Paperless without Traefik.
+paperless_bind_address: "0.0.0.0"
 paperless_time_zone: Europe/Berlin
 paperless_language: en-us
 paperless_url: "https://paperless.{{ paperless_traefik_domain }}"

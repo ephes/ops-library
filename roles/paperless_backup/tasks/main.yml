@@ -386,37 +386,53 @@
     paperless_backup_archive_path: "{{ paperless_backup_dir }}.{{ paperless_backup_archive_format }}"
   when: paperless_backup_create_archive
 
+# The archive holds every document, the database dump and the service
+# configuration with its secrets. tar writes into a fresh mktemp file (mode
+# 0600, under umask 077) next to the destination and the finished file is
+# renamed into place, so neither a new archive nor one that replaces an
+# existing file of the same name is ever readable by other accounts. Values
+# are passed through the quote filter: this is a shell task.
 - name: "Create tar.gz archive"
-  ansible.builtin.command:
-    cmd: >
-      tar -C "{{ paperless_backup_root }}"
-      -czf "{{ paperless_backup_archive_path | basename }}"
-      "{{ paperless_backup_dir | basename }}"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    umask 077
+    archive={{ paperless_backup_archive_path | basename | quote }}
+    partial="$(mktemp ".${archive}.XXXXXXXX")"
+    trap 'rm -f -- "$partial"' EXIT
+    tar -C {{ paperless_backup_root | quote }} -czf "$partial" {{ paperless_backup_dir | basename | quote }}
+    mv -f -- "$partial" "$archive"
   args:
     chdir: "{{ paperless_backup_root }}"
+    executable: /bin/bash
+  changed_when: true
   when:
     - paperless_backup_create_archive
     - paperless_backup_archive_format == 'tar.gz'
 
 - name: "Create tar.zst archive"
-  ansible.builtin.command:
-    cmd: >
-      tar -C "{{ paperless_backup_root }}"
-      --zstd -cf "{{ paperless_backup_archive_path | basename }}"
-      "{{ paperless_backup_dir | basename }}"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    umask 077
+    archive={{ paperless_backup_archive_path | basename | quote }}
+    partial="$(mktemp ".${archive}.XXXXXXXX")"
+    trap 'rm -f -- "$partial"' EXIT
+    tar -C {{ paperless_backup_root | quote }} --zstd -cf "$partial" {{ paperless_backup_dir | basename | quote }}
+    mv -f -- "$partial" "$archive"
   args:
     chdir: "{{ paperless_backup_root }}"
+    executable: /bin/bash
+  changed_when: true
   when:
     - paperless_backup_create_archive
     - paperless_backup_archive_format == 'tar.zst'
 
-- name: "Ensure archive is readable for fetch"
+- name: "Ensure archive permissions"
   ansible.builtin.file:
     path: "{{ paperless_backup_archive_path }}"
-    mode: "0644"
-  when:
-    - paperless_backup_fetch_local
-    - paperless_backup_create_archive
+    owner: "{{ paperless_backup_owner }}"
+    group: "{{ paperless_backup_group }}"
+    mode: "{{ paperless_backup_archive_mode }}"
+  when: paperless_backup_create_archive
 
 - name: "Ensure local archive directory exists"
   ansible.builtin.file:
@@ -437,7 +453,8 @@
     dest: "{{ paperless_backup_local_dir }}/"
     archive: false
     rsync_opts:
-      - "--chmod=ugo=rw"
+      - "--perms"
+      - "--chmod=u=rw,go="
   delegate_to: localhost
   become: false
   run_once: true
@@ -456,6 +473,20 @@
     - paperless_backup_fetch_local
     - paperless_backup_create_archive
     - paperless_backup_fetch_method == 'fetch'
+
+# The local directory is private (paperless_backup_local_dir_mode); the copy
+# itself is owner-only as well, whichever fetch method wrote it and whatever
+# mode an earlier copy of the same name had.
+- name: "Restrict local archive copy permissions"
+  ansible.builtin.file:
+    path: "{{ paperless_backup_local_dir }}/{{ paperless_backup_archive_path | basename }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - paperless_backup_fetch_local
+    - paperless_backup_create_archive
 
 - name: "Set backup artifact path"
   ansible.builtin.set_fact:

@@ -35,6 +35,7 @@ Deploy [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) on bare m
 | `paperless_existing_superusers_strict` | Fail when a listed existing superuser is missing | `false` |
 | `paperless_scanner_password` | Scanner SFTP password | `"CHANGEME"` |
 | `paperless_redis_password` | Redis password (empty = no auth) | `""` |
+| `paperless_bind_address` | Address gunicorn listens on. The Traefik route and the health check use `127.0.0.1`; the default also serves plain HTTP on every other address of the host. Set `127.0.0.1` unless something must reach Paperless without Traefik. | `0.0.0.0` |
 | `paperless_date_order` | Order used to read dates out of document content (`DMY`/`MDY`/`YMD`) | `DMY` |
 | `paperless_ignore_dates` | Dates never to use as a document date, in `paperless_date_order` order | `[]` |
 | `paperless_force_reinstall` | Force uv/pip reinstall even if marker exists | `false` |
