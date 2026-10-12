@@ -212,3 +212,49 @@ class RoleRestartNotifications(unittest.TestCase):
         # Wagtail's venv symlink lives in the synced site root.
         wagtail = task('wagtail', 'source_rsync.yml', 'source_rsync | Build rsync exclude list')
         self.assertIn("['/venv']", wagtail['ansible.builtin.set_fact']['wagtail_rsync_excludes_all'])
+
+
+class DelveHealthCheckOrder(unittest.TestCase):
+    """The delve health check must probe the restarted process, not the old one."""
+
+    def setUp(self):
+        self.role = ROOT / 'roles/delve_deploy'
+        self.main = yaml.safe_load((self.role / 'tasks/main.yml').read_text())
+
+    def index(self, predicate):
+        matches = [i for i, task in enumerate(self.main) if predicate(task)]
+        self.assertEqual(len(matches), 1, matches)
+        return matches[0]
+
+    def test_handlers_are_flushed_right_before_the_health_check(self):
+        flush = self.index(lambda t: t.get('ansible.builtin.meta') == 'flush_handlers')
+        health = self.index(lambda t: t.get('ansible.builtin.import_tasks') == 'health.yml')
+        self.assertEqual(flush + 1, health)
+        # flush_handlers ignores `when`; a condition here would only mislead.
+        self.assertNotIn('when', self.main[flush])
+
+    def test_every_restart_notification_comes_before_the_flush(self):
+        flush = self.index(lambda t: t.get('ansible.builtin.meta') == 'flush_handlers')
+        handlers = yaml.safe_load((self.role / 'handlers/main.yml').read_text())
+        self.assertIn('restart delve', {h['name'] for h in handlers})
+        notifying = set()
+        for position, entry in enumerate(self.main):
+            file = entry.get('ansible.builtin.import_tasks')
+            if not file:
+                continue
+            tasks = yaml.safe_load((self.role / 'tasks' / file).read_text())
+            if any('restart delve' in as_list(t.get('notify')) for t in tasks):
+                notifying.add(file)
+                self.assertLess(position, flush, file)
+        self.assertEqual(notifying, {'binary.yml', 'storekit.yml', 'config.yml', 'systemd.yml'})
+        service = self.index(lambda t: t.get('ansible.builtin.import_tasks') == 'service.yml')
+        self.assertLess(service, flush)
+
+    def test_health_check_waits_for_the_new_process(self):
+        tasks = yaml.safe_load((self.role / 'tasks/health.yml').read_text())
+        wait, probe = tasks[0], tasks[1]
+        self.assertEqual(wait['ansible.builtin.wait_for']['state'], 'started')
+        self.assertIn('ansible.builtin.uri', probe)
+        self.assertIn('status == 200', probe['until'])
+        self.assertIn('delve_healthcheck_retries', probe['retries'])
+

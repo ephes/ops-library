@@ -33,6 +33,14 @@
 - name: Ensure delve service state
   ansible.builtin.import_tasks: service.yml
 
+# Binary, env-file and unit changes only notify "restart delve". Without this
+# flush the health check below would probe the OLD process, and the restart
+# would then fire at the end of the play, straight into the caller's own smoke
+# test (502 from Traefik while delve comes back up). Not conditional on purpose:
+# flush_handlers does not honour `when`.
+- name: Restart delve now if a change is pending
+  ansible.builtin.meta: flush_handlers
+
 - name: Run delve health check
   ansible.builtin.import_tasks: health.yml
   when: delve_healthcheck_enabled | bool

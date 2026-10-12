@@ -3,6 +3,14 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Delve health check after restart
+
+- `delve_deploy` flushes its handlers before the `/health` check. A changed
+  binary, env file, StoreKit bundle or unit now restarts delve first, and the
+  check then waits for the new process. Before, the check passed against the
+  old process and the restart fired at the end of the play, into the caller's
+  smoke test (502 through Traefik).
+
 ## Unreleased — Daybook Paperless scan intake adapter (2.31.17)
 
 - `daybook_operations_runtime_deploy` accepts the `paperless.intake.v1` kind
