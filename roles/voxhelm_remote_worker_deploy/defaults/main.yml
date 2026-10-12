@@ -30,6 +30,9 @@ voxhelm_remote_worker_id: "atlas"
 voxhelm_remote_worker_token: "CHANGEME"
 voxhelm_remote_worker_hostname: "{{ inventory_hostname }}"
 voxhelm_remote_worker_allowed_url_hosts: []
+# Hosts from the allow-list that may resolve to private addresses. Rendered as
+# VOXHELM_PRIVATE_URL_HOSTS only when set; empty keeps Voxhelm's default (none).
+voxhelm_remote_worker_private_url_hosts: []
 voxhelm_remote_worker_poll_seconds: 5
 voxhelm_remote_worker_http_timeout_seconds: 60
 voxhelm_remote_worker_heartbeat_interval_seconds: 60

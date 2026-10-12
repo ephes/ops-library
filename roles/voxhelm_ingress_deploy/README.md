@@ -10,7 +10,9 @@ Expose an existing Voxhelm deployment through Traefik with the same private HTTP
 
 - Traefik dynamic config file for `https://{{ voxhelm_ingress_traefik_host }}`
 - HTTP-to-HTTPS redirect for the same host
-- Standard security/compression middlewares
+- Standard security/compression middlewares. The headers middleware sets
+  `X-Frame-Options: DENY`: Traefik replaces the backend's value, and Voxhelm
+  itself sends `DENY`, so the edge must not downgrade it to `SAMEORIGIN`
 - A high-priority `/v1/internal` edge decision: blocked by default, or routed
   only when a separate worker-internal allowlist is deliberately configured
 

@@ -45,6 +45,24 @@
       auth plus shared S3 artifact credentials.
   when: voxhelm_remote_worker_enabled | bool
 
+- name: validate | Validate remote worker private URL hosts
+  ansible.builtin.assert:
+    that:
+      - voxhelm_remote_worker_private_url_hosts is sequence
+      - voxhelm_remote_worker_private_url_hosts is not string
+      - voxhelm_remote_worker_private_url_hosts is not mapping
+      - >-
+        (voxhelm_remote_worker_private_url_hosts | select('string') | list | length)
+        == (voxhelm_remote_worker_private_url_hosts | length)
+      - >-
+        (voxhelm_remote_worker_private_url_hosts | select('string')
+        | select('match', '^[A-Za-z0-9._:-]+\Z') | list | length)
+        == (voxhelm_remote_worker_private_url_hosts | length)
+    fail_msg: >-
+      voxhelm_remote_worker_private_url_hosts must be a list of host names
+      (letters, digits, '.', '-', '_', ':'; no commas or whitespace).
+  when: voxhelm_remote_worker_enabled | bool
+
 - name: validate | Ensure pyannote remote worker secrets are configured
   ansible.builtin.assert:
     that:

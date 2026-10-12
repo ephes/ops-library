@@ -3,6 +3,19 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Voxhelm worker private URL hosts and edge frame options (VERSION_AT_MERGE)
+
+- `voxhelm_remote_worker_deploy` adds `voxhelm_remote_worker_private_url_hosts`
+  (default `[]`), rendered as `VOXHELM_PRIVATE_URL_HOSTS` in the worker env file
+  only when set. Workers re-validate claim input with the same redirect and
+  private-address checks as the control plane, so a worker without the control
+  plane's `voxhelm_private_url_hosts` refuses jobs whose source resolves to a
+  private address. Validation accepts the same host names as `voxhelm_deploy`.
+- `voxhelm_ingress_deploy` now sets `X-Frame-Options: DENY` at the edge instead
+  of `SAMEORIGIN`. Traefik's headers middleware replaces the backend's value, so
+  the edge had been weakening the `DENY` Voxhelm sends itself. Takes effect on
+  the next Voxhelm ingress deploy.
+
 ## Unreleased — Daybook Paperless scan intake adapter (2.31.17)
 
 - `daybook_operations_runtime_deploy` accepts the `paperless.intake.v1` kind

@@ -97,6 +97,8 @@
               - "'voxhelm.home.xn--wersdrfer-47a.de' in rendered_text"
               - "'X-Forwarded-Host: \"voxhelm.home.xn--wersdrfer-47a.de\"' in rendered_text"
               - "'redirectScheme:' in rendered_text"
+              - "'customFrameOptionsValue: DENY' in rendered_text"
+              - "'SAMEORIGIN' not in rendered_text"
               - "'url: \"http://voxhelm-backend.example.test:8787\"' in rendered_text"
           vars:
             rendered_text: "{{ rendered_file.content | b64decode }}"
