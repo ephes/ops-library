@@ -3,6 +3,63 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Deploy secrets off command lines (2.31.19)
+
+- `archive_deploy` passes the admin password to `manage.py ensure_admin_user`
+  on standard input (`--password-stdin`) with `no_log: true` instead of
+  `--password` on the command line, where Ansible printed it in every failure
+  result and `ps` showed it. A follow-up task reports a failure with the
+  return code and stderr. The task reports "changed" only when the user was
+  created or the password changed. **Rollout:** needs an archive checkout
+  whose `ensure_admin_user` supports `--password-stdin` (archive main since
+  2026-10).
+- `minecraft_java_deploy` runs its RCON test with `no_log: true` and feeds the
+  password on stdin to a shell wrapper that exports `MCRCON_PASS` for mcrcon,
+  instead of `mcrcon -p <password>` in a shell command. A task-level
+  `environment:` is not used, because Ansible puts it on the remote shell's
+  command line.
+- `metrics_endpoint` sets `no_log: true` on the two `htpasswd` tasks that read
+  the password from stdin (module arguments are printed with `-vvv`).
+- `scripts/check_secret_no_log.py` (`just test-secret-no-log`, part of
+  `just lint-strict`) now also fails on `command`/`shell`/`raw` tasks that
+  render a secret-named variable into the command line or `stdin` without
+  `no_log: true`. Nothing is baselined.
+
+## Unreleased — Time synchronization check (2.31.19)
+
+- Add `time_sync_check`: a read-only role that verifies a systemd host's clock
+  is synchronized. It checks that chrony or systemd-timesyncd is active, that
+  the kernel reports `NTPSynchronized=yes`, that the measured offset is under
+  `time_sync_check_max_offset_seconds` (default 1 s), and that the host clock is
+  within `time_sync_check_controller_max_skew_seconds` (default 30 s) of the
+  controller clock. It fails with the list of problems, or warns and continues
+  with `time_sync_check_fail: false`. It never changes time settings and always
+  reports `changed=0`. The collection has no host baseline of its own, so
+  include the role from the baseline or preflight play that calls the
+  collection; `files/time_sync_status.py` also runs standalone for monitoring.
+
+## Unreleased — Nyxmon deploys without spurious restarts (2.31.19)
+
+- `nyxmon_deploy` (rsync method) no longer requests a restart on every run.
+  The Django source sync ran with `delete: true` and removed the `venv` symlink,
+  `uv.lock`, `pyproject.toml` and the extra files (`README.md`) that the role
+  writes into the site root after it. The sync, the two copy tasks and the uv
+  install (which rebuilds the project when `pyproject.toml` gets a new mtime)
+  therefore all reported "changed", and every deploy restarted nyxmon and
+  nyxmon-monitor. The sync now excludes those role-managed paths, anchored to
+  the site root, and both syncs pass `--omit-dir-times`, the same pattern as
+  the roles fixed in 2.31.16. Real changes still notify both restart handlers.
+  Tasks that do not notify a restart can still report "changed" (the role
+  removes `uv.lock` before each `uv sync`, which recreates it).
+
+## Unreleased — Delve health check after restart (2.31.19)
+
+- `delve_deploy` flushes its handlers before the `/health` check. A changed
+  binary, env file, StoreKit bundle or unit now restarts delve first, and the
+  check then waits for the new process. Before, the check passed against the
+  old process and the restart fired at the end of the play, into the caller's
+  smoke test (502 through Traefik).
+
 ## Unreleased — Voxhelm worker private URL hosts and edge frame options (2.31.18)
 
 - `voxhelm_remote_worker_deploy` adds `voxhelm_remote_worker_private_url_hosts`
@@ -16,6 +73,7 @@
   the edge had been weakening the `DENY` Voxhelm sends itself. Takes effect on
   the next Voxhelm ingress deploy.
 
+||||||| 433bbc9
 ## Unreleased — Daybook Paperless scan intake adapter (2.31.17)
 
 - `daybook_operations_runtime_deploy` accepts the `paperless.intake.v1` kind

@@ -43,11 +43,13 @@ Available runbooks:
 - [ZFS USB Replication](https://github.com/ephes/ops-library/blob/main/roles/zfs_usb_replication/README.md)
 - [macOS Time Machine Exclusions](https://github.com/ephes/ops-library/blob/main/roles/macos_time_machine_exclusions/README.md)
 - [macOS SMB Mount Keeper](https://github.com/ephes/ops-library/blob/main/roles/macos_smb_mount_keeper/README.md)
+- [Time Sync Check](https://github.com/ephes/ops-library/blob/main/roles/time_sync_check/README.md)
 
 ```{toctree}
 :maxdepth: 1
 
 docker_cache_cleanup
+time_sync_check
 
 daybook_operations_api_restore
 

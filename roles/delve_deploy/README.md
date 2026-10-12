@@ -24,7 +24,11 @@ the control node rather than an upstream release.
    the public host.
 6. Installs an optional service-owned `delve discovery collect --due` oneshot
    and systemd timer for the reviewed RSS Discovery collector.
-7. Enables/starts the service and runs a loopback `/health` check.
+7. Enables/starts the service, restarts it right away when the binary, the env
+   file, the StoreKit bundle or the unit changed, and only then runs a loopback
+   `/health` check. The check therefore verifies the new process, and no
+   restart is left pending for the end of the play, where it would hit the
+   caller's own smoke test.
 
 ## Required variables
 

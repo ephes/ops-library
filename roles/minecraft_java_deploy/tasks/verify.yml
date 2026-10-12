@@ -29,12 +29,25 @@
     delay: 5
   when: minecraft_java_rcon_enabled
 
+# mcrcon takes the password only from -p or MCRCON_PASS. A command line is
+# printed in task results and visible in `ps`, and Ansible puts a task's
+# `environment:` on the remote shell's command line (shown with -vvv). So the
+# password is fed on stdin to a small shell wrapper, which reads it with the
+# `read` builtin and exports MCRCON_PASS only for mcrcon. The result is shown
+# below.
 - name: Test RCON connection
-  ansible.builtin.shell: |
-    mcrcon -H 127.0.0.1 -P {{ minecraft_java_rcon_port }} -p "{{ minecraft_java_rcon_password }}" "list"
+  ansible.builtin.command:
+    argv:
+      - /bin/sh
+      - -c
+      - 'IFS= read -r MCRCON_PASS && export MCRCON_PASS && exec mcrcon -H 127.0.0.1 -P "$1" list'
+      - mcrcon-test
+      - "{{ minecraft_java_rcon_port }}"
+    stdin: "{{ minecraft_java_rcon_password }}"
   register: rcon_test
   changed_when: false
   failed_when: false
+  no_log: true
   when: minecraft_java_rcon_enabled
 
 - name: Display RCON test result

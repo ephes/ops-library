@@ -83,10 +83,26 @@
     group: false
     rsync_opts: >-
       {{
-        (nyxmon_rsync_excludes + nyxmon_rsync_django_excludes)
-        | map('regex_replace', '^', '--exclude=')
-        | list
+        ((nyxmon_rsync_excludes + nyxmon_rsync_django_excludes)
+         | map('regex_replace', '^', '--exclude=')
+         | list)
+        + (nyxmon_rsync_role_managed
+           | map('regex_replace', '^/*', '--exclude=/')
+           | list)
+        + ['--omit-dir-times']
       }}
+  vars:
+    # Site-root paths this role creates after the sync: the venv symlink, the
+    # lock file uv writes, and the pyproject.toml / extra files copied or
+    # templated below. Without these (root-anchored) excludes, delete: true
+    # removes them on every run. The sync, the copies that put them back and
+    # the uv install that sees a new pyproject.toml would then all report a
+    # change, and every deploy would restart nyxmon. --omit-dir-times keeps
+    # the directory mtimes those writes bump from counting as source changes.
+    nyxmon_rsync_role_managed: >-
+      {{ ['venv', 'uv.lock']
+         + (['pyproject.toml'] if (nyxmon_use_source_pyproject or nyxmon_use_uv) else [])
+         + (nyxmon_rsync_extra_files | default([])) }}
   become: false
   delegate_to: localhost
   notify:
@@ -102,9 +118,10 @@
     group: false
     rsync_opts: >-
       {{
-        nyxmon_rsync_excludes
-        | map('regex_replace', '^', '--exclude=')
-        | list
+        (nyxmon_rsync_excludes
+         | map('regex_replace', '^', '--exclude=')
+         | list)
+        + ['--omit-dir-times']
       }}
   become: false
   delegate_to: localhost
@@ -144,7 +161,6 @@
   when:
     - nyxmon_rsync_extra_files is defined
     - nyxmon_rsync_extra_files | length > 0
-
   notify:
     - restart nyxmon
     - restart nyxmon-monitor

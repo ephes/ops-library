@@ -1,15 +1,27 @@
-"""Fail when a task sends a credential over HTTP without ``no_log: true``.
+"""Fail when a task passes a credential in its arguments without ``no_log: true``.
 
 Ansible prints module arguments with ``-vvv`` and in failure dumps, so a
 ``uri`` task with an ``Authorization: Bearer {{ token }}`` header leaks the
-token into terminal output, CI logs and FastDeploy step logs. This check walks
-every YAML file under ``roles/`` (except molecule scenarios) and reports:
+token into terminal output, CI logs and FastDeploy step logs. A ``command``
+task prints its command line in every failure result even without ``-v``.
+This check walks every YAML file under ``roles/`` (except molecule scenarios)
+and reports:
 
 * ``uri`` tasks that send a credential: an ``Authorization``/token/API-key/
   cookie header, ``url_password``, or a request body that renders a
   secret-named variable;
 * ``command``/``shell``/``raw`` tasks whose command line carries an
-  ``Authorization`` header or a ``Bearer`` token (``curl -H ...``).
+  ``Authorization`` header or a ``Bearer`` token (``curl -H ...``);
+* ``command``/``shell``/``raw`` tasks that render a secret-named variable
+  (``{{ admin_password }}``, ``{{ rcon_password }}``, ...) into the command
+  line or into ``stdin``.
+
+A secret on a command line is also visible in the process list while the
+command runs, which ``no_log`` does not fix: pass it through ``stdin:`` (best)
+or ``environment:`` instead, and set ``no_log: true`` on that task as well.
+Ansible puts task environment variables on the remote shell's command line, so
+``-vvv`` connection output still shows them; use it only when the program
+cannot read the secret from stdin.
 
 Such a task must have ``no_log: true``, set on the task itself or inherited
 from an enclosing block or play. A templated ``no_log`` does not count: it can
@@ -48,6 +60,7 @@ SECRET_VAR = re.compile(
     re.IGNORECASE,
 )
 JINJA_EXPR = re.compile(r"\{\{(.*?)\}\}", re.DOTALL)
+STRING_LITERAL = re.compile(r"""'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*\"""")
 COMMAND_CREDENTIAL = re.compile(r"authorization\s*:|\bbearer\s|--oauth2-bearer", re.IGNORECASE)
 
 TRUE_VALUES = {True, "true", "True", "yes", "Yes", "on"}
@@ -62,6 +75,25 @@ def _renders_secret(value: Any) -> bool:
     if not isinstance(value, str):
         return False
     return any(SECRET_VAR.search(expr) for expr in JINJA_EXPR.findall(value))
+
+
+def _renders_secret_variable(value: Any) -> bool:
+    """Like ``_renders_secret``, but ignores string literals in expressions.
+
+    A command legitimately names files and options that contain words such as
+    ``token`` (``lookup('file', 'service_token_status.py')``); only a variable
+    with a secret-like name counts here.
+    """
+    if isinstance(value, dict):
+        return any(_renders_secret_variable(v) for v in value.values())
+    if isinstance(value, list):
+        return any(_renders_secret_variable(v) for v in value)
+    if not isinstance(value, str):
+        return False
+    return any(
+        SECRET_VAR.search(STRING_LITERAL.sub("''", expr))
+        for expr in JINJA_EXPR.findall(value)
+    )
 
 
 ALL_MODULES = URI_MODULES | COMMAND_MODULES
@@ -156,14 +188,23 @@ def credential_reason(task: dict) -> str | None:
         return _uri_reason(pairs, raws)
     # command/shell/raw: free-form string, cmd or argv.
     texts = list(raws)
+    stdin: list[Any] = []
     for name, value in pairs:
         if name == "cmd" and isinstance(value, str):
             texts.append(value)
         elif name == "argv" and isinstance(value, list):
             # Join the vector: "Bearer" and its value may be separate items.
             texts.append(" ".join(str(item) for item in value) + " ")
+        elif name == "argv" and isinstance(value, str):
+            texts.append(value)
+        elif name == "stdin":
+            stdin.append(value)
     if any(COMMAND_CREDENTIAL.search(text) for text in texts):
         return "passes an Authorization/Bearer credential on the command line"
+    if any(_renders_secret_variable(text) for text in texts):
+        return "renders a secret-named variable into the command line"
+    if any(_renders_secret_variable(value) for value in stdin):
+        return "renders a secret-named variable into stdin"
     return None
 
 
@@ -251,8 +292,10 @@ def main(argv: list[str]) -> int:
     if problems:
         print(
             f"\n{len(problems)} problem(s): tasks that send credentials need no_log: true. "
-            "Add no_log: true and print only status and json (not msg) "
-            "of the registered result in a separate task.",
+            "For uri, add no_log: true and print only status and json (not msg) "
+            "of the registered result in a separate task. For command/shell, "
+            "move the secret off the command line (environment: or stdin:) and "
+            "add no_log: true.",
             file=sys.stderr,
         )
         return 1

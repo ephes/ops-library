@@ -92,6 +92,7 @@
       register: metrics_endpoint_htpasswd_verify
       changed_when: false
       failed_when: false
+      no_log: true
 
     - name: Generate htpasswd entry
       ansible.builtin.command: "htpasswd -niB {{ metrics_endpoint_auth_user }}"
@@ -99,6 +100,7 @@
         stdin: "{{ metrics_endpoint_auth_password }}"
       register: metrics_endpoint_htpasswd_entry
       changed_when: false
+      no_log: true
       when: metrics_endpoint_htpasswd_verify.rc != 0
 
     - name: Write htpasswd file
