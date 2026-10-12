@@ -3,6 +3,18 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Nyxmon deploys without spurious restarts
+
+- `nyxmon_deploy` (rsync method) no longer reports a change on every run. The
+  Django source sync ran with `delete: true` and removed the `venv` symlink,
+  `uv.lock`, `pyproject.toml` and the extra files (`README.md`) that the role
+  writes into the site root after it. The sync, the two copy tasks and the uv
+  install (which rebuilds the project when `pyproject.toml` gets a new mtime)
+  therefore all reported "changed", and every deploy restarted nyxmon and
+  nyxmon-monitor. The sync now excludes those role-managed paths, anchored to
+  the site root, and both syncs pass `--omit-dir-times`, the same pattern as
+  the roles fixed in 2.31.16. Real changes still notify both restart handlers.
+
 ## Unreleased — Delve health check after restart
 
 - `delve_deploy` flushes its handlers before the `/health` check. A changed

@@ -1,9 +1,15 @@
 """Ensure application changes reach every existing restart handler."""
 from pathlib import Path
+import os
+import shutil
+import subprocess
+import tempfile
 import unittest
 
 import yaml
+from ansible.plugins.filter.core import regex_replace
 from jinja2 import Environment
+from jinja2.nativetypes import NativeEnvironment
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -257,4 +263,112 @@ class DelveHealthCheckOrder(unittest.TestCase):
         self.assertIn('ansible.builtin.uri', probe)
         self.assertIn('status == 200', probe['until'])
         self.assertIn('delve_healthcheck_retries', probe['retries'])
+
+
+class NyxmonUnchangedDeployIsQuiet(unittest.TestCase):
+    """An unchanged nyxmon deploy must not report changes (and so not restart)."""
+
+    ROLE = ROOT / 'roles/nyxmon_deploy'
+
+    def setUp(self):
+        self.defaults = yaml.safe_load((self.ROLE / 'defaults/main.yml').read_text())
+        tasks = yaml.safe_load((self.ROLE / 'tasks/source_rsync.yml').read_text())
+        self.tasks = {t['name']: t for t in tasks}
+        self.django = self.tasks['source_rsync | Sync Django source code to target']
+        self.additional = self.tasks['source_rsync | Sync additional Nyxmon source directories']
+
+    def render(self, expression, **overrides):
+        env = NativeEnvironment()
+        env.filters['regex_replace'] = regex_replace
+        context = {**self.defaults, **overrides}
+        for name, value in self.django.get('vars', {}).items():
+            context[name] = env.from_string(value).render(**context)
+        return env.from_string(expression).render(**context)
+
+    def django_opts(self, **overrides):
+        return self.render(self.django['ansible.posix.synchronize']['rsync_opts'], **overrides)
+
+    def test_role_managed_site_files_survive_the_deleting_sync(self):
+        opts = self.django_opts()
+        for path in ('venv', 'uv.lock', 'pyproject.toml', 'README.md'):
+            self.assertIn(f'--exclude=/{path}', opts)
+        self.assertIn('--omit-dir-times', opts)
+        # The configured excludes (database, .env, ...) are still all there.
+        for exclude in self.defaults['nyxmon_rsync_excludes'] + self.defaults['nyxmon_rsync_django_excludes']:
+            self.assertIn(f'--exclude={exclude}', opts)
+        self.assertIn('--omit-dir-times', self.render(self.additional['ansible.posix.synchronize']['rsync_opts']))
+
+    def test_pyproject_is_only_protected_when_the_role_writes_it(self):
+        cases = (
+            (True, True, True),    # copied from the source checkout
+            (True, False, True),
+            (False, True, True),   # templated for uv
+            (False, False, False), # pip install: src/django may ship its own
+        )
+        for use_source, use_uv, protected in cases:
+            opts = self.django_opts(nyxmon_use_source_pyproject=use_source, nyxmon_use_uv=use_uv)
+            self.assertEqual('--exclude=/pyproject.toml' in opts, protected, (use_source, use_uv))
+
+    def test_extra_files_follow_the_configured_list(self):
+        opts = self.django_opts(nyxmon_rsync_extra_files=['README.md', '/docs/NOTES.md'])
+        self.assertIn('--exclude=/README.md', opts)
+        self.assertIn('--exclude=/docs/NOTES.md', opts)
+        self.assertNotIn('--exclude=/README.md', self.django_opts(nyxmon_rsync_extra_files=[]))
+
+    def test_copies_of_role_managed_files_still_notify(self):
+        for name in ('source_rsync | Copy pyproject.toml from source', 'source_rsync | Copy extra files from source'):
+            self.assertEqual(self.tasks[name]['notify'], ['restart nyxmon', 'restart nyxmon-monitor'])
+
+    @unittest.skipUnless(shutil.which('rsync'), 'rsync is not installed')
+    def test_second_sync_of_an_unchanged_checkout_changes_nothing(self):
+        """Replay the role's syncs with real rsync around the role's own writes."""
+        with tempfile.TemporaryDirectory() as scratch:
+            source, site = Path(scratch, 'checkout'), Path(scratch, 'site')
+            for file in ('src/django/manage.py', 'src/django/config/settings.py', 'src/nyxmon/__init__.py',
+                         'src/nyxboard/__init__.py', 'pyproject.toml', 'README.md'):
+                Path(source, file).parent.mkdir(parents=True, exist_ok=True)
+                Path(source, file).write_text(f'{file}\n')
+            site.mkdir()
+
+            def sync(src, dest, opts):
+                # The options ansible.posix.synchronize passes for these tasks.
+                result = subprocess.run(
+                    ['rsync', '--delay-updates', '-F', '--delete-after', '--archive', '--no-owner', '--no-group',
+                     '--out-format=<<CHANGED>>%i %n%L', *opts, str(src), str(dest)],
+                    check=True, capture_output=True, text=True)
+                return [line for line in result.stdout.splitlines() if line.startswith('<<CHANGED>>')]
+
+            def deploy():
+                changed = sync(f'{source}/src/django/', f'{site}/', self.django_opts())
+                for path in self.defaults['nyxmon_rsync_additional_paths']:
+                    Path(site, path).mkdir(parents=True, exist_ok=True)
+                    changed += sync(f'{source}/{path}', f'{site}/{path}',
+                                    self.render(self.additional['ansible.posix.synchronize']['rsync_opts']))
+                # What the role itself then writes into the site root.
+                for file in ('pyproject.toml', 'README.md'):
+                    if not Path(site, file).exists():
+                        shutil.copyfile(Path(source, file), Path(site, file))
+                        changed.append(f'copy {file}')
+                Path(site, 'uv.lock').write_text('lock\n')
+                Path(site, '.env').write_text('SECRET=1\n')
+                Path(site, 'db.sqlite3').write_text('data\n')
+                Path(site, '.venv').mkdir(exist_ok=True)
+                Path(site, 'staticfiles').mkdir(exist_ok=True)
+                if not Path(site, 'venv').is_symlink():
+                    os.symlink(Path(site, '.venv'), Path(site, 'venv'))
+                return changed
+
+            self.assertTrue(deploy())
+            pyproject_mtime = Path(site, 'pyproject.toml').stat().st_mtime_ns
+            self.assertEqual(deploy(), [])
+            # uv rebuilds the project when pyproject.toml gets a new mtime.
+            self.assertEqual(Path(site, 'pyproject.toml').stat().st_mtime_ns, pyproject_mtime)
+            for kept in ('venv', 'uv.lock', '.env', 'db.sqlite3', 'README.md'):
+                self.assertTrue(os.path.lexists(Path(site, kept)), kept)
+
+            Path(source, 'src/django/manage.py').write_text('changed source\n')
+            Path(source, 'src/django/config/settings.py').unlink()
+            changed = deploy()
+            self.assertEqual(len(changed), 2, changed)
+            self.assertFalse(Path(site, 'config/settings.py').exists())
 

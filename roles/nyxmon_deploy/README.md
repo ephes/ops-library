@@ -262,6 +262,17 @@ Every SQLite sidecar is excluded by name: `rsync --delete` removing a live
 `-journal` or `-wal` file out from under a running writer costs crash
 atomicity, which is worse than a failed write.
 
+The Django sync also leaves alone what the role itself puts into the site
+root afterwards: the `venv` symlink, `uv.lock`, `pyproject.toml` (whenever the
+role copies or templates it) and every file in `nyxmon_rsync_extra_files`.
+These excludes are anchored to the site root and added automatically. Both
+syncs pass `--omit-dir-times`. Without this, `delete: true` removed those files
+on every run: the sync, the copies that restored them and the uv install (which
+rebuilds the project when `pyproject.toml` gets a new mtime) all reported a
+change, and every deploy restarted nyxmon. An unchanged checkout now reports
+no change and requests no restart; a real source, dependency-input or
+dependency change still notifies both restart handlers.
+
 ### Switching back to PyPI-based deployments
 
 If you prefer the original "install from PyPI" mode (e.g. for production), override these variables:
