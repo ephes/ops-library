@@ -45,6 +45,9 @@
   failed_when: false
   no_log: true
   loop: "{{ fastdeploy_legacy_token_users }}"
+  # Not in check mode: the site may not exist yet, and the command module
+  # fails on a missing chdir before it would skip.
+  when: not ansible_check_mode
 
 # Loops over the names, not the registered results: a failed loop item is
 # printed in full, and the results carry the withheld output.

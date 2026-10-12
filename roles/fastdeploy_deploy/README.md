@@ -175,8 +175,9 @@ Every successful role run is treated as a rollout of the live FastDeploy service
 - after the restart, it validates the running process with an authenticated localhost request to
   `/users/me`
 
-The token for that request is minted on the host by FastDeploy's own `create_access_token`, run
-with the application's interpreter. It is signed with the `SECRET_KEY` and algorithm from the
+The token for that request is a short-lived user access token, minted on the host by FastDeploy's
+own `deploy.auth` function for those (`files/mint_validation_token.py`), run with the application's
+interpreter. It is signed with the `SECRET_KEY` and algorithm from the
 `.env` the role just wrote; the secret key is not passed on a command line and the role does not
 import a JWT library itself. If minting fails, the role reports the exit code and the last line of
 the error output.

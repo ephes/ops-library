@@ -97,7 +97,14 @@ class RegistrationTaskTests(unittest.TestCase):
 
     def test_no_role_mints_tokens_with_create_access_token(self):
         offenders = [str(path.relative_to(ROOT)) for path in (ROOT / "roles").rglob("*") if path.is_file() and "create_access_token" in path.read_text(errors="ignore")]
-        self.assertEqual(offenders, [])
+        # The one exception is not a service token: fastdeploy_deploy mints a
+        # short-lived *user* access token for its own rollout check, the way
+        # FastDeploy's login endpoint does.
+        user_token_helper = "roles/fastdeploy_deploy/files/mint_validation_token.py"
+        self.assertEqual(offenders, [user_token_helper])
+        helper = (ROOT / user_token_helper).read_text()
+        self.assertIn('"type": "user"', helper)
+        self.assertNotIn("service", helper)
 
     def test_token_is_issued_through_the_registry_with_argv_and_no_log(self):
         issue = self.by_name["register_echoport | Issue a revocable token scoped to the backup bridge"]

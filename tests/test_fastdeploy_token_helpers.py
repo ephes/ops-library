@@ -85,12 +85,16 @@ class ValidationTokenTests(unittest.TestCase):
         self.assertIs(mint["no_log"], True)
         # The no_log task must not hide its own failure.
         self.assertIs(mint["failed_when"], False)
+        # In check mode the site may not exist; the command module fails on a
+        # missing chdir instead of skipping.
+        self.assertIn("not ansible_check_mode", mint["when"])
         names = list(rollout)
         report = rollout["rollout | Report a failed validation token mint"]
         self.assertEqual(names.index(report["name"]), names.index(mint["name"]) + 1)
         message = report["ansible.builtin.fail"]["msg"]
         self.assertIn("fastdeploy_rollout_validation_token.rc", message)
         self.assertNotIn("stdout", message)
+        self.assertIn("not ansible_check_mode", report["when"])
         self.assertIs(rollout["rollout | Validate FastDeploy DB-backed auth after restart"]["no_log"], True)
 
 
@@ -129,7 +133,9 @@ class LegacyTokenUserTests(unittest.TestCase):
         self.assertNotIn("environment", ensure)
         self.assertIs(ensure["no_log"], True)
         self.assertIs(ensure["failed_when"], False)
+        self.assertEqual(ensure["when"], "not ansible_check_mode")
         report = initialize["initialize | Report a failed legacy service token user"]
+        self.assertIn("not ansible_check_mode", report["when"])
         message = report["ansible.builtin.fail"]["msg"]
         self.assertNotIn("stdout", message)
         self.assertNotIn("stderr", message)

@@ -15,6 +15,9 @@
   user name and lifetime go in on stdin.
 - A failed mint is reported with its exit code and the last line of the error
   output instead of only "output has been hidden".
+- `tests/test_daybook_operations_service_token.py` still refuses
+  `create_access_token` in every role, with this one user-token helper as the
+  named exception: service tokens keep going through `issueservicetoken`.
 - `fastdeploy_rollout_validation_token_algorithm` is gone; the algorithm is the
   one FastDeploy is configured with. A playbook that still sets it is unaffected.
 - New `fastdeploy_legacy_token_users` (default `[]`, nothing happens): a

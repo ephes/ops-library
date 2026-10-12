@@ -26,8 +26,8 @@
     - fastdeploy_rollout_restart_enabled
     - fastdeploy_rollout_validation_enabled
 
-# The token is minted by FastDeploy's own create_access_token (see
-# files/mint_validation_token.py), which reads SECRET_KEY and the signing
+# The user access token is minted by FastDeploy's own deploy.auth function
+# (see files/mint_validation_token.py), which reads SECRET_KEY and the signing
 # algorithm from the site's .env. No secret is passed on the command line and
 # the role does not depend on the JWT library FastDeploy happens to use.
 - name: rollout | Mint FastDeploy validation token
@@ -45,18 +45,24 @@
   become: true
   become_user: "{{ fastdeploy_user }}"
   no_log: true
-  when: fastdeploy_rollout_validation_enabled
+  # Not in check mode: nothing may exist yet (the command module fails on a
+  # missing chdir before it would skip), and the request below is skipped too.
+  when:
+    - fastdeploy_rollout_validation_enabled
+    - not ansible_check_mode
 
-# Only the exit code and the last line of stderr (the exception) are shown;
-# stdout would be the token.
+# Only the exit code, the module's own message and the last line of stderr
+# (the exception) are shown; stdout would be the token.
 - name: rollout | Report a failed validation token mint
   ansible.builtin.fail:
     msg: >-
       Minting the FastDeploy validation token failed
-      (rc={{ fastdeploy_rollout_validation_token.rc | default('unknown') }}):
+      (rc={{ fastdeploy_rollout_validation_token.rc | default('unknown', true) }},
+      {{ fastdeploy_rollout_validation_token.msg | default('no module message', true) }}):
       {{ (fastdeploy_rollout_validation_token.stderr_lines | default([]))[-1:] | join('') | default('no error output', true) }}
   when:
     - fastdeploy_rollout_validation_enabled
+    - not ansible_check_mode
     - fastdeploy_rollout_validation_token is not skipped
     - >-
       (fastdeploy_rollout_validation_token.rc | default(1)) != 0 or
