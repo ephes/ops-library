@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Verify that a systemd host's clock is NTP-synchronized without changing any time settings
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions: [all]
+    - name: Debian
+      versions: [all]
+dependencies: []

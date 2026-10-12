@@ -1,0 +1,13 @@
+---
+# A container runs no time service (systemd-timesyncd is disabled inside
+# containers and chrony is not installed), so this exercises the problem path:
+# warn-only mode reports the problem and lets the play continue.
+- name: Converge
+  hosts: all
+  become: true
+  gather_facts: false
+
+  roles:
+    - role: time_sync_check
+      vars:
+        time_sync_check_fail: false

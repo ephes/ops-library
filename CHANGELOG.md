@@ -3,6 +3,19 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Time synchronization check
+
+- Add `time_sync_check`: a read-only role that verifies a systemd host's clock
+  is synchronized. It checks that chrony or systemd-timesyncd is active, that
+  the kernel reports `NTPSynchronized=yes`, that the measured offset is under
+  `time_sync_check_max_offset_seconds` (default 1 s), and that the host clock is
+  within `time_sync_check_controller_max_skew_seconds` (default 30 s) of the
+  controller clock. It fails with the list of problems, or warns and continues
+  with `time_sync_check_fail: false`. It never changes time settings and always
+  reports `changed=0`. The collection has no host baseline of its own, so
+  include the role from the baseline or preflight play that calls the
+  collection; `files/time_sync_status.py` also runs standalone for monitoring.
+
 ## Unreleased — Nyxmon deploys without spurious restarts
 
 - `nyxmon_deploy` (rsync method) no longer reports a change on every run. The

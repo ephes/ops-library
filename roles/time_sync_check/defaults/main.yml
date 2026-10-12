@@ -1,0 +1,13 @@
+---
+# Largest acceptable absolute offset reported by chrony or systemd-timesyncd.
+time_sync_check_max_offset_seconds: 1
+# Largest acceptable difference between the host clock and the controller
+# clock. This catches a host that believes it is synchronized but is not (wrong
+# source, hours off). It includes SSH latency, so keep it coarse. 0 disables it.
+time_sync_check_controller_max_skew_seconds: 30
+# true: fail the play on a problem. false: print a warning and continue.
+time_sync_check_fail: true
+# Interpreter for the read-only status script on the host.
+time_sync_check_python: python3
+
+ops_library_documentation_category: operations

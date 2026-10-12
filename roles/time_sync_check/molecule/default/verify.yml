@@ -1,0 +1,43 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Verify | Warn-only mode reports the missing time service
+      ansible.builtin.include_role:
+        name: time_sync_check
+      vars:
+        time_sync_check_fail: false
+
+    - name: Verify | Assert the reported status
+      ansible.builtin.assert:
+        that:
+          - not time_sync_check_result.ok
+          - time_sync_check_result.source is none
+          - time_sync_check_result.problems | select('search', 'no time synchronization service is active') | list | length == 1
+          - time_sync_check_result.epoch | float > 1700000000
+
+    - name: Verify | Failing mode stops the play with a clear message
+      block:
+        - name: Verify | Run the check in failing mode
+          ansible.builtin.include_role:
+            name: time_sync_check
+
+        - name: Verify | The check must not pass here
+          ansible.builtin.fail:
+            msg: "time_sync_check passed on a host without a time service"
+      rescue:
+        - name: Verify | Assert the failure message
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'Fail when the clock is not synchronized'
+              - "'Time synchronization check FAILED' in ansible_failed_result.msg"
+              - "'no time synchronization service is active' in ansible_failed_result.msg"
+
+    - name: Verify | No time service was installed or started by the check
+      ansible.builtin.command: systemctl is-active chrony chronyd systemd-timesyncd
+      register: time_services
+      changed_when: false
+      failed_when: time_services.rc == 0

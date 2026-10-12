@@ -1,0 +1,109 @@
+---
+# Read-only: nothing here starts, stops, installs or configures anything.
+- name: Validate time sync check settings
+  ansible.builtin.assert:
+    that:
+      - time_sync_check_max_offset_seconds is not boolean
+      - (time_sync_check_max_offset_seconds | float(0)) > 0
+      - time_sync_check_controller_max_skew_seconds is not boolean
+      - (time_sync_check_controller_max_skew_seconds | string) is match('^[0-9]+(\\.[0-9]+)?$')
+      - time_sync_check_fail is boolean
+    fail_msg: >-
+      time_sync_check_max_offset_seconds must be a number above 0,
+      time_sync_check_controller_max_skew_seconds a number of at least 0
+      (0 disables the controller comparison) and time_sync_check_fail a boolean.
+    quiet: true
+
+- name: Note the controller clock before reading the host clock
+  ansible.builtin.set_fact:
+    time_sync_check_controller_before: "{{ lookup('ansible.builtin.pipe', 'date +%s') | int }}"
+
+- name: Read time synchronization status
+  ansible.builtin.script:
+    cmd: "time_sync_status.py --max-offset {{ time_sync_check_max_offset_seconds | float | quote }}"
+    executable: "{{ time_sync_check_python }}"
+  register: time_sync_check_script
+  changed_when: false
+  check_mode: false
+
+- name: Parse time synchronization status
+  ansible.builtin.set_fact:
+    time_sync_check_status: "{{ time_sync_check_script.stdout | trim | from_json }}"
+    # The controller clock is read with whole-second resolution, so the host
+    # reading may legitimately lie anywhere in [before, after + 1).
+    time_sync_check_controller_after: "{{ (lookup('ansible.builtin.pipe', 'date +%s') | int) + 1 }}"
+
+- name: Compare the host clock with the controller clock
+  ansible.builtin.set_fact:
+    time_sync_check_skew: >-
+      {{
+        [
+          (time_sync_check_controller_before | int) - (time_sync_check_status.epoch | float),
+          (time_sync_check_status.epoch | float) - (time_sync_check_controller_after | int),
+          0
+        ] | max | float | round(3)
+      }}
+
+- name: Evaluate time synchronization status
+  ansible.builtin.set_fact:
+    time_sync_check_result: >-
+      {{
+        time_sync_check_status | combine({
+          'controller_skew_seconds': time_sync_check_skew | float,
+          'problems': time_sync_check_status.problems + time_sync_check_skew_problems,
+          'ok': (time_sync_check_status.problems + time_sync_check_skew_problems) | length == 0,
+        })
+      }}
+  vars:
+    time_sync_check_skew_problems: >-
+      {{
+        [
+          'the host clock differs from the controller clock by about '
+          ~ (time_sync_check_skew | float | round(1)) ~ 's (allowed: '
+          ~ time_sync_check_controller_max_skew_seconds ~ 's)'
+        ]
+        if (
+          (time_sync_check_controller_max_skew_seconds | float) > 0
+          and (time_sync_check_skew | float) > (time_sync_check_controller_max_skew_seconds | float)
+        )
+        else []
+      }}
+
+- name: Report time synchronization status
+  ansible.builtin.debug:
+    msg: >-
+      Time sync on {{ inventory_hostname }}:
+      {{ 'OK' if time_sync_check_result.ok else 'PROBLEM' }}.
+      Service: {{ time_sync_check_result.source or 'none' }}.
+      NTPSynchronized: {{ time_sync_check_shown_flag }}.
+      Offset: {{ time_sync_check_shown_offset }}
+      (allowed {{ time_sync_check_max_offset_seconds }}s).
+      Difference to the controller clock: about
+      {{ time_sync_check_result.controller_skew_seconds }}s.
+      {{ time_sync_check_result.notes | join('. ') }}
+  vars:
+    time_sync_check_shown_flag: >-
+      {{ 'unknown' if time_sync_check_result.kernel_synchronized is none else time_sync_check_result.kernel_synchronized }}
+    time_sync_check_shown_offset: >-
+      {{ 'unknown' if time_sync_check_result.offset_seconds is none else (time_sync_check_result.offset_seconds ~ 's') }}
+
+- name: Fail when the clock is not synchronized
+  ansible.builtin.fail:
+    msg: >-
+      Time synchronization check FAILED on {{ inventory_hostname }}:
+      {{ time_sync_check_result.problems | join('; ') }}.
+      This role only checks; it changed nothing. Fix NTP on the host
+      (chrony or systemd-timesyncd), then rerun.
+  when:
+    - not time_sync_check_result.ok
+    - time_sync_check_fail | bool
+
+- name: Warn when the clock is not synchronized
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: time synchronization problem on {{ inventory_hostname }}:
+      {{ time_sync_check_result.problems | join('; ') }}.
+      Continuing because time_sync_check_fail is false.
+  when:
+    - not time_sync_check_result.ok
+    - not (time_sync_check_fail | bool)
