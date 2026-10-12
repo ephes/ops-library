@@ -23,6 +23,55 @@
   no_log: true
   when: fastdeploy_create_initial_user
 
+# Temporary bridge for the legacy service token grace period, off by default
+# (fastdeploy_legacy_token_users: []). FastDeploy only accepts a service token
+# whose "user" claim names an existing user. The users are created by
+# FastDeploy's own createuser command (see files/ensure_token_user.py) with the
+# hash of a random password that is never stored or printed.
+- name: initialize | Ensure legacy service token users exist
+  ansible.builtin.command:
+    argv:
+      - "{{ fastdeploy_venv_bin }}/python"
+      - -c
+      - "{{ lookup('ansible.builtin.file', role_path ~ '/files/ensure_token_user.py') }}"
+    stdin: "{{ item }}"
+    chdir: "{{ fastdeploy_site_path }}"
+  become: "{{ fastdeploy_initialize_become | default(true) }}"
+  become_user: "{{ fastdeploy_user }}"
+  register: fastdeploy_legacy_token_user_results
+  changed_when: "'created:' in (fastdeploy_legacy_token_user_results.stdout | default('') | lower)"
+  # Reported by the next task. createuser prints the database error for an
+  # existing user, and that error quotes the password hash.
+  failed_when: false
+  no_log: true
+  loop: "{{ fastdeploy_legacy_token_users }}"
+
+# Loops over the names, not the registered results: a failed loop item is
+# printed in full, and the results carry the withheld output.
+- name: initialize | Report a failed legacy service token user
+  ansible.builtin.fail:
+    msg: >-
+      Could not ensure the FastDeploy user "{{ item }}"
+      (rc={{ fastdeploy_legacy_token_user_result.rc | default('unknown') }}).
+      Output is withheld because it can quote a password hash; run
+      "commands.py createuser" on the host to see it.
+  loop: "{{ fastdeploy_legacy_token_users }}"
+  loop_control:
+    index_var: fastdeploy_legacy_token_user_index
+  vars:
+    fastdeploy_legacy_token_user_result: >-
+      {{ (fastdeploy_legacy_token_user_results.results | default([]))[fastdeploy_legacy_token_user_index] | default({}) }}
+    fastdeploy_legacy_token_user_output: >-
+      {{ ((fastdeploy_legacy_token_user_result.stdout | default('')) ~ ' ' ~
+      (fastdeploy_legacy_token_user_result.stderr | default(''))) | lower | regex_replace('\\s+', ' ') }}
+  when:
+    - not ansible_check_mode
+    - >-
+      (fastdeploy_legacy_token_user_result.rc | default(1)) != 0 or
+      ('created:' not in fastdeploy_legacy_token_user_output and
+       'duplicate key' not in fastdeploy_legacy_token_user_output and
+       'unique constraint' not in fastdeploy_legacy_token_user_output)
+
 - name: initialize | Sync services from filesystem
   ansible.builtin.command:
     cmd: "{{ fastdeploy_venv_bin }}/python commands.py syncservices"

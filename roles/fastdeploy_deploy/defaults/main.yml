@@ -75,6 +75,13 @@ fastdeploy_legacy_service_tokens_accepted_until: ""
 fastdeploy_service_token_max_expire_days: ""
 # SERVICE_TOKEN_RETENTION_DAYS (FastDeploy default 30)
 fastdeploy_service_token_retention_days: ""
+# TEMPORARY bridge for the legacy token grace period; keep it empty otherwise.
+# FastDeploy rejects a service token whose "user" claim does not name an
+# existing user, also inside LEGACY_SERVICE_TOKENS_ACCEPTED_UNTIL. Names listed
+# here are created as FastDeploy users with a random, discarded password (no
+# password login). Remove the names again and delete the users once the tokens
+# are rotated: see "Legacy token users" in the README.
+fastdeploy_legacy_token_users: []
 
 # Node.js and npm
 fastdeploy_nodejs_version: 24  # Major version for Node.js (LTS)
@@ -91,7 +98,6 @@ fastdeploy_rollout_validation_enabled: true
 fastdeploy_rollout_validation_base_url: "http://127.0.0.1:{{ fastdeploy_app_port }}"
 fastdeploy_rollout_validation_path: "/users/me"
 fastdeploy_rollout_validation_user: "{{ fastdeploy_initial_user }}"
-fastdeploy_rollout_validation_token_algorithm: "HS256"
 fastdeploy_rollout_validation_token_ttl_seconds: 300
 fastdeploy_rollout_validation_retries: 15
 fastdeploy_rollout_validation_delay: 2

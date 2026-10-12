@@ -26,39 +26,48 @@
     - fastdeploy_rollout_restart_enabled
     - fastdeploy_rollout_validation_enabled
 
+# The token is minted by FastDeploy's own create_access_token (see
+# files/mint_validation_token.py), which reads SECRET_KEY and the signing
+# algorithm from the site's .env. No secret is passed on the command line and
+# the role does not depend on the JWT library FastDeploy happens to use.
 - name: rollout | Mint FastDeploy validation token
   ansible.builtin.command:
     argv:
       - "{{ fastdeploy_venv_bin }}/python"
       - -c
-      - |
-        import time
-        from jose import jwt
-
-        print(
-            jwt.encode(
-                {
-                    "user": {{ fastdeploy_rollout_validation_user | to_json }},
-                    "type": "user",
-                    "exp": int(time.time()) + {{ fastdeploy_rollout_validation_token_ttl_seconds }},
-                },
-                {{ fastdeploy_secret_key | to_json }},
-                algorithm={{ fastdeploy_rollout_validation_token_algorithm | to_json }},
-            )
-        )
+      - "{{ lookup('ansible.builtin.file', role_path ~ '/files/mint_validation_token.py') }}"
+    stdin: "{{ {'user': fastdeploy_rollout_validation_user, 'ttl_seconds': fastdeploy_rollout_validation_token_ttl_seconds | int} | to_json }}"
+    chdir: "{{ fastdeploy_site_path }}"
   register: fastdeploy_rollout_validation_token
   changed_when: false
+  # Reported by the next task: no_log would otherwise hide why minting failed.
+  failed_when: false
   become: true
   become_user: "{{ fastdeploy_user }}"
   no_log: true
   when: fastdeploy_rollout_validation_enabled
+
+# Only the exit code and the last line of stderr (the exception) are shown;
+# stdout would be the token.
+- name: rollout | Report a failed validation token mint
+  ansible.builtin.fail:
+    msg: >-
+      Minting the FastDeploy validation token failed
+      (rc={{ fastdeploy_rollout_validation_token.rc | default('unknown') }}):
+      {{ (fastdeploy_rollout_validation_token.stderr_lines | default([]))[-1:] | join('') | default('no error output', true) }}
+  when:
+    - fastdeploy_rollout_validation_enabled
+    - fastdeploy_rollout_validation_token is not skipped
+    - >-
+      (fastdeploy_rollout_validation_token.rc | default(1)) != 0 or
+      (fastdeploy_rollout_validation_token.stdout | default('') | trim | length) == 0
 
 - name: rollout | Validate FastDeploy DB-backed auth after restart
   ansible.builtin.uri:
     url: "{{ fastdeploy_rollout_validation_base_url }}{{ fastdeploy_rollout_validation_path }}"
     method: GET
     headers:
-      Authorization: "Bearer {{ fastdeploy_rollout_validation_token.stdout }}"
+      Authorization: "Bearer {{ (fastdeploy_rollout_validation_token.stdout_lines | default([]))[-1:] | join('') | trim }}"
     status_code: "{{ fastdeploy_rollout_validation_status_codes }}"
     return_content: true
   register: fastdeploy_rollout_validation_response

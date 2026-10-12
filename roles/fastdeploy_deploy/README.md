@@ -129,6 +129,43 @@ Echoport's `FASTDEPLOY_SERVICE_TOKEN` and tokens minted by playbooks). Order:
 4. Before the grace period ends, set the variable back to `""` and deploy again. Once the variable
    is cleared (or the time has passed), tokens without `jti` get 401.
 
+#### Legacy token users
+
+Temporary bridge, off by default. Remove it after the token rotation.
+
+FastDeploy accepts a service token only while the user named in its `user` claim exists. That also
+holds for tokens without `jti` inside the grace period: a legacy token whose `user` is not a
+FastDeploy user gets 401 even though `LEGACY_SERVICE_TOKENS_ACCEPTED_UNTIL` has not passed. List
+such names to have the role create them:
+
+```yaml
+fastdeploy_legacy_token_users:
+  - credential-rotation
+```
+
+For each name the role runs FastDeploy's own `commands.py createuser` on the host, with the hash of
+a random password that is generated there, never stored and never printed. A name that already
+exists is left alone (its password is not changed), so repeated runs report no change.
+
+What such a user is:
+
+- FastDeploy has no roles and no "service account" flag. The user is an ordinary FastDeploy user,
+  equal to the initial admin user in what it may do through the API.
+- Nobody knows its password, so `/token` login does not work for it. A user token for it can only
+  be minted with `SECRET_KEY`, which already allows minting one for any user.
+- The legacy tokens get back exactly what they had before FastDeploy started checking the user:
+  deployments of the one service named in the token. The `user` claim is otherwise only recorded
+  with the deployment.
+- New on the host: `commands.py issueservicetoken --user <name>` now works for the name.
+
+Removal, once every consumer uses a re-issued token (step 3 above) under a real user:
+
+1. Set `fastdeploy_legacy_token_users` back to `[]`. The role stops ensuring the users; it does not
+   delete them.
+2. Delete the users from FastDeploy's `user` table. FastDeploy has no command for that yet. Until
+   they are deleted they stay ordinary users without a usable password, and deleting one
+   invalidates every service token issued for that name.
+
 ### Rollout behavior
 
 Every successful role run is treated as a rollout of the live FastDeploy service:
@@ -137,6 +174,12 @@ Every successful role run is treated as a rollout of the live FastDeploy service
 - it does not rely on incidental handler notifications from unit-file changes
 - after the restart, it validates the running process with an authenticated localhost request to
   `/users/me`
+
+The token for that request is minted on the host by FastDeploy's own `create_access_token`, run
+with the application's interpreter. It is signed with the `SECRET_KEY` and algorithm from the
+`.env` the role just wrote; the secret key is not passed on a command line and the role does not
+import a JWT library itself. If minting fails, the role reports the exit code and the last line of
+the error output.
 
 That validation is DB-backed and secret-backed in the running service process:
 

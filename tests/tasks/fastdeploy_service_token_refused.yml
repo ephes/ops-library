@@ -1,6 +1,7 @@
 ---
 # One refused case for tests/test_fastdeploy_service_token_settings.yml:
-# validate_tasks must fail with a message containing expected_message.
+# validate_tasks must fail with a message containing expected_message. The
+# failed result must not contain forbidden_text (optional).
 - name: fastdeploy_service_token_refused | Run the validation
   block:
     - name: fastdeploy_service_token_refused | Validate the settings
@@ -14,6 +15,7 @@
       ansible.builtin.assert:
         that:
           - expected_message in failure_text
+          - (forbidden_text | default('')) | length == 0 or forbidden_text not in (ansible_failed_result | to_json)
         fail_msg: "Expected a refusal containing '{{ expected_message }}', got: {{ failure_text }}"
       vars:
         failure_text: >-

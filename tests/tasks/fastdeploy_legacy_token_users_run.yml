@@ -1,0 +1,19 @@
+---
+# One initialize.yml run for tests/test_fastdeploy_service_token_settings.yml
+# against the stand-in site; expected_changed lists the change state per user.
+- name: fastdeploy_legacy_token_users_run | Run initialize.yml
+  ansible.builtin.include_tasks: "{{ deploy_role }}/tasks/initialize.yml"
+  vars:
+    role_path: "{{ deploy_role }}"
+    fastdeploy_venv_bin: "{{ render_dir }}/site/.venv/bin"
+    fastdeploy_site_path: "{{ render_dir }}/site"
+    fastdeploy_user: "{{ lookup('env', 'USER') }}"
+    fastdeploy_initialize_become: false
+    fastdeploy_create_initial_user: false
+    fastdeploy_sync_services: false
+
+- name: fastdeploy_legacy_token_users_run | Assert the reported changes
+  ansible.builtin.assert:
+    that:
+      - fastdeploy_legacy_token_user_results.results | map(attribute='changed') | list == expected_changed
+    fail_msg: "Expected changes {{ expected_changed }} for {{ fastdeploy_legacy_token_users }}"

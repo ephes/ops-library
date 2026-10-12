@@ -24,6 +24,8 @@
     fastdeploy_postgres_port: 5432
     fastdeploy_postgres_database: fastdeploy
     fastdeploy_secret_key: secret
+    # role default, for the validation tasks included below
+    fastdeploy_legacy_token_users: []
     # inputs of env.j2
     secret_key: secret
     postgres_password: pw
@@ -50,6 +52,7 @@
           - deploy_defaults.fastdeploy_legacy_service_tokens_accepted_until == ""
           - deploy_defaults.fastdeploy_service_token_max_expire_days == ""
           - deploy_defaults.fastdeploy_service_token_retention_days == ""
+          - deploy_defaults.fastdeploy_legacy_token_users == []
           - self_defaults.fd_self_legacy_service_tokens_accepted_until == ""
           - self_defaults.fd_self_service_token_max_expire_days == ""
           - self_defaults.fd_self_service_token_retention_days == ""
@@ -228,6 +231,131 @@
           - >-
             (lookup('file', self_role ~ '/tasks/main.yml') | from_yaml | map(attribute='name') | list).index('Validate service token settings')
             < (lookup('file', self_role ~ '/tasks/main.yml') | from_yaml | map(attribute='name') | list).index('Ensure deployment directories exist')
+
+    # ------------------------------------------------------------------
+    # Legacy token users (temporary bridge, off by default)
+    # ------------------------------------------------------------------
+    - name: Accept valid legacy token users
+      ansible.builtin.include_tasks: "{{ deploy_role }}/tasks/validate_service_token_settings.yml"
+      vars:
+        fastdeploy_legacy_token_users: "{{ item }}"
+        fastdeploy_legacy_service_tokens_accepted_until: ""
+        fastdeploy_service_token_max_expire_days: ""
+        fastdeploy_service_token_retention_days: ""
+      loop:
+        - []
+        - [credential-rotation]
+        - [credential-rotation, "ops@example.com", legacy_2]
+
+    - name: Refuse invalid legacy token users
+      ansible.builtin.include_tasks: tasks/fastdeploy_service_token_refused.yml
+      vars:
+        validate_tasks: "{{ deploy_role }}/tasks/validate_service_token_settings.yml"
+        expected_message: "fastdeploy_legacy_token_users must be a list of user names"
+        fastdeploy_legacy_token_users: "{{ item }}"
+        fastdeploy_legacy_service_tokens_accepted_until: ""
+        fastdeploy_service_token_max_expire_days: ""
+        fastdeploy_service_token_retention_days: ""
+      loop:
+        - credential-rotation
+        - {name: credential-rotation}
+        - [""]
+        - ["two words"]
+        - ["line\nbreak"]
+        - [42]
+        - [[nested]]
+
+    # initialize.yml against a stand-in site: commands.py records the users it
+    # created and answers like FastDeploy does for an existing one.
+    - name: Create the stand-in FastDeploy site
+      ansible.builtin.file:
+        path: "{{ render_dir }}/{{ item }}"
+        state: directory
+        mode: "0700"
+      loop: [site/src/deploy, site/.venv/bin]
+
+    - name: Write the stand-in FastDeploy code
+      ansible.builtin.copy:
+        dest: "{{ render_dir }}/site/{{ item.path }}"
+        content: "{{ item.content }}"
+        mode: "0600"
+      loop:
+        - path: src/deploy/__init__.py
+          content: ""
+        - path: src/deploy/auth.py
+          content: |
+            def get_password_hash(plain):
+                return "$2b$12$stand-in-hash"
+        - path: commands.py
+          content: |
+            import os
+            import sys
+            from pathlib import Path
+
+            name = os.environ["INITIAL_USER_NAME"]
+            marker = Path(__file__).parent / f"user-{name}"
+            print(f"creating user {name}")
+            if name == "broken":
+                print(f"failed to create user {name}")
+                print(f"OperationalError [parameters: ('{name}', '{os.environ['INITIAL_PASSWORD_HASH']}')]")
+            elif name == "crash":
+                sys.exit(3)
+            elif marker.exists():
+                print(f"failed to create user {name}")
+                print("IntegrityError: duplicate key value violates unique constraint")
+                print(f"[parameters: ('{name}', '{os.environ['INITIAL_PASSWORD_HASH']}')]")
+            else:
+                marker.write_text("")
+                print("created: ")
+                print(f"UserCreated(type='user', id=1, name='{name}')")
+      loop_control:
+        label: "{{ item.path }}"
+
+    - name: Find the local Python interpreter
+      ansible.builtin.command: python3 -c "import sys; print(sys.executable)"
+      register: local_python
+      changed_when: false
+
+    - name: Link it as the stand-in venv interpreter
+      ansible.builtin.file:
+        src: "{{ local_python.stdout }}"
+        dest: "{{ render_dir }}/site/.venv/bin/python"
+        state: link
+
+    - name: Run initialize.yml without legacy token users, then twice with them
+      ansible.builtin.include_tasks: tasks/fastdeploy_legacy_token_users_run.yml
+      vars:
+        fastdeploy_legacy_token_users: "{{ item.users }}"
+        expected_changed: "{{ item.changed }}"
+      loop:
+        - {users: [], changed: []}
+        - {users: [credential-rotation, legacy-two], changed: [true, true]}
+        - {users: [credential-rotation, legacy-two], changed: [false, false]}
+      loop_control:
+        label: "{{ item.users }}"
+
+    - name: Assert only the listed users were created
+      ansible.builtin.find:
+        paths: "{{ render_dir }}/site"
+        patterns: "user-*"
+      register: created_users
+      failed_when: created_users.files | map(attribute='path') | map('basename') | sort != ['user-credential-rotation', 'user-legacy-two']
+
+    - name: Fail when a legacy token user cannot be created
+      ansible.builtin.include_tasks: tasks/fastdeploy_service_token_refused.yml
+      vars:
+        validate_tasks: "{{ deploy_role }}/tasks/initialize.yml"
+        expected_message: 'Could not ensure the FastDeploy user "{{ item }}"'
+        forbidden_text: stand-in-hash
+        fastdeploy_legacy_token_users: ["{{ item }}"]
+        role_path: "{{ deploy_role }}"
+        fastdeploy_venv_bin: "{{ render_dir }}/site/.venv/bin"
+        fastdeploy_site_path: "{{ render_dir }}/site"
+        fastdeploy_user: "{{ lookup('env', 'USER') }}"
+        fastdeploy_initialize_become: false
+        fastdeploy_create_initial_user: false
+        fastdeploy_sync_services: false
+      loop: [broken, crash]
 
     - name: Remove render directory
       ansible.builtin.file:
