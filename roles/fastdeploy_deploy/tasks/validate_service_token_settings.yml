@@ -46,3 +46,19 @@
   loop_control:
     label: "{{ item.name }}"
   when: item.value | string | length > 0
+
+# Names of users to create for legacy service tokens (see initialize.yml).
+- name: validate_service_token_settings | Check the legacy token users
+  ansible.builtin.assert:
+    that:
+      - fastdeploy_legacy_token_users is not string
+      - fastdeploy_legacy_token_users is not mapping
+      - fastdeploy_legacy_token_users is sequence
+      - fastdeploy_legacy_token_users | reject('string') | list | length == 0
+      - >-
+        fastdeploy_legacy_token_users | select('string')
+        | reject('match', '^[A-Za-z0-9][A-Za-z0-9._@-]{0,254}$') | list | length == 0
+    fail_msg: >-
+      fastdeploy_legacy_token_users must be a list of user names (letters,
+      digits, ".", "_", "@", "-"; at most 255 characters).
+    quiet: true

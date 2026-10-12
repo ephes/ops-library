@@ -3,6 +3,32 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — FastDeploy rollout check without python-jose (2.31.21)
+
+- `fastdeploy_deploy` failed at its last step ("Mint FastDeploy validation
+  token") against a FastDeploy that uses PyJWT: the role imported `jose`, which
+  the application no longer installs. The token is now minted by FastDeploy's
+  own `deploy.auth.create_access_token`, run with the application's interpreter
+  (`files/mint_validation_token.py`). It signs with the `SECRET_KEY` and
+  algorithm from the site's `.env`, so the role no longer depends on the JWT
+  library and no longer puts the secret key on a `python -c` command line. The
+  user name and lifetime go in on stdin.
+- A failed mint is reported with its exit code and the last line of the error
+  output instead of only "output has been hidden".
+- `tests/test_daybook_operations_service_token.py` still refuses
+  `create_access_token` in every role, with this one user-token helper as the
+  named exception: service tokens keep going through `issueservicetoken`.
+- `fastdeploy_rollout_validation_token_algorithm` is gone; the algorithm is the
+  one FastDeploy is configured with. A playbook that still sets it is unaffected.
+- New `fastdeploy_legacy_token_users` (default `[]`, nothing happens): a
+  temporary bridge for the legacy service token grace period. FastDeploy
+  accepts a service token only while the user named in its `user` claim
+  exists, also inside `LEGACY_SERVICE_TOKENS_ACCEPTED_UNTIL`. The listed names
+  are created with FastDeploy's `commands.py createuser` and the hash of a
+  random password that is generated on the host and discarded, so there is no
+  password login. See "Legacy token users" in the role README for what such a
+  user can do and how to remove it after the tokens are rotated.
+
 ## Unreleased — Edge frame options match the backends (2.31.20)
 
 - The Traefik headers middleware of `archive_deploy`, `chesslab_deploy`,

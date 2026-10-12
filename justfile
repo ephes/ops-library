@@ -206,6 +206,7 @@ test-wagtail-deploy: venv
 test-fastdeploy-service-token-settings: venv
     @echo "Testing FastDeploy service token env settings and their validation..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_fastdeploy_service_token_settings.yml
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_fastdeploy_token_helpers
 
 # Quick syntax check for everything
 syntax-check: venv

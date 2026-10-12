@@ -158,21 +158,9 @@
         argv:
           - "{{ fastdeploy_venv_python }}"
           - -c
-          - |
-            import time
-            from jose import jwt
-
-            print(
-                jwt.encode(
-                    {
-                        "user": {{ fastdeploy_initial_user | to_json }},
-                        "type": "user",
-                        "exp": int(time.time()) + 300,
-                    },
-                    {{ fastdeploy_secret_key | to_json }},
-                    algorithm="HS256",
-                )
-            )
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../files/mint_validation_token.py') }}"
+        stdin: "{{ {'user': fastdeploy_initial_user, 'ttl_seconds': 300} | to_json }}"
+        chdir: "{{ fastdeploy_site_path }}"
       register: fastdeploy_validation_token
       changed_when: false
       become_user: fastdeploy
@@ -183,7 +171,7 @@
         url: "http://127.0.0.1:9999/users/me"
         method: GET
         headers:
-          Authorization: "Bearer {{ fastdeploy_validation_token.stdout }}"
+          Authorization: "Bearer {{ fastdeploy_validation_token.stdout_lines[-1] | trim }}"
         status_code: 200
         return_content: true
       register: fastdeploy_validation_response
