@@ -3,6 +3,27 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Paperless backup archive is owner-only
+
+- `paperless_backup` no longer leaves the finished archive world-readable. The
+  role set it to mode `0644` "for the fetch" in the `0755` backup root, so
+  every account on the host could read all documents, the database dump and
+  the service configuration with its secrets. tar now writes into a fresh
+  `0600` temporary file that is renamed into place, so the archive is
+  owner-only from its creation (also when it replaces an existing file); the role then applies
+  `paperless_backup_archive_mode` (new, default `0600`) and
+  `paperless_backup_owner`, whether or not the archive is fetched. The local
+  copy stays in the `0700` local directory and is set to `0600` after the
+  fetch (both fetch methods). **Rollout:** the fetch reads the archive as the SSH user;
+  with a non-root SSH user set `paperless_backup_group` to a group of that user
+  and the mode to `0640`. Archives from earlier runs keep mode `0644`: run
+  `chmod 600 /opt/backups/paperless/*.tar.*` once on the host.
+- `paperless_deploy` adds `paperless_bind_address` (default `0.0.0.0`, the
+  value that was hard-coded for gunicorn in the unit and in
+  `gunicorn.conf.py`). The role's Traefik route and health check already use
+  `127.0.0.1`; set the variable to `127.0.0.1` to stop serving plain HTTP on
+  the LAN and tailnet addresses. Nothing changes until it is set.
+
 ## Unreleased — Optional source restriction for the UniFi controller route (2.31.23)
 
 - `unifi_deploy` adds `unifi_traefik_ip_allowlist` (default `[]`). The role

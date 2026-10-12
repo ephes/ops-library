@@ -7,6 +7,11 @@ paperless_backup_owner: root
 paperless_backup_group: root
 paperless_backup_dir_mode: "0750"
 paperless_backup_file_mode: "0640"
+# Mode of the finished archive (documents, database dump, configuration with
+# secrets). The fetch to the control machine reads it as the SSH user: keep
+# 0600 when that user is root or the archive owner; a different SSH user needs
+# a group it belongs to as paperless_backup_group and "0640".
+paperless_backup_archive_mode: "0600"
 paperless_backup_local_dir_mode: "0700"
 paperless_backup_root_mode: "0755"
 paperless_backup_dir_owner: "{{ paperless_backup_owner }}"
