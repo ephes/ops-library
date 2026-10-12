@@ -102,7 +102,7 @@
               - "'redirect-to-https' in rendered_text"
               - "'redirectScheme:' in rendered_text"
               - "'customFrameOptionsValue: DENY' in rendered_text"
-              - "'customFrameOptionsValue: SAMEORIGIN' in rendered_text"
+              - "'SAMEORIGIN' not in rendered_text"
               - "'certResolver: letsencrypt' in rendered_text"
           vars:
             rendered_text: "{{ rendered_file.content | b64decode }}"
