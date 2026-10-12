@@ -27,6 +27,7 @@ voxhelm_remote_worker_force_install: false
 voxhelm_remote_worker_launcher_path: "/etc/voxhelm-remote-worker/worker-launcher.sh"
 voxhelm_remote_worker_id: "atlas"
 voxhelm_remote_worker_allowed_url_hosts: []
+voxhelm_remote_worker_private_url_hosts: []  # allowlisted hosts that may resolve to private IPs
 voxhelm_remote_worker_caffeinate_enabled: true
 voxhelm_remote_worker_caffeinate_args:
   - "-i"
@@ -45,6 +46,14 @@ in ops-library.
 `voxhelm_remote_worker_allowed_url_hosts` must include the same media hosts that
 the control plane accepts for URL jobs; workers re-validate claim input before
 downloading media.
+
+`voxhelm_remote_worker_private_url_hosts` lists the hosts that may resolve to
+private addresses (for example an S3 endpoint on the home network). Workers
+apply the same redirect and private-address checks as the control plane, so
+set it to the control plane's `voxhelm_private_url_hosts`. It is rendered as
+`VOXHELM_PRIVATE_URL_HOSTS` (comma-separated) only when non-empty and must be a
+list of host names without commas or whitespace; validation rejects anything
+else before deployment.
 
 The launcher wraps the worker with `caffeinate -ims` by default so unattended
 macOS hosts do not idle-sleep or spin down disks during long Metal/CPU

@@ -20,6 +20,7 @@ from jinja2 import Environment, StrictUndefined
 ROOT = Path(__file__).resolve().parents[1]
 ROLES = ROOT / "roles"
 VOXHELM = ROLES / "voxhelm_deploy"
+VOXHELM_WORKER = ROLES / "voxhelm_remote_worker_deploy"
 ECHOPORT = ROLES / "echoport_deploy"
 MAILGUN = ROLES / "mailgun_relay_deploy"
 
@@ -327,6 +328,106 @@ class VoxhelmOptionalSettingsTests(unittest.TestCase):
                             str(playbook),
                             "-e",
                             json.dumps({**base, **overrides}),
+                        ],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+                    self.assertEqual(
+                        result.returncode, 0 if valid else 2, result.stdout + result.stderr
+                    )
+
+
+class VoxhelmRemoteWorkerPrivateUrlHostsTests(unittest.TestCase):
+    """The worker re-validates claim input, so it needs the control plane's private hosts."""
+
+    VALIDATE_TASK = "validate | Validate remote worker private URL hosts"
+
+    def setUp(self):
+        self.defaults = _defaults(VOXHELM_WORKER)
+
+    def test_default_is_empty_and_not_rendered(self):
+        self.assertEqual(self.defaults["voxhelm_remote_worker_private_url_hosts"], [])
+        values = _env_lines(_render(VOXHELM_WORKER / "templates/worker.env.j2", self.defaults))
+        self.assertNotIn("VOXHELM_PRIVATE_URL_HOSTS", values)
+        self.assertIn("VOXHELM_ALLOWED_URL_HOSTS", values)
+
+    def test_rendered_comma_separated_when_set(self):
+        values = _env_lines(
+            _render(
+                VOXHELM_WORKER / "templates/worker.env.j2",
+                {
+                    **self.defaults,
+                    "voxhelm_remote_worker_private_url_hosts": [
+                        "nas.local",
+                        "minio.tailnet.ts.net",
+                    ],
+                },
+            )
+        )
+        self.assertEqual(
+            values["VOXHELM_PRIVATE_URL_HOSTS"], "nas.local,minio.tailnet.ts.net"
+        )
+
+    def test_worker_and_control_plane_accept_the_same_host_names(self):
+        control = _task(
+            _tasks(VOXHELM / "tasks/validate.yml"),
+            "validate | Validate the prune schedule and private URL hosts",
+        )
+        worker = _task(_tasks(VOXHELM_WORKER / "tasks/main.yml"), self.VALIDATE_TASK)
+
+        def normalised(conditions, name):
+            return sorted(
+                " ".join(str(condition).split()).replace(" | select", "| select")
+                for condition in conditions
+                if name in str(condition)
+            )
+
+        self.assertEqual(
+            normalised(control["ansible.builtin.assert"]["that"], "voxhelm_private_url_hosts"),
+            [
+                line.replace("voxhelm_remote_worker_private_url_hosts", "voxhelm_private_url_hosts")
+                for line in normalised(
+                    worker["ansible.builtin.assert"]["that"],
+                    "voxhelm_remote_worker_private_url_hosts",
+                )
+            ],
+        )
+
+    def test_validation_rejects_malformed_values(self):
+        task = dict(_task(_tasks(VOXHELM_WORKER / "tasks/main.yml"), self.VALIDATE_TASK))
+        self.assertEqual(task.pop("when"), "voxhelm_remote_worker_enabled | bool")
+        cases = [
+            ([], True),
+            (["nas.local"], True),
+            (["s3.home.xn--wersdrfer-47a.de", "[::1]"], False),
+            (["fd00::1", "minio.tailnet.ts.net"], True),
+            ("nas.local", False),
+            ({"nas.local": False}, False),
+            ([1], False),
+            (["nas.local,evil.example"], False),
+            (["nas local"], False),
+            (["nas.local\n"], False),
+            ([""], False),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            playbook = Path(directory) / "validate.json"
+            playbook.write_text(
+                json.dumps([{"hosts": "localhost", "gather_facts": False, "tasks": [task]}])
+            )
+            for value, valid in cases:
+                with self.subTest(value=value):
+                    result = subprocess.run(
+                        [
+                            "ansible-playbook",
+                            "-i",
+                            "localhost,",
+                            "-c",
+                            "local",
+                            str(playbook),
+                            "-e",
+                            json.dumps({"voxhelm_remote_worker_private_url_hosts": value}),
                         ],
                         check=False,
                         capture_output=True,

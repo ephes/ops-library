@@ -77,7 +77,9 @@ http:
         stsIncludeSubdomains: true
         stsPreload: true
         stsSeconds: 15552000
-        customFrameOptionsValue: SAMEORIGIN
+        # Voxhelm itself answers X-Frame-Options: DENY. Traefik replaces the
+        # backend's header with this value, so it must not be weaker.
+        customFrameOptionsValue: DENY
         customRequestHeaders:
           X-Forwarded-Proto: https
           X-Forwarded-Host: "{{ voxhelm_ingress_traefik_host }}"
