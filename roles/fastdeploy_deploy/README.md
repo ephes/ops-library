@@ -340,3 +340,7 @@ MIT
 ## Author Information
 
 Created for homelab automation - part of the ops-library collection.
+
+The application `.env` is owned by `fastdeploy_user:fastdeploy_group` with mode
+`0600`. systemd reads it via `EnvironmentFile`; application helpers run as
+`fastdeploy_user`, so the deploy user does not need group access to this file.

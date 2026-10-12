@@ -45,10 +45,12 @@
         path: "{{ fastdeploy_env_path }}"
       register: env_file
 
-    - name: Verify | Assert .env exists
+    - name: Verify | Assert .env exists with owner-only permissions
       ansible.builtin.assert:
         that:
           - env_file.stat.exists
+          - env_file.stat.mode == "0600"
+          - env_file.stat.pw_name == "fastdeploy"
         fail_msg: "FastDeploy .env missing at {{ fastdeploy_env_path }}"
 
     - name: Verify | Service unit exists

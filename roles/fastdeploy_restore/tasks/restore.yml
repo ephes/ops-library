@@ -128,7 +128,7 @@
     dest: "{{ fastdeploy_restore_env_file }}"
     owner: "{{ fastdeploy_restore_user }}"
     group: "{{ fastdeploy_restore_group }}"
-    mode: "0640"
+    mode: "0600"
     remote_src: true
 
 - name: "Restore systemd unit files"

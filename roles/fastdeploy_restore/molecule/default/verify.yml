@@ -25,6 +25,17 @@
         path: /home/fastdeploy/site/.env
       register: fastdeploy_verify_env
 
+    - name: Check restored FastDeploy environment permissions
+      ansible.builtin.stat:
+        path: /home/fastdeploy/site/.env
+      register: fastdeploy_env_permissions
+
+    - name: Assert restored environment is owner-only
+      ansible.builtin.assert:
+        that:
+          - fastdeploy_env_permissions.stat.mode == "0600"
+          - fastdeploy_env_permissions.stat.pw_name == "fastdeploy"
+
     - name: Verify FastDeploy service directories
       ansible.builtin.stat:
         path: /home/fastdeploy/site/services/rollback-service/config.txt

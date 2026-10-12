@@ -204,9 +204,9 @@ nyxmon_internal_ip_ranges:  # Customize for your network
 
 By default the role performs a "local source" deployment when `nyxmon_deploy_method: rsync`:
 
-1. Validates that the Nyxmon repository contains `src/django/`, `src/nyxmon/`, `src/nyxboard/`, `pyproject.toml`, and `README.md`.
+1. Validates that the Nyxmon repository contains `src/django/`, `src/nyxmon/`, `src/nyxboard/`, `pyproject.toml`, `uv.lock`, and `README.md`.
 2. Rsyncs those directories/files to the target host.
-3. Runs `uv sync --no-default-groups --no-dev` inside `/home/nyxmon/site`, so Nyxmon is installed directly from the freshly synced sources while only runtime dependencies are resolved from PyPI.
+3. Runs `uv sync --frozen --no-default-groups --no-dev` inside `/home/nyxmon/site`, so Nyxmon is installed directly from the freshly synced sources with runtime dependencies installed from the committed lockfile. A missing lockfile fails deployment.
 
 This workflow keeps the server in lockstep with the local checkout and avoids the broken-wheel issue we hit earlier.
 
@@ -272,9 +272,10 @@ rebuilds the project when `pyproject.toml` gets a new mtime) all reported a
 change, and every deploy restarted nyxmon. For an unchanged checkout the
 syncs, the copies and the uv install now report no change, so no restart is
 requested; a real source, dependency-input or dependency change still notifies
-both restart handlers. The play as a whole is not change-free: the role still
-removes `uv.lock` before each `uv sync` (which recreates it), and that task
-reports "changed" without notifying a restart.
+both restart handlers. The committed `uv.lock` is copied separately and protected
+from the deleting sync; unchanged copies do not request a restart. Source-pyproject
+deployments (including git checkouts) use `--frozen`. The generated PyPI project
+keeps its host-generated lock and resolves only in that compatibility mode.
 
 ### Switching back to PyPI-based deployments
 

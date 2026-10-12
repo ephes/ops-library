@@ -3,6 +3,16 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased
+
+- Echoport and Nyxmon source-pyproject deployments preserve and install from the
+  committed `uv.lock` with `uv sync --frozen`. Rsync validates and copies the
+  lockfile separately, notifying restart handlers only when inputs change.
+  Missing source lockfiles now fail deployment. Nyxmon's generated PyPI project
+  retains dependency resolution without deleting its host-generated lockfile.
+- FastDeploy deploy and restore now write the application `.env` with the documented owner-only mode `0600`;
+  its service and helpers do not require group read access.
+
 ## Unreleased — Edge frame options match the backends (2.31.20)
 
 - The Traefik headers middleware of `archive_deploy`, `chesslab_deploy`,
