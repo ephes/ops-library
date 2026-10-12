@@ -13,9 +13,11 @@
   created or the password changed. **Rollout:** needs an archive checkout
   whose `ensure_admin_user` supports `--password-stdin` (archive main since
   2026-10).
-- `minecraft_java_deploy` runs its RCON test with `MCRCON_PASS` in the
-  environment and `no_log: true` instead of `mcrcon -p <password>` in a shell
-  command.
+- `minecraft_java_deploy` runs its RCON test with `no_log: true` and feeds the
+  password on stdin to a shell wrapper that exports `MCRCON_PASS` for mcrcon,
+  instead of `mcrcon -p <password>` in a shell command. A task-level
+  `environment:` is not used, because Ansible puts it on the remote shell's
+  command line.
 - `metrics_endpoint` sets `no_log: true` on the two `htpasswd` tasks that read
   the password from stdin (module arguments are printed with `-vvv`).
 - `scripts/check_secret_no_log.py` (`just test-secret-no-log`, part of
@@ -38,8 +40,8 @@
 
 ## Unreleased — Nyxmon deploys without spurious restarts
 
-- `nyxmon_deploy` (rsync method) no longer reports a change on every run. The
-  Django source sync ran with `delete: true` and removed the `venv` symlink,
+- `nyxmon_deploy` (rsync method) no longer requests a restart on every run.
+  The Django source sync ran with `delete: true` and removed the `venv` symlink,
   `uv.lock`, `pyproject.toml` and the extra files (`README.md`) that the role
   writes into the site root after it. The sync, the two copy tasks and the uv
   install (which rebuilds the project when `pyproject.toml` gets a new mtime)
@@ -47,6 +49,8 @@
   nyxmon-monitor. The sync now excludes those role-managed paths, anchored to
   the site root, and both syncs pass `--omit-dir-times`, the same pattern as
   the roles fixed in 2.31.16. Real changes still notify both restart handlers.
+  Tasks that do not notify a restart can still report "changed" (the role
+  removes `uv.lock` before each `uv sync`, which recreates it).
 
 ## Unreleased — Delve health check after restart
 

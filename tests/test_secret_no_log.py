@@ -1,6 +1,7 @@
 """Tasks that pass credentials in their arguments must set no_log: true."""
 
 import importlib.util
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -170,6 +171,19 @@ class SecretNoLogCheckTests(unittest.TestCase):
         )
         self.assertEqual(result, [])
 
+    def assertRcon_wrapper(self, argv):
+        """Run the wrapper with a fake mcrcon: password from stdin, not argv."""
+        with tempfile.TemporaryDirectory() as directory:
+            fake = Path(directory) / "mcrcon"
+            fake.write_text('#!/bin/sh\nprintf "%s|%s\\n" "$MCRCON_PASS" "$*"\n')
+            fake.chmod(0o700)
+            rendered = [str(item).replace("{{ minecraft_java_rcon_port }}", "25575") for item in argv]
+            result = subprocess.run(
+                rendered, input="p4ss w0rd$'\"\n", capture_output=True, text=True, check=True,
+                env={"PATH": f"{directory}:/usr/bin:/bin"},
+            )
+        self.assertEqual(result.stdout, "p4ss w0rd$'\"|-H 127.0.0.1 -P 25575 list\n")
+
     def test_role_commands_keep_secrets_off_the_command_line(self):
         def tasks(path):
             return {t["name"]: t for t in yaml.safe_load((ROOT / "roles" / path).read_text())}
@@ -193,10 +207,14 @@ class SecretNoLogCheckTests(unittest.TestCase):
 
         verify = tasks("minecraft_java_deploy/tasks/verify.yml")
         rcon = verify["Test RCON connection"]
-        self.assertNotIn("-p", rcon["ansible.builtin.command"]["argv"])
-        self.assertNotIn("password", yaml.safe_dump(rcon["ansible.builtin.command"]))
-        self.assertEqual(rcon["environment"], {"MCRCON_PASS": "{{ minecraft_java_rcon_password }}"})
+        command = rcon["ansible.builtin.command"]
+        self.assertNotIn("-p", command["argv"])
+        self.assertNotIn("password", yaml.safe_dump(command["argv"]))
+        self.assertEqual(command["stdin"], "{{ minecraft_java_rcon_password }}")
+        # Task environment ends up on the remote shell's command line.
+        self.assertNotIn("environment", rcon)
         self.assertIs(rcon["no_log"], True)
+        self.assertRcon_wrapper(command["argv"])
         self.assertIn("rcon_test.stdout", verify["Display RCON test result"]["ansible.builtin.debug"]["msg"])
 
         metrics = tasks("metrics_endpoint/tasks/main.yml")

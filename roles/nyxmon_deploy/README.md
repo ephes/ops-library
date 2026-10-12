@@ -269,9 +269,12 @@ These excludes are anchored to the site root and added automatically. Both
 syncs pass `--omit-dir-times`. Without this, `delete: true` removed those files
 on every run: the sync, the copies that restored them and the uv install (which
 rebuilds the project when `pyproject.toml` gets a new mtime) all reported a
-change, and every deploy restarted nyxmon. An unchanged checkout now reports
-no change and requests no restart; a real source, dependency-input or
-dependency change still notifies both restart handlers.
+change, and every deploy restarted nyxmon. For an unchanged checkout the
+syncs, the copies and the uv install now report no change, so no restart is
+requested; a real source, dependency-input or dependency change still notifies
+both restart handlers. The play as a whole is not change-free: the role still
+removes `uv.lock` before each `uv sync` (which recreates it), and that task
+reports "changed" without notifying a restart.
 
 ### Switching back to PyPI-based deployments
 

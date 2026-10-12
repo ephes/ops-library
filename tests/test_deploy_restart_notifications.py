@@ -336,7 +336,10 @@ class NyxmonUnchangedDeployIsQuiet(unittest.TestCase):
                     ['rsync', '--delay-updates', '-F', '--delete-after', '--archive', '--no-owner', '--no-group',
                      '--out-format=<<CHANGED>>%i %n%L', *opts, str(src), str(dest)],
                     check=True, capture_output=True, text=True)
-                return [line for line in result.stdout.splitlines() if line.startswith('<<CHANGED>>')]
+                # openrsync (macOS /usr/bin/rsync) reports deletions as a bare
+                # "*deleting <path>" line, without the out-format prefix.
+                return [line for line in result.stdout.splitlines()
+                        if line.startswith('<<CHANGED>>') or line.lstrip().startswith('*deleting')]
 
             def deploy():
                 changed = sync(f'{source}/src/django/', f'{site}/', self.django_opts())
@@ -370,5 +373,7 @@ class NyxmonUnchangedDeployIsQuiet(unittest.TestCase):
             Path(source, 'src/django/config/settings.py').unlink()
             changed = deploy()
             self.assertEqual(len(changed), 2, changed)
+            self.assertTrue(any('manage.py' in line for line in changed), changed)
+            self.assertTrue(any('deleting' in line and 'settings.py' in line for line in changed), changed)
             self.assertFalse(Path(site, 'config/settings.py').exists())
 
