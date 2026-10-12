@@ -19,7 +19,8 @@
       {{ ['src/django/']
          + (nyxmon_rsync_additional_paths | default([]))
          + (nyxmon_rsync_extra_files | default([]))
-         + (['pyproject.toml'] if nyxmon_use_source_pyproject else []) }}
+         + (['pyproject.toml'] if nyxmon_use_source_pyproject else [])
+         + (['uv.lock'] if nyxmon_use_uv and nyxmon_use_source_pyproject else []) }}
   delegate_to: localhost
   become: false
 
@@ -143,6 +144,20 @@
     group: "{{ nyxmon_group }}"
     mode: '0644'
   when:
+    - nyxmon_use_source_pyproject
+  notify:
+    - restart nyxmon
+    - restart nyxmon-monitor
+
+- name: source_rsync | Copy uv.lock from source
+  copy:
+    src: "{{ nyxmon_source_path }}/uv.lock"
+    dest: "{{ nyxmon_site_path }}/uv.lock"
+    owner: "{{ nyxmon_user }}"
+    group: "{{ nyxmon_group }}"
+    mode: '0644'
+  when:
+    - nyxmon_use_uv
     - nyxmon_use_source_pyproject
   notify:
     - restart nyxmon

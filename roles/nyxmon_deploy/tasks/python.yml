@@ -55,16 +55,10 @@
     - restart nyxmon
     - restart nyxmon-monitor
 
-- name: python | Remove stale uv.lock before syncing
-  file:
-    path: "{{ nyxmon_site_path }}/uv.lock"
-    state: absent
-  when: nyxmon_use_uv
-
 - name: python | Build uv sync command arguments
   set_fact:
     nyxmon_uv_sync_cmd: >-
-      uv sync --no-default-groups --no-dev{{ '' if nyxmon_use_source_pyproject else ' --upgrade-package nyxmon' }}
+      uv sync --no-default-groups --no-dev{{ ' --frozen' if nyxmon_use_source_pyproject else '' }}{{ '' if nyxmon_use_source_pyproject else ' --upgrade-package nyxmon' }}
   when: nyxmon_use_uv
 
 - name: python | Test if venv Python is usable

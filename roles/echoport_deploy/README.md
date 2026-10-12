@@ -106,3 +106,13 @@ echoport_health_overdue_grace_minutes: ""  # ECHOPORT_HEALTH_OVERDUE_GRACE_MINUT
 Source and dependency changes notify the existing restart handlers after deployment.
 Echoport restarts its systemd service. Unchanged syncs do not request a restart.
 The `echoport_service_restart_on_change` setting (default `true`) controls these handlers.
+
+## Dependency lockfile
+
+With `echoport_use_uv: true` and `echoport_use_source_pyproject: true` (the
+defaults), the source checkout must contain both `pyproject.toml` and committed
+`uv.lock`. The role copies both files and runs
+`uv sync --frozen --no-default-groups --no-dev`, preserving reviewed versions.
+Missing lockfiles fail deployment. Lockfile changes notify the service restart;
+unchanged copies and uv audits do not. The lockfile is protected from the
+Django directory's deleting rsync. The pip compatibility path is unchanged.

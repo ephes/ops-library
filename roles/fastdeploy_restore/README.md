@@ -25,6 +25,7 @@ metadata-derived facts, verification, and rollback behavior.
 - Optionally captures a safety backup via `fastdeploy_backup` before stopping services.
 - Ensures the deploy user’s SOPS key exists (operators must provide it out-of-band).
 - Stops the FastDeploy systemd service, drops/recreates the PostgreSQL database, restores `services/`, deploy runner scripts/workspace, `.env`, systemd/Traefik/sudoers files, and restarts the service.
+- Restores `.env` with mode `0600`, readable only by `fastdeploy_restore_user`, matching deployment.
 - Re-owns the extracted PostgreSQL dump so the database user can read it before replaying via `psql`.
 - Post-restore verification checks systemd status, retries an HTTP health probe, runs a PostgreSQL query, and compares the restored services count to metadata.
 - On failure, automatically replays the safety snapshot (if present) and reports the rollback status.

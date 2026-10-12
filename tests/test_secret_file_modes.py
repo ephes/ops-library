@@ -156,6 +156,22 @@ def load_tasks(path):
     return {task.get("name"): task for task in iter_tasks(yaml.safe_load(path.read_text()))}
 
 
+class FastdeployEnvironmentModeTests(unittest.TestCase):
+    def test_restore_preserves_owner_only_permissions(self):
+        task = load_tasks(ROLES / 'fastdeploy_restore/tasks/restore.yml')['Restore FastDeploy environment file']
+        self.assertEqual(task['ansible.builtin.copy']['mode'], '0600')
+        self.assertEqual(task['ansible.builtin.copy']['owner'], '{{ fastdeploy_restore_user }}')
+
+    def test_environment_is_readable_only_by_the_service_owner(self):
+        task = load_tasks(ROLES / 'fastdeploy_deploy/tasks/environment.yml')['Create .env file from template']
+        args = task['template']
+        self.assertEqual(args['mode'], '0600')
+        self.assertEqual(args['owner'], '{{ fastdeploy_user }}')
+        unit = (ROLES / 'fastdeploy_deploy/templates/fastdeploy.service.j2').read_text()
+        self.assertIn('User={{ fastdeploy_user }}', unit)
+        self.assertIn('EnvironmentFile={{ fastdeploy_site_path }}/.env', unit)
+
+
 class UnifiMongoCredentialTests(unittest.TestCase):
     role = ROLES / "unifi_deploy"
 

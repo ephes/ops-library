@@ -220,6 +220,37 @@ class RoleRestartNotifications(unittest.TestCase):
         self.assertIn("['/venv']", wagtail['ansible.builtin.set_fact']['wagtail_rsync_excludes_all'])
 
 
+class CommittedLockfiles(unittest.TestCase):
+    def test_source_projects_copy_and_require_lockfiles(self):
+        for role in ('echoport', 'nyxmon'):
+            with self.subTest(role=role):
+                tasks = yaml.safe_load((ROOT / f'roles/{role}_deploy/tasks/source_rsync.yml').read_text())
+                required = next(t for t in tasks if 'Build list of required source paths' in t['name'])
+                env = NativeEnvironment()
+                for source, uv in ((True, True), (True, False), (False, True)):
+                    paths = env.from_string(required['set_fact'][f'{role}_required_source_paths']).render(
+                        **{f'{role}_use_source_pyproject': source, f'{role}_use_uv': uv})
+                    self.assertEqual('uv.lock' in paths, source and uv)
+                copy = next(t for t in tasks if t.get('copy', {}).get('src') == '{{ ' + role + '_source_path }}/uv.lock')
+                self.assertEqual(copy['copy']['dest'], '{{ ' + role + '_site_path }}/uv.lock')
+                self.assertIn(f'{role}_use_source_pyproject', copy['when'])
+                self.assertIn(f'{role}_use_uv', copy['when'])
+                expected = [f'restart {role}'] + (['restart nyxmon-monitor'] if role == 'nyxmon' else [])
+                self.assertEqual(copy['notify'], expected)
+
+    def test_source_sync_is_frozen_and_never_removes_lock(self):
+        for role in ('echoport', 'nyxmon'):
+            tasks = yaml.safe_load((ROOT / f'roles/{role}_deploy/tasks/python.yml').read_text())
+            self.assertFalse(any(t.get('file', {}).get('path', '').endswith('/uv.lock')
+                                 and t['file'].get('state') == 'absent' for t in tasks), role)
+            cmd = next(t['set_fact'][f'{role}_uv_sync_cmd'] for t in tasks
+                       if f'{role}_uv_sync_cmd' in t.get('set_fact', {}))
+            for source in (True, False):
+                rendered = Environment().from_string(cmd).render(**{f'{role}_use_source_pyproject': source})
+                self.assertEqual('--frozen' in rendered, source, (role, source))
+                self.assertEqual('--upgrade-package nyxmon' in rendered, role == 'nyxmon' and not source)
+
+
 class DelveHealthCheckOrder(unittest.TestCase):
     """The delve health check must probe the restarted process, not the old one."""
 
@@ -325,7 +356,7 @@ class NyxmonUnchangedDeployIsQuiet(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             source, site = Path(scratch, 'checkout'), Path(scratch, 'site')
             for file in ('src/django/manage.py', 'src/django/config/settings.py', 'src/nyxmon/__init__.py',
-                         'src/nyxboard/__init__.py', 'pyproject.toml', 'README.md'):
+                         'src/nyxboard/__init__.py', 'pyproject.toml', 'uv.lock', 'README.md'):
                 Path(source, file).parent.mkdir(parents=True, exist_ok=True)
                 Path(source, file).write_text(f'{file}\n')
             site.mkdir()
@@ -348,11 +379,10 @@ class NyxmonUnchangedDeployIsQuiet(unittest.TestCase):
                     changed += sync(f'{source}/{path}', f'{site}/{path}',
                                     self.render(self.additional['ansible.posix.synchronize']['rsync_opts']))
                 # What the role itself then writes into the site root.
-                for file in ('pyproject.toml', 'README.md'):
-                    if not Path(site, file).exists():
+                for file in ('pyproject.toml', 'uv.lock', 'README.md'):
+                    if not Path(site, file).exists() or Path(source, file).read_bytes() != Path(site, file).read_bytes():
                         shutil.copyfile(Path(source, file), Path(site, file))
                         changed.append(f'copy {file}')
-                Path(site, 'uv.lock').write_text('lock\n')
                 Path(site, '.env').write_text('SECRET=1\n')
                 Path(site, 'db.sqlite3').write_text('data\n')
                 Path(site, '.venv').mkdir(exist_ok=True)
@@ -368,6 +398,10 @@ class NyxmonUnchangedDeployIsQuiet(unittest.TestCase):
             self.assertEqual(Path(site, 'pyproject.toml').stat().st_mtime_ns, pyproject_mtime)
             for kept in ('venv', 'uv.lock', '.env', 'db.sqlite3', 'README.md'):
                 self.assertTrue(os.path.lexists(Path(site, kept)), kept)
+
+            Path(source, 'uv.lock').write_text('changed dependency lock\n')
+            self.assertEqual(deploy(), ['copy uv.lock'])
+            self.assertEqual(deploy(), [])
 
             Path(source, 'src/django/manage.py').write_text('changed source\n')
             Path(source, 'src/django/config/settings.py').unlink()
