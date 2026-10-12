@@ -24,6 +24,7 @@ All tunables live in `defaults/main.yml`. The highlights:
 | `unifi_jvm_min_heap_mb` / `unifi_jvm_max_heap_mb` | `1024 / 2048` | Heap sizes used in the systemd service. |
 | `unifi_external_domain` | `home.xn--wersdrfer-47a.de` | External domain used in the Traefik router + debug output. |
 | `unifi_traefik_enabled` | `true` | Toggle Traefik dynamic file management. |
+| `unifi_traefik_ip_allowlist` | `[]` | Source networks (IPs or CIDR ranges) allowed to reach the controller UI through Traefik. Empty leaves the route open to every client that reaches Traefik; set the trusted LAN and tailnet ranges so the admin login is not offered to the internet (other clients get 403). Every entry must parse as an address or `address/prefix`; anything else fails the role during validation. |
 | `unifi_manage_firewall` | `true` | When true, open the standard UniFi TCP/UDP ports via `ufw`. |
 | `unifi_create_homeassistant_user` | `false` | Generate or reconcile a read-only UniFi admin for Home Assistant integration. |
 | `unifi_homeassistant_password` | `""` | Optional pre-defined HA password. Leave empty to auto-generate and store under `unifi_homeassistant_password_store`; when set, existing user password hashes are updated to match. |
@@ -51,5 +52,6 @@ Review the defaults file for Traefik entrypoints, MongoDB repo release, logrotat
 - The role assumes Debian/Ubuntu + systemd. It performs a hard fail on other platforms to avoid half-configured hosts.
 - MongoDB authentication is mandatory: define `unifi_mongodb_password` via SOPS/Ansible Vault before running the role.
 - Upgrading from a release that inlined `MONGO_URI` in the unit: one `unifi_deploy` run writes the argument file, rewrites the unit without the password, and restarts UniFi. Backups taken earlier by `unifi_backup` still contain the old unit with the password (archive files are `0600`). Restoring such an old unit with `unifi_restore` brings the inline password back; rerun `unifi_deploy` afterwards. A unit restored from a newer backup needs the argument file, which `unifi_deploy` creates.
+- The Traefik route has no Basic Auth in front of the controller (the UniFi mobile and device clients cannot answer it). By default it also has no source restriction, so the controller's own login is the only protection for `unifi.<domain>`. Set `unifi_traefik_ip_allowlist` to the trusted networks unless the UI really has to be reachable from the internet. Device adoption (`unifi_inform_url`, port 8080) does not go through Traefik and is not affected.
 - If you already manage Traefik entrypoints elsewhere, keep `unifi_traefik_manage_api_entrypoint: false` to avoid editing `traefik.toml`.
 - For production cutovers, run `unifi_backup` prior to `unifi_deploy` and keep `unifi_remove` ready for clean rollbacks.

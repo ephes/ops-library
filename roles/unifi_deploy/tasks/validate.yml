@@ -18,6 +18,9 @@
       - unifi_deb_url | string | length > 0
     fail_msg: "Set unifi_deb_url to point at a UniFi .deb artifact."
 
+- name: "validate | Check Traefik settings"
+  ansible.builtin.import_tasks: validate_traefik.yml
+
 - name: "validate | Cache derived facts"
   ansible.builtin.set_fact:
     unifi_mongodb_bind_ip_line: "{{ unifi_mongodb_bind_addresses | join(',') }}"
