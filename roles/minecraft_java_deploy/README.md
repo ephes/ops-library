@@ -191,7 +191,8 @@ MCRCON_PASS="PASSWORD" mcrcon -H 127.0.0.1 -P 25575 -t
 - Systemd hardening enabled (`NoNewPrivileges`, `PrivateTmp`, `ProtectSystem`)
 - The RCON password is only in files the `minecraft` user owns: `server.properties`
   (`0640`), `backup-world.sh` (`0750`) and `.env` (`0600`). The backup script passes
-  it to mcrcon via `MCRCON_PASS`, not `-p`, so it does not show up in `ps`.
+  it to mcrcon via `MCRCON_PASS`, not `-p`, so it does not show up in `ps`. The
+  deploy's own RCON test does the same and runs with `no_log: true`.
 - Hourly backup archives include `server.properties`; the script creates them `0600`
   (`umask 077`), and each deploy tightens existing archives to `0600`.
 

@@ -3,6 +3,26 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Deploy secrets off command lines
+
+- `archive_deploy` passes the admin password to `manage.py ensure_admin_user`
+  on standard input (`--password-stdin`) with `no_log: true` instead of
+  `--password` on the command line, where Ansible printed it in every failure
+  result and `ps` showed it. A follow-up task reports a failure with the
+  return code and stderr. The task reports "changed" only when the user was
+  created or the password changed. **Rollout:** needs an archive checkout
+  whose `ensure_admin_user` supports `--password-stdin` (archive main since
+  2026-10).
+- `minecraft_java_deploy` runs its RCON test with `MCRCON_PASS` in the
+  environment and `no_log: true` instead of `mcrcon -p <password>` in a shell
+  command.
+- `metrics_endpoint` sets `no_log: true` on the two `htpasswd` tasks that read
+  the password from stdin (module arguments are printed with `-vvv`).
+- `scripts/check_secret_no_log.py` (`just test-secret-no-log`, part of
+  `just lint-strict`) now also fails on `command`/`shell`/`raw` tasks that
+  render a secret-named variable into the command line or `stdin` without
+  `no_log: true`. Nothing is baselined.
+
 ## Unreleased — Time synchronization check
 
 - Add `time_sync_check`: a read-only role that verifies a systemd host's clock

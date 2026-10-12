@@ -222,7 +222,7 @@ lint: venv
 # Static check: tasks that send credentials over HTTP (uri headers, url_password,
 # curl -H Authorization) must set no_log: true so -vvv output cannot print them.
 test-secret-no-log: venv
-    @echo "Checking that credential-carrying uri/command tasks set no_log..."
+    @echo "Checking that uri/command tasks carrying credentials or secret variables set no_log..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_secret_no_log
 
 # Run strict ansible-lint (fails on any finding not listed in .ansible-lint-ignore)

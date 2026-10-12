@@ -80,10 +80,14 @@
       - ensure_admin_user
       - --username
       - "{{ archive_admin_username }}"
-      - --password
-      - "{{ archive_admin_password }}"
       - --email
       - "{{ archive_admin_email }}"
+      - --password-stdin
+    # The password goes through stdin, never argv: Ansible prints the command
+    # line in every failure result and it shows up in `ps`. stdin is preferred
+    # over `environment:` here because Ansible puts task environment variables
+    # on the remote shell's command line (visible with -vvv and briefly in `ps`).
+    stdin: "{{ archive_admin_password }}"
   args:
     chdir: "{{ archive_django_path }}"
   environment:
@@ -111,3 +115,19 @@
     ARCHIVE_MEDIA_STORAGE_ADDRESSING_STYLE: "{{ archive_media_storage_addressing_style }}"
   become: true
   become_user: "{{ archive_user }}"
+  register: archive_ensure_admin_user
+  changed_when: >-
+    'Created admin user' in (archive_ensure_admin_user.stdout | default(''))
+    or ('Updated admin user' in (archive_ensure_admin_user.stdout | default(''))
+        and '(password unchanged)' not in (archive_ensure_admin_user.stdout | default('')))
+  failed_when: false
+  no_log: true
+
+# The task above is no_log, so report its failure here. The command's own
+# output names the user and the reason, never the password.
+- name: django | Report a failed archive admin user update
+  ansible.builtin.fail:
+    msg: >-
+      manage.py ensure_admin_user failed (rc={{ archive_ensure_admin_user.rc | default('unknown') }}):
+      {{ (archive_ensure_admin_user.stderr | default(archive_ensure_admin_user.msg | default(''), true)) | trim }}
+  when: archive_ensure_admin_user.rc | default(1) != 0

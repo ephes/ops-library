@@ -29,12 +29,24 @@
     delay: 5
   when: minecraft_java_rcon_enabled
 
+# The password goes to mcrcon through MCRCON_PASS, not -p: a command line is
+# printed in task results and visible in `ps` for as long as mcrcon runs.
+# mcrcon cannot read it from stdin. The result is shown below.
 - name: Test RCON connection
-  ansible.builtin.shell: |
-    mcrcon -H 127.0.0.1 -P {{ minecraft_java_rcon_port }} -p "{{ minecraft_java_rcon_password }}" "list"
+  ansible.builtin.command:
+    argv:
+      - mcrcon
+      - -H
+      - 127.0.0.1
+      - -P
+      - "{{ minecraft_java_rcon_port }}"
+      - list
+  environment:
+    MCRCON_PASS: "{{ minecraft_java_rcon_password }}"
   register: rcon_test
   changed_when: false
   failed_when: false
+  no_log: true
   when: minecraft_java_rcon_enabled
 
 - name: Display RCON test result

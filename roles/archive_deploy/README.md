@@ -119,3 +119,15 @@ being deleted during redeploys even when the environment has already migrated to
 
 Source and dependency changes notify the existing restart handlers after deployment.
 Archive restarts both its web service and the metadata worker. Unchanged syncs do not request a restart.
+
+## Admin password handling
+
+The role runs `manage.py ensure_admin_user --password-stdin` and feeds the
+password on standard input with `no_log: true`. It is never passed as
+`--password`, so it appears neither in Ansible's failure output nor in the
+process list. This needs an archive checkout whose `ensure_admin_user`
+supports `--password-stdin` (archive main since 2026-10); an older checkout
+fails with an unrecognized-argument error. Because the task is `no_log`, a
+separate task reports a failure with the command's return code and stderr.
+The task reports "changed" only when the user was created or the password
+actually changed.
