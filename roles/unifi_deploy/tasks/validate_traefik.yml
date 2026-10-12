@@ -1,0 +1,60 @@
+---
+- name: "validate_traefik | Ensure Traefik IP allowlist is a list of networks"
+  ansible.builtin.assert:
+    that:
+      - unifi_traefik_ip_allowlist is not string
+      - unifi_traefik_ip_allowlist is not mapping
+      - unifi_traefik_ip_allowlist is iterable
+      - >-
+        unifi_traefik_ip_allowlist
+        | reject('string') | list | length == 0
+    fail_msg: >-
+      unifi_traefik_ip_allowlist must be a list of IP addresses or CIDR ranges
+      (for example ["192.168.0.0/16", "100.64.0.0/10"]); an empty list leaves
+      the route unrestricted.
+    quiet: true
+  when: unifi_traefik_enabled | bool
+
+# Exact parsing, not a pattern: 192.168.1.0/33, 999.999.999.999 or fd7a::/129
+# look like networks, but Traefik cannot build the middleware from them and the
+# controller route would disappear after a deploy that reported success.
+# Python's ipaddress module needs no extra collection and the controller always
+# has python3. Traefik (Go) takes neither whitespace, an IPv6 zone nor a
+# dotted netmask in place of the prefix length.
+- name: "validate_traefik | Verify Traefik IP allowlist entries parse as networks"
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "-c"
+      - |
+        import ipaddress, json, sys
+        invalid = []
+        for entry in json.loads(sys.argv[1]):
+            try:
+                if entry != "".join(entry.split()) or "%" in entry:
+                    raise ValueError("whitespace or zone")
+                if "/" in entry:
+                    prefix = entry.partition("/")[2]
+                    if not (prefix.isascii() and prefix.isdigit()):
+                        raise ValueError("prefix length is not a number")
+                    ipaddress.ip_network(entry, strict=False)
+                else:
+                    ipaddress.ip_address(entry)
+            except ValueError:
+                invalid.append(entry)
+        if invalid:
+            print(
+                "unifi_traefik_ip_allowlist entries are not IP addresses or CIDR ranges: "
+                + ", ".join(repr(entry) for entry in invalid)
+            )
+            sys.exit(1)
+      - "{{ unifi_traefik_ip_allowlist | to_json }}"
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  changed_when: false
+  register: unifi_traefik_ip_allowlist_check
+  failed_when: unifi_traefik_ip_allowlist_check.rc != 0
+  when:
+    - unifi_traefik_enabled | bool
+    - unifi_traefik_ip_allowlist | length > 0

@@ -1,0 +1,164 @@
+---
+# Runs the real unifi_deploy Traefik template and its allowlist validation
+# under Ansible: the default must render the file the role wrote before the
+# allowlist existed, a list of networks adds the ipAllowList middleware, and a
+# value that is not a list of networks is refused before anything is written.
+
+- name: Test the optional UniFi Traefik IP allowlist
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - ../roles/unifi_deploy/defaults/main.yml
+
+  vars:
+    unifi_role: "{{ playbook_dir }}/../roles/unifi_deploy"
+    unifi_allowlist_task: "validate_traefik | Ensure Traefik IP allowlist is a list of networks"
+    unifi_trusted_networks:
+      - "192.168.0.0/16"
+      - "100.64.0.0/10"
+      - "fd7a:115c:a1e0::/48"
+      - "192.168.178.20"
+    unifi_previous_output: |
+      http:
+        routers:
+          unifi:
+            rule: "Host(`unifi.home.xn--wersdrfer-47a.de`)"
+            entryPoints:
+              - "web-secure"
+            service: unifi
+            tls:
+              certResolver: "letsencrypt"
+
+        services:
+          unifi:
+            loadBalancer:
+              servers:
+                - url: "https://127.0.0.1:8443"
+              serversTransport: unifi-transport
+
+        serversTransports:
+          unifi-transport:
+            insecureSkipVerify: true
+    unifi_parse_task: "validate_traefik | Verify Traefik IP allowlist entries parse as networks"
+    # Not a list of strings: refused by the structure check.
+    unifi_rejected_shapes:
+      - "192.168.0.0/16"
+      - { lan: "192.168.0.0/16" }
+      - ["192.168.0.0/16", 10]
+      - [["192.168.0.0/16"]]
+    # Strings that are not an address or a CIDR range: refused by the parser.
+    unifi_rejected_entries:
+      - ""
+      - "lan"
+      - "deadbeef"
+      - "192.168.1.0/33"
+      - "999.999.999.999/99"
+      - "999.999.999.999"
+      - "fd7a::/129"
+      - "1.2.3"
+      - "192.168.0.0/16/8"
+      - "192.168.0.0/"
+      - "192.168.0.0/255.255.0.0"
+      - "10.0.0.0/+8"
+      - "fe80::1%eth0"
+      - " 192.168.0.0/16"
+      - "192.168.0.0/16 "
+      - "192.168.0.0/16\n"
+      - "192.168.0.0/16\"\n      - evil"
+
+  tasks:
+    - name: Create a scratch directory
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: unifi-allowlist
+      register: unifi_scratch
+
+    - name: Run the test and always remove the scratch directory
+      block:
+        - name: Assert the allowlist defaults to empty
+          ansible.builtin.assert:
+            that:
+              - unifi_traefik_ip_allowlist == []
+
+        - name: Render the route with defaults
+          ansible.builtin.template:
+            src: "{{ unifi_role }}/templates/unifi.traefik.yml.j2"
+            dest: "{{ unifi_scratch.path }}/default.yml"
+            mode: "0600"
+
+        - name: Render the route with an allowlist
+          ansible.builtin.template:
+            src: "{{ unifi_role }}/templates/unifi.traefik.yml.j2"
+            dest: "{{ unifi_scratch.path }}/limited.yml"
+            mode: "0600"
+          vars:
+            unifi_traefik_ip_allowlist: "{{ unifi_trusted_networks }}"
+
+        - name: Read the rendered routes
+          ansible.builtin.slurp:
+            path: "{{ unifi_scratch.path }}/{{ item }}"
+          loop:
+            - default.yml
+            - limited.yml
+          register: unifi_rendered
+
+        - name: Assert the default route is the previous file, byte for byte
+          ansible.builtin.assert:
+            that:
+              - (unifi_rendered.results[0].content | b64decode) == unifi_previous_output
+
+        - name: Assert the allowlist restricts the router and changes nothing else
+          ansible.builtin.assert:
+            that:
+              - limited.http.routers | list == ['unifi']
+              - limited.http.routers.unifi.middlewares == ['unifi-ipallow']
+              - limited.http.middlewares == expected_middlewares
+              - limited.http.routers.unifi | dict2items | rejectattr('key', 'equalto', 'middlewares') | list | items2dict == plain.http.routers.unifi
+              - limited.http.services == plain.http.services
+              - limited.http.serversTransports == plain.http.serversTransports
+              - "'middlewares' not in plain.http"
+          vars:
+            plain: "{{ unifi_rendered.results[0].content | b64decode | from_yaml }}"
+            limited: "{{ unifi_rendered.results[1].content | b64decode | from_yaml }}"
+            expected_middlewares:
+              unifi-ipallow:
+                ipAllowList:
+                  sourceRange: "{{ unifi_trusted_networks }}"
+
+        - name: Accept an empty list and a list of networks
+          ansible.builtin.include_tasks: "{{ unifi_role }}/tasks/validate_traefik.yml"
+          vars:
+            unifi_traefik_ip_allowlist: "{{ item }}"
+          loop:
+            - []
+            - "{{ unifi_trusted_networks }}"
+
+        - name: Refuse values that are not a list of strings
+          ansible.builtin.include_tasks: tasks/expect_unifi_allowlist_refused.yml
+          loop: "{{ unifi_rejected_shapes }}"
+          loop_control:
+            loop_var: unifi_rejected_allowlist
+          vars:
+            unifi_expected_failed_task: "{{ unifi_allowlist_task }}"
+
+        - name: Refuse entries that are not an address or a CIDR range
+          ansible.builtin.include_tasks: tasks/expect_unifi_allowlist_refused.yml
+          loop: "{{ unifi_rejected_entries }}"
+          loop_control:
+            loop_var: unifi_rejected_entry
+          vars:
+            unifi_rejected_allowlist: ["192.168.0.0/16", "{{ unifi_rejected_entry }}"]
+            unifi_expected_failed_task: "{{ unifi_parse_task }}"
+
+        - name: Skip the check when the role does not manage Traefik
+          ansible.builtin.include_tasks: "{{ unifi_role }}/tasks/validate_traefik.yml"
+          vars:
+            unifi_traefik_enabled: false
+            unifi_traefik_ip_allowlist: "not used"
+      always:
+        - name: Remove the scratch directory
+          ansible.builtin.file:
+            path: "{{ unifi_scratch.path }}"
+            state: absent

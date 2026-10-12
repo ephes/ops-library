@@ -107,6 +107,12 @@ unifi_traefik_config_path: "{{ unifi_traefik_dynamic_dir }}/unifi.yml"
 unifi_traefik_entrypoints:
   - "web-secure"
 unifi_traefik_certresolver: "letsencrypt"
+# Source networks allowed to reach the controller UI through Traefik. Empty
+# (the default) keeps the route open to every client that can reach Traefik,
+# with only the controller's own login in front. Set it to the trusted LAN and
+# tailnet ranges (for example the homelab_internal_ip_ranges list) so the
+# admin UI is not offered to the internet. Other clients get 403.
+unifi_traefik_ip_allowlist: []
 unifi_traefik_manage_api_entrypoint: false
 unifi_traefik_api_entrypoint: "traefik"
 unifi_traefik_api_port: 9090

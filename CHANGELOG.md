@@ -3,6 +3,21 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Optional source restriction for the UniFi controller route
+
+- `unifi_deploy` adds `unifi_traefik_ip_allowlist` (default `[]`). The role
+  publishes the controller admin UI as `unifi.<domain>` with a `Host()` rule
+  only: no Basic Auth and no source restriction, so the controller's own login
+  is all that stands between the internet and the network configuration. With
+  a list of IP addresses or CIDR ranges the router gets an `ipAllowList`
+  middleware and other clients receive 403. The empty default renders the same
+  file as before, byte for byte, so nothing changes until the variable is set.
+  A value that is not a list of parseable networks (a bare string, a name, an
+  empty entry, `192.168.1.0/33`, `999.999.999.999`) is refused during
+  validation, before the role changes anything; Traefik would otherwise drop
+  the route.
+  Device adoption (port 8080) does not go through Traefik and is unaffected.
+
 ## Unreleased — Frozen application lockfiles and owner-only FastDeploy .env (2.31.22)
 
 - Echoport and Nyxmon source-pyproject deployments preserve and install from the

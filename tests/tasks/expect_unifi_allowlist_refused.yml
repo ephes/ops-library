@@ -1,0 +1,20 @@
+---
+- name: Check one rejected UniFi Traefik allowlist value
+  block:
+    - name: Run the allowlist validation with the rejected value
+      ansible.builtin.include_tasks: "{{ unifi_role }}/tasks/validate_traefik.yml"
+      vars:
+        unifi_traefik_ip_allowlist: "{{ unifi_rejected_allowlist }}"
+
+    - name: Fail when the rejected value was accepted
+      ansible.builtin.fail:
+        msg: "unifi_traefik_ip_allowlist accepted {{ unifi_rejected_allowlist | to_json }}"
+  rescue:
+    - name: Assert the refusal came from the expected allowlist check
+      ansible.builtin.assert:
+        that:
+          - ansible_failed_task.name == unifi_expected_failed_task
+          - >-
+            'IP addresses or CIDR ranges' in
+            (ansible_failed_result.msg ~ ' ' ~ (ansible_failed_result.stdout | default('')))
+        quiet: true
