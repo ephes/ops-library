@@ -581,6 +581,9 @@
 
 # uv replaces an environment on another working interpreter itself, but aborts
 # on one whose interpreter cannot start -- what a vanished base Python leaves.
+# Every task that becomes the service user switches with a login shell (-i):
+# a root connection's working directory is unreadable to that user, and a
+# module started there dies in getcwd before it does anything.
 - name: runtime | Probe the existing environment's interpreter
   ansible.builtin.command:
     argv: ["{{ daybook_sessions_checkout_path }}/.venv/bin/python", -I, -c, ""]
@@ -589,6 +592,7 @@
   failed_when: false
   become: "{{ ansible_user_id != daybook_sessions_service_user }}"
   become_user: "{{ daybook_sessions_service_user }}"
+  become_flags: "-i"
   when:
     - daybook_sessions_enabled | bool
 
@@ -598,6 +602,7 @@
     state: absent
   become: "{{ ansible_user_id != daybook_sessions_service_user }}"
   become_user: "{{ daybook_sessions_service_user }}"
+  become_flags: "-i"
   when:
     - daybook_sessions_enabled | bool
     - daybook_sessions_venv_probe.rc | default(0) != 0
@@ -637,6 +642,7 @@
       - "{{ daybook_sessions_python_version }}"
   become: "{{ ansible_user_id != daybook_sessions_service_user }}"
   become_user: "{{ daybook_sessions_service_user }}"
+  become_flags: "-i"
   changed_when: false
   when:
     - daybook_sessions_enabled | bool

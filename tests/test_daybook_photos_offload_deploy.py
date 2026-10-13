@@ -17,7 +17,7 @@ class DaybookPhotosOffloadDeployTests(unittest.TestCase):
         sync = sync.split("- name:", 1)[0]
         self.assertIn("- UV_PYTHON_PREFERENCE=only-managed", sync)
         self.assertLess(
-            tasks.index("- name: runtime | Remove an environment whose interpreter cannot start"),
+            tasks.index("- name: runtime | Remove an environment that does not run the pinned Python"),
             tasks.index("- name: runtime | Recreate the emptied Photos offload environment directory"),
         )
         self.assertLess(
@@ -25,10 +25,22 @@ class DaybookPhotosOffloadDeployTests(unittest.TestCase):
             tasks.index("- name: runtime | Synchronize pinned Daybook runtime"),
         )
         # The checkout is root-owned: the service user could not unlink .venv.
-        removal = tasks.split("- name: runtime | Remove an environment whose interpreter cannot start", 1)[1]
+        removal = tasks.split("- name: runtime | Remove an environment that does not run the pinned Python", 1)[1]
         removal = removal.split("- name:", 1)[0]
         self.assertIn("become_user: root", removal)
         self.assertIn("daybook_photos_offload_venv_python.stat.exists", removal)
+        self.assertIn("daybook_photos_offload_venv_probe.rc | default(0) != 0", removal)
+        # uv unlinks an environment on another Python, which the service user
+        # cannot do here either: the probe is the exact check made after the sync.
+        probe = tasks.split("- name: runtime | Probe whether the existing environment runs the pinned Python", 1)[1]
+        probe = probe.split("- name:", 1)[0]
+        require = tasks.split("- name: runtime | Require the environment to run exactly the pinned Python", 1)[1]
+        require = require.split("- name:", 1)[0]
+        check = require.split("      - -c\n", 1)[1].split("  become:", 1)[0]
+        self.assertIn("v == sys.argv[1]", check)
+        self.assertIn('- "{{ daybook_photos_offload_python_version }}"', check)
+        self.assertIn(check, probe)
+        self.assertIn("failed_when: false", probe)
         recreate = tasks.split("- name: runtime | Recreate the emptied Photos offload environment directory", 1)[1]
         recreate = recreate.split("- name:", 1)[0]
         self.assertIn('mode: "0700"', recreate)
