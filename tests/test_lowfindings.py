@@ -97,6 +97,30 @@ def test_proxy_validation_wired_and_rejects_invalid_lists():
     ]
 
 
+@pytest.mark.parametrize(
+    "stdout,changed",
+    [
+        ("Database is up to date\n", False),
+        ("all database updates are applied (version 1845)\n", False),
+        ("all database updates are applied (version 9999)\n", False),
+        (
+            "<p>Updating database:</p><p>- old version: 1844; target version: 1845</p>\n"
+            "<p>updating to version 1845 (all databases)...\n &nbsp; done\n",
+            True,
+        ),
+        ("", True),
+        ("Unexpected output\n", True),
+    ],
+)
+def test_postfixadmin_schema_change_detection(stdout, changed):
+    task = tasks("roles/postfixadmin_deploy/tasks/schema.yml")[0]
+    result = {"stdout": stdout, "rc": 0}
+    assert (
+        ENV.compile_expression(task["changed_when"])(**{task["register"]: result})
+        is changed
+    )
+
+
 def test_postfixadmin_queries_are_protected():
     checker = load_module(ROOT / "scripts/check_secret_no_log.py")
     for path in (
