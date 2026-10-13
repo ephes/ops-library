@@ -66,3 +66,7 @@ password when migrating to avoid changing the integration credentials.
 
 MongoDB scripts use unique remote temporary files (0600), removed in `always` blocks even if rendering or execution fails.
 Temporary build/script blocks are skipped in check mode because `tempfile` cannot allocate paths there.
+
+## Task credential handling
+
+Authenticated mongosh tasks read credentials from a 0600 JavaScript file in a unique private temporary directory, run with --file, and remove the directory in always on success or failure. Home Assistant password hashing reads its inputs through stdin. Existing retries, user-management recovery and removal toggles are preserved.

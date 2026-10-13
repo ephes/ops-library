@@ -33,6 +33,8 @@
 
 - `paperless_restore`: Document importer passphrases now use stdin, with no stdin read for an empty passphrase. PostgreSQL CLI tasks use a temporary 0600 passfile owned by the executing database user in a unique 0700 directory, removed in an always block on success or failure. Only the PGPASSFILE path appears in the task environment. Empty passwords retain the existing libpq authentication fallback. Passfile passwords must not contain CR or LF; colons and backslashes are escaped. Restore SQL, rollback order and database connection options are unchanged.
 
+- `unifi_deploy`: MongoDB user creation JSON-quotes credentials and database names and executes with --file, preserving literal quotes/backslashes and reporting script failures through the existing recovery path. Authenticated mongosh tasks read credentials from a 0600 JavaScript file in a unique private temporary directory, run with --file, and remove the directory in always on success or failure. Home Assistant password hashing reads its inputs through stdin. Existing retries, user-management recovery and removal toggles are preserved.
+
 ## Unreleased — Daybook sessions and Photos offload deploy again on a root connection (2.31.30)
 
 - `daybook_sessions_deploy`: the environment probe, the removal of a broken
