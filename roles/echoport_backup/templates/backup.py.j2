@@ -25,6 +25,8 @@ os.environ['PYTHONUNBUFFERED'] = '1'
 # Configuration from Ansible
 MC_PATH = "{{ echoport_backup_mc_install_path }}"
 MINIO_ALIAS = "{{ echoport_backup_minio_alias }}"
+# mc aliases of per-target MinIO accounts, by first segment of the object key.
+MINIO_PREFIX_ALIASES = {{ echoport_backup_minio_prefix_aliases | to_json }}
 DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
 TEMP_DIR = "{{ echoport_backup_temp_dir }}"
 
@@ -319,9 +321,14 @@ def create_tarball(source_dir: Path, tarball_path: Path) -> bool:
         return False
 
 
+def minio_alias_for(key: str) -> str:
+    """Return the mc alias whose account may access this object key."""
+    return MINIO_PREFIX_ALIASES.get(key.split("/", 1)[0], MINIO_ALIAS)
+
+
 def upload_to_minio(tarball_path: Path, bucket: str, key: str) -> bool:
     """Upload tarball to MinIO using mc."""
-    dest = f"{MINIO_ALIAS}/{bucket}/{key}"
+    dest = f"{minio_alias_for(key)}/{bucket}/{key}"
     print(f"Uploading to MinIO: {dest}", file=sys.stderr)
 
     try:
@@ -345,7 +352,7 @@ def upload_to_minio(tarball_path: Path, bucket: str, key: str) -> bool:
 
 def download_from_minio(bucket: str, key: str, dest_path: Path) -> bool:
     """Download tarball from MinIO using mc."""
-    src = f"{MINIO_ALIAS}/{bucket}/{key}"
+    src = f"{minio_alias_for(key)}/{bucket}/{key}"
     print(f"Downloading from MinIO: {src}", file=sys.stderr)
 
     try:
@@ -1043,7 +1050,7 @@ def main_backup(config: Optional[Dict], context: Dict, cenv: Dict) -> int:
 
         # Use mc stat to verify the object exists
         verify_result = subprocess.run(
-            [MC_PATH, "stat", f"{MINIO_ALIAS}/{bucket}/{storage_key}"],
+            [MC_PATH, "stat", f"{minio_alias_for(storage_key)}/{bucket}/{storage_key}"],
             capture_output=True,
             text=True
         )

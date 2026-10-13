@@ -93,6 +93,22 @@ minio_service_accounts: []
 #   allowed_buckets:
 #     - backups
 
+# Scoped backup account (tasks_from: backup_account; see README "Backup accounts").
+# One MinIO user per backup target that may read, write and list only
+# <bucket>/<prefix>/ for each prefix. It is not part of the main deploy.
+minio_backup_account_name: ""          # target name; the policy is backup-<name>
+minio_backup_account_secret_key: ""    # REQUIRED via SOPS, at least 32 characters
+# MinIO limits a user name to 20 characters, so it is derived from the target
+# name. It is an identifier, not a secret: it shows up in mc arguments.
+minio_backup_account_user: "bk-{{ (minio_backup_account_name | hash('sha256'))[:17] }}"
+minio_backup_account_bucket: backups
+minio_backup_account_prefixes:
+  - "{{ minio_backup_account_name }}"
+# Backup runners only upload, read back and download. Deleting expired archives
+# is the retention job's business and needs its own account.
+minio_backup_account_allow_delete: false
+minio_backup_account_policy_dir: /etc/minio/policies
+
 # Health & service
 minio_systemd_restart: always
 minio_healthcheck_timeout: 30

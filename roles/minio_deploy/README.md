@@ -154,6 +154,48 @@ VERSION="RELEASE.2024-10-02T17-50-41Z"
 curl -s "https://dl.min.io/client/mc/release/linux-amd64/archive/mc.${VERSION}.sha256sum"
 ```
 
+## Backup accounts
+
+`tasks_from: backup_account` creates or updates one MinIO user for one backup
+target. It is not part of the deploy: a play on the MinIO host includes it per
+target, after the bootstrap has configured the admin alias
+(`minio_host_alias`) for root.
+
+```yaml
+- name: Create the scoped MinIO account of the delve backup
+  ansible.builtin.include_role:
+    name: local.ops_library.minio_deploy
+    tasks_from: backup_account
+  vars:
+    minio_backup_account_name: delve
+    minio_backup_account_secret_key: "{{ secrets.delve }}"  # 32 to 40 characters
+```
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `minio_backup_account_name` | `""` | Target name. The policy is `backup-<name>`. |
+| `minio_backup_account_secret_key` | `""` | Secret key, 32 to 40 characters. |
+| `minio_backup_account_user` | `bk-` + 17 hex digits of the name's SHA-256 | MinIO user name (3 to 20 characters). An identifier, not a secret. |
+| `minio_backup_account_bucket` | `backups` | Bucket the account works in. |
+| `minio_backup_account_prefixes` | `[<name>]` | Key prefixes the account may use. |
+| `minio_backup_account_allow_delete` | `false` | Also allow `s3:DeleteObject` below the prefixes. |
+| `minio_backup_account_policy_dir` | `/etc/minio/policies` | Where the policy document is kept on the host. |
+
+The policy allows `s3:GetObject` and `s3:PutObject` on
+`<bucket>/<prefix>/*`, `s3:ListBucket` on the bucket for keys below the
+prefixes, and `s3:GetBucketLocation`. That covers `mc cp` in both directions
+(including multipart uploads), `mc stat` and `mc ls` of the own prefix. The
+account cannot list or read another prefix or bucket, delete anything, or use
+the admin API. It can overwrite its own objects; enable bucket versioning if
+that matters.
+
+The tasks are idempotent. The policy is written to the server and
+`mc admin user add` runs on every pass, so a failed earlier run, a change made
+by hand and a rotated secret are all corrected,
+and the run ends by proving that the user is enabled, holds exactly
+`backup-<name>` and belongs to no group. The secret is passed to mc on stdin
+in a `no_log` task and never appears in a command line.
+
 ## Bootstrap Features
 
 ### Buckets
