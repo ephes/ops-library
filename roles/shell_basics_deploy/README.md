@@ -7,7 +7,7 @@ The package and idempotence path is exercised on Debian 13 in Molecule.
 ## Features
 
 - Installs modern CLI defaults: `fish`, `eza`, `fd-find` (with `fd` symlink), `ripgrep`, `bat` (`batcat` symlink), `fzf`, `tmux`, `tealdeer`, `just`, `btop`, `bmon`, `sysstat` (`iostat`/`mpstat`), `iotop`, and common utilities.
-- Fetches the latest chezmoi release via the official installer (no pinned, outdated `.deb`).
+- Installs a pinned chezmoi release archive verified by SHA-256.
 - Adds a managed block to `~/.config/fish/config.fish` using `fish_add_path` so existing user content is preserved; optional extra lines supported.
 - Switches the target user's login shell to fish and sets the system `editor` alternative to `vim.basic`.
 - All paths and user details are configurable.
@@ -54,9 +54,9 @@ shell_basics_fish_extra_config: []     # Extra lines appended in the managed fis
 shell_basics_set_default_editor: true
 shell_basics_default_editor_path: /usr/bin/vim.basic
 
-# chezmoi install (upstream installer)
+# chezmoi install (verified release archive)
 shell_basics_manage_chezmoi: true
-shell_basics_chezmoi_version: latest
+shell_basics_chezmoi_version: "2.73.1"
 shell_basics_chezmoi_install_dir: /usr/local/bin
 shell_basics_chezmoi_bin_path: "{{ shell_basics_chezmoi_install_dir }}/chezmoi"
 ```
@@ -78,6 +78,23 @@ shell_basics_chezmoi_bin_path: "{{ shell_basics_chezmoi_install_dir }}/chezmoi"
 ## Notes
 
 - The role symlinks `~/.local/bin/bat` → `/usr/bin/batcat` and `~/.local/bin/fd` → `/usr/bin/fdfind` when present.
-- Chezmoi is installed from https://get.chezmoi.io using the latest release unless `shell_basics_chezmoi_version` is pinned.
+- Chezmoi is installed from a pinned GitHub release archive, verified before extraction.
 - Fish config is managed via a dedicated block; existing content outside that block is left intact.
 - Intended for Debian/Ubuntu targets (uses `apt`). MIT licensed.
+
+## Verified release downloads
+
+Verified Linux amd64/arm64 archives install only the chezmoi binary at `shell_basics_chezmoi_bin_path`, owned by root, mode 0755. A differing installed version is replaced; a matching version is left alone. `latest` is no longer supported.
+
+Pinned defaults (checksum map keys identify the release architecture/target):
+
+| Variable | Default |
+| --- | --- |
+| `shell_basics_chezmoi_version` | `2.73.1` |
+| `shell_basics_chezmoi_checksum` | amd64: `sha256:a3f958acb7d0e5d53fa43c2eec9bc8ae3b4fba8bcbfdce29a8881ca3ffc20a53`<br>arm64: `sha256:e60275b27f505ae2086bfb87b144eacf7377a89803120f6bd933d1852a93b0c6` |
+
+To update, bump the version and checksum together. Fetch the SHA-256 from the
+project’s published checksum file or release-page asset digest over HTTPS,
+and update the source URL comment beside the checksum in `defaults/main.yml`.
+Never reuse the old checksum for a new version. Supply matching checksums for
+every enabled architecture. Run `just test-root-downloads` before deploying.
