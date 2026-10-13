@@ -53,11 +53,25 @@
     group: "{{ fd_self_group }}"
     mode: '0600'
 
+- name: deploy_staging | Render management shell environment
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ fd_staging_dir }}/.env.shell"
+    owner: "{{ fd_self_user }}"
+    group: "{{ fd_self_group }}"
+    mode: "0600"
+  vars:
+    task_shell_environment: true
+  no_log: true
+
 - name: Run database migrations
   shell: |
     export PATH="{{ fd_self_uv_install_dir }}:${PATH}"
     cd {{ fd_staging_dir }}
     source .venv/bin/activate
+    set -a
+    . ./.env.shell || exit $?
+    set +a
     # FastDeploy uses SQLAlchemy with Alembic migrations
     if [ -f "alembic.ini" ]; then
       alembic upgrade head
@@ -69,7 +83,6 @@
   become_user: "{{ fd_self_user }}"
   environment:
     HOME: "/home/{{ fd_self_user }}"
-    DATABASE_URL: "postgresql+asyncpg://{{ postgres_user | default('fastdeploy') }}:{{ postgres_password }}@{{ postgres_host }}:{{ postgres_port | default('5432') }}/{{ postgres_db_name }}"
   register: migration_result
   failed_when: false  # Don't fail if no migrations needed
 

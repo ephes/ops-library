@@ -17,6 +17,8 @@
 
 - `fastdeploy_deploy`: Management commands source a rendered 0600 shell environment companion inside the remote shell, keeping credentials out of command arguments and task environment values. The companion uses the same template as the application env file, with shell quoting enabled only for the companion; the existing application/systemd env format is preserved. Command change reporting and check-mode skips are preserved.
 
+- `fastdeploy_self_deploy`: Management commands source a rendered 0600 shell environment companion inside the remote shell, keeping credentials out of command arguments and task environment values. The companion uses the same template as the application env file, with shell quoting enabled only for the companion; the existing application/systemd env format is preserved. Command change reporting and check-mode skips are preserved.
+
 ## Unreleased — Daybook sessions and Photos offload deploy again on a root connection (2.31.30)
 
 - `daybook_sessions_deploy`: the environment probe, the removal of a broken
