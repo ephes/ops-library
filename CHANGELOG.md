@@ -3,6 +3,19 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Nyxmon restore probe works with HTTPS-enforcing settings (2.31.31)
+
+- `nyxmon_restore`: the post-restore HTTP probe of
+  `http://127.0.0.1:10017/admin/login/` now sends `X-Forwarded-Proto: https`
+  by default (`nyxmon_restore_health_headers`). With
+  `config.settings.production`, the `nyxmon_deploy` default, Nyxmon answers a
+  plain-HTTP request with a 301 to HTTPS, which the probe followed to a TLS
+  port that does not exist and then failed the restore. Nyxmon's
+  `config.wsgi_proxy` entrypoint trusts the header from loopback, so the probe
+  is answered like a request that came through Traefik. Settings modules
+  without an SSL redirect ignore the header. Nyxmon no longer ships
+  `config.settings.macos`; do not set `nyxmon_django_settings_module` to it.
+
 ## Unreleased — Daybook sessions and Photos offload deploy again on a root connection (2.31.30)
 
 - `daybook_sessions_deploy`: the environment probe, the removal of a broken

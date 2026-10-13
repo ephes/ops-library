@@ -45,7 +45,11 @@ nyxmon_restore_health_url: http://127.0.0.1:10017/admin/login/
 nyxmon_restore_health_retries: 5
 nyxmon_restore_health_delay: 5
 nyxmon_restore_health_expected_status: 200
-nyxmon_restore_health_headers: {}
+# The probe talks plain HTTP to the loopback port. config.settings.production
+# redirects plain HTTP to HTTPS, so the probe sends the header the reverse
+# proxy sends; Nyxmon's config.wsgi_proxy entrypoint trusts it from loopback.
+nyxmon_restore_health_headers:
+  X-Forwarded-Proto: https
 nyxmon_restore_verify_sqlite: true
 
 nyxmon_restore_dirs:

@@ -82,10 +82,12 @@ Before enabling it:
 - Create an account on the host (`manage.py createsuperuser` as the service
   user with the service environment). The role does not create one, and with
   no account nobody can log in until one exists.
-- Use a Nyxmon version and settings module that mark the session and CSRF
-  cookies `Secure`, so the login only works through the HTTPS router. Plain
-  HTTP `GET` probes against the loopback port (such as `nyxmon_restore`'s
-  check of `/admin/login/`) need no cookie and keep working.
+- Keep the default `nyxmon_django_settings_module`
+  (`config.settings.production`): it marks the session and CSRF cookies
+  `Secure` and redirects plain HTTP to HTTPS, so the login only works through
+  the HTTPS router. Probes against the loopback port must send
+  `X-Forwarded-Proto: https` (as `nyxmon_restore`'s check of `/admin/login/`
+  does) or they get a 301.
 
 The value is rendered as `true` or `false` on every deploy, so setting it back
 to `false` turns the login off again. A change restarts `nyxmon.service` and
