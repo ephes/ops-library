@@ -5,7 +5,6 @@ import yaml
 from ansible.parsing.dataloader import DataLoader
 from ansible.template import Templar, trust_as_template
 
-
 ROLE_ROOT = Path(__file__).resolve().parents[2] / "roles" / "openclaw_deploy"
 
 
@@ -160,3 +159,97 @@ def test_model_switch_keeps_unrestricted_configs_unrestricted(model_allowlist) -
     )
     expression = task["ansible.builtin.set_fact"]["_openclaw_model_allowlist_patch"]
     assert templar.template(trust_as_template(expression)) == {}
+
+
+@pytest.mark.parametrize("network_mode", ["bridge", "host"])
+@pytest.mark.parametrize("traefik_enabled", [False, True])
+def test_network_mode_keeps_gateway_bind_and_port_consistent(
+    network_mode, traefik_enabled
+):
+    variables = yaml.safe_load((ROLE_ROOT / "defaults/main.yml").read_text())
+    variables.update(
+        openclaw_network_mode=network_mode,
+        openclaw_traefik_enabled=traefik_enabled,
+        openclaw_host_port=18890,
+        openclaw_container_port=18789,
+    )
+    task = _task_by_name("config | Build gateway access patch")
+    templar = Templar(loader=DataLoader(), variables=variables)
+    patch = templar.template(
+        trust_as_template(
+            task["ansible.builtin.set_fact"]["_openclaw_gateway_access_patch"]
+        )
+    )["gateway"]
+    assert patch["bind"] == (
+        "lan" if network_mode == "bridge" and traefik_enabled else "loopback"
+    )
+    assert patch["port"] == (18890 if network_mode == "host" else 18789)
+    variables["_openclaw_existing_config"] = {"gateway": {"bind": "lan", "port": 9999}}
+    for name in (
+        "config | Build managed plugin patch inputs",
+        "config | Build gateway access patch",
+    ):
+        for key, expression in _task_by_name(name)["ansible.builtin.set_fact"].items():
+            variables[key] = Templar(loader=DataLoader(), variables=variables).template(
+                trust_as_template(expression)
+            )
+    runtime = Templar(loader=DataLoader(), variables=variables).template(
+        trust_as_template(
+            _task_by_name("config | Build runtime config patch")[
+                "ansible.builtin.set_fact"
+            ]["_openclaw_runtime_patch"]
+        )
+    )["gateway"]
+    assert runtime["bind"] == patch["bind"]
+    assert runtime["port"] == patch["port"]
+    compose_template = (ROLE_ROOT / "templates/openclaw-compose.yml.j2").read_text()
+    rendered = templar.template(trust_as_template(compose_template))
+    services = yaml.safe_load(rendered)["services"]
+    service = services[variables["openclaw_container_name"]]
+    assert services["openclaw-cli"]["network_mode"] == (
+        "host"
+        if network_mode == "host"
+        else "service:" + variables["openclaw_container_name"]
+    )
+    if network_mode == "host":
+        assert service["network_mode"] == "host"
+        assert "ports" not in service
+    else:
+        assert "network_mode" not in service
+        assert service["ports"] == ["127.0.0.1:18890:18789"]
+
+
+@pytest.mark.parametrize("configured_timeout", [123, 500])
+def test_port_startup_budget_is_independent_of_readiness_retries(configured_timeout):
+    defaults = yaml.safe_load((ROLE_ROOT / "defaults/main.yml").read_text())
+    defaults["openclaw_startup_timeout"] = configured_timeout
+    tasks = yaml.safe_load((ROLE_ROOT / "tasks/health.yml").read_text())
+    templar = Templar(loader=DataLoader(), variables=defaults)
+    timeout = templar.template(
+        trust_as_template(tasks[0]["ansible.builtin.wait_for"]["timeout"])
+    )
+    assert timeout == configured_timeout
+    assert (
+        timeout
+        > defaults["openclaw_healthcheck_delay"]
+        * defaults["openclaw_healthcheck_retries"]
+    )
+
+
+@pytest.mark.parametrize("invalid_timeout", [0, -1, "not-a-number"])
+def test_invalid_startup_budget_fails_with_its_variable_named(invalid_timeout):
+    variables = yaml.safe_load((ROLE_ROOT / "defaults/main.yml").read_text())
+    variables["openclaw_startup_timeout"] = invalid_timeout
+    task = next(
+        task
+        for task in yaml.safe_load((ROLE_ROOT / "tasks/validate.yml").read_text())
+        if task["name"] == "validate | Gateway network mode"
+    )
+    conditions = task["ansible.builtin.assert"]["that"]
+    templar = Templar(loader=DataLoader(), variables=variables)
+    results = [
+        templar.template(trust_as_template("{{ " + expression + " }}"))
+        for expression in conditions
+    ]
+    assert not all(results)
+    assert "openclaw_startup_timeout" in task["ansible.builtin.assert"]["fail_msg"]

@@ -6,6 +6,17 @@
     fail_msg: >-
       openclaw_version is required (e.g. "v2026.7.1"). Set it in the playbook or inventory.
 
+- name: validate | Gateway network mode
+  ansible.builtin.assert:
+    that:
+      - openclaw_network_mode in ['bridge', 'host']
+      - openclaw_startup_timeout | int > 0
+      - openclaw_network_mode != 'host' or openclaw_bind_host in ['127.0.0.1', 'localhost']
+    fail_msg: >-
+      openclaw_network_mode must be bridge or host. Host mode requires a
+      loopback openclaw_bind_host and always binds the Gateway to loopback.
+      openclaw_startup_timeout must be a positive number of seconds.
+
 - name: validate | Core OpenClaw settings
   ansible.builtin.assert:
     that:

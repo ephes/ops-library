@@ -152,7 +152,8 @@
         {
           "gateway": {
             "mode": "local",
-            "bind": ("lan" if (openclaw_traefik_enabled | bool) else "loopback"),
+            "bind": ("lan" if (openclaw_network_mode == 'bridge' and openclaw_traefik_enabled | bool) else "loopback"),
+            "port": (openclaw_host_port if openclaw_network_mode == 'host' else openclaw_container_port) | int,
             "trustedProxies": openclaw_gateway_trusted_proxies,
             "allowRealIpFallback": openclaw_gateway_allow_real_ip_fallback | bool,
             "http": {
@@ -532,7 +533,8 @@
                 },
                 "gateway": {
                   "mode": "local",
-                  "bind": ("lan" if (openclaw_traefik_enabled | bool) else "loopback"),
+                  "bind": ("lan" if (openclaw_network_mode == 'bridge' and openclaw_traefik_enabled | bool) else "loopback"),
+                  "port": (openclaw_host_port if openclaw_network_mode == 'host' else openclaw_container_port) | int,
                   "trustedProxies": openclaw_gateway_trusted_proxies,
                   "allowRealIpFallback": openclaw_gateway_allow_real_ip_fallback | bool,
                   "http": {

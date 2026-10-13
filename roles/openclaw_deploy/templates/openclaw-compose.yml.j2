@@ -8,8 +8,12 @@ services:
     cpus: {{ openclaw_cpus }}
     pids_limit: {{ openclaw_pids_limit }}
     user: "1000:1000"
+{% if openclaw_network_mode == 'host' %}
+    network_mode: host
+{% else %}
     ports:
       - "{{ openclaw_bind_host }}:{{ openclaw_host_port }}:{{ openclaw_container_port }}"
+{% endif %}
     env_file:
       - .env
     volumes:
@@ -24,7 +28,11 @@ services:
     container_name: openclaw-cli
     user: "1000:1000"
     entrypoint: ["node", "dist/index.js"]
+{% if openclaw_network_mode == 'host' %}
+    network_mode: host
+{% else %}
     network_mode: "service:{{ openclaw_container_name }}"
+{% endif %}
     env_file:
       - .env
     volumes:

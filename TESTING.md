@@ -34,9 +34,16 @@ just molecule-test unifi_restore
 `just test` currently runs:
 
 - `just test-roles`
+- `just test-openclaw-compose-lifecycle` (real Docker Compose stop/start and
+  container-recreation checks)
 - `just lint`
 - `just docs-build` (strict Sphinx build with `-E -n`)
 - `just docs-lint`
+
+The OpenClaw lifecycle check uses the detected Docker socket and requires the
+`docker compose` plugin. It pulls `alpine:3.22` on a cold cache; set
+`OPENCLAW_LIFECYCLE_TEST_IMAGE` to a preloaded sleep-capable image for offline
+runs. Each check owns an isolated project and removes it afterward.
 
 `just validate-strict` swaps in `just lint-strict` for the same sequence.
 Use `just lint` only as a quick summary helper. It intentionally does not fail the run.
@@ -69,7 +76,7 @@ prints only `status` and `json` (the server's response body) of the registered r
 covered by `.ansible-lint-ignore`. The baseline lists existing debt as `<file> <rule> skip`
 entries, grouped by rule with a note on why each group was not fixed mechanically:
 
-- `name[prefix]`: task names in included task files without the `<file stem> | ` prefix.
+- `name[prefix]`: task names in included task files without the `<file stem> |` prefix.
 - `command-instead-of-module`, `command-instead-of-shell`, `partial-become[task]`: fixing these
   changes behaviour (idempotence, change reporting, privilege escalation) and needs a reviewed
   change per task.

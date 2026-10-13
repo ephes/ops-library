@@ -3,6 +3,40 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Preserve OpenClaw proxy attribution across restarts (2.31.25)
+
+- `openclaw_deploy` supports opt-in `openclaw_network_mode: host`, forcing a
+  loopback-only Gateway listener and using the host port directly. This
+  preserves direct-local API access alongside host-side Traefik proxy
+  attribution under 10.2; bridge networking remains the default.
+  Opting in shares host networking with agent tools and skills, making
+  host-loopback services reachable and auxiliary listeners use host ports.
+  The Compose CLI follows the selected mode. Managed `gateway.port` now comes
+  from the host or container port variable, including existing configs. A
+  separate 300-second `openclaw_startup_timeout` controls TCP port waiting;
+  in host mode it allows entrypoint Doctor/bootstrap before the listener
+  opens. Bridge mode still probes the published port, followed by the
+  existing authoritative CLI/channel readiness checks.
+
+- `openclaw_deploy` stops its Compose stack with `stop` instead of `down`,
+  retaining the bridge gateway address across service restarts and image
+  upgrades. Host-side reverse proxies can trust their actual single bridge
+  gateway IP without a broad container-subnet allowlist. OpenClaw 10.2 rejects
+  proxy-shaped requests with missing trusted attribution. Explicit removal
+  still tears down the network through `openclaw_remove`.
+- Plugin and audio SecretRef CLI containers share the matching running
+  gateway's PID namespace, respecting its state ownership while retaining
+  host networking and fresh environment-file values. Offline activation uses
+  one-shot containers without PID sharing. A mismatched live
+  image fails closed; this fixes same-version 10.2 reconciliation refusing
+  otherwise valid plugin inspection and attempting an unnecessary install.
+
+## Unreleased — OpenClaw 2026.10.2 upgrade guidance
+
+- `openclaw_deploy` README examples now use `v2026.10.2` and document its matching
+  official Codex plugin, stopped-gateway backup and activation checks. The
+  existing Doctor activation workflow remains the deployment path.
+
 ## Unreleased — Paperless backup archive is owner-only (2.31.24)
 
 - `paperless_backup` no longer leaves the finished archive world-readable. The
@@ -165,6 +199,7 @@
   the next Voxhelm ingress deploy.
 
 ||||||| 433bbc9
+
 ## Unreleased — Daybook Paperless scan intake adapter (2.31.17)
 
 - `daybook_operations_runtime_deploy` accepts the `paperless.intake.v1` kind

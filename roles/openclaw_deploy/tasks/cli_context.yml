@@ -1,0 +1,57 @@
+---
+# Newer releases fence shared state by the Gateway's PID namespace. Share its
+# PID namespace while it is running; keep host-networked one-shots for offline
+# bootstrap and activation after Doctor has stopped the old Gateway.
+- name: cli_context | Inspect gateway state and image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{' }}.State.Running{{ '}}' }} {{ '{{' }}.Config.Image{{ '}}' }}"
+      - "{{ openclaw_container_name }}"
+  register: _openclaw_cli_gateway
+  changed_when: false
+  failed_when: false
+
+- name: cli_context | Require unambiguous container state
+  ansible.builtin.assert:
+    that:
+      - >-
+        _openclaw_cli_gateway.rc != 0
+        or (_openclaw_cli_gateway.stdout | trim) is regex('^(true|false) [^ ]+$')
+    fail_msg: >-
+      Docker inspection returned an unexpected state/image format. Refusing
+      to select an offline CLI while the gateway may still be running.
+
+- name: cli_context | Resolve whether gateway CLI is available
+  ansible.builtin.set_fact:
+    _openclaw_cli_gateway_running: >-
+      {{ _openclaw_cli_gateway.rc == 0
+         and (_openclaw_cli_gateway.stdout | trim).startswith('true ') }}
+
+- name: cli_context | Require matching image before using the running gateway CLI
+  ansible.builtin.assert:
+    that:
+      - >-
+        not (_openclaw_cli_gateway_running | bool)
+        or (_openclaw_cli_gateway.stdout | trim)
+        == ('true ' ~ openclaw_image_name ~ ':' ~ openclaw_image_tag)
+    fail_msg: >-
+      The running OpenClaw gateway uses a different image. Stop it before
+      running target-version CLI tasks. Doctor activation does this for
+      targets v2026.9.7+ when enabled; older targets or activation-disabled
+      deploys require a manual stop.
+
+- name: cli_context | Select matching live or offline CLI
+  ansible.builtin.set_fact:
+    _openclaw_cli_argv: >-
+      {{
+        ['docker', 'run', '--rm', '--network', 'host']
+        + (['--pid', 'container:' ~ openclaw_container_name]
+           if (_openclaw_cli_gateway_running | bool) else [])
+        + ['--user', '1000:1000', '--env-file', openclaw_site_dir ~ '/.env',
+           '--volume', openclaw_data_dir ~ ':/home/node/.openclaw',
+           '--entrypoint', 'node', openclaw_image_name ~ ':' ~ openclaw_image_tag,
+           'dist/index.js']
+      }}

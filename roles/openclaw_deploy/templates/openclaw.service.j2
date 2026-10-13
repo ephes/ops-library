@@ -10,7 +10,7 @@ Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory={{ openclaw_site_dir }}
 ExecStart=/usr/bin/docker compose -f {{ openclaw_site_dir }}/docker-compose.yml up -d --remove-orphans
-ExecStop=/usr/bin/docker compose -f {{ openclaw_site_dir }}/docker-compose.yml down
+ExecStop=/usr/bin/docker compose -f {{ openclaw_site_dir }}/docker-compose.yml stop
 TimeoutStartSec=0
 
 [Install]

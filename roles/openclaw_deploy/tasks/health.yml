@@ -4,7 +4,7 @@
     host: "{{ openclaw_bind_host }}"
     port: "{{ openclaw_host_port }}"
     delay: 2
-    timeout: "{{ openclaw_healthcheck_delay * openclaw_healthcheck_retries }}"
+    timeout: "{{ openclaw_startup_timeout }}"
 
 - name: health | Verify container is running
   ansible.builtin.command:

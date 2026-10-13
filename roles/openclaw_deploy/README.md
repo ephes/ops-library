@@ -22,7 +22,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
   roles:
     - role: local.ops_library.openclaw_deploy
       vars:
-        openclaw_version: "v2026.9.1"
+        openclaw_version: "v2026.10.2"
         openclaw_data_dir: "/mnt/cryptdata/openclaw/data"
         openclaw_gateway_token: "{{ sops_secrets.gateway_token }}"
         openclaw_anthropic_api_key: "{{ sops_secrets.anthropic_api_key }}"
@@ -44,7 +44,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 - Optional audio transcription can route voice notes to a dedicated OpenAI-compatible endpoint and auth profile without changing normal agent model authentication.
 - Persistent state (sessions, config) is stored in a bind-mounted directory owned by container uid 1000.
 - The container binds to `127.0.0.1:18789` by default, with optional Traefik reverse proxy for external access. When Traefik is enabled, the bind host is validated to be loopback.
-- When Traefik is enabled, role-managed config sets `gateway.bind: "lan"` and `gateway.controlUi.allowedOrigins` to `https://<openclaw_traefik_host>` so the host-side reverse proxy can reach the gateway UI safely.
+- With Traefik enabled, bridge mode sets `gateway.bind: "lan"`, while host mode sets `loopback`; both set `gateway.controlUi.allowedOrigins` to `https://<openclaw_traefik_host>` so the host-side reverse proxy can reach the gateway UI safely.
 - Role-managed gateway hardening sets explicit `gateway.trustedProxies`, disables `gateway.allowRealIpFallback`, and configures `gateway.auth.rateLimit`.
 - Role-managed gateway configuration sets `gateway.mode: "local"`, which is required by current OpenClaw releases for a locally hosted gateway.
 - Gateway config (`openclaw.json`) is seeded once on first deploy and not overwritten on subsequent runs (use `openclaw_force_config: true` to overwrite). Existing configs are patched to ensure unused plugins (WhatsApp) are explicitly disabled.
@@ -57,7 +57,7 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 
 | Variable | Description |
 |----------|-------------|
-| `openclaw_version` | Git tag to checkout and build (e.g. `v2026.9.1`) |
+| `openclaw_version` | Git tag to checkout and build (e.g. `v2026.10.2`) |
 | `openclaw_gateway_token` | Gateway authentication token |
 | `openclaw_anthropic_api_key` | Anthropic API key for AI replies |
 
@@ -65,15 +65,17 @@ OpenClaw intentionally does not provide `openclaw_backup` or `openclaw_restore` 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `openclaw_bind_host` | `127.0.0.1` | Host IP to bind the container port |
+| `openclaw_bind_host` | `127.0.0.1` | Published address in bridge mode; host mode requires loopback |
 | `openclaw_host_port` | `18789` | Host port for the gateway |
-| `openclaw_container_port` | `18789` | Container port for the gateway |
+| `openclaw_container_port` | `18789` | Managed `gateway.port` and published container port in bridge mode; unused in host mode |
 
 ### Gateway Hardening
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `openclaw_gateway_config_mode` | `0600` | File mode used for `openclaw.json` |
+| `openclaw_startup_timeout` | `300` | TCP port-wait budget; host mode waits for the Gateway listener, bridge mode probes the published port |
+| `openclaw_network_mode` | `bridge` | Gateway Docker networking: `bridge` with port publication, or `host` with a forced loopback listener on `openclaw_host_port` |
 | `openclaw_gateway_trusted_proxies` | `[127.0.0.1, ::1]` | Trusted proxy IP/CIDR list written to `gateway.trustedProxies` |
 | `openclaw_gateway_allow_real_ip_fallback` | `false` | Controls `gateway.allowRealIpFallback` |
 | `openclaw_gateway_auth_rate_limit_enabled` | `true` | Enable `gateway.auth.rateLimit` patching |
@@ -248,6 +250,59 @@ by fixing the reported problem or by redeploying the previous version and
 restoring the pre-upgrade backup. Deploys that keep the running image skip
 this step and cause no extra downtime.
 
+For `v2026.10.2`, keep the official Codex plugin pinned to the same release
+(`@openclaw/codex@2026.10.2`); the role derives this pin automatically. Before
+deploying an upgrade, stop the gateway yourself and create and verify a backup
+while it stays stopped. After deployment, check `plugins inspect codex --json`,
+`health --json` and `channels status --json`. Test the configured model with
+`agent --session-id probe-upgrade-<unique-id> --message 'Reply exactly: OPENCLAW_CANARY_OK' --timeout 90 --json`
+without `--deliver`, so the probe does not send a channel message.
+Leave `openclaw_heartbeat_recovery_managed` and
+`openclaw_codex_v2026_9_1_registration_backport_managed` false on newer releases.
+If heartbeat recovery was enabled on 9.1, disable it while management is still
+on and the gateway still runs 9.1, then turn management off before upgrading;
+see the heartbeat recovery retirement instructions below.
+
+For host-side Traefik plus direct host-local API callers, set
+`openclaw_network_mode: host`. The role forces the Gateway listener to loopback
+and uses `openclaw_host_port` directly, without Docker port publication.
+Traefik then connects from loopback with forwarded client attribution, while
+local API clients retain direct-local attribution. Bridge networking remains
+the default; in that mode host callers share the NAT bridge peer with Traefik
+and 10.2 can reject direct requests without a non-loopback forwarded client.
+Host mode shares the host network namespace: agent tools and skills can reach
+host-loopback services, and auxiliary listeners use host ports. Choose it for
+trusted deployments and inspect the Gateway's listeners. Only its configured
+HTTP listener is constrained to loopback by this role. The role manages
+`gateway.port` from the network mode's port variable, including existing
+configs that previously contained a manually set port.
+
+The Compose CLI service uses host networking in host mode and the Gateway's
+network namespace in bridge mode. Gateway RPC commands such as `cron list`
+can therefore reach the configured listener. Direct state-management commands
+on a live Gateway should use the role's PID-sharing CLI context.
+The TCP port wait uses `openclaw_startup_timeout` (default 300 seconds).
+In host mode this waits for the actual Gateway listener after entrypoint
+Doctor/bootstrap. In bridge mode the published Docker proxy can accept TCP
+before the Gateway starts, so this budget may return early; the subsequent
+OpenClaw/Telegram readiness checks remain authoritative and use
+`openclaw_healthcheck_retries` and `openclaw_healthcheck_delay`.
+
+The systemd service uses `docker compose stop` when stopped or restarted.
+This retains the Compose network, its bridge gateway address and stopped
+containers; `up -d` still replaces containers when the image changes. The remove
+role continues to use `down` for explicit removal. With a host-side reverse
+proxy and Docker bridge networking, include the actual immediate bridge gateway
+IP in `openclaw_gateway_trusted_proxies`. Trust that single address rather than
+all containers in a bridge subnet. OpenClaw 10.2 rejects proxy-shaped requests
+without trusted client attribution. After deliberately removing/recreating the
+network, inspect its gateway and update the trusted address before serving
+traffic again.
+On the first upgrade carrying this unit change, Doctor may stop the service
+before the new unit is installed, so the old `down` can still recreate the
+network once. Re-inspect its gateway after that first deploy and reconcile
+the trusted proxy address; retention applies after the new unit is loaded.
+
 For subscription-backed OpenAI agent turns, enable the official Codex plugin, configure a canonical
 `openai/<model>` primary, and list the OAuth profile before any optional API-key backup:
 
@@ -261,6 +316,19 @@ openclaw_openai_auth_order:
 The OAuth login itself remains persistent runtime state and is intentionally not stored in
 this public role. Run `openclaw models auth login --provider openai --device-code` on the
 deployed host, then verify with `openclaw models auth list --provider openai`.
+
+When the target-version gateway is running, plugin inspection/installation and
+audio SecretRef commands use a matching one-shot CLI container with
+`--pid container:<gateway>`, so it can verify the live state owner's process.
+Both live and offline one-shots retain host networking and load the freshly
+rendered `.env`. When the gateway is stopped or missing, they omit `--pid`
+after Doctor activation. A running gateway with a different image
+fails this selection rather than opening its state with the target CLI. This
+keeps same-version reconciliation compatible with 10.2's state ownership guard.
+Version changes to targets older than `v2026.9.7`, or with Doctor activation
+disabled, require stopping the gateway manually before deployment. Automatic
+Doctor activation only handles targets from `v2026.9.7`; the live CLI image
+guard also applies to older targets and deliberate activation opt-outs.
 
 Plugin package reconciliation and installed-version verification require a real deployment
 and are skipped in Ansible check mode. Check mode still reports the managed gateway-config
@@ -750,7 +818,7 @@ Handler unit tests for managed OpenClaw integration handlers live at:
 | `openclaw_install_docker` | `true` | Install Docker via docker_install role |
 | `openclaw_manage_user` | `true` | Create system user/group |
 | `openclaw_upgrade_migrations_enabled` | `true` | On v2026.9.1+, detect runtime-blocking legacy workspace state and run the supported non-interactive Doctor repair with the gateway stopped |
-| `openclaw_doctor_activation_enabled` | `true` | On v2026.9.7+, when the target image differs from the running gateway, stop the gateway and run the entrypoint's `doctor --fix --non-interactive` with the new image before role CLI tasks open the state |
+| `openclaw_doctor_activation_enabled` | `true` | On v2026.9.7+, when the target image differs from the running gateway, stop the gateway and run the entrypoint's `doctor --fix --non-interactive` with the new image before role CLI tasks open the state; when disabled (or targeting older releases), manually stop the gateway before a version change |
 | `openclaw_healthcheck_enabled` | `true` | Require TCP, a stable container, healthy gateway RPC, and configured Telegram readiness after deployment |
 
 For a complete list, see `defaults/main.yml`.
