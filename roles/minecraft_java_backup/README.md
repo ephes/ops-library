@@ -91,3 +91,7 @@ MIT
 ## Author
 
 ops-library contributors
+
+## Task credential handling
+
+Save coordination reads the RCON password from stdin inside the remote shell and exports MCRCON_PASS only to mcrcon. It never passes the password in command arguments or task environment values; credential input is protected by no_log. Failures report return codes while withholding credential input; the existing save-on condition is preserved.

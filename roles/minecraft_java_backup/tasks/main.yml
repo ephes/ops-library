@@ -38,28 +38,46 @@
 - name: Perform backup with save coordination
   block:
     # Save coordination - only if server is running
-    - name: Disable auto-save
-      ansible.builtin.shell: |
-        /usr/local/bin/mcrcon -H 127.0.0.1 -P {{ minecraft_java_rcon_port }} "save-off"
-      environment:
-        MCRCON_PASS: "{{ minecraft_java_rcon_password }}"
-      register: save_off_result
-      changed_when: true
-      when: minecraft_server_is_running
+    - name: main | Coordinate save-off
+      block:
+        - name: Disable auto-save
+          ansible.builtin.shell: |
+            IFS= read -r MCRCON_PASS
+            export MCRCON_PASS
+            /usr/local/bin/mcrcon -H 127.0.0.1 -P {{ minecraft_java_rcon_port }} "save-off"
+          args:
+            stdin: "{{ minecraft_java_rcon_password }}"
+          no_log: true
+          register: save_off_result
+          changed_when: true
+          when: minecraft_server_is_running
+      rescue:
+        - name: main | Report failed save-off
+          ansible.builtin.fail:
+            msg: "save-off failed (rc={{ save_off_result.rc | default('unknown') }}); verify auto-save manually if the command reached the server."
 
     - name: Mark saves as disabled
       ansible.builtin.set_fact:
         minecraft_saves_disabled: true
       when: minecraft_server_is_running
 
-    - name: Flush world to disk
-      ansible.builtin.shell: |
-        timeout 30 /usr/local/bin/mcrcon -H 127.0.0.1 -P {{ minecraft_java_rcon_port }} "save-all"
-      environment:
-        MCRCON_PASS: "{{ minecraft_java_rcon_password }}"
-      register: save_all_result
-      changed_when: true
-      when: minecraft_server_is_running
+    - name: main | Coordinate save-all
+      block:
+        - name: Flush world to disk
+          ansible.builtin.shell: |
+            IFS= read -r MCRCON_PASS
+            export MCRCON_PASS
+            timeout 30 /usr/local/bin/mcrcon -H 127.0.0.1 -P {{ minecraft_java_rcon_port }} "save-all"
+          args:
+            stdin: "{{ minecraft_java_rcon_password }}"
+          no_log: true
+          register: save_all_result
+          changed_when: true
+          when: minecraft_server_is_running
+      rescue:
+        - name: main | Report failed save-all
+          ansible.builtin.fail:
+            msg: "save-all failed (rc={{ save_all_result.rc | default('unknown') }}); saves will be re-enabled if disabled."
 
     - name: Verify save completed
       ansible.builtin.assert:
@@ -120,9 +138,12 @@
     # CRITICAL: Always re-enable saves if they were disabled
     - name: Re-enable auto-save
       ansible.builtin.shell: |
+        IFS= read -r MCRCON_PASS
+        export MCRCON_PASS
         /usr/local/bin/mcrcon -H 127.0.0.1 -P {{ minecraft_java_rcon_port }} "save-on"
-      environment:
-        MCRCON_PASS: "{{ minecraft_java_rcon_password }}"
+      args:
+        stdin: "{{ minecraft_java_rcon_password }}"
+      no_log: true
       when: minecraft_saves_disabled | default(false)
       changed_when: true
       ignore_errors: true
@@ -130,7 +151,7 @@
 
     - name: Warn if save-on failed
       ansible.builtin.debug:
-        msg: "WARNING: Failed to re-enable auto-save! Manual intervention may be required."
+        msg: "WARNING: Failed to re-enable auto-save! Manual intervention may be required (rc={{ save_on_result.rc | default('unknown') }})."
       when: save_on_result is defined and save_on_result.failed | default(false)
 
 - name: Get backup file size

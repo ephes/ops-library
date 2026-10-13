@@ -9,6 +9,8 @@
 
 - `redis_install`: The authenticated PING probe reads stdin inside the remote shell and exports REDISCLI_AUTH only to redis-cli, keeping the password out of arguments and task environment values. The probe remains read-only and non-fatal.
 
+- `minecraft_java_backup`: Save coordination reads the RCON password from stdin inside the remote shell and exports MCRCON_PASS only to mcrcon. It never passes the password in command arguments or task environment values; credential input is protected by no_log. Failures report return codes while withholding credential input; the existing save-on condition is preserved.
+
 ## Unreleased — Daybook sessions and Photos offload deploy again on a root connection (2.31.30)
 
 - `daybook_sessions_deploy`: the environment probe, the removal of a broken
