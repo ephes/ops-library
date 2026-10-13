@@ -3,6 +3,18 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — NyxBoard login can be required by the deploy role (2.31.29)
+
+- `nyxmon_deploy`: new `nyxmon_require_login` (default `false`), rendered as
+  `NYXBOARD_REQUIRE_LOGIN` into the shared `.env`. Set to `true`, every
+  NyxBoard page requires a logged-in Django user, inside the unchanged Traefik
+  dual router; the Django admin login and plain loopback `GET` probes are
+  unaffected. The role does not create an account: create one on the host
+  first, and deploy a Nyxmon version whose selected settings module marks the
+  session and CSRF cookies `Secure`. The default renders `false`, so existing
+  deployments behave as before. Render tests and the Molecule verify cover the
+  default and the rendered boolean.
+
 ## Unreleased — PostfixAdmin schema setup is idempotent again (2.31.28)
 
 - `postfixadmin_deploy`: schema setup recognises both legacy and current
