@@ -232,7 +232,7 @@ lint: venv
 # curl -H Authorization) must set no_log: true so -vvv output cannot print them.
 test-secret-no-log: venv
     @echo "Checking that uri/command tasks carrying credentials or secret variables set no_log..."
-    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_secret_no_log
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_secret_no_log tests.test_secret_exposure
 
 # Run strict ansible-lint (fails on any finding not listed in .ansible-lint-ignore)
 # plus the no_log check for credential-carrying tasks
@@ -660,3 +660,4 @@ test-lowfindings: venv
 # Portable task credential delivery regressions (no host/database access).
 test-task-credentials: venv
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest discover -s tests -p 'test_*_credentials.py'
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_task_credential_contracts

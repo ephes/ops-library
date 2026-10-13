@@ -5,6 +5,11 @@
 
 ## Unreleased — Keep task credentials out of arguments and environment
 
+- Static credential checks now reject secret-looking command arguments and task
+  environment values even with `no_log`, including inherited environments. The
+  exact baseline records existing out-of-scope findings; focused transport and
+  task-behavior regressions run in the test recipes.
+
 - `mail_relay_deploy`: SASL password creation and updates send the password through stdin, keeping it out of command arguments and Ansible task environment values. Existing notifications and change reporting are preserved.
 
 - `redis_install`: The authenticated PING probe reads stdin inside the remote shell and exports REDISCLI_AUTH only to redis-cli, keeping the password out of arguments and task environment values. The probe remains read-only and non-fatal.

@@ -73,6 +73,35 @@ false` alone does not keep a token private. To keep failures debuggable, add a s
 prints only `status` and `json` (the server's response body) of the registered result. Do not print
 `msg`: for a malformed header value it quotes the header, token included.
 
+### Credentials in task environment and arguments
+
+`just test-secret-no-log` also runs `tests.test_secret_exposure` and
+`python scripts/check_secret_no_log.py --exposure`. This checks task and inherited
+block/play environments and command/shell/raw arguments even with `no_log: true`.
+Use stdin with `no_log`, or a 0600 file read by the remote command. Passing a
+password through task `environment:` still exposes it in connection output and
+the remote shell's process arguments.
+
+The exact counted file/task/reason entries for directly detected findings in `scripts/secret_exposure_allowlist.json`
+record pre-existing findings outside the L5 location list addressed by
+`ops-secrets-in-task-environment`. They are follow-up debt, not a safe credential
+transport. No audited role may be allowlisted; new directly detected findings and stale entries
+fail the tests, including duplicate task identities. Path variables are excluded; password hashes are credentials.
+
+This is a name-based static check, not data-flow analysis: it does not resolve
+neutral argv/environment aggregates built by facts, helper includes or dynamic
+variable keys. Known indirect transports outside L5 are recorded separately in
+scripts/secret_exposure_indirect_debt.json, with exact tasks and follow-up reasons.
+That list does not suppress findings. The existing no_log check retains its
+prior stdin name vocabulary; passphrase-only stdin logging in the encrypted-volume
+and ZFS roles remains explicit follow-up debt. The changed Paperless tasks' existing
+conditional no_log values are pinned by the task-contract regressions.
+
+`just test-task-credentials` runs each changed role's render/static regressions,
+including executed local shell fixtures for literal secret handling. These
+checks require no hosts or databases and also run through `just test`.
+Molecule/database restore rehearsal remains a separate integration gate.
+
 ## Strict lint baseline
 
 `just lint-strict` runs `ansible-lint roles/` and exits non-zero on any finding that is not
