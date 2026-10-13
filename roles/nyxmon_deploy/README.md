@@ -430,3 +430,9 @@ Infrastructure Team
 Source and dependency changes notify the existing restart handlers after deployment.
 Nyxmon restarts both the web service and the enabled monitoring service; unchanged syncs do not request a restart.
 The `nyxmon_service_restart_on_change` setting (default `true`) controls these handlers.
+
+## Task credential handling
+
+Management commands source a rendered 0600 shell environment companion inside the remote shell, keeping credentials out of command arguments and task environment values. The companion uses the same template as the application env file, with shell quoting enabled only for the companion; the existing application/systemd env format is preserved. Command change reporting and check-mode skips are preserved.
+
+The role-managed rsync excludes also protect the root .env.shell management companion, even when inventory replaces nyxmon_rsync_excludes. It survives delete-enabled source syncs, so an unchanged deploy does not rewrite it or trigger a restart.
