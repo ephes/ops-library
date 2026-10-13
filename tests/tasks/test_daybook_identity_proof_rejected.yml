@@ -1,0 +1,18 @@
+---
+- name: test_daybook_identity_proof_rejected | Expect the proof to be refused
+  block:
+    - name: test_daybook_identity_proof_rejected | Validate the proof
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/weeknotes_identity_proof.yml"
+      vars:
+        daybook_weeknotes_identity_proof_plan_hash: "{{ follow_plan_hash }}"
+        daybook_weeknotes_identity_proof: "{{ follow_case.proof }}"
+
+    - name: test_daybook_identity_proof_rejected | Fail because the proof was accepted
+      ansible.builtin.fail:
+        msg: "Accepted: {{ follow_case.name }}"
+  rescue:
+    - name: test_daybook_identity_proof_rejected | Require the expected refusal
+      ansible.builtin.assert:
+        that:
+          - ansible_failed_task.name == follow_case.expected
+        fail_msg: "{{ follow_case.name }} failed in {{ ansible_failed_task.name }}"

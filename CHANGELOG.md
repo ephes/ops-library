@@ -3,6 +3,31 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Daybook sessions checkout can follow a branch head (2.31.27)
+
+- `daybook_sessions_deploy`: no-fetch mode (`daybook_sessions_repo_update:
+  false`) accepts `daybook_sessions_repo_bundle_src`, a controller-side git
+  bundle carrying `daybook_sessions_repo_ref`. When the dedicated checkout lacks
+  that commit, the role copies the bundle next to it (service-user-owned, mode
+  0600), requires it to carry the commit at a ref below `refs/`, fetches its refs into
+  `refs/bundle/*` and removes the copy; the existing ownership, cleanliness and
+  local detached-checkout steps then run unchanged. A checkout that already
+  holds the commit copies nothing. Private control can so install a branch head
+  it resolved to a commit at deploy time on a host without a repository
+  credential, instead of a commit staged there by hand. Empty (the default)
+  keeps the previous behaviour.
+- `daybook_sessions_deploy`: the root-owned weeknotes activation proof names
+  the Daybook commit under which the identity migration was applied. An
+  ordinary deployment required that commit to equal the one being installed, so
+  the checkout could never move without a new attended apply. It now requires
+  the proof's commit to be the installed one or an ancestor of it
+  (`git merge-base --is-ancestor`); the plan hash, file ownership and modes,
+  and the re-verification of the attestation by the installed Daybook are
+  bound exactly as before, and a checkout moved backwards or onto unrelated
+  history is refused. The operator rail and the activation task still require
+  and write the exact installed commit, so each verified apply moves that
+  anchor to the commit installed then.
+
 ## Unreleased — Explicit proxy trust, quieter credential queries, private temp paths and opt-in unit hardening (2.31.26)
 
 - `fastdeploy_deploy` explicitly trusts proxy headers only from `fastdeploy_forwarded_allow_ips`

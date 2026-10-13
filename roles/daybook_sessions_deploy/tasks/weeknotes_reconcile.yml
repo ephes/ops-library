@@ -532,18 +532,10 @@
   when: daybook_weeknotes_post_identity_epoch == 'monday-after-v1'
 
 - name: weeknotes_reconcile | Validate root activation proof against verified plan
-  ansible.builtin.assert:
-    that:
-      - >-
-        (daybook_weeknotes_identity_gate_contents.results[1].content | b64decode | from_json)
-        == {
-          'schema_version': 1,
-          'identity_epoch': 'monday-after-v1',
-          'plan_hash': (daybook_weeknotes_identity_attestation_verification.stdout | from_json).plan_hash,
-          'daybook_repo_ref': daybook_weeknotes_identity_required_repo_ref
-        }
-    fail_msg: "The root activation proof does not bind this exact plan and Daybook revision."
-  no_log: true
+  ansible.builtin.include_tasks: weeknotes_identity_proof.yml
+  vars:
+    daybook_weeknotes_identity_proof: "{{ daybook_weeknotes_identity_gate_contents.results[1].content | b64decode | from_json }}"
+    daybook_weeknotes_identity_proof_plan_hash: "{{ (daybook_weeknotes_identity_attestation_verification.stdout | from_json).plan_hash }}"
   when: daybook_weeknotes_post_identity_epoch == 'monday-after-v1'
 
 - name: weeknotes_reconcile | Open identity epoch gate after exact verification

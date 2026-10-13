@@ -1,0 +1,67 @@
+---
+# No-fetch mode's transport. Private control hands over a git bundle carrying
+# daybook_sessions_repo_ref, so a host without a GitHub key still receives a
+# commit its dedicated checkout has never seen. A checkout that already holds
+# the commit is left alone, and the bundle never outlives the run.
+- name: source_bundle | Look for the requested Daybook commit in the checkout
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/git
+      - cat-file
+      - -e
+      - "{{ daybook_sessions_repo_ref }}^{commit}"
+    chdir: "{{ daybook_sessions_checkout_path }}"
+  become: "{{ (ansible_user_id | default(lookup('env', 'USER'))) != daybook_sessions_service_user }}"
+  become_user: "{{ daybook_sessions_service_user }}"
+  become_flags: "-i"
+  register: daybook_sessions_bundle_commit
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: source_bundle | Stage the requested Daybook commit from the bundle
+  when: daybook_sessions_bundle_commit.rc != 0
+  block:
+    - name: source_bundle | Copy the Daybook bundle
+      ansible.builtin.copy:
+        src: "{{ daybook_sessions_repo_bundle_src }}"
+        dest: "{{ daybook_sessions_repo_bundle_path }}"
+        owner: "{{ daybook_sessions_service_user }}"
+        group: "{{ daybook_sessions_service_group }}"
+        mode: "0600"
+
+    # At a ref below refs/: that is what the fetch below imports. A bundle
+    # that names the commit only as HEAD is refused here, not found empty later.
+    - name: source_bundle | Require the bundle to carry the requested commit
+      ansible.builtin.command:
+        argv: [/usr/bin/git, bundle, list-heads, "{{ daybook_sessions_repo_bundle_path }}"]
+      become: "{{ (ansible_user_id | default(lookup('env', 'USER'))) != daybook_sessions_service_user }}"
+      become_user: "{{ daybook_sessions_service_user }}"
+      become_flags: "-i"
+      register: daybook_sessions_bundle_heads
+      changed_when: false
+      failed_when: >-
+        daybook_sessions_bundle_heads.rc != 0
+        or daybook_sessions_bundle_heads.stdout is not search('(?m)^' ~ (daybook_sessions_repo_ref | lower) ~ ' refs/')
+
+    # Into refs/bundle/* only: the checkout's own branches and remote-tracking
+    # refs stay as they are, and the existing no-fetch tasks do the checkout.
+    - name: source_bundle | Fetch every ref of the bundle
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/git
+          - fetch
+          - --quiet
+          - --no-tags
+          - "{{ daybook_sessions_repo_bundle_path }}"
+          - "+refs/*:refs/bundle/*"
+        chdir: "{{ daybook_sessions_checkout_path }}"
+      become: "{{ (ansible_user_id | default(lookup('env', 'USER'))) != daybook_sessions_service_user }}"
+      become_user: "{{ daybook_sessions_service_user }}"
+      become_flags: "-i"
+      changed_when: true
+  always:
+    - name: source_bundle | Remove the staged Daybook bundle
+      ansible.builtin.file:
+        path: "{{ daybook_sessions_repo_bundle_path }}"
+        state: absent
