@@ -1,0 +1,35 @@
+---
+# Start from the state of a host that got Node.js from the distribution:
+# Ubuntu 24.04 ships nodejs 18 and a separate npm package.
+- name: Prepare
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Ensure remote temp directory exists
+      ansible.builtin.file:
+        path: /root/.ansible/tmp
+        state: directory
+        mode: "0700"
+        owner: root
+        group: root
+
+    - name: Install distribution Node.js and npm
+      ansible.builtin.apt:
+        name:
+          - nodejs
+          - npm
+        state: present
+        update_cache: true
+        install_recommends: false
+
+    - name: Read distribution Node.js version
+      ansible.builtin.command: /usr/bin/node --version
+      register: prepare_node_version
+      changed_when: false
+
+    - name: Assert the starting point is older than the target
+      ansible.builtin.assert:
+        that:
+          - prepare_node_version.stdout is match('^v18\.')

@@ -1,0 +1,90 @@
+---
+# Install one Node.js release line system-wide from the NodeSource apt repository
+
+- name: Validate nodejs_install settings
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == "Debian"
+      - nodejs_install_major | string is match('^[1-9][0-9]*$')
+    fail_msg: >-
+      nodejs_install needs a Debian-family host and a numeric
+      nodejs_install_major (got {{ nodejs_install_major | default('UNSET') }}).
+
+- name: Install NodeSource repository prerequisites
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Ensure apt keyrings directory exists
+  ansible.builtin.file:
+    path: "{{ nodejs_install_keyring | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install NodeSource signing key
+  ansible.builtin.get_url:
+    url: "{{ nodejs_install_key_url }}"
+    dest: "{{ nodejs_install_keyring }}"
+    owner: root
+    group: root
+    mode: "0644"
+    timeout: 30
+
+# One file with one line: switching nodejs_install_major replaces the old
+# release line instead of leaving two NodeSource repositories behind.
+- name: Configure NodeSource repository
+  ansible.builtin.copy:
+    dest: "{{ nodejs_install_sources_list }}"
+    content: |
+      deb [signed-by={{ nodejs_install_keyring }}] {{ nodejs_install_repo_url }} nodistro main
+    owner: root
+    group: root
+    mode: "0644"
+  register: nodejs_install_repo
+
+# Without the pin a distribution release with a newer Node.js than the selected
+# line would replace the NodeSource package on the next apt upgrade.
+- name: Prefer NodeSource for the nodejs package
+  ansible.builtin.copy:
+    dest: "{{ nodejs_install_preferences }}"
+    content: |
+      Package: nodejs
+      Pin: origin deb.nodesource.com
+      Pin-Priority: 700
+    owner: root
+    group: root
+    mode: "0644"
+
+# The NodeSource package ships npm and conflicts with the distribution's npm
+# package, so apt removes a distribution npm (and the node-* libraries that
+# only it needs) in the same transaction.
+- name: Install Node.js from the selected release line
+  ansible.builtin.apt:
+    name: "nodejs={{ nodejs_install_major }}.*"
+    state: present
+    allow_downgrade: true
+    update_cache: "{{ nodejs_install_repo is changed }}"
+
+- name: Read installed Node.js and npm versions
+  ansible.builtin.command: "{{ item }} --version"
+  loop:
+    - /usr/bin/node
+    - /usr/bin/npm
+  register: nodejs_install_versions
+  changed_when: false
+
+- name: Assert the system Node.js is the selected release line
+  ansible.builtin.assert:
+    that:
+      - nodejs_install_versions.results[0].stdout is match('^v' ~ nodejs_install_major ~ '\.')
+    fail_msg: >-
+      Expected /usr/bin/node v{{ nodejs_install_major }}.x, found
+      {{ nodejs_install_versions.results[0].stdout }}.
+    success_msg: >-
+      node {{ nodejs_install_versions.results[0].stdout }},
+      npm {{ nodejs_install_versions.results[1].stdout }}
