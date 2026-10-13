@@ -37,6 +37,8 @@
 
 - `unifi_remove`: Authenticated mongosh tasks read credentials from a 0600 JavaScript file in a unique private temporary directory, run with --file, and remove the directory in always on success or failure. Existing retries, user-management recovery and removal toggles are preserved.
 
+- `unifi_restore`: protect MongoDB verification results with conditional no_log and mark existing aggregate password arguments for a live restore/rollback rehearsal before conversion.
+
 ## Unreleased — Daybook sessions and Photos offload deploy again on a root connection (2.31.30)
 
 - `daybook_sessions_deploy`: the environment probe, the removal of a broken
