@@ -42,7 +42,8 @@ replacements, or removes media.
   exact, root-owned clean checkout under a root-owned parent so the service
   user cannot replace source, Git metadata, or the `.venv` pathname; only
   `.venv` contents are service-user writable; every ancestor is protected,
-  and no privileged operation traverses `.venv` contents)
+  and no privileged operation traverses `.venv` contents, except root
+  unlinking a whole environment that does not run the pinned Python)
 - `~/.daybook/photos-offload/` and `ledger.json` (directory 0700; Daybook
   creates ledger/lock files at 0600; the role removes inherited directory ACLs
   and Daybook rejects extended ACLs on all private state files)
@@ -65,7 +66,11 @@ write editable-install metadata into the protected source checkout. The
 environment is built on a uv-managed CPython of exactly
 `daybook_photos_offload_python_version` (`UV_PYTHON_PREFERENCE=only-managed`,
 never Homebrew's Python), and deployment asserts it runs exactly that version
-from a uv-managed prefix. Bytecode writes into that checkout are disabled. All launcher, Git, uv, and Daybook
+from a uv-managed prefix. An existing environment that does not run that
+version (another patch release after a pin change, or an interpreter that no
+longer starts) is removed and recreated empty by root before the sync, because
+uv would unlink the `.venv` directory, which the service user cannot do in the
+root-owned checkout. Bytecode writes into that checkout are disabled. All launcher, Git, uv, and Daybook
 diagnostics are suppressed; a failed run emits one stable generic error.
 Scheduled output therefore contains only status,
 `state_changed`, and aggregate counts, or that generic failure—no Photos UUIDs,

@@ -1545,11 +1545,13 @@
       not ansible_check_mode
       or (daybook_photos_offload_checkout_before.stat.isdir | default(false))
 
-# uv replaces an environment on another working interpreter itself, but aborts
-# on one whose interpreter cannot start -- what a vanished base Python leaves.
-# The environment directory sits in the root-owned checkout, so root empties it
-# by removing and recreating it exactly as created above; a fresh, still empty
-# environment has no interpreter to probe and is left alone.
+# uv replaces an environment that does not run the pinned Python by unlinking
+# the environment directory, and aborts on one whose interpreter cannot start.
+# The directory sits in the root-owned checkout, where the service user can
+# empty but not unlink it. So whenever the existing environment does not run
+# exactly the pinned Python, root removes and recreates it exactly as created
+# above and uv fills the empty directory; a fresh, still empty environment has
+# no interpreter to probe and is left alone.
 - name: runtime | Inspect the existing environment's interpreter
   ansible.builtin.stat:
     path: "{{ daybook_photos_offload_venv_path }}/bin/python"
@@ -1560,9 +1562,18 @@
     - daybook_photos_offload_enabled | bool
     - not ansible_check_mode
 
-- name: runtime | Probe the existing environment's interpreter
+- name: runtime | Probe whether the existing environment runs the pinned Python
   ansible.builtin.command:
-    argv: ["{{ daybook_photos_offload_venv_path }}/bin/python", -I, -c, ""]
+    argv:
+      - "{{ daybook_photos_offload_venv_path }}/bin/python"
+      - -I
+      - -c
+      - >-
+        import sys;
+        v = '%d.%d.%d' % sys.version_info[:3];
+        raise SystemExit(0 if v == sys.argv[1] and '/uv/python/cpython-' + v + '-' in sys.base_prefix
+        else 'runs %s from %s' % (v, sys.base_prefix))
+      - "{{ daybook_photos_offload_python_version }}"
   register: daybook_photos_offload_venv_probe
   changed_when: false
   failed_when: false
@@ -1573,7 +1584,7 @@
     - not ansible_check_mode
     - daybook_photos_offload_venv_python.stat.exists | default(false)
 
-- name: runtime | Remove an environment whose interpreter cannot start
+- name: runtime | Remove an environment that does not run the pinned Python
   ansible.builtin.file:
     path: "{{ daybook_photos_offload_venv_path }}"
     state: absent

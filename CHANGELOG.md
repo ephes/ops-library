@@ -3,6 +3,26 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Daybook sessions and Photos offload deploy again on a root connection (2.31.30)
+
+- `daybook_sessions_deploy`: the environment probe, the removal of a broken
+  environment and the pinned-Python check now switch to the service user with a
+  login shell (`become_flags: "-i"`), like every other task of the role. On a
+  host reached as root they started in root's working directory, which the
+  service user cannot read: the probe's module died in `getcwd`, the role read
+  that as an interpreter that cannot start, and the removal failed the same
+  way, after the checkout had already moved and before `uv sync` and the
+  wrappers. Hosts reached as the service user were not affected. A static test
+  requires the login switch on every task that becomes the service user.
+- `daybook_photos_offload_deploy`: the pre-sync probe now asks whether the
+  existing environment runs exactly the pinned uv-managed Python, not only
+  whether its interpreter starts. `uv sync` replaces an environment on another
+  Python by unlinking its directory, which the service user cannot do inside
+  the root-owned checkout (`failed to remove directory …/.venv: Permission
+  denied`); root now removes and recreates the directory in that case as it
+  already did for a dead interpreter, and uv fills the empty directory. A
+  directory a failed run left empty is synced in place.
+
 ## Unreleased — NyxBoard login can be required by the deploy role (2.31.29)
 
 - `nyxmon_deploy`: new `nyxmon_require_login` (default `false`), rendered as
