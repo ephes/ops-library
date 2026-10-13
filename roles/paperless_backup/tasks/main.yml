@@ -1,4 +1,5 @@
 ---
+
 - name: "Validate required paths"
   ansible.builtin.stat:
     path: "{{ item.path }}"
@@ -176,14 +177,13 @@
     mode: "0755"
   when: paperless_backup_exporter_enabled
 
-- name: "Set exporter environment"
-  ansible.builtin.set_fact:
-    paperless_backup_exporter_environment: "{{ {'PAPERLESS_PASSPHRASE': paperless_backup_exporter_passphrase} if (paperless_backup_exporter_passphrase | default('', true) | string | length) > 0 else {} }}"
-  when: paperless_backup_exporter_enabled
-
 - name: "Run Paperless document_exporter"
   ansible.builtin.shell: |
     set -euo pipefail
+    {% if (paperless_backup_exporter_passphrase | default('', true) | string | length) > 0 %}
+    IFS= read -r -d '' task_passphrase || true
+    export PAPERLESS_PASSPHRASE="$task_passphrase"
+    {% endif %}
     cd "{{ paperless_backup_manage_dir }}"
     set -a
     source "{{ paperless_backup_env_file }}"
@@ -191,28 +191,78 @@
     {{ paperless_backup_manage_python }} manage.py document_exporter {{ paperless_backup_exporter_flags }} "{{ paperless_backup_effective_exporter_target }}"
   args:
     executable: /bin/bash
+    stdin: "{{ paperless_backup_exporter_passphrase | default('') }}"
+    stdin_add_newline: false
   become: true
   become_user: "{{ paperless_backup_user }}"
-  environment: "{{ paperless_backup_exporter_environment | default({}) }}"
   no_log: "{{ paperless_backup_exporter_passphrase | length > 0 }}"
   when: paperless_backup_exporter_enabled
 
-- name: "Dump PostgreSQL database"
-  ansible.builtin.shell: |
-    set -euo pipefail
-    {{ paperless_backup_postgres_dump_binary }} \
-      {{ ('--host=' + paperless_backup_postgres_host) if paperless_backup_postgres_host else '' }} \
-      {{ ('--port=' + (paperless_backup_postgres_port | string)) if paperless_backup_postgres_host else '' }} \
-      --username={{ paperless_backup_postgres_user }} \
-      {{ paperless_backup_postgres_dump_options }} \
-      {{ paperless_backup_postgres_database }} > "{{ paperless_backup_dir }}/database/{{ paperless_backup_postgres_database }}.sql"
-  args:
-    executable: /bin/bash
-  become: true
-  become_user: "{{ paperless_backup_postgres_become_user }}"
-  environment:
-    PGPASSWORD: "{{ paperless_backup_postgres_password }}"
-  no_log: "{{ paperless_backup_postgres_password | default('') | length > 0 }}"
+- name: main | Run Dump PostgreSQL database with a private passfile
+  block:
+    - name: main | Validate passfile password format
+      ansible.builtin.assert:
+        that:
+          - '"\n" not in (paperless_backup_postgres_password | default("") | string)'
+          - '"\r" not in (paperless_backup_postgres_password | default("") | string)'
+        fail_msg: PostgreSQL passfile passwords cannot contain line breaks.
+      when: not ansible_check_mode
+
+    - name: main | Allocate private passfile directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: paperless_backup-pgpass-
+      register: paperless_backup_task_pgpass_1
+      become: true
+      become_user: "{{ paperless_backup_postgres_become_user }}"
+      changed_when: false
+      when:
+        - not ansible_check_mode
+        - (paperless_backup_postgres_password | default('') | string | length) > 0
+
+    - name: main | Render PostgreSQL passfile
+      ansible.builtin.template:
+        src: task-pgpass.j2
+        dest: "{{ paperless_backup_task_pgpass_1.path }}/pgpass"
+        mode: "0600"
+      vars:
+        task_pgpass_password: "{{ paperless_backup_postgres_password }}"
+      become: true
+      become_user: "{{ paperless_backup_postgres_become_user }}"
+      no_log: true
+      changed_when: false
+      when:
+        - not ansible_check_mode
+        - paperless_backup_task_pgpass_1.path is defined
+
+    - name: "Dump PostgreSQL database"
+      ansible.builtin.shell: |
+        set -euo pipefail
+        {{ paperless_backup_postgres_dump_binary }} \
+          {{ ('--host=' + paperless_backup_postgres_host) if paperless_backup_postgres_host else '' }} \
+          {{ ('--port=' + (paperless_backup_postgres_port | string)) if paperless_backup_postgres_host else '' }} \
+          --username={{ paperless_backup_postgres_user }} \
+          {{ paperless_backup_postgres_dump_options }} \
+          {{ paperless_backup_postgres_database }} > "{{ paperless_backup_dir }}/database/{{ paperless_backup_postgres_database }}.sql"
+      args:
+        executable: /bin/bash
+      become: true
+      become_user: "{{ paperless_backup_postgres_become_user }}"
+      environment:
+        PGPASSFILE: '{{ paperless_backup_task_pgpass_1.path ~ ''/pgpass'' if paperless_backup_task_pgpass_1.path is defined else omit }}'
+      no_log: "{{ paperless_backup_postgres_password | default('') | length > 0 }}"
+
+  always:
+    - name: main | Remove private passfile directory
+      ansible.builtin.file:
+        path: "{{ paperless_backup_task_pgpass_1.path }}"
+        state: absent
+      become: true
+      become_user: "{{ paperless_backup_postgres_become_user }}"
+      changed_when: false
+      when:
+        - not ansible_check_mode
+        - paperless_backup_task_pgpass_1.path is defined
 
 - name: "Rsync Paperless directories"
   ansible.builtin.command:
@@ -392,6 +442,7 @@
 # renamed into place, so neither a new archive nor one that replaces an
 # existing file of the same name is ever readable by other accounts. Values
 # are passed through the quote filter: this is a shell task.
+
 - name: "Create tar.gz archive"
   ansible.builtin.shell: |
     set -euo pipefail
@@ -477,6 +528,7 @@
 # The local directory is private (paperless_backup_local_dir_mode); the copy
 # itself is owner-only as well, whichever fetch method wrote it and whatever
 # mode an earlier copy of the same name had.
+
 - name: "Restrict local archive copy permissions"
   ansible.builtin.file:
     path: "{{ paperless_backup_local_dir }}/{{ paperless_backup_archive_path | basename }}"
