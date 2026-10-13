@@ -3,6 +3,27 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Restore roles retain every pre-restore copy
+
+- Jellyfin, Navidrome, MeTube, Minecraft Java, SnappyMail and Wagtail use one
+  internal preservation task file. Directory replacements rename live state to
+  a unique timestamped sibling; mount points use a space-checked independent
+  copy verified before emptying live contents. Nested mounts fail closed.
+  Service stops fail closed (an absent Minecraft unit still permits restore
+  before deploy). SnappyMail now quiesces nginx/PHP-FPM and restarts them only
+  after success or a failure before live changes; restart errors are fatal.
+  Its staging stays beside the data and is removed even on failure.
+  No restore prunes these copies. Final reports show paths and sizes; each role
+  README gives the exact manual cleanup pattern. SnappyMail extracts archives
+  into staging before replacing data.
+- Wagtail validates compressed SQL before stopping services, verifies a retained
+  live database dump before dropping the database, restores SQL in one
+  transaction and recovers from the safety dump if SQL replacement fails,
+  leaving services stopped when service management is enabled. Failures after
+  SQL commits keep the restored database. Nonempty legacy
+  `wagtail_restore_postgres_target_opts` overrides now fail validation explicitly.
+  Its site copy and database dump remain available for manual recovery.
+
 ## Unreleased — Daybook sessions and Photos offload deploy again on a root connection (2.31.30)
 
 - `daybook_sessions_deploy`: the environment probe, the removal of a broken

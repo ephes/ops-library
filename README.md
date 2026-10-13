@@ -76,6 +76,11 @@ The current shared restore pilot boundary is intentionally narrow:
 - public pilot roles: `fastdeploy_restore`, `unifi_restore`
 - internal helper: `restore_pilot_internal`
 
+Separately, `restore_preserve_internal` is a small directory-preservation task
+library used by Jellyfin, Navidrome, MeTube, Minecraft Java, SnappyMail and
+Wagtail restores. It retains every timestamped sibling for manual pruning; it
+does not add those roles to the restore pilot scaffold.
+
 That helper is only for the repo-proven host-local scaffold. Delayed roles such as
 `homeassistant_restore`, `paperless_restore`, `vaultwarden_restore`, `minio_restore`,
 `nyxmon_restore`, and the hybrid `minecraft_java_restore` remain outside that scaffold for now.
