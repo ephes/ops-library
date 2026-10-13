@@ -12,6 +12,7 @@ import unittest
 from pathlib import Path
 
 import yaml
+from ansible.plugins.filter.core import to_bool
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 
@@ -41,6 +42,7 @@ def render(template_name: str, **overrides: object) -> str:
         "nyxmon_django_allowed_hosts": "127.0.0.1",
         "nyxmon_django_admin_url": "admin/",
         "nyxmon_django_debug": False,
+        "nyxmon_require_login": defaults["nyxmon_require_login"],
         "nyxmon_telegram_bot_token": "test-token",
         "nyxmon_telegram_chat_id": "1",
         "nyxmon_notify_consecutive_failures": defaults[
@@ -67,6 +69,7 @@ def render(template_name: str, **overrides: object) -> str:
         keep_trailing_newline=True,
     )
     environment.filters["lower"] = lambda value: str(value).lower()
+    environment.filters["bool"] = to_bool
     return environment.get_template(template_name).render(**context)
 
 
@@ -220,6 +223,34 @@ class NotificationPolicyTests(unittest.TestCase):
             main_tasks,
         )
         self.assertIn("nyxmon_notify_consecutive_failures | int <= 100", main_tasks)
+
+
+class RequireLoginTests(unittest.TestCase):
+    def test_login_is_off_by_default(self) -> None:
+        self.assertIs(role_defaults()["nyxmon_require_login"], False)
+        self.assertIn("\nNYXBOARD_REQUIRE_LOGIN=false\n", render("nyxmon.env.j2"))
+
+    def test_login_switch_renders_a_django_boolean(self) -> None:
+        for value, expected in (
+            (True, "true"),
+            ("true", "true"),
+            ("yes", "true"),
+            (False, "false"),
+            ("false", "false"),
+            ("no", "false"),
+        ):
+            with self.subTest(value=value):
+                env_file = render("nyxmon.env.j2", nyxmon_require_login=value)
+                self.assertEqual(
+                    re.findall(r"(?m)^NYXBOARD_REQUIRE_LOGIN=(.*)$", env_file),
+                    [expected],
+                )
+
+    def test_the_readme_documents_the_switch(self) -> None:
+        readme = (ROLE / "README.md").read_text()
+
+        self.assertIn("`nyxmon_require_login`", readme)
+        self.assertIn("`NYXBOARD_REQUIRE_LOGIN`", readme)
 
 
 if __name__ == "__main__":

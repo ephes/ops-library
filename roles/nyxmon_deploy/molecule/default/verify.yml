@@ -101,6 +101,14 @@
       vars:
         nyxmon_env_text: "{{ nyxmon_env_content.content | b64decode }}"
 
+    - name: Verify | Assert NyxBoard login stays off by default
+      ansible.builtin.assert:
+        that:
+          - nyxmon_env_text is regex('(?m)^NYXBOARD_REQUIRE_LOGIN=false$')
+        fail_msg: "Nyxmon .env does not render NYXBOARD_REQUIRE_LOGIN=false by default"
+      vars:
+        nyxmon_env_text: "{{ nyxmon_env_content.content | b64decode }}"
+
     - name: Verify | Check monitoring service active
       ansible.builtin.command:
         argv:

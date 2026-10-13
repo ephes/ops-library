@@ -50,6 +50,10 @@ nyxmon_django_admin_url: "admin/"
 # REQUIRED - Must be provided, no default for security
 # nyxmon_django_secret_key: ""
 nyxmon_django_debug: false
+# Require a logged-in Django user for every NyxBoard page (rendered as
+# NYXBOARD_REQUIRE_LOGIN). Create an account first: with no account nobody can
+# log in. The Traefik routers and the Django admin login are unaffected.
+nyxmon_require_login: false
 
 # Telegram settings (for monitoring)
 # REQUIRED - Must be provided, no defaults for security

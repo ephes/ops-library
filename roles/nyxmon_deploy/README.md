@@ -65,6 +65,32 @@ The monitoring worker unit name defaults to `nyxmon-monitor` and can be
 overridden with `nyxmon_monitoring_service_name` if a host needs a different
 systemd unit name.
 
+### NyxBoard login
+
+| Variable | Default | Rendered as | Meaning |
+| --- | --- | --- | --- |
+| `nyxmon_require_login` | `false` | `NYXBOARD_REQUIRE_LOGIN` | Require a logged-in Django user for every NyxBoard page |
+
+With `nyxmon_require_login: true`, NyxBoard redirects anonymous visitors to
+`/accounts/login/`. This is an application login *inside* the Traefik dual
+router described below, not a replacement for it: LAN and Tailscale clients
+still skip basic auth and then meet the login page, public clients pass basic
+auth first. The Django admin keeps its own staff login either way.
+
+Before enabling it:
+
+- Create an account on the host (`manage.py createsuperuser` as the service
+  user with the service environment). The role does not create one, and with
+  no account nobody can log in until one exists.
+- Use a Nyxmon version and settings module that mark the session and CSRF
+  cookies `Secure`, so the login only works through the HTTPS router. Plain
+  HTTP `GET` probes against the loopback port (such as `nyxmon_restore`'s
+  check of `/admin/login/`) need no cookie and keep working.
+
+The value is rendered as `true` or `false` on every deploy, so setting it back
+to `false` turns the login off again. A change restarts `nyxmon.service` and
+`nyxmon-monitor.service` like any other `.env` change.
+
 ### Monitoring reliability and alert policy
 
 Monitoring reliability defaults are rendered into the shared `.env`:
