@@ -39,6 +39,8 @@
 
 - `unifi_restore`: protect MongoDB verification results with conditional no_log and mark existing aggregate password arguments for a live restore/rollback rehearsal before conversion.
 
+- `minio_restore`: mark existing aggregate MC_HOST credential environments for a live service restore rehearsal before conversion.
+
 ## Unreleased — Daybook sessions and Photos offload deploy again on a root connection (2.31.30)
 
 - `daybook_sessions_deploy`: the environment probe, the removal of a broken
