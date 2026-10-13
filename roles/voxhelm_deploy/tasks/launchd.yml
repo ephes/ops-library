@@ -141,7 +141,8 @@
   when: voxhelm_prune_enabled | bool
 
 # The prune job is periodic: load it, but never kickstart it from a deploy.
-# launchd runs it every voxhelm_prune_interval_seconds (RunAtLoad is false).
+# launchd runs it every voxhelm_prune_interval_seconds, or daily at
+# voxhelm_prune_daily_time when that is set (RunAtLoad is false).
 - name: launchd | Manage Voxhelm prune launchd state
   ansible.builtin.include_tasks: manage_launchd_unit.yml
   vars:

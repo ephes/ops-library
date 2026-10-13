@@ -22,8 +22,18 @@
     <key>WorkingDirectory</key>
     <string>{{ voxhelm_app_dir | e }}</string>
 
+{% if voxhelm_prune_daily_time | string | length > 0 %}
+    <key>StartCalendarInterval</key>
+    <dict>
+      <key>Hour</key>
+      <integer>{{ (voxhelm_prune_daily_time | string).split(':')[0] | int }}</integer>
+      <key>Minute</key>
+      <integer>{{ (voxhelm_prune_daily_time | string).split(':')[1] | int }}</integer>
+    </dict>
+{% else %}
     <key>StartInterval</key>
     <integer>{{ voxhelm_prune_interval_seconds | int }}</integer>
+{% endif %}
     <key>RunAtLoad</key>
     <false/>
     <key>KeepAlive</key>

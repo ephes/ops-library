@@ -205,6 +205,9 @@
     that:
       - (voxhelm_prune_interval_seconds | string) is match('^[0-9]+\Z')
       - (voxhelm_prune_interval_seconds | int) >= 60
+      - >-
+        (voxhelm_prune_daily_time | string | length == 0)
+        or (voxhelm_prune_daily_time | string) is match('^([01][0-9]|2[0-3]):[0-5][0-9]\Z')
       - voxhelm_private_url_hosts is sequence
       - voxhelm_private_url_hosts is not string
       - voxhelm_private_url_hosts is not mapping
@@ -215,6 +218,7 @@
         (voxhelm_private_url_hosts | select('string') | select('match', '^[A-Za-z0-9._:-]+\Z') | list | length)
         == (voxhelm_private_url_hosts | length)
     fail_msg: >-
-      voxhelm_prune_interval_seconds must be a whole number of at least 60, and
-      voxhelm_private_url_hosts must be a list of host names (letters, digits,
+      voxhelm_prune_interval_seconds must be a whole number of at least 60,
+      voxhelm_prune_daily_time must be empty or a quoted "HH:MM" (00:00 to
+      23:59), and voxhelm_private_url_hosts must be a list of host names (letters, digits,
       '.', '-', '_', ':'; no commas or whitespace).

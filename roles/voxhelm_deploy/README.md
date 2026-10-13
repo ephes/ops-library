@@ -17,7 +17,7 @@ Current default runtime:
 - one Django Tasks `db_worker` process
 - one Wyoming STT/TTS sidecar process on port `10300`
 - optional WhisperKit local-server sidecar on port `50060` when explicitly enabled
-- optional hourly `manage.py prune_job_artifacts` launchd job, off by default
+- optional periodic (hourly or daily) `manage.py prune_job_artifacts` launchd job, off by default
   (see "Job Artifact Pruning" below)
 - `whisper.cpp` as the default STT backend on `studio`, with `mlx-whisper` as fallback
 - `mlx-whisper` as the default Wyoming STT backend for short interactive speech
@@ -145,6 +145,7 @@ voxhelm_uvicorn_log_level: "info"
 voxhelm_prune_enabled: false
 voxhelm_prune_dry_run: true
 voxhelm_prune_interval_seconds: 3600
+voxhelm_prune_daily_time: ""  # "HH:MM" (host local time): run once a day instead of every interval
 # Rendered into voxhelm.env only when set; empty/[] keeps Voxhelm's default.
 voxhelm_source_artifact_retention_seconds: ""  # Voxhelm default 86400
 voxhelm_job_metadata_retention_seconds: ""     # Voxhelm default 7776000 (90 days); 0 disables
@@ -306,7 +307,12 @@ speech artifacts are never pruned. The role can schedule it on the control
 plane as a fourth launchd job, `de.wersdoerfer.voxhelm-prune`
 (`voxhelm_prune_label`), which runs `prune.sh` every
 `voxhelm_prune_interval_seconds` (default `3600`, minimum `60`) through
-`StartInterval`; `RunAtLoad` and `KeepAlive` are false. `prune.sh` sources
+`StartInterval`; `RunAtLoad` and `KeepAlive` are false. Set
+`voxhelm_prune_daily_time` to a quoted `"HH:MM"` (host local time, `00:00` to
+`23:59`) to run it once a day at that time instead: the plist then carries
+`StartCalendarInterval` and no `StartInterval`, and launchd runs a slot missed
+while the host slept once after it wakes. Quote the value: YAML reads an
+unquoted `14:30` as a number, which the role rejects. `prune.sh` sources
 `voxhelm.env` like the worker. Output goes to
 `/var/log/voxhelm/voxhelm-prune.log` and `voxhelm-prune.err.log`. A deploy loads
 the job but never kickstarts it, and the source sync keeps `prune.sh` (it is
@@ -335,7 +341,7 @@ To enable it:
 2. Optionally set `voxhelm_source_artifact_retention_seconds` /
    `voxhelm_job_metadata_retention_seconds`, then set
    `voxhelm_prune_enabled: true` (keeping `voxhelm_prune_dry_run: true`) and
-   deploy. Check `voxhelm-prune.log` after the next hourly run.
+   deploy. Check `voxhelm-prune.log` after the next scheduled run.
 3. When the dry-run output looks right, set `voxhelm_prune_dry_run: false` and
    deploy again. The next scheduled run deletes for real; to run it right away,
    use `sudo launchctl kickstart system/de.wersdoerfer.voxhelm-prune`.
