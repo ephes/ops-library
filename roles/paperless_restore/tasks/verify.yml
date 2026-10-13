@@ -1,9 +1,9 @@
 ---
+
 - name: Dry-run verification notice
   ansible.builtin.debug:
     msg: "paperless_restore_dry_run=true - skipping service start and health checks"
   when: paperless_restore_dry_run | bool
-
 - when: not paperless_restore_dry_run | bool
   block:
     - name: Start Paperless services
@@ -26,26 +26,80 @@
       changed_when: false
       loop: "{{ paperless_restore_start_services }}"
 
-    - name: Run PostgreSQL connection test
-      ansible.builtin.shell: |
-        set -euo pipefail
-        echo "{{ paperless_restore_postgres_test_query }}" | {{ paperless_restore_psql_binary }} \
-          --host={{ paperless_restore_postgres_host }} \
-          --port={{ paperless_restore_postgres_port }} \
-          --username={{ paperless_restore_postgres_user }} \
-          --dbname={{ paperless_restore_postgres_database }} \
-          --set ON_ERROR_STOP=1
-      args:
-        executable: /bin/bash
-      become: true
-      become_user: "{{ paperless_restore_postgres_become_user }}"
-      environment: "{{ {'PGPASSWORD': paperless_restore_postgres_password} if (paperless_restore_postgres_password | default('') | string | length) > 0 else {} }}"
-      changed_when: false
-      register: _paperless_restore_pg_check
-      retries: "{{ paperless_restore_postgres_check_retries | int }}"
-      delay: "{{ paperless_restore_postgres_check_delay | int }}"
-      until: _paperless_restore_pg_check.rc == 0
-      when: paperless_restore_postgres_check_enabled | bool
+    - name: verify | Run Run PostgreSQL connection test with a private passfile
+      block:
+        - name: verify | Validate passfile password format
+          ansible.builtin.assert:
+            that:
+              - '"\n" not in (paperless_restore_postgres_password | default("") | string)'
+              - '"\r" not in (paperless_restore_postgres_password | default("") | string)'
+            fail_msg: PostgreSQL passfile passwords cannot contain line breaks.
+          when:
+            - not ansible_check_mode
+            - paperless_restore_postgres_check_enabled | bool
+
+        - name: verify | Allocate private passfile directory
+          ansible.builtin.tempfile:
+            state: directory
+            prefix: paperless_restore-pgpass-
+          register: paperless_restore_task_pgpass_3
+          become: true
+          become_user: "{{ paperless_restore_postgres_become_user }}"
+          changed_when: false
+          when:
+            - not ansible_check_mode
+            - (paperless_restore_postgres_password | default('') | string | length) > 0
+            - paperless_restore_postgres_check_enabled | bool
+
+        - name: verify | Render PostgreSQL passfile
+          ansible.builtin.template:
+            src: task-pgpass.j2
+            dest: "{{ paperless_restore_task_pgpass_3.path }}/pgpass"
+            mode: "0600"
+          vars:
+            task_pgpass_password: "{{ paperless_restore_postgres_password }}"
+          become: true
+          become_user: "{{ paperless_restore_postgres_become_user }}"
+          no_log: true
+          changed_when: false
+          when:
+            - not ansible_check_mode
+            - paperless_restore_task_pgpass_3.path is defined
+            - paperless_restore_postgres_check_enabled | bool
+
+        - name: Run PostgreSQL connection test
+          ansible.builtin.shell: |
+            set -euo pipefail
+            echo "{{ paperless_restore_postgres_test_query }}" | {{ paperless_restore_psql_binary }} \
+              --host={{ paperless_restore_postgres_host }} \
+              --port={{ paperless_restore_postgres_port }} \
+              --username={{ paperless_restore_postgres_user }} \
+              --dbname={{ paperless_restore_postgres_database }} \
+              --set ON_ERROR_STOP=1
+          args:
+            executable: /bin/bash
+          become: true
+          become_user: "{{ paperless_restore_postgres_become_user }}"
+          environment:
+            PGPASSFILE: '{{ paperless_restore_task_pgpass_3.path ~ ''/pgpass'' if paperless_restore_task_pgpass_3.path is defined else omit }}'
+          changed_when: false
+          register: _paperless_restore_pg_check
+          retries: "{{ paperless_restore_postgres_check_retries | int }}"
+          delay: "{{ paperless_restore_postgres_check_delay | int }}"
+          until: _paperless_restore_pg_check.rc == 0
+          when: paperless_restore_postgres_check_enabled | bool
+
+      always:
+        - name: verify | Remove private passfile directory
+          ansible.builtin.file:
+            path: "{{ paperless_restore_task_pgpass_3.path }}"
+            state: absent
+          become: true
+          become_user: "{{ paperless_restore_postgres_become_user }}"
+          changed_when: false
+          when:
+            - not ansible_check_mode
+            - paperless_restore_task_pgpass_3.path is defined
 
     - name: Perform HTTP health check
       ansible.builtin.uri:
