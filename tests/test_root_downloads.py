@@ -110,6 +110,28 @@ def test_release_urls_render_with_matching_architecture_checksum(arch):
                         assert target in url
 
 
+@pytest.mark.parametrize("arch,target", [("x86_64", "x86_64"), ("arm64", "aarch64")])
+def test_uv_darwin_checksums(arch, target):
+    env = Environment(undefined=StrictUndefined)
+    defaults = yaml.safe_load((ROOT / "roles/uv_install/defaults/main.yml").read_text())
+    nodes = list(
+        checker.walk(
+            yaml.safe_load((ROOT / "roles/uv_install/tasks/main.yml").read_text())
+        )
+    )
+    expression = next(
+        n["ansible.builtin.set_fact"]["uv_release_target"]
+        for n in nodes
+        if "uv_release_target" in n.get("ansible.builtin.set_fact", {})
+    )
+    values = dict(
+        defaults, ansible_architecture=arch, ansible_facts={"os_family": "Darwin"}
+    )
+    release = env.from_string(expression).render(values)
+    assert release == target + "-apple-darwin"
+    assert defaults["uv_checksum"][release].startswith("sha256:")
+
+
 def test_shared_mc_download_has_checksum():
     nodes = yaml.safe_load(
         (ROOT / "roles/minio_backup/tasks/mc_install.yml").read_text()
@@ -144,6 +166,61 @@ def test_echoport_pins_are_passed_over_included_role_defaults():
     assert "custom-release" in env.from_string(
         values["echoport_backup_mc_download_url"]
     ).render(values)
+
+
+def test_uv_consumers_use_the_verified_default():
+    version = yaml.safe_load((ROOT / "roles/uv_install/defaults/main.yml").read_text())[
+        "uv_version"
+    ]
+    for role, key in [
+        ("homeassistant_deploy", "homeassistant_uv_version"),
+        ("open_webui_venv_deploy", "open_webui_uv_version"),
+        ("metube_shared", "metube_uv_version"),
+    ]:
+        assert (
+            yaml.safe_load((ROOT / f"roles/{role}/defaults/main.yml").read_text())[key]
+            == version
+        )
+    for path in (ROOT / "roles").glob("*/defaults/main.yml"):
+        values = yaml.safe_load(path.read_text()) or {}
+        for key, value in values.items():
+            if key.endswith("uv_version"):
+                assert value != "latest", (path, key)
+
+
+def test_uv_verified_archive_extracts_with_system_tar(tmp_path):
+    import io
+    import subprocess
+    import tarfile
+
+    nodes = list(
+        checker.walk(
+            yaml.safe_load((ROOT / "roles/uv_install/tasks/main.yml").read_text())
+        )
+    )
+    download = next(n for n in nodes if n.get("name") == "Download verified uv archive")
+    extract = next(n for n in nodes if n.get("name") == "Extract verified uv archive")
+    assert (
+        download["ansible.builtin.get_url"]["checksum"]
+        == "{{ uv_checksum[uv_release_target] }}"
+    )
+    assert nodes.index(download) < nodes.index(extract)
+    with tarfile.open(tmp_path / "uv.tar.gz", "w:gz") as archive:
+        for name in ("uv", "uvx"):
+            data = b"verified binary fixture"
+            member = tarfile.TarInfo("uv-aarch64-apple-darwin/" + name)
+            member.size = len(data)
+            archive.addfile(member, io.BytesIO(data))
+    env = Environment(undefined=StrictUndefined)
+    argv = [
+        env.from_string(arg).render(temp_dir={"path": str(tmp_path)})
+        for arg in extract["ansible.builtin.command"]["argv"]
+    ]
+    subprocess.run(argv, check=True, capture_output=True)
+    for name in ("uv", "uvx"):
+        assert (
+            tmp_path / "uv-aarch64-apple-darwin" / name
+        ).read_bytes() == b"verified binary fixture"
 
 
 @pytest.mark.parametrize(

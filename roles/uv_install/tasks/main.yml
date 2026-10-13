@@ -50,32 +50,47 @@
         not uv_installed.stat.exists or
         (uv_is_symlink | default(false)) or
         uv_force_reinstall or
-        (uv_update_existing and uv_version != "latest" and current_version is defined and current_version != uv_version)
+        (uv_update_existing and (current_version | default('')) != uv_version)
       }}
-
-- name: Update uv when tracking latest
-  ansible.builtin.command: "{{ uv_install_dir }}/uv self update"
-  register: uv_self_update
-  changed_when: "'Updated' in uv_self_update.stdout"
-  failed_when: false
-  when:
-    - uv_installed.stat.exists
-    - not (uv_is_symlink | default(false))
-    - uv_update_existing
-    - uv_version == "latest"
-  become: yes
-
-- name: Reinstall uv when self update fails
-  ansible.builtin.set_fact:
-    needs_install: true
-  when:
-    - uv_self_update is defined
-    - uv_self_update.rc is defined
-    - uv_self_update.rc != 0
 
 - name: Install or update uv
   when: needs_install | bool
   block:
+    - name: Create temporary directory for installation
+      tempfile:
+        state: directory
+        suffix: .uv_install
+      register: temp_dir
+
+    - name: Select uv release target
+      ansible.builtin.set_fact:
+        uv_release_target: "{{ {'x86_64': 'x86_64', 'aarch64': 'aarch64', 'arm64': 'aarch64'}.get(ansible_architecture, 'unsupported') }}-{{ 'apple-darwin' if ansible_facts.os_family == 'Darwin' else 'unknown-linux-gnu' }}"
+
+    - name: Validate pinned uv release
+      ansible.builtin.assert:
+        that:
+          - uv_version != 'latest'
+          - uv_release_target in uv_checksum
+        fail_msg: "Set a pinned uv_version and matching uv_checksum for this platform."
+
+    - name: Download verified uv archive
+      ansible.builtin.get_url:
+        url: "https://github.com/astral-sh/uv/releases/download/{{ uv_version }}/uv-{{ uv_release_target }}.tar.gz"
+        checksum: "{{ uv_checksum[uv_release_target] }}"
+        dest: "{{ temp_dir.path }}/uv.tar.gz"
+        mode: '0644'
+        timeout: 30
+
+    - name: Extract verified uv archive
+      ansible.builtin.command:
+        argv:
+          - tar
+          - -xzf
+          - "{{ temp_dir.path }}/uv.tar.gz"
+          - -C
+          - "{{ temp_dir.path }}"
+      changed_when: true
+
     - name: Remove existing symlink if present
       file:
         path: "{{ uv_install_dir }}/{{ item }}"
@@ -86,33 +101,18 @@
       when: uv_is_symlink | default(false)
       become: yes
 
-    - name: Create temporary directory for installation
-      tempfile:
-        state: directory
-        suffix: .uv_install
-      register: temp_dir
-
-    - name: Download uv installer script
-      get_url:
-        url: https://astral.sh/uv/install.sh
-        dest: "{{ temp_dir.path }}/install.sh"
+    - name: Install uv and uvx
+      ansible.builtin.copy:
+        src: "{{ temp_dir.path }}/uv-{{ uv_release_target }}/{{ item }}"
+        dest: "{{ uv_install_dir }}/{{ item }}"
+        remote_src: true
+        owner: "{{ uv_install_owner }}"
+        group: "{{ uv_install_group }}"
         mode: '0755'
-        timeout: 30
-      register: download_result
-
-    - name: Run uv installer script
-      shell: |
-        export UV_INSTALL_DIR="{{ uv_install_dir }}"
-        {% if uv_version != "latest" %}
-        export UV_VERSION="{{ uv_version }}"
-        {% endif %}
-        bash "{{ temp_dir.path }}/install.sh"
-      args:
-        executable: /bin/bash
-      environment:
-        HOME: "{{ ansible_env.HOME | default('/root') }}"
-      become: yes
-      register: install_result
+      loop:
+        - uv
+        - uvx
+      become: true
 
     - name: Ensure uv binaries are owned by root and world-executable
       file:
@@ -125,17 +125,12 @@
         - uvx
       become: yes
 
+  always:
     - name: Clean up temporary directory
-      file:
+      ansible.builtin.file:
         path: "{{ temp_dir.path }}"
         state: absent
-
-    - name: Display installation output
-      debug:
-        var: install_result.stdout_lines
-      when:
-        - install_result.stdout_lines is defined
-        - ansible_verbosity >= 1
+      when: temp_dir.path is defined
 
 - name: Create system-wide symlinks (deprecated - use uv_install_dir instead)
   file:

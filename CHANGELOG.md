@@ -7,6 +7,7 @@
 
 - `echoport_backup`: pin and verify mc using the existing MinIO installer tasks. Reconcile the installed binary on every deploy, using the project’s GitHub release after dl.min.io was discontinued. A differing mc binary is replaced at the next deploy.
 - `sops_dependencies`: verify the pinned Linux amd64 sops and age downloads using published SHA-256 values, including the sops apt fallback.
+- `uv_install`: replace the root-run shell installer and automatic self-update with pinned, SHA-256-verified uv/uvx archives for Linux and macOS on x86_64/ARM64. Bump version and checksums together. Reject `uv_version: latest`; pin the three consumer-role defaults to the verified version. Both older and newer installed versions are replaced when updates are enabled; extraction supports GNU and BSD tar.
 
 ## Unreleased — Daybook sessions and Photos offload deploy again on a root connection (2.31.30)
 
