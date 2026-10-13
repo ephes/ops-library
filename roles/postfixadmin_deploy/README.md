@@ -71,6 +71,10 @@ See `defaults/main.yml` in `postfixadmin_shared` for all available variables.
 
 ## Schema Migration
 
+Schema setup runs `public/upgrade.php` on each deployment. It reports unchanged
+for both `Database is up to date` and `all database updates are applied (version N)`;
+runs that apply database updates still report changed.
+
 If you have existing data in the custom `mail_*` tables schema, this role can migrate it to PostfixAdmin's native schema:
 
 1. Set `postfixadmin_migrate_schema: true`

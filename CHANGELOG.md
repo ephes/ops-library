@@ -5,6 +5,10 @@
 
 ## Unreleased — Daybook sessions checkout can follow a branch head (2.31.27)
 
+- `postfixadmin_deploy`: schema setup recognises both legacy and current
+  `upgrade.php` messages for an up-to-date database, avoiding false changes
+  during repeated deployments while still reporting applied updates as changed.
+  Render/static regression coverage checks both messages and real update output.
 - `daybook_sessions_deploy`: no-fetch mode (`daybook_sessions_repo_update:
   false`) accepts `daybook_sessions_repo_bundle_src`, a controller-side git
   bundle carrying `daybook_sessions_repo_ref`. When the dedicated checkout lacks

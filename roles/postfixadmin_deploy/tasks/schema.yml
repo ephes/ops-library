@@ -7,5 +7,7 @@
     cmd: php public/upgrade.php
     chdir: "{{ postfixadmin_install_path }}"
   register: postfixadmin_schema_result
-  changed_when: "'Database is up to date' not in postfixadmin_schema_result.stdout"
+  changed_when: >-
+    'Database is up to date' not in postfixadmin_schema_result.stdout and
+    'all database updates are applied (version ' not in postfixadmin_schema_result.stdout
   failed_when: postfixadmin_schema_result.rc != 0
