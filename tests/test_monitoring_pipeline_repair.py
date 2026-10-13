@@ -195,6 +195,7 @@ class RebootRequiredDetectionTests(unittest.TestCase):
         they passed while the deployed script read an empty kernel list on
         every host. A fake must speak the contract of the thing it replaces.
         """
+        self.addCleanup(setattr, module.os, "uname", module.os.uname)
         module.os.uname = lambda: type("U", (), {"release": running})()
 
         def fake_run(argv, **kwargs):
