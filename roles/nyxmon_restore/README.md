@@ -34,12 +34,20 @@ nyxmon_restore_create_safety_backup: true
 nyxmon_restore_cleanup_safety_backup: true
 nyxmon_restore_verify_http: true
 nyxmon_restore_health_url: http://127.0.0.1:10017/admin/login/
+nyxmon_restore_health_headers: { X-Forwarded-Proto: https }
+nyxmon_restore_health_expected_status: 200
 nyxmon_restore_dirs:
   - { name: media,  src: media,  dest: /home/nyxmon/site/media,      optional: false }
   - { name: static, src: static, dest: /home/nyxmon/site/staticfiles, optional: true }
   - { name: cache,  src: cache,  dest: /home/nyxmon/site/cache,      optional: true }
   - { name: logs,   src: logs,   dest: /home/nyxmon/logs,            optional: true }
 ```
+
+The HTTP probe runs on the host against the loopback port. Nyxmon's
+`config.settings.production` redirects plain HTTP to HTTPS, so the probe sends
+`X-Forwarded-Proto: https` like Traefik does and expects 200; a probe without
+that header gets a 301. The host in `nyxmon_restore_health_url` must be listed
+in `nyxmon_django_allowed_hosts` (the deploy role's default is `127.0.0.1`).
 
 Archives are restored from `nyxmon_restore_archive_search_root` on the target host. The older
 `nyxmon_restore_local_cache` compatibility variable still exists in defaults, but this role's

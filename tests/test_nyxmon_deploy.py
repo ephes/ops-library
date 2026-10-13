@@ -253,5 +253,56 @@ class RequireLoginTests(unittest.TestCase):
         self.assertIn("`NYXBOARD_REQUIRE_LOGIN`", readme)
 
 
+
+class ProductionSettingsContractTests(unittest.TestCase):
+    """config.settings.production redirects plain HTTP and checks the host."""
+
+    def test_default_settings_module_is_production(self) -> None:
+        self.assertEqual(
+            role_defaults()["nyxmon_django_settings_module"],
+            "config.settings.production",
+        )
+
+    def test_env_file_provides_what_production_settings_require(self) -> None:
+        rendered = render("nyxmon.env.j2", nyxmon_django_allowed_hosts="127.0.0.1,x.test")
+
+        for line in (
+            "DJANGO_SETTINGS_MODULE=config.settings.production",
+            "DJANGO_SECRET_KEY=test-secret-key",
+            "DJANGO_ALLOWED_HOSTS=127.0.0.1,x.test",
+            "DJANGO_CACHE_LOCATION=/home/nyxmon/site/cache",
+            "DJANGO_ADMIN_URL=admin/",
+        ):
+            self.assertIn(line + "\n", rendered)
+
+    def test_web_service_starts_the_proxy_aware_entrypoint_on_loopback(self) -> None:
+        unit = render("nyxmon.service.j2")
+
+        self.assertIn("--host 127.0.0.1", unit)
+        self.assertIn("config.wsgi_proxy:application", unit)
+
+    def test_restore_probe_presents_itself_as_https_from_loopback(self) -> None:
+        restore = ROOT / "roles" / "nyxmon_restore"
+        defaults = yaml.safe_load((restore / "defaults" / "main.yml").read_text())
+        (probe,) = [
+            task
+            for task in yaml.safe_load((restore / "tasks" / "verify.yml").read_text())
+            if task["name"] == "HTTP health probe"
+        ]
+
+        self.assertTrue(
+            defaults["nyxmon_restore_health_url"].startswith("http://127.0.0.1:")
+        )
+        self.assertIn("127.0.0.1", role_defaults()["nyxmon_django_allowed_hosts"])
+        self.assertEqual(
+            defaults["nyxmon_restore_health_headers"], {"X-Forwarded-Proto": "https"}
+        )
+        self.assertEqual(defaults["nyxmon_restore_health_expected_status"], 200)
+        self.assertEqual(
+            probe["ansible.builtin.uri"]["headers"],
+            "{{ nyxmon_restore_health_headers }}",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
