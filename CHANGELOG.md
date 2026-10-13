@@ -3,6 +3,14 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — FastDeploy runner step states
+
+- `fastdeploy_register_service`: advisory systemd verification now reports `success` with a
+  `WARNING:` message containing the unit name and systemd state when the unit is inactive.
+  The former `warning` state was rejected by FastDeploy's API with HTTP 422. Regression tests
+  audit step-state literals across the runner templates and helpers and exercise rendered
+  verification paths; only `running`, `success`, and `failure` are emitted.
+
 ## Unreleased — Daybook sessions and Photos offload deploy again on a root connection (2.31.30)
 
 - `daybook_sessions_deploy`: the environment probe, the removal of a broken
