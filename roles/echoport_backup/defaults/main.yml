@@ -25,7 +25,10 @@ echoport_backup_default_bucket: "backups"
 
 # mc (MinIO client) installation
 echoport_backup_mc_install_path: "/usr/local/bin/mc"
-echoport_backup_mc_download_url: "https://dl.min.io/client/mc/release/linux-amd64/mc"
+echoport_backup_mc_version: "RELEASE.2025-08-13T08-35-41Z"
+# https://github.com/minio/mc/releases/download/RELEASE.2025-08-13T08-35-41Z/mc.linux-amd64.RELEASE.2025-08-13T08-35-41Z.sha256sum
+echoport_backup_mc_checksum: "sha256:01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891"
+echoport_backup_mc_download_url: "https://github.com/minio/mc/releases/download/{{ echoport_backup_mc_version }}/mc.linux-amd64.{{ echoport_backup_mc_version }}"
 
 # Temporary directory for backup operations
 echoport_backup_temp_dir: "/tmp/echoport-backup"

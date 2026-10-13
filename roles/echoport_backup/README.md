@@ -215,3 +215,20 @@ ECHOPORT_RESULT:{"success": true, "bucket": "backups", "key": "nyxmon/2024-01-15
 ## License
 
 MIT
+
+## Verified release downloads
+
+The mc installer reuses `minio_backup/tasks/mc_install.yml`. Each deploy reconciles the existing mc binary at `echoport_backup_mc_install_path` (default `/usr/local/bin/mc`) against the pinned SHA-256, replacing a different binary. The default GitHub URL replaces the discontinued dl.min.io endpoint. Override `echoport_backup_mc_download_url` only with an artifact matching `echoport_backup_mc_checksum`. Linux amd64 remains the supported target.
+
+Pinned defaults (checksum map keys identify the release architecture/target):
+
+| Variable | Default |
+| --- | --- |
+| `echoport_backup_mc_version` | `RELEASE.2025-08-13T08-35-41Z` |
+| `echoport_backup_mc_checksum` | `sha256:01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891` |
+
+To update, bump the version and checksum together. Fetch the SHA-256 from the
+project’s published checksum file or release-page asset digest over HTTPS,
+and update the source URL comment beside the checksum in `defaults/main.yml`.
+Never reuse the old checksum for a new version. Supply matching checksums for
+every enabled architecture. Run `just test-root-downloads` before deploying.
