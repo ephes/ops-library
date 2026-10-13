@@ -1,0 +1,38 @@
+---
+# The root-owned activation proof names the Daybook commit under which the
+# identity migration was applied and verified. A deployment that follows a
+# moving branch installs later commits, so the proof stays valid exactly while
+# the installed commit is that commit or descends from it. The plan hash is
+# still bound exactly, and the installed Daybook re-verified the attestation
+# just before this.
+- name: weeknotes_identity_proof | Require the proof to bind the verified plan
+  ansible.builtin.assert:
+    that:
+      - daybook_weeknotes_identity_proof is mapping
+      - daybook_weeknotes_identity_proof.daybook_repo_ref | default('') is string
+      - (daybook_weeknotes_identity_proof.daybook_repo_ref | default('') | regex_search('^[0-9a-f]{40}$')) is not none
+      - >-
+        daybook_weeknotes_identity_proof
+        == {
+          'schema_version': 1,
+          'identity_epoch': 'monday-after-v1',
+          'plan_hash': daybook_weeknotes_identity_proof_plan_hash,
+          'daybook_repo_ref': daybook_weeknotes_identity_proof.daybook_repo_ref | default('')
+        }
+    fail_msg: "The root activation proof does not bind this exact plan and a Daybook revision."
+  no_log: true
+
+- name: weeknotes_identity_proof | Require the installed Daybook to descend from the proof's revision
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/git
+      - merge-base
+      - --is-ancestor
+      - "{{ daybook_weeknotes_identity_proof.daybook_repo_ref }}"
+      - HEAD
+    chdir: "{{ daybook_sessions_checkout_path }}"
+  become: "{{ (ansible_user_id | default(lookup('env', 'USER'))) != daybook_sessions_service_user }}"
+  become_user: "{{ daybook_sessions_service_user }}"
+  become_flags: "-i"
+  changed_when: false
+  check_mode: false

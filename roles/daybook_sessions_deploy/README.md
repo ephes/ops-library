@@ -50,6 +50,7 @@ daybook_sessions_repo_url: "https://github.com/ephes/daybook.git"
 daybook_sessions_repo_ref: "CHANGEME"
 daybook_sessions_checkout_path: "{{ daybook_sessions_service_home }}/.local/share/daybook/sessions/daybook"
 daybook_sessions_repo_update: true
+daybook_sessions_repo_bundle_src: ""
 daybook_sessions_path: "s3://agent-sessions"
 daybook_sessions_schedule_interval_seconds: 1800
 daybook_sessions_launchd_label: "de.wersdoerfer.daybook.sessions"
@@ -173,6 +174,18 @@ detaches it at the pinned commit. The role verifies the checkout and commit loca
 untracked files, rejects tracked changes when force is disabled, and uses a
 local detached checkout without any remote operation. A missing checkout or
 object fails instead of cloning or fetching.
+
+No-fetch mode can still receive a commit the checkout has never seen: set
+`daybook_sessions_repo_bundle_src` to a controller-side git bundle that carries
+`daybook_sessions_repo_ref`. When the checkout lacks that commit, the role
+copies the bundle next to the checkout (service-user-owned, mode 0600),
+requires it to carry the commit at a ref below `refs/` (a bundle of `HEAD`
+alone is refused), fetches its refs into
+`refs/bundle/*`, and removes the copy again; the checks and the local detached
+checkout above then run unchanged. A checkout that already holds the commit is
+not touched, so a repeated run copies nothing. This is how private control lets
+the checkout follow a branch head it resolved to a commit at deploy time
+without giving the host a repository credential.
 
 ## Launchd Scope
 
@@ -311,7 +324,16 @@ mutation, the role disables and unloads the exact reconcile LaunchDaemon.
 Requesting `monday-after-v1` additionally requires a clean exact pinned Daybook
 checkout, the exact private control seed, matching service-user-owned mode-0600
 seed/plan/attestation files, and a root-owned mode-0600 activation proof binding
-their plan hash to that Daybook revision. The installed helper and launcher must
+their plan hash to the Daybook revision that applied the migration. The proof
+is written by the operator rail's verified `apply`, and only by it; a later
+deployment accepts it while the installed commit is that revision or descends
+from it (`git merge-base --is-ancestor`), so the checkout can move forward
+along its branch without a new apply, and a checkout moved backwards or onto
+unrelated history is refused. Every verified `apply` rewrites the proof with
+the commit installed at that moment -- including the fresh apply that schedule
+activation requires -- so an apply after an upgrade advances that anchor:
+commits older than it are no longer accepted, and going back to one needs a
+new apply there. The installed helper and launcher must
 match the current root-owned templates. Only then is the epoch rendered or the
 schedule allowed to activate. Private control must perform a fresh idempotent
 apply and include `tasks_from: weeknotes_reconcile_activate` in the same play;

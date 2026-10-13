@@ -1,0 +1,179 @@
+---
+# Behaviour of the two task files that let daybook_sessions_deploy follow a
+# moving branch on a host that never fetches from the remote: the bundle
+# transport and the activation proof's ancestry rule. Real git, no fakes.
+- name: Test Daybook sessions bundle transport and proof ancestry
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/daybook_sessions_deploy"
+    follow_root: "/tmp/ops-library-{{ (playbook_dir | hash('sha1'))[:10] }}-daybook-follow-branch"
+    follow_git_env:
+      GIT_CONFIG_GLOBAL: /dev/null
+      GIT_CONFIG_SYSTEM: /dev/null
+      GIT_AUTHOR_NAME: test
+      GIT_AUTHOR_EMAIL: test@example.invalid
+      GIT_COMMITTER_NAME: test
+      GIT_COMMITTER_EMAIL: test@example.invalid
+    daybook_sessions_service_user: "{{ lookup('env', 'USER') }}"
+    daybook_sessions_service_group: "{{ lookup('pipe', 'id -gn') }}"
+    daybook_sessions_checkout_path: "{{ follow_root }}/sessions/daybook"
+    daybook_sessions_repo_bundle_src: "{{ follow_root }}/controller.bundle"
+    daybook_sessions_repo_bundle_path: "{{ follow_root }}/sessions/daybook-source.bundle"
+    follow_plan_hash: "{{ 'plan' | hash('sha256') }}"
+  tasks:
+    - name: Reset the fixture
+      ansible.builtin.file:
+        path: "{{ follow_root }}"
+        state: absent
+
+    - name: Build a source with two commits, a checkout at the first and a bundle of the second
+      ansible.builtin.shell: |
+        set -eu
+        mkdir -p "{{ follow_root }}/sessions"
+        cd "{{ follow_root }}"
+        /usr/bin/git init --quiet --initial-branch=main source
+        /usr/bin/git -C source commit --quiet --allow-empty -m first
+        /usr/bin/git clone --quiet source sessions/daybook
+        /usr/bin/git -C sessions/daybook checkout --quiet --detach HEAD
+        /usr/bin/git -C source commit --quiet --allow-empty -m second
+        /usr/bin/git -C source update-ref refs/remotes/origin/main HEAD
+        /usr/bin/git -C source bundle create --quiet "{{ follow_root }}/controller.bundle" refs/remotes/origin/main
+        /usr/bin/git -C source bundle create --quiet "{{ follow_root }}/head-only.bundle" HEAD
+        /usr/bin/git -C source rev-parse HEAD~1 HEAD
+      environment: "{{ follow_git_env }}"
+      register: follow_commits
+      changed_when: false
+
+    - name: Name the two commits
+      ansible.builtin.set_fact:
+        follow_first: "{{ follow_commits.stdout_lines[0] }}"
+        follow_second: "{{ follow_commits.stdout_lines[1] }}"
+
+    - name: Refuse a bundle that does not carry the requested commit
+      block:
+        - name: Stage a commit the bundle lacks
+          ansible.builtin.include_tasks: "{{ role_path }}/tasks/source_bundle.yml"
+          vars:
+            daybook_sessions_repo_ref: "{{ 'f' * 40 }}"
+
+        - name: Fail because the foreign bundle was accepted
+          ansible.builtin.fail:
+            msg: A bundle without the requested commit was accepted.
+      rescue:
+        - name: Require the refusal to come from the bundle check
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'source_bundle | Require the bundle to carry the requested commit'
+
+    - name: Refuse a bundle that names the commit only as HEAD
+      block:
+        - name: Stage from a bundle whose only head the fetch would not import
+          ansible.builtin.include_tasks: "{{ role_path }}/tasks/source_bundle.yml"
+          vars:
+            daybook_sessions_repo_ref: "{{ follow_second }}"
+            daybook_sessions_repo_bundle_src: "{{ follow_root }}/head-only.bundle"
+
+        - name: Fail because the HEAD-only bundle was accepted
+          ansible.builtin.fail:
+            msg: A bundle that names the commit only as HEAD was accepted.
+      rescue:
+        - name: Require the refusal to come from the bundle check
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'source_bundle | Require the bundle to carry the requested commit'
+
+    - name: Stage the second commit from the bundle
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/source_bundle.yml"
+      vars:
+        daybook_sessions_repo_ref: "{{ follow_second }}"
+
+    - name: Inspect the checkout and the staged bundle path
+      ansible.builtin.shell: |
+        set -eu
+        cd "{{ daybook_sessions_checkout_path }}"
+        /usr/bin/git cat-file -e "{{ follow_second }}^{commit}"
+        /usr/bin/git rev-parse HEAD
+        /usr/bin/git for-each-ref --format='%(refname)' refs/bundle
+        test ! -e "{{ daybook_sessions_repo_bundle_path }}" && echo bundle-removed
+      environment: "{{ follow_git_env }}"
+      register: follow_staged
+      changed_when: false
+
+    - name: Require the commit present, HEAD unmoved and no bundle left behind
+      ansible.builtin.assert:
+        that:
+          - follow_staged.stdout_lines == [follow_first, 'refs/bundle/remotes/origin/main', 'bundle-removed']
+          - daybook_sessions_bundle_commit.rc != 0
+
+    - name: Stage the same commit again
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/source_bundle.yml"
+      vars:
+        daybook_sessions_repo_ref: "{{ follow_second }}"
+
+    - name: Require the second run to find the commit and copy nothing
+      ansible.builtin.assert:
+        that:
+          - daybook_sessions_bundle_commit.rc == 0
+
+    - name: Accept a proof made at the installed commit
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/weeknotes_identity_proof.yml"
+      vars:
+        daybook_weeknotes_identity_proof_plan_hash: "{{ follow_plan_hash }}"
+        daybook_weeknotes_identity_proof:
+          schema_version: 1
+          identity_epoch: monday-after-v1
+          plan_hash: "{{ follow_plan_hash }}"
+          daybook_repo_ref: "{{ follow_first }}"
+
+    - name: Reject proofs that do not bind the plan and an ancestor revision
+      ansible.builtin.include_tasks: tasks/test_daybook_identity_proof_rejected.yml
+      loop:
+        - name: a proof made at a commit the installed one does not descend from
+          expected: "weeknotes_identity_proof | Require the installed Daybook to descend from the proof's revision"
+          proof: {schema_version: 1, identity_epoch: monday-after-v1, plan_hash: "{{ follow_plan_hash }}", daybook_repo_ref: "{{ follow_second }}"}
+        - name: a proof for another plan
+          expected: weeknotes_identity_proof | Require the proof to bind the verified plan
+          proof: {schema_version: 1, identity_epoch: monday-after-v1, plan_hash: "{{ 'other' | hash('sha256') }}", daybook_repo_ref: "{{ follow_first }}"}
+        - name: a proof naming a branch instead of a commit
+          expected: weeknotes_identity_proof | Require the proof to bind the verified plan
+          proof: {schema_version: 1, identity_epoch: monday-after-v1, plan_hash: "{{ follow_plan_hash }}", daybook_repo_ref: main}
+        - name: a proof without a revision
+          expected: weeknotes_identity_proof | Require the proof to bind the verified plan
+          proof: {schema_version: 1, identity_epoch: monday-after-v1, plan_hash: "{{ follow_plan_hash }}"}
+        - name: a proof with an extra field
+          expected: weeknotes_identity_proof | Require the proof to bind the verified plan
+          proof: {schema_version: 1, identity_epoch: monday-after-v1, plan_hash: "{{ follow_plan_hash }}", daybook_repo_ref: "{{ follow_first }}", note: extra}
+      loop_control:
+        loop_var: follow_case
+        label: "{{ follow_case.name }}"
+
+    - name: Move the checkout to the second commit
+      ansible.builtin.command:
+        argv: [/usr/bin/git, checkout, --quiet, --detach, "{{ follow_second }}"]
+        chdir: "{{ daybook_sessions_checkout_path }}"
+      environment: "{{ follow_git_env }}"
+      changed_when: false
+
+    - name: Accept the earlier proof once the installed commit descends from it
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/weeknotes_identity_proof.yml"
+      vars:
+        daybook_weeknotes_identity_proof_plan_hash: "{{ follow_plan_hash }}"
+        daybook_weeknotes_identity_proof:
+          schema_version: 1
+          identity_epoch: monday-after-v1
+          plan_hash: "{{ follow_plan_hash }}"
+          daybook_repo_ref: "{{ follow_first }}"
+
+    - name: Require the role to use both task files
+      ansible.builtin.assert:
+        that:
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/main.yml') is search('include_tasks. source_bundle.yml')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is search('include_tasks. weeknotes_identity_proof.yml')
+          - lookup('ansible.builtin.file', role_path ~ '/tasks/weeknotes_reconcile.yml') is not search("'daybook_repo_ref'. daybook_weeknotes_identity_required_repo_ref")
+
+    - name: Remove the fixture
+      ansible.builtin.file:
+        path: "{{ follow_root }}"
+        state: absent

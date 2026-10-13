@@ -480,6 +480,13 @@
     - daybook_sessions_enabled | bool
     - not (daybook_sessions_repo_update | bool)
 
+- name: source | Stage the pinned Daybook commit from a bundle for no-fetch mode
+  ansible.builtin.include_tasks: source_bundle.yml
+  when:
+    - daybook_sessions_enabled | bool
+    - not (daybook_sessions_repo_update | bool)
+    - daybook_sessions_repo_bundle_src | string | length > 0
+
 - name: source | Verify pinned Daybook commit exists locally for no-fetch mode
   ansible.builtin.command:
     argv:
