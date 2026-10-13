@@ -54,10 +54,10 @@ vibe_coding_install_node: true
 vibe_coding_node_major_version: "22"
 
 # Neovim (from GitHub releases)
-vibe_coding_neovim_version: "0.11.6"
+vibe_coding_neovim_version: "0.12.5"
 
 # lazygit (from GitHub releases)
-vibe_coding_lazygit_version: "0.59.0"
+vibe_coding_lazygit_version: "0.65.1"
 
 # Rust toolchain (rustup + rust-analyzer)
 vibe_coding_install_rust: true
@@ -140,3 +140,26 @@ vibe_coding_sshd_hardening: true
 - Legacy: when only `vibe_coding_chezmoi_source_dir` is set, chezmoi source is rsynced from local machine (no `.git` on target).
 - Node.js is pinned to a major version via NodeSource (e.g. `22`); minor updates come via apt.
 - Intended for Ubuntu targets. MIT licensed.
+
+## Verified release downloads
+
+Linux x86_64 and aarch64 are supported. Neovim and lazygit retain version-based installation guards; matching versions are left alone. Neovim stays under `/opt/nvim-linux-<arch>` with `/usr/local/bin/nvim` as a symlink; lazygit and zellij stay in `/usr/local/bin`, owned by root, mode 0755. Zellij and rustup retain installation-only guards: existing installations are left alone. Rustup-init is verified before running as `vibe_coding_user`, keeping its toolchain under that user’s home. Rustup toolchain/component downloads continue to use rustup’s upstream verification; the pin here covers the bootstrap binary. NodeSource’s existing repository signing-key download remains unverified because no vendor checksum was found; the regression helper exempts only its exact existing URL/task file. Apt package authentication and per-user npm installs are outside the release-binary checks.
+
+Pinned defaults (checksum map keys identify the release architecture/target):
+
+| Variable | Default |
+| --- | --- |
+| `vibe_coding_neovim_version` | `0.12.5` |
+| `vibe_coding_lazygit_version` | `0.65.1` |
+| `vibe_coding_rustup_version` | `1.29.1` |
+| `vibe_coding_zellij_version` | `0.45.1` |
+| `vibe_coding_lazygit_checksum` | x86_64: `sha256:02beacbcda0fa342e50ae3480ba8147307353af3fb28e1d5f790e02329c201a6`<br>arm64: `sha256:49abecdf6adf4f2dfdb11bf7b9bfada267ea523612ed809d1c6d87f6c04000a7` |
+| `vibe_coding_neovim_checksum` | x86_64: `sha256:bce0f56eda1f1b1db6eee8f4133d7a38813ea07933837dd1777411ca384c6875`<br>arm64: `sha256:1aa5ca085249580ae0f91eb14f27ec0919773ff2d99a163d03f3d6c21ac29725` |
+| `vibe_coding_zellij_checksum` | x86_64: `sha256:40bcc2e03f5d5ae8e054e39f676081fe12ab70871506996ba595834c3718eefc`<br>aarch64: `sha256:05f0802afadd53f8db9514e7cae53c9ae8432fed1b35b8294aa816ee3044a16b` |
+| `vibe_coding_rustup_checksum` | x86_64: `sha256:dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71`<br>aarch64: `sha256:15f6e4ce9f583b929c996c91562bad6d4454f3281de858b02cdfdef615fac433` |
+
+To update, bump the version and checksum together. Fetch the SHA-256 from the
+project’s published checksum file or release-page asset digest over HTTPS,
+and update the source URL comment beside the checksum in `defaults/main.yml`.
+Never reuse the old checksum for a new version. Supply matching checksums for
+every enabled architecture. Run `just test-root-downloads` before deploying.

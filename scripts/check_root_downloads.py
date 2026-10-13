@@ -12,6 +12,7 @@ ROLES = (
     "sops_dependencies",
     "uv_install",
     "shell_basics_deploy",
+    "vibe_coding_deploy",
 )
 # No vendor-published checksum was found for this repository signing key. Keep only this
 # exact existing download exempt; it is reported as an unresolved L4 item.

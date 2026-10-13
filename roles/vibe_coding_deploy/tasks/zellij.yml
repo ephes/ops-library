@@ -10,19 +10,40 @@
   block:
     - name: zellij | Determine system architecture
       ansible.builtin.set_fact:
-        vibe_coding_zellij_arch: "{{ 'x86_64' if ansible_architecture == 'x86_64' else 'aarch64' }}"
+        vibe_coding_zellij_arch: "{{ {'x86_64': 'x86_64', 'aarch64': 'aarch64'}.get(ansible_architecture, 'unsupported') }}"
 
-    - name: zellij | Look up latest release
-      ansible.builtin.uri:
-        url: https://api.github.com/repos/zellij-org/zellij/releases/latest
-        return_content: true
-        headers:
-          User-Agent: ansible-vibe-coding
-      register: vibe_coding_zellij_release
+    - name: zellij | Validate checksum architecture
+      ansible.builtin.assert:
+        that:
+          - vibe_coding_zellij_arch in vibe_coding_zellij_checksum
+          - vibe_coding_zellij_version != 'latest'
 
-    - name: zellij | Download and extract binary
+    - name: zellij | Allocate release directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: zellij_
+      register: vibe_coding_zellij_tmp
+
+    - name: zellij | Download verified archive
+      ansible.builtin.get_url:
+        url: "https://github.com/zellij-org/zellij/releases/download/v{{ vibe_coding_zellij_version }}/zellij-{{ vibe_coding_zellij_arch }}-unknown-linux-musl.tar.gz"
+        checksum: "{{ vibe_coding_zellij_checksum[vibe_coding_zellij_arch] }}"
+        dest: "{{ vibe_coding_zellij_tmp.path }}/release.tar.gz"
+        mode: "0644"
+
+    - name: zellij | Extract verified archive
       ansible.builtin.unarchive:
-        src: "https://github.com/zellij-org/zellij/releases/download/{{ vibe_coding_zellij_release.json.tag_name }}/zellij-{{ vibe_coding_zellij_arch }}-unknown-linux-musl.tar.gz"
+        src: "{{ vibe_coding_zellij_tmp.path }}/release.tar.gz"
         dest: /usr/local/bin
         remote_src: true
         mode: "0755"
+        owner: root
+        group: root
+        include:
+          - zellij
+  always:
+    - name: zellij | Remove release directory
+      ansible.builtin.file:
+        path: "{{ vibe_coding_zellij_tmp.path }}"
+        state: absent
+      when: vibe_coding_zellij_tmp.path is defined
