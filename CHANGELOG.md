@@ -7,6 +7,8 @@
 
 - `mail_relay_deploy`: SASL password creation and updates send the password through stdin, keeping it out of command arguments and Ansible task environment values. Existing notifications and change reporting are preserved.
 
+- `redis_install`: The authenticated PING probe reads stdin inside the remote shell and exports REDISCLI_AUTH only to redis-cli, keeping the password out of arguments and task environment values. The probe remains read-only and non-fatal.
+
 ## Unreleased — Daybook sessions and Photos offload deploy again on a root connection (2.31.30)
 
 - `daybook_sessions_deploy`: the environment probe, the removal of a broken

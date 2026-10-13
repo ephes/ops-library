@@ -26,7 +26,13 @@
 
 - name: Check if Redis accepts configured password
   ansible.builtin.command:
-    cmd: redis-cli -p {{ redis_install_port }} -a "{{ redis_install_password }}" PING
+    argv:
+      - /bin/sh
+      - -c
+      - 'IFS= read -r REDISCLI_AUTH && export REDISCLI_AUTH && exec redis-cli -p "$1" PING'
+      - redis-auth-check
+      - "{{ redis_install_port }}"
+    stdin: "{{ redis_install_password }}"
   register: redis_ping_with_auth
   changed_when: false
   failed_when: false

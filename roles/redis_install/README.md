@@ -139,3 +139,7 @@ ss -lntp | grep 6379
 | `redis-cli ping` fails | `journalctl -u redis-server -n 50`, ensure `bind` list matches interfaces |
 | Config validation fails | Correct the desired variables and rerun; the previous active file is preserved and temporary validator logs are removed on exit |
 | Service fails to start after applying template | Verify `redis_install_maxmemory` format (e.g., `256mb`), confirm `redis_install_password` set when auth enabled |
+
+## Task credential handling
+
+The authenticated PING probe reads stdin inside the remote shell and exports REDISCLI_AUTH only to redis-cli, keeping the password out of arguments and task environment values. The probe remains read-only and non-fatal.
