@@ -222,6 +222,7 @@ consumer repos depend on.
 | Bootstrap | [`voxhelm_remote_worker_deploy`](roles/voxhelm_remote_worker_deploy/README.md) | Install and run a pinned public-PyPI Voxhelm remote transcription worker on macOS under launchd. |
 | Bootstrap | [`zellij_ingress_deploy`](roles/zellij_ingress_deploy/README.md) | Drop a Traefik dynamic config that temporarily redirects a friendly host name to a Tailscale Serve URL fronting `zellij web` on a backend host. |
 | Bootstrap | [`uv_install`](roles/uv_install/README.md) | Install uv for Python environment management. |
+| Bootstrap | [`nodejs_install`](roles/nodejs_install/README.md) | Install one Node.js release line system-wide from the NodeSource apt repository. |
 | Bootstrap | [`sops_dependencies`](roles/sops_dependencies/README.md) | Install age/SOPS prerequisites. |
 | Testing/demo | [`test_dummy`](roles/test_dummy/README.md) | Demonstration service for developing and testing runners. |
 

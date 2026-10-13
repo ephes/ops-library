@@ -10,6 +10,7 @@ boot_visible_i915
 docker_install
 dpkg_arch_remove
 headless_mode
+nodejs_install
 ollama_install
 uv_install
 sops_dependencies

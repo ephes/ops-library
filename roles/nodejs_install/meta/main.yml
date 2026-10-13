@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Install one Node.js release line system-wide from NodeSource
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - all
+    - name: Debian
+      versions:
+        - all
+  galaxy_tags:
+    - nodejs
+    - npm
+    - development
+
+dependencies: []

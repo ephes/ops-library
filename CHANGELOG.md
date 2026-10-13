@@ -3,6 +3,19 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — New `nodejs_install` role (2.31.32)
+
+- New bootstrap role `nodejs_install`: installs one Node.js release line
+  (`nodejs_install_major`, default `24`) system-wide from the NodeSource apt
+  repository, pins the `nodejs` package to that origin and fails unless
+  `/usr/bin/node` reports that major version. On a
+  host that has the distribution's Node.js it replaces `nodejs` and removes the
+  distribution's separate `npm` package (NodeSource bundles npm) together with
+  the packages that depend on it; runtimes with their own Node.js, such as the
+  nvm one of `mastodon_deploy`, are not touched. The role README lists what
+  changes on the host and how to go back. A Molecule scenario converges from
+  Ubuntu 24.04 with Node.js 18 and `npm` to Node.js 24.
+
 ## Unreleased — Nyxmon restore probe works with HTTPS-enforcing settings (2.31.31)
 
 - `nyxmon_restore`: the post-restore HTTP probe of
