@@ -189,13 +189,11 @@ class SecretNoLogCheckTests(unittest.TestCase):
             return {t["name"]: t for t in yaml.safe_load((ROOT / "roles" / path).read_text())}
 
         admin = tasks("archive_deploy/tasks/django.yml")["django | Ensure archive admin user exists"]
-        argv = admin["ansible.builtin.command"]["argv"]
-        self.assertNotIn("--password", argv)
-        self.assertFalse(any("archive_admin_password" in str(item) for item in argv))
-        self.assertIn("--password-stdin", argv)
-        self.assertEqual(admin["ansible.builtin.command"]["stdin"], "{{ archive_admin_password }}")
-        # Task environment ends up on the remote shell's command line.
-        self.assertFalse(any("archive_admin_password" in str(v) for v in admin["environment"].values()))
+        command = admin["ansible.builtin.shell"]
+        self.assertNotIn("archive_admin_password", command["cmd"])
+        self.assertIn("--password-stdin", command["cmd"])
+        self.assertEqual(command["stdin"], "{{ archive_admin_password }}")
+        self.assertNotIn("environment", admin)
         self.assertIs(admin["no_log"], True)
         # The no_log task must not hide its own failure.
         self.assertIs(admin["failed_when"], False)
