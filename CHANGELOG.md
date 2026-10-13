@@ -3,7 +3,7 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
-## Unreleased — Preserve OpenClaw proxy attribution across restarts (2.31.25)
+## Unreleased — Explicit proxy trust, quieter credential queries, private temp paths and opt-in unit hardening (2.31.26)
 
 - `fastdeploy_deploy` explicitly trusts proxy headers only from `fastdeploy_forwarded_allow_ips`
   (default `["127.0.0.1"]`); configure trusted proxy addresses for login throttling.
@@ -19,6 +19,8 @@
   hardening, disabled by default; validate on a host before enabling.
 - Removed a stray merge marker between the 2.31.18 and 2.31.17 notes;
   regression checks reject conflict markers in tracked text files.
+
+## Unreleased — Preserve OpenClaw proxy attribution across restarts (2.31.25)
 
 - `openclaw_deploy` supports opt-in `openclaw_network_mode: host`, forcing a
   loopback-only Gateway listener and using the host port directly. This
