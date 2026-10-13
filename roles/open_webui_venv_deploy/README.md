@@ -125,3 +125,12 @@ Use the `open_webui_venv_remove` role to stop the service and clean up data when
 
 Source and dependency changes notify the existing restart handlers after deployment.
 Open WebUI restarts its systemd service. Unchanged syncs do not request a restart.
+
+### Optional systemd hardening
+
+`open_webui_systemd_hardening` defaults to `false`, preserving the existing unit.
+Set it to `true` to enable `NoNewPrivileges=true`, `PrivateTmp=true`,
+`ProtectSystem=strict`, and `ProtectHome=false`. Writable paths are limited to
+`open_webui_home`, `open_webui_data_dir`, `open_webui_log_dir`.
+Validate custom paths and application writes on a staging host before enabling.
+Enabling or disabling rewrites the unit on the next deploy.

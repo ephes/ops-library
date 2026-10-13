@@ -132,8 +132,6 @@ unifi_create_homeassistant_user: false
 unifi_homeassistant_username: "homeassistant"
 unifi_homeassistant_password: ""
 unifi_homeassistant_password_store: "{{ unifi_home_dir }}/.homeassistant_unifi_password"
-unifi_homeassistant_password_length: 24
-unifi_homeassistant_password_chars: "ascii_letters,digits"
 unifi_homeassistant_wait_retries: 30
 unifi_homeassistant_wait_delay: 10
 

@@ -6,3 +6,6 @@ takahe_collectstatic: true
 takahe_service_enabled: true
 takahe_service_state: started
 takahe_nginx_enabled: true
+
+# Enable only after validating writable paths on the target host.
+takahe_systemd_hardening: false

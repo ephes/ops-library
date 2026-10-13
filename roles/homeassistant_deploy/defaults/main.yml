@@ -122,7 +122,6 @@ homeassistant_manage_secrets: false
 homeassistant_manage_includes: false
 homeassistant_overwrite_config: false
 homeassistant_remove_legacy_met_weather_yaml: false
-homeassistant_manage_unifi_password: true
 
 # Location / recorder defaults (safe placeholders – override per environment)
 homeassistant_name: "Home Assistant"
@@ -169,10 +168,8 @@ homeassistant_enable_udev_rule: true
 homeassistant_udev_rule_path: /etc/udev/rules.d/99-homeassistant-zbt1.rules
 
 # UniFi password discovery
-homeassistant_unifi_password_source: "file"  # file|generate|variable
+homeassistant_unifi_password_source: "file"  # file|variable
 homeassistant_unifi_password_file: /home/unifi/.homeassistant_unifi_password
-homeassistant_unifi_password_length: 24
-homeassistant_unifi_password_charset: "ascii_letters,digits"
 homeassistant_unifi_password_variable: ""
 
 # Traefik integration

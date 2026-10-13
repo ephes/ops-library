@@ -150,6 +150,7 @@
       | reject('equalto', item.item.owner) | list | length > 0
 
 - name: Get existing mail users from database (PostfixAdmin)
+  no_log: true
   community.postgresql.postgresql_query:
     db: "{{ mail_users_postgres_database }}"
     query: |
@@ -161,6 +162,7 @@
   when: mail_users_schema_mode == 'postfixadmin'
 
 - name: Get existing mail users from database (legacy)
+  no_log: true
   community.postgresql.postgresql_query:
     db: "{{ mail_users_postgres_database }}"
     query: |
@@ -200,6 +202,7 @@
     loop_var: user
 
 - name: Disable users not in secrets (optional - PostfixAdmin)
+  no_log: true
   community.postgresql.postgresql_query:
     db: "{{ mail_users_postgres_database }}"
     query: |
@@ -217,6 +220,7 @@
     - mail_users_schema_mode == 'postfixadmin'
 
 - name: Disable users not in secrets (optional - legacy)
+  no_log: true
   community.postgresql.postgresql_query:
     db: "{{ mail_users_postgres_database }}"
     query: |

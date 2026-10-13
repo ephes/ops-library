@@ -29,8 +29,19 @@ def is_cidr(value: Any) -> bool:
     return True
 
 
+def is_ip_address(value: Any) -> bool:
+    """Accept only unscoped literal IPv4/IPv6 addresses for proxy trust."""
+    if not isinstance(value, str) or "%" in value:
+        return False
+    try:
+        ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    return True
+
+
 class FilterModule:
     """Expose collection filters to Ansible."""
 
     def filters(self) -> dict[str, Any]:
-        return {"is_cidr": is_cidr}
+        return {"is_cidr": is_cidr, "is_ip_address": is_ip_address}

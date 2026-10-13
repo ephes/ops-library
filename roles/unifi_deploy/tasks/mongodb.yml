@@ -173,25 +173,36 @@
           ansible.builtin.fail:
             msg: "Password mismatch detected - see final error message after auth is restored."
 
-    - name: "mongodb | Render init script"
-      ansible.builtin.template:
-        src: mongo-init.js.j2
-        dest: /tmp/unifi-mongo-init.js
-        owner: root
-        group: root
-        mode: "0600"
-      no_log: true
+    - name: "mongodb | Manage temporary MongoDB script"
+      when: not ansible_check_mode
+      block:
+        - name: "mongodb | Allocate private MongoDB script"
+          ansible.builtin.tempfile:
+            state: file
+            prefix: unifi-mongo-init-
+          register: unifi_mongodb_script
 
-    - name: "mongodb | Create user"
-      ansible.builtin.shell: |
-        mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} < /tmp/unifi-mongo-init.js
-      register: unifi_mongodb_init
-      no_log: true
+        - name: "mongodb | Render init script"
+          ansible.builtin.template:
+            src: mongo-init.js.j2
+            dest: "{{ unifi_mongodb_script.path }}"
+            owner: root
+            group: root
+            mode: "0600"
+          no_log: true
 
-    - name: "mongodb | Remove init script"
-      ansible.builtin.file:
-        path: /tmp/unifi-mongo-init.js
-        state: absent
+        - name: "mongodb | Create user"
+          ansible.builtin.shell: |
+            mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} < {{ unifi_mongodb_script.path | quote }}
+          register: unifi_mongodb_init
+          no_log: true
+
+      always:
+        - name: "mongodb | Remove temporary MongoDB script"
+          ansible.builtin.file:
+            path: "{{ unifi_mongodb_script.path }}"
+            state: absent
+          when: unifi_mongodb_script.path is defined
 
   rescue:
     - name: "mongodb | Capture failure context"
@@ -205,12 +216,6 @@
             'init result rc: ' ~ (unifi_mongodb_init.rc | default('n/a')) ~ ', ' ~
             'init stderr: ' ~ (unifi_mongodb_init.stderr | default('n/a'))
           ) }}
-
-    - name: "mongodb | Remove init script on failure"
-      ansible.builtin.file:
-        path: /tmp/unifi-mongo-init.js
-        state: absent
-      failed_when: false
 
   always:
     - name: "mongodb | Restore authorization setting"

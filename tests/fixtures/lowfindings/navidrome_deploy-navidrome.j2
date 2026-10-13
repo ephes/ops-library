@@ -1,0 +1,29 @@
+# Managed by Ansible - Navidrome systemd unit
+[Unit]
+Description=Navidrome music server
+After={{ navidrome_systemd_after }}
+Wants=network-online.target
+
+[Service]
+User={{ navidrome_user }}
+Group={{ navidrome_group }}
+WorkingDirectory={{ navidrome_install_dir }}
+ExecStart={{ navidrome_bin_path }} --configfile {{ navidrome_config_path }}
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE={{ navidrome_systemd_nofile }}
+Environment=HOME={{ navidrome_home }}
+Environment=ND_CONFIGFILE={{ navidrome_config_path }}
+Environment=ND_CACHEFOLDER={{ navidrome_cache_dir }}
+Environment=ND_DATAFOLDER={{ navidrome_data_dir }}
+Environment=ND_LOGFILE={{ navidrome_log_dir }}/navidrome.log
+Environment=ND_LOGLEVEL={{ navidrome_log_level | upper }}
+{% if navidrome_systemd_memory_max %}
+MemoryMax={{ navidrome_systemd_memory_max }}
+{% endif %}
+{% if navidrome_systemd_tasks_max %}
+TasksMax={{ navidrome_systemd_tasks_max }}
+{% endif %}
+
+[Install]
+WantedBy=multi-user.target

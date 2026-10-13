@@ -65,3 +65,6 @@ marina_rsync_excludes:
   - ".pytest_cache"
   - ".mypy_cache"
   - "node_modules"
+
+# Enable only after validating writable paths on the target host.
+marina_systemd_hardening: false

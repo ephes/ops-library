@@ -19,6 +19,7 @@ just molecule-test fastdeploy_register_service
 
 ## What `just test` Covers
 
+- portable audit follow-up render/static checks (`just test-lowfindings`)
 - role test harness (`just test-roles`)
 - no_log check for credential-carrying tasks (`just test-secret-no-log`)
 - non-failing lint summary (`just lint`)

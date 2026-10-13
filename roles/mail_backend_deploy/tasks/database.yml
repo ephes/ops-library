@@ -460,6 +460,7 @@
         - mail_backend_schema_mode == 'postfixadmin'
 
     - name: Ensure mailbox self-alias entries exist (PostfixAdmin schema)
+      no_log: true
       community.postgresql.postgresql_query:
         db: "{{ mail_backend_postgres_database }}"
         query: |

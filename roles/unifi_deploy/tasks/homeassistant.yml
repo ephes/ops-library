@@ -5,17 +5,13 @@
     state: present
 
 - name: "homeassistant | Initialize password fact"
+  no_log: true
   ansible.builtin.set_fact:
     unifi_homeassistant_password_effective: "{{ unifi_homeassistant_password | default('', true) }}"
 
-- name: "homeassistant | Generate password when missing"
-  ansible.builtin.set_fact:
-    unifi_homeassistant_password_effective: "{{ lookup('password', '/tmp/unifi_homeassistant_password length=' ~ unifi_homeassistant_password_length ~ ' chars=' ~ unifi_homeassistant_password_chars) }}"
-  when: unifi_homeassistant_password_effective | length == 0
-
 - name: "homeassistant | Fail when password is undefined"
   ansible.builtin.fail:
-    msg: "Set unifi_homeassistant_password or allow generation."
+    msg: "Set unifi_homeassistant_password from inventory (SOPS/Ansible Vault); automatic generation is no longer supported."
   when: unifi_homeassistant_password_effective | length == 0
 
 - name: "homeassistant | Probe for default site"
@@ -83,29 +79,40 @@
       changed_when: false
       no_log: true
 
-    - name: "homeassistant | Render MongoDB script"
-      ansible.builtin.template:
-        src: mongo-ha-user.js.j2
-        dest: /tmp/unifi-mongo-ha-user.js
-        owner: root
-        group: root
-        mode: "0600"
-      no_log: true
+    - name: "homeassistant | Manage temporary MongoDB script"
+      when: not ansible_check_mode
+      block:
+        - name: "homeassistant | Allocate private MongoDB script"
+          ansible.builtin.tempfile:
+            state: file
+            prefix: unifi-mongo-ha-
+          register: unifi_homeassistant_script
 
-    - name: "homeassistant | Apply MongoDB script"
-      ansible.builtin.shell: |
-        mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} \
-          -u "{{ unifi_mongodb_user }}" -p "{{ unifi_mongodb_password }}" --authenticationDatabase admin \
-          < /tmp/unifi-mongo-ha-user.js
-      register: unifi_homeassistant_user
-      changed_when: "'changed=true' in unifi_homeassistant_user.stdout.lower()"
-      failed_when: "'STATUS=error' in unifi_homeassistant_user.stdout"
-      no_log: true
+        - name: "homeassistant | Render MongoDB script"
+          ansible.builtin.template:
+            src: mongo-ha-user.js.j2
+            dest: "{{ unifi_homeassistant_script.path }}"
+            owner: root
+            group: root
+            mode: "0600"
+          no_log: true
 
-    - name: "homeassistant | Remove Mongo script"
-      ansible.builtin.file:
-        path: /tmp/unifi-mongo-ha-user.js
-        state: absent
+        - name: "homeassistant | Apply MongoDB script"
+          ansible.builtin.shell: |
+            mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} \
+              -u "{{ unifi_mongodb_user }}" -p "{{ unifi_mongodb_password }}" --authenticationDatabase admin \
+              < {{ unifi_homeassistant_script.path | quote }}
+          register: unifi_homeassistant_user
+          changed_when: "'changed=true' in unifi_homeassistant_user.stdout.lower()"
+          failed_when: "'STATUS=error' in unifi_homeassistant_user.stdout"
+          no_log: true
+
+      always:
+        - name: "homeassistant | Remove temporary MongoDB script"
+          ansible.builtin.file:
+            path: "{{ unifi_homeassistant_script.path }}"
+            state: absent
+          when: unifi_homeassistant_script.path is defined
 
     - name: "homeassistant | Persist password locally"
       ansible.builtin.copy:

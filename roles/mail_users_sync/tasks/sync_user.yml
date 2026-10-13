@@ -79,6 +79,7 @@
     - domain_result_postfixadmin.query_result | length == 0
 
 - name: Validate custom mailbox target exists (PostfixAdmin)
+  no_log: true
   community.postgresql.postgresql_query:
     db: "{{ mail_users_postgres_database }}"
     query: |
@@ -218,6 +219,7 @@
   no_log: true
 
 - name: Check if user exists {{ user.email }} (PostfixAdmin)
+  no_log: true
   community.postgresql.postgresql_query:
     db: "{{ mail_users_postgres_database }}"
     query: |
@@ -232,6 +234,7 @@
   when: mail_users_schema_mode == 'postfixadmin'
 
 - name: Check if user exists {{ user.email }} (legacy)
+  no_log: true
   community.postgresql.postgresql_query:
     db: "{{ mail_users_postgres_database }}"
     query: |
@@ -248,6 +251,7 @@
   when: mail_users_schema_mode == 'legacy'
 
 - name: Normalize existing user rows for {{ user.email }}
+  no_log: true
   ansible.builtin.set_fact:
     user_exists_rows: >-
       {{
@@ -377,6 +381,7 @@
     - password_changed | bool or active_changed | bool or maildir_changed | bool
 
 - name: Update mail user {{ user.email }} (legacy)
+  no_log: true
   community.postgresql.postgresql_query:
     db: "{{ mail_users_postgres_database }}"
     query: |

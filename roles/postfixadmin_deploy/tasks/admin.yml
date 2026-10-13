@@ -19,6 +19,7 @@
   changed_when: all_domain_insert.rowcount | default(0) > 0
 
 - name: Check if superadmin exists
+  no_log: true
   community.postgresql.postgresql_query:
     db: "{{ postfixadmin_db_name }}"
     login_host: "{{ postfixadmin_db_host }}"
@@ -30,6 +31,7 @@
   register: admin_check
 
 - name: Create superadmin account
+  no_log: true
   community.postgresql.postgresql_query:
     db: "{{ postfixadmin_db_name }}"
     login_host: "{{ postfixadmin_db_host }}"
@@ -44,6 +46,7 @@
   when: admin_check.query_result | length == 0
 
 - name: Update superadmin password if changed
+  no_log: true
   community.postgresql.postgresql_query:
     db: "{{ postfixadmin_db_name }}"
     login_host: "{{ postfixadmin_db_host }}"

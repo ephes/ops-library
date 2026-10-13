@@ -20,7 +20,7 @@ Deploys Home Assistant Core on bare metal/VM hosts using `uv`-managed Python env
 - Optional management of `configuration.yaml`, `secrets.yaml`, and include files with overwrite guards.
 - Migrates obsolete role-generated `system_monitor` and `discovery` YAML blocks
   out of existing managed configurations.
-- UniFi password discovery supports file, generated, or SOPS-provided secrets.
+- UniFi password discovery supports file or SOPS-provided secrets; automatic generation is no longer supported.
 - Traefik template reproduces the single-router production config (punycode domain, websocket middleware).
 
 ## Key Variables
@@ -41,7 +41,7 @@ Deploys Home Assistant Core on bare metal/VM hosts using `uv`-managed Python env
 - `homeassistant_api_forwarded_for` / `homeassistant_api_forwarded_proto` – forwarded headers for API calls when `use_x_forwarded_for` is enabled (defaults to host IPv4 or `127.0.0.1`).
 - `homeassistant_uv_path` / `homeassistant_python_version` – uv binary and interpreter version.
 - `homeassistant_traefik_domain`, `homeassistant_traefik_entrypoints`, `homeassistant_traefik_middlewares` – reverse-proxy behaviour.
-- `homeassistant_unifi_password_source` (`file|generate|variable`) plus supporting vars for secrets discovery.
+- `homeassistant_unifi_password_source` (`file|variable`) plus supporting vars for secrets discovery.
 
 See `roles/homeassistant_deploy/defaults/main.yml` for the full variable catalog.
 

@@ -16,37 +16,45 @@
     path: /usr/local/bin/mcrcon
   register: mcrcon_installed
 
-- name: Clone mcrcon repository
-  ansible.builtin.git:
-    repo: https://github.com/Tiiffi/mcrcon.git
-    dest: /tmp/mcrcon
-    version: v0.7.2
-    force: true
-  when: not mcrcon_installed.stat.exists
+- name: Build and install mcrcon when missing
+  when:
+    - not mcrcon_installed.stat.exists
+    - not ansible_check_mode
+  block:
+    - name: Allocate mcrcon build directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: mcrcon-
+      register: minecraft_java_mcrcon_build
 
-- name: Build mcrcon
-  ansible.builtin.shell: |
-    cd /tmp/mcrcon
-    make clean || true
-    make
-  changed_when: true
-  when: not mcrcon_installed.stat.exists
+    - name: Clone mcrcon repository
+      ansible.builtin.git:
+        repo: https://github.com/Tiiffi/mcrcon.git
+        dest: "{{ minecraft_java_mcrcon_build.path }}"
+        version: v0.7.2
+        force: true
 
-- name: Install mcrcon
-  ansible.builtin.copy:
-    src: /tmp/mcrcon/mcrcon
-    dest: /usr/local/bin/mcrcon
-    owner: root
-    group: root
-    mode: "0755"
-    remote_src: true
-  when: not mcrcon_installed.stat.exists
+    - name: Build mcrcon
+      ansible.builtin.command: make
+      args:
+        chdir: "{{ minecraft_java_mcrcon_build.path }}"
+      changed_when: true
 
-- name: Clean up mcrcon build directory
-  ansible.builtin.file:
-    path: /tmp/mcrcon
-    state: absent
-  when: not mcrcon_installed.stat.exists
+    - name: Install mcrcon
+      ansible.builtin.copy:
+        src: "{{ minecraft_java_mcrcon_build.path }}/mcrcon"
+        dest: /usr/local/bin/mcrcon
+        owner: root
+        group: root
+        mode: "0755"
+        remote_src: true
+
+  always:
+    - name: Clean up mcrcon build directory
+      ansible.builtin.file:
+        path: "{{ minecraft_java_mcrcon_build.path }}"
+        state: absent
+      when: minecraft_java_mcrcon_build.path is defined
 
 - name: Verify Java installation
   ansible.builtin.command: java -version

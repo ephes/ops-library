@@ -10,7 +10,7 @@ Group={{ fastdeploy_group }}
 WorkingDirectory={{ fastdeploy_site_path }}
 Environment="PATH={{ fastdeploy_venv_bin }}:/usr/local/bin:/usr/bin:/bin"
 EnvironmentFile={{ fastdeploy_site_path }}/.env
-ExecStart={{ fastdeploy_venv_bin }}/python -m uvicorn deploy.entrypoints.fastapi_app:app --port {{ fastdeploy_app_port }} --host {{ fastdeploy_app_host }}
+ExecStart={{ fastdeploy_venv_bin }}/python -m uvicorn deploy.entrypoints.fastapi_app:app --port {{ fastdeploy_app_port }} --host {{ fastdeploy_app_host }} --proxy-headers --forwarded-allow-ips {{ fastdeploy_forwarded_allow_ips | join(',') }}
 {% if fastdeploy_service_restart_on_failure %}
 Restart=always
 RestartSec={{ fastdeploy_service_restart_sec }}

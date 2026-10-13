@@ -10,6 +10,9 @@ and reports:
 * ``uri`` tasks that send a credential: an ``Authorization``/token/API-key/
   cookie header, ``url_password``, or a request body that renders a
   secret-named variable;
+* ``postgresql_query`` tasks that read or write password-bearing columns or
+  known password-bearing tables (`admin`, `mail_users`, `mailbox`),
+  including password hashes;
 * ``command``/``shell``/``raw`` tasks whose command line carries an
   ``Authorization`` header or a ``Bearer`` token (``curl -H ...``);
 * ``command``/``shell``/``raw`` tasks that render a secret-named variable
@@ -61,7 +64,9 @@ SECRET_VAR = re.compile(
 )
 JINJA_EXPR = re.compile(r"\{\{(.*?)\}\}", re.DOTALL)
 STRING_LITERAL = re.compile(r"""'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*\"""")
-COMMAND_CREDENTIAL = re.compile(r"authorization\s*:|\bbearer\s|--oauth2-bearer", re.IGNORECASE)
+COMMAND_CREDENTIAL = re.compile(
+    r"authorization\s*:|\bbearer\s|--oauth2-bearer", re.IGNORECASE
+)
 
 TRUE_VALUES = {True, "true", "True", "yes", "Yes", "on"}
 
@@ -96,7 +101,8 @@ def _renders_secret_variable(value: Any) -> bool:
     )
 
 
-ALL_MODULES = URI_MODULES | COMMAND_MODULES
+QUERY_MODULES = {"postgresql_query", "community.postgresql.postgresql_query"}
+ALL_MODULES = URI_MODULES | COMMAND_MODULES | QUERY_MODULES
 
 
 PURE_TEMPLATE = re.compile(r"^\s*\{\{.*\}\}\s*$", re.DOTALL)
@@ -165,9 +171,13 @@ def _uri_reason(pairs: list[tuple[str, Any]], raws: list[str]) -> str | None:
         if name == "headers":
             if isinstance(value, dict):
                 for header, header_value in value.items():
-                    if SENSITIVE_HEADER.search(str(header)) or _renders_secret(header_value):
+                    if SENSITIVE_HEADER.search(str(header)) or _renders_secret(
+                        header_value
+                    ):
                         return f"sends header {header!r}"
-            elif isinstance(value, str) and (SENSITIVE_HEADER.search(value) or _renders_secret(value)):
+            elif isinstance(value, str) and (
+                SENSITIVE_HEADER.search(value) or _renders_secret(value)
+            ):
                 return "builds headers from a credential"
         elif name == "url_password" and value not in (None, ""):
             return "sets url_password"
@@ -184,6 +194,20 @@ def credential_reason(task: dict) -> str | None:
     if found is None:
         return None
     module, pairs, raws = found
+    if module in QUERY_MODULES:
+        # login_password is redacted by the module; query arguments and rows
+        # are not. Password hashes are credentials too.
+        for name, value in pairs:
+            if name in {"query", "named_args", "positional_args"}:
+                if SENSITIVE_HEADER.search(str(value)) or re.search(
+                    r"\b(?:from|into|update)\s+[\"]?(?:admin|mail_users|mailbox)\b",
+                    str(value),
+                    re.IGNORECASE,
+                ):
+                    return "queries password-bearing data"
+        if raws:
+            return "takes query arguments in free-form form"
+        return None
     if module in URI_MODULES:
         return _uri_reason(pairs, raws)
     # command/shell/raw: free-form string, cmd or argv.
@@ -226,7 +250,15 @@ def iter_findings(data: Any, inherited: bool = False) -> Iterator[tuple[str, str
     reason = credential_reason(data)
     if reason and not protected:
         yield str(data.get("name", "<unnamed task>")), reason
-    for key in ("block", "rescue", "always", "tasks", "pre_tasks", "post_tasks", "handlers"):
+    for key in (
+        "block",
+        "rescue",
+        "always",
+        "tasks",
+        "pre_tasks",
+        "post_tasks",
+        "handlers",
+    ):
         if key in data:
             yield from iter_findings(data[key], protected)
 
@@ -262,7 +294,9 @@ def scan(paths: list[Path]) -> list[str]:
             documents = _load(path)
         except (OSError, UnicodeError, yaml.YAMLError) as error:
             # Never treat an unreadable file as clean.
-            problems.append(f"{shown}: cannot be parsed, so it was not checked: {error}")
+            problems.append(
+                f"{shown}: cannot be parsed, so it was not checked: {error}"
+            )
             continue
         for document in documents:
             for name, reason in iter_findings(document):
@@ -280,7 +314,9 @@ def default_paths() -> list[Path]:
     return sorted(
         p
         for p in roles.rglob("*")
-        if p.suffix in {".yml", ".yaml"} and p.is_file() and "molecule" not in p.relative_to(roles).parts
+        if p.suffix in {".yml", ".yaml"}
+        and p.is_file()
+        and "molecule" not in p.relative_to(roles).parts
     )
 
 

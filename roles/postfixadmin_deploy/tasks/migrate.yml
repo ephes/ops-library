@@ -67,6 +67,7 @@
           ON CONFLICT (domain) DO NOTHING
 
     - name: Migrate mailboxes from mail_users to mailbox
+      no_log: true
       community.postgresql.postgresql_query:
         db: "{{ postfixadmin_db_name }}"
         login_host: "{{ postfixadmin_db_host }}"
@@ -131,6 +132,7 @@
           ON CONFLICT (alias_domain) DO NOTHING
 
     - name: Create default mailbox aliases in alias table
+      no_log: true
       community.postgresql.postgresql_query:
         db: "{{ postfixadmin_db_name }}"
         login_host: "{{ postfixadmin_db_host }}"

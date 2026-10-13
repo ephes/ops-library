@@ -110,17 +110,20 @@
   when: postfixadmin_restore_admin_tables | bool
   block:
     - name: Read admin table backup
+      no_log: true
       ansible.builtin.slurp:
         src: "{{ postfixadmin_restore_dir }}/admin.json"
       register: admin_backup_content
       failed_when: false
 
     - name: Parse admin backup data
+      no_log: true
       ansible.builtin.set_fact:
         admin_backup_data: "{{ admin_backup_content.content | b64decode | from_json }}"
       when: admin_backup_content.content is defined
 
     - name: Restore admin accounts
+      no_log: true
       community.postgresql.postgresql_query:
         db: "{{ postfixadmin_db_name }}"
         login_host: "{{ postfixadmin_db_host }}"

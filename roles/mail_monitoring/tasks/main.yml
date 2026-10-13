@@ -93,6 +93,7 @@
       no_log: true
 
     - name: Query existing mailbox (postfixadmin)
+      no_log: true
       community.postgresql.postgresql_query:
         db: "{{ mail_monitoring_postgres_database }}"
         query: |
@@ -107,6 +108,7 @@
       when: mail_monitoring_schema_mode == "postfixadmin"
 
     - name: Query existing mailbox (legacy)
+      no_log: true
       community.postgresql.postgresql_query:
         db: "{{ mail_monitoring_postgres_database }}"
         query: |

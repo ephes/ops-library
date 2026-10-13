@@ -21,3 +21,16 @@ Outputs:
 - Systemd unit `metube.service` bound to `{{ metube_host }}:{{ metube_port }}` (default 127.0.0.1:8081)
 - Traefik dynamic config at `{{ metube_traefik_config_path }}` with internal IP bypass + basic auth externally
 - Environment file at `{{ metube_env_file }}` with yt-dlp options, download paths, and concurrency limits
+
+## Optional systemd hardening
+
+`metube_systemd_hardening` defaults to `false`, preserving the existing unit.
+Set it to `true` to enable `NoNewPrivileges=true`, `PrivateTmp=true`,
+`ProtectSystem=strict`, and `ProtectHome=false`. Writable paths are limited to
+`metube_home`, `metube_download_dir`, `metube_temp_dir`, `metube_state_dir`, `metube_audio_download_dir`.
+Validate custom paths and application writes on a staging host before enabling.
+Enabling or disabling rewrites the unit on the next deploy.
+
+With hardening disabled, existing unit rendering is preserved. Setting both
+`metube_systemd_tasks_max` and `metube_systemd_memory_max` currently joins the
+settings on one line; correcting that existing behavior is a separate follow-up.

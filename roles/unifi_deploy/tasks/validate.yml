@@ -24,3 +24,12 @@
 - name: "validate | Cache derived facts"
   ansible.builtin.set_fact:
     unifi_mongodb_bind_ip_line: "{{ unifi_mongodb_bind_addresses | join(',') }}"
+
+- name: "validate | Require Home Assistant password when integration enabled"
+  ansible.builtin.assert:
+    that:
+      - unifi_homeassistant_password is string
+      - unifi_homeassistant_password | default('', true) | length > 0
+    fail_msg: "Set unifi_homeassistant_password from inventory (SOPS/Ansible Vault); automatic generation is no longer supported."
+    quiet: true
+  when: unifi_create_homeassistant_user | bool
