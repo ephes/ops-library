@@ -3,6 +3,25 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Per-target MinIO backup accounts, mc aliases without credentials on the command line (2.31.34)
+
+- `minio_deploy`: new entry point `tasks_from: backup_account`. It creates or
+  updates one MinIO user per backup target whose policy `backup-<name>` allows
+  reading, writing and listing only `<bucket>/<prefix>/` (no delete unless
+  `minio_backup_account_allow_delete` is set, no admin API). The secret reaches
+  `mc admin user add` on stdin, and the run proves that the user holds exactly
+  that policy. See the role README, "Backup accounts".
+- `echoport_backup`: the mc alias is now imported with `mc alias import` from
+  stdin instead of `mc alias set <alias> <url> <key> <secret>`, which showed
+  the credentials in the host's process list while the task ran. It is
+  imported only when the stored values differ. The tasks are also an entry
+  point for other plays (`tasks_from: minio_alias`), take a list of OS users
+  (`echoport_backup_minio_alias_users`) and remove the aliases named in
+  `echoport_backup_minio_retired_aliases`.
+- `echoport_backup`: the generic runner can use one mc alias per target
+  (`echoport_backup_minio_prefix_aliases`, by first segment of the object
+  key). The default, an empty mapping, keeps the single alias.
+
 ## Unreleased — Voxhelm prune job can run once a day at a fixed time (2.31.33)
 
 - `voxhelm_deploy`: new `voxhelm_prune_daily_time` (default `""`). Set to a

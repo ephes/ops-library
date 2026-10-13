@@ -1,0 +1,173 @@
+---
+# Create or update one scoped MinIO account for a backup target: a user that may
+# read, write and list only <bucket>/<prefix>/. Runs on the MinIO host as root
+# and uses the admin alias the bootstrap configured (minio_host_alias).
+# Entry point for other plays: include_role with tasks_from: backup_account.
+# The secret key reaches mc on stdin, never as an argument.
+
+- name: backup_account | Classify backup account input without exposing the secret
+  ansible.builtin.set_fact:
+    minio_backup_account_input_ok: >-
+      {{
+        minio_backup_account_name is match('^[A-Za-z0-9][A-Za-z0-9_-]*$')
+        and minio_backup_account_user is match('^[A-Za-z0-9][A-Za-z0-9_-]{2,19}$')
+        and minio_backup_account_bucket is match('^[a-z0-9][a-z0-9.-]{2,62}$')
+        and minio_backup_account_prefixes | length > 0
+        and minio_backup_account_prefixes
+            | reject('match', '^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$') | list | length == 0
+        and minio_backup_account_secret_key | string | length >= 32
+        and minio_backup_account_secret_key | string | length <= 40
+        and minio_backup_account_secret_key != 'CHANGEME'
+      }}
+  no_log: true
+
+- name: backup_account | Validate backup account input
+  ansible.builtin.assert:
+    that:
+      - minio_backup_account_input_ok | bool
+    fail_msg: >-
+      minio_backup_account_name must be a target name (letters, digits, "-",
+      "_"), minio_backup_account_user 3 to 20 such characters,
+      minio_backup_account_prefixes non-empty plain key prefixes without
+      wildcards, and minio_backup_account_secret_key 32 to 40 characters and
+      not CHANGEME. Values are never printed.
+
+- name: backup_account | Require the MinIO admin alias
+  ansible.builtin.command:
+    argv:
+      - "{{ minio_mc_bin_path }}"
+      - admin
+      - info
+      - "{{ minio_host_alias }}"
+  register: minio_backup_account_admin_check
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: backup_account | Refuse to continue without the MinIO admin alias
+  ansible.builtin.assert:
+    that:
+      - minio_backup_account_admin_check.rc == 0
+    fail_msg: >-
+      mc admin info {{ minio_host_alias }} failed
+      (rc={{ minio_backup_account_admin_check.rc }}): mc is missing, the admin
+      alias is not configured for root on this host, or MinIO is unreachable.
+      Deploy MinIO with minio_bootstrap_with_mc first.
+
+- name: backup_account | Create MinIO policy directory
+  ansible.builtin.file:
+    path: "{{ minio_backup_account_policy_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: backup_account | Install backup account policy
+  ansible.builtin.template:
+    src: backup-account-policy.json.j2
+    dest: "{{ minio_backup_account_policy_dir }}/backup-{{ minio_backup_account_name }}.json"
+    owner: root
+    group: root
+    mode: "0640"
+  register: minio_backup_account_policy_file
+
+# `mc admin policy create` replaces an existing policy of that name. It runs on
+# every pass, so the server always ends with the installed document, also after
+# a failed earlier run or a change made by hand on the server.
+- name: backup_account | Create or update backup account policy
+  ansible.builtin.command:
+    argv:
+      - "{{ minio_mc_bin_path }}"
+      - admin
+      - policy
+      - create
+      - "{{ minio_host_alias }}"
+      - "backup-{{ minio_backup_account_name }}"
+      - "{{ minio_backup_account_policy_dir }}/backup-{{ minio_backup_account_name }}.json"
+  changed_when: minio_backup_account_policy_file is changed
+
+- name: backup_account | Check backup account user
+  ansible.builtin.command:
+    argv:
+      - "{{ minio_mc_bin_path }}"
+      - admin
+      - user
+      - info
+      - --json
+      - "{{ minio_host_alias }}"
+      - "{{ minio_backup_account_user }}"
+  register: minio_backup_account_user_info
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# `mc admin user add` is an upsert, so a rotated secret reaches the server on
+# every run. It reads the user name and the secret from stdin.
+- name: backup_account | Create or update backup account user
+  ansible.builtin.command:
+    argv:
+      - "{{ minio_mc_bin_path }}"
+      - admin
+      - user
+      - add
+      - "{{ minio_host_alias }}"
+    stdin: |-
+      {{ minio_backup_account_user }}
+      {{ minio_backup_account_secret_key }}
+  register: minio_backup_account_user_add
+  changed_when: minio_backup_account_user_info.rc != 0
+  failed_when: false
+  no_log: true
+
+- name: backup_account | Require successful backup account user upsert
+  ansible.builtin.assert:
+    that:
+      - minio_backup_account_user_add is skipped or minio_backup_account_user_add.rc == 0
+    fail_msg: >-
+      mc admin user add for {{ minio_backup_account_user }} failed with
+      rc={{ minio_backup_account_user_add.rc | default('skipped') }}; mc output
+      is withheld because it can quote the secret.
+
+- name: backup_account | Attach backup account policy
+  ansible.builtin.command:
+    argv:
+      - "{{ minio_mc_bin_path }}"
+      - admin
+      - policy
+      - attach
+      - "{{ minio_host_alias }}"
+      - "backup-{{ minio_backup_account_name }}"
+      - --user
+      - "{{ minio_backup_account_user }}"
+  changed_when: true
+  when: >-
+    minio_backup_account_user_info.rc != 0
+    or ('backup-' ~ minio_backup_account_name)
+       not in ((minio_backup_account_user_info.stdout | from_json).policyName | default('')).split(',')
+
+- name: backup_account | Read backup account user after attachment
+  ansible.builtin.command:
+    argv:
+      - "{{ minio_mc_bin_path }}"
+      - admin
+      - user
+      - info
+      - --json
+      - "{{ minio_host_alias }}"
+      - "{{ minio_backup_account_user }}"
+  register: minio_backup_account_user_final
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: backup_account | Prove the backup account holds exactly its own policy
+  ansible.builtin.assert:
+    that:
+      - (minio_backup_account_user_final.stdout | from_json).policyName | default('') == 'backup-' ~ minio_backup_account_name
+      - (minio_backup_account_user_final.stdout | from_json).memberOf | default([]) | length == 0
+      - (minio_backup_account_user_final.stdout | from_json).userStatus | default('') == 'enabled'
+    fail_msg: >-
+      MinIO user {{ minio_backup_account_user }} must be enabled, hold exactly
+      the policy backup-{{ minio_backup_account_name }} and belong to no group;
+      mc admin user info reports something else. Detach the other policies or
+      groups by hand, then run again.
+  when: not ansible_check_mode

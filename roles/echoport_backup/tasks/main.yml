@@ -19,17 +19,7 @@
   when: not echoport_backup_mc_stat.stat.exists
 
 - name: Configure mc alias for MinIO
-  ansible.builtin.command:
-    cmd: >
-      {{ echoport_backup_mc_install_path }} alias set
-      {{ echoport_backup_minio_alias }}
-      {{ echoport_backup_minio_url }}
-      {{ echoport_backup_minio_access_key }}
-      {{ echoport_backup_minio_secret_key }}
-  become: true
-  become_user: "{{ echoport_backup_user }}"
-  no_log: true
-  changed_when: true
+  ansible.builtin.include_tasks: minio_alias.yml
   when:
     - echoport_backup_minio_url | length > 0
     - echoport_backup_minio_access_key | length > 0

@@ -1,0 +1,97 @@
+---
+# Give OS users an mc alias, and remove retired ones, without putting the
+# credentials on a command line: `mc alias set <alias> <url> <key> <secret>`
+# shows them in the host's process list, `mc alias import` reads them on stdin.
+# Entry point for other plays: include_role with tasks_from: minio_alias.
+
+- name: minio_alias | Validate mc alias names
+  ansible.builtin.assert:
+    that:
+      - echoport_backup_minio_alias is match('^[A-Za-z][A-Za-z0-9_-]*$')
+      - echoport_backup_minio_retired_aliases | reject('match', '^[A-Za-z][A-Za-z0-9_-]*$') | list | length == 0
+      - echoport_backup_minio_alias not in echoport_backup_minio_retired_aliases
+      - echoport_backup_minio_url | length > 0
+    fail_msg: >-
+      echoport_backup_minio_alias and echoport_backup_minio_retired_aliases must
+      be mc alias names (a letter, then letters, digits, "-" or "_"), the alias
+      must not be retired in the same run, and echoport_backup_minio_url is
+      required.
+
+- name: minio_alias | Read current mc alias
+  ansible.builtin.command:
+    argv:
+      - "{{ echoport_backup_mc_install_path }}"
+      - --json
+      - alias
+      - list
+      - "{{ echoport_backup_minio_alias }}"
+  become: true
+  become_user: "{{ item }}"
+  loop: "{{ echoport_backup_minio_alias_users }}"
+  register: echoport_backup_minio_alias_current
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  no_log: true  # the output carries the stored secret key
+
+- name: minio_alias | Import mc alias from stdin
+  ansible.builtin.command:
+    argv:
+      - "{{ echoport_backup_mc_install_path }}"
+      - alias
+      - import
+      - "{{ echoport_backup_minio_alias }}"
+    stdin: "{{ echoport_backup_minio_alias_wanted | to_json }}"
+  become: true
+  become_user: "{{ item.item }}"
+  loop: "{{ echoport_backup_minio_alias_current.results }}"
+  register: echoport_backup_minio_alias_import
+  failed_when: false
+  no_log: true
+  vars:
+    echoport_backup_minio_alias_wanted:
+      url: "{{ echoport_backup_minio_url }}"
+      accessKey: "{{ echoport_backup_minio_access_key }}"
+      secretKey: "{{ echoport_backup_minio_secret_key }}"
+      api: s3v4
+      path: auto
+    echoport_backup_minio_alias_stored: >-
+      {{
+        (item.stdout | from_json)
+        if item.rc == 0 and (item.stdout | trim | length) > 0
+        else {}
+      }}
+  when: >-
+    echoport_backup_minio_alias_stored.URL | default('') != echoport_backup_minio_url
+    or echoport_backup_minio_alias_stored.accessKey | default('') != echoport_backup_minio_access_key
+    or echoport_backup_minio_alias_stored.secretKey | default('') != echoport_backup_minio_secret_key
+
+# The import runs with no_log, so its failure is reported here, without output.
+- name: minio_alias | Require successful mc alias import
+  ansible.builtin.assert:
+    that:
+      - echoport_backup_minio_alias_import.results | rejectattr('skipped', 'defined') | rejectattr('rc', 'equalto', 0) | list | length == 0
+    fail_msg: >-
+      mc alias import {{ echoport_backup_minio_alias }} failed for at least one
+      of {{ echoport_backup_minio_alias_users | join(', ') }} (mc missing or the
+      credentials rejected); mc output is withheld because it can quote them.
+
+# `mc alias remove` prints no credentials, unlike `mc alias list`, so a missing
+# alias is read from its error instead of being looked up first.
+- name: minio_alias | Remove retired mc aliases
+  ansible.builtin.command:
+    argv:
+      - "{{ echoport_backup_mc_install_path }}"
+      - alias
+      - remove
+      - "{{ item.1 }}"
+  become: true
+  become_user: "{{ item.0 }}"
+  loop: "{{ echoport_backup_minio_alias_users | product(echoport_backup_minio_retired_aliases) | list }}"
+  loop_control:
+    label: "{{ item.0 }}: {{ item.1 }}"
+  register: echoport_backup_minio_alias_removed
+  changed_when: echoport_backup_minio_alias_removed.rc == 0
+  failed_when:
+    - echoport_backup_minio_alias_removed.rc != 0
+    - "'No such alias' not in echoport_backup_minio_alias_removed.stderr"

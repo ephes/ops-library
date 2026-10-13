@@ -22,6 +22,16 @@ echoport_backup_minio_url: ""  # Must be provided
 echoport_backup_minio_access_key: ""  # Must be provided
 echoport_backup_minio_secret_key: ""  # Must be provided
 echoport_backup_default_bucket: "backups"
+# OS users whose mc configuration gets the alias (tasks/minio_alias.yml).
+echoport_backup_minio_alias_users:
+  - "{{ echoport_backup_user }}"
+# Aliases to remove from those users' mc configuration, for example the shared
+# alias a per-target alias replaces.
+echoport_backup_minio_retired_aliases: []
+# Per-target aliases of the generic runner, by first segment of the object key
+# (Echoport's key prefix is the target name), e.g. {nyxmon: backup-nyxmon}.
+# A key without an entry uses echoport_backup_minio_alias.
+echoport_backup_minio_prefix_aliases: {}
 
 # mc (MinIO client) installation
 echoport_backup_mc_install_path: "/usr/local/bin/mc"

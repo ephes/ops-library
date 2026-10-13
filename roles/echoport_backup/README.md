@@ -41,6 +41,9 @@ echoport_backup_service_name: "echoport-backup"
 # MinIO settings
 echoport_backup_minio_alias: "minio"
 echoport_backup_default_bucket: "backups"
+echoport_backup_minio_alias_users: ["{{ echoport_backup_user }}"]
+echoport_backup_minio_retired_aliases: []
+echoport_backup_minio_prefix_aliases: {}
 
 # FastDeploy API (for service sync)
 echoport_backup_api_base: "http://localhost:8000"
@@ -51,6 +54,44 @@ When `echoport_backup_sync_services` is true and the token is set, the role call
 `POST <echoport_backup_api_base>/services/sync`. The call runs with `no_log: true` so the bearer token
 never appears in verbose output; a failed sync does not fail the play and is reported by a separate
 task that prints only the HTTP status and response body.
+
+### MinIO alias
+
+The role gives `echoport_backup_minio_alias_users` the mc alias
+`echoport_backup_minio_alias` with `mc alias import`, which reads the
+credentials on stdin. They never appear in a command line, where
+`mc alias set <alias> <url> <key> <secret>` would show them in the host's
+process list. The alias is imported only when the stored URL or credentials
+differ, and every alias in `echoport_backup_minio_retired_aliases` is removed
+from those users' mc configuration.
+
+Other plays use the same tasks for their own runner:
+
+```yaml
+- name: Configure the mc alias of the delve backup
+  ansible.builtin.include_role:
+    name: local.ops_library.echoport_backup
+    tasks_from: minio_alias
+  vars:
+    echoport_backup_minio_alias: backup-delve
+    echoport_backup_minio_url: "http://127.0.0.1:9001"
+    echoport_backup_minio_access_key: "{{ account_user }}"
+    echoport_backup_minio_secret_key: "{{ account_secret }}"
+    echoport_backup_minio_alias_users: [root]
+    echoport_backup_minio_retired_aliases: []
+```
+
+The generic runner (`backup.py.j2`) serves several Echoport targets. With
+`echoport_backup_minio_prefix_aliases` it uses a separate alias, and so a
+separate MinIO account (`minio_deploy`, "Backup accounts"), per target: the
+alias is chosen by the first segment of the object key, which is the target
+name. A key without an entry uses `echoport_backup_minio_alias`.
+
+```yaml
+echoport_backup_minio_prefix_aliases:
+  nyxmon: backup-nyxmon
+  homelab: backup-homelab
+```
 
 ## Dependencies
 
