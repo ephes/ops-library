@@ -160,3 +160,7 @@ fastdeploy_python_version: "3.14"
 # uv installation settings (used when fastdeploy_install_uv is true)
 fastdeploy_uv_install_dir: /usr/local/bin
 fastdeploy_uv_binary: "{{ fastdeploy_uv_install_dir }}/uv"
+
+# Trusted proxy addresses for Uvicorn (never trust arbitrary clients).
+fastdeploy_forwarded_allow_ips:
+  - "127.0.0.1"

@@ -388,3 +388,19 @@ Created for homelab automation - part of the ops-library collection.
 The application `.env` is owned by `fastdeploy_user:fastdeploy_group` with mode
 `0600`. systemd reads it via `EnvironmentFile`; application helpers run as
 `fastdeploy_user`, so the deploy user does not need group access to this file.
+
+### Proxy headers and login throttling
+
+Uvicorn explicitly enables proxy headers and trusts only
+`fastdeploy_forwarded_allow_ips` (default `["127.0.0.1"]`). Supply a non-empty
+list of literal IPv4/IPv6 addresses for trusted proxies; wildcard, CIDR, host
+names and command arguments are rejected. Trusted proxy attribution gives the
+login failure throttle separate client buckets (50 failures per 15 minutes).
+For a remote Traefik instance, set its address, for example `["192.168.1.2"]`.
+Only trust proxies that overwrite client-supplied forwarded headers.
+
+This setting applies to `fastdeploy_deploy` units. The separate
+`fastdeploy_self_deploy` blue/green role still uses Uvicorn's implicit proxy
+trust defaults; a self-deploy replaces the main unit and does not preserve
+custom `fastdeploy_forwarded_allow_ips`. Use `fastdeploy_deploy` for this
+proxy trust configuration until that role gains matching support.

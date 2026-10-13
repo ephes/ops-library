@@ -201,3 +201,8 @@ MCRCON_PASS="PASSWORD" mcrcon -H 127.0.0.1 -P 25575 -t
 ## License
 
 MIT
+
+## Temporary build paths
+
+mcrcon builds use a unique private remote temporary directory, removed in an `always` block on success or failure.
+Temporary build/script blocks are skipped in check mode because `tempfile` cannot allocate paths there.

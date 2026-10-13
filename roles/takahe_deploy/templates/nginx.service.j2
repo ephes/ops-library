@@ -16,6 +16,13 @@ ExecReload=/usr/sbin/nginx -c {{ takahe_nginx_config_path }} -s reload
 ExecStop=/usr/sbin/nginx -c {{ takahe_nginx_config_path }} -s quit
 Restart=on-failure
 RestartSec=5
+{% if takahe_systemd_hardening | default(false) | bool %}
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths={{ takahe_cache_root }} {{ takahe_nginx_run_dir }} {{ takahe_nginx_log_dir }}
+{% endif %}
 
 [Install]
 WantedBy=multi-user.target

@@ -29,6 +29,7 @@
     mode: "0600"
 
 - name: Backup old mail_users table
+  no_log: true
   community.postgresql.postgresql_query:
     db: "{{ postfixadmin_db_name }}"
     login_host: "{{ postfixadmin_db_host }}"
@@ -38,6 +39,7 @@
   register: mail_users_backup
 
 - name: Write mail_users backup
+  no_log: true
   ansible.builtin.copy:
     content: "{{ mail_users_backup.query_result | default([]) | to_nice_json }}"
     dest: "{{ postfixadmin_backup_path }}/migration/mail_users_{{ postfixadmin_migration_timestamp }}.json"

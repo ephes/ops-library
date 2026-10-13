@@ -47,3 +47,12 @@ Deploys [Navidrome](https://www.navidrome.org/) as a systemd-managed service (no
 | `navidrome_basic_auth_user` | `navidrome` | Basic auth username; requires either `navidrome_basic_auth_password` or `_password_hash` when enabled. |
 
 See `defaults/main.yml` and `roles/navidrome_shared/defaults/main.yml` for the full variable reference.
+
+### Optional systemd hardening
+
+`navidrome_systemd_hardening` defaults to `false`, preserving the existing unit.
+Set it to `true` to enable `NoNewPrivileges=true`, `PrivateTmp=true`,
+`ProtectSystem=strict`, and `ProtectHome=false`. Writable paths are limited to
+`navidrome_home`, `navidrome_data_dir`, `navidrome_cache_dir`, `navidrome_log_dir`.
+Validate custom paths and application writes on a staging host before enabling.
+Enabling or disabling rewrites the unit on the next deploy.

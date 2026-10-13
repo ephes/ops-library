@@ -20,3 +20,6 @@ metube_systemd_restart_sec: 5s
 metube_systemd_nofile: 65535
 metube_systemd_tasks_max: ""
 metube_systemd_memory_max: ""
+
+# Enable only after validating writable paths on the target host.
+metube_systemd_hardening: false

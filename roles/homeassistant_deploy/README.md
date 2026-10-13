@@ -28,7 +28,7 @@ Ansible role that installs and configures a Home Assistant Core instance on bare
 - Optional management of `configuration.yaml`, `secrets.yaml`, and include files with overwrite guards.
 - Removes obsolete `system_monitor` and `discovery` blocks previously emitted
   by the role when it manages an existing configuration.
-- Supports UniFi presence integration credentials sourced from file, generated fallback, or provided variables.
+- Supports UniFi presence integration credentials sourced from file or provided variables (inventory/SOPS).
 
 ## Key Variables
 
@@ -48,7 +48,7 @@ All tunables live in `defaults/main.yml`; the most important ones are listed bel
 | `homeassistant_manage_includes` | `false` | Manage include files defined in `homeassistant_include_files` |
 | `homeassistant_overwrite_config` | `false` | Force re-render of configs/includes even if files exist |
 | `homeassistant_remove_legacy_met_weather_yaml` | `false` | Remove the legacy role-generated `weather: platform: met` YAML block, which current Home Assistant versions reject; only applies when `homeassistant_manage_configuration: true` |
-| `homeassistant_unifi_password_source` | `file` | `file`, `generate`, or `variable` password discovery |
+| `homeassistant_unifi_password_source` | `file` | `file` or `variable` password discovery; automatic generation is removed |
 | `homeassistant_manage_matter_server` | `false` | Install and manage the Matter server systemd unit |
 | `homeassistant_matter_server_package_spec` | `python-matter-server[server]` | Pip spec for the Matter server package |
 | `homeassistant_matter_server_virtualenv_path` | `{{ homeassistant_site_path }}/.venv-matter-server` | Dedicated uv virtualenv for the Matter server |
@@ -214,3 +214,11 @@ See the defaults file for recorder, logger, timezone, and UniFi integration sett
 - The server does not require a Bluetooth adapter by default because HA uses the Companion app for commissioning.
 - When enabling the Matter server, keep Python >= 3.12 and use `python-matter-server[server]` so native dependencies are installed.
 - The Matter server runs in a dedicated virtualenv so its `matter_server` package namespace cannot overwrite Home Assistant's `matter-python-client` files.
+
+### UniFi password migration
+
+Before the next deploy, move any password previously generated in a controller
+`/tmp` file into SOPS/Ansible Vault and supply the corresponding password variable.
+Empty credentials now fail instead of generating a fallback. Home Assistant may
+still read the password file persisted on the UniFi host. Keep the existing
+password when migrating to avoid changing the integration credentials.

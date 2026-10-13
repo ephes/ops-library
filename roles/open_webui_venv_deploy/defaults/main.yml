@@ -65,3 +65,6 @@ open_webui_healthcheck_path: "/"
 open_webui_healthcheck_status: 200
 open_webui_healthcheck_timeout: 10
 open_webui_healthcheck_retries: 12
+
+# Enable only after validating writable paths on the target host.
+open_webui_systemd_hardening: false

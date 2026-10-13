@@ -14,3 +14,6 @@ navidrome_service_state: started
 # Optional periodic rescan timer (uses systemd timer to trigger --scan)
 navidrome_rescan_timer_enabled: false
 navidrome_rescan_timer_on_calendar: "hourly"
+
+# Enable only after validating writable paths on the target host.
+navidrome_systemd_hardening: false

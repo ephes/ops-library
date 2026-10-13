@@ -24,6 +24,13 @@ MemoryMax={{ navidrome_systemd_memory_max }}
 {% if navidrome_systemd_tasks_max %}
 TasksMax={{ navidrome_systemd_tasks_max }}
 {% endif %}
+{% if navidrome_systemd_hardening | default(false) | bool %}
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths={{ navidrome_home }} {{ navidrome_data_dir }} {{ navidrome_cache_dir }} {{ navidrome_log_dir }}
+{% endif %}
 
 [Install]
 WantedBy=multi-user.target

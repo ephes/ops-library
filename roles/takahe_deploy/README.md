@@ -172,3 +172,13 @@ MIT
 
 Source and dependency changes notify the existing restart handlers after deployment.
 Takahe restarts both the gunicorn web service and the stator worker. Unchanged syncs do not request a restart.
+
+### Optional systemd hardening
+
+`takahe_systemd_hardening` defaults to `false`, preserving the existing unit.
+Set it to `true` to enable `NoNewPrivileges=true`, `PrivateTmp=true`,
+`ProtectSystem=strict`, and `ProtectHome=false`. Writable paths are limited to
+`takahe_site_path`, `takahe_media_root`, `takahe_cache_root`.
+The nginx unit instead allows the cache, runtime and nginx log directories.
+Validate custom paths and application writes on a staging host before enabling.
+Enabling or disabling rewrites the unit on the next deploy.

@@ -58,6 +58,9 @@ It fails when a task sends a credential without `no_log: true`:
   value or URL that renders a secret-named variable, `url_password`, or a `body`/`src` that renders a
   secret-named variable (`*password*`, `*secret*`, `*token*`, `*api_key*`, `*private_key*`,
   `*access_key*`; names ending in `_file`, `_path`, `_hash`, `_dir` or `_name` do not count);
+- a `postgresql_query` task reading or writing password-bearing query arguments/columns or
+  known password-bearing tables (`admin`, `mail_users`, `mailbox`), including password hashes
+  (module-redacted `login_password` alone does not count);
 - a `command`/`shell`/`raw` task whose command line has an `Authorization:` header or a `Bearer` token.
 
 The check also reads `action:`/`local_action:` forms (including `k=v` arguments and a nested `args`) and
@@ -308,3 +311,11 @@ with Redis, Ansible and systemd in a disposable local Docker Linux VM. Run
 for privilege/isolation boundaries and runner safety checks. It is separate from
 the default contributor suite and needs macOS Docker plus image-build network
 access.
+
+## Audit follow-up regressions
+
+`just test-lowfindings` runs portable pytest render/static checks for trusted FastDeploy
+proxy addresses, password-bearing queries, UniFi credentials, remote temporary path
+cleanup, default-off unit hardening, and conflict markers in tracked text files.
+These checks do not validate service behavior on a host; run Molecule separately
+before merging or enabling hardening.

@@ -5,6 +5,21 @@
 
 ## Unreleased — Preserve OpenClaw proxy attribution across restarts (2.31.25)
 
+- `fastdeploy_deploy` explicitly trusts proxy headers only from `fastdeploy_forwarded_allow_ips`
+  (default `["127.0.0.1"]`); configure trusted proxy addresses for login throttling.
+  The separate `fastdeploy_self_deploy` units still use implicit Uvicorn defaults.
+- PostfixAdmin admin queries and backup writes suppress password hashes in task logs;
+  the credential checker now covers password-bearing PostgreSQL queries,
+  including existing mail provisioning and admin restore tasks.
+- UniFi/Home Assistant no longer generate passwords in controller `/tmp` files.
+  Supply the existing password via inventory/SOPS or the supported remote password file.
+- Minecraft mcrcon builds and UniFi MongoDB scripts use unique remote temporary
+  paths with cleanup on success and failure.
+- Marina, Takahe, MeTube, Navidrome and Open WebUI venv provide opt-in systemd
+  hardening, disabled by default; validate on a host before enabling.
+- Removed a stray merge marker between the 2.31.18 and 2.31.17 notes;
+  regression checks reject conflict markers in tracked text files.
+
 - `openclaw_deploy` supports opt-in `openclaw_network_mode: host`, forcing a
   loopback-only Gateway listener and using the host port directly. This
   preserves direct-local API access alongside host-side Traefik proxy
@@ -198,7 +213,6 @@
   the edge had been weakening the `DENY` Voxhelm sends itself. Takes effect on
   the next Voxhelm ingress deploy.
 
-||||||| 433bbc9
 
 ## Unreleased — Daybook Paperless scan intake adapter (2.31.17)
 

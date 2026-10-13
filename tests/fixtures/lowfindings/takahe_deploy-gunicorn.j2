@@ -1,0 +1,18 @@
+# Managed by Ansible - Takahe gunicorn
+
+[Unit]
+Description=Takahe web service
+After=network.target
+
+[Service]
+Type=simple
+User={{ takahe_user }}
+Group={{ takahe_group }}
+WorkingDirectory={{ takahe_site_path }}
+EnvironmentFile={{ takahe_env_file }}
+ExecStart={{ takahe_venv_path }}/bin/gunicorn --workers {{ takahe_gunicorn_workers }} --threads {{ takahe_gunicorn_threads }} --timeout {{ takahe_gunicorn_timeout }} --bind 127.0.0.1:{{ takahe_app_port }}{% if takahe_gunicorn_extra_args | length > 0 %} {{ takahe_gunicorn_extra_args }}{% endif %} takahe.wsgi:application
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

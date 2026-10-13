@@ -1,0 +1,16 @@
+---
+- name: "validate_proxy_headers | Validate trusted proxy list"
+  ansible.builtin.assert:
+    that:
+      - fastdeploy_forwarded_allow_ips is sequence
+      - fastdeploy_forwarded_allow_ips is not string
+      - fastdeploy_forwarded_allow_ips is not mapping
+      - fastdeploy_forwarded_allow_ips | length > 0
+    fail_msg: fastdeploy_forwarded_allow_ips must be a non-empty list of literal IP addresses.
+
+- name: "validate_proxy_headers | Validate trusted proxy addresses"
+  ansible.builtin.assert:
+    that:
+      - item | local.ops_library.is_ip_address
+    fail_msg: fastdeploy_forwarded_allow_ips must contain only literal IP addresses (no wildcard or CIDR).
+  loop: "{{ fastdeploy_forwarded_allow_ips }}"

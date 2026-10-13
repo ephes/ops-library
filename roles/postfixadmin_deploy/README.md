@@ -193,3 +193,7 @@ MIT
 ## Author
 
 Jochen Wersdoerfer
+
+## Credential logging
+
+Password-bearing admin queries and admin backup writes use `no_log: true` to keep password hashes out of Ansible output, including verbose runs.

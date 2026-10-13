@@ -72,3 +72,12 @@ MIT
 
 Source and dependency changes notify the existing restart handlers after deployment.
 Marina restarts its systemd service. Unchanged syncs do not request a restart.
+
+### Optional systemd hardening
+
+`marina_systemd_hardening` defaults to `false`, preserving the existing unit.
+Set it to `true` to enable `NoNewPrivileges=true`, `PrivateTmp=true`,
+`ProtectSystem=strict`, and `ProtectHome=false`. Writable paths are limited to
+`marina_site_path`, `marina_cache_dir`.
+Validate custom paths and application writes on a staging host before enabling.
+Enabling or disabling rewrites the unit on the next deploy.

@@ -27,7 +27,7 @@ All tunables live in `defaults/main.yml`. The highlights:
 | `unifi_traefik_ip_allowlist` | `[]` | Source networks (IPs or CIDR ranges) allowed to reach the controller UI through Traefik. Empty leaves the route open to every client that reaches Traefik; set the trusted LAN and tailnet ranges so the admin login is not offered to the internet (other clients get 403). Every entry must parse as an address or `address/prefix`; anything else fails the role during validation. |
 | `unifi_manage_firewall` | `true` | When true, open the standard UniFi TCP/UDP ports via `ufw`. |
 | `unifi_create_homeassistant_user` | `false` | Generate or reconcile a read-only UniFi admin for Home Assistant integration. |
-| `unifi_homeassistant_password` | `""` | Optional pre-defined HA password. Leave empty to auto-generate and store under `unifi_homeassistant_password_store`; when set, existing user password hashes are updated to match. |
+| `unifi_homeassistant_password` | `""` | Required when HA integration is enabled. Supply via inventory/SOPS; existing user hashes are updated to match and the remote password store is retained for Home Assistant. |
 | `unifi_mongodb_repo_distribution_override` | `""` | Force the MongoDB apt codename (defaults to detected release, fallback `noble` if unsupported). |
 
 Review the defaults file for Traefik entrypoints, MongoDB repo release, logrotate script paths, and controller URLs.
@@ -55,3 +55,14 @@ Review the defaults file for Traefik entrypoints, MongoDB repo release, logrotat
 - The Traefik route has no Basic Auth in front of the controller (the UniFi mobile and device clients cannot answer it). By default it also has no source restriction, so the controller's own login is the only protection for `unifi.<domain>`. Set `unifi_traefik_ip_allowlist` to the trusted networks unless the UI really has to be reachable from the internet. Device adoption (`unifi_inform_url`, port 8080) does not go through Traefik and is not affected.
 - If you already manage Traefik entrypoints elsewhere, keep `unifi_traefik_manage_api_entrypoint: false` to avoid editing `traefik.toml`.
 - For production cutovers, run `unifi_backup` prior to `unifi_deploy` and keep `unifi_remove` ready for clean rollbacks.
+
+### UniFi password migration
+
+Before the next deploy, move any password previously generated in a controller
+`/tmp` file into SOPS/Ansible Vault and supply the corresponding password variable.
+Empty credentials now fail instead of generating a fallback. Home Assistant may
+still read the password file persisted on the UniFi host. Keep the existing
+password when migrating to avoid changing the integration credentials.
+
+MongoDB scripts use unique remote temporary files (0600), removed in `always` blocks even if rendering or execution fails.
+Temporary build/script blocks are skipped in check mode because `tempfile` cannot allocate paths there.
