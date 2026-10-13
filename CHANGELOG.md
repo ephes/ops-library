@@ -3,6 +3,17 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Voxhelm prune job can run once a day at a fixed time (2.31.33)
+
+- `voxhelm_deploy`: new `voxhelm_prune_daily_time` (default `""`). Set to a
+  quoted `"HH:MM"` (host local time), the `de.wersdoerfer.voxhelm-prune`
+  launchd job runs `prune_job_artifacts` once a day at that time
+  (`StartCalendarInterval`) instead of every `voxhelm_prune_interval_seconds`
+  (`StartInterval`, still the default). The role rejects anything but `00:00`
+  to `23:59`, including the number YAML makes of an unquoted `14:30`. Nothing
+  changes for hosts that leave it empty; the job stays off and in dry-run mode
+  by default.
+
 ## Unreleased — New `nodejs_install` role (2.31.32)
 
 - New bootstrap role `nodejs_install`: installs one Node.js release line

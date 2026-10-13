@@ -1,6 +1,6 @@
 """Render checks for the Voxhelm prune job and the optional service settings.
 
-Covers the hourly `prune_job_artifacts` launchd job in `voxhelm_deploy` (off by
+Covers the periodic `prune_job_artifacts` launchd job in `voxhelm_deploy` (off by
 default, dry-run until switched) and the optional Voxhelm, Echoport and
 mailgun-relay settings that are rendered only when the owner sets them.
 """
@@ -91,6 +91,7 @@ class VoxhelmPruneJobTests(unittest.TestCase):
         self.assertIs(self.defaults["voxhelm_prune_enabled"], False)
         self.assertIs(self.defaults["voxhelm_prune_dry_run"], True)
         self.assertEqual(self.defaults["voxhelm_prune_interval_seconds"], 3600)
+        self.assertEqual(self.defaults["voxhelm_prune_daily_time"], "")
 
     def test_prune_script_sources_env_and_defaults_to_dry_run(self):
         script = _render(VOXHELM / "templates/prune.sh.j2", self.context)
@@ -136,6 +137,25 @@ class VoxhelmPruneJobTests(unittest.TestCase):
             ).encode()
         )
         self.assertEqual(custom["StartInterval"], 7200)
+        self.assertNotIn("StartCalendarInterval", plist)
+
+    def test_prune_plist_runs_once_a_day_when_a_daily_time_is_set(self):
+        for daily_time, expected in (
+            ("04:30", {"Hour": 4, "Minute": 30}),
+            ("00:00", {"Hour": 0, "Minute": 0}),
+            ("23:09", {"Hour": 23, "Minute": 9}),
+        ):
+            with self.subTest(daily_time=daily_time):
+                plist = plistlib.loads(
+                    _render(
+                        VOXHELM / "templates/voxhelm-prune.launchd.plist.j2",
+                        {**self.context, "voxhelm_prune_daily_time": daily_time},
+                    ).encode()
+                )
+                self.assertEqual(plist["StartCalendarInterval"], expected)
+                self.assertNotIn("StartInterval", plist)
+                self.assertIs(plist["RunAtLoad"], False)
+                self.assertIs(plist["KeepAlive"], False)
 
     def test_launchd_tasks_gate_the_prune_job_and_never_kickstart_it(self):
         config = _tasks(VOXHELM / "tasks/config.yml")
@@ -292,11 +312,20 @@ class VoxhelmOptionalSettingsTests(unittest.TestCase):
                 "voxhelm_staged_input_retention_seconds",
                 "voxhelm_wyoming_stt_max_audio_seconds",
                 "voxhelm_prune_interval_seconds",
+                "voxhelm_prune_daily_time",
                 "voxhelm_private_url_hosts",
             )
         }
         cases = [
             ({}, True),
+            ({"voxhelm_prune_daily_time": "04:30"}, True),
+            ({"voxhelm_prune_daily_time": "23:59"}, True),
+            ({"voxhelm_prune_daily_time": "24:00"}, False),
+            ({"voxhelm_prune_daily_time": "4:30"}, False),
+            ({"voxhelm_prune_daily_time": "04:60"}, False),
+            ({"voxhelm_prune_daily_time": "04:30\n"}, False),
+            # An unquoted 14:30 in YAML arrives as the number 870.
+            ({"voxhelm_prune_daily_time": 870}, False),
             ({"voxhelm_job_metadata_retention_seconds": 0}, True),
             ({"voxhelm_source_artifact_retention_seconds": "86400"}, True),
             ({"voxhelm_private_url_hosts": ["nas.local"]}, True),
