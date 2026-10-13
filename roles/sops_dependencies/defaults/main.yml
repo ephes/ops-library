@@ -20,3 +20,8 @@ sops_deps_sops_version: "3.13.3"
 # Ansible collection dependencies
 sops_deps_install_ansible_collection: true
 sops_deps_ansible_user: "{{ sops_deps_user }}"
+
+# https://github.com/getsops/sops/releases/download/v3.13.3/sops-v3.13.3.checksums.txt
+sops_deps_sops_checksum: "sha256:e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b"
+# Release-page asset SHA-256: https://github.com/FiloSottile/age/releases/tag/v1.3.2
+sops_deps_age_checksum: "sha256:cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10"

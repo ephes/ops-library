@@ -6,6 +6,7 @@
 ## Unreleased — Pin and verify privileged release downloads
 
 - `echoport_backup`: pin and verify mc using the existing MinIO installer tasks. Reconcile the installed binary on every deploy, using the project’s GitHub release after dl.min.io was discontinued. A differing mc binary is replaced at the next deploy.
+- `sops_dependencies`: verify the pinned Linux amd64 sops and age downloads using published SHA-256 values, including the sops apt fallback.
 
 ## Unreleased — Daybook sessions and Photos offload deploy again on a root connection (2.31.30)
 

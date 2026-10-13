@@ -7,7 +7,10 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-ROLES = ("echoport_backup",)
+ROLES = (
+    "echoport_backup",
+    "sops_dependencies",
+)
 # No vendor-published checksum was found for this repository signing key. Keep only this
 # exact existing download exempt; it is reported as an unresolved L4 item.
 EXCEPTION = (
