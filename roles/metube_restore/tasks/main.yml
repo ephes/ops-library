@@ -36,6 +36,14 @@
     msg: "MeTube restore archive not found: {{ metube_restore_selected_archive }}"
   when: not metube_restore_selected_stat.stat.exists
 
+- name: Validate preservation layout before staging changes
+  ansible.builtin.include_tasks: "{{ role_path }}/../restore_preserve_internal/tasks/validate.yml"
+  vars:
+    restore_preserve_mutable_paths:
+      - "{{ metube_state_dir }}"
+      - "{{ metube_restore_staging_dir }}"
+    restore_preserve_source: "{{ metube_restore_selected_archive }}"
+
 - name: Prepare staging directory
   ansible.builtin.file:
     path: "{{ metube_restore_staging_dir }}"
@@ -83,6 +91,22 @@
       - metube_restore_payload_stats.results[0].stat.exists
     fail_msg: "MeTube state directory missing inside archive: {{ metube_restore_payload_dir }}/state"
 
+- name: Stop metube service before restore
+  ansible.builtin.systemd:
+    name: "{{ metube_service_name }}"
+    state: stopped
+  when: metube_restore_stop_service | bool
+
+- name: Keep pre-restore directory copy
+  ansible.builtin.include_tasks: "{{ role_path }}/../restore_preserve_internal/tasks/main.yml"
+  vars:
+    restore_preserve_path: "{{ metube_state_dir }}"
+    restore_preserve_empty: true
+
+- name: Remember metube pre-restore copy
+  ansible.builtin.set_fact:
+    metube_restore_preserved: "{{ restore_preserve_report }}"
+
 - name: Ensure target directories exist
   ansible.builtin.file:
     path: "{{ item.path }}"
@@ -95,16 +119,10 @@
     - { path: "{{ metube_env_dir }}", owner: "root", group: "root", mode: "0755" }
     - { path: "{{ metube_traefik_config_path | dirname }}", owner: "root", group: "root", mode: "0755" }
 
-- name: Stop metube service before restore
-  ansible.builtin.systemd:
-    name: "{{ metube_service_name }}"
-    state: stopped
-  when: metube_restore_stop_service | bool
-
 - name: Restore state directory
   ansible.builtin.command:
     cmd: >
-      rsync -a --delete "{{ metube_restore_payload_dir }}/state/" "{{ metube_state_dir }}/"
+      rsync -a "{{ metube_restore_payload_dir }}/state/" "{{ metube_state_dir }}/"
   changed_when: true
 
 - name: Restore environment file
@@ -162,3 +180,7 @@
     path: "{{ metube_restore_staging_dir }}"
     state: absent
   when: metube_restore_cleanup | bool
+
+- name: Report retained metube pre-restore copies
+  ansible.builtin.debug:
+    msg: "Retained copy: {{ metube_restore_preserved }}. Owner prunes by hand."

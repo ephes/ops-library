@@ -1,6 +1,13 @@
 ---
 # minecraft_java_restore - Restore data from archive
 
+- name: Validate Minecraft world preservation layout
+  ansible.builtin.include_tasks: "{{ role_path }}/../restore_preserve_internal/tasks/validate.yml"
+  vars:
+    restore_preserve_mutable_paths:
+      - "{{ minecraft_java_server_dir }}/{{ minecraft_java_world_name }}"
+    restore_preserve_source: "{{ minecraft_restore_archive_path }}"
+
 - name: Create temporary extraction directory
   ansible.builtin.tempfile:
     state: directory
@@ -30,10 +37,11 @@
   ansible.builtin.set_fact:
     extracted_base: "{{ extracted_world.files[0].path | dirname }}"
 
-- name: Remove existing world directory
-  ansible.builtin.file:
-    path: "{{ minecraft_java_server_dir }}/{{ minecraft_java_world_name }}"
-    state: absent
+- name: Keep pre-restore directory copy
+  ansible.builtin.include_tasks: "{{ role_path }}/../restore_preserve_internal/tasks/main.yml"
+  vars:
+    restore_preserve_path: "{{ minecraft_java_server_dir ~ '/' ~ minecraft_java_world_name }}"
+    restore_preserve_empty: true
 
 - name: Restore world directory
   ansible.builtin.copy:
@@ -75,9 +83,9 @@
     - banned-players.json
   ignore_errors: true
 
-- name: Fix ownership recursively
+- name: Fix restored world ownership recursively
   ansible.builtin.file:
-    path: "{{ minecraft_java_server_dir }}"
+    path: "{{ minecraft_java_server_dir }}/{{ minecraft_java_world_name }}"
     owner: "{{ minecraft_java_user }}"
     group: "{{ minecraft_java_group }}"
     recurse: true
@@ -94,3 +102,7 @@
       Archive: {{ minecraft_restore_archive_path | basename }}
       World: {{ minecraft_java_world_name }}
       Target: {{ minecraft_java_server_dir }}
+
+- name: Report retained Minecraft world copy
+  ansible.builtin.debug:
+    var: restore_preserve_report

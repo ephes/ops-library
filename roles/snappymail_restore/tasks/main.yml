@@ -58,99 +58,209 @@
     msg: "Restore source not found at {{ snappymail_restore_source_effective }}"
   when: not snappymail_restore_source_stat.stat.exists
 
-- name: Ensure data parent exists
-  ansible.builtin.file:
-    path: "{{ snappymail_data_dir | dirname }}"
-    state: directory
-    mode: "0755"
+- name: Validate SnappyMail preservation layout
+  ansible.builtin.include_tasks: "{{ role_path }}/../restore_preserve_internal/tasks/validate.yml"
+  vars:
+    restore_preserve_mutable_paths:
+      - "{{ snappymail_data_dir }}"
+    restore_preserve_source: "{{ snappymail_restore_source_effective }}"
 
-- name: Clean existing data directory
-  ansible.builtin.file:
-    path: "{{ snappymail_data_dir }}"
-    state: absent
-  when: snappymail_restore_clean | bool
+- name: Restore SnappyMail with retained copies and staging cleanup
+  when: not ansible_check_mode
+  block:
+    - name: Reset SnappyMail recovery tracking
+      ansible.builtin.set_fact:
+        snappymail_restore_live_touched: false
+        snappymail_restore_stop_results: {results: []}
+        snappymail_restore_stopped_units: []
+        restore_preserve_result: {}
+        snappymail_restore_stage: {}
 
-- name: Recreate data directory
-  ansible.builtin.file:
-    path: "{{ snappymail_data_dir }}"
-    state: directory
-    owner: "{{ snappymail_restore_owner }}"
-    group: "{{ snappymail_restore_group }}"
-    mode: "{{ snappymail_restore_mode }}"
+    - name: Determine if source is archive
+      ansible.builtin.set_fact:
+        snappymail_restore_is_archive: "{{ snappymail_restore_source_effective | regex_search('\\.tar\\.(gz|zst)$') is not none }}"
 
-- name: Determine if source is archive
-  ansible.builtin.set_fact:
-    snappymail_restore_is_archive: "{{ snappymail_restore_source_effective | regex_search('\\.tar\\.(gz|zst)$') is not none }}"
+    - name: Ensure restore dependencies are installed
+      ansible.builtin.apt:
+        name: "{{ snappymail_restore_packages }}"
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+      when:
+        - snappymail_restore_packages | length > 0
 
-- name: Ensure restore dependencies are installed
-  ansible.builtin.apt:
-    name: "{{ snappymail_restore_packages }}"
-    state: present
-    update_cache: true
-    cache_valid_time: 3600
-  when:
-    - snappymail_restore_packages | length > 0
-    - not snappymail_restore_is_archive
+    - name: Ensure data parent exists
+      ansible.builtin.file:
+        path: "{{ snappymail_data_dir | dirname }}"
+        state: directory
+        mode: "0755"
 
-- name: Restore from archive
-  ansible.builtin.unarchive:
-    src: "{{ snappymail_restore_source_effective }}"
-    dest: "{{ snappymail_data_dir | dirname }}"
-    remote_src: true
-    extra_opts: "{{ ['--use-compress-program=unzstd'] if snappymail_restore_source_effective.endswith('.tar.zst') else [] }}"
-  when: snappymail_restore_is_archive
+    - name: Create SnappyMail archive staging directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: .snappymail-restore-
+        path: "{{ snappymail_data_dir | dirname }}"
+      register: snappymail_restore_stage
+      when: snappymail_restore_is_archive
 
-- name: Restore from directory copy
-  ansible.posix.synchronize:
-    src: "{{ snappymail_restore_source_effective }}/"
-    dest: "{{ snappymail_data_dir }}/"
-    archive: true
-    recursive: true
-    delete: true
-  delegate_to: "{{ inventory_hostname }}"
-  when: not snappymail_restore_is_archive
+    - name: Validate SnappyMail archive by extracting into staging
+      ansible.builtin.unarchive:
+        src: "{{ snappymail_restore_source_effective }}"
+        dest: "{{ snappymail_restore_stage.path }}"
+        remote_src: true
+        extra_opts: "{{ ['--use-compress-program=unzstd'] if snappymail_restore_source_effective.endswith('.tar.zst') else [] }}"
+      when: snappymail_restore_is_archive
 
-- name: Ensure ownership and permissions on restored data
-  ansible.builtin.file:
-    path: "{{ snappymail_data_dir }}"
-    state: directory
-    owner: "{{ snappymail_restore_owner }}"
-    group: "{{ snappymail_restore_group }}"
-    mode: "{{ snappymail_restore_mode }}"
-    recurse: true
+    - name: Select validated SnappyMail payload
+      ansible.builtin.set_fact:
+        snappymail_restore_payload: >-
+          {{ snappymail_restore_stage.path ~ '/' ~ (snappymail_data_dir | basename)
+             if snappymail_restore_is_archive else snappymail_restore_source_effective }}
 
-- name: Find PHP-FPM service for SnappyMail
-  ansible.builtin.find:
-    paths: "/etc/php"
-    patterns: "snappymail.conf"
-    recurse: true
-    file_type: file
-  register: snappymail_restore_php_pool
-  failed_when: false
+    - name: Check SnappyMail payload directory
+      ansible.builtin.stat:
+        path: "{{ snappymail_restore_payload }}"
+      register: snappymail_restore_payload_stat
 
-- name: Derive PHP-FPM service name
-  ansible.builtin.set_fact:
-    snappymail_restore_php_service: >-
-      {{
-        snappymail_restore_php_pool.files
-        | map(attribute='path')
-        | map('regex_replace', '^/etc/php/([^/]+)/fpm/.*$', 'php\g<1>-fpm')
-        | list
-        | first
-        | default('php-fpm')
-      }}
+    - name: Require SnappyMail data directory in payload
+      ansible.builtin.assert:
+        that:
+          - snappymail_restore_payload_stat.stat.isdir | default(false)
 
-- name: Restart services after restore
-  ansible.builtin.systemd:
-    name: "{{ item }}"
-    state: restarted
-    enabled: true
-  loop:
-    - nginx
-    - "{{ snappymail_restore_php_service }}"
-  ignore_errors: true
-  when: snappymail_restore_restart_services | bool
+    - name: Find PHP-FPM service for SnappyMail
+      ansible.builtin.find:
+        paths: "/etc/php"
+        patterns: "snappymail.conf"
+        recurse: true
+        file_type: file
+      register: snappymail_restore_php_pool
+      failed_when: false
 
-- name: Report restore completion
-  ansible.builtin.debug:
-    msg: "SnappyMail data restored from {{ snappymail_restore_source_effective }} into {{ snappymail_data_dir }}"
+    - name: Require an identifiable SnappyMail PHP-FPM pool before stopping nginx
+      ansible.builtin.assert:
+        that:
+          - snappymail_restore_php_pool.files | default([]) | length > 0
+        fail_msg: "SnappyMail PHP-FPM pool not found; refusing to stop nginx."
+      when: snappymail_restore_restart_services | bool
+
+    - name: Derive PHP-FPM service name
+      ansible.builtin.set_fact:
+        snappymail_restore_php_service: >-
+          {{
+            snappymail_restore_php_pool.files | default([])
+            | map(attribute='path')
+            | map('regex_replace', '^/etc/php/([^/]+)/fpm/.*$', 'php\g<1>-fpm')
+            | list
+            | first
+            | default('php-fpm')
+          }}
+
+    - name: Check SnappyMail preservation before stopping writers
+      ansible.builtin.include_tasks: "{{ role_path }}/../restore_preserve_internal/tasks/preflight.yml"
+      vars:
+        restore_preserve_path: "{{ snappymail_data_dir }}"
+        restore_preserve_empty: "{{ snappymail_restore_clean | bool }}"
+
+    - name: Stop SnappyMail writers before preservation
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+      loop:
+        - nginx
+        - "{{ snappymail_restore_php_service }}"
+      register: snappymail_restore_stop_results
+      when: snappymail_restore_restart_services | bool
+
+    - name: Keep pre-restore directory copy
+      ansible.builtin.include_tasks: "{{ role_path }}/../restore_preserve_internal/tasks/main.yml"
+      vars:
+        restore_preserve_path: "{{ snappymail_data_dir }}"
+        restore_preserve_empty: "{{ snappymail_restore_clean | bool }}"
+
+    - name: Record that preservation has prepared live data for replacement
+      ansible.builtin.set_fact:
+        snappymail_restore_live_touched: true
+
+    - name: Remember SnappyMail pre-restore copy
+      ansible.builtin.set_fact:
+        snappymail_restore_preserved: "{{ restore_preserve_report }}"
+
+    - name: Recreate data directory
+      ansible.builtin.file:
+        path: "{{ snappymail_data_dir }}"
+        state: directory
+        owner: "{{ snappymail_restore_owner }}"
+        group: "{{ snappymail_restore_group }}"
+        mode: "{{ snappymail_restore_mode }}"
+
+    - name: Restore validated SnappyMail directory
+      ansible.builtin.command:
+        argv:
+          - rsync
+          - -a
+          - "{{ snappymail_restore_payload }}/"
+          - "{{ snappymail_data_dir }}/"
+      changed_when: true
+
+    - name: Ensure ownership and permissions on restored data
+      ansible.builtin.file:
+        path: "{{ snappymail_data_dir }}"
+        state: directory
+        owner: "{{ snappymail_restore_owner }}"
+        group: "{{ snappymail_restore_group }}"
+        mode: "{{ snappymail_restore_mode }}"
+        recurse: true
+
+    - name: Restart services after restore
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: restarted
+        enabled: true
+      loop:
+        - nginx
+        - "{{ snappymail_restore_php_service }}"
+      when: snappymail_restore_restart_services | bool
+
+    - name: Report restore completion
+      ansible.builtin.debug:
+        msg: "SnappyMail data restored from {{ snappymail_restore_source_effective }} into {{ snappymail_data_dir }}"
+
+    - name: Report retained SnappyMail copy
+      ansible.builtin.debug:
+        var: snappymail_restore_preserved
+
+  rescue:
+    - name: Record units actually stopped by this SnappyMail invocation
+      ansible.builtin.set_fact:
+        snappymail_restore_stopped_units: "{{ snappymail_restore_stopped_units + [item.item] }}"
+      loop: "{{ snappymail_restore_stop_results.results | default([]) }}"
+      when:
+        - snappymail_restore_restart_services | bool
+        - item.changed | default(false) | bool
+        - not item.skipped | default(false) | bool
+        - not item.failed | default(false) | bool
+
+    - name: Restart SnappyMail units stopped before a preservation failure
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+      loop: "{{ snappymail_restore_stopped_units }}"
+      failed_when: false
+      when:
+        - snappymail_restore_restart_services | bool
+        - not snappymail_restore_live_touched | default(false) | bool
+        - "'RESTORE_PRESERVED ' not in (restore_preserve_result.stdout | default(''))"
+
+    - name: Report SnappyMail restore failure
+      ansible.builtin.fail:
+        msg: >-
+          SnappyMail restore failed at {{ ansible_failed_task.name | default('unknown task') }}.
+          Units stopped before preservation were restarted best-effort if live data was untouched.
+          Otherwise inspect the retained copy before restarting services.
+
+  always:
+    - name: Remove SnappyMail extraction staging
+      ansible.builtin.file:
+        path: "{{ snappymail_restore_stage.path }}"
+        state: absent
+      when: snappymail_restore_stage.path is defined

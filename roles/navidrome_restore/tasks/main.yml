@@ -37,6 +37,14 @@
     msg: "Navidrome restore archive not found: {{ navidrome_restore_selected_archive }}"
   when: not navidrome_restore_selected_stat.stat.exists
 
+- name: Validate preservation layout before staging changes
+  ansible.builtin.include_tasks: "{{ role_path }}/../restore_preserve_internal/tasks/validate.yml"
+  vars:
+    restore_preserve_mutable_paths:
+      - "{{ navidrome_data_dir }}"
+      - "{{ navidrome_restore_staging_dir }}"
+    restore_preserve_source: "{{ navidrome_restore_selected_archive }}"
+
 - name: Reset staging directory
   ansible.builtin.file:
     path: "{{ navidrome_restore_staging_dir }}"
@@ -88,6 +96,21 @@
     msg: "Navidrome data directory missing inside archive: {{ navidrome_restore_payload_dir }}/data"
   when: not navidrome_restore_payload_stats.results[0].stat.exists
 
+- name: Stop Navidrome before restore
+  ansible.builtin.systemd:
+    name: "{{ navidrome_service_name }}"
+    state: stopped
+
+- name: Keep pre-restore directory copy
+  ansible.builtin.include_tasks: "{{ role_path }}/../restore_preserve_internal/tasks/main.yml"
+  vars:
+    restore_preserve_path: "{{ navidrome_data_dir }}"
+    restore_preserve_empty: true
+
+- name: Remember navidrome pre-restore copy
+  ansible.builtin.set_fact:
+    navidrome_restore_preserved: "{{ restore_preserve_report }}"
+
 - name: Ensure Navidrome directories exist
   ansible.builtin.file:
     path: "{{ item.path }}"
@@ -102,16 +125,10 @@
     - { path: "{{ navidrome_config_path | dirname }}", owner: "root", group: "root", mode: "0755" }
     - { path: "{{ navidrome_traefik_config_path | dirname }}", owner: "root", group: "root", mode: "0755" }
 
-- name: Stop Navidrome before restore
-  ansible.builtin.systemd:
-    name: "{{ navidrome_service_name }}"
-    state: stopped
-  failed_when: false
-
 - name: Restore Navidrome data directory
   ansible.builtin.command:
     cmd: >
-      rsync -a --delete "{{ navidrome_restore_payload_dir }}/data/" "{{ navidrome_data_dir }}/"
+      rsync -a "{{ navidrome_restore_payload_dir }}/data/" "{{ navidrome_data_dir }}/"
   changed_when: true
 
 - name: Restore Navidrome config file
@@ -197,3 +214,7 @@
     path: "{{ navidrome_restore_staging_dir }}"
     state: absent
   when: navidrome_restore_cleanup | bool
+
+- name: Report retained navidrome pre-restore copies
+  ansible.builtin.debug:
+    msg: "Retained copy: {{ navidrome_restore_preserved }}. Owner prunes by hand."

@@ -41,7 +41,7 @@ Roles are the primary surface area, but they no longer form one flat category.
 |----------|----------|----------|
 | **Public lifecycle entrypoints** | `fastdeploy_deploy`, `unifi_restore`, `tailscale_backup`, `apt_upgrade_register`, `uv_install` | Stable role names that consumer repos are expected to call directly. |
 | **Shared-defaults roles** | `homelab_shared`, `jellyfin_shared`, `mail_shared`, `postfixadmin_shared`, `vaultwarden_shared` | Shared variable and fact surfaces for sibling lifecycle roles. Usually loaded by `meta/main.yml` dependencies rather than by operators. |
-| **Internal helpers** | `webapp_deploy_internal`, `restore_pilot_internal`, `minio_shared` | Narrow implementation details for other roles. Not part of the public compatibility contract. |
+| **Internal helpers** | `webapp_deploy_internal`, `restore_pilot_internal`, `restore_preserve_internal`, `minio_shared` | Narrow implementation details for other roles. Not part of the public compatibility contract. |
 
 Each role still follows standard Ansible structure (`defaults/`, `tasks/`,
 `templates/`, `handlers/`, optional `meta/`). Sensitive or environment-specific
@@ -94,6 +94,11 @@ Current helper surfaces:
   validation plus the `block`/`rescue`/`always` orchestration that still calls
   back into role-owned `validate`, `prepare`, `restore`, `verify`, `rollback`,
   and `cleanup` task files.
+- `restore_preserve_internal` is a shared task library for retaining directory
+  state before file/Wagtail restores. Callers include its `main`, `validate`
+  and optional `preflight` tasks by sibling path to retain the caller’s role
+  context; every copy remains for manual pruning. It is independent of the
+  restore pilot scaffold and has no pruning or rollback orchestration.
 - `minio_shared` is an internal helper task library, not a shared-defaults
   role. It currently exposes `tasks/mc_host_env.yml` for MinIO backup/restore
   flows that need consistent `MC_HOST_*` environment construction.

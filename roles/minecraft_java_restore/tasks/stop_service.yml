@@ -1,17 +1,37 @@
 ---
 # minecraft_java_restore - Stop service before restore
 
-- name: Check if service exists
-  ansible.builtin.systemd:
-    name: "{{ minecraft_java_service_name }}"
-  register: service_status
-  ignore_errors: true
+- name: Query Minecraft service load state
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - show
+      - --property=LoadState
+      - --property=ActiveState
+      - --
+      - "{{ minecraft_java_service_name }}"
+  register: minecraft_restore_service_load
+  changed_when: false
+  failed_when: >-
+    minecraft_restore_service_load.rc != 0 and
+    ('LoadState=not-found' not in minecraft_restore_service_load.stdout_lines or
+     'ActiveState=inactive' not in minecraft_restore_service_load.stdout_lines)
+  check_mode: false
+
+- name: Require loaded or genuinely absent Minecraft unit
+  ansible.builtin.assert:
+    that:
+      - >-
+        'LoadState=loaded' in minecraft_restore_service_load.stdout_lines or
+        ('LoadState=not-found' in minecraft_restore_service_load.stdout_lines and
+         'ActiveState=inactive' in minecraft_restore_service_load.stdout_lines)
+    fail_msg: "Minecraft unit load state is unsafe for restore (e.g. masked or failed)."
 
 - name: Stop minecraft service
   ansible.builtin.systemd:
     name: "{{ minecraft_java_service_name }}"
     state: stopped
-  when: service_status.status is defined and service_status.status.ActiveState == 'active'
+  when: "'LoadState=loaded' in minecraft_restore_service_load.stdout_lines"
 
 - name: Wait for service to stop
   ansible.builtin.wait_for:
@@ -23,4 +43,4 @@
 
 - name: Display stop status
   ansible.builtin.debug:
-    msg: "Service {{ 'stopped' if service_status.status is defined else 'not running' }}"
+    msg: "Service {{ minecraft_java_service_name }} {{ 'stopped' if 'LoadState=loaded' in minecraft_restore_service_load.stdout_lines else 'absent (restore before deploy)' }}"
