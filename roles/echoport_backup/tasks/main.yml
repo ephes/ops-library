@@ -6,17 +6,15 @@
     name: sqlite3
     state: present
 
-- name: Check if mc (MinIO client) exists
-  ansible.builtin.stat:
-    path: "{{ echoport_backup_mc_install_path }}"
-  register: echoport_backup_mc_stat
-
-- name: Download mc (MinIO client)
-  ansible.builtin.get_url:
-    url: "{{ echoport_backup_mc_download_url }}"
-    dest: "{{ echoport_backup_mc_install_path }}"
-    mode: "0755"
-  when: not echoport_backup_mc_stat.stat.exists
+- name: Install pinned and verified mc client
+  ansible.builtin.include_role:
+    name: local.ops_library.minio_backup
+    tasks_from: mc_install
+  vars:
+    minio_mc_version: "{{ echoport_backup_mc_version }}"
+    minio_mc_checksum: "{{ echoport_backup_mc_checksum }}"
+    minio_mc_bin_path: "{{ echoport_backup_mc_install_path }}"
+    minio_mc_download_url: "{{ echoport_backup_mc_download_url }}"
 
 - name: Configure mc alias for MinIO
   ansible.builtin.include_tasks: minio_alias.yml

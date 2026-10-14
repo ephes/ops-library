@@ -82,37 +82,17 @@
         - shell_basics_current_chezmoi.rc == 0
         - "'chezmoi version' in (shell_basics_current_chezmoi.stdout | default(''))"
 
-    - name: Look up latest chezmoi release
-      ansible.builtin.uri:
-        url: https://api.github.com/repos/twpayne/chezmoi/releases/latest
-        return_content: true
-        status_code: 200
-        headers:
-          User-Agent: ansible-shell-basics
-      register: shell_basics_chezmoi_release
-      when: shell_basics_chezmoi_version == 'latest'
-      changed_when: false
-
-    - name: Set desired chezmoi version (latest)
-      ansible.builtin.set_fact:
-        shell_basics_desired_chezmoi_version: "{{ shell_basics_chezmoi_release.json.tag_name | regex_replace('^v', '') }}"
-      when: shell_basics_chezmoi_version == 'latest'
-
-    - name: Set desired chezmoi version (pinned)
+    - name: Select pinned chezmoi release
       ansible.builtin.set_fact:
         shell_basics_desired_chezmoi_version: "{{ shell_basics_chezmoi_version }}"
-      when: shell_basics_chezmoi_version != 'latest'
+        shell_basics_chezmoi_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(ansible_architecture, 'unsupported') }}"
 
-    - name: Ensure desired chezmoi version is known
+    - name: Validate pinned chezmoi release
       ansible.builtin.assert:
         that:
-          - shell_basics_desired_chezmoi_version is defined
-          - shell_basics_desired_chezmoi_version | length > 0
-        fail_msg: "Could not determine chezmoi version to install."
-
-    - name: Set desired chezmoi tag (with leading v)
-      ansible.builtin.set_fact:
-        shell_basics_desired_chezmoi_tag: "v{{ shell_basics_desired_chezmoi_version | regex_replace('^v', '') }}"
+          - shell_basics_chezmoi_version != 'latest'
+          - shell_basics_chezmoi_arch in shell_basics_chezmoi_checksum
+        fail_msg: "Set a pinned chezmoi version and matching checksum for this architecture."
 
     - name: Determine if chezmoi install is needed
       ansible.builtin.set_fact:
@@ -137,38 +117,40 @@
             suffix: chezmoi_install
           register: shell_basics_chezmoi_tmp
 
-        - name: Download chezmoi installer
+        - name: Download verified chezmoi archive
           ansible.builtin.get_url:
-            url: https://get.chezmoi.io
-            dest: "{{ shell_basics_chezmoi_tmp.path }}/install.sh"
+            url: "https://github.com/twpayne/chezmoi/releases/download/v{{ shell_basics_chezmoi_version }}/chezmoi_{{ shell_basics_chezmoi_version }}_linux_{{ shell_basics_chezmoi_arch }}.tar.gz"
+            checksum: "{{ shell_basics_chezmoi_checksum[shell_basics_chezmoi_arch] }}"
+            dest: "{{ shell_basics_chezmoi_tmp.path }}/chezmoi.tar.gz"
+            mode: "0644"
+
+        - name: Extract verified chezmoi archive
+          ansible.builtin.unarchive:
+            src: "{{ shell_basics_chezmoi_tmp.path }}/chezmoi.tar.gz"
+            dest: "{{ shell_basics_chezmoi_tmp.path }}"
+            remote_src: true
+
+        - name: Install chezmoi binary
+          ansible.builtin.copy:
+            src: "{{ shell_basics_chezmoi_tmp.path }}/chezmoi"
+            dest: "{{ shell_basics_chezmoi_bin_path }}"
+            remote_src: true
+            owner: root
+            group: root
             mode: "0755"
-
-        - name: Build chezmoi installer arguments
-          ansible.builtin.set_fact:
-            shell_basics_chezmoi_installer_argv: >-
-              {{
-                [shell_basics_chezmoi_tmp.path ~ '/install.sh', '-b', shell_basics_chezmoi_install_dir]
-                + (['-t', shell_basics_desired_chezmoi_tag] if shell_basics_chezmoi_version != 'latest' else [])
-              }}
-
-    - name: Run chezmoi installer
-      when: shell_basics_install_chezmoi | bool
-      ansible.builtin.command:
-        argv: "{{ shell_basics_chezmoi_installer_argv }}"
-      register: shell_basics_chezmoi_install
-      changed_when: shell_basics_install_chezmoi | bool
-
-    - name: Remove temporary installer directory
-      when: shell_basics_install_chezmoi | bool
-      ansible.builtin.file:
-        path: "{{ shell_basics_chezmoi_tmp.path }}"
-        state: absent
 
     - name: Validate installed chezmoi version
       ansible.builtin.command: "{{ shell_basics_chezmoi_bin_path }} --version"
       register: shell_basics_chezmoi_verify
       changed_when: false
       failed_when: shell_basics_chezmoi_verify.rc != 0
+
+  always:
+    - name: Remove temporary chezmoi release directory
+      ansible.builtin.file:
+        path: "{{ shell_basics_chezmoi_tmp.path }}"
+        state: absent
+      when: shell_basics_chezmoi_tmp.path is defined
 
 - name: Ensure local bin directory exists
   ansible.builtin.file:
@@ -248,7 +230,7 @@
   when: shell_basics_switch_shell | bool
 
 - name: Set default editor
-  ansible.builtin.alternatives:
+  community.general.alternatives:
     name: editor
     path: "{{ shell_basics_default_editor_path }}"
   when: shell_basics_set_default_editor | bool

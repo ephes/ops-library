@@ -222,3 +222,10 @@ Before the next deploy, move any password previously generated in a controller
 Empty credentials now fail instead of generating a fallback. Home Assistant may
 still read the password file persisted on the UniFi host. Keep the existing
 password when migrating to avoid changing the integration credentials.
+
+## Verified uv bootstrap
+
+`homeassistant_uv_version` defaults to `0.13.0`, matching the verified release
+checksums in `uv_install`. When overriding this version, also supply matching
+`uv_checksum` entries for each target (see the `uv_install` role README).
+Bump the version and checksum together; `latest` is no longer accepted.

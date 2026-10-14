@@ -13,11 +13,40 @@
   block:
     - name: lazygit | Determine system architecture
       ansible.builtin.set_fact:
-        vibe_coding_lazygit_arch: "{{ 'x86_64' if ansible_architecture == 'x86_64' else 'arm64' }}"
+        vibe_coding_lazygit_arch: "{{ {'x86_64': 'x86_64', 'aarch64': 'arm64'}.get(ansible_architecture, 'unsupported') }}"
 
-    - name: lazygit | Download and extract release
+    - name: lazygit | Validate checksum architecture
+      ansible.builtin.assert:
+        that:
+          - vibe_coding_lazygit_arch in vibe_coding_lazygit_checksum
+          - vibe_coding_lazygit_version != 'latest'
+
+    - name: lazygit | Allocate release directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: lazygit_
+      register: vibe_coding_lazygit_tmp
+
+    - name: lazygit | Download verified archive
+      ansible.builtin.get_url:
+        url: "https://github.com/jesseduffield/lazygit/releases/download/v{{ vibe_coding_lazygit_version }}/lazygit_{{ vibe_coding_lazygit_version }}_linux_{{ vibe_coding_lazygit_arch }}.tar.gz"
+        checksum: "{{ vibe_coding_lazygit_checksum[vibe_coding_lazygit_arch] }}"
+        dest: "{{ vibe_coding_lazygit_tmp.path }}/release.tar.gz"
+        mode: "0644"
+
+    - name: lazygit | Extract verified archive
       ansible.builtin.unarchive:
-        src: "https://github.com/jesseduffield/lazygit/releases/download/v{{ vibe_coding_lazygit_version }}/lazygit_{{ vibe_coding_lazygit_version }}_linux_{{ vibe_coding_lazygit_arch }}.tar.gz"
+        src: "{{ vibe_coding_lazygit_tmp.path }}/release.tar.gz"
         dest: /usr/local/bin
         remote_src: true
         mode: "0755"
+        owner: root
+        group: root
+        include:
+          - lazygit
+  always:
+    - name: lazygit | Remove release directory
+      ansible.builtin.file:
+        path: "{{ vibe_coding_lazygit_tmp.path }}"
+        state: absent
+      when: vibe_coding_lazygit_tmp.path is defined

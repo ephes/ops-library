@@ -4,8 +4,8 @@
   become: true
 
   vars:
-    # Avoid GitHub API dependency during tests
-    shell_basics_manage_chezmoi: false
+    # Exercise the pinned download, checksum, extraction and installation.
+    shell_basics_manage_chezmoi: true
     shell_basics_user: root
 
   roles:

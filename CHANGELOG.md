@@ -3,6 +3,14 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Pin and verify privileged release downloads (2.31.37)
+
+- `echoport_backup`: pin and verify mc using the existing MinIO installer tasks. Reconcile the installed binary on every deploy, using the project’s GitHub release after dl.min.io was discontinued. A differing mc binary is replaced at the next deploy.
+- `sops_dependencies`: verify the pinned Linux amd64 sops and age downloads using published SHA-256 values (sops checksum file; age's signed GitHub build attestation), including the sops apt fallback.
+- `uv_install`: replace the root-run shell installer and automatic self-update with pinned, SHA-256-verified uv/uvx archives for Linux and macOS on x86_64/ARM64. Bump version and checksums together. Reject `uv_version: latest`; pin the three consumer-role defaults to the verified version. Both older and newer installed versions are replaced when updates are enabled; extraction supports GNU and BSD tar.
+- `shell_basics_deploy`: replace the root-run chezmoi installer and release lookup with a pinned, verified Linux amd64/arm64 archive. Correct the alternatives module namespace and clean temporary archives after failures. Reject `shell_basics_chezmoi_version: latest` and replace both older and newer differing versions with the pin.
+- `vibe_coding_deploy`: verify pinned lazygit, Neovim and zellij release archives and rustup-init binaries on Linux x86_64/ARM64. The extracted zellij binary is also checked against the project's published `.sha256sum` before it is copied into place. Neovim v0.12.5 publishes no checksum file: its pin is the GitHub release asset digest (via the releases API), not a project checksum. Keep existing installation guards and paths. The NodeSource signing-key download is unchanged: no vendor-published checksum was found. Add `just test-root-downloads` to the default test and strict lint gates to reject new unchecked downloads in these five roles; only that exact existing signing-key URL is exempt.
+
 ## Unreleased — Restore roles retain every pre-restore copy (2.31.36)
 
 - Jellyfin, Navidrome, MeTube, Minecraft Java, SnappyMail and Wagtail use one

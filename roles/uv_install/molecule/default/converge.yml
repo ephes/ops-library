@@ -12,10 +12,11 @@
         owner: root
         group: root
 
-    - name: Install curl for uv installer
+    - name: Install verified archive prerequisites
       ansible.builtin.apt:
         name:
-          - curl
+          - tar
+          - gzip
           - ca-certificates
         state: present
         update_cache: true
