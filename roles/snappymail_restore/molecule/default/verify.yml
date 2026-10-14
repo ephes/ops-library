@@ -34,3 +34,199 @@
           - marker_stat.stat.pw_name == snappymail_restore_owner
           - marker_stat.stat.gr_name == snappymail_restore_group
         fail_msg: "Marker file missing or ownership incorrect at {{ snappymail_data_dir }}/marker.txt"
+
+- name: Verify | Rehearse restores over existing data
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    snappymail_data_dir: "/opt/snappymail-data"
+    snappymail_restore_root: "/tmp/snappymail-backups"
+    snappymail_restore_source: "latest"
+    snappymail_restore_owner: "snappymail"
+    snappymail_restore_group: "snappymail"
+    snappymail_restore_mode: "0750"
+    snappymail_restore_restart_services: false
+    # Prints "<sha256>  ./<relative path>" for every file below argv[1], sorted.
+    rehearsal_manifest_cmd: >-
+      cd "$1" && find . -type f -exec sha256sum {} + | LC_ALL=C sort
+
+  tasks:
+    - name: Rehearsal | Manifests
+      ansible.builtin.command:
+        argv: [bash, -c, "{{ rehearsal_manifest_cmd }}", manifest, "{{ item }}"]
+      changed_when: false
+      register: rehearsal_m0
+      loop:
+        - /tmp/snappymail-data
+        - "{{ snappymail_data_dir }}"
+
+    - name: Rehearsal | Write live-only data before the first restore over it
+      ansible.builtin.copy:
+        dest: "{{ snappymail_data_dir }}/live-1.txt"
+        content: "live data 1"
+        mode: "0640"
+
+    - name: Rehearsal | Manifest of live data before the first restore
+      ansible.builtin.command:
+        argv: [bash, -c, "{{ rehearsal_manifest_cmd }}", manifest, "{{ snappymail_data_dir }}"]
+      changed_when: false
+      register: rehearsal_live_before_1
+
+    - name: Rehearsal | Restore over existing data
+      ansible.builtin.include_role:
+        name: snappymail_restore
+
+    - name: Rehearsal | Find pre-restore copies after the first restore
+      ansible.builtin.find:
+        paths: "{{ snappymail_data_dir | dirname }}"
+        patterns: "{{ snappymail_data_dir | basename }}.pre-restore-*"
+        file_type: directory
+      register: rehearsal_copies_1
+
+    - name: Rehearsal | Manifests after the first restore
+      ansible.builtin.command:
+        argv: [bash, -c, "{{ rehearsal_manifest_cmd }}", manifest, "{{ item }}"]
+      changed_when: false
+      register: rehearsal_m1
+      loop: "{{ (rehearsal_copies_1.files | map(attribute='path') | list) + [snappymail_data_dir] }}"
+
+    - name: Rehearsal | Assert one copy holds exactly the replaced live data
+      ansible.builtin.assert:
+        that:
+          - rehearsal_copies_1.files | length == 1
+          - "'live-1.txt' in rehearsal_live_before_1.stdout"
+          - rehearsal_m1.results[0].stdout == rehearsal_live_before_1.stdout
+          - rehearsal_m1.results[1].stdout == rehearsal_m0.results[0].stdout
+
+    - name: Rehearsal | Write live-only data before the second restore over it
+      ansible.builtin.copy:
+        dest: "{{ snappymail_data_dir }}/live-2.txt"
+        content: "live data 2"
+        mode: "0640"
+
+    - name: Rehearsal | Manifest of live data before the second restore
+      ansible.builtin.command:
+        argv: [bash, -c, "{{ rehearsal_manifest_cmd }}", manifest, "{{ snappymail_data_dir }}"]
+      changed_when: false
+      register: rehearsal_live_before_2
+
+    - name: Rehearsal | Restore over existing data again
+      ansible.builtin.include_role:
+        name: snappymail_restore
+
+    - name: Rehearsal | Find pre-restore copies after the second restore
+      ansible.builtin.find:
+        paths: "{{ snappymail_data_dir | dirname }}"
+        patterns: "{{ snappymail_data_dir | basename }}.pre-restore-*"
+        file_type: directory
+      register: rehearsal_copies_2
+
+    - name: Rehearsal | Manifests after the second restore
+      ansible.builtin.command:
+        argv: [bash, -c, "{{ rehearsal_manifest_cmd }}", manifest, "{{ item }}"]
+      changed_when: false
+      register: rehearsal_m2
+      loop:
+        - "{{ rehearsal_copies_1.files[0].path }}"
+        - >-
+          {{ rehearsal_copies_2.files | map(attribute='path')
+             | reject('equalto', rehearsal_copies_1.files[0].path) | first | default('/nonexistent') }}
+        - "{{ snappymail_data_dir }}"
+
+    - name: Rehearsal | Assert the second restore kept the first copy and added a second
+      ansible.builtin.assert:
+        that:
+          - rehearsal_copies_2.files | length == 2
+          - rehearsal_m2.results[0].stdout == rehearsal_live_before_1.stdout
+          - "'live-2.txt' in rehearsal_live_before_2.stdout"
+          - rehearsal_m2.results[1].stdout == rehearsal_live_before_2.stdout
+          - rehearsal_m2.results[2].stdout == rehearsal_m0.results[0].stdout
+
+    # A live directory that is a mount point is preserved by copying it into a
+    # sibling on the parent filesystem. A parent too small for that copy must
+    # fail the restore at preflight, before anything is stopped, copied or cleared.
+    - name: Rehearsal | Mount a small parent filesystem
+      ansible.posix.mount:
+        path: /srv/tinyfs
+        src: tmpfs
+        fstype: tmpfs
+        opts: size=24m
+        state: ephemeral
+
+    - name: Rehearsal | Create the live mount point
+      ansible.builtin.file:
+        path: /srv/tinyfs/data
+        state: directory
+        mode: "0750"
+
+    - name: Rehearsal | Mount the live directory
+      ansible.posix.mount:
+        path: /srv/tinyfs/data
+        src: tmpfs
+        fstype: tmpfs
+        opts: size=20m
+        state: ephemeral
+
+    - name: Rehearsal | Fill the live directory
+      ansible.builtin.command:
+        argv: [dd, if=/dev/urandom, of=/srv/tinyfs/data/payload.bin, bs=1M, count=12]
+        creates: /srv/tinyfs/data/payload.bin
+
+    - name: Rehearsal | Manifest of the small filesystem before the refused restore
+      ansible.builtin.command:
+        argv: [bash, -c, "find /srv/tinyfs | LC_ALL=C sort; {{ rehearsal_manifest_cmd }}", manifest, /srv/tinyfs/data]
+      changed_when: false
+      register: rehearsal_tiny_before
+
+    - name: Rehearsal | Restore into a live directory whose copy cannot fit
+      block:
+        - name: Rehearsal | Run the restore that must be refused
+          ansible.builtin.include_role:
+            name: snappymail_restore
+          vars:
+            snappymail_data_dir: /srv/tinyfs/data
+            snappymail_restore_source: /tmp/snappymail-data
+
+        - name: Rehearsal | Record that the restore was not refused
+          ansible.builtin.set_fact:
+            rehearsal_refusal: "not refused"
+      rescue:
+        - name: Rehearsal | Record the refusal message
+          ansible.builtin.set_fact:
+            rehearsal_refusal: "{{ ansible_failed_result.msg | default('') }}"
+
+    - name: Rehearsal | Ask the preservation helper why the copy is refused
+      ansible.builtin.script:
+        cmd: >-
+          {{ playbook_dir }}/../../../restore_preserve_internal/files/preserve.py
+          /srv/tinyfs/data --preflight
+        executable: /usr/bin/python3
+      register: rehearsal_preflight
+      changed_when: false
+      failed_when: false
+
+    - name: Rehearsal | Manifest of the small filesystem after the refused restore
+      ansible.builtin.command:
+        argv: [bash, -c, "find /srv/tinyfs | LC_ALL=C sort; {{ rehearsal_manifest_cmd }}", manifest, /srv/tinyfs/data]
+      changed_when: false
+      register: rehearsal_tiny_after
+
+    - name: Rehearsal | Assert insufficient space failed at preflight before any change
+      ansible.builtin.assert:
+        that:
+          - "'preflight | Check mounts and preservation space' in rehearsal_refusal"
+          - rehearsal_preflight.rc != 0
+          - "'insufficient free space for verified pre-restore copy' in rehearsal_preflight.stderr"
+          - "'payload.bin' in rehearsal_tiny_after.stdout"
+          - rehearsal_tiny_after.stdout == rehearsal_tiny_before.stdout
+          - "'pre-restore' not in rehearsal_tiny_after.stdout"
+
+    - name: Rehearsal | Unmount the small filesystems
+      ansible.posix.mount:
+        path: "{{ item }}"
+        state: unmounted
+      loop:
+        - /srv/tinyfs/data
+        - /srv/tinyfs

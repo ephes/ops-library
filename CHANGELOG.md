@@ -23,6 +23,11 @@
   SQL commits keep the restored database. Nonempty legacy
   `wagtail_restore_postgres_target_opts` overrides now fail validation explicitly.
   Its site copy and database dump remain available for manual recovery.
+- `snappymail_restore` Molecule scenario: after the first restore it restores
+  twice more over live data and checks that each run leaves one more
+  `.pre-restore-*` copy holding the replaced data, then that a mount-point live
+  directory whose copy does not fit its parent filesystem fails at preflight
+  with the live data unchanged and no copy created.
 
 ## Unreleased — FastDeploy runner step states (2.31.35)
 
