@@ -1,6 +1,7 @@
 ---
 - name: Download age binary
   get_url:
+    checksum: "{{ sops_deps_age_checksum }}"
     url: "https://github.com/FiloSottile/age/releases/download/v{{ sops_deps_age_version }}/age-v{{ sops_deps_age_version }}-linux-amd64.tar.gz"
     dest: "/tmp/age.tar.gz"
     mode: '0644'

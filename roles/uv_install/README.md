@@ -12,14 +12,13 @@ Install and manage the Astral uv package manager.
 
 ## Requirements
 
-- curl
-- bash
+- tar and gzip on the managed host
 
 ## Role Variables
 
 ```yaml
-# Version to install (latest, or specific like "0.8.15")
-uv_version: latest
+# Pinned version; update the matching uv_checksum map together.
+uv_version: "0.13.0"
 
 # Installation directory
 uv_install_dir: "/usr/local/bin"
@@ -45,7 +44,7 @@ uv_update_existing: true
   roles:
     - role: local.ops_library.uv_install
       vars:
-        uv_version: latest
+        uv_version: "0.13.0"
         uv_create_symlinks: true
 ```
 
@@ -69,3 +68,24 @@ dependencies:
 ## License
 
 MIT
+
+## Verified release downloads
+
+Release archives install `uv` and `uvx` in `uv_install_dir` with `uv_install_owner`/`uv_install_group` and mode 0755. Extraction uses the system tar (GNU or BSD). Supported targets are Linux glibc and macOS, on x86_64 and ARM64. `uv_update_existing` and `uv_force_reinstall` retain their behavior. With updates enabled, an absent, unreadable or different installed version is replaced. Automatic self-update and `uv_version: latest` are no longer supported.
+
+Pinned defaults (checksum map keys identify the release architecture/target):
+
+| Variable | Default |
+| --- | --- |
+| `uv_version` | `0.13.0` |
+| `uv_checksum` | x86_64-unknown-linux-gnu: `sha256:1468ebd5a5541121837c5a2817b9972ba6090fa6caa3d142620850a47fb75154`<br>aarch64-unknown-linux-gnu: `sha256:3ccfb6af6e242433eb552f7d9676abd5412c6595c497e990d9c8cb7b5bd4d2c3`<br>x86_64-apple-darwin: `sha256:5f44dcbde809b632f47c36fadb241cb4d6f9af71d0c8f172b5d2026d3dde742c`<br>aarch64-apple-darwin: `sha256:a9c1b29002cf3c83f07fa9cd8a887a3be0107d90e23189721221e7257db8e3d6` |
+
+To update, bump the version and checksum together. Fetch the SHA-256 from the
+project’s published checksum file or release-page asset digest over HTTPS,
+and update the source URL comment beside the checksum in `defaults/main.yml`.
+Never reuse the old checksum for a new version. Supply matching checksums for
+every enabled architecture. Run `just test-root-downloads` before deploying.
+
+The default uv pins in `homeassistant_deploy`, `open_webui_venv_deploy` and
+`metube_shared` must also be updated when bumping the shared uv pin. The
+regression gate checks that their default versions match these checksums.

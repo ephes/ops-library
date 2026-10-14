@@ -15,17 +15,28 @@
       become_user: "{{ vibe_coding_user }}"
       register: vibe_coding_rustup_tmpdir
 
+    - name: rust | Select release architecture
+      ansible.builtin.set_fact:
+        vibe_coding_rustup_arch: "{{ {'x86_64': 'x86_64', 'aarch64': 'aarch64'}.get(ansible_architecture, 'unsupported') }}"
+
+    - name: rust | Validate pinned release
+      ansible.builtin.assert:
+        that:
+          - vibe_coding_rustup_arch in vibe_coding_rustup_checksum
+          - vibe_coding_rustup_version != 'latest'
+
     - name: rust | Download rustup-init
       ansible.builtin.get_url:
-        url: https://sh.rustup.rs
-        dest: "{{ vibe_coding_rustup_tmpdir.path }}/rustup-init.sh"
+        url: "https://static.rust-lang.org/rustup/archive/{{ vibe_coding_rustup_version }}/{{ vibe_coding_rustup_arch }}-unknown-linux-gnu/rustup-init"
+        checksum: "{{ vibe_coding_rustup_checksum[vibe_coding_rustup_arch] }}"
+        dest: "{{ vibe_coding_rustup_tmpdir.path }}/rustup-init"
         mode: "0755"
       become: true
       become_user: "{{ vibe_coding_user }}"
 
     - name: rust | Run rustup-init
       ansible.builtin.command:
-        cmd: "{{ vibe_coding_rustup_tmpdir.path }}/rustup-init.sh -y --no-modify-path"
+        cmd: "{{ vibe_coding_rustup_tmpdir.path }}/rustup-init -y --no-modify-path"
       become: true
       become_user: "{{ vibe_coding_user }}"
       changed_when: true
@@ -35,7 +46,7 @@
       ansible.builtin.file:
         path: "{{ vibe_coding_rustup_tmpdir.path }}"
         state: absent
-      when: vibe_coding_rustup_tmpdir is defined
+      when: vibe_coding_rustup_tmpdir.path is defined
       become: true
       become_user: "{{ vibe_coding_user }}"
 

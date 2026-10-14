@@ -134,3 +134,10 @@ Set it to `true` to enable `NoNewPrivileges=true`, `PrivateTmp=true`,
 `open_webui_home`, `open_webui_data_dir`, `open_webui_log_dir`.
 Validate custom paths and application writes on a staging host before enabling.
 Enabling or disabling rewrites the unit on the next deploy.
+
+## Verified uv bootstrap
+
+`open_webui_uv_version` defaults to `0.13.0`, matching the verified release
+checksums in `uv_install`. When overriding this version, also supply matching
+`uv_checksum` entries for each target (see the `uv_install` role README).
+Bump the version and checksum together; `latest` is no longer accepted.

@@ -59,3 +59,39 @@ vibe_coding_github_token: ""
 
 # SSH hardening — Match User block in sshd_config
 vibe_coding_sshd_hardening: true
+
+vibe_coding_rustup_version: "1.29.1"
+vibe_coding_zellij_version: "0.45.1"
+
+vibe_coding_lazygit_checksum:
+  # https://github.com/jesseduffield/lazygit/releases/download/v0.65.1/checksums.txt
+  x86_64: "sha256:02beacbcda0fa342e50ae3480ba8147307353af3fb28e1d5f790e02329c201a6"
+  # https://github.com/jesseduffield/lazygit/releases/download/v0.65.1/checksums.txt
+  arm64: "sha256:49abecdf6adf4f2dfdb11bf7b9bfada267ea523612ed809d1c6d87f6c04000a7"
+
+# GitHub release asset digest via API, no project-published checksum file for
+# v0.12.5: https://api.github.com/repos/neovim/neovim/releases/tags/v0.12.5
+# (assets[].digest of nvim-linux-x86_64.tar.gz / nvim-linux-arm64.tar.gz).
+vibe_coding_neovim_checksum:
+  x86_64: "sha256:bce0f56eda1f1b1db6eee8f4133d7a38813ea07933837dd1777411ca384c6875"
+  arm64: "sha256:1aa5ca085249580ae0f91eb14f27ec0919773ff2d99a163d03f3d6c21ac29725"
+
+# Archive digest (GitHub release asset digest via API:
+# https://api.github.com/repos/zellij-org/zellij/releases/tags/v0.45.1); checked
+# before extraction. The binary checksum below is the trust anchor.
+vibe_coding_zellij_checksum:
+  x86_64: "sha256:40bcc2e03f5d5ae8e054e39f676081fe12ab70871506996ba595834c3718eefc"
+  aarch64: "sha256:05f0802afadd53f8db9514e7cae53c9ae8432fed1b35b8294aa816ee3044a16b"
+
+# Published SHA-256 of the extracted zellij binary:
+vibe_coding_zellij_binary_checksum:
+  # https://github.com/zellij-org/zellij/releases/download/v0.45.1/zellij-x86_64-unknown-linux-musl.sha256sum
+  x86_64: "sha256:d006c521dcb475a6005d741e9dd7c5758e5a23b28dd60a5c10cebfa4876319dd"
+  # https://github.com/zellij-org/zellij/releases/download/v0.45.1/zellij-aarch64-unknown-linux-musl.sha256sum
+  aarch64: "sha256:2a2c0621e6f3b11ecbb05d66939a48000a2508604620aa20727a5fd61c49f451"
+
+vibe_coding_rustup_checksum:
+  # https://static.rust-lang.org/rustup/archive/1.29.1/x86_64-unknown-linux-gnu/rustup-init.sha256
+  x86_64: "sha256:dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71"
+  # https://static.rust-lang.org/rustup/archive/1.29.1/aarch64-unknown-linux-gnu/rustup-init.sha256
+  aarch64: "sha256:15f6e4ce9f583b929c996c91562bad6d4454f3281de858b02cdfdef615fac433"

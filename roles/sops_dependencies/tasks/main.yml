@@ -27,6 +27,7 @@
 
 - name: Install sops via binary (not in apt)
   get_url:
+    checksum: "{{ sops_deps_sops_checksum }}"
     url: "https://github.com/getsops/sops/releases/download/v{{ sops_deps_sops_version }}/sops-v{{ sops_deps_sops_version }}.linux.amd64"
     dest: "/usr/local/bin/sops"
     mode: '0755'

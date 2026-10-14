@@ -28,9 +28,28 @@
         state: absent
         force_apt_get: true
 
-    - name: neovim | Download and extract release tarball
+    - name: neovim | Validate checksum architecture
+      ansible.builtin.assert:
+        that:
+          - vibe_coding_neovim_arch in vibe_coding_neovim_checksum
+          - vibe_coding_neovim_version != 'latest'
+
+    - name: neovim | Allocate release directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: neovim_
+      register: vibe_coding_neovim_tmp
+
+    - name: neovim | Download verified archive
+      ansible.builtin.get_url:
+        url: "https://github.com/neovim/neovim/releases/download/v{{ vibe_coding_neovim_version }}/nvim-linux-{{ vibe_coding_neovim_arch }}.tar.gz"
+        checksum: "{{ vibe_coding_neovim_checksum[vibe_coding_neovim_arch] }}"
+        dest: "{{ vibe_coding_neovim_tmp.path }}/release.tar.gz"
+        mode: "0644"
+
+    - name: neovim | Extract verified archive
       ansible.builtin.unarchive:
-        src: "https://github.com/neovim/neovim/releases/download/v{{ vibe_coding_neovim_version }}/nvim-linux-{{ vibe_coding_neovim_arch }}.tar.gz"
+        src: "{{ vibe_coding_neovim_tmp.path }}/release.tar.gz"
         dest: /opt
         remote_src: true
 
@@ -39,3 +58,9 @@
         src: "/opt/nvim-linux-{{ vibe_coding_neovim_arch }}/bin/nvim"
         dest: /usr/local/bin/nvim
         state: link
+  always:
+    - name: neovim | Remove release directory
+      ansible.builtin.file:
+        path: "{{ vibe_coding_neovim_tmp.path }}"
+        state: absent
+      when: vibe_coding_neovim_tmp.path is defined
