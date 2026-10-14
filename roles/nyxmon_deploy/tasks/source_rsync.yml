@@ -101,7 +101,7 @@
     # change, and every deploy would restart nyxmon. --omit-dir-times keeps
     # the directory mtimes those writes bump from counting as source changes.
     nyxmon_rsync_role_managed: >-
-      {{ ['venv', 'uv.lock']
+      {{ ['venv', 'uv.lock', '.env.shell']
          + (['pyproject.toml'] if (nyxmon_use_source_pyproject or nyxmon_use_uv) else [])
          + (nyxmon_rsync_extra_files | default([])) }}
   become: false

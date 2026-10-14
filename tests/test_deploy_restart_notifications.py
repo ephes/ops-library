@@ -321,7 +321,7 @@ class NyxmonUnchangedDeployIsQuiet(unittest.TestCase):
 
     def test_role_managed_site_files_survive_the_deleting_sync(self):
         opts = self.django_opts()
-        for path in ('venv', 'uv.lock', 'pyproject.toml', 'README.md'):
+        for path in ('venv', 'uv.lock', '.env.shell', 'pyproject.toml', 'README.md'):
             self.assertIn(f'--exclude=/{path}', opts)
         self.assertIn('--omit-dir-times', opts)
         # The configured excludes (database, .env, ...) are still all there.
@@ -384,6 +384,7 @@ class NyxmonUnchangedDeployIsQuiet(unittest.TestCase):
                         shutil.copyfile(Path(source, file), Path(site, file))
                         changed.append(f'copy {file}')
                 Path(site, '.env').write_text('SECRET=1\n')
+                Path(site, '.env.shell').write_text('SECRET=1\n')
                 Path(site, 'db.sqlite3').write_text('data\n')
                 Path(site, '.venv').mkdir(exist_ok=True)
                 Path(site, 'staticfiles').mkdir(exist_ok=True)
@@ -396,7 +397,7 @@ class NyxmonUnchangedDeployIsQuiet(unittest.TestCase):
             self.assertEqual(deploy(), [])
             # uv rebuilds the project when pyproject.toml gets a new mtime.
             self.assertEqual(Path(site, 'pyproject.toml').stat().st_mtime_ns, pyproject_mtime)
-            for kept in ('venv', 'uv.lock', '.env', 'db.sqlite3', 'README.md'):
+            for kept in ('venv', 'uv.lock', '.env', '.env.shell', 'db.sqlite3', 'README.md'):
                 self.assertTrue(os.path.lexists(Path(site, kept)), kept)
 
             Path(source, 'uv.lock').write_text('changed dependency lock\n')

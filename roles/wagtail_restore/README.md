@@ -114,3 +114,13 @@ owner prunes old copies by hand after inspecting them. Exact path patterns:
 Each `*` is a UTC timestamp plus a random suffix. Failed copy verification may
 leave an incomplete sibling; inspect it manually. On failure, use the reported
 copy to recover before starting services.
+
+## Task credential handling
+
+The live-database safety dump (`pg_dump`/`pg_restore --list`), the SQL restore (`psql`)
+and the rollback from the safety dump (`pg_restore`) read `wagtail_restore_postgres_password`
+from a private 0600 passfile in a 0700 temporary directory; the task environment carries only
+`PGPASSFILE`. The directory is removed in the restore's `always` section, on success and on
+failure. The role requires a nonempty `wagtail_restore_postgres_password`; passwords
+containing CR or LF are rejected before any service is stopped; colons and backslashes are
+escaped.

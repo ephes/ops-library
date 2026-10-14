@@ -123,6 +123,14 @@
     DUMP: "{{ wagtail_restore_payload_dir }}/database/{{ wagtail_restore_postgres_database }}.sql.gz"
   changed_when: false
 
+- name: Validate PostgreSQL passfile password before restore
+  ansible.builtin.assert:
+    that:
+      - '"\n" not in (wagtail_restore_postgres_password | default("") | string)'
+      - '"\r" not in (wagtail_restore_postgres_password | default("") | string)'
+    fail_msg: PostgreSQL passfile passwords cannot contain line breaks.
+  when: not ansible_check_mode
+
 - name: Reset Wagtail recovery state for this invocation
   ansible.builtin.set_fact:
     wagtail_restore_database_touched: false
@@ -149,6 +157,27 @@
 
 - when: not wagtail_restore_dry_run | bool and not ansible_check_mode
   block:
+    # psql, pg_dump and pg_restore read the password from a private passfile;
+    # PGPASSFILE carries only its path. Removed in the always section below.
+    - name: Allocate private PostgreSQL passfile directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: wagtail_restore-pgpass-
+      register: wagtail_restore_task_pgpass
+      changed_when: false
+      when: (wagtail_restore_postgres_password | default('') | string | length) > 0
+
+    - name: Render PostgreSQL passfile
+      ansible.builtin.template:
+        src: task-pgpass.j2
+        dest: "{{ wagtail_restore_task_pgpass.path }}/pgpass"
+        mode: "0600"
+      vars:
+        task_pgpass_password: "{{ wagtail_restore_postgres_password }}"
+      no_log: true
+      changed_when: false
+      when: wagtail_restore_task_pgpass.path is defined
+
     # Auxiliary units are stopped first, and deliberately not failed_when: false.
     # They are opt-in, so a unit that will not stop means the restore would drop
     # the database while it still holds a connection. Going first means such a
@@ -201,7 +230,7 @@
         PGHOST: "{{ wagtail_restore_postgres_host }}"
         PGPORT: "{{ wagtail_restore_postgres_port | string }}"
         PGUSER: "{{ wagtail_restore_postgres_user }}"
-        PGPASSWORD: "{{ wagtail_restore_postgres_password }}"
+        PGPASSFILE: "{{ wagtail_restore_task_pgpass.path ~ '/pgpass' if wagtail_restore_task_pgpass.path is defined else omit }}"
         PGDATABASE: "{{ wagtail_restore_postgres_database }}"
       register: wagtail_restore_safety_dump
       changed_when: true
@@ -253,7 +282,7 @@
         PGHOST: "{{ wagtail_restore_postgres_host }}"
         PGPORT: "{{ wagtail_restore_postgres_port | string }}"
         PGUSER: "{{ wagtail_restore_postgres_user }}"
-        PGPASSWORD: "{{ wagtail_restore_postgres_password }}"
+        PGPASSFILE: "{{ wagtail_restore_task_pgpass.path ~ '/pgpass' if wagtail_restore_task_pgpass.path is defined else omit }}"
         PGDATABASE: "{{ wagtail_restore_postgres_database }}"
       changed_when: true
       no_log: true
@@ -397,7 +426,7 @@
             PGHOST: "{{ wagtail_restore_postgres_host }}"
             PGPORT: "{{ wagtail_restore_postgres_port | string }}"
             PGUSER: "{{ wagtail_restore_postgres_user }}"
-            PGPASSWORD: "{{ wagtail_restore_postgres_password }}"
+            PGPASSFILE: "{{ wagtail_restore_task_pgpass.path ~ '/pgpass' if wagtail_restore_task_pgpass.path is defined else omit }}"
           changed_when: true
           no_log: true
 
@@ -414,6 +443,13 @@
           Inspect services and retained copy {{ wagtail_restore_preserved }} before starting them.
 
   always:
+    - name: Remove private PostgreSQL passfile directory
+      ansible.builtin.file:
+        path: "{{ wagtail_restore_task_pgpass.path }}"
+        state: absent
+      changed_when: false
+      when: wagtail_restore_task_pgpass.path is defined
+
     - name: Report retained Wagtail pre-restore copy
       ansible.builtin.debug:
         msg: >-

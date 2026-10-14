@@ -196,23 +196,73 @@
 
     # Same endpoint and role as the restore itself, so the safety dump below
     # always covers the database that is about to be replaced.
-    - name: Check whether the live database exists
-      ansible.builtin.command:
-        argv: >-
-          {{ [takahe_restore_postgres_psql_binary]
-             + takahe_restore_pg_conn_args
-             + ['--dbname=' ~ takahe_restore_postgres_database, '--no-psqlrc',
-                '--tuples-only', '--no-align', '--command=SELECT 1'] }}
-      become: true
-      become_user: "{{ takahe_restore_postgres_become_user }}"
-      environment:
-        PGPASSWORD: "{{ takahe_restore_postgres_password }}"
-      no_log: "{{ (takahe_restore_postgres_password | default('') | length > 0) }}"
-      register: takahe_restore_db_exists_query
-      changed_when: false
-      failed_when:
-        - takahe_restore_db_exists_query.rc != 0
-        - ('database "' ~ takahe_restore_postgres_database ~ '" does not exist') not in (takahe_restore_db_exists_query.stderr | default(''))
+
+    - name: main | Run Check whether the live database exists with a private passfile
+      block:
+        - name: main | Validate passfile password format
+          ansible.builtin.assert:
+            that:
+              - '"\n" not in (takahe_restore_postgres_password | default("") | string)'
+              - '"\r" not in (takahe_restore_postgres_password | default("") | string)'
+            fail_msg: PostgreSQL passfile passwords cannot contain line breaks.
+          when: not ansible_check_mode
+
+        - name: main | Allocate private passfile directory
+          ansible.builtin.tempfile:
+            state: directory
+            prefix: takahe_restore-pgpass-
+          register: takahe_restore_task_pgpass_1
+          become: true
+          become_user: "{{ takahe_restore_postgres_become_user }}"
+          changed_when: false
+          when:
+            - not ansible_check_mode
+            - (takahe_restore_postgres_password | default('') | string | length) > 0
+
+        - name: main | Render PostgreSQL passfile
+          ansible.builtin.template:
+            src: task-pgpass.j2
+            dest: "{{ takahe_restore_task_pgpass_1.path }}/pgpass"
+            mode: "0600"
+          vars:
+            task_pgpass_password: "{{ takahe_restore_postgres_password }}"
+          become: true
+          become_user: "{{ takahe_restore_postgres_become_user }}"
+          no_log: true
+          changed_when: false
+          when:
+            - not ansible_check_mode
+            - takahe_restore_task_pgpass_1.path is defined
+
+        - name: Check whether the live database exists
+          ansible.builtin.command:
+            argv: >-
+              {{ [takahe_restore_postgres_psql_binary]
+                 + takahe_restore_pg_conn_args
+                 + ['--dbname=' ~ takahe_restore_postgres_database, '--no-psqlrc',
+                    '--tuples-only', '--no-align', '--command=SELECT 1'] }}
+          become: true
+          become_user: "{{ takahe_restore_postgres_become_user }}"
+          environment:
+            PGPASSFILE: '{{ takahe_restore_task_pgpass_1.path ~ ''/pgpass'' if takahe_restore_task_pgpass_1.path is defined else omit }}'
+          no_log: "{{ (takahe_restore_postgres_password | default('') | length > 0) }}"
+          register: takahe_restore_db_exists_query
+          changed_when: false
+          failed_when:
+            - takahe_restore_db_exists_query.rc != 0
+            - ('database "' ~ takahe_restore_postgres_database ~ '" does not exist') not in (takahe_restore_db_exists_query.stderr | default(''))
+
+      always:
+        - name: main | Remove private passfile directory
+          ansible.builtin.file:
+            path: "{{ takahe_restore_task_pgpass_1.path }}"
+            state: absent
+          become: true
+          become_user: "{{ takahe_restore_postgres_become_user }}"
+          changed_when: false
+          when:
+            - not ansible_check_mode
+            - takahe_restore_task_pgpass_1.path is defined
 
     - name: Record whether the live database exists
       ansible.builtin.set_fact:
@@ -270,20 +320,73 @@
           loop_control:
             label: "{{ item.path }}"
 
-        - name: Take safety dump of the live database
-          ansible.builtin.command:
-            argv: >-
-              {{ [takahe_restore_postgres_dump_binary]
-                 + takahe_restore_pg_conn_args
-                 + ['--format=custom', '--file=' ~ takahe_restore_safety_dump,
-                    '--dbname=' ~ takahe_restore_postgres_database] }}
-          become: true
-          become_user: "{{ takahe_restore_postgres_become_user }}"
-          environment:
-            PGPASSWORD: "{{ takahe_restore_postgres_password }}"
-          no_log: "{{ (takahe_restore_postgres_password | default('') | length > 0) }}"
-          changed_when: true
-          when: takahe_restore_db_exists | bool
+        - name: main | Run Take safety dump of the live database with a private passfile
+          block:
+            - name: main | Validate passfile password format
+              ansible.builtin.assert:
+                that:
+                  - '"\n" not in (takahe_restore_postgres_password | default("") | string)'
+                  - '"\r" not in (takahe_restore_postgres_password | default("") | string)'
+                fail_msg: PostgreSQL passfile passwords cannot contain line breaks.
+              when:
+                - not ansible_check_mode
+                - takahe_restore_db_exists | bool
+
+            - name: main | Allocate private passfile directory
+              ansible.builtin.tempfile:
+                state: directory
+                prefix: takahe_restore-pgpass-
+              register: takahe_restore_task_pgpass_2
+              become: true
+              become_user: "{{ takahe_restore_postgres_become_user }}"
+              changed_when: false
+              when:
+                - not ansible_check_mode
+                - (takahe_restore_postgres_password | default('') | string | length) > 0
+                - takahe_restore_db_exists | bool
+
+            - name: main | Render PostgreSQL passfile
+              ansible.builtin.template:
+                src: task-pgpass.j2
+                dest: "{{ takahe_restore_task_pgpass_2.path }}/pgpass"
+                mode: "0600"
+              vars:
+                task_pgpass_password: "{{ takahe_restore_postgres_password }}"
+              become: true
+              become_user: "{{ takahe_restore_postgres_become_user }}"
+              no_log: true
+              changed_when: false
+              when:
+                - not ansible_check_mode
+                - takahe_restore_task_pgpass_2.path is defined
+                - takahe_restore_db_exists | bool
+
+            - name: Take safety dump of the live database
+              ansible.builtin.command:
+                argv: >-
+                  {{ [takahe_restore_postgres_dump_binary]
+                     + takahe_restore_pg_conn_args
+                     + ['--format=custom', '--file=' ~ takahe_restore_safety_dump,
+                        '--dbname=' ~ takahe_restore_postgres_database] }}
+              become: true
+              become_user: "{{ takahe_restore_postgres_become_user }}"
+              environment:
+                PGPASSFILE: '{{ takahe_restore_task_pgpass_2.path ~ ''/pgpass'' if takahe_restore_task_pgpass_2.path is defined else omit }}'
+              no_log: "{{ (takahe_restore_postgres_password | default('') | length > 0) }}"
+              changed_when: true
+              when: takahe_restore_db_exists | bool
+
+          always:
+            - name: main | Remove private passfile directory
+              ansible.builtin.file:
+                path: "{{ takahe_restore_task_pgpass_2.path }}"
+                state: absent
+              become: true
+              become_user: "{{ takahe_restore_postgres_become_user }}"
+              changed_when: false
+              when:
+                - not ansible_check_mode
+                - takahe_restore_task_pgpass_2.path is defined
 
         - name: Check the safety dump
           ansible.builtin.command:
@@ -367,49 +470,195 @@
 
     - name: Restore Takahe with rollback
       block:
-        - name: Drop Takahe database
-          ansible.builtin.command:
-            argv: >-
-              {{ [takahe_restore_postgres_dropdb_binary] + takahe_restore_pg_admin_conn_args
-                 + ['--if-exists', takahe_restore_postgres_database] }}
-          become: true
-          become_user: "{{ takahe_restore_postgres_become_user }}"
-          environment:
-            PGPASSWORD: "{{ takahe_restore_postgres_password }}"
-          no_log: "{{ (takahe_restore_postgres_password | default('') | length > 0) }}"
-          changed_when: true
+        - name: main | Run Drop Takahe database with a private passfile
+          block:
+            - name: main | Validate passfile password format
+              ansible.builtin.assert:
+                that:
+                  - '"\n" not in (takahe_restore_postgres_password | default("") | string)'
+                  - '"\r" not in (takahe_restore_postgres_password | default("") | string)'
+                fail_msg: PostgreSQL passfile passwords cannot contain line breaks.
+              when: not ansible_check_mode
 
-        - name: Recreate Takahe database
-          ansible.builtin.command:
-            argv: >-
-              {{ [takahe_restore_postgres_createdb_binary] + takahe_restore_pg_admin_conn_args
-                 + ['--owner=' ~ takahe_restore_postgres_user, takahe_restore_postgres_database] }}
-          become: true
-          become_user: "{{ takahe_restore_postgres_become_user }}"
-          environment:
-            PGPASSWORD: "{{ takahe_restore_postgres_password }}"
-          no_log: "{{ (takahe_restore_postgres_password | default('') | length > 0) }}"
-          changed_when: true
+            - name: main | Allocate private passfile directory
+              ansible.builtin.tempfile:
+                state: directory
+                prefix: takahe_restore-pgpass-
+              register: takahe_restore_task_pgpass_3
+              become: true
+              become_user: "{{ takahe_restore_postgres_become_user }}"
+              changed_when: false
+              when:
+                - not ansible_check_mode
+                - (takahe_restore_postgres_password | default('') | string | length) > 0
 
-        - name: Restore PostgreSQL dump
-          ansible.builtin.command:
-            argv: >-
-              {{ [takahe_restore_postgres_restore_binary]
-                 + takahe_restore_pg_conn_args
-                 + ['--dbname=' ~ takahe_restore_postgres_database,
-                    '--single-transaction', '--clean', '--if-exists', '--no-owner',
-                    takahe_restore_payload_dir ~ '/database/' ~ takahe_restore_postgres_database ~ '.dump'] }}
-          become: true
-          become_user: "{{ takahe_restore_postgres_become_user }}"
-          environment:
-            PGPASSWORD: "{{ takahe_restore_postgres_password }}"
-          no_log: "{{ (takahe_restore_postgres_password | default('') | length > 0) }}"
-          changed_when: true
+            - name: main | Render PostgreSQL passfile
+              ansible.builtin.template:
+                src: task-pgpass.j2
+                dest: "{{ takahe_restore_task_pgpass_3.path }}/pgpass"
+                mode: "0600"
+              vars:
+                task_pgpass_password: "{{ takahe_restore_postgres_password }}"
+              become: true
+              become_user: "{{ takahe_restore_postgres_become_user }}"
+              no_log: true
+              changed_when: false
+              when:
+                - not ansible_check_mode
+                - takahe_restore_task_pgpass_3.path is defined
+
+            - name: Drop Takahe database
+              ansible.builtin.command:
+                argv: >-
+                  {{ [takahe_restore_postgres_dropdb_binary] + takahe_restore_pg_admin_conn_args
+                     + ['--if-exists', takahe_restore_postgres_database] }}
+              become: true
+              become_user: "{{ takahe_restore_postgres_become_user }}"
+              environment:
+                PGPASSFILE: '{{ takahe_restore_task_pgpass_3.path ~ ''/pgpass'' if takahe_restore_task_pgpass_3.path is defined else omit }}'
+              no_log: "{{ (takahe_restore_postgres_password | default('') | length > 0) }}"
+              changed_when: true
+
+          always:
+            - name: main | Remove private passfile directory
+              ansible.builtin.file:
+                path: "{{ takahe_restore_task_pgpass_3.path }}"
+                state: absent
+              become: true
+              become_user: "{{ takahe_restore_postgres_become_user }}"
+              changed_when: false
+              when:
+                - not ansible_check_mode
+                - takahe_restore_task_pgpass_3.path is defined
+
+        - name: main | Run Recreate Takahe database with a private passfile
+          block:
+            - name: main | Validate passfile password format
+              ansible.builtin.assert:
+                that:
+                  - '"\n" not in (takahe_restore_postgres_password | default("") | string)'
+                  - '"\r" not in (takahe_restore_postgres_password | default("") | string)'
+                fail_msg: PostgreSQL passfile passwords cannot contain line breaks.
+              when: not ansible_check_mode
+
+            - name: main | Allocate private passfile directory
+              ansible.builtin.tempfile:
+                state: directory
+                prefix: takahe_restore-pgpass-
+              register: takahe_restore_task_pgpass_4
+              become: true
+              become_user: "{{ takahe_restore_postgres_become_user }}"
+              changed_when: false
+              when:
+                - not ansible_check_mode
+                - (takahe_restore_postgres_password | default('') | string | length) > 0
+
+            - name: main | Render PostgreSQL passfile
+              ansible.builtin.template:
+                src: task-pgpass.j2
+                dest: "{{ takahe_restore_task_pgpass_4.path }}/pgpass"
+                mode: "0600"
+              vars:
+                task_pgpass_password: "{{ takahe_restore_postgres_password }}"
+              become: true
+              become_user: "{{ takahe_restore_postgres_become_user }}"
+              no_log: true
+              changed_when: false
+              when:
+                - not ansible_check_mode
+                - takahe_restore_task_pgpass_4.path is defined
+
+            - name: Recreate Takahe database
+              ansible.builtin.command:
+                argv: >-
+                  {{ [takahe_restore_postgres_createdb_binary] + takahe_restore_pg_admin_conn_args
+                     + ['--owner=' ~ takahe_restore_postgres_user, takahe_restore_postgres_database] }}
+              become: true
+              become_user: "{{ takahe_restore_postgres_become_user }}"
+              environment:
+                PGPASSFILE: '{{ takahe_restore_task_pgpass_4.path ~ ''/pgpass'' if takahe_restore_task_pgpass_4.path is defined else omit }}'
+              no_log: "{{ (takahe_restore_postgres_password | default('') | length > 0) }}"
+              changed_when: true
+
+          always:
+            - name: main | Remove private passfile directory
+              ansible.builtin.file:
+                path: "{{ takahe_restore_task_pgpass_4.path }}"
+                state: absent
+              become: true
+              become_user: "{{ takahe_restore_postgres_become_user }}"
+              changed_when: false
+              when:
+                - not ansible_check_mode
+                - takahe_restore_task_pgpass_4.path is defined
+
+        - name: main | Run Restore PostgreSQL dump with a private passfile
+          block:
+            - name: main | Validate passfile password format
+              ansible.builtin.assert:
+                that:
+                  - '"\n" not in (takahe_restore_postgres_password | default("") | string)'
+                  - '"\r" not in (takahe_restore_postgres_password | default("") | string)'
+                fail_msg: PostgreSQL passfile passwords cannot contain line breaks.
+              when: not ansible_check_mode
+
+            - name: main | Allocate private passfile directory
+              ansible.builtin.tempfile:
+                state: directory
+                prefix: takahe_restore-pgpass-
+              register: takahe_restore_task_pgpass_5
+              become: true
+              become_user: "{{ takahe_restore_postgres_become_user }}"
+              changed_when: false
+              when:
+                - not ansible_check_mode
+                - (takahe_restore_postgres_password | default('') | string | length) > 0
+
+            - name: main | Render PostgreSQL passfile
+              ansible.builtin.template:
+                src: task-pgpass.j2
+                dest: "{{ takahe_restore_task_pgpass_5.path }}/pgpass"
+                mode: "0600"
+              vars:
+                task_pgpass_password: "{{ takahe_restore_postgres_password }}"
+              become: true
+              become_user: "{{ takahe_restore_postgres_become_user }}"
+              no_log: true
+              changed_when: false
+              when:
+                - not ansible_check_mode
+                - takahe_restore_task_pgpass_5.path is defined
+
+            - name: Restore PostgreSQL dump
+              ansible.builtin.command:
+                argv: >-
+                  {{ [takahe_restore_postgres_restore_binary]
+                     + takahe_restore_pg_conn_args
+                     + ['--dbname=' ~ takahe_restore_postgres_database,
+                        '--single-transaction', '--clean', '--if-exists', '--no-owner',
+                        takahe_restore_payload_dir ~ '/database/' ~ takahe_restore_postgres_database ~ '.dump'] }}
+              become: true
+              become_user: "{{ takahe_restore_postgres_become_user }}"
+              environment:
+                PGPASSFILE: '{{ takahe_restore_task_pgpass_5.path ~ ''/pgpass'' if takahe_restore_task_pgpass_5.path is defined else omit }}'
+              no_log: "{{ (takahe_restore_postgres_password | default('') | length > 0) }}"
+              changed_when: true
+
+          always:
+            - name: main | Remove private passfile directory
+              ansible.builtin.file:
+                path: "{{ takahe_restore_task_pgpass_5.path }}"
+                state: absent
+              become: true
+              become_user: "{{ takahe_restore_postgres_become_user }}"
+              changed_when: false
+              when:
+                - not ansible_check_mode
+                - takahe_restore_task_pgpass_5.path is defined
 
         # --ignore-times makes rsync rewrite every file to a new inode (temp file
         # + rename). Without it, a file whose content is unchanged would get
         # its owner/mode updated in place, which would also change the
-        # hard-linked media snapshot.
         - name: Restore media directory  # noqa: command-instead-of-module
           ansible.builtin.command:
             argv:
@@ -504,6 +753,11 @@
           loop: "{{ takahe_systemd_services }}"
 
       rescue:
+        - name: main | Remember the original restore failure
+          ansible.builtin.set_fact:
+            takahe_restore_original_failed_task: "{{ ansible_failed_task.name | default('unknown task') }}"
+          changed_when: false
+
         - name: Make sure Takahe services are stopped before rolling back
           ansible.builtin.systemd:
             name: "{{ item }}"
@@ -529,43 +783,106 @@
                  | reject('in', ['inactive', 'failed'])
                  | list | length > 0 }}
 
-        - name: Roll back the database from the safety dump
-          ansible.builtin.shell: |
-            set -euo pipefail
-            admin=()
-            case "$PG_HOST" in
-              ""|localhost|127.0.0.1|::1) ;;
-              *) admin+=("--host=$PG_HOST") ;;
-            esac
-            if [ -n "$PG_PORT" ]; then admin+=("--port=$PG_PORT"); fi
-            conn=()
-            if [ -n "$PG_HOST" ]; then conn+=("--host=$PG_HOST"); fi
-            if [ -n "$PG_PORT" ]; then conn+=("--port=$PG_PORT"); fi
-            "$DROPDB" "${admin[@]}" --if-exists "$DB"
-            "$CREATEDB" "${admin[@]}" --owner="$DB_OWNER" "$DB"
-            "$PG_RESTORE" "${conn[@]}" --username="$DB_OWNER" --dbname="$DB" \
-              --single-transaction --no-owner "$SAFETY_DUMP"
-          args:
-            executable: /bin/bash
-          become: true
-          become_user: "{{ takahe_restore_postgres_become_user }}"
-          environment:
-            PGPASSWORD: "{{ takahe_restore_postgres_password }}"
-            DROPDB: "{{ takahe_restore_postgres_dropdb_binary }}"
-            CREATEDB: "{{ takahe_restore_postgres_createdb_binary }}"
-            PG_RESTORE: "{{ takahe_restore_postgres_restore_binary }}"
-            DB: "{{ takahe_restore_postgres_database }}"
-            DB_OWNER: "{{ takahe_restore_postgres_user }}"
-            SAFETY_DUMP: "{{ takahe_restore_safety_dump }}"
-            PG_HOST: "{{ takahe_restore_postgres_host | default('') | string }}"
-            PG_PORT: "{{ takahe_restore_postgres_port | default('') | string }}"
-          no_log: "{{ (takahe_restore_postgres_password | default('') | length > 0) }}"
-          register: takahe_restore_db_rollback
-          changed_when: true
-          failed_when: false
-          when:
-            - takahe_restore_db_exists | bool
-            - not (takahe_restore_rescue_running | bool)
+        - name: main | Run Roll back the database from the safety dump with a private passfile
+          block:
+            - name: main | Validate passfile password format
+              ansible.builtin.assert:
+                that:
+                  - '"\n" not in (takahe_restore_postgres_password | default("") | string)'
+                  - '"\r" not in (takahe_restore_postgres_password | default("") | string)'
+                fail_msg: PostgreSQL passfile passwords cannot contain line breaks.
+              when:
+                - not ansible_check_mode
+                - takahe_restore_db_exists | bool
+                - not (takahe_restore_rescue_running | bool)
+
+            - name: main | Allocate private passfile directory
+              ansible.builtin.tempfile:
+                state: directory
+                prefix: takahe_restore-pgpass-
+              register: takahe_restore_task_pgpass_6
+              become: true
+              become_user: "{{ takahe_restore_postgres_become_user }}"
+              changed_when: false
+              when:
+                - not ansible_check_mode
+                - (takahe_restore_postgres_password | default('') | string | length) > 0
+                - takahe_restore_db_exists | bool
+                - not (takahe_restore_rescue_running | bool)
+
+            - name: main | Render PostgreSQL passfile
+              ansible.builtin.template:
+                src: task-pgpass.j2
+                dest: "{{ takahe_restore_task_pgpass_6.path }}/pgpass"
+                mode: "0600"
+              vars:
+                task_pgpass_password: "{{ takahe_restore_postgres_password }}"
+              become: true
+              become_user: "{{ takahe_restore_postgres_become_user }}"
+              no_log: true
+              changed_when: false
+              when:
+                - not ansible_check_mode
+                - takahe_restore_task_pgpass_6.path is defined
+                - takahe_restore_db_exists | bool
+                - not (takahe_restore_rescue_running | bool)
+
+            - name: Roll back the database from the safety dump
+              ansible.builtin.shell: |
+                set -euo pipefail
+                admin=()
+                case "$PG_HOST" in
+                  ""|localhost|127.0.0.1|::1) ;;
+                  *) admin+=("--host=$PG_HOST") ;;
+                esac
+                if [ -n "$PG_PORT" ]; then admin+=("--port=$PG_PORT"); fi
+                conn=()
+                if [ -n "$PG_HOST" ]; then conn+=("--host=$PG_HOST"); fi
+                if [ -n "$PG_PORT" ]; then conn+=("--port=$PG_PORT"); fi
+                "$DROPDB" "${admin[@]}" --if-exists "$DB"
+                "$CREATEDB" "${admin[@]}" --owner="$DB_OWNER" "$DB"
+                "$PG_RESTORE" "${conn[@]}" --username="$DB_OWNER" --dbname="$DB" \
+                  --single-transaction --no-owner "$SAFETY_DUMP"
+              args:
+                executable: /bin/bash
+              become: true
+              become_user: "{{ takahe_restore_postgres_become_user }}"
+              environment:
+                PGPASSFILE: '{{ takahe_restore_task_pgpass_6.path ~ ''/pgpass'' if takahe_restore_task_pgpass_6.path is defined else omit }}'
+                DROPDB: '{{ takahe_restore_postgres_dropdb_binary }}'
+                CREATEDB: '{{ takahe_restore_postgres_createdb_binary }}'
+                PG_RESTORE: '{{ takahe_restore_postgres_restore_binary }}'
+                DB: '{{ takahe_restore_postgres_database }}'
+                DB_OWNER: '{{ takahe_restore_postgres_user }}'
+                SAFETY_DUMP: '{{ takahe_restore_safety_dump }}'
+                PG_HOST: '{{ takahe_restore_postgres_host | default('''') | string }}'
+                PG_PORT: '{{ takahe_restore_postgres_port | default('''') | string }}'
+              no_log: "{{ (takahe_restore_postgres_password | default('') | length > 0) }}"
+              register: takahe_restore_db_rollback
+              changed_when: true
+              failed_when: false
+              when:
+                - takahe_restore_db_exists | bool
+                - not (takahe_restore_rescue_running | bool)
+
+          rescue:
+            - name: main | Record failed database rollback credential preparation
+              ansible.builtin.set_fact:
+                takahe_restore_db_rollback:
+                  rc: 1
+              changed_when: false
+          always:
+            - name: main | Remove private passfile directory
+              ansible.builtin.file:
+                path: "{{ takahe_restore_task_pgpass_6.path }}"
+                state: absent
+              become: true
+              become_user: "{{ takahe_restore_postgres_become_user }}"
+              changed_when: false
+              failed_when: false
+              when:
+                - not ansible_check_mode
+                - takahe_restore_task_pgpass_6.path is defined
 
         - name: Roll back media and config files
           ansible.builtin.shell:
@@ -599,7 +916,7 @@
         - name: Fail after rollback and leave Takahe stopped
           ansible.builtin.fail:
             msg: >-
-              Takahe restore failed ({{ ansible_failed_task.name | default('unknown task') }}).
+              Takahe restore failed ({{ takahe_restore_original_failed_task | default('unknown task') }}).
               {{ 'A service could not be stopped, so NOTHING was rolled back; stop it and roll back by hand from the paths below.'
                  if (takahe_restore_rescue_running | bool) else '' }}
               Database rollback: {{ 'not needed (no live database before the restore)'

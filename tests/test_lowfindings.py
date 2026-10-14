@@ -204,7 +204,7 @@ def test_remote_tempfile_cleanup(path, allocation):
     block = next(
         n
         for n in walk(nodes)
-        if any("ansible.builtin.tempfile" in c for c in n.get("block", []))
+        if any(c.get("ansible.builtin.tempfile", {}).get("state") == allocation for c in n.get("block", []))
     )
     alloc = next(n for n in block["block"] if "ansible.builtin.tempfile" in n)
     assert alloc["ansible.builtin.tempfile"]["state"] == allocation

@@ -52,10 +52,12 @@
     - not unifi_restore_mongodb_port_check.failed
     - unifi_restore_mongodump_check.rc == 0
 
+# ops-secrets-in-task-environment: aggregate credentials unchanged; needs live restore rehearsal.
 - name: "verify | Verify MongoDB is accessible"
   ansible.builtin.command:
     argv: "{{ unifi_restore_mongodump_args }}"
   register: unifi_restore_mongodb_check
+  no_log: "{{ unifi_restore_mongodb_password | default('', true) | length > 0 }}"
   retries: 6
   delay: 5
   until: unifi_restore_mongodb_check.rc == 0

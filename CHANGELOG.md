@@ -3,6 +3,51 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Keep task credentials out of arguments and environment (2.31.38)
+
+- Static credential checks now reject secret-looking command arguments and task
+  environment values even with `no_log`, including inherited environments (also below a task whose own environment is a template or list). The
+  exact baseline records existing out-of-scope findings; focused transport and
+  task-behavior regressions run in the test recipes.
+
+- `mail_relay_deploy`: SASL password creation and updates send the password through stdin, keeping it out of command arguments and Ansible task environment values. Existing notifications and change reporting are preserved.
+
+- `redis_install`: The authenticated PING probe reads stdin inside the remote shell and exports REDISCLI_AUTH only to redis-cli, keeping the password out of arguments and task environment values. The probe remains read-only and non-fatal.
+
+- `minecraft_java_backup`: Save coordination reads the RCON password from stdin inside the remote shell and exports MCRCON_PASS only to mcrcon. It never passes the password in command arguments or task environment values; credential input is protected by no_log. Failures report return codes while withholding credential input; the existing save-on condition is preserved.
+
+- `archive_deploy`: Management commands source a rendered 0600 shell environment companion inside the remote shell, keeping credentials out of command arguments and task environment values. The companion uses the same template as the application env file, with shell quoting enabled only for the companion; the existing application/systemd env format is preserved. Command change reporting and check-mode skips are preserved.
+
+- `nyxmon_deploy`: Management commands source a rendered 0600 shell environment companion inside the remote shell, keeping credentials out of command arguments and task environment values. The companion uses the same template as the application env file, with shell quoting enabled only for the companion; the existing application/systemd env format is preserved. Command change reporting and check-mode skips are preserved.
+
+- `fastdeploy_deploy`: Management commands source a rendered 0600 shell environment companion inside the remote shell, keeping credentials out of command arguments and task environment values. The companion uses the same template as the application env file, with shell quoting enabled only for the companion; the existing application/systemd env format is preserved. Command change reporting and check-mode skips are preserved.
+
+- `fastdeploy_self_deploy`: Management commands source a rendered 0600 shell environment companion inside the remote shell, keeping credentials out of command arguments and task environment values. The companion uses the same template as the application env file, with shell quoting enabled only for the companion; the existing application/systemd env format is preserved. Command change reporting and check-mode skips are preserved.
+
+- `fastdeploy_restore`: PostgreSQL CLI tasks use a temporary 0600 passfile owned by the executing database user in a unique 0700 directory, removed in an always block on success or failure. Only the PGPASSFILE path appears in the task environment. Empty passwords retain the existing libpq authentication fallback. Passfile passwords must not contain CR or LF (checked during validation, before the database is dropped); colons and backslashes are escaped. Restore SQL, rollback order and database connection options are unchanged.
+
+- `mastodon_backup`: PostgreSQL CLI tasks use a temporary 0600 passfile owned by the executing database user in a unique 0700 directory, removed in an always block on success or failure. Only the PGPASSFILE path appears in the task environment. Empty passwords retain the existing libpq authentication fallback. Passfile passwords must not contain CR or LF; colons and backslashes are escaped. Restore SQL, rollback order and database connection options are unchanged.
+
+- `takahe_backup`: PostgreSQL CLI tasks use a temporary 0600 passfile owned by the executing database user in a unique 0700 directory, removed in an always block on success or failure. Only the PGPASSFILE path appears in the task environment. Empty passwords retain the existing libpq authentication fallback. Passfile passwords must not contain CR or LF; colons and backslashes are escaped. Restore SQL, rollback order and database connection options are unchanged.
+
+- `paperless_backup`: Document exporter passphrases now use stdin, with no stdin read for an empty passphrase; the obsolete exporter-environment fact is removed. PostgreSQL CLI tasks use a temporary 0600 passfile owned by the executing database user in a unique 0700 directory, removed in an always block on success or failure. Only the PGPASSFILE path appears in the task environment. Empty passwords retain the existing libpq authentication fallback. Passfile passwords must not contain CR or LF; colons and backslashes are escaped. Restore SQL, rollback order and database connection options are unchanged.
+
+- `mastodon_restore`: PostgreSQL CLI tasks use a temporary 0600 passfile owned by the executing database user in a unique 0700 directory, removed in an always block on success or failure. Only the PGPASSFILE path appears in the task environment. Empty passwords retain the existing libpq authentication fallback. Passfile passwords must not contain CR or LF; colons and backslashes are escaped. Restore SQL, rollback order and database connection options are unchanged.
+
+- `takahe_restore`: PostgreSQL CLI tasks use a temporary 0600 passfile owned by the executing database user in a unique 0700 directory, removed in an always block on success or failure. Only the PGPASSFILE path appears in the task environment. Empty passwords retain the existing libpq authentication fallback. Passfile passwords must not contain CR or LF; colons and backslashes are escaped. Restore SQL, rollback order and database connection options are unchanged.
+
+- `wagtail_restore`: the live-database safety dump, the SQL restore and the rollback from the safety dump read the password from a private 0600 passfile (0700 temporary directory, removed in the restore's always section) instead of `PGPASSWORD` in the task environment. Passwords with CR or LF are rejected before services stop.
+
+- `paperless_restore`: Document importer passphrases now use stdin, with no stdin read for an empty passphrase. PostgreSQL CLI tasks use a temporary 0600 passfile owned by the executing database user in a unique 0700 directory, removed in an always block on success or failure. Only the PGPASSFILE path appears in the task environment. Empty passwords retain the existing libpq authentication fallback. Passfile passwords must not contain CR or LF; colons and backslashes are escaped. Restore SQL, rollback order and database connection options are unchanged.
+
+- `unifi_deploy`: MongoDB user creation JSON-quotes credentials and database names and executes with --file, preserving literal quotes/backslashes and reporting script failures through the existing recovery path. Authenticated mongosh tasks read credentials from a 0600 JavaScript file in a unique private temporary directory, run with --file, and remove the directory in always on success or failure. Home Assistant password hashing reads its inputs through stdin. Existing retries, user-management recovery and removal toggles are preserved.
+
+- `unifi_remove`: Authenticated mongosh tasks read credentials from a 0600 JavaScript file in a unique private temporary directory, run with --file, and remove the directory in always on success or failure. Existing retries, user-management recovery and removal toggles are preserved.
+
+- `unifi_restore`: protect MongoDB verification results with conditional no_log and mark existing aggregate password arguments for a live restore/rollback rehearsal before conversion.
+
+- `minio_restore`: mark existing aggregate MC_HOST credential environments for a live service restore rehearsal before conversion.
+
 ## Unreleased — Pin and verify privileged release downloads (2.31.37)
 
 - `echoport_backup`: pin and verify mc using the existing MinIO installer tasks. Reconcile the installed binary on every deploy, using the project’s GitHub release after dl.min.io was discontinued. A differing mc binary is replaced at the next deploy.

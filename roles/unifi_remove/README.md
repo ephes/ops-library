@@ -47,3 +47,7 @@ Refer to `defaults/main.yml` for additional knobs (service list, directories, Mo
 - Dropping the MongoDB database/user requires valid credentials; the tasks stay skipped (and safe) until `unifi_mongodb_password` is set.
 - Keep `unifi_remove_delete_data`/`home` set to `false` for dry-runs—once flipped the directories are removed permanently.
 - If `ufw` is not installed the firewall cleanup step is quietly skipped.
+
+## Task credential handling
+
+Authenticated mongosh tasks read credentials from a 0600 JavaScript file in a unique private temporary directory, run with --file, and remove the directory in always on success or failure. Existing retries, user-management recovery and removal toggles are preserved.

@@ -57,16 +57,6 @@ ALLOWED = {
     ): "creates:-guarded key download; a bad keyring makes the following apt "
     "update fail loudly",
     (
-        "mail_relay_deploy/tasks/sasl.yml",
-        "sasl | Create relay user in sasldb2",
-    ): "echo cannot fail; saslpasswd2 is the last command, so its status is "
-    "the task status",
-    (
-        "mail_relay_deploy/tasks/sasl.yml",
-        "sasl | Update relay user password in sasldb2",
-    ): "echo cannot fail; saslpasswd2 is the last command, so its status is "
-    "the task status",
-    (
         "remote_luks_unlock/tasks/cleanup.yml",
         "Read current GRUB_CMDLINE_LINUX_DEFAULT for cleanup",
     ): "best-effort read that ends in '|| echo \"\"'; a missing value is "

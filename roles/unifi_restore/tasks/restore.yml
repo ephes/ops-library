@@ -53,6 +53,7 @@
         - unifi_restore_mongodb_drop_database | bool
       no_log: "{{ unifi_restore_mongodb_password | default('', true) | length > 0 }}"
 
+    # ops-secrets-in-task-environment: aggregate credentials unchanged; needs live restore rehearsal.
     - name: "mongodb | Drop existing MongoDB database"
       ansible.builtin.command:
         argv: "{{ unifi_restore_mongodb_drop_args }}"
@@ -86,6 +87,7 @@
       when: unifi_restore_mongodb_dump_available
       no_log: "{{ unifi_restore_mongodb_password | default('', true) | length > 0 }}"
 
+    # ops-secrets-in-task-environment: aggregate credentials unchanged; needs live restore rehearsal.
     - name: "mongodb | Restore MongoDB database"
       ansible.builtin.command:
         argv: "{{ unifi_restore_mongorestore_args }}"

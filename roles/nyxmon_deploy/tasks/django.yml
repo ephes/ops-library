@@ -12,36 +12,48 @@
     - restart nyxmon
     - restart nyxmon-monitor
 
+- name: django | Render management shell environment
+  ansible.builtin.template:
+    src: nyxmon.env.j2
+    dest: "{{ nyxmon_site_path }}/.env.shell"
+    owner: "{{ nyxmon_user }}"
+    group: "{{ nyxmon_group }}"
+    mode: "0600"
+  vars:
+    task_shell_environment: true
+  no_log: true
+
 - name: django | Run Django migrations
-  django_manage:
-    command: migrate
-    app_path: "{{ nyxmon_django_path }}"
-    virtualenv: "{{ nyxmon_venv_path }}"
-  environment:
-    DJANGO_SETTINGS_MODULE: "{{ nyxmon_django_settings_module }}"
-    DJANGO_SECRET_KEY: "{{ nyxmon_django_secret_key }}"
-    DJANGO_ALLOWED_HOSTS: "{{ nyxmon_django_allowed_hosts }}"
-    DJANGO_CACHE_LOCATION: "{{ nyxmon_cache_dir }}"
-    DJANGO_ADMIN_URL: "{{ nyxmon_django_admin_url }}"
-    TELEGRAM_BOT_TOKEN: "{{ nyxmon_telegram_bot_token }}"
-    TELEGRAM_CHAT_ID: "{{ nyxmon_telegram_chat_id }}"
+  ansible.builtin.shell: |
+    set -a
+    . {{ (nyxmon_site_path ~ '/.env.shell') | quote }}
+    set +a
+    export PATH={{ nyxmon_venv_bin | quote }}:"$PATH"
+    export VIRTUAL_ENV={{ nyxmon_venv_path | quote }}
+    exec ./manage.py migrate --noinput
+  args:
+    chdir: "{{ nyxmon_django_path }}"
+  register: nyxmon_migrate_result
+  changed_when: >-
+    'Migrating forwards ' in nyxmon_migrate_result.stdout or
+    'Applying' in nyxmon_migrate_result.stdout or
+    (nyxmon_migrate_result.stdout_lines | select('search', 'Installed') | reject('search', 'Installed 0 object') | list | length > 0)
   become: true
   become_user: "{{ nyxmon_user }}"
   when: not nyxmon_skip_django_manage | default(false)
 
 - name: django | Collect static files
-  django_manage:
-    command: collectstatic
-    app_path: "{{ nyxmon_django_path }}"
-    virtualenv: "{{ nyxmon_venv_path }}"
-  environment:
-    DJANGO_SETTINGS_MODULE: "{{ nyxmon_django_settings_module }}"
-    DJANGO_SECRET_KEY: "{{ nyxmon_django_secret_key }}"
-    DJANGO_ALLOWED_HOSTS: "{{ nyxmon_django_allowed_hosts }}"
-    DJANGO_CACHE_LOCATION: "{{ nyxmon_cache_dir }}"
-    DJANGO_ADMIN_URL: "{{ nyxmon_django_admin_url }}"
-    TELEGRAM_BOT_TOKEN: "{{ nyxmon_telegram_bot_token }}"
-    TELEGRAM_CHAT_ID: "{{ nyxmon_telegram_chat_id }}"
+  ansible.builtin.shell: |
+    set -a
+    . {{ (nyxmon_site_path ~ '/.env.shell') | quote }}
+    set +a
+    export PATH={{ nyxmon_venv_bin | quote }}:"$PATH"
+    export VIRTUAL_ENV={{ nyxmon_venv_path | quote }}
+    exec ./manage.py collectstatic --noinput
+  args:
+    chdir: "{{ nyxmon_django_path }}"
+  register: nyxmon_collectstatic_result
+  changed_when: nyxmon_collectstatic_result.stdout_lines | reject('equalto', '') | reject('search', '0 static files') | list | length > 0
   become: true
   become_user: "{{ nyxmon_user }}"
   when: not nyxmon_skip_django_manage | default(false)

@@ -1,4 +1,12 @@
 ---
+- name: validate | Validate PostgreSQL passfile password before restore
+  ansible.builtin.assert:
+    that:
+      - '"\n" not in (fastdeploy_restore_postgres_password | default("") | string)'
+      - '"\r" not in (fastdeploy_restore_postgres_password | default("") | string)'
+    fail_msg: PostgreSQL passfile passwords cannot contain line breaks.
+  when: not ansible_check_mode
+
 - name: "Resolve FastDeploy restore artifact and snapshot"
   ansible.builtin.include_role:
     name: local.ops_library.restore_pilot_internal

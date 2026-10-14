@@ -248,6 +248,17 @@
           become: false
           delegate_to: localhost
 
+        - name: Verify | Write stub management shell environment
+          ansible.builtin.copy:
+            dest: "{{ fastdeploy_redaction_site.path }}/.env.shell"
+            mode: "0600"
+            content: |
+              DATABASE_URL={{ ('postgresql+asyncpg://fastdeploy:' ~ fastdeploy_redaction_db_password ~ '@localhost:5432/fastdeploy') | quote }}
+              SECRET_KEY={{ fastdeploy_redaction_secret_key | quote }}
+          no_log: true
+          become: false
+          delegate_to: localhost
+
         - name: Verify | Create nested playbook for FastDeploy message redaction regression
           ansible.builtin.tempfile:
             state: file

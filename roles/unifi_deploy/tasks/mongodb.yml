@@ -1,4 +1,5 @@
 ---
+
 - name: "mongodb | Ensure keyring directory"
   ansible.builtin.file:
     path: /usr/share/keyrings
@@ -113,16 +114,55 @@
     delay: 5
 
 # Skip user management entirely if auth is disabled
-- name: "mongodb | Check UniFi user authentication"
-  ansible.builtin.shell: |
-    mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} \
-      --authenticationDatabase admin -u "{{ unifi_mongodb_user }}" -p "{{ unifi_mongodb_password }}" \
-      --eval "db.runCommand({connectionStatus: 1})" >/dev/null 2>&1
-  register: unifi_mongodb_user_check
-  changed_when: false
-  failed_when: false
-  no_log: true
-  when: unifi_mongodb_enable_auth | bool
+
+- name: mongodb | Run mongosh with a private credential script
+  block:
+    - name: mongodb | Allocate private MongoDB directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: unifi_deploy-mongo-
+      register: unifi_deploy_task_mongo_1
+      changed_when: false
+      when:
+        - not ansible_check_mode
+        - unifi_mongodb_enable_auth | bool
+
+    - name: mongodb | Render authenticated MongoDB script
+      ansible.builtin.template:
+        src: task-mongosh.js.j2
+        dest: "{{ unifi_deploy_task_mongo_1.path }}/command.js"
+        mode: "0600"
+      vars:
+        task_mongo_auth_db: "admin"
+        task_mongo_database: "test"
+        task_mongo_script: |
+          printjson(db.runCommand({connectionStatus: 1}));
+      no_log: true
+      changed_when: false
+      when:
+        - not ansible_check_mode
+        - unifi_deploy_task_mongo_1.path is defined
+        - unifi_mongodb_enable_auth | bool
+
+    - name: "mongodb | Check UniFi user authentication"
+      ansible.builtin.shell: |
+        mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} \
+          --file {{ (unifi_deploy_task_mongo_1.path ~ '/command.js' if unifi_deploy_task_mongo_1.path is defined else '/dev/null') | quote }} >/dev/null 2>&1
+      register: unifi_mongodb_user_check
+      changed_when: false
+      failed_when: false
+      no_log: true
+      when: unifi_mongodb_enable_auth | bool
+
+  always:
+    - name: mongodb | Remove private MongoDB directory
+      ansible.builtin.file:
+        path: "{{ unifi_deploy_task_mongo_1.path }}"
+        state: absent
+      changed_when: false
+      when:
+        - not ansible_check_mode
+        - unifi_deploy_task_mongo_1.path is defined
 
 # MongoDB 8.0+ localhost exception doesn't work reliably. Instead, we temporarily
 # disable auth, create the user, then re-enable auth.
@@ -193,7 +233,7 @@
 
         - name: "mongodb | Create user"
           ansible.builtin.shell: |
-            mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} < {{ unifi_mongodb_script.path | quote }}
+            mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} --file {{ unifi_mongodb_script.path | quote }}
           register: unifi_mongodb_init
           no_log: true
 
@@ -264,17 +304,60 @@
       {% endif %}
   when: unifi_mongodb_user_creation_failed | default(false)
 
-- name: "mongodb | Verify user was created successfully"
-  ansible.builtin.shell: |
-    mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} \
-      --authenticationDatabase admin -u "{{ unifi_mongodb_user }}" -p "{{ unifi_mongodb_password }}" \
-      --eval "db.runCommand({connectionStatus: 1})" >/dev/null 2>&1
-  register: unifi_mongodb_user_verify
-  changed_when: false
-  failed_when: unifi_mongodb_user_verify.rc != 0
-  no_log: true
-  when:
-    - unifi_mongodb_enable_auth | bool
-    - unifi_mongodb_user_check.rc is defined
-    - unifi_mongodb_user_check.rc != 0
-    - not (unifi_mongodb_user_creation_failed | default(false))
+- name: mongodb | Run mongosh with a private credential script
+  block:
+    - name: mongodb | Allocate private MongoDB directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: unifi_deploy-mongo-
+      register: unifi_deploy_task_mongo_2
+      changed_when: false
+      when:
+        - not ansible_check_mode
+        - unifi_mongodb_enable_auth | bool
+        - unifi_mongodb_user_check.rc is defined
+        - unifi_mongodb_user_check.rc != 0
+        - not (unifi_mongodb_user_creation_failed | default(false))
+
+    - name: mongodb | Render authenticated MongoDB script
+      ansible.builtin.template:
+        src: task-mongosh.js.j2
+        dest: "{{ unifi_deploy_task_mongo_2.path }}/command.js"
+        mode: "0600"
+      vars:
+        task_mongo_auth_db: "admin"
+        task_mongo_database: "test"
+        task_mongo_script: |
+          printjson(db.runCommand({connectionStatus: 1}));
+      no_log: true
+      changed_when: false
+      when:
+        - not ansible_check_mode
+        - unifi_deploy_task_mongo_2.path is defined
+        - unifi_mongodb_enable_auth | bool
+        - unifi_mongodb_user_check.rc is defined
+        - unifi_mongodb_user_check.rc != 0
+        - not (unifi_mongodb_user_creation_failed | default(false))
+
+    - name: "mongodb | Verify user was created successfully"
+      ansible.builtin.shell: |
+        mongosh --quiet --host {{ unifi_mongodb_host }} --port {{ unifi_mongodb_port }} \
+          --file {{ (unifi_deploy_task_mongo_2.path ~ '/command.js' if unifi_deploy_task_mongo_2.path is defined else '/dev/null') | quote }} >/dev/null 2>&1
+      register: unifi_mongodb_user_verify
+      changed_when: false
+      failed_when: unifi_mongodb_user_verify.rc != 0
+      no_log: true
+      when:
+        - unifi_mongodb_enable_auth | bool
+        - unifi_mongodb_user_check.rc is defined
+        - unifi_mongodb_user_check.rc != 0
+        - not (unifi_mongodb_user_creation_failed | default(false))
+  always:
+    - name: mongodb | Remove private MongoDB directory
+      ansible.builtin.file:
+        path: "{{ unifi_deploy_task_mongo_2.path }}"
+        state: absent
+      changed_when: false
+      when:
+        - not ansible_check_mode
+        - unifi_deploy_task_mongo_2.path is defined

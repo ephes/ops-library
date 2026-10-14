@@ -19,6 +19,7 @@
     mc_helper_insecure: "{{ minio_restore_mc_insecure }}"
     mc_helper_ca_cert_path: "{{ minio_restore_mc_ca_cert_path }}"
 
+# ops-secrets-in-task-environment: aggregate credentials unchanged; needs live restore rehearsal.
 - name: Run mc admin info after restore
   ansible.builtin.command: >-
     {{ minio_mc_bin_path }}
@@ -28,6 +29,7 @@
   changed_when: false
   no_log: true
 
+# ops-secrets-in-task-environment: aggregate credentials unchanged; needs live restore rehearsal.
 - name: List buckets as a sanity check
   ansible.builtin.command: >-
     {{ minio_mc_bin_path }}

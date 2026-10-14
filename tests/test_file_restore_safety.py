@@ -70,7 +70,7 @@ class WiringTests(unittest.TestCase):
                         self.assertNotIn("preserv", str(task))
                         self.assertNotIn("pre-restore", str(task))
                         self.assertRegex(
-                            str(task), r"staging|temp_dir|snappymail_restore_stage"
+                            str(task), r"staging|temp_dir|snappymail_restore_stage|_task_pgpass\.path"
                         )
         self.assertNotIn("rmtree", HELPER.read_text())
         self.assertNotIn("unlink", HELPER.read_text())

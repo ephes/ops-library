@@ -380,7 +380,8 @@ class MinecraftRconPasswordTests(unittest.TestCase):
         self.assertIn("umask 077", script)
         backup = (ROLES / "minecraft_java_backup/tasks/main.yml").read_text()
         self.assertNotIn("-p ", backup)
-        self.assertEqual(backup.count("MCRCON_PASS:"), 3)
+        self.assertNotIn("MCRCON_PASS:", backup)
+        self.assertEqual(backup.count("stdin: \"{{ minecraft_java_rcon_password }}\""), 3)
 
     def test_backup_archives_are_private(self):
         tasks = load_tasks(ROLES / "minecraft_java_backup/tasks/main.yml")

@@ -404,3 +404,7 @@ This setting applies to `fastdeploy_deploy` units. The separate
 trust defaults; a self-deploy replaces the main unit and does not preserve
 custom `fastdeploy_forwarded_allow_ips`. Use `fastdeploy_deploy` for this
 proxy trust configuration until that role gains matching support.
+
+## Task credential handling
+
+Management commands source a rendered 0600 shell environment companion inside the remote shell, keeping credentials out of command arguments and task environment values. The companion uses the same template as the application env file, with shell quoting enabled only for the companion; the existing application/systemd env format is preserved. Command change reporting and check-mode skips are preserved.

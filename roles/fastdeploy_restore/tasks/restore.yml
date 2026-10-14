@@ -1,4 +1,5 @@
 ---
+
 - name: "Stop FastDeploy service"
   ansible.builtin.systemd:
     name: "{{ fastdeploy_restore_systemd_service }}"
@@ -52,35 +53,86 @@
   become: true
   when: fastdeploy_restore_snapshot_includes_database
 
-- name: "Restore PostgreSQL dump"
-  ansible.builtin.shell: |
-    set -euo pipefail
-    {
-      printf 'SET ROLE %s;\n' "{{ fastdeploy_restore_postgres_user }}"
-      cat "{{ fastdeploy_restore_snapshot_dir }}/database/{{ fastdeploy_restore_postgres_database }}.sql"
-    } | {{ fastdeploy_restore_psql_binary }} "{{ fastdeploy_restore_postgres_database }}"
-  args:
-    executable: /bin/bash
-  become: true
-  become_user: "{{ fastdeploy_restore_postgres_become_user }}"
-  environment:
-    PGPASSWORD: "{{ fastdeploy_restore_postgres_password }}"
+- name: restore | Run Restore PostgreSQL dump with a private passfile
+  block:
+    - name: restore | Validate passfile password format
+      ansible.builtin.assert:
+        that:
+          - '"\n" not in (fastdeploy_restore_postgres_password | default("") | string)'
+          - '"\r" not in (fastdeploy_restore_postgres_password | default("") | string)'
+        fail_msg: PostgreSQL passfile passwords cannot contain line breaks.
+      when: not ansible_check_mode
+
+    - name: restore | Allocate private passfile directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: fastdeploy_restore-pgpass-
+      register: fastdeploy_restore_task_pgpass_1
+      become: true
+      become_user: "{{ fastdeploy_restore_postgres_become_user }}"
+      changed_when: false
+      when:
+        - not ansible_check_mode
+        - (fastdeploy_restore_postgres_password | default('') | string | length) > 0
+
+    - name: restore | Render PostgreSQL passfile
+      ansible.builtin.template:
+        src: task-pgpass.j2
+        dest: "{{ fastdeploy_restore_task_pgpass_1.path }}/pgpass"
+        mode: "0600"
+      vars:
+        task_pgpass_password: "{{ fastdeploy_restore_postgres_password }}"
+      become: true
+      become_user: "{{ fastdeploy_restore_postgres_become_user }}"
+      no_log: true
+      changed_when: false
+      when:
+        - not ansible_check_mode
+        - fastdeploy_restore_task_pgpass_1.path is defined
+
+    - name: "Restore PostgreSQL dump"
+      ansible.builtin.shell: |
+        set -euo pipefail
+        {
+          printf 'SET ROLE %s;\n' "{{ fastdeploy_restore_postgres_user }}"
+          cat "{{ fastdeploy_restore_snapshot_dir }}/database/{{ fastdeploy_restore_postgres_database }}.sql"
+        } | {{ fastdeploy_restore_psql_binary }} "{{ fastdeploy_restore_postgres_database }}"
+      args:
+        executable: /bin/bash
+      become: true
+      become_user: "{{ fastdeploy_restore_postgres_become_user }}"
+      environment:
+        PGPASSFILE: '{{ fastdeploy_restore_task_pgpass_1.path ~ ''/pgpass'' if fastdeploy_restore_task_pgpass_1.path is defined else omit }}'
+  always:
+    - name: restore | Remove private passfile directory
+      ansible.builtin.file:
+        path: "{{ fastdeploy_restore_task_pgpass_1.path }}"
+        state: absent
+      become: true
+      become_user: "{{ fastdeploy_restore_postgres_become_user }}"
+      changed_when: false
+      when:
+        - not ansible_check_mode
+        - fastdeploy_restore_task_pgpass_1.path is defined
 
 - name: "Prepare directory sync plan"
   ansible.builtin.set_fact:
     fastdeploy_restore_sync_items:
+
       - name: "services"
         src: "{{ fastdeploy_restore_snapshot_dir }}/services"
         dest: "{{ fastdeploy_restore_services_path }}"
         owner: "{{ fastdeploy_restore_user }}"
         group: "{{ fastdeploy_restore_group }}"
         include: true
+
       - name: "deploy_runners"
         src: "{{ fastdeploy_restore_snapshot_dir }}/deploy_runners"
         dest: "{{ fastdeploy_restore_deploy_runner_root }}"
         owner: "{{ fastdeploy_restore_deploy_user }}"
         group: "{{ fastdeploy_restore_deploy_group }}"
         include: true
+
       - name: "deploy_workspace"
         src: "{{ fastdeploy_restore_snapshot_dir }}/deploy_workspace"
         dest: "{{ fastdeploy_restore_deploy_workspace }}"

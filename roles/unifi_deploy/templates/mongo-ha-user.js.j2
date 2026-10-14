@@ -1,4 +1,6 @@
-use('{{ unifi_mongodb_database }}');
+const authDb = db.getSiblingDB('admin');
+if (!authDb.auth({{ unifi_mongodb_user | to_json }}, {{ unifi_mongodb_password | to_json }})) { quit(1); }
+db = db.getSiblingDB({{ unifi_mongodb_database | to_json }});
 var existing = db.admin.findOne({name: "{{ unifi_homeassistant_username }}"});
 var changed = false;
 var now = Date.now();

@@ -102,5 +102,11 @@ This produces `/opt/backups/paperless/pre-migration-YYYYMMDDThhmmss/…` plus `p
 ## Security notes
 
 - The finished archive contains every document, the database dump and the service configuration with its secrets. tar writes it into a fresh `0600` temporary file that is renamed into place, so it is owner-only from the first byte even when it replaces an existing file; the role then applies `paperless_backup_archive_mode` (default `0600`) and `paperless_backup_owner`/`paperless_backup_group`. The local copy lands in the `paperless_backup_local_dir_mode` (`0700`) directory and is set to `0600` after the fetch. Earlier versions set the archive to `0644` for the fetch, which left it readable by every account on the host. The fetch reads the archive as the SSH user: with a non-root SSH user, put that user into `paperless_backup_group` and set the mode to `0640`. Archives from earlier runs keep their old mode; tighten them once with `chmod 600 /opt/backups/paperless/*.tar.*`.
-- `document_exporter` receives its passphrase via the `PAPERLESS_PASSPHRASE` environment variable, so secrets do not show up in process listings or Ansible logs (the task automatically flips `no_log` on when a passphrase is set).
-- `pg_dump` falls back to the `PGPASSWORD` environment variable only when `paperless_backup_postgres_password` is provided; prefer peer authentication (leave it empty) if possible.
+- Exporter passphrases arrive through stdin and are exported as PAPERLESS_PASSPHRASE only inside the remote shell; the task keeps its conditional no_log protection.
+- pg_dump uses a private temporary PGPASSFILE only when paperless_backup_postgres_password is provided; leave it empty to retain peer/libpq authentication fallback.
+
+## Task credential handling
+
+PostgreSQL CLI tasks use a temporary 0600 passfile owned by the executing database user in a unique 0700 directory, removed in an always block on success or failure. Only the PGPASSFILE path appears in the task environment. Empty passwords retain the existing libpq authentication fallback. Passfile passwords must not contain CR or LF; colons and backslashes are escaped. Restore SQL, rollback order and database connection options are unchanged.
+
+Document exporter passphrases are read through stdin inside the remote shell, including embedded line breaks; no passphrase is sent in task environment values. Existing env-file overrides remain in effect.

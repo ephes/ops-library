@@ -2,14 +2,18 @@
 # Initialize FastDeploy application
 
 - name: initialize | Create initial admin user
-  ansible.builtin.command:
-    cmd: "{{ fastdeploy_venv_bin }}/python commands.py createuser"
+  ansible.builtin.shell:
+    cmd: |
+      set -a
+      . {{ (fastdeploy_site_path ~ '/.env.shell') | quote }}
+      set +a
+      IFS= read -r INITIAL_PASSWORD_HASH
+      export INITIAL_PASSWORD_HASH
+      exec {{ fastdeploy_venv_bin | quote }}/python commands.py createuser
+    stdin: "{{ fastdeploy_initial_password_hash }}"
     chdir: "{{ fastdeploy_site_path }}"
   environment:
     INITIAL_USER_NAME: "{{ fastdeploy_initial_user }}"
-    INITIAL_PASSWORD_HASH: "{{ fastdeploy_initial_password_hash }}"
-    DATABASE_URL: "postgresql+asyncpg://{{ fastdeploy_postgres_user }}:{{ fastdeploy_postgres_password }}@{{ fastdeploy_postgres_host }}/{{ fastdeploy_postgres_database }}"
-    SECRET_KEY: "{{ fastdeploy_secret_key }}"
     PRODUCTION: "true"
   become: "{{ fastdeploy_initialize_become | default(true) }}"
   become_user: "{{ fastdeploy_user }}"
@@ -76,12 +80,14 @@
        'unique constraint' not in fastdeploy_legacy_token_user_output)
 
 - name: initialize | Sync services from filesystem
-  ansible.builtin.command:
-    cmd: "{{ fastdeploy_venv_bin }}/python commands.py syncservices"
+  ansible.builtin.shell:
+    cmd: |
+      set -a
+      . {{ (fastdeploy_site_path ~ '/.env.shell') | quote }}
+      set +a
+      exec {{ fastdeploy_venv_bin | quote }}/python commands.py syncservices
     chdir: "{{ fastdeploy_site_path }}"
   environment:
-    DATABASE_URL: "postgresql+asyncpg://{{ fastdeploy_postgres_user }}:{{ fastdeploy_postgres_password }}@{{ fastdeploy_postgres_host }}/{{ fastdeploy_postgres_database }}"
-    SECRET_KEY: "{{ fastdeploy_secret_key }}"
     PRODUCTION: "true"
   become: "{{ fastdeploy_initialize_become | default(true) }}"
   become_user: "{{ fastdeploy_user }}"
