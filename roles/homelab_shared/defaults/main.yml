@@ -87,7 +87,7 @@ homelab_restore_rebuild_static: false
 homelab_restore_staging_dir: /tmp/homelab-restore
 homelab_restore_staging_mode: "0700"
 homelab_restore_safe_snapshot_prefix: "pre-restore"
-homelab_restore_safe_snapshot_delete: true  # delete the safety snapshot automatically after a successful restore
+homelab_restore_safe_snapshot_delete: false  # keep the pre-restore copy; true deletes it after a successful restore
 homelab_restore_create_safe_snapshot: true
 homelab_restore_restart_service: true
 homelab_restore_reload_traefik: true

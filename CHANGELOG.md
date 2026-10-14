@@ -3,6 +3,18 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Work app and Homelab restores keep the pre-restore copy (2.31.44)
+
+- `work_app_restore` and `homelab_restore` deleted the
+  `<site>.pre-restore-<timestamp>` copy (including `db.sqlite3` and `.env`)
+  as soon as a restore passed its health check, which contradicted the
+  2.31.36 rule that no restore prunes its pre-restore copies.
+  `work_app_restore_safe_snapshot_delete` and
+  `homelab_restore_safe_snapshot_delete` now default to `false`; the copy
+  stays, for example `/home/work/site.pre-restore-20261014T153000`, and the
+  last task reports its path. The owner prunes old copies by hand. Set the
+  variable to `true` to get the old delete-after-success behaviour.
+
 ## Unreleased — Tailscale auth key off the command line (2.31.43)
 
 - `tailscale_deploy` and `tailscale_restore` ran

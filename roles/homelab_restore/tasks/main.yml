@@ -476,3 +476,19 @@
         - homelab_restore_safe_snapshot_delete | bool
         - homelab_restore_safety_dir | length > 0
         - homelab_restore_success | bool
+
+    - name: "Check for a retained safety snapshot"
+      ansible.builtin.stat:
+        path: "{{ homelab_restore_safety_dir }}"
+      register: homelab_restore_safety_stat
+      when: homelab_restore_safety_dir | length > 0
+
+    - name: "Report retained safety snapshot"
+      ansible.builtin.debug:
+        msg: >-
+          Pre-restore copy of {{ homelab_site_path }} (database and .env included) kept at
+          {{ homelab_restore_safety_dir }}. The role does not remove it; prune it by hand
+          once the restored Homelab is confirmed.
+      when:
+        - homelab_restore_safety_dir | length > 0
+        - homelab_restore_safety_stat.stat.exists | default(false)

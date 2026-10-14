@@ -7,7 +7,7 @@ Restores a Homelab deployment from archives created by `homelab_backup`. Validat
 - Archive discovery via `homelab_restore_archive` (`latest` uses the newest tarball under `/opt/backups/homelab`).
 - Metadata validation (slug, timestamp, ops-library version) plus optional checksum verification.
 - Dry-run mode (`homelab_restore_dry_run: true`) unpacks/validates without mutating the host and prints the planned actions/downtime.
-- Safety snapshot (`/home/homelab/site.pre-restore-<ts>`) with configurable retention.
+- Safety snapshot (`/home/homelab/site.pre-restore-<ts>`, including the database and `.env`). It is kept after the restore and its path is reported; the owner prunes old copies by hand. `homelab_restore_safe_snapshot_delete: true` deletes it after a successful restore instead.
 - Restores SQLite DB, static/media/cache directories, `.env`, systemd unit, and Traefik config; optional static rebuild via `collectstatic`.
 - Post-restore checks: Django `check --deploy`, `showmigrations`, SQLite `PRAGMA integrity_check`, and HTTP validation (`homelab_restore_healthcheck_url`).
 - The service is stopped before the safety snapshot and before any file is replaced; if the stop fails, the restore aborts. Stale `-wal`/`-shm`/`-journal` files are removed before the database is replaced.

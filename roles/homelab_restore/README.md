@@ -29,7 +29,7 @@ homelab_restore_dry_run: false
 homelab_restore_validate_checksums: true
 homelab_restore_allow_version_mismatch: false
 homelab_restore_create_safe_snapshot: true
-homelab_restore_safe_snapshot_delete: true
+homelab_restore_safe_snapshot_delete: false   # true deletes the pre-restore copy after success
 homelab_restore_restore_env: true
 homelab_restore_rebuild_static: false
 homelab_restore_verify_http: true
@@ -56,4 +56,4 @@ homelab_restore_expected_content: "Homelab"
 
 - Run `homelab_restore_dry_run: true` to inspect metadata and checksum validation without modifying the host.
 - Set `homelab_restore_allow_version_mismatch: true` only when you intentionally restore an archive built with a different ops-library version.
-- Safety snapshots are kept until the role completes successfully. Disable auto-deletion (`homelab_restore_safe_snapshot_delete: false`) if you want to inspect the snapshot manually.
+- The safety snapshot (`<homelab_site_path>.pre-restore-<timestamp>`, for example `/home/homelab/site.pre-restore-20261014T153000`, including `db.sqlite3` and `.env`) is kept after successful and failed restores, and the final task reports its path. Nothing prunes these copies: inspect them and delete old ones by hand. Set `homelab_restore_safe_snapshot_delete: true` to delete the copy after a successful restore instead.

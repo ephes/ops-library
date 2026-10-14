@@ -212,6 +212,7 @@
   vars:
     backup_text: "{{ lookup('file', playbook_dir ~ '/../roles/homelab_backup/tasks/main.yml') }}"
     restore_text: "{{ lookup('file', playbook_dir ~ '/../roles/homelab_restore/tasks/main.yml') }}"
+    shared_defaults: "{{ lookup('file', playbook_dir ~ '/../roles/homelab_shared/defaults/main.yml') }}"
 
   tasks:
     - name: Assert stop failures abort and integrity is checked
@@ -227,3 +228,6 @@
           - restore_text.index('Remove stale SQLite journal files') < restore_text.index('Restore SQLite database')
           # integrity_check output must be exactly "ok"
           - "\"(homelab_restore_sqlite_check.stdout | trim) != 'ok'\" in restore_text"
+          # the pre-restore copy is kept by default and its path reported
+          - "'homelab_restore_safe_snapshot_delete: false' in shared_defaults"
+          - restore_text.index('Cleanup safety snapshot') < restore_text.index('Report retained safety snapshot')
