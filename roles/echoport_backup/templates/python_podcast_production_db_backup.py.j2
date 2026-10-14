@@ -410,15 +410,15 @@ def probe_remote_directory(remote_host: str, remote_user: str, path: str) -> str
     backup.
     """
     quoted = shlex.quote(path)
-    result = ssh(
-        remote_host,
-        remote_user,
+    # The remote login shell may be fish, which cannot parse if/then/fi, so
+    # the probe runs under sh.
+    script = (
         f"if test -L {quoted}; then echo symlink; "
         f"elif test -d {quoted}; then echo present; "
         f"elif test -e {quoted}; then echo notdir; "
-        f"else echo missing; fi",
-        check=False,
+        f"else echo missing; fi"
     )
+    result = ssh(remote_host, remote_user, f"sh -c {shlex.quote(script)}", check=False)
     state = result.stdout.strip()
     if result.returncode != 0 or state not in ("present", "missing", "symlink", "notdir"):
         raise RuntimeError(
