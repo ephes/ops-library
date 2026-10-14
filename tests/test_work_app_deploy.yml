@@ -247,6 +247,7 @@
   vars:
     backup_text: "{{ lookup('file', playbook_dir ~ '/../roles/work_app_backup/tasks/main.yml') }}"
     restore_text: "{{ lookup('file', playbook_dir ~ '/../roles/work_app_restore/tasks/main.yml') }}"
+    shared_defaults: "{{ lookup('file', playbook_dir ~ '/../roles/work_app_shared/defaults/main.yml') }}"
 
   tasks:
     - name: Assert stop failures abort and integrity is checked
@@ -260,3 +261,6 @@
           - restore_text.index('Stop Work app service prior to restore') < restore_text.index('Restore SQLite database')
           # integrity_check output must be exactly "ok"
           - "\"(work_app_restore_sqlite_check.stdout | trim) != 'ok'\" in restore_text"
+          # the pre-restore copy is kept by default and its path reported
+          - "'work_app_restore_safe_snapshot_delete: false' in shared_defaults"
+          - restore_text.index('Cleanup safety snapshot') < restore_text.index('Report retained safety snapshot')

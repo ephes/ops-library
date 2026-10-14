@@ -470,3 +470,19 @@
         - work_app_restore_safe_snapshot_delete | bool
         - work_app_restore_safety_dir | length > 0
         - work_app_restore_success | bool
+
+    - name: "Check for a retained safety snapshot"
+      ansible.builtin.stat:
+        path: "{{ work_app_restore_safety_dir }}"
+      register: work_app_restore_safety_stat
+      when: work_app_restore_safety_dir | length > 0
+
+    - name: "Report retained safety snapshot"
+      ansible.builtin.debug:
+        msg: >-
+          Pre-restore copy of {{ work_app_site_path }} (database and .env included) kept at
+          {{ work_app_restore_safety_dir }}. The role does not remove it; prune it by hand
+          once the restored Work app is confirmed.
+      when:
+        - work_app_restore_safety_dir | length > 0
+        - work_app_restore_safety_stat.stat.exists | default(false)

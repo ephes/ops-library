@@ -18,7 +18,19 @@ work_app_restore_dry_run: false
 work_app_restore_allow_version_mismatch: false
 work_app_restore_restore_env: true
 work_app_restore_create_safe_snapshot: true
+work_app_restore_safe_snapshot_delete: false   # true deletes the pre-restore copy after success
 ```
+
+## Pre-restore copy
+
+Before anything is replaced the role copies the stopped site directory
+(`/home/work/site` by default, including `db.sqlite3` and `.env`) to
+`<work_app_site_path>.pre-restore-<timestamp>`, for example
+`/home/work/site.pre-restore-20261014T153000` (host local time). The copy is kept after a
+successful restore as well as after a failed one, and the final task reports
+its path. Nothing prunes these copies: inspect them and delete old ones by
+hand. Set `work_app_restore_safe_snapshot_delete: true` to delete the copy
+after a successful restore instead.
 
 ## License
 
