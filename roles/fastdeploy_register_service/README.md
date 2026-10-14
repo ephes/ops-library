@@ -170,9 +170,19 @@ ansible-playbook -i inventories/prod/hosts.yml playbooks/site.yml -l localhost -
 ```
 
 8. Progress is emitted as NDJSON on stdout. If FastDeploy supplied callback URLs and a token, the
-   runner also sends best-effort HTTP updates.
+   runner also sends best-effort HTTP updates. Step states are limited to `running`, `success`,
+   and `failure`, as required by the FastDeploy API.
+9. Systemd verification is advisory: an inactive unit reports `success` with a message starting
+   with `WARNING:` that includes the unit name and its systemd state. The deployment still finishes
+   successfully. Set `verify.systemd_service` to an empty string to skip verification.
 
 ## Validation
+
+The runner state contract and rendered verification paths can be checked without host access:
+
+```bash
+just test-fastdeploy-runner-step-states
+```
 
 Focused Molecule coverage for this role lives under:
 

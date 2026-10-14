@@ -3,6 +3,17 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — FastDeploy runner step states (2.31.35)
+
+- `fastdeploy_register_service`: advisory systemd verification now reports `success` with a
+  `WARNING:` message containing the unit name and systemd state when the unit is inactive.
+  The former `warning` state was rejected by FastDeploy's API with HTTP 422. Regression tests
+  audit step-state literals across the runner templates and helpers and exercise rendered
+  verification paths; only `running`, `success`, and `failure` are emitted.
+- `fastdeploy_register_service` Molecule scenario: the mock `secrets/prod/*.yml`
+  fixtures it seeds are now committed (the repository's `secrets/` ignore rule had
+  kept them out), so the scenario runs from a fresh clone.
+
 ## Unreleased — Per-target MinIO backup accounts, mc aliases without credentials on the command line (2.31.34)
 
 - `minio_deploy`: new entry point `tasks_from: backup_account`. It creates or
