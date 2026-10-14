@@ -1,0 +1,65 @@
+---
+# Prepare deploys the relay once with recipient rewrites enabled and checks
+# that state. Converge then switches to the final configuration (rewrites off,
+# filtering features on), so the scenario still covers the rewrites-on path and
+# the on-to-off transition, while idempotence re-runs only the final
+# configuration instead of flipping between two.
+- name: Prepare
+  hosts: all
+  become: true
+
+  vars:
+    mail_relay_domains:
+      - "example.test"
+    mail_relay_backend_host: "smtp.example.test"
+    mail_relay_sasl_password: "relay-password"
+    mail_relay_greylisting_enabled: false
+    mail_relay_tls_enabled: false
+    mail_relay_smtpd_tls_security_level: "none"
+    mail_relay_mynetworks:
+      - "127.0.0.0/8"
+      - "[::1]/128"
+    mail_relay_recipient_rewrites:
+      - from: "@wersdörfer.de"
+        to: "@xn--wersdrfer-47a.de"
+
+  tasks:
+    - name: Prepare | Install Postfix dependencies
+      ansible.builtin.apt:
+        name: postfix
+        state: present
+        update_cache: true
+
+    - name: Prepare | Apply role with recipient rewrites enabled
+      ansible.builtin.include_role:
+        name: mail_relay_deploy
+
+    - name: Prepare | Flush handlers after enabled run
+      ansible.builtin.meta: flush_handlers
+
+    - name: Prepare | Recipient canonical map contains domain rewrite
+      ansible.builtin.command: grep "@xn--wersdrfer-47a.de" /etc/postfix/recipient_canonical
+      changed_when: false
+
+    - name: Prepare | Check recipient canonical db exists when rewrites enabled
+      ansible.builtin.stat:
+        path: /etc/postfix/recipient_canonical.db
+      register: canonical_db_stat
+
+    - name: Prepare | Assert recipient canonical db exists
+      ansible.builtin.assert:
+        that:
+          - canonical_db_stat.stat.exists
+          - canonical_db_stat.stat.size | int > 0
+        fail_msg: "/etc/postfix/recipient_canonical.db missing or empty when rewrites are enabled"
+
+    - name: Prepare | Check main.cf has recipient canonical maps when rewrites enabled
+      ansible.builtin.command: grep "^recipient_canonical_maps = hash:/etc/postfix/recipient_canonical$" /etc/postfix/main.cf
+      register: canonical_maps_enabled_grep
+      changed_when: false
+
+    - name: Prepare | Assert recipient canonical maps configured when rewrites enabled
+      ansible.builtin.assert:
+        that:
+          - canonical_maps_enabled_grep.rc == 0
+        fail_msg: "recipient_canonical_maps missing from /etc/postfix/main.cf when rewrites are enabled"

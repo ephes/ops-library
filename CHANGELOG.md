@@ -3,6 +3,16 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Meaningful idempotence check for the mail relay Molecule scenario (2.31.42)
+
+- `mail_relay_deploy` Molecule scenario: the rewrites-on deployment and its
+  checks moved from `converge.yml` into a new `prepare.yml`, and `converge.yml`
+  applies only the final configuration (rewrites off; recipient verification,
+  postscreen and submission spam discard on). Converge used to apply both
+  configurations, so the idempotence step flipped between them and always
+  failed. The scenario still covers the rewrites-on state and the switch to
+  the final state; the role itself is unchanged.
+
 ## Unreleased — Scoped MinIO accounts for media runners, Echoport cleanup and the Daybook bridge (2.31.41)
 
 - `minio_deploy` (`tasks_from: backup_account`): two new switches.
