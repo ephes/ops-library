@@ -5,7 +5,8 @@ Every member must sit below one of the allowed top-level directories, use a
 relative path without "..", and be a regular file, directory, symlink or
 hardlink; a top-level entry itself must be a directory. Symlink and hardlink
 targets, resolved through all symlinks in the archive, must stay inside the
-member's own top-level directory, and no member may be stored below a symlink
+member's own top-level directory, no hardlink may point (directly or through
+other hardlinks) at a symlink, and no member may be stored below a symlink
 member.
 Prints ``ARCHIVE_TOPS <json list>`` with the top-level directories present.
 """
@@ -98,10 +99,20 @@ def validate(path, allowed):
         # cannot leave the tree even when each link looks harmless alone.
         if not inside(resolve(name, links), top):
             raise ValueError(f"symlink leaves {top}/: {name!r}")
+    hardlink_targets = dict(hardlinks)
     for name, target in hardlinks:
         top = name.split("/")[0]
         if not inside(resolve(target, links), top):
             raise ValueError(f"hardlink leaves {top}/: {name!r}")
+        # A hardlink to a symlink extracts as a copy of that symlink at the
+        # hardlink's own location, where its relative target means something
+        # else. Follow hardlink chains and refuse any that ends at a symlink.
+        seen = {name}
+        while target in hardlink_targets and target not in seen:
+            seen.add(target)
+            target = hardlink_targets[target]
+        if target in links:
+            raise ValueError(f"hardlink to a symlink: {name!r}")
     if not tops:
         raise ValueError("archive has no members")
     return tops

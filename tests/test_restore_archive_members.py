@@ -179,6 +179,34 @@ class BadMemberTests(unittest.TestCase):
             ("letsencrypt/x", tarfile.LNKTYPE, "letsencrypt/up/victim"),
         )
 
+    def test_hardlink_to_symlink(self):
+        # Extracted, the hardlink becomes a second symlink with the same
+        # relative target, which resolves differently at its own location.
+        self.assert_rejected(
+            "hardlink to a symlink",
+            ("letsencrypt/sub", tarfile.DIRTYPE, ""),
+            ("letsencrypt/sub/s", tarfile.SYMTYPE, "file"),
+            ("letsencrypt/alias", tarfile.LNKTYPE, "letsencrypt/sub/s"),
+        )
+
+    def test_hardlink_chain_to_symlink(self):
+        self.assert_rejected(
+            "hardlink to a symlink",
+            ("letsencrypt/sub", tarfile.DIRTYPE, ""),
+            ("letsencrypt/sub/s", tarfile.SYMTYPE, "file"),
+            ("letsencrypt/sub/first", tarfile.LNKTYPE, "letsencrypt/sub/s"),
+            ("letsencrypt/second", tarfile.LNKTYPE, "letsencrypt/sub/first"),
+        )
+
+    def test_hardlink_to_regular_file_is_accepted(self):
+        archive = self.build(
+            ("letsencrypt/file", tarfile.REGTYPE, ""),
+            ("letsencrypt/copy", tarfile.LNKTYPE, "letsencrypt/file"),
+        )
+        result = check(archive, "letsencrypt")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('ARCHIVE_TOPS ["letsencrypt"]', result.stdout)
+
     def test_top_level_entry_must_be_directory(self):
         self.assert_rejected("not a directory", ("letsencrypt", tarfile.REGTYPE, ""))
 
@@ -249,6 +277,23 @@ class RoleWiringTests(unittest.TestCase):
             if task.get("ansible.builtin.file", {}).get("state") == "absent":
                 self.assertIn("staging", str(task))
                 self.assertNotIn("pre-restore", str(task))
+
+    def test_replaced_directory_takes_metadata_from_the_pre_restore_copy(self):
+        # Emptying a copied mount point resets its mode and owner, so both the
+        # renamed and the copied pre-restore copy are the metadata reference.
+        tasks = yaml.safe_load(
+            (
+                ROOT
+                / "roles/restore_preserve_internal/tasks/replace_from_archive_top.yml"
+            ).read_text()
+        )
+        move = next(task for task in tasks if "ansible.builtin.shell" in task)
+        reference = " ".join(move["environment"]["REF"].split())
+        self.assertIn(
+            "restore_preserve_report.path if restore_preserve_report.method in "
+            "['rename', 'copy']",
+            reference,
+        )
 
 
 if __name__ == "__main__":

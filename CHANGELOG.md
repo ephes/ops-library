@@ -9,7 +9,7 @@
   `certbot_dns_backup` stores members as `letsencrypt/...`, so it created
   `/letsencrypt` and left `/etc/letsencrypt` unchanged. The role now checks
   every member before anything changes (relative paths below `letsencrypt/`,
-  no `..`, symlinks inside the tree), extracts into a staging directory next
+  no `..`, symlinks inside the tree, no hardlinks to symlinks), extracts into a staging directory next
   to `/etc/letsencrypt`, keeps the current directory as
   `/etc/letsencrypt.pre-restore-<timestamp>-<suffix>` and moves the restored
   tree into place. The copy is reported and never removed by the role. The

@@ -33,14 +33,16 @@ below it). The tasks:
 1. run `files/archive_members.py`, which fails unless every member is a
    relative path below an allowed name, without `..`, and a regular file,
    directory, symlink or hardlink whose target, resolved through every
-   symlink in the archive, stays inside its own directory, with no member
-   stored below a symlink and every top-level entry a directory. Nothing has
+   symlink in the archive, stays inside its own directory, with no hardlink
+   to a symlink (directly or through other hardlinks), no member stored below
+   a symlink and every top-level entry a directory. Nothing has
    changed at this point;
 2. extract into a `.restore-staging-*` directory inside `restore_archive_root`
    and check that every staged top-level entry is a directory;
 3. for each directory present in the archive, preserve the live directory as
    described above and move the staged contents into the emptied directory,
-   which keeps its owner and mode;
+   which gets the owner and mode of its pre-restore copy (of the staged
+   directory when there was no live directory);
 4. remove the staging directory, also after a failure.
 
 `restore_archive_reports` lists one preservation report per directory. A

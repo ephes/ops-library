@@ -11,8 +11,8 @@ restored state.
 The archive stores the directory by name (`letsencrypt/live/...`). The role:
 
 1. checks every archive member before anything changes: it must be a relative path below
-   `letsencrypt/` (the basename of `certbot_dns_dir`) without `..`, and symlinks must stay
-   inside that tree. A bad archive fails here and leaves the host untouched;
+   `letsencrypt/` (the basename of `certbot_dns_dir`) without `..`, symlinks must stay
+   inside that tree and no hardlink may point at a symlink. A bad archive fails here and leaves the host untouched;
 2. extracts into a `.restore-staging-*` directory next to `certbot_dns_dir`;
 3. keeps the current directory as `/etc/letsencrypt.pre-restore-<UTC timestamp>-<suffix>`
    and moves the restored tree into `/etc/letsencrypt`;

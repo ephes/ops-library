@@ -9,9 +9,11 @@
   ansible.builtin.set_fact:
     restore_archive_reports: "{{ restore_archive_reports + [restore_preserve_report] }}"
 
-# The live directory keeps its own owner and mode: a renamed pre-restore copy
-# carries them, a copied mount point kept its own, and a directory that did
-# not exist takes them from the staged directory.
+# The live directory keeps its own owner and mode, taken from the pre-restore
+# copy: a renamed copy is the old directory, and a copied mount point's copy
+# was verified identical including the top directory's metadata (emptying the
+# mount resets it). A directory that did not exist takes them from the staged
+# directory.
 - name: replace_from_archive_top | Move staged directory contents into place
   ansible.builtin.shell: |
     set -euo pipefail
@@ -33,7 +35,7 @@
     LIVE: "{{ restore_archive_root }}/{{ restore_archive_top }}"
     STAGED: "{{ restore_archive_staging.path }}/{{ restore_archive_top }}"
     REF: >-
-      {{ restore_preserve_report.path if restore_preserve_report.method == 'rename'
+      {{ restore_preserve_report.path if restore_preserve_report.method in ['rename', 'copy']
          else (restore_archive_staging.path ~ '/' ~ restore_archive_top)
          if restore_preserve_report.method == 'absent' else '' }}
   changed_when: true
