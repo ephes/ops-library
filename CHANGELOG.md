@@ -3,6 +3,28 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Echoport runner for the mail database (2.32.1)
+
+- New `echoport_backup/templates/mail_db_backup.py.j2`: a service-owned
+  Echoport runner for the whole `mail` PostgreSQL database (Postfix, Dovecot
+  and PostfixAdmin tables). The backup runs `pg_dump --format=custom` as the
+  local `postgres` user, checks with `pg_restore --list` that every table in
+  `mail_db_echoport_backup_required_tables` has data in the dump, records row
+  counts, the server version and checksums in `manifest.json` /
+  `manifest.sha256`, uploads one tarball and compares the stored size. A
+  failed or empty dump, a missing table or a size mismatch fails the run.
+- Its restore never touches the live database: it verifies the archive and
+  the dump, creates a new scratch database `<prefix>_<restore id>` (refusing
+  an existing one), restores into it with `--no-owner --no-privileges
+  --exit-on-error` and compares the row counts with the manifest. Putting the
+  data back into `mail` is an attended step (ops-control
+  `docs/MAIL_DB_BACKUP_RESTORE_ECHOPORT.md`).
+- Template variables (set by ops-control `register-mail-db-backup.yml`):
+  `mail_db_echoport_backup_db_name`, `_postgres_os_user`,
+  `_restore_db_prefix`, `_required_tables`, `_counted_tables`, plus the
+  shared `echoport_backup_*` MinIO settings. Tested by
+  `just test-mail-db-echoport-backup`.
+
 ## Unreleased — Nyxmon can run the Rust monitoring agent (2.32.0)
 
 - `nyxmon_deploy`: new `nyxmon_agent_impl` (`python`, the default, or
@@ -64,7 +86,6 @@
 - The `postfixadmin_backup` README no longer claims that `mail_backup` covers
   the mail tables; it names the whole-database dumps that do.
 
-||||||| parent of 31d3f313 (Let nyxmon_deploy install and select the Rust monitoring agent)
 ## Unreleased — FastDeploy and Nyxmon deploys no longer restart Traefik (2.31.47)
 
 - `fastdeploy_deploy` and `nyxmon_deploy` no longer restart Traefik after
