@@ -352,9 +352,8 @@ If deployments fail, check:
 
 ## Handlers
 
-This role provides the following handlers:
-
-- `restart traefik` - Restarts Traefik when the FastDeploy dynamic config changes
+This role provides no handlers. Traefik watches `/etc/traefik/dynamic` and
+loads a changed FastDeploy config without a restart.
 
 ## Tags
 

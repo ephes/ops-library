@@ -1,7 +1,4 @@
 ---
-# Handlers for FastDeploy deployment
-
-- name: restart traefik
-  systemd:
-    name: traefik
-    state: restarted
+# Handlers for FastDeploy deployment. None: Traefik loads the dynamic config
+# itself because it watches /etc/traefik/dynamic.
+[]

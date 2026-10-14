@@ -14,7 +14,9 @@
     webapp_deploy_internal_traefik_password_hash_var: nyxmon_basic_auth_password_hash
     webapp_deploy_internal_traefik_auth_packages: []
     webapp_deploy_internal_traefik_auth_package_os_families: []
-    webapp_deploy_internal_traefik_notify_handlers:
-      - reload traefik
+    # Traefik watches /etc/traefik/dynamic and loads the change itself. A
+    # restart drops every route on the host for a few seconds, and the basic
+    # auth hash is new on every run, so it would restart Traefik on every deploy.
+    webapp_deploy_internal_traefik_notify_handlers: []
     webapp_deploy_internal_traefik_service_name: traefik
     webapp_deploy_internal_traefik_force_restart: false

@@ -29,9 +29,3 @@
     name: "{{ nyxmon_monitoring_service_name | regex_replace('\\.service$', '') }}"
     state: restarted
   when: nyxmon_monitoring_enabled
-
-- name: reload traefik
-  systemd:
-    name: traefik
-    state: restarted
-  ignore_errors: true  # Traefik might not be installed or might not support reload
