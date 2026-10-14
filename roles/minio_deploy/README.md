@@ -179,6 +179,8 @@ target, after the bootstrap has configured the admin alias
 | `minio_backup_account_bucket` | `backups` | Bucket the account works in. |
 | `minio_backup_account_prefixes` | `[<name>]` | Key prefixes the account may use. |
 | `minio_backup_account_allow_delete` | `false` | Also allow `s3:DeleteObject` below the prefixes. |
+| `minio_backup_account_allow_put` | `true` | Allow `s3:PutObject`. `false` for an account that only reads and deletes. |
+| `minio_backup_account_whole_bucket` | `false` | Grant the object actions and listing on the whole bucket instead of the prefixes. |
 | `minio_backup_account_policy_dir` | `/etc/minio/policies` | Where the policy document is kept on the host. |
 
 The policy allows `s3:GetObject` and `s3:PutObject` on
@@ -188,6 +190,13 @@ prefixes, and `s3:GetBucketLocation`. That covers `mc cp` in both directions
 account cannot list or read another prefix or bucket, delete anything, or use
 the admin API. It can overwrite its own objects; enable bucket versioning if
 that matters.
+
+A retention job that expires archives of every target (Echoport's cleanup)
+gets an account of its own with `minio_backup_account_whole_bucket: true`,
+`minio_backup_account_allow_delete: true` and
+`minio_backup_account_allow_put: false`: it may list the whole bucket, read
+(`mc stat`) and delete any object in it, but not write, touch another bucket
+or use the admin API.
 
 The tasks are idempotent. The policy is written to the server and
 `mc admin user add` runs on every pass, so a failed earlier run, a change made

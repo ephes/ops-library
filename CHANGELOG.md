@@ -3,6 +3,29 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Scoped MinIO accounts for media runners, Echoport cleanup and the Daybook bridge (2.31.41)
+
+- `minio_deploy` (`tasks_from: backup_account`): two new switches.
+  `minio_backup_account_whole_bucket: true` grants listing and the object
+  actions on the whole bucket instead of the prefixes, and
+  `minio_backup_account_allow_put: false` drops `s3:PutObject`. Together with
+  `minio_backup_account_allow_delete: true` they describe a retention account
+  that lists, reads and deletes but never writes, which is what Echoport's
+  cleanup needs instead of the MinIO root credentials. The defaults render the
+  existing policy documents byte for byte.
+- `echoport_deploy`: the cleanup user's mc alias is written with
+  `mc alias import` on stdin instead of `mc alias set`, so the credentials no
+  longer appear in the host's process list. Its entry leaves
+  `scripts/secret_exposure_allowlist.json`.
+- `echoport_backup` media runners (`homepage_media_backup.py.j2`,
+  `python_podcast_media_backup.py.j2`): the manifest upload runs
+  `rclone copyto --no-check-dest`. The key is new on every run, so the skipped
+  HEAD probe compared nothing, and the upload stays within what a
+  prefix-scoped MinIO account may do. `rclone copy` of the objects still
+  compares, so runs stay incremental.
+- `daybook_operations_api_backup` (`register_echoport`): the mc alias may
+  contain `_`, as the scoped alias `backup-daybook_operations_api` does.
+
 ## Unreleased — Graphyard deploys no longer restart Grafana every run (2.31.40)
 
 - `graphyard_auth_bootstrap_deploy`: the Grafana datasource provisioning

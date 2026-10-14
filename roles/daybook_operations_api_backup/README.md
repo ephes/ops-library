@@ -61,7 +61,10 @@ attended import/rollback validation remain required before production acceptance
 ## Echoport registration
 
 Include this role with `tasks_from: register_echoport` after the API, FastDeploy,
-Echoport and root mc alias exist. The default schedule is empty for manual
+Echoport and root's mc alias `daybook_operations_api_backup_alias` exist. The
+alias may be a scoped account limited to the `daybook_operations_api/` prefix
+(for example `backup-daybook_operations_api`): the bridge only uploads and
+reads back its own archive. The default schedule is empty for manual
 validation. Set the schedule only after upload/restore and off-host replication
 checks. Echoport owns scheduling and remote retention; no additional timer is
 installed.
@@ -108,7 +111,7 @@ A hard kill or host crash can leave private `echoport-*`/`upload-*` directories:
 pause and drain the target, verify no bridge child remains, and remove only those
 identified stale directories from the two configured roots. There is no automatic
 sweep of uncertain work. Existing manual
-lifecycle archives remain operator-managed. The root mc alias's credentials never
+lifecycle archives remain operator-managed. The mc alias's credentials never
 enter the service process, request context or output. Failed uploads may leave an
 unreferenced remote object for operator inspection; the runner never deletes
 remote objects on an ambiguous failure.

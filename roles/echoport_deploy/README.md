@@ -80,11 +80,18 @@ echoport_health_overdue_grace_minutes: ""  # ECHOPORT_HEALTH_OVERDUE_GRACE_MINUT
   When `echoport_cleanup_enabled` is true the role requires
   `echoport_minio_url`, `echoport_minio_access_key` and
   `echoport_minio_secret_key`, configures the alias for `echoport_user`
-  (idempotently, only when URL or credentials differ), verifies it can list
-  `echoport_minio_verify_bucket`, and writes `MINIO_MC_PATH` / `MINIO_ALIAS`
+  (idempotently, only when URL or credentials differ, with `mc alias import`
+  on stdin so the credentials never appear on a command line), verifies it can
+  list `echoport_minio_verify_bucket`, and writes `MINIO_MC_PATH` / `MINIO_ALIAS`
   into the application `.env`. Without this alias every scheduled deletion
   fails and `mc` reports a missing local path; check
   `/home/echoport/logs/cleanup.log` for `Complete with errors`.
+- The alias needs no admin rights: listing the bucket, `mc stat` and `mc rm`
+  of any object in it are enough. `minio_deploy` (`tasks_from: backup_account`
+  with `minio_backup_account_whole_bucket: true`,
+  `minio_backup_account_allow_delete: true`,
+  `minio_backup_account_allow_put: false`) creates such an account, so the
+  MinIO root credentials are not needed here.
 
 ## Example
 
