@@ -8,3 +8,14 @@
     owner: "{{ fastdeploy_user }}"
     group: "{{ fastdeploy_group }}"
     mode: '0600'  # Only the FastDeploy service owner needs access
+
+- name: environment | Render management shell environment
+  ansible.builtin.template:
+    src: fastdeploy.env.j2
+    dest: "{{ fastdeploy_site_path }}/.env.shell"
+    owner: "{{ fastdeploy_user }}"
+    group: "{{ fastdeploy_group }}"
+    mode: "0600"
+  vars:
+    task_shell_environment: true
+  no_log: true

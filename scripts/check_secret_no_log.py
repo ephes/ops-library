@@ -19,12 +19,10 @@ and reports:
   (``{{ admin_password }}``, ``{{ rcon_password }}``, ...) into the command
   line or into ``stdin``.
 
-A secret on a command line is also visible in the process list while the
-command runs, which ``no_log`` does not fix: pass it through ``stdin:`` (best)
-or ``environment:`` instead, and set ``no_log: true`` on that task as well.
-Ansible puts task environment variables on the remote shell's command line, so
-``-vvv`` connection output still shows them; use it only when the program
-cannot read the secret from stdin.
+A secret on a command line or in task ``environment:`` is also exposed by
+remote shell argv/connection logging, regardless of ``no_log``. The additional
+``--exposure`` check rejects these delivery paths even when logging is hidden.
+Use stdin (with no_log) or a private 0600 file read inside the remote command.
 
 Such a task must have ``no_log: true``, set on the task itself or inherited
 from an enclosing block or play. A templated ``no_log`` does not count: it can
@@ -37,6 +35,7 @@ from __future__ import annotations
 
 import re
 import sys
+from collections import Counter
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -53,7 +52,7 @@ COMMAND_MODULES = {
 }
 
 SENSITIVE_HEADER = re.compile(
-    r"authorization|token|api[-_]?key|secret|cookie|password", re.IGNORECASE
+    r"authorization|token|api[-_]?key|secret|cookie|password|passphrase", re.IGNORECASE
 )
 SECRET_WORD = r"(?:password|passwd|secret|token|api_key|apikey|private_key|access_key)"
 # A Jinja expression mentioning a secret-named variable. Names that only point
@@ -198,13 +197,15 @@ def credential_reason(task: dict) -> str | None:
         # login_password is redacted by the module; query arguments and rows
         # are not. Password hashes are credentials too.
         for name, value in pairs:
-            if name in {"query", "named_args", "positional_args"}:
-                if SENSITIVE_HEADER.search(str(value)) or re.search(
+            if name in {"query", "named_args", "positional_args"} and (
+                SENSITIVE_HEADER.search(str(value))
+                or re.search(
                     r"\b(?:from|into|update)\s+[\"]?(?:admin|mail_users|mailbox)\b",
                     str(value),
                     re.IGNORECASE,
-                ):
-                    return "queries password-bearing data"
+                )
+            ):
+                return "queries password-bearing data"
         if raws:
             return "takes query arguments in free-form form"
         return None
@@ -230,6 +231,107 @@ def credential_reason(task: dict) -> str | None:
     if any(_renders_secret_variable(value) for value in stdin):
         return "renders a secret-named variable into stdin"
     return None
+
+
+def _renders_exposure_secret(value: Any) -> bool:
+    if isinstance(value, dict):
+        return any(_renders_exposure_secret(v) for v in value.values())
+    if isinstance(value, list):
+        return any(_renders_exposure_secret(v) for v in value)
+    if not isinstance(value, str):
+        return False
+    pattern = re.compile(
+        r"\b\w*(?:password|passwd|passphrase|secret|token|api_key|apikey|private_key|access_key)\w*\b"
+        r"(?<!_file)(?<!_path)(?<!_dir)(?<!_name)",
+        re.IGNORECASE,
+    )
+    return any(
+        pattern.search(STRING_LITERAL.sub("''", expr))
+        for expr in JINJA_EXPR.findall(value)
+    )
+
+
+def exposure_reason(task: dict, environment: Any = None) -> str | None:
+    """Reject credentials in connection-level environment or process arguments.
+
+    Unlike credential_reason, no_log never suppresses these findings. stdin
+    and credential-file module content remain covered by their logging/mode
+    checks; a path is not a credential.
+    """
+    if environment is None:
+        environment = task.get("environment")
+    if isinstance(environment, dict):
+        for key, value in environment.items():
+            if value in (None, ""):
+                continue
+            if _renders_exposure_secret(value) or (
+                SENSITIVE_HEADER.search(str(key))
+                and not str(key).upper().endswith(("_FILE", "_PATH", "_DIR"))
+            ):
+                return "puts a credential in task environment"
+    elif _renders_exposure_secret(environment):
+        return "builds task environment from a credential"
+    found = _module(task)
+    if found is None or found[0] not in COMMAND_MODULES:
+        return None
+    _, pairs, raws = found
+    texts = list(raws) + [value for name, value in pairs if name in {"cmd", "argv"}]
+    if any(_renders_exposure_secret(value) for value in texts):
+        return "puts a secret-named variable in command arguments"
+    if any(COMMAND_CREDENTIAL.search(str(value)) for value in texts):
+        return "puts an Authorization/Bearer credential in command arguments"
+    return None
+
+
+def iter_exposure_findings(
+    data: Any, environment: Any = None
+) -> Iterator[tuple[str, str]]:
+    if isinstance(data, list):
+        for item in data:
+            yield from iter_exposure_findings(item, environment)
+        return
+    if not isinstance(data, dict):
+        return
+    current = data.get("environment", environment)
+    if isinstance(current, dict) and isinstance(environment, dict):
+        current = {**environment, **current}
+    children = [
+        key
+        for key in (
+            "block",
+            "rescue",
+            "always",
+            "tasks",
+            "pre_tasks",
+            "post_tasks",
+            "handlers",
+        )
+        if key in data
+    ]
+    if not children:
+        reason = exposure_reason(data, current)
+        if reason:
+            yield str(data.get("name", "<unnamed task>")), reason
+    for key in children:
+        yield from iter_exposure_findings(data[key], current)
+
+
+def exposure_scan(paths: list[Path]) -> list[tuple[str, str, str]]:
+    """Return exact file/task/reason identities for rollout and regression checks."""
+    findings = []
+    for path in paths:
+        shown = str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path)
+        try:
+            documents = _load(path)
+        except (OSError, UnicodeError, yaml.YAMLError) as error:
+            findings.append((shown, "<parse failure>", str(error)))
+            continue
+        for document in documents:
+            findings.extend(
+                (shown, name, reason)
+                for name, reason in iter_exposure_findings(document)
+            )
+    return findings
 
 
 def _no_log(node: dict, inherited: bool) -> bool:
@@ -321,6 +423,37 @@ def default_paths() -> list[Path]:
 
 
 def main(argv: list[str]) -> int:
+    if "--exposure" in argv:
+        import json
+
+        argv = [arg for arg in argv if arg != "--exposure"]
+        paths = [Path(arg).resolve() for arg in argv] or default_paths()
+        baseline = json.loads(
+            (ROOT / "scripts/secret_exposure_allowlist.json").read_text()
+        )
+        allowed = Counter(
+            (entry["file"], entry["task"], entry["reason"]) for entry in baseline
+        )
+        problems = []
+        for finding in exposure_scan(paths):
+            if allowed[finding]:
+                allowed[finding] -= 1
+            else:
+                problems.append(finding)
+        if not argv:
+            for finding, remaining in allowed.items():
+                problems.extend(
+                    (finding[0], finding[1], "has a stale exposure allowlist entry")
+                    for _ in range(remaining)
+                )
+        for file, task, reason in problems:
+            remediation = (
+                "remove the stale entry from scripts/secret_exposure_allowlist.json"
+                if reason == "has a stale exposure allowlist entry"
+                else "use stdin or a 0600 file"
+            )
+            print(f"{file}: task {task!r} {reason}; {remediation}", file=sys.stderr)
+        return int(bool(problems))
     paths = [Path(arg).resolve() for arg in argv] or default_paths()
     problems = scan(paths)
     for problem in problems:
@@ -330,7 +463,7 @@ def main(argv: list[str]) -> int:
             f"\n{len(problems)} problem(s): tasks that send credentials need no_log: true. "
             "For uri, add no_log: true and print only status and json (not msg) "
             "of the registered result in a separate task. For command/shell, "
-            "move the secret off the command line (environment: or stdin:) and "
+            "move the secret off the command line (stdin or a 0600 file) and "
             "add no_log: true.",
             file=sys.stderr,
         )

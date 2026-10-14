@@ -104,3 +104,7 @@ dry-run behavior, package-backed UniFi version compatibility checks via the
 real `dpkg-query` path, mocked MongoDB restore replay, scaffold rescue ->
 rollback orchestration, and targeted rollback replay from a seeded filesystem +
 MongoDB safety snapshot with post-rollback verification.
+
+## Deferred credential transport
+
+MongoDB drop, restore, rollback and connection-verification commands still carry the password in argv through neutral aggregate facts. Process listings can expose it. Conditional no_log protects command results, including the verification task whose logging gap was corrected here; it does not fix argv exposure. Tasks marked ops-secrets-in-task-environment require a live restore/rollback rehearsal before replacing this transport with private config/scripts. Exact tasks and follow-up reasons are in scripts/secret_exposure_indirect_debt.json.

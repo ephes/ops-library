@@ -30,6 +30,7 @@
       - "--exclude=.ruff_cache"
       - "--exclude=.mypy_cache"
       - "--exclude=.env"
+      - "--exclude=/{{ archive_env_path | relpath(archive_site_path) }}.shell"
       - "--exclude=db.sqlite3"
       - "--exclude=archive-media/"
       - "--exclude=staticfiles/"

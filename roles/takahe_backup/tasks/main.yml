@@ -1,4 +1,5 @@
 ---
+
 - name: Capture Takahe version
   ansible.builtin.command:
     argv:
@@ -62,24 +63,73 @@
         takahe_backup_pg_dump_host_flag: "{{ (takahe_backup_postgres_host | default('') | string | length > 0) | ternary('--host=' ~ takahe_backup_postgres_host, '') }}"
         takahe_backup_pg_dump_port_flag: "{{ (takahe_backup_postgres_port | default('') | string | length > 0) | ternary('--port=' ~ takahe_backup_postgres_port, '') }}"
 
-    - name: Dump PostgreSQL database
-      ansible.builtin.shell: |
-        set -euo pipefail
-        {{ takahe_backup_postgres_dump_binary }} \
-          {{ takahe_backup_pg_dump_host_flag }} \
-          {{ takahe_backup_pg_dump_port_flag }} \
-          --username={{ takahe_backup_postgres_user }} \
-          --format={{ takahe_backup_postgres_format }} \
-          --compress={{ takahe_backup_postgres_compress }} \
-          --file "{{ takahe_backup_db_dump }}" \
-          {{ takahe_backup_postgres_database }}
-      args:
-        executable: /bin/bash
-      become: true
-      become_user: "{{ takahe_backup_postgres_become_user }}"
-      environment:
-        PGPASSWORD: "{{ takahe_backup_postgres_password }}"
-      no_log: "{{ (takahe_backup_postgres_password | default('') | length > 0) }}"
+    - name: main | Run Dump PostgreSQL database with a private passfile
+      block:
+        - name: main | Validate passfile password format
+          ansible.builtin.assert:
+            that:
+              - '"\n" not in (takahe_backup_postgres_password | default("") | string)'
+              - '"\r" not in (takahe_backup_postgres_password | default("") | string)'
+            fail_msg: PostgreSQL passfile passwords cannot contain line breaks.
+          when: not ansible_check_mode
+
+        - name: main | Allocate private passfile directory
+          ansible.builtin.tempfile:
+            state: directory
+            prefix: takahe_backup-pgpass-
+          register: takahe_backup_task_pgpass_1
+          become: true
+          become_user: "{{ takahe_backup_postgres_become_user }}"
+          changed_when: false
+          when:
+            - not ansible_check_mode
+            - (takahe_backup_postgres_password | default('') | string | length) > 0
+
+        - name: main | Render PostgreSQL passfile
+          ansible.builtin.template:
+            src: task-pgpass.j2
+            dest: "{{ takahe_backup_task_pgpass_1.path }}/pgpass"
+            mode: "0600"
+          vars:
+            task_pgpass_password: "{{ takahe_backup_postgres_password }}"
+          become: true
+          become_user: "{{ takahe_backup_postgres_become_user }}"
+          no_log: true
+          changed_when: false
+          when:
+            - not ansible_check_mode
+            - takahe_backup_task_pgpass_1.path is defined
+
+        - name: Dump PostgreSQL database
+          ansible.builtin.shell: |
+            set -euo pipefail
+            {{ takahe_backup_postgres_dump_binary }} \
+              {{ takahe_backup_pg_dump_host_flag }} \
+              {{ takahe_backup_pg_dump_port_flag }} \
+              --username={{ takahe_backup_postgres_user }} \
+              --format={{ takahe_backup_postgres_format }} \
+              --compress={{ takahe_backup_postgres_compress }} \
+              --file "{{ takahe_backup_db_dump }}" \
+              {{ takahe_backup_postgres_database }}
+          args:
+            executable: /bin/bash
+          become: true
+          become_user: "{{ takahe_backup_postgres_become_user }}"
+          environment:
+            PGPASSFILE: '{{ takahe_backup_task_pgpass_1.path ~ ''/pgpass'' if takahe_backup_task_pgpass_1.path is defined else omit }}'
+          no_log: "{{ (takahe_backup_postgres_password | default('') | length > 0) }}"
+
+      always:
+        - name: main | Remove private passfile directory
+          ansible.builtin.file:
+            path: "{{ takahe_backup_task_pgpass_1.path }}"
+            state: absent
+          become: true
+          become_user: "{{ takahe_backup_postgres_become_user }}"
+          changed_when: false
+          when:
+            - not ansible_check_mode
+            - takahe_backup_task_pgpass_1.path is defined
 
     - name: Sync Takahe media directory
       ansible.builtin.command:

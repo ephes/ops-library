@@ -283,3 +283,7 @@ grep postgrey /var/log/mail.log
 ## License
 
 MIT
+
+## Task credential handling
+
+SASL password creation and updates send the password through stdin, keeping it out of command arguments and Ansible task environment values. Existing notifications and change reporting are preserved.

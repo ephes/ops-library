@@ -130,14 +130,15 @@ class FediRestoreOrderTests(unittest.TestCase):
 
         # Rescue rolls back and never starts a service.
         block = find(tasks, f"Restore {Svc} with rollback")
-        rescue_names = [task["name"] for task in block["rescue"]]
+        rescue_tasks = flatten(block["rescue"], ("block",))
+        rescue_names = [task["name"] for task in rescue_tasks]
         self.assertIn("Roll back the database from the safety dump", rescue_names)
         self.assertIn("Roll back media and config files", rescue_names)
         for task in block["rescue"]:
             systemd = task.get("ansible.builtin.systemd")
             if systemd and "state" in systemd:
                 self.assertEqual(systemd["state"], "stopped")
-        db_rollback = shell_cmd(block["rescue"][rescue_names.index("Roll back the database from the safety dump")])
+        db_rollback = shell_cmd(rescue_tasks[rescue_names.index("Roll back the database from the safety dump")])
         self.assertIn("--single-transaction", db_rollback)
         final = block["rescue"][-1]["ansible.builtin.fail"]["msg"]
         self.assertIn("Safety dump:", final)

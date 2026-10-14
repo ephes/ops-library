@@ -1,4 +1,15 @@
 ---
+- name: validate | Validate PostgreSQL passfile passwords before restore
+  ansible.builtin.assert:
+    that:
+      - '"\n" not in (paperless_restore_postgres_admin_password | default("") | string)'
+      - '"\r" not in (paperless_restore_postgres_admin_password | default("") | string)'
+      - '"\n" not in (paperless_restore_postgres_password | default("") | string)'
+      - '"\r" not in (paperless_restore_postgres_password | default("") | string)'
+    fail_msg: PostgreSQL passfile passwords cannot contain line breaks.
+  when: not ansible_check_mode
+
+
 - name: Resolve requested archive input
   ansible.builtin.set_fact:
     paperless_restore_archive_input: "{{ paperless_restore_archive | default('latest') }}"

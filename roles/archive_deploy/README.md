@@ -131,3 +131,9 @@ fails with an unrecognized-argument error. Because the task is `no_log`, a
 separate task reports a failure with the command's return code and stderr.
 The task reports "changed" only when the user was created or the password
 actually changed.
+
+## Task credential handling
+
+Management commands source a rendered 0600 shell environment companion inside the remote shell, keeping credentials out of command arguments and task environment values. The companion uses the same template as the application env file, with shell quoting enabled only for the companion; the existing application/systemd env format is preserved. Command change reporting and check-mode skips are preserved.
+
+The deleting source sync protects the management companion at archive_env_path + ".shell" with a root-anchored exclusion relative to archive_site_path, preserving unchanged-deploy idempotence.

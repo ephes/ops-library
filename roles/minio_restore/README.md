@@ -63,3 +63,7 @@ See `defaults/main.yml` for the full reference.
 - When `minio_restore_create_safety_backup` is true, each existing data directory and the current config/systemd files are copied to `{{ minio_restore_safety_backup_prefix }}-<timestamp>` in `/tmp/minio-restore/`. Any failure during the restore triggers an automatic rollback from that snapshot.
 - Health checks target `http://<bind_host>:<api_port>/minio/health/live` by default; override `minio_restore_health_path` if you expose MinIO differently.
 - `mc` metadata imports use URL-encoded credentials and IPv6-safe hostnames; no aliases/config files are persisted on disk.
+
+## Deferred credential transport
+
+Metadata restore and verification still send credentials in MC_HOST environment values through helper facts. Process listings and Ansible connection logging can expose those values despite no_log. Tasks marked ops-secrets-in-task-environment require a live service restore rehearsal before replacing this transport with private configuration. Exact tasks and follow-up reasons are in scripts/secret_exposure_indirect_debt.json.

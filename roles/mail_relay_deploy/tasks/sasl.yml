@@ -28,8 +28,15 @@
   when: not ansible_check_mode
 
 - name: sasl | Create relay user in sasldb2
-  ansible.builtin.shell: |
-    echo "{{ mail_relay_sasl_password }}" | saslpasswd2 -c -u {{ mail_relay_hostname }} -p {{ mail_relay_sasl_user }}
+  ansible.builtin.command:
+    argv:
+      - saslpasswd2
+      - -c
+      - -u
+      - "{{ mail_relay_hostname }}"
+      - -p
+      - "{{ mail_relay_sasl_user }}"
+    stdin: "{{ mail_relay_sasl_password }}"
   no_log: true
   when:
     - not ansible_check_mode
@@ -37,8 +44,14 @@
   notify: Restart postfix
 
 - name: sasl | Update relay user password in sasldb2
-  ansible.builtin.shell: |
-    echo "{{ mail_relay_sasl_password }}" | saslpasswd2 -u {{ mail_relay_hostname }} -p {{ mail_relay_sasl_user }}
+  ansible.builtin.command:
+    argv:
+      - saslpasswd2
+      - -u
+      - "{{ mail_relay_hostname }}"
+      - -p
+      - "{{ mail_relay_sasl_user }}"
+    stdin: "{{ mail_relay_sasl_password }}"
   no_log: true
   changed_when: false
   when:
