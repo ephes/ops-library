@@ -168,7 +168,7 @@ class OperationsRoleTests(unittest.TestCase):
         self.assertIn("daybook_operations_runtime_mode in ['serve', 'host']", conditions)
         self.assertIn("daybook_operations_runtime_owner in ['root', 'user']", conditions)
         self.assertNotIn("'tick'", conditions)
-        self.assertIn("daybook_operations_runtime_action in ['install', 'replace', 'cutover', 'rollback', 'closeout']",
+        self.assertIn("daybook_operations_runtime_action in ['install', 'replace', 'cutover', 'rollback', 'closeout', 'stop', 'verify']",
                       conditions)
         self.assertIn("daybook_operations_runtime_workers.long < daybook_operations_runtime_workers.count",
                       conditions)

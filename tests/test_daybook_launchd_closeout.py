@@ -128,9 +128,10 @@ class RuntimeCloseoutTests(unittest.TestCase):
 
     def test_closeout_is_an_attended_action_that_starts_nothing(self):
         that = asserted(tasks(self.ROLE)[0])
-        self.assertIn("daybook_operations_runtime_action in ['install', 'replace', 'cutover', 'rollback', 'closeout']", that)
-        self.assertIn("daybook_operations_runtime_action == 'install' or daybook_operations_runtime_confirmed | bool", that)
-        self.assertIn("daybook_operations_runtime_action != 'closeout' or not daybook_operations_runtime_start | bool", that)
+        self.assertIn("daybook_operations_runtime_action in ['install', 'replace', 'cutover', 'rollback', 'closeout', 'stop', 'verify']", that)
+        # Only `install` and the read-only `verify` go without confirmation.
+        self.assertIn("daybook_operations_runtime_action in ['install', 'verify'] or daybook_operations_runtime_confirmed | bool", that)
+        self.assertIn("daybook_operations_runtime_action not in ['closeout', 'stop', 'verify'] or not daybook_operations_runtime_start | bool", that)
 
     def test_closeout_touches_nothing_but_the_saved_command_and_its_marker(self):
         items = tasks(self.ROLE)

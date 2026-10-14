@@ -3,10 +3,14 @@
   ansible.builtin.assert:
     that:
       - ansible_facts.system == 'Darwin'
-      - daybook_operations_runtime_action in ['install', 'replace', 'cutover', 'rollback', 'closeout']
-      - daybook_operations_runtime_action == 'install' or daybook_operations_runtime_confirmed | bool
+      - daybook_operations_runtime_action in ['install', 'replace', 'cutover', 'rollback', 'closeout', 'stop', 'verify']
+      # `verify` only reads; every other action but `install` changes a running machine.
+      - daybook_operations_runtime_action in ['install', 'verify'] or daybook_operations_runtime_confirmed | bool
       - not daybook_operations_runtime_start | bool or daybook_operations_runtime_confirmed | bool
-      - daybook_operations_runtime_action != 'closeout' or not daybook_operations_runtime_start | bool
+      - daybook_operations_runtime_action not in ['closeout', 'stop', 'verify'] or not daybook_operations_runtime_start | bool
+      - daybook_operations_runtime_status_sources | length > 0
+      - daybook_operations_runtime_status_sources | select('match', '^[a-z0-9][a-z0-9_-]{0,49}$') | list | length
+        == daybook_operations_runtime_status_sources | length
       # `replace` writes a disabled profile and starts nothing; the cutover that
       # follows it is what enables and starts, after its own guards.
       - daybook_operations_runtime_action != 'replace' or not daybook_operations_runtime_start | bool
@@ -100,6 +104,20 @@
   # Nothing else is touched: the supervisor keeps running under its keeper.
   ansible.builtin.meta: end_role
   when: daybook_operations_runtime_action == 'closeout'
+
+- name: Stop the hosted supervisor
+  ansible.builtin.include_tasks: stop.yml
+  when: daybook_operations_runtime_action == 'stop'
+
+- name: Verify the running supervisor
+  ansible.builtin.include_tasks: verify.yml
+  when: daybook_operations_runtime_action == 'verify'
+
+- name: Stop after stopping or verifying
+  # Neither installs code nor writes a profile: `stop` only quiesces, so that the
+  # code install and `replace` that follow find nothing running; `verify` reads.
+  ansible.builtin.meta: end_role
+  when: daybook_operations_runtime_action in ['stop', 'verify']
 
 - name: Install the pinned code where no other role does
   # Before the revision is verified below: on a fresh machine there is no

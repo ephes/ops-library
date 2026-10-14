@@ -100,3 +100,36 @@ daybook_operations_runtime_staged_plist: "{{ daybook_operations_runtime_install_
 daybook_operations_runtime_legacy_plist: "{{ daybook_operations_runtime_install_root }}/regular-importer.before-operations.plist"
 # Written by `action: closeout`; while it exists `rollback` refuses.
 daybook_operations_runtime_closeout_marker: "{{ daybook_operations_runtime_install_root }}/closed-out"
+# The sources `stop` and `verify` ask the server about (`operations status
+# --binding`). The machine holds no list of them, so the caller names the ones it
+# runs; a name the server does not answer for makes both refuse.
+daybook_operations_runtime_status_sources:
+  - "{{ daybook_operations_runtime_binding }}"
+# `stop`: the machine's run windows, as [{start: "HH:MM", end: "HH:MM"}] in
+# `stop_window_timezone`. A running supervisor is not stopped from
+# `stop_window_lead_minutes` before a window's start until its end, checked on the
+# machine's clock before the quiet waits and again right before the bootout. A
+# supervisor that is already stopped is never held back by them.
+daybook_operations_runtime_stop_windows: []
+daybook_operations_runtime_stop_window_lead_minutes: 0
+daybook_operations_runtime_stop_window_timezone: Europe/Berlin
+# `stop`: only the read-only checks, each once, and a report. Touches nothing.
+daybook_operations_runtime_stop_preflight: false
+# `stop`: how long to wait for the store to empty and every named source to have
+# no operation in flight before refusing (retries x delay seconds).
+daybook_operations_runtime_quiet_retries: 30
+daybook_operations_runtime_quiet_delay: 10
+# `stop`: how long to wait for the supervisor to exit after SIGTERM. A unit handed
+# out in between is finished, not cut short; a wait that runs out boots the keeper
+# back in.
+daybook_operations_runtime_stop_timeout: 300
+# `verify`: attempts, `poll_delay` seconds apart, for the keeper to bring the
+# supervisor up.
+daybook_operations_runtime_verify_retries: 12
+# Seconds between two looks while `stop` or `verify` waits for launchd, the
+# supervisor or the keeper.
+daybook_operations_runtime_poll_delay: 5
+daybook_operations_runtime_launchctl: /bin/launchctl
+daybook_operations_runtime_pgrep: /usr/bin/pgrep
+daybook_operations_runtime_kill: /bin/kill
+daybook_operations_runtime_date: /bin/date

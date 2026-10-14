@@ -57,13 +57,46 @@ keeper -- and does not take `start: true`. Recovery afterwards happens inside th
 model: the keeper repairs the supervisor, and a source that must stop is disabled
 on the server.
 
+`action: stop`, with `confirmed: true`, stops a supervisor that runs inside the
+capability host (mode `host`) so its code can be replaced, in the runbook's
+order: boot out the keeper label, send SIGTERM to exactly the `operations serve`
+processes found, and wait until they and the host's `supervisor` session are
+gone and the store holds nothing. SIGTERM makes the supervisor stop dispatching;
+each worker finishes the unit it owns and persists its receipt, and nothing kills
+it after a timeout, because launchd does not own it. It never sends SIGKILL,
+never kills a tmux session and never touches the capability host. It refuses,
+with nothing touched, without an Aqua session for the GUI user, without a running
+capability host, with a stop marker in the store, when its loaded label does not
+run `operations host-keep`, near or inside a run window
+(`daybook_operations_runtime_stop_windows`, from
+`stop_window_lead_minutes` before a window's start until its end, on the
+machine's clock, checked first and again right before the bootout; a window or
+lead crossing midnight is refused as a configuration), or when, after waiting
+up to `quiet_retries` x `quiet_delay` seconds, the store still holds a delivery
+or a source in `daybook_operations_runtime_status_sources` has an operation
+assigned or awaiting application. A supervisor that is already stopped is never
+held back. If anything fails once the keeper is booted out -- the supervisor does
+not exit within `daybook_operations_runtime_stop_timeout`, or leaves a record
+behind -- the keeper is enabled and bootstrapped again (only when the label's
+plist still holds the keeper's command) and the role fails: no code has been
+replaced, so the keeper adopts the supervisor still finishing or starts it again.
+`daybook_operations_runtime_stop_preflight: true` runs only the read-only checks,
+each once, and reports. `stop` ends the role before any code or profile changes;
+the code install, `replace` and `cutover` that follow find nothing running.
+
+`action: verify` is read-only: it requires the label loaded with the
+supervisor's command, `operations serve` running (in the `supervisor` session
+in mode `host`), the installed checkout at `daybook_operations_runtime_revision`,
+no stop marker, and `operations status` answering for every source in
+`daybook_operations_runtime_status_sources` with the profile enabled and the
+local state readable. It reports each source's server state and disposition.
+
 `cutover` and `rollback` never stop a running supervisor. Disabling a KeepAlive
 label does not stop it, and stopping it here could have launchd kill a long child
 at its exit timeout. With the supervisor's label loaded -- running or between
 runs, since KeepAlive would start it again -- they refuse at once and say so:
-quiesce it by hand first, as the ops-control runbook describes (no active
-operation, empty store, every source at least 90 seconds from due, then
-`launchctl bootout`). A legacy importer run still in progress is waited for, as
+quiesce it first with `action: stop` (mode `host`), or by hand as the ops-control
+runbook describes. A legacy importer run still in progress is waited for, as
 before. Optional `start: true` loads the
 legacy command only after the remote active slot has been reconciled. This does
 not restore an old ledger or delete API evidence. Failures after the label has been
@@ -231,6 +264,22 @@ daybook_operations_runtime_staged_plist: "{{ daybook_operations_runtime_install_
 daybook_operations_runtime_legacy_plist: "{{ daybook_operations_runtime_install_root }}/regular-importer.before-operations.plist"
 # Written by `action: closeout`; while it exists `rollback` refuses.
 daybook_operations_runtime_closeout_marker: "{{ daybook_operations_runtime_install_root }}/closed-out"
+# The sources `stop` and `verify` ask the server about.
+daybook_operations_runtime_status_sources:
+  - "{{ daybook_operations_runtime_binding }}"
+daybook_operations_runtime_stop_windows: []
+daybook_operations_runtime_stop_window_lead_minutes: 0
+daybook_operations_runtime_stop_window_timezone: Europe/Berlin
+daybook_operations_runtime_stop_preflight: false
+daybook_operations_runtime_quiet_retries: 30
+daybook_operations_runtime_quiet_delay: 10
+daybook_operations_runtime_stop_timeout: 300
+daybook_operations_runtime_verify_retries: 12
+daybook_operations_runtime_poll_delay: 5
+daybook_operations_runtime_launchctl: /bin/launchctl
+daybook_operations_runtime_pgrep: /usr/bin/pgrep
+daybook_operations_runtime_kill: /bin/kill
+daybook_operations_runtime_date: /bin/date
 ```
 
 ## The profile: identity, kinds of work, a pool, and one store

@@ -1,0 +1,139 @@
+---
+# Read-only proof that the supervisor runs the expected code and its sources
+# answer: the label loaded with the supervisor's command, `operations serve`
+# running (inside the capability host's `supervisor` session in mode `host`),
+# the installed checkout at `daybook_operations_runtime_revision`, no stop marker
+# in the store, and `operations status` answering for every source named in
+# `daybook_operations_runtime_status_sources` with the profile enabled and the
+# local state readable. Changes nothing.
+- name: verify | Resolve local GUI user ID
+  ansible.builtin.command:
+    argv: [/usr/bin/id, -u, "{{ daybook_operations_runtime_user }}"]
+  register: daybook_operations_runtime_verify_uid
+  changed_when: false
+  check_mode: false
+
+- name: verify | Name the command the label must run
+  ansible.builtin.set_fact:
+    # The keeper in mode `host`, the supervisor itself in mode `serve`.
+    daybook_operations_runtime_verify_command: >-
+      {{ '(?m)^\s*' ~ ('host-keep' if daybook_operations_runtime_mode == 'host' else 'serve') ~ '\s*$' }}
+
+- name: verify | Require the supervisor label loaded with its command
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_runtime_launchctl }}", print, "gui/{{ daybook_operations_runtime_verify_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
+  register: daybook_operations_runtime_verify_label
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  retries: "{{ daybook_operations_runtime_verify_retries }}"
+  delay: "{{ daybook_operations_runtime_poll_delay }}"
+  until: >-
+    daybook_operations_runtime_verify_label.rc == 0
+    and daybook_operations_runtime_verify_label.stdout is search(daybook_operations_runtime_verify_command)
+  no_log: true
+
+- name: verify | Require operations serve running
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_runtime_pgrep }}", -u, "{{ daybook_operations_runtime_user }}", -f, "[o]perations serve"]
+  register: daybook_operations_runtime_verify_serving
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  retries: "{{ daybook_operations_runtime_verify_retries }}"
+  delay: "{{ daybook_operations_runtime_poll_delay }}"
+  until: daybook_operations_runtime_verify_serving.rc == 0
+
+- name: verify | Require the supervisor session inside the capability host
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_runtime_host_tmux }}", -L, "{{ daybook_operations_runtime_host_socket }}", has-session, -t, "=supervisor"]
+  environment:
+    TMUX_TMPDIR: "{{ daybook_operations_runtime_host_tmpdir }}"
+  become: "{{ daybook_operations_runtime_owner == 'root' }}"
+  become_user: "{{ daybook_operations_runtime_user }}"
+  become_flags: "-H -S -n -i"
+  register: daybook_operations_runtime_verify_session
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  retries: "{{ daybook_operations_runtime_verify_retries }}"
+  delay: "{{ daybook_operations_runtime_poll_delay }}"
+  until: daybook_operations_runtime_verify_session.rc == 0
+  when: daybook_operations_runtime_mode == 'host'
+
+- name: verify | Read the installed revision
+  ansible.builtin.command:
+    argv: [/usr/bin/git, -C, "{{ daybook_operations_runtime_install_root }}/daybook", rev-parse, HEAD]
+  register: daybook_operations_runtime_verify_revision
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: verify | Find stop markers in the store
+  ansible.builtin.find:
+    paths: ["{{ daybook_operations_runtime_journal }}/halts"]
+    patterns: ['*.json']
+    file_type: any
+    hidden: true
+  register: daybook_operations_runtime_verify_halts
+  check_mode: false
+
+- name: verify | Ask the server about each source this machine runs
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_runtime_python }}", -I, -c, 'from daybook.cli import main; raise SystemExit(main())', operations, status, --policy, "{{ daybook_operations_runtime_policy }}", --policy-owner, "{{ daybook_operations_runtime_owner }}", --binding, "{{ item }}"]
+  become: "{{ daybook_operations_runtime_owner == 'root' }}"
+  become_user: "{{ daybook_operations_runtime_user }}"
+  become_flags: "-H -S -n -i"
+  loop: "{{ daybook_operations_runtime_status_sources }}"
+  register: daybook_operations_runtime_verify_sources
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: verify | Start the report from nothing
+  # Facts outlive a role run within one playbook run.
+  ansible.builtin.set_fact:
+    daybook_operations_runtime_verify_report: []
+
+- name: verify | Judge each source
+  ansible.builtin.set_fact:
+    daybook_operations_runtime_verify_report: >-
+      {{ daybook_operations_runtime_verify_report + [{
+           'source': item.item,
+           'answered': item.rc == 0,
+           'status': (item.stdout | from_json).status if item.rc == 0 else (item.stdout | default('') | truncate(80)),
+           'profile_enabled': (item.stdout | from_json).enabled if item.rc == 0 else none,
+           'server_enabled': (item.stdout | from_json).server.enabled if item.rc == 0 else none,
+           'active_state': (item.stdout | from_json).server.active_state if item.rc == 0 else none,
+           'disposition': (item.stdout | from_json).server.disposition if item.rc == 0 else none,
+           'stale': (item.stdout | from_json).server.stale if item.rc == 0 else none,
+           'healthy': item.rc == 0
+                      and (item.stdout | from_json).enabled
+                      and (item.stdout | from_json).status != 'unreadable'
+         }] }}
+  loop: "{{ daybook_operations_runtime_verify_sources.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: verify | Report
+  ansible.builtin.debug:
+    msg:
+      - "Installed revision: {{ daybook_operations_runtime_verify_revision.stdout | trim }} (expected {{ daybook_operations_runtime_revision }})"
+      - "Keeper label loaded: {{ daybook_operations_runtime_verify_label.rc == 0 }}; operations serve: {{ daybook_operations_runtime_verify_serving.rc == 0 }}; supervisor session: {{ daybook_operations_runtime_verify_session.rc | default(0) == 0 }}"
+      - "Stop markers in the store: {{ daybook_operations_runtime_verify_halts.matched }}"
+      - "{{ daybook_operations_runtime_verify_report | default([]) }}"
+
+- name: verify | Require a healthy supervisor on the expected code
+  ansible.builtin.assert:
+    that:
+      - daybook_operations_runtime_verify_label.rc == 0
+      - daybook_operations_runtime_verify_label.stdout is search(daybook_operations_runtime_verify_command)
+      - daybook_operations_runtime_verify_serving.rc == 0
+      - daybook_operations_runtime_verify_session.rc | default(0) == 0
+      - daybook_operations_runtime_verify_revision.stdout | trim == daybook_operations_runtime_revision
+      - daybook_operations_runtime_verify_halts.matched == 0
+      - daybook_operations_runtime_verify_halts.skipped_paths | default({}) | length == 0
+      - daybook_operations_runtime_verify_report | default([]) | rejectattr('healthy') | list | length == 0
+    fail_msg: >-
+      The supervisor is not verified healthy on {{ daybook_operations_runtime_revision }}; see the report above.
+      Unhealthy sources: {{ daybook_operations_runtime_verify_report | default([]) | rejectattr('healthy') | map(attribute='source') | list }}.
