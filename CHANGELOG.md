@@ -3,6 +3,21 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — FastDeploy and Nyxmon deploys no longer restart Traefik (2.31.47)
+
+- `fastdeploy_deploy` and `nyxmon_deploy` no longer restart Traefik after
+  rendering their dynamic config. FastDeploy restarted it on every run
+  (`webapp_deploy_internal_traefik_force_restart: true`), Nyxmon whenever the
+  file changed, which was every run because the basic auth bcrypt hash gets a
+  new salt each time. Each restart refused or cut every connection through
+  that Traefik for 0.5–10 seconds; on macmini on 2026-10-14 repeated deploys
+  restarted it 58 times and broke Voxhelm transcript jobs from staging with
+  `Connection refused` and `RemoteDisconnected`. Traefik's file provider
+  watches `/etc/traefik/dynamic` (`watch = true` in `traefik_deploy`) and
+  loads the change without a restart, as `homelab_deploy` already relies on.
+  The unused `restart traefik` (FastDeploy) and `reload traefik` (Nyxmon)
+  handlers are removed.
+
 ## Unreleased — Certbot and mail configuration restores land in /etc again (2.31.46)
 
 - `certbot_dns_restore`: the restore extracted the archive into `/`, but
