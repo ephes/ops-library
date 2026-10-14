@@ -25,7 +25,9 @@
 
   vars:
     role_path: "{{ playbook_dir }}/../roles/dns_metrics_endpoint"
-    test_tmp_dir: "/tmp/test-dns-metrics-endpoint"
+    # Per-checkout prefix: parallel runs from other worktrees use other paths.
+    ops_test_tmp_prefix: "ops-library-{{ (playbook_dir | hash('sha1'))[:10] }}-"
+    test_tmp_dir: "/tmp/{{ ops_test_tmp_prefix }}test-dns-metrics-endpoint"
 
     # Template inputs come from the role defaults so the test fails if a default
     # is renamed or dropped.

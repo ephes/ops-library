@@ -148,8 +148,13 @@ class Debian13CompatibilityTests(unittest.TestCase):
             (ROLES / "postgres_install/molecule/default/molecule.yml").read_text()
         )
         postgres_hosts = postgres_scenario["provisioner"]["inventory"]["host_vars"]
-        self.assertEqual(postgres_hosts["instance"]["postgres_install_version"], "16")
-        self.assertEqual(postgres_hosts["debian13"]["postgres_install_version"], "17")
+        run_id = "-${MOLECULE_RUN_ID:-local}"
+        self.assertEqual(
+            postgres_hosts[f"instance{run_id}"]["postgres_install_version"], "16"
+        )
+        self.assertEqual(
+            postgres_hosts[f"debian13{run_id}"]["postgres_install_version"], "17"
+        )
 
     def test_application_and_dns_package_tasks_remain_distribution_native(self) -> None:
         package_tasks = {

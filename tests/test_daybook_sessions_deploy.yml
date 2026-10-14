@@ -9,19 +9,21 @@
 
   vars:
     role_path: "{{ playbook_dir }}/../roles/daybook_sessions_deploy"
-    rendered_env: "/tmp/test-daybook-sessions.env"
-    rendered_launcher: "/tmp/test-daybook-sessions-launcher.sh"
-    rendered_plist: "/tmp/test-daybook-sessions.plist"
-    rendered_user_plist: "/tmp/test-daybook-sessions-user.plist"
-    rendered_archive_env: "/tmp/test-daybook-archive-quotes.env"
-    rendered_archive_launcher: "/tmp/test-daybook-archive-quotes.sh"
-    rendered_archive_plist: "/tmp/test-daybook-archive-quotes.plist"
-    rendered_headed_archive_plist: "/tmp/test-daybook-archive-quotes-headed.plist"
-    rendered_reconcile_env: "/tmp/test-daybook-weeknotes-reconcile.env"
-    rendered_reconcile_launcher: "/tmp/test-daybook-weeknotes-reconcile.sh"
-    rendered_reconcile_plist: "/tmp/test-daybook-weeknotes-reconcile.plist"
-    rendered_identity_helper: "/tmp/test-daybook-weeknotes-identity-ops.py"
-    rendered_identity_launcher: "/tmp/test-daybook-weeknotes-identity-ops.sh"
+    # Per-checkout prefix: parallel runs from other worktrees use other paths.
+    ops_test_tmp_prefix: "ops-library-{{ (playbook_dir | hash('sha1'))[:10] }}-"
+    rendered_env: "/tmp/{{ ops_test_tmp_prefix }}test-daybook-sessions.env"
+    rendered_launcher: "/tmp/{{ ops_test_tmp_prefix }}test-daybook-sessions-launcher.sh"
+    rendered_plist: "/tmp/{{ ops_test_tmp_prefix }}test-daybook-sessions.plist"
+    rendered_user_plist: "/tmp/{{ ops_test_tmp_prefix }}test-daybook-sessions-user.plist"
+    rendered_archive_env: "/tmp/{{ ops_test_tmp_prefix }}test-daybook-archive-quotes.env"
+    rendered_archive_launcher: "/tmp/{{ ops_test_tmp_prefix }}test-daybook-archive-quotes.sh"
+    rendered_archive_plist: "/tmp/{{ ops_test_tmp_prefix }}test-daybook-archive-quotes.plist"
+    rendered_headed_archive_plist: "/tmp/{{ ops_test_tmp_prefix }}test-daybook-archive-quotes-headed.plist"
+    rendered_reconcile_env: "/tmp/{{ ops_test_tmp_prefix }}test-daybook-weeknotes-reconcile.env"
+    rendered_reconcile_launcher: "/tmp/{{ ops_test_tmp_prefix }}test-daybook-weeknotes-reconcile.sh"
+    rendered_reconcile_plist: "/tmp/{{ ops_test_tmp_prefix }}test-daybook-weeknotes-reconcile.plist"
+    rendered_identity_helper: "/tmp/{{ ops_test_tmp_prefix }}test-daybook-weeknotes-identity-ops.py"
+    rendered_identity_launcher: "/tmp/{{ ops_test_tmp_prefix }}test-daybook-weeknotes-identity-ops.sh"
 
   tasks:
     - name: Verify role files exist

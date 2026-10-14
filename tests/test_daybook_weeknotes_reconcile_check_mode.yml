@@ -5,7 +5,9 @@
   gather_facts: false
   vars:
     role_path: "{{ playbook_dir }}/../roles/daybook_sessions_deploy"
-    reconcile_check_home: "/private/tmp/daybook-weeknotes-reconcile-check-mode-{{ lookup('env', 'USER') }}"
+    # Per-checkout prefix: parallel runs from other worktrees use other paths.
+    ops_test_tmp_prefix: "ops-library-{{ (playbook_dir | hash('sha1'))[:10] }}-"
+    reconcile_check_home: "/private/tmp/{{ ops_test_tmp_prefix }}daybook-weeknotes-reconcile-check-mode-{{ lookup('env', 'USER') }}"
   tasks:
     - name: Require this regression playbook to run in check mode
       ansible.builtin.assert:

@@ -11,7 +11,7 @@ setup:
     @./setup-pre-commit.sh
 
 # Run the default contributor validation path
-test: venv test-daybook-operations test-macos-ssh-tunnel test-macos-smb-mount-keeper typecheck test-roles test-zfs-snapshot-file-attestation test-zfs-usb-replication test-software-live test-software-estate test-debian13-compatibility test-os-apt-maintenance-refresh test-traefik-transactions test-openclaw-audio-transcription test-openclaw-codex-registration-backport test-openclaw-doctor-activation test-openclaw-heartbeat-recovery test-network-recovery test-monitoring-pipeline-repair test-traefik-metrics-entrypoint test-os-apt-maintenance-failed-run test-tailscale-metrics-timer test-nyxmon-deploy test-certbot-dns-renewal-hooks test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-photos-archive-sync-deploy test-daybook-voice-memo-inbox-deploy test-daybook-voice-memo-work test-daybook-mail-work test-daybook-voice-memo-attention test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-work-app-deploy test-opaq-app-deploy test-homelab-lifecycle-safety test-heis-production-backup test-takahe-deploy test-wagtail-deploy test-static-site-deploy test-voxhelm-csrf test-secret-file-modes test-secret-no-log test-shell-pipefail test-backup-service-restart test-logyard-ingress lint docs-build docs-lint
+test: venv test-daybook-operations test-macos-ssh-tunnel test-macos-smb-mount-keeper typecheck test-roles test-zfs-snapshot-file-attestation test-zfs-usb-replication test-software-live test-software-estate test-debian13-compatibility test-os-apt-maintenance-refresh test-traefik-transactions test-openclaw-audio-transcription test-openclaw-codex-registration-backport test-openclaw-doctor-activation test-openclaw-heartbeat-recovery test-network-recovery test-monitoring-pipeline-repair test-traefik-metrics-entrypoint test-os-apt-maintenance-failed-run test-tailscale-metrics-timer test-nyxmon-deploy test-certbot-dns-renewal-hooks test-ssh-forwarding-roles test-ssh-forwarding-integration test-vaultwarden-maintenance test-bind-authoritative-secondary test-dns-metrics-endpoint test-daybook-sessions-deploy test-daybook-photos-offload-deploy test-daybook-photos-offload-symlink-safety test-daybook-photos-archive-sync-deploy test-daybook-voice-memo-inbox-deploy test-daybook-voice-memo-work test-daybook-mail-work test-daybook-voice-memo-attention test-daybook-weeknotes-identity-ops test-daybook-weeknotes-reconcile-check-mode test-weeknotes-home-deploy test-work-app-deploy test-opaq-app-deploy test-homelab-lifecycle-safety test-heis-production-backup test-takahe-deploy test-wagtail-deploy test-static-site-deploy test-voxhelm-csrf test-secret-file-modes test-secret-no-log test-shell-pipefail test-backup-service-restart test-logyard-ingress test-molecule-run-isolation lint docs-build docs-lint
     @echo ""
     @echo "✅ Validation completed!"
 
@@ -104,9 +104,15 @@ test-vaultwarden-maintenance: venv
     @echo "Testing Vaultwarden maintenance switch and package pinning contracts..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_vaultwarden_maintenance
 
+# Uses a private work directory so parallel runs from other checkouts do not
+# delete each other's rendered files.
 test-bind-authoritative-secondary: venv
-    @echo "Testing BIND transfer-backed (secondary) zone support..."
-    @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_bind_authoritative_secondary.yml
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Testing BIND transfer-backed (secondary) zone support..."
+    work_dir=$(mktemp -d "${TMPDIR:-/tmp}/test-bind-authoritative-secondary.XXXXXX")
+    trap 'rm -rf -- "$work_dir"' EXIT
+    UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local -e "test_tmp_dir=$work_dir" tests/test_bind_authoritative_secondary.yml
 
 test-dns-metrics-endpoint: venv
     @echo "Testing DNS metrics endpoint validation and collector behaviour..."
@@ -354,42 +360,42 @@ molecule-test role:
     #!/usr/bin/env bash
     eval "$(just _export-docker-host)"
     export ANSIBLE_ALLOW_BROKEN_CONDITIONALS=1
-    cd roles/{{role}} && uv run molecule test
+    scripts/molecule-run.sh {{quote(role)}} default test
 
 # Run a named molecule scenario for a specific role
 molecule-test-scenario role scenario:
     #!/usr/bin/env bash
     eval "$(just _export-docker-host)"
     export ANSIBLE_ALLOW_BROKEN_CONDITIONALS=1
-    cd roles/{{role}} && uv run molecule test -s {{scenario}}
+    scripts/molecule-run.sh {{quote(role)}} {{quote(scenario)}} test
 
 # Run molecule converge (apply without destroy) for debugging
 molecule-converge role:
     #!/usr/bin/env bash
     eval "$(just _export-docker-host)"
     export ANSIBLE_ALLOW_BROKEN_CONDITIONALS=1
-    cd roles/{{role}} && uv run molecule converge
+    scripts/molecule-run.sh {{quote(role)}} default converge
 
 # Run molecule verify (run verification tests only)
 molecule-verify role:
     #!/usr/bin/env bash
     eval "$(just _export-docker-host)"
     export ANSIBLE_ALLOW_BROKEN_CONDITIONALS=1
-    cd roles/{{role}} && uv run molecule verify
+    scripts/molecule-run.sh {{quote(role)}} default verify
 
 # Destroy molecule test containers
 molecule-destroy role:
     #!/usr/bin/env bash
     eval "$(just _export-docker-host)"
     export ANSIBLE_ALLOW_BROKEN_CONDITIONALS=1
-    cd roles/{{role}} && uv run molecule destroy
+    scripts/molecule-run.sh {{quote(role)}} default destroy
 
 # SSH into running molecule container
 molecule-login role:
     #!/usr/bin/env bash
     eval "$(just _export-docker-host)"
     export ANSIBLE_ALLOW_BROKEN_CONDITIONALS=1
-    cd roles/{{role}} && uv run molecule login
+    scripts/molecule-run.sh {{quote(role)}} default login
 
 # Run molecule tests for all roles that have molecule configs
 molecule-test-all:
@@ -413,7 +419,7 @@ molecule-test-all:
         echo "========================================"
         echo "Testing role: $role_name (scenario: $scenario_name)"
         echo "========================================"
-        if ! (cd "roles/$role_name" && uv run molecule test -s "$scenario_name"); then
+        if ! scripts/molecule-run.sh "$role_name" "$scenario_name" test; then
             failed_roles+=("$role_name/$scenario_name")
         fi
     done
@@ -447,7 +453,7 @@ molecule-test-postfixadmin:
             echo "========================================"
             echo "Testing role: $role"
             echo "========================================"
-            if ! (cd "roles/$role" && uv run molecule test); then
+            if ! scripts/molecule-run.sh "$role" default test; then
                 failed_roles+=("$role")
             fi
         else
@@ -548,6 +554,12 @@ typecheck: venv
 test-logyard-ingress: venv
     @echo "Testing that the Logyard ingress routes only the Loki push path and /ready..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_logyard_ingress
+
+# Static check: Molecule platform/network names carry ${MOLECULE_RUN_ID:-local}
+# so parallel runs from different checkouts never share Docker containers.
+test-molecule-run-isolation: venv
+    @echo "Testing that Molecule container names are scoped to the run..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_molecule_run_isolation
 
 test-traefik-transactions: venv
     @uv run python -m unittest tests.test_traefik_transaction

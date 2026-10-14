@@ -9,12 +9,14 @@
 
   vars:
     role_path: "{{ playbook_dir }}/../roles/wagtail_deploy"
-    rendered_service: "/tmp/test-wagtail.service"
-    rendered_worker: "/tmp/test-wagtail-db-worker.service"
-    rendered_worker_with_args: "/tmp/test-wagtail-db-worker-with-args.service"
-    rendered_env: "/tmp/test-wagtail.env"
-    rendered_env_staging: "/tmp/test-wagtail-staging.env"
-    rendered_env_plain: "/tmp/test-wagtail-plain.env"
+    # Per-checkout prefix: parallel runs from other worktrees use other paths.
+    ops_test_tmp_prefix: "ops-library-{{ (playbook_dir | hash('sha1'))[:10] }}-"
+    rendered_service: "/tmp/{{ ops_test_tmp_prefix }}test-wagtail.service"
+    rendered_worker: "/tmp/{{ ops_test_tmp_prefix }}test-wagtail-db-worker.service"
+    rendered_worker_with_args: "/tmp/{{ ops_test_tmp_prefix }}test-wagtail-db-worker-with-args.service"
+    rendered_env: "/tmp/{{ ops_test_tmp_prefix }}test-wagtail.env"
+    rendered_env_staging: "/tmp/{{ ops_test_tmp_prefix }}test-wagtail-staging.env"
+    rendered_env_plain: "/tmp/{{ ops_test_tmp_prefix }}test-wagtail-plain.env"
     wagtail_project_slug: "python-podcast"
     # Shared inputs for the wagtail.env.j2 renders below. Task-level vars in the
     # service-template tasks override these where the names overlap.

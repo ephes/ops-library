@@ -4,7 +4,9 @@
   connection: local
   gather_facts: false
   vars:
-    fixture_root: /private/tmp/daybook-photos-offload-link-safety
+    # Per-checkout prefix: parallel runs from other worktrees use other paths.
+    ops_test_tmp_prefix: "ops-library-{{ (playbook_dir | hash('sha1'))[:10] }}-"
+    fixture_root: "/private/tmp/{{ ops_test_tmp_prefix }}daybook-photos-offload-link-safety"
     checkout_path: "{{ fixture_root }}/checkout"
     venv_path: "{{ checkout_path }}/.venv"
     symlink_target_path: "{{ fixture_root }}/symlink-target"

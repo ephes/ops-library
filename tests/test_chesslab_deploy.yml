@@ -6,8 +6,10 @@
 
   vars:
     role_path: "{{ playbook_dir }}/../roles/chesslab_deploy"
-    rendered_env: "/tmp/test-chesslab.env"
-    rendered_service: "/tmp/test-chesslab.service"
+    # Per-checkout prefix: parallel runs from other worktrees use other paths.
+    ops_test_tmp_prefix: "ops-library-{{ (playbook_dir | hash('sha1'))[:10] }}-"
+    rendered_env: "/tmp/{{ ops_test_tmp_prefix }}test-chesslab.env"
+    rendered_service: "/tmp/{{ ops_test_tmp_prefix }}test-chesslab.service"
 
   tasks:
     - name: Load role defaults

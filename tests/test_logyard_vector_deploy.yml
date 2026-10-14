@@ -6,7 +6,9 @@
 
   vars:
     role_path: "{{ playbook_dir }}/../roles/logyard_vector_deploy"
-    rendered_config: "/tmp/test-logyard-vector.yaml"
+    # Per-checkout prefix: parallel runs from other worktrees use other paths.
+    ops_test_tmp_prefix: "ops-library-{{ (playbook_dir | hash('sha1'))[:10] }}-"
+    rendered_config: "/tmp/{{ ops_test_tmp_prefix }}test-logyard-vector.yaml"
 
   tasks:
     - name: Verify role files exist
