@@ -86,6 +86,30 @@ class ExposureTests(unittest.TestCase):
             ["nested", "recover", "cleanup"],
         )
 
+    def test_inherited_environment_survives_template_and_list_children(self):
+        data = yaml.safe_load(
+            """
+- environment:
+    PGPASSWORD: "{{ db_password }}"
+  block:
+    - name: template child
+      command: true
+      environment: "{{ extra_env }}"
+    - name: list child
+      command: true
+      environment:
+        - PATH: /usr/bin
+    - name: overriding child
+      command: true
+      environment:
+        PGPASSWORD: ""
+"""
+        )
+        self.assertEqual(
+            [n for n, _ in check.iter_exposure_findings(data)],
+            ["template child", "list child"],
+        )
+
     def test_stdin_and_file_paths_are_allowed(self):
         data = [
             {

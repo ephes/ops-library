@@ -251,15 +251,15 @@ def _renders_exposure_secret(value: Any) -> bool:
     )
 
 
-def exposure_reason(task: dict, environment: Any = None) -> str | None:
-    """Reject credentials in connection-level environment or process arguments.
-
-    Unlike credential_reason, no_log never suppresses these findings. stdin
-    and credential-file module content remain covered by their logging/mode
-    checks; a path is not a credential.
-    """
-    if environment is None:
-        environment = task.get("environment")
+def _environment_reason(environment: Any) -> str | None:
+    # A list holds inherited layers (block environments, then the task's own),
+    # or is Ansible's own list-of-mappings form; every layer reaches the process.
+    if isinstance(environment, list):
+        for layer in environment:
+            reason = _environment_reason(layer)
+            if reason:
+                return reason
+        return None
     if isinstance(environment, dict):
         for key, value in environment.items():
             if value in (None, ""):
@@ -269,8 +269,24 @@ def exposure_reason(task: dict, environment: Any = None) -> str | None:
                 and not str(key).upper().endswith(("_FILE", "_PATH", "_DIR"))
             ):
                 return "puts a credential in task environment"
-    elif _renders_exposure_secret(environment):
+        return None
+    if _renders_exposure_secret(environment):
         return "builds task environment from a credential"
+    return None
+
+
+def exposure_reason(task: dict, environment: Any = None) -> str | None:
+    """Reject credentials in connection-level environment or process arguments.
+
+    Unlike credential_reason, no_log never suppresses these findings. stdin
+    and credential-file module content remain covered by their logging/mode
+    checks; a path is not a credential.
+    """
+    if environment is None:
+        environment = task.get("environment")
+    reason = _environment_reason(environment)
+    if reason:
+        return reason
     found = _module(task)
     if found is None or found[0] not in COMMAND_MODULES:
         return None
@@ -292,9 +308,16 @@ def iter_exposure_findings(
         return
     if not isinstance(data, dict):
         return
-    current = data.get("environment", environment)
-    if isinstance(current, dict) and isinstance(environment, dict):
-        current = {**environment, **current}
+    # Keep every ancestor environment: a child environment given as a template
+    # or list does not stop Ansible from passing the inherited values. Only two
+    # mappings merge (child keys override parent keys, as in Ansible).
+    current = list(environment or [])
+    if "environment" in data:
+        own = data["environment"]
+        if current and isinstance(current[-1], dict) and isinstance(own, dict):
+            current[-1] = {**current[-1], **own}
+        else:
+            current.append(own)
     children = [
         key
         for key in (

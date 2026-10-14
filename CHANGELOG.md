@@ -6,7 +6,7 @@
 ## Unreleased — Keep task credentials out of arguments and environment (2.31.38)
 
 - Static credential checks now reject secret-looking command arguments and task
-  environment values even with `no_log`, including inherited environments. The
+  environment values even with `no_log`, including inherited environments (also below a task whose own environment is a template or list). The
   exact baseline records existing out-of-scope findings; focused transport and
   task-behavior regressions run in the test recipes.
 
@@ -24,7 +24,7 @@
 
 - `fastdeploy_self_deploy`: Management commands source a rendered 0600 shell environment companion inside the remote shell, keeping credentials out of command arguments and task environment values. The companion uses the same template as the application env file, with shell quoting enabled only for the companion; the existing application/systemd env format is preserved. Command change reporting and check-mode skips are preserved.
 
-- `fastdeploy_restore`: PostgreSQL CLI tasks use a temporary 0600 passfile owned by the executing database user in a unique 0700 directory, removed in an always block on success or failure. Only the PGPASSFILE path appears in the task environment. Empty passwords retain the existing libpq authentication fallback. Passfile passwords must not contain CR or LF; colons and backslashes are escaped. Restore SQL, rollback order and database connection options are unchanged.
+- `fastdeploy_restore`: PostgreSQL CLI tasks use a temporary 0600 passfile owned by the executing database user in a unique 0700 directory, removed in an always block on success or failure. Only the PGPASSFILE path appears in the task environment. Empty passwords retain the existing libpq authentication fallback. Passfile passwords must not contain CR or LF (checked during validation, before the database is dropped); colons and backslashes are escaped. Restore SQL, rollback order and database connection options are unchanged.
 
 - `mastodon_backup`: PostgreSQL CLI tasks use a temporary 0600 passfile owned by the executing database user in a unique 0700 directory, removed in an always block on success or failure. Only the PGPASSFILE path appears in the task environment. Empty passwords retain the existing libpq authentication fallback. Passfile passwords must not contain CR or LF; colons and backslashes are escaped. Restore SQL, rollback order and database connection options are unchanged.
 
