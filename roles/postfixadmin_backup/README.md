@@ -10,8 +10,10 @@ does **not** back up the mail tables (`domain`, `mailbox`, `alias`,
 PostgreSQL database and are covered by whole-database dumps, which restore with
 `pg_restore` rather than row by row: the daily `mail_offsite_replication` stage
 dump (`pg_dump --format=custom --dbname=mail`, kept as ZFS snapshots on the
-offsite host). The `mail_backup` role can also dump the database, but it is
-only run by hand.
+offsite host) and the Echoport runner
+`echoport_backup/templates/mail_db_backup.py.j2` (a daily `pg_dump` of the
+whole database into MinIO). The `mail_backup` role can also dump the
+database, but it is only run by hand.
 
 ## Disposition
 
