@@ -76,3 +76,17 @@ def test_env_file_points_the_app_at_the_service_user_alias() -> None:
     )
     assert "MINIO_MC_PATH=/usr/local/bin/mc" in rendered
     assert "MINIO_ALIAS=minio" in rendered
+
+
+def test_alias_credentials_reach_mc_on_stdin_not_as_arguments() -> None:
+    alias_task = _task("scheduler | Configure mc alias for cleanup user")
+    command = alias_task["ansible.builtin.command"]
+    assert command["argv"][1:3] == ["alias", "import"]
+    arguments = " ".join(command["argv"])
+    assert "access_key" not in arguments
+    assert "secret_key" not in arguments
+    assert "echoport_minio_access_key" in command["stdin"]
+    assert "echoport_minio_secret_key" in command["stdin"]
+    for task in _tasks():
+        argv = (task.get("ansible.builtin.command") or {}).get("argv", [])
+        assert not ("alias" in argv and "set" in argv), task["name"]

@@ -255,6 +255,10 @@ def backup(bucket: str, key_prefix: str, objects_prefix: str, credentials: Dict[
                 "--config",
                 str(config_path),
                 "--s3-no-check-bucket",
+                # The key is new on every run, so there is nothing to compare;
+                # skipping the HEAD probe also keeps the upload within what a
+                # prefix-scoped MinIO account may do.
+                "--no-check-dest",
             ]
         )
         emit_step("snapshot_metadata", "success", f"Snapshot metadata stored ({file_count} objects)")

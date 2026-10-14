@@ -40,10 +40,13 @@ def render_policy(**overrides: object) -> dict:
         trim_blocks=True,
     )
     env.filters["bool"] = to_bool
+    env.filters["to_json"] = json.dumps
     context = {
         "minio_backup_account_bucket": "backups",
         "minio_backup_account_prefixes": ["delve"],
         "minio_backup_account_allow_delete": False,
+        "minio_backup_account_allow_put": True,
+        "minio_backup_account_whole_bucket": False,
     }
     context.update(overrides)
     return json.loads(env.get_template("backup-account-policy.json.j2").render(**context))
@@ -79,9 +82,30 @@ class BackupAccountPolicyTests(unittest.TestCase):
             ["arn:aws:s3:::backups/a/*", "arn:aws:s3:::backups/b/c/*"],
         )
 
+    def test_retention_account_reads_and_deletes_the_whole_bucket_but_never_writes(self):
+        policy = render_policy(
+            minio_backup_account_whole_bucket=True,
+            minio_backup_account_allow_delete=True,
+            minio_backup_account_allow_put=False,
+        )
+        location, listing, objects = policy["Statement"]
+        self.assertEqual(location["Action"], ["s3:GetBucketLocation"])
+        self.assertEqual(listing, {"Effect": "Allow", "Action": ["s3:ListBucket"], "Resource": ["arn:aws:s3:::backups"]})
+        self.assertEqual(objects["Action"], ["s3:GetObject", "s3:DeleteObject"])
+        self.assertEqual(objects["Resource"], ["arn:aws:s3:::backups/*"])
+        actions = [action for statement in policy["Statement"] for action in statement["Action"]]
+        self.assertFalse([action for action in actions if "*" in action or "admin" in action])
+
+    def test_whole_bucket_ignores_the_prefixes(self):
+        policy = render_policy(minio_backup_account_whole_bucket=True, minio_backup_account_prefixes=["a", "b"])
+        self.assertNotIn("Condition", policy["Statement"][1])
+        self.assertEqual(policy["Statement"][2]["Resource"], ["arn:aws:s3:::backups/*"])
+
     def test_defaults_refuse_delete_and_derive_a_valid_user_name(self):
         defaults = yaml.safe_load((MINIO_ROLE / "defaults" / "main.yml").read_text())
         self.assertIs(defaults["minio_backup_account_allow_delete"], False)
+        self.assertIs(defaults["minio_backup_account_allow_put"], True)
+        self.assertIs(defaults["minio_backup_account_whole_bucket"], False)
         self.assertEqual(
             defaults["minio_backup_account_user"],
             "bk-{{ (minio_backup_account_name | hash('sha256'))[:17] }}",
@@ -158,6 +182,21 @@ class NoCredentialOnCommandLineTests(unittest.TestCase):
         self.assertEqual(
             main["Configure mc alias for MinIO"]["ansible.builtin.include_tasks"], "minio_alias.yml"
         )
+
+
+class MediaRunnerTests(unittest.TestCase):
+    """The rclone media runners work with a prefix-scoped account."""
+
+    def test_only_the_manifest_upload_skips_the_destination_check(self):
+        for name in ("homepage_media_backup.py.j2", "python_podcast_media_backup.py.j2"):
+            with self.subTest(template=name):
+                source = (BACKUP_ROLE / "templates" / name).read_text()
+                # The manifest key is new on every run; `rclone copy` of the
+                # objects must keep comparing, or every run uploads everything.
+                self.assertEqual(source.count('"--no-check-dest"'), 1)
+                manifest = source.index('f"dst:{bucket}/{key_prefix}/manifest.json",')
+                self.assertGreater(source.index('"--no-check-dest"'), manifest)
+                self.assertLess(source.index('"--no-check-dest"'), source.index("emit_step(\"snapshot_metadata\", \"success\""))
 
 
 class GenericRunnerAliasTests(unittest.TestCase):

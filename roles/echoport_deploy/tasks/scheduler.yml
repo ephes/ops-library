@@ -55,16 +55,21 @@
   no_log: true
   when: echoport_cleanup_enabled
 
+# `mc alias import` reads the credentials on stdin; `mc alias set` would put
+# them on its command line, where the host's process list shows them.
 - name: scheduler | Configure mc alias for cleanup user
   ansible.builtin.command:
     argv:
       - "{{ echoport_minio_mc_path }}"
       - alias
-      - set
+      - import
       - "{{ echoport_minio_alias }}"
-      - "{{ echoport_minio_url }}"
-      - "{{ echoport_minio_access_key }}"
-      - "{{ echoport_minio_secret_key }}"
+    stdin: >-
+      {{
+        {'url': echoport_minio_url, 'accessKey': echoport_minio_access_key,
+         'secretKey': echoport_minio_secret_key, 'api': 's3v4', 'path': 'auto'}
+        | to_json
+      }}
   become: true
   become_user: "{{ echoport_user }}"
   no_log: true

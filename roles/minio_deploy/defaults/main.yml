@@ -107,6 +107,11 @@ minio_backup_account_prefixes:
 # Backup runners only upload, read back and download. Deleting expired archives
 # is the retention job's business and needs its own account.
 minio_backup_account_allow_delete: false
+# A retention job that reads and deletes but never writes sets this to false.
+minio_backup_account_allow_put: true
+# true: the account may list and use every key of the bucket (the prefixes are
+# ignored), for example Echoport's retention job, which works across targets.
+minio_backup_account_whole_bucket: false
 minio_backup_account_policy_dir: /etc/minio/policies
 
 # Health & service

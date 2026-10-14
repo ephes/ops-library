@@ -8,7 +8,7 @@
       - daybook_operations_api_backup_policy == '/etc/daybook-operations-backup.json'
       - daybook_operations_api_backup_target is match('^[a-z][a-z0-9_-]+$')
       - daybook_operations_api_backup_bucket is match('^[a-z][a-z0-9-]+$')
-      - daybook_operations_api_backup_alias is match('^[a-z][a-z0-9-]+$')
+      - daybook_operations_api_backup_alias is match('^[a-z][a-z0-9_-]+$')
       - daybook_operations_api_backup_retention_days | int >= 1
     fail_msg: Registration requires live execution on Linux with the fixed backup policy; check mode is not supported.
 
