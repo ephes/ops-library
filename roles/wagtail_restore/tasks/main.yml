@@ -14,6 +14,12 @@
       - wagtail_restore_postgres_password != "CHANGEME"
     fail_msg: "Missing required Wagtail restore variables or secrets."
 
+- name: Refuse legacy PostgreSQL target options
+  ansible.builtin.assert:
+    that:
+      - wagtail_restore_postgres_target_opts | length == 0
+    fail_msg: "wagtail_restore_postgres_target_opts must be empty; transactional restore owns these options."
+
 - name: Determine archive when set to latest
   ansible.builtin.find:
     paths: "{{ wagtail_restore_root }}"
@@ -45,6 +51,14 @@
   ansible.builtin.fail:
     msg: "Wagtail restore archive not found: {{ wagtail_restore_selected_archive }}"
   when: not wagtail_restore_archive_stat.stat.exists
+
+- name: Validate preservation layout before staging changes
+  ansible.builtin.include_tasks: "{{ role_path }}/../restore_preserve_internal/tasks/validate.yml"
+  vars:
+    restore_preserve_mutable_paths:
+      - "{{ wagtail_site_path }}"
+      - "{{ wagtail_restore_staging_dir }}"
+    restore_preserve_source: "{{ wagtail_restore_selected_archive }}"
 
 - name: Reset staging directory
   ansible.builtin.file:
@@ -98,12 +112,42 @@
     msg: "Database dump missing inside archive"
   when: not wagtail_restore_dump_stat.stat.exists
 
+- name: Validate compressed SQL dump before stopping services
+  ansible.builtin.shell: |
+    set -euo pipefail
+    gzip -t "$DUMP"
+    gzip -dc "$DUMP" | tail -n 10 | grep -Fx -- '-- PostgreSQL database dump complete'
+  args:
+    executable: /bin/bash
+  environment:
+    DUMP: "{{ wagtail_restore_payload_dir }}/database/{{ wagtail_restore_postgres_database }}.sql.gz"
+  changed_when: false
+
+- name: Reset Wagtail recovery state for this invocation
+  ansible.builtin.set_fact:
+    wagtail_restore_database_touched: false
+    wagtail_restore_safety_ready: false
+    wagtail_restore_replacement_complete: false
+    wagtail_restore_recovery_complete: false
+    wagtail_restore_failed_task_name: "none"
+    wagtail_restore_preserved: {}
+    wagtail_restore_preserved_size: "dump incomplete"
+
+- name: Check Wagtail site preservation before stopping writers
+  ansible.builtin.include_tasks: "{{ role_path }}/../restore_preserve_internal/tasks/preflight.yml"
+  vars:
+    restore_preserve_path: "{{ wagtail_site_path }}"
+    restore_preserve_empty: false
+  when:
+    - not wagtail_restore_dry_run | bool
+    - not ansible_check_mode
+
 - name: Skip destructive restore steps during dry run
   ansible.builtin.debug:
     msg: "wagtail_restore_dry_run=true - skipping service stop and database restore"
   when: wagtail_restore_dry_run | bool
 
-- when: not wagtail_restore_dry_run | bool
+- when: not wagtail_restore_dry_run | bool and not ansible_check_mode
   block:
     # Auxiliary units are stopped first, and deliberately not failed_when: false.
     # They are opt-in, so a unit that will not stop means the restore would drop
@@ -120,8 +164,57 @@
       ansible.builtin.systemd:
         name: "{{ wagtail_restore_systemd_unit_name }}"
         state: stopped
-      failed_when: false
       when: wagtail_restore_stop_service | bool
+
+    - name: Keep Wagtail site pre-restore copy
+      ansible.builtin.include_tasks: "{{ role_path }}/../restore_preserve_internal/tasks/main.yml"
+      vars:
+        restore_preserve_path: "{{ wagtail_site_path }}"
+        restore_preserve_empty: false
+
+    - name: Remember Wagtail pre-restore copy
+      ansible.builtin.set_fact:
+        wagtail_restore_preserved: "{{ restore_preserve_report }}"
+
+    - name: Require existing Wagtail site for safety dump
+      ansible.builtin.assert:
+        that:
+          - wagtail_restore_preserved.path is not none
+
+    - name: Take and verify live database safety dump
+      ansible.builtin.shell: |
+        set -euo pipefail
+        required="$(psql --no-psqlrc -At --command='SELECT pg_database_size(current_database())')"
+        available="$(df -PB1 "$SAFETY_DIR" | awk 'NR==2 {print $4}')"
+        test "$available" -ge "$((required + required / 10 + 16777216))"
+        test ! -e "$SAFETY_DIR/database.pre-restore.dump"
+        test ! -L "$SAFETY_DIR/database.pre-restore.dump"
+        pg_dump --format=custom --file="$SAFETY_DIR/database.pre-restore.dump"
+        pg_restore --list "$SAFETY_DIR/database.pre-restore.dump" > /dev/null
+        pg_restore --file=/dev/null "$SAFETY_DIR/database.pre-restore.dump"
+        chmod 600 "$SAFETY_DIR/database.pre-restore.dump"
+        du -sb "$SAFETY_DIR"
+      args:
+        executable: /bin/bash
+      environment:
+        SAFETY_DIR: "{{ wagtail_restore_preserved.path }}"
+        PGHOST: "{{ wagtail_restore_postgres_host }}"
+        PGPORT: "{{ wagtail_restore_postgres_port | string }}"
+        PGUSER: "{{ wagtail_restore_postgres_user }}"
+        PGPASSWORD: "{{ wagtail_restore_postgres_password }}"
+        PGDATABASE: "{{ wagtail_restore_postgres_database }}"
+      register: wagtail_restore_safety_dump
+      changed_when: true
+      no_log: true
+
+    - name: Record verified Wagtail recovery dump
+      ansible.builtin.set_fact:
+        wagtail_restore_safety_ready: true
+        wagtail_restore_preserved_size: "{{ wagtail_restore_safety_dump.stdout.split()[0] }}"
+
+    - name: Mark database replacement started
+      ansible.builtin.set_fact:
+        wagtail_restore_database_touched: true
 
     - name: Drop Wagtail database
       community.postgresql.postgresql_db:
@@ -149,26 +242,25 @@
       become_user: "{{ wagtail_restore_postgres_become_user }}"
       no_log: "{{ (wagtail_restore_postgres_admin_password | default('') | length > 0) }}"
 
-    - name: Ensure database dump is readable by Postgres user
-      ansible.builtin.file:
-        path: "{{ wagtail_restore_payload_dir }}/database/{{ wagtail_restore_postgres_database }}.sql.gz"
-        owner: "{{ wagtail_restore_postgres_become_user }}"
-        group: "{{ wagtail_restore_postgres_become_user }}"
-        mode: "0640"
+    - name: Restore PostgreSQL dump in one transaction
+      ansible.builtin.shell: |
+        set -euo pipefail
+        gzip -dc "$DUMP" | psql --no-psqlrc --single-transaction -v ON_ERROR_STOP=1
+      args:
+        executable: /bin/bash
+      environment:
+        DUMP: "{{ wagtail_restore_payload_dir }}/database/{{ wagtail_restore_postgres_database }}.sql.gz"
+        PGHOST: "{{ wagtail_restore_postgres_host }}"
+        PGPORT: "{{ wagtail_restore_postgres_port | string }}"
+        PGUSER: "{{ wagtail_restore_postgres_user }}"
+        PGPASSWORD: "{{ wagtail_restore_postgres_password }}"
+        PGDATABASE: "{{ wagtail_restore_postgres_database }}"
+      changed_when: true
+      no_log: true
 
-    - name: Restore PostgreSQL dump
-      community.postgresql.postgresql_db:
-        name: "{{ wagtail_restore_postgres_database }}"
-        state: restore
-        target: "{{ wagtail_restore_payload_dir }}/database/{{ wagtail_restore_postgres_database }}.sql.gz"
-        target_opts: "{{ wagtail_restore_postgres_target_opts if (wagtail_restore_postgres_target_opts | default('') | length > 0) else omit }}"
-        login_host: "{{ wagtail_restore_postgres_host if (wagtail_restore_postgres_host | default('') | length > 0) else omit }}"
-        login_port: "{{ wagtail_restore_postgres_port if (wagtail_restore_postgres_port | default('') | length > 0) else omit }}"
-        login_user: "{{ wagtail_restore_postgres_user }}"
-        login_password: "{{ wagtail_restore_postgres_password if (wagtail_restore_postgres_password | default('') | length > 0) else omit }}"
-      become: true
-      become_user: "{{ wagtail_restore_postgres_become_user }}"
-      no_log: "{{ (wagtail_restore_postgres_password | default('') | length > 0) }}"
+    - name: Mark SQL replacement committed
+      ansible.builtin.set_fact:
+        wagtail_restore_replacement_complete: true
 
     - name: Ensure database privileges
       community.postgresql.postgresql_privs:
@@ -237,7 +329,6 @@
         enabled: true
         state: "{{ wagtail_restore_restart | bool | ternary('restarted', 'started') }}"
         daemon_reload: true
-      failed_when: false
 
     # Run state only - enablement is owned by wagtail_deploy, and a restore that
     # leaves a worker down must not report success. Gated on the same condition as
@@ -250,30 +341,89 @@
       when: wagtail_restore_stop_service | bool
 
   rescue:
-    # Best effort: never leave the site or its workers down because the restore
-    # failed. These must not mask the original failure, hence failed_when: false
-    # followed by an explicit re-raise.
-    - name: Restart Wagtail service after failed restore
-      ansible.builtin.systemd:
-        name: "{{ wagtail_restore_systemd_unit_name }}"
-        state: started
-      failed_when: false
-      when: wagtail_restore_stop_service | bool
+    - name: Record this invocation's Wagtail restore failure
+      ansible.builtin.set_fact:
+        wagtail_restore_failed_task_name: "{{ ansible_failed_task.name | default('unknown task') }}"
 
-    - name: Restart auxiliary Wagtail units after failed restore
+    - name: Leave Wagtail services stopped after restore failure
       ansible.builtin.systemd:
         name: "{{ item }}"
-        state: started
-      loop: "{{ wagtail_restore_extra_systemd_units }}"
-      failed_when: false
-      when: wagtail_restore_stop_service | bool
+        state: stopped
+      loop: "{{ [wagtail_restore_systemd_unit_name] + wagtail_restore_extra_systemd_units }}"
+      when:
+        - wagtail_restore_database_touched | bool
+        - wagtail_restore_stop_service | bool
+
+    - name: Recover verified Wagtail database
+      when:
+        - wagtail_restore_safety_ready | bool
+        - wagtail_restore_database_touched | bool
+        - not wagtail_restore_replacement_complete | bool
+      block:
+        - name: Drop failed Wagtail database
+          community.postgresql.postgresql_db:
+            name: "{{ wagtail_restore_postgres_database }}"
+            state: absent
+            force: true
+            login_host: "{{ wagtail_restore_postgres_host if (wagtail_restore_postgres_host | default('') | length > 0) else omit }}"
+            login_port: "{{ wagtail_restore_postgres_port if (wagtail_restore_postgres_port | default('') | length > 0) else omit }}"
+            login_user: "{{ wagtail_restore_postgres_admin_user }}"
+            login_password: "{{ wagtail_restore_postgres_admin_password if (wagtail_restore_postgres_admin_password | default('') | length > 0) else omit }}"
+          become: true
+          become_user: "{{ wagtail_restore_postgres_become_user }}"
+          no_log: "{{ (wagtail_restore_postgres_admin_password | default('') | length > 0) }}"
+
+        - name: Recreate Wagtail database for recovery
+          community.postgresql.postgresql_db:
+            name: "{{ wagtail_restore_postgres_database }}"
+            owner: "{{ wagtail_restore_postgres_user }}"
+            state: present
+            login_host: "{{ wagtail_restore_postgres_host if (wagtail_restore_postgres_host | default('') | length > 0) else omit }}"
+            login_port: "{{ wagtail_restore_postgres_port if (wagtail_restore_postgres_port | default('') | length > 0) else omit }}"
+            login_user: "{{ wagtail_restore_postgres_admin_user }}"
+            login_password: "{{ wagtail_restore_postgres_admin_password if (wagtail_restore_postgres_admin_password | default('') | length > 0) else omit }}"
+          become: true
+          become_user: "{{ wagtail_restore_postgres_become_user }}"
+          no_log: "{{ (wagtail_restore_postgres_admin_password | default('') | length > 0) }}"
+        - name: Restore Wagtail safety dump in one transaction
+          ansible.builtin.command:
+            argv:
+              - pg_restore
+              - --single-transaction
+              - --exit-on-error
+              - "--dbname={{ wagtail_restore_postgres_database }}"
+              - "{{ wagtail_restore_preserved.path }}/database.pre-restore.dump"
+          environment:
+            PGHOST: "{{ wagtail_restore_postgres_host }}"
+            PGPORT: "{{ wagtail_restore_postgres_port | string }}"
+            PGUSER: "{{ wagtail_restore_postgres_user }}"
+            PGPASSWORD: "{{ wagtail_restore_postgres_password }}"
+          changed_when: true
+          no_log: true
+
+        - name: Record successful database recovery
+          ansible.builtin.set_fact:
+            wagtail_restore_recovery_complete: true
 
     - name: Re-raise the restore failure
       ansible.builtin.fail:
         msg: >-
-          Wagtail restore failed at '{{ ansible_failed_task.name | default('unknown task') }}'.
-          Services were restarted best-effort; the database may be in a partially
-          restored state.
+          Wagtail restore failed at {{ wagtail_restore_failed_task_name }}.
+          SQL replacement committed: {{ wagtail_restore_replacement_complete }};
+          database recovery completed: {{ wagtail_restore_recovery_complete }}.
+          Inspect services and retained copy {{ wagtail_restore_preserved }} before starting them.
+
+  always:
+    - name: Report retained Wagtail pre-restore copy
+      ansible.builtin.debug:
+        msg: >-
+          Failed task: {{ wagtail_restore_failed_task_name }};
+          database touched: {{ wagtail_restore_database_touched }};
+          SQL replacement committed: {{ wagtail_restore_replacement_complete }};
+          database recovery completed: {{ wagtail_restore_recovery_complete }}.
+          Retained copy {{ wagtail_restore_preserved | default({}) }};
+          size including database dump: {{ wagtail_restore_preserved_size | default('dump incomplete') }} bytes.
+          Owner prunes copies by hand.
 
 - name: Cleanup restore staging directory
   ansible.builtin.file:

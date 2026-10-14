@@ -130,11 +130,19 @@ at that site (this is how `unifi_backup/tasks/services.yml` is checked).
 
 ## Restore safety
 
-`just test-restore-safety` (part of `just test`) checks the restore roles statically: the dump or
-database is validated before the service stops, the stop fails closed, a safety copy is taken
-before the first overwrite, no restore step ignores failures, and `rescue` puts the safety copy
-back and leaves the service stopped. Molecule (`just molecule-test vaultwarden_restore`) covers
+`just test-restore-safety` (part of `just test`) checks the covered restore roles:
+inputs are validated, stops fail closed, and safety copies precede replacement.
+Vaultwarden and the federation database restores recover in `rescue` with services
+left stopped; file-based directory copies are retained for manual recovery. Molecule (`just molecule-test vaultwarden_restore`) covers
 the successful path in Docker.
+
+The file-restore regressions in `tests.test_file_restore_safety` also execute the
+shared preservation helper against temporary local directories. They verify
+rename/copy ordering, checksum failure, mount points (with a mocked mount table),
+insufficient space, and repeated restores retaining every copy. All six callers
+are checked statically. Wagtail validation, transactional SQL restore and guarded
+database recovery are pinned alongside those contracts. These do not replace
+Molecule or a real PostgreSQL integration run; no host restore runs in this suite.
 
 ## SSH forwarding identity fixtures
 
