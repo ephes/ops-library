@@ -20,3 +20,33 @@ The helper prints a marked JSON record containing the copy path and original app
 size in bytes (collected before any rename) before clearing and exposes `restore_preserve_report` for the
 caller's final report. A failed copy can leave an incomplete sibling for manual
 inspection, but leaves live data untouched. Check mode initializes a placeholder report and does not preserve or clear.
+
+## Replacing directories from an archive
+
+`tasks/replace_from_archive.yml` restores whole directories from a tar archive
+whose members are stored by directory name (`letsencrypt/...`, `postfix/...`),
+as `community.general.archive` writes them. Inputs: `restore_archive_src`
+(archive path on the managed host), `restore_archive_root` (the parent, for
+example `/etc`) and `restore_archive_allowed_tops` (directory names allowed
+below it). The tasks:
+
+1. run `files/archive_members.py`, which fails unless every member is a
+   relative path below an allowed name, without `..`, present only once, and a regular file,
+   directory, symlink or hardlink whose target, resolved through every
+   symlink in the archive, stays inside its own directory, with no hardlink
+   to a symlink (directly or through other hardlinks), no member stored below
+   a symlink and every top-level entry a directory. Nothing has
+   changed at this point;
+2. extract into a `.restore-staging-*` directory inside `restore_archive_root`
+   and check that every staged top-level entry is a directory;
+3. for each directory present in the archive, preserve the live directory as
+   described above and move the staged contents into the emptied directory,
+   which gets the owner and mode of its pre-restore copy (of the staged
+   directory when there was no live directory);
+4. remove the staging directory, also after a failure.
+
+`restore_archive_reports` lists one preservation report per directory. A
+failure after preservation leaves the live directory empty or partly filled;
+the retained copy is then the way back. Callers that stop services can run
+`files/archive_members.py` themselves before stopping them, as `mail_restore`
+does.

@@ -97,7 +97,10 @@ Current helper surfaces:
 - `restore_preserve_internal` is a shared task library for retaining directory
   state before file/Wagtail restores. Callers include its `main`, `validate`
   and optional `preflight` tasks by sibling path to retain the caller’s role
-  context; every copy remains for manual pruning. It is independent of the
+  context; every copy remains for manual pruning. Its
+  `replace_from_archive` tasks validate archive members, extract into a
+  staging directory and replace named directories below a parent such as
+  `/etc` (Certbot and mail configuration restores). It is independent of the
   restore pilot scaffold and has no pruning or rollback orchestration.
 - `minio_shared` is an internal helper task library, not a shared-defaults
   role. It currently exposes `tasks/mc_host_env.yml` for MinIO backup/restore

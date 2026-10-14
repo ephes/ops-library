@@ -156,6 +156,17 @@
       Restoring backup from: {{ mail_restore_source }}
       {{ manifest_content.content | b64decode }}
 
+- name: Validate configuration archive members before stopping services
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/../restore_preserve_internal/files/archive_members.py
+      {{ (mail_restore_source ~ '/config.tar.gz') | quote }}
+      {% for top in mail_restore_config_dirs %}--allow-top {{ top | quote }} {% endfor %}
+    executable: "{{ ansible_facts.python.executable | default('/usr/bin/python3') }}"
+  changed_when: false
+  check_mode: false
+  when: mail_restore_config | bool
+
 # =============================================================================
 # Gather service facts and stop services
 # =============================================================================
@@ -260,11 +271,16 @@
 - name: Restore configuration
   when: mail_restore_config
   block:
-    - name: Extract config from backup
-      ansible.builtin.unarchive:
-        src: "{{ mail_restore_source }}/config.tar.gz"
-        dest: /
-        remote_src: true
+    - name: Validate, stage and replace configuration directories
+      ansible.builtin.include_tasks: "{{ role_path }}/../restore_preserve_internal/tasks/replace_from_archive.yml"
+      vars:
+        restore_archive_src: "{{ mail_restore_source }}/config.tar.gz"
+        restore_archive_root: "{{ mail_restore_config_root }}"
+        restore_archive_allowed_tops: "{{ mail_restore_config_dirs }}"
+
+    - name: Record retained configuration copies
+      ansible.builtin.set_fact:
+        mail_restore_config_copies: "{{ restore_archive_reports | map(attribute='path') | select | list }}"
 
 # =============================================================================
 # Start services after restore
@@ -284,6 +300,8 @@
       {% if mail_restore_services | difference(mail_restore_existing_services) | length > 0 %}
       Services not found (skipped): {{ mail_restore_services | difference(mail_restore_existing_services) | join(', ') }}
       {% endif %}
-      {% if not mail_restore_config %}
+      {% if mail_restore_config %}
+      Pre-restore configuration copies (pruned by hand): {{ mail_restore_config_copies | default([]) | join(', ') or 'none' }}
+      {% else %}
       Note: Configuration was NOT restored. Review and apply config changes manually if needed.
       {% endif %}
