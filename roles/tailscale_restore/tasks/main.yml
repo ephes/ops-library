@@ -138,8 +138,9 @@
     state: "{{ tailscale_restore_restart_service | bool | ternary('restarted', 'started') }}"
 
 - name: Re-run tailscale up after restore (optional)
-  ansible.builtin.command:
-    cmd: >
+  ansible.builtin.include_tasks: "{{ role_path }}/../tailscale_shared/tasks/join.yml"
+  vars:
+    tailscale_join_command: >-
       {{ tailscale_bin }} up
       --hostname={{ tailscale_hostname }}
       --accept-routes={{ tailscale_accept_routes | ternary('true', 'false') }}
@@ -147,11 +148,9 @@
       {% if tailscale_exit_node | length > 0 %}--exit-node={{ tailscale_exit_node }}{% endif %}
       {% if tailscale_advertise_exit_node | bool %}--advertise-exit-node{% endif %}
       {{ tailscale_args_extra }}
-      --authkey={{ tailscale_auth_key }}
   when:
     - tailscale_restore_force_reup | bool
     - not tailscale_manual_up | bool
-  changed_when: true
 
 - name: Cleanup staging directory
   ansible.builtin.file:

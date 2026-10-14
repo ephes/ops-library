@@ -54,7 +54,7 @@ COMMAND_MODULES = {
 SENSITIVE_HEADER = re.compile(
     r"authorization|token|api[-_]?key|secret|cookie|password|passphrase", re.IGNORECASE
 )
-SECRET_WORD = r"(?:password|passwd|secret|token|api_key|apikey|private_key|access_key)"
+SECRET_WORD = r"(?:password|passwd|secret|token|api_key|apikey|private_key|access_key|auth_?key)"
 # A Jinja expression mentioning a secret-named variable. Names that only point
 # at a secret (``*_file``, ``*_path``, ``*_hash``, ...) do not count.
 SECRET_VAR = re.compile(
@@ -241,7 +241,7 @@ def _renders_exposure_secret(value: Any) -> bool:
     if not isinstance(value, str):
         return False
     pattern = re.compile(
-        r"\b\w*(?:password|passwd|passphrase|secret|token|api_key|apikey|private_key|access_key)\w*\b"
+        r"\b\w*(?:password|passwd|passphrase|secret|token|api_key|apikey|private_key|access_key|auth_?key)\w*\b"
         r"(?<!_file)(?<!_path)(?<!_dir)(?<!_name)",
         re.IGNORECASE,
     )

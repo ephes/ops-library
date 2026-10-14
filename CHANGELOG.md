@@ -3,6 +3,20 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Tailscale auth key off the command line (2.31.43)
+
+- `tailscale_deploy` and `tailscale_restore` ran
+  `tailscale up --authkey=<key>` without `no_log`, so the key was visible in
+  the host's process list and in Ansible/FastDeploy output on failure or with
+  `-v`. Both now use the new `tailscale_shared/tasks/join.yml`: the key is
+  written to a private 0600 temporary file, `tailscale up` gets
+  `--auth-key=file:<path>` and runs with `no_log`, a failure is reported
+  without the key, and the file is removed afterwards. `file:` is supported
+  since Tailscale 1.16 and `--auth-key` since 1.22; the role installs the
+  latest stable package by default.
+- `scripts/check_secret_no_log.py` treats `auth_key`/`authkey` variables as
+  secrets, so a key rendered onto a command line is flagged.
+
 ## Unreleased — Meaningful idempotence check for the mail relay Molecule scenario (2.31.42)
 
 - `mail_relay_deploy` Molecule scenario: the rewrites-on deployment and its

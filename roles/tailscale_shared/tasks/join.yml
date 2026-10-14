@@ -1,0 +1,48 @@
+---
+# Run `tailscale up` with the auth key read from a private temporary file
+# (`--auth-key=file:<path>`, Tailscale 1.22 or newer), so the key never
+# appears on the command line, in the process list or in task output.
+# Input: tailscale_join_command (the `tailscale up ...` command without a key).
+# Output: tailscale_up (registered result of the command).
+# Check mode cannot create the key file, so the join is only reported there.
+- name: join | Report the join that check mode skips
+  ansible.builtin.debug:
+    msg: "Check mode: would run tailscale up with the auth key from a private file"
+  when: ansible_check_mode
+
+- name: join | Join tailnet with the auth key from a private file
+  when: not ansible_check_mode
+  block:
+    - name: join | Create private auth key file
+      ansible.builtin.tempfile:
+        state: file
+        suffix: .tailscale-auth-key
+      register: tailscale_auth_key_file
+
+    - name: join | Write auth key file
+      ansible.builtin.copy:
+        content: "{{ tailscale_auth_key }}"
+        dest: "{{ tailscale_auth_key_file.path }}"
+        mode: "0600"
+      no_log: true
+
+    - name: join | Run tailscale up
+      ansible.builtin.command:
+        cmd: "{{ tailscale_join_command }} --auth-key=file:{{ tailscale_auth_key_file.path }}"
+      register: tailscale_up
+      changed_when: true
+      failed_when: false
+      no_log: true
+
+    # The no_log task above must not hide its own failure; stderr carries the
+    # Tailscale error, never the key itself.
+    - name: join | Report a failed tailscale up
+      ansible.builtin.fail:
+        msg: "tailscale up failed (rc={{ tailscale_up.rc }}): {{ tailscale_up.stderr | default('') }}"
+      when: tailscale_up.rc != 0
+  always:
+    - name: join | Remove auth key file
+      ansible.builtin.file:
+        path: "{{ tailscale_auth_key_file.path }}"
+        state: absent
+      when: tailscale_auth_key_file.path is defined

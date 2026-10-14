@@ -6,6 +6,10 @@ Restores Tailscale state/configuration from a backup archive and optionally re-j
 
 Extracts a backup produced by `tailscale_backup`, restores `/var/lib/tailscale`, sysconfig, and systemd drop-ins, restarts the service, and optionally runs `tailscale up` again (auth key required unless using manual mode).
 
+The re-join passes the auth key as `--auth-key=file:<path>` from a private temporary file that is
+removed afterwards, so the key stays out of the process list and task output (Tailscale 1.22 or
+newer). See `tailscale_deploy` for details.
+
 ## Requirements
 
 - Debian/Ubuntu target

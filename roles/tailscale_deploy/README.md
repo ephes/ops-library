@@ -70,5 +70,11 @@ tailscale_repo_list_file: /etc/apt/sources.list.d/tailscale.list  # Legacy clean
 ## Notes
 
 - If Tailscale is the only management path, perform initial bootstrap via LAN/console or preinstall Tailscale manually, then switch to automated deploys.
+- The auth key never goes on the command line. The role writes it to a private
+  (0600) temporary file, runs `tailscale up --auth-key=file:<path>` and removes
+  the file afterwards, also when `tailscale up` fails. The `tailscale up` task
+  runs with `no_log`; a failure is reported in a separate task with the exit
+  code and Tailscale's error output. `--auth-key=file:` needs Tailscale 1.22 or
+  newer, so do not pin `tailscale_package_version` below that.
 - When rotating auth keys or reusing an existing node key, set `tailscale_manual_up: true`.
 - Server nodes should either have key expiry disabled in the Tailscale admin console or be monitored with `tailscale_metrics_endpoint` so Nyxmon alerts before `BackendState` reaches `NeedsLogin`.
