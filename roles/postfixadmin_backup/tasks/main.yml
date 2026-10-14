@@ -1,123 +1,309 @@
 ---
 # postfixadmin_backup - Backup PostfixAdmin configuration and admin tables
 #
-# Note: Core mail tables (domain, mailbox, alias, alias_domain) are backed up
-# by mail_backup role. This role only backs up PostfixAdmin-specific data.
+# Only the PostfixAdmin overlay is backed up here. The mail tables (domain,
+# mailbox, alias, alias_domain) live in the same `mail` database and are
+# covered by whole-database dumps, see README.md.
+#
+# Fail-closed: every part is written into "<timestamp>.tmp" and the directory
+# is renamed to "<timestamp>" only once all required parts are written and the
+# manifest lists exactly what is there. A failed run removes its .tmp
+# directory, fails the play and never reaches the retention step.
 
-- name: Set backup timestamp
+- name: Set backup timestamp and paths
   ansible.builtin.set_fact:
     postfixadmin_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+    postfixadmin_backup_dir: "{{ postfixadmin_backup_path }}/{{ ansible_date_time.iso8601_basic_short }}"
+    postfixadmin_backup_tmp_dir: "{{ postfixadmin_backup_path }}/{{ ansible_date_time.iso8601_basic_short }}.tmp"
+    postfixadmin_backup_warnings: []
 
-- name: Create backup directory
+- name: Validate backup retention settings
+  ansible.builtin.assert:
+    that:
+      - postfixadmin_backup_retention_days | int >= 1
+      - postfixadmin_backup_keep_min | int >= 1
+    fail_msg: "postfixadmin_backup_retention_days and postfixadmin_backup_keep_min must be at least 1"
+    quiet: true
+
+- name: Ensure backup root exists
   ansible.builtin.file:
-    path: "{{ postfixadmin_backup_path }}/{{ postfixadmin_backup_timestamp }}"
+    path: "{{ postfixadmin_backup_path }}"
     state: directory
     owner: root
     group: root
     mode: "0700"
 
-- name: Backup PostfixAdmin config.local.php
-  ansible.builtin.copy:
-    src: "{{ postfixadmin_install_path }}/config.local.php"
-    dest: "{{ postfixadmin_backup_path }}/{{ postfixadmin_backup_timestamp }}/config.local.php"
-    remote_src: true
-    mode: "0600"
-  failed_when: false
+# The rescue below deletes this run's .tmp directory. Refuse to start if the
+# final or .tmp directory already exists (a second run in the same play reuses
+# the cached timestamp), so a failure can never delete an earlier backup.
+- name: Check that this run's backup paths are new
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ postfixadmin_backup_dir }}"
+    - "{{ postfixadmin_backup_tmp_dir }}"
+  register: postfixadmin_backup_existing_paths
 
-- name: Backup templates_c directory
-  ansible.builtin.command:
-    cmd: >
-      tar -czf "{{ postfixadmin_backup_path }}/{{ postfixadmin_backup_timestamp }}/templates_c.tar.gz"
-      -C "{{ postfixadmin_install_path }}" templates_c
-  when: postfixadmin_backup_include_templates_c | bool
-  failed_when: false
-  changed_when: true
+- name: Refuse to reuse an existing backup directory
+  ansible.builtin.fail:
+    msg: >-
+      {{ postfixadmin_backup_existing_paths.results | selectattr('stat.exists') | map(attribute='item') | join(', ') }}
+      already exists; refusing to reuse it. Re-gather facts before a second
+      backup in the same play.
+  when: postfixadmin_backup_existing_paths.results | selectattr('stat.exists') | list | length > 0
 
-- name: Backup PostfixAdmin admin table
-  no_log: true
-  community.postgresql.postgresql_query:
-    db: "{{ postfixadmin_db_name }}"
-    login_host: "{{ postfixadmin_db_host }}"
-    login_user: "{{ postfixadmin_db_user }}"
-    login_password: "{{ postfixadmin_db_password }}"
-    query: "SELECT * FROM admin"
-  register: admin_backup
+- name: Create backup
+  block:
+    - name: Create temporary backup directory
+      ansible.builtin.file:
+        path: "{{ postfixadmin_backup_tmp_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
 
-- name: Write admin table backup
-  no_log: true
-  ansible.builtin.copy:
-    content: "{{ admin_backup.query_result | to_nice_json }}"
-    dest: "{{ postfixadmin_backup_path }}/{{ postfixadmin_backup_timestamp }}/admin.json"
-    mode: "0600"
+    # Required part: a missing config.local.php fails the backup.
+    - name: Check PostfixAdmin config.local.php
+      ansible.builtin.stat:
+        path: "{{ postfixadmin_install_path }}/config.local.php"
+      register: postfixadmin_backup_config_stat
 
-- name: Backup PostfixAdmin domain_admins table
-  community.postgresql.postgresql_query:
-    db: "{{ postfixadmin_db_name }}"
-    login_host: "{{ postfixadmin_db_host }}"
-    login_user: "{{ postfixadmin_db_user }}"
-    login_password: "{{ postfixadmin_db_password }}"
-    query: "SELECT * FROM domain_admins"
-  register: domain_admins_backup
-  failed_when: false
+    - name: Require PostfixAdmin config.local.php
+      ansible.builtin.assert:
+        that:
+          - postfixadmin_backup_config_stat.stat.exists
+          - postfixadmin_backup_config_stat.stat.isreg
+        fail_msg: "{{ postfixadmin_install_path }}/config.local.php is missing; refusing to write an incomplete backup"
+        quiet: true
 
-- name: Write domain_admins table backup
-  ansible.builtin.copy:
-    content: "{{ domain_admins_backup.query_result | default([]) | to_nice_json }}"
-    dest: "{{ postfixadmin_backup_path }}/{{ postfixadmin_backup_timestamp }}/domain_admins.json"
-    mode: "0600"
-  when: domain_admins_backup.query_result is defined
+    - name: Backup PostfixAdmin config.local.php
+      ansible.builtin.copy:
+        src: "{{ postfixadmin_install_path }}/config.local.php"
+        dest: "{{ postfixadmin_backup_tmp_dir }}/config.local.php"
+        remote_src: true
+        mode: "0600"
 
-- name: Backup PostfixAdmin log table
-  community.postgresql.postgresql_query:
-    db: "{{ postfixadmin_db_name }}"
-    login_host: "{{ postfixadmin_db_host }}"
-    login_user: "{{ postfixadmin_db_user }}"
-    login_password: "{{ postfixadmin_db_password }}"
-    query: "SELECT * FROM log ORDER BY timestamp DESC LIMIT 10000"
-  register: log_backup
-  failed_when: false
+    # Required part: the query must succeed and return at least one admin.
+    # All columns are kept (TOTP secret, phone, email_other, token, ...).
+    - name: Backup PostfixAdmin admin table
+      no_log: true
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: "SELECT * FROM admin ORDER BY username"
+      register: admin_backup
 
-- name: Write log table backup
-  ansible.builtin.copy:
-    content: "{{ log_backup.query_result | default([]) | to_nice_json }}"
-    dest: "{{ postfixadmin_backup_path }}/{{ postfixadmin_backup_timestamp }}/log.json"
-    mode: "0600"
-  when: log_backup.query_result is defined
+    - name: Require at least one admin account
+      ansible.builtin.assert:
+        that:
+          - admin_backup.query_result | length > 0
+        fail_msg: "The admin table is empty; refusing to write a backup without an admin account"
+        quiet: true
 
-- name: Create backup manifest
-  ansible.builtin.copy:
-    content: |
-      ---
-      backup_type: postfixadmin
-      timestamp: {{ postfixadmin_backup_timestamp }}
-      created_at: {{ ansible_date_time.iso8601 }}
-      hostname: {{ inventory_hostname }}
-      postfixadmin_version: {{ postfixadmin_version }}
-      contents:
-        - config.local.php
-        - admin.json
-        - domain_admins.json
-        - log.json
-      {% if postfixadmin_backup_include_templates_c %}
-        - templates_c.tar.gz
-      {% endif %}
-    dest: "{{ postfixadmin_backup_path }}/{{ postfixadmin_backup_timestamp }}/manifest.yml"
-    mode: "0644"
+    - name: Write admin table backup
+      no_log: true
+      ansible.builtin.copy:
+        content: "{{ admin_backup.query_result | to_nice_json }}"
+        dest: "{{ postfixadmin_backup_tmp_dir }}/admin.json"
+        mode: "0600"
 
-- name: Clean up old backups
+    # Required part: the query must succeed; no rows is valid (superadmin only).
+    - name: Backup PostfixAdmin domain_admins table
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: "SELECT * FROM domain_admins ORDER BY username, domain"
+      register: domain_admins_backup
+
+    - name: Write domain_admins table backup
+      ansible.builtin.copy:
+        # postgresql_query returns {} rather than [] for an empty result.
+        content: "{{ (domain_admins_backup.query_result if domain_admins_backup.query_result is sequence and domain_admins_backup.query_result is not mapping else []) | to_nice_json }}"
+        dest: "{{ postfixadmin_backup_tmp_dir }}/domain_admins.json"
+        mode: "0600"
+
+    # Recorded in the manifest so a restore can refuse a backup taken from a
+    # newer schema than the target has.
+    - name: Read PostfixAdmin database schema version
+      community.postgresql.postgresql_query:
+        db: "{{ postfixadmin_db_name }}"
+        login_host: "{{ postfixadmin_db_host }}"
+        login_user: "{{ postfixadmin_db_user }}"
+        login_password: "{{ postfixadmin_db_password }}"
+        query: "SELECT value FROM config WHERE name = 'version'"
+      register: postfixadmin_backup_schema_query
+
+    - name: Require a numeric PostfixAdmin schema version
+      ansible.builtin.assert:
+        that:
+          - postfixadmin_backup_schema_query.query_result | length == 1
+          - postfixadmin_backup_schema_query.query_result[0].value | string is match('^[0-9]+$')
+        fail_msg: "config.version is missing or not numeric; refusing to write a backup without the schema version"
+        quiet: true
+
+    # Optional part: audit log. A failing query or write is a warning and the
+    # part is left out of the manifest.
+    - name: Backup PostfixAdmin log table
+      block:
+        - name: Query PostfixAdmin log table
+          community.postgresql.postgresql_query:
+            db: "{{ postfixadmin_db_name }}"
+            login_host: "{{ postfixadmin_db_host }}"
+            login_user: "{{ postfixadmin_db_user }}"
+            login_password: "{{ postfixadmin_db_password }}"
+            query: "SELECT * FROM log ORDER BY timestamp DESC LIMIT 10000"
+          register: log_backup
+
+        - name: Write log table backup
+          ansible.builtin.copy:
+            content: "{{ (log_backup.query_result if log_backup.query_result is sequence and log_backup.query_result is not mapping else []) | to_nice_json }}"
+            dest: "{{ postfixadmin_backup_tmp_dir }}/log.json"
+            mode: "0600"
+      rescue:
+        - name: Remove a partial log backup
+          ansible.builtin.file:
+            path: "{{ postfixadmin_backup_tmp_dir }}/log.json"
+            state: absent
+
+        - name: Record skipped log part
+          ansible.builtin.set_fact:
+            postfixadmin_backup_warnings: "{{ postfixadmin_backup_warnings + ['log.json: ' ~ (ansible_failed_result.msg | default('failed'))] }}"
+
+    # Optional part: compiled Smarty templates (regenerable).
+    - name: Backup templates_c directory
+      ansible.builtin.command:
+        cmd: >
+          tar -czf "{{ postfixadmin_backup_tmp_dir }}/templates_c.tar.gz"
+          -C "{{ postfixadmin_install_path }}" templates_c
+      when: postfixadmin_backup_include_templates_c | bool
+      register: templates_c_backup
+      failed_when: false
+      changed_when: templates_c_backup.rc | default(1) == 0
+
+    - name: Drop a failed templates_c archive
+      when:
+        - postfixadmin_backup_include_templates_c | bool
+        - templates_c_backup.rc | default(1) != 0
+      block:
+        - name: Remove the partial templates_c archive
+          ansible.builtin.file:
+            path: "{{ postfixadmin_backup_tmp_dir }}/templates_c.tar.gz"
+            state: absent
+
+        - name: Record skipped templates_c part
+          ansible.builtin.set_fact:
+            postfixadmin_backup_warnings: >-
+              {{ postfixadmin_backup_warnings + ['templates_c.tar.gz: ' ~ ((templates_c_backup.stderr | default('') | trim) or 'tar failed')] }}
+
+    # The manifest lists only parts that are actually on disk.
+    - name: Find written backup parts
+      ansible.builtin.find:
+        paths: "{{ postfixadmin_backup_tmp_dir }}"
+        file_type: file
+      register: postfixadmin_backup_written
+
+    - name: Set backup contents
+      ansible.builtin.set_fact:
+        postfixadmin_backup_contents: >-
+          {{
+            postfixadmin_backup_written.files | map(attribute='path') | map('basename')
+            | select('in', postfixadmin_backup_required_parts + postfixadmin_backup_optional_parts)
+            | sort | list
+          }}
+
+    - name: Require every required part
+      ansible.builtin.assert:
+        that:
+          - postfixadmin_backup_required_parts | difference(postfixadmin_backup_contents) | length == 0
+        fail_msg: >-
+          Missing required parts:
+          {{ postfixadmin_backup_required_parts | difference(postfixadmin_backup_contents) | join(', ') }}
+        quiet: true
+
+    - name: Create backup manifest
+      ansible.builtin.copy:
+        content: |
+          ---
+          {{ postfixadmin_backup_manifest | to_nice_yaml(indent=2) }}
+        dest: "{{ postfixadmin_backup_tmp_dir }}/manifest.yml"
+        mode: "0644"
+      vars:
+        postfixadmin_backup_manifest:
+          backup_type: postfixadmin
+          manifest_version: 2
+          timestamp: "{{ postfixadmin_backup_timestamp }}"
+          created_at: "{{ ansible_date_time.iso8601 }}"
+          hostname: "{{ inventory_hostname }}"
+          postfixadmin_version: "{{ postfixadmin_version | string }}"
+          db_schema_version: "{{ postfixadmin_backup_schema_query.query_result[0].value | int }}"
+          contents: "{{ postfixadmin_backup_contents }}"
+          skipped: "{{ postfixadmin_backup_warnings }}"
+
+    - name: Publish the complete backup
+      ansible.builtin.command:
+        argv:
+          - mv
+          - --no-target-directory
+          - "{{ postfixadmin_backup_tmp_dir }}"
+          - "{{ postfixadmin_backup_dir }}"
+      changed_when: true
+
+  rescue:
+    - name: Remove the incomplete backup directory
+      ansible.builtin.file:
+        path: "{{ postfixadmin_backup_tmp_dir }}"
+        state: absent
+
+    - name: Fail the backup
+      ansible.builtin.fail:
+        msg: >-
+          PostfixAdmin backup failed at
+          '{{ ansible_failed_task.name | default('unknown task') }}'; nothing
+          was published and retention did not run.
+          {{ '' if (ansible_failed_task.no_log | default(false)) else (ansible_failed_result.msg | default('')) }}
+
+- name: Warn about skipped optional parts
+  ansible.builtin.debug:
+    msg: "WARNING: optional part not backed up: {{ item }}"
+  loop: "{{ postfixadmin_backup_warnings }}"
+
+# Retention runs only after a successful run. It considers only directories
+# named like a completed backup (no .tmp), never prunes the newest
+# postfixadmin_backup_keep_min of them, and prunes the rest only when older
+# than postfixadmin_backup_retention_days.
+- name: Find completed backups
   ansible.builtin.find:
     paths: "{{ postfixadmin_backup_path }}"
     file_type: directory
-    age: "{{ postfixadmin_backup_retention_days }}d"
-  register: old_backups
+    patterns: '^[0-9]{8}T[0-9]{6}$'
+    use_regex: true
+  register: postfixadmin_backup_all
 
-- name: Remove old backup directories
+- name: Find completed backups older than the retention period
+  ansible.builtin.find:
+    paths: "{{ postfixadmin_backup_path }}"
+    file_type: directory
+    patterns: '^[0-9]{8}T[0-9]{6}$'
+    use_regex: true
+    age: "{{ postfixadmin_backup_retention_days }}d"
+  register: postfixadmin_backup_old
+
+- name: Remove expired backup directories
   ansible.builtin.file:
-    path: "{{ item.path }}"
+    path: "{{ item }}"
     state: absent
-  loop: "{{ old_backups.files }}"
-  when: old_backups.files | length > 0
+  loop: >-
+    {{
+      postfixadmin_backup_old.files | map(attribute='path') | sort
+      | difference(
+          (postfixadmin_backup_all.files | map(attribute='path') | sort | reverse | list)[:postfixadmin_backup_keep_min | int]
+        )
+    }}
 
 - name: Report backup location
   ansible.builtin.debug:
-    msg: "PostfixAdmin backup created at {{ postfixadmin_backup_path }}/{{ postfixadmin_backup_timestamp }}"
+    msg: "PostfixAdmin backup created at {{ postfixadmin_backup_dir }} ({{ postfixadmin_backup_contents | join(', ') }})"

@@ -3,6 +3,41 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — PostfixAdmin backups fail closed (2.31.48)
+
+- `postfixadmin_backup` no longer publishes a partial backup. `config.local.php`,
+  the `admin` table (at least one row) and the `domain_admins` table (no rows
+  is fine) are required, and so is the database schema version. A run writes
+  into `<timestamp>.tmp/` and renames it only when every required part is
+  there; on any failure the `.tmp` directory is removed, the play fails and
+  retention does not run. The audit `log` and `templates_c` stay optional:
+  a failure is a warning and the part is left out of the manifest.
+- The manifest (`manifest_version: 2`) lists exactly the parts written, plus
+  `postfixadmin_version`, `db_schema_version` and the skipped optional parts.
+  It used to list every part whether or not it existed.
+- The `admin` backup keeps every column, and `postfixadmin_restore` restores
+  them all, so TOTP secrets, `phone`, `email_other` and tokens survive. Before
+  it changes anything, the restore refuses a timestamp that is not a backup
+  directory name, a manifest without `contents`, a missing required or listed
+  part, a column the target's `admin` table lacks, and a backup from a newer
+  schema version than the target's.
+- Retention prunes only completed backup directories (`YYYYMMDDTHHMMSS`),
+  only after a successful run, and never the newest
+  `postfixadmin_backup_keep_min` (new, default 5). Age-only pruning of an
+  ad-hoc role could leave just the newest, possibly partial, backup.
+- The Echoport runner `echoport_backup/templates/postfixadmin_backup.py.j2`
+  gets the same treatment: `admin` (all columns, at least one row) and
+  `domain_admins` are required, `log` is optional; `config.local.php`, the
+  nginx site and the PHP pool are required, the Traefik config is optional.
+  Missing optional parts are reported as warnings. `manifest.json`
+  (`format_version: 2`) lists the tables and config files in the archive and
+  the schema version. The restore refuses an archive with a missing required
+  or listed part, or from a newer schema, before it stops any service;
+  archives written before this change still restore. The safety snapshot
+  keeps every admin column as well.
+- The `postfixadmin_backup` README no longer claims that `mail_backup` covers
+  the mail tables; it names the whole-database dumps that do.
+
 ## Unreleased — FastDeploy and Nyxmon deploys no longer restart Traefik (2.31.47)
 
 - `fastdeploy_deploy` and `nyxmon_deploy` no longer restart Traefik after

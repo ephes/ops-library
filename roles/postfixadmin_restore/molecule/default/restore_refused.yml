@@ -1,0 +1,24 @@
+---
+- name: Restore must refuse {{ refused_timestamp }}
+  block:
+    - name: Restore {{ refused_timestamp }}
+      ansible.builtin.include_role:
+        name: postfixadmin_restore
+      vars:
+        postfixadmin_db_password: "molecule-test-password"
+        postfixadmin_backup_path: "/tmp/postfixadmin-backups"
+        postfixadmin_restore_timestamp: "{{ refused_timestamp }}"
+
+    - name: Record unexpected success
+      ansible.builtin.set_fact:
+        restore_refused: false
+  rescue:
+    - name: Record expected refusal
+      ansible.builtin.set_fact:
+        restore_refused: true
+
+- name: Assert {{ refused_timestamp }} was refused
+  ansible.builtin.assert:
+    that:
+      - restore_refused
+    fail_msg: "postfixadmin_restore accepted {{ refused_timestamp }}"

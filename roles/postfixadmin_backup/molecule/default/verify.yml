@@ -87,17 +87,115 @@
       ansible.builtin.set_fact:
         manifest: "{{ manifest_content.content | b64decode | from_yaml }}"
 
-    - name: Assert manifest has correct type
+    - name: Assert manifest lists exactly the written parts
       ansible.builtin.assert:
         that:
           - manifest.backup_type == 'postfixadmin'
-        fail_msg: "Manifest has incorrect backup type"
+          - manifest.manifest_version | int == 2
+          - manifest.contents | sort == ['admin.json', 'config.local.php', 'domain_admins.json', 'log.json']
+          - manifest.postfixadmin_version | length > 0
+          - manifest.db_schema_version | int > 0
+        fail_msg: "Unexpected manifest: {{ manifest }}"
+
+    - name: Assert every listed part exists
+      ansible.builtin.stat:
+        path: "{{ latest_backup }}/{{ item }}"
+      loop: "{{ manifest.contents }}"
+      register: listed_parts
+      failed_when: not listed_parts.stat.exists
+
+    # Fail-closed: a run with a missing required part publishes nothing and
+    # leaves no .tmp directory behind.
+    - name: Run a backup with a missing config.local.php
+      block:
+        - name: Back up from a broken install path
+          ansible.builtin.include_role:
+            name: postfixadmin_backup
+          vars:
+            postfixadmin_db_password: "molecule-test-password"
+            postfixadmin_install_path: /nonexistent/postfixadmin
+
+        - name: Record unexpected success
+          ansible.builtin.set_fact:
+            broken_backup_failed: false
+      rescue:
+        - name: Record expected failure
+          ansible.builtin.set_fact:
+            broken_backup_failed: true
+
+    - name: Find backup directories after the failed run
+      ansible.builtin.find:
+        paths: "{{ postfixadmin_backup_path }}"
+        file_type: directory
+      register: dirs_after_failure
+
+    - name: Assert the failed run published nothing
+      ansible.builtin.assert:
+        that:
+          - broken_backup_failed
+          - dirs_after_failure.matched == backup_dirs.matched
+          - dirs_after_failure.files | map(attribute='path') | select('search', '\\.tmp$') | list | length == 0
+        fail_msg: "A failed backup left a directory behind: {{ dirs_after_failure.files | map(attribute='path') | list }}"
+
+    # Retention: old completed backups beyond keep_min are pruned after a
+    # successful run; the newest keep_min and any .tmp directory are kept.
+    - name: Create expired fake backups
+      ansible.builtin.file:
+        path: "{{ postfixadmin_backup_path }}/{{ item }}"
+        state: directory
+        mode: "0700"
+        modification_time: "202001010000.00"
+        access_time: "202001010000.00"
+      loop:
+        - 20200101T000001
+        - 20200101T000002
+        - 20200101T000003
+        - 20200101T000004
+        - 20200101T000005
+        - 20200101T000006
+        - 20200101T000007
+        - 20200101T000008.tmp
+
+    - name: Wait so the next backup gets a new timestamp
+      ansible.builtin.pause:
+        seconds: 1
+
+    - name: Refresh the timestamp fact
+      ansible.builtin.setup:
+        gather_subset: [min]
+
+    - name: Run a successful backup
+      ansible.builtin.include_role:
+        name: postfixadmin_backup
+      vars:
+        postfixadmin_db_password: "molecule-test-password"
+
+    - name: Find backups after retention
+      ansible.builtin.find:
+        paths: "{{ postfixadmin_backup_path }}"
+        file_type: directory
+      register: dirs_after_retention
+
+    - name: Assert retention kept the newest five completed backups
+      ansible.builtin.assert:
+        that:
+          - _names | select('match', '^[0-9]{8}T[0-9]{6}$') | list | length == 5
+          - "'20200101T000007' in _names"
+          - "'20200101T000005' in _names"
+          - "'20200101T000004' not in _names"
+          - "'20200101T000001' not in _names"
+          - "'20200101T000008.tmp' in _names"
+          - (latest_backup | basename) in _names
+        fail_msg: "Unexpected backups after retention: {{ _names }}"
+      vars:
+        _names: "{{ dirs_after_retention.files | map(attribute='path') | map('basename') | sort | list }}"
 
     - name: Display verification summary
       ansible.builtin.debug:
         msg: |
           PostfixAdmin backup verification completed successfully:
           - Backup directory: {{ latest_backup }}
-          - Manifest: OK
-          - Config backup: OK
+          - Manifest: OK ({{ manifest.contents | join(', ') }}, schema {{ manifest.db_schema_version }})
           - Admin table backup: OK ({{ admin_data | length }} entries)
+          - Failed run published nothing: OK
+          - Retention kept the newest five: OK

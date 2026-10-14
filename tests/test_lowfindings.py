@@ -134,9 +134,9 @@ def test_postfixadmin_queries_are_protected():
         assert node["no_log"] is True
         node.pop("no_log")
         assert list(checker.iter_findings([node]))
-    nodes = tasks("roles/postfixadmin_backup/tasks/main.yml")
+    nodes = list(walk(tasks("roles/postfixadmin_backup/tasks/main.yml")))
     for name in ("Backup PostfixAdmin admin table", "Write admin table backup"):
-        assert next(n for n in nodes if n["name"] == name)["no_log"] is True
+        assert next(n for n in nodes if n.get("name") == name)["no_log"] is True
 
 
 @pytest.mark.parametrize(

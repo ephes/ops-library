@@ -4,7 +4,14 @@ Backup PostfixAdmin configuration and admin-specific database tables.
 
 ## Overview
 
-This role creates backups of PostfixAdmin's configuration and admin data. Core mail tables (`domain`, `mailbox`, `alias`, `alias_domain`) are backed up by the `mail_backup` role - this role only backs up PostfixAdmin UI-specific data.
+This role creates backups of PostfixAdmin's configuration and admin data. It
+does **not** back up the mail tables (`domain`, `mailbox`, `alias`,
+`alias_domain`, `config`, `vacation`, ...). They live in the same `mail`
+PostgreSQL database and are covered by whole-database dumps, which restore with
+`pg_restore` rather than row by row: the daily `mail_offsite_replication` stage
+dump (`pg_dump --format=custom --dbname=mail`, kept as ZFS snapshots on the
+offsite host). The `mail_backup` role can also dump the database, but it is
+only run by hand.
 
 ## Disposition
 
@@ -15,16 +22,37 @@ operator workflow and should not be treated as an auto-removal candidate.
 
 ## What Gets Backed Up
 
-1. **Configuration File**
-   - `/opt/postfixadmin/config.local.php`
+Required parts. If one cannot be written, the backup fails, nothing is
+published and retention does not run:
 
-2. **Database Tables**
-   - `admin` - PostfixAdmin administrator accounts
-   - `domain_admins` - Admin-to-domain permissions
-   - `log` - Audit log of admin actions (last 10,000 entries)
+- `config.local.php` (copied from `postfixadmin_install_path`)
+- `admin.json`: the whole `admin` table, every column, including the TOTP
+  secret, `phone`, `email_other` and the password reset token. The query must
+  succeed and return at least one row.
+- `domain_admins.json`: the query must succeed; no rows is valid
+  (superadmin-only setup).
+- `manifest.yml`: lists exactly the parts that were written, plus the
+  PostfixAdmin version and the database schema version (`config.version`).
+  Reading the schema version is required as well.
 
-3. **Optional**
-   - `templates_c/` - Compiled Smarty templates (usually not needed)
+Optional parts. A failure is a warning, the part is left out of the manifest
+and recorded under `skipped`:
+
+- `log.json`: the newest 10,000 rows of the audit log
+- `templates_c.tar.gz`: compiled Smarty templates, only with
+  `postfixadmin_backup_include_templates_c: true` (regenerable)
+
+## How a Run Works
+
+1. All parts are written into `<timestamp>.tmp/`.
+2. When every required part is there, the manifest is written and the
+   directory is renamed to `<timestamp>/`.
+3. If any step fails, the `.tmp` directory is removed and the play fails.
+   An existing directory for the same timestamp is never reused.
+4. Only after a successful run, retention prunes completed backups (names
+   `YYYYMMDDTHHMMSS`, never `.tmp` or other directories) that are older than
+   `postfixadmin_backup_retention_days`, except the newest
+   `postfixadmin_backup_keep_min`, which are always kept.
 
 ## Requirements
 
@@ -42,8 +70,10 @@ operator workflow and should not be treated as an auto-removal candidate.
 # Backup location
 postfixadmin_backup_path: /mnt/cryptdata/backups/postfixadmin
 
-# Retention period
+# Retention: completed backups older than this are pruned after a successful run ...
 postfixadmin_backup_retention_days: 14
+# ... except the newest N, which are always kept
+postfixadmin_backup_keep_min: 5
 
 # Include templates_c directory
 postfixadmin_backup_include_templates_c: false
@@ -59,6 +89,18 @@ postfixadmin_backup_include_templates_c: false
     ├── admin.json
     ├── domain_admins.json
     └── log.json
+```
+
+`manifest.yml`:
+
+```yaml
+backup_type: postfixadmin
+manifest_version: 2
+timestamp: 20251208T120000
+postfixadmin_version: 4.0.5
+db_schema_version: 1851
+contents: [admin.json, config.local.php, domain_admins.json, log.json]
+skipped: []
 ```
 
 ## Example Playbook
