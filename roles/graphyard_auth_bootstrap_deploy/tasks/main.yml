@@ -371,7 +371,9 @@
     GRAFANA_DATASOURCE_PROVISIONING_PATH: "{{ graphyard_auth_bootstrap_grafana_datasource_provisioning_path }}"
     GRAFANA_DATASOURCE_TARGET_URL: "{{ graphyard_auth_bootstrap_grafana_datasource_target_url }}"
   register: graphyard_auth_bootstrap_grafana_datasource_provisioning_url_update
-  changed_when: "'CHANGED' in graphyard_auth_bootstrap_grafana_datasource_provisioning_url_update.stdout"
+  # Exact match on the status line: a substring test would also match UNCHANGED.
+  changed_when: >-
+    (graphyard_auth_bootstrap_grafana_datasource_provisioning_url_update.stdout_lines | last | default('')) == 'CHANGED'
   tags: [graphyard_auth_bootstrap]
 
 - name: Restart Grafana container when datasource URL changed
