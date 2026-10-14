@@ -31,11 +31,15 @@ private control repo such as ops-control SOPS.
 - optional `/etc/daybook-sessions/weeknotes-identity-ops.py` and
   `/etc/daybook-sessions/weeknotes-identity-ops.sh` content-free operator rail
 - optional `/Library/LaunchDaemons/de.wersdoerfer.daybook.weeknotes-reconcile.plist`
+  (deleted once `daybook_weeknotes_reconcile_launchd_retired` is true)
 - optional dedicated `~/.daybook/weeknotes-reconcile/` runtime (mode `0700`),
   with `state.json`, `.state.json.lock`, and an auth-only `pi-agent/`
 - optional dedicated `~/.daybook/archive-quote-browser` profile directory (never
   a user's live Helium profile)
-- launchd stdout/stderr logs under `/var/log/daybook-sessions/`
+- launchd stdout/stderr logs under `/var/log/daybook-sessions/` for timers that
+  still run. A job retired to the Daybook operations supervisor writes no log
+  there: the supervisor discards its children's stderr and keeps content-free
+  receipts, which `daybook operations status --binding <source>` reports.
 - the default shipper watermark state path at
   `~/.daybook/sessions-shipped.json`
 
@@ -388,7 +392,9 @@ To rotate the managed authorization, first disable and unload the exact
 reconcile unit, replace the separately staged source, and apply once with
 `daybook_weeknotes_reconcile_pi_auth_rotate=true`. Rotation fails closed while
 the unit is loaded. Return the flag to false immediately; it is never a normal
-deployment setting.
+deployment setting. With the unit retired, the unit check only confirms it stays
+unloaded; the role does not see the operations supervisor, so rotate when no
+`weeknotes` operation is running.
 
 ### Static install, migration, epoch, and activation flow
 

@@ -3,6 +3,14 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Daybook sessions README describes retired timers (2.31.39)
+
+- `daybook_sessions_deploy` README: a job retired to the Daybook operations
+  supervisor writes no launchd log under `/var/log/daybook-sessions/` (its
+  status comes from `daybook operations status --binding <source>`), the
+  reconcile plist is deleted once retired, and OAuth rotation of a retired unit
+  should happen while no `weeknotes` operation runs. Documentation only.
+
 ## Unreleased — Python Podcast private media probe works with a fish login shell
 
 - `echoport_backup` (`python_podcast_production_db_backup.py.j2`): the remote
