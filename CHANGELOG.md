@@ -3,6 +3,15 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Graphyard deploys no longer restart Grafana every run (2.31.40)
+
+- `graphyard_auth_bootstrap_deploy`: the Grafana datasource provisioning
+  rewrite reports changed only when its status line is exactly `CHANGED`.
+  The substring test also matched `UNCHANGED`, so every deploy reported a
+  change and restarted the Grafana container (a few seconds of downtime).
+  A new regression test runs the embedded script and the task's
+  `changed_when` against both outcomes.
+
 ## Unreleased — Daybook sessions README describes retired timers (2.31.39)
 
 - `daybook_sessions_deploy` README: a job retired to the Daybook operations
