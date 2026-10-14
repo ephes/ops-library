@@ -222,6 +222,101 @@ class SecretNoLogCheckTests(unittest.TestCase):
             task = next(t for t in block["block"] if t["name"] == name)
             self.assertIs(task["no_log"], True)
 
+    def test_auth_key_on_a_command_line_is_flagged(self):
+        result = findings(
+            """
+- name: Tailscale up
+  ansible.builtin.command:
+    cmd: "tailscale up --authkey={{ tailscale_auth_key }}"
+- name: Other auth key spelling
+  ansible.builtin.shell: "tool --key {{ service_authkey }}"
+- name: Key file pointer
+  ansible.builtin.command:
+    cmd: "tailscale up --auth-key=file:{{ tailscale_auth_key_file.path }}"
+"""
+        )
+        self.assertEqual(
+            [name for name, _ in result], ["Tailscale up", "Other auth key spelling"]
+        )
+
+    def test_tailscale_roles_pass_the_auth_key_as_a_file(self):
+        for path in ("tailscale_deploy/tasks/up.yml", "tailscale_restore/tasks/main.yml"):
+            text = (ROOT / "roles" / path).read_text()
+            self.assertNotIn("authkey", text, path)
+            self.assertIn("tailscale_shared/tasks/join.yml", text, path)
+        join = next(t for t in yaml.safe_load((ROOT / "roles/tailscale_shared/tasks/join.yml").read_text()) if "block" in t)
+        self.assertEqual(join["when"], "not ansible_check_mode")
+        tasks = {task["name"]: task for task in join["block"]}
+        run = tasks["join | Run tailscale up"]
+        self.assertIn("--auth-key=file:", run["ansible.builtin.command"]["cmd"])
+        self.assertIs(run["no_log"], True)
+        self.assertIs(tasks["join | Write auth key file"]["no_log"], True)
+        self.assertEqual(tasks["join | Write auth key file"]["ansible.builtin.copy"]["mode"], "0600")
+        self.assertEqual(join["always"][0]["ansible.builtin.file"]["state"], "absent")
+
+    def run_join(self, exit_code, *extra):
+        """Run join.yml locally with a fake `tailscale up` that records its input."""
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            fake = base / "tailscale"
+            fake.write_text(
+                "#!/bin/sh\n"
+                f'printf "%s\\n" "$*" > "{base}/argv"\n'
+                'for arg in "$@"; do case "$arg" in --auth-key=file:*)\n'
+                f'  file="${{arg#--auth-key=file:}}"; cat "$file" > "{base}/key";\n'
+                f'  stat -f %Lp "$file" 2>/dev/null > "{base}/mode" || stat -c %a "$file" > "{base}/mode";\n'
+                f'  printf "%s" "$file" > "{base}/path";;\n'
+                "esac; done\n"
+                f"echo 'fake tailscale error' >&2; exit {exit_code}\n"
+            )
+            fake.chmod(0o700)
+            playbook = base / "join.yml"
+            playbook.write_text(
+                f"""
+- hosts: localhost
+  gather_facts: false
+  vars:
+    tailscale_auth_key: tskey-test-placeholder
+    tailscale_join_command: "{fake} up --hostname=test"
+  tasks:
+    - ansible.builtin.include_tasks: {ROOT}/roles/tailscale_shared/tasks/join.yml
+"""
+            )
+            result = subprocess.run(
+                ["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook), *extra],
+                capture_output=True, text=True, cwd=ROOT,
+            )
+            observed = {
+                name: (base / name).read_text().strip()
+                for name in ("argv", "key", "mode", "path")
+                if (base / name).exists()
+            }
+            observed["left_behind"] = Path(observed.get("path", "/nonexistent")).exists()
+            return result, observed
+
+    def test_join_reads_the_key_from_a_private_file_and_removes_it(self):
+        result, observed = self.run_join(0)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(observed["key"], "tskey-test-placeholder")
+        self.assertEqual(observed["mode"], "600")
+        self.assertNotIn("tskey-test-placeholder", observed["argv"])
+        self.assertIn("--auth-key=file:", observed["argv"])
+        self.assertFalse(observed["left_behind"])
+        self.assertNotIn("tskey-test-placeholder", result.stdout + result.stderr)
+
+    def test_join_is_skipped_in_check_mode(self):
+        result, observed = self.run_join(0, "--check")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("argv", observed)
+        self.assertIn("Check mode: would run tailscale up", result.stdout)
+
+    def test_join_failure_is_reported_without_the_key(self):
+        result, observed = self.run_join(3)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("fake tailscale error", result.stdout)
+        self.assertNotIn("tskey-test-placeholder", result.stdout + result.stderr)
+        self.assertFalse(observed["left_behind"])
+
     def test_failure_reports_never_print_the_uri_msg(self):
         """uri's msg can quote request headers (e.g. an invalid header value)."""
         for role, register in (

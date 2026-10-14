@@ -46,6 +46,8 @@ class ExposureTests(unittest.TestCase):
                 }
             },
             {"local_action": "shell echo {{ admin_password }}"},
+            {"command": "tailscale up --authkey={{ tailscale_auth_key }}"},
+            {"command": {"argv": ["tailscale", "up", "--auth-key={{ service_authkey }}"]}},
             {
                 "command": "true",
                 "environment": "{{ {'PAPERLESS_PASSPHRASE': passphrase} }}",

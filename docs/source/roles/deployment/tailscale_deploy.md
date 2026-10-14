@@ -25,3 +25,7 @@ Installs and joins a host to a Tailscale tailnet using the official repository. 
 ```
 
 Set `tailscale_manual_up: true` when you prefer to run `tailscale up` manually (e.g., during auth key rotation).
+
+The auth key is passed to `tailscale up` as `--auth-key=file:<path>` from a private temporary
+file that is removed afterwards, so it never appears on the command line or in task output. This
+needs Tailscale 1.22 or newer.

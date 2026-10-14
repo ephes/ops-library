@@ -27,13 +27,12 @@
       {{ tailscale_args_extra }}
 
 - name: Join tailnet when not already running
-  ansible.builtin.command:
-    cmd: "{{ tailscale_up_command }} --authkey={{ tailscale_auth_key }}"
-  register: tailscale_up
+  ansible.builtin.include_tasks: "{{ role_path }}/../tailscale_shared/tasks/join.yml"
+  vars:
+    tailscale_join_command: "{{ tailscale_up_command }}"
   when:
     - not tailscale_manual_up | bool
     - tailscale_backend_state != "Running"
-  changed_when: true
 
 - name: Display backend state
   ansible.builtin.debug:

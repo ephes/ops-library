@@ -32,3 +32,6 @@ tailscale_auth_key: ""    # required when manual_up=false
         tailscale_restore_archive: latest
         tailscale_auth_key: "{{ sops_secrets.tailscale_auth_key }}"
 ```
+
+The optional re-join passes the auth key as `--auth-key=file:<path>` from a private temporary
+file that is removed afterwards (Tailscale 1.22 or newer).
