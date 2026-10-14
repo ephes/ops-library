@@ -3,6 +3,13 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Python Podcast private media probe works with a fish login shell
+
+- `echoport_backup` (`python_podcast_production_db_backup.py.j2`): the remote
+  check whether the private media directory exists runs under `sh -c`. The
+  production host's login shell is fish, which cannot parse `if ...; then`,
+  so every backup with the private media step failed with "Could not probe".
+
 ## Unreleased — Keep task credentials out of arguments and environment (2.31.38)
 
 - Static credential checks now reject secret-looking command arguments and task

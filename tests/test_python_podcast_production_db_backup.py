@@ -107,7 +107,7 @@ class FakeRemote:
         stdout = ""
         if cmd.startswith("mktemp -d /tmp/echoport-pp-private-media."):
             stdout = "/tmp/echoport-pp-private-media.Ab12Cd34\n"
-        elif cmd.startswith("if test -L"):
+        elif cmd.startswith("sh -c 'if test -L"):
             stdout = f"{self.probe}\n"
         elif cmd.startswith("du -sb"):
             stdout = f"{self.du_bytes}\t{DEFAULT_PATH}\n"
@@ -253,9 +253,27 @@ class PrivateMediaBackupTests(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIsNone(remote.uploaded)
 
+    def test_probe_runs_under_bash_and_fish_login_shells(self) -> None:
+        """The probe must not depend on the remote login shell (fish on production)."""
+        (self.tmp / "dir").mkdir()
+        (self.tmp / "file").write_text("x")
+        (self.tmp / "link").symlink_to(self.tmp / "dir")
+        expected = {"dir": "present", "file": "notdir", "link": "symlink", "absent": "missing"}
+        shells = [shell for shell in ("bash", "fish") if shutil.which(shell)]
+        self.assertIn("bash", shells)
+        for shell in shells:
+            def login_shell(host, user, cmd, check=True, shell=shell):
+                return subprocess.run([shell, "-c", cmd], capture_output=True, text=True, check=False)
+
+            for name, state in expected.items():
+                with self.subTest(shell=shell, path=name), mock.patch.object(self.runner, "ssh", side_effect=login_shell):
+                    self.assertEqual(
+                        self.runner.probe_remote_directory("prod.example", "root", str(self.tmp / name)), state
+                    )
+
     def test_failed_probe_fails_instead_of_skipping(self) -> None:
         def broken(host, user, cmd, check=True):
-            if cmd.startswith("if test -L"):
+            if cmd.startswith("sh -c 'if test -L"):
                 return subprocess.CompletedProcess(cmd, 255, "", "ssh: connection refused")
             return subprocess.CompletedProcess(cmd, 0, "", "")
 
