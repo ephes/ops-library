@@ -1,0 +1,62 @@
+---
+# Whether a running supervisor may be stopped at this moment: not from
+# `daybook_operations_runtime_stop_window_lead_minutes` before the start of a
+# window in `daybook_operations_runtime_stop_windows` until its end, in
+# `daybook_operations_runtime_stop_window_timezone`, on the machine's clock.
+# Included twice by stop.yml: before the quiet waits and again right before the
+# keeper is booted out, since the waits can run into a window.
+- name: stop_window | Require windows within one day
+  # Only same-day windows: a lead or a window crossing midnight would be
+  # compared wrongly, so such a configuration is refused rather than guessed at.
+  ansible.builtin.assert:
+    that:
+      - item.start is string and item.start is match('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+      - item.end is string and item.end is match('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+      - (item.start.split(':')[0] | int) * 60 + (item.start.split(':')[1] | int)
+        - (daybook_operations_runtime_stop_window_lead_minutes | int) >= 0
+      - (item.start.split(':')[0] | int) * 60 + (item.start.split(':')[1] | int)
+        < (item.end.split(':')[0] | int) * 60 + (item.end.split(':')[1] | int)
+    fail_msg: "Run window {{ item }} must lie within one day, lead included. Nothing was touched."
+  loop: "{{ daybook_operations_runtime_stop_windows }}"
+
+- name: stop_window | Read the machine's clock
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_runtime_date }}", "+%H:%M"]
+  environment:
+    TZ: "{{ daybook_operations_runtime_stop_window_timezone }}"
+  register: daybook_operations_runtime_stop_clock
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: daybook_operations_runtime_stop_windows | length > 0
+
+- name: stop_window | Decide whether a run window is near
+  ansible.builtin.set_fact:
+    daybook_operations_runtime_stop_window: >-
+      {%- if daybook_operations_runtime_stop_windows | length == 0 -%}
+      {{ '' }}
+      {%- elif daybook_operations_runtime_stop_clock.stdout | default('') | trim is not match('^([01][0-9]|2[0-3]):[0-5][0-9]$') -%}
+      the clock did not answer HH:MM
+      {%- else -%}
+      {%-   set now = daybook_operations_runtime_stop_clock.stdout | trim -%}
+      {%-   set minute = (now.split(':')[0] | int) * 60 + (now.split(':')[1] | int) -%}
+      {%-   set lead = daybook_operations_runtime_stop_window_lead_minutes | int -%}
+      {%-   set hits = [] -%}
+      {%-   for window in daybook_operations_runtime_stop_windows -%}
+      {%-     set start = (window.start.split(':')[0] | int) * 60 + (window.start.split(':')[1] | int) -%}
+      {%-     set end = (window.end.split(':')[0] | int) * 60 + (window.end.split(':')[1] | int) -%}
+      {%-     if start - lead <= minute < end -%}
+      {%-       set _ = hits.append(window.start ~ '-' ~ window.end) -%}
+      {%-     endif -%}
+      {%-   endfor -%}
+      {{ ('it is ' ~ now ~ ' ' ~ daybook_operations_runtime_stop_window_timezone ~ ', within ' ~ lead
+          ~ ' minutes of or inside the run window ' ~ hits | join(', ')) if hits else '' }}
+      {%- endif -%}
+
+- name: stop_window | Refuse to stop a running supervisor now
+  ansible.builtin.assert:
+    that:
+      # A supervisor already stopped -- by an earlier run that failed later -- is
+      # never held back: finishing the update is what brings it back.
+      - not daybook_operations_runtime_stop_running | bool or (daybook_operations_runtime_stop_window | default('', true)) == ''
+    fail_msg: "Not now: {{ daybook_operations_runtime_stop_window }}. Nothing was touched."

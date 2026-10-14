@@ -245,6 +245,48 @@
     # count is silently skipped.
     - (daybook_voice_memo_inbox_prequiesce_in_flight | default('') | string) is match('[0-9]+$')
 
+- name: Inspect the label for the operations keeper
+  # The operations runtime's cutover turns this label into the supervisor's
+  # keeper. A loaded keeper would start the supervisor again at any moment, so
+  # it is asked first; only the exit status and the command name are used.
+  ansible.builtin.command:
+    argv:
+      - /bin/launchctl
+      - print
+      - "gui/{{ daybook_voice_memo_inbox_uid.stdout | trim }}/{{ daybook_voice_memo_inbox_launchd_label }}"
+  register: daybook_voice_memo_inbox_keeper
+  changed_when: false
+  failed_when: daybook_voice_memo_inbox_keeper.rc not in [0, 113]
+  check_mode: false
+  no_log: true
+  when: daybook_voice_memo_inbox_enabled | bool
+
+- name: Look for an operations supervisor running this code
+  # The operations supervisor runs from this checkout's interpreter, inside the
+  # capability host, and outlives its keeper label: booting out the label below
+  # would leave it running while the checkout and environment are replaced
+  # under it. With the keeper not loaded, nothing starts it again after this
+  # look. The pattern cannot match this command.
+  ansible.builtin.command:
+    argv: [/usr/bin/pgrep, -u, "{{ daybook_voice_memo_inbox_service_user }}", -f, "[o]perations serve"]
+  register: daybook_voice_memo_inbox_supervisor
+  changed_when: false
+  failed_when: daybook_voice_memo_inbox_supervisor.rc not in [0, 1]
+  check_mode: false
+  when: daybook_voice_memo_inbox_enabled | bool
+
+- name: Refuse while an operations supervisor runs or is kept
+  ansible.builtin.assert:
+    that:
+      - daybook_voice_memo_inbox_keeper.rc == 113
+        or daybook_voice_memo_inbox_keeper.stdout is not search('(?m)^\s*(serve|host-keep)\s*$')
+      - daybook_voice_memo_inbox_supervisor.rc == 1
+    fail_msg: >-
+      The operations supervisor runs from this install or its keeper label is
+      loaded. Stop it first (ops-control `just daybook-runtime-update`, which
+      stops it, deploys this role and starts it again); nothing was touched.
+  when: daybook_voice_memo_inbox_enabled | bool
+
 - name: Disable Voice Memo inbox before deployment
   ansible.builtin.command:
     argv:

@@ -1517,5 +1517,35 @@ class ImporterBundleOfMainTests(unittest.TestCase):
         self.assertFalse(any("clone" in argv for argv in commands))
 
 
+class ImporterRefusesARunningSupervisorTests(unittest.TestCase):
+    def test_a_running_operations_supervisor_is_refused_before_anything_is_touched(self):
+        """The supervisor runs from this install and outlives its keeper label, so
+        the role refuses while one runs -- before it disables or boots out any label."""
+        tasks = yaml.safe_load((ROOT / "roles/daybook_voice_memo_inbox_deploy/tasks/main.yml").read_text())
+        names = [t.get("name") for t in tasks]
+        keeper = names.index("Inspect the label for the operations keeper")
+        look = names.index("Look for an operations supervisor running this code")
+        refuse = names.index("Refuse while an operations supervisor runs or is kept")
+        self.assertEqual((look, refuse), (keeper + 1, keeper + 2))
+        self.assertEqual(tasks[keeper]["ansible.builtin.command"]["argv"][:2], ["/bin/launchctl", "print"])
+        self.assertIs(tasks[keeper]["no_log"], True)
+        self.assertEqual(
+            tasks[look]["ansible.builtin.command"]["argv"],
+            ["/usr/bin/pgrep", "-u", "{{ daybook_voice_memo_inbox_service_user }}", "-f", "[o]perations serve"],
+        )
+        self.assertEqual(
+            tasks[refuse]["ansible.builtin.assert"]["that"],
+            ["daybook_voice_memo_inbox_keeper.rc == 113 or daybook_voice_memo_inbox_keeper.stdout"
+             " is not search('(?m)^\\s*(serve|host-keep)\\s*$')",
+             "daybook_voice_memo_inbox_supervisor.rc == 1"],
+        )
+        first_change = min(
+            i for i, task in enumerate(tasks)
+            if any(word in task.get("ansible.builtin.command", {}).get("argv", [])
+                   for word in ("disable", "bootout"))
+        )
+        self.assertLess(refuse, first_change)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -3,6 +3,33 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Stop and verify a hosted Daybook supervisor without hand steps (2.31.45)
+
+- `daybook_operations_runtime_deploy`: new `action: stop` (with `confirmed:
+  true`) stops a supervisor running inside the capability host so its code can
+  be replaced: it boots out the keeper label, sends SIGTERM to exactly the
+  `operations serve` processes found and waits until they, the host's
+  `supervisor` session and every store record are gone. It never sends
+  SIGKILL, never kills a tmux session and never touches the capability host.
+  It refuses with nothing touched without an Aqua session or a running
+  capability host, with a stop marker in the store, with a loaded label that
+  does not run the keeper, near or inside a run window
+  (`daybook_operations_runtime_stop_windows`, checked on the machine's clock
+  first and again right before the bootout), or
+  when the store or a source named in `daybook_operations_runtime_status_sources`
+  still holds work after a bounded wait. A failure after the bootout boots the
+  keeper back in on the unchanged code. `daybook_operations_runtime_stop_preflight`
+  runs only the read-only checks.
+- `daybook_operations_runtime_deploy`: new read-only `action: verify`: label
+  loaded, `operations serve` running in the `supervisor` session, the installed
+  checkout at the expected revision, no stop marker, and `operations status`
+  answering for each named source with the profile enabled.
+- `daybook_voice_memo_inbox_deploy`: refuses, before disabling or booting out
+  any label, while its label is loaded with the operations keeper or
+  supervisor command, or an `operations serve` process runs for the service user. The
+  supervisor runs from this install and outlives its keeper, so a deployment
+  would otherwise replace its code under it.
+
 ## Unreleased — Work app and Homelab restores keep the pre-restore copy (2.31.44)
 
 - `work_app_restore` and `homelab_restore` deleted the

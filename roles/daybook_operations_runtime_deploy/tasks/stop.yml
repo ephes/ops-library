@@ -1,0 +1,366 @@
+---
+# Stop a hosted supervisor so its code can be replaced -- the runbook's order,
+# without anyone typing it. Only for mode `host`: there the keeper is the label,
+# and the supervisor is the capability host's child, so booting out the keeper
+# leaves it running and SIGTERM is what stops it. The supervisor takes SIGTERM
+# as "stop dispatching": every worker finishes the unit it owns and persists its
+# receipt, and nothing kills it after a timeout, because launchd does not own it.
+# Never `tmux kill-session` (its SIGHUP does not let owned work finish), never
+# SIGKILL, never the capability host itself.
+#
+# Refuses, with nothing touched, unless: the GUI user has an Aqua session and a
+# running capability host (so the keeper restarts the supervisor inside it
+# without opening a window); the store holds no halt (a person's attention
+# request); no run window is near (`daybook_operations_runtime_stop_windows`,
+# checked again right before the bootout); and, after waiting a bounded time, the store
+# holds no delivery and no named source has an operation assigned or awaiting
+# application. Once the keeper is booted out, any failure boots it back in
+# before failing: no code has been replaced yet, so the keeper adopts the
+# supervisor still finishing, or starts it again, exactly as before.
+#
+# With `daybook_operations_runtime_stop_preflight: true` only the read-only
+# checks run, each once, and the role reports what a stop would do.
+- name: stop | Require a hosted supervisor
+  ansible.builtin.assert:
+    that:
+      - daybook_operations_runtime_mode == 'host'
+    fail_msg: >-
+      `stop` stops a supervisor running inside the capability host (mode `host`).
+      A plain `serve` LaunchAgent is stopped by launchd itself, which may kill a long
+      child at its exit timeout; quiesce that one by hand as the runbook describes.
+
+- name: stop | Resolve local GUI user ID
+  ansible.builtin.command:
+    argv: [/usr/bin/id, -u, "{{ daybook_operations_runtime_user }}"]
+  register: daybook_operations_runtime_stop_uid
+  changed_when: false
+  check_mode: false
+
+- name: stop | Inspect the GUI user's Aqua domain
+  # The raw listing names every loaded job with its environment; only the exit
+  # status is used.
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_runtime_launchctl }}", print, "gui/{{ daybook_operations_runtime_stop_uid.stdout | trim }}"]
+  register: daybook_operations_runtime_stop_domain
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  no_log: true
+
+- name: stop | Require a logged-in GUI session to restart the keeper in
+  ansible.builtin.assert:
+    that:
+      - daybook_operations_runtime_stop_domain.rc == 0
+    fail_msg: >-
+      {{ daybook_operations_runtime_user }} has no Aqua session (gui/{{ daybook_operations_runtime_stop_uid.stdout | trim }}).
+      The keeper is an Aqua-only LaunchAgent and could not be started again; nothing was touched.
+
+- name: stop | Inspect the keeper label
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_runtime_launchctl }}", print, "gui/{{ daybook_operations_runtime_stop_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
+  register: daybook_operations_runtime_stop_label
+  changed_when: false
+  failed_when: daybook_operations_runtime_stop_label.rc not in [0, 113]
+  check_mode: false
+  no_log: true
+
+- name: stop | Look for a running supervisor
+  ansible.builtin.command:
+    # The same pattern every guard of this role uses; it cannot match this command.
+    argv: ["{{ daybook_operations_runtime_pgrep }}", -u, "{{ daybook_operations_runtime_user }}", -f, "[o]perations serve"]
+  register: daybook_operations_runtime_stop_serving
+  changed_when: false
+  failed_when: daybook_operations_runtime_stop_serving.rc not in [0, 1]
+  check_mode: false
+
+- name: stop | Decide whether anything runs
+  ansible.builtin.set_fact:
+    daybook_operations_runtime_stop_running: >-
+      {{ daybook_operations_runtime_stop_label.rc == 0 or daybook_operations_runtime_stop_serving.rc == 0 }}
+
+- name: stop | Refuse a loaded label that does not run the keeper
+  ansible.builtin.assert:
+    that:
+      # Only the keeper is booted out: a label running `serve` itself, or the
+      # legacy importer, would be stopped by launchd, which may kill a child.
+      - daybook_operations_runtime_stop_label.rc != 0
+        or daybook_operations_runtime_stop_label.stdout is search('(?m)^\s*host-keep\s*$')
+    fail_msg: >-
+      {{ daybook_operations_runtime_label }} is loaded but does not run `operations host-keep`.
+      Nothing was touched.
+
+- name: stop | Check the run windows before anything else
+  ansible.builtin.include_tasks: stop_window.yml
+
+- name: stop | Ask whether the capability host is running
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_runtime_host_tmux }}", -L, "{{ daybook_operations_runtime_host_socket }}", has-session, -t, "={{ daybook_operations_runtime_host_session }}"]
+  environment:
+    TMUX_TMPDIR: "{{ daybook_operations_runtime_host_tmpdir }}"
+  become: "{{ daybook_operations_runtime_owner == 'root' }}"
+  become_user: "{{ daybook_operations_runtime_user }}"
+  become_flags: "-H -S -n -i"
+  register: daybook_operations_runtime_stop_host
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: stop | Require the capability host the keeper restarts the supervisor in
+  ansible.builtin.assert:
+    that:
+      # Only the supervisor is ever stopped, never the host. With the host there,
+      # the keeper starts the supervisor inside it again without opening a window;
+      # without it, a restart would depend on Ghostty starting, which is the
+      # owner's to attend.
+      - not daybook_operations_runtime_stop_running | bool or daybook_operations_runtime_stop_host.rc == 0
+    fail_msg: >-
+      The capability host ({{ daybook_operations_runtime_host_socket }}, session
+      {{ daybook_operations_runtime_host_session }}) is not running. Nothing was touched.
+
+- name: stop | Find stop markers in the store
+  ansible.builtin.find:
+    paths: ["{{ daybook_operations_runtime_journal }}/halts"]
+    patterns: ['*.json']
+    file_type: any
+    hidden: true
+  register: daybook_operations_runtime_stop_halts
+  check_mode: false
+
+- name: stop | Refuse while a source waits for a person
+  ansible.builtin.assert:
+    that:
+      - daybook_operations_runtime_stop_halts.matched == 0
+      - daybook_operations_runtime_stop_halts.skipped_paths | default({}) | length == 0
+    fail_msg: >-
+      {{ daybook_operations_runtime_journal }}/halts holds {{ daybook_operations_runtime_stop_halts.matched }}
+      stop marker(s), or could not be read. Recover them (`operations recover --binding SOURCE`)
+      first; a replace would refuse them anyway. Nothing was touched.
+
+- name: stop | Wait until the store owes nothing
+  ansible.builtin.find:
+    paths: ["{{ daybook_operations_runtime_journal }}/deliveries"]
+    patterns: ['*.json']
+    file_type: any
+    hidden: true
+  register: daybook_operations_runtime_stop_store
+  # Judged by the refusal below, which says what is still owed.
+  failed_when: false
+  check_mode: false
+  # A record is an operation this machine holds right now. Short memo work clears
+  # within minutes; a long run outlasts the wait, and the stop refuses below.
+  retries: "{{ 0 if daybook_operations_runtime_stop_preflight | bool or not daybook_operations_runtime_stop_running | bool else daybook_operations_runtime_quiet_retries }}"
+  delay: "{{ daybook_operations_runtime_quiet_delay }}"
+  until: daybook_operations_runtime_stop_store.matched == 0
+
+- name: stop | Ask the server about each source this machine runs
+  ansible.builtin.command:
+    argv: ["{{ daybook_operations_runtime_python }}", -I, -c, 'from daybook.cli import main; raise SystemExit(main())', operations, status, --policy, "{{ daybook_operations_runtime_policy }}", --policy-owner, "{{ daybook_operations_runtime_owner }}", --binding, "{{ item }}"]
+  become: "{{ daybook_operations_runtime_owner == 'root' }}"
+  become_user: "{{ daybook_operations_runtime_user }}"
+  become_flags: "-H -S -n -i"
+  loop: "{{ daybook_operations_runtime_status_sources }}"
+  register: daybook_operations_runtime_stop_sources
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  # An unanswered status ends the wait at once and refuses below; an operation in
+  # flight is waited for.
+  retries: "{{ 0 if daybook_operations_runtime_stop_preflight | bool or not daybook_operations_runtime_stop_running | bool else daybook_operations_runtime_quiet_retries }}"
+  delay: "{{ daybook_operations_runtime_quiet_delay }}"
+  until: >-
+    daybook_operations_runtime_stop_sources.rc != 0
+    or (daybook_operations_runtime_stop_sources.stdout | from_json).server.active_state not in ['assigned', 'awaiting_apply']
+
+- name: stop | Summarise what the machine is doing
+  ansible.builtin.set_fact:
+    daybook_operations_runtime_stop_busy: >-
+      {{ daybook_operations_runtime_stop_sources.results
+         | rejectattr('rc', 'equalto', 0) | map(attribute='item') | map('regex_replace', '$', ': no status')
+         | list
+         + daybook_operations_runtime_stop_sources.results
+         | selectattr('rc', 'equalto', 0)
+         | selectattr('stdout', 'search', '"active_state": *"(assigned|awaiting_apply)"')
+         | map(attribute='item') | map('regex_replace', '$', ': operation in flight') | list }}
+
+- name: stop | Read the installed revision for the preflight
+  ansible.builtin.command:
+    argv: [/usr/bin/git, -C, "{{ daybook_operations_runtime_install_root }}/daybook", rev-parse, HEAD]
+  register: daybook_operations_runtime_stop_installed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: daybook_operations_runtime_stop_preflight | bool
+
+- name: stop | Report the preflight
+  ansible.builtin.debug:
+    msg:
+      - "Installed revision: {{ daybook_operations_runtime_stop_installed.stdout | default('') | trim or 'unreadable' }}; an update would install {{ daybook_operations_runtime_revision }}"
+      - "Supervisor running: {{ daybook_operations_runtime_stop_running | bool }} (keeper label loaded: {{ daybook_operations_runtime_stop_label.rc == 0 }}, operations serve: {{ daybook_operations_runtime_stop_serving.rc == 0 }})"
+      - "Run windows: {{ daybook_operations_runtime_stop_window or 'none near' }}"
+      - "Capability host running: {{ daybook_operations_runtime_stop_host.rc == 0 }}"
+      - "Store: {{ daybook_operations_runtime_stop_store.matched }} delivery record(s), {{ daybook_operations_runtime_stop_halts.matched }} stop marker(s)"
+      - "Sources busy or unanswered: {{ daybook_operations_runtime_stop_busy | join(', ') if daybook_operations_runtime_stop_busy else 'none' }}"
+  when: daybook_operations_runtime_stop_preflight | bool
+
+- name: stop | Refuse while the machine holds work
+  ansible.builtin.assert:
+    that:
+      - daybook_operations_runtime_stop_store.matched == 0
+      - daybook_operations_runtime_stop_store.skipped_paths | default({}) | length == 0
+      - daybook_operations_runtime_stop_busy | length == 0
+    fail_msg: >-
+      Still busy: {{ daybook_operations_runtime_stop_store.matched }} delivery record(s) in the store;
+      sources: {{ daybook_operations_runtime_stop_busy | join(', ') if daybook_operations_runtime_stop_busy else 'none' }}.
+      Nothing was touched; run again later.
+  when: daybook_operations_runtime_stop_running | bool or daybook_operations_runtime_stop_preflight | bool
+
+- name: stop | Check the run windows again, now that the waits are over
+  ansible.builtin.include_tasks: stop_window.yml
+  when: not daybook_operations_runtime_stop_preflight | bool
+
+- name: stop | Stop the supervisor
+  when:
+    - daybook_operations_runtime_stop_running | bool
+    - not daybook_operations_runtime_stop_preflight | bool
+  block:
+    - name: stop | Boot out the keeper
+      # Not disabled: the cutover that follows enables and bootstraps it, and a
+      # failure below bootstraps it straight back.
+      ansible.builtin.command:
+        argv: ["{{ daybook_operations_runtime_launchctl }}", bootout, "gui/{{ daybook_operations_runtime_stop_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
+      register: daybook_operations_runtime_stop_bootout
+      changed_when: true
+      # 3 (no such process) and 113 mean it went between the look and the bootout.
+      failed_when: daybook_operations_runtime_stop_bootout.rc not in [0, 3, 113]
+      when: daybook_operations_runtime_stop_label.rc == 0
+
+    - name: stop | Prove the keeper label unloaded
+      ansible.builtin.command:
+        argv: ["{{ daybook_operations_runtime_launchctl }}", print, "gui/{{ daybook_operations_runtime_stop_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
+      register: daybook_operations_runtime_stop_unloaded
+      changed_when: false
+      failed_when: daybook_operations_runtime_stop_unloaded.rc not in [0, 113]
+      retries: 12
+      delay: "{{ daybook_operations_runtime_poll_delay }}"
+      until: daybook_operations_runtime_stop_unloaded.rc == 113
+      no_log: true
+
+    - name: stop | Find the supervisor again, now that nothing restarts it
+      ansible.builtin.command:
+        argv: ["{{ daybook_operations_runtime_pgrep }}", -u, "{{ daybook_operations_runtime_user }}", -f, "[o]perations serve"]
+      register: daybook_operations_runtime_stop_pids
+      changed_when: false
+      failed_when: daybook_operations_runtime_stop_pids.rc not in [0, 1]
+
+    - name: stop | Ask the supervisor to stop
+      # SIGTERM only, to exactly the processes found: the supervisor stops
+      # dispatching, and each worker finishes the unit it owns and persists its
+      # receipt before the process exits.
+      ansible.builtin.command:
+        argv: "{{ [daybook_operations_runtime_kill, '-TERM'] + daybook_operations_runtime_stop_pids.stdout_lines | map('trim') | select('match', '^[0-9]+$') | list }}"
+      register: daybook_operations_runtime_stop_signal
+      changed_when: true
+      # A process that exited between the look and the signal is already stopped.
+      failed_when: false
+      when: daybook_operations_runtime_stop_pids.stdout_lines | map('trim') | select('match', '^[0-9]+$') | list | length > 0
+
+    - name: stop | Wait for the supervisor to exit
+      ansible.builtin.command:
+        argv: ["{{ daybook_operations_runtime_pgrep }}", -u, "{{ daybook_operations_runtime_user }}", -f, "[o]perations serve"]
+      register: daybook_operations_runtime_stop_gone
+      changed_when: false
+      failed_when: daybook_operations_runtime_stop_gone.rc not in [0, 1]
+      # Bounded: a unit handed out between the quiet check and the bootout is
+      # finished, not cut short. A wait that runs out fails and boots the keeper
+      # back in, which adopts the supervisor still finishing.
+      retries: "{{ (daybook_operations_runtime_stop_timeout | int / daybook_operations_runtime_poll_delay | int) | round(0, 'ceil') | int }}"
+      delay: "{{ daybook_operations_runtime_poll_delay }}"
+      until: daybook_operations_runtime_stop_gone.rc == 1
+
+    - name: stop | Prove the supervisor session ended
+      ansible.builtin.command:
+        argv: ["{{ daybook_operations_runtime_host_tmux }}", -L, "{{ daybook_operations_runtime_host_socket }}", has-session, -t, "=supervisor"]
+      environment:
+        TMUX_TMPDIR: "{{ daybook_operations_runtime_host_tmpdir }}"
+      become: "{{ daybook_operations_runtime_owner == 'root' }}"
+      become_user: "{{ daybook_operations_runtime_user }}"
+      become_flags: "-H -S -n -i"
+      register: daybook_operations_runtime_stop_session
+      changed_when: false
+      failed_when: daybook_operations_runtime_stop_session.rc == 0
+      retries: 6
+      delay: "{{ daybook_operations_runtime_poll_delay }}"
+      until: daybook_operations_runtime_stop_session.rc != 0
+
+    - name: stop | Find anything the stopped supervisor left in the store
+      ansible.builtin.find:
+        paths:
+          - "{{ daybook_operations_runtime_journal }}/deliveries"
+          - "{{ daybook_operations_runtime_journal }}/halts"
+        patterns: ['*.json']
+        file_type: any
+        hidden: true
+      register: daybook_operations_runtime_stop_left
+
+    - name: stop | Require an empty store before any code changes
+      ansible.builtin.assert:
+        that:
+          - daybook_operations_runtime_stop_left.matched == 0
+          - daybook_operations_runtime_stop_left.skipped_paths | default({}) | length == 0
+        fail_msg: >-
+          The stopped supervisor left {{ daybook_operations_runtime_stop_left.matched }} record(s) or
+          stop marker(s) in {{ daybook_operations_runtime_journal }}; a replace would refuse them.
+
+  rescue:
+    - name: stop | Read the command the label would load
+      ansible.builtin.slurp:
+        src: "{{ daybook_operations_runtime_plist }}"
+      register: daybook_operations_runtime_stop_plist
+      failed_when: false
+
+    - name: stop | Decide whether the label still runs the keeper
+      ansible.builtin.set_fact:
+        # Only the keeper is loaded back, never whatever else the file might hold.
+        daybook_operations_runtime_stop_is_keeper: >-
+          {{ daybook_operations_runtime_stop_plist.content is defined
+             and (daybook_operations_runtime_stop_plist.content | b64decode) is search('<string>host-keep</string>') }}
+
+    - name: stop | Enable the keeper label
+      ansible.builtin.command:
+        argv: ["{{ daybook_operations_runtime_launchctl }}", enable, "gui/{{ daybook_operations_runtime_stop_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
+      changed_when: true
+      failed_when: false
+      when: daybook_operations_runtime_stop_is_keeper | bool
+
+    - name: stop | Boot the keeper back in
+      # Nothing was replaced: the keeper adopts the supervisor session if it is
+      # still finishing, or starts the supervisor again on the code it ran.
+      ansible.builtin.command:
+        argv: ["{{ daybook_operations_runtime_launchctl }}", bootstrap, "gui/{{ daybook_operations_runtime_stop_uid.stdout | trim }}", "{{ daybook_operations_runtime_plist }}"]
+      register: daybook_operations_runtime_stop_restored
+      changed_when: true
+      # Judged by the look below, not by the exit status: launchctl answers a
+      # label that is still loaded with an error too.
+      failed_when: false
+      when: daybook_operations_runtime_stop_is_keeper | bool
+
+    - name: stop | Look for the keeper again
+      ansible.builtin.command:
+        argv: ["{{ daybook_operations_runtime_launchctl }}", print, "gui/{{ daybook_operations_runtime_stop_uid.stdout | trim }}/{{ daybook_operations_runtime_label }}"]
+      register: daybook_operations_runtime_stop_back
+      changed_when: false
+      failed_when: false
+      retries: 6
+      delay: "{{ daybook_operations_runtime_poll_delay }}"
+      until: daybook_operations_runtime_stop_back.rc == 0
+      no_log: true
+
+    - name: stop | Fail after trying to restore the keeper
+      ansible.builtin.fail:
+        msg: >-
+          The supervisor could not be stopped cleanly ({{ ansible_failed_task.name | default('unknown step') }}).
+          {{ 'The keeper is loaded again on the unchanged code; nothing was replaced. Run again later.'
+             if daybook_operations_runtime_stop_back.rc == 0 else
+             'The keeper could NOT be loaded again (launchctl bootstrap: ' ~ (daybook_operations_runtime_stop_restored.rc
+             | default('not run, the label does not hold the keeper')) ~ '); no supervisor is kept alive. Nothing was
+             replaced. Attend to it now.' }}

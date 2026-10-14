@@ -17,6 +17,13 @@ all environment-specific or secret values use rejected `CHANGEME` placeholders.
 
 ## Safety model
 
+- Before touching any label, the role refuses while an `operations serve`
+  process runs for the service user. The Daybook operations supervisor runs
+  from this install's interpreter inside the capability host and outlives its
+  keeper label, so booting out the label would leave it running while its
+  checkout and environment are replaced. Stop it first with the operations
+  runtime role's `action: stop` (ops-control `just daybook-runtime-update`
+  does stop, this role, `replace` and `cutover` in one run).
 - General deployment disables and boots out both exact labels before replacing
   managed code or configuration and leaves them disabled by default. Each
   unloaded proof tolerates launchd's short termination window (up to one
