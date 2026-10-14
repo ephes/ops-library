@@ -3,7 +3,7 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
-## Unreleased — Nyxmon can run the Rust monitoring agent
+## Unreleased — Nyxmon can run the Rust monitoring agent (2.32.0)
 
 - `nyxmon_deploy`: new `nyxmon_agent_impl` (`python`, the default, or
   `rust`) selects which agent `nyxmon-monitor.service` runs. With
