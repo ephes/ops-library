@@ -3,6 +3,19 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — FastDeploy backups never use the shared key `.tar.gz`
+
+- `echoport_backup` (`fastdeploy_backup.py.j2`): the runner builds its object
+  key in one place, falls back to `<target>/<timestamp>` when
+  `ECHOPORT_KEY_PREFIX` is empty or only slashes, and fails before the upload
+  when no prefix can be built. The runner deployed on macmini from 2026-02-11
+  until its re-registration on 2026-10-14 predated the committed template: it
+  read the Echoport context from the top level of the FastDeploy config file
+  instead of `context.env`, so every FastDeploy backup was written to
+  `backups/.tar.gz` and nightly retention deleted it. New tests
+  (`just test-fastdeploy-backup-key`) pin the nested context lookup and the
+  key fallback.
+
 ## Unreleased — Stop and verify a hosted Daybook supervisor without hand steps (2.31.45)
 
 - `daybook_operations_runtime_deploy`: new `action: stop` (with `confirmed:

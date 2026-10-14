@@ -676,10 +676,24 @@ def run_rollback(snapshot_dir: Path) -> str | None:
         return str(exc)
 
 
+def resolve_backup_key(cenv: Dict, target: str, timestamp: str) -> str:
+    """Return the MinIO object key for a backup archive.
+
+    An empty or missing ECHOPORT_KEY_PREFIX falls back to <target>/<timestamp>.
+    A runner that read the wrong context level once wrote every scheduled
+    backup to the shared key ".tar.gz", which retention then deleted; refuse
+    any key without a real prefix instead of uploading it.
+    """
+    key_prefix = (cenv.get("ECHOPORT_KEY_PREFIX") or "").strip("/") or f"{target}/{timestamp}".strip("/")
+    if not key_prefix:
+        raise ValueError(f"Refusing backup key without a prefix: {key_prefix!r}")
+    return f"{key_prefix}.tar.gz"
+
+
 def backup(cenv: Dict) -> int:
-    target = cenv.get("ECHOPORT_TARGET", "fastdeploy")
+    target = cenv.get("ECHOPORT_TARGET") or "fastdeploy"
     timestamp = cenv.get("ECHOPORT_TIMESTAMP") or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
-    key_prefix = cenv.get("ECHOPORT_KEY_PREFIX") or f"{target}/{timestamp}"
+    key = resolve_backup_key(cenv, target, timestamp)
     bucket = cenv.get("ECHOPORT_BUCKET", DEFAULT_BUCKET)
 
     work_dir = Path(tempfile.mkdtemp(prefix="fd-backup-", dir=get_temp_parent_dir()))
@@ -783,8 +797,6 @@ def backup(cenv: Dict) -> int:
 
         checksum = calculate_sha256(tarball_path)
         size_bytes = tarball_path.stat().st_size
-        key = f"{key_prefix}.tar.gz"
-
         run_cmd([MC_PATH, "cp", str(tarball_path), f"{MINIO_ALIAS}/{bucket}/{key}"])
         emit_step("upload", "success", f"Uploaded {size_bytes:,} bytes")
 
