@@ -31,7 +31,7 @@ example `/etc`) and `restore_archive_allowed_tops` (directory names allowed
 below it). The tasks:
 
 1. run `files/archive_members.py`, which fails unless every member is a
-   relative path below an allowed name, without `..`, and a regular file,
+   relative path below an allowed name, without `..`, present only once, and a regular file,
    directory, symlink or hardlink whose target, resolved through every
    symlink in the archive, stays inside its own directory, with no hardlink
    to a symlink (directly or through other hardlinks), no member stored below

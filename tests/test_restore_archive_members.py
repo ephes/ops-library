@@ -198,6 +198,25 @@ class BadMemberTests(unittest.TestCase):
             ("letsencrypt/second", tarfile.LNKTYPE, "letsencrypt/sub/first"),
         )
 
+    def test_repeated_member_name(self):
+        # The later entry replaces the symlink on extraction; checks keyed by
+        # name must not be fooled into following the wrong one.
+        self.assert_rejected(
+            "duplicate member",
+            ("letsencrypt/deep/nested", tarfile.DIRTYPE, ""),
+            ("letsencrypt/deep/nested/s", tarfile.SYMTYPE, "../../inside"),
+            ("letsencrypt/b", tarfile.LNKTYPE, "letsencrypt/deep/nested/s"),
+            ("letsencrypt/regular", tarfile.REGTYPE, ""),
+            ("letsencrypt/deep/nested/s", tarfile.LNKTYPE, "letsencrypt/regular"),
+        )
+
+    def test_repeated_name_after_normalisation(self):
+        self.assert_rejected(
+            "duplicate member",
+            ("letsencrypt/file", tarfile.REGTYPE, ""),
+            ("./letsencrypt//file", tarfile.REGTYPE, ""),
+        )
+
     def test_hardlink_to_regular_file_is_accepted(self):
         archive = self.build(
             ("letsencrypt/file", tarfile.REGTYPE, ""),

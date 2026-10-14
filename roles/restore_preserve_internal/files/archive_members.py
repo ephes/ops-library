@@ -2,7 +2,7 @@
 """Validate restore archive members before anything is extracted.
 
 Every member must sit below one of the allowed top-level directories, use a
-relative path without "..", and be a regular file, directory, symlink or
+relative path without "..", appear only once, and be a regular file, directory, symlink or
 hardlink; a top-level entry itself must be a directory. Symlink and hardlink
 targets, resolved through all symlinks in the archive, must stay inside the
 member's own top-level directory, no hardlink may point (directly or through
@@ -64,7 +64,7 @@ def validate(path, allowed):
     tops = []
     links = {}
     hardlinks = []
-    names = []
+    names = set()
     with tarfile.open(path, "r:*") as archive:
         for member in archive.getmembers():
             parts = clean(member.name)
@@ -79,13 +79,17 @@ def validate(path, allowed):
             if len(parts) == 1 and not member.isdir():
                 raise ValueError(f"top-level member is not a directory: {member.name!r}")
             name = "/".join(parts)
+            # A repeated name makes the later member replace the earlier one
+            # on extraction, so checks keyed by name would see the wrong one.
+            if name in names:
+                raise ValueError(f"duplicate member: {member.name!r}")
             if member.issym():
                 if member.linkname.startswith("/"):
                     raise ValueError(f"absolute symlink target: {member.name!r}")
                 links[name] = member.linkname
             elif member.islnk():
                 hardlinks.append((name, "/".join(clean(member.linkname))))
-            names.append(name)
+            names.add(name)
             if top not in tops:
                 tops.append(top)
     for name in names:
