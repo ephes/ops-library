@@ -3,6 +3,32 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Nyxmon can run the Rust monitoring agent
+
+- `nyxmon_deploy`: new `nyxmon_agent_impl` (`python`, the default, or
+  `rust`) selects which agent `nyxmon-monitor.service` runs. With
+  `nyxmon_agent_rust_version` and `nyxmon_agent_rust_sha256` set, the role
+  installs that `nyxmon-agent` release from GitHub (checksum-pinned, or
+  `nyxmon_agent_rust_local_archive` for development builds) into
+  `/opt/nyxmon-agent/<version>/`, with either implementation, so the binary
+  can be installed before the switch. The archive must hold only the regular
+  files `nyxmon-agent` and `LICENSE` (checked before extraction). An installed version is never modified;
+  the same version from a different archive fails the run. Before anything
+  points at it, the binary must report the pinned version (`--version`) and
+  accept the migrated database (`--check-schema`, as the service user). With
+  `rust` the drop-in
+  `/etc/systemd/system/nyxmon-monitor.service.d/agent-impl.conf` replaces the
+  `ExecStart` with the versioned binary; with `python` it is removed. After the
+  restart the role checks the live process (`/proc/<pid>/exe` for Rust, the
+  `start-agent` argv for Python) and only then prunes old versions beyond
+  `nyxmon_agent_rust_keep_versions` (default 3), keeping the pinned, the
+  running and the previously selected version (no pruning with monitoring
+  disabled). Rollback is setting `nyxmon_agent_impl: python`
+  again; the README documents the emergency rollback on the host.
+- Without a pinned version and with `nyxmon_agent_impl: python` the role
+  installs nothing and restarts nothing new; it only adds read-only checks
+  that the unit runs the venv `start-agent`.
+
 ## Unreleased — PostfixAdmin backups fail closed (2.31.48)
 
 - `postfixadmin_backup` no longer publishes a partial backup. `config.local.php`,
@@ -38,6 +64,7 @@
 - The `postfixadmin_backup` README no longer claims that `mail_backup` covers
   the mail tables; it names the whole-database dumps that do.
 
+||||||| parent of 31d3f313 (Let nyxmon_deploy install and select the Rust monitoring agent)
 ## Unreleased — FastDeploy and Nyxmon deploys no longer restart Traefik (2.31.47)
 
 - `fastdeploy_deploy` and `nyxmon_deploy` no longer restart Traefik after

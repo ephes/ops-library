@@ -126,6 +126,38 @@
       OpsGate producer config is invalid. Set both nyxmon_opsgate_submit_base_url and
       nyxmon_opsgate_submit_token (>=20 chars), or leave both empty to disable integration.
 
+- name: Validate monitoring agent implementation settings
+  ansible.builtin.assert:
+    that:
+      - nyxmon_agent_impl in ['python', 'rust']
+      - nyxmon_agent_rust_version is string
+      - >-
+        nyxmon_agent_rust_version == '' or
+        nyxmon_agent_rust_version is regex('^[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?$')
+      - nyxmon_agent_rust_sha256 is string
+      - nyxmon_agent_rust_sha256 == '' or nyxmon_agent_rust_sha256 is regex('^[0-9a-f]{64}$')
+      - nyxmon_agent_rust_local_archive is string
+      - >-
+        nyxmon_agent_rust_version == '' or nyxmon_agent_rust_sha256 != '' or
+        nyxmon_agent_rust_local_archive != ''
+      - nyxmon_agent_rust_sha256 == '' or nyxmon_agent_rust_version != ''
+      - nyxmon_agent_rust_local_archive == '' or nyxmon_agent_rust_version != ''
+      - nyxmon_agent_impl == 'python' or nyxmon_agent_rust_version != ''
+      - nyxmon_agent_impl == 'python' or nyxmon_monitoring_enabled | bool
+      - nyxmon_agent_rust_install_root is regex('^/[^ ]*[^/ ]$')
+      - nyxmon_agent_rust_keep_versions is not boolean
+      - (nyxmon_agent_rust_keep_versions | string) is regex('^[0-9]+$')
+      - nyxmon_agent_rust_keep_versions | int >= 1
+    fail_msg: >-
+      Monitoring agent settings are invalid. nyxmon_agent_impl must be python or
+      rust (got {{ nyxmon_agent_impl }}). nyxmon_agent_rust_version must be empty
+      or a version such as 0.1.0 (got '{{ nyxmon_agent_rust_version }}'), and
+      impl rust needs a version and nyxmon_monitoring_enabled. A version needs
+      nyxmon_agent_rust_sha256 (64 lowercase hex digits) or
+      nyxmon_agent_rust_local_archive; a checksum or local archive without a
+      version is refused. nyxmon_agent_rust_install_root must be an absolute
+      path other than /, nyxmon_agent_rust_keep_versions a whole number >= 1.
+
 - name: Setup user and directories
   include_tasks: user.yml
 
@@ -137,6 +169,9 @@
 
 - name: Configure Django application
   include_tasks: django.yml
+
+- name: Install the Rust agent and select the agent implementation
+  include_tasks: agent_rust.yml
 
 - name: Setup systemd service
   include_tasks: service.yml
@@ -154,6 +189,9 @@
 
 - name: main | Flush handlers before OpsGate smoke validation
   meta: flush_handlers
+
+- name: main | Verify the running agent implementation and prune old Rust agents
+  include_tasks: agent_verify.yml
 
 - name: main | Validate live nyxmon-monitor OpsGate settings
   include_tasks: validate_opsgate_smoke.yml

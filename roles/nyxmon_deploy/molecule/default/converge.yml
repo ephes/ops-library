@@ -1,5 +1,5 @@
 ---
-- name: Converge
+- name: Converge with the Python agent
   hosts: all
   become: true
 
@@ -54,23 +54,389 @@
       vars:
         uv_install_dir: /usr/local/bin
 
-  vars:
-    nyxmon_deploy_method: git
-    nyxmon_git_repo: "https://github.com/ephes/nyxmon.git"
-    nyxmon_git_version: main
-    nyxmon_use_source_pyproject: false
-    nyxmon_use_uv: true
-    nyxmon_python_version: "3.12"
-    nyxmon_django_path: "{{ nyxmon_site_path }}/src/django"
-    nyxmon_django_secret_key: "molecule-nyxmon-secret-key"
-    nyxmon_telegram_bot_token: "molecule-telegram-token"
-    nyxmon_telegram_chat_id: "123456"
-    nyxmon_opsgate_submit_base_url: "http://opsgate-api.internal:8711"
-    nyxmon_opsgate_submit_token: "molecule-opsgate-submit-token"
-    nyxmon_opsgate_approval_base_url: "https://opsgate.example.test"
-    nyxmon_basic_auth_enabled: false
-    nyxmon_traefik_enabled: true
-    nyxmon_monitoring_enabled: true
+  vars_files:
+    - nyxmon_vars.yml
 
   roles:
     - role: nyxmon_deploy
+
+# The Rust phases use a fake nyxmon-agent compiled in the instance: the real
+# release is an x86_64 binary and Molecule may run on arm64. The fake answers
+# --version and --check-schema like the real one (the latter only checks the
+# --db path exists) and otherwise waits for SIGTERM, so /proc/<pid>/exe of the
+# unit is the versioned binary.
+- name: Build fake Rust agent release archives
+  hosts: all
+  become: true
+  vars:
+    fake_agent_build: /root/fake-agent
+    fake_agent_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-agent"
+    fake_agent_builds:
+      # name: [reported version, reported commit]
+      a: ["0.1.0", "0000000000000000000000000000000000000000"]
+      a2: ["0.1.0", "1111111111111111111111111111111111111111"]
+      b: ["0.1.1", "2222222222222222222222222222222222222222"]
+      wrong: ["0.1.0", "3333333333333333333333333333333333333333"]
+  tasks:
+    - name: Install a C compiler
+      ansible.builtin.apt:
+        name:
+          - gcc
+          - libc6-dev
+        state: present
+
+    - name: Create build directories
+      ansible.builtin.file:
+        path: "{{ fake_agent_build }}/{{ item }}"
+        state: directory
+        mode: "0755"
+      loop: "{{ fake_agent_builds.keys() | list }}"
+
+    - name: Write the fake agent source
+      ansible.builtin.copy:
+        dest: "{{ fake_agent_build }}/fake-agent.c"
+        mode: "0644"
+        content: |
+          #include <stdio.h>
+          #include <string.h>
+          #include <unistd.h>
+
+          int main(int argc, char **argv) {
+              const char *db = NULL;
+              int check_schema = 0;
+              for (int i = 1; i < argc; i++) {
+                  if (strcmp(argv[i], "--version") == 0) {
+                      printf("nyxmon-agent %s (%s)\n", AGENT_VERSION, AGENT_COMMIT);
+                      return 0;
+                  }
+                  if (strcmp(argv[i], "--check-schema") == 0) check_schema = 1;
+                  if (strcmp(argv[i], "--db") == 0 && i + 1 < argc) db = argv[++i];
+              }
+              if (db == NULL || access(db, R_OK) != 0) {
+                  fprintf(stderr, "Database file not found: %s\n", db ? db : "(none)");
+                  return 1;
+              }
+              if (check_schema) {
+                  printf("schema OK\n");
+                  return 0;
+              }
+              for (;;) pause();
+          }
+
+    - name: Compile the fake agents
+      ansible.builtin.command:
+        argv:
+          - gcc
+          - -O2
+          - -DAGENT_VERSION="{{ item.value[0] }}"
+          - -DAGENT_COMMIT="{{ item.value[1] }}"
+          - -o
+          - "{{ fake_agent_build }}/{{ item.key }}/nyxmon-agent"
+          - "{{ fake_agent_build }}/fake-agent.c"
+        creates: "{{ fake_agent_build }}/{{ item.key }}/nyxmon-agent"
+      loop: "{{ fake_agent_builds | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Add a license file
+      ansible.builtin.copy:
+        dest: "{{ fake_agent_build }}/{{ item }}/LICENSE"
+        content: "fake\n"
+        mode: "0644"
+      loop: "{{ fake_agent_builds.keys() | list }}"
+
+    - name: Pack the archives in the release layout
+      ansible.builtin.command:
+        argv:
+          - tar
+          - --owner=0
+          - --group=0
+          - -czf
+          - "{{ fake_agent_build }}/{{ item }}.tar.gz"
+          - -C
+          - "{{ fake_agent_build }}/{{ item }}"
+          - nyxmon-agent
+          - LICENSE
+        creates: "{{ fake_agent_build }}/{{ item }}.tar.gz"
+      loop: "{{ fake_agent_builds.keys() | list }}"
+
+    - name: Create a hostile build whose agent is a symlink to /etc/shadow
+      ansible.builtin.file:
+        path: "{{ fake_agent_build }}/link/{{ item.name }}"
+        src: "{{ item.src | default(omit) }}"
+        state: "{{ item.state }}"
+        force: true
+        mode: "{{ item.mode | default(omit) }}"
+      loop:
+        - {name: "", state: directory, mode: "0755"}
+        - {name: nyxmon-agent, state: link, src: /etc/shadow}
+      loop_control:
+        label: "{{ item.name or 'link/' }}"
+
+    - name: Pack the hostile archive
+      ansible.builtin.command:
+        argv:
+          - tar
+          - --owner=0
+          - --group=0
+          - -czf
+          - "{{ fake_agent_build }}/link.tar.gz"
+          - -C
+          - "{{ fake_agent_build }}/link"
+          - nyxmon-agent
+        creates: "{{ fake_agent_build }}/link.tar.gz"
+
+    - name: Fetch the archives to the controller
+      ansible.builtin.fetch:
+        src: "{{ fake_agent_build }}/{{ item }}.tar.gz"
+        dest: "{{ fake_agent_archives }}/{{ item }}.tar.gz"
+        flat: true
+      loop: "{{ fake_agent_builds.keys() | list + ['link'] }}"
+
+- name: Switch to the Rust agent (fake 0.1.0)
+  hosts: all
+  become: true
+  vars_files:
+    - nyxmon_vars.yml
+  vars:
+    fake_agent_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-agent"
+  roles:
+    - role: nyxmon_deploy
+      vars:
+        nyxmon_agent_impl: rust
+        nyxmon_agent_rust_version: "0.1.0"
+        nyxmon_agent_rust_local_archive: "{{ fake_agent_archives }}/a.tar.gz"
+        nyxmon_agent_rust_keep_versions: 1
+  post_tasks:
+    - name: Read the drop-in
+      ansible.builtin.slurp:
+        path: /etc/systemd/system/nyxmon-monitor.service.d/agent-impl.conf
+      register: rust_dropin
+
+    - name: Assert the drop-in starts the versioned binary
+      ansible.builtin.assert:
+        that:
+          - >-
+            'ExecStart=/opt/nyxmon-agent/0.1.0/nyxmon-agent --db /home/nyxmon/site/src/django/db.sqlite3 --enable-telegram'
+            in (rust_dropin.content | b64decode)
+
+- name: Switch to another Rust version (fake 0.1.1) and prune
+  hosts: all
+  become: true
+  vars_files:
+    - nyxmon_vars.yml
+  vars:
+    fake_agent_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-agent"
+  pre_tasks:
+    - name: Plant an old version beyond keep_versions
+      ansible.builtin.file:
+        path: /opt/nyxmon-agent/0.0.9
+        state: directory
+        mode: "0755"
+        modification_time: "200001010000.00"
+        modification_time_format: "%Y%m%d%H%M.%S"
+
+    - name: Plant a directory that is not a version
+      ansible.builtin.file:
+        path: /opt/nyxmon-agent/keep-me
+        state: directory
+        mode: "0755"
+        modification_time: "200001010000.00"
+        modification_time_format: "%Y%m%d%H%M.%S"
+  roles:
+    - role: nyxmon_deploy
+      vars:
+        nyxmon_agent_impl: rust
+        nyxmon_agent_rust_version: "0.1.1"
+        nyxmon_agent_rust_local_archive: "{{ fake_agent_archives }}/b.tar.gz"
+        nyxmon_agent_rust_keep_versions: 1
+  post_tasks:
+    - name: List the install root
+      ansible.builtin.find:
+        paths: /opt/nyxmon-agent
+        file_type: directory
+        hidden: true
+      register: rust_installed
+
+    - name: Read the remembered previous version
+      ansible.builtin.slurp:
+        path: /opt/nyxmon-agent/.previous-version
+      register: rust_previous
+
+    - name: Assert the previous version is kept and the old one pruned
+      ansible.builtin.assert:
+        that:
+          - rust_installed.files | map(attribute='path') | map('basename') | sort == ['0.1.0', '0.1.1', 'keep-me']
+          - rust_previous.content | b64decode | trim == '0.1.0'
+
+- name: Refuse a binary that reports another version
+  hosts: all
+  become: true
+  vars_files:
+    - nyxmon_vars.yml
+  vars:
+    fake_agent_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-agent"
+  tasks:
+    - name: Read the main PID before the refused run
+      ansible.builtin.command: systemctl show --property=MainPID --value nyxmon-monitor
+      changed_when: false
+      register: pid_before
+
+    - name: Deploy 0.2.0 from an archive whose binary reports 0.1.0
+      block:
+        - name: Run the role
+          ansible.builtin.include_role:
+            name: nyxmon_deploy
+          vars:
+            nyxmon_agent_impl: rust
+            nyxmon_agent_rust_version: "0.2.0"
+            nyxmon_agent_rust_local_archive: "{{ fake_agent_archives }}/wrong.tar.gz"
+            nyxmon_agent_rust_keep_versions: 1
+
+        - name: Record an unexpected success
+          ansible.builtin.set_fact:
+            refused_run_succeeded: true
+      rescue:
+        - name: Read the main PID after the refused run
+          ansible.builtin.command: systemctl show --property=MainPID --value nyxmon-monitor
+          changed_when: false
+          register: pid_after
+
+        - name: Stat the rejected version
+          ansible.builtin.stat:
+            path: /opt/nyxmon-agent/0.2.0
+          register: rejected_version
+
+        - name: Read the drop-in
+          ansible.builtin.slurp:
+            path: /etc/systemd/system/nyxmon-monitor.service.d/agent-impl.conf
+          register: refused_dropin
+
+        - name: Assert nothing was switched
+          ansible.builtin.assert:
+            that:
+              - not (refused_run_succeeded | default(false))
+              - "'reports the pinned version' in ansible_failed_result.msg | default('') or 'failed validation' in ansible_failed_result.msg | default('')"
+              - not rejected_version.stat.exists
+              - "'/opt/nyxmon-agent/0.1.1/nyxmon-agent' in (refused_dropin.content | b64decode)"
+              - pid_after.stdout == pid_before.stdout
+
+    - name: Fail when the role accepted the wrong binary
+      ansible.builtin.assert:
+        that:
+          - not (refused_run_succeeded | default(false))
+
+- name: Refuse a different archive for an installed version
+  hosts: all
+  become: true
+  vars_files:
+    - nyxmon_vars.yml
+  vars:
+    fake_agent_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-agent"
+  tasks:
+    - name: Checksum the installed binary before the refused run
+      ansible.builtin.stat:
+        path: /opt/nyxmon-agent/0.1.0/nyxmon-agent
+        checksum_algorithm: sha256
+      register: binary_before
+
+    - name: Deploy 0.1.0 from a different archive
+      block:
+        - name: Run the role
+          ansible.builtin.include_role:
+            name: nyxmon_deploy
+          vars:
+            nyxmon_agent_impl: rust
+            nyxmon_agent_rust_version: "0.1.0"
+            nyxmon_agent_rust_local_archive: "{{ fake_agent_archives }}/a2.tar.gz"
+            nyxmon_agent_rust_keep_versions: 1
+
+        - name: Record an unexpected success
+          ansible.builtin.set_fact:
+            replaced_run_succeeded: true
+      rescue:
+        - name: Checksum the installed binary after the refused run
+          ansible.builtin.stat:
+            path: /opt/nyxmon-agent/0.1.0/nyxmon-agent
+            checksum_algorithm: sha256
+          register: binary_after
+
+        - name: Assert the installed version was not modified
+          ansible.builtin.assert:
+            that:
+              - not (replaced_run_succeeded | default(false))
+              - "'is installed from an archive with sha256' in ansible_failed_result.msg | default('')"
+              - binary_after.stat.checksum == binary_before.stat.checksum
+
+    - name: Fail when the role replaced an installed version
+      ansible.builtin.assert:
+        that:
+          - not (replaced_run_succeeded | default(false))
+
+- name: Refuse an archive whose agent is a symlink
+  hosts: all
+  become: true
+  vars_files:
+    - nyxmon_vars.yml
+  vars:
+    fake_agent_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-agent"
+  tasks:
+    - name: Stat /etc/shadow before the refused run
+      ansible.builtin.stat:
+        path: /etc/shadow
+      register: shadow_before
+
+    - name: Deploy 0.3.0 from the hostile archive
+      block:
+        - name: Run the role
+          ansible.builtin.include_role:
+            name: nyxmon_deploy
+          vars:
+            nyxmon_agent_impl: rust
+            nyxmon_agent_rust_version: "0.3.0"
+            nyxmon_agent_rust_local_archive: "{{ fake_agent_archives }}/link.tar.gz"
+            nyxmon_agent_rust_keep_versions: 1
+
+        - name: Record an unexpected success
+          ansible.builtin.set_fact:
+            link_run_succeeded: true
+      rescue:
+        - name: Stat /etc/shadow after the refused run
+          ansible.builtin.stat:
+            path: /etc/shadow
+          register: shadow_after
+
+        - name: Stat the refused version
+          ansible.builtin.stat:
+            path: /opt/nyxmon-agent/0.3.0
+          register: link_version
+
+        - name: Assert the link was refused before extraction
+          ansible.builtin.assert:
+            that:
+              - not (link_run_succeeded | default(false))
+              - "'regular files nyxmon-agent' in ansible_failed_result.msg | default('')"
+              - shadow_after.stat.mode == shadow_before.stat.mode
+              - shadow_after.stat.uid == shadow_before.stat.uid
+              - shadow_after.stat.gid == shadow_before.stat.gid
+              - not link_version.stat.exists
+
+    - name: Fail when the role accepted the hostile archive
+      ansible.builtin.assert:
+        that:
+          - not (link_run_succeeded | default(false))
+
+- name: Roll back to the Python agent
+  hosts: all
+  become: true
+  vars_files:
+    - nyxmon_vars.yml
+  vars:
+    fake_agent_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-agent"
+  roles:
+    - role: nyxmon_deploy
+      vars:
+        nyxmon_agent_impl: python
+        nyxmon_agent_rust_version: "0.1.1"
+        nyxmon_agent_rust_local_archive: "{{ fake_agent_archives }}/b.tar.gz"
+        nyxmon_agent_rust_keep_versions: 1

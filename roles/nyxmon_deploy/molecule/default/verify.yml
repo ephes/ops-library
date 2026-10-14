@@ -134,3 +134,41 @@
         that:
           - nyxmon_venv.stat.exists
         fail_msg: "Nyxmon venv python missing at {{ nyxmon_venv_python }}"
+
+    # converge.yml ends with a rollback from the fake Rust agent 0.1.1 to Python.
+    - name: Verify | Agent implementation drop-in is gone
+      ansible.builtin.stat:
+        path: /etc/systemd/system/nyxmon-monitor.service.d/agent-impl.conf
+      register: nyxmon_agent_dropin
+
+    - name: Verify | Read the monitoring process command line
+      ansible.builtin.shell: |
+        pid=$(systemctl show --property=MainPID --value nyxmon-monitor)
+        tr '\0' '\n' < "/proc/$pid/cmdline"
+      args:
+        executable: /bin/bash
+      changed_when: false
+      register: nyxmon_agent_cmdline
+
+    - name: Verify | List installed Rust agent versions
+      ansible.builtin.find:
+        paths: /opt/nyxmon-agent
+        file_type: directory
+      register: nyxmon_agent_installed
+
+    - name: Verify | Read the remembered previous Rust version
+      ansible.builtin.slurp:
+        path: /opt/nyxmon-agent/.previous-version
+      register: nyxmon_agent_previous
+
+    - name: Verify | Assert the rollback left the Python agent running
+      ansible.builtin.assert:
+        that:
+          - not nyxmon_agent_dropin.stat.exists
+          - (nyxmon_site_path ~ '/.venv/bin/start-agent') in nyxmon_agent_cmdline.stdout_lines
+          - nyxmon_agent_installed.files | map(attribute='path') | map('basename') | sort == ['0.1.1', 'keep-me']
+          - nyxmon_agent_previous.content | b64decode | trim == '0.1.1'
+        fail_msg: >-
+          Rollback state is wrong: drop-in {{ nyxmon_agent_dropin.stat.exists }},
+          argv {{ nyxmon_agent_cmdline.stdout_lines }},
+          versions {{ nyxmon_agent_installed.files | map(attribute='path') | list }}.

@@ -7,7 +7,13 @@ settings rendered into the worker environment.
 
 from __future__ import annotations
 
+import base64
+import json
+import os
 import re
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -302,6 +308,435 @@ class ProductionSettingsContractTests(unittest.TestCase):
             probe["ansible.builtin.uri"]["headers"],
             "{{ nyxmon_restore_health_headers }}",
         )
+
+
+def task_list(name: str) -> list[dict]:
+    return yaml.safe_load((ROLE / "tasks" / name).read_text())
+
+
+def walk_tasks(tasks: list[dict]):
+    for task in tasks or []:
+        yield task
+        for key in ("block", "rescue", "always"):
+            yield from walk_tasks(task.get(key, []))
+
+
+def find_task(tasks: list[dict], name: str) -> dict:
+    return next(task for task in walk_tasks(tasks) if task.get("name") == name)
+
+
+def run_cases(task: dict, cases: dict[str, dict], show: str) -> dict[str, object]:
+    """Run one role task once per case on localhost and report each outcome.
+
+    Returns ``{case: "failed"}`` for a failed task, else the value of the
+    variable ``show`` after the task (``None`` for an assert).
+    """
+    plays = []
+    for case, variables in cases.items():
+        plays.append(
+            {
+                "name": case,
+                "hosts": "localhost",
+                "gather_facts": False,
+                "vars": variables,
+                "tasks": [
+                    {
+                        "block": [
+                            dict(task),
+                            {
+                                "ansible.builtin.debug": {
+                                    "msg": "CASE {{ "
+                                    + json.dumps(case)
+                                    + " }} {{ ({'value': "
+                                    + show
+                                    + "}) | to_json }}"
+                                }
+                            },
+                        ],
+                        "rescue": [
+                            {
+                                "ansible.builtin.debug": {
+                                    "msg": "CASE {{ " + json.dumps(case) + " }} failed"
+                                }
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+    with tempfile.TemporaryDirectory() as tmp:
+        playbook = Path(tmp) / "cases.yml"
+        playbook.write_text(yaml.safe_dump(plays))
+        result = subprocess.run(
+            [
+                str(Path(sys.executable).parent / "ansible-playbook"),
+                "-i",
+                "localhost,",
+                "-c",
+                "local",
+                str(playbook),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            env={
+                **os.environ,
+                "ANSIBLE_STDOUT_CALLBACK": "json",
+                "ANSIBLE_LOCALHOST_WARNING": "false",
+            },
+        )
+    if result.returncode != 0:
+        raise AssertionError(result.stdout[-4000:] + result.stderr[-4000:])
+    outcomes: dict[str, object] = {}
+    for play in json.loads(result.stdout)["plays"]:
+        for task_result in play["tasks"]:
+            message = task_result["hosts"]["localhost"].get("msg", "")
+            if isinstance(message, str) and message.startswith("CASE "):
+                case, _, rest = message[len("CASE ") :].partition(" ")
+                outcomes[case] = "failed" if rest == "failed" else json.loads(rest)["value"]
+    return outcomes
+
+
+class RustAgentTests(unittest.TestCase):
+    """PLAN.md 8.3 of nyxmon agent-rs: versioned install, drop-in switch."""
+
+    def test_defaults_keep_the_python_agent_and_install_nothing(self) -> None:
+        defaults = role_defaults()
+
+        self.assertEqual(defaults["nyxmon_agent_impl"], "python")
+        self.assertEqual(defaults["nyxmon_agent_rust_version"], "")
+        self.assertEqual(defaults["nyxmon_agent_rust_sha256"], "")
+        self.assertEqual(defaults["nyxmon_agent_rust_local_archive"], "")
+        self.assertEqual(defaults["nyxmon_agent_rust_install_root"], "/opt/nyxmon-agent")
+        self.assertEqual(defaults["nyxmon_agent_rust_keep_versions"], 3)
+
+    def test_release_url_names_the_tagged_release_asset(self) -> None:
+        url = (
+            Environment(undefined=StrictUndefined)
+            .from_string(role_defaults()["nyxmon_agent_rust_release_url"])
+            .render(nyxmon_agent_rust_version="0.1.0")
+        )
+
+        self.assertEqual(
+            url,
+            "https://github.com/ephes/nyxmon/releases/download/agent-rs-v0.1.0/"
+            "nyxmon-agent-0.1.0-x86_64-unknown-linux-gnu.tar.gz",
+        )
+
+    def test_agent_tasks_run_after_migrations_and_verify_after_the_restart(self) -> None:
+        names = [task.get("name") for task in task_list("main.yml")]
+        install = names.index("Install the Rust agent and select the agent implementation")
+        verify = names.index(
+            "main | Verify the running agent implementation and prune old Rust agents"
+        )
+
+        self.assertLess(names.index("Configure Django application"), install)
+        self.assertLess(install, names.index("Setup monitoring"))
+        self.assertLess(
+            names.index("main | Flush handlers before OpsGate smoke validation"), verify
+        )
+        self.assertLess(
+            verify, names.index("main | Validate live nyxmon-monitor OpsGate settings")
+        )
+        self.assertLess(
+            names.index("Validate monitoring agent implementation settings"),
+            names.index("Setup user and directories"),
+        )
+
+    def test_dropin_starts_the_versioned_binary_with_the_python_arguments(self) -> None:
+        dropin = render(
+            "agent-impl.conf.j2",
+            nyxmon_agent_rust_binary="/opt/nyxmon-agent/0.1.0/nyxmon-agent",
+        )
+        base = render("nyxmon-monitor.service.j2")
+
+        self.assertIn(
+            "[Service]\nExecStart=\n"
+            "ExecStart=/opt/nyxmon-agent/0.1.0/nyxmon-agent "
+            "--db /home/nyxmon/site/db.sqlite3 --enable-telegram\n",
+            dropin,
+        )
+        self.assertIn(
+            "ExecStart=/home/nyxmon/site/.venv/bin/start-agent "
+            "--db /home/nyxmon/site/db.sqlite3 --enable-telegram\n",
+            base,
+        )
+
+    def test_dropin_exists_only_for_rust_and_every_change_restarts(self) -> None:
+        tasks = task_list("agent_rust.yml")
+        rust = find_task(tasks, "agent_rust | Select the Rust agent for the monitoring unit")
+        python = find_task(tasks, "agent_rust | Select the Python agent for the monitoring unit")
+
+        self.assertEqual(rust["when"], "nyxmon_agent_impl == 'rust'")
+        self.assertEqual(python["when"], "nyxmon_agent_impl == 'python'")
+        self.assertEqual(python["ansible.builtin.file"]["state"], "absent")
+        for task in (rust, python):
+            self.assertEqual(task["notify"], ["reload systemd", "restart nyxmon-monitor"])
+
+    def test_candidate_is_validated_before_the_dropin_changes(self) -> None:
+        tasks = task_list("agent_rust.yml")
+        names = [task.get("name") for task in walk_tasks(tasks)]
+        install = find_task(tasks, "agent_rust | Install and validate the pinned Rust agent release")
+
+        self.assertEqual(install["when"], "nyxmon_agent_rust_version | length > 0")
+        for earlier, later in (
+            (
+                "agent_rust | Refuse a different archive for an installed version",
+                "agent_rust | Download the release archive",
+            ),
+            (
+                "agent_rust | Download the release archive",
+                "agent_rust | Assert the candidate reports the pinned version",
+            ),
+            (
+                "agent_rust | Assert the candidate reports the pinned version",
+                "agent_rust | Assert the database schema satisfies the candidate",
+            ),
+            (
+                "agent_rust | Assert the database schema satisfies the candidate",
+                "agent_rust | Select the Rust agent for the monitoring unit",
+            ),
+        ):
+            self.assertLess(names.index(earlier), names.index(later))
+        version = find_task(tasks, "agent_rust | Read the version of the candidate binary")
+        schema = find_task(tasks, "agent_rust | Check the database schema with the candidate binary")
+        for task in (version, schema):
+            self.assertEqual(task["become_user"], "{{ nyxmon_user }}")
+            self.assertEqual(
+                task["ansible.builtin.command"]["argv"][0], "{{ nyxmon_agent_rust_binary }}"
+            )
+        self.assertEqual(
+            schema["ansible.builtin.command"]["argv"][1:],
+            ["--check-schema", "--db", "{{ nyxmon_django_path }}/db.sqlite3"],
+        )
+        rescue = find_task(tasks, "agent_rust | Remove the rejected fresh install")
+        self.assertEqual(rescue["when"], "not nyxmon_agent_rust_dir_stat.stat.exists")
+
+    def test_download_is_checksum_pinned(self) -> None:
+        download = find_task(task_list("agent_rust.yml"), "agent_rust | Download the release archive")
+
+        self.assertEqual(
+            download["ansible.builtin.get_url"]["checksum"],
+            "sha256:{{ nyxmon_agent_rust_sha256 }}",
+        )
+
+    def test_settings_validation(self) -> None:
+        task = find_task(task_list("main.yml"), "Validate monitoring agent implementation settings")
+        sha = "a" * 64
+        base = {
+            "nyxmon_agent_impl": "python",
+            "nyxmon_agent_rust_version": "",
+            "nyxmon_agent_rust_sha256": "",
+            "nyxmon_agent_rust_local_archive": "",
+            "nyxmon_agent_rust_install_root": "/opt/nyxmon-agent",
+            "nyxmon_agent_rust_keep_versions": 3,
+            "nyxmon_monitoring_enabled": True,
+        }
+        accepted = {
+            "defaults": {},
+            "python_with_a_pinned_release": {"nyxmon_agent_rust_version": "0.1.0", "nyxmon_agent_rust_sha256": sha},
+            "rust_release": {"nyxmon_agent_impl": "rust", "nyxmon_agent_rust_version": "0.1.0", "nyxmon_agent_rust_sha256": sha},
+            "rust_local_archive": {"nyxmon_agent_impl": "rust", "nyxmon_agent_rust_version": "0.2.0-rc.1", "nyxmon_agent_rust_local_archive": "/tmp/a.tar.gz"},
+            "keep_one": {"nyxmon_agent_rust_keep_versions": 1},
+        }
+        refused = {
+            "unknown_impl": {"nyxmon_agent_impl": "go"},
+            "rust_without_version": {"nyxmon_agent_impl": "rust"},
+            "rust_without_monitoring": {"nyxmon_agent_impl": "rust", "nyxmon_agent_rust_version": "0.1.0", "nyxmon_agent_rust_sha256": sha, "nyxmon_monitoring_enabled": False},
+            "version_without_checksum": {"nyxmon_agent_rust_version": "0.1.0"},
+            "short_checksum": {"nyxmon_agent_rust_version": "0.1.0", "nyxmon_agent_rust_sha256": "a" * 63},
+            "uppercase_checksum": {"nyxmon_agent_rust_version": "0.1.0", "nyxmon_agent_rust_sha256": "A" * 64},
+            "checksum_without_version": {"nyxmon_agent_rust_sha256": sha},
+            "archive_without_version": {"nyxmon_agent_rust_local_archive": "/tmp/a.tar.gz"},
+            "version_with_a_path": {"nyxmon_agent_rust_version": "../0.1.0", "nyxmon_agent_rust_sha256": sha},
+            "version_with_a_v": {"nyxmon_agent_rust_version": "v0.1.0", "nyxmon_agent_rust_sha256": sha},
+            "root_install_root": {"nyxmon_agent_rust_install_root": "/"},
+            "relative_install_root": {"nyxmon_agent_rust_install_root": "opt/nyxmon-agent"},
+            "keep_zero": {"nyxmon_agent_rust_keep_versions": 0},
+            "keep_boolean": {"nyxmon_agent_rust_keep_versions": True},
+        }
+        cases = {name: {**base, **overrides} for name, overrides in {**accepted, **refused}.items()}
+
+        outcomes = run_cases(task, cases, "none")
+
+        for name in accepted:
+            with self.subTest(case=name):
+                self.assertIsNone(outcomes[name])
+        for name in refused:
+            with self.subTest(case=name):
+                self.assertEqual(outcomes[name], "failed")
+
+    def test_previous_rust_version_is_read_from_the_dropin(self) -> None:
+        task = find_task(
+            task_list("agent_rust.yml"),
+            "agent_rust | Derive the Rust version the drop-in selected so far",
+        )
+        rendered = render(
+            "agent-impl.conf.j2",
+            nyxmon_agent_rust_binary="/opt/nyxmon-agent/0.1.0/nyxmon-agent",
+        )
+
+        def case(content: str | None) -> dict:
+            variables: dict = {"nyxmon_agent_rust_install_root": "/opt/nyxmon-agent"}
+            variables["nyxmon_agent_dropin_before"] = (
+                {"skipped": True}
+                if content is None
+                else {"content": base64.b64encode(content.encode()).decode()}
+            )
+            return variables
+
+        outcomes = run_cases(
+            task,
+            {
+                "rust_dropin": case(rendered),
+                "no_dropin": case(None),
+                "foreign_path": case("[Service]\nExecStart=\nExecStart=/usr/bin/x --db y\n"),
+            },
+            "nyxmon_agent_rust_active_before",
+        )
+
+        self.assertEqual(
+            outcomes, {"rust_dropin": "0.1.0", "no_dropin": "", "foreign_path": ""}
+        )
+
+    def test_pruning_keeps_the_pinned_previous_and_newest_versions(self) -> None:
+        task = find_task(
+            task_list("agent_verify.yml"),
+            "agent_verify | Decide which Rust agent versions to keep",
+        )
+        installed = [
+            ("0.1.0", 10),
+            ("0.2.0", 20),
+            ("0.3.0", 30),
+            ("0.4.0", 40),
+            ("0.5.0-rc.1", 50),
+            ("not-a-version", 60),
+        ]
+
+        def case(pinned: str, previous: str | None, keep: int, live: str = "") -> dict:
+            return {
+                "nyxmon_agent_rust_version": pinned,
+                "nyxmon_agent_rust_keep_versions": keep,
+                "nyxmon_agent_rust_install_root": "/opt/nyxmon-agent",
+                "nyxmon_agent_live": {
+                    "stdout_lines": ["state=active", "pid=42", f"exe={live}", "arg=x"]
+                },
+                "nyxmon_agent_rust_installed": {
+                    "files": [
+                        {"path": f"/opt/nyxmon-agent/{name}", "mtime": mtime}
+                        for name, mtime in installed
+                    ]
+                },
+                "nyxmon_agent_rust_previous": (
+                    {"failed": True, "msg": "file not found"}
+                    if previous is None
+                    else {"content": base64.b64encode(f"{previous}\n".encode()).decode()}
+                ),
+            }
+
+        outcomes = run_cases(
+            task,
+            {
+                "newest_three": case("0.5.0-rc.1", None, 3),
+                "old_pin_and_previous": case("0.1.0", "0.2.0", 1),
+                "live_binary": case(
+                    "0.1.0", "0.2.0", 1, live="/opt/nyxmon-agent/0.3.0/nyxmon-agent"
+                ),
+            },
+            "nyxmon_agent_rust_versions_installed | difference(nyxmon_agent_rust_versions_kept) | sort",
+        )
+
+        self.assertEqual(outcomes["newest_three"], ["0.1.0", "0.2.0"])
+        self.assertEqual(outcomes["old_pin_and_previous"], ["0.3.0", "0.4.0"])
+        self.assertEqual(outcomes["live_binary"], ["0.4.0"])
+
+    def test_pruning_needs_the_live_check(self) -> None:
+        tasks = task_list("agent_verify.yml")
+        verify = find_task(tasks, "agent_verify | Verify the running agent implementation")
+        prune = find_task(tasks, "agent_verify | Prune old Rust agent versions")
+
+        self.assertIn("nyxmon_monitoring_enabled", verify["when"])
+        self.assertIn("nyxmon_monitoring_enabled", prune["when"])
+        self.assertLess(tasks.index(verify), tasks.index(prune))
+
+    def test_previous_version_is_recorded_only_when_the_selection_moves(self) -> None:
+        condition = find_task(
+            task_list("agent_rust.yml"),
+            "agent_rust | Remember the previously selected Rust version",
+        )["when"]
+        # The real task's condition on a harmless task; facts set in one case
+        # would leak into the next, a registered result does not.
+        probe = {
+            "name": "probe",
+            "ansible.builtin.debug": {"msg": "recorded"},
+            "when": condition,
+            "register": "probe",
+        }
+
+        def case(before: str, impl: str, version: str) -> dict:
+            return {
+                "nyxmon_agent_rust_active_before": before,
+                "nyxmon_agent_rust_active_before_stat": {"stat": {"isdir": True}},
+                "nyxmon_agent_impl": impl,
+                "nyxmon_agent_rust_version": version,
+            }
+
+        outcomes = run_cases(
+            probe,
+            {
+                "same_version_rewritten": case("0.2.0", "rust", "0.2.0"),
+                "rust_to_rust": case("0.1.0", "rust", "0.2.0"),
+                "rust_to_python": case("0.2.0", "python", "0.2.0"),
+                "no_rust_before": case("", "rust", "0.2.0"),
+            },
+            "probe is not skipped",
+        )
+
+        self.assertEqual(
+            outcomes,
+            {
+                "same_version_rewritten": False,
+                "rust_to_rust": True,
+                "rust_to_python": True,
+                "no_rust_before": False,
+            },
+        )
+
+    def test_archive_members_must_be_regular_files_before_extraction(self) -> None:
+        tasks = task_list("agent_rust.yml")
+        names = [task.get("name") for task in walk_tasks(tasks)]
+        check = find_task(
+            tasks,
+            "agent_rust | Assert the archive holds only the agent and its license as regular files",
+        )
+
+        self.assertLess(
+            names.index(check["name"]), names.index("agent_rust | Unpack the release archive")
+        )
+        self.assertIn(
+            "nyxmon_agent_rust_member_types.stdout_lines | reject('match', '-') | list | length == 0",
+            check["ansible.builtin.assert"]["that"],
+        )
+        chmod = find_task(tasks, "agent_rust | Make the agent binary root-owned and executable")
+        self.assertIs(chmod["ansible.builtin.file"]["follow"], False)
+
+    def test_live_process_check_identifies_each_implementation(self) -> None:
+        raw = (ROLE / "tasks" / "agent_verify.yml").read_text()
+
+        self.assertIn("('exe=' ~ nyxmon_agent_rust_binary)", raw)
+        self.assertIn("('arg=' ~ nyxmon_venv_bin ~ '/start-agent')", raw)
+        self.assertIn('readlink "/proc/$pid/exe"', raw)
+        self.assertIn('done < "/proc/$pid/cmdline"', raw)
+
+    def test_readme_documents_the_switch_and_rollback(self) -> None:
+        readme = (ROLE / "README.md").read_text()
+
+        for name in role_defaults():
+            if name.startswith("nyxmon_agent_"):
+                with self.subTest(variable=name):
+                    self.assertIn(f"`{name}`", readme)
+        self.assertIn("agent-impl.conf", readme)
+        self.assertIn("Rollback", readme)
 
 
 if __name__ == "__main__":

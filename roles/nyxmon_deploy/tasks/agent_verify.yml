@@ -1,0 +1,126 @@
+---
+# After the handlers ran: prove the monitoring unit runs the selected agent,
+# then prune old Rust agent versions. A failed check stops the play before
+# anything is pruned.
+
+- name: agent_verify | Verify the running agent implementation
+  when:
+    - nyxmon_monitoring_enabled
+    - not ansible_check_mode
+  block:
+    # The uv venv interpreter is a symlink to a uv-managed Python outside the
+    # venv, so the Python agent is identified by its argv, the Rust agent by
+    # /proc/<pid>/exe.
+    - name: agent_verify | Read the live nyxmon-monitor process
+      ansible.builtin.shell: |
+        unit={{ nyxmon_agent_monitor_unit | quote }}
+        printf 'state=%s\n' "$(systemctl is-active "$unit")"
+        pid=$(systemctl show --property=MainPID --value "$unit")
+        printf 'pid=%s\n' "$pid"
+        if [ "${pid:-0}" -gt 0 ] 2>/dev/null; then
+          printf 'exe=%s\n' "$(readlink "/proc/$pid/exe")"
+          while IFS= read -r -d '' arg; do
+            printf 'arg=%s\n' "$arg"
+          done < "/proc/$pid/cmdline"
+        fi
+      args:
+        executable: /bin/bash
+      changed_when: false
+      failed_when: false
+      register: nyxmon_agent_live
+      retries: 10
+      delay: 3
+      until:
+        - "'state=active' in nyxmon_agent_live.stdout_lines | default([])"
+        - nyxmon_agent_expected_line in nyxmon_agent_live.stdout_lines | default([])
+      vars:
+        nyxmon_agent_expected_line: >-
+          {{
+            ('exe=' ~ nyxmon_agent_rust_binary)
+            if nyxmon_agent_impl == 'rust'
+            else ('arg=' ~ nyxmon_venv_bin ~ '/start-agent')
+          }}
+
+    - name: agent_verify | Assert nyxmon-monitor runs the selected agent
+      ansible.builtin.assert:
+        that:
+          - "'state=active' in nyxmon_agent_live.stdout_lines"
+          - nyxmon_agent_expected_line in nyxmon_agent_live.stdout_lines
+          - >-
+            nyxmon_agent_impl == 'rust' or
+            nyxmon_agent_live.stdout_lines
+            | select('match', 'exe=' ~ (nyxmon_agent_rust_install_root | regex_escape) ~ '/')
+            | list | length == 0
+        fail_msg: |-
+          {{ nyxmon_agent_monitor_unit }}.service does not run the selected agent
+          (nyxmon_agent_impl={{ nyxmon_agent_impl }}); expected '{{ nyxmon_agent_expected_line }}'.
+          With nyxmon_service_restart_on_change=false a changed drop-in only takes
+          effect after a manual restart. Live process:
+          {{ nyxmon_agent_live.stdout_lines | join('\n') }}
+      vars:
+        nyxmon_agent_expected_line: >-
+          {{
+            ('exe=' ~ nyxmon_agent_rust_binary)
+            if nyxmon_agent_impl == 'rust'
+            else ('arg=' ~ nyxmon_venv_bin ~ '/start-agent')
+          }}
+
+# Pruning needs the live check above: without the monitoring unit (monitoring
+# disabled) nothing proves which binary still runs, so nothing is pruned.
+- name: agent_verify | Prune old Rust agent versions
+  when:
+    - nyxmon_agent_rust_version | length > 0
+    - nyxmon_monitoring_enabled
+    - not ansible_check_mode
+  block:
+    - name: agent_verify | Find installed Rust agent versions
+      ansible.builtin.find:
+        paths: "{{ nyxmon_agent_rust_install_root }}"
+        file_type: directory
+        recurse: false
+        hidden: false
+      register: nyxmon_agent_rust_installed
+
+    - name: agent_verify | Read the previously selected Rust version
+      ansible.builtin.slurp:
+        path: "{{ nyxmon_agent_rust_install_root }}/.previous-version"
+      register: nyxmon_agent_rust_previous
+      failed_when: false
+
+    # Kept: the pinned version (active with impl rust), the rollback target,
+    # the version the live process runs and the newest
+    # nyxmon_agent_rust_keep_versions installs. Directories that are not
+    # version-shaped are never touched.
+    - name: agent_verify | Decide which Rust agent versions to keep
+      ansible.builtin.set_fact:
+        nyxmon_agent_rust_versions_installed: "{{ nyxmon_agent_rust_version_dirs | map(attribute='path') | map('basename') | list }}"
+        nyxmon_agent_rust_versions_kept: >-
+          {{
+            (
+              [nyxmon_agent_rust_version, nyxmon_agent_rust_previous_version, nyxmon_agent_rust_live_version]
+              + (nyxmon_agent_rust_version_dirs | sort(attribute='mtime', reverse=true)
+                 | map(attribute='path') | map('basename') | list)[:nyxmon_agent_rust_keep_versions | int]
+            ) | select | unique | list
+          }}
+      vars:
+        nyxmon_agent_rust_version_dirs: >-
+          {{
+            nyxmon_agent_rust_installed.files
+            | selectattr('path', 'regex', '/[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?$')
+            | list
+          }}
+        nyxmon_agent_rust_previous_version: "{{ nyxmon_agent_rust_previous.content | default('') | b64decode | trim }}"
+        nyxmon_agent_rust_live_version: >-
+          {{
+            (
+              nyxmon_agent_live.stdout_lines | default([])
+              | map('regex_search', '^exe=' ~ (nyxmon_agent_rust_install_root | regex_escape) ~ '/([^/]+)/', '\1')
+              | select | map('first') | list | first
+            ) | default('', true)
+          }}
+
+    - name: agent_verify | Remove Rust agent versions beyond the kept ones
+      ansible.builtin.file:
+        path: "{{ nyxmon_agent_rust_install_root }}/{{ item }}"
+        state: absent
+      loop: "{{ nyxmon_agent_rust_versions_installed | difference(nyxmon_agent_rust_versions_kept) }}"
