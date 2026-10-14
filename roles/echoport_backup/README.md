@@ -125,6 +125,12 @@ When triggering a backup via FastDeploy/Echoport, the following context variable
 | `ECHOPORT_TIMESTAMP` | Backup timestamp |
 | `ECHOPORT_MEDIA_OBJECTS_PREFIX` | Optional override for rolling media object prefix (default `<prefix_root>/current`) |
 
+FastDeploy writes the Echoport context to the runner config file nested under
+`context.env`; runners must read it from there. The FastDeploy runner
+(`fastdeploy_backup.py.j2`) falls back to `<target>/<timestamp>` when
+`ECHOPORT_KEY_PREFIX` is empty and refuses to upload when it cannot build a
+prefix, so a backup never lands on the shared key `.tar.gz`.
+
 ## Media Rolling Mode Notes
 
 Media templates in this role use rolling object storage by default:
