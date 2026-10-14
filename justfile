@@ -123,7 +123,7 @@ test-vaultwarden-maintenance: venv
 # copy before overwriting and roll back in rescue.
 test-restore-safety: venv
     @echo "Testing restore safety contracts (safety copy, fail-closed stop, rollback)..."
-    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_vaultwarden_restore_safety tests.test_fedi_restore_safety tests.test_file_restore_safety
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_vaultwarden_restore_safety tests.test_fedi_restore_safety tests.test_file_restore_safety tests.test_restore_archive_members
 
 # Uses a private work directory so parallel runs from other checkouts do not
 # delete each other's rendered files.

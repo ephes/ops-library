@@ -36,6 +36,15 @@ mail_restore_db_force_disconnect: false
 mail_restore_maildir: true
 mail_restore_database: true
 mail_restore_config: false  # Disabled by default - config changes need review
+# config.tar.gz stores each directory by name (postfix/..., dovecot/...);
+# they are restored below this parent. Members outside these names fail
+# the restore before anything changes.
+mail_restore_config_root: "/etc"
+mail_restore_config_dirs:
+  - postfix
+  - dovecot
+  - opendkim
+  - rspamd
 
 # =============================================================================
 # Services to stop/start during restore

@@ -78,7 +78,8 @@ The current shared restore pilot boundary is intentionally narrow:
 
 Separately, `restore_preserve_internal` is a small directory-preservation task
 library used by Jellyfin, Navidrome, MeTube, Minecraft Java, SnappyMail and
-Wagtail restores. It retains every timestamped sibling for manual pruning; it
+Wagtail restores, and by the Certbot DNS and mail configuration restores
+through its validated, staged `replace_from_archive` tasks. It retains every timestamped sibling for manual pruning; it
 does not add those roles to the restore pilot scaffold.
 
 That helper is only for the repo-proven host-local scaffold. Delayed roles such as

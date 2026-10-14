@@ -36,6 +36,21 @@ This role restores mail server data from a backup created by `mail_backup`:
 | `mail_restore_maildir` | `true` | Restore maildir |
 | `mail_restore_database` | `true` | Restore PostgreSQL |
 | `mail_restore_config` | `false` | Restore config files |
+| `mail_restore_config_root` | `/etc` | Parent of the restored configuration directories |
+| `mail_restore_config_dirs` | `[postfix, dovecot, opendkim, rspamd]` | Directory names `config.tar.gz` may contain |
+
+## Configuration Restore
+
+`config.tar.gz` stores each directory by name (`postfix/main.cf`, ...). With
+`mail_restore_config: true` the role checks every member before stopping the
+services: it must sit below one of `mail_restore_config_dirs`, without absolute
+paths or `..`. After the database and maildir steps it extracts the archive
+into a staging directory below `mail_restore_config_root`, keeps each live
+directory present in the archive as
+`/etc/<name>.pre-restore-<UTC timestamp>-<suffix>` and moves the restored
+files into place. The final message lists these copies; the role never
+removes them, so prune them by hand. Earlier versions extracted into `/` and
+created `/postfix`, `/dovecot`, ... instead of updating `/etc`.
 
 ## Dump Checks
 

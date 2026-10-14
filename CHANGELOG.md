@@ -3,6 +3,28 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Certbot and mail configuration restores land in /etc again (2.31.46)
+
+- `certbot_dns_restore`: the restore extracted the archive into `/`, but
+  `certbot_dns_backup` stores members as `letsencrypt/...`, so it created
+  `/letsencrypt` and left `/etc/letsencrypt` unchanged. The role now checks
+  every member before anything changes (relative paths below `letsencrypt/`,
+  no `..`, symlinks inside the tree), extracts into a staging directory next
+  to `/etc/letsencrypt`, keeps the current directory as
+  `/etc/letsencrypt.pre-restore-<timestamp>-<suffix>` and moves the restored
+  tree into place. The copy is reported and never removed by the role. The
+  `certbot_dns_restore_dest` variable is gone.
+- `mail_restore` with `mail_restore_config: true` had the same flaw
+  (`postfix/...` extracted into `/`). It now validates `config.tar.gz`
+  before stopping services and replaces the directories below
+  `mail_restore_config_root` (default `/etc`), limited to
+  `mail_restore_config_dirs`, keeping pre-restore copies.
+- `restore_preserve_internal`: new `replace_from_archive` tasks and the
+  `archive_members.py` checker that both roles use.
+- Operators: a stray `/letsencrypt` (or `/postfix`, `/dovecot`, ...) left by
+  an earlier restore is not removed automatically; check and delete it by
+  hand.
+
 ## Unreleased — FastDeploy backups never use the shared key `.tar.gz`
 
 - `echoport_backup` (`fastdeploy_backup.py.j2`): the runner builds its object
