@@ -121,5 +121,6 @@ The live-database safety dump (`pg_dump`/`pg_restore --list`), the SQL restore (
 and the rollback from the safety dump (`pg_restore`) read `wagtail_restore_postgres_password`
 from a private 0600 passfile in a 0700 temporary directory; the task environment carries only
 `PGPASSFILE`. The directory is removed in the restore's `always` section, on success and on
-failure. An empty password keeps libpq's other authentication methods. Passwords containing
-CR or LF are rejected before any service is stopped; colons and backslashes are escaped.
+failure. The role requires a nonempty `wagtail_restore_postgres_password`; passwords
+containing CR or LF are rejected before any service is stopped; colons and backslashes are
+escaped.
