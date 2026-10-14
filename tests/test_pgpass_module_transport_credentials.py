@@ -30,7 +30,7 @@ class ModuleTransportTests(unittest.TestCase):
             for t in walk(source)
             if t.get("name", "").startswith("main | Run Roll back the database")
         )
-        with tempfile.TemporaryDirectory(dir=root / ".cache") as tmp:
+        with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
             client = directory / "fake-postgres"
             client.write_text(
