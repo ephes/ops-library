@@ -70,10 +70,28 @@ Each directory is named with the backup timestamp.
 
 ## Restore Behavior
 
-- Configuration file is overwritten if it exists
-- Admin accounts are upserted (insert or update)
-- Domain admin permissions are inserted if not existing
-- Log entries are NOT restored (they're for audit purposes only)
+Before anything changes, the restore refuses the backup when:
+
+- `postfixadmin_restore_timestamp` is not a backup directory name
+  (`YYYYMMDDTHHMMSS`; paths are rejected)
+- `manifest.yml` is missing, is not a PostfixAdmin manifest or has no
+  `contents`
+- a required part (`config.local.php`, `admin.json`, `domain_admins.json`) is
+  not listed, or any listed part is missing from the directory
+- `postfixadmin_restore_templates_c` is set but the backup has no
+  `templates_c.tar.gz`
+- the manifest's `db_schema_version` is newer than the target's
+  `config.version` (upgrade PostfixAdmin on the target first). Backups written
+  before the version was recorded are restored with a warning.
+- `admin.json` holds no admin, or a column the target's `admin` table lacks
+
+Then:
+
+- the configuration file is overwritten
+- admin accounts are upserted with every column of the backup, so TOTP
+  secrets, `phone`, `email_other` and tokens survive
+- domain admin permissions are inserted if not existing
+- log entries are NOT restored (they're for audit purposes only)
 
 ## License
 

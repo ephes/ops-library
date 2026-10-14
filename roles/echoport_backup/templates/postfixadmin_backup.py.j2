@@ -3,10 +3,17 @@
 PostfixAdmin backup/restore runner for Echoport.
 
 Service-owned same-host script:
-- Backup: capture PostfixAdmin config files + selected admin tables, create
-  manifest + checksum manifest, upload tarball to MinIO.
+- Backup: capture PostfixAdmin config files + admin tables, create manifest +
+  checksum manifest, upload tarball to MinIO.
 - Restore: download + verify, safe extract, optional safety snapshot,
   stop/start services, restore DB rows and configs, health verification.
+
+Fail-closed: the backup fails when a required part (admin with at least one
+row, domain_admins, config.local.php, the nginx site, the PHP pool, the schema
+version) cannot be written. Optional parts (the log table, the Traefik config)
+are left out of the manifest with a warning. The manifest lists exactly the
+tables and config files in the archive, and a restore refuses an archive that
+lacks a required part or a listed one before it changes anything.
 """
 
 import hashlib
@@ -49,6 +56,16 @@ CREATE_SAFETY_SNAPSHOT_RAW = "{{ postfixadmin_echoport_backup_create_safety_snap
 ROLLBACK_ON_FAILURE_RAW = "{{ postfixadmin_echoport_backup_rollback_on_failure | default(true) }}"
 
 ALLOWED_ROOTS_RAW = "{{ postfixadmin_echoport_backup_allowed_roots | join(',') }}"
+
+MANIFEST_FORMAT_VERSION = 2
+REQUIRED_TABLES = ("admin", "domain_admins")
+OPTIONAL_TABLES = ("log",)
+TABLE_QUERIES = {
+    "admin": "SELECT * FROM admin ORDER BY username",
+    "domain_admins": "SELECT * FROM domain_admins ORDER BY username, domain",
+    "log": "SELECT * FROM log ORDER BY timestamp DESC LIMIT 10000",
+}
+IDENTIFIER_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
 
 
 def parse_int(value: str, default: int) -> int:
@@ -203,6 +220,20 @@ def pool_file_for_service(php_service: str) -> Path:
     return Path(PHP_ROOT) / "fpm" / "pool.d" / "postfixadmin.conf"
 
 
+def config_parts(php_service: str) -> list[tuple[str, Path, str, str, bool]]:
+    """(archive name, live path, owner, mode, required) of every config file."""
+    return [
+        ("config.local.php", Path(CONFIG_FILE), CONFIG_OWNER, "0640", True),
+        ("nginx-postfixadmin.conf", Path(NGINX_SITE), SYSTEM_OWNER, "0644", True),
+        ("traefik-postfixadmin.yml", Path(TRAEFIK_CONFIG), SYSTEM_OWNER, "0644", False),
+        ("php-postfixadmin.conf", pool_file_for_service(php_service), SYSTEM_OWNER, "0644", True),
+    ]
+
+
+REQUIRED_CONFIG_FILES = ("config.local.php", "nginx-postfixadmin.conf", "php-postfixadmin.conf")
+KNOWN_CONFIG_FILES = REQUIRED_CONFIG_FILES + ("traefik-postfixadmin.yml",)
+
+
 def validate_config_paths(action: str = "backup") -> None:
     php_service = detect_php_service()
     configured_paths = [
@@ -284,6 +315,22 @@ def export_table_as_json(sql_select: str, creds: Dict[str, Any]) -> list[Dict[st
             continue
         rows.append(json.loads(line))
     return rows
+
+
+def read_schema_version(creds: Dict[str, Any]) -> int:
+    result = run_psql("SELECT value FROM config WHERE name = 'version';", creds)
+    value = result.stdout.strip()
+    if not re.fullmatch(r"[0-9]+", value):
+        raise RuntimeError(f"PostfixAdmin schema version (config.version) missing or not numeric: {value!r}")
+    return int(value)
+
+
+def table_columns(table_name: str, creds: Dict[str, Any]) -> set[str]:
+    sql = (
+        "SELECT column_name FROM information_schema.columns "
+        f"WHERE table_schema = current_schema() AND table_name = {sql_literal(table_name)};"
+    )
+    return {line.strip() for line in run_psql(sql, creds).stdout.splitlines() if line.strip()}
 
 
 def write_json(path: Path, payload: Any) -> None:
@@ -477,18 +524,40 @@ def sql_literal(value: Any) -> str:
     return f"'{escaped}'"
 
 
+def admin_upsert_sql(row: Dict[str, Any], target_columns: set[str]) -> str:
+    """Upsert one admin row with every column it has (TOTP secret, phone, ...).
+
+    Archives from before format 2 hold only username, password, superadmin and
+    active; their created/modified are set to NOW() as before.
+    """
+    if not isinstance(row, dict) or not row.get("username") or "password" not in row:
+        raise ValueError("admin row without username or password")
+    unknown = sorted(set(row) - target_columns)
+    if unknown:
+        raise ValueError(f"admin row has columns the target admin table lacks: {', '.join(unknown)}")
+    columns = sorted(row)
+    for column in columns:
+        if not IDENTIFIER_RE.fullmatch(column):
+            raise ValueError(f"Invalid admin column name: {column!r}")
+    values = [sql_literal(row[column]) for column in columns]
+    defaulted = [c for c in ("created", "modified") if c in target_columns and c not in row]
+    insert_columns = columns + defaulted
+    values += ["NOW()"] * len(defaulted)
+    updates = [
+        f"{column} = EXCLUDED.{column}"
+        for column in insert_columns
+        if column != "username" and not (column == "created" and column in defaulted)
+    ]
+    return (
+        f"INSERT INTO admin ({', '.join(insert_columns)}) VALUES ({', '.join(values)}) "
+        f"ON CONFLICT (username) DO UPDATE SET {', '.join(updates)};"
+    )
+
+
 def restore_admin_rows(rows: list[Dict[str, Any]], creds: Dict[str, Any]) -> None:
-    for row in rows:
-        sql = (
-            "INSERT INTO admin (username, password, superadmin, active, created, modified) "
-            f"VALUES ({sql_literal(row.get('username'))}, {sql_literal(row.get('password'))}, "
-            f"{sql_literal(row.get('superadmin'))}, {sql_literal(row.get('active'))}, NOW(), NOW()) "
-            "ON CONFLICT (username) DO UPDATE SET "
-            "password = EXCLUDED.password, "
-            "superadmin = EXCLUDED.superadmin, "
-            "active = EXCLUDED.active, "
-            "modified = NOW();"
-        )
+    target_columns = table_columns("admin", creds)
+    statements = [admin_upsert_sql(row, target_columns) for row in rows]
+    for sql in statements:
         run_psql(sql, creds)
 
 
@@ -536,17 +605,10 @@ def create_safety_snapshot(snapshot_dir: Path, creds: Dict[str, Any], php_servic
     copy_file_optional(Path(TRAEFIK_CONFIG), config_out / "traefik-postfixadmin.yml")
     copy_file_optional(pool_file_for_service(php_service), config_out / "php-postfixadmin.conf")
 
-    admin_rows = export_table_as_json(
-        "SELECT username, password, superadmin, active FROM admin ORDER BY username",
-        creds,
-    )
-    write_json(db_out / "admin.json", admin_rows)
+    write_json(db_out / "admin.json", export_table_as_json(TABLE_QUERIES["admin"], creds))
 
     if table_exists("domain_admins", creds):
-        domain_rows = export_table_as_json(
-            "SELECT username, domain, active FROM domain_admins ORDER BY username, domain",
-            creds,
-        )
+        domain_rows = export_table_as_json(TABLE_QUERIES["domain_admins"], creds)
     else:
         domain_rows = []
     write_json(db_out / "domain_admins.json", domain_rows)
@@ -582,6 +644,62 @@ def restore_from_safety_snapshot(snapshot_dir: Path, creds: Dict[str, Any], php_
         run_cmd(["chmod", "0644", str(pool_file)])
 
 
+def validate_archive(extract_dir: Path, creds: Dict[str, Any]) -> tuple[list[str], list[str]]:
+    """Refuse an archive with a missing required or listed part.
+
+    Returns the tables and config files to restore. Runs before anything is
+    changed. Archives from before format 2 list no config files; for them the
+    known config files present in the archive are used.
+    """
+    manifest_path = extract_dir / "manifest.json"
+    if not manifest_path.is_file():
+        raise RuntimeError("Backup archive missing manifest.json")
+    manifest = json.loads(manifest_path.read_text())
+    db = manifest.get("db") if isinstance(manifest, dict) else None
+    tables = db.get("tables") if isinstance(db, dict) else None
+    if not isinstance(tables, list) or not tables:
+        raise RuntimeError("manifest.json lists no tables")
+    unknown_tables = sorted(set(tables) - set(REQUIRED_TABLES + OPTIONAL_TABLES))
+    if unknown_tables:
+        raise RuntimeError(f"manifest.json lists unknown tables: {', '.join(unknown_tables)}")
+
+    config_files = manifest.get("config_files")
+    if config_files is None:
+        config_files = [name for name in KNOWN_CONFIG_FILES if (extract_dir / "config" / name).is_file()]
+    if not isinstance(config_files, list):
+        raise RuntimeError("manifest.json config_files is not a list")
+    unknown_files = sorted(set(config_files) - set(KNOWN_CONFIG_FILES))
+    if unknown_files:
+        raise RuntimeError(f"manifest.json lists unknown config files: {', '.join(unknown_files)}")
+
+    missing = [f"table {t}" for t in REQUIRED_TABLES if t not in tables]
+    missing += [f"config {c}" for c in REQUIRED_CONFIG_FILES if c not in config_files]
+    missing += [f"db/{t}.json" for t in tables if not (extract_dir / "db" / f"{t}.json").is_file()]
+    missing += [f"config/{c}" for c in config_files if not (extract_dir / "config" / c).is_file()]
+    if missing:
+        raise RuntimeError(f"Backup archive incomplete, missing: {', '.join(missing)}")
+
+    admin_rows = json.loads((extract_dir / "db" / "admin.json").read_text())
+    if not isinstance(admin_rows, list) or not admin_rows:
+        raise RuntimeError("Backup archive admin.json holds no admin rows")
+    target_columns = table_columns("admin", creds)
+    for row in admin_rows:
+        admin_upsert_sql(row, target_columns)
+    domain_rows = json.loads((extract_dir / "db" / "domain_admins.json").read_text())
+    if not isinstance(domain_rows, list):
+        raise RuntimeError("Backup archive domain_admins.json is not a list")
+
+    backup_schema = db.get("schema_version")
+    if backup_schema is not None:
+        target_schema = read_schema_version(creds)
+        if int(backup_schema) > target_schema:
+            raise RuntimeError(
+                f"Backup has PostfixAdmin schema version {backup_schema}, the target has {target_schema}; "
+                "upgrade PostfixAdmin on the target first"
+            )
+    return tables, config_files
+
+
 def backup_flow(cenv: Dict) -> int:
     emit_step("init", "running", "Validating backup configuration")
     target_name = cenv.get("ECHOPORT_TARGET", "postfixadmin")
@@ -608,40 +726,48 @@ def backup_flow(cenv: Dict) -> int:
         db_out.mkdir(parents=True, exist_ok=True)
         config_out.mkdir(parents=True, exist_ok=True)
 
+        warnings: list[str] = []
         emit_step("backup_db", "running", "Backing up PostfixAdmin admin tables")
-        admin_rows = export_table_as_json(
-            "SELECT username, password, superadmin, active FROM admin ORDER BY username",
-            creds,
-        )
-        write_json(db_out / "admin.json", admin_rows)
-
-        if table_exists("domain_admins", creds):
-            domain_rows = export_table_as_json(
-                "SELECT username, domain, active FROM domain_admins ORDER BY username, domain",
-                creds,
-            )
-        else:
-            domain_rows = []
-        write_json(db_out / "domain_admins.json", domain_rows)
-
-        if table_exists("log", creds):
-            log_rows = export_table_as_json(
-                "SELECT * FROM log ORDER BY timestamp DESC LIMIT 10000",
-                creds,
-            )
-        else:
-            log_rows = []
-        write_json(db_out / "log.json", log_rows)
-        emit_step("backup_db", "success", "Database tables exported")
+        # Required tables: a failing query fails the backup; admin needs a row.
+        tables: list[str] = []
+        for table in REQUIRED_TABLES:
+            rows = export_table_as_json(TABLE_QUERIES[table], creds)
+            if table == "admin" and not rows:
+                raise RuntimeError("admin table is empty; refusing to write a backup without an admin account")
+            write_json(db_out / f"{table}.json", rows)
+            tables.append(table)
+        for table in OPTIONAL_TABLES:
+            try:
+                write_json(db_out / f"{table}.json", export_table_as_json(TABLE_QUERIES[table], creds))
+                tables.append(table)
+            except Exception as exc:
+                (db_out / f"{table}.json").unlink(missing_ok=True)
+                warnings.append(f"table {table} skipped: {safe_error(exc)}")
+        schema_version = read_schema_version(creds)
+        emit_step("backup_db", "success", f"Tables exported: {', '.join(tables)} (schema {schema_version})")
 
         emit_step("copy_config", "running", "Copying config files")
-        copy_file_optional(Path(CONFIG_FILE), config_out / "config.local.php")
-        copy_file_optional(Path(NGINX_SITE), config_out / "nginx-postfixadmin.conf")
-        copy_file_optional(Path(TRAEFIK_CONFIG), config_out / "traefik-postfixadmin.yml")
-        copy_file_optional(pool_file_for_service(php_service), config_out / "php-postfixadmin.conf")
-        emit_step("copy_config", "success", "Config files copied")
+        config_files: list[str] = []
+        for name, src, _owner, _mode, required in config_parts(php_service):
+            if required:
+                if not copy_file_optional(src, config_out / name):
+                    raise FileNotFoundError(f"Required config file missing: {src}")
+                config_files.append(name)
+                continue
+            try:
+                if copy_file_optional(src, config_out / name):
+                    config_files.append(name)
+                else:
+                    warnings.append(f"config {name} skipped: {src} missing")
+            except Exception as exc:
+                (config_out / name).unlink(missing_ok=True)
+                warnings.append(f"config {name} skipped: {safe_error(exc)}")
+        for warning in warnings:
+            emit_step("copy_config", "running", f"WARNING: {warning}")
+        emit_step("copy_config", "success", f"Config files copied: {', '.join(config_files)}")
 
         manifest = {
+            "format_version": MANIFEST_FORMAT_VERSION,
             "target": target_name,
             "run_id": run_id,
             "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -657,8 +783,11 @@ def backup_flow(cenv: Dict) -> int:
                 "username": str(creds.get("username")),
                 "host": str(creds.get("host")),
                 "port": int(creds.get("port")),
-                "tables": ["admin", "domain_admins", "log"],
+                "tables": tables,
+                "schema_version": schema_version,
             },
+            "config_files": config_files,
+            "warnings": warnings,
         }
         (payload / "manifest.json").write_text(json.dumps(manifest, indent=2))
         make_checksum_manifest(payload, payload / "manifest.sha256")
@@ -744,6 +873,7 @@ def restore_flow(cenv: Dict) -> int:
         emit_step("extract", "running", "Extracting archive")
         safe_extract_tarball(tarball_path, extract_dir)
         verify_checksum_manifest(extract_dir, extract_dir / "manifest.sha256")
+        _tables, restore_config_files = validate_archive(extract_dir, creds)
         emit_step("extract", "success", "Archive extracted and validated")
 
         if CREATE_SAFETY_SNAPSHOT:
@@ -762,35 +892,23 @@ def restore_flow(cenv: Dict) -> int:
         emit_step("stop_service", "success", "Service stop phase completed")
 
         emit_step("restore_db", "running", "Restoring PostfixAdmin admin tables")
-        admin_path = extract_dir / "db" / "admin.json"
-        if not admin_path.exists():
-            raise RuntimeError("Backup archive missing db/admin.json")
-        admin_rows = json.loads(admin_path.read_text())
+        admin_rows = json.loads((extract_dir / "db" / "admin.json").read_text())
         expected_admin_count = len(admin_rows)
         restore_admin_rows(admin_rows, creds)
-
-        domain_path = extract_dir / "db" / "domain_admins.json"
-        if domain_path.exists():
-            domain_rows = json.loads(domain_path.read_text())
-            restore_domain_admin_rows(domain_rows, creds)
+        domain_rows = json.loads((extract_dir / "db" / "domain_admins.json").read_text())
+        restore_domain_admin_rows(domain_rows, creds)
         db_smoke_check(creds)
         emit_step("restore_db", "success", "Database rows restored")
 
         emit_step("restore_config", "running", "Restoring config files")
-        if copy_file_optional(extract_dir / "config" / "config.local.php", Path(CONFIG_FILE)):
-            run_cmd(["chown", CONFIG_OWNER, CONFIG_FILE])
-            run_cmd(["chmod", "0640", CONFIG_FILE])
-        if copy_file_optional(extract_dir / "config" / "nginx-postfixadmin.conf", Path(NGINX_SITE)):
-            run_cmd(["chown", SYSTEM_OWNER, NGINX_SITE])
-            run_cmd(["chmod", "0644", NGINX_SITE])
-        if copy_file_optional(extract_dir / "config" / "traefik-postfixadmin.yml", Path(TRAEFIK_CONFIG)):
-            run_cmd(["chown", SYSTEM_OWNER, TRAEFIK_CONFIG])
-            run_cmd(["chmod", "0644", TRAEFIK_CONFIG])
-        pool_file = pool_file_for_service(php_service)
-        if copy_file_optional(extract_dir / "config" / "php-postfixadmin.conf", pool_file):
-            run_cmd(["chown", SYSTEM_OWNER, str(pool_file)])
-            run_cmd(["chmod", "0644", str(pool_file)])
-        emit_step("restore_config", "success", "Config files restored")
+        for name, dest, owner, mode, _required in config_parts(php_service):
+            if name not in restore_config_files:
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(extract_dir / "config" / name, dest)
+            run_cmd(["chown", owner, str(dest)])
+            run_cmd(["chmod", mode, str(dest)])
+        emit_step("restore_config", "success", f"Config files restored: {', '.join(restore_config_files)}")
 
         emit_step("start_service", "running", "Starting php-fpm + nginx")
         run_cmd(["nginx", "-t"])

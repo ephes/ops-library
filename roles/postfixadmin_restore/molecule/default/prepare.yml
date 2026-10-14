@@ -118,6 +118,16 @@
         postfixadmin_backup_path: "/tmp/postfixadmin-backups"
         postfixadmin_totp_enabled: false
 
+    - name: Give the admin the columns the restore used to drop
+      become: true
+      become_user: postgres
+      community.postgresql.postgresql_query:
+        db: mail
+        query: >-
+          UPDATE admin SET phone = '+49 30 000000', email_other = 'other@example.test',
+          totp_secret = 'MOLECULETOTPSECRET', superadmin = TRUE
+          WHERE username = 'admin@example.test'
+
     - name: Create backup
       ansible.builtin.include_role:
         name: postfixadmin_backup

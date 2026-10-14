@@ -167,7 +167,22 @@ postfixadmin_login_rate_burst: 3
 # =============================================================================
 
 postfixadmin_backup_path: /mnt/cryptdata/backups/postfixadmin
+# Completed backups older than this are pruned after a successful run ...
 postfixadmin_backup_retention_days: 14
+# ... except the newest postfixadmin_backup_keep_min, which are always kept.
+postfixadmin_backup_keep_min: 5
+
+# Parts of a backup directory (postfixadmin_backup / postfixadmin_restore).
+# A backup without every required part fails and is never published; a restore
+# refuses a backup that lacks one. Optional parts are left out of the manifest
+# with a warning when they cannot be written.
+postfixadmin_backup_required_parts:
+  - config.local.php
+  - admin.json
+  - domain_admins.json
+postfixadmin_backup_optional_parts:
+  - log.json
+  - templates_c.tar.gz
 
 # =============================================================================
 # Health Check
