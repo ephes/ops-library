@@ -54,6 +54,14 @@ logyard_health_critical_window_seconds: 3600
 
 See `defaults/main.yml` for the full variable set.
 
+`rsync` mode pushes `logyard_source_path` with `--delete`, minus
+`logyard_rsync_excludes`. Its `.git` entry has no trailing slash, so git
+metadata stays behind both for a normal clone, where `.git` is a directory, and
+for a git worktree, where it is a file. rsync never deletes excluded paths on
+the host, so a `.git` file that an earlier deploy copied to
+`{{ logyard_site_path }}/.git` stays until it is removed by hand. The `git`
+deploy method clones the repository and does not use these excludes.
+
 ## Retention
 
 This role expects retention to be a real product decision, not an operator afterthought.

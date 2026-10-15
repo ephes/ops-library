@@ -37,6 +37,7 @@ core Django runtime plus automation-owned InfluxDB and Grafana containers.
 | --- | --- | --- |
 | `graphyard_deploy_method` | `rsync` | `rsync` or `git` |
 | `graphyard_source_path` | `""` | Required when using `rsync` |
+| `graphyard_rsync_excludes` | see `defaults/main.yml` | rsync `--exclude` patterns for `rsync` mode |
 | `graphyard_git_repo` | `https://github.com/ephes/graphyard.git` | Used for `git` deploy mode |
 | `graphyard_git_version` | `main` | Branch/tag/commit for `git` mode |
 | `graphyard_home` | `/opt/apps/graphyard` | Base path |
@@ -130,6 +131,11 @@ See `defaults/main.yml` for the full variable set.
 - Default `graphyard_rsync_excludes` also protect shared Logyard Grafana assets under
   `deploy/grafana/` so a Graphyard rsync deploy does not delete Logyard's dashboard or
   datasource provisioning files from the shared Grafana tree.
+- The default `graphyard_rsync_excludes` entry `.git` has no trailing slash, so git
+  metadata stays behind both for a normal clone, where `.git` is a directory, and
+  for a git worktree, where it is a file. rsync never deletes excluded paths on the
+  host, so a `.git` file that an earlier deploy copied to
+  `{{ graphyard_site_path }}/.git` stays until it is removed by hand.
 - Source changes from either `rsync` or `git` deploy mode notify both systemd services for restart,
   so updated Graphyard application code takes effect even when the unit files and env file are unchanged.
 - Declarative metric spec provisioning is keyed by spec `name`.
