@@ -45,6 +45,7 @@ expose the service publicly behind TLS.
 | `mailgun_relay_secrets_path` | `{{ env_dir }}/secrets.yml` | secrets, 0640 root:mailgun-relay |
 | `mailgun_relay_deploy_method` | `rsync` | `rsync` or `git` |
 | `mailgun_relay_source_path` | `""` | REQUIRED when method=rsync |
+| `mailgun_relay_rsync_excludes` | see `defaults/main.yml` | rsync `--exclude` patterns; see [What the rsync deploy ships](#what-the-rsync-deploy-ships) |
 | `mailgun_relay_python_version` | `3.14` | |
 | `mailgun_relay_bind_host` | `127.0.0.1` | loopback by default; reverse proxy fronts it |
 | `mailgun_relay_bind_port` | `8085` | |
@@ -59,6 +60,26 @@ expose the service publicly behind TLS.
 | `mailgun_relay_max_recipients` | `100` | to+cc+bcc combined |
 | `mailgun_relay_max_header_value_length` | `998` | RFC 5322 line limit |
 | `mailgun_relay_log_level` | `INFO` | structured JSON to stdout |
+
+## What the rsync deploy ships
+
+With `mailgun_relay_deploy_method: rsync` the role pushes
+`mailgun_relay_source_path` to `mailgun_relay_site_path` with `--delete`,
+minus `mailgun_relay_rsync_excludes`. Besides caches, virtualenvs and `.env`
+files, the defaults keep two things off the host:
+
+- `.git` (no trailing slash), so git metadata stays behind both for a normal
+  clone, where it is a directory, and for a git worktree, where it is a file
+  pointing at the main repository.
+- `/rust/`, the Rust port in the relay repository (sources, plans, fixtures and
+  Cargo build output). The Python service needs none of it. The leading slash
+  anchors the pattern at the source root, so a directory named `rust` deeper in
+  the tree is still synced.
+
+rsync never deletes excluded paths on the receiving side, so a `.git` or
+`rust/` that an earlier deploy already copied stays in the site directory until
+it is removed by hand. The `git` deploy method clones the whole repository and
+does not use these excludes.
 
 ## REQUIRED variables (no safe defaults)
 

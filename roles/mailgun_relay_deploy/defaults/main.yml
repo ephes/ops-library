@@ -26,7 +26,8 @@ mailgun_relay_git_repo: "https://github.com/ephes/mailgun-relay.git"
 mailgun_relay_git_version: "main"
 mailgun_relay_rsync_excludes:
   - ".vault_password"  # Ansible Vault passwords in legacy deploy/ dirs; never ship them
-  - ".git/"
+  # No trailing slash: in a git worktree `.git` is a file, not a directory.
+  - ".git"
   - ".venv/"
   - "__pycache__/"
   - "*.pyc"
@@ -37,6 +38,9 @@ mailgun_relay_rsync_excludes:
   - "build/"
   - ".env"
   - ".env.local"
+  # The Rust port in the relay repo (sources, plans, fixtures, Cargo build
+  # output); the Python service needs none of it. Anchored at the source root.
+  - "/rust/"
 
 # Python runtime + uv sync arguments
 mailgun_relay_python_version: "3.14"

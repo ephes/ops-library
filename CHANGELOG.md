@@ -3,6 +3,18 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — mailgun-relay rsync deploys skip rust/ and worktree .git (2.39.1)
+
+- `mailgun_relay_deploy`: `mailgun_relay_rsync_excludes` now excludes
+  `/rust/`, the Rust port that lives in the relay repository (sources, plans,
+  fixtures and Cargo build output); the Python service needs none of it.
+- `mailgun_relay_deploy`: the `.git/` exclude is now `.git`, so it also matches
+  the `.git` file of a git worktree, which earlier deploys copied to the host.
+  rsync does not delete excluded paths on the host, so remove an already
+  copied `/opt/apps/mailgun-relay/site/.git` by hand.
+- `just test-mailgun-relay-deploy` runs the default excludes through
+  `rsync --dry-run` against a worktree-shaped tree.
+
 ## Unreleased — Owner-only fetched backup archives (2.39.0)
 
 - Security: backup roles left the archive they fetch to the controller with
