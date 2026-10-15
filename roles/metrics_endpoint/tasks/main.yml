@@ -20,6 +20,21 @@
           metrics_endpoint auth values are missing or still set to CHANGEME.
           Set metrics_endpoint_auth_user/password via ops-control vault before enabling.
 
+    - name: Validate probe state exports
+      ansible.builtin.assert:
+        that:
+          - item.name is defined
+          - item.name is match('^[a-z][a-z0-9_]*$')
+          - item.name not in ['hostname', 'timestamp', 'mail', 'disk', 'services']
+          - item.path is defined
+          - item.path is match('^/[A-Za-z0-9._/-]+$')
+        fail_msg: >-
+          Each metrics_endpoint_probe_states entry needs a lowercase name that
+          is not a built-in section and an absolute path.
+      loop: "{{ metrics_endpoint_probe_states }}"
+      loop_control:
+        label: "{{ item.name | default('UNSET') }}"
+
     - name: Install dependencies for metrics endpoint
       ansible.builtin.package:
         name: "{{ metrics_endpoint_packages }}"

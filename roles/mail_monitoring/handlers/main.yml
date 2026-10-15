@@ -8,3 +8,9 @@
     name: "{{ mail_monitoring_cleanup_service_name }}.timer"
     state: restarted
   when: mail_monitoring_cleanup_enabled | bool
+
+- name: restart mailgun-relay-probe timer
+  ansible.builtin.systemd:
+    name: "{{ mail_monitoring_relay_probe_service_name }}.timer"
+    state: restarted
+  when: mail_monitoring_relay_probe_enabled | bool

@@ -3,6 +3,32 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Mailgun relay end-to-end probe (2.40.0)
+
+- `mail_monitoring`: optional relay probe (`mail_monitoring_relay_probe_enabled`,
+  default `false`). A systemd timer (default every 15 minutes) runs
+  `/usr/local/bin/mailgun-relay-probe` as a dedicated system user. It sends
+  `POST <url>/v3/<domain>/messages` with Basic-Auth `api:<token>` and one
+  message from `mail_monitoring_relay_probe_from` to the monitor mailbox, with
+  the subject `<prefix> <UTC time>-<hex>`, and writes `last_status`/`last_run`
+  to `/var/lib/<service_name>/state`. The token lives in
+  `/etc/<service_name>/token` (probe user, `0600`) and reaches curl on stdin
+  only. The script takes `--url` (e.g. another relay instance), `--retries`,
+  `--subject-suffix`, `--token-file` and extra curl arguments after `--`.
+  Manual runs record nothing unless `--state-file` is given. The role installs
+  curl. Disabling the probe again removes the timer, units, script, token and
+  state.
+- `metrics_endpoint`: new `metrics_endpoint_probe_states` (default `[]`)
+  exports probe state files as top-level sections
+  (`{"<name>": {"last_status", "last_run", "age_seconds"}}`). A missing or
+  malformed file omits the section, so json-metrics rules on it fail. With the
+  list empty the rendered script is unchanged.
+- `just test-mail-monitoring-probe` also runs the rendered probe against a
+  local stub relay (form fields, Basic-Auth, token kept off argv and out of
+  the output, state file, exit codes) and the metrics script against probe
+  state files. The Molecule scenarios of both roles cover the systemd run and
+  the exported section.
+
 ## Unreleased — certbot DNS removes the previous provider's credentials
 
 - `certbot_dns_deploy`: new `cleanup.yml`, run after the certificate and

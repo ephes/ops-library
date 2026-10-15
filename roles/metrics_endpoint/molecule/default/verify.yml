@@ -55,3 +55,42 @@
           - metrics_endpoint_json.disk.root_percent is number
           - metrics_endpoint_json.services is mapping
         fail_msg: "metrics endpoint JSON response missing expected keys"
+
+    - name: Verify | Probe section is absent without a state file
+      ansible.builtin.assert:
+        that:
+          - metrics_endpoint_json.molecule_probe is not defined
+        fail_msg: "probe section must be omitted while its state file is missing"
+
+    - name: Verify | Create probe state directory
+      ansible.builtin.file:
+        path: /var/lib/molecule-probe
+        state: directory
+        mode: "0755"
+
+    - name: Verify | Write a probe state file
+      ansible.builtin.shell: |
+        printf 'last_status=200\nlast_run=%d\ncurl_exit=0\n' "$(( $(date +%s) - 60 ))" > /var/lib/molecule-probe/state
+        chmod 0644 /var/lib/molecule-probe/state
+      changed_when: false
+
+    - name: Verify | Endpoint returns the probe section
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ metrics_endpoint_port }}{{ metrics_endpoint_path }}"
+        method: GET
+        url_username: "{{ metrics_endpoint_auth_user }}"
+        url_password: "{{ metrics_endpoint_auth_password }}"
+        force_basic_auth: true
+        return_content: true
+        status_code: 200
+      register: metrics_endpoint_probe_response
+
+    - name: Verify | Assert probe section values
+      vars:
+        _probe: "{{ (metrics_endpoint_probe_response.content | from_json).molecule_probe }}"
+      ansible.builtin.assert:
+        that:
+          - _probe.last_status == 200
+          - _probe.age_seconds >= 60
+          - _probe.age_seconds < 600
+        fail_msg: "probe section missing or wrong: {{ metrics_endpoint_probe_response.content }}"

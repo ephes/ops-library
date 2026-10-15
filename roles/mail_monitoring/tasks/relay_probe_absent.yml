@@ -1,0 +1,24 @@
+---
+- name: relay_probe_absent | Check for an installed relay probe timer
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ mail_monitoring_relay_probe_service_name }}.timer"
+  register: _mail_monitoring_relay_probe_timer
+
+- name: relay_probe_absent | Stop and disable relay probe timer
+  ansible.builtin.systemd:
+    name: "{{ mail_monitoring_relay_probe_service_name }}.timer"
+    state: stopped
+    enabled: false
+  when: _mail_monitoring_relay_probe_timer.stat.exists
+
+- name: relay_probe_absent | Remove relay probe files, token and state
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "/etc/systemd/system/{{ mail_monitoring_relay_probe_service_name }}.timer"
+    - "/etc/systemd/system/{{ mail_monitoring_relay_probe_service_name }}.service"
+    - "/usr/local/bin/{{ mail_monitoring_relay_probe_service_name }}"
+    - "/etc/{{ mail_monitoring_relay_probe_service_name }}"
+    - "/var/lib/{{ mail_monitoring_relay_probe_service_name }}"
+  notify: reload systemd

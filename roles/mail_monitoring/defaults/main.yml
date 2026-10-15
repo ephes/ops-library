@@ -26,3 +26,24 @@ mail_monitoring_cleanup_timer_on_calendar: "daily"
 
 mail_monitoring_cleanup_script_path: "/usr/local/bin/mail-monitoring-cleanup.sh"
 mail_monitoring_cleanup_service_name: "mail-monitoring-cleanup"
+
+# Mailgun-API end-to-end probe (optional, see README "Relay probe").
+# A systemd timer POSTs one message through a Mailgun-compatible relay
+# (POST <url>/v3/<domain>/messages, Basic-Auth api:<token>) to the monitor
+# mailbox and records the HTTP status in /var/lib/<service_name>/state, which
+# metrics_endpoint can export (metrics_endpoint_probe_states).
+mail_monitoring_relay_probe_enabled: false
+mail_monitoring_relay_probe_url: "CHANGE_ME"     # base URL, e.g. https://mailgun.example.org
+mail_monitoring_relay_probe_domain: "CHANGE_ME"  # Mailgun path domain the token may use
+mail_monitoring_relay_probe_from: "CHANGE_ME"    # the one From address the token may use
+mail_monitoring_relay_probe_to: "{{ mail_monitoring_address }}"
+mail_monitoring_relay_probe_subject_prefix: "[nyxmon-relay]"
+mail_monitoring_relay_probe_token: "CHANGE_ME"   # raw API token, from ops-control vault
+mail_monitoring_relay_probe_timeout: 30          # seconds per HTTP attempt
+mail_monitoring_relay_probe_retries: 2           # curl retries on connection refused, timeout, 408/429/5xx
+mail_monitoring_relay_probe_on_calendar: "*:0/15"
+mail_monitoring_relay_probe_randomized_delay_sec: 60
+mail_monitoring_relay_probe_user: "mailgun-relay-probe"
+# Names the unit, the script (/usr/local/bin/<name>), the token directory
+# (/etc/<name>) and the state directory (/var/lib/<name>).
+mail_monitoring_relay_probe_service_name: "mailgun-relay-probe"

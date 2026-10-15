@@ -23,6 +23,9 @@
     metrics_endpoint_auth_password: molecule-metrics-password
     metrics_endpoint_bind: "127.0.0.1"
     metrics_endpoint_vmail_path: "/"
+    metrics_endpoint_probe_states:
+      - name: molecule_probe
+        path: /var/lib/molecule-probe/state
 
   roles:
     - role: metrics_endpoint

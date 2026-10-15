@@ -50,3 +50,9 @@
         mail_monitoring_vmail_user: "vmail"
         mail_monitoring_vmail_group: "vmail"
         mail_monitoring_cleanup_ttl_days: 1
+        mail_monitoring_relay_probe_enabled: true
+        mail_monitoring_relay_probe_url: "http://127.0.0.1:18085"
+        mail_monitoring_relay_probe_domain: "mg.example.test"
+        mail_monitoring_relay_probe_from: "relay-probe@example.test"
+        mail_monitoring_relay_probe_token: "molecule-relay-probe-token"
+        mail_monitoring_relay_probe_retries: 0

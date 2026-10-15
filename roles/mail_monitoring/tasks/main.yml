@@ -297,3 +297,11 @@
         state: started
         daemon_reload: true
       when: mail_monitoring_cleanup_enabled | bool
+
+    - name: Install Mailgun relay probe
+      ansible.builtin.include_tasks: relay_probe.yml
+      when: mail_monitoring_relay_probe_enabled | bool
+
+    - name: Remove Mailgun relay probe
+      ansible.builtin.include_tasks: relay_probe_absent.yml
+      when: not (mail_monitoring_relay_probe_enabled | bool)
