@@ -1,0 +1,48 @@
+---
+# Remove the credentials file of a provider this host no longer uses.
+# Runs after certificate.yml, so after a successful `certbot reconfigure`.
+# A file is removed only when a complete scan of renewal/*.conf (symlinks followed)
+# finds no configuration that mentions it; any scan error keeps the file:
+# after a failed or skipped switch (check mode) the lineage still points at the
+# old file, and other lineages that use it keep it.
+
+- name: cleanup | Select the other providers' credentials files
+  ansible.builtin.set_fact:
+    certbot_dns_inactive_credentials_files: >-
+      {{ [certbot_dns_credentials_file, certbot_dns_rfc2136_credentials_file]
+         | unique | difference([certbot_dns_active_credentials_file]) }}
+  when: certbot_dns_remove_unused_credentials | bool
+
+- name: cleanup | Find renewal configurations that still use another provider's credentials file
+  # grep exits 0 when a renewal configuration mentions the path, 1 when none
+  # does, and 2 on any error (unreadable file, no *.conf at all). Files named
+  # on the command line are opened through symlinks, like certbot does. Only
+  # exit 1 counts as "unused".
+  ansible.builtin.command:
+    argv:
+      - sh
+      - -c
+      - 'exec grep -l -F -e "$1" -- "$2"/*.conf'
+      - sh
+      - "{{ item }}"
+      - "{{ certbot_dns_config_dir }}/renewal"
+  loop: "{{ certbot_dns_inactive_credentials_files | default([]) }}"
+  register: certbot_dns_inactive_credentials_users
+  changed_when: false
+  failed_when: certbot_dns_inactive_credentials_users.rc not in [0, 1, 2]
+  check_mode: false
+  become: yes
+  when: certbot_dns_remove_unused_credentials | bool
+
+- name: cleanup | Remove unused credentials files of other providers
+  ansible.builtin.file:
+    path: "{{ item.item }}"
+    state: absent
+  loop: "{{ certbot_dns_inactive_credentials_users.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  become: yes
+  when:
+    - certbot_dns_remove_unused_credentials | bool
+    - item.rc is defined
+    - item.rc == 1

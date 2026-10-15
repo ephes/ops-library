@@ -57,5 +57,10 @@ certbot_dns_renewal_hooks: []
 # settings and only saves them if it succeeds. Requires certbot >= 2.3.
 certbot_dns_reconfigure_on_provider_change: true
 
+# Delete the other provider's credentials file once no renewal configuration
+# under renewal/ mentions it any more (after a successful switch). A lineage
+# that still uses it, for example after a failed switch, keeps it.
+certbot_dns_remove_unused_credentials: true
+
 # Package management
 certbot_dns_package_state: present

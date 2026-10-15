@@ -66,6 +66,13 @@ that use the old file are not affected. Only run the switch once the
 zone is actually served by the new provider's servers (the delegation has moved),
 because Let's Encrypt resolves the challenge through public DNS.
 
+After the switch, `certbot_dns_remove_unused_credentials: true` (default)
+deletes the other provider's credentials file once no renewal configuration
+under `renewal/` mentions it any more. A lineage that still uses it (after a
+failed switch, in check mode, or another lineage on the old provider) keeps it,
+and so does any error while scanning (an unreadable or missing configuration).
+Set it to `false` to keep old credentials files.
+
 ### Common configuration
 
 ```yaml
@@ -78,6 +85,7 @@ certbot_dns_propagation_seconds: 120       # Wait for DNS propagation
 certbot_dns_renewal_hooks: []              # Commands to run post-renewal
 certbot_dns_credentials_file: "/etc/letsencrypt/dns-credentials.ini"            # gandi
 certbot_dns_rfc2136_credentials_file: "/etc/letsencrypt/dns-rfc2136-credentials.ini"
+certbot_dns_remove_unused_credentials: true # delete the other provider's unused file
 certbot_dns_renewal_hook_path: "/etc/letsencrypt/renewal-hooks/deploy/reload-services.sh"
 ```
 
@@ -163,7 +171,7 @@ just test-role certbot_dns_deploy
 
 ## Changelog
 
-- **Unreleased**: `rfc2136` provider; automatic `certbot reconfigure` when the provider changes
+- **Unreleased**: `rfc2136` provider; automatic `certbot reconfigure` when the provider changes; removal of the previous provider's unused credentials file
 - **1.0.0** (2025-12-02): Initial release
 
 ## License

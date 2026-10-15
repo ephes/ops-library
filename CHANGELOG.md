@@ -3,6 +3,18 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — certbot DNS removes the previous provider's credentials
+
+- `certbot_dns_deploy`: new `cleanup.yml`, run after the certificate and
+  provider switch. With `certbot_dns_remove_unused_credentials: true` (default)
+  it deletes the other provider's credentials file (`certbot_dns_credentials_file`
+  for gandi, `certbot_dns_rfc2136_credentials_file` for rfc2136) once no
+  `renewal/*.conf` mentions it (symlinked configurations are followed). A
+  lineage that still uses it, after a failed switch, in check mode or on
+  another lineage, keeps it, and so does any scan error (an unreadable file, no
+  configuration at all). Tests run the tasks on localhost against a temporary
+  config directory.
+
 ## Unreleased — Traefik log rotation keeps Traefik writing to fresh files (2.39.2)
 
 - `traefik_deploy`: `/etc/logrotate.d/traefik` now has one block per file.

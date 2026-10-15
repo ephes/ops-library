@@ -1,3 +1,6 @@
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -78,6 +81,124 @@ class CertbotDnsRfc2136Tests(unittest.TestCase):
         self.assertEqual(argv[:2], ["certbot", "reconfigure"])
         self.assertIn("certbot_dns_current_authenticator != 'dns-' ~ certbot_dns_provider", switch["when"])
         self.assertIn("not ansible_check_mode", switch["when"])
+
+    def test_cleanup_runs_after_the_switch(self):
+        main = yaml.safe_load((ROLE / "tasks" / "main.yml").read_text())
+        order = [t["ansible.builtin.import_tasks"] for t in main]
+        self.assertLess(order.index("certificate.yml"), order.index("cleanup.yml"))
+        defaults = yaml.safe_load((ROLE / "defaults" / "main.yml").read_text())
+        self.assertTrue(defaults["certbot_dns_remove_unused_credentials"])
+
+
+@unittest.skipUnless(shutil.which("ansible-playbook"), "ansible-playbook not on PATH")
+class CertbotDnsCredentialsCleanupTests(unittest.TestCase):
+    """Run cleanup.yml on localhost against a temporary /etc/letsencrypt."""
+
+    def run_cleanup(self, provider, renewal_confs, enabled=True, check=False, prepare=None):
+        tasks = yaml.safe_load((ROLE / "tasks" / "cleanup.yml").read_text())
+        for task in tasks:
+            task.pop("become", None)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = Path(temp_dir)
+            (config / "renewal").mkdir()
+            gandi = config / "dns-credentials.ini"
+            rfc2136 = config / "dns-rfc2136-credentials.ini"
+            gandi.write_text("dns_gandi_api_key = old\n")
+            rfc2136.write_text("dns_rfc2136_name = acme-home\n")
+            for name, authenticator, credentials in renewal_confs:
+                plugin = authenticator.removeprefix("dns-")
+                (config / "renewal" / name).write_text(
+                    "[renewalparams]\n"
+                    f"authenticator = {authenticator}\n"
+                    f"{authenticator.replace('-', '_')}_credentials = {config / credentials}\n"
+                    f"dns_{plugin}_propagation_seconds = 120\n"
+                )
+            if prepare:
+                prepare(config)
+            active = rfc2136 if provider == "rfc2136" else gandi
+            variables = {
+                "certbot_dns_config_dir": str(config),
+                "certbot_dns_credentials_file": str(gandi),
+                "certbot_dns_rfc2136_credentials_file": str(rfc2136),
+                "certbot_dns_active_credentials_file": str(active),
+                "certbot_dns_remove_unused_credentials": enabled,
+            }
+            playbook = config / "play.yml"
+            playbook.write_text(
+                yaml.safe_dump(
+                    [{"hosts": "localhost", "gather_facts": False, "vars": variables, "tasks": tasks}]
+                )
+            )
+            command = ["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook)]
+            if check:
+                command.append("--check")
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            return gandi.exists(), rfc2136.exists()
+
+    def test_removes_the_old_provider_file_after_the_switch(self):
+        gandi, rfc2136 = self.run_cleanup(
+            "rfc2136", [("home.example.conf", "dns-rfc2136", "dns-rfc2136-credentials.ini")]
+        )
+        self.assertFalse(gandi)
+        self.assertTrue(rfc2136)
+
+    def test_keeps_a_file_a_lineage_still_uses(self):
+        # A failed or check-mode switch leaves the lineage on the old provider.
+        gandi, rfc2136 = self.run_cleanup(
+            "rfc2136", [("home.example.conf", "dns-gandi", "dns-credentials.ini")]
+        )
+        self.assertTrue(gandi)
+        self.assertTrue(rfc2136)
+
+    def test_keeps_a_file_another_lineage_uses(self):
+        gandi, _ = self.run_cleanup(
+            "rfc2136",
+            [
+                ("home.example.conf", "dns-rfc2136", "dns-rfc2136-credentials.ini"),
+                ("other.example.conf", "dns-gandi", "dns-credentials.ini"),
+            ],
+        )
+        self.assertTrue(gandi)
+
+    def test_never_removes_the_active_file(self):
+        gandi, rfc2136 = self.run_cleanup(
+            "gandi", [("home.example.conf", "dns-gandi", "dns-credentials.ini")]
+        )
+        self.assertTrue(gandi)
+        self.assertFalse(rfc2136)
+
+    def test_keeps_the_file_when_the_scan_is_incomplete(self):
+        # An unreadable configuration must not count as "no lineage uses it".
+        def make_unreadable(config):
+            bad = config / "renewal" / "aaa-unreadable.conf"
+            bad.write_text(f"dns_gandi_credentials = {config / 'dns-credentials.ini'}\n")
+            bad.chmod(0)
+
+        gandi, _ = self.run_cleanup(
+            "rfc2136",
+            [("home.example.conf", "dns-rfc2136", "dns-rfc2136-credentials.ini")],
+            prepare=make_unreadable,
+        )
+        self.assertTrue(gandi)
+
+    def test_follows_symlinked_renewal_configurations(self):
+        def link_gandi_lineage(config):
+            target = config / "elsewhere.conf"
+            target.write_text(f"dns_gandi_credentials = {config / 'dns-credentials.ini'}\n")
+            (config / "renewal" / "other.example.conf").symlink_to(target)
+
+        gandi, _ = self.run_cleanup(
+            "rfc2136",
+            [("home.example.conf", "dns-rfc2136", "dns-rfc2136-credentials.ini")],
+            prepare=link_gandi_lineage,
+        )
+        self.assertTrue(gandi)
+
+    def test_opt_out_and_check_mode_keep_files(self):
+        confs = [("home.example.conf", "dns-rfc2136", "dns-rfc2136-credentials.ini")]
+        self.assertEqual(self.run_cleanup("rfc2136", confs, enabled=False), (True, True))
+        self.assertEqual(self.run_cleanup("rfc2136", confs, check=True), (True, True))
 
 
 if __name__ == "__main__":
