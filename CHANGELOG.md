@@ -3,6 +3,19 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — graphyard and logyard rsync deploys skip worktree .git (2.40.1)
+
+- `graphyard_deploy`, `logyard_deploy`: the `.git/` entry in
+  `graphyard_rsync_excludes` and `logyard_rsync_excludes` is now `.git`, as in
+  `mailgun_relay_deploy` since 2.39.1. `.git/` only matched a directory; in a
+  git worktree `.git` is a file, and deploys from a worktree copied it to the
+  host. rsync does not delete excluded paths on the host, so remove an already
+  copied `site/.git` file under `/opt/apps/graphyard` or `/opt/apps/logyard`
+  by hand.
+- `just test-rsync-git-excludes` (`tests/test_rsync_git_excludes.py`) finds
+  every role default exclude list that names `.git` and runs it through
+  `rsync --dry-run` against a clone-shaped and a worktree-shaped tree.
+
 ## Unreleased — GoToSocial backup counts local statuses on the real schema
 
 - `echoport_backup` (`gotosocial_backup.py.j2`): `verify_snapshot` counted
