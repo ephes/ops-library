@@ -1,0 +1,74 @@
+---
+# A real sshd on 127.0.0.1:2222 whose root login uses fish (as on production
+# and staging) and a client key that verify.yml pins to the guard.
+- name: Prepare a real OpenSSH harness
+  hosts: all
+  become: true
+  tasks:
+    - name: Install OpenSSH, rsync and fish
+      ansible.builtin.apt:
+        name:
+          - openssh-client
+          - openssh-server
+          - rsync
+          - fish
+        state: present
+        update_cache: true
+
+    - name: Generate container SSH host keys
+      ansible.builtin.command:
+        argv: [/usr/bin/ssh-keygen, -A]
+      changed_when: false
+
+    - name: Configure isolated sshd test port
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/10-molecule-port.conf
+        content: |
+          Port 2222
+          ListenAddress 127.0.0.1
+          UsePAM no
+          PermitRootLogin prohibit-password
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Disable socket activation so sshd honors the test port
+      ansible.builtin.systemd_service:
+        name: ssh.socket
+        state: stopped
+        enabled: false
+
+    - name: Start sshd
+      ansible.builtin.service:
+        name: ssh
+        state: restarted
+
+    - name: Use fish as root's login shell
+      ansible.builtin.user:
+        name: root
+        shell: /usr/bin/fish
+
+    - name: Ensure root's .ssh directory exists
+      ansible.builtin.file:
+        path: /root/.ssh
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Create the client key
+      ansible.builtin.command:
+        argv: [/usr/bin/ssh-keygen, -q, -t, ed25519, -N, "", -f, /root/molecule_deploy_key]
+        creates: /root/molecule_deploy_key
+
+    - name: Create an allowed root and an outside directory
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: nobody
+        group: nogroup
+        mode: "0755"
+      loop:
+        - /srv/marina/site
+        - /srv/marina/site/media
+        - /srv/outside

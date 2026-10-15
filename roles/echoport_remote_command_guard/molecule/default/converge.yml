@@ -1,0 +1,31 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  roles:
+    - role: echoport_remote_command_guard
+      vars:
+        echoport_remote_command_guard_policy:
+          postgres:
+            dump_databases: [homepage]
+            restore_databases: {homepage: homepage}
+            temp_file_prefixes: [homepage]
+          units: [cron.service]
+          private_media_paths: []
+          path_roots:
+            - {path: /srv/marina/site, owner: "nobody:nogroup"}
+  post_tasks:
+    - name: Read the client public key
+      ansible.builtin.slurp:
+        src: /root/molecule_deploy_key.pub
+      register: molecule_deploy_key_pub
+
+    - name: Pin the client key to the guard
+      ansible.builtin.copy:
+        dest: /root/.ssh/authorized_keys
+        owner: root
+        group: root
+        mode: "0600"
+        content: >
+          from="127.0.0.1",restrict,command="{{ echoport_remote_command_guard_forced_command }}"
+          {{ molecule_deploy_key_pub.content | b64decode | trim }}

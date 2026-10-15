@@ -124,6 +124,7 @@ consumer repos depend on.
 | Infrastructure | [`macos_ssh_tunnel`](roles/macos_ssh_tunnel/README.md) | Manage a user LaunchAgent for an SSH local forward with lifecycle and HTTPS checks. |
 | Infrastructure | [`ssh_forwarding_identity`](roles/ssh_forwarding_identity/README.md) | Provision a non-rotating, passphrase-free Ed25519 identity for unattended forwarding. |
 | Infrastructure | [`ssh_restricted_forwarding_account`](roles/ssh_restricted_forwarding_account/README.md) | Provision a dedicated OpenSSH account restricted to local forwarding toward one host and port. |
+| Infrastructure | [`echoport_remote_command_guard`](roles/echoport_remote_command_guard/README.md) | Forced-command allowlist for the Echoport remote backup runners' root SSH key (pg_dump/restore, scp/rsync inside allowed roots). |
 | File sharing | [`samba_timemachine`](roles/samba_timemachine/README.md) | Configure Samba Time Machine share with vfs_fruit and conf.d snippet wiring. |
 | File sharing | [`samba_share`](roles/samba_share/README.md) | Configure generic Samba shares via conf.d snippets and user provisioning. |
 | Infrastructure | [`encrypted_volume_prepare`](roles/encrypted_volume_prepare/README.md) | Prepare and mount a LUKS data volume with UUID checks, keyfile unlock, and boot-time wiring (crypttab/fstab). |

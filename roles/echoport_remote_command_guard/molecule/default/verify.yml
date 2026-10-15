@@ -1,0 +1,157 @@
+---
+- name: Verify the guard through a real sshd
+  hosts: all
+  become: true
+  vars:
+    guard_ssh: >-
+      /usr/bin/ssh -p 2222 -i /root/molecule_deploy_key -o BatchMode=yes
+      -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
+    allowed_commands:
+      - test -d /srv/marina/site/media
+      - readlink -f /srv/marina/site/media
+      - systemctl show --property=LoadState --value cron.service
+      - chown -R nobody:nogroup /srv/marina/site/media
+    refused_commands:
+      - id
+      - test -d /srv/outside
+      - test -e /srv/marina/site; id
+      - "sh -c id"
+      - chown root:root /srv/marina/site/media
+      - systemctl stop ssh.service
+      - sudo -u postgres psql -d postgres -c 'SELECT 1'
+  tasks:
+    - name: Stat the installed guard and policy
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /usr/local/sbin/echoport-remote-command-guard
+        - /etc/echoport/remote-command-guard.json
+      register: guard_files
+
+    - name: Assert ownership and modes
+      ansible.builtin.assert:
+        that:
+          - guard_files.results[0].stat.pw_name == 'root'
+          - guard_files.results[0].stat.mode == '0755'
+          - guard_files.results[1].stat.pw_name == 'root'
+          - guard_files.results[1].stat.mode == '0644'
+
+    - name: Run allowed commands over SSH
+      ansible.builtin.shell:
+        cmd: "{{ guard_ssh }} root@127.0.0.1 {{ item | quote }}"
+      loop: "{{ allowed_commands }}"
+      register: guard_allowed
+      changed_when: false
+
+    - name: Run refused commands over SSH
+      ansible.builtin.shell:
+        cmd: "{{ guard_ssh }} root@127.0.0.1 {{ item | quote }}"
+      loop: "{{ refused_commands }}"
+      register: guard_refused
+      changed_when: false
+      failed_when: false
+
+    - name: Open an interactive session
+      ansible.builtin.shell:
+        cmd: "{{ guard_ssh }} -T root@127.0.0.1 < /dev/null"
+      register: guard_interactive
+      changed_when: false
+      failed_when: false
+
+    - name: Assert the allowlist decisions
+      ansible.builtin.assert:
+        that:
+          - guard_allowed.results | map(attribute='rc') | unique == [0]
+          - guard_allowed.results[1].stdout | trim == '/srv/marina/site/media'
+          - guard_refused.results | map(attribute='rc') | select('equalto', 0) | list | length == 0
+          - guard_refused.results | map(attribute='stderr') | select('search', 'command not allowed') | list | length
+            == refused_commands | length
+          - guard_interactive.rc != 0
+          - "'interactive sessions are not allowed' in guard_interactive.stderr"
+
+    - name: Write a transfer fixture
+      ansible.builtin.copy:
+        dest: /root/transfer.bin
+        content: "fixture\n"
+        mode: "0600"
+
+    - name: Upload and download with classic scp inside the root
+      ansible.builtin.shell:
+        cmd: >-
+          /usr/bin/scp -O -P 2222 -i /root/molecule_deploy_key -o BatchMode=yes
+          -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
+          /root/transfer.bin root@127.0.0.1:/srv/marina/site/db.sqlite3.tmp &&
+          /usr/bin/scp -O -P 2222 -i /root/molecule_deploy_key -o BatchMode=yes
+          -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
+          root@127.0.0.1:/srv/marina/site/db.sqlite3.tmp /root/transfer.back &&
+          cmp /root/transfer.bin /root/transfer.back
+      changed_when: false
+
+    - name: Try SFTP-mode scp and an upload outside the root
+      ansible.builtin.shell:
+        cmd: "{{ item }}"
+      loop:
+        - >-
+          /usr/bin/scp -P 2222 -i /root/molecule_deploy_key -o BatchMode=yes
+          -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
+          root@127.0.0.1:/srv/marina/site/db.sqlite3.tmp /root/sftp.back
+        - >-
+          /usr/bin/scp -O -P 2222 -i /root/molecule_deploy_key -o BatchMode=yes
+          -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
+          /root/transfer.bin root@127.0.0.1:/srv/outside/x.tmp
+      register: guard_scp_refused
+      changed_when: false
+      failed_when: false
+
+    - name: Sync a directory down and back up with rsync inside the root
+      ansible.builtin.shell:
+        cmd: >-
+          mkdir -p /root/rsync-down &&
+          /usr/bin/rsync -a --safe-links -e "{{ guard_ssh }}"
+          root@127.0.0.1:/srv/marina/site/media/ /root/rsync-down/ &&
+          touch /root/rsync-down/new-file &&
+          /usr/bin/rsync -a --delete -e "{{ guard_ssh }}"
+          /root/rsync-down/ root@127.0.0.1:/srv/marina/site/media/
+      changed_when: false
+
+    - name: Try rsync into a directory outside the root
+      ansible.builtin.shell:
+        cmd: >-
+          /usr/bin/rsync -a --delete -e "{{ guard_ssh }}"
+          /root/rsync-down/ root@127.0.0.1:/srv/outside/
+      register: guard_rsync_refused
+      changed_when: false
+      failed_when: false
+
+    - name: Stat transfer results
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /root/sftp.back
+        - /srv/outside/x.tmp
+        - /srv/outside/new-file
+        - /srv/marina/site/media/new-file
+      register: guard_transfer_results
+
+    - name: Assert transfer decisions
+      ansible.builtin.assert:
+        that:
+          - guard_scp_refused.results | map(attribute='rc') | select('equalto', 0) | list | length == 0
+          - guard_rsync_refused.rc != 0
+          - not guard_transfer_results.results[0].stat.exists
+          - not guard_transfer_results.results[1].stat.exists
+          - not guard_transfer_results.results[2].stat.exists
+          - guard_transfer_results.results[3].stat.exists
+
+    - name: Write a policy the guard must reject
+      ansible.builtin.copy:
+        dest: /root/broken-policy.json
+        content: '{"path_roots": [{"path": "/", "owner": "root:root"}]}'
+        mode: "0600"
+
+    - name: Check the broken policy
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, -I, /usr/local/sbin/echoport-remote-command-guard, --check-policy, /root/broken-policy.json]
+      register: guard_broken_policy
+      changed_when: false
+      failed_when: guard_broken_policy.rc != 1

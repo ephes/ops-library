@@ -3,6 +3,25 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Pinned backup SSH key for production and staging
+
+FastDeploy privilege reduction, stage 1, SSH part.
+
+- New role `echoport_remote_command_guard`: a forced-command allowlist for the
+  SSH key the Echoport remote runners use as `root` on production/staging.
+  It accepts exactly the commands those runners send (pg_dump/restore of the
+  listed databases, `systemctl` for listed units, `scp -f|-t` and
+  `rsync --server` inside listed path roots or on the runners' temp dump
+  files, the python-podcast private media backup steps), executes them without
+  a shell and refuses and logs everything else, including interactive
+  sessions and SFTP. The policy is per host and validated by the guard before
+  it is installed. Tested against every remote runner's real commands
+  (`just test-echoport-remote-command-guard`) and through a real sshd with a
+  fish login shell (`just molecule-test echoport_remote_command_guard`).
+- `echoport_backup`: the remote runners (homepage/python-podcast production DB
+  and staging, marina and villakunterbunt staging) call `scp -O` so the guard
+  sees a checkable `scp -f|-t <path>`. heis is unchanged.
+
 ## Unreleased — FastDeploy no longer makes `deploy` root (2.35.0)
 
 FastDeploy privilege reduction, stage 1.
