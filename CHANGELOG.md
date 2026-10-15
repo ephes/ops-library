@@ -3,7 +3,7 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
-## Unreleased — Traefik backup includes the dynamic route configs
+## Unreleased — Traefik backup includes the dynamic route configs (2.41.0)
 
 - `traefik_backup`: also copies the file-provider directory
   (`traefik_backup_dynamic_dir`, default `/etc/traefik/dynamic`) into the backup,
