@@ -735,9 +735,11 @@ test-docker-cache-cleanup: venv
 test-time-sync-check: venv
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_time_sync_check
 
-# Verify literal subject matching for the scoped delivery-probe exemption.
+# Verify literal subject matching for the scoped delivery-probe exemption,
+# and run the relay probe script and the metrics endpoint's probe-state export
+# against local stubs.
 test-mail-monitoring-probe: venv
-    @UV_PROJECT_ENVIRONMENT=.venv uv run pytest -q tests/unit/test_mail_monitoring_probe_settings.py
+    @UV_PROJECT_ENVIRONMENT=.venv uv run pytest -q tests/unit/test_mail_monitoring_probe_settings.py tests/unit/test_mailgun_relay_probe.py
 
 # Portable render/static audit regressions; no Molecule or host access.
 test-lowfindings: venv

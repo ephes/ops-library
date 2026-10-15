@@ -47,3 +47,105 @@
       ansible.builtin.assert:
         that:
           - cleanup_timer_active.stdout | trim == 'active'
+
+    - name: Stat relay probe token and its directory
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /etc/mailgun-relay-probe
+        - /etc/mailgun-relay-probe/token
+      register: relay_probe_token_stat
+
+    - name: Assert relay probe token is readable by the probe user only
+      ansible.builtin.assert:
+        that:
+          - relay_probe_token_stat.results[0].stat.mode == '0750'
+          - relay_probe_token_stat.results[0].stat.pw_name == 'root'
+          - relay_probe_token_stat.results[0].stat.gr_name == 'mailgun-relay-probe'
+          - relay_probe_token_stat.results[1].stat.mode == '0600'
+          - relay_probe_token_stat.results[1].stat.pw_name == 'mailgun-relay-probe'
+
+    - name: Verify relay probe timer is enabled
+      ansible.builtin.command: systemctl is-enabled --quiet mailgun-relay-probe.timer
+      changed_when: false
+
+    - name: Verify relay probe timer is active
+      ansible.builtin.command: systemctl is-active mailgun-relay-probe.timer
+      register: relay_probe_timer_active
+      changed_when: false
+      failed_when: relay_probe_timer_active.stdout | trim != 'active'
+
+    - name: Install a stub relay that records the last POST
+      ansible.builtin.copy:
+        dest: /tmp/stub-relay.py
+        mode: "0755"
+        content: |
+          import http.server, json
+
+          class Handler(http.server.BaseHTTPRequestHandler):
+              def do_POST(self):
+                  body = self.rfile.read(int(self.headers["Content-Length"]))
+                  with open("/tmp/stub-relay-request.json", "w") as f:
+                      json.dump({"path": self.path,
+                                 "auth": self.headers.get("Authorization", ""),
+                                 "body": body.decode("utf-8", "replace")}, f)
+                  self.send_response(200)
+                  self.send_header("Content-Length", "2")
+                  self.end_headers()
+                  self.wfile.write(b"{}")
+
+          # Serves until stopped: a timer-triggered probe may arrive as well.
+          http.server.HTTPServer(("127.0.0.1", 18085), Handler).serve_forever()
+
+    - name: Start the stub relay
+      ansible.builtin.command: systemd-run --unit molecule-stub-relay --collect python3 /tmp/stub-relay.py
+      changed_when: false
+
+    - name: Wait for the stub relay
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 18085
+        timeout: 15
+
+    - name: Run the relay probe once through systemd
+      ansible.builtin.command: systemctl start mailgun-relay-probe.service
+      changed_when: false
+
+    - name: Stop the stub relay
+      ansible.builtin.command: systemctl stop molecule-stub-relay
+      changed_when: false
+
+    - name: Read the probe state and the recorded request
+      ansible.builtin.slurp:
+        src: "{{ item }}"
+      loop:
+        - /var/lib/mailgun-relay-probe/state
+        - /tmp/stub-relay-request.json
+      register: relay_probe_files
+
+    - name: Read the probe journal
+      ansible.builtin.command: journalctl -u mailgun-relay-probe.service --no-pager
+      register: relay_probe_journal
+      changed_when: false
+
+    - name: Stat the probe state file
+      ansible.builtin.stat:
+        path: /var/lib/mailgun-relay-probe/state
+      register: relay_probe_state_stat
+
+    - name: Assert the probe posted as expected and recorded HTTP 200
+      vars:
+        _state: "{{ relay_probe_files.results[0].content | b64decode }}"
+        _request: "{{ relay_probe_files.results[1].content | b64decode | from_json }}"
+      ansible.builtin.assert:
+        that:
+          - "'last_status=200' in _state.splitlines()"
+          - _request.path == '/v3/mg.example.test/messages'
+          - _request.auth == 'Basic ' ~ ('api:molecule-relay-probe-token' | b64encode)
+          - "'relay-probe@example.test' in _request.body"
+          - "'monitor@example.test' in _request.body"
+          - "'[nyxmon-relay] ' in _request.body"
+          - "'status=200' in relay_probe_journal.stdout"
+          - "'molecule-relay-probe-token' not in relay_probe_journal.stdout"
+          - relay_probe_state_stat.stat.pw_name == 'mailgun-relay-probe'
+          - relay_probe_state_stat.stat.mode == '0644'

@@ -33,6 +33,7 @@ metrics_endpoint_vmail_path: "/mnt/cryptdata/vmail"
 metrics_endpoint_queue_path: "/var/spool/postfix"
 metrics_endpoint_services: [postfix, dovecot, rspamd]
 metrics_endpoint_extra_metrics: []        # list of extra commands to emit into JSON (currently unused)
+metrics_endpoint_probe_states: []         # probe state files exported as sections, see below
 ```
 
 ## Usage
@@ -60,6 +61,31 @@ metrics_endpoint_extra_metrics: []        # list of extra commands to emit into 
 - Generates htpasswd file at `/etc/metrics-endpoint/htpasswd`.
 - Creates systemd unit `metrics-endpoint.service`, binds to loopback/Tailscale only.
 - Applies ACLs on postfix queue paths so the metrics user can read queue counts.
+
+## Probe state sections
+
+`metrics_endpoint_probe_states` exports state files written by probe timers,
+for example the relay probe of the `mail_monitoring` role:
+
+```yaml
+metrics_endpoint_probe_states:
+  - name: mailgun_relay
+    path: /var/lib/mailgun-relay-probe/state
+```
+
+Each file holds `key=value` lines; the endpoint reads `last_status` (HTTP
+status, `0` when no response arrived) and `last_run` (epoch seconds) and adds
+the age at request time:
+
+```json
+"mailgun_relay": {"last_status": 200, "last_run": 1760531400, "age_seconds": 312}
+```
+
+A missing, unreadable or malformed file omits the section, so json-metrics
+rules on `$.mailgun_relay.*` fail with `path_missing` instead of passing.
+`name` must be lowercase (`[a-z][a-z0-9_]*`) and must not shadow a built-in
+section; the role asserts both. With the list empty (the default) the
+rendered script is unchanged.
 
 ## Notes
 

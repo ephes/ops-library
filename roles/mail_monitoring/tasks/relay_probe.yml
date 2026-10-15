@@ -1,0 +1,102 @@
+---
+- name: relay_probe | Set relay probe paths
+  ansible.builtin.set_fact:
+    _mail_monitoring_relay_probe_script_path: "/usr/local/bin/{{ mail_monitoring_relay_probe_service_name }}"
+    _mail_monitoring_relay_probe_token_dir: "/etc/{{ mail_monitoring_relay_probe_service_name }}"
+    _mail_monitoring_relay_probe_token_path: "/etc/{{ mail_monitoring_relay_probe_service_name }}/token"
+    _mail_monitoring_relay_probe_state_path: "/var/lib/{{ mail_monitoring_relay_probe_service_name }}/state"
+
+- name: relay_probe | Validate relay probe settings
+  ansible.builtin.assert:
+    that:
+      - mail_monitoring_relay_probe_service_name is match('^[a-z][a-z0-9-]*$')
+      - mail_monitoring_relay_probe_user is match('^[a-z][a-z0-9-]*$')
+      - mail_monitoring_relay_probe_url is match('^https?://[^/\\s]+(/\\S*)?$')
+      - mail_monitoring_relay_probe_domain is match('^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$')
+      - mail_monitoring_relay_probe_from is match('^[^@\\s<>]+@[A-Za-z0-9.-]+$')
+      - mail_monitoring_relay_probe_to is match('^[^@\\s<>]+@[A-Za-z0-9.-]+$')
+      - mail_monitoring_relay_probe_subject_prefix is match('^[^\\x00-\\x1f]*\\S[^\\x00-\\x1f]*$')
+      - mail_monitoring_relay_probe_timeout | int > 0
+      - mail_monitoring_relay_probe_retries | int >= 0
+      - "'CHANGE_ME' not in (mail_monitoring_relay_probe_url ~ mail_monitoring_relay_probe_domain ~ mail_monitoring_relay_probe_from)"
+    fail_msg: >-
+      Relay probe settings are incomplete or malformed. Set
+      mail_monitoring_relay_probe_url, _domain and _from (one sender the
+      token's policy allows), and a non-empty subject prefix.
+
+- name: relay_probe | Validate relay probe token
+  ansible.builtin.assert:
+    that:
+      - mail_monitoring_relay_probe_token is defined
+      - mail_monitoring_relay_probe_token != "CHANGE_ME"
+      - mail_monitoring_relay_probe_token is match('^[A-Za-z0-9._~-]+$')
+    fail_msg: >-
+      mail_monitoring_relay_probe_token is missing, still CHANGE_ME, or has
+      characters outside [A-Za-z0-9._~-]. Set it via ops-control vault.
+  no_log: true
+
+- name: relay_probe | Install curl for the relay probe
+  ansible.builtin.package:
+    name: curl
+    state: present
+
+- name: relay_probe | Create relay probe system group
+  ansible.builtin.group:
+    name: "{{ mail_monitoring_relay_probe_user }}"
+    system: true
+    state: present
+
+- name: relay_probe | Create relay probe system user
+  ansible.builtin.user:
+    name: "{{ mail_monitoring_relay_probe_user }}"
+    group: "{{ mail_monitoring_relay_probe_user }}"
+    shell: /usr/sbin/nologin
+    create_home: false
+    system: true
+    state: present
+
+- name: relay_probe | Create relay probe token directory
+  ansible.builtin.file:
+    path: "{{ _mail_monitoring_relay_probe_token_dir }}"
+    state: directory
+    owner: root
+    group: "{{ mail_monitoring_relay_probe_user }}"
+    mode: "0750"
+
+- name: relay_probe | Install relay probe token
+  ansible.builtin.copy:
+    dest: "{{ _mail_monitoring_relay_probe_token_path }}"
+    content: "{{ mail_monitoring_relay_probe_token }}"
+    owner: "{{ mail_monitoring_relay_probe_user }}"
+    group: "{{ mail_monitoring_relay_probe_user }}"
+    mode: "0600"
+  no_log: true
+
+- name: relay_probe | Install relay probe script
+  ansible.builtin.template:
+    src: mailgun-relay-probe.sh.j2
+    dest: "{{ _mail_monitoring_relay_probe_script_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: relay_probe | Install relay probe systemd units
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "/etc/systemd/system/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - { src: "mailgun-relay-probe.service.j2", dest: "{{ mail_monitoring_relay_probe_service_name }}.service" }
+    - { src: "mailgun-relay-probe.timer.j2", dest: "{{ mail_monitoring_relay_probe_service_name }}.timer" }
+  notify:
+    - reload systemd
+    - restart mailgun-relay-probe timer
+
+- name: relay_probe | Enable and start relay probe timer
+  ansible.builtin.systemd:
+    name: "{{ mail_monitoring_relay_probe_service_name }}.timer"
+    enabled: true
+    state: started
+    daemon_reload: true
