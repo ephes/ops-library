@@ -185,7 +185,23 @@ Sentry as the misleading `current transaction is aborted, commands ignored until
 end of transaction block` — `django_tasks_db` retries the query inside the same
 already-aborted transaction.
 
-## FastDeploy runner restores
+## Remote runners and the pinned SSH key
+
+The remote runners (`homepage_*`, `python_podcast_*`, `marina_staging_backup`,
+`villakunterbunt_staging_backup`, `heis_production_backup`) run on macmini as
+the `deploy` user and SSH to their hosts as `root` with deploy's key. On hosts
+where that key is pinned to `echoport_remote_command_guard` (production and
+staging), only the commands these templates send are accepted, so:
+
+- every runner except heis calls `scp -O` (classic protocol: the remote side
+  sees `scp -f|-t <path>`, which the guard can check; the default SFTP mode
+  cannot be path-restricted);
+- a new remote command in a template needs a matching guard rule.
+  `just test-echoport-remote-command-guard` renders each runner, drives a
+  backup and a restore with the network faked, and fails on any command the
+  guard would refuse;
+- the opt-in python-podcast private media restore (`--include-private-media`)
+  is refused by the guard.
 
 The FastDeploy runner (`fastdeploy_backup.py.j2`) does not restore the
 services, runner entries and sudoers files retired by the FastDeploy privilege
