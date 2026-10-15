@@ -161,24 +161,7 @@
     access_time: preserve
 
 - name: Configure log rotation for Traefik
-  ansible.builtin.copy:
-    content: |
-      {{ traefik_log_dir }}/*.log {
-          daily
-          rotate {{ traefik_logrotate_days }}
-          compress
-          delaycompress
-          missingok
-          notifempty
-          create 0644 root root
-          postrotate
-              systemctl reload traefik > /dev/null 2>&1 || true
-          endscript
-      }
-    dest: /etc/logrotate.d/traefik
-    owner: root
-    group: root
-    mode: '0644'
+  ansible.builtin.import_tasks: logrotate.yml
 
 - name: Check if UFW is installed
   ansible.builtin.command: which ufw

@@ -1,0 +1,13 @@
+---
+# Rotate Traefik's log files. Changes neither the binary, the static/dynamic
+# configuration nor the unit, so it is also usable standalone on hosts whose
+# full deploy is refused by the transaction guard:
+#   include_role: {name: traefik_deploy, tasks_from: logrotate}
+# Applying it never signals or restarts Traefik; the next rotation does.
+- name: logrotate | Configure log rotation for Traefik
+  ansible.builtin.template:
+    src: traefik.logrotate.j2
+    dest: /etc/logrotate.d/traefik
+    owner: root
+    group: root
+    mode: '0644'

@@ -3,6 +3,30 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Traefik log rotation keeps Traefik writing to fresh files (2.39.2)
+
+- `traefik_deploy`: `/etc/logrotate.d/traefik` now has one block per file.
+  `access.log` is renamed, and the postrotate script sends `SIGUSR1` to the
+  Traefik main process (`systemctl kill --signal=USR1 --kill-whom=main`)
+  instead of running `systemctl reload traefik || true`. The unit has no
+  `ExecReload`, so the reload always failed silently and Traefik kept writing
+  to the renamed `access.log.1` until its next restart. The fresh `access.log`
+  stayed empty, and `notifempty` never rotated it again (macmini: 465 MB in
+  `access.log.1`). A failed signal now makes logrotate report an error, and a
+  stopped Traefik is not signalled.
+- `traefik.log` uses `copytruncate`: Traefik reopens only its access log on
+  `SIGUSR1`, never its own log, which it writes with `O_APPEND`.
+- The rotation configuration is a template applied by the new standalone
+  entry `tasks_from: logrotate`, which the full deploy imports. It writes only
+  `/etc/logrotate.d/traefik` and is therefore usable on transaction-managed
+  hosts, where the full deploy is refused. The README describes the one-time
+  repair for a host that is already stuck on `*.log.1`.
+- Tests: `tests/test_traefik_logrotate.py` (`just test-traefik-logrotate`)
+  checks both blocks and runs the rendered postrotate script against a stub
+  `systemctl`. The Molecule scenario forces a real rotation and checks that
+  the unchanged Traefik process holds the fresh `access.log` and `traefik.log`
+  open and writes the truncated `traefik.log` from the start.
+
 ## Unreleased — mailgun-relay rsync deploys skip rust/ and worktree .git (2.39.1)
 
 - `mailgun_relay_deploy`: `mailgun_relay_rsync_excludes` now excludes

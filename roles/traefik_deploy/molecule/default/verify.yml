@@ -127,3 +127,103 @@
           apache2.service unexpectedly exists; the dangling-unit case is not
           being exercised.
         success_msg: "Absent unit correctly skipped rather than failing the play."
+
+    # Regression: the postrotate script ran `systemctl reload traefik`, which
+    # fails because the unit has no ExecReload; `|| true` hid that and Traefik
+    # kept writing to the renamed access.log.1. Rotate for real and check that
+    # the running process, without a restart, writes to the fresh access.log
+    # (reopened on SIGUSR1) and to traefik.log (copytruncate: Traefik never
+    # reopens its own log).
+    - name: Verify | Logrotate configuration parses
+      ansible.builtin.command: logrotate --debug /etc/logrotate.d/traefik
+      changed_when: false
+
+    - name: Verify | Read Traefik main PID before rotation
+      ansible.builtin.command: systemctl show traefik.service --property=MainPID --value
+      register: traefik_pid_before
+      changed_when: false
+
+    # notifempty skips empty files; give both logs content to rotate.
+    - name: Verify | Make sure both logs are non-empty
+      ansible.builtin.shell: |
+        set -eu
+        for log in access.log traefik.log; do
+          echo '{"molecule":"logrotate"}' >> "/var/log/traefik/$log"
+        done
+      changed_when: true
+
+    - name: Verify | Force a Traefik log rotation
+      ansible.builtin.command: logrotate --force /etc/logrotate.d/traefik
+      changed_when: true
+
+    - name: Verify | Rotated files exist
+      ansible.builtin.stat:
+        path: "/var/log/traefik/{{ item }}.1"
+      register: traefik_rotated
+      loop:
+        - access.log
+        - traefik.log
+
+    - name: Verify | Assert both logs were rotated
+      ansible.builtin.assert:
+        that:
+          - traefik_rotated.results | map(attribute='stat.exists') | min
+        fail_msg: "logrotate did not rotate the Traefik logs"
+
+    - name: Verify | Read the copied general log
+      ansible.builtin.command: cat /var/log/traefik/traefik.log.1
+      register: traefik_general_rotated
+      changed_when: false
+
+    - name: Verify | Assert copytruncate kept the general log content
+      ansible.builtin.assert:
+        that:
+          - "'\"molecule\":\"logrotate\"' in traefik_general_rotated.stdout"
+        fail_msg: "traefik.log.1 does not contain the marker written before rotation"
+
+    - name: Verify | Wait until Traefik holds the fresh log files open
+      ansible.builtin.shell: |
+        set -euo pipefail
+        pid=$(systemctl show traefik.service --property=MainPID --value)
+        for fd in /proc/"$pid"/fd/*; do readlink "$fd" || true; done | grep '^/var/log/traefik/' | sort -u
+      args:
+        executable: /bin/bash
+      register: traefik_open_logs
+      changed_when: false
+      until:
+        - "'/var/log/traefik/access.log' in traefik_open_logs.stdout_lines"
+        - "'/var/log/traefik/traefik.log' in traefik_open_logs.stdout_lines"
+      retries: 10
+      delay: 1
+
+    # Traefik logs the SIGUSR1 it received into its general log. It writes
+    # with O_APPEND, so after copytruncate the line lands at offset 0 instead
+    # of leaving a NUL-filled hole the size of the old file.
+    - name: Verify | Traefik writes the truncated general log from the start
+      ansible.builtin.shell: |
+        set -euo pipefail
+        log=/var/log/traefik/traefik.log
+        grep -qi 'rotation' "$log"
+        test "$(tr -d '\000' < "$log" | wc -c)" -eq "$(wc -c < "$log")"
+      args:
+        executable: /bin/bash
+      register: traefik_general_fresh
+      changed_when: false
+      until: traefik_general_fresh.rc == 0
+      retries: 10
+      delay: 1
+
+    - name: Verify | Read Traefik main PID after rotation
+      ansible.builtin.command: systemctl show traefik.service --property=MainPID --value
+      register: traefik_pid_after
+      changed_when: false
+
+    - name: Verify | Assert Traefik reopened its logs without a restart
+      ansible.builtin.assert:
+        that:
+          - traefik_pid_after.stdout == traefik_pid_before.stdout
+          - traefik_open_logs.stdout_lines | select('search', '\\.log\\.1$') | list | length == 0
+        fail_msg: >-
+          Traefik (PID {{ traefik_pid_before.stdout }} -> {{ traefik_pid_after.stdout }})
+          still holds {{ traefik_open_logs.stdout_lines }} after rotation.
+        success_msg: "Traefik writes to the fresh access.log and to traefik.log."
