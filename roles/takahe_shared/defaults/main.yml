@@ -184,7 +184,10 @@ takahe_backup_retain: 7
 takahe_backup_postgres_dump_binary: pg_dump
 takahe_backup_postgres_format: custom
 takahe_backup_postgres_compress: 9
-takahe_backup_postgres_become_user: "{{ takahe_postgres_become_user }}"
+# pg_dump writes into the backup directory (owner takahe_backup_owner, mode
+# takahe_backup_dir_mode 0700), so it runs as that owner and authenticates
+# over TCP with the passfile, like mastodon_backup.
+takahe_backup_postgres_become_user: "{{ takahe_backup_owner }}"
 takahe_backup_postgres_host: "{{ takahe_postgres_host }}"
 takahe_backup_postgres_port: "{{ takahe_postgres_port }}"
 takahe_backup_postgres_database: "{{ takahe_postgres_database }}"
