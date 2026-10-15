@@ -23,6 +23,15 @@
         | select('in', bind_zone_transfer_backed_types)
         | list | length > 0
 
+- name: Ensure dynamic zone directory is writable by named
+  ansible.builtin.file:
+    path: "{{ bind_dynamic_zone_dir }}"
+    state: directory
+    owner: "{{ bind_service_user }}"
+    group: "{{ bind_config_group }}"
+    mode: '0775'
+  when: bind_zones | map(attribute='dynamic', default=false) | map('bool') | select | list | length > 0
+
 # Rendered before named.conf so that named-checkconf, which follows the include
 # added there, finds the file already in place on a first install.
 - name: Render TSIG keys
@@ -73,7 +82,30 @@
   loop: "{{ bind_zones }}"
   loop_control:
     label: "{{ item.name }}"
-  when: item.type | default(bind_zone_default_type) not in bind_zone_transfer_backed_types
+  when:
+    - item.type | default(bind_zone_default_type) not in bind_zone_transfer_backed_types
+    - not (item.dynamic | default(false) | bool)
+  notify: reload bind
+
+# A dynamic zone's file belongs to named once it is loaded: updates land in the
+# .jnl journal and are periodically written back into the file. Ansible only
+# seeds it (force: false) and never overwrites it, otherwise every deploy would
+# roll back the dynamic records and desynchronise the journal, which makes named
+# refuse to load the zone. Change the static part of a loaded dynamic zone with
+# nsupdate, or with `rndc freeze <zone>` / edit / bump serial / `rndc thaw <zone>`.
+- name: Seed dynamic zone files
+  ansible.builtin.copy:
+    src: "{{ bind_zone_files_dir }}/{{ item.file }}"
+    dest: "{{ item.file if item.file.startswith('/') else bind_dynamic_zone_dir ~ '/' ~ item.file }}"
+    owner: "{{ bind_service_user }}"
+    group: "{{ bind_config_group }}"
+    mode: "0644"
+    force: false
+    validate: "named-checkzone {{ item.name }} %s"
+  loop: "{{ bind_zones }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.dynamic | default(false) | bool
   notify: reload bind
 
 - name: Render named.conf

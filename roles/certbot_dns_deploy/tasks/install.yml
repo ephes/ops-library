@@ -8,3 +8,11 @@
       - python3-certbot-dns-gandi
     state: "{{ certbot_dns_package_state }}"
   when: certbot_dns_provider == "gandi"
+
+- name: Install certbot and RFC 2136 plugin
+  ansible.builtin.package:
+    name:
+      - certbot
+      - python3-certbot-dns-rfc2136
+    state: "{{ certbot_dns_package_state }}"
+  when: certbot_dns_provider == "rfc2136"

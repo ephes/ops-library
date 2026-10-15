@@ -1,0 +1,164 @@
+---
+# Test playbook for bind_authoritative_deploy dynamic (RFC 2136) zones.
+#
+# Covers:
+#   * dynamic: true renders update-policy and a bind_dynamic_zone_dir file path
+#   * non-dynamic zones render exactly as before (no update-policy)
+#   * the seed task copies with force: false and is the only install path for
+#     a dynamic zone (the normal install task skips it)
+#   * validation rejects a dynamic zone without update_policy, with a mapping,
+#     or with a transfer-backed type
+
+- name: Test bind_authoritative_deploy dynamic zone support
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    role_path: "{{ playbook_dir }}/../roles/bind_authoritative_deploy"
+    test_tmp_dir: "/tmp/test-bind-authoritative-dynamic"
+    rendered: "{{ test_tmp_dir }}/dynamic.named.conf.local"
+
+    bind_config_dir: "{{ bind_defaults.bind_config_dir }}"
+    bind_working_dir: "{{ bind_defaults.bind_working_dir }}"
+    bind_dynamic_zone_dir: "{{ bind_defaults.bind_dynamic_zone_dir }}"
+    bind_zone_default_type: "{{ bind_defaults.bind_zone_default_type }}"
+    bind_zone_transfer_backed_types: "{{ bind_defaults.bind_zone_transfer_backed_types }}"
+
+    dynamic_zones:
+      - name: "example.com"
+        file: "db.example.com"
+        type: master
+      - name: "home.example.com"
+        file: "db.home.example.com"
+        type: master
+        dynamic: true
+        allow_transfer:
+          - 'key "xfer"'
+        update_policy:
+          - 'grant "ddns-home" name home.example.com. A AAAA'
+          - 'grant "ddns-home" name *.home.example.com. A AAAA'
+          - 'grant "acme-home" name _acme-challenge.home.example.com. TXT'
+      - name: "abs.example.com"
+        file: "/srv/zones/db.abs.example.com"
+        type: primary
+        dynamic: true
+        update_policy: 'grant "k" name abs.example.com. A'
+      - name: "home.example.com.secondary"
+        file: "db.home.example.com"
+        type: secondary
+        primaries:
+          - "192.0.2.1"
+
+    bad_dynamic_zones:
+      - label: "missing update_policy"
+        zone: {name: "a.example", file: "db.a", type: master, dynamic: true}
+      - label: "empty update_policy"
+        zone: {name: "b.example", file: "db.b", type: master, dynamic: true, update_policy: []}
+      - label: "mapping update_policy"
+        zone: {name: "c.example", file: "db.c", type: master, dynamic: true, update_policy: {grant: x}}
+      - label: "transfer-backed dynamic zone"
+        zone:
+          name: "d.example"
+          file: "db.d"
+          type: secondary
+          dynamic: true
+          primaries: ["192.0.2.1"]
+          update_policy: ['grant "k" name d.example. A']
+
+  tasks:
+    - name: Load role defaults
+      ansible.builtin.include_vars:
+        file: "{{ role_path }}/defaults/main.yml"
+        name: bind_defaults
+
+    - name: Assert the dynamic zone directory default
+      ansible.builtin.assert:
+        that:
+          - bind_defaults.bind_dynamic_zone_dir == "/var/lib/bind"
+
+    - name: Create test directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ test_tmp_dir }}"
+        - "{{ test_tmp_dir }}/zones"
+
+    - name: Create controller-side zone file fixtures
+      ansible.builtin.copy:
+        content: "; test fixture zone file\n"
+        dest: "{{ test_tmp_dir }}/zones/{{ item }}"
+        mode: "0644"
+      loop:
+        - db.example.com
+        - db.home.example.com
+
+    - name: Render named.conf.local with dynamic zones
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/named.conf.local.j2"
+        dest: "{{ rendered }}"
+        mode: "0644"
+      vars:
+        bind_zones: "{{ dynamic_zones }}"
+
+    - name: Read the render
+      ansible.builtin.slurp:
+        path: "{{ rendered }}"
+      register: rendered_slurp
+
+    - name: Assert dynamic zones render update-policy and the dynamic directory
+      ansible.builtin.assert:
+        that:
+          - "'file \"/var/lib/bind/db.home.example.com\";' in text"
+          - >-
+            'update-policy { grant "ddns-home" name home.example.com. A AAAA; grant "ddns-home" name *.home.example.com. A AAAA; grant "acme-home" name _acme-challenge.home.example.com. TXT; };' in text
+          - "'allow-transfer { key \"xfer\"; };' in text"
+          - "'file \"/srv/zones/db.abs.example.com\";' in text"
+          - "'update-policy { grant \"k\" name abs.example.com. A; };' in text"
+          # Static and secondary zones are unaffected.
+          - "'file \"/etc/bind/db.example.com\";' in text"
+          - "'file \"/var/cache/bind/db.home.example.com\";' in text"
+          - text | regex_findall('update-policy') | length == 2
+          - "'allow-update' not in text"
+        fail_msg: "{{ text }}"
+      vars:
+        text: "{{ rendered_slurp.content | b64decode }}"
+
+    - name: Load role tasks for structural checks
+      ansible.builtin.set_fact:
+        config_tasks: "{{ lookup('ansible.builtin.file', role_path ~ '/tasks/config.yml') | from_yaml }}"
+
+    - name: Assert dynamic zone files are seeded, never overwritten
+      ansible.builtin.assert:
+        that:
+          - seed_task | length == 1
+          - seed_task[0]['ansible.builtin.copy'].force == false
+          - seed_task[0]['ansible.builtin.copy'].owner == '{{ "{{" }} bind_service_user {{ "}}" }}'
+          - "'named-checkzone' in seed_task[0]['ansible.builtin.copy'].validate"
+          - "'not (item.dynamic | default(false) | bool)' in install_task[0].when"
+      vars:
+        seed_task: "{{ config_tasks | selectattr('name', 'equalto', 'Seed dynamic zone files') | list }}"
+        install_task: "{{ config_tasks | selectattr('name', 'equalto', 'Install zone files') | list }}"
+
+    - name: Validation rejects malformed dynamic zones
+      ansible.builtin.include_tasks: tasks/bind_dynamic_validate_case.yml
+      loop: "{{ bad_dynamic_zones }}"
+      loop_control:
+        loop_var: bad_case
+        label: "{{ bad_case.label }}"
+
+    - name: Validation accepts the well-formed dynamic zones
+      ansible.builtin.include_tasks:
+        file: "{{ role_path }}/tasks/validate.yml"
+      vars:
+        bind_zones: "{{ dynamic_zones[:2] }}"
+        bind_zone_files_dir: "{{ test_tmp_dir }}/zones"
+        bind_allow_transfer: [none]
+        bind_tsig_keys: []
+
+    - name: Remove test directory
+      ansible.builtin.file:
+        path: "{{ test_tmp_dir }}"
+        state: absent

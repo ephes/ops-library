@@ -1,7 +1,8 @@
 ---
 # Default variables for certbot_dns_deploy role
 
-# DNS provider (currently only gandi is supported)
+# DNS provider: "gandi" (LiveDNS API) or "rfc2136" (DNS UPDATE signed with TSIG,
+# e.g. against your own BIND primary)
 certbot_dns_provider: "gandi"
 
 # Certificate identity (punycode-safe)
@@ -12,6 +13,15 @@ certbot_dns_email: "admin@wersdoerfer.de"
 
 # Provider credentials (must be overridden)
 certbot_dns_gandi_api_token: "CHANGEME"
+
+# RFC 2136 provider. The server must be an IP address (the plugin does not
+# resolve names) of the zone's primary. The key needs an update-policy grant for
+# TXT at _acme-challenge.<name> for every requested name.
+certbot_dns_rfc2136_server: "CHANGEME"
+certbot_dns_rfc2136_port: 53
+certbot_dns_rfc2136_key_name: "CHANGEME"
+certbot_dns_rfc2136_key_secret: "CHANGEME"     # base64 TSIG secret (from secrets)
+certbot_dns_rfc2136_key_algorithm: "HMAC-SHA256"
 
 # Domain set to request
 certbot_dns_wildcard: true                # Request *.domain
@@ -36,6 +46,12 @@ certbot_dns_renewal_hooks: []
 #   - "systemctl restart traefik"
 #   - "systemctl reload postfix@-"
 #   - "systemctl reload dovecot"
+
+# When an existing lineage was issued with a different authenticator (for example
+# when moving from gandi to rfc2136), run `certbot reconfigure` so renewals use
+# the configured provider. reconfigure performs a dry-run challenge with the new
+# settings and only saves them if it succeeds. Requires certbot >= 2.3.
+certbot_dns_reconfigure_on_provider_change: true
 
 # Package management
 certbot_dns_package_state: present
