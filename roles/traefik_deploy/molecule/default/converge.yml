@@ -35,5 +35,11 @@
         systemctl --failed --no-legend | grep -q apache2 || true
       changed_when: false
 
+    # verify.yml forces a rotation and checks that Traefik reopened its logs.
+    - name: Converge | Install logrotate
+      ansible.builtin.apt:
+        name: logrotate
+        state: present
+
   roles:
     - role: traefik_deploy

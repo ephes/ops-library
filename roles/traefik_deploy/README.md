@@ -11,7 +11,7 @@ This role installs and configures the base Traefik infrastructure on a target ho
 - Deploying static configuration with HTTP→HTTPS redirect
 - Setting up Let's Encrypt automatic certificate management
 - Configuring the systemd service with security hardening
-- Setting up log rotation
+- Setting up log rotation that makes Traefik reopen its logs (see [Log rotation](#log-rotation))
 - Optionally configuring firewall rules
 
 **Note**: This role only handles the base Traefik infrastructure. Individual service configurations should be managed by their respective roles using Traefik's dynamic configuration in `/etc/traefik/dynamic/`.
@@ -466,6 +466,68 @@ hand-tuned configuration, apply just these tasks:
     name: local.ops_library.traefik_deploy
     tasks_from: web_conflicts
 ```
+
+## Log rotation
+
+`/etc/logrotate.d/traefik` rotates `access.log` and `traefik.log` in
+`traefik_log_dir` daily and keeps `traefik_logrotate_days` compressed
+generations (`delaycompress`, so the newest rotated file `*.log.1` stays
+uncompressed for one day). The two files need different handling:
+
+- **`access.log`** is renamed and recreated. Traefik reopens it on `SIGUSR1`,
+  which the postrotate script sends to the main process:
+
+  ```sh
+  if systemctl is-active --quiet traefik.service; then
+      systemctl kill --signal=USR1 --kill-whom=main traefik.service
+  fi
+  ```
+
+  This needs systemd 252 or newer (`--kill-whom`). A stopped Traefik is not
+  signalled; it opens the fresh file when it starts. A failed signal makes
+  logrotate report an error instead of passing silently.
+- **`traefik.log`** uses `copytruncate`. `SIGUSR1` reopens only the access log
+  (Traefik's signal handler calls nothing but `RotateAccessLogs`), and Traefik
+  never reopens its own log, so a rename would strand it on `traefik.log.1`.
+  Traefik opens the file with `O_APPEND`, so after truncation it writes from
+  the start again. Lines written between the copy and the truncate are lost.
+  That is acceptable for this low-volume log.
+
+Up to ops-library 2.39.1 the script ran `systemctl reload traefik || true` on
+both files after renaming them. The unit has no `ExecReload`, so that reload
+always failed and Traefik kept writing to `access.log.1` and `traefik.log.1`
+until its next restart. The fresh files stayed empty, and `notifempty` then
+never rotated them again. On an affected host,
+`ls -l /proc/$(systemctl show -p MainPID --value traefik)/fd | grep log` shows
+`*.log.1`.
+
+### Applying only the rotation configuration
+
+The rotation entry writes only `/etc/logrotate.d/traefik`. It neither
+signals nor restarts Traefik, and it leaves the binary, the static and
+dynamic configuration and the unit alone. That makes it usable on
+transaction-managed hosts, where the full deploy is refused:
+
+```yaml
+- name: Apply the traefik_deploy log rotation configuration
+  ansible.builtin.include_role:
+    name: local.ops_library.traefik_deploy
+    tasks_from: logrotate
+```
+
+A host that is already stuck on `*.log.1` needs two manual steps after the
+new configuration is applied, and no restart:
+
+```sh
+cd /var/log/traefik
+systemctl kill --signal=USR1 --kill-whom=main traefik.service   # access.log
+# traefik.log: Traefik's open file is traefik.log.1; move it back over the
+# empty traefik.log (refuses if traefik.log has content)
+test ! -s traefik.log && mv traefik.log.1 traefik.log
+```
+
+The stuck `access.log.1` stays as the newest generation, and the next
+rotation compresses it as usual.
 
 ## Guarded updates of existing installations
 
