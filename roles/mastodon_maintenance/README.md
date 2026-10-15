@@ -38,8 +38,9 @@ mastodon_maintenance_extra_commands:
 follows or is followed by and that were not refreshed for `--days`; it never touches local accounts and is a
 superset of `--remove-headers` (tootctl refuses both flags together). `emoji purge --remote-only` deletes every
 remote custom emoji (no age filter); they are fetched again when new posts use them. Without a scope flag,
-`emoji purge` deletes local custom emoji as well and tootctl does not reject misspelt flags, so the role fails
-unless an `emoji purge` command carries only `--remote-only` or `--suspended-only`.
+`emoji purge` deletes local custom emoji as well, and tootctl accepts misspelt flags and values such as
+`--remote-only false`, so the role fails unless any command mentioning an emoji purge is exactly `emoji purge`
+followed only by `--remote-only` or `--suspended-only`.
 
 ## Key Variables
 

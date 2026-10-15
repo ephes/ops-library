@@ -13,21 +13,25 @@
     mastodon_maintenance_commands: "{{ mastodon_maintenance_tootctl_commands + mastodon_maintenance_extra_commands }}"
 
 # `tootctl emoji purge` without a scope flag deletes every custom emoji,
-# including the instance's own. tootctl does not reject unknown options, so a
-# misspelt flag silently widens the purge. Only accept the exact scope flags.
+# including the instance's own. tootctl does not reject unknown options and
+# accepts values for boolean flags (`--remote-only false`), and the command is
+# rendered unquoted into a shell script. So any command that mentions an emoji
+# purge (ignoring quotes, backslashes and shell punctuation) must be exactly
+# `emoji purge` followed only by `--remote-only` / `--suspended-only`.
 - name: validate | Reject unscoped custom emoji purges
   ansible.builtin.assert:
     that:
       - >-
-        ((item | string).split() | first | default('')) != 'emoji'
-        or ((item | string).split()[1:2] | first | default('')) != 'purge'
-        or (
-          ((item | string).split()[2:] | select('match', '^-') | list | length > 0)
-          and ((item | string).split()[2:] | select('match', '^-') | reject('in', ['--remote-only', '--suspended-only']) | list | length == 0)
-        )
+        not ((item | string) | regex_replace(mastodon_maintenance_quote_chars, '')
+        is search(mastodon_maintenance_emoji_purge_pattern))
+        or ((item | string) | trim | regex_replace('\s+', ' ')
+        is match(mastodon_maintenance_scoped_emoji_purge_pattern))
     fail_msg: >-
-      Refusing maintenance command "{{ item }}": `emoji purge` must be limited with
-      --remote-only or --suspended-only (and no other flags); without them it deletes
-      local custom emoji too.
+      Refusing maintenance command "{{ item }}": `emoji purge` must be followed only by
+      --remote-only or --suspended-only; anything else can delete local custom emoji too.
     quiet: true
   loop: "{{ mastodon_maintenance_commands }}"
+  vars:
+    mastodon_maintenance_quote_chars: "['\"\\\\]"
+    mastodon_maintenance_emoji_purge_pattern: '(^|[^A-Za-z0-9_-])emoji[^A-Za-z0-9_-]+purge($|[^A-Za-z0-9_-])'
+    mastodon_maintenance_scoped_emoji_purge_pattern: '^emoji purge( --remote-only| --suspended-only)+$'
