@@ -33,6 +33,27 @@
     label: "{{ item.name }}"
   when: item.type | default(bind_zone_default_type) in bind_zone_transfer_backed_types
 
+- name: Validate dynamic zones
+  ansible.builtin.assert:
+    that:
+      # A transfer-backed zone receives its content from the primary; updates
+      # are made on the primary, never on a secondary.
+      - item.type | default(bind_zone_default_type) in ['master', 'primary']
+      # Without an update-policy the zone would be static and the seeded file
+      # would silently never change again, because the role does not overwrite it.
+      - item.update_policy is defined
+      - item.update_policy is not mapping
+      - item.update_policy is string or item.update_policy is sequence
+      - item.update_policy | length > 0
+    fail_msg: >-
+      Zone {{ item.name }} is dynamic: it must be type master/primary and define a
+      non-empty update_policy list (rules such as
+      'grant "key" name host.example.com. A AAAA').
+  loop: "{{ bind_zones }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.dynamic | default(false) | bool
+
 - name: Check zone files directory exists on controller
   ansible.builtin.stat:
     path: "{{ bind_zone_files_dir }}"

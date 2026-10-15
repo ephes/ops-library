@@ -1,9 +1,10 @@
 # Certbot DNS Deploy
 
-Role to obtain and renew wildcard/apex TLS certificates via Certbot using DNS-01 (Gandi LiveDNS).
+Role to obtain and renew wildcard/apex TLS certificates via Certbot using DNS-01, with Gandi LiveDNS (`gandi`) or RFC 2136 DNS UPDATE signed with TSIG (`rfc2136`, e.g. your own BIND primary).
 
-- Installs certbot + dns-gandi plugin
-- Renders provider credentials (Gandi LiveDNS API key)
+- Installs certbot + the provider plugin (`python3-certbot-dns-gandi` or `python3-certbot-dns-rfc2136`)
+- Renders provider credentials into a per-provider file (`certbot_dns_credentials_file` for gandi, `certbot_dns_rfc2136_credentials_file` for rfc2136)
+- Switches an existing lineage to the configured provider with `certbot reconfigure` when its authenticator differs
 - Requests a single lineage with apex + wildcard SANs
 - Configures renewal hooks so dependent services load the renewed certificate
 - Uses system `certbot.timer` for renewals
@@ -11,13 +12,19 @@ Role to obtain and renew wildcard/apex TLS certificates via Certbot using DNS-01
 ## Requirements
 
 - Debian/Ubuntu with `systemd`
-- Gandi LiveDNS domain and API key (not PAT). UI path: avatar → User settings → “Password & access restrictions” → Developer access → API key (deprecated label but works for LiveDNS).
+- gandi: Gandi LiveDNS domain and API key (not PAT). UI path: avatar → User settings → “Password & access restrictions” → Developer access → API key (deprecated label but works for LiveDNS).
+
+- rfc2136: a primary that accepts TSIG-signed updates for `_acme-challenge.<name>` TXT (BIND `update-policy`), reachable on port 53 from the host; its IP address (the plugin does not resolve names).
+- Provider switch on an existing lineage: certbot >= 2.3 (`reconfigure`; Ubuntu 24.04 ships 2.9), and the zone must already be delegated to the new provider's servers, because Let's Encrypt resolves the challenge through public DNS.
 
 ## Variables (common)
 
 - `certbot_dns_domain`: base domain (punycode if IDN), e.g. `home.xn--wersdrfer-47a.de`
 - `certbot_dns_email`: Let’s Encrypt account email
-- `certbot_dns_gandi_api_token`: LiveDNS API key
+- `certbot_dns_provider`: `gandi` (default) or `rfc2136`
+- `certbot_dns_gandi_api_token`: LiveDNS API key (gandi)
+- `certbot_dns_rfc2136_server` / `_port` / `_key_name` / `_key_secret` / `_key_algorithm`: RFC 2136 target (IP), port (53), TSIG key name, base64 secret, algorithm (`HMAC-SHA256`)
+- `certbot_dns_reconfigure_on_provider_change`: run `certbot reconfigure` when the lineage's authenticator differs (default: true). reconfigure dry-runs the challenge against LE staging and saves only on success; the old provider's credentials file is left untouched, so a failed switch keeps renewing with the old provider
 - `certbot_dns_wildcard`: include `*.domain` (default: true)
 - `certbot_dns_include_base`: include apex (default: true)
 - `certbot_dns_additional_domains`: extra SANs
@@ -74,4 +81,4 @@ Role to obtain and renew wildcard/apex TLS certificates via Certbot using DNS-01
   (using the configured `certbot_dns_renewal_hook_path`; the shown path is its
   default) or manually restart or reload each consumer that did not load the new
   certificate.
-- Store the API key in secrets (`secrets/prod/dns.yml`); do not commit.***
+- Store the API key / TSIG secret in secrets (`secrets/prod/dns.yml`); do not commit.

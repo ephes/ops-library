@@ -10,6 +10,8 @@ Deploy an authoritative BIND 9 DNS server with managed config files and raw zone
 - Supports transfer-backed (secondary) zones that named populates via AXFR/IXFR.
 - Renders TSIG `key { ... };` stanzas into a non-world-readable include for
   authenticated transfers and `NOTIFY`.
+- Supports dynamic zones (RFC 2136 `UPDATE`, authorised per record by TSIG key
+  through `update-policy`); Ansible seeds their zone file once and never overwrites it.
 - Validates zones with `named-checkzone` and config with `named-checkconf` before reload.
 - Post-deploy `dig` check that requires an authoritative answer, with retries so a
   secondary's first zone transfer can finish.
@@ -78,6 +80,7 @@ bind_zone_transfer_backed_types:
 | `bind_tsig_keys_file` | `{{ bind_config_dir }}/named.conf.keys` | Where the key stanzas are written and included from. The include is emitted first in `named.conf`, and only when `bind_tsig_keys` is non-empty. |
 | `bind_tsig_keys_mode` | `0640` | Mode of that file (owner `root`, group `bind_config_group`). Deliberately stricter than `bind_config_mode` (`0644`) — a TSIG secret must not be world-readable. The task that renders it is `no_log: true`. |
 | `bind_extra_options` | `[]` | Raw lines emitted verbatim **inside** the `options { }` block. Consequently it cannot carry top-level statements such as `key` or `acl` — use `bind_tsig_keys` for keys, and an inline nested address-match list (see [Combining address and key correctly](#combining-address-and-key-correctly)) instead of a named `acl`. |
+| `bind_dynamic_zone_dir` | `/var/lib/bind` | Where a dynamic zone's relative `file` is resolved and its seed file is installed. named writes the zone file and its `.jnl` journal there, which the packaged Debian/Ubuntu AppArmor profile permits. |
 | `bind_service_user` | `bind` | Account named(8) runs as. Used to own `bind_working_dir` so the daemon can store transferred zones. Deliberately separate from `bind_config_group` — a group name is not usable as a file owner. |
 
 For a complete list, see `defaults/main.yml`.
@@ -102,6 +105,8 @@ bind_zones:
 | `primaries` | transfer-backed zones only | Primary servers to transfer from, rendered as `primaries { ... };`. Required and non-empty for transfer-backed zones. Normally a list; a single address may be given as a bare string, which renders verbatim (`bind_macros.acl_list` has an explicit string branch, exactly as for `bind_allow_transfer` and `bind_recursion_acl`). A mapping is rejected by validation. |
 | `allow_transfer` | no | Per-zone `allow-transfer` address-match list, overriding the global `bind_allow_transfer`. |
 | `extra_config` | no | List of raw lines emitted verbatim inside the zone block, e.g. `also-notify { ...; };`. |
+| `dynamic` | no | `true` makes the zone accept RFC 2136 updates. Only for `master`/`primary` zones. See [Dynamic zones](#dynamic-zones-rfc-2136-updates). |
+| `update_policy` | dynamic zones only | List of `update-policy` rules, rendered verbatim and joined with `; `. Required and non-empty when `dynamic` is true. |
 
 `primaries`, `allow_transfer` and `extra_config` list entries are joined with `; `
 and rendered verbatim — the role does not parse or rewrite them, so any valid BIND
@@ -415,6 +420,66 @@ Then bump a serial on the primary and confirm the secondary picks it up within
 seconds (`dig +norec SOA example.com @198.51.100.20`). If it only catches up hours
 later, signed `NOTIFY` is not working and `also-notify` is missing its key.
 
+## Dynamic zones (RFC 2136 updates)
+
+A zone entry with `dynamic: true` accepts DNS `UPDATE` messages (`nsupdate`,
+certbot's `dns-rfc2136` plugin, a DDNS client). Who may change what is defined by
+`update_policy`, which is rendered verbatim as `update-policy { ... };`:
+
+```yaml
+bind_tsig_keys:
+  - name: "ddns-home"
+    secret: "{{ dns_secrets.tsig_ddns_home_key }}"      # from SOPS
+  - name: "acme-home"
+    secret: "{{ dns_secrets.tsig_acme_home_key }}"
+bind_zones:
+  - name: "home.example.com"
+    file: "db.home.example.com"                      # -> /var/lib/bind/db.home.example.com
+    type: master
+    dynamic: true
+    update_policy:
+      - 'grant "ddns-home" name home.example.com. A AAAA'
+      - 'grant "ddns-home" name *.home.example.com. A AAAA'
+      - 'grant "acme-home" name _acme-challenge.home.example.com. TXT'
+```
+
+renders
+
+```
+zone "home.example.com" {
+    type master;
+    file "/var/lib/bind/db.home.example.com";
+    update-policy { grant "ddns-home" name home.example.com. A AAAA; grant "ddns-home" name *.home.example.com. A AAAA; grant "acme-home" name _acme-challenge.home.example.com. TXT; };
+};
+```
+
+How the role treats a dynamic zone:
+
+- **The controller file is a seed, installed once.** It is copied with `force: false`
+  into `bind_dynamic_zone_dir`, owned by `bind_service_user`. Once named has loaded
+  the zone, updates go to a `.jnl` journal and are written back into that file, so
+  re-copying it on every deploy would roll the dynamic records back and leave a
+  journal that no longer matches the file, after which named refuses to load the zone.
+  Editing the seed file in the control repository therefore has **no effect** on a
+  server that already has the zone. Change static records of a live dynamic zone with
+  `nsupdate`, or with `rndc freeze <zone>`, edit the file, bump the serial,
+  `rndc thaw <zone>`.
+- **Keep dynamic zones small.** Put only the records that really change into the
+  dynamic zone, and delegate it from a static parent zone (`home NS ...` in the parent).
+  The parent stays a normal controller-managed zone with all the usual review.
+- **Use narrow rules.** Grant each key only the names and types it needs (`name`
+  matches exactly one owner name; a literal `*.home.example.com.` matches the wildcard
+  record itself, not every name below it). Avoid `zonesub` and `wildcard` match types
+  for keys that live on less trusted hosts.
+- **Secondaries need nothing special.** Every `UPDATE` bumps the SOA serial and sends
+  `NOTIFY` like any other change; serve the zone on the secondary as an ordinary
+  transfer-backed zone. Send updates to the primary only.
+- `allow-update` is not rendered. `update-policy` and `allow-update` are mutually
+  exclusive in BIND; do not add `allow-update` through `extra_config`.
+
+Validation rejects a dynamic zone that is not `master`/`primary` or that has no
+`update_policy`.
+
 ## Example Playbook
 
 ```yaml
@@ -430,6 +495,8 @@ later, signed `NOTIFY` is not working and `also-notify` is missing its key.
 - Zone serials must be incremented manually when zone contents change. A serial that
   does not advance is not transferred by a secondary — a silent no-op that looks like
   success. Never revert a serial; roll content back under a *higher* serial.
+- Dynamic zone serials are incremented by named on every update; the manual-serial
+  rule above applies only to controller-managed zones.
 - `bind_allow_transfer` defaults to `none` to prevent unintended AXFR. Set it
   explicitly (globally or per zone) if you have secondaries.
 - Keep controller-managed zone files under `/etc/bind/` to stay within the default

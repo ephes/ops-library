@@ -62,14 +62,25 @@
     state: directory
     mode: "{{ certbot_dns_restore_dir_mode }}"
 
+# Each DNS provider has its own credentials file (certbot_dns_deploy); a host
+# normally has only one of them, so fix whichever exist.
+- name: Check for credentials files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ [certbot_dns_credentials_file | default(''), certbot_dns_rfc2136_credentials_file | default('')] | select | list }}"
+  register: certbot_dns_restore_credentials_stat
+
 - name: Fix credentials file permissions
   ansible.builtin.file:
-    path: "{{ certbot_dns_credentials_file }}"
+    path: "{{ item.item }}"
     state: file
     owner: "{{ certbot_dns_restore_owner }}"
     group: "{{ certbot_dns_restore_group }}"
     mode: "{{ certbot_dns_restore_credentials_mode }}"
-  when: certbot_dns_credentials_file is defined
+  loop: "{{ certbot_dns_restore_credentials_stat.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stat.exists
 
 - name: Validate renewal with dry-run (optional)
   ansible.builtin.command: certbot renew --dry-run

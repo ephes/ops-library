@@ -9,7 +9,8 @@ This role installs Certbot with the DNS plugin, renders provider credentials, re
 ## Requirements
 
 - Debian/Ubuntu with `systemd`
-- DNS provider: Gandi LiveDNS (others can be added later)
+- DNS provider: Gandi LiveDNS (`gandi`) or any RFC 2136 server accepting
+  TSIG-signed updates (`rfc2136`, e.g. BIND with an `update-policy`)
 - Root privileges to install packages and write `/etc/letsencrypt`
 - Gandi credential must be a LiveDNS API key (not a Personal Access Token). UI path: avatar (top right) → User settings → “Password & access restrictions” → Developer access → API key (marked deprecated but still works for LiveDNS).
 
@@ -18,11 +19,52 @@ This role installs Certbot with the DNS plugin, renders provider credentials, re
 ### Required
 
 ```yaml
-certbot_dns_provider: "gandi"          # Only gandi supported today
+certbot_dns_provider: "gandi"          # gandi | rfc2136
 certbot_dns_domain: "home.xn--wersdrfer-47a.de"
 certbot_dns_email: "admin@wersdoerfer.de"
 certbot_dns_gandi_api_token: "CHANGEME"  # Gandi LiveDNS API key
 ```
+
+### RFC 2136 provider
+
+```yaml
+certbot_dns_provider: "rfc2136"
+certbot_dns_rfc2136_server: "192.0.2.53"      # IP of the zone's primary (no hostname)
+certbot_dns_rfc2136_port: 53
+certbot_dns_rfc2136_key_name: "acme-home"     # TSIG key name
+certbot_dns_rfc2136_key_secret: "CHANGEME"    # base64 secret, from SOPS
+certbot_dns_rfc2136_key_algorithm: "HMAC-SHA256"
+```
+
+The key needs permission to add and delete `TXT` records at
+`_acme-challenge.<name>` for every requested name. For an apex plus wildcard
+certificate both challenges use the same owner name, so one BIND rule suffices:
+
+```
+update-policy { grant "acme-home" name _acme-challenge.home.example.com. TXT; };
+```
+
+The plugin finds the zone by asking the server for the SOA of the challenge name,
+so `_acme-challenge.<domain>` may live in a delegated child zone. Updates go to
+the primary; secondaries follow via NOTIFY, and `certbot_dns_propagation_seconds`
+(default 120) covers the transfer.
+
+### Switching provider on an existing lineage
+
+`certbot certonly --keep-until-expiring` does not touch a lineage that is not due
+for renewal, so it would keep renewing with the old authenticator. With
+`certbot_dns_reconfigure_on_provider_change: true` (default) the role reads
+`renewal/<cert-name>.conf` and, when its `authenticator` differs from
+`dns-<certbot_dns_provider>`, runs `certbot reconfigure` with the new provider.
+reconfigure does a dry-run challenge against the Let's Encrypt staging CA and
+only saves the new settings if it succeeds, so a provider that cannot publish
+the TXT record fails the deploy instead of failing the next renewal silently.
+Needs certbot >= 2.3 (Ubuntu 24.04 ships 2.9). Each provider has its own
+credentials file, so the old provider's file stays intact: after a failed
+switch the lineage still renews with its previous provider, and other lineages
+that use the old file are not affected. Only run the switch once the
+zone is actually served by the new provider's servers (the delegation has moved),
+because Let's Encrypt resolves the challenge through public DNS.
 
 ### Common configuration
 
@@ -34,7 +76,8 @@ certbot_dns_key_type: "ecdsa"              # rsa|ecdsa
 certbot_dns_staging: false                 # Use LE staging for tests
 certbot_dns_propagation_seconds: 120       # Wait for DNS propagation
 certbot_dns_renewal_hooks: []              # Commands to run post-renewal
-certbot_dns_credentials_file: "/etc/letsencrypt/dns-credentials.ini"
+certbot_dns_credentials_file: "/etc/letsencrypt/dns-credentials.ini"            # gandi
+certbot_dns_rfc2136_credentials_file: "/etc/letsencrypt/dns-rfc2136-credentials.ini"
 certbot_dns_renewal_hook_path: "/etc/letsencrypt/renewal-hooks/deploy/reload-services.sh"
 ```
 
@@ -120,6 +163,7 @@ just test-role certbot_dns_deploy
 
 ## Changelog
 
+- **Unreleased**: `rfc2136` provider; automatic `certbot reconfigure` when the provider changes
 - **1.0.0** (2025-12-02): Initial release
 
 ## License

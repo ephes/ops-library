@@ -1,0 +1,27 @@
+---
+# One negative case for tests/test_bind_authoritative_dynamic.yml: the role's
+# validate.yml must fail on the dynamic-zone assertion for bad_case.zone.
+- name: "bind_dynamic_validate_case | Run validation for {{ bad_case.label }}"
+  block:
+    - name: bind_dynamic_validate_case | Include role validation
+      ansible.builtin.include_tasks:
+        file: "{{ role_path }}/tasks/validate.yml"
+      vars:
+        bind_zones: ["{{ bad_case.zone }}"]
+        bind_zone_files_dir: "{{ test_tmp_dir }}/zones"
+        bind_allow_transfer: [none]
+        bind_tsig_keys: []
+
+    - name: bind_dynamic_validate_case | Fail because validation passed
+      ansible.builtin.fail:
+        msg: "Validation accepted a malformed dynamic zone: {{ bad_case.label }}"
+  rescue:
+    - name: bind_dynamic_validate_case | Assert the dynamic-zone validation is what failed
+      ansible.builtin.assert:
+        that:
+          - "'is dynamic' in failure_text"
+        fail_msg: "Unexpected failure for {{ bad_case.label }}: {{ failure_text }}"
+      vars:
+        failure_text: >-
+          {{ ansible_failed_result.msg | default('') ~ ' ' ~
+          (ansible_failed_result.results | default([]) | map(attribute='msg', default='') | list | join(' ')) }}

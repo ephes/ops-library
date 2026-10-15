@@ -700,11 +700,12 @@
     - name: Assert all exemptions key off one shared predicate
       ansible.builtin.assert:
         that:
-          - install_zone_files_task.when == controller_managed_predicate
+          # A list `when` is AND-ed; the dynamic-zone exemption is the second element.
+          - controller_managed_predicate in ([install_zone_files_task.when] | flatten)
           - stat_zone_files_task.when == controller_managed_predicate
           - primaries_assert_task.when == transfer_backed_predicate
           # An ad-hoc "== 'slave'" comparison would silently miss type secondary.
-          - "'slave' not in install_zone_files_task.when"
+          - "'slave' not in ([install_zone_files_task.when] | flatten | join(' '))"
           - "'slave' not in stat_zone_files_task.when"
           - "'slave' not in primaries_assert_task.when"
         fail_msg: "The transfer-backed exemptions no longer share one predicate."

@@ -33,7 +33,7 @@
           "--agree-tos",
           "--email", certbot_dns_email,
           "--authenticator", "dns-" + certbot_dns_provider,
-          "--dns-" + certbot_dns_provider + "-credentials", certbot_dns_credentials_file,
+          "--dns-" + certbot_dns_provider + "-credentials", certbot_dns_active_credentials_file,
           "--dns-" + certbot_dns_provider + "-propagation-seconds", certbot_dns_propagation_seconds | string,
           "--cert-name", certbot_dns_domain,
           "--key-type", certbot_dns_key_type,
@@ -52,3 +52,43 @@
       )
     )
   become: yes
+
+# `certonly --keep-until-expiring` leaves an existing, still valid lineage alone,
+# including its stored authenticator, so a provider change would otherwise only
+# take effect at the next real renewal -- with the old provider. reconfigure
+# switches the lineage after a successful dry run against the staging CA.
+- name: Read the lineage's renewal configuration
+  ansible.builtin.slurp:
+    path: "{{ certbot_dns_config_dir }}/renewal/{{ certbot_dns_domain }}.conf"
+  register: certbot_dns_renewal_conf
+  failed_when: false
+  become: yes
+  when: certbot_dns_reconfigure_on_provider_change | bool
+
+- name: Determine the lineage's current authenticator
+  ansible.builtin.set_fact:
+    certbot_dns_current_authenticator: >-
+      {{ ((certbot_dns_renewal_conf.content | default('') | b64decode)
+          | regex_search('(?m)^authenticator\s*=\s*(\S+)', '\1') | default([], true) | first | default('')) }}
+  when: certbot_dns_reconfigure_on_provider_change | bool
+
+- name: Switch the lineage to the configured DNS provider
+  ansible.builtin.command:
+    argv:
+      - certbot
+      - reconfigure
+      - --non-interactive
+      - --cert-name
+      - "{{ certbot_dns_domain }}"
+      - --authenticator
+      - "dns-{{ certbot_dns_provider }}"
+      - "--dns-{{ certbot_dns_provider }}-credentials"
+      - "{{ certbot_dns_active_credentials_file }}"
+      - "--dns-{{ certbot_dns_provider }}-propagation-seconds"
+      - "{{ certbot_dns_propagation_seconds | string }}"
+  become: yes
+  when:
+    - certbot_dns_reconfigure_on_provider_change | bool
+    - not ansible_check_mode
+    - certbot_dns_current_authenticator | default('') | length > 0
+    - certbot_dns_current_authenticator != 'dns-' ~ certbot_dns_provider

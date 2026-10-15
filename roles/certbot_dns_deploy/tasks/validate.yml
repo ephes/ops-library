@@ -8,7 +8,7 @@
       - certbot_dns_domain | length > 0
       - certbot_dns_email is defined
       - certbot_dns_email | length > 0
-      - certbot_dns_provider in ["gandi"]
+      - certbot_dns_provider in ["gandi", "rfc2136"]
     fail_msg: "certbot_dns_domain, certbot_dns_email must be set and provider must be supported"
 
 - name: Validate provider credentials
@@ -19,6 +19,25 @@
       - certbot_dns_gandi_api_token != "CHANGEME"
     fail_msg: "Set certbot_dns_gandi_api_token to a real API token (not CHANGEME)"
   when: certbot_dns_provider == "gandi"
+
+- name: Validate RFC 2136 settings
+  ansible.builtin.assert:
+    that:
+      - certbot_dns_rfc2136_server | string | length > 0
+      - certbot_dns_rfc2136_server != "CHANGEME"
+      # The plugin passes the server straight to dnspython, which needs an address.
+      - certbot_dns_rfc2136_server is match('^([0-9]{1,3}[.]){3}[0-9]{1,3}$|^[0-9A-Fa-f:]*:[0-9A-Fa-f:.]*$')
+      - certbot_dns_rfc2136_port | int > 0
+      - certbot_dns_rfc2136_key_name | length > 0
+      - certbot_dns_rfc2136_key_name != "CHANGEME"
+      - certbot_dns_rfc2136_key_secret | length > 0
+      - certbot_dns_rfc2136_key_secret != "CHANGEME"
+      - certbot_dns_rfc2136_key_algorithm | upper in ["HMAC-SHA256", "HMAC-SHA384", "HMAC-SHA512"]
+    fail_msg: >-
+      rfc2136: set certbot_dns_rfc2136_server (an IP address), key name and secret
+      (not CHANGEME); algorithm must be HMAC-SHA256/384/512.
+  no_log: true
+  when: certbot_dns_provider == "rfc2136"
 
 - name: Validate certificate options
   ansible.builtin.assert:

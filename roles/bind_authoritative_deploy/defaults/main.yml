@@ -39,6 +39,12 @@ bind_zone_transfer_backed_types:
   - secondary
 bind_zones: []
 
+# Directory for dynamic zones (zone entries with `dynamic: true`). named must be
+# able to write the zone file and its .jnl journal there; /var/lib/bind is the
+# Debian/Ubuntu location the packaged AppArmor profile permits for that. A
+# relative `file` of a dynamic zone is resolved against this directory.
+bind_dynamic_zone_dir: /var/lib/bind
+
 bind_recursion: true
 bind_recursion_acl:
   - localhost
