@@ -1,0 +1,31 @@
+---
+# Install the locked dependencies into the site's virtualenv.
+#
+# By default only the project's runtime dependencies are installed:
+# --no-default-groups leaves out every group uv would sync by default (the
+# `dev` group, or whatever [tool.uv] default-groups names), and because
+# `uv sync` is exact, it also removes such packages from an existing venv.
+# Groups a site needs on the host go into wagtail_uv_sync_groups.
+
+- name: python | Install dependencies with uv
+  ansible.builtin.command:
+    argv: >-
+      {{
+        [wagtail_uv_path, 'sync', '--frozen']
+        + ([] if (wagtail_uv_install_default_groups | bool) else ['--no-default-groups'])
+        + (wagtail_uv_sync_groups | map('regex_replace', '^', '--group=') | list)
+      }}
+    chdir: "{{ wagtail_site_path }}"
+  environment:
+    VIRTUAL_ENV: "{{ wagtail_venv_path }}"
+    UV_PROJECT_ENVIRONMENT: "{{ wagtail_venv_path }}"
+  become: true
+  become_user: "{{ wagtail_user }}"
+  register: wagtail_uv_sync
+  changed_when: >-
+    'Installed ' in (wagtail_uv_sync.stdout ~ wagtail_uv_sync.stderr) or
+    'Uninstalled ' in (wagtail_uv_sync.stdout ~ wagtail_uv_sync.stderr) or
+    'Updated ' in (wagtail_uv_sync.stdout ~ wagtail_uv_sync.stderr)
+  notify:
+    - restart wagtail
+    - restart wagtail db worker

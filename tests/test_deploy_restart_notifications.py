@@ -101,7 +101,8 @@ ROLES = {
         {
             'source_rsync.yml': ['source_rsync | Sync Wagtail source code to target'],
             'source_git.yml': ['source_git | Clone or update repository'],
-            'python.yml': ['python | Create virtual environment using uv', 'python | Install dependencies with uv'],
+            'python.yml': ['python | Create virtual environment using uv'],
+            'uv_sync.yml': ['python | Install dependencies with uv'],
         },
         ['wagtail_uv_sync'],
     ),

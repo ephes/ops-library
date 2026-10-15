@@ -222,6 +222,8 @@ test-homelab-lifecycle-safety: venv
 test-wagtail-deploy: venv
     @echo "Testing Wagtail env rendering and the secret validation switches..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_wagtail_deploy.yml
+    @echo "Testing that the Wagtail dependency sync leaves out the dev group..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run pytest -q tests/test_wagtail_uv_sync.py
 
 test-fastdeploy-service-token-settings: venv
     @echo "Testing FastDeploy service token env settings and their validation..."

@@ -3,6 +3,23 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Wagtail sites deploy without dev dependencies (2.33.0)
+
+- `wagtail_deploy` now runs `uv sync --frozen --no-default-groups`, so a
+  deployed site gets its runtime dependencies only. The `dev` group (and any
+  other group in `[tool.uv] default-groups`) no longer reaches the host; on
+  the first deploy `uv sync` uninstalls those packages from the existing
+  venv, which restarts the services. Before, production venvs carried the
+  whole dev toolchain (Jupyter, pytest, Sphinx, ...), and packages without a
+  wheel for the host's Python, such as PyYAML through Jupyter on 3.15, were
+  built from source on every rebuild.
+- New `wagtail_uv_sync_groups` (default `[]`) installs named groups with
+  `--group`, for a group a site does need on the host. It must be a list.
+- New `wagtail_uv_install_default_groups` (default `false`); `true` syncs the
+  default groups as before.
+- The sync moved into `tasks/uv_sync.yml`; `tests/test_wagtail_uv_sync.py`
+  runs it with a real `uv` against local wheels (`just test-wagtail-deploy`).
+
 ## Unreleased — Echoport runner for the mail database (2.32.1)
 
 - New `echoport_backup/templates/mail_db_backup.py.j2`: a service-owned

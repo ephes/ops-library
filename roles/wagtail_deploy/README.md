@@ -103,6 +103,17 @@ wagtail_db_worker_interval_seconds: 5
 wagtail_service_restart_on_change: true
 ```
 
+### Dependencies
+
+```yaml
+wagtail_uv_install_default_groups: false  # default: runtime dependencies only
+wagtail_uv_sync_groups: []                # extra dependency groups to install
+```
+
+The role installs the locked dependencies with `uv sync --frozen`. By default it adds `--no-default-groups`, so the site's venv gets the `[project] dependencies` only: the `dev` group (and any other group named in `[tool.uv] default-groups`) stays off the host. `uv sync` is exact, so the first deploy with this default also uninstalls such packages from an existing venv (a change that restarts the services when `wagtail_service_restart_on_change` is on).
+
+Everything the site needs on the host has to be a runtime dependency: gunicorn, the db worker, and whatever `migrate`, `collectstatic`, `update_index` and `wagtail_asset_build_commands` import. A group that is needed there anyway goes into `wagtail_uv_sync_groups` and is installed with `--group`. `wagtail_uv_install_default_groups: true` restores the previous behaviour of syncing the default groups, for example on a staging host that runs the test suite.
+
 When `wagtail_service_restart_on_change` is enabled, source updates, dependency updates, environment changes, and systemd unit changes restart the Wagtail service. If the optional db worker is enabled, those changes restart the worker as well.
 
 ### Static Assets

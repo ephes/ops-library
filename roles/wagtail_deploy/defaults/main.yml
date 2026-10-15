@@ -49,6 +49,15 @@ wagtail_venv_path: "{{ wagtail_site_path }}/.venv"
 wagtail_venv_bin: "{{ wagtail_venv_path }}/bin"
 wagtail_python: "{{ wagtail_venv_bin }}/python"
 
+# Dependency groups. A deployed site gets its runtime dependencies only:
+# with false, `uv sync` runs with --no-default-groups, which leaves out the
+# `dev` group (and any other group in [tool.uv] default-groups) and removes
+# those packages from an existing venv. Set true to sync the default groups as
+# well (the behaviour before 2.33.0). Groups the site needs on the host, at
+# runtime or for the deploy steps, are listed here and installed with --group.
+wagtail_uv_install_default_groups: false
+wagtail_uv_sync_groups: []
+
 # Application settings
 wagtail_app_host: "127.0.0.1"
 wagtail_app_port: 8000

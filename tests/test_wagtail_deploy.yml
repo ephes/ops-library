@@ -46,6 +46,7 @@
     # renders below and override their deliberate false.
     wagtail_require_object_storage: "{{ wagtail_defaults.wagtail_require_object_storage }}"
     wagtail_require_sentry: "{{ wagtail_defaults.wagtail_require_sentry }}"
+    wagtail_uv_sync_groups: "{{ wagtail_defaults.wagtail_uv_sync_groups }}"
 
     # Flattened failure text of the most recent rescued failure; a looped
     # assert reports through .results, a plain assert through .msg.
@@ -76,6 +77,15 @@
         fail_msg: >-
           wagtail_django_sentry_environment must default to production so
           existing production deployments keep their Sentry environment tag.
+
+    - name: Assert deploys sync runtime dependencies only by default
+      ansible.builtin.assert:
+        that:
+          - wagtail_defaults.wagtail_uv_install_default_groups == false
+          - wagtail_defaults.wagtail_uv_sync_groups == []
+        fail_msg: >-
+          A deployed site must not get the dev dependency group by default;
+          tests/test_wagtail_uv_sync.py checks the sync itself.
 
     # ------------------------------------------------------------------
     # Validation: the wagtail_require_* switches decide which secrets are
@@ -160,6 +170,41 @@
           ansible.builtin.assert:
             that:
               - "'Required secrets or settings are missing' in wagtail_validate_failure_text"
+            fail_msg: "Unexpected failure: {{ wagtail_validate_failure_text }}"
+
+    - name: Validation accepts a list of dependency groups
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate.yml"
+      vars:
+        wagtail_service_name: "python-podcast"
+        wagtail_fqdn: "example.com"
+        wagtail_traefik_host_rule: "Host(`example.com`)"
+        wagtail_app_port: 10014
+        wagtail_source_path: "/tmp"
+        wagtail_deploy_method: "{{ wagtail_defaults.wagtail_deploy_method }}"
+        wagtail_uv_sync_groups:
+          - worker
+
+    - name: Validation rejects dependency groups given as a string
+      block:
+        - name: Run validation with a string for wagtail_uv_sync_groups
+          ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate.yml"
+          vars:
+            wagtail_service_name: "python-podcast"
+            wagtail_fqdn: "example.com"
+            wagtail_traefik_host_rule: "Host(`example.com`)"
+            wagtail_app_port: 10014
+            wagtail_source_path: "/tmp"
+            wagtail_deploy_method: "{{ wagtail_defaults.wagtail_deploy_method }}"
+            wagtail_uv_sync_groups: "worker"
+
+        - name: Fail because the string was accepted
+          ansible.builtin.fail:
+            msg: "Validation accepted a string for wagtail_uv_sync_groups"
+      rescue:
+        - name: Confirm the failure came from the dependency group assert
+          ansible.builtin.assert:
+            that:
+              - "'wagtail_uv_sync_groups must be a list' in wagtail_validate_failure_text"
             fail_msg: "Unexpected failure: {{ wagtail_validate_failure_text }}"
 
     - name: Render Wagtail web service template

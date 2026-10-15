@@ -79,3 +79,17 @@
       Define it, or set wagtail_require_sentry: false for a site that runs
       without Sentry.
   when: wagtail_require_sentry | bool
+
+# A plain string here would be iterated character by character into
+# `--group=d --group=e --group=v`; demand a list of non-empty names.
+- name: validate | Validate uv dependency group settings
+  ansible.builtin.assert:
+    that:
+      - wagtail_uv_sync_groups is sequence
+      - wagtail_uv_sync_groups is not string
+      - wagtail_uv_sync_groups is not mapping
+      - wagtail_uv_sync_groups | reject('string') | list | length == 0
+      - wagtail_uv_sync_groups | select('match', '^\s*$') | list | length == 0
+    fail_msg: >-
+      wagtail_uv_sync_groups must be a list of dependency group names
+      (got {{ wagtail_uv_sync_groups | to_json }}).
