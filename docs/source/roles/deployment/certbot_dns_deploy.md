@@ -26,7 +26,7 @@ Role to obtain and renew wildcard/apex TLS certificates via Certbot using DNS-01
 - `certbot_dns_gandi_api_token`: LiveDNS API key (gandi)
 - `certbot_dns_rfc2136_server` / `_port` / `_key_name` / `_key_secret` / `_key_algorithm`: RFC 2136 target (IP), port (53), TSIG key name, base64 secret, algorithm (`HMAC-SHA256`)
 - `certbot_dns_reconfigure_on_provider_change`: run `certbot reconfigure` when the lineage's authenticator differs (default: true). reconfigure dry-runs the challenge against LE staging and saves only on success; the old provider's credentials file is left untouched, so a failed switch keeps renewing with the old provider
-- `certbot_dns_remove_unused_credentials`: after the switch, delete the other provider's credentials file once no renewal configuration mentions it (default: true); a lineage that still uses it keeps it
+- `certbot_dns_remove_unused_credentials`: after the switch, delete the other provider's credentials file once no renewal configuration mentions it (default: true); a lineage that still uses it keeps it. The previous plugin's leftover `dns_<plugin>_*` settings are first removed from the managed lineage once it authenticates with the configured provider
 - `certbot_dns_wildcard`: include `*.domain` (default: true)
 - `certbot_dns_include_base`: include apex (default: true)
 - `certbot_dns_additional_domains`: extra SANs
