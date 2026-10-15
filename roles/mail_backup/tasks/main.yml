@@ -216,6 +216,21 @@
     - mail_backup_create_archive
     - mail_backup_fetch_method == 'fetch'
 
+# The archive can hold credentials (env files, database dumps, keys); fetch
+# writes the local copy with the controller's umask (usually 0644). Check
+# mode fetches nothing, so there is nothing to restrict then.
+- name: Restrict local archive copy permissions
+  ansible.builtin.file:
+    path: "{{ mail_backup_local_dir }}/{{ mail_backup_archive_path | basename }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - mail_backup_fetch_local
+    - mail_backup_create_archive
+    - not ansible_check_mode
+
 # =============================================================================
 # Cleanup and Reporting
 # =============================================================================

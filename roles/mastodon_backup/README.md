@@ -30,7 +30,7 @@ Creates on-host backups of the Mastodon database, media, and configuration with 
 | `mastodon_backup_stop_services` | `true` | Stop services during backup for consistency. The stop and the payload capture share one block whose `always` section restarts the services, even when a step fails. |
 | `mastodon_backup_include_media` | `true` | Include local media directory. |
 | `mastodon_backup_media_rsync_excludes` | `["/cache/***"]` | Rsync exclude patterns for local media backups. |
-| `mastodon_backup_fetch_local` | `true` | Fetch archive to the controller. |
+| `mastodon_backup_fetch_local` | `true` | Fetch archive to the controller (the local copy is set to 0600). |
 | `mastodon_backup_fetch_become` | `true` | Use privilege escalation while fetching. Set to `false` when the SSH user can read the archive directly so Ansible streams large archives instead of using its in-memory become fallback. |
 | `mastodon_backup_retain` | `7` | Number of newest archives and payload directories (by mtime) kept on the host after each backup; `0` disables pruning. |
 | `mastodon_backup_retain_all_prefixes` | `false` | Count every backup in `mastodon_backup_root` against `mastodon_backup_retain`, not only those with the current prefix. Enable it when backups are taken under changing prefixes (`pre-upgrade`, `pre-4.6.3`, ...), which otherwise never prune each other; `mastodon_backup_root` must then hold only Mastodon backups. |

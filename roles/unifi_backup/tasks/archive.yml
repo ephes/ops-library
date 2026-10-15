@@ -43,6 +43,20 @@
   run_once: true
   when: unifi_backup_fetch_local | bool
 
+# The archive can hold credentials (env files, database dumps, keys); fetch
+# writes the local copy with the controller's umask (usually 0644). Check
+# mode fetches nothing, so there is nothing to restrict then.
+- name: Restrict local archive copy permissions
+  ansible.builtin.file:
+    path: "{{ unifi_backup_local_dir }}/{{ unifi_backup_archive | basename }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - unifi_backup_fetch_local | bool
+    - not ansible_check_mode
+
 - name: Report backup completion
   ansible.builtin.debug:
     msg: |

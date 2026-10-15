@@ -155,7 +155,11 @@ class PaperlessBackupArchiveModeTest(unittest.TestCase):
         self.assertIs(task["become"], False)
         self.assertEqual(
             conditions(task),
-            ["paperless_backup_fetch_local", "paperless_backup_create_archive"],
+            [
+                "paperless_backup_fetch_local",
+                "paperless_backup_create_archive",
+                "not ansible_check_mode",
+            ],
         )
 
 

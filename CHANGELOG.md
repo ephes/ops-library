@@ -3,6 +3,30 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Owner-only fetched backup archives (2.39.0)
+
+- Security: backup roles left the archive they fetch to the controller with
+  the controller's umask (usually 0644), although the archives hold
+  credentials (`takahe.env`, database dumps, ACME and Tailscale keys, ...).
+  `ansible.builtin.fetch` has no `mode` option, so every backup role that
+  fetches an archive now follows the fetch with a task that sets the local
+  copy to 0600 under the fetch's conditions (also after a `synchronize` pull):
+  `certbot_dns_backup`, `fastdeploy_backup`, `homeassistant_backup`,
+  `homelab_backup`, `jellyfin_backup`, `mail_backup`, `mastodon_backup`,
+  `metube_backup`, `minio_backup`, `navidrome_backup`, `nyxmon_backup`,
+  `snappymail_backup`, `tailscale_backup`, `takahe_backup`, `traefik_backup`,
+  `unifi_backup`, `vaultwarden_backup`, `wagtail_backup` and
+  `work_app_backup` (`paperless_backup` already did this). The task is
+  skipped in check mode, where fetch writes nothing (also in
+  `paperless_backup`, whose task failed under `--check`). Copies fetched
+  earlier keep their mode;
+  `find ~/backups -type f -exec chmod 600 {} +` fixes them.
+- `fastdeploy_backup`: the `synchronize` pull used `--chmod=ugo=rw`; it now
+  uses `--chmod=u=rw,go=` like the other roles.
+- `just test-fetched-backup-archive-modes` checks every fetch in
+  `roles/*_backup` statically and runs each role's fetch and permission task
+  against localhost under umask 022.
+
 ## Unreleased — Parakeet for Voxhelm known-speaker jobs (2.38.0)
 
 - `voxhelm_remote_worker_deploy`: new `voxhelm_remote_worker_parakeet_enabled`

@@ -276,6 +276,21 @@
     - vaultwarden_backup_fetch_local | bool
     - vaultwarden_backup_create_archive | bool
 
+# The archive can hold credentials (env files, database dumps, keys); fetch
+# writes the local copy with the controller's umask (usually 0644). Check
+# mode fetches nothing, so there is nothing to restrict then.
+- name: Restrict local archive copy permissions
+  ansible.builtin.file:
+    path: "{{ vaultwarden_backup_local_dir }}/{{ vaultwarden_backup_final_archive | basename }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - vaultwarden_backup_fetch_local | bool
+    - vaultwarden_backup_create_archive | bool
+    - not ansible_check_mode
+
 - name: Find existing Vaultwarden backup archives (plain)
   ansible.builtin.find:
     paths: "{{ vaultwarden_backup_root }}"

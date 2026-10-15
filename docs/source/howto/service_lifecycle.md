@@ -103,6 +103,7 @@ Offer both rsync (local dev) and git (production) deployment modes whenever the 
 - Dumps all state (databases, media, config) to `{{ backup_root_prefix }}/<service>/`. `backup_root_prefix` defaults to `/opt/backups` via metadata but can be overridden per host.
 - Writes manifest files so restore can verify archives.
 - Supports optional local fetch (rsync/scp) triggered by ops-control `just backup <service>`.
+- The archive usually holds credentials (env files, database dumps, keys). `ansible.builtin.fetch` has no `mode` option and writes the local copy with the controller's umask, so follow the fetch (and any `synchronize` pull) with an `ansible.builtin.file` task delegated to localhost that sets the copy to `0600` under the same conditions; `just test-fetched-backup-archive-modes` enforces this for every `roles/*_backup` fetch.
 
 #### Restore role
 

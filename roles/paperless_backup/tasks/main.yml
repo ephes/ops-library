@@ -539,6 +539,7 @@
   when:
     - paperless_backup_fetch_local
     - paperless_backup_create_archive
+    - not ansible_check_mode
 
 - name: "Set backup artifact path"
   ansible.builtin.set_fact:

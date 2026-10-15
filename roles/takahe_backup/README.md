@@ -29,7 +29,7 @@ Creates on-host backups of the Takahe database, media, and configuration with an
 | `takahe_backup_prefix` | `manual` | Prefix for backup directory/archive names. |
 | `takahe_backup_stop_services` | `true` | Stop services during backup for consistency. The restart runs in an `always` section, so a failed dump or copy still restarts the units this role stopped; units that were already stopped stay stopped. |
 | `takahe_backup_include_media` | `true` | Include local media directory. |
-| `takahe_backup_fetch_local` | `true` | Fetch archive to the controller. |
+| `takahe_backup_fetch_local` | `true` | Fetch archive to the controller (the local copy is set to 0600). |
 | `takahe_backup_retain` | `7` | Number of archives to retain. |
 
 See `defaults/main.yml` and `roles/takahe_shared/defaults/main.yml` for the full reference.

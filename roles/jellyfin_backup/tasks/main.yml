@@ -178,6 +178,21 @@
     - jellyfin_backup_fetch_local | bool
     - jellyfin_backup_create_archive | bool
 
+# The archive can hold credentials (env files, database dumps, keys); fetch
+# writes the local copy with the controller's umask (usually 0644). Check
+# mode fetches nothing, so there is nothing to restrict then.
+- name: Restrict local archive copy permissions
+  ansible.builtin.file:
+    path: "{{ jellyfin_backup_local_dir }}/{{ jellyfin_backup_archive | basename }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - jellyfin_backup_fetch_local | bool
+    - jellyfin_backup_create_archive | bool
+    - not ansible_check_mode
+
 - name: Find existing Jellyfin backup archives
   ansible.builtin.find:
     paths: "{{ jellyfin_backup_root }}"

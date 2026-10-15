@@ -258,3 +258,19 @@
     - work_app_backup_fetch_local | bool
     - work_app_backup_create_archive | bool
     - work_app_backup_archive_format == 'tar.gz'
+
+# The archive can hold credentials (env files, database dumps, keys); fetch
+# writes the local copy with the controller's umask (usually 0644). Check
+# mode fetches nothing, so there is nothing to restrict then.
+- name: Restrict local archive copy permissions
+  ansible.builtin.file:
+    path: "{{ work_app_backup_local_dir }}/{{ work_app_backup_archive | basename }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - work_app_backup_fetch_local | bool
+    - work_app_backup_create_archive | bool
+    - work_app_backup_archive_format == 'tar.gz'
+    - not ansible_check_mode
