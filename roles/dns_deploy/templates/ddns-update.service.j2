@@ -1,13 +1,14 @@
 [Unit]
-Description=Update Gandi DNS for {{ dns_ddns_subdomain }}.{{ dns_ddns_domain }}
+Description=Update {{ dns_ddns_provider }} DNS for {{ dns_ddns_subdomain }}.{{ dns_ddns_domain }}
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
 User=ddns
-EnvironmentFile={{ dns_ddns_config_dir }}/gandi.env
-ExecStart={{ dns_ddns_script_path }}
+Group=ddns
+EnvironmentFile={{ dns_ddns_config_dir }}/credentials.env
+ExecStart=/usr/bin/python3 {{ dns_ddns_script_path }} --config {{ dns_ddns_config_dir }}/config.json
 StandardOutput=journal
 StandardError=journal
 
@@ -16,4 +17,4 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths={{ dns_ddns_log_dir }}
+ReadWritePaths={{ dns_ddns_log_dir }} {{ dns_ddns_state_dir }}

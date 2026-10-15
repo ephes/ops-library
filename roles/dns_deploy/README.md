@@ -11,7 +11,7 @@ Deploy Unbound DNS with split-horizon views and ad blocking for homelab environm
 - **IDN/Punycode support**: For domains with special characters
 - **Automatic blocklist updates**: Via systemd timer
 - **DNSSEC validation**: For secure DNS resolution
-- **Dynamic DNS (DDNS)**: Optional automatic updates for Gandi LiveDNS (opt-in)
+- **Dynamic DNS (DDNS)**: Optional updater with pluggable provider backends (Gandi LiveDNS implemented), failing loudly and exposing a status file for monitoring (opt-in)
 
 ## Requirements
 
@@ -213,16 +213,25 @@ Notes:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `dns_ddns_enabled` | `false` | Enable dynamic DNS updater |
-| `dns_ddns_provider` | `"gandi"` | DNS provider (only Gandi supported) |
-| `dns_ddns_domain` | `"CHANGEME"` | Base domain (e.g., `"example.com"`) |
+| `dns_ddns_provider` | `"gandi"` | Provider backend (implemented: `gandi`) |
+| `dns_ddns_domain` | `"CHANGEME"` | Zone (e.g., `"example.com"`; IDN names are converted to punycode) |
 | `dns_ddns_subdomain` | `"home"` | Subdomain to update |
 | `dns_ddns_update_wildcard` | `true` | Also update `*.subdomain` |
 | `dns_ddns_ttl` | `300` | DNS record TTL in seconds |
 | `dns_ddns_interval` | `"5min"` | Update check interval |
-| `dns_ddns_api_token` | `"CHANGEME"` | Gandi LiveDNS API token |
 | `dns_ddns_ipv4_enabled` | `true` | Update IPv4 (A records) |
 | `dns_ddns_ipv6_enabled` | `true` | Update IPv6 (AAAA records) |
+| `dns_ddns_ipv4_source_url` / `dns_ddns_ipv6_source_url` | icanhazip | WAN address detection |
+| `dns_ddns_verify_nameservers` | `[]` | Nameservers asked for the public view (empty: the zone's NS records) |
+| `dns_ddns_state_dir` | `"/var/lib/ddns"` | Dedicated state directory (basename must contain `ddns`) |
+| `dns_ddns_status_path` | `"{{ dns_ddns_state_dir }}/status.json"` | Status file written by every run |
+| `dns_ddns_script_path` | `"/usr/local/bin/ddns-update"` | Updater (Python 3, stdlib only) |
 | `dns_ddns_log_max_size_mb` | `10` | Log rotation size in MB |
+| `dns_ddns_api_token` | `"CHANGEME"` | Gandi credential: Personal Access Token or legacy API key |
+| `dns_ddns_gandi_auth_scheme` | `"bearer"` | `bearer` for a PAT, `apikey` for a legacy API key |
+| `dns_ddns_status_endpoint_enabled` | `false` | Serve the status file over authenticated HTTP |
+| `dns_ddns_status_endpoint_bind` / `_port` / `_path` | Tailscale IP / `9112` / `/.well-known/ddns` | Status endpoint address |
+| `dns_ddns_status_endpoint_auth_user` / `_password` | `"CHANGE_ME"` | Basic-auth credentials (required when enabled) |
 
 ## How It Works
 
@@ -248,14 +257,46 @@ Unbound uses view-based configuration to return different IPs based on client so
 
 ### Dynamic DNS (Optional)
 
-When enabled (`dns_ddns_enabled: true`):
+When enabled (`dns_ddns_enabled: true`), `ddns-update.timer` runs
+`/usr/local/bin/ddns-update --config /etc/ddns/config.json` as the `ddns` account.
+Settings live in `/etc/ddns/config.json`; credentials in `/etc/ddns/credentials.env`
+(mode 0600). Each run:
 
-1. Detects current public IPv4 and IPv6 addresses
-2. Updates Gandi LiveDNS via API when IP changes
-3. Updates both base domain and wildcard (e.g., `home.example.com` and `*.home.example.com`)
-4. Runs automatically via systemd timer (default: every 5 minutes)
-5. Logs all updates to `/var/log/ddns/ddns-update.log`
-6. Runs as dedicated `ddns` service account
+1. Detects the public IPv4 and IPv6 address (each must be a global address).
+2. For `subdomain` and `*.subdomain`, A and AAAA: reads the record from the provider,
+   writes it only when it differs, then reads it back. Every record is logged as
+   `unchanged`, `updated <old> -> <new>` or `ERROR` (credentials are never logged).
+3. Asks the zone's authoritative nameservers (`dig +norecurse`) what the public sees.
+4. Writes `/var/lib/ddns/status.json`: WAN addresses, per-record provider and public
+   values, `summary.run_ok`, `summary.consecutive_failures`,
+   `summary.public_ok` and `summary.public_mismatch_seconds` (how long the public
+   view has differed from the WAN address).
+5. Exits non-zero, so the unit fails, on any non-2xx API answer, a read-back mismatch,
+   a failed address detection, a missing credential or an unknown provider. A public
+   mismatch alone does not fail the run (propagation lags); monitor it through the
+   status file instead.
+
+With `dns_ddns_status_endpoint_enabled: true`, `ddns-status-endpoint.service` serves the
+status file (plus `meta.age_seconds`) with basic auth, by default on the Tailscale
+address, port 9112, path `/.well-known/ddns`, for a Nyxmon `json-metrics` check.
+
+The DDNS tasks are tagged `ddns`, so `--tags ddns` redeploys only the updater.
+
+**Providers.** `gandi` (LiveDNS v5): a Personal Access Token with the LiveDNS
+"Manage domain name technical configurations" permission for the zone uses
+`dns_ddns_gandi_auth_scheme: bearer`; a legacy API key uses `apikey`. A PAT that
+expired or was revoked answers HTTP 403 for every request.
+
+To add a provider, subclass `Backend` in `files/ddns_update.py` (implement
+`get(name, rtype)` returning the sorted values, empty when the record does not
+exist, and `set(name, rtype, values)`), register it in `BACKENDS`, add its settings
+to `templates/ddns-config.json.j2` under the provider name, its credentials to
+`templates/ddns.env.j2`, extend the provider assert in `tasks/ddns.yml`, and add
+tests with a fake transport in `tests/test_ddns_update.py`. For example, Porkbun
+(API v3) would send `apikey`/`secretapikey` in the JSON body of
+`dns/retrieveByNameType/<domain>/<type>/<sub>` and `dns/editByNameType/...`
+(`dns/create/<domain>` when the record is missing), needs API access enabled per
+domain, and requires a TTL of at least 600.
 
 **Example configuration:**
 
@@ -266,9 +307,14 @@ When enabled (`dns_ddns_enabled: true`):
 
     # Enable DDNS
     dns_ddns_enabled: true
+    dns_ddns_provider: gandi
     dns_ddns_domain: "example.com"
     dns_ddns_subdomain: "home"
-    dns_ddns_api_token: "{{ vault_gandi_api_token }}"  # From vault/secrets
+    dns_ddns_api_token: "{{ vault_gandi_pat }}"  # From vault/secrets
+    dns_ddns_gandi_auth_scheme: bearer
+    dns_ddns_status_endpoint_enabled: true
+    dns_ddns_status_endpoint_auth_user: nyxmon
+    dns_ddns_status_endpoint_auth_password: "{{ vault_ddns_status_password }}"
 ```
 
 ## Testing
@@ -304,6 +350,9 @@ sudo journalctl -u ddns-update.service -n 50
 # Check DDNS log file
 sudo tail -f /var/log/ddns/ddns-update.log
 # Shows IP detection and DNS update activity
+
+sudo jq .summary /var/lib/ddns/status.json
+# Last run result and public-view freshness
 
 # Manually trigger DDNS update
 sudo systemctl start ddns-update.service
@@ -348,8 +397,9 @@ For Tailscale clients to use this DNS:
 - Check timer status: `sudo systemctl status ddns-update.timer`
 - View update logs: `sudo tail /var/log/ddns/ddns-update.log`
 - Check service errors: `sudo journalctl -u ddns-update.service -n 100`
-- Verify API token: `sudo cat /etc/ddns/gandi.env` (check permissions)
-- Test connectivity: `curl -H "Authorization: Bearer YOUR_TOKEN" https://api.gandi.net/v5/livedns/domains/example.com`
+- Check the last run: `sudo jq '.summary, .errors' /var/lib/ddns/status.json`; HTTP 403 from Gandi on every request means the PAT expired or was revoked (or a legacy API key is sent with `dns_ddns_gandi_auth_scheme: bearer`)
+- Credentials file: `/etc/ddns/credentials.env` (mode 0600, owner `ddns`; never print it)
+- Test the credential: `curl -H "Authorization: Bearer <PAT>"` (or `Apikey <key>`) `https://api.gandi.net/v5/livedns/domains` must answer 200
 - Manual trigger: `sudo systemctl start ddns-update.service`
 
 ### DDNS updates but DNS not resolving
@@ -371,8 +421,11 @@ For Tailscale clients to use this DNS:
 - `/etc/systemd/system/unbound-blocklist.*` - Update timer and service
 
 ### DDNS (when enabled)
-- `/usr/local/bin/ddns-update.sh` - DDNS update script
-- `/etc/ddns/gandi.env` - Gandi API token (0600 permissions)
+- `/usr/local/bin/ddns-update` - DDNS updater (Python)
+- `/etc/ddns/config.json` - DDNS settings (no secrets)
+- `/etc/ddns/credentials.env` - provider credentials (0600 permissions)
+- `/var/lib/ddns/status.json` - status of the last run
+- `/usr/local/bin/ddns_status_httpd.py`, `ddns-status-endpoint.service` - optional status endpoint
 - `/var/log/ddns/ddns-update.log` - Update logs
 - `/etc/systemd/system/ddns-update.service` - DDNS service unit
 - `/etc/systemd/system/ddns-update.timer` - DDNS timer unit

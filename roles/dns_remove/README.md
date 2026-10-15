@@ -65,7 +65,8 @@ None.
 
 1. **DDNS updater** (if configured)
    - Systemd service and timer (`ddns-update.service`, `ddns-update.timer`)
-   - Update script (respects `dns_ddns_script_path`, default: `/usr/local/bin/ddns-update.sh`)
+   - Updater (respects `dns_ddns_script_path`, default: `/usr/local/bin/ddns-update`) and the legacy `/usr/local/bin/ddns-update.sh`
+   - Status endpoint unit, server script and htpasswd directory, and the state directory (`dns_ddns_state_dir`, only when its basename contains `ddns`)
    - Configuration files (respects `dns_ddns_config_dir`, default: `/etc/ddns/`)
    - Log files (respects `dns_ddns_log_dir`, default: `/var/log/ddns/`)
    - Service account (`ddns` user)
