@@ -51,6 +51,7 @@
     - "{{ traefik_backup_root }}"
     - "{{ traefik_backup_dir }}"
     - "{{ traefik_backup_dir }}/acme"
+    - "{{ traefik_backup_dir }}/dynamic"
 
 - name: Copy ACME state file
   ansible.builtin.copy:
@@ -67,12 +68,12 @@
     msg: "traefik_backup_include_acme is false; skipping acme.json backup"
   when: not traefik_backup_include_acme | bool
 
-# No trailing slash on src: the directory itself lands under the backup dir,
-# so the archive holds <prefix>-<timestamp>/dynamic/<file>.
+# The trailing slash on src copies the directory's contents, so the archive
+# holds <prefix>-<timestamp>/dynamic/<file> whatever the source is called.
 - name: Copy dynamic config directory
   ansible.builtin.copy:
-    src: "{{ traefik_backup_dynamic_dir | regex_replace('/+$', '') }}"
-    dest: "{{ traefik_backup_dir }}/"
+    src: "{{ traefik_backup_dynamic_dir | regex_replace('/+$', '') }}/"
+    dest: "{{ traefik_backup_dir }}/dynamic/"
     remote_src: true
     mode: preserve
   when: traefik_backup_include_dynamic | bool

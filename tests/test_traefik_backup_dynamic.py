@@ -119,6 +119,16 @@ class TraefikBackupDynamicEngineTest(unittest.TestCase):
         self.assertIn(f"{run}/dynamic/homelab.yml", members)
         self.assertNotIn(f"{run}/homelab.yml", members)
 
+    def test_layout_does_not_depend_on_the_source_name(self) -> None:
+        routes = self.base / "etc" / "traefik" / "routes"
+        self.dynamic.rename(routes)
+        result = self.run_role(traefik_backup_dynamic_dir=str(routes))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        members = self.archive_members()
+        run = members[0].split("/")[0]
+        self.assertIn(f"{run}/dynamic/homelab.yml", members)
+        self.assertFalse([m for m in members if "/routes" in m], members)
+
     def test_missing_dynamic_dir_fails(self) -> None:
         shutil.rmtree(self.dynamic)
         result = self.run_role()
@@ -130,7 +140,8 @@ class TraefikBackupDynamicEngineTest(unittest.TestCase):
         result = self.run_role(traefik_backup_include_dynamic=False)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         members = self.archive_members()
-        self.assertFalse([m for m in members if "/dynamic" in m], members)
+        # Like acme/, the (empty) dynamic/ directory is always created.
+        self.assertFalse([m for m in members if "/dynamic/" in m], members)
 
 
 if __name__ == "__main__":
