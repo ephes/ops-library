@@ -18,6 +18,19 @@
     - traefik_backup_include_acme | bool
     - not traefik_backup_acme_stat.stat.exists | default(false)
 
+- name: Check dynamic config directory exists
+  ansible.builtin.stat:
+    path: "{{ traefik_backup_dynamic_dir }}"
+  register: traefik_backup_dynamic_stat
+  when: traefik_backup_include_dynamic | bool
+
+- name: Fail when dynamic config directory is missing
+  ansible.builtin.fail:
+    msg: "Traefik dynamic config directory not found: {{ traefik_backup_dynamic_dir }}"
+  when:
+    - traefik_backup_include_dynamic | bool
+    - not (traefik_backup_dynamic_stat.stat.isdir | default(false))
+
 - name: Set backup timestamp
   ansible.builtin.set_fact:
     traefik_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
@@ -54,6 +67,21 @@
     msg: "traefik_backup_include_acme is false; skipping acme.json backup"
   when: not traefik_backup_include_acme | bool
 
+# No trailing slash on src: the directory itself lands under the backup dir,
+# so the archive holds <prefix>-<timestamp>/dynamic/<file>.
+- name: Copy dynamic config directory
+  ansible.builtin.copy:
+    src: "{{ traefik_backup_dynamic_dir | regex_replace('/+$', '') }}"
+    dest: "{{ traefik_backup_dir }}/"
+    remote_src: true
+    mode: preserve
+  when: traefik_backup_include_dynamic | bool
+
+- name: Skip dynamic config backup (disabled)
+  ansible.builtin.debug:
+    msg: "traefik_backup_include_dynamic is false; skipping {{ traefik_backup_dynamic_dir }}"
+  when: not traefik_backup_include_dynamic | bool
+
 - name: Write backup metadata
   ansible.builtin.copy:
     dest: "{{ traefik_backup_dir }}/metadata.yml"
@@ -63,6 +91,9 @@
     content: |
       timestamp: {{ traefik_backup_timestamp }}
       acme_path: {{ traefik_backup_acme_path }}
+      include_acme: {{ traefik_backup_include_acme | bool | lower }}
+      dynamic_dir: {{ traefik_backup_dynamic_dir }}
+      include_dynamic: {{ traefik_backup_include_dynamic | bool | lower }}
 
 - name: Create backup archive
   ansible.builtin.archive:
@@ -109,5 +140,5 @@
 - name: Report backup completion
   ansible.builtin.debug:
     msg: |
-      Traefik ACME backup complete: {{ traefik_backup_archive }}
+      Traefik backup complete: {{ traefik_backup_archive }}
       Local copy: {{ traefik_backup_fetch_local | ternary(traefik_backup_local_dir ~ '/' ~ (traefik_backup_archive | basename), 'not fetched') }}
