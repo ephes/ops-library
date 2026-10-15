@@ -166,6 +166,20 @@
   run_once: true
   when: metube_backup_fetch_local | bool and metube_backup_create_archive | bool
 
+# The archive can hold credentials (env files, database dumps, keys); fetch
+# writes the local copy with the controller's umask (usually 0644). Check
+# mode fetches nothing, so there is nothing to restrict then.
+- name: Restrict local archive copy permissions
+  ansible.builtin.file:
+    path: "{{ metube_backup_local_dir }}/{{ metube_backup_archive | basename }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - metube_backup_fetch_local | bool and metube_backup_create_archive | bool
+    - not ansible_check_mode
+
 - name: Prune old archives
   ansible.builtin.find:
     paths: "{{ metube_backup_root }}"

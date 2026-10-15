@@ -116,6 +116,21 @@
     - wagtail_backup_fetch_local | bool
     - wagtail_backup_create_archive | bool
 
+# The archive can hold credentials (env files, database dumps, keys); fetch
+# writes the local copy with the controller's umask (usually 0644). Check
+# mode fetches nothing, so there is nothing to restrict then.
+- name: Restrict local archive copy permissions
+  ansible.builtin.file:
+    path: "{{ wagtail_backup_local_dir }}/{{ wagtail_backup_archive | basename }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - wagtail_backup_fetch_local | bool
+    - wagtail_backup_create_archive | bool
+    - not ansible_check_mode
+
 - name: Find existing backup archives
   ansible.builtin.find:
     paths: "{{ wagtail_backup_root }}"
