@@ -157,6 +157,12 @@
         - "emoji\tpurge"
         - "emoji purge --remote-only && emoji purge"
         - "emoji purge $(echo --remote-only)"
+        - "emoji pur"
+        - "emoji p --remote-only"
+        - "emo purge --remote-only"
+        - "e purge"
+        - "emoji"
+        - "emoji --remote-only purge"
 
     - name: Reject a command string instead of a list
       ansible.builtin.include_tasks: tasks/test_mastodon_rejected.yml

@@ -26,18 +26,23 @@
   loop: "{{ mastodon_maintenance_commands }}"
 
 # `tootctl emoji purge` without a scope flag deletes every custom emoji,
-# including the instance's own, and tootctl accepts misspelt flags and values
-# for boolean flags (`--remote-only false`). An emoji purge must therefore be
-# followed only by `--remote-only` and/or `--suspended-only`.
-- name: validate | Reject unscoped custom emoji purges
+# including the instance's own. tootctl (Thor) accepts abbreviated command
+# names (`em pur`), misspelt flags and values for boolean flags
+# (`--remote-only false`). So anything addressing the emoji commands must use
+# the full names, and a purge must be followed only by `--remote-only` and/or
+# `--suspended-only`.
+- name: validate | Reject unscoped or abbreviated custom emoji commands
   ansible.builtin.assert:
     that:
       - >-
-        item.split()[:2] != ['emoji', 'purge']
-        or (item.split()[2:] | length > 0
+        not 'emoji'.startswith(item.split()[0])
+        or (item.split()[:2] in [['emoji', 'import'], ['emoji', 'export']])
+        or (item.split()[:2] == ['emoji', 'purge']
+            and item.split()[2:] | length > 0
             and item.split()[2:] | reject('in', ['--remote-only', '--suspended-only']) | list | length == 0)
     fail_msg: >-
-      Refusing maintenance command "{{ item }}": `emoji purge` must be followed only by
-      --remote-only or --suspended-only; anything else can delete local custom emoji too.
+      Refusing maintenance command "{{ item }}": emoji commands must use full names, and
+      `emoji purge` must be followed only by --remote-only or --suspended-only; anything
+      else can delete local custom emoji too.
     quiet: true
   loop: "{{ mastodon_maintenance_commands }}"
