@@ -3,6 +3,28 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Echoport runner for the Django Chat staging database (2.34.1)
+
+- New `echoport_backup/templates/django_chat_staging_db_backup.py.j2`: an
+  Echoport runner for the Django Chat PostgreSQL database on the staging host.
+  It runs on macmini as the deploy user and reaches the host as root over SSH.
+  The backup streams `pg_dump --format=custom` (run as `postgres` there) to
+  macmini, checks with `pg_restore --list` that every table in
+  `django_chat_staging_db_backup_required_tables` has data, records row counts
+  read from the dump, host, server version and checksums in `manifest.json` /
+  `manifest.sha256`, uploads one tarball and compares the stored size. A failed
+  or empty dump, a missing table or a size mismatch fails the run.
+- Its restore never touches the live database: it verifies the archive and the
+  dump, copies the dump into a root-only `mktemp -d` directory on the staging
+  host (checked by SHA-256, removed afterwards), creates a new scratch database
+  `<prefix>_<restore id>` (refusing an existing one), restores into it with
+  `--no-owner --no-privileges --exit-on-error` and compares the row counts with
+  the manifest. Template variables: `django_chat_staging_db_backup_host`,
+  `_remote_user`, `_db_name`, `_postgres_os_user`, `_restore_db_prefix`,
+  `_required_tables`, `_counted_tables`, plus the shared `echoport_backup_*`
+  MinIO settings (ops-control `register-django-chat-staging-db-backup.yml`).
+  Tested by `just test-django-chat-staging-db-backup`.
+
 ## Unreleased — DDNS RFC 2136 backend and multi-provider writes
 
 - `dns_deploy` DDNS: new backend `rfc2136` (nsupdate + TSIG against the zone's
