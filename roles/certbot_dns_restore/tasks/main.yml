@@ -71,6 +71,20 @@
     mode: "{{ certbot_dns_restore_credentials_mode }}"
   when: certbot_dns_credentials_file is defined
 
+- name: Check for an RFC 2136 credentials file
+  ansible.builtin.stat:
+    path: "{{ certbot_dns_rfc2136_credentials_file }}"
+  register: certbot_dns_restore_rfc2136_credentials
+
+- name: Fix RFC 2136 credentials file permissions
+  ansible.builtin.file:
+    path: "{{ certbot_dns_rfc2136_credentials_file }}"
+    state: file
+    owner: "{{ certbot_dns_restore_owner }}"
+    group: "{{ certbot_dns_restore_group }}"
+    mode: "{{ certbot_dns_restore_credentials_mode }}"
+  when: certbot_dns_restore_rfc2136_credentials.stat.exists
+
 - name: Validate renewal with dry-run (optional)
   ansible.builtin.command: certbot renew --dry-run
   when: certbot_dns_restore_run_dry_renew | bool

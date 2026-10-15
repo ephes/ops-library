@@ -85,6 +85,10 @@
   Encrypt staging, saved only on success); opt out with
   `certbot_dns_reconfigure_on_provider_change: false`. The credentials and
   RFC 2136 validation tasks are `no_log`. Default provider stays `gandi`.
+  rfc2136 credentials go to their own file (`certbot_dns_rfc2136_credentials_file`,
+  default `/etc/letsencrypt/dns-rfc2136-credentials.ini`), so the gandi file a
+  lineage still references is never rewritten; `certbot_dns_restore` also
+  fixes that file's mode when present.
   Tested by `just test-certbot-dns-rfc2136`.
 
 >>>>>>> 2bac4bc (Add dynamic BIND zones and a certbot RFC 2136 provider)

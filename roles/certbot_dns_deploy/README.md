@@ -59,7 +59,10 @@ for renewal, so it would keep renewing with the old authenticator. With
 reconfigure does a dry-run challenge against the Let's Encrypt staging CA and
 only saves the new settings if it succeeds, so a provider that cannot publish
 the TXT record fails the deploy instead of failing the next renewal silently.
-Needs certbot >= 2.3 (Ubuntu 24.04 ships 2.9). Only run the switch once the
+Needs certbot >= 2.3 (Ubuntu 24.04 ships 2.9). Each provider has its own
+credentials file, so the old provider's file stays intact: after a failed
+switch the lineage still renews with its previous provider, and other lineages
+that use the old file are not affected. Only run the switch once the
 zone is actually served by the new provider's servers (the delegation has moved),
 because Let's Encrypt resolves the challenge through public DNS.
 
@@ -73,7 +76,8 @@ certbot_dns_key_type: "ecdsa"              # rsa|ecdsa
 certbot_dns_staging: false                 # Use LE staging for tests
 certbot_dns_propagation_seconds: 120       # Wait for DNS propagation
 certbot_dns_renewal_hooks: []              # Commands to run post-renewal
-certbot_dns_credentials_file: "/etc/letsencrypt/dns-credentials.ini"
+certbot_dns_credentials_file: "/etc/letsencrypt/dns-credentials.ini"            # gandi
+certbot_dns_rfc2136_credentials_file: "/etc/letsencrypt/dns-rfc2136-credentials.ini"
 certbot_dns_renewal_hook_path: "/etc/letsencrypt/renewal-hooks/deploy/reload-services.sh"
 ```
 

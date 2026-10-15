@@ -35,7 +35,11 @@ certbot_dns_propagation_seconds: 120      # Wait time for DNS propagation
 
 # Paths
 certbot_dns_config_dir: "/etc/letsencrypt"
-certbot_dns_credentials_file: "/etc/letsencrypt/dns-credentials.ini"
+certbot_dns_credentials_file: "/etc/letsencrypt/dns-credentials.ini"          # gandi
+# Separate file per provider: a lineage's renewal configuration points at its
+# credentials file, so switching providers must not rewrite the file the old
+# authenticator still uses (a failed switch, or another lineage, keeps working).
+certbot_dns_rfc2136_credentials_file: "/etc/letsencrypt/dns-rfc2136-credentials.ini"
 certbot_dns_renewal_hook_path: "/etc/letsencrypt/renewal-hooks/deploy/reload-services.sh"
 
 # Renewal hooks (commands run after renewal)

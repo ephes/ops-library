@@ -33,7 +33,7 @@
           "--agree-tos",
           "--email", certbot_dns_email,
           "--authenticator", "dns-" + certbot_dns_provider,
-          "--dns-" + certbot_dns_provider + "-credentials", certbot_dns_credentials_file,
+          "--dns-" + certbot_dns_provider + "-credentials", certbot_dns_active_credentials_file,
           "--dns-" + certbot_dns_provider + "-propagation-seconds", certbot_dns_propagation_seconds | string,
           "--cert-name", certbot_dns_domain,
           "--key-type", certbot_dns_key_type,
@@ -83,7 +83,7 @@
       - --authenticator
       - "dns-{{ certbot_dns_provider }}"
       - "--dns-{{ certbot_dns_provider }}-credentials"
-      - "{{ certbot_dns_credentials_file }}"
+      - "{{ certbot_dns_active_credentials_file }}"
       - "--dns-{{ certbot_dns_provider }}-propagation-seconds"
       - "{{ certbot_dns_propagation_seconds | string }}"
   become: yes

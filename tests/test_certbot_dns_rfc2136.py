@@ -55,6 +55,22 @@ class CertbotDnsRfc2136Tests(unittest.TestCase):
         rfc = [t for t in validate if t["name"] == "Validate RFC 2136 settings"][0]
         self.assertTrue(rfc["no_log"])
 
+    def test_providers_use_separate_credentials_files(self):
+        defaults = yaml.safe_load((ROLE / "defaults" / "main.yml").read_text())
+        self.assertNotEqual(
+            defaults["certbot_dns_credentials_file"],
+            defaults["certbot_dns_rfc2136_credentials_file"],
+        )
+        credentials = yaml.safe_load((ROLE / "tasks" / "credentials.yml").read_text())
+        render = [t for t in credentials if t["name"] == "Render DNS credentials file"][0]
+        self.assertEqual(
+            render["ansible.builtin.template"]["dest"],
+            "{{ certbot_dns_active_credentials_file }}",
+        )
+        certificate = (ROLE / "tasks" / "certificate.yml").read_text()
+        self.assertNotIn("certbot_dns_credentials_file", certificate)
+        self.assertEqual(certificate.count("certbot_dns_active_credentials_file"), 2)
+
     def test_reconfigure_only_on_authenticator_change(self):
         tasks = yaml.safe_load((ROLE / "tasks" / "certificate.yml").read_text())
         switch = [t for t in tasks if t["name"] == "Switch the lineage to the configured DNS provider"][0]

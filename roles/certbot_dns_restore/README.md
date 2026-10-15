@@ -28,6 +28,7 @@ unchanged; delete a stray `/letsencrypt` from such a run by hand after checking 
 certbot_dns_restore_archive: ""          # Path to backup archive (required)
 certbot_dns_dir: "/etc/letsencrypt"      # Certbot directory
 certbot_dns_credentials_file: "/etc/letsencrypt/dns-credentials.ini"
+certbot_dns_rfc2136_credentials_file: "/etc/letsencrypt/dns-rfc2136-credentials.ini"  # mode fixed when present
 certbot_dns_restore_run_dry_renew: true  # Run certbot renew --dry-run after restore
 ```
 
