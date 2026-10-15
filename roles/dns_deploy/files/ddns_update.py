@@ -305,7 +305,9 @@ def run(config: dict, env: dict, http: HttpFunc = http_request, resolve: Resolve
     records: dict[str, dict] = {}
     wan: dict[str, Optional[str]] = {"ipv4": None, "ipv6": None}
 
-    log(f"DDNS run: providers={','.join(providers)} zone={zone} names={','.join(names)}")
+    provider_label = (f"provider={provider}" if len(providers) == 1
+                      else f"providers={','.join(providers)}")
+    log(f"DDNS run: {provider_label} zone={zone} names={','.join(names)}")
 
     backends: dict[str, Optional[Backend]] = {}
     for name_ in providers:
@@ -379,13 +381,34 @@ def run(config: dict, env: dict, http: HttpFunc = http_request, resolve: Resolve
                     record["action"] = action
                     break
 
-    # Public view: ask the zone's authoritative nameservers directly.
-    nameservers = list(config.get("verify_nameservers") or [])
-    if not nameservers:
-        nameservers = resolve(zone, "NS", None) or []
+    # Public view: ask the authoritative nameservers directly. Without an explicit
+    # list, use the NS set of the closest enclosing zone that has one, so a record
+    # in a delegated child zone (home.example.com) is checked at the child's servers
+    # once the delegation exists, and at the parent's servers before that.
+    configured = list(config.get("verify_nameservers") or [])
+    ns_cache: dict[str, list[str]] = {}
+
+    def nameservers_for(owner: str) -> list[str]:
+        if configured:
+            return configured
+        labels = owner.split(".")
+        if labels[0] == "*":
+            labels = labels[1:]
+        candidates = [".".join(labels[i:]) for i in range(len(labels))]
+        candidates = [c for c in candidates if c == zone or c.endswith("." + zone)] or [zone]
+        for candidate in candidates:
+            if candidate not in ns_cache:
+                ns_cache[candidate] = resolve(candidate, "NS", None) or []
+            if ns_cache[candidate]:
+                return ns_cache[candidate]
+        return []
+
+    used_nameservers: list[str] = []
     for record in records.values():
         if record["desired"] is None:
             continue
+        nameservers = nameservers_for(record["name"])
+        used_nameservers += [ns for ns in nameservers if ns not in used_nameservers]
         answers = [resolve(record["name"], record["type"], ns) for ns in nameservers]
         seen = [a for a in answers if a is not None]
         record["public_values"] = seen[0] if seen else None
@@ -415,7 +438,7 @@ def run(config: dict, env: dict, http: HttpFunc = http_request, resolve: Resolve
         "wan": wan,
         "records": records,
         "errors": errors,
-        "nameservers": nameservers,
+        "nameservers": used_nameservers or configured or nameservers_for(zone),
         "summary": {
             "run_ok": run_ok,
             "finished_at_epoch": timestamp,

@@ -270,7 +270,10 @@ Settings live in `/etc/ddns/config.json`; credentials in `/etc/ddns/credentials.
 2. For `subdomain` and `*.subdomain`, A and AAAA: reads the record from the provider,
    writes it only when it differs, then reads it back. Every record is logged as
    `unchanged`, `updated <old> -> <new>` or `ERROR` (credentials are never logged).
-3. Asks the zone's authoritative nameservers (`dig +norecurse`) what the public sees.
+3. Asks the authoritative nameservers (`dig +norecurse`) what the public sees: those
+   in `dns_ddns_verify_nameservers`, or else the NS set of the closest enclosing zone
+   that has one (so `home` in a delegated child zone `home.example.com` is checked at
+   the child's servers once the delegation exists, and at the parent's before).
 4. Writes `/var/lib/ddns/status.json`: WAN addresses, per-record provider and public
    values, `summary.run_ok`, `summary.consecutive_failures`,
    `summary.public_ok` and `summary.public_mismatch_seconds` (how long the public

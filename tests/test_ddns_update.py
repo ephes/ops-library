@@ -304,6 +304,40 @@ class Rfc2136Tests(unittest.TestCase):
         self.assertEqual(status["providers"], ["gandi", "rfc2136"])
         self.assertIn(f"updated rfc2136 A home.{ZONE}: [] -> {NEW4}", lines)
 
+    def test_single_provider_log_header_is_unchanged(self):
+        _code, _status, lines = self.run_ddns(FakeNameserver(), self.rfc_config())
+        self.assertEqual(lines[0], f"DDNS run: provider=rfc2136 zone={ZONE} names=home,*.home")
+
+    def test_public_view_uses_the_delegated_child_zone_servers(self):
+        asked = []
+
+        def resolve(name, rtype, server):
+            if rtype == "NS":
+                return {f"home.{ZONE}": ["ns1.child."], ZONE: ["ns-a.parent."]}.get(name, [])
+            asked.append((name, server))
+            return current_public(NEW4, NEW6).get((name, rtype)) if server == "ns1.child." else None
+
+        ddns.Rfc2136Backend.command = staticmethod(FakeNameserver(current_public(NEW4, NEW6)))
+        code, status = ddns.run(self.rfc_config(), {"DDNS_TSIG_SECRET": TSIG}, http=FakeGandi(),
+                                resolve=resolve, log=lambda _l: None, now=lambda: 1_000_000)
+        self.assertEqual(code, 0)
+        self.assertTrue(status["summary"]["public_ok"])
+        self.assertEqual({server for _n, server in asked}, {"ns1.child."})
+        self.assertEqual(status["nameservers"], ["ns1.child."])
+
+    def test_public_view_falls_back_to_parent_before_delegation(self):
+        def resolve(name, rtype, server):
+            if rtype == "NS":
+                return {ZONE: ["ns-a.parent."]}.get(name, [])
+            return current_public(NEW4, NEW6).get((name, rtype))
+
+        ddns.Rfc2136Backend.command = staticmethod(FakeNameserver(current_public(NEW4, NEW6)))
+        code, status = ddns.run(self.rfc_config(), {"DDNS_TSIG_SECRET": TSIG}, http=FakeGandi(),
+                                resolve=resolve, log=lambda _l: None, now=lambda: 1_000_000)
+        self.assertEqual(code, 0)
+        self.assertEqual(status["nameservers"], ["ns-a.parent."])
+        self.assertTrue(status["summary"]["public_ok"])
+
     def test_dual_write_fails_when_one_provider_fails(self):
         cfg = self.rfc_config()
         cfg["providers"] = ["gandi", "rfc2136"]

@@ -15,8 +15,10 @@
   BIND while a delegation moves); any provider failing fails the run.
   `status.json` keeps its summary and per-record fields and adds `providers`
   plus `records.*.providers`. Log lines carry the provider name only when more
-  than one is configured. Default stays the single `gandi` provider. Tested by
-  `just test-ddns-update`.
+  than one is configured. Default stays the single `gandi` provider.
+- Without `dns_ddns_verify_nameservers`, the public check now asks the NS set of
+  the closest enclosing zone that has one, so records in a delegated child zone
+  are verified at the child's servers. Tested by `just test-ddns-update`.
 
 ## Unreleased — BIND dynamic zones, certbot RFC 2136 provider
 
