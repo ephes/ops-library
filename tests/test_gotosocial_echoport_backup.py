@@ -76,9 +76,12 @@ def make_db(path: Path, statuses: int) -> None:
     con = sqlite3.connect(path)
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("CREATE TABLE accounts (id TEXT PRIMARY KEY, domain TEXT)")
-    con.execute("CREATE TABLE statuses (id TEXT PRIMARY KEY, local INTEGER)")
+    # Same columns GoToSocial 0.22 uses: there is no statuses.local, a local
+    # status is one whose account has no domain.
+    con.execute("CREATE TABLE statuses (id TEXT PRIMARY KEY, account_id TEXT NOT NULL)")
     con.executemany("INSERT INTO accounts VALUES (?, ?)", [("a1", None), ("a2", "mastodon.example")])
-    con.executemany("INSERT INTO statuses VALUES (?, 1)", [(f"s{i}",) for i in range(statuses)])
+    con.executemany("INSERT INTO statuses VALUES (?, 'a1')", [(f"s{i}",) for i in range(statuses)])
+    con.execute("INSERT INTO statuses VALUES ('remote', 'a2')")
     con.commit()
     con.close()
 
@@ -86,7 +89,7 @@ def make_db(path: Path, statuses: int) -> None:
 def count_statuses(path: Path) -> int:
     con = sqlite3.connect(path)
     try:
-        return con.execute("SELECT count(*) FROM statuses").fetchone()[0]
+        return con.execute("SELECT count(*) FROM statuses WHERE account_id = 'a1'").fetchone()[0]
     finally:
         con.close()
 

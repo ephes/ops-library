@@ -3,6 +3,13 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — GoToSocial backup counts local statuses on the real schema
+
+- `echoport_backup` (`gotosocial_backup.py.j2`): `verify_snapshot` counted
+  `statuses WHERE local = 1`, a column GoToSocial 0.22 does not have, so every
+  backup failed. Local statuses are now those whose account has no domain. The
+  test fixture uses GoToSocial's columns and includes a remote status.
+
 ## Unreleased — Mailgun relay end-to-end probe (2.40.0)
 
 - `mail_monitoring`: optional relay probe (`mail_monitoring_relay_probe_enabled`,
@@ -29,6 +36,7 @@
   state files. The Molecule scenarios of both roles cover the systemd run and
   the exported section.
 
+||||||| parent of 7ebbce2 (Count GoToSocial local statuses by account in the backup check)
 ## Unreleased — certbot DNS removes the previous provider's credentials
 
 - `certbot_dns_deploy`: new `cleanup.yml`, run after the certificate and
