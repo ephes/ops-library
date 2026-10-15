@@ -11,5 +11,8 @@
 - name: Request or update certificate
   ansible.builtin.import_tasks: certificate.yml
 
+- name: Remove unused credentials of other providers
+  ansible.builtin.import_tasks: cleanup.yml
+
 - name: Configure renewal hooks and timer
   ansible.builtin.import_tasks: renewal.yml
