@@ -22,8 +22,11 @@ import importlib.util
 import io
 import json
 import os
+import re
+import secrets
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -49,17 +52,28 @@ PRODUCTION_POLICY = {
         "restore_databases": {},
         "temp_file_prefixes": ["homepage", "pp"],
     },
-    "units": [],
+    "units": ["gotosocial"],
     "private_media_paths": ["/home/python-podcast/site/private_media"],
-    "path_roots": [],
+    "path_roots": [{"path": "/var/lib/gotosocial", "owner": "gotosocial:gotosocial"}],
+    "read_files": ["/etc/gotosocial/config.yaml"],
+    "sqlite_snapshots": [
+        {
+            "database": "/var/lib/gotosocial/sqlite.db",
+            "owner": "gotosocial:gotosocial",
+            "temp_dir": "/var/tmp/gotosocial-echoport.XXXXXX",
+        }
+    ],
+    "ready_urls": ["http://127.0.0.1:10070/readyz"],
 }
 
 STAGING_POLICY = {
     "postgres": {
-        "dump_databases": ["homepage", "python-podcast"],
+        "dump_databases": ["homepage", "python-podcast", "django-chat"],
         "restore_databases": {"homepage": "homepage", "python-podcast": "python-podcast"},
         "temp_file_prefixes": ["homepage", "pp"],
+        "scratch_restore_prefixes": ["django_chat_restore"],
     },
+    "temp_dirs": ["/var/tmp/django-chat-db-restore.XXXXXXXX"],
     "units": [
         "homepage",
         "homepage.service",
@@ -78,7 +92,45 @@ STAGING_POLICY = {
     ],
 }
 
-RSYNC_FLAGS = "-logDtpre.iLsfxCIvu"
+# What sshd hands the guard for each rsync client call the runners make
+# (client options -> server command without the path). Derived by running
+# rsync 3.2.7 (Ubuntu 24.04, macmini) and 3.5.0 (Debian 13) with a recording
+# -e program; both send the same. A runner with other options fails here
+# until its server command is derived and allowed in the guard.
+RSYNC_CLIENT_TO_SERVER = {
+    ("-a", "--safe-links"): "rsync --server --sender -logDtpre.iLsfxCIvu --safe-links .",
+    ("-a", "--no-D"): "rsync --server -logtpre.iLsfxCIvu .",
+    ("-a", "--no-D", "--delete"): "rsync --server -logtpre.iLsfxCIvu --delete .",
+}
+RSYNC_DOWNLOAD = RSYNC_CLIENT_TO_SERVER[("-a", "--safe-links")]
+RSYNC_UPLOAD_DELETE = RSYNC_CLIENT_TO_SERVER[("-a", "--no-D", "--delete")]
+
+
+def rsync_server_command(argv: list[str]) -> tuple[str, str, bool]:
+    """(host, SSH_ORIGINAL_COMMAND, is_download) for a runner's rsync client argv."""
+    e = argv.index("-e")
+    options = tuple(argv[1:e])
+    source, target = argv[e + 2:]
+    download = ":" in source
+    user_host, path = (source if download else target).split(":", 1)
+    assert options in RSYNC_CLIENT_TO_SERVER, f"rsync client options {options} have no derived server command"
+    return user_host.split("@", 1)[1], f"{RSYNC_CLIENT_TO_SERVER[options]} {path}", download
+
+
+def fake_stat(mode: int, nlink: int = 1, uid: int | None = None) -> os.stat_result:
+    """An lstat result; owned by the guard's own user (root on the hosts) by default."""
+    return os.stat_result((mode, 1, 1, nlink, os.geteuid() if uid is None else uid, 0, 0, 0, 0, 0))
+
+
+def lstat_absent(path: str) -> os.stat_result:
+    raise FileNotFoundError(path)
+
+
+def lstat_runner_view(path: str) -> os.stat_result:
+    """The hosts as the runners leave them: their mktemp dirs exist, nothing else."""
+    if re.fullmatch(r"/var/tmp/(gotosocial-echoport|django-chat-db-restore)\.[A-Za-z0-9]+", path):
+        return fake_stat(stat.S_IFDIR | 0o700, nlink=2)
+    raise FileNotFoundError(path)
 
 
 def load_guard() -> types.ModuleType:
@@ -135,6 +187,66 @@ class GuardAllowsRunnerShapes(unittest.TestCase):
         self.assertEqual(decision.umask, 0o077)
         self.assertEqual(decision.argv[0], "tar")
 
+    def test_exact_rsync_commands(self) -> None:
+        for server in RSYNC_CLIENT_TO_SERVER.values():
+            with self.subTest(server=server):
+                self.allowed(f"{server} /home/marina/site/media/", self.staging)
+
+    def test_django_chat_shapes(self) -> None:
+        tmp = "/var/tmp/django-chat-db-restore.Ab12Cd34"
+        for command in (
+            "runuser -u postgres -- pg_dump --format=custom --dbname=django-chat",
+            "runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -qAt -d django-chat -c 'SHOW server_version;'",
+            "runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -qAt -d postgres "
+            "-c \"SELECT 1 FROM pg_database WHERE datname = 'django_chat_restore_42';\"",
+            "runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -qAt -d django_chat_restore_42 "
+            "-c 'SELECT count(*) FROM public.auth_user;'",
+            "runuser -u postgres -- createdb django_chat_restore_42",
+            "mktemp -d /var/tmp/django-chat-db-restore.XXXXXXXX",
+            f"sha256sum {tmp}/django-chat.dump",
+            f"rm -rf -- {tmp}",
+        ):
+            with self.subTest(command=command):
+                GUARD.check(command, self.staging, realpath=identity, lstat=lstat_runner_view)
+        upload = self.allowed(f"umask 077 && cat > {tmp}/django-chat.dump", self.staging)
+        self.assertEqual((upload.argv, upload.umask), (["cat"], 0o077))
+        self.assertEqual((upload.stdout.directory, upload.stdout.name), (tmp, "django-chat.dump"))
+        restore = self.allowed(
+            "runuser -u postgres -- pg_restore --no-owner --no-privileges --exit-on-error "
+            f"--dbname=django_chat_restore_42 < {tmp}/django-chat.dump",
+            self.staging,
+        )
+        self.assertEqual(restore.argv[-1], "--dbname=django_chat_restore_42")
+        self.assertEqual((restore.stdin.directory, restore.stdin.name, restore.stdin.owners), (tmp, "django-chat.dump", ()))
+
+    def test_gotosocial_shapes(self) -> None:
+        tmp = "/var/tmp/gotosocial-echoport.Ab12Cd"
+        for command in (
+            "test -f /var/lib/gotosocial/sqlite.db",
+            "mktemp -d /var/tmp/gotosocial-echoport.XXXXXX",
+            f"chown gotosocial:gotosocial {tmp}",
+            f"runuser -u gotosocial -- sqlite3 /var/lib/gotosocial/sqlite.db \".backup '{tmp}/sqlite.db'\"",
+            f"runuser -u gotosocial -- sqlite3 {tmp}/sqlite.db 'PRAGMA integrity_check;'",
+            "scp -f /etc/gotosocial/config.yaml",
+            "scp -f /var/lib/gotosocial/.ops-domain-layout",
+            f"{RSYNC_DOWNLOAD} /var/lib/gotosocial/storage/",
+            f"rm -rf -- {tmp}",
+            "systemctl stop gotosocial",
+            "mv /var/lib/gotosocial/sqlite.db /var/lib/gotosocial/sqlite.db.pre-restore-20261015T020000Z",
+            "scp -t /var/lib/gotosocial/sqlite.db.restore-tmp",
+            "mkdir -p /var/lib/gotosocial/storage",
+            f"{RSYNC_UPLOAD_DELETE} /var/lib/gotosocial/storage/",
+            "chown -R gotosocial:gotosocial /var/lib/gotosocial/storage",
+            "chmod 0600 /var/lib/gotosocial/sqlite.db",
+            "chmod 0700 /var/lib/gotosocial/storage",
+            "curl -fsS -o /dev/null http://127.0.0.1:10070/readyz",
+        ):
+            with self.subTest(command=command):
+                GUARD.check(command, self.production, realpath=identity, lstat=lstat_runner_view)
+        read = GUARD.check(f"cat {tmp}/sqlite.db", self.production, realpath=identity, lstat=lstat_runner_view)
+        self.assertEqual(read.argv, ["cat"])
+        self.assertEqual((read.stdin.directory, read.stdin.name, read.stdin.owners), (tmp, "sqlite.db", ("gotosocial",)))
+
     def test_policy_rejects_unsafe_entries(self) -> None:
         for broken in (
             {"units": ["a b"]},
@@ -144,6 +256,13 @@ class GuardAllowsRunnerShapes(unittest.TestCase):
             {"postgres": {"dump_databases": ["db;id"]}},
             {"postgres": {"temp_file_prefixes": ["../x"]}},
             {"private_media_paths": ["/tmp"]},
+            {"temp_dirs": ["/root/x.XXXXXX"]},
+            {"temp_dirs": ["/var/tmp/x.XXX"]},
+            {"postgres": {"scratch_restore_prefixes": ["x;y"]}},
+            {"sqlite_snapshots": [{"database": "/var/lib/x/db", "owner": "root:root", "temp_dir": "/var/tmp/x.XXXXXX"}]},
+            {"sqlite_snapshots": [{"database": "/var/lib/x/db", "owner": "x:x", "temp_dir": "/srv/x.XXXXXX"}]},
+            {"read_files": ["/etc"]},
+            {"ready_urls": ["http://example.org/readyz"]},
         ):
             with self.subTest(policy=broken):
                 with self.assertRaises(GUARD.Refused):
@@ -224,10 +343,234 @@ class GuardRefusals(unittest.TestCase):
             "scp -f /home/marina/site/link",
             "scp -t /home/marina/site/link/x.tmp",
             "chown -R marina:marina /home/marina/site/link",
-            "rsync --server -logDtpre.iLsfxCIvu --delete . /home/marina/site/link/",
+            f"{RSYNC_UPLOAD_DELETE} /home/marina/site/link/",
+            "mv /home/marina/site/link/a /home/marina/site/b",
+            "chmod 0600 /home/marina/site/link/a",
         ):
             with self.subTest(command=command):
                 self.assertRefused(command, self.staging, realpath=escaping)
+
+
+    def test_rsync_options_must_match_exactly(self) -> None:
+        media = "/home/marina/site/media/"
+        for server_args in (
+            "--server --sender -logDtpLre.iLsfxCIvu --safe-links .",  # -L: follow symlinks out of the root
+            "--server --sender -logDtpre.iLsfxCIvu .",  # without --safe-links
+            "--server --sender -logDtpre.iLsfxCIvu --safe-links --copy-unsafe-links .",
+            "--server -logDtpre.iLsfxCIvu .",  # upload with D: device files
+            "--server -logDtpre.iLsfxCIvu --delete .",
+            "--server -logKtpre.iLsfxCIvu --delete .",  # -K: keep dirlinks
+            "--server -logtpre.iLsfxCIvu --delete --remove-source-files .",
+            "--server -logtpre.iLsfxCIvu --delete-excluded .",
+            "--server --sender -logtpre.iLsfxCIvu --delete .",
+        ):
+            with self.subTest(args=server_args):
+                self.assertRefused(f"rsync {server_args} {media}", self.staging)
+
+    def test_scp_refuses_targets_that_are_not_plain_files(self) -> None:
+        kinds = {
+            "symlink": fake_stat(stat.S_IFLNK | 0o777),
+            "device": fake_stat(stat.S_IFCHR | 0o600),
+            "block device": fake_stat(stat.S_IFBLK | 0o600),
+            "fifo": fake_stat(stat.S_IFIFO | 0o600),
+            "directory": fake_stat(stat.S_IFDIR | 0o700, nlink=2),
+            "hard link": fake_stat(stat.S_IFREG | 0o600, nlink=2),
+        }
+        for kind, st in kinds.items():
+            for command, host in (
+                ("scp -t /home/marina/site/db.sqlite3.tmp", self.staging),
+                ("scp -f /home/marina/site/db.sqlite3", self.staging),
+                ("scp -t /tmp/echoport_homepage_restore_x.dump", self.staging),
+                ("scp -f /tmp/echoport_homepage_dump_x.dump", self.production),
+                ("scp -f /etc/gotosocial/config.yaml", self.production),
+            ):
+                with self.subTest(kind=kind, command=command):
+                    with self.assertRaises(GUARD.Refused):
+                        GUARD.check(command, host, realpath=identity, lstat=lambda _p, st=st: st)
+        plain = fake_stat(stat.S_IFREG | 0o600)
+        GUARD.check("scp -t /home/marina/site/db.sqlite3.tmp", self.staging, realpath=identity, lstat=lambda _p: plain)
+        GUARD.check("scp -t /home/marina/site/db.sqlite3.tmp", self.staging, realpath=identity, lstat=lstat_absent)
+
+    def test_scp_against_a_real_tree(self) -> None:
+        tree = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, tree, ignore_errors=True)
+        root = tree / "site"
+        root.mkdir()
+        outside = tree / "outside.txt"
+        outside.write_text("x")
+        (root / "plain.tmp").write_text("x")
+        (root / "link.tmp").symlink_to(outside)
+        (root / "dirlink").symlink_to(tree)
+        os.link(outside, root / "hard.tmp")
+        os.mkfifo(root / "fifo.tmp")
+        host = policy({"path_roots": [{"path": str(root), "owner": "marina:marina"}]})
+        GUARD.check(f"scp -t {root}/plain.tmp", host)
+        GUARD.check(f"scp -t {root}/new.tmp", host)
+        for name in ("link.tmp", "hard.tmp", "fifo.tmp", "dirlink/outside.tmp"):
+            with self.subTest(name=name):
+                with self.assertRaises(GUARD.Refused):
+                    GUARD.check(f"scp -t {root}/{name}", host)
+
+    def test_mv_only_onto_new_names_within_one_root(self) -> None:
+        exists = fake_stat(stat.S_IFREG | 0o600)
+        GUARD.check("mv /home/marina/site/a /home/marina/site/b", self.staging, realpath=identity, lstat=lstat_absent)
+        GUARD.check("mv /home/marina/site/a.tmp /home/marina/site/a", self.staging, realpath=identity,
+                    lstat=lambda _p: exists)
+        for command, lstat in (
+            ("mv /home/marina/site/a /home/marina/site/b", lambda _p: exists),
+            ("mv /home/marina/site/a /home/villakunterbunt/data/a", lstat_absent),
+            ("mv /home/marina/site/a /tmp/a", lstat_absent),
+        ):
+            with self.subTest(command=command):
+                with self.assertRaises(GUARD.Refused):
+                    GUARD.check(command, self.staging, realpath=identity, lstat=lstat)
+
+    def test_django_chat_refusals(self) -> None:
+        tmp = "/var/tmp/django-chat-db-restore.Ab12Cd34"
+        psql = "runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -qAt -d"
+        for command in (
+            f"{psql} django-chat -c 'DROP TABLE auth_user;'",
+            f"{psql} django-chat -c 'SELECT count(*) FROM public.auth_user;'",
+            f"{psql} postgres -c 'SHOW server_version;'",
+            f"{psql} django_chat_restore_42 -c 'SELECT count(*) FROM public.auth_user; DROP TABLE x;'",
+            f"{psql} homepage -c \"SELECT 1 FROM pg_database WHERE datname = 'django_chat_restore_1';\"",
+            "runuser -u postgres -- pg_dump --format=custom --dbname=postgres",
+            "runuser -u postgres -- createdb django-chat",
+            "runuser -u postgres -- createdb django_chat_restore_x",
+            "runuser -u postgres -- pg_restore --no-owner --no-privileges --exit-on-error --dbname=django-chat "
+            f"< {tmp}/django-chat.dump",
+            "runuser -u postgres -- pg_restore --no-owner --no-privileges --exit-on-error "
+            "--dbname=django_chat_restore_1 < /tmp/echoport_homepage_restore_x.dump",
+            "runuser -u postgres -- pg_restore --no-owner --no-privileges --exit-on-error --dbname=django_chat_restore_1",
+            "sudo -u postgres pg_restore --no-owner --no-privileges --exit-on-error "
+            f"--dbname=django_chat_restore_1 < {tmp}/django-chat.dump",
+            f"systemctl start marina.service < {tmp}/django-chat.dump",
+            "runuser -u root -- id",
+            "runuser -u postgres -- id",
+            f"umask 077 && cat > {tmp}/notes.txt",
+            "umask 077 && cat > /var/tmp/other.Ab12Cd34/django-chat.dump",
+            f"umask 077 && cat > {tmp}/sub/django-chat.dump",
+            f"umask 022 && cat > {tmp}/django-chat.dump",
+            f"cat {tmp}/django-chat.dump",
+            "cat /etc/hostname",
+            "sha256sum /etc/hostname",
+            "mktemp -d /var/tmp/other.XXXXXXXX",
+            "rm -rf -- /var/tmp",
+            "rm -rf -- /var/tmp/django-chat-db-restore.Ab12",
+        ):
+            with self.subTest(command=command):
+                self.assertRefused(command, self.staging)
+        # sha256sum only in a private directory of the guard's user.
+        for directory in (
+            fake_stat(stat.S_IFDIR | 0o755, nlink=2),
+            fake_stat(stat.S_IFDIR | 0o700, nlink=2, uid=os.geteuid() + 1),
+            fake_stat(stat.S_IFLNK | 0o777),
+        ):
+            with self.subTest(directory=directory):
+                with self.assertRaises(GUARD.Refused):
+                    GUARD.check(f"sha256sum {tmp}/django-chat.dump", self.staging, realpath=identity,
+                                lstat=lambda path, st=directory: st if path == tmp else lstat_absent(path))
+
+    def test_gotosocial_refusals(self) -> None:
+        tmp = "/var/tmp/gotosocial-echoport.Ab12Cd"
+        as_gts = "runuser -u gotosocial -- sqlite3"
+        for command in (
+            f"{as_gts} /var/lib/gotosocial/sqlite.db '.shell id'",
+            f"{as_gts} /var/lib/gotosocial/sqlite.db \".backup '/tmp/x.db'\"",
+            f"{as_gts} /var/lib/gotosocial/sqlite.db \".backup '{tmp}/sqlite.db' extra\"",
+            f"{as_gts} /var/lib/gotosocial/sqlite.db 'PRAGMA integrity_check;'",
+            f"{as_gts} {tmp}/sqlite.db 'DELETE FROM accounts;'",
+            f"runuser -u marina -- sqlite3 {tmp}/sqlite.db 'PRAGMA integrity_check;'",
+            "runuser -u gotosocial -- id",
+            f"chown root:root {tmp}",
+            "chown gotosocial:gotosocial /var/tmp/django-chat-db-restore.Ab12Cd34",
+            "chown root:root /var/lib/gotosocial/sqlite.db",
+            "chmod 4755 /var/lib/gotosocial/sqlite.db",
+            "chmod 0777 /var/lib/gotosocial/storage",
+            "chmod 0600 /etc/hostname",
+            "chmod -R 0700 /var/lib/gotosocial",
+            "curl -fsS -o /dev/null http://127.0.0.1:9999/readyz",
+            "curl -fsS -o /root/x http://127.0.0.1:10070/readyz",
+            "curl -fsS http://127.0.0.1:10070/readyz",
+            "scp -f /etc/gotosocial/other.yaml",
+            "scp -t /etc/gotosocial/config.yaml",
+            "scp -t /var/lib/gotosocial/sqlite.db",
+            f"scp -f {tmp}/sqlite.db",
+            "cat /var/lib/gotosocial/sqlite.db",
+            f"cat {tmp}/sub/sqlite.db",
+            "test -x /var/lib/gotosocial/sqlite.db",
+            "mktemp -d /var/tmp/gotosocial-echoport.XXX",
+            "systemctl restart gotosocial",
+        ):
+            with self.subTest(command=command):
+                with self.assertRaises(GUARD.Refused, msg=command):
+                    GUARD.check(command, self.production, realpath=identity, lstat=lstat_runner_view)
+        # A snapshot temp dir that is not a directory is not handed over.
+        with self.assertRaises(GUARD.Refused):
+            GUARD.check(f"chown gotosocial:gotosocial {tmp}", self.production, realpath=identity, lstat=lstat_absent)
+        # Staging has none of it.
+        self.assertRefused("curl -fsS -o /dev/null http://127.0.0.1:10070/readyz", self.staging)
+        self.assertRefused("mktemp -d /var/tmp/gotosocial-echoport.XXXXXX", self.staging)
+
+
+class GuardRedirects(unittest.TestCase):
+    """The files the guard opens itself for `< file`, `> file` and `cat`."""
+
+    def setUp(self) -> None:
+        # Like the runners' mktemp -d: a 0700 directory of the guard's user.
+        self.dir = Path(f"/tmp/echoport-guard-test.{secrets.token_hex(4)}")
+        self.dir.mkdir(mode=0o700)
+        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
+
+    def redirect(self, name: str, owners: tuple[str, ...] = ()) -> Any:
+        return GUARD.Redirect(str(self.dir), name, owners)
+
+    def test_create_is_exclusive_and_private(self) -> None:
+        fd = GUARD.open_redirect(self.redirect("a.dump"), create=True)
+        os.write(fd, b"dump")
+        os.close(fd)
+        self.assertEqual(stat.S_IMODE((self.dir / "a.dump").stat().st_mode), 0o600)
+        with self.assertRaises(OSError):
+            GUARD.open_redirect(self.redirect("a.dump"), create=True)
+
+    def test_read_plain_file(self) -> None:
+        (self.dir / "a.dump").write_bytes(b"dump")
+        fd = GUARD.open_redirect(self.redirect("a.dump"), create=False)
+        self.assertEqual(os.read(fd, 10), b"dump")
+        os.close(fd)
+
+    def test_refuses_links_and_special_files(self) -> None:
+        outside = self.dir.parent / f"{self.dir.name}-outside"
+        outside.write_text("x")
+        self.addCleanup(outside.unlink)
+        (self.dir / "link").symlink_to(outside)
+        os.link(outside, self.dir / "hard")
+        os.mkfifo(self.dir / "fifo")
+        (self.dir / "sub").mkdir()
+        for name, create in (("link", False), ("link", True), ("hard", False), ("fifo", False), ("sub", False)):
+            with self.subTest(name=name, create=create):
+                with self.assertRaises((GUARD.Refused, OSError)):
+                    fd = GUARD.open_redirect(self.redirect(name), create=create)
+                    os.close(fd)
+        self.assertEqual(outside.read_text(), "x")
+
+    def test_refuses_a_shared_or_foreign_directory(self) -> None:
+        (self.dir / "a.dump").write_bytes(b"dump")
+        self.dir.chmod(0o755)
+        with self.assertRaises(GUARD.Refused):
+            GUARD.open_redirect(self.redirect("a.dump"), create=False)
+        self.dir.chmod(0o700)
+        with mock.patch.object(GUARD.os, "geteuid", return_value=os.geteuid() + 1):
+            with self.assertRaises(GUARD.Refused):
+                GUARD.open_redirect(self.redirect("a.dump"), create=False)
+
+    def test_refuses_a_symlinked_directory(self) -> None:
+        link = self.dir.parent / f"{self.dir.name}-link"
+        link.symlink_to(self.dir)
+        self.addCleanup(link.unlink)
+        (self.dir / "a.dump").write_bytes(b"dump")
+        with self.assertRaises(OSError):
+            GUARD.open_redirect(GUARD.Redirect(str(link), "a.dump"), create=False)
 
 
 class GuardMain(unittest.TestCase):
@@ -359,15 +702,19 @@ class RecordingHosts:
     def scp_to_remote(self, host: str, user: str, local: str, remote: str) -> None:
         self.record(host, f"scp -t {remote}")
 
-    def rsync_from_remote(self, host: str, user: str, remote: str, local: str) -> None:
-        self.record(host, f"rsync --server --sender {RSYNC_FLAGS} --safe-links . {remote}/")
-        Path(local).mkdir(parents=True, exist_ok=True)
-        (Path(local) / "file.txt").write_text("data")
-
-    def rsync_to_remote(self, host: str, user: str, local: str, remote: str) -> None:
-        self.record(host, f"rsync --server {RSYNC_FLAGS} --delete . {remote}/")
+    def rsync(self, argv: list[str]) -> None:
+        """The runner's own rsync client call, as the server side sees it."""
+        host, command, download = rsync_server_command(argv)
+        self.record(host, command)
+        if download:
+            local = Path(argv[-1])
+            local.mkdir(parents=True, exist_ok=True)
+            (local / "file.txt").write_text("data")
 
     def run(self, args: Any, **kwargs: Any) -> subprocess.CompletedProcess:
+        if isinstance(args, str) and args.startswith("rsync "):
+            self.rsync(shlex.split(args))
+            return subprocess.CompletedProcess(args, 0, "", "")
         if isinstance(args, str):
             raise AssertionError(f"unexpected shell command in runner: {args}")
         if args[0] == "sqlite3":
@@ -400,9 +747,6 @@ class RecordingHosts:
             mock.patch.object(runner.subprocess, "run", side_effect=self.run),
             mock.patch.object(runner, "TEMP_DIR", str(self.work)),
         ]
-        for name in ("rsync_from_remote", "rsync_to_remote"):
-            if hasattr(runner, name):
-                patches.append(mock.patch.object(runner, name, side_effect=getattr(self, name)))
         with contextlib.ExitStack() as stack:
             for patch in patches:
                 stack.enter_context(patch)
@@ -425,12 +769,12 @@ class RunnerCommandsAreAllowlisted(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.policies = {host: policy(data) for host, data in self.POLICIES.items()}
 
-    def assert_all_allowed(self, hosts: RecordingHosts, expected_hosts: set[str]) -> None:
+    def assert_all_allowed(self, hosts: Any, expected_hosts: set[str]) -> None:
         self.assertTrue(hosts.commands, "runner sent no remote commands")
         self.assertEqual({host for host, _ in hosts.commands}, expected_hosts)
         for host, command in hosts.commands:
             with self.subTest(host=host, command=command):
-                GUARD.check(command, self.policies[host], realpath=identity)
+                GUARD.check(command, self.policies[host], realpath=identity, lstat=lstat_runner_view)
 
     def backup_then_restore(self, runner, backup, restore) -> tuple[RecordingHosts, RecordingHosts]:
         backup_hosts = RecordingHosts(self.tmp)
@@ -519,8 +863,9 @@ class RunnerCommandsAreAllowlisted(unittest.TestCase):
         )
         self.assert_all_allowed(backup_hosts, {"staging.wersdoerfer.de"})
         self.assert_all_allowed(restore_hosts, {"staging.wersdoerfer.de"})
+        self.assertIn(f"{RSYNC_DOWNLOAD} /home/marina/site/media/", [c for _, c in backup_hosts.commands])
         sent = [command for _, command in restore_hosts.commands]
-        self.assertTrue(any(command.startswith("rsync --server") for command in sent))
+        self.assertIn("rsync --server -logtpre.iLsfxCIvu . /home/marina/site/media/", sent)
         self.assertTrue(any(command.startswith("chown -R marina:marina") for command in sent))
 
     def test_villakunterbunt_runner(self) -> None:
@@ -554,6 +899,140 @@ class RunnerCommandsAreAllowlisted(unittest.TestCase):
         )
         self.assert_all_allowed(backup_hosts, {"staging.wersdoerfer.de"})
         self.assert_all_allowed(restore_hosts, {"staging.wersdoerfer.de"})
+        sent = [command for _, command in restore_hosts.commands]
+        self.assertIn(f"{RSYNC_UPLOAD_DELETE} /home/villakunterbunt/data/media/", sent)
+
+    def test_django_chat_runner(self) -> None:
+        tests_dir = Path(__file__).resolve().parent
+        loader_spec = importlib.util.spec_from_file_location(
+            "django_chat_runner_contract", tests_dir / "test_django_chat_staging_db_backup.py"
+        )
+        assert loader_spec and loader_spec.loader
+        contract = importlib.util.module_from_spec(loader_spec)
+        loader_spec.loader.exec_module(contract)
+        runner = contract.render_runner(self.tmp / "work")
+        host = contract.FakeHosts(self.tmp)
+        events: list[dict] = []
+        with (
+            mock.patch.object(runner, "run_cmd", host.run_cmd),
+            mock.patch.object(runner, "ensure_binaries", lambda: None),
+            mock.patch.object(runner, "_emit", events.append),
+        ):
+            self.assertEqual(runner.backup_flow({"ECHOPORT_KEY_PREFIX": "django-chat-staging-db/t1"}), 0, events)
+            backup_calls = list(host.remote_calls)
+            archive = host.stored[f"{contract.ALIAS}/backups/django-chat-staging-db/t1.tar.gz"]
+            host.remote_calls.clear()
+            cenv = {
+                "ECHOPORT_RESTORE_ID": "42",
+                "ECHOPORT_KEY": "django-chat-staging-db/t1.tar.gz",
+                "ECHOPORT_CHECKSUM": sha256_bytes(archive),
+            }
+            self.assertEqual(runner.restore_flow(cenv), 0, events)
+        self.policies[contract.HOST] = self.policies["staging.wersdoerfer.de"]
+        for calls in (backup_calls, host.remote_calls):
+            recorded = types.SimpleNamespace(commands=[(contract.HOST, c) for c in calls])
+            self.assert_all_allowed(recorded, {contract.HOST})
+
+    def test_gotosocial_runner(self) -> None:
+        runner = render_runner(
+            "gotosocial_backup.py.j2",
+            gotosocial_backup_remote_host="wersdoerfer.de",
+            gotosocial_backup_ready_url="http://127.0.0.1:10070/readyz",
+            gotosocial_backup_target_name="gotosocial",
+        )
+        host = GoToSocialHost(self.tmp)
+        with host.installed(runner):
+            self.assertEqual(runner.backup("backups", "gotosocial/t1", "2026-10-15T01-25-00"), 0)
+            backup = list(host.commands)
+            host.commands.clear()
+            archive = host.store["gotosocial/t1.tar.gz"]
+            self.assertEqual(runner.restore("backups", "gotosocial/t1.tar.gz", sha256(archive)), 0)
+        for recorded in (backup, host.commands):
+            self.assert_all_allowed(types.SimpleNamespace(commands=recorded), {"wersdoerfer.de"})
+        sent = [c for _, c in backup + host.commands]
+        self.assertIn(f"{RSYNC_DOWNLOAD} /var/lib/gotosocial/storage/", sent)
+        self.assertIn(f"{RSYNC_UPLOAD_DELETE} /var/lib/gotosocial/storage/", sent)
+        self.assertTrue(any(c.startswith("cat /var/tmp/gotosocial-echoport.") for c in sent))
+        self.assertTrue(any(c.startswith("mv /var/lib/gotosocial/storage ") for c in sent))
+
+
+class GoToSocialHost:
+    """Plays production for gotosocial_backup.py.j2 at the subprocess boundary."""
+
+    TMP = "/var/tmp/gotosocial-echoport.Ab12Cd"
+    LAYOUT = "fedi.example.org example.org\n"
+
+    def __init__(self, work: Path) -> None:
+        self.work = work
+        self.commands: list[tuple[str, str]] = []
+        self.store: dict[str, Path] = {}
+
+    def ssh_line(self, line: str, kwargs: dict) -> subprocess.CompletedProcess:
+        self.commands.append(("wersdoerfer.de", line))
+        argv = shlex.split(line)
+        stdout, rc = "", 0
+        if argv[0] == "mktemp":
+            stdout = self.TMP + "\n"
+        elif argv[-1] == "PRAGMA integrity_check;":
+            stdout = "ok\n"
+        elif argv[0] == "cat":
+            kwargs["stdout"].write(b"SQLite format 3\0")
+        elif argv[:2] == ["test", "-e"] and argv[2].endswith(("-wal", "-shm")):
+            rc = 1
+        return subprocess.CompletedProcess(argv, rc, stdout if "stdout" not in kwargs else b"", "" if "stdout" not in kwargs else b"")
+
+    def run(self, args: Any, **kwargs: Any) -> subprocess.CompletedProcess:
+        assert isinstance(args, list), args
+        if args[0] == "ssh":
+            assert args[-2] == "root@wersdoerfer.de", args
+            return self.ssh_line(args[-1], kwargs)
+        if args[0] == "scp":
+            assert args[1] == "-O", args
+            source, target = args[-2], args[-1]
+            if ":" in source:
+                path = source.split(":", 1)[1]
+                self.commands.append(("wersdoerfer.de", f"scp -f {path}"))
+                Path(target).write_text(self.LAYOUT if path.endswith("domain-layout") else "host: x\n")
+            else:
+                self.commands.append(("wersdoerfer.de", f"scp -t {target.split(':', 1)[1]}"))
+            return subprocess.CompletedProcess(args, 0, "", "")
+        if args[0] == "rsync":
+            host, command, download = rsync_server_command(args)
+            self.commands.append((host, command))
+            if download:
+                local = Path(args[-1])
+                local.mkdir(parents=True, exist_ok=True)
+                (local / "a.png").write_bytes(b"png")
+            return subprocess.CompletedProcess(args, 0, "", "")
+        if args[0] == "sqlite3":
+            return subprocess.CompletedProcess(args, 0, "ok\n" if "PRAGMA" in args[-1] else "1\n", "")
+        if args[1] == "cp":
+            source, target = args[-2], args[-1]
+            if source.startswith("minio/"):
+                shutil.copy(self.store[source.split("/", 2)[2]], target)
+            else:
+                stored = self.work / f"gts-{len(self.store)}.tar.gz"
+                shutil.copy(source, stored)
+                self.store[target.split("/", 2)[2]] = stored
+            return subprocess.CompletedProcess(args, 0, "", "")
+        if args[1] == "stat":
+            size = self.store[args[-1].split("/", 2)[2]].stat().st_size
+            return subprocess.CompletedProcess(args, 0, json.dumps({"size": size}), "")
+        raise AssertionError(f"unexpected local command: {args}")
+
+    @contextlib.contextmanager
+    def installed(self, runner: types.ModuleType):
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(runner.subprocess, "run", side_effect=self.run))
+            stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+            stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
+            yield
+
+
+def sha256_bytes(data: bytes) -> str:
+    import hashlib
+
+    return hashlib.sha256(data).hexdigest()
 
 
 class RunnersUseClassicScp(unittest.TestCase):

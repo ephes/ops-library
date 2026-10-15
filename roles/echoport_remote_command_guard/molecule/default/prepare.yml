@@ -5,12 +5,13 @@
   hosts: all
   become: true
   tasks:
-    - name: Install OpenSSH, rsync and fish
+    - name: Install OpenSSH, rsync, sqlite3 and fish
       ansible.builtin.apt:
         name:
           - openssh-client
           - openssh-server
           - rsync
+          - sqlite3
           - fish
         state: present
         update_cache: true
@@ -72,3 +73,23 @@
         - /srv/marina/site
         - /srv/marina/site/media
         - /srv/outside
+
+    - name: Create a service data directory for the SQLite snapshot steps
+      ansible.builtin.file:
+        path: /srv/gts
+        state: directory
+        owner: nobody
+        group: nogroup
+        mode: "0700"
+
+    - name: Create the service's SQLite database
+      ansible.builtin.command:
+        argv: [/usr/bin/sqlite3, /srv/gts/sqlite.db, "CREATE TABLE accounts (id TEXT); INSERT INTO accounts VALUES ('a1');"]
+        creates: /srv/gts/sqlite.db
+
+    - name: Hand the database to the service user
+      ansible.builtin.file:
+        path: /srv/gts/sqlite.db
+        owner: nobody
+        group: nogroup
+        mode: "0600"

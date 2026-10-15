@@ -213,8 +213,10 @@ def rsync_to_remote(
     """Rsync directory from local to remote host (directories only, trailing slashes)."""
     _validate_ssh_identifier(remote_host, "remote_host")
     _validate_ssh_identifier(remote_user, "remote_user")
+    # --no-D: no device or special files on the host; the pinned key's guard
+    # (echoport_remote_command_guard) accepts only these exact options.
     full_cmd = (
-        f'rsync -a -e "ssh {SSH_OPTS}" '
+        f'rsync -a --no-D -e "ssh {SSH_OPTS}" '
         f"{shlex.quote(local_path)}/ {remote_user}@{remote_host}:{shlex.quote(remote_path)}/"
     )
     print(f"[RSYNC] {local_path}/ -> {remote_path}/", file=sys.stderr)

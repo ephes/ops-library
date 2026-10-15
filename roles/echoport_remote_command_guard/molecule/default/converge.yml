@@ -10,10 +10,15 @@
             dump_databases: [homepage]
             restore_databases: {homepage: homepage}
             temp_file_prefixes: [homepage]
+            scratch_restore_prefixes: [molecule_restore]
           units: [cron.service]
           private_media_paths: []
           path_roots:
             - {path: /srv/marina/site, owner: "nobody:nogroup"}
+          temp_dirs: [/var/tmp/molecule-restore.XXXXXXXX]
+          sqlite_snapshots:
+            - {database: /srv/gts/sqlite.db, owner: "nobody:nogroup", temp_dir: /var/tmp/molecule-gts.XXXXXX}
+          read_files: [/etc/hostname]
   post_tasks:
     - name: Read the client public key
       ansible.builtin.slurp:

@@ -21,6 +21,36 @@ FastDeploy privilege reduction, stage 1, SSH part.
 - `echoport_backup`: the remote runners (homepage/python-podcast production DB
   and staging, marina and villakunterbunt staging) call `scp -O` so the guard
   sees a checkable `scp -f|-t <path>`. heis is unchanged.
+- The guard accepts exactly the rsync server commands of the runners' client
+  options (download `-a --safe-links`, upload `-a --no-D` with or without
+  `--delete`; derived from rsync 3.2.7 and 3.5.0, listed in the role README)
+  and refuses everything else (`-L`, `-K`, device/special files, other
+  options). The marina and villakunterbunt upload runners pass `--no-D`.
+- `scp -t` writes only onto a new path or an existing regular file with one
+  link (no symlink, device, FIFO or directory); `scp -f` reads only missing or
+  regular files.
+- Django Chat staging DB runner (`django_chat_staging_db_backup.py.j2`) passes
+  the guard unchanged: `runuser -u postgres --` forms, `pg_dump` to stdout, the
+  runner's three fixed read-only `psql` queries, scratch databases from
+  `postgres.scratch_restore_prefixes`, a root-only restore temp dir from
+  `temp_dirs`. The guard performs the runner's `umask 077 && cat > <dump>` and
+  `pg_restore ... < <dump>` redirections itself, opening the files without
+  following symlinks.
+- GoToSocial runner (`gotosocial_backup.py.j2`): every remote step is one
+  plain command (no `bash -c` script), `scp -O` without `-p`, uploads with
+  `--no-D`, and the snapshot is read with `cat` from the service user's temp
+  dir, which the guard opens itself without following symlinks. The rollback
+  runs the same moves step by step. New policy keys `sqlite_snapshots`,
+  `read_files`, `ready_urls`; generic `mv` within one root onto a new name,
+  `chmod 0600|0700`, `test -f`.
+- `just molecule-test echoport_remote_command_guard` also runs the refused
+  rsync options, scp onto a symlink, a SQLite snapshot through the guard and a
+  dump upload into a root-only temp dir.
+- Accepted risk (documented): restores run `pg_restore` in a PostgreSQL
+  superuser session; a crafted dump could run code as `postgres`.
+- Rollout: re-run the register playbooks of these runners before pinning a
+  host (ops-control `docs/FASTDEPLOY_PRIVILEGES.md`); the new forms also work
+  unpinned.
 
 ## Unreleased — mailgun-relay Python/Rust implementation switch (2.42.0)
 

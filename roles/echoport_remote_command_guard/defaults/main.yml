@@ -20,4 +20,9 @@ echoport_remote_command_guard_python: /usr/bin/python3
 #   private_media_paths: []                 # python-podcast private media backup (tar on the host)
 #   path_roots:                             # SQLite/file targets: paths must resolve inside a root
 #     - {path: /home/marina/site, owner: "marina:marina"}
+#   temp_dirs: []                           # mktemp -d templates for root-only restore temp dirs
+#   sqlite_snapshots: []                    # {database, owner, temp_dir}: online SQLite snapshot as owner
+#   read_files: []                          # extra files scp -f may read
+#   ready_urls: []                          # curl -fsS -o /dev/null <url> readiness probes
+# postgres also takes scratch_restore_prefixes: [<prefix>] (createdb/pg_restore <prefix>_<digits>).
 echoport_remote_command_guard_policy: {}
