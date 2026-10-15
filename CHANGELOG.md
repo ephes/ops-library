@@ -5,6 +5,10 @@
 
 ## Unreleased — journald retention role (2.37.0)
 
+- Fix `takahe_backup`: `pg_dump` ran as `postgres` and could not write into the
+  root-owned 0700 backup directory, so every backup failed at the dump step.
+  `takahe_backup_postgres_become_user` now defaults to `takahe_backup_owner`
+  (TCP + passfile, as in `mastodon_backup`).
 - New `journald_config` role: writes one systemd-journald drop-in
   (`/etc/systemd/journald.conf.d/60-ops-library.conf`) with `Storage=` and the
   size, file-count and age limits (`SystemMaxUse`, `SystemKeepFree`,
@@ -24,10 +28,6 @@
 
 ## Unreleased — GoToSocial deploy role and Echoport runner (2.36.0)
 
-- Fix `takahe_backup`: `pg_dump` ran as `postgres` and could not write into the
-  root-owned 0700 backup directory, so every backup failed at the dump step.
-  `takahe_backup_postgres_become_user` now defaults to `takahe_backup_owner`
-  (TCP + passfile, as in `mastodon_backup`).
 - New role `gotosocial_deploy`: GoToSocial from a pinned upstream release
   (0.22.2, sha256-verified per architecture), SQLite and local storage in
   `/var/lib/gotosocial`, hardened systemd unit (`ProtectSystem=strict`, one
