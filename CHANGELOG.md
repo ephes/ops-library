@@ -3,7 +3,29 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
-<<<<<<< HEAD
+## Unreleased — BIND dynamic zones, certbot RFC 2136 provider
+
+- `bind_authoritative_deploy`: zone entries accept `dynamic: true` plus an
+  `update_policy` list, rendered as `update-policy { ... };`, so a zone can
+  take TSIG-signed RFC 2136 updates. The zone file is a seed: installed once
+  (`force: false`) into the new `bind_dynamic_zone_dir` (default
+  `/var/lib/bind`, owned by the named user) and never overwritten, because
+  named owns the file and its journal afterwards. Validation rejects a dynamic
+  zone that is not `master`/`primary` or has no `update_policy`. Existing zone
+  lists render unchanged. Tested by `just test-bind-authoritative-dynamic`.
+- `certbot_dns_deploy`: new provider `rfc2136` (`python3-certbot-dns-rfc2136`,
+  `certbot_dns_rfc2136_server`/`_port`/`_key_name`/`_key_secret`/
+  `_key_algorithm`). When an existing lineage was issued with another
+  authenticator, the role runs `certbot reconfigure` (dry run against Let's
+  Encrypt staging, saved only on success); opt out with
+  `certbot_dns_reconfigure_on_provider_change: false`. The credentials and
+  RFC 2136 validation tasks are `no_log`. Default provider stays `gandi`.
+  rfc2136 credentials go to their own file (`certbot_dns_rfc2136_credentials_file`,
+  default `/etc/letsencrypt/dns-rfc2136-credentials.ini`), so the gandi file a
+  lineage still references is never rewritten. `certbot_dns_restore` fixes the
+  mode of whichever credentials files exist instead of requiring the gandi one.
+  Tested by `just test-certbot-dns-rfc2136`.
+
 ## Unreleased — DDNS updater fails loudly and has pluggable backends
 
 - `dns_deploy` DDNS: the shell updater is replaced by a stdlib Python updater
@@ -66,32 +88,6 @@
   runs it with a real `uv` against local wheels (`just test-wagtail-deploy`).
 
 ||||||| parent of 699b482 (Guard Mastodon pool sizing and emoji purges, add cross-prefix backup retention)
-||||||| parent of 2bac4bc (Add dynamic BIND zones and a certbot RFC 2136 provider)
-=======
-## Unreleased — BIND dynamic zones, certbot RFC 2136 provider
-
-- `bind_authoritative_deploy`: zone entries accept `dynamic: true` plus an
-  `update_policy` list, rendered as `update-policy { ... };`, so a zone can
-  take TSIG-signed RFC 2136 updates. The zone file is a seed: installed once
-  (`force: false`) into the new `bind_dynamic_zone_dir` (default
-  `/var/lib/bind`, owned by the named user) and never overwritten, because
-  named owns the file and its journal afterwards. Validation rejects a dynamic
-  zone that is not `master`/`primary` or has no `update_policy`. Existing zone
-  lists render unchanged. Tested by `just test-bind-authoritative-dynamic`.
-- `certbot_dns_deploy`: new provider `rfc2136` (`python3-certbot-dns-rfc2136`,
-  `certbot_dns_rfc2136_server`/`_port`/`_key_name`/`_key_secret`/
-  `_key_algorithm`). When an existing lineage was issued with another
-  authenticator, the role runs `certbot reconfigure` (dry run against Let's
-  Encrypt staging, saved only on success); opt out with
-  `certbot_dns_reconfigure_on_provider_change: false`. The credentials and
-  RFC 2136 validation tasks are `no_log`. Default provider stays `gandi`.
-  rfc2136 credentials go to their own file (`certbot_dns_rfc2136_credentials_file`,
-  default `/etc/letsencrypt/dns-rfc2136-credentials.ini`), so the gandi file a
-  lineage still references is never rewritten; `certbot_dns_restore` also
-  fixes that file's mode when present.
-  Tested by `just test-certbot-dns-rfc2136`.
-
->>>>>>> 2bac4bc (Add dynamic BIND zones and a certbot RFC 2136 provider)
 ## Unreleased — Echoport runner for the mail database (2.32.1)
 
 - New `echoport_backup/templates/mail_db_backup.py.j2`: a service-owned
