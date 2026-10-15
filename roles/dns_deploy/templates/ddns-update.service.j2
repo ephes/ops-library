@@ -1,5 +1,5 @@
 [Unit]
-Description=Update {{ dns_ddns_provider }} DNS for {{ dns_ddns_subdomain }}.{{ dns_ddns_domain }}
+Description=Update {{ dns_ddns_effective_providers | join(" + ") }} DNS for {{ dns_ddns_subdomain }}.{{ dns_ddns_domain }}
 After=network-online.target
 Wants=network-online.target
 

@@ -11,7 +11,11 @@ run (exit 1). After the provider step it asks the zone's authoritative
 nameservers what the public sees and records that, plus how long a mismatch has
 lasted, in a status JSON file for monitoring.
 
-Secrets are never logged: request headers and bodies are not written anywhere.
+Several providers can be written in one run (``providers`` list), e.g. the old
+and the new DNS host while a delegation moves; the run fails if any of them fails.
+
+Secrets are never logged: request headers and bodies are not written anywhere,
+and the RFC 2136 TSIG secret reaches nsupdate on stdin, never in argv or a file.
 
 Adding a backend: subclass ``Backend``, implement ``get(name, rtype)`` (returns a
 sorted list of values, empty when the record does not exist) and
@@ -32,6 +36,8 @@ import urllib.request
 from typing import Callable, Optional
 
 HttpFunc = Callable[[str, str, dict, Optional[bytes]], "tuple[int, bytes]"]
+# (argv, stdin text) -> (exit code, combined output)
+CommandFunc = Callable[[list, Optional[str]], "tuple[int, str]"]
 ResolveFunc = Callable[[str, str, Optional[str]], "Optional[list[str]]"]
 
 USER_AGENT = "ops-library-ddns/2"
@@ -143,7 +149,75 @@ class GandiBackend(Backend):
             raise DdnsError(f"gandi PUT {name} {rtype}: HTTP {status} {short_body(body)}")
 
 
-BACKENDS = {GandiBackend.provider: GandiBackend}
+def run_command(argv: list, stdin: Optional[str]) -> tuple[int, str]:
+    try:
+        result = subprocess.run(argv, input=stdin, capture_output=True, text=True,
+                                timeout=60, check=False)
+    except (OSError, subprocess.TimeoutExpired) as err:
+        return 127, str(err)
+    return result.returncode, (result.stdout + result.stderr).strip()
+
+
+class Rfc2136Backend(Backend):
+    """RFC 2136 DNS UPDATE signed with TSIG (nsupdate), read back from the same server.
+
+    Settings: server (address or name of the primary), port (53), key_name,
+    key_algorithm (hmac-sha256), update_zone (optional; nsupdate finds the zone by
+    SOA otherwise). Credential: DDNS_TSIG_SECRET (base64) in the environment.
+    """
+
+    provider = "rfc2136"
+    algorithms = ("hmac-sha256", "hmac-sha384", "hmac-sha512")
+    command: CommandFunc = staticmethod(run_command)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.server = str(self.settings.get("server", "")).strip()
+        self.port = int(self.settings.get("port", 53))
+        self.key_name = str(self.settings.get("key_name", "")).strip()
+        self.algorithm = str(self.settings.get("key_algorithm", "hmac-sha256")).lower()
+        self.update_zone = str(self.settings.get("update_zone", "") or "").strip()
+        if not self.server or not self.key_name:
+            raise DdnsError("rfc2136: settings server and key_name are required")
+        if self.algorithm not in self.algorithms:
+            raise DdnsError(f"rfc2136: unsupported key_algorithm {self.algorithm!r}")
+        for value in (self.server, self.key_name, self.update_zone):
+            if any(ch.isspace() for ch in value):
+                raise DdnsError("rfc2136: settings must not contain whitespace")
+        self.secret = self._require_env("DDNS_TSIG_SECRET")
+        if any(ch.isspace() for ch in self.secret):
+            raise DdnsError("rfc2136: DDNS_TSIG_SECRET must be a single base64 token")
+
+    def _fqdn(self, name: str) -> str:
+        return fqdn(name, self.zone) + "."
+
+    def get(self, name: str, rtype: str) -> list[str]:
+        argv = ["dig", "+norecurse", "+short", "+time=3", "+tries=2", "-p", str(self.port),
+                f"@{self.server}", self._fqdn(name), rtype]
+        code, output = self.command(argv, None)
+        lines = [line.strip() for line in output.splitlines() if line.strip()]
+        if code != 0 or any(line.startswith(";") for line in lines):
+            raise DdnsError(f"rfc2136 query {name} {rtype} @{self.server}: {short_body(output.encode())}")
+        # A wildcard owner is queried literally and answers with its own record set.
+        return sorted(line.rstrip(".") for line in lines if line.split()[0] != "CNAME")
+
+    def set(self, name: str, rtype: str, values: list[str]) -> None:
+        owner = self._fqdn(name)
+        script = [f"server {self.server} {self.port}"]
+        if self.update_zone:
+            script.append(f"zone {self.update_zone}")
+        script.append(f"key {self.algorithm}:{self.key_name} {self.secret}")
+        script.append(f"update delete {owner} {rtype}")
+        script += [f"update add {owner} {self.ttl} {rtype} {value}" for value in values]
+        script.append("send")
+        code, output = self.command(["nsupdate", "-v"], "\n".join(script) + "\n")
+        if code != 0:
+            output = output.replace(self.secret, "<redacted>")
+            raise DdnsError(f"rfc2136 update {name} {rtype}: nsupdate exit {code}: "
+                            f"{short_body(output.encode())}")
+
+
+BACKENDS = {GandiBackend.provider: GandiBackend, Rfc2136Backend.provider: Rfc2136Backend}
 
 
 def detect_ip(url: str, version: int, http: HttpFunc) -> str:
@@ -221,7 +295,8 @@ def write_status(path: Optional[str], status: dict) -> None:
 
 def run(config: dict, env: dict, http: HttpFunc = http_request, resolve: ResolveFunc = dig,
         log: Callable[[str], None] = print, now: Callable[[], float] = time.time) -> tuple[int, dict]:
-    provider = config.get("provider", "gandi")
+    providers = list(config.get("providers") or [config.get("provider", "gandi")])
+    provider = providers[0]
     zone = idna_zone(config["zone"])
     names = list(config.get("names", []))
     ttl = int(config.get("ttl", 300))
@@ -230,17 +305,21 @@ def run(config: dict, env: dict, http: HttpFunc = http_request, resolve: Resolve
     records: dict[str, dict] = {}
     wan: dict[str, Optional[str]] = {"ipv4": None, "ipv6": None}
 
-    log(f"DDNS run: provider={provider} zone={zone} names={','.join(names)}")
+    provider_label = (f"provider={provider}" if len(providers) == 1
+                      else f"providers={','.join(providers)}")
+    log(f"DDNS run: {provider_label} zone={zone} names={','.join(names)}")
 
-    backend: Optional[Backend] = None
-    try:
-        backend_cls = BACKENDS.get(provider)
-        if backend_cls is None:
-            raise DdnsError(f"unknown provider {provider!r} (known: {', '.join(sorted(BACKENDS))})")
-        backend = backend_cls(zone, ttl, config.get(provider, {}), env, http)
-    except DdnsError as err:
-        errors.append(str(err))
-        log(f"ERROR: {err}")
+    backends: dict[str, Optional[Backend]] = {}
+    for name_ in providers:
+        backends[name_] = None
+        try:
+            backend_cls = BACKENDS.get(name_)
+            if backend_cls is None:
+                raise DdnsError(f"unknown provider {name_!r} (known: {', '.join(sorted(BACKENDS))})")
+            backends[name_] = backend_cls(zone, ttl, config.get(name_, {}), env, http)
+        except DdnsError as err:
+            errors.append(str(err))
+            log(f"ERROR: {err}")
 
     sources = config.get("ip_sources", {})
     for version, enabled in families.items():
@@ -264,38 +343,72 @@ def run(config: dict, env: dict, http: HttpFunc = http_request, resolve: Resolve
             desired = wan[f"ipv{version}"]
             record = {"name": fqdn(name, zone), "type": rtype, "desired": desired,
                       "provider_values": None, "action": "skipped", "public_values": None,
-                      "public_ok": False}
+                      "public_ok": False, "providers": {}}
             records[key] = record
-            if backend is None or desired is None:
-                continue
-            try:
-                current = backend.get(name, rtype)
-                record["provider_values"] = current
-                if current == [desired]:
-                    record["action"] = "unchanged"
-                    log(f"unchanged {rtype} {record['name']} = {desired}")
-                else:
-                    backend.set(name, rtype, [desired])
-                    after = backend.get(name, rtype)
-                    record["provider_values"] = after
-                    if after != [desired]:
-                        raise DdnsError(
-                            f"{rtype} {record['name']}: read-back {after} != [{desired}]"
-                        )
-                    record["action"] = "updated"
-                    log(f"updated {rtype} {record['name']}: {current or '[]'} -> {desired}")
-            except DdnsError as err:
-                record["action"] = "failed"
-                errors.append(str(err))
-                log(f"ERROR: {err}")
+            for provider_name, backend in backends.items():
+                tag = f"{provider_name} " if len(backends) > 1 else ""
+                result = {"values": None, "action": "skipped"}
+                record["providers"][provider_name] = result
+                if backend is None or desired is None:
+                    continue
+                try:
+                    current = backend.get(name, rtype)
+                    result["values"] = current
+                    if current == [desired]:
+                        result["action"] = "unchanged"
+                        log(f"unchanged {tag}{rtype} {record['name']} = {desired}")
+                    else:
+                        backend.set(name, rtype, [desired])
+                        after = backend.get(name, rtype)
+                        result["values"] = after
+                        if after != [desired]:
+                            raise DdnsError(
+                                f"{tag}{rtype} {record['name']}: read-back {after} != [{desired}]"
+                            )
+                        result["action"] = "updated"
+                        log(f"updated {tag}{rtype} {record['name']}: "
+                            f"{current or '[]'} -> {desired}")
+                except DdnsError as err:
+                    result["action"] = "failed"
+                    errors.append(str(err))
+                    log(f"ERROR: {err}")
+            # Summary fields keep their single-provider meaning: the first provider's
+            # values, and the worst action across providers.
+            actions = [r["action"] for r in record["providers"].values()]
+            record["provider_values"] = record["providers"][provider]["values"]
+            for action in ("failed", "skipped", "updated", "unchanged"):
+                if action in actions:
+                    record["action"] = action
+                    break
 
-    # Public view: ask the zone's authoritative nameservers directly.
-    nameservers = list(config.get("verify_nameservers") or [])
-    if not nameservers:
-        nameservers = resolve(zone, "NS", None) or []
+    # Public view: ask the authoritative nameservers directly. Without an explicit
+    # list, use the NS set of the closest enclosing zone that has one, so a record
+    # in a delegated child zone (home.example.com) is checked at the child's servers
+    # once the delegation exists, and at the parent's servers before that.
+    configured = list(config.get("verify_nameservers") or [])
+    ns_cache: dict[str, list[str]] = {}
+
+    def nameservers_for(owner: str) -> list[str]:
+        if configured:
+            return configured
+        labels = owner.split(".")
+        if labels[0] == "*":
+            labels = labels[1:]
+        candidates = [".".join(labels[i:]) for i in range(len(labels))]
+        candidates = [c for c in candidates if c == zone or c.endswith("." + zone)] or [zone]
+        for candidate in candidates:
+            if candidate not in ns_cache:
+                ns_cache[candidate] = resolve(candidate, "NS", None) or []
+            if ns_cache[candidate]:
+                return ns_cache[candidate]
+        return []
+
+    used_nameservers: list[str] = []
     for record in records.values():
         if record["desired"] is None:
             continue
+        nameservers = nameservers_for(record["name"])
+        used_nameservers += [ns for ns in nameservers if ns not in used_nameservers]
         answers = [resolve(record["name"], record["type"], ns) for ns in nameservers]
         seen = [a for a in answers if a is not None]
         record["public_values"] = seen[0] if seen else None
@@ -320,11 +433,12 @@ def run(config: dict, env: dict, http: HttpFunc = http_request, resolve: Resolve
 
     status = {
         "provider": provider,
+        "providers": providers,
         "zone": zone,
         "wan": wan,
         "records": records,
         "errors": errors,
-        "nameservers": nameservers,
+        "nameservers": used_nameservers or configured or nameservers_for(zone),
         "summary": {
             "run_ok": run_ok,
             "finished_at_epoch": timestamp,

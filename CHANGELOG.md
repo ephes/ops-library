@@ -3,6 +3,23 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — DDNS RFC 2136 backend and multi-provider writes
+
+- `dns_deploy` DDNS: new backend `rfc2136` (nsupdate + TSIG against the zone's
+  primary, read back with `dig +norecurse`; settings
+  `dns_ddns_rfc2136_server`/`_port`/`_key_name`/`_key_algorithm`/
+  `_update_zone`, secret `dns_ddns_rfc2136_key_secret` as `DDNS_TSIG_SECRET` in
+  `credentials.env`). The secret reaches nsupdate on stdin only and is redacted
+  from errors.
+- `dns_ddns_providers` writes several providers per run (e.g. Gandi and our own
+  BIND while a delegation moves); any provider failing fails the run.
+  `status.json` keeps its summary and per-record fields and adds `providers`
+  plus `records.*.providers`. Log lines carry the provider name only when more
+  than one is configured. Default stays the single `gandi` provider.
+- Without `dns_ddns_verify_nameservers`, the public check now asks the NS set of
+  the closest enclosing zone that has one, so records in a delegated child zone
+  are verified at the child's servers. Tested by `just test-ddns-update`.
+
 ## Unreleased — BIND dynamic zones, certbot RFC 2136 provider
 
 - `bind_authoritative_deploy`: zone entries accept `dynamic: true` plus an
