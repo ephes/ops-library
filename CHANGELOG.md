@@ -3,6 +3,25 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — journald retention role (2.37.0)
+
+- New `journald_config` role: writes one systemd-journald drop-in
+  (`/etc/systemd/journald.conf.d/60-ops-library.conf`) with `Storage=` and the
+  size, file-count and age limits (`SystemMaxUse`, `SystemKeepFree`,
+  `SystemMaxFileSize`, `SystemMaxFiles`, `MaxRetentionSec`, `MaxFileSec`),
+  plus `journald_config_extra_settings` for other `[Journal]` keys. Values are
+  validated before anything is written, and the role restarts journald when
+  the drop-in changes. `journald_config_state: absent` removes the drop-in
+  again.
+- The README explains why a host can keep only a day of logs with most of
+  `SystemMaxUse` free: journald also rotates when a file's data hash table is
+  75% full, every rotation archives the system journal plus each per-UID
+  journal, and the default `SystemMaxFiles=100` then deletes the oldest files.
+  It shows how to size all three limits from the measured daily volume.
+- Molecule scenario `journald_config/default` checks the rendered drop-in,
+  `systemd-analyze cat-config`, the rejection of malformed and conflicting
+  values, and removal.
+
 ## Unreleased — GoToSocial deploy role and Echoport runner (2.36.0)
 
 - New role `gotosocial_deploy`: GoToSocial from a pinned upstream release

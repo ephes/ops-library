@@ -1,0 +1,133 @@
+---
+# Configure systemd-journald through one managed drop-in.
+
+- name: Ensure host is systemd-managed
+  ansible.builtin.assert:
+    that:
+      - ansible_service_mgr == "systemd"
+    fail_msg: "journald_config requires a systemd-managed host."
+
+- name: Validate state
+  ansible.builtin.assert:
+    that:
+      - journald_config_state in ['present', 'absent']
+      - journald_config_dropin_path is match('^/etc/systemd/journald\.conf\.d/[^/]+\.conf$')
+    fail_msg: >-
+      journald_config_state must be present or absent, and
+      journald_config_dropin_path must be a *.conf file directly in
+      /etc/systemd/journald.conf.d/ (journald ignores anything else), got
+      {{ journald_config_state }} / {{ journald_config_dropin_path }}.
+
+- name: Validate journald settings
+  when: journald_config_state == 'present'
+  block:
+    - name: Validate Storage
+      ansible.builtin.assert:
+        that:
+          - journald_config_storage | string in ['persistent', 'volatile', 'auto', 'none', '']
+        fail_msg: >-
+          journald_config_storage must be persistent, volatile, auto, none or
+          empty, got {{ journald_config_storage }}.
+
+    - name: Validate size limits
+      ansible.builtin.assert:
+        that:
+          - item.value | string is match('^[0-9]+(\\.[0-9]+)?[KMGTPE]?$')
+        fail_msg: >-
+          {{ item.key }} must be a byte count with an optional K/M/G/T/P/E
+          suffix (e.g. 16G or 1.5G), got {{ item.value }}.
+      loop: "{{ journald_config_managed_settings | dict2items | selectattr('key', 'in', ['SystemMaxUse', 'SystemKeepFree', 'SystemMaxFileSize']) | rejectattr('value', 'equalto', '') | list }}"
+      loop_control:
+        label: "{{ item.key }}={{ item.value }}"
+
+    - name: Validate SystemMaxFiles
+      ansible.builtin.assert:
+        that:
+          - journald_config_system_max_files | string is match('^[0-9]+$')
+        fail_msg: >-
+          journald_config_system_max_files must be a non-negative integer (0
+          disables the file-count limit), got
+          {{ journald_config_system_max_files }}.
+      when: journald_config_system_max_files | string | length > 0
+
+    # systemd time spans: one or more "<number><unit>" parts, e.g. "21day",
+    # "2weeks 3days", "1.5day" or "55s500ms". A number without a unit means
+    # seconds and may only stand last, so "1.51.5day" is rejected like systemd
+    # rejects it.
+    - name: Validate time spans
+      ansible.builtin.assert:
+        that:
+          - item.value | string is match('^ *(([0-9]+(\\.[0-9]+)? *(us|usec|ms|msec|s|sec|seconds?|m|min|minutes?|h|hr|hours?|d|days?|w|weeks?|M|months?|y|years?) *)+([0-9]+(\\.[0-9]+)?)?|[0-9]+(\\.[0-9]+)?) *$')
+        fail_msg: >-
+          {{ item.key }} must be a systemd time span (e.g. 21day, 3week,
+          1month), got {{ item.value }}.
+      loop: "{{ journald_config_managed_settings | dict2items | selectattr('key', 'in', ['MaxRetentionSec', 'MaxFileSec']) | rejectattr('value', 'equalto', '') | list }}"
+      loop_control:
+        label: "{{ item.key }}={{ item.value }}"
+
+    - name: Validate extra settings shape
+      ansible.builtin.assert:
+        that:
+          - journald_config_extra_settings is mapping
+        fail_msg: "journald_config_extra_settings must be a mapping of journald keys to values."
+
+    - name: Validate extra settings entries
+      ansible.builtin.assert:
+        that:
+          - item.key is match('^[A-Z][A-Za-z0-9]*$')
+          - item.key not in journald_config_managed_settings
+          - item.value is not mapping
+          - item.value is string or item.value is number or item.value is boolean
+          # systemd splits lines on CR and NUL as well as LF; any control
+          # character could smuggle in a second directive.
+          - item.value | string is not search('[\\x00-\\x1f\\x7f]')
+        fail_msg: >-
+          journald_config_extra_settings.{{ item.key }} must be a journald
+          [Journal] key that no first-class journald_config_* variable covers,
+          with a single-line scalar value.
+      loop: "{{ journald_config_extra_settings | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+- name: Ensure journald drop-in directory exists
+  ansible.builtin.file:
+    path: "{{ journald_config_dropin_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: journald_config_state == 'present'
+
+- name: Deploy journald drop-in
+  ansible.builtin.template:
+    src: journald.conf.j2
+    dest: "{{ journald_config_dropin_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: journald_config_state == 'present'
+  notify:
+    - Restart systemd-journald
+    - Flush journal to persistent storage
+
+- name: Remove journald drop-in
+  ansible.builtin.file:
+    path: "{{ journald_config_dropin_path }}"
+    state: absent
+  when: journald_config_state == 'absent'
+  notify: Restart systemd-journald
+
+- name: Apply journald configuration now
+  ansible.builtin.meta: flush_handlers
+
+- name: Check systemd-journald is running
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - systemd-journald
+  register: journald_config_active
+  changed_when: false
+  # Read-only; lets --check report a stopped journald too.
+  check_mode: false
+  failed_when: journald_config_active.stdout | trim != 'active'

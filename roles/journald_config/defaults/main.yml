@@ -1,0 +1,71 @@
+---
+ops_library_documentation_category: operations
+
+# journald_config - Default Variables
+#
+# Writes one systemd-journald drop-in. Everything not set here keeps the
+# systemd default, so with the defaults below the only effect is an explicit
+# Storage=persistent.
+
+# "present" writes the drop-in; "absent" removes it, which returns journald to
+# the distribution defaults on the next restart.
+journald_config_state: present
+
+# journald reads /etc/systemd/journald.conf, then every *.conf drop-in from
+# /usr/lib, /run and /etc journald.conf.d directories sorted by file name; a
+# later setting wins. Ubuntu ships /usr/lib/systemd/journald.conf.d/syslog.conf
+# (ForwardToSyslog=yes), which this file does not touch.
+journald_config_dropin_path: /etc/systemd/journald.conf.d/60-ops-library.conf
+
+# Storage=: persistent, volatile, auto or none. "auto" (the systemd default)
+# only persists when /var/log/journal already exists; say what you mean.
+journald_config_storage: persistent
+
+# Size and age limits. An empty string leaves the systemd default in place.
+#
+# Sizes take a K, M, G, T, P or E suffix (base 1024), e.g. "16G".
+# Time spans use systemd syntax, e.g. "21day", "3week", "1month".
+#
+# SystemMaxUse=      total disk space for persistent journals
+#                    (default: 10% of the file system, capped at 4G)
+# SystemKeepFree=    space journald always leaves free on the file system
+#                    (default: 15% of the file system, capped at 4G)
+# SystemMaxFileSize= size at which a single journal file is rotated
+#                    (default: 1/8 of SystemMaxUse, capped at 128M). The
+#                    file's data hash table is sized from this value too, and
+#                    journald also rotates when that table is 75% full, so on
+#                    a host with many distinct messages it decides how often
+#                    files rotate.
+# SystemMaxFiles=    number of journal files kept (default: 100). Archived
+#                    files beyond this are deleted oldest first, no matter how
+#                    much of SystemMaxUse is left. Every rotation archives the
+#                    system journal AND each per-UID user journal (one per
+#                    regular, non-system UID that logged), so a host with many
+#                    such users reaches this limit fast. 0 means no limit.
+# MaxRetentionSec=   delete archived files whose FIRST entry is older than
+#                    this (default: 0 = no age limit). A deleted file can hold
+#                    newer entries, so the oldest kept entry can be up to one
+#                    file's time span younger than this.
+# MaxFileSec=        rotate a file at the latest after this time
+#                    (default: 1month)
+journald_config_system_max_use: ""
+journald_config_system_keep_free: ""
+journald_config_system_max_file_size: ""
+journald_config_system_max_files: ""
+journald_config_max_retention_sec: ""
+journald_config_max_file_sec: ""
+
+# Further [Journal] keys, rendered after the ones above. Booleans are written
+# as yes/no. A key that one of the variables above already covers is rejected.
+# Example:
+#   journald_config_extra_settings:
+#     Compress: true
+#     RateLimitBurst: 20000
+journald_config_extra_settings: {}
+
+# Restart systemd-journald when the drop-in changes; that is how the
+# configuration is applied (journald has no reload). With Storage=persistent
+# the handler then runs `journalctl --flush`, so a host that was volatile
+# moves its journal to /var/log/journal right away. Stream connections survive
+# the restart through journald's file descriptor store.
+journald_config_restart_on_change: true

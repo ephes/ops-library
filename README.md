@@ -112,6 +112,7 @@ consumer repos depend on.
 | Operations | [`macos_time_machine_exclusions`](roles/macos_time_machine_exclusions/README.md) | Reapply audited user-scoped Time Machine exclusions daily without deleting client data. |
 | Operations | [`macos_smb_mount_keeper`](roles/macos_smb_mount_keeper/README.md) | Remount SMB shares at their exact `/Volumes` path from a user LaunchAgent, never unmounting anything. |
 | Infrastructure | [`netplan_config`](roles/netplan_config/README.md) | Configure persistent netplan networking. |
+| Operations | [`journald_config`](roles/journald_config/README.md) | Size systemd-journald storage, file-count and age limits through one managed drop-in. |
 | Monitoring | [`smartd`](roles/smartd/README.md) | Configure smartmontools smartd for HDD/NVMe monitoring and scheduled tests. |
 | Monitoring | [`zed`](roles/zed/README.md) | Configure ZFS Event Daemon notifications and optional zpool scrub timers. |
 | Monitoring | [`nyxmon_storage_exporter`](roles/nyxmon_storage_exporter/README.md) | Install `nyxmon-storage-metrics` JSON exporter for storage health monitoring via HTTP endpoints, including read-only per-client Time Machine sparsebundle metrics. |

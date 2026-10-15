@@ -1,0 +1,16 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    journald_config_system_max_use: "2G"
+    journald_config_system_max_file_size: "64M"
+    journald_config_system_max_files: 500
+    journald_config_max_retention_sec: "21day"
+    journald_config_extra_settings:
+      Compress: true
+
+  roles:
+    - role: journald_config

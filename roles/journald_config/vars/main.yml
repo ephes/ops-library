@@ -1,0 +1,12 @@
+---
+# Derived values. The journald key for each first-class variable, in the order
+# they are rendered. Validation uses the same map to reject an extra setting
+# that would duplicate one of these keys.
+journald_config_managed_settings:
+  Storage: "{{ journald_config_storage }}"
+  SystemMaxUse: "{{ journald_config_system_max_use }}"
+  SystemKeepFree: "{{ journald_config_system_keep_free }}"
+  SystemMaxFileSize: "{{ journald_config_system_max_file_size }}"
+  SystemMaxFiles: "{{ journald_config_system_max_files }}"
+  MaxRetentionSec: "{{ journald_config_max_retention_sec }}"
+  MaxFileSec: "{{ journald_config_max_file_sec }}"

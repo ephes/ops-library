@@ -1,0 +1,20 @@
+---
+- name: Restart systemd-journald
+  ansible.builtin.systemd_service:
+    name: systemd-journald
+    state: restarted
+  when: journald_config_restart_on_change | bool
+
+# A restart alone keeps writing to /run when the journal was volatile before
+# (no /run/systemd/journal/flushed marker). The flush moves it to
+# /var/log/journal; on a host that is already persistent it is a no-op.
+- name: Flush journal to persistent storage
+  ansible.builtin.command:
+    argv:
+      - journalctl
+      - --flush
+  changed_when: true
+  when:
+    - journald_config_restart_on_change | bool
+    - journald_config_state == 'present'
+    - journald_config_storage == 'persistent'

@@ -1,0 +1,23 @@
+---
+galaxy_info:
+  role_name: journald_config
+  author: ops-library
+  description: >-
+    Configure systemd-journald storage, size and retention limits through a
+    single managed drop-in.
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+    - name: Debian
+      versions:
+        - bookworm
+        - trixie
+  galaxy_tags:
+    - systemd
+    - journald
+    - logging
+
+dependencies: []

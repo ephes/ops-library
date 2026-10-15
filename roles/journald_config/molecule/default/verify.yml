@@ -1,0 +1,217 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Verify | read the drop-in
+      ansible.builtin.slurp:
+        path: /etc/systemd/journald.conf.d/60-ops-library.conf
+      register: journald_dropin
+
+    - name: Verify | drop-in carries exactly the configured keys
+      ansible.builtin.assert:
+        that:
+          - journald_dropin_lines == expected
+        fail_msg: "Unexpected drop-in content: {{ journald_dropin_lines }}"
+      vars:
+        journald_dropin_lines: >-
+          {{ (journald_dropin.content | b64decode).splitlines()
+             | reject('match', '^#') | reject('equalto', '') | list }}
+        expected:
+          - "[Journal]"
+          - "Storage=persistent"
+          - "SystemMaxUse=2G"
+          - "SystemMaxFileSize=64M"
+          - "SystemMaxFiles=500"
+          - "MaxRetentionSec=21day"
+          - "Compress=yes"
+
+    - name: Verify | systemd sees the drop-in
+      ansible.builtin.command:
+        argv: [systemd-analyze, cat-config, systemd/journald.conf]
+      register: journald_cat_config
+      changed_when: false
+
+    - name: Verify | effective config includes the managed values
+      ansible.builtin.assert:
+        that:
+          - "'/etc/systemd/journald.conf.d/60-ops-library.conf' in journald_cat_config.stdout"
+          - "'SystemMaxFiles=500' in journald_cat_config.stdout"
+
+    - name: Verify | journald is running
+      ansible.builtin.command:
+        argv: [systemctl, is-active, systemd-journald]
+      register: journald_active
+      changed_when: false
+      failed_when: journald_active.stdout | trim != 'active'
+
+    - name: Verify | an extra setting that duplicates a first-class key is rejected
+      block:
+        - name: Verify | apply a conflicting extra setting
+          ansible.builtin.include_role:
+            name: journald_config
+          vars:
+            journald_config_extra_settings:
+              SystemMaxUse: "1G"
+        - name: Verify | conflicting extra setting was accepted
+          ansible.builtin.set_fact:
+            journald_conflict_accepted: true
+      rescue:
+        - name: Verify | conflicting extra setting failed validation
+          ansible.builtin.set_fact:
+            journald_conflict_accepted: false
+
+    - name: Verify | assert conflicting extra setting was rejected
+      ansible.builtin.assert:
+        that:
+          - not journald_conflict_accepted
+
+    - name: Verify | a malformed size is rejected
+      block:
+        - name: Verify | apply a malformed size
+          ansible.builtin.include_role:
+            name: journald_config
+          vars:
+            journald_config_system_max_use: "16 GB"
+        - name: Verify | malformed size was accepted
+          ansible.builtin.set_fact:
+            journald_bad_size_accepted: true
+      rescue:
+        - name: Verify | malformed size failed validation
+          ansible.builtin.set_fact:
+            journald_bad_size_accepted: false
+
+    - name: Verify | assert malformed size was rejected
+      ansible.builtin.assert:
+        that:
+          - not journald_bad_size_accepted
+
+    - name: Verify | a value with a carriage return is rejected
+      block:
+        - name: Verify | apply a value smuggling a second directive
+          ansible.builtin.include_role:
+            name: journald_config
+          vars:
+            journald_config_extra_settings:
+              Compress: "yes\rSystemMaxUse=1M"
+        - name: Verify | carriage-return value was accepted
+          ansible.builtin.set_fact:
+            journald_cr_accepted: true
+      rescue:
+        - name: Verify | carriage-return value failed validation
+          ansible.builtin.set_fact:
+            journald_cr_accepted: false
+
+    - name: Verify | assert carriage-return value was rejected
+      ansible.builtin.assert:
+        that:
+          - not journald_cr_accepted
+
+    - name: Verify | a malformed time span is rejected
+      block:
+        - name: Verify | apply adjacent decimals without a unit between them
+          ansible.builtin.include_role:
+            name: journald_config
+          vars:
+            journald_config_max_retention_sec: "1.51.5day"
+        - name: Verify | malformed time span was accepted
+          ansible.builtin.set_fact:
+            journald_bad_span_accepted: true
+      rescue:
+        - name: Verify | malformed time span failed validation
+          ansible.builtin.set_fact:
+            journald_bad_span_accepted: false
+
+    - name: Verify | assert malformed time span was rejected
+      ansible.builtin.assert:
+        that:
+          - not journald_bad_span_accepted
+
+    - name: Verify | drop-in unchanged after rejected runs
+      ansible.builtin.command:
+        argv: [grep, -c, '^SystemMaxUse=2G$', /etc/systemd/journald.conf.d/60-ops-library.conf]
+      changed_when: false
+
+    - name: Verify | fractional values and SystemMaxFiles=0 are accepted
+      ansible.builtin.include_role:
+        name: journald_config
+      vars:
+        journald_config_system_max_use: "1.5G"
+        journald_config_system_max_files: 0
+        journald_config_max_retention_sec: "1.5day"
+        journald_config_max_file_sec: "1w 2d12h"
+
+    - name: Verify | read the drop-in with fractional values
+      ansible.builtin.command:
+        argv: [cat, /etc/systemd/journald.conf.d/60-ops-library.conf]
+      register: journald_fractional
+      changed_when: false
+
+    - name: Verify | fractional values rendered
+      ansible.builtin.assert:
+        that:
+          - "'SystemMaxUse=1.5G' in journald_fractional.stdout_lines"
+          - "'SystemMaxFiles=0' in journald_fractional.stdout_lines"
+          - "'MaxRetentionSec=1.5day' in journald_fractional.stdout_lines"
+          - "'MaxFileSec=1w 2d12h' in journald_fractional.stdout_lines"
+
+    # A host that was volatile has no /run/systemd/journal/flushed marker, so a
+    # restart alone keeps writing to /run. The role's flush must move it.
+    - name: Verify | switch to volatile storage
+      ansible.builtin.include_role:
+        name: journald_config
+      vars:
+        journald_config_storage: volatile
+
+    - name: Verify | drop the flush marker and the persistent journal, as on a volatile host
+      ansible.builtin.shell: |
+        set -eu
+        systemctl stop systemd-journald
+        rm -f /run/systemd/journal/flushed
+        rm -rf /var/log/journal
+        systemctl start systemd-journald
+        logger -t journald-config-verify "volatile entry"
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Verify | journal lives in /run while volatile
+      ansible.builtin.shell: |
+        set -eu
+        test -n "$(find /run/log/journal -name system.journal)"
+        test ! -d /var/log/journal || test -z "$(find /var/log/journal -name system.journal)"
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Verify | switch back to persistent storage
+      ansible.builtin.include_role:
+        name: journald_config
+
+    - name: Verify | journal moved to /var/log/journal and kept the volatile entry
+      ansible.builtin.shell: |
+        set -eu
+        test -n "$(find /var/log/journal -name system.journal)"
+        test -z "$(find /run/log/journal -name system.journal)"
+        journalctl -t journald-config-verify --no-pager | grep -q "volatile entry"
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Verify | state absent removes the drop-in
+      ansible.builtin.include_role:
+        name: journald_config
+      vars:
+        journald_config_state: absent
+
+    - name: Verify | stat removed drop-in
+      ansible.builtin.stat:
+        path: /etc/systemd/journald.conf.d/60-ops-library.conf
+      register: journald_removed
+
+    - name: Verify | assert drop-in is gone and journald still runs
+      ansible.builtin.assert:
+        that:
+          - not journald_removed.stat.exists
