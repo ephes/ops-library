@@ -10,11 +10,12 @@
   by Puma and Sidekiq) and a negative `mastodon_web_concurrency`. The README
   documents the sizing variables; their defaults are unchanged.
 - `mastodon_maintenance`: validation moved to `tasks/validate.yml`. The role
-  now fails when a command that mentions an emoji purge (ignoring quotes and
-  shell punctuation) is not exactly `emoji purge` followed only by
-  `--remote-only` / `--suspended-only`, because an unscoped purge also deletes
-  local custom emoji and tootctl accepts misspelt flags and boolean values
-  such as `--remote-only false`. Command lists
+  accepts only plain-word
+  commands (letters, digits, spaces and `._=/:,+-`; no newlines, quotes or
+  shell operators, since commands are rendered unquoted into a shell script),
+  and fails when `emoji purge` is not followed only by `--remote-only` /
+  `--suspended-only`, because an unscoped purge also deletes local custom emoji
+  and tootctl accepts misspelt flags and values such as `--remote-only false`. Command lists
   must be lists, not strings. The README shows profile-media and remote-emoji
   pruning (`media remove --prune-profiles --days N`, `emoji purge --remote-only`).
 - `mastodon_backup`: pruning moved to `tasks/prune.yml`. New

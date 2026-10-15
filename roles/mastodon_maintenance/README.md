@@ -39,8 +39,9 @@ follows or is followed by and that were not refreshed for `--days`; it never tou
 superset of `--remove-headers` (tootctl refuses both flags together). `emoji purge --remote-only` deletes every
 remote custom emoji (no age filter); they are fetched again when new posts use them. Without a scope flag,
 `emoji purge` deletes local custom emoji as well, and tootctl accepts misspelt flags and values such as
-`--remote-only false`, so the role fails unless any command mentioning an emoji purge is exactly `emoji purge`
-followed only by `--remote-only` or `--suspended-only`.
+`--remote-only false`, so the role fails unless `emoji purge` is followed only by `--remote-only` or
+`--suspended-only`. Commands are rendered unquoted into a shell script, so the role also refuses any command with
+characters other than letters, digits, spaces and `._=/:,+-` (no newlines, quotes or shell operators).
 
 ## Key Variables
 

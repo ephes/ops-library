@@ -128,6 +128,7 @@
           - "emoji purge --suspended-only"
           - "  emoji   purge   --remote-only  "
           - "emoji import /tmp/emoji.tar.gz"
+          - "emoji purge --suspended-only --remote-only"
 
     - name: Reject unsafe emoji purges
       ansible.builtin.include_tasks: tasks/test_mastodon_rejected.yml
@@ -151,6 +152,11 @@
         - "emoji purge;"
         - "emoji purge --remote-only; emoji purge"
         - "media remove --days 4; emoji purge"
+        - "emoji purge\n--remote-only"
+        - "emoji purge --remote-only\n"
+        - "emoji\tpurge"
+        - "emoji purge --remote-only && emoji purge"
+        - "emoji purge $(echo --remote-only)"
 
     - name: Reject a command string instead of a list
       ansible.builtin.include_tasks: tasks/test_mastodon_rejected.yml
