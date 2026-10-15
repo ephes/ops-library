@@ -1,14 +1,6 @@
 ---
-- name: Validate tootctl command list
-  ansible.builtin.assert:
-    that:
-      - mastodon_maintenance_tootctl_commands is iterable
-      - mastodon_maintenance_extra_commands is iterable
-    fail_msg: "mastodon_maintenance_tootctl_commands and mastodon_maintenance_extra_commands must be lists of tootctl subcommands"
-
-- name: Set maintenance command list
-  ansible.builtin.set_fact:
-    mastodon_maintenance_commands: "{{ mastodon_maintenance_tootctl_commands + mastodon_maintenance_extra_commands }}"
+- name: Validate maintenance commands
+  ansible.builtin.import_tasks: validate.yml
 
 - name: Set maintenance runtime path fallback
   ansible.builtin.set_fact:

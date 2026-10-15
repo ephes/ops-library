@@ -103,3 +103,20 @@
     that:
       - mastodon_redis_requirepass_enabled | bool == false or mastodon_redis_password | length > 0
     fail_msg: "mastodon_redis_password must be provided when redis requirepass is enabled."
+
+# DB_POOL is shared by Puma and Sidekiq through .env.production. A pool smaller
+# than either thread count makes threads wait for (and time out on) database
+# connections under load.
+- name: Validate Mastodon concurrency and database pool sizes
+  ansible.builtin.assert:
+    that:
+      - mastodon_web_concurrency | int >= 0
+      - mastodon_max_threads | int >= 1
+      - mastodon_sidekiq_concurrency | int >= 1
+      - mastodon_db_pool | int >= mastodon_sidekiq_concurrency | int
+      - mastodon_db_pool | int >= mastodon_max_threads | int
+    fail_msg: >-
+      mastodon_db_pool ({{ mastodon_db_pool }}) must be at least
+      mastodon_sidekiq_concurrency ({{ mastodon_sidekiq_concurrency }}) and
+      mastodon_max_threads ({{ mastodon_max_threads }}); mastodon_web_concurrency
+      must be >= 0 (0 runs Puma in single mode).

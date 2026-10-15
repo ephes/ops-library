@@ -1,0 +1,21 @@
+---
+# Expect the included task file to fail on an assert.
+# Inputs: case_name, case_tasks (path); case variables come from the include's vars.
+- name: "test_mastodon_rejected | Reset result for case: {{ case_name }}"
+  ansible.builtin.set_fact:
+    mastodon_test_case_rejected: false
+
+- name: "test_mastodon_rejected | Run rejected case: {{ case_name }}"
+  block:
+    - name: "test_mastodon_rejected | Include task file: {{ case_name }}"
+      ansible.builtin.include_tasks: "{{ case_tasks }}"
+  rescue:
+    - name: "test_mastodon_rejected | Record rejection: {{ case_name }}"
+      ansible.builtin.set_fact:
+        mastodon_test_case_rejected: true
+
+- name: "test_mastodon_rejected | Fail when the case was accepted: {{ case_name }}"
+  ansible.builtin.assert:
+    that:
+      - mastodon_test_case_rejected | bool
+    fail_msg: "{{ case_name }} should have been rejected"

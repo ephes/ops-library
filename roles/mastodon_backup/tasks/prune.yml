@@ -1,0 +1,49 @@
+---
+# Keep the newest mastodon_backup_retain archives and payload directories
+# (by mtime). By default only backups with the current prefix are counted; with
+# mastodon_backup_retain_all_prefixes every backup in mastodon_backup_root is,
+# so differently named one-off backups (pre-upgrade-*, pre-4.6.3-*, ...) do not
+# accumulate forever.
+- name: prune | Select backup names to prune
+  ansible.builtin.set_fact:
+    mastodon_backup_prune_name_glob: >-
+      {{ (mastodon_backup_retain_all_prefixes | bool) | ternary('*', mastodon_backup_prefix ~ '-*') }}
+
+- name: prune | Find existing backup archives
+  ansible.builtin.find:
+    paths: "{{ mastodon_backup_root }}"
+    patterns: "{{ mastodon_backup_prune_name_glob }}.{{ mastodon_backup_archive_extension }}"
+    file_type: file
+  register: mastodon_backup_existing_archives
+  when:
+    - mastodon_backup_retain | int > 0
+    - mastodon_backup_create_archive | bool
+
+- name: prune | Prune old backup archives
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ (mastodon_backup_existing_archives.files | sort(attribute='mtime', reverse=true))[(mastodon_backup_retain | int) :] }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when:
+    - mastodon_backup_retain | int > 0
+    - mastodon_backup_create_archive | bool
+
+- name: prune | Find existing backup directories
+  ansible.builtin.find:
+    paths: "{{ mastodon_backup_root }}"
+    patterns: "{{ mastodon_backup_prune_name_glob }}"
+    file_type: directory
+    recurse: false
+  register: mastodon_backup_existing_dirs
+  when: mastodon_backup_retain | int > 0
+
+- name: prune | Prune old backup directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ (mastodon_backup_existing_dirs.files | sort(attribute='mtime', reverse=true))[(mastodon_backup_retain | int) :] }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when: mastodon_backup_retain | int > 0

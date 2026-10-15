@@ -267,44 +267,8 @@
     - mastodon_backup_fetch_local | bool
     - mastodon_backup_create_archive | bool
 
-- name: Find existing backup archives
-  ansible.builtin.find:
-    paths: "{{ mastodon_backup_root }}"
-    patterns: "{{ mastodon_backup_prefix }}-*.{{ mastodon_backup_archive_extension }}"
-    file_type: file
-  register: mastodon_backup_existing_archives
-  when:
-    - mastodon_backup_retain | int > 0
-    - mastodon_backup_create_archive | bool
-
-- name: Prune old backup archives
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    state: absent
-  loop: "{{ (mastodon_backup_existing_archives.files | sort(attribute='mtime', reverse=true))[mastodon_backup_retain:] }}"
-  loop_control:
-    label: "{{ item.path }}"
-  when:
-    - mastodon_backup_retain | int > 0
-    - mastodon_backup_create_archive | bool
-
-- name: Find existing backup directories
-  ansible.builtin.find:
-    paths: "{{ mastodon_backup_root }}"
-    patterns: "{{ mastodon_backup_prefix }}-*"
-    file_type: directory
-    recurse: false
-  register: mastodon_backup_existing_dirs
-  when: mastodon_backup_retain | int > 0
-
-- name: Prune old backup directories
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    state: absent
-  loop: "{{ (mastodon_backup_existing_dirs.files | sort(attribute='mtime', reverse=true))[mastodon_backup_retain:] }}"
-  loop_control:
-    label: "{{ item.path }}"
-  when: mastodon_backup_retain | int > 0
+- name: Prune old backups
+  ansible.builtin.import_tasks: prune.yml
 
 - name: Report backup completion
   ansible.builtin.debug:

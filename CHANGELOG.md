@@ -3,6 +3,24 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Mastodon sizing guard, emoji purge guard, cross-prefix backup retention (2.34.0)
+
+- `mastodon_deploy`: refuses a `mastodon_db_pool` smaller than
+  `mastodon_sidekiq_concurrency` or `mastodon_max_threads` (`DB_POOL` is shared
+  by Puma and Sidekiq) and a negative `mastodon_web_concurrency`. The README
+  documents the sizing variables; their defaults are unchanged.
+- `mastodon_maintenance`: validation moved to `tasks/validate.yml`. The role
+  now fails when an `emoji purge` command is not limited by exactly
+  `--remote-only` or `--suspended-only`, because an unscoped purge also deletes
+  local custom emoji and tootctl does not reject misspelt flags. Command lists
+  must be lists, not strings. The README shows profile-media and remote-emoji
+  pruning (`media remove --prune-profiles --days N`, `emoji purge --remote-only`).
+- `mastodon_backup`: pruning moved to `tasks/prune.yml`. New
+  `mastodon_backup_retain_all_prefixes` (default `false`) counts every backup in
+  `mastodon_backup_root` against `mastodon_backup_retain`, so one-off backups
+  taken under changing prefixes stop accumulating. Default behaviour is
+  unchanged. Tested by `just test-mastodon-slim`.
+
 ## Unreleased — Wagtail sites deploy without dev dependencies (2.33.0)
 
 - `wagtail_deploy` now runs `uv sync --frozen --no-default-groups`, so a
@@ -20,6 +38,7 @@
 - The sync moved into `tasks/uv_sync.yml`; `tests/test_wagtail_uv_sync.py`
   runs it with a real `uv` against local wheels (`just test-wagtail-deploy`).
 
+||||||| parent of 699b482 (Guard Mastodon pool sizing and emoji purges, add cross-prefix backup retention)
 ## Unreleased — Echoport runner for the mail database (2.32.1)
 
 - New `echoport_backup/templates/mail_db_backup.py.j2`: a service-owned

@@ -1,0 +1,33 @@
+---
+- name: validate | Validate tootctl command list
+  ansible.builtin.assert:
+    that:
+      - mastodon_maintenance_tootctl_commands is iterable
+      - mastodon_maintenance_tootctl_commands is not string
+      - mastodon_maintenance_extra_commands is iterable
+      - mastodon_maintenance_extra_commands is not string
+    fail_msg: "mastodon_maintenance_tootctl_commands and mastodon_maintenance_extra_commands must be lists of tootctl subcommands"
+
+- name: validate | Set maintenance command list
+  ansible.builtin.set_fact:
+    mastodon_maintenance_commands: "{{ mastodon_maintenance_tootctl_commands + mastodon_maintenance_extra_commands }}"
+
+# `tootctl emoji purge` without a scope flag deletes every custom emoji,
+# including the instance's own. tootctl does not reject unknown options, so a
+# misspelt flag silently widens the purge. Only accept the exact scope flags.
+- name: validate | Reject unscoped custom emoji purges
+  ansible.builtin.assert:
+    that:
+      - >-
+        ((item | string).split() | first | default('')) != 'emoji'
+        or ((item | string).split()[1:2] | first | default('')) != 'purge'
+        or (
+          ((item | string).split()[2:] | select('match', '^-') | list | length > 0)
+          and ((item | string).split()[2:] | select('match', '^-') | reject('in', ['--remote-only', '--suspended-only']) | list | length == 0)
+        )
+    fail_msg: >-
+      Refusing maintenance command "{{ item }}": `emoji purge` must be limited with
+      --remote-only or --suspended-only (and no other flags); without them it deletes
+      local custom emoji too.
+    quiet: true
+  loop: "{{ mastodon_maintenance_commands }}"
