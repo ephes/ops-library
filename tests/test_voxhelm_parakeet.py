@@ -265,6 +265,25 @@ class WorkerParakeetTaskTests(unittest.TestCase):
         )
         self.assertEqual(block["become_user"], "{{ voxhelm_remote_worker_service_user }}")
 
+    def test_tasks_run_as_the_service_user_use_a_login_shell(self):
+        def walk(tasks, user=None, flags=None):
+            for task in tasks:
+                task_user = task.get("become_user", user)
+                task_flags = task.get("become_flags", flags)
+                if "block" in task:
+                    yield from walk(task["block"], task_user, task_flags)
+                else:
+                    yield task, task_user, task_flags
+
+        checked = 0
+        for task, user, flags in walk(_tasks(self.TASKS)):
+            if user:
+                checked += 1
+                with self.subTest(task=task["name"]):
+                    self.assertEqual(flags, "-i")
+        # The install, the CLI check and the nine tasks of the download block.
+        self.assertEqual(checked, 11)
+
 
 class ControlPlaneRoutingSwitchTests(unittest.TestCase):
     def setUp(self):

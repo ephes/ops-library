@@ -55,6 +55,11 @@
   `VOXHELM_KNOWN_SPEAKER_STT_BACKEND`. `"parakeet"` routes Voxhelm's
   known-speaker jobs to Parakeet with whisper.cpp as the fallback (Voxhelm
   0.1.9 or later).
+- The Parakeet tasks that run as the service user use a login shell
+  (`become_flags: "-i"`) like the rest of the role; without it the first
+  deploy on studio failed in "Check the parakeet-mlx CLI" with
+  `getcwd: Permission denied` because the module inherited root's working
+  directory.
 - `just test-voxhelm-parakeet` covers the env rendering, the validation, the
   install skip and the download/verify order.
 

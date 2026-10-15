@@ -61,6 +61,7 @@
     or (voxhelm_remote_worker_parakeet_package_version not in voxhelm_remote_worker_parakeet_version.stdout)
   become: true
   become_user: "{{ voxhelm_remote_worker_service_user }}"
+  become_flags: "-i"
 
 - name: parakeet | Describe the pinned model
   ansible.builtin.set_fact:
@@ -101,6 +102,9 @@
   when: voxhelm_remote_worker_parakeet_download_needed | bool
   become: true
   become_user: "{{ voxhelm_remote_worker_service_user }}"
+  # A login shell starts in the service user's home; without it Ansible's
+  # module cannot read root's working directory.
+  become_flags: "-i"
   vars:
     voxhelm_remote_worker_parakeet_partial_dir: "{{ voxhelm_remote_worker_parakeet_model_dir }}.partial"
   block:
@@ -114,7 +118,6 @@
         PATH: "{{ voxhelm_remote_worker_launchd_path }}"
       register: voxhelm_remote_worker_parakeet_tool_dir
       changed_when: false
-      become_flags: "-i"
 
     - name: parakeet | Remove an incomplete model directory
       ansible.builtin.file:
