@@ -50,9 +50,10 @@ then executes it directly (no shell) with a fixed `PATH`:
 | `umask 077 && cat > <tmpdir>/<name>.dump`, `sha256sum <tmpdir>/<name>.dump` | `<tmpdir>` from a `temp_dirs` template; the guard creates the file itself (exclusive, `0600`) |
 | `systemctl show --property=LoadState --value <u>`, `systemctl start\|stop <u>` | `u` in `units` |
 | `scp -f <path>` (download) | a dump file, the private media archive, a `read_files` entry, or a path inside a `path_roots` entry; must be missing or a regular file |
-| `scp -t <path>` (upload) | a restore dump file, or `<path>.tmp` / `<path>.restore-tmp` inside a root; must be new or a regular file with one link (no symlink, device, FIFO, directory) |
-| `rsync <server args> . <dir>/` | `dir` inside a root, server args exactly one of the three below |
-| `readlink -f`, `test -e\|-d\|-f`, `mkdir -p`, `mv <p>.tmp <p>` | paths inside a root |
+| `scp -t <path>` (upload) | a restore dump file (runs as `postgres`), or `<path>.tmp` / `<path>.restore-tmp` inside a root (runs as the root's owner); must be new or a regular file with one link (no symlink, device, FIFO, directory) |
+| `rsync <server args> . <dir>/` | `dir` inside a root, server args exactly one of the three below; a receiver (upload) runs as the root's owner |
+| `readlink -f`, `test -e\|-d\|-f`, `mv <p>.tmp <p>` | paths inside a root |
+| `mkdir -p <path>` | path inside a root; runs as the root's owner |
 | `mv <a> <b>` | both inside the same root, `<b>` does not exist |
 | `chmod 0600\|0700 <path>` | path inside a root |
 | `chown [-R] <owner> <path>` | path inside a root whose `owner` matches |
@@ -65,6 +66,16 @@ then executes it directly (no shell) with a fixed `PATH`:
 "Inside a root" is decided on the resolved path (`os.path.realpath`), so a
 symlink inside a root that points elsewhere is refused. Paths may only
 contain `[A-Za-z0-9._/-]` and no `.`/`..` components.
+
+Uploads run as an unprivileged user (`runuser -u <user> --`): into a root as
+the root's `owner` (which must not be root), restore dumps as `postgres`. The
+scp sink takes the file mode from the sender and the rsync receiver would
+keep the sender's owner, mode and devices as root; as the owner the sender
+cannot create root-owned, setuid-root or device files, and a symlink swapped
+in by that user only redirects a write that user could do anyway. The tar
+archive and the `sha256sum`/redirect targets must lie in a private directory
+of the guard's own user (a fresh `mktemp -d`), which nobody else can fill or
+replace.
 
 ### rsync
 
@@ -91,9 +102,10 @@ the GoToSocial snapshot `cat`, the guard opens the directory with
 `O_NOFOLLOW|O_DIRECTORY` (it must belong to the guard's user, or the
 snapshot's service user, with no group/other access) and the file inside it
 with `O_NOFOLLOW` (create: `O_EXCL`, `0600`); the file must be a regular file
-with one link. `scp`/`rsync` open their own paths after the guard's checks; a
-local user who can write inside a root could still swap a path between check
-and copy.
+with one link. Downloads (`scp -f`, the rsync sender) run as root and open
+their own paths after the guard's checks: a local user who can write inside a
+root could swap a path for a symlink in between and have root read another
+file into the backup (not new; the runners did the same before the pin).
 
 Everything else is refused with `command not allowed` (exit 1), including an
 interactive session, the SFTP subsystem (which is why the runners call

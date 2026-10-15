@@ -158,6 +158,7 @@
         - /srv/outside/new-file
         - /srv/marina/site/media/new-file
         - /srv/marina/site/media/link-target
+        - /srv/marina/site/db.sqlite3.tmp
       register: guard_transfer_results
 
     - name: Assert transfer decisions
@@ -171,6 +172,9 @@
           - not guard_transfer_results.results[1].stat.exists
           - not guard_transfer_results.results[2].stat.exists
           - guard_transfer_results.results[3].stat.exists
+          # Uploads run as the root's owner, never as root.
+          - guard_transfer_results.results[3].stat.pw_name == 'nobody'
+          - guard_transfer_results.results[5].stat.pw_name == 'nobody'
 
     - name: Write a policy the guard must reject
       ansible.builtin.copy:

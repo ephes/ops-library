@@ -128,7 +128,9 @@ def lstat_absent(path: str) -> os.stat_result:
 
 def lstat_runner_view(path: str) -> os.stat_result:
     """The hosts as the runners leave them: their mktemp dirs exist, nothing else."""
-    if re.fullmatch(r"/var/tmp/(gotosocial-echoport|django-chat-db-restore)\.[A-Za-z0-9]+", path):
+    if re.fullmatch(r"/var/tmp/(gotosocial-echoport|django-chat-db-restore)\.[A-Za-z0-9]+", path) or re.fullmatch(
+        r"/tmp/echoport-pp-private-media\.[A-Za-z0-9]+", path
+    ):
         return fake_stat(stat.S_IFDIR | 0o700, nlink=2)
     raise FileNotFoundError(path)
 
@@ -179,13 +181,47 @@ class GuardAllowsRunnerShapes(unittest.TestCase):
         self.allowed("sudo -u postgres psql -d homepage -c 'SELECT 1'", self.staging)
 
     def test_tar_runs_with_umask(self) -> None:
-        decision = self.allowed(
+        command = (
             "umask 077 && tar -C /home/python-podcast/site -czf "
-            "/tmp/echoport-pp-private-media.Ab12Cd34/private_media.tar.gz -- private_media",
-            self.production,
+            "/tmp/echoport-pp-private-media.Ab12Cd34/private_media.tar.gz -- private_media"
         )
+        decision = GUARD.check(command, self.production, realpath=identity, lstat=lstat_runner_view)
         self.assertEqual(decision.umask, 0o077)
         self.assertEqual(decision.argv[0], "tar")
+        # Not into a directory someone else made (or opened up) under that name.
+        for directory in (
+            fake_stat(stat.S_IFDIR | 0o700, nlink=2, uid=os.geteuid() + 1),
+            fake_stat(stat.S_IFDIR | 0o777, nlink=2),
+            fake_stat(stat.S_IFLNK | 0o777),
+        ):
+            for refused in (command, "scp -f /tmp/echoport-pp-private-media.Ab12Cd34/private_media.tar.gz"):
+                with self.subTest(directory=directory, command=refused):
+                    with self.assertRaises(GUARD.Refused):
+                        GUARD.check(refused, self.production, realpath=identity,
+                                    lstat=lambda p, st=directory: st if not p.endswith(".gz") else lstat_absent(p))
+        with self.assertRaises(GUARD.Refused):
+            GUARD.check(command, self.production, realpath=identity, lstat=lambda p: (
+                fake_stat(stat.S_IFLNK | 0o777) if p.endswith(".gz") else lstat_runner_view(p)))
+
+    def test_uploads_run_as_the_target_owner(self) -> None:
+        for command, host, user in (
+            ("scp -t /home/marina/site/db.sqlite3.tmp", self.staging, "marina"),
+            ("scp -t /home/villakunterbunt/data/db.sqlite3.tmp", self.staging, "villakunterbunt"),
+            ("scp -t /tmp/echoport_homepage_restore_20261015.dump", self.staging, "postgres"),
+            (f"{RSYNC_UPLOAD_DELETE} /home/marina/site/media/", self.staging, "marina"),
+            ("scp -t /var/lib/gotosocial/sqlite.db.restore-tmp", self.production, "gotosocial"),
+            (f"{RSYNC_UPLOAD_DELETE} /var/lib/gotosocial/storage/", self.production, "gotosocial"),
+            ("mkdir -p /home/marina/site/media", self.staging, "marina"),
+        ):
+            with self.subTest(command=command):
+                decision = self.allowed(command, host)
+                self.assertEqual(decision.argv, ["runuser", "-u", user, "--", *shlex.split(command)])
+        for command, host in (
+            ("scp -f /home/marina/site/db.sqlite3", self.staging),
+            (f"{RSYNC_DOWNLOAD} /home/marina/site/media/", self.staging),
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.allowed(command, host).argv, shlex.split(command))
 
     def test_exact_rsync_commands(self) -> None:
         for server in RSYNC_CLIENT_TO_SERVER.values():
@@ -253,6 +289,7 @@ class GuardAllowsRunnerShapes(unittest.TestCase):
             {"path_roots": [{"path": "/", "owner": "root:root"}]},
             {"path_roots": [{"path": "/home/x/../y", "owner": "x:x"}]},
             {"path_roots": [{"path": "/home/x", "owner": "root"}]},
+            {"path_roots": [{"path": "/home/x", "owner": "root:root"}]},
             {"postgres": {"dump_databases": ["db;id"]}},
             {"postgres": {"temp_file_prefixes": ["../x"]}},
             {"private_media_paths": ["/tmp"]},
@@ -389,6 +426,15 @@ class GuardRefusals(unittest.TestCase):
                         GUARD.check(command, host, realpath=identity, lstat=lambda _p, st=st: st)
         plain = fake_stat(stat.S_IFREG | 0o600)
         GUARD.check("scp -t /home/marina/site/db.sqlite3.tmp", self.staging, realpath=identity, lstat=lambda _p: plain)
+        # Dump files must be postgres's (pg_dump writes them; pg_restore reads them).
+        for command, host in (
+            ("scp -f /tmp/echoport_homepage_dump_x.dump", self.production),
+            ("scp -t /tmp/echoport_homepage_restore_x.dump", self.staging),
+        ):
+            with self.subTest(command=command):
+                with self.assertRaises(GUARD.Refused):
+                    GUARD.check(command, host, realpath=identity,
+                                lstat=lambda _p: fake_stat(stat.S_IFREG | 0o600, uid=os.geteuid() + 12345))
         GUARD.check("scp -t /home/marina/site/db.sqlite3.tmp", self.staging, realpath=identity, lstat=lstat_absent)
 
     def test_scp_against_a_real_tree(self) -> None:

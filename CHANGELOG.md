@@ -28,7 +28,14 @@ FastDeploy privilege reduction, stage 1, SSH part.
   options). The marina and villakunterbunt upload runners pass `--no-D`.
 - `scp -t` writes only onto a new path or an existing regular file with one
   link (no symlink, device, FIFO or directory); `scp -f` reads only missing or
-  regular files.
+  regular files, dump files only when they belong to `postgres`.
+- Uploads run unprivileged: `scp -t`, the rsync receiver and `mkdir -p` into a
+  path root run as the root's owner (`runuser -u <owner> --`; a root owned by
+  `root` is refused), restore dumps are written as `postgres`. The sender can
+  no longer create root-owned setuid or device files. The private media tar
+  archive (and `scp -f` of it) is only accepted inside a private directory of
+  root's (a fresh `mktemp -d`), so a look-alike directory with a planted
+  symlink in `/tmp` is refused.
 - Django Chat staging DB runner (`django_chat_staging_db_backup.py.j2`) passes
   the guard unchanged: `runuser -u postgres --` forms, `pg_dump` to stdout, the
   runner's three fixed read-only `psql` queries, scratch databases from
