@@ -1,0 +1,77 @@
+---
+- name: Validate guard policy shape
+  ansible.builtin.assert:
+    that:
+      - echoport_remote_command_guard_policy is mapping
+      - (echoport_remote_command_guard_policy | dict2items | map(attribute='key') | list)
+        is subset(['postgres', 'units', 'private_media_paths', 'path_roots', 'temp_dirs',
+                   'sqlite_snapshots', 'read_files', 'ready_urls'])
+      - (echoport_remote_command_guard_policy.postgres | default({})) is mapping
+      - (echoport_remote_command_guard_policy.units | default([])) is sequence
+      - (echoport_remote_command_guard_policy.units | default([])) is not string
+      - (echoport_remote_command_guard_policy.private_media_paths | default([])) is sequence
+      - (echoport_remote_command_guard_policy.private_media_paths | default([])) is not string
+      - (echoport_remote_command_guard_policy.path_roots | default([])) is sequence
+      - (echoport_remote_command_guard_policy.path_roots | default([])) is not string
+      - (echoport_remote_command_guard_policy.temp_dirs | default([])) is sequence
+      - (echoport_remote_command_guard_policy.temp_dirs | default([])) is not string
+      - (echoport_remote_command_guard_policy.sqlite_snapshots | default([])) is sequence
+      - (echoport_remote_command_guard_policy.sqlite_snapshots | default([])) is not string
+      - (echoport_remote_command_guard_policy.read_files | default([])) is sequence
+      - (echoport_remote_command_guard_policy.read_files | default([])) is not string
+      - (echoport_remote_command_guard_policy.ready_urls | default([])) is sequence
+      - (echoport_remote_command_guard_policy.ready_urls | default([])) is not string
+      - echoport_remote_command_guard_path is match('^/[A-Za-z0-9._/-]+$')
+      - echoport_remote_command_guard_policy_path is match('^/[A-Za-z0-9._/-]+$')
+      - echoport_remote_command_guard_python is match('^/[A-Za-z0-9._/-]+$')
+    fail_msg: >-
+      echoport_remote_command_guard_policy must be a mapping with only
+      postgres, units, private_media_paths, path_roots, temp_dirs,
+      sqlite_snapshots, read_files and ready_urls (see the role README), and
+      the install paths must be plain absolute paths.
+    quiet: true
+
+- name: Check that the guard's interpreter exists
+  ansible.builtin.stat:
+    path: "{{ echoport_remote_command_guard_python }}"
+  register: echoport_remote_command_guard_python_stat
+
+- name: Require the guard's interpreter
+  ansible.builtin.assert:
+    that:
+      - echoport_remote_command_guard_python_stat.stat.exists
+    fail_msg: "{{ echoport_remote_command_guard_python }} is missing; the guard needs Python 3."
+    quiet: true
+
+- name: Install the forced-command guard
+  ansible.builtin.copy:
+    src: echoport-remote-command-guard.py
+    dest: "{{ echoport_remote_command_guard_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure the policy directory exists
+  ansible.builtin.file:
+    path: "{{ echoport_remote_command_guard_policy_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# The guard validates the policy itself before it is put in place, so a policy
+# it would refuse at login never reaches the host.
+- name: Install the guard policy
+  ansible.builtin.copy:
+    content: "{{ echoport_remote_command_guard_policy | to_nice_json }}\n"
+    dest: "{{ echoport_remote_command_guard_policy_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: "{{ echoport_remote_command_guard_python }} -I {{ echoport_remote_command_guard_path }} --check-policy %s"
+
+- name: Publish the forced command for authorized_keys
+  ansible.builtin.set_fact:
+    echoport_remote_command_guard_forced_command: >-
+      {{ echoport_remote_command_guard_python }} -I {{ echoport_remote_command_guard_path }}
+      {{ echoport_remote_command_guard_policy_path }}

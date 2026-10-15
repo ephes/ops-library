@@ -38,6 +38,10 @@ TEMP_DIR = "{{ echoport_backup_temp_dir }}"
 
 # SSH configuration
 SSH_OPTS = "-o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=30"
+# scp runs with -O (classic scp protocol) so the remote side sees
+# `scp -f <path>` / `scp -t <path>`. The deploy key is pinned to the
+# echoport_remote_command_guard allowlist on production/staging, and that
+# can check a path; the SFTP mode (`scp` default) cannot be path-restricted.
 
 # Security: Allowed remote path roots (defense-in-depth)
 ALLOWED_ROOTS = [
@@ -160,7 +164,7 @@ def scp_from_remote(
     """Copy file from remote host to local path."""
     _validate_ssh_identifier(remote_host, "remote_host")
     _validate_ssh_identifier(remote_user, "remote_user")
-    full_cmd = f"scp {SSH_OPTS} {remote_user}@{remote_host}:{shlex.quote(remote_path)} {shlex.quote(local_path)}"
+    full_cmd = f"scp -O {SSH_OPTS} {remote_user}@{remote_host}:{shlex.quote(remote_path)} {shlex.quote(local_path)}"
     print(f"[SCP] {remote_path} -> {local_path}", file=sys.stderr)
     result = subprocess.run(full_cmd, shell=True, capture_output=True, text=True)
     if result.returncode != 0:
@@ -175,7 +179,7 @@ def scp_to_remote(
     """Copy file from local to remote host."""
     _validate_ssh_identifier(remote_host, "remote_host")
     _validate_ssh_identifier(remote_user, "remote_user")
-    full_cmd = f"scp {SSH_OPTS} {shlex.quote(local_path)} {remote_user}@{remote_host}:{shlex.quote(remote_path)}"
+    full_cmd = f"scp -O {SSH_OPTS} {shlex.quote(local_path)} {remote_user}@{remote_host}:{shlex.quote(remote_path)}"
     print(f"[SCP] {local_path} -> {remote_path}", file=sys.stderr)
     result = subprocess.run(full_cmd, shell=True, capture_output=True, text=True)
     if result.returncode != 0:
@@ -209,8 +213,10 @@ def rsync_to_remote(
     """Rsync directory from local to remote host (directories only, trailing slashes)."""
     _validate_ssh_identifier(remote_host, "remote_host")
     _validate_ssh_identifier(remote_user, "remote_user")
+    # --no-D: no device or special files on the host; the pinned key's guard
+    # (echoport_remote_command_guard) accepts only these exact options.
     full_cmd = (
-        f'rsync -a --delete -e "ssh {SSH_OPTS}" '
+        f'rsync -a --no-D --delete -e "ssh {SSH_OPTS}" '
         f"{shlex.quote(local_path)}/ {remote_user}@{remote_host}:{shlex.quote(remote_path)}/"
     )
     print(f"[RSYNC] {local_path}/ -> {remote_path}/", file=sys.stderr)

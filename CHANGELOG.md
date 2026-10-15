@@ -3,6 +3,62 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Pinned backup SSH key for production and staging (2.43.0)
+
+FastDeploy privilege reduction, stage 1, SSH part.
+
+- New role `echoport_remote_command_guard`: a forced-command allowlist for the
+  SSH key the Echoport remote runners use as `root` on production/staging.
+  It accepts exactly the commands those runners send (pg_dump/restore of the
+  listed databases, `systemctl` for listed units, `scp -f|-t` and
+  `rsync --server` inside listed path roots or on the runners' temp dump
+  files, the python-podcast private media backup steps), executes them without
+  a shell and refuses and logs everything else, including interactive
+  sessions and SFTP. The policy is per host and validated by the guard before
+  it is installed. Tested against every remote runner's real commands
+  (`just test-echoport-remote-command-guard`) and through a real sshd with a
+  fish login shell (`just molecule-test echoport_remote_command_guard`).
+- `echoport_backup`: the remote runners (homepage/python-podcast production DB
+  and staging, marina and villakunterbunt staging) call `scp -O` so the guard
+  sees a checkable `scp -f|-t <path>`. heis is unchanged.
+- The guard accepts exactly the rsync server commands of the runners' client
+  options (download `-a --safe-links`, upload `-a --no-D` with or without
+  `--delete`; derived from rsync 3.2.7 and 3.5.0, listed in the role README)
+  and refuses everything else (`-L`, `-K`, device/special files, other
+  options). The marina and villakunterbunt upload runners pass `--no-D`.
+- `scp -t` writes only onto a new path or an existing regular file with one
+  link (no symlink, device, FIFO or directory); `scp -f` reads only missing or
+  regular files, dump files only when they belong to `postgres`.
+- Uploads run unprivileged: `scp -t`, the rsync receiver and `mkdir -p` into a
+  path root run as the root's owner (`runuser -u <owner> --`; a root owned by
+  `root` is refused), restore dumps are written as `postgres`. The sender can
+  no longer create root-owned setuid or device files. The private media tar
+  archive (and `scp -f` of it) is only accepted inside a private directory of
+  root's (a fresh `mktemp -d`), so a look-alike directory with a planted
+  symlink in `/tmp` is refused.
+- Django Chat staging DB runner (`django_chat_staging_db_backup.py.j2`) passes
+  the guard unchanged: `runuser -u postgres --` forms, `pg_dump` to stdout, the
+  runner's three fixed read-only `psql` queries, scratch databases from
+  `postgres.scratch_restore_prefixes`, a root-only restore temp dir from
+  `temp_dirs`. The guard performs the runner's `umask 077 && cat > <dump>` and
+  `pg_restore ... < <dump>` redirections itself, opening the files without
+  following symlinks.
+- GoToSocial runner (`gotosocial_backup.py.j2`): every remote step is one
+  plain command (no `bash -c` script), `scp -O` without `-p`, uploads with
+  `--no-D`, and the snapshot is read with `cat` from the service user's temp
+  dir, which the guard opens itself without following symlinks. The rollback
+  runs the same moves step by step. New policy keys `sqlite_snapshots`,
+  `read_files`, `ready_urls`; generic `mv` within one root onto a new name,
+  `chmod 0600|0700`, `test -f`.
+- `just molecule-test echoport_remote_command_guard` also runs the refused
+  rsync options, scp onto a symlink, a SQLite snapshot through the guard and a
+  dump upload into a root-only temp dir.
+- Accepted risk (documented): restores run `pg_restore` in a PostgreSQL
+  superuser session; a crafted dump could run code as `postgres`.
+- Rollout: re-run the register playbooks of these runners before pinning a
+  host (ops-control `docs/FASTDEPLOY_PRIVILEGES.md`); the new forms also work
+  unpinned.
+
 ## Unreleased — mailgun-relay Python/Rust implementation switch (2.42.0)
 
 - `mailgun_relay_deploy`: `mailgun_relay_impl` (`python`, the default, or

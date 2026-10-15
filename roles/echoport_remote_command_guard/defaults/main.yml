@@ -1,0 +1,28 @@
+---
+ops_library_documentation_category: infrastructure
+# Where the forced-command program and its policy are installed. The
+# authorized_keys entry for the pinned key runs
+# "<python> -I <echoport_remote_command_guard_path> <echoport_remote_command_guard_policy_path>"
+# (published as the fact echoport_remote_command_guard_forced_command).
+echoport_remote_command_guard_path: /usr/local/sbin/echoport-remote-command-guard
+echoport_remote_command_guard_policy_path: /etc/echoport/remote-command-guard.json
+echoport_remote_command_guard_python: /usr/bin/python3
+
+# What the Echoport remote runners may do on this host. Every list defaults
+# to empty, which allows nothing. Shape:
+#
+# echoport_remote_command_guard_policy:
+#   postgres:
+#     dump_databases: [homepage]            # sudo -u postgres pg_dump ... --dbname=<db>
+#     restore_databases: {homepage: homepage}  # dropdb/createdb/pg_restore <db> as <owner role>
+#     temp_file_prefixes: [homepage]        # /tmp/echoport_<prefix>_(dump|restore)_<stamp>.dump
+#   units: [homepage.service]               # systemctl show/stop/start <unit>
+#   private_media_paths: []                 # python-podcast private media backup (tar on the host)
+#   path_roots:                             # SQLite/file targets: paths must resolve inside a root
+#     - {path: /home/marina/site, owner: "marina:marina"}
+#   temp_dirs: []                           # mktemp -d templates for root-only restore temp dirs
+#   sqlite_snapshots: []                    # {database, owner, temp_dir}: online SQLite snapshot as owner
+#   read_files: []                          # extra files scp -f may read
+#   ready_urls: []                          # curl -fsS -o /dev/null <url> readiness probes
+# postgres also takes scratch_restore_prefixes: [<prefix>] (createdb/pg_restore <prefix>_<digits>).
+echoport_remote_command_guard_policy: {}

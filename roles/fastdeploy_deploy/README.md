@@ -340,13 +340,17 @@ FastDeploy Service (runs as: fastdeploy)
 ### For Remote Targets
 
 Runners that reach other hosts (the Echoport production and staging
-backups) use the deploy user's key in `/home/deploy/.ssh/`.
+backups) use the deploy user's key in `/home/deploy/.ssh/`. On production
+and staging that key is pinned to the `echoport_remote_command_guard`
+allowlist (`from=` macmini's tailnet address, forced command).
 
 ### Troubleshooting
 
 If a service run fails, check:
 1. **Sudoers**: `sudo -l -U fastdeploy` and `sudo -l -U deploy`
 2. **SSH keys**: `ls -la /home/deploy/.ssh/`
+3. **Remote allowlist**: refused commands are logged by
+   `echoport-remote-command-guard` in the target host's auth log
 
 ## Handlers
 

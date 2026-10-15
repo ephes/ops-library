@@ -1,8 +1,9 @@
 """Contracts of the Echoport GoToSocial runner (target `gotosocial`).
 
 The runner is rendered from its Jinja template with every host path inside a
-temporary directory. Remote commands run locally through bash with fake
-`runuser`, `chown`, `systemctl` and `curl`; scp/rsync are local copies and
+temporary directory. Remote commands (one plain command per
+call) run locally through bash with fake `runuser`, `chown`, `systemctl` and
+`curl`; scp/rsync are local copies and
 `mc` is a fake bucket. sqlite3 is real.
 """
 
@@ -11,6 +12,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import shlex
 import shutil
 import sqlite3
 import subprocess
@@ -121,6 +123,7 @@ class Harness:
         self.fail_storage_move = False
         self.fail_move_of: str | None = None
         self.lose_reply_of: str | None = None
+        self.remote_commands: list[list[str]] = []
         self.module = self._render()
 
     def _render(self) -> types.ModuleType:
@@ -146,13 +149,22 @@ class Harness:
 
         harness = self
 
-        def remote(script: str, check: bool = True) -> subprocess.CompletedProcess:
+        def remote(args: list, check: bool = True, stdout_path: Path | None = None) -> subprocess.CompletedProcess:
+            # The runner sends one plain command per call (the pinned key's guard
+            # allows nothing else); run it locally through bash.
+            harness.remote_commands.append(list(args))
+            script = shlex.join(args)
             if harness.fail_storage_move and script.startswith(f"mv {harness.storage} "):
                 script = "echo 'mv: simulated failure' >&2; false"
             if harness.fail_move_of and script.startswith(f"mv {harness.fail_move_of} "):
                 script = "echo 'mv: simulated failure' >&2; false"
             cmd = ["bash", "-c", "set -euo pipefail; " + script]
-            result = subprocess.run(cmd, capture_output=True, text=True, env=harness.env)
+            if stdout_path is None:
+                result = subprocess.run(cmd, capture_output=True, text=True, env=harness.env)
+            else:
+                with open(stdout_path, "wb") as out:
+                    raw = subprocess.run(cmd, stdout=out, stderr=subprocess.PIPE, env=harness.env)
+                result = subprocess.CompletedProcess(cmd, raw.returncode, "", raw.stderr.decode())
             if harness.lose_reply_of and script.startswith(f"mv {harness.lose_reply_of} "):
                 # The rename happened, but the SSH connection dropped before the reply.
                 result = subprocess.CompletedProcess(cmd, 255, "", "ssh: connection reset")

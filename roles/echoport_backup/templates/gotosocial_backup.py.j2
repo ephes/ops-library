@@ -6,10 +6,15 @@ Runs ON MACMINI and reaches the GoToSocial host over SSH (root, like the other
 remote runners). The GoToSocial host needs only `sqlite3`, which
 `gotosocial_deploy` installs; it has no MinIO access.
 
+Every remote step is one plain command (no shell script, classic `scp -O`,
+fixed rsync options): on a host where the deploy key is pinned to
+`echoport_remote_command_guard`, only those exact shapes are allowed.
+
 Backup (online, no downtime):
   1. `sqlite3 .backup` of the live database into a private temp dir on the
      host (SQLite's backup API, consistent with WAL), integrity check there
-  2. copy the snapshot, rsync the media storage, copy config.yaml and the
+  2. copy the snapshot (`cat`, opened by the guard without following
+     symlinks), rsync the media storage, copy config.yaml and the
      domain-layout marker to macmini
   3. integrity check again, manifest.json + manifest.sha256, tarball
   4. upload with the runner's mc alias, compare the stored size
@@ -139,23 +144,41 @@ def read_config_file() -> Optional[Dict]:
 
 # --- remote helpers ----------------------------------------------------------
 
-def remote(script: str, check: bool = True) -> subprocess.CompletedProcess:
-    """Run a bash script on the host. bash -c keeps it independent of root's login shell."""
-    cmd = ["ssh", *SSH_OPTS, f"{REMOTE_USER}@{REMOTE_HOST}", "bash -c " + shlex.quote("set -euo pipefail; " + script)]
-    print(f"[SSH] {script}", file=sys.stderr)
-    result = subprocess.run(cmd, capture_output=True, text=True)
+def remote(args: list, check: bool = True, stdout_path: Optional[Path] = None) -> subprocess.CompletedProcess:
+    """Run one command on the host; its output goes to stdout_path when given.
+
+    One plain command per call, quoted with shlex (POSIX shells and fish read
+    it the same): the pinned key's guard runs single commands without a shell.
+    """
+    line = shlex.join(args)
+    cmd = ["ssh", *SSH_OPTS, f"{REMOTE_USER}@{REMOTE_HOST}", line]
+    print(f"[SSH] {line}", file=sys.stderr)
+    if stdout_path is None:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+    else:
+        with open(stdout_path, "wb") as out:
+            raw = subprocess.run(cmd, stdout=out, stderr=subprocess.PIPE)
+        result = subprocess.CompletedProcess(cmd, raw.returncode, "", raw.stderr.decode("utf-8", "replace"))
     if check and result.returncode != 0:
         raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
     return result
 
 
+def remote_exists(path: str) -> bool:
+    """`test -e` on the host: 0 exists, 1 absent; anything else (SSH, guard) raises."""
+    result = remote(["test", "-e", path], check=False)
+    if result.returncode not in (0, 1):
+        raise subprocess.CalledProcessError(result.returncode, result.args, result.stdout, result.stderr)
+    return result.returncode == 0
+
+
 def scp_from(remote_path: str, local_path: Path) -> None:
-    subprocess.run(["scp", "-p", *SSH_OPTS, f"{REMOTE_USER}@{REMOTE_HOST}:{remote_path}", str(local_path)],
+    subprocess.run(["scp", "-O", *SSH_OPTS, f"{REMOTE_USER}@{REMOTE_HOST}:{remote_path}", str(local_path)],
                    check=True, capture_output=True, text=True)
 
 
 def scp_to(local_path: Path, remote_path: str) -> None:
-    subprocess.run(["scp", *SSH_OPTS, str(local_path), f"{REMOTE_USER}@{REMOTE_HOST}:{remote_path}"],
+    subprocess.run(["scp", "-O", *SSH_OPTS, str(local_path), f"{REMOTE_USER}@{REMOTE_HOST}:{remote_path}"],
                    check=True, capture_output=True, text=True)
 
 
@@ -167,7 +190,8 @@ def rsync_from(remote_dir: str, local_dir: Path) -> None:
 
 
 def rsync_to(local_dir: Path, remote_dir: str) -> None:
-    subprocess.run(["rsync", "-a", "--delete", "-e", "ssh " + " ".join(SSH_OPTS),
+    # --no-D: no device or special files on the host (the guard refuses them).
+    subprocess.run(["rsync", "-a", "--no-D", "--delete", "-e", "ssh " + " ".join(SSH_OPTS),
                     f"{local_dir}/", f"{REMOTE_USER}@{REMOTE_HOST}:{remote_dir.rstrip('/')}/"],
                    check=True, capture_output=True, text=True)
 
@@ -223,26 +247,32 @@ def backup(bucket: str, key_prefix: str, timestamp: str) -> int:
     remote_tmp = ""
     try:
         emit_step("init", "running", f"Backup of {SERVICE_NAME} on {REMOTE_HOST}")
-        remote(f"test -f {shlex.quote(DB_PATH)} && test -d {shlex.quote(STORAGE_DIR)} && command -v sqlite3 >/dev/null")
-        emit_step("init", "success", "Host, database, storage and sqlite3 present")
+        remote(["test", "-f", DB_PATH])
+        remote(["test", "-d", STORAGE_DIR])
+        emit_step("init", "success", "Host, database and storage present")
 
         emit_step("snapshot", "running", "Online sqlite3 .backup on the host")
-        remote_tmp = remote(f"mktemp -d {REMOTE_TMP_PARENT}/gotosocial-echoport.XXXXXX").stdout.strip()
+        # mktemp -d creates the directory 0700 for root.
+        remote_tmp = remote(["mktemp", "-d", f"{REMOTE_TMP_PARENT}/gotosocial-echoport.XXXXXX"]).stdout.strip()
         if not remote_tmp.startswith(f"{REMOTE_TMP_PARENT}/gotosocial-echoport."):
             raise StepFailure("snapshot", f"unexpected remote temp dir: {remote_tmp!r}")
         snap = f"{remote_tmp}/{ARCHIVE_DB}"
         # As the service user: root opening the database could leave root-owned
         # -wal/-shm files behind that GoToSocial then cannot write.
-        as_owner = f"runuser -u {shlex.quote(SERVICE_USER)} --"
-        remote(f"chmod 0700 {shlex.quote(remote_tmp)} && chown {shlex.quote(SERVICE_OWNER)} {shlex.quote(remote_tmp)} && "
-               f"{as_owner} sqlite3 {shlex.quote(DB_PATH)} " + shlex.quote(f".backup '{snap}'")
-               + f" && test \"$({as_owner} sqlite3 {shlex.quote(snap)} 'PRAGMA integrity_check;')\" = ok")
+        as_owner = ["runuser", "-u", SERVICE_USER, "--"]
+        remote(["chown", SERVICE_OWNER, remote_tmp])
+        remote([*as_owner, "sqlite3", DB_PATH, f".backup '{snap}'"])
+        checked = remote([*as_owner, "sqlite3", snap, "PRAGMA integrity_check;"]).stdout.strip()
+        if checked != "ok":
+            raise StepFailure("snapshot", f"integrity_check on the host: {checked[:200]}")
         emit_step("snapshot", "success", "Snapshot taken and checked on the host")
 
         emit_step("copy", "running", "Copying snapshot, storage, config and layout")
         payload = work / "payload"
         payload.mkdir()
-        scp_from(snap, payload / ARCHIVE_DB)
+        # The service user owns the temp dir; cat lets the guard open the file
+        # without following symlinks (scp would follow them as root).
+        remote(["cat", snap], stdout_path=payload / ARCHIVE_DB)
         rsync_from(STORAGE_DIR, payload / ARCHIVE_STORAGE)
         scp_from(CONFIG_PATH, payload / ARCHIVE_CONFIG)
         scp_from(LAYOUT_MARKER, payload / ARCHIVE_LAYOUT)
@@ -309,9 +339,7 @@ def backup(bucket: str, key_prefix: str, timestamp: str) -> int:
     finally:
         if remote_tmp.startswith(f"{REMOTE_TMP_PARENT}/gotosocial-echoport."):
             # The snapshot keeps WAL mode, so opening it may leave -wal/-shm next to it.
-            snap_q = shlex.quote(f"{remote_tmp}/{ARCHIVE_DB}")
-            cleaned = remote(f"rm -f {snap_q} {snap_q}-wal {snap_q}-shm {snap_q}-journal && rmdir {shlex.quote(remote_tmp)}",
-                             check=False)
+            cleaned = remote(["rm", "-rf", "--", remote_tmp], check=False)
             if cleaned.returncode != 0:
                 print(f"[WARN] could not remove {remote_tmp}: {cleaned.stderr.strip()}", file=sys.stderr)
         shutil.rmtree(work, ignore_errors=True)
@@ -352,13 +380,14 @@ def restore(bucket: str, key: str, expected_checksum: str) -> int:
             raise StepFailure("extract", "manifest.sha256 does not match the extracted files")
         manifest = json.loads((payload / "manifest.json").read_text())
         sqlite_integrity(payload / ARCHIVE_DB)
-        host_layout = remote(f"cat {shlex.quote(LAYOUT_MARKER)}").stdout.strip()
+        scp_from(LAYOUT_MARKER, work / "host-layout")
+        host_layout = (work / "host-layout").read_text().strip()
         if manifest.get("domain_layout") != host_layout:
             raise StepFailure("extract", f"archive layout {manifest.get('domain_layout')!r} != host layout {host_layout!r}")
         emit_step("extract", "success", f"Archive of {manifest.get('timestamp')} verified, layout {host_layout}")
 
         emit_step("stop_service", "running", f"Stopping {SERVICE_NAME}")
-        remote(f"systemctl stop {shlex.quote(SERVICE_NAME)}")
+        remote(["systemctl", "stop", SERVICE_NAME])
         stopped = True
         emit_step("stop_service", "success", "Stopped")
 
@@ -368,27 +397,30 @@ def restore(bucket: str, key: str, expected_checksum: str) -> int:
         # copy exists (rename is atomic), never by what SSH reported.
         for original, saved in ((DB_PATH, aside_db), (f"{DB_PATH}-wal", f"{aside_db}-wal"),
                                 (f"{DB_PATH}-shm", f"{aside_db}-shm"), (STORAGE_DIR, aside_storage)):
-            exists = remote(f"test -e {shlex.quote(original)}", check=False).returncode == 0
-            if not exists:
+            if not remote_exists(original):
                 if original in (DB_PATH, STORAGE_DIR):
                     raise StepFailure("move_aside", f"{original} is missing")
                 absent_sidecars.append(original)
                 continue
             moved.append((original, saved))
-            remote(f"mv {shlex.quote(original)} {shlex.quote(saved)}")
+            remote(["mv", original, saved])
         emit_step("move_aside", "success", f"Kept as {aside_db} and {aside_storage}")
 
         emit_step("restore_files", "running", "Copying archived database and storage")
         tmp_db = f"{DB_PATH}.restore-tmp"
         scp_to(payload / ARCHIVE_DB, tmp_db)
-        remote(f"mv {shlex.quote(tmp_db)} {shlex.quote(DB_PATH)} && install -d -m 0700 {shlex.quote(STORAGE_DIR)}")
+        remote(["mv", tmp_db, DB_PATH])
+        remote(["mkdir", "-p", STORAGE_DIR])
+        remote(["chmod", "0700", STORAGE_DIR])
         rsync_to(payload / ARCHIVE_STORAGE, STORAGE_DIR)
-        remote(f"chown -R {shlex.quote(SERVICE_OWNER)} {shlex.quote(DB_PATH)} {shlex.quote(STORAGE_DIR)} && "
-               f"chmod 0600 {shlex.quote(DB_PATH)} && chmod 0700 {shlex.quote(STORAGE_DIR)}")
+        remote(["chown", SERVICE_OWNER, DB_PATH])
+        remote(["chown", "-R", SERVICE_OWNER, STORAGE_DIR])
+        remote(["chmod", "0600", DB_PATH])
+        remote(["chmod", "0700", STORAGE_DIR])
         emit_step("restore_files", "success", "Database and storage in place")
 
         emit_step("start_service", "running", f"Starting {SERVICE_NAME}")
-        remote(f"systemctl start {shlex.quote(SERVICE_NAME)}")
+        remote(["systemctl", "start", SERVICE_NAME])
         stopped = False
         wait_ready()
         emit_step("start_service", "success", "Ready")
@@ -402,42 +434,55 @@ def restore(bucket: str, key: str, expected_checksum: str) -> int:
         message = str(e) if not isinstance(e, subprocess.CalledProcessError) else (e.stderr or "").strip()[:500]
         if moved:
             emit_step("rollback", "running", "Putting the previous database and storage back")
-            failed = f".failed-restore-{stamp}"
-            # Nothing is deleted. Half-restored files at a moved path, and a
-            # leftover restore temp file, are moved aside as *.failed-restore-*;
-            # paths that were never moved are left alone.
-            parts = [f"systemctl stop {shlex.quote(SERVICE_NAME)} || true",
-                     f"if [ -e {shlex.quote(DB_PATH + '.restore-tmp')} ]; then mv {shlex.quote(DB_PATH + '.restore-tmp')} {shlex.quote(DB_PATH + '.restore-tmp' + failed)}; fi"]
-            # A sidecar that did not exist before the move can only belong to the
-            # restored database (it ran briefly); it must not pair with the old one.
-            for sidecar in absent_sidecars:
-                parts.append(f"if [ -e {shlex.quote(sidecar)} ]; then mv {shlex.quote(sidecar)} {shlex.quote(sidecar + failed)}; fi")
-            for original, saved in reversed(moved):
-                # Only where the saved copy exists was the original moved away.
-                parts.append(
-                    f"if [ -e {shlex.quote(saved)} ]; then "
-                    f"if [ -e {shlex.quote(original)} ]; then mv {shlex.quote(original)} {shlex.quote(original + failed)}; fi; "
-                    f"mv {shlex.quote(saved)} {shlex.quote(original)}; fi")
-            parts.append(f"test -e {shlex.quote(DB_PATH)} && test -d {shlex.quote(STORAGE_DIR)}")
-            rolled = remote("; ".join(parts), check=False)
-            emit_step("rollback", "success" if rolled.returncode == 0 else "failure",
-                      "Previous data restored" if rolled.returncode == 0 else (rolled.stderr.strip()[:300] or "data missing after rollback"))
+            rolled, detail = rollback(moved, absent_sidecars, f".failed-restore-{stamp}")
+            emit_step("rollback", "success" if rolled else "failure",
+                      "Previous data restored" if rolled else (detail or "data missing after rollback"))
             stopped = True
-            if rolled.returncode != 0:
+            if not rolled:
                 # Do not start GoToSocial without its data; leave it stopped for an operator.
                 return fail(step, message + "; rollback incomplete, service left stopped")
         if stopped:
-            started = remote(f"systemctl start {shlex.quote(SERVICE_NAME)}", check=False)
+            started = remote(["systemctl", "start", SERVICE_NAME], check=False)
             emit_step("start_service", "success" if started.returncode == 0 else "failure", "Service start after failure")
         return fail(step, message)
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
 
+def rollback(moved: list, absent_sidecars: list, failed: str) -> tuple:
+    """Put the moved-aside data back; return (ok, detail). Stops at the first failure.
+
+    Nothing is deleted. Half-restored files at a moved path, and a leftover
+    restore temp file, are moved aside as *.failed-restore-*; paths that were
+    never moved are left alone.
+    """
+    remote(["systemctl", "stop", SERVICE_NAME], check=False)
+    try:
+        tmp_db = DB_PATH + ".restore-tmp"
+        if remote_exists(tmp_db):
+            remote(["mv", tmp_db, tmp_db + failed])
+        # A sidecar that did not exist before the move can only belong to the
+        # restored database (it ran briefly); it must not pair with the old one.
+        for sidecar in absent_sidecars:
+            if remote_exists(sidecar):
+                remote(["mv", sidecar, sidecar + failed])
+        for original, saved in reversed(moved):
+            # Only where the saved copy exists was the original moved away.
+            if remote_exists(saved):
+                if remote_exists(original):
+                    remote(["mv", original, original + failed])
+                remote(["mv", saved, original])
+        remote(["test", "-e", DB_PATH])
+        remote(["test", "-d", STORAGE_DIR])
+    except subprocess.CalledProcessError as e:
+        return False, (e.stderr or "").strip()[:300]
+    return True, ""
+
+
 def wait_ready(timeout: int = 180) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        r = remote(f"curl -fsS -o /dev/null {shlex.quote(READY_URL)}", check=False)
+        r = remote(["curl", "-fsS", "-o", "/dev/null", READY_URL], check=False)
         if r.returncode == 0:
             return
         time.sleep(3)
