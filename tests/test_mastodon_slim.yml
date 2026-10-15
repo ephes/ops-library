@@ -1,0 +1,284 @@
+---
+# Contracts for Mastodon process sizing, maintenance command guards and
+# backup retention.
+# Run with: ansible-playbook -i localhost, -c local tests/test_mastodon_slim.yml
+
+- name: Test Mastodon sizing, maintenance guards and backup pruning
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    roles_dir: "{{ playbook_dir }}/../roles"
+    deploy_validate: "{{ roles_dir }}/mastodon_deploy/tasks/validate.yml"
+    maintenance_validate: "{{ roles_dir }}/mastodon_maintenance/tasks/validate.yml"
+    backup_prune: "{{ roles_dir }}/mastodon_backup/tasks/prune.yml"
+    # Minimum viable input for mastodon_deploy validate.yml.
+    mastodon_source_mode: git
+    mastodon_git_repo: "https://github.com/mastodon/mastodon.git"
+    mastodon_local_domain: "example.com"
+    mastodon_web_domain: "example.com"
+    mastodon_secret_key_base: "test-secret"  # pragma: allowlist secret
+    mastodon_otp_secret: "test-secret"  # pragma: allowlist secret
+    mastodon_vapid_public_key: "test-key"  # pragma: allowlist secret
+    mastodon_vapid_private_key: "test-key"  # pragma: allowlist secret
+    mastodon_active_record_encryption_primary_key: "test-key"  # pragma: allowlist secret
+    mastodon_active_record_encryption_deterministic_key: "test-key"  # pragma: allowlist secret
+    mastodon_active_record_encryption_key_derivation_salt: "test-key"  # pragma: allowlist secret
+    mastodon_postgres_password: "test-pw"  # pragma: allowlist secret
+    mastodon_require_smtp: false
+    mastodon_storage_driver: local
+    mastodon_redis_requirepass_enabled: false
+    mastodon_redis_password: ""
+    mastodon_maintenance_media_days: 4
+    mastodon_maintenance_preview_days: 4
+    mastodon_maintenance_status_days: 4
+
+  tasks:
+    - name: Load shared Mastodon defaults
+      ansible.builtin.include_vars:
+        file: "{{ roles_dir }}/mastodon_shared/defaults/main.yml"
+        name: mastodon_shared_defaults
+
+    - name: Load maintenance defaults
+      ansible.builtin.include_vars:
+        file: "{{ roles_dir }}/mastodon_maintenance/defaults/main.yml"
+        name: mastodon_maintenance_defaults
+
+    - name: Assert sizing defaults stay unchanged for existing users
+      ansible.builtin.assert:
+        that:
+          - mastodon_shared_defaults.mastodon_web_concurrency == 2
+          - mastodon_shared_defaults.mastodon_max_threads == 5
+          - mastodon_shared_defaults.mastodon_sidekiq_concurrency == 25
+          - mastodon_shared_defaults.mastodon_db_pool == 25
+          - mastodon_shared_defaults.mastodon_backup_retain == 7
+          - not mastodon_shared_defaults.mastodon_backup_retain_all_prefixes
+          - mastodon_maintenance_defaults.mastodon_maintenance_extra_commands == []
+
+    # --- process sizing -------------------------------------------------
+    - name: Accept the default sizing
+      ansible.builtin.include_tasks: "{{ deploy_validate }}"
+      vars:
+        mastodon_web_concurrency: 2
+        mastodon_max_threads: 5
+        mastodon_sidekiq_concurrency: 25
+        mastodon_db_pool: 25
+
+    - name: Accept a slim single-user sizing
+      ansible.builtin.include_tasks: "{{ deploy_validate }}"
+      vars:
+        mastodon_web_concurrency: 1
+        mastodon_max_threads: 5
+        mastodon_sidekiq_concurrency: 5
+        mastodon_db_pool: 5
+
+    - name: Accept Puma single mode
+      ansible.builtin.include_tasks: "{{ deploy_validate }}"
+      vars:
+        mastodon_web_concurrency: 0
+        mastodon_max_threads: 5
+        mastodon_sidekiq_concurrency: 5
+        mastodon_db_pool: 5
+
+    - name: Reject a pool smaller than Sidekiq concurrency
+      ansible.builtin.include_tasks: tasks/test_mastodon_rejected.yml
+      vars:
+        case_name: pool below sidekiq concurrency
+        case_tasks: "{{ deploy_validate }}"
+        mastodon_web_concurrency: 1
+        mastodon_max_threads: 5
+        mastodon_sidekiq_concurrency: 10
+        mastodon_db_pool: 5
+
+    - name: Reject a pool smaller than Puma threads
+      ansible.builtin.include_tasks: tasks/test_mastodon_rejected.yml
+      vars:
+        case_name: pool below puma threads
+        case_tasks: "{{ deploy_validate }}"
+        mastodon_web_concurrency: 1
+        mastodon_max_threads: 8
+        mastodon_sidekiq_concurrency: 5
+        mastodon_db_pool: 5
+
+    - name: Reject a negative Puma worker count
+      ansible.builtin.include_tasks: tasks/test_mastodon_rejected.yml
+      vars:
+        case_name: negative web concurrency
+        case_tasks: "{{ deploy_validate }}"
+        mastodon_web_concurrency: -1
+        mastodon_max_threads: 5
+        mastodon_sidekiq_concurrency: 5
+        mastodon_db_pool: 5
+
+    # --- maintenance command guard --------------------------------------
+    - name: Accept the default maintenance commands
+      ansible.builtin.include_tasks: "{{ maintenance_validate }}"
+      vars:
+        mastodon_maintenance_tootctl_commands: "{{ mastodon_maintenance_defaults.mastodon_maintenance_tootctl_commands }}"
+        mastodon_maintenance_extra_commands: []
+
+    - name: Accept scoped profile and emoji pruning
+      ansible.builtin.include_tasks: "{{ maintenance_validate }}"
+      vars:
+        mastodon_maintenance_tootctl_commands: ["media remove --days 4"]
+        mastodon_maintenance_extra_commands:
+          - "media remove --prune-profiles --days 30"
+          - "emoji purge --remote-only"
+          - "emoji purge --suspended-only"
+          - "  emoji   purge   --remote-only  "
+          - "emoji import /tmp/emoji.tar.gz"
+          - "emoji purge --suspended-only --remote-only"
+
+    - name: Reject unsafe emoji purges
+      ansible.builtin.include_tasks: tasks/test_mastodon_rejected.yml
+      vars:
+        case_name: "{{ item }}"
+        case_tasks: "{{ maintenance_validate }}"
+        mastodon_maintenance_tootctl_commands: []
+        mastodon_maintenance_extra_commands: ["{{ item }}"]
+      loop:
+        - "emoji purge"
+        - "emoji  purge"
+        - "emoji purge --remote_only"
+        - "emoji purge --remote-only=true"
+        - "emoji purge --remote-only --verbose"
+        - "emoji purge remote-only"
+        - "emoji purge --remote-only false"
+        - "emoji purge --suspended-only false"
+        - "emoji 'purge' --remote-only false"
+        - "emoji \\purge"
+        - "emoji \"purge\""
+        - "emoji purge;"
+        - "emoji purge --remote-only; emoji purge"
+        - "media remove --days 4; emoji purge"
+        - "emoji purge\n--remote-only"
+        - "emoji purge --remote-only\n"
+        - "emoji\tpurge"
+        - "emoji purge --remote-only && emoji purge"
+        - "emoji purge $(echo --remote-only)"
+        - "emoji pur"
+        - "emoji p --remote-only"
+        - "emo purge --remote-only"
+        - "e purge"
+        - "emoji"
+        - "emoji --remote-only purge"
+
+    - name: Reject a command string instead of a list
+      ansible.builtin.include_tasks: tasks/test_mastodon_rejected.yml
+      vars:
+        case_name: extra commands as string
+        case_tasks: "{{ maintenance_validate }}"
+        mastodon_maintenance_tootctl_commands: []
+        mastodon_maintenance_extra_commands: "emoji purge"
+
+    # --- backup pruning --------------------------------------------------
+    - name: Create scratch backup root
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: ops-library-mastodon-prune-
+      register: prune_root
+
+    - name: Exercise backup pruning
+      block:
+        - name: Create fake backups under several prefixes (oldest first)
+          ansible.builtin.shell: |
+            set -euo pipefail
+            cd "{{ prune_root.path }}"
+            i=0
+            for name in pre-a-20260101T000000 pre-b-20260201T000000 manual-20260301T000000 pre-c-20260401T000000 manual-20260501T000000; do
+              i=$((i + 1))
+              mkdir "$name"
+              touch "$name.tar.gz"
+              touch -t "20260${i}010000" "$name" "$name.tar.gz"
+            done
+            mkdir only-dir-20251201T000000
+            touch -t 202512010000 only-dir-20251201T000000
+          args:
+            executable: /bin/bash
+          changed_when: true
+
+        - name: Prune per prefix (default)
+          ansible.builtin.include_tasks: "{{ backup_prune }}"
+          vars:
+            mastodon_backup_root: "{{ prune_root.path }}"
+            mastodon_backup_prefix: manual
+            mastodon_backup_retain: 1
+            mastodon_backup_retain_all_prefixes: false
+            mastodon_backup_create_archive: true
+            mastodon_backup_archive_extension: tar.gz
+
+        - name: List after per-prefix prune
+          ansible.builtin.find:
+            paths: "{{ prune_root.path }}"
+            file_type: any
+          register: after_prefix
+
+        - name: Assert only the older manual backup was pruned
+          ansible.builtin.assert:
+            that:
+              - (after_prefix.files | map(attribute='path') | map('basename') | sort | list) == expected
+          vars:
+            expected:
+              - manual-20260501T000000
+              - manual-20260501T000000.tar.gz
+              - only-dir-20251201T000000
+              - pre-a-20260101T000000
+              - pre-a-20260101T000000.tar.gz
+              - pre-b-20260201T000000
+              - pre-b-20260201T000000.tar.gz
+              - pre-c-20260401T000000
+              - pre-c-20260401T000000.tar.gz
+
+        - name: Prune across all prefixes
+          ansible.builtin.include_tasks: "{{ backup_prune }}"
+          vars:
+            mastodon_backup_root: "{{ prune_root.path }}"
+            mastodon_backup_prefix: manual
+            mastodon_backup_retain: 2
+            mastodon_backup_retain_all_prefixes: true
+            mastodon_backup_create_archive: true
+            mastodon_backup_archive_extension: tar.gz
+
+        - name: List after all-prefix prune
+          ansible.builtin.find:
+            paths: "{{ prune_root.path }}"
+            file_type: any
+          register: after_all
+
+        - name: Assert the two newest backups of any prefix remain
+          ansible.builtin.assert:
+            that:
+              - (after_all.files | map(attribute='path') | map('basename') | sort | list) == expected
+          vars:
+            expected:
+              - manual-20260501T000000
+              - manual-20260501T000000.tar.gz
+              - pre-c-20260401T000000
+              - pre-c-20260401T000000.tar.gz
+
+        - name: Retain 0 disables pruning
+          ansible.builtin.include_tasks: "{{ backup_prune }}"
+          vars:
+            mastodon_backup_root: "{{ prune_root.path }}"
+            mastodon_backup_prefix: manual
+            mastodon_backup_retain: 0
+            mastodon_backup_retain_all_prefixes: true
+            mastodon_backup_create_archive: true
+            mastodon_backup_archive_extension: tar.gz
+
+        - name: List after retain 0
+          ansible.builtin.find:
+            paths: "{{ prune_root.path }}"
+            file_type: any
+          register: after_zero
+
+        - name: Assert nothing was removed with retain 0
+          ansible.builtin.assert:
+            that:
+              - after_zero.files | length == 4
+      always:
+        - name: Remove scratch backup root
+          ansible.builtin.file:
+            path: "{{ prune_root.path }}"
+            state: absent

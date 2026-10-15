@@ -26,6 +26,24 @@ mastodon_maintenance_extra_commands:
   - "accounts prune"
 ```
 
+Pruning remote profile media and remote custom emoji (the bulk of `public/system/cache` on most instances):
+
+```yaml
+mastodon_maintenance_extra_commands:
+  - "media remove --prune-profiles --days 30"
+  - "emoji purge --remote-only"
+```
+
+`media remove --prune-profiles` removes cached avatars and headers of remote accounts that nobody on the instance
+follows or is followed by and that were not refreshed for `--days`; it never touches local accounts and is a
+superset of `--remove-headers` (tootctl refuses both flags together). `emoji purge --remote-only` deletes every
+remote custom emoji (no age filter); they are fetched again when new posts use them. Without a scope flag,
+`emoji purge` deletes local custom emoji as well, and tootctl accepts misspelt flags and values such as
+`--remote-only false`, so the role fails unless emoji commands use full names (Thor would run `em pur` as a purge) and
+`emoji purge` is followed only by `--remote-only` or
+`--suspended-only`. Commands are rendered unquoted into a shell script, so the role also refuses any command with
+characters other than letters, digits, spaces and `._=/:,+-` (no newlines, quotes or shell operators).
+
 ## Key Variables
 
 | Variable | Default | Description |

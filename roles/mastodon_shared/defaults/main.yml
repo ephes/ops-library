@@ -226,6 +226,10 @@ mastodon_backup_use_delete: true
 mastodon_backup_media_rsync_excludes:
   - /cache/***
 mastodon_backup_retain: 7
+# Count every backup in mastodon_backup_root against mastodon_backup_retain,
+# not only those with the current mastodon_backup_prefix. Only enable this when
+# mastodon_backup_root holds nothing but Mastodon backups.
+mastodon_backup_retain_all_prefixes: false
 mastodon_backup_postgres_dump_binary: pg_dump
 mastodon_backup_postgres_format: custom
 mastodon_backup_postgres_compress: 9

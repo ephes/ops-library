@@ -84,6 +84,15 @@ mastodon_runtime_chown_recursive: false
 mastodon_clear_rails_cache_on_deploy: true
 ```
 
+### Process sizing
+
+`mastodon_web_concurrency` (Puma workers, `WEB_CONCURRENCY`, default `2`; `0` runs Puma in single mode),
+`mastodon_max_threads` (Puma threads per worker, `MAX_THREADS`, default `5`), `mastodon_sidekiq_concurrency`
+(`sidekiq -c`, default `25`) and `mastodon_db_pool` (`DB_POOL`, default `25`) size the processes. `DB_POOL` is shared
+by Puma and Sidekiq, so the role refuses a pool smaller than either the Sidekiq concurrency or the Puma thread count.
+A small single-user instance runs fine with one Puma worker, Sidekiq concurrency 5 and a pool of 5; raise Sidekiq
+concurrency (and the pool with it) if the Sidekiq queues stop draining.
+
 The role keeps ownership in sync for runtime directories listed in
 `mastodon_runtime_chown_paths`. Set `mastodon_runtime_chown_recursive: true`
 if you need to repair ownership on existing content (for example after a
