@@ -3,6 +3,36 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — FastDeploy no longer makes `deploy` root (2.35.0)
+
+FastDeploy privilege reduction, stage 1.
+
+- New role `fastdeploy_legacy_cleanup`: unregisters retired FastDeploy
+  services (service and runner directories, then FastDeploy's own service
+  sync) and removes listed `/etc/sudoers.d` files, archiving everything into a
+  root-only tarball first; idempotent.
+- `fastdeploy_register_service` no longer writes
+  `deploy ALL=(root) NOPASSWD: ALL` into `/etc/sudoers.d/fastdeploy_<service>`.
+  A runner whose playbook needs root must get its own narrow rule.
+- `fastdeploy_deploy` no longer installs `/etc/sudoers.d/fastdeploy`
+  (`fastdeploy ALL=(deploy) NOPASSWD: <services>/*/deploy.sh *`) and removes
+  it when present; every service has its own rule for its script.
+- Removed role `apt_upgrade_register`: its only job was to give the FastDeploy
+  `deploy` user `ansible-playbook` and `apt` as root. Run upgrades through
+  ops-control (`os_apt_maintenance` for the unattended cadence).
+- `fastdeploy_restore` and the Echoport FastDeploy runner skip the retired
+  entries (`fastdeploy-self`, `apt_upgrade_*`) and their sudoers files when
+  restoring older archives (`fastdeploy_restore_retired_entries`,
+  `fastdeploy_restore_retired_sudoers`,
+  `fastdeploy_echoport_backup_retired_entries`,
+  `fastdeploy_echoport_backup_retired_sudoers`). Other archived sudoers files
+  are restored only when every rule is the narrow per-script shape the
+  registration roles write, so older files with `deploy ALL=(root) NOPASSWD:
+  ALL` stay out (`just test-fastdeploy-retired-restore`, Molecule).
+- Housekeeping so the gates pass again: a stray merge-conflict line removed
+  from this changelog, and the `wagtail_deploy` `tasks/uv_sync.yml` task is
+  named `uv_sync | Install dependencies with uv` (strict lint `name[prefix]`).
+
 ## Unreleased — Echoport runner for the Django Chat staging database (2.34.1)
 
 - New `echoport_backup/templates/django_chat_staging_db_backup.py.j2`: an
@@ -126,7 +156,6 @@
 - The sync moved into `tasks/uv_sync.yml`; `tests/test_wagtail_uv_sync.py`
   runs it with a real `uv` against local wheels (`just test-wagtail-deploy`).
 
-||||||| parent of 699b482 (Guard Mastodon pool sizing and emoji purges, add cross-prefix backup retention)
 ## Unreleased — Echoport runner for the mail database (2.32.1)
 
 - New `echoport_backup/templates/mail_db_backup.py.j2`: a service-owned

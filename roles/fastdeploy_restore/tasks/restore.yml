@@ -158,8 +158,13 @@
 
 - name: "Rsync snapshot directories"
   ansible.builtin.command:
-    cmd: >
-      rsync -a --delete "{{ item.item.src }}/" "{{ item.item.dest }}/"
+    argv: >-
+      {{
+        ['rsync', '-a', '--delete']
+        + (fastdeploy_restore_retired_entries | map('regex_replace', '^', '--exclude=/') | list
+           if item.item.name in ['services', 'deploy_runners'] else [])
+        + [item.item.src ~ '/', item.item.dest ~ '/']
+      }}
   loop: "{{ fastdeploy_restore_sync_stats.results }}"
   when:
     - item.item.include | bool
@@ -230,6 +235,29 @@
   failed_when: false
   changed_when: false
 
+# Older fastdeploy_register_service versions wrote `deploy ALL=(root) NOPASSWD: ALL`
+# into every fastdeploy_<service> file; a file with a plain-ALL command list
+# (after joining continuations and dropping comments) is never restored.
+- name: "Find snapshot sudoers files that grant unrestricted sudo"
+  ansible.builtin.script:
+    cmd: >-
+      sudoers_blanket_check.py
+      {{ fastdeploy_restore_sudoers_files.files | default([]) | map(attribute='path') | map('quote') | join(' ') }}
+    executable: /usr/bin/python3
+  register: fastdeploy_restore_blanket_sudoers_check
+  changed_when: false
+  when: fastdeploy_restore_sudoers_files.matched | default(0) | int > 0
+
+- name: "Collect skipped sudoers files"
+  ansible.builtin.set_fact:
+    fastdeploy_restore_blanket_sudoers: >-
+      {{ (fastdeploy_restore_blanket_sudoers_check.stdout_lines | default([])) | map('trim') | select | list }}
+
+- name: "Report skipped sudoers files"
+  ansible.builtin.debug:
+    msg: "Not restoring {{ item | basename }}: it grants unrestricted sudo (ALL)"
+  loop: "{{ fastdeploy_restore_blanket_sudoers }}"
+
 - name: "Copy sudoers files"
   ansible.builtin.copy:
     src: "{{ item.path }}"
@@ -239,7 +267,10 @@
     mode: "0440"
     remote_src: true
   loop: "{{ fastdeploy_restore_sudoers_files.files }}"
-  when: fastdeploy_restore_sudoers_files.matched | default(0) | int > 0
+  when:
+    - fastdeploy_restore_sudoers_files.matched | default(0) | int > 0
+    - (item.path | basename) not in fastdeploy_restore_retired_sudoers
+    - item.path not in fastdeploy_restore_blanket_sudoers
 
 - name: "Reload systemd daemon"
   ansible.builtin.systemd:

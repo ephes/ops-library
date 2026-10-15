@@ -57,9 +57,11 @@
     - "{{ fastdeploy_site_path }}/logs"
     - "{{ fastdeploy_services_path }}"
 
-- name: Create sudoers file for fastdeploy to run as deploy
-  template:
-    src: sudoers.j2
-    dest: /etc/sudoers.d/fastdeploy
-    mode: "0440"
-    validate: "visudo -cf %s"
+# FastDeploy runs every service as `sudo -u deploy <deploy_script> --config <file>`;
+# each registered service installs its own narrow rule for that script. The old
+# wildcard rule (`fastdeploy ALL=(deploy) NOPASSWD: <services>/*/deploy.sh *`)
+# let fastdeploy run any script it writes into its own services directory.
+- name: Remove the retired wildcard sudoers rule
+  file:
+    path: /etc/sudoers.d/fastdeploy
+    state: absent

@@ -223,7 +223,9 @@
         - "{{ fastdeploy_success_snapshot }}/database"
         - "{{ fastdeploy_success_snapshot }}/services/service-a"
         - "{{ fastdeploy_success_snapshot }}/services/service-b"
+        - "{{ fastdeploy_success_snapshot }}/services/fastdeploy-self"
         - "{{ fastdeploy_success_snapshot }}/deploy_runners"
+        - "{{ fastdeploy_success_snapshot }}/deploy_runners/fastdeploy-self"
         - "{{ fastdeploy_success_snapshot }}/deploy_workspace"
         - "{{ fastdeploy_success_snapshot }}/config"
         - "{{ fastdeploy_success_snapshot }}/systemd"
@@ -274,7 +276,14 @@
         - { dest: "{{ fastdeploy_success_snapshot }}/config/fastdeploy.env", mode: "0644", content: "RESTORE_MARKER=success\n" }
         - { dest: "{{ fastdeploy_success_snapshot }}/systemd/fastdeploy.service", mode: "0644", content: "{{ fastdeploy_snapshot_unit }}" }
         - { dest: "{{ fastdeploy_success_snapshot }}/traefik/fastdeploy.yml", mode: "0644", content: "http:\n  routers:\n    fastdeploy:\n      rule: Host(`success.example.test`)\n" }
-        - { dest: "{{ fastdeploy_success_snapshot }}/sudoers/fastdeploy_restore", mode: "0440", content: "fastdeploy ALL=(ALL) NOPASSWD: /usr/bin/systemctl\n" }
+        - { dest: "{{ fastdeploy_success_snapshot }}/sudoers/fastdeploy_restore", mode: "0440", content: "fastdeploy ALL=(deploy) NOPASSWD:NOSETENV: /home/fastdeploy/site/services/service-a/backup.py *\n" }
+        # Retired by the privilege reduction; must not come back.
+        - { dest: "{{ fastdeploy_success_snapshot }}/services/fastdeploy-self/config.json", mode: "0644", content: "{}\n" }
+        - { dest: "{{ fastdeploy_success_snapshot }}/deploy_runners/fastdeploy-self/deploy.py", mode: "0700", content: "#!/bin/sh\n" }
+        - { dest: "{{ fastdeploy_success_snapshot }}/sudoers/fastdeploy_fastdeploy-self", mode: "0440", content: "deploy ALL=(root) NOPASSWD: ALL\n" }
+        - { dest: "{{ fastdeploy_success_snapshot }}/sudoers/fastdeploy_legacyrunner", mode: "0440", content: "fastdeploy ALL=(deploy) NOPASSWD: /home/deploy/runners/legacyrunner/deploy.py\ndeploy ALL=(root) NOPASSWD: ALL\n" }
+        - { dest: "{{ fastdeploy_success_snapshot }}/sudoers/fastdeploy_commented", mode: "0440", content: "deploy ALL=(root) NOPASSWD: ALL # legacy access\n" }
+        - { dest: "{{ fastdeploy_success_snapshot }}/sudoers/fastdeploy_continued", mode: "0440", content: "deploy ALL=(root) NOPASSWD: \\\n    ALL\n" }
 
     - name: Seed latest-only validation snapshot payload
       ansible.builtin.copy:
@@ -291,7 +300,7 @@
         - { dest: "{{ fastdeploy_latest_snapshot }}/config/fastdeploy.env", mode: "0644", content: "RESTORE_MARKER=latest\n" }
         - { dest: "{{ fastdeploy_latest_snapshot }}/systemd/fastdeploy.service", mode: "0644", content: "{{ fastdeploy_snapshot_unit }}" }
         - { dest: "{{ fastdeploy_latest_snapshot }}/traefik/fastdeploy.yml", mode: "0644", content: "http:\n  routers:\n    fastdeploy:\n      rule: Host(`latest.example.test`)\n" }
-        - { dest: "{{ fastdeploy_latest_snapshot }}/sudoers/fastdeploy_restore", mode: "0440", content: "fastdeploy ALL=(ALL) NOPASSWD: /usr/bin/systemctl\n" }
+        - { dest: "{{ fastdeploy_latest_snapshot }}/sudoers/fastdeploy_restore", mode: "0440", content: "fastdeploy ALL=(deploy) NOPASSWD:NOSETENV: /home/fastdeploy/site/services/service-a/backup.py *\n" }
 
     - name: Seed rescue-failure snapshot payload
       ansible.builtin.copy:
@@ -308,7 +317,7 @@
         - { dest: "{{ fastdeploy_failure_snapshot }}/config/fastdeploy.env", mode: "0644", content: "RESTORE_MARKER=failure\n" }
         - { dest: "{{ fastdeploy_failure_snapshot }}/systemd/fastdeploy.service", mode: "0644", content: "{{ fastdeploy_snapshot_unit }}" }
         - { dest: "{{ fastdeploy_failure_snapshot }}/traefik/fastdeploy.yml", mode: "0644", content: "http:\n  routers:\n    fastdeploy:\n      rule: Host(`failure.example.test`)\n" }
-        - { dest: "{{ fastdeploy_failure_snapshot }}/sudoers/fastdeploy_restore", mode: "0440", content: "fastdeploy ALL=(ALL) NOPASSWD: /usr/bin/systemctl\n" }
+        - { dest: "{{ fastdeploy_failure_snapshot }}/sudoers/fastdeploy_restore", mode: "0440", content: "fastdeploy ALL=(deploy) NOPASSWD:NOSETENV: /home/fastdeploy/site/services/service-a/backup.py *\n" }
 
     - name: Seed rollback safety snapshot payload
       ansible.builtin.copy:
@@ -324,7 +333,7 @@
         - { dest: "{{ fastdeploy_safety_snapshot }}/config/fastdeploy.env", mode: "0644", content: "RESTORE_MARKER=rollback\n" }
         - { dest: "{{ fastdeploy_safety_snapshot }}/systemd/fastdeploy.service", mode: "0644", content: "{{ fastdeploy_snapshot_unit }}" }
         - { dest: "{{ fastdeploy_safety_snapshot }}/traefik/fastdeploy.yml", mode: "0644", content: "http:\n  routers:\n    fastdeploy:\n      rule: Host(`rollback.example.test`)\n" }
-        - { dest: "{{ fastdeploy_safety_snapshot }}/sudoers/fastdeploy_restore", mode: "0440", content: "fastdeploy ALL=(ALL) NOPASSWD: /usr/bin/systemctl\n" }
+        - { dest: "{{ fastdeploy_safety_snapshot }}/sudoers/fastdeploy_restore", mode: "0440", content: "fastdeploy ALL=(deploy) NOPASSWD:NOSETENV: /home/fastdeploy/site/services/service-a/backup.py *\n" }
 
     - name: Generate manifest files for FastDeploy snapshots
       ansible.builtin.shell: |

@@ -14,6 +14,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -43,6 +44,35 @@ WORKSPACE_PATH = "{{ fastdeploy_echoport_backup_workspace_path }}"
 SYSTEMD_UNIT_PATH = "{{ fastdeploy_echoport_backup_systemd_unit_path }}"
 TRAEFIK_CONFIG_PATH = "{{ fastdeploy_echoport_backup_traefik_config_path }}"
 SUDOERS_GLOB = "{{ fastdeploy_echoport_backup_sudoers_glob }}"
+# Retired by the FastDeploy privilege reduction (stage 1). A restore of an older
+# archive must not bring them back: skipped top-level entries of services/ and
+# the deploy runner root, and sudoers files that are not copied back.
+RETIRED_ENTRIES = {{ fastdeploy_echoport_backup_retired_entries | default(['fastdeploy-self', 'fastdeploy-self-playbook.yml', 'apt_upgrade_local', 'apt_upgrade_staging']) | to_json }}
+# Archived sudoers files are restored only when every line is blank, a plain
+# comment or the narrow rule shape the registration roles write; anything else
+# (older fastdeploy_register_service files carried `deploy ALL=(root) NOPASSWD:
+# ALL`) stays out. Same check as fastdeploy_restore/files/sudoers_blanket_check.py
+# (tests keep them equal).
+_RESTORABLE_SUDO_RULE_RE = re.compile(
+    r"^[a-z_][a-z0-9_-]*[ \t]+ALL[ \t]*=[ \t]*\([A-Za-z_][A-Za-z0-9_-]*\)[ \t]*"
+    r"NOPASSWD:(?:NOSETENV:)?[ \t]*(?:/home/fastdeploy/site/services/|/home/deploy/runners/|/usr/local/libexec/)(?!\.\.?/)[A-Za-z0-9_][A-Za-z0-9._-]*(?:/(?!\.\.?(?:[ \t]|$))[A-Za-z0-9_][A-Za-z0-9._-]*)?(?:[ \t]+(?:\*|--config[ \t]+\*))?[ \t]*$"
+)
+
+
+def sudoers_restorable(text: str) -> bool:
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # Only "#" alone or "# text" is a comment: "#include", "#includedir" and
+        # "#<uid> ..." (a rule for a numeric user ID) are directives or rules.
+        if re.match(r"#(?:\s|$)", stripped):
+            continue
+        if not _RESTORABLE_SUDO_RULE_RE.match(stripped):
+            return False
+    return True
+
+RETIRED_SUDOERS = {{ fastdeploy_echoport_backup_retired_sudoers | default(['fastdeploy', 'fastdeploy_fastdeploy-self', 'fastdeploy_self_deploy_users']) | to_json }}
 
 DB_NAME = "{{ fastdeploy_echoport_backup_db_name }}"
 DB_USER = "{{ fastdeploy_echoport_backup_db_user }}"
@@ -260,13 +290,14 @@ def ensure_binaries() -> None:
                 raise FileNotFoundError(f"Required binary not found in PATH: {binary}")
 
 
-def rsync_dir(src_dir: Path, dst_dir: Path, delete: bool = True) -> None:
+def rsync_dir(src_dir: Path, dst_dir: Path, delete: bool = True, exclude: list[str] | None = None) -> None:
     if not src_dir.exists():
         return
     dst_dir.mkdir(parents=True, exist_ok=True)
     args = ["rsync", "-a"]
     if delete:
         args.append("--delete")
+    args.extend(f"--exclude=/{name}" for name in exclude or [])
     args.extend([f"{src_dir}/", f"{dst_dir}/"])
     run_cmd(args)
 
@@ -309,6 +340,12 @@ def restore_sudoers_from_stage(src_dir: Path) -> None:
         return
     for src in sorted(src_dir.glob("*.rule")):
         dst_name = decode_sudoers_name(src.name)
+        if dst_name in RETIRED_SUDOERS:
+            print(f"[INFO] Not restoring retired sudoers file {dst_name}", file=sys.stderr)
+            continue
+        if not sudoers_restorable(src.read_text(errors="replace")):
+            print(f"[WARN] Not restoring {dst_name}: not a narrow per-script rule; rerun its register playbook", file=sys.stderr)
+            continue
         dst = Path("/etc/sudoers.d") / dst_name
         shutil.copy2(src, dst)
         run_cmd(["chmod", "0440", str(dst)])
@@ -632,8 +669,8 @@ def create_safety_snapshot(snapshot_dir: Path) -> Path:
 
 
 def restore_files_from_stage(stage_dir: Path) -> None:
-    rsync_dir(stage_dir / "services", Path(SERVICES_PATH), delete=True)
-    rsync_dir(stage_dir / "deploy_runners", Path(RUNNER_ROOT), delete=True)
+    rsync_dir(stage_dir / "services", Path(SERVICES_PATH), delete=True, exclude=RETIRED_ENTRIES)
+    rsync_dir(stage_dir / "deploy_runners", Path(RUNNER_ROOT), delete=True, exclude=RETIRED_ENTRIES)
 
     if INCLUDE_WORKSPACE and (stage_dir / "deploy_workspace").exists():
         rsync_dir(stage_dir / "deploy_workspace", Path(WORKSPACE_PATH), delete=True)

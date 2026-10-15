@@ -1,0 +1,18 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  roles:
+    - role: fastdeploy_legacy_cleanup
+      vars:
+        fastdeploy_legacy_cleanup_services:
+          - fastdeploy-self
+          - apt_upgrade_local
+          - apt_upgrade_staging  # already absent
+        fastdeploy_legacy_cleanup_sudoers_files:
+          - fastdeploy
+          - fastdeploy_fastdeploy-self
+          - fastdeploy_self_deploy_users
+          - apt_upgrade_apt_upgrade_local  # already absent
+        fastdeploy_legacy_cleanup_extra_paths:
+          - /home/deploy/runners/fastdeploy-self-playbook.yml

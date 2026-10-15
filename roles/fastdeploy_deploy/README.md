@@ -314,41 +314,39 @@ comparison with `nyxmon_deploy` did not show a narrower stable primitive yet.
 
 ## Deployment Execution Architecture
 
-When FastDeploy triggers a service deployment, the following execution chain occurs:
+When FastDeploy triggers a service, the following execution chain occurs:
 
 ```
 FastDeploy Service (runs as: fastdeploy)
     │
-    ├── sudo -u deploy  (via /etc/sudoers.d/fastdeploy)
-    │       │
-    │       └── /home/fastdeploy/site/services/<service>/deploy.sh
-    │               │
-    │               └── sudo /usr/bin/env ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook ...
-    │                       (via /etc/sudoers.d/apt_upgrade_<service>)
+    └── sudo -u deploy <deploy_script> --config <file>
+            (via the service's own /etc/sudoers.d/<service> rule)
+            │
+            └── optional second step to root, only for the exact script:
+                deploy ALL=(root) NOPASSWD:NOSETENV: <service>/backup.py *
 ```
 
 ### Key Components
 
 1. **fastdeploy user**: Runs the FastDeploy web service
-2. **deploy user**: Executes deployment scripts with elevated privileges
-3. **Sudoers rules**:
-   - `/etc/sudoers.d/fastdeploy`: Allows `fastdeploy` to run deploy.sh scripts as `deploy`
-   - `/etc/sudoers.d/apt_upgrade_*`: Allows `deploy` to run ansible-playbook as root
+2. **deploy user**: Runs the service scripts; it has no general root rights
+3. **Sudoers rules**: each registered service (for example through
+   `echoport_backup` or the ops-control `register-*-backup.yml` playbooks)
+   installs rules that name its own script. This role installs no sudoers
+   rule and removes the retired wildcard file `/etc/sudoers.d/fastdeploy`
+   (`fastdeploy ALL=(deploy) NOPASSWD: <services>/*/deploy.sh *`), which let
+   fastdeploy run any script it wrote into its own services directory.
 
 ### For Remote Targets
 
-When deploying to remote servers (e.g., apt_upgrade_staging):
-- SSH keys are stored in `/home/deploy/.ssh/`
-- The playbook specifies `ansible_ssh_private_key_file` to use these keys
-- The deploy key's public key must be authorized on the target server
+Runners that reach other hosts (the Echoport production and staging
+backups) use the deploy user's key in `/home/deploy/.ssh/`.
 
 ### Troubleshooting
 
-If deployments fail, check:
+If a service run fails, check:
 1. **Sudoers**: `sudo -l -U fastdeploy` and `sudo -l -U deploy`
 2. **SSH keys**: `ls -la /home/deploy/.ssh/`
-3. **SSH connectivity**: `sudo -u deploy ssh -i /home/deploy/.ssh/id_ed25519 root@<target> echo OK`
-4. **Ansible manually**: `sudo -u deploy sudo /usr/bin/env ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook <playbook> -i <host>, -v`
 
 ## Handlers
 

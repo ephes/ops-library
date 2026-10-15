@@ -197,6 +197,7 @@ consumer repos depend on.
 | Service removal | [`daybook_voice_memo_attention_notifier_remove`](roles/daybook_voice_memo_attention_notifier_remove/README.md) | Revoke only the dedicated notifier key and executable while preserving other authorizations. |
 | Service removal | [`fastdeploy_remove`](roles/fastdeploy_remove/README.md) | Remove FastDeploy and related resources safely. |
 | Service removal | [`nyxmon_remove`](roles/nyxmon_remove/README.md) | Remove Nyxmon while preserving data as needed. |
+| Service removal | [`fastdeploy_legacy_cleanup`](roles/fastdeploy_legacy_cleanup/README.md) | Unregister retired FastDeploy services and remove legacy sudoers rules, archiving everything first. |
 | Service removal | [`homeassistant_remove`](roles/homeassistant_remove/README.md) | Tear down Home Assistant (service, config, user) with confirmation guards. |
 | Service removal | [`unifi_remove`](roles/unifi_remove/README.md) | Destructively remove UniFi, MongoDB packages/users, Traefik + firewall artifacts with confirmation. |
 | Service removal | [`navidrome_remove`](roles/navidrome_remove/README.md) | Remove Navidrome binaries, config, data, Traefik wiring, and user with confirmation toggles. |
@@ -208,7 +209,6 @@ consumer repos depend on.
 | Service removal | [`open_webui_venv_remove`](roles/open_webui_venv_remove/README.md) | Remove Open WebUI venv service, env/venv/site/data/logs, and optional Traefik wiring. |
 | Service removal | [`mastodon_remove`](roles/mastodon_remove/README.md) | Remove Mastodon services, config, and user with confirmation gates. |
 | Service removal | [`ollama_remove`](roles/ollama_remove/README.md) | Remove Ollama launchd service on macOS with optional data/user/brew cleanup. |
-| Service registration | [`apt_upgrade_register`](roles/apt_upgrade_register/README.md) | Register apt-upgrade maintenance runners with FastDeploy. |
 | Service registration | [`fastdeploy_register_service`](roles/fastdeploy_register_service/README.md) | Generic FastDeploy service registration helper. |
 | Operations | [`docker_cache_cleanup`](roles/docker_cache_cleanup/README.md) | Daily cleanup of Docker build cache unused for seven days. |
 | Operations | [`time_sync_check`](roles/time_sync_check/README.md) | Read-only check that a host's clock is NTP-synchronized (chrony or systemd-timesyncd, offset threshold, controller comparison); fails or warns. |

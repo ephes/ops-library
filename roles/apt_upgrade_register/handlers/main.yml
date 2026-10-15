@@ -1,3 +1,0 @@
----
-# Handlers for apt_upgrade_register role
-# Currently no handlers needed as this is a registration-only role

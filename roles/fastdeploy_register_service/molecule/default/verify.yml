@@ -138,7 +138,7 @@
           - "'extra_vars_from_sops' in (fd_runner_config_raw.content | b64decode)"
           - "'runner-config-secret-file' in (fd_runner_secret_raw.content | b64decode)"
           - "'fastdeploy ALL=(deploy) NOPASSWD: /home/deploy/runners/molecule_fastdeploy/deploy.py' in (fd_sudoers_raw.content | b64decode)"
-          - "'deploy ALL=(root) NOPASSWD: ALL' in (fd_sudoers_raw.content | b64decode)"
+          - "'deploy ALL=(root)' not in (fd_sudoers_raw.content | b64decode)"
           - not fd_sops_key_stat.stat.exists
           - fd_private_paths.results[0].stat.mode == '0700'
           - fd_private_paths.results[1].stat.mode == '0700'

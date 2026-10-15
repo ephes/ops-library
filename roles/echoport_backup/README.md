@@ -185,6 +185,15 @@ Sentry as the misleading `current transaction is aborted, commands ignored until
 end of transaction block` — `django_tasks_db` retries the query inside the same
 already-aborted transaction.
 
+## FastDeploy runner restores
+
+The FastDeploy runner (`fastdeploy_backup.py.j2`) does not restore the
+services, runner entries and sudoers files retired by the FastDeploy privilege
+reduction (`fastdeploy_echoport_backup_retired_entries`,
+`fastdeploy_echoport_backup_retired_sudoers`), even from older archives, and it restores other archived sudoers files only when they hold nothing but
+narrow per-script rules (older `fastdeploy_register_service` files with
+`deploy ALL=(root) NOPASSWD: ALL` are skipped).
+
 ## Python Podcast Private Media
 
 `templates/python_podcast_production_db_backup.py.j2` also backs up

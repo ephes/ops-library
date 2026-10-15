@@ -35,7 +35,6 @@ task sends a bearer token or password over HTTP without `no_log: true` (see "Cre
 
 Role-local Molecule scenarios currently include:
 
-- `apt_upgrade_register`
 - `fastdeploy_register_service`
 - `fastdeploy_restore`
 - `nyxmon_deploy`

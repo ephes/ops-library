@@ -1,7 +1,13 @@
 # FastDeploy Service Registration Role
 
 Register a service runner with FastDeploy so the FastDeploy UI/API can trigger a narrowly scoped
-`ops-control` deployment flow through a controlled `fastdeploy -> deploy -> root` privilege chain.
+`ops-control` deployment flow as the `deploy` user (`fastdeploy -> deploy`).
+
+The role no longer grants `deploy` any root rights. Earlier versions wrote
+`deploy ALL=(root) NOPASSWD: ALL` into `/etc/sudoers.d/fastdeploy_<service>`, which made every
+registered runner, and anything able to change its runner config, root on the host. A runner whose
+playbook needs `--become` must get its own narrow, reviewed sudo rule from the consuming playbook;
+until then its Ansible run fails at the first privileged task.
 
 ## What The Role Does
 
@@ -20,11 +26,10 @@ Register a service runner with FastDeploy so the FastDeploy UI/API can trigger a
 - copies that runner into `/home/fastdeploy/site/services/<service>/deploy.py` with owner-only
   permissions
 - writes `/home/fastdeploy/site/services/<service>/config.json`
-- installs `/etc/sudoers.d/fastdeploy_<service>`
+- installs `/etc/sudoers.d/fastdeploy_<service>` (only `fastdeploy -> deploy` for the runner)
 - optionally calls `POST <fd_api_base>/services/sync`
 
-The role does not generate `deploy.sh` or `playbook.yml`. Those belong to other FastDeploy
-registration patterns such as `apt_upgrade_register`.
+The role does not generate `deploy.sh` or `playbook.yml`.
 
 ## Requirements
 
@@ -153,7 +158,7 @@ Notes:
 ## Execution Flow
 
 1. FastDeploy starts `/home/fastdeploy/site/services/<service>/deploy.py`.
-2. The sudoers rule allows that runner to execute as `deploy`.
+2. The sudoers rule allows that runner to execute as `deploy` (nothing more).
 3. The runner prepares `ops-control`:
    - `rsync`: uses the pre-synced checkout already placed at `/home/deploy/ops-control`
    - `git`: clones or refreshes a checkout in `/home/deploy/_workspace/ops-control`
