@@ -228,6 +228,35 @@ Restore (staging):
   while the services are still stopped; the previous tree is moved back if
   the swap fails.
 
+## Django Chat Staging Database Template Notes
+
+`templates/django_chat_staging_db_backup.py.j2` backs up the Django Chat
+PostgreSQL database on the staging host (Django Chat has no production). It
+runs on macmini as the deploy user and reaches the staging host as root over
+SSH with the deploy key; only the deploy user's mc alias touches MinIO.
+
+- Backup: `pg_dump --format=custom` runs on the staging host as `postgres` and
+  streams to macmini. `pg_restore --list` must show data for every table in
+  `django_chat_staging_db_backup_required_tables`; the row counts of
+  `_counted_tables` are read from the dump, not the live database. The
+  tarball holds the dump, `manifest.json` (host, database, server version,
+  tables, row counts) and `manifest.sha256`. A failed or empty dump, a missing
+  table or a stored size that differs fails the run.
+- Restore: never touches the live database. After the archive checksum, both
+  manifest checksums and the dump are verified, the dump goes into a fresh
+  `mktemp -d` directory (root, 0700) on the staging host, is compared by
+  SHA-256, and is restored into the new database `<prefix>_<restore id>`
+  (`--no-owner --no-privileges --exit-on-error`, an existing name is refused).
+  Its row counts are compared with the manifest; the temp directory is removed
+  either way. Dropping the scratch database, or swapping it in, is left to
+  ops-control.
+- `pg_restore` on macmini reads the dump, so its major version must not be
+  older than the staging server's; otherwise the run fails at `--list`.
+- Variables: `django_chat_staging_db_backup_host`, `_remote_user`, `_db_name`,
+  `_postgres_os_user`, `_restore_db_prefix`, `_required_tables`,
+  `_counted_tables`, plus the shared `echoport_backup_*` MinIO settings. Media
+  is not included: Django Chat keeps it, private voice references too, in S3.
+
 ## Graphyard Template Notes
 
 `templates/graphyard_backup.py.j2` is the service-owned same-host runner for Graphyard:
