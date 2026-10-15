@@ -3,6 +3,44 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — mailgun-relay Python/Rust implementation switch (2.42.0)
+
+- `mailgun_relay_deploy`: `mailgun_relay_impl` (`python`, the default, or
+  `rust`) selects what `mailgun-relay.service` runs. `rust` starts the Rust
+  port of the relay (`mailgun-relay` from the GitHub release `rs-v<version>`)
+  through the drop-in `/etc/systemd/system/mailgun-relay.service.d/impl.conf`
+  (`ExecStart=` override plus `Environment=MALLOC_MMAP_THRESHOLD_=131072`,
+  which keeps large attachment buffers from staying resident). New variables
+  `mailgun_relay_rust_version`, `_sha256`, `_release_url`, `_local_archive`,
+  `_install_root` (`/opt/mailgun-relay`) and `_keep_versions` (3), validated
+  before anything changes. With the defaults nothing changes on a host.
+- A pinned version is installed with either implementation into
+  `<root>/<version>/` (checksum-pinned download or local archive holding
+  exactly the regular files `mailgun-relay` and `LICENSE`, an installed
+  version never replaced), then validated by the versioned path: `--version` as the
+  service user and `--check-config` through `systemd-run` with the unit's
+  user, environment file and sandbox. A failure removes a fresh install and
+  stops the play for `rust`. For `python` the drop-in is removed before any
+  Rust step and a Rust failure is an ignored failure (`WARNING`), so the
+  rollback to Python never depends on the release.
+- After the health check the role verifies the live process
+  (`/proc/<pid>/exe` for Rust, the venv `python -m mailgun_relay` argv for
+  Python), records `<root>/.previous-version` when the selection moves, and
+  prunes old versions (keeps pinned, live, previous and the newest N).
+  Source, venv, env and secrets are still deployed for both implementations;
+  existing task and handler names are unchanged.
+- Tests: `tests/test_mailgun_relay_deploy.py` covers defaults, release URL,
+  validation, task order, the drop-in, failure handling, the live check and
+  pruning. First Molecule scenario for the role
+  (`just test-mailgun-relay-deploy-molecule`): Python from the public
+  repository plus fake release archives built from a small C program that
+  answers `--version`, `--check-config` and `GET /health`. It covers
+  installing ahead of the switch without a restart, the switch, a version
+  change with pruning, a wrong version, a failing `--check-config`, a
+  different archive for an installed version and a symlink member (all
+  refused with nothing switched), and rollbacks to Python while the pinned
+  release fails `--check-config` or its archive is broken.
+
 ## Unreleased — Traefik backup includes the dynamic route configs (2.41.0)
 
 - `traefik_backup`: also copies the file-provider directory

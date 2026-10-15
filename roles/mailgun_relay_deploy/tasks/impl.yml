@@ -1,0 +1,105 @@
+---
+# Select the implementation and install the pinned Rust release. Runs after
+# config.yml, so --check-config sees the env file and secrets the unit will
+# use, and before service.yml.
+#
+# The rollback must not depend on Rust: with impl python the drop-in is
+# removed before any Rust step runs, and rust.yml then reports a failing
+# release as a warning only. With the version empty nothing is installed or
+# validated, and with impl python the base unit runs the venv.
+
+- name: impl | Derive Rust release paths
+  ansible.builtin.set_fact:
+    mailgun_relay_rust_dir: "{{ mailgun_relay_rust_install_root }}/{{ mailgun_relay_rust_version }}"
+    mailgun_relay_rust_binary: "{{ mailgun_relay_rust_install_root }}/{{ mailgun_relay_rust_version }}/mailgun-relay"
+    mailgun_relay_rust_staging: "{{ mailgun_relay_rust_install_root }}/.staging"
+    mailgun_relay_dropin: "/etc/systemd/system/{{ mailgun_relay_service_name }}.service.d/impl.conf"
+    mailgun_relay_rust_install_failed: false
+
+- name: impl | Check for an implementation drop-in
+  ansible.builtin.stat:
+    path: "{{ mailgun_relay_dropin }}"
+  register: mailgun_relay_dropin_stat
+
+- name: impl | Read the implementation drop-in
+  ansible.builtin.slurp:
+    path: "{{ mailgun_relay_dropin }}"
+  register: mailgun_relay_dropin_before
+  when: mailgun_relay_dropin_stat.stat.exists
+
+- name: impl | Derive the Rust version the drop-in selected so far
+  ansible.builtin.set_fact:
+    mailgun_relay_rust_active_before: >-
+      {{
+        (
+          (mailgun_relay_dropin_before.content | default('') | b64decode)
+          | regex_search(
+              '(?m)^ExecStart=' ~ (mailgun_relay_rust_install_root | regex_escape)
+              ~ '/([^/ ]+)/mailgun-relay( |$)', '\1')
+          | default([], true)
+          | first
+        ) | default('', true)
+      }}
+
+# First, so the switch back to Python never waits on a Rust download or check.
+- name: impl | Select the Python implementation
+  ansible.builtin.file:
+    path: "{{ mailgun_relay_dropin }}"
+    state: absent
+  register: mailgun_relay_dropin_python
+  notify:
+    - reload systemd
+    - restart mailgun-relay
+  when: mailgun_relay_impl == 'python'
+
+- name: impl | Install and validate the pinned Rust release
+  ansible.builtin.import_tasks: rust.yml
+  when: mailgun_relay_rust_version | length > 0
+
+- name: impl | Ensure the drop-in directory exists
+  ansible.builtin.file:
+    path: "{{ mailgun_relay_dropin | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: mailgun_relay_impl == 'rust'
+
+# The version is part of the drop-in, so every version change and every impl
+# flip changes the file and restarts the unit; an unchanged deploy restarts
+# nothing. The base unit keeps the Python ExecStart and the shared hardening.
+- name: impl | Select the Rust implementation
+  ansible.builtin.template:
+    src: impl.conf.j2
+    dest: "{{ mailgun_relay_dropin }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: mailgun_relay_dropin_rust
+  notify:
+    - reload systemd
+    - restart mailgun-relay
+  when: mailgun_relay_impl == 'rust'
+
+- name: impl | Check the previously selected Rust version
+  ansible.builtin.stat:
+    path: "{{ mailgun_relay_rust_install_root }}/{{ mailgun_relay_rust_active_before }}"
+  register: mailgun_relay_rust_active_before_stat
+  when: mailgun_relay_rust_active_before | length > 0
+
+# Kept by the pruning step as the rollback target. Written only when the
+# selection moves away from that version (another version, or Python), not
+# when the drop-in changes for another reason.
+- name: impl | Remember the previously selected Rust version
+  ansible.builtin.copy:
+    content: "{{ mailgun_relay_rust_active_before }}\n"
+    dest: "{{ mailgun_relay_rust_install_root }}/.previous-version"
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - mailgun_relay_rust_active_before | length > 0
+    - mailgun_relay_rust_active_before_stat.stat.isdir | default(false)
+    - >-
+      mailgun_relay_rust_active_before
+      != (mailgun_relay_rust_version if mailgun_relay_impl == 'rust' else '')

@@ -1,7 +1,9 @@
 # mailgun_relay_deploy
 
 Deploy the `mailgun-relay` FastAPI service: a Mailgun-Messages-API-compatible
-HTTP→SMTP adapter for `django-anymail` clients.
+HTTP→SMTP adapter for `django-anymail` clients. The unit can instead run the
+Rust port of the relay, a single release binary; see
+[Implementation: Python or Rust](#implementation-python-or-rust).
 
 The service enforces (in order, before any SMTP submission):
 
@@ -61,6 +63,140 @@ expose the service publicly behind TLS.
 | `mailgun_relay_max_header_value_length` | `998` | RFC 5322 line limit |
 | `mailgun_relay_log_level` | `INFO` | structured JSON to stdout |
 
+## Implementation: Python or Rust
+
+`mailgun-relay.service` runs either the Python service from the venv
+(`python -m mailgun_relay`, the default) or the Rust port, a single binary
+published as a GitHub release of mailgun-relay (tag `rs-v<version>`, asset
+`mailgun-relay-<version>-x86_64-unknown-linux-gnu.tar.gz`; the release build
+needs no glibc symbol newer than 2.35, so Ubuntu 22.04 or newer runs it). Both
+read the same env file and secrets and serve the same port, so only one of
+them runs at a time.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `mailgun_relay_impl` | `python` | `python` or `rust`: which implementation the unit starts |
+| `mailgun_relay_rust_version` | `""` | Release to install, e.g. `0.2.0`. Empty: nothing is installed, validated or pruned. Required for `rust` |
+| `mailgun_relay_rust_sha256` | `""` | sha256 of the release archive (64 lowercase hex digits); required with a version unless a local archive is used |
+| `mailgun_relay_rust_release_url` | GitHub release asset of `mailgun_relay_rust_version` | Download URL |
+| `mailgun_relay_rust_local_archive` | `""` | Controller path of an archive with the release layout; replaces the download (development). Checked against `mailgun_relay_rust_sha256` when both are set |
+| `mailgun_relay_rust_install_root` | `/opt/mailgun-relay` | Versions are installed to `<root>/<version>/mailgun-relay`; a normalized absolute path (no `.`, `..` or empty components) outside the rsync-managed site path |
+| `mailgun_relay_rust_keep_versions` | `3` | Newest installed versions kept by pruning |
+
+Set these in host variables, not in the play's role `vars:`, so the inventory
+is the one place to switch. A pinned version is installed with either
+implementation, which allows installing the binary ahead of the switch.
+`/opt/mailgun-relay` (Rust releases, root-owned) is not
+`/opt/apps/mailgun-relay` (the service user's home with the Python site).
+
+What the role does, in order:
+
+1. Validates the settings before anything changes (`rust` needs a version; a
+   version needs a checksum or a local archive).
+2. Deploys source, venv, env file and secrets for both implementations: the
+   venv is the rollback path, and env and secrets are shared. A Python code or
+   lock change therefore restarts the unit even while Rust runs.
+3. With `python`: removes the drop-in
+   `/etc/systemd/system/mailgun-relay.service.d/impl.conf` **before** any Rust
+   step, so switching back never depends on the Rust release.
+4. With a version set and `<root>/<version>/` missing: downloads the archive
+   with `get_url` and the pinned checksum (or copies the local archive and
+   checks its checksum), refuses an archive that does not hold exactly the
+   regular files `mailgun-relay` and `LICENSE` (checked with `tar --list`
+   before extraction; links and devices are refused), unpacks it into
+   `<root>/.staging/`, records the archive checksum in
+   `<root>/<version>/.archive-sha256` and moves the directory into place
+   (root-owned, `0755`). An installed version is never modified: the same
+   version from a different archive is refused.
+5. Validates the candidate by the versioned path: `mailgun-relay --version` as
+   the service user (must print `mailgun-relay <version> (<commit>)`), then
+   `mailgun-relay --check-config` under the unit's identity, environment file
+   and sandbox:
+
+   ```bash
+   systemd-run --wait --pipe --collect --quiet \
+     -p User=mailgun-relay -p Group=mailgun-relay \
+     -p EnvironmentFile=/etc/mailgun-relay/mailgun-relay.env \
+     -p NoNewPrivileges=yes -p ProtectSystem=strict -p ProtectHome=yes \
+     -p PrivateTmp=yes -p PrivateDevices=yes \
+     /opt/mailgun-relay/<version>/mailgun-relay --check-config
+   ```
+
+   It loads the env file and the secrets file exactly as the server would
+   (schema, file mode, token shapes, the SMTP CA file) and binds nothing.
+   A failure in steps 4–5 removes a version installed in this run again and
+   leaves the drop-in, the running unit and the other versions alone. With
+   `rust` it stops the play. With `python` it is reported as an ignored
+   failure (`WARNING: ...`, `ignored=1` in the recap) and the deploy goes on to
+   restart and verify Python; nothing is pruned in that run.
+6. With `rust`: writes the drop-in
+
+   ```ini
+   [Service]
+   ExecStart=
+   ExecStart=/opt/mailgun-relay/<version>/mailgun-relay
+   Environment=MALLOC_MMAP_THRESHOLD_=131072
+   ```
+
+   The base unit keeps the Python `ExecStart`, `WorkingDirectory`, `User`,
+   `EnvironmentFile`, `SyslogIdentifier=mailgun-relay` and the hardening for
+   both implementations. `MALLOC_MMAP_THRESHOLD_` fixes glibc's mmap threshold
+   at 128 KiB: with the default dynamic threshold, buffers of a request with
+   large attachments stay on the heap afterwards (40–100 MiB resident after a
+   request at the 25 MiB limit, against 4.5 MiB with the fixed threshold). The
+   version is part of the drop-in, so a version change or a switch changes the
+   file and restarts the unit; a deploy that changes neither restarts nothing.
+   When the selection moves away from a Rust version, that version is written
+   to `<root>/.previous-version`.
+7. After the handlers and the health check: waits up to 30 s until the unit
+   is active and its main process is the selected implementation: for `rust`,
+   `readlink /proc/<pid>/exe` equals the versioned binary; for `python`, the
+   argv in `/proc/<pid>/cmdline` contains `<venv>/bin/python`, `-m` and
+   `mailgun_relay`, and the executable is not below the install root.
+8. Only then, with a version set: prunes version directories beyond the
+   newest `mailgun_relay_rust_keep_versions` (by modification time). The
+   pinned version, the version the live process runs and the previously
+   selected one are always kept; directories that are not version-shaped are
+   never touched.
+
+Example (host variables):
+
+```yaml
+# Install 0.2.0 next to the running Python service, nothing switched
+mailgun_relay_impl: python
+mailgun_relay_rust_version: "0.2.0"
+mailgun_relay_rust_sha256: "<sha256 from the release's .sha256 asset>"
+
+# Switch: the next deploy writes the drop-in and restarts mailgun-relay
+mailgun_relay_impl: rust
+```
+
+Development build instead of a release (an archive with the release layout):
+
+```yaml
+mailgun_relay_impl: rust
+mailgun_relay_rust_version: "0.2.0"
+mailgun_relay_rust_local_archive: /path/to/mailgun-relay-0.2.0-x86_64-unknown-linux-gnu.tar.gz
+```
+
+### Rollback
+
+- Back to Python: set `mailgun_relay_impl: python` and deploy. The drop-in is
+  removed first, the unit restarts with the venv. This works even when the
+  pinned release is broken or rejects the configuration (step 5). The binary
+  stays installed, so switching forward again needs no download.
+- Emergency without Ansible, on the host:
+  `rm /etc/systemd/system/mailgun-relay.service.d/impl.conf && systemctl daemon-reload && systemctl restart mailgun-relay`.
+  Set `mailgun_relay_impl: python` in the inventory before the next deploy, or
+  that deploy writes the drop-in again.
+- Bad Rust release: pin the previous `mailgun_relay_rust_version` and
+  `mailgun_relay_rust_sha256` again and deploy. Its directory is still
+  installed (pruning keeps the previously selected version), the drop-in
+  changes and the unit restarts.
+
+The relay holds no state, so every switch is a plain restart (about 1–2 s in
+which a send fails; Anymail does not retry).
+
 ## What the rsync deploy ships
 
 With `mailgun_relay_deploy_method: rsync` the role pushes
@@ -112,7 +248,9 @@ mailgun_relay_tokens:
 
 The role's `health.yml` waits for the bind port, calls `GET /health`, and
 checks the structured systemd `active` state plus the exact payload contract:
-`status == "ok"` **and no `version` key**. The relay deliberately withholds its
+`status == "ok"` **and no `version` key** (the same contract for both
+implementations; step 7 of [the implementation switch](#implementation-python-or-rust)
+then checks which one answers). The relay deliberately withholds its
 version from `/health` because the Traefik router in front of it has no path
 restriction, so the endpoint answers unauthenticated callers. A deploy that
 starts failing this assertion means the deployed source predates that hardening
@@ -170,6 +308,21 @@ pipeline. Work through it in this order:
   the backend). PostfixAdmin sender/login binding is the most common cause:
   verify the envelope sender equals the relay's mailbox.
 
+## Testing
+
+- `just test-mailgun-relay-deploy`: unit tests for the rsync excludes and the
+  implementation switch (defaults, validation, task order, drop-in, failure
+  handling, live check, pruning).
+- `just test-mailgun-relay-deploy-molecule`: the Molecule scenario. It deploys
+  the Python service from the public repository (pinned commit) into a systemd
+  container, then fake Rust release archives built in the container from a
+  small C program that answers `--version`, `--check-config` and
+  `GET /health`: install ahead of the switch without a restart, switch,
+  version change with pruning, a wrong version, a failing `--check-config`, a
+  different archive for an installed version and a symlink member (each
+  refused with nothing switched), and rollbacks to Python while the pinned
+  release fails `--check-config` or its archive is broken.
+
 ## Companion playbook
 
 See `ops-control/playbooks/deploy-mailgun-relay.yml`.
@@ -178,3 +331,5 @@ See `ops-control/playbooks/deploy-mailgun-relay.yml`.
 
 Source and dependency changes notify the existing restart handlers after deployment.
 mailgun-relay restarts its systemd service. Unchanged syncs do not request a restart.
+A changed drop-in (implementation switch or Rust version change) reloads systemd and
+restarts the unit; installing a Rust release with `mailgun_relay_impl: python` does not.

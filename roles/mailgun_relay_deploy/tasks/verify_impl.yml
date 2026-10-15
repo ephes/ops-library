@@ -1,0 +1,122 @@
+---
+# After the handlers ran: prove the unit runs the selected implementation,
+# then prune old Rust releases. A failed check stops the play before anything
+# is pruned.
+
+- name: verify_impl | Verify the running implementation
+  when: not ansible_check_mode
+  block:
+    # The venv interpreter is a symlink to a uv-managed Python outside the
+    # venv, so Python is identified by its argv, Rust by /proc/<pid>/exe.
+    - name: verify_impl | Read the live mailgun-relay process
+      ansible.builtin.shell: |
+        unit={{ mailgun_relay_service_name | quote }}
+        printf 'state=%s\n' "$(systemctl is-active "$unit")"
+        pid=$(systemctl show --property=MainPID --value "$unit")
+        printf 'pid=%s\n' "$pid"
+        if [ "${pid:-0}" -gt 0 ] 2>/dev/null; then
+          printf 'exe=%s\n' "$(readlink "/proc/$pid/exe")"
+          while IFS= read -r -d '' arg; do
+            printf 'arg=%s\n' "$arg"
+          done < "/proc/$pid/cmdline"
+        fi
+      args:
+        executable: /bin/bash
+      changed_when: false
+      failed_when: false
+      register: mailgun_relay_live
+      retries: 10
+      delay: 3
+      until:
+        - "'state=active' in mailgun_relay_live.stdout_lines | default([])"
+        - mailgun_relay_expected_lines | difference(mailgun_relay_live.stdout_lines | default([])) | length == 0
+      vars:
+        mailgun_relay_expected_lines: >-
+          {{
+            ['exe=' ~ mailgun_relay_rust_binary]
+            if mailgun_relay_impl == 'rust'
+            else ['arg=' ~ mailgun_relay_venv_bin ~ '/python', 'arg=-m', 'arg=mailgun_relay']
+          }}
+
+    - name: verify_impl | Assert mailgun-relay runs the selected implementation
+      ansible.builtin.assert:
+        that:
+          - "'state=active' in mailgun_relay_live.stdout_lines"
+          - mailgun_relay_expected_lines | difference(mailgun_relay_live.stdout_lines) | length == 0
+          - >-
+            mailgun_relay_impl == 'rust' or
+            mailgun_relay_live.stdout_lines
+            | select('match', 'exe=' ~ (mailgun_relay_rust_install_root | regex_escape) ~ '/')
+            | list | length == 0
+        fail_msg: |-
+          {{ mailgun_relay_service_name }}.service does not run the selected
+          implementation (mailgun_relay_impl={{ mailgun_relay_impl }}); expected
+          {{ mailgun_relay_expected_lines }}. Live process:
+          {{ mailgun_relay_live.stdout_lines | join('\n') }}
+      vars:
+        mailgun_relay_expected_lines: >-
+          {{
+            ['exe=' ~ mailgun_relay_rust_binary]
+            if mailgun_relay_impl == 'rust'
+            else ['arg=' ~ mailgun_relay_venv_bin ~ '/python', 'arg=-m', 'arg=mailgun_relay']
+          }}
+
+# Only after the live check above, and not after a rejected release (impl
+# python): that run leaves the install root as it found it.
+- name: verify_impl | Prune old Rust releases
+  when:
+    - mailgun_relay_rust_version | length > 0
+    - not mailgun_relay_rust_install_failed | bool
+    - not ansible_check_mode
+  block:
+    - name: verify_impl | Find installed Rust releases
+      ansible.builtin.find:
+        paths: "{{ mailgun_relay_rust_install_root }}"
+        file_type: directory
+        recurse: false
+        hidden: false
+      register: mailgun_relay_rust_installed
+
+    - name: verify_impl | Read the previously selected Rust version
+      ansible.builtin.slurp:
+        path: "{{ mailgun_relay_rust_install_root }}/.previous-version"
+      register: mailgun_relay_rust_previous
+      failed_when: false
+
+    # Kept: the pinned version (active with impl rust), the rollback target,
+    # the version the live process runs and the newest
+    # mailgun_relay_rust_keep_versions installs. Directories that are not
+    # version-shaped are never touched.
+    - name: verify_impl | Decide which Rust releases to keep
+      ansible.builtin.set_fact:
+        mailgun_relay_rust_versions_installed: "{{ mailgun_relay_rust_version_dirs | map(attribute='path') | map('basename') | list }}"
+        mailgun_relay_rust_versions_kept: >-
+          {{
+            (
+              [mailgun_relay_rust_version, mailgun_relay_rust_previous_version, mailgun_relay_rust_live_version]
+              + (mailgun_relay_rust_version_dirs | sort(attribute='mtime', reverse=true)
+                 | map(attribute='path') | map('basename') | list)[:mailgun_relay_rust_keep_versions | int]
+            ) | select | unique | list
+          }}
+      vars:
+        mailgun_relay_rust_version_dirs: >-
+          {{
+            mailgun_relay_rust_installed.files
+            | selectattr('path', 'regex', '/[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?$')
+            | list
+          }}
+        mailgun_relay_rust_previous_version: "{{ mailgun_relay_rust_previous.content | default('') | b64decode | trim }}"
+        mailgun_relay_rust_live_version: >-
+          {{
+            (
+              mailgun_relay_live.stdout_lines | default([])
+              | map('regex_search', '^exe=' ~ (mailgun_relay_rust_install_root | regex_escape) ~ '/([^/]+)/', '\1')
+              | select | map('first') | list | first
+            ) | default('', true)
+          }}
+
+    - name: verify_impl | Remove Rust releases beyond the kept ones
+      ansible.builtin.file:
+        path: "{{ mailgun_relay_rust_install_root }}/{{ item }}"
+        state: absent
+      loop: "{{ mailgun_relay_rust_versions_installed | difference(mailgun_relay_rust_versions_kept) }}"
