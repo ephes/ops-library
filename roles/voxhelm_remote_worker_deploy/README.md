@@ -65,6 +65,37 @@ Set `voxhelm_remote_worker_whispercpp_model_source` when a host already has the
 configured whisper.cpp model elsewhere. The role links that file into the
 worker model cache without replacing an existing cached model.
 
+### Parakeet (known-speaker jobs)
+
+`voxhelm_remote_worker_parakeet_enabled: true` installs NVIDIA Parakeet TDT for
+Voxhelm's known-speaker jobs (Voxhelm 0.1.9 or later):
+
+- `uv tool install --python 3.13 parakeet-mlx==<voxhelm_remote_worker_parakeet_package_version>`
+  as the service user (Voxhelm itself needs Python 3.14 and runs the CLI as a
+  child process); skipped when that version is already installed, and the
+  worker restarts after an install.
+- `config.json` and `model.safetensors` of
+  `voxhelm_remote_worker_parakeet_model_repo` at the pinned commit
+  `voxhelm_remote_worker_parakeet_model_revision` (2.5 GB), downloaded with the
+  `hf` CLI from the parakeet-mlx tool environment into
+  `<model_dir>.partial`, checked against
+  `voxhelm_remote_worker_parakeet_model_sha256`, and only then moved to
+  `voxhelm_remote_worker_parakeet_model_dir` (by default
+  `<model cache>/parakeet/<commit>`) with a `VOXHELM_MODEL_REVISION` file
+  recording the repo, commit and checksum. A directory whose files are all
+  there and whose marker matches the configured pin is not downloaded again;
+  anything else is replaced. A new commit gets a new directory by default, and
+  old ones are left in place.
+- The `VOXHELM_PARAKEET_*` settings in `worker.env` (CLI path, model directory
+  and name, chunk and overlap seconds, optional maximum sentence seconds,
+  timeout). They are not rendered while the switch is off, so the worker does
+  not advertise Parakeet.
+
+The worker advertises the `parakeet` backend only while the CLI and both model
+files are present, re-checked on every heartbeat. Jobs reach it only after the
+control plane sets `voxhelm_known_speaker_stt_backend: "parakeet"`
+(`voxhelm_deploy`); until then nothing changes.
+
 ## Example
 
 ```yaml

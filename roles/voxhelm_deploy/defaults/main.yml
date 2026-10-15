@@ -70,6 +70,11 @@ voxhelm_batch_max_download_bytes: 536870912
 voxhelm_ffmpeg_bin: "/opt/homebrew/bin/ffmpeg"
 voxhelm_stt_backend: "whispercpp"
 voxhelm_stt_fallback_backend: "mlx"
+# "parakeet" routes known-speaker jobs with the speaker-change re-cut to
+# Parakeet, then whisper.cpp. In remote_pull mode the workers run them, so turn
+# this on only after the workers advertise Parakeet
+# (voxhelm_remote_worker_parakeet_enabled). Empty keeps today's routing.
+voxhelm_known_speaker_stt_backend: ""
 voxhelm_stt_debug_logging: false
 voxhelm_diarization_backend: "none"
 voxhelm_pyannote_model: "pyannote/speaker-diarization-3.1"

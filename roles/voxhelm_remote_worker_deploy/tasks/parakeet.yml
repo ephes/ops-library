@@ -1,0 +1,184 @@
+---
+# Parakeet CLI and pinned model for known-speaker jobs. Included from main.yml
+# only when voxhelm_remote_worker_parakeet_enabled is true.
+
+- name: parakeet | Validate Parakeet settings
+  ansible.builtin.assert:
+    that:
+      - voxhelm_remote_worker_parakeet_package_version | string | trim | length > 0
+      - voxhelm_remote_worker_parakeet_python_version | string | trim | length > 0
+      - voxhelm_remote_worker_parakeet_bin is match('^/')
+      - voxhelm_remote_worker_parakeet_model_repo | string | trim | length > 0
+      - voxhelm_remote_worker_parakeet_model_revision is match('^[0-9a-f]{40}$')
+      - voxhelm_remote_worker_parakeet_model_sha256 is match('^[0-9a-f]{64}$')
+      - voxhelm_remote_worker_parakeet_model_dir is match('^/')
+      - voxhelm_remote_worker_parakeet_model_name | string | trim | length > 0
+      - voxhelm_remote_worker_parakeet_overlap_seconds | int >= 0
+      - >-
+        voxhelm_remote_worker_parakeet_overlap_seconds | int
+        < voxhelm_remote_worker_parakeet_chunk_seconds | int
+      - voxhelm_remote_worker_parakeet_timeout_seconds | int > 0
+      - >-
+        (voxhelm_remote_worker_parakeet_max_sentence_seconds | string | trim | length == 0)
+        or (voxhelm_remote_worker_parakeet_max_sentence_seconds | float > 0)
+    fail_msg: >-
+      Parakeet needs a pinned CLI version, an absolute CLI path and model
+      directory, a 40-character model commit, the 64-character sha256 of
+      model.safetensors, an overlap smaller than the chunk duration, a positive
+      timeout and an empty or positive maximum sentence duration.
+
+- name: parakeet | Install the parakeet-mlx CLI as a uv tool
+  ansible.builtin.command:
+    argv:
+      - "{{ voxhelm_remote_worker_uv_bin }}"
+      - tool
+      - install
+      - --python
+      - "{{ voxhelm_remote_worker_parakeet_python_version }}"
+      - --default-index
+      - "{{ voxhelm_remote_worker_public_index_url }}"
+      - "parakeet-mlx=={{ voxhelm_remote_worker_parakeet_package_version }}"
+  environment:
+    PATH: "{{ voxhelm_remote_worker_launchd_path }}"
+  register: voxhelm_remote_worker_parakeet_install
+  changed_when: true
+  become: true
+  become_user: "{{ voxhelm_remote_worker_service_user }}"
+  become_flags: "-i"
+  when: >-
+    voxhelm_remote_worker_tool_list.stdout | default('')
+    is not search('(?m)^parakeet-mlx v' ~ (voxhelm_remote_worker_parakeet_package_version | regex_escape) ~ '( |$)')
+
+- name: parakeet | Check the parakeet-mlx CLI
+  ansible.builtin.command:
+    argv:
+      - "{{ voxhelm_remote_worker_parakeet_bin }}"
+      - --version
+  register: voxhelm_remote_worker_parakeet_version
+  changed_when: false
+  failed_when: >-
+    voxhelm_remote_worker_parakeet_version.rc != 0
+    or (voxhelm_remote_worker_parakeet_package_version not in voxhelm_remote_worker_parakeet_version.stdout)
+  become: true
+  become_user: "{{ voxhelm_remote_worker_service_user }}"
+
+- name: parakeet | Describe the pinned model
+  ansible.builtin.set_fact:
+    voxhelm_remote_worker_parakeet_marker: |
+      repo={{ voxhelm_remote_worker_parakeet_model_repo }}
+      revision={{ voxhelm_remote_worker_parakeet_model_revision }}
+      model.safetensors sha256={{ voxhelm_remote_worker_parakeet_model_sha256 }}
+
+- name: parakeet | Check the pinned model directory
+  ansible.builtin.stat:
+    path: "{{ voxhelm_remote_worker_parakeet_model_dir }}/{{ item }}"
+  loop:
+    - config.json
+    - model.safetensors
+    - VOXHELM_MODEL_REVISION
+  register: voxhelm_remote_worker_parakeet_model_files
+
+- name: parakeet | Read the recorded model commit
+  ansible.builtin.slurp:
+    path: "{{ voxhelm_remote_worker_parakeet_model_dir }}/VOXHELM_MODEL_REVISION"
+  register: voxhelm_remote_worker_parakeet_recorded_marker
+  when: voxhelm_remote_worker_parakeet_model_files.results[2].stat.exists
+
+# A directory counts as deployed only when every file is there and its marker
+# names the configured repo, commit and checksum (a reused custom model_dir
+# with an older commit is downloaded again).
+- name: parakeet | Decide whether the pinned model must be downloaded
+  ansible.builtin.set_fact:
+    voxhelm_remote_worker_parakeet_download_needed: >-
+      {{
+        (voxhelm_remote_worker_parakeet_model_files.results
+         | rejectattr('stat.exists') | list | length > 0)
+        or ((voxhelm_remote_worker_parakeet_recorded_marker.content | default('') | b64decode)
+            != voxhelm_remote_worker_parakeet_marker)
+      }}
+
+- name: parakeet | Download and verify the pinned model
+  when: voxhelm_remote_worker_parakeet_download_needed | bool
+  become: true
+  become_user: "{{ voxhelm_remote_worker_service_user }}"
+  vars:
+    voxhelm_remote_worker_parakeet_partial_dir: "{{ voxhelm_remote_worker_parakeet_model_dir }}.partial"
+  block:
+    - name: parakeet | Resolve the uv tool directory
+      ansible.builtin.command:
+        argv:
+          - "{{ voxhelm_remote_worker_uv_bin }}"
+          - tool
+          - dir
+      environment:
+        PATH: "{{ voxhelm_remote_worker_launchd_path }}"
+      register: voxhelm_remote_worker_parakeet_tool_dir
+      changed_when: false
+      become_flags: "-i"
+
+    - name: parakeet | Remove an incomplete model directory
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ voxhelm_remote_worker_parakeet_partial_dir }}"
+        - "{{ voxhelm_remote_worker_parakeet_model_dir }}"
+
+    - name: parakeet | Ensure the model root exists
+      ansible.builtin.file:
+        path: "{{ voxhelm_remote_worker_parakeet_model_root }}"
+        state: directory
+        mode: "0750"
+
+    # hf ships with parakeet-mlx (huggingface_hub) in the tool environment.
+    - name: parakeet | Download config.json and model.safetensors at the pinned commit
+      ansible.builtin.command:
+        argv:
+          - "{{ voxhelm_remote_worker_parakeet_tool_dir.stdout | trim }}/parakeet-mlx/bin/hf"
+          - download
+          - "{{ voxhelm_remote_worker_parakeet_model_repo }}"
+          - config.json
+          - model.safetensors
+          - --revision
+          - "{{ voxhelm_remote_worker_parakeet_model_revision }}"
+          - --local-dir
+          - "{{ voxhelm_remote_worker_parakeet_partial_dir }}"
+      environment:
+        HF_HUB_DISABLE_TELEMETRY: "1"
+      changed_when: true
+
+    - name: parakeet | Hash the downloaded weights
+      ansible.builtin.stat:
+        path: "{{ voxhelm_remote_worker_parakeet_partial_dir }}/model.safetensors"
+        checksum_algorithm: sha256
+      register: voxhelm_remote_worker_parakeet_weights
+
+    - name: parakeet | Verify the weights' sha256
+      ansible.builtin.assert:
+        that:
+          - voxhelm_remote_worker_parakeet_weights.stat.exists
+          - voxhelm_remote_worker_parakeet_weights.stat.checksum == voxhelm_remote_worker_parakeet_model_sha256
+        fail_msg: >-
+          model.safetensors of {{ voxhelm_remote_worker_parakeet_model_repo }} at
+          {{ voxhelm_remote_worker_parakeet_model_revision }} does not match
+          voxhelm_remote_worker_parakeet_model_sha256; the partial download is
+          left in {{ voxhelm_remote_worker_parakeet_partial_dir }}.
+
+    - name: parakeet | Drop the Hugging Face download metadata
+      ansible.builtin.file:
+        path: "{{ voxhelm_remote_worker_parakeet_partial_dir }}/.cache"
+        state: absent
+
+    - name: parakeet | Record the model commit next to the weights
+      ansible.builtin.copy:
+        dest: "{{ voxhelm_remote_worker_parakeet_partial_dir }}/VOXHELM_MODEL_REVISION"
+        mode: "0640"
+        content: "{{ voxhelm_remote_worker_parakeet_marker }}"
+
+    - name: parakeet | Move the verified model into place
+      ansible.builtin.command:
+        argv:
+          - /bin/mv
+          - "{{ voxhelm_remote_worker_parakeet_partial_dir }}"
+          - "{{ voxhelm_remote_worker_parakeet_model_dir }}"
+      changed_when: true

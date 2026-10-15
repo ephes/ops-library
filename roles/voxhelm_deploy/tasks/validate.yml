@@ -27,6 +27,12 @@
       Django secret key, bearer token config, bootstrap operator credentials,
       port, uv binary path, and Piper voice config.
 
+- name: validate | Validate known-speaker STT routing
+  ansible.builtin.assert:
+    that:
+      - voxhelm_known_speaker_stt_backend in ["", "parakeet"]
+    fail_msg: "voxhelm_known_speaker_stt_backend must be empty or 'parakeet'."
+
 - name: validate | Validate CSRF origin list
   ansible.builtin.assert:
     that:

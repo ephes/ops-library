@@ -3,6 +3,25 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Parakeet for Voxhelm known-speaker jobs (2.38.0)
+
+- `voxhelm_remote_worker_deploy`: new `voxhelm_remote_worker_parakeet_enabled`
+  (default `false`). When set, the role installs the `parakeet-mlx` CLI
+  (pinned, default 0.5.3) as a uv tool on Python 3.13, downloads
+  `config.json` and `model.safetensors` of
+  `mlx-community/parakeet-tdt-0.6b-v3` at a pinned commit into a directory
+  named after the commit, verifies the weights' sha256 before moving them into
+  place, records the commit next to them, and renders the
+  `VOXHELM_PARAKEET_*` worker settings. The worker restarts after a CLI
+  install. Nothing is installed or rendered while the switch is off.
+- `voxhelm_deploy`: new `voxhelm_known_speaker_stt_backend` (default `""`,
+  validated to `""` or `"parakeet"`), rendered as
+  `VOXHELM_KNOWN_SPEAKER_STT_BACKEND`. `"parakeet"` routes Voxhelm's
+  known-speaker jobs to Parakeet with whisper.cpp as the fallback (Voxhelm
+  0.1.9 or later).
+- `just test-voxhelm-parakeet` covers the env rendering, the validation, the
+  install skip and the download/verify order.
+
 ## Unreleased — journald retention role (2.37.0)
 
 - Fix `takahe_backup`: `pg_dump` ran as `postgres` and could not write into the

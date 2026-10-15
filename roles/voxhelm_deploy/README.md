@@ -60,6 +60,10 @@ voxhelm_app_port: 8787
 voxhelm_bind_host: "0.0.0.0"
 voxhelm_stt_backend: "whispercpp"
 voxhelm_stt_fallback_backend: "mlx"
+# "parakeet": known-speaker jobs with the re-cut go to Parakeet, then
+# whisper.cpp (Voxhelm 0.1.9+). Turn on only after the workers advertise it
+# (voxhelm_remote_worker_parakeet_enabled in voxhelm_remote_worker_deploy).
+voxhelm_known_speaker_stt_backend: ""
 voxhelm_tts_backend: "piper"
 voxhelm_tts_max_input_chars: 5000
 voxhelm_mlx_model: "mlx-community/whisper-large-v3-mlx"

@@ -72,6 +72,29 @@ voxhelm_remote_worker_stt_debug_logging: false
 voxhelm_remote_worker_ffmpeg_bin: "/opt/homebrew/bin/ffmpeg"
 voxhelm_remote_worker_model_cache_dir: "{{ voxhelm_remote_worker_service_home }}/Library/Caches/voxhelm/models"
 
+# Parakeet TDT through the parakeet-mlx CLI, used by Voxhelm for known-speaker
+# jobs when the control plane sets VOXHELM_KNOWN_SPEAKER_STT_BACKEND=parakeet.
+# Off by default. When enabled, the role installs the CLI as a uv tool on its
+# own Python, downloads config.json and model.safetensors of a pinned model
+# commit into a directory named after the commit, checks the weights' sha256,
+# and points the worker at that directory. The worker then advertises the
+# `parakeet` backend while the CLI and both files are present.
+voxhelm_remote_worker_parakeet_enabled: false
+voxhelm_remote_worker_parakeet_package_version: "0.5.3"
+voxhelm_remote_worker_parakeet_python_version: "3.13"
+voxhelm_remote_worker_parakeet_bin: "{{ voxhelm_remote_worker_service_home }}/.local/bin/parakeet-mlx"
+voxhelm_remote_worker_parakeet_model_repo: "mlx-community/parakeet-tdt-0.6b-v3"
+voxhelm_remote_worker_parakeet_model_revision: "ed2b7e8c15f9aaa0b5772e2efb986255eaef7e15"
+voxhelm_remote_worker_parakeet_model_sha256: "05e01c7f396c298cf7d23f61da7b504adeab698f0aaeafd9c82d198625464592"
+voxhelm_remote_worker_parakeet_model_root: "{{ voxhelm_remote_worker_model_cache_dir }}/parakeet"
+voxhelm_remote_worker_parakeet_model_dir: "{{ voxhelm_remote_worker_parakeet_model_root }}/{{ voxhelm_remote_worker_parakeet_model_revision }}"
+voxhelm_remote_worker_parakeet_model_name: "parakeet-tdt-0.6b-v3"
+voxhelm_remote_worker_parakeet_chunk_seconds: 600
+voxhelm_remote_worker_parakeet_overlap_seconds: 30
+# Empty: no --max-duration (run-on sentences are left to the re-cut).
+voxhelm_remote_worker_parakeet_max_sentence_seconds: ""
+voxhelm_remote_worker_parakeet_timeout_seconds: 1800
+
 voxhelm_remote_worker_diarization_backend: "pyannote"
 voxhelm_remote_worker_pyannote_model: "pyannote/speaker-diarization-3.1"
 voxhelm_remote_worker_pyannote_device: "auto"
