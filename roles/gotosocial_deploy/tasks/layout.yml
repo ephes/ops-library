@@ -1,0 +1,26 @@
+---
+# GoToSocial cannot change host/account-domain once it has federated: remote
+# servers cache the mapping and the instance actor and keys are bound to it.
+# The first deploy records the pair; later deploys refuse a different pair.
+- name: layout | Compute the requested domain layout
+  ansible.builtin.set_fact:
+    gotosocial_domain_layout: >-
+      {{ gotosocial_host }} {{ gotosocial_account_domain if gotosocial_account_domain | length > 0 else gotosocial_host }}
+
+- name: layout | Read the recorded domain layout
+  ansible.builtin.slurp:
+    src: "{{ gotosocial_layout_marker_path }}"
+  register: gotosocial_layout_marker
+  failed_when: false
+
+- name: layout | Refuse a changed domain layout
+  ansible.builtin.assert:
+    that:
+      - gotosocial_layout_marker.content is not defined
+        or (gotosocial_layout_marker.content | b64decode | trim) == (gotosocial_domain_layout | trim)
+        or gotosocial_allow_domain_layout_change | bool
+    fail_msg: >-
+      This instance was deployed as "{{ (gotosocial_layout_marker.content | default('') | b64decode | trim) }}"
+      (host account-domain) and is now asked to be "{{ gotosocial_domain_layout | trim }}".
+      GoToSocial cannot change its domain layout after federating. Only for a wiped
+      data directory set gotosocial_allow_domain_layout_change=true.

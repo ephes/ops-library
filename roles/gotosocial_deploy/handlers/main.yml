@@ -1,0 +1,16 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart gotosocial
+  ansible.builtin.systemd:
+    name: "{{ gotosocial_service_name }}"
+    state: restarted
+  when: gotosocial_service_state == 'started'
+
+- name: reload traefik
+  ansible.builtin.service:
+    name: traefik
+    state: reloaded
+  failed_when: false

@@ -1,0 +1,45 @@
+---
+- name: user | Ensure group exists
+  ansible.builtin.group:
+    name: "{{ gotosocial_group }}"
+    system: true
+
+- name: user | Ensure user exists
+  ansible.builtin.user:
+    name: "{{ gotosocial_user }}"
+    group: "{{ gotosocial_group }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ gotosocial_data_dir }}"
+    create_home: false
+
+- name: user | Ensure root-owned install directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ gotosocial_install_root }}"
+    - "{{ gotosocial_install_root }}/releases"
+
+- name: user | Ensure config directory (readable by the service group only)
+  ansible.builtin.file:
+    path: "{{ gotosocial_config_dir }}"
+    state: directory
+    owner: root
+    group: "{{ gotosocial_group }}"
+    mode: "0750"
+
+- name: user | Ensure private data directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ gotosocial_user }}"
+    group: "{{ gotosocial_group }}"
+    mode: "0700"
+  loop:
+    - "{{ gotosocial_data_dir }}"
+    - "{{ gotosocial_storage_dir }}"
+    - "{{ gotosocial_cache_dir }}"

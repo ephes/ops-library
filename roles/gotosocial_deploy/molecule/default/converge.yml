@@ -1,0 +1,12 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    gotosocial_host: "social.molecule.test"
+    gotosocial_account_domain: "molecule.test"
+    gotosocial_traefik_config_path: "/etc/traefik/dynamic/gotosocial.yml"
+    gotosocial_traefik_cert_resolver: "letsencrypt"
+  roles:
+    - role: gotosocial_deploy

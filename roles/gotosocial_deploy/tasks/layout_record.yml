@@ -1,0 +1,8 @@
+---
+- name: layout | Record the domain layout of this data directory
+  ansible.builtin.copy:
+    content: "{{ gotosocial_domain_layout | trim }}\n"
+    dest: "{{ gotosocial_layout_marker_path }}"
+    owner: root
+    group: root
+    mode: "0644"

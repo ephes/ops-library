@@ -1,0 +1,11 @@
+---
+- name: health | Wait for GoToSocial readiness
+  ansible.builtin.uri:
+    url: "http://{{ '[' ~ gotosocial_bind_address ~ ']' if ':' in gotosocial_bind_address else gotosocial_bind_address }}:{{ gotosocial_port }}/readyz"
+    method: GET
+    status_code: 200
+  register: gotosocial_health
+  until: gotosocial_health.status == 200
+  retries: "{{ gotosocial_healthcheck_retries }}"
+  delay: "{{ gotosocial_healthcheck_delay }}"
+  changed_when: false

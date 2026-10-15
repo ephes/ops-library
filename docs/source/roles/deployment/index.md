@@ -52,6 +52,7 @@ snappymail_deploy
 static_site_deploy
 takahe_deploy
 takahe_shared
+gotosocial_deploy
 mail_backend_deploy
 mail_spam_deploy
 mail_relay_deploy

@@ -1,0 +1,180 @@
+---
+# Static contracts of gotosocial_deploy (validation and rendered templates).
+# Run with: ansible-playbook -i localhost, -c local tests/test_gotosocial_deploy.yml
+# The full install is covered by roles/gotosocial_deploy/molecule/default.
+
+- name: Test GoToSocial deploy role contracts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - ../roles/gotosocial_deploy/defaults/main.yml
+
+  vars:
+    role_dir: "{{ playbook_dir }}/../roles/gotosocial_deploy"
+    ops_test_tmp: "/tmp/ops-library-{{ (playbook_dir | hash('sha1'))[:10] }}-gotosocial"
+    ansible_facts:
+      architecture: x86_64
+
+  tasks:
+    - name: Defaults are safe
+      ansible.builtin.assert:
+        that:
+          - gotosocial_host == 'CHANGEME'
+          - gotosocial_bind_address == '127.0.0.1'
+          - not gotosocial_accounts_registration_open
+          - gotosocial_release_checksums.amd64 is match('^sha256:[0-9a-f]{64}$')
+          - gotosocial_release_checksums.arm64 is match('^sha256:[0-9a-f]{64}$')
+          - gotosocial_download_url is search('/v' ~ gotosocial_version ~ '/gotosocial_' ~ gotosocial_version ~ '_linux_amd64.tar.gz$')
+
+    - name: Validation rejects the placeholder host
+      block:
+        - name: Validate with CHANGEME
+          ansible.builtin.include_tasks: "{{ role_dir }}/tasks/validate.yml"
+        - name: Not reached
+          ansible.builtin.fail:
+            msg: "CHANGEME host was accepted"
+      rescue:
+        - name: Rejected by the host check
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'validate | Require host and a supported architecture'
+
+    - name: Validation rejects a public listener
+      block:
+        - name: Validate with 0.0.0.0
+          ansible.builtin.include_tasks: "{{ role_dir }}/tasks/validate.yml"
+          vars:
+            gotosocial_host: social.example.org
+            gotosocial_bind_address: 0.0.0.0
+        - name: Not reached
+          ansible.builtin.fail:
+            msg: "public listener was accepted"
+      rescue:
+        - name: Rejected by the loopback check
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'validate | Keep the listener on loopback'
+
+    - name: Validation rejects secrets in extra config
+      block:
+        - name: Validate with a password in extra config
+          ansible.builtin.include_tasks: "{{ role_dir }}/tasks/validate.yml"
+          vars:
+            gotosocial_host: social.example.org
+            gotosocial_extra_config:
+              db-password: "x"  # pragma: allowlist secret
+        - name: Not reached
+          ansible.builtin.fail:
+            msg: "secret in extra config was accepted"
+      rescue:
+        - name: Rejected by the extra-config check
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'validate | Keep secrets out of gotosocial_extra_config'
+
+    - name: Validation rejects a host outside the account domain
+      block:
+        - name: Validate with unrelated domains
+          ansible.builtin.include_tasks: "{{ role_dir }}/tasks/validate.yml"
+          vars:
+            gotosocial_host: social.example.net
+            gotosocial_account_domain: example.org
+        - name: Not reached
+          ansible.builtin.fail:
+            msg: "host outside the account domain was accepted"
+      rescue:
+        - name: Rejected by the subdomain check
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'validate | Host is the account domain or a subdomain of it'
+
+    - name: Validation rejects guarded keys in extra config
+      block:
+        - name: Validate with bind-address in extra config
+          ansible.builtin.include_tasks: "{{ role_dir }}/tasks/validate.yml"
+          vars:
+            gotosocial_host: social.example.org
+            gotosocial_extra_config:
+              bind-address: 0.0.0.0
+        - name: Not reached
+          ansible.builtin.fail:
+            msg: "guarded key in extra config was accepted"
+      rescue:
+        - name: Rejected by the guarded-keys check
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'validate | Keep guarded settings out of gotosocial_extra_config'
+
+    - name: Validation accepts a split-domain layout
+      ansible.builtin.include_tasks: "{{ role_dir }}/tasks/validate.yml"
+      vars:
+        gotosocial_host: fedi.example.org
+        gotosocial_account_domain: example.org
+
+    - name: Scratch directory
+      ansible.builtin.file:
+        path: "{{ ops_test_tmp }}"
+        state: directory
+        mode: "0700"
+
+    - name: Render config and route
+      ansible.builtin.template:
+        src: "{{ role_dir }}/templates/{{ item.src }}"
+        dest: "{{ ops_test_tmp }}/{{ item.dest }}"
+        mode: "0600"
+      loop:
+        - {src: config.yaml.j2, dest: config.yaml}
+        - {src: traefik.yml.j2, dest: traefik.yml}
+        - {src: gotosocial.service.j2, dest: gotosocial.service}
+      vars:
+        gotosocial_host: fedi.example.org
+        gotosocial_account_domain: example.org
+        gotosocial_traefik_cert_resolver: letsencrypt
+        gotosocial_extra_config:
+          instance-languages: [de, en]
+
+    - name: Read rendered files
+      ansible.builtin.set_fact:
+        rendered_config: "{{ lookup('file', ops_test_tmp ~ '/config.yaml') | from_yaml }}"
+        rendered_route: "{{ lookup('file', ops_test_tmp ~ '/traefik.yml') | from_yaml }}"
+        rendered_unit: "{{ lookup('file', ops_test_tmp ~ '/gotosocial.service') }}"
+
+    - name: Config carries the split-domain layout and safe settings
+      ansible.builtin.assert:
+        that:
+          - rendered_config['host'] == 'fedi.example.org'
+          - rendered_config['account-domain'] == 'example.org'
+          - rendered_config['protocol'] == 'https'
+          - rendered_config['bind-address'] == '127.0.0.1'
+          - rendered_config['port'] == 10070
+          - rendered_config['db-type'] == 'sqlite'
+          - rendered_config['db-address'] == '/var/lib/gotosocial/sqlite.db'
+          - rendered_config['letsencrypt-enabled'] == false
+          - rendered_config['accounts-registration-open'] == false
+          - rendered_config['instance-languages'] == ['de', 'en']
+          - rendered_config['web-asset-base-dir'] == '/opt/gotosocial/current/web/assets/'
+
+    - name: Route is public, HTTPS-only and points at loopback
+      ansible.builtin.assert:
+        that:
+          - rendered_route.http.routers['gotosocial-secure'].rule == 'Host(`fedi.example.org`)'
+          - rendered_route.http.routers['gotosocial-secure'].tls.certResolver == 'letsencrypt'
+          - rendered_route.http.routers['gotosocial-http'].middlewares == ['gotosocial-redirect']
+          - rendered_route.http.services.gotosocial.loadBalancer.servers[0].url == 'http://127.0.0.1:10070'
+          - rendered_route.http.middlewares['gotosocial-headers'].headers.customFrameOptionsValue == 'DENY'
+
+    - name: Unit is hardened
+      ansible.builtin.assert:
+        that:
+          - "'ProtectSystem=strict' in rendered_unit"
+          - "'ReadWritePaths=/var/lib/gotosocial' in rendered_unit"
+          - "'NoNewPrivileges=yes' in rendered_unit"
+          - "'CapabilityBoundingSet=\n' in rendered_unit"
+          - "'User=gotosocial' in rendered_unit"
+
+    - name: Remove scratch directory
+      ansible.builtin.file:
+        path: "{{ ops_test_tmp }}"
+        state: absent

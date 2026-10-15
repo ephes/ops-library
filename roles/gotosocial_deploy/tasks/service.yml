@@ -1,0 +1,7 @@
+---
+- name: service | Ensure GoToSocial state
+  ansible.builtin.systemd:
+    name: "{{ gotosocial_service_name }}"
+    enabled: "{{ gotosocial_service_enabled | bool }}"
+    state: "{{ gotosocial_service_state }}"
+    daemon_reload: true

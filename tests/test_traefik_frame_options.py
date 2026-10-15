@@ -29,6 +29,7 @@ EXPECTED = {
         "DENY",
         "Grafana default (allow_embedding off)",
     ),
+    ("gotosocial_deploy/templates/traefik.yml.j2", "gotosocial-headers"): ("DENY", "GoToSocial default"),
     ("homelab_deploy/templates/traefik.yml.j2", "homelab-headers"): ("DENY", "app setting"),
     ("logyard_ingress_deploy/templates/traefik-logyard.yml.j2", "logyard-headers"): ("DENY", "API only"),
     ("mailgun_relay_ingress_deploy/templates/traefik-mailgun-relay.yml.j2", "mailgun-relay-headers"): (

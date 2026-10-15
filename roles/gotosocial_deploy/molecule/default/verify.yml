@@ -1,0 +1,134 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Service is active
+      ansible.builtin.command: systemctl is-active gotosocial
+      changed_when: false
+
+    - name: Readiness endpoint answers on loopback
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:10070/readyz"
+        status_code: 200
+
+    - name: WebFinger answers for the account domain handle of the instance actor
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:10070/.well-known/host-meta"
+        headers:
+          Host: social.molecule.test
+          X-Forwarded-Proto: https
+        status_code: 200
+        return_content: true
+      register: hostmeta
+
+    - name: host-meta points at the host
+      ansible.builtin.assert:
+        that:
+          - "'https://social.molecule.test/.well-known/webfinger' in hostmeta.content"
+
+    - name: Listener is loopback only
+      ansible.builtin.shell: |
+        set -o pipefail
+        ss -ltnH | awk '{print $4}' | grep -E ':10070$'
+      args:
+        executable: /bin/bash
+      register: listeners
+      changed_when: false
+
+    - name: No wildcard listener
+      ansible.builtin.assert:
+        that:
+          - listeners.stdout_lines | length > 0
+          - listeners.stdout_lines | select('match', '^(127\.0\.0\.1|\[::1\]):10070$') | list | length == listeners.stdout_lines | length
+
+    - name: Read config, marker and route
+      ansible.builtin.slurp:
+        src: "{{ item }}"
+      loop:
+        - /etc/gotosocial/config.yaml
+        - /var/lib/gotosocial/.ops-domain-layout
+        - /etc/traefik/dynamic/gotosocial.yml
+      register: files
+
+    - name: Rendered files carry the layout
+      ansible.builtin.assert:
+        that:
+          - (files.results[0].content | b64decode | from_yaml)['host'] == 'social.molecule.test'
+          - (files.results[0].content | b64decode | from_yaml)['account-domain'] == 'molecule.test'
+          - (files.results[0].content | b64decode | from_yaml)['accounts-registration-open'] == false
+          - (files.results[1].content | b64decode | trim) == 'social.molecule.test molecule.test'
+          - "'Host(`social.molecule.test`)' in (files.results[2].content | b64decode)"
+          - "'certResolver: letsencrypt' in (files.results[2].content | b64decode)"
+
+    - name: Config and data are private to the service
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /etc/gotosocial/config.yaml
+        - /var/lib/gotosocial
+        - /var/lib/gotosocial/sqlite.db
+      register: perms
+
+    - name: Permissions are restrictive
+      ansible.builtin.assert:
+        that:
+          - perms.results[0].stat.mode == '0640'
+          - perms.results[0].stat.gr_name == 'gotosocial'
+          - perms.results[1].stat.mode == '0700'
+          - perms.results[2].stat.exists
+          - perms.results[2].stat.pw_name == 'gotosocial'
+
+    - name: Admin wrapper creates an account
+      ansible.builtin.command:
+        argv:
+          - /usr/local/sbin/gotosocial-admin
+          - account
+          - create
+          - --username
+          - molecule
+          - --email
+          - molecule@molecule.test
+          - --password
+          - "Molecule-Test-Only-0001!"  # pragma: allowlist secret
+      changed_when: true
+      no_log: true
+
+    - name: WebFinger resolves the new account on the account domain
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:10070/.well-known/webfinger?resource=acct:molecule@molecule.test"
+        headers:
+          Host: social.molecule.test
+          X-Forwarded-Proto: https
+        return_content: true
+      register: webfinger
+
+    - name: Actor URI lives on the host
+      ansible.builtin.assert:
+        that:
+          - webfinger.json.subject == 'acct:molecule@molecule.test'
+          - "'https://social.molecule.test/users/molecule' in (webfinger.json.links | map(attribute='href') | list)"
+
+- name: Verify the domain layout guard
+  hosts: all
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Changing the layout is refused
+      block:
+        - name: Re-run the role with another account domain
+          ansible.builtin.include_role:
+            name: gotosocial_deploy
+          vars:
+            gotosocial_host: "social.molecule.test"
+            # Valid on its own (host == account domain), but not the recorded layout.
+            gotosocial_account_domain: "social.molecule.test"
+        - name: The run should not get here
+          ansible.builtin.fail:
+            msg: "layout change was accepted"
+      rescue:
+        - name: The guard stopped it
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'layout | Refuse a changed domain layout'

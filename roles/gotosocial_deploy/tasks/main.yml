@@ -1,0 +1,36 @@
+---
+- name: Validate GoToSocial inputs
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Install GoToSocial packages
+  ansible.builtin.import_tasks: packages.yml
+
+- name: Ensure GoToSocial user and directories
+  ansible.builtin.import_tasks: user.yml
+
+- name: Guard the domain layout
+  ansible.builtin.import_tasks: layout.yml
+
+- name: Install GoToSocial release
+  ansible.builtin.import_tasks: binary.yml
+
+- name: Render GoToSocial configuration
+  ansible.builtin.import_tasks: config.yml
+
+- name: Install GoToSocial systemd unit
+  ansible.builtin.import_tasks: systemd.yml
+
+- name: Ensure GoToSocial service state
+  ansible.builtin.import_tasks: service.yml
+
+- name: Run GoToSocial health check
+  ansible.builtin.import_tasks: health.yml
+  when:
+    - gotosocial_healthcheck_enabled | bool
+    - gotosocial_service_state == 'started'
+
+- name: Record the domain layout
+  ansible.builtin.import_tasks: layout_record.yml
+
+- name: Configure Traefik exposure
+  ansible.builtin.import_tasks: traefik.yml
