@@ -3,6 +3,16 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Traefik backup includes the dynamic route configs (2.41.0)
+
+- `traefik_backup`: also copies the file-provider directory
+  (`traefik_backup_dynamic_dir`, default `/etc/traefik/dynamic`) into the backup,
+  so the archive holds `<prefix>-<timestamp>/dynamic/<file>`. Before, a run with the
+  defaults archived only `metadata.yml` (`acme.json` is off by default). On by
+  default (`traefik_backup_include_dynamic: true`); the run fails when the directory
+  is missing. `metadata.yml` records `dynamic_dir` and both include flags.
+  `traefik_restore` is unchanged and still restores only `acme.json`.
+
 ## Unreleased — graphyard and logyard rsync deploys skip worktree .git (2.40.1)
 
 - `graphyard_deploy`, `logyard_deploy`: the `.git/` entry in

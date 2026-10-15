@@ -13,3 +13,7 @@ traefik_backup_fetch_local: true
 traefik_backup_local_dir: "{{ lookup('env', 'HOME') }}/backups/traefik"
 traefik_backup_local_dir_mode: "0700"
 traefik_backup_include_acme: false
+# File-provider route configs (one file per service). Copied as a whole
+# directory, source permissions kept.
+traefik_backup_dynamic_dir: /etc/traefik/dynamic
+traefik_backup_include_dynamic: true
