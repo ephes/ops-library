@@ -3,7 +3,7 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
-## Unreleased — Pinned backup SSH key for production and staging
+## Unreleased — Pinned backup SSH key for production and staging (2.43.0)
 
 FastDeploy privilege reduction, stage 1, SSH part.
 
