@@ -1,6 +1,6 @@
 ---
 # DDNS Updater Deployment Tasks
-# Deploys dynamic DNS updater for Gandi LiveDNS
+# Deploys the dynamic DNS updater (provider backend selected by dns_ddns_provider)
 # Only runs if dns_ddns_enabled is true
 
 - name: DDNS deployment
@@ -9,12 +9,36 @@
     - name: DDNS | Validate configuration
       ansible.builtin.assert:
         that:
+          - dns_ddns_provider in ["gandi"]
           - dns_ddns_domain != "CHANGEME"
-          - dns_ddns_api_token != "CHANGEME"
+          - dns_ddns_ipv4_enabled | bool or dns_ddns_ipv6_enabled | bool
+          - dns_ddns_state_dir is match('^/.+/[^/]*ddns[^/]*$')
+          - (dns_ddns_status_path | dirname) == dns_ddns_state_dir
+          - dns_ddns_provider != "gandi" or dns_ddns_api_token != "CHANGEME"
+          - dns_ddns_provider != "gandi" or dns_ddns_gandi_auth_scheme in ["bearer", "apikey"]
         fail_msg: |
           DDNS configuration is incomplete!
+          - dns_ddns_provider must be one of: gandi
           - dns_ddns_domain must be set (not CHANGEME)
-          - dns_ddns_api_token must be set (not CHANGEME)
+          - at least one of dns_ddns_ipv4_enabled / dns_ddns_ipv6_enabled must be true
+          - dns_ddns_state_dir must be a dedicated directory whose name contains "ddns",
+            and dns_ddns_status_path must live directly in it
+          - gandi: dns_ddns_api_token must be set, dns_ddns_gandi_auth_scheme bearer|apikey
+
+    - name: DDNS | Validate status endpoint configuration
+      ansible.builtin.assert:
+        that:
+          - dns_ddns_status_endpoint_auth_user | length > 0
+          - dns_ddns_status_endpoint_auth_user != "CHANGE_ME"
+          - dns_ddns_status_endpoint_auth_password | length > 0
+          - dns_ddns_status_endpoint_auth_password != "CHANGE_ME"
+        fail_msg: "Set dns_ddns_status_endpoint_auth_user/password before enabling the status endpoint."
+      when: dns_ddns_status_endpoint_enabled | bool
+
+    - name: DDNS | Install dependencies
+      ansible.builtin.apt:
+        name: "{{ ['python3', 'bind9-dnsutils'] + (['apache2-utils'] if dns_ddns_status_endpoint_enabled | bool else []) }}"
+        state: present
 
     - name: DDNS | Create ddns service account
       ansible.builtin.user:
@@ -34,25 +58,43 @@
       loop:
         - "{{ dns_ddns_log_dir }}"
         - "{{ dns_ddns_config_dir }}"
+        - "{{ dns_ddns_state_dir }}"
 
-    - name: DDNS | Deploy update script
-      ansible.builtin.template:
-        src: ddns-update.sh.j2
+    - name: DDNS | Deploy updater
+      ansible.builtin.copy:
+        src: ddns_update.py
         dest: "{{ dns_ddns_script_path }}"
         mode: "0755"
         owner: root
         group: root
-      notify: restart ddns-update timer
 
-    - name: DDNS | Deploy environment file
+    - name: DDNS | Remove legacy shell updater
+      ansible.builtin.file:
+        path: "{{ dns_ddns_legacy_script_path }}"
+        state: absent
+      when: dns_ddns_legacy_script_path != dns_ddns_script_path
+
+    - name: DDNS | Deploy settings
+      ansible.builtin.template:
+        src: ddns-config.json.j2
+        dest: "{{ dns_ddns_config_dir }}/config.json"
+        mode: "0644"
+        owner: root
+        group: ddns
+
+    - name: DDNS | Deploy credentials
       ansible.builtin.template:
         src: ddns.env.j2
-        dest: "{{ dns_ddns_config_dir }}/gandi.env"
+        dest: "{{ dns_ddns_config_dir }}/credentials.env"
         mode: "0600"
         owner: ddns
         group: ddns
-      no_log: true  # Don't log API token
-      notify: restart ddns-update service
+      no_log: true  # Don't log API credentials
+
+    - name: DDNS | Remove legacy credentials file
+      ansible.builtin.file:
+        path: "{{ dns_ddns_config_dir }}/gandi.env"
+        state: absent
 
     - name: DDNS | Deploy systemd service
       ansible.builtin.template:
@@ -61,9 +103,6 @@
         mode: "0644"
         owner: root
         group: root
-      notify:
-        - reload systemd
-        - restart ddns-update service
 
     - name: DDNS | Deploy systemd timer
       ansible.builtin.template:
@@ -72,9 +111,7 @@
         mode: "0644"
         owner: root
         group: root
-      notify:
-        - reload systemd
-        - restart ddns-update timer
+      notify: restart ddns-update timer
 
     - name: DDNS | Reload systemd daemon
       ansible.builtin.systemd:
@@ -86,8 +123,103 @@
         state: started
         enabled: true
 
-    - name: DDNS | Trigger initial update
+    # A failed first run is reported, not hidden: the status file and the
+    # Nyxmon check carry the details, and the deploy output shows the result.
+    - name: DDNS | Run the updater once
       ansible.builtin.systemd:
         name: ddns-update.service
         state: started
-      ignore_errors: true  # First run might fail if IP hasn't changed
+      register: _ddns_first_run
+      failed_when: false
+      when: not ansible_check_mode
+
+    - name: DDNS | Read the first run result
+      ansible.builtin.command:
+        argv: [systemctl, show, ddns-update.service, --property=Result, --value]
+      register: _ddns_first_run_result
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: DDNS | Report a failed first run
+      ansible.builtin.debug:
+        msg: >-
+          WARNING: ddns-update.service failed on its first run (Result={{
+          _ddns_first_run_result.stdout | trim }}); see journalctl -u ddns-update.service
+          and {{ dns_ddns_status_path }}.
+      when:
+        - not ansible_check_mode
+        - (_ddns_first_run_result.stdout | trim) != "success"
+
+    - name: DDNS | Status endpoint
+      when: dns_ddns_status_endpoint_enabled | bool
+      block:
+        - name: DDNS | Deploy status HTTP server
+          ansible.builtin.copy:
+            src: ddns_status_httpd.py
+            dest: "{{ dns_ddns_status_endpoint_server_path }}"
+            mode: "0755"
+            owner: root
+            group: root
+          notify: restart ddns-status-endpoint
+
+        - name: DDNS | Ensure htpasswd directory exists
+          ansible.builtin.file:
+            path: "{{ dns_ddns_status_endpoint_htpasswd_dir }}"
+            state: directory
+            owner: root
+            group: ddns
+            mode: "0750"
+
+        - name: DDNS | Verify existing htpasswd credentials
+          ansible.builtin.command: >-
+            htpasswd -viB {{ dns_ddns_status_endpoint_htpasswd_path }} {{ dns_ddns_status_endpoint_auth_user }}
+          args:
+            stdin: "{{ dns_ddns_status_endpoint_auth_password }}"
+          register: _ddns_htpasswd_verify
+          changed_when: false
+          failed_when: false
+          no_log: true
+
+        - name: DDNS | Generate htpasswd entry
+          ansible.builtin.command: "htpasswd -niB {{ dns_ddns_status_endpoint_auth_user }}"
+          args:
+            stdin: "{{ dns_ddns_status_endpoint_auth_password }}"
+          register: _ddns_htpasswd_entry
+          changed_when: false
+          when: _ddns_htpasswd_verify.rc != 0
+          no_log: true
+
+        - name: DDNS | Write htpasswd file
+          ansible.builtin.copy:
+            dest: "{{ dns_ddns_status_endpoint_htpasswd_path }}"
+            content: "{{ _ddns_htpasswd_entry.stdout }}\n"
+            owner: root
+            group: ddns
+            mode: "0640"
+          when: _ddns_htpasswd_verify.rc != 0
+          notify: restart ddns-status-endpoint
+          no_log: true
+
+        - name: DDNS | Deploy status endpoint unit
+          ansible.builtin.template:
+            src: ddns-status-endpoint.service.j2
+            dest: /etc/systemd/system/ddns-status-endpoint.service
+            mode: "0644"
+            owner: root
+            group: root
+          notify: restart ddns-status-endpoint
+
+        - name: DDNS | Enable and start status endpoint
+          ansible.builtin.systemd:
+            name: ddns-status-endpoint.service
+            state: started
+            enabled: true
+            daemon_reload: true
+
+    - name: DDNS | Stop a status endpoint that is no longer enabled
+      ansible.builtin.systemd:
+        name: ddns-status-endpoint.service
+        state: stopped
+        enabled: false
+      failed_when: false
+      when: not dns_ddns_status_endpoint_enabled | bool

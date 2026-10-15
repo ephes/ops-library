@@ -33,3 +33,9 @@
     name: ddns-update.timer
     state: restarted
   when: dns_ddns_enabled | default(false)
+- name: restart ddns-status-endpoint
+  systemd:
+    name: ddns-status-endpoint.service
+    state: restarted
+    daemon_reload: yes
+  when: dns_ddns_status_endpoint_enabled | default(false)

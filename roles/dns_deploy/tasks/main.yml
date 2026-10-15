@@ -9,7 +9,11 @@
   include_tasks: configure_unbound_only.yml
 
 - name: Configure DDNS updater (optional)
-  include_tasks: ddns.yml
+  include_tasks:
+    file: ddns.yml
+    apply:
+      tags: ['ddns']
+  tags: ['ddns']
 
 - name: Configure firewall rules
   include_tasks: firewall.yml

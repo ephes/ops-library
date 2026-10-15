@@ -3,6 +3,28 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — DDNS updater fails loudly and has pluggable backends
+
+- `dns_deploy` DDNS: the shell updater is replaced by a stdlib Python updater
+  (`/usr/local/bin/ddns-update`, settings in `/etc/ddns/config.json`,
+  credentials in `/etc/ddns/credentials.env`). The provider is a backend selected
+  by `dns_ddns_provider`; `gandi` is implemented and documented as the pattern for
+  further backends.
+- Any non-2xx API answer, a read-back mismatch, a failed WAN address detection or
+  a missing credential now fails the run with a non-zero exit. Previously a
+  Gandi HTTP 403 on every record still ended in `Result=success`.
+- Records are read first and written only when they differ; every record is
+  logged as unchanged, updated (old -> new) or failed. Credentials are not logged.
+- New `dns_ddns_gandi_auth_scheme` (`bearer` for a Personal Access Token, the
+  default, or `apikey` for a legacy API key).
+- Each run asks the zone's authoritative nameservers for the public view and
+  writes `/var/lib/ddns/status.json` (run result, consecutive failures, how long
+  the public records have differed from the WAN address). The optional
+  `dns_ddns_status_endpoint_*` settings serve it with basic auth for a Nyxmon
+  `json-metrics` check.
+- The DDNS tasks are tagged `ddns`. `dns_remove` also removes the status endpoint,
+  status directory and the legacy script.
+
 ## Unreleased — Mastodon sizing guard, emoji purge guard, cross-prefix backup retention (2.34.0)
 
 - `mastodon_deploy`: refuses a `mastodon_db_pool` smaller than

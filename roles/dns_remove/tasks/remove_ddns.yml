@@ -12,10 +12,19 @@
     ddns_script_path: "{{ dns_ddns_script_path | default(dns_deploy_defaults.dns_ddns_script_path) }}"
     ddns_config_dir: "{{ dns_ddns_config_dir | default(dns_deploy_defaults.dns_ddns_config_dir) }}"
     ddns_log_dir: "{{ dns_ddns_log_dir | default(dns_deploy_defaults.dns_ddns_log_dir) }}"
+    ddns_state_dir: "{{ dns_ddns_state_dir | default(dns_deploy_defaults.dns_ddns_state_dir) }}"
 
 - name: Stop and disable DDNS timer
   systemd:
     name: ddns-update.timer
+    state: stopped
+    enabled: false
+  failed_when: false
+  ignore_errors: true
+
+- name: Stop and disable DDNS status endpoint
+  systemd:
+    name: ddns-status-endpoint.service
     state: stopped
     enabled: false
   failed_when: false
@@ -36,12 +45,24 @@
   loop:
     - /etc/systemd/system/ddns-update.service
     - /etc/systemd/system/ddns-update.timer
+    - /etc/systemd/system/ddns-status-endpoint.service
   notify: Reload systemd
 
-- name: Remove DDNS script
+- name: Remove DDNS scripts and status endpoint files
   file:
-    path: "{{ ddns_script_path }}"
+    path: "{{ item }}"
     state: absent
+  loop:
+    - "{{ ddns_script_path }}"
+    - /usr/local/bin/ddns-update.sh
+    - "{{ dns_ddns_status_endpoint_server_path | default(dns_deploy_defaults.dns_ddns_status_endpoint_server_path) }}"
+    - "{{ dns_ddns_status_endpoint_htpasswd_dir | default(dns_deploy_defaults.dns_ddns_status_endpoint_htpasswd_dir) }}"
+
+- name: Remove DDNS state directory
+  file:
+    path: "{{ ddns_state_dir }}"
+    state: absent
+  when: ddns_state_dir is match('^/.+/[^/]*ddns[^/]*$')
 
 - name: Remove DDNS configuration directory
   file:
