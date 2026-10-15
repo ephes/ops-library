@@ -49,7 +49,6 @@
   state files. The Molecule scenarios of both roles cover the systemd run and
   the exported section.
 
-||||||| parent of 7ebbce2 (Count GoToSocial local statuses by account in the backup check)
 ## Unreleased — certbot DNS removes the previous provider's credentials
 
 - `certbot_dns_deploy`: new `cleanup.yml`, run after the certificate and
