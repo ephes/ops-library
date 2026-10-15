@@ -100,12 +100,18 @@ test-nyxmon-deploy: venv
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_nyxmon_deploy
 
 test-mailgun-relay-deploy: venv
-    @echo "Testing what the mailgun-relay rsync deploy ships to the host..."
+    @echo "Testing the mailgun-relay rsync excludes and the Python/Rust implementation switch..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_mailgun_relay_deploy
 
 test-rsync-git-excludes: venv
     @echo "Testing that rsync deploys keep git metadata (worktree .git files too) off the host..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_rsync_git_excludes
+
+# Python service from the public repo plus fake Rust release archives in a
+# systemd container: switch, version change, refusals, rollback (downloads uv's
+# Python 3.14 and the relay's dependencies).
+test-mailgun-relay-deploy-molecule: venv
+    @just molecule-test mailgun_relay_deploy
 
 test-deploy-restart-notifications: venv
     @echo "Testing that app deploy roles restart after source and dependency changes..."

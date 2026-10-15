@@ -1,0 +1,61 @@
+---
+# converge.yml ends with a rollback from the fake Rust relay 0.2.1 to Python
+# while the pinned archive (0.5.0) is broken. 0.2.0 was pruned by the switch
+# forward before it (keep_versions 1; 0.2.1 is pinned, live and previous).
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Verify | Implementation drop-in is gone
+      ansible.builtin.stat:
+        path: /etc/systemd/system/mailgun-relay.service.d/impl.conf
+      register: relay_dropin
+
+    - name: Verify | Read the relay process
+      ansible.builtin.shell: |
+        unit=mailgun-relay
+        systemctl is-active "$unit"
+        pid=$(systemctl show --property=MainPID --value "$unit")
+        readlink "/proc/$pid/exe"
+        tr '\0' '\n' < "/proc/$pid/cmdline"
+      args:
+        executable: /bin/bash
+      changed_when: false
+      register: relay_process
+
+    - name: Verify | Query the health endpoint
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8085/health
+        return_content: true
+      register: relay_health
+
+    - name: Verify | List installed Rust releases
+      ansible.builtin.find:
+        paths: /opt/mailgun-relay
+        file_type: directory
+        hidden: true
+      register: relay_installed
+
+    - name: Verify | Read the remembered previous Rust version
+      ansible.builtin.slurp:
+        path: /opt/mailgun-relay/.previous-version
+      register: relay_previous
+
+    - name: Verify | Assert the rollback left the Python service running
+      ansible.builtin.assert:
+        that:
+          - not relay_dropin.stat.exists
+          - relay_process.stdout_lines[0] == 'active'
+          - not relay_process.stdout_lines[1].startswith('/opt/mailgun-relay/')
+          - relay_process.stdout_lines[2:] == ['/opt/apps/mailgun-relay/site/.venv/bin/python', '-m', 'mailgun_relay']
+          - relay_health.json.status == 'ok'
+          - "'version' not in relay_health.json"
+          - relay_installed.files | map(attribute='path') | map('basename') | sort == ['0.2.1', 'keep-me']
+          - relay_previous.content | b64decode | trim == '0.2.1'
+        fail_msg: >-
+          Rollback state is wrong: drop-in {{ relay_dropin.stat.exists }},
+          process {{ relay_process.stdout_lines }},
+          health {{ relay_health.json | default('') }},
+          versions {{ relay_installed.files | map(attribute='path') | list }}.

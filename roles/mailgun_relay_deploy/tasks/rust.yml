@@ -1,0 +1,332 @@
+---
+# Install the pinned Rust release into <root>/<version>/ and validate it by the
+# versioned path, before the drop-in may point at it (impl.yml).
+#
+# A failure removes a version installed by this run again and leaves the
+# drop-in, the running unit and the other versions alone. With impl rust it
+# stops the play. With impl python it is a warning and the deploy goes on to
+# restart and verify Python, so a broken or download-less release, or one that
+# rejects a configuration Python accepts, never blocks the rollback.
+
+- name: rust | Install and validate the pinned Rust release
+  block:
+    - name: rust | Check whether the pinned version is installed
+      ansible.builtin.stat:
+        path: "{{ mailgun_relay_rust_dir }}"
+      register: mailgun_relay_rust_dir_stat
+
+    - name: rust | Ensure the install root exists
+      ansible.builtin.file:
+        path: "{{ mailgun_relay_rust_install_root }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: rust | Remove leftovers of an interrupted install
+      ansible.builtin.file:
+        path: "{{ mailgun_relay_rust_staging }}"
+        state: absent
+
+    - name: rust | Checksum the local archive
+      ansible.builtin.stat:
+        path: "{{ mailgun_relay_rust_local_archive }}"
+        get_checksum: true
+        checksum_algorithm: sha256
+      delegate_to: localhost
+      become: false
+      register: mailgun_relay_rust_local_archive_stat
+      when: mailgun_relay_rust_local_archive | length > 0
+
+    - name: rust | Assert the local archive exists and matches a pinned checksum
+      ansible.builtin.assert:
+        that:
+          - mailgun_relay_rust_local_archive_stat.stat.exists
+          - mailgun_relay_rust_local_archive_stat.stat.isreg
+          - >-
+            mailgun_relay_rust_sha256 == '' or
+            mailgun_relay_rust_local_archive_stat.stat.checksum == mailgun_relay_rust_sha256
+        fail_msg: >-
+          mailgun_relay_rust_local_archive {{ mailgun_relay_rust_local_archive }} is
+          missing, not a file, or its sha256
+          ({{ mailgun_relay_rust_local_archive_stat.stat.checksum | default('n/a') }})
+          differs from mailgun_relay_rust_sha256.
+      when: mailgun_relay_rust_local_archive | length > 0
+
+    - name: rust | Determine the expected archive checksum
+      ansible.builtin.set_fact:
+        mailgun_relay_rust_archive_sha256: >-
+          {{
+            mailgun_relay_rust_local_archive_stat.stat.checksum
+            if mailgun_relay_rust_local_archive | length > 0
+            else mailgun_relay_rust_sha256
+          }}
+
+    - name: rust | Read the archive checksum of the installed version
+      ansible.builtin.slurp:
+        path: "{{ mailgun_relay_rust_dir }}/.archive-sha256"
+      register: mailgun_relay_rust_installed_sha256
+      failed_when: false
+      when: mailgun_relay_rust_dir_stat.stat.exists
+
+    # An installed version directory is never modified in place: the same
+    # version must come from the same archive.
+    - name: rust | Refuse a different archive for an installed version
+      ansible.builtin.assert:
+        that:
+          - mailgun_relay_rust_installed_sha256.content is defined
+          - >-
+            (mailgun_relay_rust_installed_sha256.content | b64decode | trim)
+            == mailgun_relay_rust_archive_sha256
+        fail_msg: >-
+          {{ mailgun_relay_rust_dir }} is installed from an archive with sha256
+          {{ (mailgun_relay_rust_installed_sha256.content | default('') | b64decode | trim) or 'unknown' }},
+          but this run pins {{ mailgun_relay_rust_archive_sha256 }}. An installed
+          version is never replaced in place. Pin the matching archive, or remove
+          the directory by hand when it is not the active version
+          ({{ mailgun_relay_dropin }}).
+      when: mailgun_relay_rust_dir_stat.stat.exists
+
+    - name: rust | Stage the pinned release
+      when:
+        - not mailgun_relay_rust_dir_stat.stat.exists
+        - not ansible_check_mode
+      block:
+        - name: rust | Create the staging directory
+          ansible.builtin.file:
+            path: "{{ mailgun_relay_rust_staging }}/tree"
+            state: directory
+            owner: root
+            group: root
+            mode: "0755"
+
+        - name: rust | Download the release archive
+          ansible.builtin.get_url:
+            url: "{{ mailgun_relay_rust_release_url }}"
+            dest: "{{ mailgun_relay_rust_staging }}/archive.tar.gz"
+            checksum: "sha256:{{ mailgun_relay_rust_sha256 }}"
+            owner: root
+            group: root
+            mode: "0600"
+          when: mailgun_relay_rust_local_archive | length == 0
+
+        - name: rust | Copy the local archive
+          ansible.builtin.copy:
+            src: "{{ mailgun_relay_rust_local_archive }}"
+            dest: "{{ mailgun_relay_rust_staging }}/archive.tar.gz"
+            owner: root
+            group: root
+            mode: "0600"
+          when: mailgun_relay_rust_local_archive | length > 0
+
+        - name: rust | Checksum the staged archive
+          ansible.builtin.stat:
+            path: "{{ mailgun_relay_rust_staging }}/archive.tar.gz"
+            get_checksum: true
+            checksum_algorithm: sha256
+          register: mailgun_relay_rust_staged_archive
+
+        - name: rust | Assert the staged archive is the pinned one
+          ansible.builtin.assert:
+            that:
+              - mailgun_relay_rust_staged_archive.stat.checksum == mailgun_relay_rust_archive_sha256
+            fail_msg: >-
+              The staged archive has sha256 {{ mailgun_relay_rust_staged_archive.stat.checksum }},
+              expected {{ mailgun_relay_rust_archive_sha256 }}.
+
+        # Checked before extraction: exactly the regular files mailgun-relay
+        # and LICENSE, each once (the release layout). A link or device member
+        # could otherwise make the following tasks act on a path outside the
+        # staging directory.
+        - name: rust | List the archive members
+          ansible.builtin.command:
+            argv:
+              - tar
+              - --list
+              - --gzip
+              - --file
+              - "{{ mailgun_relay_rust_staging }}/archive.tar.gz"
+          changed_when: false
+          register: mailgun_relay_rust_member_names
+
+        - name: rust | List the archive member types
+          ansible.builtin.command:
+            argv:
+              - tar
+              - --list
+              - --verbose
+              - --gzip
+              - --file
+              - "{{ mailgun_relay_rust_staging }}/archive.tar.gz"
+          changed_when: false
+          register: mailgun_relay_rust_member_types
+
+        - name: rust | Assert the archive holds only the relay and its license as regular files
+          ansible.builtin.assert:
+            that:
+              - mailgun_relay_rust_members | sort == ['LICENSE', 'mailgun-relay']
+              - mailgun_relay_rust_member_types.stdout_lines | length == mailgun_relay_rust_members | length
+              - mailgun_relay_rust_member_types.stdout_lines | reject('match', '-') | list | length == 0
+            fail_msg: >-
+              The release archive must hold exactly the regular files
+              mailgun-relay and LICENSE at its root, once each; found
+              {{ mailgun_relay_rust_member_types.stdout_lines }}.
+          vars:
+            mailgun_relay_rust_members: "{{ mailgun_relay_rust_member_names.stdout_lines | map('regex_replace', '^[.]/', '') | list }}"
+
+        - name: rust | Unpack the release archive
+          ansible.builtin.unarchive:
+            src: "{{ mailgun_relay_rust_staging }}/archive.tar.gz"
+            dest: "{{ mailgun_relay_rust_staging }}/tree"
+            remote_src: true
+            owner: root
+            group: root
+
+        - name: rust | Check the unpacked relay binary
+          ansible.builtin.stat:
+            path: "{{ mailgun_relay_rust_staging }}/tree/mailgun-relay"
+            follow: false
+            get_checksum: false
+          register: mailgun_relay_rust_unpacked_binary
+
+        - name: rust | Assert the unpacked relay is a regular file
+          ansible.builtin.assert:
+            that:
+              - mailgun_relay_rust_unpacked_binary.stat.isreg | default(false)
+            fail_msg: "{{ mailgun_relay_rust_staging }}/tree/mailgun-relay is not a regular file."
+
+        - name: rust | Make the relay binary root-owned and executable
+          ansible.builtin.file:
+            path: "{{ mailgun_relay_rust_staging }}/tree/mailgun-relay"
+            state: file
+            follow: false
+            owner: root
+            group: root
+            mode: "0755"
+
+        - name: rust | Record the archive checksum with the version
+          ansible.builtin.copy:
+            content: "{{ mailgun_relay_rust_archive_sha256 }}\n"
+            dest: "{{ mailgun_relay_rust_staging }}/tree/.archive-sha256"
+            owner: root
+            group: root
+            mode: "0644"
+
+        - name: rust | Move the staged version into place
+          ansible.builtin.command:
+            argv:
+              - mv
+              - --no-target-directory
+              - "{{ mailgun_relay_rust_staging }}/tree"
+              - "{{ mailgun_relay_rust_dir }}"
+            creates: "{{ mailgun_relay_rust_dir }}"
+
+        - name: rust | Remove the staging directory
+          ansible.builtin.file:
+            path: "{{ mailgun_relay_rust_staging }}"
+            state: absent
+
+    # By the versioned path, before the drop-in points at it.
+    - name: rust | Validate the candidate binary
+      when: not ansible_check_mode or mailgun_relay_rust_dir_stat.stat.exists
+      block:
+        - name: rust | Read the version of the candidate binary
+          ansible.builtin.command:
+            argv:
+              - "{{ mailgun_relay_rust_binary }}"
+              - --version
+          become: true
+          become_user: "{{ mailgun_relay_user }}"
+          check_mode: false
+          changed_when: false
+          failed_when: false
+          register: mailgun_relay_rust_version_check
+
+        - name: rust | Assert the candidate reports the pinned version
+          ansible.builtin.assert:
+            that:
+              - mailgun_relay_rust_version_check.rc == 0
+              - (mailgun_relay_rust_version_check.stdout.split() + ['', ''])[0] == 'mailgun-relay'
+              - (mailgun_relay_rust_version_check.stdout.split() + ['', ''])[1] == mailgun_relay_rust_version
+            fail_msg: >-
+              {{ mailgun_relay_rust_binary }} --version exited
+              {{ mailgun_relay_rust_version_check.rc }} with
+              '{{ mailgun_relay_rust_version_check.stdout | trim }}'
+              {{ mailgun_relay_rust_version_check.stderr | trim }};
+              expected 'mailgun-relay {{ mailgun_relay_rust_version }} (<commit>)'.
+
+        # The unit's identity, environment file and sandbox, so the candidate
+        # proves it accepts the production env and secrets (file modes
+        # included) as the unit will run it. Binds nothing, sends nothing.
+        - name: rust | Check the configuration with the candidate binary
+          ansible.builtin.command:
+            argv:
+              - systemd-run
+              - --wait
+              - --pipe
+              - --collect
+              - --quiet
+              - --property=User={{ mailgun_relay_user }}
+              - --property=Group={{ mailgun_relay_group }}
+              - --property=EnvironmentFile={{ mailgun_relay_env_path }}
+              - --property=NoNewPrivileges=yes
+              - --property=ProtectSystem=strict
+              - --property=ProtectHome=yes
+              - --property=PrivateTmp=yes
+              - --property=PrivateDevices=yes
+              - "{{ mailgun_relay_rust_binary }}"
+              - --check-config
+          check_mode: false
+          changed_when: false
+          failed_when: false
+          register: mailgun_relay_rust_config_check
+
+        - name: rust | Assert the candidate accepts the configuration
+          ansible.builtin.assert:
+            that:
+              - mailgun_relay_rust_config_check.rc == 0
+            fail_msg: >-
+              {{ mailgun_relay_rust_binary }} --check-config exited
+              {{ mailgun_relay_rust_config_check.rc }}:
+              {{ mailgun_relay_rust_config_check.stderr | trim }}
+              {{ mailgun_relay_rust_config_check.stdout | trim }}
+
+  rescue:
+    - name: rust | Remove the rejected fresh install
+      ansible.builtin.file:
+        path: "{{ mailgun_relay_rust_dir }}"
+        state: absent
+      when: not (mailgun_relay_rust_dir_stat.stat.exists | default(true))
+
+    - name: rust | Remove the staging directory after a failure
+      ansible.builtin.file:
+        path: "{{ mailgun_relay_rust_staging }}"
+        state: absent
+
+    - name: rust | Stop on a rejected Rust release
+      ansible.builtin.fail:
+        msg: >-
+          mailgun-relay {{ mailgun_relay_rust_version }} failed installation or
+          validation at '{{ ansible_failed_task.name | default('?') }}'
+          ({{ ansible_failed_result.msg | default('see above') }}).
+          Nothing was switched: the drop-in, the running unit and the other
+          installed versions are unchanged.
+      when: mailgun_relay_impl == 'rust'
+
+    - name: rust | Record the rejected Rust release
+      ansible.builtin.set_fact:
+        mailgun_relay_rust_install_failed: true
+
+    # A failed task that is ignored, so the warning stands out in red and as
+    # `ignored=1` in the play recap instead of scrolling past as a debug line.
+    - name: rust | Warn about the rejected Rust release and continue with Python
+      ansible.builtin.fail:
+        msg: >-
+          WARNING: mailgun-relay {{ mailgun_relay_rust_version }} failed
+          installation or validation at
+          '{{ ansible_failed_task.name | default('?') }}'
+          ({{ ansible_failed_result.msg | default('see above') }}).
+          mailgun_relay_impl is python, so the deploy continues with Python;
+          nothing Rust is selected and nothing is pruned. Fix or unpin
+          mailgun_relay_rust_version before switching to rust.
+      ignore_errors: true

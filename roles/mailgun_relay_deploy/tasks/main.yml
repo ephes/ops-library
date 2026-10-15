@@ -65,6 +65,47 @@
     fail_msg: "mailgun_relay_source_path must be set when mailgun_relay_deploy_method=rsync"
   when: mailgun_relay_deploy_method == "rsync"
 
+- name: main | Validate implementation settings
+  ansible.builtin.assert:
+    that:
+      - mailgun_relay_impl in ['python', 'rust']
+      - mailgun_relay_rust_version is string
+      - >-
+        mailgun_relay_rust_version == '' or
+        mailgun_relay_rust_version is regex('^[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?$')
+      - mailgun_relay_rust_sha256 is string
+      - mailgun_relay_rust_sha256 == '' or mailgun_relay_rust_sha256 is regex('^[0-9a-f]{64}$')
+      - mailgun_relay_rust_local_archive is string
+      - >-
+        mailgun_relay_rust_version == '' or mailgun_relay_rust_sha256 != '' or
+        mailgun_relay_rust_local_archive != ''
+      - mailgun_relay_rust_sha256 == '' or mailgun_relay_rust_version != ''
+      - mailgun_relay_rust_local_archive == '' or mailgun_relay_rust_version != ''
+      - mailgun_relay_impl == 'python' or mailgun_relay_rust_version != ''
+      - mailgun_relay_rust_install_root is string
+      - mailgun_relay_rust_install_root is regex('^/[^ ]*[^/ ]$')
+      # Only normalized paths, so the checks here see the real location:
+      # no empty, '.' or '..' components (/opt/.. is /).
+      - mailgun_relay_rust_install_root is not regex('//|/[.][.]?(/|$)')
+      # rsync --delete owns the site tree; an install below it would be wiped.
+      - >-
+        not ((mailgun_relay_rust_install_root ~ '/')
+        .startswith(mailgun_relay_site_path | regex_replace('/+$', '') ~ '/'))
+      - mailgun_relay_rust_keep_versions is not boolean
+      - (mailgun_relay_rust_keep_versions | string) is regex('^[0-9]+$')
+      - mailgun_relay_rust_keep_versions | int >= 1
+    fail_msg: >-
+      Implementation settings are invalid. mailgun_relay_impl must be python or
+      rust (got {{ mailgun_relay_impl }}); rust needs mailgun_relay_rust_version.
+      mailgun_relay_rust_version must be empty or a version such as 0.2.0 (got
+      '{{ mailgun_relay_rust_version }}'). A version needs
+      mailgun_relay_rust_sha256 (64 lowercase hex digits) or
+      mailgun_relay_rust_local_archive; a checksum or local archive without a
+      version is refused. mailgun_relay_rust_install_root must be an absolute
+      path other than / without '.', '..' or empty components, outside
+      {{ mailgun_relay_site_path }},
+      mailgun_relay_rust_keep_versions a whole number >= 1.
+
 - name: main | Ensure service user and directories
   ansible.builtin.import_tasks: user.yml
 
@@ -77,6 +118,9 @@
 - name: main | Render env and secrets files
   ansible.builtin.import_tasks: config.yml
 
+- name: main | Install the pinned Rust release and select the implementation
+  ansible.builtin.import_tasks: impl.yml
+
 - name: main | Configure and start systemd service
   ansible.builtin.import_tasks: service.yml
 
@@ -86,3 +130,6 @@
 - name: main | Verify health endpoint
   ansible.builtin.import_tasks: health.yml
   when: mailgun_relay_healthcheck_enabled | bool
+
+- name: main | Verify the running implementation and prune old Rust releases
+  ansible.builtin.import_tasks: verify_impl.yml

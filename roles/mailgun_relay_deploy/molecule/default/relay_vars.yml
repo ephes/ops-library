@@ -1,0 +1,19 @@
+---
+# Shared by every play of converge.yml. The Python service comes from the
+# public repository, pinned to a commit: a push to main between two plays
+# would restart the unit and break the "no restart" assertions. SMTP is never
+# contacted (only /health is called).
+mailgun_relay_deploy_method: git
+mailgun_relay_git_repo: "https://github.com/ephes/mailgun-relay.git"
+# Refuse custom header names with a final newline (D-19); live on macmini
+# since 2026-10-15.
+mailgun_relay_git_version: cb62bff68920937890dbd7cd431e135598ddba3c
+mailgun_relay_smtp_username: "molecule"
+mailgun_relay_smtp_password: "molecule-password"
+mailgun_relay_envelope_sender: "relay@example.com"
+mailgun_relay_tokens:
+  - label: molecule
+    # sha256 of "molecule-token"
+    token_sha256: "4089bea2af0752a2541af22f5b74a42d715a550d0e346a55e701d4c53aeacb74"
+    mailgun_domains: ["example.com"]
+    allowed_from_domains: ["example.com"]

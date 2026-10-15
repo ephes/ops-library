@@ -49,6 +49,29 @@ mailgun_relay_uv_sync_args: "--no-default-groups --no-dev"
 # Systemd unit
 mailgun_relay_service_name: "mailgun-relay"
 
+# Implementation: python (the venv `python -m mailgun_relay`, the default) or
+# rust (the `mailgun-relay` release binary, selected by a systemd drop-in).
+# Source, venv, env file and secrets are deployed for both; the venv is the
+# rollback path.
+mailgun_relay_impl: python
+# Rust release to install, e.g. "0.2.0". Empty: nothing is installed,
+# validated or pruned. A set version is installed with impl python too, so the
+# binary can be in place before the switch. Required for impl rust.
+mailgun_relay_rust_version: ""
+# sha256 of the release archive (64 lowercase hex digits). Required with a
+# version unless mailgun_relay_rust_local_archive is set; also checked against
+# a local archive when both are set.
+mailgun_relay_rust_sha256: ""
+mailgun_relay_rust_release_url: >-
+  https://github.com/ephes/mailgun-relay/releases/download/rs-v{{ mailgun_relay_rust_version }}/mailgun-relay-{{ mailgun_relay_rust_version }}-x86_64-unknown-linux-gnu.tar.gz
+# Controller path of an archive with the same layout (development); replaces
+# the download.
+mailgun_relay_rust_local_archive: ""
+mailgun_relay_rust_install_root: /opt/mailgun-relay
+# Installed versions kept by the pruning step. The version in the drop-in, the
+# previously active version and the pinned version are always kept on top.
+mailgun_relay_rust_keep_versions: 3
+
 # Service runtime config (non-secret)
 mailgun_relay_bind_host: "127.0.0.1"
 mailgun_relay_bind_port: 8085

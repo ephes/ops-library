@@ -1,0 +1,686 @@
+---
+- name: Converge with the Python service
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Ensure apt helpers, git and curl are present
+      ansible.builtin.apt:
+        name:
+          - python3-apt
+          - curl
+          - ca-certificates
+          - git
+        state: present
+        update_cache: true
+
+    - name: Install uv
+      ansible.builtin.import_role:
+        name: uv_install
+      vars:
+        uv_install_dir: /usr/local/bin
+
+  vars_files:
+    - relay_vars.yml
+
+  roles:
+    - role: mailgun_relay_deploy
+
+# The Rust phases use a fake mailgun-relay compiled in the instance: the real
+# release is an x86_64 binary and Molecule may run on arm64. The fake answers
+# --version like the real one; --check-config fails unless it runs as a
+# non-root user with MAILGUN_RELAY_SECRETS_PATH set and readable (so it proves
+# the systemd-run identity and EnvironmentFile), or always for CHECK_FAILS;
+# without arguments it answers every HTTP request on MAILGUN_RELAY_BIND_HOST:
+# MAILGUN_RELAY_BIND_PORT with {"status":"ok"}, which satisfies health.yml.
+- name: Build fake Rust release archives
+  hosts: all
+  become: true
+  vars:
+    fake_relay_build: /root/fake-relay
+    fake_relay_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-relay"
+    fake_relay_builds:
+      # name: [reported version, reported commit, --check-config fails]
+      a: ["0.2.0", "0000000000000000000000000000000000000000", 0]
+      a2: ["0.2.0", "1111111111111111111111111111111111111111", 0]
+      b: ["0.2.1", "2222222222222222222222222222222222222222", 0]
+      wrong: ["0.2.0", "3333333333333333333333333333333333333333", 0]
+      badcfg: ["0.4.0", "4444444444444444444444444444444444444444", 1]
+  tasks:
+    - name: Install a C compiler
+      ansible.builtin.apt:
+        name:
+          - gcc
+          - libc6-dev
+        state: present
+
+    - name: Create build directories
+      ansible.builtin.file:
+        path: "{{ fake_relay_build }}/{{ item }}"
+        state: directory
+        mode: "0755"
+      loop: "{{ fake_relay_builds.keys() | list }}"
+
+    - name: Write the fake relay source
+      ansible.builtin.copy:
+        dest: "{{ fake_relay_build }}/fake-relay.c"
+        mode: "0644"
+        content: |
+          #include <arpa/inet.h>
+          #include <netinet/in.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <string.h>
+          #include <sys/socket.h>
+          #include <sys/time.h>
+          #include <unistd.h>
+
+          static const char RESPONSE[] =
+              "HTTP/1.1 200 OK\r\n"
+              "Content-Type: application/json\r\n"
+              "Content-Length: 15\r\n"
+              "Connection: close\r\n"
+              "\r\n"
+              "{\"status\":\"ok\"}";
+
+          static int check_config(void) {
+              const char *secrets = getenv("MAILGUN_RELAY_SECRETS_PATH");
+              if (CHECK_FAILS) {
+                  fprintf(stderr, "mailgun-relay: configuration error: fake rejection\n");
+                  return 1;
+              }
+              if (geteuid() == 0) {
+                  fprintf(stderr, "mailgun-relay: configuration error: runs as root\n");
+                  return 1;
+              }
+              if (secrets == NULL || access(secrets, R_OK) != 0) {
+                  fprintf(stderr, "mailgun-relay: configuration error: secrets %s not readable\n",
+                          secrets ? secrets : "(unset)");
+                  return 1;
+              }
+              printf("mailgun-relay: configuration OK (fake)\n");
+              return 0;
+          }
+
+          static int serve(void) {
+              const char *host = getenv("MAILGUN_RELAY_BIND_HOST");
+              const char *port = getenv("MAILGUN_RELAY_BIND_PORT");
+              struct sockaddr_in addr;
+              int one = 1;
+              int fd = socket(AF_INET, SOCK_STREAM, 0);
+              memset(&addr, 0, sizeof addr);
+              addr.sin_family = AF_INET;
+              addr.sin_port = htons((unsigned short)atoi(port ? port : "8085"));
+              if (fd < 0 || inet_pton(AF_INET, host ? host : "127.0.0.1", &addr.sin_addr) != 1) {
+                  return 1;
+              }
+              setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
+              if (bind(fd, (struct sockaddr *)&addr, sizeof addr) != 0 || listen(fd, 16) != 0) {
+                  perror("mailgun-relay: bind");
+                  return 1;
+              }
+              for (;;) {
+                  char buffer[4096];
+                  struct timeval timeout = {5, 0};
+                  int client = accept(fd, NULL, NULL);
+                  if (client < 0) {
+                      continue;
+                  }
+                  setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout);
+                  if (read(client, buffer, sizeof buffer) > 0) {
+                      if (write(client, RESPONSE, sizeof RESPONSE - 1) < 0) {
+                          perror("mailgun-relay: write");
+                      }
+                  }
+                  close(client);
+              }
+          }
+
+          int main(int argc, char **argv) {
+              if (argc == 1) {
+                  return serve();
+              }
+              if (argc == 2 && strcmp(argv[1], "--version") == 0) {
+                  printf("mailgun-relay %s (%s)\n", RELAY_VERSION, RELAY_COMMIT);
+                  return 0;
+              }
+              if (argc == 2 && strcmp(argv[1], "--check-config") == 0) {
+                  return check_config();
+              }
+              fprintf(stderr, "usage: mailgun-relay [--version | --check-config]\n");
+              return 2;
+          }
+
+    - name: Compile the fake relays
+      ansible.builtin.command:
+        argv:
+          - gcc
+          - -O2
+          - -DRELAY_VERSION="{{ item.value[0] }}"
+          - -DRELAY_COMMIT="{{ item.value[1] }}"
+          - -DCHECK_FAILS={{ item.value[2] }}
+          - -o
+          - "{{ fake_relay_build }}/{{ item.key }}/mailgun-relay"
+          - "{{ fake_relay_build }}/fake-relay.c"
+        creates: "{{ fake_relay_build }}/{{ item.key }}/mailgun-relay"
+      loop: "{{ fake_relay_builds | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Add a license file
+      ansible.builtin.copy:
+        dest: "{{ fake_relay_build }}/{{ item }}/LICENSE"
+        content: "fake\n"
+        mode: "0644"
+      loop: "{{ fake_relay_builds.keys() | list }}"
+
+    - name: Pack the archives in the release layout
+      ansible.builtin.command:
+        argv:
+          - tar
+          - --owner=0
+          - --group=0
+          - -czf
+          - "{{ fake_relay_build }}/{{ item }}.tar.gz"
+          - -C
+          - "{{ fake_relay_build }}/{{ item }}"
+          - mailgun-relay
+          - LICENSE
+        creates: "{{ fake_relay_build }}/{{ item }}.tar.gz"
+      loop: "{{ fake_relay_builds.keys() | list }}"
+
+    - name: Create a hostile build whose relay is a symlink to /etc/shadow
+      ansible.builtin.file:
+        path: "{{ fake_relay_build }}/link/{{ item.name }}"
+        src: "{{ item.src | default(omit) }}"
+        state: "{{ item.state }}"
+        force: true
+        mode: "{{ item.mode | default(omit) }}"
+      loop:
+        - {name: "", state: directory, mode: "0755"}
+        - {name: mailgun-relay, state: link, src: /etc/shadow}
+      loop_control:
+        label: "{{ item.name or 'link/' }}"
+
+    - name: Pack the hostile archive
+      ansible.builtin.command:
+        argv:
+          - tar
+          - --owner=0
+          - --group=0
+          - -czf
+          - "{{ fake_relay_build }}/link.tar.gz"
+          - -C
+          - "{{ fake_relay_build }}/link"
+          - mailgun-relay
+        creates: "{{ fake_relay_build }}/link.tar.gz"
+
+    - name: Write an archive that is not a gzip file at all
+      ansible.builtin.copy:
+        dest: "{{ fake_relay_build }}/broken.tar.gz"
+        content: "not an archive\n"
+        mode: "0644"
+
+    - name: Fetch the archives to the controller
+      ansible.builtin.fetch:
+        src: "{{ fake_relay_build }}/{{ item }}.tar.gz"
+        dest: "{{ fake_relay_archives }}/{{ item }}.tar.gz"
+        flat: true
+      loop: "{{ fake_relay_builds.keys() | list + ['link', 'broken'] }}"
+
+- name: Install fake 0.2.0 ahead of the switch (impl python)
+  hosts: all
+  become: true
+  vars_files:
+    - relay_vars.yml
+  vars:
+    fake_relay_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-relay"
+  pre_tasks:
+    - name: Read the main PID before the install
+      ansible.builtin.command: systemctl show --property=MainPID --value mailgun-relay
+      changed_when: false
+      register: pid_before
+  roles:
+    - role: mailgun_relay_deploy
+      vars:
+        mailgun_relay_impl: python
+        mailgun_relay_rust_version: "0.2.0"
+        mailgun_relay_rust_local_archive: "{{ fake_relay_archives }}/a.tar.gz"
+        mailgun_relay_rust_keep_versions: 1
+  post_tasks:
+    - name: Read the main PID after the install
+      ansible.builtin.command: systemctl show --property=MainPID --value mailgun-relay
+      changed_when: false
+      register: pid_after
+
+    - name: Stat the installed binary
+      ansible.builtin.stat:
+        path: /opt/mailgun-relay/0.2.0/mailgun-relay
+      register: installed_binary
+
+    - name: Stat the drop-in
+      ansible.builtin.stat:
+        path: /etc/systemd/system/mailgun-relay.service.d/impl.conf
+      register: python_dropin
+
+    - name: Read the recorded archive checksum
+      ansible.builtin.slurp:
+        path: /opt/mailgun-relay/0.2.0/.archive-sha256
+      register: installed_sha256
+
+    - name: Checksum the local archive
+      ansible.builtin.stat:
+        path: "{{ fake_relay_archives }}/a.tar.gz"
+        checksum_algorithm: sha256
+      delegate_to: localhost
+      become: false
+      register: archive_a
+
+    - name: Assert the binary is installed and nothing was switched or restarted
+      ansible.builtin.assert:
+        that:
+          - installed_binary.stat.isreg
+          - installed_binary.stat.pw_name == 'root'
+          - installed_binary.stat.mode == '0755'
+          - installed_sha256.content | b64decode | trim == archive_a.stat.checksum
+          - not python_dropin.stat.exists
+          - pid_after.stdout == pid_before.stdout
+          - mailgun_relay_live.stdout_lines | select('match', 'arg=-m$') | list | length == 1
+
+- name: Switch to the Rust implementation (fake 0.2.0)
+  hosts: all
+  become: true
+  vars_files:
+    - relay_vars.yml
+  vars:
+    fake_relay_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-relay"
+  roles:
+    - role: mailgun_relay_deploy
+      vars:
+        mailgun_relay_impl: rust
+        mailgun_relay_rust_version: "0.2.0"
+        mailgun_relay_rust_local_archive: "{{ fake_relay_archives }}/a.tar.gz"
+        mailgun_relay_rust_keep_versions: 1
+  post_tasks:
+    - name: Read the drop-in
+      ansible.builtin.slurp:
+        path: /etc/systemd/system/mailgun-relay.service.d/impl.conf
+      register: rust_dropin
+
+    - name: Read the live process environment and identity
+      ansible.builtin.shell: |
+        pid=$(systemctl show --property=MainPID --value mailgun-relay)
+        readlink "/proc/$pid/exe"
+        stat -c '%U' "/proc/$pid"
+        tr '\0' '\n' < "/proc/$pid/environ" | grep -x 'MALLOC_MMAP_THRESHOLD_=.*'
+      args:
+        executable: /bin/bash
+      changed_when: false
+      register: rust_process
+
+    - name: Assert the unit runs the versioned binary with the drop-in settings
+      ansible.builtin.assert:
+        that:
+          - "'ExecStart=/opt/mailgun-relay/0.2.0/mailgun-relay\n' in (rust_dropin.content | b64decode)"
+          - "'Environment=MALLOC_MMAP_THRESHOLD_=131072\n' in (rust_dropin.content | b64decode)"
+          - rust_process.stdout_lines == ['/opt/mailgun-relay/0.2.0/mailgun-relay', 'mailgun-relay', 'MALLOC_MMAP_THRESHOLD_=131072']
+
+- name: Switch to another Rust version (fake 0.2.1) and prune
+  hosts: all
+  become: true
+  vars_files:
+    - relay_vars.yml
+  vars:
+    fake_relay_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-relay"
+  pre_tasks:
+    - name: Plant an old version beyond keep_versions
+      ansible.builtin.file:
+        path: /opt/mailgun-relay/0.0.9
+        state: directory
+        mode: "0755"
+        modification_time: "200001010000.00"
+        modification_time_format: "%Y%m%d%H%M.%S"
+
+    - name: Plant a directory that is not a version
+      ansible.builtin.file:
+        path: /opt/mailgun-relay/keep-me
+        state: directory
+        mode: "0755"
+        modification_time: "200001010000.00"
+        modification_time_format: "%Y%m%d%H%M.%S"
+  roles:
+    - role: mailgun_relay_deploy
+      vars:
+        mailgun_relay_impl: rust
+        mailgun_relay_rust_version: "0.2.1"
+        mailgun_relay_rust_local_archive: "{{ fake_relay_archives }}/b.tar.gz"
+        mailgun_relay_rust_keep_versions: 1
+  post_tasks:
+    - name: List the install root
+      ansible.builtin.find:
+        paths: /opt/mailgun-relay
+        file_type: directory
+        hidden: true
+      register: rust_installed
+
+    - name: Read the remembered previous version
+      ansible.builtin.slurp:
+        path: /opt/mailgun-relay/.previous-version
+      register: rust_previous
+
+    - name: Assert the previous version is kept and the old one pruned
+      ansible.builtin.assert:
+        that:
+          - rust_installed.files | map(attribute='path') | map('basename') | sort == ['0.2.0', '0.2.1', 'keep-me']
+          - rust_previous.content | b64decode | trim == '0.2.0'
+          - "'exe=/opt/mailgun-relay/0.2.1/mailgun-relay' in mailgun_relay_live.stdout_lines"
+
+- name: Refuse a binary that reports another version
+  hosts: all
+  become: true
+  vars_files:
+    - relay_vars.yml
+  vars:
+    fake_relay_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-relay"
+  tasks:
+    - name: Read the main PID before the refused run
+      ansible.builtin.command: systemctl show --property=MainPID --value mailgun-relay
+      changed_when: false
+      register: pid_before
+
+    - name: Deploy 0.3.0 from an archive whose binary reports 0.2.0
+      block:
+        - name: Run the role
+          ansible.builtin.include_role:
+            name: mailgun_relay_deploy
+          vars:
+            mailgun_relay_impl: rust
+            mailgun_relay_rust_version: "0.3.0"
+            mailgun_relay_rust_local_archive: "{{ fake_relay_archives }}/wrong.tar.gz"
+            mailgun_relay_rust_keep_versions: 1
+
+        - name: Record an unexpected success
+          ansible.builtin.set_fact:
+            wrong_run_succeeded: true
+      rescue:
+        - name: Read the main PID after the refused run
+          ansible.builtin.command: systemctl show --property=MainPID --value mailgun-relay
+          changed_when: false
+          register: pid_after
+
+        - name: Stat the rejected version
+          ansible.builtin.stat:
+            path: /opt/mailgun-relay/0.3.0
+          register: rejected_version
+
+        - name: Read the drop-in
+          ansible.builtin.slurp:
+            path: /etc/systemd/system/mailgun-relay.service.d/impl.conf
+          register: refused_dropin
+
+        - name: Assert nothing was switched
+          ansible.builtin.assert:
+            that:
+              - not (wrong_run_succeeded | default(false))
+              - "'reports the pinned version' in ansible_failed_result.msg | default('') or 'failed installation or validation' in ansible_failed_result.msg | default('')"
+              - "'--version exited 0' in ansible_failed_result.msg | default('')"
+              - not rejected_version.stat.exists
+              - "'/opt/mailgun-relay/0.2.1/mailgun-relay' in (refused_dropin.content | b64decode)"
+              - pid_after.stdout == pid_before.stdout
+
+    - name: Fail when the role accepted the wrong binary
+      ansible.builtin.assert:
+        that:
+          - not (wrong_run_succeeded | default(false))
+
+- name: Refuse a release whose --check-config fails (impl rust)
+  hosts: all
+  become: true
+  vars_files:
+    - relay_vars.yml
+  vars:
+    fake_relay_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-relay"
+  tasks:
+    - name: Read the main PID before the refused run
+      ansible.builtin.command: systemctl show --property=MainPID --value mailgun-relay
+      changed_when: false
+      register: pid_before
+
+    - name: Deploy 0.4.0, which rejects the configuration
+      block:
+        - name: Run the role
+          ansible.builtin.include_role:
+            name: mailgun_relay_deploy
+          vars:
+            mailgun_relay_impl: rust
+            mailgun_relay_rust_version: "0.4.0"
+            mailgun_relay_rust_local_archive: "{{ fake_relay_archives }}/badcfg.tar.gz"
+            mailgun_relay_rust_keep_versions: 1
+
+        - name: Record an unexpected success
+          ansible.builtin.set_fact:
+            badcfg_run_succeeded: true
+      rescue:
+        - name: Read the main PID after the refused run
+          ansible.builtin.command: systemctl show --property=MainPID --value mailgun-relay
+          changed_when: false
+          register: pid_after
+
+        - name: Stat the rejected version
+          ansible.builtin.stat:
+            path: /opt/mailgun-relay/0.4.0
+          register: rejected_version
+
+        - name: Read the drop-in
+          ansible.builtin.slurp:
+            path: /etc/systemd/system/mailgun-relay.service.d/impl.conf
+          register: refused_dropin
+
+        - name: Assert nothing was switched
+          ansible.builtin.assert:
+            that:
+              - not (badcfg_run_succeeded | default(false))
+              - "'--check-config exited 1' in ansible_failed_result.msg | default('')"
+              - "'fake rejection' in ansible_failed_result.msg | default('')"
+              - not rejected_version.stat.exists
+              - "'/opt/mailgun-relay/0.2.1/mailgun-relay' in (refused_dropin.content | b64decode)"
+              - pid_after.stdout == pid_before.stdout
+
+    - name: Fail when the role accepted the rejected configuration
+      ansible.builtin.assert:
+        that:
+          - not (badcfg_run_succeeded | default(false))
+
+- name: Refuse a different archive for an installed version
+  hosts: all
+  become: true
+  vars_files:
+    - relay_vars.yml
+  vars:
+    fake_relay_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-relay"
+  tasks:
+    - name: Checksum the installed binary before the refused run
+      ansible.builtin.stat:
+        path: /opt/mailgun-relay/0.2.0/mailgun-relay
+        checksum_algorithm: sha256
+      register: binary_before
+
+    - name: Deploy 0.2.0 from a different archive
+      block:
+        - name: Run the role
+          ansible.builtin.include_role:
+            name: mailgun_relay_deploy
+          vars:
+            mailgun_relay_impl: rust
+            mailgun_relay_rust_version: "0.2.0"
+            mailgun_relay_rust_local_archive: "{{ fake_relay_archives }}/a2.tar.gz"
+            mailgun_relay_rust_keep_versions: 1
+
+        - name: Record an unexpected success
+          ansible.builtin.set_fact:
+            replaced_run_succeeded: true
+      rescue:
+        - name: Checksum the installed binary after the refused run
+          ansible.builtin.stat:
+            path: /opt/mailgun-relay/0.2.0/mailgun-relay
+            checksum_algorithm: sha256
+          register: binary_after
+
+        - name: Read the drop-in
+          ansible.builtin.slurp:
+            path: /etc/systemd/system/mailgun-relay.service.d/impl.conf
+          register: refused_dropin
+
+        - name: Assert the installed version was not modified
+          ansible.builtin.assert:
+            that:
+              - not (replaced_run_succeeded | default(false))
+              - "'is installed from an archive with sha256' in ansible_failed_result.msg | default('')"
+              - binary_after.stat.checksum == binary_before.stat.checksum
+              - "'/opt/mailgun-relay/0.2.1/mailgun-relay' in (refused_dropin.content | b64decode)"
+
+    - name: Fail when the role replaced an installed version
+      ansible.builtin.assert:
+        that:
+          - not (replaced_run_succeeded | default(false))
+
+- name: Refuse an archive whose relay is a symlink
+  hosts: all
+  become: true
+  vars_files:
+    - relay_vars.yml
+  vars:
+    fake_relay_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-relay"
+  tasks:
+    - name: Stat /etc/shadow before the refused run
+      ansible.builtin.stat:
+        path: /etc/shadow
+      register: shadow_before
+
+    - name: Deploy 0.3.1 from the hostile archive
+      block:
+        - name: Run the role
+          ansible.builtin.include_role:
+            name: mailgun_relay_deploy
+          vars:
+            mailgun_relay_impl: rust
+            mailgun_relay_rust_version: "0.3.1"
+            mailgun_relay_rust_local_archive: "{{ fake_relay_archives }}/link.tar.gz"
+            mailgun_relay_rust_keep_versions: 1
+
+        - name: Record an unexpected success
+          ansible.builtin.set_fact:
+            link_run_succeeded: true
+      rescue:
+        - name: Stat /etc/shadow after the refused run
+          ansible.builtin.stat:
+            path: /etc/shadow
+          register: shadow_after
+
+        - name: Stat the refused version and the staging directory
+          ansible.builtin.stat:
+            path: "{{ item }}"
+          loop:
+            - /opt/mailgun-relay/0.3.1
+            - /opt/mailgun-relay/.staging
+          register: link_leftovers
+
+        - name: Assert the link was refused before extraction
+          ansible.builtin.assert:
+            that:
+              - not (link_run_succeeded | default(false))
+              - "'regular files mailgun-relay' in ansible_failed_result.msg | default('')"
+              - shadow_after.stat.mode == shadow_before.stat.mode
+              - shadow_after.stat.uid == shadow_before.stat.uid
+              - shadow_after.stat.gid == shadow_before.stat.gid
+              - link_leftovers.results | selectattr('stat.exists') | list | length == 0
+
+    - name: Fail when the role accepted the hostile archive
+      ansible.builtin.assert:
+        that:
+          - not (link_run_succeeded | default(false))
+
+# Rollback must not depend on Rust: the pinned release is broken, the run
+# still ends with Python running and no drop-in.
+- name: Roll back to Python while the pinned release fails --check-config
+  hosts: all
+  become: true
+  vars_files:
+    - relay_vars.yml
+  vars:
+    fake_relay_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-relay"
+  roles:
+    - role: mailgun_relay_deploy
+      vars:
+        mailgun_relay_impl: python
+        mailgun_relay_rust_version: "0.4.0"
+        mailgun_relay_rust_local_archive: "{{ fake_relay_archives }}/badcfg.tar.gz"
+        mailgun_relay_rust_keep_versions: 1
+  post_tasks:
+    - name: Stat the drop-in
+      ansible.builtin.stat:
+        path: /etc/systemd/system/mailgun-relay.service.d/impl.conf
+      register: rollback_dropin
+
+    - name: List the install root
+      ansible.builtin.find:
+        paths: /opt/mailgun-relay
+        file_type: directory
+        hidden: true
+      register: rollback_installed
+
+    - name: Read the remembered previous version
+      ansible.builtin.slurp:
+        path: /opt/mailgun-relay/.previous-version
+      register: rollback_previous
+
+    - name: Assert Python runs and the Rust installs were left alone
+      ansible.builtin.assert:
+        that:
+          - mailgun_relay_rust_install_failed
+          - not rollback_dropin.stat.exists
+          - "'arg=/opt/apps/mailgun-relay/site/.venv/bin/python' in mailgun_relay_live.stdout_lines"
+          - mailgun_relay_live.stdout_lines | select('match', 'exe=/opt/mailgun-relay/') | list | length == 0
+          - rollback_installed.files | map(attribute='path') | map('basename') | sort == ['0.2.0', '0.2.1', 'keep-me']
+          - rollback_previous.content | b64decode | trim == '0.2.1'
+
+- name: Switch forward to the installed Rust 0.2.1 again
+  hosts: all
+  become: true
+  vars_files:
+    - relay_vars.yml
+  vars:
+    fake_relay_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-relay"
+  roles:
+    - role: mailgun_relay_deploy
+      vars:
+        mailgun_relay_impl: rust
+        mailgun_relay_rust_version: "0.2.1"
+        mailgun_relay_rust_local_archive: "{{ fake_relay_archives }}/b.tar.gz"
+        mailgun_relay_rust_keep_versions: 1
+  post_tasks:
+    - name: Assert the unit runs 0.2.1 again
+      ansible.builtin.assert:
+        that:
+          - "'exe=/opt/mailgun-relay/0.2.1/mailgun-relay' in mailgun_relay_live.stdout_lines"
+
+- name: Roll back to Python while the pinned archive is broken
+  hosts: all
+  become: true
+  vars_files:
+    - relay_vars.yml
+  vars:
+    fake_relay_archives: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/fake-relay"
+  roles:
+    - role: mailgun_relay_deploy
+      vars:
+        mailgun_relay_impl: python
+        mailgun_relay_rust_version: "0.5.0"
+        mailgun_relay_rust_local_archive: "{{ fake_relay_archives }}/broken.tar.gz"
+        mailgun_relay_rust_keep_versions: 1
+  post_tasks:
+    - name: Assert the broken archive only produced the warning
+      ansible.builtin.assert:
+        that:
+          - mailgun_relay_rust_install_failed
+          - "'arg=/opt/apps/mailgun-relay/site/.venv/bin/python' in mailgun_relay_live.stdout_lines"
