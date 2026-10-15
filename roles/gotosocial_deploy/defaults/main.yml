@@ -1,0 +1,116 @@
+---
+# GoToSocial deployment defaults (public safe, no secrets)
+
+# Pinned upstream release. Bump version and both checksums together; the
+# checksums come from the release's checksums.txt on Codeberg.
+gotosocial_version: "0.22.2"
+gotosocial_release_checksums:
+  amd64: "sha256:b8e7406c7eae73a50b7990affb5b1151fe81cfdb1c12951630bb08b0d77f7337"
+  arm64: "sha256:274ddb425444ea06f9f02bbd5abbce0bddc6f0a0d7c359ba8d8f0936ab8f3da5"
+gotosocial_download_base_url: "https://codeberg.org/superseriousbusiness/gotosocial/releases/download"
+gotosocial_arch_map:
+  x86_64: amd64
+  amd64: amd64
+  aarch64: arm64
+  arm64: arm64
+gotosocial_arch: "{{ gotosocial_arch_map[ansible_facts['architecture']] | default('unsupported') }}"
+gotosocial_download_url: >-
+  {{ gotosocial_download_base_url }}/v{{ gotosocial_version }}/gotosocial_{{ gotosocial_version }}_linux_{{ gotosocial_arch }}.tar.gz
+
+# Users and paths
+gotosocial_user: gotosocial
+gotosocial_group: gotosocial
+gotosocial_install_root: /opt/gotosocial
+gotosocial_release_dir: "{{ gotosocial_install_root }}/releases/{{ gotosocial_version }}"
+gotosocial_current_link: "{{ gotosocial_install_root }}/current"
+gotosocial_config_dir: /etc/gotosocial
+gotosocial_config_path: "{{ gotosocial_config_dir }}/config.yaml"
+gotosocial_data_dir: /var/lib/gotosocial
+gotosocial_db_path: "{{ gotosocial_data_dir }}/sqlite.db"
+gotosocial_storage_dir: "{{ gotosocial_data_dir }}/storage"
+gotosocial_cache_dir: "{{ gotosocial_data_dir }}/.cache"
+# Records host/account-domain of the first deploy; see tasks/layout.yml.
+gotosocial_layout_marker_path: "{{ gotosocial_data_dir }}/.ops-domain-layout"
+gotosocial_admin_wrapper_path: /usr/local/sbin/gotosocial-admin
+gotosocial_service_name: gotosocial
+
+# Domains. `gotosocial_host` is the DNS name GoToSocial is served on.
+# `gotosocial_account_domain` is the domain in the handles (@user@<domain>);
+# empty means the same as the host. The pair cannot change once the
+# instance has federated, so the role refuses to change it after the first
+# deploy (gotosocial_allow_domain_layout_change overrides that, for a wiped
+# data directory only).
+gotosocial_host: "CHANGEME"
+gotosocial_account_domain: ""
+gotosocial_allow_domain_layout_change: false
+
+# Network: loopback only, Traefik in front.
+gotosocial_bind_address: "127.0.0.1"
+gotosocial_port: 10070
+gotosocial_trusted_proxies:
+  - "127.0.0.1/32"
+  - "::1"
+
+# Instance settings
+gotosocial_application_name: "gotosocial"
+gotosocial_landing_page_user: ""
+gotosocial_instance_languages: []
+gotosocial_accounts_registration_open: false
+gotosocial_instance_expose_public_timeline: false
+gotosocial_instance_robots_allow_indexing: false
+gotosocial_media_remote_cache_duration: "7 days"
+gotosocial_cache_memory_target: "100MiB"
+gotosocial_log_level: "info"
+gotosocial_log_client_ip: false
+
+# Optional SMTP (empty host disables mail). The password belongs in SOPS.
+gotosocial_smtp_host: ""
+gotosocial_smtp_port: 587
+gotosocial_smtp_username: ""
+gotosocial_smtp_password: ""
+gotosocial_smtp_from: ""
+
+# Extra config keys merged over the rendered settings (no secrets here).
+gotosocial_extra_config: {}
+# Keys gotosocial_extra_config may not set (validated, recorded or path-bound).
+gotosocial_guarded_config_keys:
+  - host
+  - account-domain
+  - protocol
+  - bind-address
+  - port
+  - trusted-proxies
+  - db-type
+  - db-address
+  - storage-backend
+  - storage-local-base-path
+  - letsencrypt-enabled
+  - web-template-base-dir
+  - web-asset-base-dir
+  - accounts-registration-open
+
+# Packages: sqlite3 is for the consistent .backup of the backup runner.
+gotosocial_packages:
+  - ca-certificates
+  - sqlite3
+  - tar
+
+# Service
+gotosocial_service_enabled: true
+gotosocial_service_state: started
+gotosocial_systemd_memory_max: "1G"
+
+# Traefik (public router: federation peers cannot do Basic Auth, see README)
+gotosocial_traefik_enabled: true
+gotosocial_traefik_config_path: "/etc/traefik/dynamic/gotosocial.yml"
+gotosocial_traefik_host: "{{ gotosocial_host }}"
+gotosocial_traefik_entrypoints:
+  - web-secure
+gotosocial_traefik_http_entrypoint: web
+gotosocial_traefik_cert_resolver: ""
+gotosocial_traefik_middlewares: []
+
+# Health check against the loopback listener
+gotosocial_healthcheck_enabled: true
+gotosocial_healthcheck_retries: 30
+gotosocial_healthcheck_delay: 2

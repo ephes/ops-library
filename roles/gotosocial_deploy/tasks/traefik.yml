@@ -1,0 +1,28 @@
+---
+- name: traefik | Ensure dynamic config directory exists
+  ansible.builtin.file:
+    path: "{{ gotosocial_traefik_config_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: gotosocial_traefik_enabled | bool
+
+- name: traefik | Render route
+  ansible.builtin.template:
+    src: traefik.yml.j2
+    dest: "{{ gotosocial_traefik_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: gotosocial_traefik_enabled | bool
+  notify: reload traefik
+
+# Disabled means "not routed": a deploy with routing off removes the file, so
+# the instance can run (and be prepared) before a cutover hands it the host.
+- name: traefik | Remove route when routing is disabled
+  ansible.builtin.file:
+    path: "{{ gotosocial_traefik_config_path }}"
+    state: absent
+  when: not (gotosocial_traefik_enabled | bool)
+  notify: reload traefik

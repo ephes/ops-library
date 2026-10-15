@@ -1,0 +1,76 @@
+---
+- name: validate | Require host and a supported architecture
+  ansible.builtin.assert:
+    that:
+      - gotosocial_host is string
+      - gotosocial_host | length > 0
+      - gotosocial_host != 'CHANGEME'
+      - gotosocial_host is match('^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$')
+      - gotosocial_account_domain is string
+      - gotosocial_account_domain | length == 0
+        or gotosocial_account_domain is match('^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$')
+      - gotosocial_arch in gotosocial_release_checksums
+    fail_msg: >-
+      gotosocial_host must be a lower-case DNS name (got {{ gotosocial_host }}),
+      gotosocial_account_domain empty or a DNS name, and the host architecture
+      ({{ ansible_facts['architecture'] }}) one of
+      {{ gotosocial_release_checksums.keys() | list }}.
+
+# GoToSocial refuses to start otherwise ("host ... is not a valid subdomain of
+# account-domain"), after the role has already installed everything.
+- name: validate | Host is the account domain or a subdomain of it
+  ansible.builtin.assert:
+    that:
+      - gotosocial_account_domain | length == 0
+        or gotosocial_host == gotosocial_account_domain
+        or gotosocial_host.endswith('.' ~ gotosocial_account_domain)
+    fail_msg: >-
+      gotosocial_host ({{ gotosocial_host }}) must equal gotosocial_account_domain
+      ({{ gotosocial_account_domain }}) or be a subdomain of it.
+
+- name: validate | Require an exact version and sha256 checksums
+  ansible.builtin.assert:
+    that:
+      - gotosocial_version is match('^[0-9]+\.[0-9]+\.[0-9]+$')
+      - gotosocial_release_checksums[gotosocial_arch] is match('^sha256:[0-9a-f]{64}$')
+    fail_msg: "gotosocial_version must be X.Y.Z and its checksum sha256:<64 hex>."
+
+- name: validate | Keep the listener on loopback
+  ansible.builtin.assert:
+    that:
+      - gotosocial_bind_address in ['127.0.0.1', '::1']
+      - gotosocial_port | int > 1024
+      - gotosocial_port | int < 65536
+    fail_msg: "GoToSocial must listen on loopback behind Traefik on an unprivileged port."
+
+- name: validate | Service state is started or stopped
+  ansible.builtin.assert:
+    that:
+      - gotosocial_service_state in ['started', 'stopped']
+      - gotosocial_extra_config is mapping
+    fail_msg: "gotosocial_service_state must be started or stopped; gotosocial_extra_config a mapping."
+
+- name: validate | Keep secrets out of gotosocial_extra_config
+  ansible.builtin.assert:
+    that:
+      - gotosocial_extra_config.keys() | select('search', 'password|secret|key') | list | length == 0
+    fail_msg: >-
+      gotosocial_extra_config must not carry passwords, secrets or keys; use the
+      dedicated variables (e.g. gotosocial_smtp_password) so they stay no_log.
+
+# The settings the role validates or records (listener, layout, storage,
+# database) must not be overridable through the free-form mapping.
+- name: validate | Keep guarded settings out of gotosocial_extra_config
+  ansible.builtin.assert:
+    that:
+      - gotosocial_extra_config.keys() | intersect(gotosocial_guarded_config_keys) | list | length == 0
+    fail_msg: >-
+      gotosocial_extra_config must not set {{ gotosocial_extra_config.keys() | intersect(gotosocial_guarded_config_keys) | list }};
+      use the dedicated gotosocial_* variables.
+
+- name: validate | SMTP needs a sender when enabled
+  ansible.builtin.assert:
+    that:
+      - gotosocial_smtp_from | length > 0
+    fail_msg: "gotosocial_smtp_from is required when gotosocial_smtp_host is set."
+  when: gotosocial_smtp_host | length > 0

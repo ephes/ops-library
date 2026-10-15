@@ -1,0 +1,55 @@
+---
+- name: binary | Check for an installed release
+  ansible.builtin.stat:
+    path: "{{ gotosocial_release_dir }}/gotosocial"
+  register: gotosocial_installed_binary
+
+- name: binary | Install the pinned release
+  when: not gotosocial_installed_binary.stat.exists
+  block:
+    - name: binary | Create release directory
+      ansible.builtin.file:
+        path: "{{ gotosocial_release_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: binary | Download release archive (checksum verified)
+      ansible.builtin.get_url:
+        url: "{{ gotosocial_download_url }}"
+        dest: "/tmp/gotosocial_{{ gotosocial_version }}_{{ gotosocial_arch }}.tar.gz"
+        checksum: "{{ gotosocial_release_checksums[gotosocial_arch] }}"
+        mode: "0644"
+
+    - name: binary | Unpack release
+      ansible.builtin.unarchive:
+        src: "/tmp/gotosocial_{{ gotosocial_version }}_{{ gotosocial_arch }}.tar.gz"
+        dest: "{{ gotosocial_release_dir }}"
+        remote_src: true
+        owner: root
+        group: root
+        extra_opts:
+          - --no-same-owner
+
+    - name: binary | Remove downloaded archive
+      ansible.builtin.file:
+        path: "/tmp/gotosocial_{{ gotosocial_version }}_{{ gotosocial_arch }}.tar.gz"
+        state: absent
+
+- name: binary | Point current at the pinned release
+  ansible.builtin.file:
+    src: "{{ gotosocial_release_dir }}"
+    dest: "{{ gotosocial_current_link }}"
+    state: link
+    owner: root
+    group: root
+  notify: restart gotosocial
+
+- name: binary | Install admin wrapper
+  ansible.builtin.template:
+    src: gotosocial-admin.sh.j2
+    dest: "{{ gotosocial_admin_wrapper_path }}"
+    owner: root
+    group: root
+    mode: "0750"

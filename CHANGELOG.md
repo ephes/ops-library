@@ -3,6 +3,47 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — GoToSocial deploy role and Echoport runner (2.36.0)
+
+- New role `gotosocial_deploy`: GoToSocial from a pinned upstream release
+  (0.22.2, sha256-verified per architecture), SQLite and local storage in
+  `/var/lib/gotosocial`, hardened systemd unit (`ProtectSystem=strict`, one
+  writable path, no capabilities), loopback listener on `127.0.0.1:10070`,
+  public Traefik route (documented exception to the dual-router policy:
+  federation peers cannot do Basic Auth), `/readyz` health check and an admin
+  CLI wrapper `/usr/local/sbin/gotosocial-admin`.
+- Validation: the host must be the account domain or a subdomain of it
+  (GoToSocial refuses to start otherwise), and `gotosocial_extra_config` may
+  not carry secrets or any key of `gotosocial_guarded_config_keys` (listener,
+  layout, database, storage, registrations).
+- The role records `host account-domain` on the first deploy and refuses a
+  later deploy with a different pair (GoToSocial cannot change its domain
+  layout after federating); `gotosocial_allow_domain_layout_change` overrides
+  it for a wiped data directory.
+- `gotosocial_traefik_enabled: false` removes the route, so an instance can be
+  prepared before a cutover hands it the host name.
+- New `echoport_backup/templates/gotosocial_backup.py.j2`: Echoport runner
+  for target `gotosocial`, run on macmini against the GoToSocial host over
+  SSH. Backup is online: `sqlite3 .backup` as the service user into a private
+  temp dir on the host (integrity-checked there and again on macmini), plus the
+  media storage, `config.yaml` and the domain-layout marker; `manifest.json`
+  (local account/status counts, layout) and `manifest.sha256`; the stored size
+  is compared after upload. Restore verifies the recorded checksum, the
+  manifest checksums, the database integrity and that the archive's domain
+  layout equals the host's, then stops the service, moves the current database
+  and storage aside path by path (`*.pre-restore-<ts>`, nothing deleted),
+  puts the archived data in place, starts the service and waits for
+  `/readyz`. Any failure after the first move swaps back exactly the paths
+  that were moved, moves half-restored files and WAL/SHM files the restored
+  database created to `*.failed-restore-<ts>`, and leaves the service stopped
+  if the previous data cannot be put back. The local archive has a fixed name
+  in a private work directory. Host, paths and service are fixed by
+  Ansible; key prefixes outside `gotosocial/` are refused.
+- Tests: `just test-gotosocial-deploy` (static contracts) and
+  `just test-gotosocial-echoport-backup` (runner against a fake host with real
+  sqlite3), both part of `just test`; `just test-gotosocial-molecule` (full
+  install in a systemd container).
+
 ## Unreleased — FastDeploy no longer makes `deploy` root (2.35.0)
 
 FastDeploy privilege reduction, stage 1.

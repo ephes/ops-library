@@ -1,0 +1,14 @@
+---
+- name: systemd | Install unit
+  ansible.builtin.template:
+    src: gotosocial.service.j2
+    dest: "/etc/systemd/system/{{ gotosocial_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart gotosocial
+
+- name: systemd | Apply unit changes before starting
+  ansible.builtin.meta: flush_handlers

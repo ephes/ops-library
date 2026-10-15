@@ -1,0 +1,10 @@
+---
+- name: config | Render config.yaml
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ gotosocial_config_path }}"
+    owner: root
+    group: "{{ gotosocial_group }}"
+    mode: "0640"
+  no_log: "{{ gotosocial_smtp_password | length > 0 }}"
+  notify: restart gotosocial
