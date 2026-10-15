@@ -39,7 +39,7 @@ Roles are the primary surface area, but they no longer form one flat category.
 
 | Surface | Examples | Contract |
 |----------|----------|----------|
-| **Public lifecycle entrypoints** | `fastdeploy_deploy`, `unifi_restore`, `tailscale_backup`, `apt_upgrade_register`, `uv_install` | Stable role names that consumer repos are expected to call directly. |
+| **Public lifecycle entrypoints** | `fastdeploy_deploy`, `unifi_restore`, `tailscale_backup`, `uv_install` | Stable role names that consumer repos are expected to call directly. |
 | **Shared-defaults roles** | `homelab_shared`, `jellyfin_shared`, `mail_shared`, `postfixadmin_shared`, `vaultwarden_shared` | Shared variable and fact surfaces for sibling lifecycle roles. Usually loaded by `meta/main.yml` dependencies rather than by operators. |
 | **Internal helpers** | `webapp_deploy_internal`, `restore_pilot_internal`, `restore_preserve_internal`, `minio_shared` | Narrow implementation details for other roles. Not part of the public compatibility contract. |
 

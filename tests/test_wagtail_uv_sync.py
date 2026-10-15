@@ -167,7 +167,7 @@ class WagtailUvSyncTest(unittest.TestCase):
             host_result
             for play in result["plays"]
             for task in play["tasks"]
-            if task["task"]["name"] == "python | Install dependencies with uv"
+            if task["task"]["name"] == "uv_sync | Install dependencies with uv"
             for host_result in task["hosts"].values()
         ]
         self.assertEqual(len(sync), 1, proc.stdout)

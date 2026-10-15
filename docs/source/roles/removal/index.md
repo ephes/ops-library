@@ -10,6 +10,7 @@ daybook_operations_api_remove
 software_estate_remove
 software_live_remove
 fastdeploy_remove
+fastdeploy_legacy_cleanup
 nyxmon_remove
 traefik_remove
 dns_remove

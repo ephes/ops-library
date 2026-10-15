@@ -27,6 +27,20 @@ fastdeploy_restore_require_sops_key: false
 fastdeploy_restore_traefik_config_path: "/etc/traefik/dynamic/fastdeploy.yml"
 fastdeploy_restore_sudoers_glob: "/etc/sudoers.d/fastdeploy_*"
 
+# Retired by the FastDeploy privilege reduction (stage 1). Restoring an older
+# snapshot must not bring these back: top-level entries skipped when the
+# services and deploy runner directories are synced, and sudoers files that
+# are not copied back.
+fastdeploy_restore_retired_entries:
+  - fastdeploy-self
+  - fastdeploy-self-playbook.yml
+  - apt_upgrade_local
+  - apt_upgrade_staging
+fastdeploy_restore_retired_sudoers:
+  - fastdeploy
+  - fastdeploy_fastdeploy-self
+  - fastdeploy_self_deploy_users
+
 # PostgreSQL
 fastdeploy_restore_postgres_database: "fastdeploy"
 fastdeploy_restore_postgres_user: "fastdeploy"

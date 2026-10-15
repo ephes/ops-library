@@ -94,6 +94,26 @@
           - "'RESTORE_MARKER=success' in (fastdeploy_restored_env.content | b64decode)"
         fail_msg: "FastDeploy restore did not apply the expected snapshot."
 
+    - name: Stat retired and blanket entries after the explicit restore
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /home/fastdeploy/site/services/fastdeploy-self
+        - /home/deploy/runners/fastdeploy-self
+        - /etc/sudoers.d/fastdeploy_fastdeploy-self
+        - /etc/sudoers.d/fastdeploy_legacyrunner
+        - /etc/sudoers.d/fastdeploy_commented
+        - /etc/sudoers.d/fastdeploy_continued
+        - /etc/sudoers.d/fastdeploy_restore
+      register: fastdeploy_retired_stat
+
+    - name: Assert retired entries and blanket sudo rules were not restored
+      ansible.builtin.assert:
+        that:
+          - fastdeploy_retired_stat.results[:6] | map(attribute='stat.exists') | select | list | length == 0
+          - fastdeploy_retired_stat.results[6].stat.exists
+        fail_msg: "FastDeploy restore brought back a retired entry or an unrestricted sudo rule."
+
     - name: Seed pre-failure FastDeploy state before rescue coverage
       ansible.builtin.copy:
         dest: "{{ item.dest }}"

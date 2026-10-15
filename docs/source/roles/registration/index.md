@@ -5,7 +5,6 @@ Roles for registering services and tasks with FastDeploy.
 ```{toctree}
 :maxdepth: 1
 
-apt_upgrade_register
 fastdeploy_register_service
 ```
 

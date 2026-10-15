@@ -1,0 +1,85 @@
+---
+# The macmini layout before stage 1: retired services with their runner,
+# blanket sudo rules, and one backup service that must survive.
+- name: Prepare FastDeploy legacy layout
+  hosts: all
+  become: true
+  tasks:
+    - name: Install sudo
+      ansible.builtin.apt:
+        name: sudo
+        state: present
+        update_cache: true
+
+    - name: Create the deploy and fastdeploy users
+      ansible.builtin.user:
+        name: "{{ item }}"
+        shell: /bin/bash
+        create_home: true
+      loop: [deploy, fastdeploy]
+
+    - name: Create service and runner directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /home/fastdeploy/site/services/fastdeploy-self
+        - /home/fastdeploy/site/services/apt_upgrade_local
+        - /home/fastdeploy/site/services/kept-backup
+        - /home/deploy/runners/fastdeploy-self
+        - /home/fastdeploy/site/.venv/bin
+
+    - name: Create service files
+      ansible.builtin.copy:
+        dest: "{{ item.path }}"
+        content: "{{ item.content }}"
+        mode: "0600"
+      loop:
+        - {path: /home/fastdeploy/site/services/fastdeploy-self/config.json, content: "{}\n"}
+        - {path: /home/fastdeploy/site/services/apt_upgrade_local/deploy.sh, content: "#!/bin/sh\n"}
+        - {path: /home/fastdeploy/site/services/kept-backup/config.json, content: "{}\n"}
+        - {path: /home/deploy/runners/fastdeploy-self/deploy-secrets.json, content: "{\"token\": \"fixture\"}\n"}
+        - {path: /home/deploy/runners/fastdeploy-self-playbook.yml, content: "---\n"}
+        - {path: /home/fastdeploy/site/commands.py, content: "# fixture\n"}
+        - {path: /home/fastdeploy/site/.env.shell, content: "FIXTURE=1\n"}
+      loop_control:
+        label: "{{ item.path }}"
+
+    # Stands in for FastDeploy's CLI: reports the deletion once, then nothing.
+    - name: Install a fake FastDeploy interpreter
+      ansible.builtin.copy:
+        dest: /home/fastdeploy/site/.venv/bin/python
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          [ "$1" = commands.py ] && [ "$2" = syncservices ] || exit 2
+          [ "$(id -un)" = fastdeploy ] || { echo "not fastdeploy" >&2; exit 3; }
+          echo "syncing services"
+          echo "updated: kept-backup"
+          if [ -e /tmp/fake-sync-done ]; then
+            echo "deleted: -"
+          else
+            echo "deleted: apt_upgrade_local, fastdeploy-self"
+            touch /tmp/fake-sync-done
+          fi
+          echo "services synced"
+
+    - name: Give fastdeploy its site
+      ansible.builtin.file:
+        path: /home/fastdeploy/site
+        owner: fastdeploy
+        group: fastdeploy
+        recurse: true
+
+    - name: Install legacy and kept sudoers files
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/{{ item.name }}"
+        content: "{{ item.content }}\n"
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+      loop:
+        - {name: fastdeploy, content: "fastdeploy ALL=(deploy) NOPASSWD: /home/fastdeploy/site/services/*/deploy.sh *"}
+        - {name: fastdeploy_fastdeploy-self, content: "deploy ALL=(root) NOPASSWD: ALL"}
+        - {name: fastdeploy_self_deploy_users, content: "deploy ALL=(postgres) NOPASSWD: ALL"}
+        - {name: kept_backup, content: "fastdeploy ALL=(deploy) NOPASSWD:NOSETENV: /home/fastdeploy/site/services/kept-backup/backup.py *"}

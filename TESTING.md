@@ -265,7 +265,6 @@ fixed `/tmp/test-...` name.
 
 Current role-local scenarios include infrastructure and restore boundaries such as:
 
-- `apt_upgrade_register`
 - `fastdeploy_register_service`
 - `fastdeploy_restore`
 - `nyxmon_deploy`

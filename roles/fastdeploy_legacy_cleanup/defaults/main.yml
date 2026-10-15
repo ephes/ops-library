@@ -1,0 +1,30 @@
+---
+ops_library_documentation_category: removal
+# FastDeploy services to unregister. For each name the role removes
+# <services_path>/<name> and <runner_root>/<name>, then FastDeploy's service
+# sync drops the service (and its deployment history) from the database.
+fastdeploy_legacy_cleanup_services: []
+
+# Files in /etc/sudoers.d to remove (base names only).
+fastdeploy_legacy_cleanup_sudoers_files: []
+
+# Further files or directories to remove. Each must sit under one of
+# fastdeploy_legacy_cleanup_extra_path_roots.
+fastdeploy_legacy_cleanup_extra_paths: []
+fastdeploy_legacy_cleanup_extra_path_roots:
+  - /home/deploy/runners
+  - /home/fastdeploy/site/services
+
+fastdeploy_legacy_cleanup_services_path: /home/fastdeploy/site/services
+fastdeploy_legacy_cleanup_runner_root: /home/deploy/runners
+
+# Everything removed is first copied into a root-only tarball here (runner
+# directories can hold deploy secrets), so a removal can be undone by hand.
+fastdeploy_legacy_cleanup_archive_dir: /var/backups/fastdeploy-legacy-cleanup
+
+# Run FastDeploy's own `commands.py syncservices` after removing service
+# directories. Only used when fastdeploy_legacy_cleanup_services is not empty.
+fastdeploy_legacy_cleanup_sync_services: true
+fastdeploy_legacy_cleanup_fastdeploy_user: fastdeploy
+fastdeploy_legacy_cleanup_site_path: /home/fastdeploy/site
+fastdeploy_legacy_cleanup_venv_bin: "{{ fastdeploy_legacy_cleanup_site_path }}/.venv/bin"

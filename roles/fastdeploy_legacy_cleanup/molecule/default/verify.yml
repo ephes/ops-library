@@ -1,0 +1,92 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  tasks:
+    - name: Stat removed and kept paths
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /home/fastdeploy/site/services/fastdeploy-self
+        - /home/fastdeploy/site/services/apt_upgrade_local
+        - /home/deploy/runners/fastdeploy-self
+        - /home/deploy/runners/fastdeploy-self-playbook.yml
+        - /etc/sudoers.d/fastdeploy
+        - /etc/sudoers.d/fastdeploy_fastdeploy-self
+        - /etc/sudoers.d/fastdeploy_self_deploy_users
+        - /home/fastdeploy/site/services/kept-backup/config.json
+        - /etc/sudoers.d/kept_backup
+      register: cleanup_paths
+
+    - name: Find the archive
+      ansible.builtin.find:
+        paths: /var/backups/fastdeploy-legacy-cleanup
+        patterns: "*.tar.gz"
+      register: cleanup_archives
+
+    - name: List the archive
+      ansible.builtin.command:
+        argv: [tar, -tzf, "{{ cleanup_archives.files[0].path }}"]
+      register: cleanup_archive_listing
+      changed_when: false
+
+    # Exit 1 with "is not allowed to run sudo" is the expected result once
+    # every deploy rule is gone.
+    - name: List what deploy may run as root
+      ansible.builtin.command:
+        argv: [sudo, -l, -U, deploy]
+      register: cleanup_deploy_sudo
+      changed_when: false
+      failed_when: cleanup_deploy_sudo.rc not in [0, 1]
+
+    - name: Assert the cleanup result
+      ansible.builtin.assert:
+        that:
+          - cleanup_paths.results[:7] | map(attribute='stat.exists') | select | list | length == 0
+          - cleanup_paths.results[7].stat.exists
+          - cleanup_paths.results[8].stat.exists
+          - cleanup_archives.matched == 1
+          - cleanup_archives.files[0].mode == '0600'
+          - "'home/deploy/runners/fastdeploy-self/deploy-secrets.json' in cleanup_archive_listing.stdout_lines"
+          - "'etc/sudoers.d/fastdeploy_fastdeploy-self' in cleanup_archive_listing.stdout_lines"
+          - "'kept-backup' not in cleanup_archive_listing.stdout"
+          - "'(root)' not in cleanup_deploy_sudo.stdout"
+          - "'(postgres)' not in cleanup_deploy_sudo.stdout"
+
+    # A cleanup of a single file must still produce a readable tar archive.
+    - name: Create a lone legacy sudoers file
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/lone_legacy
+        content: "deploy ALL=(root) NOPASSWD: /bin/true\n"
+        mode: "0440"
+
+    - name: Clean up only that file
+      ansible.builtin.include_role:
+        name: fastdeploy_legacy_cleanup
+      vars:
+        fastdeploy_legacy_cleanup_sudoers_files: [lone_legacy]
+        fastdeploy_legacy_cleanup_archive_dir: /var/backups/fastdeploy-legacy-cleanup-lone
+
+    - name: Find the single-file archive
+      ansible.builtin.find:
+        paths: /var/backups/fastdeploy-legacy-cleanup-lone
+        patterns: "*.tar.gz"
+      register: cleanup_lone_archives
+
+    - name: List the single-file archive
+      ansible.builtin.command:
+        argv: [tar, -tzf, "{{ cleanup_lone_archives.files[0].path }}"]
+      register: cleanup_lone_listing
+      changed_when: false
+
+    - name: Check the lone file is gone
+      ansible.builtin.stat:
+        path: /etc/sudoers.d/lone_legacy
+      register: cleanup_lone_stat
+
+    - name: Assert the single-file archive
+      ansible.builtin.assert:
+        that:
+          - cleanup_lone_archives.matched == 1
+          - cleanup_lone_listing.stdout_lines == ['etc/sudoers.d/lone_legacy']
+          - not cleanup_lone_stat.stat.exists

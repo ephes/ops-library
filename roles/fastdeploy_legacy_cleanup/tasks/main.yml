@@ -1,0 +1,166 @@
+---
+- name: Validate cleanup lists
+  ansible.builtin.assert:
+    that:
+      - fastdeploy_legacy_cleanup_services is sequence
+      - fastdeploy_legacy_cleanup_services is not string
+      - fastdeploy_legacy_cleanup_sudoers_files is sequence
+      - fastdeploy_legacy_cleanup_sudoers_files is not string
+      - fastdeploy_legacy_cleanup_extra_paths is sequence
+      - fastdeploy_legacy_cleanup_extra_paths is not string
+    fail_msg: The fastdeploy_legacy_cleanup_* lists must be YAML lists.
+    quiet: true
+
+- name: Validate service names
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item is match('^[A-Za-z0-9][A-Za-z0-9_.-]*$')
+      - item not in ['.', '..']
+    fail_msg: "Invalid FastDeploy service name: {{ item }}"
+    quiet: true
+  loop: "{{ fastdeploy_legacy_cleanup_services }}"
+
+- name: Validate sudoers file names
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item is match('^[A-Za-z0-9][A-Za-z0-9_.-]*$')
+      - item != 'README'
+    fail_msg: "Invalid /etc/sudoers.d file name: {{ item }}"
+    quiet: true
+  loop: "{{ fastdeploy_legacy_cleanup_sudoers_files }}"
+
+- name: Validate extra paths
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item is match('^/[A-Za-z0-9._/-]+$')
+      - "'/../' not in (item ~ '/')"
+      - "'/./' not in (item ~ '/')"
+      - >-
+        fastdeploy_legacy_cleanup_extra_path_roots
+        | select('in', [item | dirname])
+        | list | length > 0
+    fail_msg: >-
+      Extra path {{ item }} must be a plain absolute path directly inside one of
+      {{ fastdeploy_legacy_cleanup_extra_path_roots | join(', ') }}.
+    quiet: true
+  loop: "{{ fastdeploy_legacy_cleanup_extra_paths }}"
+
+- name: Collect paths to remove
+  ansible.builtin.set_fact:
+    _fastdeploy_legacy_cleanup_paths: >-
+      {{
+        (fastdeploy_legacy_cleanup_services | map('regex_replace', '^', fastdeploy_legacy_cleanup_services_path ~ '/') | list)
+        + (fastdeploy_legacy_cleanup_services | map('regex_replace', '^', fastdeploy_legacy_cleanup_runner_root ~ '/') | list)
+        + (fastdeploy_legacy_cleanup_sudoers_files | map('regex_replace', '^', '/etc/sudoers.d/') | list)
+        + fastdeploy_legacy_cleanup_extra_paths
+      }}
+
+- name: Check which paths exist
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop: "{{ _fastdeploy_legacy_cleanup_paths }}"
+  register: _fastdeploy_legacy_cleanup_stat
+
+- name: Select existing paths
+  ansible.builtin.set_fact:
+    _fastdeploy_legacy_cleanup_existing: >-
+      {{
+        _fastdeploy_legacy_cleanup_stat.results
+        | selectattr('stat.exists')
+        | map(attribute='item')
+        | list
+      }}
+
+- name: Archive and remove
+  when: _fastdeploy_legacy_cleanup_existing | length > 0
+  block:
+    - name: Ensure the archive directory exists
+      ansible.builtin.file:
+        path: "{{ fastdeploy_legacy_cleanup_archive_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Name the archive
+      ansible.builtin.set_fact:
+        _fastdeploy_legacy_cleanup_archive: >-
+          {{ fastdeploy_legacy_cleanup_archive_dir }}/{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}.tar.gz
+
+    # Members are stored relative to / (etc/sudoers.d/..., home/...), so
+    # `tar -xzf <archive> -C / <member>` puts a file back where it was. The
+    # archive directory is root-only, the file is made 0600 right after.
+    - name: Archive what is about to be removed
+      ansible.builtin.command:
+        argv: >-
+          {{
+            ['tar', '-czf', _fastdeploy_legacy_cleanup_archive, '-C', '/', '--']
+            + (_fastdeploy_legacy_cleanup_existing | map('regex_replace', '^/', '') | list)
+          }}
+      changed_when: true
+
+    - name: Restrict the archive to root
+      ansible.builtin.file:
+        path: "{{ _fastdeploy_legacy_cleanup_archive }}"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Remove legacy sudoers files, service and runner directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ _fastdeploy_legacy_cleanup_existing }}"
+
+    - name: Check the remaining sudoers configuration
+      ansible.builtin.command:
+        argv: [/usr/sbin/visudo, -c]
+      changed_when: false
+
+- name: Check for the FastDeploy site
+  ansible.builtin.stat:
+    path: "{{ fastdeploy_legacy_cleanup_site_path }}/commands.py"
+  register: _fastdeploy_legacy_cleanup_site
+  when:
+    - fastdeploy_legacy_cleanup_sync_services | bool
+    - fastdeploy_legacy_cleanup_services | length > 0
+
+# FastDeploy deletes a service whose directory is gone (and refuses a sync
+# that would delete more than half of them).
+- name: Sync FastDeploy services from the filesystem
+  ansible.builtin.shell:
+    cmd: |
+      set -a
+      . {{ (fastdeploy_legacy_cleanup_site_path ~ '/.env.shell') | quote }}
+      set +a
+      exec {{ fastdeploy_legacy_cleanup_venv_bin | quote }}/python commands.py syncservices
+    chdir: "{{ fastdeploy_legacy_cleanup_site_path }}"
+  environment:
+    PRODUCTION: "true"
+  become: true
+  become_user: "{{ fastdeploy_legacy_cleanup_fastdeploy_user }}"
+  register: _fastdeploy_legacy_cleanup_sync
+  changed_when: >-
+    _fastdeploy_legacy_cleanup_sync.stdout is search('(?m)^deleted: (?!-$)')
+  when:
+    - fastdeploy_legacy_cleanup_sync_services | bool
+    - fastdeploy_legacy_cleanup_services | length > 0
+    - _fastdeploy_legacy_cleanup_site.stat.exists | default(false)
+
+# A service with a running deployment is kept by the sync; that must not pass
+# silently.
+- name: Fail when FastDeploy kept a retired service
+  ansible.builtin.fail:
+    msg: >-
+      FastDeploy did not delete {{ item }} (a deployment is still running?):
+      {{ _fastdeploy_legacy_cleanup_sync.stdout_lines | select('search', '^skipped: ') | list }}
+  loop: "{{ fastdeploy_legacy_cleanup_services }}"
+  when:
+    - _fastdeploy_legacy_cleanup_sync is not skipped
+    - _fastdeploy_legacy_cleanup_sync.stdout is defined
+    - >-
+      _fastdeploy_legacy_cleanup_sync.stdout is search('(?m)^skipped: ' ~ (item | regex_escape) ~ ' ')

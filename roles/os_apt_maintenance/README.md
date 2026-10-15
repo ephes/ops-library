@@ -254,7 +254,7 @@ curl -sS -u "nyxmon:<password>" http://<TAILSCALE_IP>:9106/.well-known/os-apt-ma
 
 ## Relationship To FastDeploy
 
-`apt_upgrade_register` remains the FastDeploy manual/API path for operator-triggered apt upgrades. This role owns unattended host-local cadence and monitoring state. Both paths may coexist on the same host.
+This role owns unattended host-local apt cadence and monitoring state. The former FastDeploy path for operator-triggered upgrades (`apt_upgrade_register`) was removed in 2.35.0 because it gave the FastDeploy `deploy` user root through `ansible-playbook` and `apt`; run upgrades through ops-control instead.
 
 ## Testing
 

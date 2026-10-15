@@ -1,7 +1,6 @@
 ---
 driver:
   name: docker
-
 platforms:
   - name: "instance-${MOLECULE_RUN_ID:-local}"
     image: geerlingguy/docker-ubuntu2404-ansible
@@ -11,33 +10,24 @@ platforms:
     tmpfs:
       - /run
       - /tmp
-
 provisioner:
   name: ansible
-  inventory:
-    host_vars:
-      "instance-${MOLECULE_RUN_ID:-local}":
-        ansible_user: root
   playbooks:
+    prepare: prepare.yml
     converge: converge.yml
     verify: verify.yml
   env:
-    ANSIBLE_FORCE_COLOR: "true"
-    ANSIBLE_VERBOSITY: "1"
-    # MOLECULE_PROJECT_DIRECTORY = roles/apt_upgrade_register
     ANSIBLE_ROLES_PATH: "${MOLECULE_PROJECT_DIRECTORY}/..:~/.ansible/roles:/etc/ansible/roles"
-
 verifier:
   name: ansible
-
 scenario:
-  name: default
   test_sequence:
     - dependency
     - cleanup
     - destroy
     - syntax
     - create
+    - prepare
     - converge
     - idempotence
     - verify

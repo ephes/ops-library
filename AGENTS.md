@@ -39,7 +39,7 @@ local.ops_library (namespace.name)
 ├── roles/
 │   ├── fastdeploy_deploy/      # Deploy FastDeploy platform
 │   ├── nyxmon_deploy/          # Deploy Nyxmon monitoring
-│   ├── apt_upgrade_register/   # Register apt upgrades with FastDeploy
+│   ├── fastdeploy_register_service/ # Register runners with FastDeploy
 │   ├── uv_install/             # Install uv for Python
 │   └── ...
 ```

@@ -7,7 +7,7 @@
 # `uv sync` is exact, it also removes such packages from an existing venv.
 # Groups a site needs on the host go into wagtail_uv_sync_groups.
 
-- name: python | Install dependencies with uv
+- name: uv_sync | Install dependencies with uv
   ansible.builtin.command:
     argv: >-
       {{
