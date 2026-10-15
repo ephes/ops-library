@@ -11,7 +11,7 @@ Deploy Unbound DNS with split-horizon views and ad blocking for homelab environm
 - **IDN/Punycode support**: For domains with special characters
 - **Automatic blocklist updates**: Via systemd timer
 - **DNSSEC validation**: For secure DNS resolution
-- **Dynamic DNS (DDNS)**: Optional updater with pluggable provider backends (Gandi LiveDNS implemented), failing loudly and exposing a status file for monitoring (opt-in)
+- **Dynamic DNS (DDNS)**: Optional updater with pluggable provider backends (Gandi LiveDNS and RFC 2136/TSIG implemented, several at once for migrations), failing loudly and exposing a status file for monitoring (opt-in)
 
 ## Requirements
 
@@ -213,7 +213,8 @@ Notes:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `dns_ddns_enabled` | `false` | Enable dynamic DNS updater |
-| `dns_ddns_provider` | `"gandi"` | Provider backend (implemented: `gandi`) |
+| `dns_ddns_provider` | `"gandi"` | Provider backend: `gandi` or `rfc2136` |
+| `dns_ddns_providers` | `[]` | Write several providers in one run, e.g. `["gandi", "rfc2136"]` while a delegation moves; empty means `[dns_ddns_provider]` |
 | `dns_ddns_domain` | `"CHANGEME"` | Zone (e.g., `"example.com"`; IDN names are converted to punycode) |
 | `dns_ddns_subdomain` | `"home"` | Subdomain to update |
 | `dns_ddns_update_wildcard` | `true` | Also update `*.subdomain` |
@@ -229,6 +230,9 @@ Notes:
 | `dns_ddns_log_max_size_mb` | `10` | Log rotation size in MB |
 | `dns_ddns_api_token` | `"CHANGEME"` | Gandi credential: Personal Access Token or legacy API key |
 | `dns_ddns_gandi_auth_scheme` | `"bearer"` | `bearer` for a PAT, `apikey` for a legacy API key |
+| `dns_ddns_rfc2136_server` / `_port` | `"CHANGEME"` / `53` | Primary nameserver that accepts the updates |
+| `dns_ddns_rfc2136_key_name` / `_key_algorithm` / `_key_secret` | `"CHANGEME"` / `hmac-sha256` / `"CHANGEME"` | TSIG key; the secret comes from secrets |
+| `dns_ddns_rfc2136_update_zone` | `""` | Zone to update (e.g. a delegated `home.example.com`); empty lets nsupdate find it by SOA |
 | `dns_ddns_status_endpoint_enabled` | `false` | Serve the status file over authenticated HTTP |
 | `dns_ddns_status_endpoint_bind` / `_port` / `_path` | Tailscale IP / `9112` / `/.well-known/ddns` | Status endpoint address |
 | `dns_ddns_status_endpoint_auth_user` / `_password` | `"CHANGE_ME"` | Basic-auth credentials (required when enabled) |
@@ -286,6 +290,21 @@ The DDNS tasks are tagged `ddns`, so `--tags ddns` redeploys only the updater.
 "Manage domain name technical configurations" permission for the zone uses
 `dns_ddns_gandi_auth_scheme: bearer`; a legacy API key uses `apikey`. A PAT that
 expired or was revoked answers HTTP 403 for every request.
+
+`rfc2136`: DNS UPDATE through `nsupdate`, signed with a TSIG key, sent to
+`dns_ddns_rfc2136_server`; the record is read back from the same server with
+`dig +norecurse` (a wildcard owner such as `*.home` is queried literally). The secret
+is passed to nsupdate on stdin as a `key` statement, never in argv or a file, and is
+redacted from error output. The server needs an `update-policy` that lets the key
+change exactly these owners and types, for example with `bind_authoritative_deploy`:
+`grant "ddns-home" name home.example.com. A AAAA` and
+`grant "ddns-home" name *.home.example.com. A AAAA`.
+
+Several providers: with `dns_ddns_providers: ["gandi", "rfc2136"]` every record is
+written to both, which keeps the old and the new DNS host correct while resolvers
+still follow a cached delegation. A failure at either fails the run. `status.json`
+keeps its shape (the first provider's values in `provider_values`, the worst action
+in `action`) and adds `providers` and per-record `providers.<name>`.
 
 To add a provider, subclass `Backend` in `files/ddns_update.py` (implement
 `get(name, rtype)` returning the sorted values, empty when the record does not

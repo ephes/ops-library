@@ -1,29 +1,40 @@
 ---
 # DDNS Updater Deployment Tasks
-# Deploys the dynamic DNS updater (provider backend selected by dns_ddns_provider)
+# Deploys the dynamic DNS updater (provider backends from dns_ddns_providers or dns_ddns_provider)
 # Only runs if dns_ddns_enabled is true
 
 - name: DDNS deployment
   when: dns_ddns_enabled | default(false)
   block:
+    - name: DDNS | Resolve the providers to write
+      ansible.builtin.set_fact:
+        dns_ddns_effective_providers: "{{ dns_ddns_providers if dns_ddns_providers | length > 0 else [dns_ddns_provider] }}"
+
     - name: DDNS | Validate configuration
       ansible.builtin.assert:
         that:
-          - dns_ddns_provider in ["gandi"]
+          - dns_ddns_effective_providers | difference(["gandi", "rfc2136"]) | length == 0
+          - dns_ddns_effective_providers | unique | length == dns_ddns_effective_providers | length
           - dns_ddns_domain != "CHANGEME"
           - dns_ddns_ipv4_enabled | bool or dns_ddns_ipv6_enabled | bool
           - dns_ddns_state_dir is match('^/.+/[^/]*ddns[^/]*$')
           - (dns_ddns_status_path | dirname) == dns_ddns_state_dir
-          - dns_ddns_provider != "gandi" or dns_ddns_api_token != "CHANGEME"
-          - dns_ddns_provider != "gandi" or dns_ddns_gandi_auth_scheme in ["bearer", "apikey"]
+          - "'gandi' not in dns_ddns_effective_providers or dns_ddns_api_token != 'CHANGEME'"
+          - "'gandi' not in dns_ddns_effective_providers or dns_ddns_gandi_auth_scheme in ['bearer', 'apikey']"
+          - "'rfc2136' not in dns_ddns_effective_providers or dns_ddns_rfc2136_server != 'CHANGEME'"
+          - "'rfc2136' not in dns_ddns_effective_providers or dns_ddns_rfc2136_key_name != 'CHANGEME'"
+          - "'rfc2136' not in dns_ddns_effective_providers or dns_ddns_rfc2136_key_secret not in ['', 'CHANGEME']"
+          - "'rfc2136' not in dns_ddns_effective_providers or dns_ddns_rfc2136_key_algorithm in ['hmac-sha256', 'hmac-sha384', 'hmac-sha512']"
         fail_msg: |
           DDNS configuration is incomplete!
-          - dns_ddns_provider must be one of: gandi
+          - providers (dns_ddns_providers, or dns_ddns_provider) must be gandi and/or rfc2136, no duplicates
           - dns_ddns_domain must be set (not CHANGEME)
           - at least one of dns_ddns_ipv4_enabled / dns_ddns_ipv6_enabled must be true
           - dns_ddns_state_dir must be a dedicated directory whose name contains "ddns",
             and dns_ddns_status_path must live directly in it
           - gandi: dns_ddns_api_token must be set, dns_ddns_gandi_auth_scheme bearer|apikey
+          - rfc2136: dns_ddns_rfc2136_server, _key_name and _key_secret must be set,
+            _key_algorithm hmac-sha256|384|512
 
     - name: DDNS | Validate status endpoint configuration
       ansible.builtin.assert:
