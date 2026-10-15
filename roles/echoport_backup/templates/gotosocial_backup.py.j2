@@ -252,7 +252,10 @@ def backup(bucket: str, key_prefix: str, timestamp: str) -> int:
         db = payload / ARCHIVE_DB
         sqlite_integrity(db)
         local_accounts = sqlite_scalar(db, "SELECT count(*) FROM accounts WHERE domain IS NULL;")
-        local_statuses = sqlite_scalar(db, "SELECT count(*) FROM statuses WHERE local = 1;")
+        # GoToSocial has no statuses.local column; local = authored by a local account.
+        local_statuses = sqlite_scalar(
+            db, "SELECT count(*) FROM statuses WHERE account_id IN (SELECT id FROM accounts WHERE domain IS NULL);"
+        )
         if local_accounts < 1:
             raise StepFailure("verify_snapshot", "snapshot has no local accounts")
         emit_step("verify_snapshot", "success", f"ok: {local_accounts} local accounts, {local_statuses} local statuses")
