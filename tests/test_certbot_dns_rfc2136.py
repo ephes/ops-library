@@ -122,6 +122,8 @@ class CertbotDnsCredentialsCleanupTests(unittest.TestCase):
                 "certbot_dns_rfc2136_credentials_file": str(rfc2136),
                 "certbot_dns_active_credentials_file": str(active),
                 "certbot_dns_remove_unused_credentials": enabled,
+                "certbot_dns_provider": provider,
+                "certbot_dns_domain": "home.example",
             }
             playbook = config / "play.yml"
             playbook.write_text(
@@ -134,6 +136,9 @@ class CertbotDnsCredentialsCleanupTests(unittest.TestCase):
                 command.append("--check")
             result = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.managed_conf = (config / "renewal" / "home.example.conf").read_text() if (
+                config / "renewal" / "home.example.conf"
+            ).exists() else ""
             return gandi.exists(), rfc2136.exists()
 
     def test_removes_the_old_provider_file_after_the_switch(self):
@@ -142,6 +147,42 @@ class CertbotDnsCredentialsCleanupTests(unittest.TestCase):
         )
         self.assertFalse(gandi)
         self.assertTrue(rfc2136)
+
+    def test_drops_the_previous_plugin_settings_after_reconfigure(self):
+        # certbot reconfigure leaves dns_gandi_* in the switched lineage.
+        def add_stale_gandi(config):
+            conf = config / "renewal" / "home.example.conf"
+            conf.write_text(
+                conf.read_text()
+                + f"dns_gandi_credentials = {config / 'dns-credentials.ini'}\n"
+                + "dns_gandi_propagation_seconds = 120\n"
+            )
+
+        gandi, rfc2136 = self.run_cleanup(
+            "rfc2136",
+            [("home.example.conf", "dns-rfc2136", "dns-rfc2136-credentials.ini")],
+            prepare=add_stale_gandi,
+        )
+        self.assertFalse(gandi)
+        self.assertTrue(rfc2136)
+        self.assertNotIn("dns_gandi", self.managed_conf)
+        self.assertIn("authenticator = dns-rfc2136\n", self.managed_conf)
+        self.assertIn("dns_rfc2136_credentials = ", self.managed_conf)
+        self.assertIn("dns_rfc2136_propagation_seconds = 120\n", self.managed_conf)
+
+    def test_keeps_settings_of_a_lineage_not_yet_switched(self):
+        # The lineage still authenticates with gandi (failed or skipped switch).
+        def add_rfc2136(config):
+            conf = config / "renewal" / "home.example.conf"
+            conf.write_text(conf.read_text() + "dns_rfc2136_propagation_seconds = 120\n")
+
+        gandi, _ = self.run_cleanup(
+            "rfc2136",
+            [("home.example.conf", "dns-gandi", "dns-credentials.ini")],
+            prepare=add_rfc2136,
+        )
+        self.assertTrue(gandi)
+        self.assertIn("dns_gandi_credentials = ", self.managed_conf)
 
     def test_keeps_a_file_a_lineage_still_uses(self):
         # A failed or check-mode switch leaves the lineage on the old provider.

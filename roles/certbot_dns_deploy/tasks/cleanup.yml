@@ -13,6 +13,34 @@
          | unique | difference([certbot_dns_active_credentials_file]) }}
   when: certbot_dns_remove_unused_credentials | bool
 
+# `certbot reconfigure` keeps the previous plugin's dns_<plugin>_* settings in
+# the lineage's renewal configuration. Certbot restores only the current
+# authenticator's settings and drops the others at the next renewal; until
+# then they would keep the old credentials file "in use" below.
+- name: cleanup | Read the managed lineage's renewal configuration
+  ansible.builtin.slurp:
+    path: "{{ certbot_dns_config_dir }}/renewal/{{ certbot_dns_domain }}.conf"
+  register: certbot_dns_cleanup_renewal_conf
+  failed_when: false
+  check_mode: false
+  become: yes
+  when: certbot_dns_remove_unused_credentials | bool
+
+- name: cleanup | Drop other providers' settings from the managed lineage
+  ansible.builtin.lineinfile:
+    path: "{{ certbot_dns_config_dir }}/renewal/{{ certbot_dns_domain }}.conf"
+    regexp: '^dns_{{ item }}_[A-Za-z0-9_]+\s*='
+    state: absent
+  loop: "{{ ['gandi', 'rfc2136'] | difference([certbot_dns_provider]) }}"
+  become: yes
+  when:
+    - certbot_dns_remove_unused_credentials | bool
+    - certbot_dns_cleanup_renewal_conf.content is defined
+    - >-
+      ((certbot_dns_cleanup_renewal_conf.content | b64decode)
+       | regex_findall('(?m)^authenticator\s*=\s*(\S+)') | first | default(''))
+      == 'dns-' ~ certbot_dns_provider
+
 - name: cleanup | Find renewal configurations that still use another provider's credentials file
   # grep exits 0 when a renewal configuration mentions the path, 1 when none
   # does, and 2 on any error (unreadable file, no *.conf at all). Files named

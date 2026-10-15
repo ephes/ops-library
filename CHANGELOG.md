@@ -12,8 +12,12 @@
   `renewal/*.conf` mentions it (symlinked configurations are followed). A
   lineage that still uses it, after a failed switch, in check mode or on
   another lineage, keeps it, and so does any scan error (an unreadable file, no
-  configuration at all). Tests run the tasks on localhost against a temporary
-  config directory.
+  configuration at all). Before the scan it drops the previous plugin's
+  `dns_<plugin>_*` settings from the managed lineage once that lineage
+  authenticates with the configured provider: `certbot reconfigure` leaves them
+  behind (certbot ignores them and drops them at the next renewal), and they
+  would keep the old file "in use". Tests run the tasks on localhost against a
+  temporary config directory.
 
 ## Unreleased — Traefik log rotation keeps Traefik writing to fresh files (2.39.2)
 

@@ -71,6 +71,10 @@ deletes the other provider's credentials file once no renewal configuration
 under `renewal/` mentions it any more. A lineage that still uses it (after a
 failed switch, in check mode, or another lineage on the old provider) keeps it,
 and so does any error while scanning (an unreadable or missing configuration).
+`certbot reconfigure` leaves the previous plugin's `dns_<plugin>_*` settings in
+the lineage's renewal configuration; certbot ignores them and drops them at the
+next renewal. The role removes them from the managed lineage once its
+`authenticator` is the configured provider, so the old file can go right away.
 Set it to `false` to keep old credentials files.
 
 ### Common configuration
