@@ -7,7 +7,7 @@ Flags:
 | Variable | Default | Description |
 | --- | --- | --- |
 | `metube_confirm_removal` | `false` | Must be `true` to proceed. |
-| `metube_remove_install_dir` | `true` | Delete `{{ metube_install_dir }}` (sources + venv). |
+| `metube_remove_install_dir` | `true` | Delete `{{ metube_install_dir }}` (sources + venv) and the UI build cache `{{ metube_ui_build_root }}`. |
 | `metube_remove_state` | `true` | Delete `{{ metube_state_dir }}`. |
 | `metube_remove_downloads` | `false` | Delete `{{ metube_download_dir }}` (dangerous, large). |
 | `metube_remove_traefik_config` | `true` | Delete Traefik dynamic config. |

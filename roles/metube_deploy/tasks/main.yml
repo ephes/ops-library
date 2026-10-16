@@ -18,11 +18,15 @@
 - name: "Create directories"
   ansible.builtin.include_tasks: directories.yml
 
+- name: "Build frontend assets in the staging checkout"
+  ansible.builtin.include_tasks: ui.yml
+  when: metube_ui_build | bool
+
 - name: "Fetch MeTube sources"
   ansible.builtin.include_tasks: source.yml
 
-- name: "Build frontend assets"
-  ansible.builtin.include_tasks: ui.yml
+- name: "Publish frontend assets"
+  ansible.builtin.include_tasks: ui_publish.yml
   when: metube_ui_build | bool
 
 - name: "Create Python environment and install dependencies"

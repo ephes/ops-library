@@ -11,6 +11,8 @@ metube_manage_user: true
 metube_install_dir: /opt/metube
 metube_app_dir: "{{ metube_install_dir }}"
 metube_venv_path: /opt/metube/venv
+# UI staging checkout plus corepack/pnpm/npm caches (HOME of the UI build).
+metube_ui_build_root: /var/cache/metube
 metube_service_name: metube
 metube_service_unit: /etc/systemd/system/metube.service
 metube_service_enabled: true
@@ -72,6 +74,10 @@ metube_uv_version: "0.13.0"  # Keep aligned with uv_install version/checksums.
 metube_uv_path: /usr/local/bin/uv
 metube_python_version: "3.14"
 metube_nodejs_version: 24
+# Oldest Node.js release (within metube_nodejs_version) the UI build accepts;
+# an older installed release is upgraded. Angular CLI 22 needs 24.15.0.
+# Empty disables the check.
+metube_nodejs_min_version: "24.15.0"
 
 # Packages
 metube_system_packages:

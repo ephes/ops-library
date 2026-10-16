@@ -3,6 +3,27 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — MeTube builds its pnpm UI before switching sources (2.44.0)
+
+- `metube_deploy` builds the UI with pnpm through corepack (the version in
+  `ui/package.json`'s `packageManager`) when `ui/pnpm-lock.yaml` exists, and
+  with `npm ci` otherwise. Upstream master moved the UI to pnpm, so `npm ci`
+  failed after the new sources were already checked out.
+- The UI is built in a staging checkout (`metube_ui_build_dir`, under the new
+  shared `metube_ui_build_root: /var/cache/metube`). `metube_install_dir`
+  moves to the built commit and gets the new build only after the build
+  succeeded; a failed install or build stops the play with the install and
+  the running service unchanged. A commit stamp replaces the install marker
+  (`metube_install_marker` is gone), and leftover `ui/node_modules`,
+  `ui/.angular` and the marker are removed from `metube_install_dir`.
+- New `metube_nodejs_min_version` (default `24.15.0`, Angular CLI 22's
+  minimum): an older Node.js of the configured major is upgraded, and the role
+  fails early if the installed Node.js still does not qualify. The NodeSource
+  list `nodesource-metube.list` is now written whole, replacing an older
+  major's line instead of keeping it.
+- `metube_remove` also deletes `metube_ui_build_root` with the install dir.
+- Python dependency tooling is unchanged (`uv sync --frozen --no-dev`).
+
 ## Unreleased — Pinned backup SSH key for production and staging (2.43.0)
 
 FastDeploy privilege reduction, stage 1, SSH part.

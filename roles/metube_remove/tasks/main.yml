@@ -45,10 +45,13 @@
     state: absent
   when: metube_remove_downloads | bool
 
-- name: Remove install directory (sources + venv)
+- name: Remove install directory (sources + venv) and UI build cache
   ansible.builtin.file:
-    path: "{{ metube_install_dir }}"
+    path: "{{ item }}"
     state: absent
+  loop:
+    - "{{ metube_install_dir }}"
+    - "{{ metube_ui_build_root }}"
   when: metube_remove_install_dir | bool
 
 - name: Remove metube user

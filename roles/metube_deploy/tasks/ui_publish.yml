@@ -1,0 +1,38 @@
+---
+- name: "ui_publish | Read revision of the live UI build"
+  ansible.builtin.slurp:
+    src: "{{ metube_install_dir }}/ui/dist/metube/{{ metube_ui_rev_file }}"
+  register: metube_ui_live_rev
+  failed_when: false
+
+# Copy next to the live build, then swap, so the running service never
+# serves a half-copied tree.
+- name: "ui_publish | Publish the staged UI build"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    live={{ (metube_install_dir ~ '/ui/dist') | quote }}
+    mkdir -p "$live"
+    rm -rf "$live/metube.new" "$live/metube.old"
+    cp -a {{ (metube_ui_build_dir ~ '/ui/dist/metube') | quote }} "$live/metube.new"
+    if [ -e "$live/metube" ]; then mv "$live/metube" "$live/metube.old"; fi
+    mv "$live/metube.new" "$live/metube"
+    rm -rf "$live/metube.old"
+  args:
+    executable: /bin/bash
+  changed_when: true
+  when: >-
+    (metube_ui_live_rev.content | default('') | b64decode | trim)
+    != metube_ui_build_rev
+  notify: restart metube
+  become: true
+  become_user: "{{ metube_user }}"
+
+# Left behind by role versions that built the UI inside metube_install_dir.
+- name: "ui_publish | Remove in-place UI build leftovers"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ metube_install_dir }}/ui/node_modules"
+    - "{{ metube_install_dir }}/ui/.angular"
+    - "{{ metube_install_dir }}/.metube-installed"

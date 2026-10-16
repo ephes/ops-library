@@ -4,18 +4,27 @@
   register: metube_node_version_check
   failed_when: false
   changed_when: false
+  check_mode: false
 
-- name: Parse Node.js major version
+- name: Parse Node.js version
   ansible.builtin.set_fact:
     metube_node_current_major: "{{ metube_node_version_check.stdout | default('v0') | regex_replace('^v([0-9]+).*', '\\1') | int }}"
+    metube_node_current_version: "{{ metube_node_version_check.stdout | default('v0') | regex_replace('^v', '') }}"
   when: metube_node_version_check.rc == 0
 
+# A wrong major is (re)installed; an older release of the right major is
+# upgraded within that major (the UI build enforces a minimum Node release).
 - name: Determine if Node.js install/upgrade is needed
   ansible.builtin.set_fact:
     metube_node_needs_install: "{{ metube_node_version_check.rc != 0 or (metube_node_current_major | int) != (metube_nodejs_version | int) }}"
+    metube_node_needs_upgrade: >-
+      {{ metube_node_version_check.rc == 0
+         and (metube_node_current_major | int) == (metube_nodejs_version | int)
+         and (metube_nodejs_min_version | string | length > 0)
+         and metube_node_current_version is version(metube_nodejs_min_version | string, '<') }}
 
 - name: Install Node.js from NodeSource repository
-  when: metube_node_needs_install | bool
+  when: metube_node_needs_install | bool or metube_node_needs_upgrade | bool
   block:
     - name: Install prerequisites for NodeSource setup
       ansible.builtin.apt:
@@ -38,11 +47,15 @@
       args:
         creates: /etc/apt/keyrings/nodesource.gpg
 
-    - name: Add NodeSource repository
-      ansible.builtin.apt_repository:
-        repo: "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_{{ metube_nodejs_version }}.x nodistro main"
-        filename: nodesource-metube
-        state: present
+    # Written whole (not apt_repository) so a line for an older major is
+    # replaced instead of kept next to the new one.
+    - name: Configure NodeSource repository for Node.js {{ metube_nodejs_version }}.x
+      ansible.builtin.copy:
+        content: "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_{{ metube_nodejs_version }}.x nodistro main\n"
+        dest: /etc/apt/sources.list.d/nodesource-metube.list
+        owner: root
+        group: root
+        mode: "0644"
 
     - name: Install Node.js {{ metube_nodejs_version }}.x
       ansible.builtin.apt:
@@ -50,3 +63,29 @@
         state: present
         allow_downgrade: true
         update_cache: true
+      when: metube_node_needs_install | bool
+
+    - name: Upgrade Node.js within {{ metube_nodejs_version }}.x
+      ansible.builtin.apt:
+        name: nodejs
+        state: latest  # noqa package-latest
+        update_cache: true
+      when: metube_node_needs_upgrade | bool
+
+- name: Check installed Node.js version
+  ansible.builtin.command: node --version
+  register: metube_node_final_check
+  changed_when: false
+  check_mode: false
+
+- name: Assert Node.js meets the UI build requirement
+  ansible.builtin.assert:
+    that:
+      - (metube_node_final_check.stdout | regex_replace('^v([0-9]+).*', '\\1') | int) == (metube_nodejs_version | int)
+      - >-
+        metube_nodejs_min_version | string | length == 0
+        or (metube_node_final_check.stdout | regex_replace('^v', '')) is version(metube_nodejs_min_version | string, '>=')
+    fail_msg: >-
+      Node.js {{ metube_node_final_check.stdout }} is installed, but MeTube needs
+      {{ metube_nodejs_version }}.x at least {{ metube_nodejs_min_version }}.
+      Check the NodeSource repositories in /etc/apt/sources.list.d.

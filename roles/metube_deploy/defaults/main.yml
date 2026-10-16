@@ -2,16 +2,20 @@
 # Whether to install uv automatically
 metube_install_uv: "{{ metube_manage_uv }}"
 
-# Whether to rebuild the UI (Angular) on each run
+# Whether to build the UI (Angular). The build runs in a staging checkout
+# (metube_ui_build_dir) and only a successful build is copied into
+# metube_install_dir; it is skipped when the staged build already matches the
+# checked-out commit. pnpm (via corepack) is used when ui/pnpm-lock.yaml
+# exists, npm ci otherwise.
 metube_ui_build: true
 metube_ui_build_configuration: production
 metube_ui_node_env: production
+metube_ui_build_dir: "{{ metube_ui_build_root }}/src"
+# Commit stamp written next to ui/dist/metube/browser (not served).
+metube_ui_rev_file: .metube-ui-rev
 
 # Whether to run uv sync on each deploy
 metube_sync_dependencies: true
-
-# Marker file to skip rebuild/sync when unchanged
-metube_install_marker: "{{ metube_install_dir }}/.metube-installed"
 
 # Systemd resource knobs
 metube_systemd_after: "network.target"
