@@ -171,13 +171,59 @@ mastodon_nginx_cache_zone_size: "20m"
 mastodon_nginx_cache_inactive: "14d"
 mastodon_nginx_cache_size: "1g"
 mastodon_nginx_temp_path: "{{ mastodon_nginx_cache_path }}/temp"
+# Cache for the public federation documents in
+# mastodon_nginx_federation_cache_locations (instance actor, WebFinger,
+# NodeInfo, host-meta). nginx follows Mastodon's own Cache-Control and Vary
+# headers, sends one request per expired entry to Puma (proxy_cache_lock) and
+# keeps serving the stale copy while it refreshes, so a burst of remote servers
+# fetching /actor does not need one Puma thread per request.
+mastodon_nginx_federation_cache_enabled: false
+mastodon_nginx_federation_cache_path: /var/cache/mastodon/nginx-federation
+mastodon_nginx_federation_cache_zone: mastodon_federation
+mastodon_nginx_federation_cache_zone_size: "10m"
+mastodon_nginx_federation_cache_size: "100m"
+# Entries unused for this long are removed; until then an expired entry is
+# still served (stale) while nginx refreshes it in the background.
+mastodon_nginx_federation_cache_inactive: "7d"
+mastodon_nginx_federation_cache_locations:
+  - /actor
+  - /.well-known/webfinger
+  - /.well-known/host-meta
+  - /.well-known/nodeinfo
+  - /nodeinfo/2.0
+# How long other requests for a missing entry wait for the one filling it
+# (proxy_cache_lock_timeout and proxy_cache_lock_age) before going to Puma.
+mastodon_nginx_federation_cache_lock_timeout: "10s"
+# After the health check the role fills the cache for these hosts and
+# documents and fails unless a second request is served from the cache. A
+# missing /actor entry is what lets a federation burst deadlock Puma; a cold
+# entry can still happen later (purge, eviction after _inactive).
+mastodon_nginx_federation_cache_prime_hosts:
+  - "{{ mastodon_traefik_host }}"
+mastodon_nginx_federation_cache_prime:
+  - path: /actor
+    accept: application/activity+json
+  - path: /.well-known/host-meta
+    accept: application/xrd+xml
+  - path: /.well-known/nodeinfo
+    accept: application/json
+  - path: /nodeinfo/2.0
+    accept: application/json
+# Additional entries, e.g. a WebFinger query for the local account.
+mastodon_nginx_federation_cache_prime_extra: []
 mastodon_nginx_body_temp_path: /var/lib/mastodon-nginx/body
 mastodon_nginx_run_dir: /run/mastodon-nginx
 mastodon_nginx_pid_file: "{{ mastodon_nginx_run_dir }}/nginx.pid"
 mastodon_nginx_access_log: "{{ mastodon_nginx_log_dir }}/access.log"
 mastodon_nginx_error_log: "{{ mastodon_nginx_log_dir }}/error.log"
+# Append request time, upstream response time and cache status to the
+# combined access log format (existing fields keep their positions).
+mastodon_nginx_access_log_timing: false
 mastodon_nginx_client_max_body_size: "100M"
 mastodon_nginx_worker_connections: 4096
+# Open-file limit of the nginx unit; must exceed worker_connections (the
+# systemd default soft limit of 1024 does not).
+mastodon_nginx_limit_nofile: 65536
 mastodon_nginx_server_name: "_"
 mastodon_nginx_logrotate_enabled: true
 mastodon_nginx_logrotate_path: /etc/logrotate.d/mastodon-nginx

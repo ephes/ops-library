@@ -3,6 +3,35 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Mastodon federation document cache, nginx timing log (2.46.0)
+
+Nothing changes for a deployment that leaves the new switches off, except the
+nginx file limit.
+
+- `mastodon_deploy`: new `mastodon_nginx_federation_cache_enabled` (default
+  `false`). When on, mastodon-nginx caches the exact paths in
+  `mastodon_nginx_federation_cache_locations` (`/actor`,
+  `/.well-known/webfinger`, `/.well-known/host-meta`,
+  `/.well-known/nodeinfo`, `/nodeinfo/2.0`) in their own zone
+  (`mastodon_nginx_federation_cache_path`, `_zone`, `_zone_size`, `_size`,
+  `_inactive`, `_lock_timeout`). nginx follows Mastodon's `Cache-Control`,
+  replaces `Vary` with a key on normalized `Accept` and the presence of
+  `Origin`, collapses concurrent misses (`proxy_cache_lock`, lock timeout and
+  age 10 s) and serves the stale entry while it refreshes or while Puma fails.
+  After the health check the role fills the cache
+  (`mastodon_nginx_federation_cache_prime_hosts`, `_prime`, `_prime_extra`)
+  and fails unless a second request is a cache hit. A cached `/actor` keeps a
+  federation burst from deadlocking Puma: GoToSocial servers fetch `/actor`
+  back to verify Mastodon's signed key fetches while every thread is busy
+  with their requests. A purged or evicted entry is cold again until it is
+  requested once. Status and account documents are not cached.
+- `mastodon_deploy`: new `mastodon_nginx_access_log_timing` (default `false`)
+  appends `rt=`, `urt=` and `cache=` to the combined access log format.
+- `mastodon_deploy`: the mastodon-nginx unit sets
+  `LimitNOFILE={{ mastodon_nginx_limit_nofile }}` (default `65536`). The
+  systemd default soft limit of 1024 was below `worker_connections` (4096),
+  and nginx warned about it. The next deploy restarts mastodon-nginx.
+
 ## Unreleased — MeTube no longer renders DOWNLOAD_MODE (2.44.1)
 
 - `metube_deploy` drops `DOWNLOAD_MODE` from `metube.env` and

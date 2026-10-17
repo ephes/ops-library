@@ -58,6 +58,32 @@ http {
     proxy_cache_path {{ mastodon_nginx_cache_path }} levels=1:2 keys_zone={{ mastodon_nginx_cache_zone }}:{{ mastodon_nginx_cache_zone_size }} inactive={{ mastodon_nginx_cache_inactive }} max_size={{ mastodon_nginx_cache_size }};
     proxy_temp_path {{ mastodon_nginx_temp_path }};
 {% endif %}
+{% if mastodon_nginx_federation_cache_enabled | bool %}
+    proxy_cache_path {{ mastodon_nginx_federation_cache_path }} levels=1:2 keys_zone={{ mastodon_nginx_federation_cache_zone }}:{{ mastodon_nginx_federation_cache_zone_size }} inactive={{ mastodon_nginx_federation_cache_inactive }} max_size={{ mastodon_nginx_federation_cache_size }} use_temp_path=off;
+
+    # The federation cache ignores Mastodon's Vary header (every distinct Accept
+    # string would be its own, cold entry) and keys on these instead: Accept
+    # reduced to the formats Mastodon distinguishes (sent upstream in that
+    # form, so the cached body matches the key), and whether the request is a
+    # CORS request (Mastodon adds Access-Control-Allow-Origin only then).
+    map $http_accept $mastodon_federation_accept {
+        default "";
+        "~*application/(activity|ld)\+json" "application/activity+json";
+        "~*application/jrd\+json" "application/jrd+json";
+        "~*(application/xrd\+xml|application/xml|text/xml)" "application/xrd+xml";
+        "~*json" "application/json";
+        "~*text/html" "text/html";
+    }
+
+    map $http_origin $mastodon_federation_cors {
+        default "cors";
+        "" "";
+    }
+{% endif %}
+{% if mastodon_nginx_access_log_timing | bool %}
+
+    log_format mastodon_timing '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" rt=$request_time urt=$upstream_response_time cache=$upstream_cache_status';
+{% endif %}
 
     server {
         listen 127.0.0.1:{{ mastodon_nginx_port }};
@@ -67,7 +93,7 @@ http {
         root {{ mastodon_public_path }};
         index index.html;
 
-        access_log {{ mastodon_nginx_access_log }};
+        access_log {{ mastodon_nginx_access_log }}{{ ' mastodon_timing' if mastodon_nginx_access_log_timing | bool else '' }};
         error_log {{ mastodon_nginx_error_log }};
 
         client_max_body_size {{ mastodon_nginx_client_max_body_size }};
@@ -110,6 +136,34 @@ http {
         }
 {% endif %}
 
+{% if mastodon_nginx_federation_cache_enabled | bool %}
+{% for path in mastodon_nginx_federation_cache_locations %}
+        location = {{ path }} {
+            proxy_cache {{ mastodon_nginx_federation_cache_zone }};
+            proxy_cache_key "$mastodon_forwarded_proto://$mastodon_forwarded_host$request_uri|$mastodon_federation_accept|$mastodon_federation_cors";
+            proxy_ignore_headers Vary;
+            proxy_cache_lock on;
+            proxy_cache_lock_timeout {{ mastodon_nginx_federation_cache_lock_timeout }};
+            proxy_cache_lock_age {{ mastodon_nginx_federation_cache_lock_timeout }};
+            proxy_cache_use_stale updating error timeout http_500 http_502 http_503 http_504;
+            proxy_cache_background_update on;
+            proxy_buffering on;
+            # A proxy_set_header here replaces all inherited ones, so repeat them.
+            proxy_set_header Host $mastodon_forwarded_host;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $mastodon_forwarded_proto;
+            proxy_set_header X-Forwarded-Host $mastodon_forwarded_host;
+            proxy_set_header X-Forwarded-Server $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header Accept $mastodon_federation_accept;
+            # Uncompressed from Puma; nginx gzips per client (gzip_proxied any).
+            proxy_set_header Accept-Encoding "";
+            add_header X-Cache-Status $upstream_cache_status always;
+            proxy_pass http://mastodon-web;
+        }
+
+{% endfor %}
+{% endif %}
         location / {
             try_files $uri @proxy;
         }

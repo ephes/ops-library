@@ -49,6 +49,17 @@
     - mastodon_nginx_enabled | bool
     - mastodon_nginx_cache_enabled | bool
 
+- name: Ensure Mastodon nginx federation cache directory exists
+  ansible.builtin.file:
+    path: "{{ mastodon_nginx_federation_cache_path }}"
+    state: directory
+    owner: "{{ mastodon_nginx_user }}"
+    group: "{{ mastodon_nginx_group }}"
+    mode: "0750"
+  when:
+    - mastodon_nginx_enabled | bool
+    - mastodon_nginx_federation_cache_enabled | bool
+
 - name: Ensure Mastodon nginx config directory exists
   ansible.builtin.file:
     path: "{{ mastodon_nginx_conf_dir }}"

@@ -66,3 +66,9 @@
 - name: Run Mastodon health check
   ansible.builtin.import_tasks: healthcheck.yml
   when: mastodon_healthcheck_enabled | bool
+
+- name: Fill and check the nginx federation cache
+  ansible.builtin.import_tasks: federation_cache.yml
+  when:
+    - mastodon_nginx_enabled | bool
+    - mastodon_nginx_federation_cache_enabled | bool

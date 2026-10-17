@@ -80,6 +80,8 @@ mastodon_traefik_host: "{{ mastodon_web_domain }}"
 mastodon_nginx_enabled: true
 mastodon_nginx_port: 10044
 mastodon_nginx_cache_enabled: false
+mastodon_nginx_federation_cache_enabled: false
+mastodon_nginx_access_log_timing: false
 mastodon_runtime_chown_recursive: false
 mastodon_clear_rails_cache_on_deploy: true
 ```
@@ -117,6 +119,49 @@ Enable proxy caching for `/system/` by setting `mastodon_nginx_cache_enabled: tr
 `{{ mastodon_nginx_logrotate_path }}` when `mastodon_nginx_logrotate_enabled: true`. POST request bodies (media
 uploads, federation inbox) are buffered via `client_body_temp_path` at `{{ mastodon_nginx_body_temp_path }}`
 (default `/var/lib/mastodon-nginx/body`), owned by the nginx service user.
+
+### Federation document cache
+
+`mastodon_nginx_federation_cache_enabled: true` caches the public documents listed in
+`mastodon_nginx_federation_cache_locations` (exact paths; default `/actor`, `/.well-known/webfinger`,
+`/.well-known/host-meta`, `/.well-known/nodeinfo`, `/nodeinfo/2.0`) in a separate cache zone at
+`mastodon_nginx_federation_cache_path`.
+
+- nginx follows Mastodon's own `Cache-Control`. Mastodon marks these responses public: instance actor 10
+  minutes, WebFinger, host-meta and the NodeInfo discovery document 3 days, NodeInfo 30 minutes, WebFinger
+  errors 3 minutes. Responses that are private, set a cookie or carry no caching headers are not stored.
+- Mastodon's `Vary: Accept, Origin` is ignored, because every distinct `Accept` string from remote software
+  would be a separate, cold entry. Instead the cache key is the forwarded scheme and host, the full request
+  URI, `Accept` reduced to the formats Mastodon tells apart (ActivityStreams JSON, JRD, XRD/XML, other JSON,
+  HTML, none) and whether the request carries `Origin` (Mastodon adds `Access-Control-Allow-Origin: *` only
+  then). Puma receives the reduced `Accept` and no `Accept-Encoding`, so a cached body always matches its key;
+  nginx compresses for the client.
+- Concurrent misses for the same entry wait for the one request filling it, for up to
+  `mastodon_nginx_federation_cache_lock_timeout` (default `10s`, used for both `proxy_cache_lock_timeout` and
+  `proxy_cache_lock_age`); after that they go to Puma themselves. An expired entry is still served while nginx
+  refreshes it in the background, and also when Puma fails or times out; entries are removed only after
+  `mastodon_nginx_federation_cache_inactive` (default `7d`) without use.
+- After the health check the role fills the cache for every host in
+  `mastodon_nginx_federation_cache_prime_hosts` (default the Traefik host) and every entry in
+  `mastodon_nginx_federation_cache_prime` plus `mastodon_nginx_federation_cache_prime_extra` (path and
+  `Accept`; default `/actor`, host-meta and both NodeInfo documents), then requests each again and fails the
+  deploy unless it is served from the cache.
+- Why: when a post reaches many servers at once, GoToSocial servers verify Mastodon's signed key fetch by
+  fetching `/actor` back while every Puma thread is busy with their own signed requests. A cached `/actor` is
+  answered by nginx without a Puma thread; a missing one waits for Mastodon's 10 s outbound read timeout.
+- Limitation: the cache only helps while the entry exists. After a purge, after eviction (`_inactive` without
+  any request, or `_size` exceeded) or for an `Accept` bucket that was never requested, the first request
+  needs a free Puma thread again; during a burst that can still block until the timeout. Redeploying (or
+  requesting the documents once) refills it.
+- Responses carry `X-Cache-Status` (`MISS`, `HIT`, `STALE`, `UPDATING`, ...). Status and account documents
+  are deliberately not cached: they depend on the requester (blocks, visibility).
+- To drop cached entries (for example after changing the instance actor), remove the files under
+  `mastodon_nginx_federation_cache_path`, reload `mastodon-nginx` and redeploy to refill the cache.
+
+`mastodon_nginx_access_log_timing: true` appends `rt=$request_time urt=$upstream_response_time
+cache=$upstream_cache_status` to the combined access log format; the existing fields keep their positions.
+`mastodon_nginx_limit_nofile` (default `65536`) sets `LimitNOFILE` for the nginx unit so that
+`mastodon_nginx_worker_connections` (default `4096`) fits under the open-file limit.
 
 ## SMTP validation
 

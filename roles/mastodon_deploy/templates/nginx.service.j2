@@ -16,6 +16,7 @@ ExecStart=/usr/sbin/nginx -c {{ mastodon_nginx_config_path }} -g 'daemon off;'
 ExecReload=/usr/sbin/nginx -c {{ mastodon_nginx_config_path }} -s reload
 ExecStop=/usr/sbin/nginx -c {{ mastodon_nginx_config_path }} -s quit
 Restart=on-failure
+LimitNOFILE={{ mastodon_nginx_limit_nofile }}
 RestartSec=5
 
 [Install]
