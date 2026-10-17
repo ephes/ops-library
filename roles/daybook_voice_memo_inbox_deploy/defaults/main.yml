@@ -69,7 +69,9 @@ daybook_voice_memo_inbox_language: ""
 daybook_voice_memo_inbox_prompt: >-
   Transcribe faithfully. The speaker mixes German and English and uses software,
   infrastructure, and product terminology. Preserve technical names,
-  punctuation, and paragraph breaks.
+  punctuation, and paragraph breaks. In the owner's workflow, a 'Matter' is a
+  tracked personal or business task; this English word can sound like German
+  'Meta'. Use the surrounding context, not an automatic replacement.
 daybook_voice_memo_inbox_min_stable_seconds: 120
 daybook_voice_memo_inbox_max_audio_bytes: 16777216
 daybook_voice_memo_inbox_max_duration_seconds: 180

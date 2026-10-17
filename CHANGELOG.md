@@ -3,6 +3,12 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Voice Memo Matter terminology (2.47.1)
+
+- The Voice Memo inbox role's default ASR prompt explains that the owner's
+  tracked task term “Matter” can sound like German “Meta”. It asks the model
+  to choose from context instead of applying a blanket replacement.
+
 ## Unreleased — Mastodon LOCAL_DOMAIN discovery route (2.47.0)
 
 - `mastodon_deploy`: new `mastodon_traefik_local_domain_wellknown` (default

@@ -181,6 +181,9 @@ immutable production pins. The role currently supports Apple Silicon Homebrew
 under `/opt/homebrew`; an Intel `/usr/local` layout requires a separately
 reviewed role change, not a variable override. Size, duration, request timeout,
 model, and language/prompt values remain bounded operational configuration.
+The default transcription prompt describes the owner's term *Matter* (a
+tracked task), which can sound like German *Meta*. It asks ASR to decide from
+context rather than replace every occurrence.
 
 | Variable | Default |
 | --- | --- |
