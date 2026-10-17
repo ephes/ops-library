@@ -102,6 +102,21 @@ root-owned rsync), but note this can be slow on large media trees.
 
 Split-domain deployments are supported and intentional: `LOCAL_DOMAIN` (handles) can differ from `WEB_DOMAIN` (UI). Do not change `LOCAL_DOMAIN` after federation begins.
 
+Remote servers look up `@user@LOCAL_DOMAIN` at `https://LOCAL_DOMAIN/.well-known/webfinger`, so something on
+`LOCAL_DOMAIN` has to answer it. With `mastodon_traefik_local_domain_wellknown: true` the role renders the Traefik
+router `mastodon-local-wellknown` for ``Host(`<mastodon_local_domain>`)`` and the exact paths
+`/.well-known/webfinger`, `/.well-known/host-meta` and `/.well-known/nodeinfo`, routed to the Mastodon web service
+(mastodon-nginx, so the federation cache applies). Mastodon accepts `LOCAL_DOMAIN` as a host and answers these
+documents for it. Everything else on `LOCAL_DOMAIN` stays with the site that serves it.
+
+- `mastodon_traefik_local_domain_priority` (default `1000`) must be higher than that site's router. Traefik's default
+  priority is the length of the rule.
+- `mastodon_traefik_local_domain_cert_resolver` selects the ACME resolver for `LOCAL_DOMAIN`; empty renders `tls: {}`
+  and relies on a certificate Traefik already has.
+- The role refuses the switch without `mastodon_traefik_enabled` or when `mastodon_local_domain` equals the Traefik
+  host.
+- Turning it off and redeploying removes the router again.
+
 ## Redis
 
 By default, the role assumes an existing local Redis instance (`127.0.0.1:6379` with no password). To install Redis with ops-library, set:
@@ -144,8 +159,9 @@ uploads, federation inbox) are buffered via `client_body_temp_path` at `{{ masto
 - After the health check the role fills the cache for every host in
   `mastodon_nginx_federation_cache_prime_hosts` (default the Traefik host) and every entry in
   `mastodon_nginx_federation_cache_prime` plus `mastodon_nginx_federation_cache_prime_extra` (path and
-  `Accept`; default `/actor`, host-meta and both NodeInfo documents), then requests each again and fails the
-  deploy unless it is served from the cache.
+  `Accept`, optionally `host`; default `/actor`, host-meta and both NodeInfo documents), then requests each again
+  and fails the deploy unless it is served from the cache. An entry with `host` is filled for that host only. With
+  `mastodon_traefik_local_domain_wellknown` the `/.well-known/` entries are also filled for `mastodon_local_domain`.
 - Why: when a post reaches many servers at once, GoToSocial servers verify Mastodon's signed key fetch by
   fetching `/actor` back while every Puma thread is busy with their own signed requests. A cached `/actor` is
   answered by nginx without a Puma thread; a missing one waits for Mastodon's 10 s outbound read timeout.

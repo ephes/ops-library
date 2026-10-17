@@ -33,6 +33,9 @@
     mastodon_maintenance_media_days: 4
     mastodon_maintenance_preview_days: 4
     mastodon_maintenance_status_days: 4
+    mastodon_traefik_enabled: true
+    mastodon_traefik_host: "example.com"
+    mastodon_traefik_local_domain_wellknown: false
 
   tasks:
     - name: Load shared Mastodon defaults
@@ -100,6 +103,58 @@
         mastodon_max_threads: 8
         mastodon_sidekiq_concurrency: 5
         mastodon_db_pool: 5
+
+    - name: Reject the LOCAL_DOMAIN discovery route when LOCAL_DOMAIN is the web host
+      ansible.builtin.include_tasks: tasks/test_mastodon_rejected.yml
+      vars:
+        case_name: local discovery route without a split domain
+        case_tasks: "{{ deploy_validate }}"
+        mastodon_traefik_local_domain_wellknown: true
+        mastodon_web_concurrency: 2
+        mastodon_max_threads: 5
+        mastodon_sidekiq_concurrency: 25
+        mastodon_db_pool: 25
+
+    - name: Accept the LOCAL_DOMAIN discovery route for a split domain
+      ansible.builtin.include_tasks: "{{ deploy_validate }}"
+      vars:
+        mastodon_traefik_local_domain_wellknown: true
+        mastodon_local_domain: "example.com"
+        mastodon_web_domain: "social.example.com"
+        mastodon_traefik_host: "social.example.com"
+        mastodon_web_concurrency: 2
+        mastodon_max_threads: 5
+        mastodon_sidekiq_concurrency: 25
+        mastodon_db_pool: 25
+
+    - name: Expand the federation cache fill list
+      ansible.builtin.include_tasks: "{{ roles_dir }}/mastodon_deploy/tasks/federation_cache_items.yml"
+      vars:
+        mastodon_traefik_local_domain_wellknown: true
+        mastodon_local_domain: "example.com"
+        mastodon_nginx_federation_cache_prime_hosts: ["social.example.com"]
+        mastodon_nginx_federation_cache_prime: "{{ mastodon_shared_defaults.mastodon_nginx_federation_cache_prime }}"
+        mastodon_nginx_federation_cache_prime_extra:
+          - path: "/.well-known/webfinger?resource=acct:alice@example.com"
+            accept: application/jrd+json
+          - path: /nodeinfo/2.0
+            accept: application/json
+            host: other.example.com
+
+    - name: Assert the fill list covers LOCAL_DOMAIN only for /.well-known/ documents
+      ansible.builtin.assert:
+        that:
+          - mastodon_federation_cache_prime_items | type_debug == 'list'
+          - >-
+            (mastodon_federation_cache_prime_items | map(attribute='host')
+            | zip(mastodon_federation_cache_prime_items | map(attribute='path')) | map('join', ' ') | list)
+            == ['social.example.com /actor',
+                'social.example.com /.well-known/host-meta', 'example.com /.well-known/host-meta',
+                'social.example.com /.well-known/nodeinfo', 'example.com /.well-known/nodeinfo',
+                'social.example.com /nodeinfo/2.0',
+                'social.example.com /.well-known/webfinger?resource=acct:alice@example.com',
+                'example.com /.well-known/webfinger?resource=acct:alice@example.com',
+                'other.example.com /nodeinfo/2.0']
 
     - name: Reject a negative Puma worker count
       ansible.builtin.include_tasks: tasks/test_mastodon_rejected.yml

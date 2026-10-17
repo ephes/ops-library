@@ -44,6 +44,23 @@ http:
 {% endfor %}
 {% endif %}
 
+{% if mastodon_traefik_local_domain_wellknown | bool %}
+    mastodon-local-wellknown:
+      rule: "Host(`{{ mastodon_local_domain }}`) && (Path(`/.well-known/webfinger`) || Path(`/.well-known/host-meta`) || Path(`/.well-known/nodeinfo`))"
+      entryPoints:
+{% for entrypoint in mastodon_traefik_entrypoints %}
+        - {{ entrypoint }}
+{% endfor %}
+      service: {{ mastodon_traefik_service_web }}
+      priority: {{ mastodon_traefik_local_domain_priority }}
+{% if mastodon_traefik_local_domain_cert_resolver | length > 0 %}
+      tls:
+        certResolver: {{ mastodon_traefik_local_domain_cert_resolver }}
+{% else %}
+      tls: {}
+{% endif %}
+
+{% endif %}
   services:
     {{ mastodon_traefik_service_web }}:
       loadBalancer:

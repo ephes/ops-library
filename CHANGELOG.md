@@ -3,6 +3,24 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Mastodon LOCAL_DOMAIN discovery route (2.47.0)
+
+- `mastodon_deploy`: new `mastodon_traefik_local_domain_wellknown` (default
+  `false`) for split-domain instances. It renders the Traefik router
+  `mastodon-local-wellknown` for
+  ``Host(`<mastodon_local_domain>`)`` and the exact paths
+  `/.well-known/webfinger`, `/.well-known/host-meta` and
+  `/.well-known/nodeinfo`, routed to the Mastodon web service (mastodon-nginx)
+  with `mastodon_traefik_local_domain_priority` (default `1000`, above a site
+  router's rule-length default) and `mastodon_traefik_local_domain_cert_resolver`
+  (empty renders `tls: {}`). Account discovery then no longer depends on the
+  site serving `LOCAL_DOMAIN`. `validate.yml` refuses it without Traefik or when
+  `mastodon_local_domain` equals the Traefik host.
+- With the route on, the federation cache fill (2.46.0) also fills the
+  `/.well-known/` entries for `mastodon_local_domain`. A fill entry may now carry
+  its own `host`. The list is built in the new
+  `tasks/federation_cache_items.yml`.
+
 ## Unreleased — Mastodon federation document cache, nginx timing log (2.46.0)
 
 Nothing changes for a deployment that leaves the new switches off, except the

@@ -104,6 +104,18 @@
       - mastodon_redis_requirepass_enabled | bool == false or mastodon_redis_password | length > 0
     fail_msg: "mastodon_redis_password must be provided when redis requirepass is enabled."
 
+- name: Validate the LOCAL_DOMAIN discovery route
+  ansible.builtin.assert:
+    that:
+      - mastodon_traefik_enabled | bool
+      - mastodon_local_domain | length > 0
+      - mastodon_local_domain != mastodon_traefik_host
+    fail_msg: >-
+      mastodon_traefik_local_domain_wellknown needs mastodon_traefik_enabled and a
+      mastodon_local_domain ({{ mastodon_local_domain }}) that differs from the
+      Traefik host ({{ mastodon_traefik_host }}); otherwise there is nothing to route.
+  when: mastodon_traefik_local_domain_wellknown | bool
+
 # DB_POOL is shared by Puma and Sidekiq through .env.production. A pool smaller
 # than either thread count makes threads wait for (and time out on) database
 # connections under load.

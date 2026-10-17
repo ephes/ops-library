@@ -1,0 +1,21 @@
+---
+# Expand mastodon_nginx_federation_cache_prime(+_extra) into host/path/accept
+# items (see the defaults for the host rules).
+- name: Build the federation cache fill list
+  ansible.builtin.set_fact:
+    mastodon_federation_cache_prime_items: >-
+      {%- set items = [] -%}
+      {%- set local_route = mastodon_traefik_local_domain_wellknown | bool -%}
+      {%- for entry in mastodon_nginx_federation_cache_prime + mastodon_nginx_federation_cache_prime_extra -%}
+      {%- if entry.host is defined -%}
+      {%- set hosts = [entry.host] -%}
+      {%- elif local_route and entry.path.startswith('/.well-known/') -%}
+      {%- set hosts = mastodon_nginx_federation_cache_prime_hosts + [mastodon_local_domain] -%}
+      {%- else -%}
+      {%- set hosts = mastodon_nginx_federation_cache_prime_hosts -%}
+      {%- endif -%}
+      {%- for host in hosts | unique -%}
+      {%- set _ = items.append({'host': host, 'path': entry.path, 'accept': entry.accept}) -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {{ items }}
