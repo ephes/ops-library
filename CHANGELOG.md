@@ -3,6 +3,13 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — MeTube no longer renders DOWNLOAD_MODE (2.44.1)
+
+- `metube_deploy` drops `DOWNLOAD_MODE` from `metube.env` and
+  `metube_shared` drops `metube_download_mode`. Upstream MeTube removed the
+  setting and ignores it; downloads always run concurrently, and
+  `metube_max_concurrent_downloads: 1` gives sequential downloads.
+
 ## Unreleased — MeTube builds its pnpm UI before switching sources (2.44.0)
 
 - `metube_deploy` builds the UI with pnpm through corepack (the version in

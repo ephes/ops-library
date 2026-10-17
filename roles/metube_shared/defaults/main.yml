@@ -32,7 +32,7 @@ metube_temp_dir: "{{ metube_download_dir }}"
 
 # Application settings
 metube_download_template: "%(title)s [%(id)s].%(ext)s"
-metube_download_mode: limited
+# Upstream always downloads concurrently; 1 gives sequential downloads.
 metube_max_concurrent_downloads: 3
 metube_default_theme: auto
 metube_enable_accesslog: false
