@@ -1,0 +1,53 @@
+---
+# What Delve checks before and after every detector call: exactly one served
+# model named by the alias, the pinned build and one slot. The key travels in a
+# header, so the requests are no_log and only their status and the fields
+# below are reported.
+- name: health | Read /v1/models
+  ansible.builtin.uri:
+    url: "http://{{ llama_server_bind_address }}:{{ llama_server_port }}/v1/models"
+    headers:
+      Authorization: "Bearer {{ llama_server_api_key | string | trim }}"
+    return_content: true
+    status_code: [200]
+    timeout: 10
+  register: llama_server_models
+  until: llama_server_models.status | default(0) == 200
+  retries: "{{ llama_server_healthcheck_retries }}"
+  delay: "{{ llama_server_healthcheck_delay }}"
+  failed_when: false
+  no_log: true
+
+- name: health | Read /props
+  ansible.builtin.uri:
+    url: "http://{{ llama_server_bind_address }}:{{ llama_server_port }}/props"
+    headers:
+      Authorization: "Bearer {{ llama_server_api_key | string | trim }}"
+    return_content: true
+    status_code: [200]
+    timeout: 10
+  register: llama_server_props
+  failed_when: false
+  no_log: true
+
+- name: health | Report what llama-server serves
+  ansible.builtin.debug:
+    msg:
+      models_status: "{{ llama_server_models.status | default('no answer') }}"
+      models: "{{ (llama_server_models.json | default({})).get('data', []) | map(attribute='id') | list }}"
+      props_status: "{{ llama_server_props.status | default('no answer') }}"
+      build_info: "{{ (llama_server_props.json | default({})).get('build_info', '') }}"
+      total_slots: "{{ (llama_server_props.json | default({})).get('total_slots', '') }}"
+
+- name: health | Require the pinned alias, build and one slot
+  ansible.builtin.assert:
+    that:
+      - llama_server_models.status | default(0) == 200
+      - ((llama_server_models.json | default({})).get('data', []) | map(attribute='id') | list) == [llama_server_alias]
+      - llama_server_props.status | default(0) == 200
+      - (llama_server_props.json | default({})).get('build_info', '') == llama_server_build
+      - (llama_server_props.json | default({})).get('total_slots', 0) | int == 1
+    fail_msg: >-
+      llama-server on {{ llama_server_bind_address }}:{{ llama_server_port }} does not
+      serve exactly {{ llama_server_alias }} on build {{ llama_server_build }} with one
+      slot. See {{ llama_server_stderr_log }} (the wrapper says why it refused to start).

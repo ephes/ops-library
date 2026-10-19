@@ -1,0 +1,90 @@
+---
+# Runtime of the ad-analysis-v1 transcription profile. Included from main.yml
+# only when voxhelm_remote_worker_ad_analysis_enabled is true. The worker
+# advertises the profile only while Parakeet, whisper-cli with the pinned
+# turbo model, and ffprobe resolve, so a missing piece here would leave
+# Delve's jobs waiting without a word; the role fails instead.
+
+- name: ad_analysis | Validate the profile runtime settings
+  ansible.builtin.assert:
+    that:
+      - voxhelm_remote_worker_parakeet_enabled | bool
+      - voxhelm_remote_worker_window_model is match('^[A-Za-z0-9._-]+$')
+      - voxhelm_remote_worker_window_model_sha256 is match('^[0-9a-f]{64}$')
+      - >-
+        voxhelm_remote_worker_window_model_source | string | length > 0
+        or voxhelm_remote_worker_window_model_url is match('^https://')
+      - >-
+        voxhelm_remote_worker_window_model_source | string | length == 0
+        or voxhelm_remote_worker_window_model_source is match('^/')
+      - voxhelm_remote_worker_window_timeout_seconds | int > 0
+      - voxhelm_remote_worker_ffprobe_bin is match('^/')
+      - voxhelm_remote_worker_whispercpp_bin is match('^/')
+    fail_msg: >-
+      The ad-analysis-v1 profile needs Parakeet
+      (voxhelm_remote_worker_parakeet_enabled), a turbo model file name, its
+      64-character SHA-256, an https URL or an absolute source path, a positive
+      window timeout, and absolute ffprobe and whisper-cli paths.
+
+- name: ad_analysis | Check whisper-cli and ffprobe
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ voxhelm_remote_worker_whispercpp_bin }}"
+    - "{{ voxhelm_remote_worker_ffprobe_bin }}"
+  register: voxhelm_remote_worker_ad_analysis_bins
+
+- name: ad_analysis | Require whisper-cli and ffprobe
+  ansible.builtin.assert:
+    that:
+      - voxhelm_remote_worker_ad_analysis_bins.results | rejectattr('stat.exists') | list | length == 0
+    fail_msg: >-
+      {{ voxhelm_remote_worker_ad_analysis_bins.results | rejectattr('stat.exists')
+         | map(attribute='item') | join(', ') }} not found; the Homebrew packages
+      {{ voxhelm_remote_worker_ad_analysis_brew_packages | join(', ') }} provide them.
+
+- name: ad_analysis | Download and verify the pinned turbo window model
+  ansible.builtin.get_url:
+    url: "{{ voxhelm_remote_worker_window_model_url }}"
+    dest: "{{ voxhelm_remote_worker_model_cache_dir }}/{{ voxhelm_remote_worker_window_model }}"
+    checksum: "sha256:{{ voxhelm_remote_worker_window_model_sha256 }}"
+    owner: "{{ voxhelm_remote_worker_service_user }}"
+    group: "{{ voxhelm_remote_worker_service_group }}"
+    mode: "0640"
+    timeout: 120
+  register: voxhelm_remote_worker_window_model_download
+  when: voxhelm_remote_worker_window_model_source | string | length == 0
+
+- name: ad_analysis | Hash the configured turbo model source
+  ansible.builtin.stat:
+    path: "{{ voxhelm_remote_worker_window_model_source }}"
+    checksum_algorithm: sha256
+  register: voxhelm_remote_worker_window_model_source_stat
+  when: voxhelm_remote_worker_window_model_source | string | length > 0
+
+- name: ad_analysis | Require the pinned turbo model at the source
+  ansible.builtin.assert:
+    that:
+      - voxhelm_remote_worker_window_model_source_stat.stat.exists
+      - voxhelm_remote_worker_window_model_source_stat.stat.checksum == voxhelm_remote_worker_window_model_sha256
+    fail_msg: >-
+      {{ voxhelm_remote_worker_window_model_source }} is missing or is not the
+      pinned turbo model (SHA-256 {{ voxhelm_remote_worker_window_model_sha256 }}).
+  when: voxhelm_remote_worker_window_model_source | string | length > 0
+
+- name: ad_analysis | Link the turbo model source into the worker cache
+  ansible.builtin.file:
+    src: "{{ voxhelm_remote_worker_window_model_source }}"
+    dest: "{{ voxhelm_remote_worker_model_cache_dir }}/{{ voxhelm_remote_worker_window_model }}"
+    state: link
+    force: true
+  register: voxhelm_remote_worker_window_model_link
+  when: voxhelm_remote_worker_window_model_source | string | length > 0
+
+# One result for the restart decision in main.yml (a skipped task registers
+# too, so the two tasks above keep their own names).
+- name: ad_analysis | Record whether the turbo model changed
+  ansible.builtin.set_fact:
+    voxhelm_remote_worker_window_model_changed: >-
+      {{ (voxhelm_remote_worker_window_model_download.changed | default(false))
+         or (voxhelm_remote_worker_window_model_link.changed | default(false)) }}

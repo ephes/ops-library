@@ -3,6 +3,46 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Server ad analysis: Delve settings, llama-server role, worker profile runtime (2.48.0)
+
+Slice 16 of the podcast repo's server ad analysis
+(`docs/player/specs/server-ad-analysis-design.md`). Nothing changes for a
+deployment that leaves the new switches off.
+
+- `delve_deploy`: new `delve_smart_skip_analysis` (default `false`). When on,
+  the role installs apt `ffmpeg`, copies the analysis profile JSON
+  (`delve_smart_skip_analysis_profile_src`) to `/etc/delve`, creates
+  `delve_analysis_media_dir` (delve, 0700; added to the unit's
+  `ReadWritePaths` when it is outside the data directory), writes the voxhelm
+  producer token and the detector API key to their own files (root:delve
+  0640, `no_log`) and renders `DELVE_SMART_SKIP_ANALYSIS`,
+  `DELVE_SMART_SKIP_ANALYSIS_PROFILE`, `DELVE_ANALYSIS_MEDIA_DIR`,
+  `DELVE_ANALYSIS_MEDIA_DISK_CAP_BYTES`, `DELVE_FFPROBE_PATH`,
+  `DELVE_FFMPEG_PATH`, `DELVE_VOXHELM_URL` + `DELVE_VOXHELM_TOKEN_FILE`,
+  `DELVE_DETECTOR_URL` + `DELVE_DETECTOR_API_KEY_FILE` and the optional
+  timeouts. URLs must be bare origins; a secret must be at least 32 characters
+  and not `CHANGEME` (checked without printing it). Off, none of this is
+  rendered and the env file and unit are unchanged; the secret files are removed.
+  ops-deploy's `delve` service mirrors the new `delve.env.j2` and
+  `delve.service.j2` lines byte for byte (its parity tests vendor both).
+- New role `llama_server_deploy`: one pinned llama.cpp `llama-server` on macOS
+  as a LaunchDaemon, started through a wrapper copied from the control node
+  (Delve's `detector-server.sh`, checked to pin the same GGUF SHA-256 and the
+  private flags). Installs Homebrew `llama.cpp` when missing (never upgrades)
+  and fails unless the installed build is `llama_server_build`; downloads the
+  GGUF at a pinned Hugging Face commit with its SHA-256; writes the API key file
+  (0600, service user); binds to the host's Tailscale address (`tailnet`) or a
+  loopback/tailnet literal; and checks after a start that `/v1/models` serves
+  exactly the alias and `/props` the build and one slot.
+  `llama_server_enabled: false` unloads it and removes the plist and key file.
+- `voxhelm_remote_worker_deploy`: new
+  `voxhelm_remote_worker_ad_analysis_enabled` (default `false`) for the
+  `ad-analysis-v1` profile runtime: installs `whisper-cpp` and `ffmpeg` when
+  missing, downloads `ggml-large-v3-turbo.bin` at a pinned commit and checks
+  its SHA-256 (or links a verified existing file), renders
+  `VOXHELM_WINDOW_MODEL`, `VOXHELM_WINDOW_TIMEOUT_SECONDS` and
+  `VOXHELM_FFPROBE_BIN`, and requires Parakeet to be enabled.
+
 ## Unreleased
 
 - Remove `stsPreload: true` from all role Traefik templates so their HSTS
@@ -1222,7 +1262,6 @@ FastDeploy privilege reduction, stage 1.
   of `SAMEORIGIN`. Traefik's headers middleware replaces the backend's value, so
   the edge had been weakening the `DENY` Voxhelm sends itself. Takes effect on
   the next Voxhelm ingress deploy.
-
 
 ## Unreleased — Daybook Paperless scan intake adapter (2.31.17)
 

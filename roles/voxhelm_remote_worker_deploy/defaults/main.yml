@@ -95,6 +95,28 @@ voxhelm_remote_worker_parakeet_overlap_seconds: 30
 voxhelm_remote_worker_parakeet_max_sentence_seconds: ""
 voxhelm_remote_worker_parakeet_timeout_seconds: 1800
 
+# Runtime of the `ad-analysis-v1` transcription profile (Voxhelm D-26 to D-29,
+# specs/2026-10-16_ad_analysis_profile.md and its amendments): Parakeet (the
+# settings above, which this needs), the whisper large-v3-turbo window model
+# with its pinned SHA-256 for the German drift check and the chapter windows,
+# whisper-cli and ffprobe. Off by default. When on, the role installs the
+# brew packages below when missing, downloads the turbo model at a pinned
+# Hugging Face commit into the worker's model cache (or links an existing
+# file, voxhelm_remote_worker_window_model_source, after checking its hash) and
+# renders VOXHELM_WINDOW_MODEL, VOXHELM_WINDOW_TIMEOUT_SECONDS and
+# VOXHELM_FFPROBE_BIN. The worker advertises the profile only while all of
+# them resolve (checked at every heartbeat).
+voxhelm_remote_worker_ad_analysis_enabled: false
+voxhelm_remote_worker_ad_analysis_brew_packages:
+  - "whisper-cpp"
+  - "ffmpeg"
+voxhelm_remote_worker_window_model: "ggml-large-v3-turbo.bin"
+voxhelm_remote_worker_window_model_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo.bin"
+voxhelm_remote_worker_window_model_sha256: "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69"  # pragma: allowlist secret
+voxhelm_remote_worker_window_model_source: ""
+voxhelm_remote_worker_window_timeout_seconds: 120
+voxhelm_remote_worker_ffprobe_bin: "/opt/homebrew/bin/ffprobe"
+
 voxhelm_remote_worker_diarization_backend: "pyannote"
 voxhelm_remote_worker_pyannote_model: "pyannote/speaker-diarization-3.1"
 voxhelm_remote_worker_pyannote_device: "auto"

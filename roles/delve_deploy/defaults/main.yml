@@ -93,6 +93,48 @@ delve_discovery_max_items_per_feed: 100
 # timeout stay coherent even when every fetch reaches the 30s whole-request cap.
 delve_discovery_max_sources_per_run: 100
 
+# Server ad analysis (DELVE_SMART_SKIP_ANALYSIS; the podcast repo's
+# docs/player/specs/server-ad-analysis-design.md). Off by default; while off,
+# nothing below is rendered and the env file and unit stay as they were. When
+# on, the role installs ffmpeg (ffprobe and ffmpeg), copies the analysis
+# profile JSON from the control node, creates the media directory, writes the
+# voxhelm producer token and the detector API key to their own files (root,
+# group delve, mode 0640) and renders the analysis settings.
+delve_smart_skip_analysis: false
+# Control-node path of the analysis profile JSON (required when on); its
+# canonical SHA-256 is the profile id Delve serves results for.
+delve_smart_skip_analysis_profile_src: ""
+delve_smart_skip_analysis_profile_path: "{{ delve_config_dir }}/smart-skip-analysis-profile.json"
+# Downloaded publisher audio and stored transcripts. Empty: Delve's default,
+# <dirname DELVE_DB_PATH>/smart-skip-media. Keep it off the backup path; a
+# directory outside delve_data_dir is added to the unit's ReadWritePaths.
+delve_analysis_media_dir: ""
+# Empty: Delve's default disk cap (20000000000 bytes).
+delve_analysis_media_disk_cap_bytes: ""
+# Empty: ffprobe / ffmpeg on PATH (the apt ffmpeg package installs both in /usr/bin).
+delve_ffprobe_path: ""
+delve_ffmpeg_path: ""
+delve_smart_skip_packages:
+  - ffmpeg
+# voxhelm origin (http(s)://host[:port], no path) for the transcription stage,
+# and Delve's producer bearer token there (a secret; pass from SOPS). Empty URL:
+# jobs wait in `transcribing` (voxhelmNotConfigured).
+delve_voxhelm_url: ""
+delve_voxhelm_token: ""
+delve_voxhelm_token_path: "{{ delve_config_dir }}/voxhelm-token"
+# Empty: Delve's defaults (60 s per call, 1800 s per upload, poll every 30 s).
+delve_voxhelm_timeout_seconds: ""
+delve_voxhelm_upload_timeout_seconds: ""
+delve_voxhelm_poll_seconds: ""
+# Detector llama-server origin and its API key (a secret; the same value the
+# llama_server_deploy role writes for llama-server). Empty URL: transcribed
+# jobs wait in `detecting` (detectorNotConfigured).
+delve_detector_url: ""
+delve_detector_api_key: ""
+delve_detector_api_key_path: "{{ delve_config_dir }}/detector-api-key"
+# Empty: Delve's default (300 s per call).
+delve_detector_timeout_seconds: ""
+
 # systemd
 delve_service_enabled: true
 delve_service_state: started

@@ -22,3 +22,19 @@
     owner: "{{ delve_user }}"
     group: "{{ delve_group }}"
     mode: "0750"
+
+# Downloaded publisher audio and transcripts (server ad analysis). Delve keeps
+# its files 0600 and its subdirectories 0700; the directory itself is created
+# here so a path outside the data directory exists before the unit's
+# ReadWritePaths names it. It is never removed by the role: switching the
+# analysis off leaves the files for the operator (see the README).
+- name: directories | Ensure the analysis media directory exists
+  ansible.builtin.file:
+    path: "{{ delve_analysis_media_dir }}"
+    state: directory
+    owner: "{{ delve_user }}"
+    group: "{{ delve_group }}"
+    mode: "0700"
+  when:
+    - delve_smart_skip_analysis | bool
+    - delve_analysis_media_dir | length > 0

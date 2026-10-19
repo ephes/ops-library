@@ -1,0 +1,114 @@
+---
+- name: validate | Ensure the target is macOS
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] == 'Darwin'
+    fail_msg: "llama_server_deploy only supports macOS targets (gather facts first)."
+
+- name: validate | Validate llama-server settings
+  ansible.builtin.assert:
+    that:
+      - llama_server_service_user | string | trim | length > 0
+      - llama_server_service_user != "CHANGEME"
+      - llama_server_service_group | string | trim | length > 0
+      - llama_server_wrapper_src | string | trim | length > 0
+      - llama_server_bin is match('^/')
+      - llama_server_install_dir is match('^/')
+      - llama_server_model_dir is match('^/')
+      - llama_server_config_dir is match('^/')
+      - llama_server_gguf_file is match('^[A-Za-z0-9._-]+\.gguf$')
+      - llama_server_gguf_url is match('^https://')
+      - llama_server_gguf_sha256 is match('^[0-9a-f]{64}$')
+      - llama_server_alias is match('^[A-Za-z0-9._-]+-' ~ (llama_server_gguf_sha256[:8]) ~ '$')
+      - llama_server_build is match('^b[0-9]+-[0-9a-f]{7,40}$')
+      - (llama_server_port | string) is match('^[0-9]{1,5}$')
+      - llama_server_port | int >= 1
+      - llama_server_port | int <= 65535
+      - >-
+        llama_server_bind_host == 'tailnet'
+        or llama_server_bind_host is match('^127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$')
+        or llama_server_bind_host is match('^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}$')
+    fail_msg: >-
+      llama_server_deploy needs a service user, the wrapper on the control node,
+      absolute paths, a .gguf file name, an https model URL, the model's
+      64-character SHA-256, an alias ending in '-' plus the first 8 hex digits
+      of that hash, a build "b<number>-<commit>", a port, and a bind host that
+      is "tailnet", a loopback address or a Tailscale (100.64.0.0/10) address.
+  when: llama_server_enabled | bool
+
+- name: validate | Stat the wrapper on the control node
+  ansible.builtin.stat:
+    path: "{{ llama_server_wrapper_src }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: llama_server_wrapper_src_stat
+  when: llama_server_enabled | bool
+
+# The wrapper refuses a GGUF with another hash and fixes the flags; a wrapper
+# that pins another model would make launchd restart it forever.
+- name: validate | Check the wrapper pins this model and the private flags
+  ansible.builtin.assert:
+    that:
+      - llama_server_wrapper_src_stat.stat.exists
+      - llama_server_wrapper_src_stat.stat.isreg
+      - llama_server_wrapper_text is search('GGUF_SHA256="' ~ llama_server_gguf_sha256 ~ '"')
+      - llama_server_wrapper_text is search('--api-key-file')
+      - llama_server_wrapper_text is search('--no-slots')
+      - llama_server_wrapper_text is search('--cache-ram 0')
+    fail_msg: >-
+      {{ llama_server_wrapper_src }} must exist and pin GGUF_SHA256="{{ llama_server_gguf_sha256 }}"
+      with --api-key-file, --no-slots and --cache-ram 0.
+  vars:
+    llama_server_wrapper_text: >-
+      {{ lookup('ansible.builtin.file', llama_server_wrapper_src)
+         if llama_server_wrapper_src_stat.stat.exists | default(false) else '' }}
+  when: llama_server_enabled | bool
+
+- name: validate | Classify the API key
+  ansible.builtin.set_fact:
+    llama_server_api_key_usable: >-
+      {{ llama_server_api_key | string | trim | length >= 32
+         and llama_server_api_key | string | trim != 'CHANGEME'
+         and llama_server_api_key | string is not search('[\r\n]') }}
+  no_log: true
+  when: llama_server_enabled | bool
+
+- name: validate | Validate the API key
+  ansible.builtin.assert:
+    that:
+      - llama_server_api_key_usable | bool
+    fail_msg: >-
+      llama_server_api_key must be a single-line value of at least 32
+      characters that is not CHANGEME. The value is not printed.
+  when: llama_server_enabled | bool
+
+- name: validate | Pick the Tailscale address to bind
+  ansible.builtin.set_fact:
+    llama_server_tailnet_addresses: >-
+      {{ ansible_facts['all_ipv4_addresses'] | default([])
+         | select('match', '^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}$')
+         | unique | list }}
+  when:
+    - llama_server_enabled | bool
+    - llama_server_bind_host == 'tailnet'
+
+- name: validate | Require exactly one Tailscale address
+  ansible.builtin.assert:
+    that:
+      - llama_server_tailnet_addresses | length == 1
+    fail_msg: >-
+      llama_server_bind_host is "tailnet" but the host has
+      {{ llama_server_tailnet_addresses | length }} Tailscale IPv4 addresses
+      ({{ llama_server_tailnet_addresses | join(', ') }}). Is Tailscale up? Set
+      llama_server_bind_host to the address explicitly.
+  when:
+    - llama_server_enabled | bool
+    - llama_server_bind_host == 'tailnet'
+
+- name: validate | Resolve the bind address
+  ansible.builtin.set_fact:
+    llama_server_bind_address: >-
+      {{ llama_server_tailnet_addresses[0]
+         if llama_server_bind_host == 'tailnet' else llama_server_bind_host }}
+  when: llama_server_enabled | bool

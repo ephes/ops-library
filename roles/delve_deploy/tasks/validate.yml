@@ -93,3 +93,92 @@
       delve_apple_server_notifications requires delve_apple_client_id (the
       binary refuses to boot without DELVE_APPLE_CLIENT_ID when Apple server
       notifications are enabled).
+
+# --- Server ad analysis ------------------------------------------------------
+
+- name: validate | Validate the server ad analysis switch
+  ansible.builtin.assert:
+    that:
+      - delve_smart_skip_analysis is boolean or (delve_smart_skip_analysis | string | lower) in ['true', 'false']
+    fail_msg: >-
+      delve_smart_skip_analysis must be true or false; got
+      {{ delve_smart_skip_analysis | string | to_json }}.
+    quiet: true
+
+- name: validate | Validate the server ad analysis settings
+  ansible.builtin.assert:
+    that:
+      - delve_smart_skip_analysis_profile_src | length > 0
+      - delve_smart_skip_analysis_profile_path is match(delve_analysis_path_pattern)
+      - delve_analysis_media_dir | length == 0 or delve_analysis_media_dir is match(delve_analysis_path_pattern)
+      - delve_analysis_media_dir | length == 0 or (delve_analysis_media_dir | regex_replace('/+$', '')) != (delve_data_dir | regex_replace('/+$', ''))
+      - delve_analysis_media_disk_cap_bytes | string | length == 0 or (delve_analysis_media_disk_cap_bytes | string) is match('^[1-9][0-9]*$')
+      - delve_ffprobe_path | length == 0 or delve_ffprobe_path is match(delve_analysis_path_pattern)
+      - delve_ffmpeg_path | length == 0 or delve_ffmpeg_path is match(delve_analysis_path_pattern)
+      - delve_voxhelm_url | length == 0 or delve_voxhelm_url is match('^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?$')
+      - delve_detector_url | length == 0 or delve_detector_url is match('^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?$')
+      - delve_voxhelm_token_path is match(delve_analysis_path_pattern)
+      - delve_detector_api_key_path is match(delve_analysis_path_pattern)
+      - >-
+        [delve_voxhelm_timeout_seconds, delve_voxhelm_upload_timeout_seconds,
+         delve_voxhelm_poll_seconds, delve_detector_timeout_seconds]
+        | map('string') | reject('equalto', '') | reject('match', '^[1-9][0-9]*$') | list | length == 0
+    fail_msg: >-
+      Server ad analysis needs delve_smart_skip_analysis_profile_src (the
+      profile JSON on the control node), absolute paths for the profile, the
+      media directory (not the data directory itself), ffprobe, ffmpeg and the
+      secret files, a positive whole disk cap and timeouts when set, and
+      voxhelm / detector URLs that are bare origins (http(s)://host[:port], no
+      path, query or credentials). Paths are rendered inside double quotes:
+      no whitespace, quotes, backslashes, $ or backticks.
+  vars:
+    # The same paths ops-deploy's DelveConfig accepts.
+    delve_analysis_path_pattern: '^/[^\s"''\\$`]*$'
+  when: delve_smart_skip_analysis | bool
+
+- name: validate | Stat the analysis profile on the control node
+  ansible.builtin.stat:
+    path: "{{ delve_smart_skip_analysis_profile_src }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: delve_smart_skip_analysis_profile_src_stat
+  when: delve_smart_skip_analysis | bool
+
+- name: validate | Verify the analysis profile is valid JSON on the control node
+  ansible.builtin.assert:
+    that:
+      - delve_smart_skip_analysis_profile_src_stat.stat.exists
+      - delve_smart_skip_analysis_profile_src_stat.stat.isreg
+      - (lookup('ansible.builtin.file', delve_smart_skip_analysis_profile_src) | from_json) is mapping
+    fail_msg: >-
+      delve_smart_skip_analysis_profile_src {{ delve_smart_skip_analysis_profile_src }}
+      must be a JSON object file on the control node.
+  when: delve_smart_skip_analysis | bool
+
+# The secrets are classified without printing them (no_log), then the
+# classification is asserted in a visible task: a placeholder, an empty value
+# or a short one fails here instead of at delved's startup.
+- name: validate | Classify the voxhelm token and detector API key
+  ansible.builtin.set_fact:
+    delve_voxhelm_token_usable: >-
+      {{ delve_voxhelm_token | string | trim | length >= 32
+         and delve_voxhelm_token | string | trim != 'CHANGEME'
+         and delve_voxhelm_token | string is not search('[\r\n]') }}
+    delve_detector_api_key_usable: >-
+      {{ delve_detector_api_key | string | trim | length >= 32
+         and delve_detector_api_key | string | trim != 'CHANGEME'
+         and delve_detector_api_key | string is not search('[\r\n]') }}
+  no_log: true
+  when: delve_smart_skip_analysis | bool
+
+- name: validate | Validate the voxhelm token and detector API key
+  ansible.builtin.assert:
+    that:
+      - delve_voxhelm_url | length == 0 or delve_voxhelm_token_usable | bool
+      - delve_detector_url | length == 0 or delve_detector_api_key_usable | bool
+    fail_msg: >-
+      With delve_voxhelm_url set, delve_voxhelm_token must be a single-line
+      value of at least 32 characters that is not CHANGEME; the same holds for
+      delve_detector_api_key with delve_detector_url. The values are not printed.
+  when: delve_smart_skip_analysis | bool

@@ -233,6 +233,7 @@ consumer repos depend on.
 | Bootstrap | [`daybook_photos_archive_sync_deploy`](roles/daybook_photos_archive_sync_deploy/README.md) | Install the disabled-first, single-writer Nikon working-folder archive reconciler as an Aqua user LaunchAgent. |
 | Bootstrap | [`daybook_voice_memo_inbox_deploy`](roles/daybook_voice_memo_inbox_deploy/README.md) | Install the disabled-first Apple Voice Memos to Voxhelm and immutable Obsidian inbox importer on macOS. |
 | Bootstrap | [`ollama_install`](roles/ollama_install/README.md) | Install Ollama on macOS via Homebrew and manage a launchd service. |
+| Bootstrap | [`llama_server_deploy`](roles/llama_server_deploy/README.md) | Run one pinned llama.cpp `llama-server` (Delve's ad detector) on macOS under launchd: pinned build and GGUF hash, alias, API key file, loopback or tailnet bind, no slot state or prompt logging. |
 | Bootstrap | [`voxhelm_deploy`](roles/voxhelm_deploy/README.md) | Deploy Voxhelm on macOS with `uv`, Uvicorn, and a launchd-managed synchronous transcription API. |
 | Bootstrap | [`voxhelm_ingress_deploy`](roles/voxhelm_ingress_deploy/README.md) | Expose Voxhelm over private HTTPS via Traefik on the edge host while proxying to the macOS backend over Tailscale. |
 | Bootstrap | [`voxhelm_remote_worker_deploy`](roles/voxhelm_remote_worker_deploy/README.md) | Install and run a pinned public-PyPI Voxhelm remote transcription worker on macOS under launchd. |
