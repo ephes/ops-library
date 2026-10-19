@@ -180,18 +180,53 @@
     - restart nyxmon
     - restart nyxmon-monitor
 
-# This walks the live database, which lives in the site tree. That is safe: it
-# only sets owner/group to the service user the database already belongs to, and
-# it does not touch modes. The readonly-database failure came from the syncs
-# above, where `synchronize`'s default `archive: true` stamped the CONTROLLER's
-# uid/gid onto the destination directory and took write access away from the
-# service user mid-sync - SQLITE_READONLY_DIRECTORY, because SQLite must create
-# a journal file there. Hence `owner: false` / `group: false` on both syncs, plus
-# the db.sqlite3* excludes in nyxmon_rsync_excludes.
+# The ownership fix below runs over the site tree, which also holds the live
+# database: the Django sync copies src/django/ into the site root, so that is
+# where Django keeps db.sqlite3. The database, its agent lock and backups are
+# persistent and safe to include; the fix only sets owner/group to the service
+# user they already belong to and never touches modes. The readonly-database
+# failure came from the syncs above, where `synchronize`'s default
+# `archive: true` stamped the CONTROLLER's uid/gid onto the destination
+# directory and took write access away from the service user mid-sync -
+# SQLITE_READONLY_DIRECTORY, because SQLite must create a journal file there.
+# Hence `owner: false` / `group: false` on both syncs, plus the db.sqlite3*
+# excludes in nyxmon_rsync_excludes.
+#
+# The sidecars are not safe to include. The writers keep running, and with
+# journal_mode=delete every write transaction creates db.sqlite3-journal and
+# deletes it at commit (in WAL mode -wal/-shm go away with the last
+# connection). One recursive walk over the site root listed such a sidecar and
+# failed when it was gone before the chown. So the fix lists the site root's
+# entries without the transient sidecars (db.sqlite3-*) and recurses into each
+# entry on its own. sqlite_privacy.yml sets owner and mode of every database
+# file, sidecars included, later in the play and verifies the result.
 
-- name: source_rsync | Set ownership for synced files
+- name: source_rsync | List site entries for the ownership fix
+  find:
+    paths: "{{ nyxmon_site_path }}"
+    file_type: any
+    hidden: true
+    recurse: false
+    excludes:
+      - "db.sqlite3-*"
+  register: nyxmon_site_entries
+
+- name: source_rsync | Set ownership for the site root
   file:
     path: "{{ nyxmon_site_path }}"
+    state: directory
     owner: "{{ nyxmon_user }}"
     group: "{{ nyxmon_group }}"
-    recurse: true
+
+# Top-level symlinks (the role's venv link) are changed themselves, not
+# followed; their targets in the site tree are entries of their own.
+- name: source_rsync | Set ownership for synced files
+  file:
+    path: "{{ item.path }}"
+    owner: "{{ nyxmon_user }}"
+    group: "{{ nyxmon_group }}"
+    recurse: "{{ item.isdir }}"
+    follow: "{{ not item.islnk }}"
+  loop: "{{ nyxmon_site_entries.files | sort(attribute='path') }}"
+  loop_control:
+    label: "{{ item.path | basename }}"

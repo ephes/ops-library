@@ -87,7 +87,18 @@
     that:
       - nyxmon_source_path != ""
       - nyxmon_source_path is defined
-    fail_msg: "nyxmon_source_path must be set when using rsync deployment method"
+      # The Django sync copies src/django/ into the site root, so that is where
+      # Django keeps db.sqlite3. The ownership fix in source_rsync.yml keeps
+      # the database's transient sidecars out of its walk only there.
+      - >-
+        (nyxmon_django_path | regex_replace('/+$', ''))
+        == (nyxmon_site_path | regex_replace('/+$', ''))
+    fail_msg: >-
+      nyxmon_source_path must be set when using rsync deployment method, and
+      nyxmon_django_path must be nyxmon_site_path (the Django sync puts the
+      project and its database there); got nyxmon_django_path
+      {{ nyxmon_django_path | default('NOT SET') }}, nyxmon_site_path
+      {{ nyxmon_site_path | default('NOT SET') }}.
   when: nyxmon_deploy_method == "rsync"
 
 - name: Validate Traefik basic auth configuration

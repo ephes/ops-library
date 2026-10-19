@@ -284,6 +284,14 @@ source sync is what has to be careful about it:
   change, both writers restart independently of the general restart preference.
   A final post-restart pass verifies that new and existing sidecars cannot expose
   JSON-check credentials to other local accounts.
+- The writers keep running during the deploy, so a sidecar can disappear
+  between the listing and the change (a `db.sqlite3-journal` lives for one write
+  transaction). A failed change on a transient sidecar (`db.sqlite3-*`) is
+  therefore not an error; the verify pass is the guarantee: every
+  `db.sqlite3*` file still present afterwards must be the service user's and
+  `0600`, or the deploy fails. SQLite gives new sidecars the database file's
+  mode. A failure on the database itself, the agent lock or a backup fails the
+  deploy as before.
 
 | Variable | Default | Description |
 | --- | --- | --- |
@@ -379,10 +387,17 @@ nyxmon_use_source_pyproject: true
 The sync runs with `owner: false` and `group: false`. rsync's archive defaults
 would otherwise stamp the controller's uid/gid onto the destination directory
 itself, taking write access to the site directory away from the service user
-for the rest of the deploy. Ownership is fixed afterwards by a single recursive
-task. That is safe for a different reason than it may look: the database is
-inside the tree, but the task only sets owner/group to the service user the
-file already belongs to, and never touches modes.
+for the rest of the deploy. Ownership is fixed afterwards: the role sets
+owner/group (never modes) on the site root, lists its entries and recurses into
+each one on its own. The database, its agent lock and backups are part of that
+pass; it only sets the owner they already have. The transient sidecars
+(`db.sqlite3-*`) are left out, because the running writers create and delete
+them while the deploy runs: with `journal_mode=delete` every write transaction
+creates `db.sqlite3-journal` and deletes it at commit. One recursive walk over
+the site root listed a journal and failed when it was gone before the chown.
+Top-level symlinks are changed themselves rather than followed. Because the
+Django sync puts the project, and with it `db.sqlite3`, into the site root,
+rsync deploys require `nyxmon_django_path` to equal `nyxmon_site_path`.
 
 Exclusions are configurable and default to persistent runtime data:
 

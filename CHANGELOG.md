@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased — nyxmon_deploy: deploys no longer fail on a vanishing SQLite journal (2.62.2)
+
+- `nyxmon_deploy` no longer fails while the monitoring agent writes. The
+  database uses `journal_mode=delete`, so every write transaction creates
+  `db.sqlite3-journal` and deletes it at commit. Two tasks lost that race
+  (the Rust agent cutover needed three runs): `sqlite_privacy | Restrict
+  database and sidecars` listed a journal that was gone when its `file` call
+  ran, and `source_rsync | Set ownership for synced files` walked the site
+  root recursively and failed on a journal deleted mid-walk.
+- The ownership fix now sets owner/group on the site root, lists its entries
+  without the transient sidecars (`db.sqlite3-*`) and recurses into each entry
+  on its own; top-level symlinks are changed, not followed. The database, its
+  agent lock and backups stay in the pass.
+- The privacy pass still restricts every `db.sqlite3*` file it finds. A failure
+  on a transient sidecar is no longer an error, but the verify pass is
+  unchanged: every database file still present afterwards must be the service
+  user's and `0600`, or the deploy fails. Failures on the database, the lock or
+  a backup fail the deploy as before.
+- rsync deploys now require `nyxmon_django_path` to equal `nyxmon_site_path`
+  (the Django sync puts the project and `db.sqlite3` there).
+
 ## Unreleased — explicit Java fresh-trigger recovery (2.62.1)
 
 - `java_ca_refresh`: explicitly process the distribution Java fresh trigger when
