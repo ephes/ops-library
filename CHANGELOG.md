@@ -3,6 +3,13 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased
+
+- Remove `stsPreload: true` from all role Traefik templates so their HSTS
+  middleware no longer advertises `preload`. No domains were submitted to the
+  browser preload list; the owner decided against registration on 2026-10-19.
+  HSTS lifetimes, subdomain settings, and all other security headers are unchanged.
+
 ## Unreleased — Voice Memo Matter terminology (2.47.1)
 
 - The Voice Memo inbox role's default ASR prompt explains that the owner's
