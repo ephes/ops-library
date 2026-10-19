@@ -3,6 +3,20 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Echoport runner fails closed on a missing mc alias (2.48.1)
+
+- The generic Echoport runner (`echoport_backup`, `backup.py.j2`) checks with
+  `mc --json alias list` that the object key's mc alias exists before it
+  archives anything and before every `mc cp`/`mc stat`, and fails the backup or
+  restore with an error naming the alias and the key prefix. mc reads an
+  unknown alias as a local path, so a target without its own alias, whose
+  fallback alias had been removed, wrote its archives below the runner's
+  working directory and Echoport recorded them as successful backups. The
+  alias listing carries the secret key and is never printed.
+- New `echoport_backup_minio_require_prefix_alias` (default `false`) refuses
+  keys without an entry in `echoport_backup_minio_prefix_aliases` instead of
+  falling back to `echoport_backup_minio_alias`.
+
 ## Unreleased — Server ad analysis: Delve settings, llama-server role, worker profile runtime (2.48.0)
 
 Slice 16 of the podcast repo's server ad analysis

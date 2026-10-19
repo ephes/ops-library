@@ -32,6 +32,10 @@ echoport_backup_minio_retired_aliases: []
 # (Echoport's key prefix is the target name), e.g. {nyxmon: backup-nyxmon}.
 # A key without an entry uses echoport_backup_minio_alias.
 echoport_backup_minio_prefix_aliases: {}
+# Refuse keys without an entry in echoport_backup_minio_prefix_aliases instead
+# of falling back to echoport_backup_minio_alias. Either way the runner checks
+# that the alias exists in mc's configuration before every mc cp/stat.
+echoport_backup_minio_require_prefix_alias: false
 
 # mc (MinIO client) installation
 echoport_backup_mc_install_path: "/usr/local/bin/mc"
