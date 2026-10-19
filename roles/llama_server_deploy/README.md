@@ -41,7 +41,9 @@ the pins live:
    changed or the job is not running.
 6. Health check: `/v1/models` must serve exactly `llama_server_alias`, and
    `/props` must report `llama_server_build` and one slot (what Delve checks
-   before and after every detector call).
+   before and after every detector call). `/v1/models` without the key must
+   answer 401: llama-server leaves only `/health`, `/v1/health` and UI assets
+   open once a key is loaded, and serves everything when none is.
 
 `llama_server_enabled: false` unloads the job and removes its plist and the
 API key file; the model, the wrapper and the Homebrew package stay.
@@ -50,8 +52,13 @@ API key file; the model, the wrapper and the Homebrew package stay.
 
 - `llama_server_service_user` - the account the server runs as.
 - `llama_server_wrapper_src` - the wrapper on the control node.
-- `llama_server_api_key` - at least 32 characters; pass from SOPS. Delve needs
-  the same value (`delve_detector_api_key` of `delve_deploy`).
+- `llama_server_api_key` - at least 32 characters of `A-Z a-z 0-9 . _ ~ + / = -`
+  (`llama_server_api_key_pattern`; `openssl rand -hex 32` makes one); pass
+  from SOPS. llama-server (b11669) reads `--api-key-file` line by line without
+  trimming and skips empty lines and lines starting with `#`, so any other
+  value could be ignored and leave the server without authentication. Delve
+  needs the same value (`delve_detector_api_key` of `delve_deploy`, which
+  checks the same pattern).
 - `llama_server_brew_user` - when Ansible connects as root.
 
 ## Example

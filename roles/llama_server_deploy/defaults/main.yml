@@ -50,6 +50,13 @@ llama_server_alias: "qwen3-4b-instruct-2507-q4km-3605803b"
 llama_server_api_key: "CHANGEME"  # pragma: allowlist secret
 llama_server_config_dir: "/etc/llama-server"
 llama_server_api_key_path: "{{ llama_server_config_dir }}/api-key"
+# What the key must look like. llama-server (b11669, common/arg.cpp
+# --api-key-file) reads the file line by line without trimming and skips empty
+# lines and lines starting with "#", so the key is one token of these
+# characters: never a comment, never split or padded. Delve's side
+# (delve_deploy's delve_detector_api_key_pattern, ops-deploy's
+# DETECTOR_API_KEY_PATTERN) accepts exactly the same values.
+llama_server_api_key_pattern: '^[A-Za-z0-9._~+/=-]{32,}\Z'
 
 # Bind address: "tailnet" picks this host's single Tailscale IPv4 address
 # (100.64.0.0/10) from the gathered facts; otherwise a loopback address or a

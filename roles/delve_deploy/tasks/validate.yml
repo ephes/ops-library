@@ -166,9 +166,8 @@
          and delve_voxhelm_token | string | trim != 'CHANGEME'
          and delve_voxhelm_token | string is not search('[\r\n]') }}
     delve_detector_api_key_usable: >-
-      {{ delve_detector_api_key | string | trim | length >= 32
-         and delve_detector_api_key | string | trim != 'CHANGEME'
-         and delve_detector_api_key | string is not search('[\r\n]') }}
+      {{ (delve_detector_api_key | string | trim) is match(delve_detector_api_key_pattern)
+         and delve_detector_api_key | string | trim != 'CHANGEME' }}
   no_log: true
   when: delve_smart_skip_analysis | bool
 
@@ -179,6 +178,8 @@
       - delve_detector_url | length == 0 or delve_detector_api_key_usable | bool
     fail_msg: >-
       With delve_voxhelm_url set, delve_voxhelm_token must be a single-line
-      value of at least 32 characters that is not CHANGEME; the same holds for
-      delve_detector_api_key with delve_detector_url. The values are not printed.
+      value of at least 32 characters that is not CHANGEME; with
+      delve_detector_url set, delve_detector_api_key must be at least 32
+      characters of A-Z a-z 0-9 . _ ~ + / = - (the key llama-server reads
+      whole; e.g. openssl rand -hex 32). The values are not printed.
   when: delve_smart_skip_analysis | bool

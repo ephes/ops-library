@@ -30,6 +30,19 @@
   failed_when: false
   no_log: true
 
+# The key must actually be enforced: llama-server serves /health and
+# /v1/health without a key, every other route (including /v1/models) needs
+# it once a key is loaded, and answers 401 otherwise. A key file whose only
+# line it skipped would leave it open, with /v1/models answering 200.
+- name: health | Read /v1/models without the API key
+  ansible.builtin.uri:
+    url: "http://{{ llama_server_bind_address }}:{{ llama_server_port }}/v1/models"
+    return_content: false
+    status_code: [401]
+    timeout: 10
+  register: llama_server_models_unauthenticated
+  failed_when: false
+
 - name: health | Report what llama-server serves
   ansible.builtin.debug:
     msg:
@@ -38,6 +51,7 @@
       props_status: "{{ llama_server_props.status | default('no answer') }}"
       build_info: "{{ (llama_server_props.json | default({})).get('build_info', '') }}"
       total_slots: "{{ (llama_server_props.json | default({})).get('total_slots', '') }}"
+      models_without_key_status: "{{ llama_server_models_unauthenticated.status | default('no answer') }}"
 
 - name: health | Require the pinned alias, build and one slot
   ansible.builtin.assert:
@@ -47,7 +61,9 @@
       - llama_server_props.status | default(0) == 200
       - (llama_server_props.json | default({})).get('build_info', '') == llama_server_build
       - (llama_server_props.json | default({})).get('total_slots', 0) | int == 1
+      - llama_server_models_unauthenticated.status | default(0) == 401
     fail_msg: >-
       llama-server on {{ llama_server_bind_address }}:{{ llama_server_port }} does not
       serve exactly {{ llama_server_alias }} on build {{ llama_server_build }} with one
-      slot. See {{ llama_server_stderr_log }} (the wrapper says why it refused to start).
+      slot, or answers /v1/models without the API key (it must answer 401). See
+      {{ llama_server_stderr_log }} (the wrapper says why it refused to start).

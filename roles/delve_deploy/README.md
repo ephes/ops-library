@@ -115,7 +115,9 @@ When on, the role
    `DELVE_VOXHELM_TOKEN_FILE` and `DELVE_DETECTOR_URL` +
    `DELVE_DETECTOR_API_KEY_FILE`. A URL must be a bare origin
    (`http(s)://host[:port]`); its secret must be at least 32 characters and not
-   `CHANGEME` (checked without printing it);
+   `CHANGEME`, and the detector key must match
+   `delve_detector_api_key_pattern` (the key llama-server reads whole, as
+   `llama_server_deploy` checks it); both are checked without printing them;
 5. renders the optional `DELVE_ANALYSIS_MEDIA_DISK_CAP_BYTES`,
    `DELVE_FFPROBE_PATH`, `DELVE_FFMPEG_PATH`, `DELVE_VOXHELM_TIMEOUT_SECONDS`,
    `DELVE_VOXHELM_UPLOAD_TIMEOUT_SECONDS`, `DELVE_VOXHELM_POLL_SECONDS` and

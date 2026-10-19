@@ -68,9 +68,8 @@
 - name: validate | Classify the API key
   ansible.builtin.set_fact:
     llama_server_api_key_usable: >-
-      {{ llama_server_api_key | string | trim | length >= 32
-         and llama_server_api_key | string | trim != 'CHANGEME'
-         and llama_server_api_key | string is not search('[\r\n]') }}
+      {{ (llama_server_api_key | string | trim) is match(llama_server_api_key_pattern)
+         and llama_server_api_key | string | trim != 'CHANGEME' }}
   no_log: true
   when: llama_server_enabled | bool
 
@@ -79,8 +78,11 @@
     that:
       - llama_server_api_key_usable | bool
     fail_msg: >-
-      llama_server_api_key must be a single-line value of at least 32
-      characters that is not CHANGEME. The value is not printed.
+      llama_server_api_key must be at least 32 characters of A-Z a-z 0-9
+      . _ ~ + / = - ({{ llama_server_api_key_pattern }}), e.g. openssl rand
+      -hex 32: llama-server skips key-file lines starting with # and does not
+      trim, so any other value could leave it without authentication. The
+      value is not printed.
   when: llama_server_enabled | bool
 
 - name: validate | Pick the Tailscale address to bind

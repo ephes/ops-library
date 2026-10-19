@@ -34,6 +34,22 @@ SHA = "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597"  # prag
 TOKEN = "t" * 40
 KEY = "k" * 40
 PLACEHOLDER = "CHANGEME"  # pragma: allowlist secret
+# Detector keys llama-server would not read whole: a "#" line is a comment to
+# it (b11669 common/arg.cpp --api-key-file), and it does not trim.
+COMMENT_KEY = "#" + "k" * 39  # pragma: allowlist secret
+SPACED_KEY = "k" * 20 + " " + "k" * 20  # pragma: allowlist secret
+COMMA_KEY = "k" * 39 + ","  # pragma: allowlist secret
+HEX_KEY = "0123456789abcdef" * 4  # pragma: allowlist secret
+
+
+def _llama_server_api_keys(content: str) -> list:
+    """llama-server b11669's --api-key-file loop (common/arg.cpp), in Python:
+    std::getline per line, no trimming, empty and "#" lines skipped."""
+    lines = content.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()  # getline yields no line after the final newline
+    return [line for line in lines if line and not line.startswith("#")]
+
 
 ANALYSIS_KEYS = (
     "DELVE_SMART_SKIP_ANALYSIS",
@@ -325,6 +341,9 @@ class DelveAnalysisValidationTests(unittest.TestCase):
         for overrides in (
             {"delve_voxhelm_token": "CHANGEME"},
             {"delve_detector_api_key": "short-key"},  # pragma: allowlist secret
+            {"delve_detector_api_key": COMMENT_KEY},
+            {"delve_detector_api_key": SPACED_KEY},
+            {"delve_detector_api_key": COMMA_KEY},
         ):
             with self.subTest(overrides=list(overrides)):
                 result = self._validate(overrides)
@@ -447,6 +466,9 @@ class LlamaServerRoleTests(unittest.TestCase):
             "lan bind": {"llama_server_bind_host": "192.168.1.5"},
             "placeholder user": {"llama_server_service_user": "CHANGEME"},
             "placeholder key": {"llama_server_api_key": PLACEHOLDER},
+            "comment key": {"llama_server_api_key": COMMENT_KEY},
+            "key with a space": {"llama_server_api_key": SPACED_KEY},
+            "key with a comma": {"llama_server_api_key": COMMA_KEY},
             "wrapper pins another model": {"llama_server_wrapper_src": str(other)},
             "missing wrapper": {
                 "llama_server_wrapper_src": str(Path(self.tmp.name) / "missing.sh")
@@ -491,6 +513,116 @@ class LlamaServerRoleTests(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn(f"BUILD=[{expected}]", result.stdout)
+
+    def test_hex_key_passes(self):
+        result = self._validate({"llama_server_api_key": HEX_KEY})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_every_accepted_key_is_read_whole_by_llama_server(self):
+        import random
+        import re
+
+        pattern = _defaults(LLAMA)["llama_server_api_key_pattern"]
+        self.assertEqual(pattern, _defaults(DELVE)["delve_detector_api_key_pattern"])
+        alphabet = "".join(chr(c) for c in range(32, 127))
+        rng = random.Random(16)
+        samples = [HEX_KEY, COMMENT_KEY, SPACED_KEY, COMMA_KEY, KEY]
+        samples += [
+            "".join(rng.choice(alphabet) for _ in range(rng.randint(30, 70)))
+            for _ in range(2000)
+        ]
+        accepted = 0
+        for key in samples:
+            if re.match(pattern, key.strip()) and key.strip() != PLACEHOLDER:
+                accepted += 1
+                # What the role writes: the trimmed key and one newline.
+                self.assertEqual(
+                    _llama_server_api_keys(key.strip() + "\n"), [key.strip()]
+                )
+        self.assertGreater(accepted, 1)
+        self.assertIsNone(re.match(pattern, COMMENT_KEY))
+
+    def test_health_check_requires_401_without_the_key(self):
+        tasks = _tasks(LLAMA / "tasks/health.yml")
+        unauthenticated = _task(tasks, "health | Read /v1/models without the API key")
+        self.assertNotIn("headers", unauthenticated["ansible.builtin.uri"])
+        self.assertTrue(
+            unauthenticated["ansible.builtin.uri"]["url"].endswith("/v1/models")
+        )
+        checks = _task(tasks, "health | Require the pinned alias, build and one slot")
+        self.assertIn(
+            "llama_server_models_unauthenticated.status | default(0) == 401",
+            checks["ansible.builtin.assert"]["that"],
+        )
+        names = [task["name"] for task in tasks]
+        self.assertLess(
+            names.index("health | Read /v1/models"),
+            names.index("health | Read /v1/models without the API key"),
+        )
+
+    def _health_against(self, enforce_key: bool) -> subprocess.CompletedProcess:
+        """Run the role's health tasks against a fake llama-server on loopback."""
+        import http.server
+        import threading
+
+        alias, build = "qwen3-4b-instruct-2507-q4km-3605803b", "b11669-620d2225c"
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802
+                if enforce_key and self.headers.get("Authorization") != f"Bearer {KEY}":
+                    code, body = 401, {"error": {"code": 401}}
+                elif self.path == "/v1/models":
+                    code, body = 200, {"data": [{"id": alias}]}
+                elif self.path == "/props":
+                    code, body = 200, {"build_info": build, "total_slots": 1}
+                else:
+                    code, body = 404, {}
+                data = json.dumps(body).encode()
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        play = {
+            "hosts": "localhost",
+            "gather_facts": False,
+            "vars_files": [str(LLAMA / "defaults/main.yml")],
+            "tasks": [
+                {"ansible.builtin.include_tasks": str(LLAMA / "tasks/health.yml")}
+            ],
+        }
+        return _run_playbook(
+            play,
+            {
+                "llama_server_service_user": "jochen",
+                "llama_server_api_key": KEY,
+                "llama_server_bind_address": "127.0.0.1",
+                "llama_server_port": server.server_address[1],
+                "llama_server_healthcheck_retries": 1,
+                "llama_server_healthcheck_delay": 0,
+            },
+        )
+
+    def test_health_check_passes_when_the_key_is_enforced(self):
+        result = self._health_against(enforce_key=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn(KEY, result.stdout)
+
+    def test_health_check_fails_when_the_server_ignores_the_key(self):
+        # The key file's only line was skipped (a "#" key): no key loaded,
+        # every route open. The alias, build and slot checks alone pass.
+        result = self._health_against(enforce_key=False)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("without the API key", result.stdout)
+        self.assertNotIn(KEY, result.stdout)
 
     def test_health_requests_carrying_the_key_are_no_log(self):
         tasks = _tasks(LLAMA / "tasks/health.yml")

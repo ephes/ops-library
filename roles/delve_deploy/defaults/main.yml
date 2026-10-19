@@ -132,6 +132,10 @@ delve_voxhelm_poll_seconds: ""
 delve_detector_url: ""
 delve_detector_api_key: ""
 delve_detector_api_key_path: "{{ delve_config_dir }}/detector-api-key"
+# The detector key llama-server reads whole (llama_server_deploy's
+# llama_server_api_key_pattern, ops-deploy's DETECTOR_API_KEY_PATTERN): it
+# skips key-file lines starting with "#" and does not trim.
+delve_detector_api_key_pattern: '^[A-Za-z0-9._~+/=-]{32,}\Z'
 # Empty: Delve's default (300 s per call).
 delve_detector_timeout_seconds: ""
 

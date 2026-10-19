@@ -21,7 +21,9 @@ deployment that leaves the new switches off.
   `DELVE_FFMPEG_PATH`, `DELVE_VOXHELM_URL` + `DELVE_VOXHELM_TOKEN_FILE`,
   `DELVE_DETECTOR_URL` + `DELVE_DETECTOR_API_KEY_FILE` and the optional
   timeouts. URLs must be bare origins; a secret must be at least 32 characters
-  and not `CHANGEME` (checked without printing it). Off, none of this is
+  and not `CHANGEME`, and the detector API key at least 32 of
+  `A-Z a-z 0-9 . _ ~ + / = -` (`delve_detector_api_key_pattern`, checked
+  without printing it). Off, none of this is
   rendered and the env file and unit are unchanged; the secret files are removed.
   ops-deploy's `delve` service mirrors the new `delve.env.j2` and
   `delve.service.j2` lines byte for byte (its parity tests vendor both).
@@ -33,7 +35,11 @@ deployment that leaves the new switches off.
   GGUF at a pinned Hugging Face commit with its SHA-256; writes the API key file
   (0600, service user); binds to the host's Tailscale address (`tailnet`) or a
   loopback/tailnet literal; and checks after a start that `/v1/models` serves
-  exactly the alias and `/props` the build and one slot.
+  exactly the alias, `/props` the build and one slot, and `/v1/models`
+  without the key answers 401. The API key must be at least 32 of
+  `A-Z a-z 0-9 . _ ~ + / = -` (`llama_server_api_key_pattern`): llama-server
+  skips key-file lines starting with `#` and does not trim, so another value
+  could leave it without authentication.
   `llama_server_enabled: false` unloads it and removes the plist and key file.
 - `voxhelm_remote_worker_deploy`: new
   `voxhelm_remote_worker_ad_analysis_enabled` (default `false`) for the
