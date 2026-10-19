@@ -8,10 +8,17 @@ line, where the host's process list shows it.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import io
 import json
+import os
+import shutil
+import tempfile
+import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import yaml
 from ansible.plugins.filter.core import to_bool
@@ -199,38 +206,205 @@ class MediaRunnerTests(unittest.TestCase):
                 self.assertLess(source.index('"--no-check-dest"'), source.index("emit_step(\"snapshot_metadata\", \"success\""))
 
 
+FAKE_MC = r"""#!/usr/bin/env python3
+# Fake mc: knows the aliases in $FAKE_MC_ALIASES, stores "remote" objects
+# below $FAKE_MC_REMOTE, logs every call to $FAKE_MC_LOG, and, like the real
+# mc, treats a path whose first segment is no known alias as a local path.
+import json, os, shutil, sys
+args = sys.argv[1:]
+with open(os.environ["FAKE_MC_LOG"], "a") as log:
+    log.write(json.dumps(args) + "\n")
+aliases = json.loads(os.environ["FAKE_MC_ALIASES"])
+remote = os.environ["FAKE_MC_REMOTE"]
+def where(path):
+    alias, _, rest = path.partition("/")
+    return os.path.join(remote, alias, rest) if alias in aliases else path
+if args[:3] == ["--json", "alias", "list"]:
+    name = args[3]
+    if name in aliases:
+        print(json.dumps({"status": "success", "alias": name, "URL": "http://127.0.0.1:9000",
+                          "accessKey": "AKFAKE", "secretKey": "SECRET-MUST-NOT-LEAK", "api": "s3v4", "path": "auto"}))
+        sys.exit(0)
+    print(json.dumps({"status": "error", "error": {"message": "No such alias `%s` found." % name}}))
+    sys.exit(1)
+if args[0] == "cp":
+    dst = where(args[2])
+    os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
+    shutil.copyfile(where(args[1]), dst)
+    sys.exit(0)
+if args[0] == "stat":
+    sys.exit(0 if os.path.exists(where(args[1])) else 1)
+sys.exit(2)
+"""
+
+
 class GenericRunnerAliasTests(unittest.TestCase):
-    def render(self, aliases: dict) -> str:
+    """The generic runner picks the key's alias and fails closed without it."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.workdir = self.tmp / "cwd"
+        self.remote = self.tmp / "remote"
+        self.data = self.tmp / "data"
+        for path in (self.workdir, self.remote, self.data):
+            path.mkdir()
+        (self.data / "state.txt").write_text("state\n")
+        self.mc = self.tmp / "mc"
+        self.mc.write_text(FAKE_MC)
+        self.mc.chmod(0o755)
+        self.log = self.tmp / "mc.log"
+        self.log.touch()
+
+    def render(self, aliases: dict, require: bool = False) -> str:
         env = Environment(loader=FileSystemLoader(BACKUP_ROLE / "templates"))
         env.filters["to_json"] = json.dumps
+        env.filters["bool"] = to_bool
         defaults = yaml.safe_load((BACKUP_ROLE / "defaults" / "main.yml").read_text())
         defaults["echoport_backup_minio_prefix_aliases"] = aliases
+        defaults["echoport_backup_minio_require_prefix_alias"] = require
+        defaults["echoport_backup_mc_install_path"] = str(self.mc)
+        defaults["echoport_backup_allowed_roots"] = [str(self.data)]
+        defaults["echoport_backup_temp_dir"] = str(self.tmp / "work")
         return env.get_template("backup.py.j2").render(**defaults)
 
-    def alias_for(self, source: str, key: str) -> str:
-        start = source.index("MINIO_ALIAS = ")
-        end = source.index("def upload_to_minio")
-        chosen = source[start : source.index("\n", start)] + "\n"
-        chosen += source[source.index("MINIO_PREFIX_ALIASES = ") : source.index("\n", source.index("MINIO_PREFIX_ALIASES = "))]
-        chosen += "\n" + source[source.index("def minio_alias_for") : end]
-        namespace: dict = {}
-        exec(chosen, namespace)  # noqa: S102 - rendered role template under test
-        return namespace["minio_alias_for"](key)
+    def load(self, aliases: dict, require: bool = False) -> types.ModuleType:
+        module = types.ModuleType("echoport_generic_runner")
+        exec(compile(self.render(aliases, require), "backup.py", "exec"), module.__dict__)  # noqa: S102
+        return module
+
+    def run_action(self, module, known_aliases: list[str], cenv: dict) -> tuple[int, str, str]:
+        env = {
+            "FAKE_MC_ALIASES": json.dumps(known_aliases),
+            "FAKE_MC_REMOTE": str(self.remote),
+            "FAKE_MC_LOG": str(self.log),
+        }
+        stdout, stderr = io.StringIO(), io.StringIO()
+        cwd = os.getcwd()
+        os.chdir(self.workdir)
+        try:
+            with mock.patch.dict(os.environ, env), contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                if cenv.get("ECHOPORT_ACTION") == "restore":
+                    rc = module.main_restore(None, {}, cenv)
+                else:
+                    rc = module.main_backup(None, {}, cenv)
+        finally:
+            os.chdir(cwd)
+        return rc, stdout.getvalue(), stderr.getvalue()
+
+    def backup(self, module, known_aliases: list[str], target: str = "radarr"):
+        return self.run_action(module, known_aliases, {
+            "ECHOPORT_TARGET": target,
+            "ECHOPORT_KEY_PREFIX": f"{target}/2026-10-19T02-00-00",
+            "ECHOPORT_BACKUP_FILES": str(self.data / "state.txt"),
+        })
+
+    def mc_calls(self) -> list[list[str]]:
+        return [json.loads(line) for line in self.log.read_text().splitlines()]
+
+    def local_files(self) -> list[Path]:
+        return [path for path in self.workdir.rglob("*") if path.is_file()]
 
     def test_rendered_script_compiles(self):
         compile(self.render({"nyxmon": "backup-nyxmon"}), "backup.py", "exec")
+        self.assertIn("MINIO_REQUIRE_PREFIX_ALIAS = False", self.render({}))
+        self.assertIn("MINIO_REQUIRE_PREFIX_ALIAS = True", self.render({}, require=True))
 
     def test_alias_follows_the_first_key_segment(self):
-        source = self.render({"nyxmon": "backup-nyxmon"})
-        self.assertEqual(self.alias_for(source, "nyxmon/2026-10-13T02-00-00.tar.gz"), "backup-nyxmon")
-        self.assertEqual(self.alias_for(source, "homelab/2026-10-13T02-00-00.tar.gz"), "minio")
-        self.assertEqual(self.alias_for(source, "nyxmon-other/x.tar.gz"), "minio")
+        module = self.load({"nyxmon": "backup-nyxmon"})
+        self.assertEqual(module.minio_alias_for("nyxmon/2026-10-13T02-00-00.tar.gz"), "backup-nyxmon")
+        self.assertEqual(module.minio_alias_for("homelab/2026-10-13T02-00-00.tar.gz"), "minio")
+        self.assertEqual(module.minio_alias_for("nyxmon-other/x.tar.gz"), "minio")
 
     def test_default_keeps_the_single_alias(self):
         source = self.render({})
         self.assertIn("MINIO_PREFIX_ALIASES = {}", source)
-        self.assertEqual(self.alias_for(source, "nyxmon/x.tar.gz"), "minio")
+        self.assertEqual(self.load({}).minio_alias_for("nyxmon/x.tar.gz"), "minio")
         self.assertNotIn("{MINIO_ALIAS}", source)
+
+    def test_missing_fallback_alias_fails_and_writes_nothing_locally(self):
+        # 2026-10-19: radarr had no entry and root no longer had `minio`.
+        module = self.load({"nyxmon": "backup-nyxmon"})
+        rc, stdout, stderr = self.backup(module, ["backup-nyxmon"])
+        self.assertEqual(rc, 1)
+        self.assertEqual(self.local_files(), [])
+        self.assertEqual([call for call in self.mc_calls() if call[0] in ("cp", "stat")], [])
+        self.assertIn("mc alias 'minio'", stdout)
+        self.assertIn("key prefix 'radarr'", stdout)
+        self.assertIn('\\"success\\": false', stdout)
+        self.assertNotIn("SECRET-MUST-NOT-LEAK", stdout + stderr)
+
+    def test_missing_prefix_alias_fails_and_writes_nothing_locally(self):
+        module = self.load({"radarr": "backup-radarr"})
+        rc, stdout, _ = self.backup(module, ["minio"])
+        self.assertEqual(rc, 1)
+        self.assertEqual(self.local_files(), [])
+        self.assertIn("mc alias 'backup-radarr'", stdout)
+        self.assertNotIn(["cp"], [call[:1] for call in self.mc_calls()])
+
+    def test_known_prefix_uploads_and_verifies_with_its_alias(self):
+        module = self.load({"radarr": "backup-radarr"})
+        rc, stdout, stderr = self.backup(module, ["backup-radarr", "minio"])
+        self.assertEqual(rc, 0, stderr)
+        self.assertEqual(self.local_files(), [])
+        key = "backup-radarr/backups/radarr/2026-10-19T02-00-00.tar.gz"
+        calls = self.mc_calls()
+        self.assertEqual([call[0] for call in calls if call[0] in ("cp", "stat")], ["cp", "stat"])
+        self.assertEqual([call for call in calls if call[0] == "cp"][0][2], key)
+        self.assertEqual([call for call in calls if call[0] == "stat"][0], ["stat", key])
+        self.assertTrue((self.remote / key).is_file())
+        self.assertNotIn("SECRET-MUST-NOT-LEAK", stdout + stderr)
+
+    def test_alias_is_checked_again_right_before_upload_and_stat(self):
+        module = self.load({"radarr": "backup-radarr"})
+        self.backup(module, ["backup-radarr"])
+        calls = self.mc_calls()
+        for index, call in enumerate(calls):
+            if call[0] in ("cp", "stat"):
+                self.assertEqual(calls[index - 1], ["--json", "alias", "list", "backup-radarr"])
+
+    def test_required_prefix_alias_refuses_the_shared_fallback(self):
+        module = self.load({"nyxmon": "backup-nyxmon"}, require=True)
+        rc, stdout, _ = self.backup(module, ["backup-nyxmon", "minio"])
+        self.assertEqual(rc, 1)
+        self.assertEqual(self.local_files(), [])
+        self.assertIn("key prefix 'radarr'", stdout)
+        self.assertNotIn(["cp"], [call[:1] for call in self.mc_calls()])
+
+    def test_invalid_alias_name_is_refused(self):
+        module = self.load({"radarr": "../radarr"})
+        rc, _, _ = self.backup(module, ["../radarr"])
+        self.assertEqual(rc, 1)
+        self.assertEqual(self.mc_calls(), [])
+
+    def test_restore_download_is_guarded(self):
+        module = self.load({"nyxmon": "backup-nyxmon"})
+        # A stale local copy at the would-be path must not be restored.
+        stale = self.workdir / "minio" / "backups" / "radarr" / "x.tar.gz"
+        stale.parent.mkdir(parents=True)
+        stale.write_bytes(b"stale")
+        rc, stdout, _ = self.run_action(module, ["backup-nyxmon"], {
+            "ECHOPORT_ACTION": "restore",
+            "ECHOPORT_TARGET": "radarr",
+            "ECHOPORT_KEY": "radarr/x.tar.gz",
+            "ECHOPORT_CHECKSUM": hashlib.sha256(b"stale").hexdigest(),
+            "ECHOPORT_BACKUP_FILES": str(self.data / "state.txt"),
+        })
+        self.assertEqual(rc, 1)
+        self.assertIn("mc alias 'minio'", stdout)
+        self.assertEqual([call for call in self.mc_calls() if call[0] == "cp"], [])
+        self.assertEqual((self.data / "state.txt").read_text(), "state\n")
+
+    def test_download_function_is_guarded_on_its_own(self):
+        module = self.load({})
+        dest = self.tmp / "download.tar.gz"
+        env = {"FAKE_MC_ALIASES": "[]", "FAKE_MC_REMOTE": str(self.remote), "FAKE_MC_LOG": str(self.log)}
+        with mock.patch.dict(os.environ, env), contextlib.redirect_stderr(io.StringIO()) as stderr:
+            self.assertFalse(module.download_from_minio("backups", "radarr/x.tar.gz", dest))
+            self.assertFalse(module.upload_to_minio(self.data / "state.txt", "backups", "radarr/x.tar.gz"))
+        self.assertFalse(dest.exists())
+        self.assertIn("mc alias 'minio'", stderr.getvalue())
+        self.assertEqual([call[0] for call in self.mc_calls()], ["--json", "--json"])
 
 
 if __name__ == "__main__":

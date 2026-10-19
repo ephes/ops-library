@@ -44,6 +44,7 @@ echoport_backup_default_bucket: "backups"
 echoport_backup_minio_alias_users: ["{{ echoport_backup_user }}"]
 echoport_backup_minio_retired_aliases: []
 echoport_backup_minio_prefix_aliases: {}
+echoport_backup_minio_require_prefix_alias: false
 
 # FastDeploy API (for service sync)
 echoport_backup_api_base: "http://localhost:8000"
@@ -92,6 +93,22 @@ echoport_backup_minio_prefix_aliases:
   nyxmon: backup-nyxmon
   homelab: backup-homelab
 ```
+
+The runner fails closed on a missing alias. mc reads `<alias>/<bucket>/<key>`
+with an alias it does not know as a local path, so `mc cp` would write the
+archive below the runner's working directory and `mc stat` would then find
+it there, and Echoport would record a backup that never reached MinIO. Before
+it archives anything, and again before every `mc cp` (upload, restore
+download) and `mc stat` (upload check), the runner runs
+`mc --json alias list <alias>` as the runner user and fails the backup or
+restore unless the alias exists with an http(s) URL. The error names the
+alias and the key prefix; the command's output carries the secret key and is
+never printed.
+
+Set `echoport_backup_minio_require_prefix_alias: true` once every target of
+the runner has its own entry: a key without one then fails instead of
+falling back to `echoport_backup_minio_alias`. Leave it `false` while a target
+still uses the shared alias, or to roll a target back to it.
 
 ## Dependencies
 
