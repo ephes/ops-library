@@ -24,6 +24,13 @@ Service roles that need specific Python versions rely on `uv` to install and man
 (for example `wagtail_deploy`, `homeassistant_deploy`, `fastdeploy_deploy`). Prefer `uv` instead of
 system Python builds; set `uv_version` and the role-specific `*_python_version` variables as needed.
 
+## Traefik HSTS policy
+
+Role templates omit the HSTS `preload` directive. The owner decided against
+browser preload registration on 2026-10-19 because it is difficult to undo and
+requires HTTPS for every subdomain. Existing HSTS lifetimes, `includeSubDomains`
+settings, and other security headers remain unchanged.
+
 ## Role Taxonomy
 
 `ops-library` ships three different role surfaces. Keeping those categories separate is part of the
