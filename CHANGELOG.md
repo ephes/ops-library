@@ -3,6 +3,12 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — archive_deploy documents archive_workers
+
+- `archive_deploy`: the README lists `archive_workers` (default `2`, the
+  gunicorn worker count of the web app) under the common overrides. The
+  variable already existed; nothing changes for deployments.
+
 ## Unreleased — Echoport runner fails closed on a missing mc alias (2.48.1)
 
 - The generic Echoport runner (`echoport_backup`, `backup.py.j2`) checks with

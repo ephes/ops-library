@@ -59,6 +59,7 @@ archive_django_allowed_hosts:
   - "archive.home.xn--wersdrfer-47a.de"
 archive_django_csrf_trusted_origins:
   - "https://archive.home.xn--wersdrfer-47a.de"
+archive_workers: 2                  # gunicorn worker processes for the web app
 archive_metadata_worker_interval: 10
 archive_metadata_worker_limit: 10
 archive_metadata_request_timeout: 15
