@@ -113,11 +113,17 @@
   loop: "{{ homeassistant_backup_extra_dirs | default([]) }}"
   when: item.include | default(true) | bool
 
+# Home Assistant keeps writing while this runs: `.timeout` waits for a
+# committing writer instead of failing with "database is locked".
 - name: "Create SQLite backup using .backup"
   ansible.builtin.command:
     cmd: >
-      sqlite3 "{{ homeassistant_backup_sqlite_path }}"
+      sqlite3 "{{ homeassistant_backup_sqlite_path }}" ".timeout 30000"
       ".backup '{{ homeassistant_backup_dir }}/config/{{ homeassistant_backup_sqlite_path | basename }}'"
+  register: _ha_backup_sqlite_result
+  retries: 2
+  delay: 5
+  until: _ha_backup_sqlite_result.rc == 0
   when:
     - homeassistant_backup_use_sqlite_backup | bool
     - _ha_backup_exists[homeassistant_backup_sqlite_path] | default(false)

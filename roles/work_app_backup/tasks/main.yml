@@ -121,7 +121,7 @@
       ansible.builtin.command:
         cmd: >
           {{ work_app_backup_sqlite_command }} "{{ work_app_database_path }}"
-          ".backup '{{ work_app_backup_sqlite_target }}'"
+          ".timeout 30000" ".backup '{{ work_app_backup_sqlite_target }}'"
       register: work_app_backup_sqlite_result
       retries: "{{ work_app_backup_sqlite_retries }}"
       delay: 2

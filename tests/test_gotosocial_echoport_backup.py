@@ -9,6 +9,7 @@ call) run locally through bash with fake `runuser`, `chown`, `systemctl` and
 
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import os
@@ -20,6 +21,7 @@ import sys
 import tarfile
 import tempfile
 import textwrap
+import threading
 import types
 import unittest
 from pathlib import Path
@@ -251,6 +253,50 @@ class GoToSocialRunnerTest(unittest.TestCase):
         self.assertEqual(manifest["storage"]["files"], 1)
         # No downtime and no leftovers on the host.
         self.assertEqual(self.h.systemctl_calls(), [])
+        self.assertEqual(list(self.h.tmp_parent.iterdir()), [])
+
+    def hold_write_lock(self) -> sqlite3.Connection:
+        """A writer in the middle of a commit, as GoToSocial does all the time.
+
+        Rollback journal: with WAL the exclusive lock would not block a reader.
+        """
+        with contextlib.closing(sqlite3.connect(self.h.db)) as con:
+            con.execute("PRAGMA journal_mode=DELETE")
+        writer = sqlite3.connect(self.h.db, isolation_level=None, check_same_thread=False)
+        self.addCleanup(writer.close)
+        writer.execute("BEGIN EXCLUSIVE")
+        writer.execute("INSERT INTO statuses VALUES ('during-backup', 'a1')")
+        return writer
+
+    def test_snapshot_waits_for_a_committing_writer(self) -> None:
+        writer = self.hold_write_lock()
+        release = threading.Timer(0.5, lambda: writer.execute("COMMIT"))
+        release.start()
+        self.addCleanup(release.cancel)
+        res = self.backup()
+        self.assertTrue(res["success"])
+        snapshots = [c for c in self.h.remote_commands if any(a.startswith(".backup ") for a in c)]
+        self.assertEqual(len(snapshots), 1, snapshots)
+        self.assertIn(".timeout 30000", snapshots[0])
+        obj = self.h.root / "bucket" / "backups" / res["key"]
+        with tarfile.open(obj) as tar:
+            manifest = json.load(tar.extractfile("manifest.json"))
+        self.assertEqual(manifest["database"]["local_statuses"], 4)
+
+    def test_snapshot_lock_that_outlasts_every_attempt_fails_with_the_reason(self) -> None:
+        self.hold_write_lock()
+        self.h.module.SQLITE_BUSY_TIMEOUT_MS = 100
+        rc, events = self.h.run({"ECHOPORT_ACTION": "backup", "ECHOPORT_KEY_PREFIX": "gotosocial/2026-10-15T01-00-00",
+                                 "ECHOPORT_TIMESTAMP": "2026-10-15T01-00-00"})
+        self.assertEqual(rc, 1)
+        error = self.h.result(events)["error"]
+        self.assertIn("database is locked", error)
+        failed = [e for e in events if e.get("name") == "snapshot" and e.get("state") == "failure"]
+        self.assertTrue(failed and "database is locked" in failed[-1]["message"], events)
+        # Every attempt writes a new file: a partial copy is never backed up into again.
+        targets = [c[-1] for c in self.h.remote_commands if c[-1].startswith(".backup ")]
+        self.assertEqual(len(targets), 3, targets)
+        self.assertEqual(len(set(targets)), 3, targets)
         self.assertEqual(list(self.h.tmp_parent.iterdir()), [])
 
     def test_backup_refuses_foreign_key_prefix(self) -> None:

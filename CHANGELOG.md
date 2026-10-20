@@ -3,6 +3,45 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Every SQLite backup waits for writers (2.53.0)
+
+- `echoport_backup`: the SQLite handling of the generic runner (2.51.1) moved
+  into the shared `templates/_sqlite_backup.py.j2`, and every other runner that
+  copies a SQLite database includes it: `echoport_backup.py.j2` (Echoport's own
+  database), `homeassistant_backup.py.j2`, `graphyard_backup.py.j2`,
+  `delve_backup.py.j2`, `vaultwarden_backup.py.j2` and
+  `marina_staging_backup.py.j2`. Each backup now passes `.timeout 30000` before
+  `.backup`, retries a failed backup or integrity check up to 3 times 5 s apart,
+  removes a partial copy, requires `PRAGMA integrity_check` to print exactly
+  `ok` (the old substring test accepted any report containing "ok", for example
+  "broken"), and the failure names the database and the sqlite3 error (the
+  `run_cmd` callers used to report only the exit status). The delve and
+  Vaultwarden runners used Python's `sqlite3` backup API with its 5 s busy
+  timeout; they now use the same `sqlite3` call, and the Vaultwarden runner no
+  longer creates an empty database when the source is missing. The
+  pre-restore integrity checks use the exact `ok` test too.
+- `echoport_backup` GoToSocial runner: the online snapshot on the host sends
+  `sqlite3 <db> ".timeout 30000" ".backup '<tmpdir>/<name>'"` and retries up to
+  3 times, each attempt into a new file (`retry<N>-sqlite.db`) in the private
+  temp dir; the `snapshot` step carries the sqlite3 error.
+- `echoport_remote_command_guard`: a `sqlite_snapshots` `.backup` may carry one
+  `.timeout <ms>` argument before it (1 to 999999 ms); the old form is still
+  accepted. Deploy the guard on the GoToSocial host before the runner.
+- `homelab_backup`, `work_app_backup`, `nyxmon_backup`, `homeassistant_backup`:
+  the hot `sqlite3 .backup` task passes `.timeout 30000`; `nyxmon_backup` and
+  `homeassistant_backup` retry it twice, 5 s apart (homelab and work_app
+  already retried and fall back to an offline copy). `vaultwarden_backup` is
+  unchanged: it stops the service before its `.backup`.
+- The heis and villakunterbunt runners are not changed.
+- Tests: new `tests/test_sqlite_backup_runners.py` (in
+  `just test-echoport-sqlite-backup`) backs up a real database through each
+  local runner while another connection holds its exclusive lock, checks the
+  retry, the partial-copy cleanup, the exact `ok`, that no runner template runs
+  its own `.backup`, that Ansible's `template` module resolves the include, and
+  the four role tasks. `tests/test_gotosocial_echoport_backup.py` covers the
+  remote snapshot under a lock, `tests/test_echoport_remote_command_guard.py`
+  the new guard shapes.
+
 ## Unreleased — Metadata-only MinIO backups (2.52.0)
 
 - `minio_backup`: `minio_backup_include_data: false` makes a metadata-only

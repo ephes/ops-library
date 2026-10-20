@@ -124,7 +124,9 @@ class SqliteBackupUnderWriteLockTests(unittest.TestCase):
 class BackupStepMessageTests(unittest.TestCase):
     def test_failure_step_carries_the_sqlite_error(self):
         source = (BACKUP_ROLE / "templates" / "backup.py.j2").read_text()
-        self.assertIn('f".timeout {SQLITE_BUSY_TIMEOUT_MS}", f".backup \'{backup_path}\'"', source)
+        helper = (BACKUP_ROLE / "templates" / "_sqlite_backup.py.j2").read_text()
+        self.assertIn("{% include '_sqlite_backup.py.j2' %}", source)
+        self.assertIn('f".timeout {SQLITE_BUSY_TIMEOUT_MS}", f".backup \'{backup_path}\'"', helper)
         self.assertIn('f"Failed to backup database: {db_path} ({db_error})"', source)
 
 

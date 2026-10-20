@@ -325,8 +325,8 @@ test-minio-backup-accounts: venv
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_minio_backup_accounts
 
 test-echoport-sqlite-backup: venv
-    @echo "Testing the generic Echoport runner's SQLite backup under a write lock..."
-    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_echoport_sqlite_backup
+    @echo "Testing the SQLite backups of the Echoport runners and backup roles under a write lock..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_echoport_sqlite_backup tests.test_sqlite_backup_runners
 
 test-encrypted-volume-fstab: venv
     @echo "Testing that the encrypted volume fstab entry is stable (no rewrite, no remount)..."

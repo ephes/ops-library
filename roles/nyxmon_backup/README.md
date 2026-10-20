@@ -12,7 +12,7 @@ playbooks and legacy/manual workflows.
 
 - Validates site, media, static, logs, `.env`, systemd, Traefik, and database paths before running.
 - Optionally stops `nyxmon.service`/`nyxmon-monitor.service` (default) to guarantee SQLite consistency.
-- Uses `sqlite3 .backup` when enabled, otherwise copies the database via rsync.
+- Uses `sqlite3 .backup` when enabled (with `.timeout 30000` and two retries, for runs that keep the services up), otherwise copies the database via rsync.
 - Rsyncs media/static/logs (with include flags for cache/static/logs) plus config files, systemd units, and Traefik config.
 - Captures metadata + SHA256 manifest, compresses to `tar.gz`, and fetches archives to `~/backups/nyxmon`.
 

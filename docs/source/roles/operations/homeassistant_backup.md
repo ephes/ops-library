@@ -5,7 +5,7 @@ Creates on-host and off-host snapshots of Home Assistant configuration, data, lo
 ## Highlights
 
 - Validates required paths before running.
-- Uses `sqlite3 ".backup"` to capture a consistent `home-assistant_v2.db` without stopping the service.
+- Uses `sqlite3 ".backup"` to capture a consistent `home-assistant_v2.db` without stopping the service; `.timeout 30000` waits for a committing writer and a failed backup is retried twice.
 - Rsyncs `config/`, `data/`, `logs/` (optional) to `/opt/backups/homeassistant/<prefix>-<timestamp>/`.
 - Captures Thread + Matter state (`/var/lib/thread` and any Matter Server storage/chip factory dirs outside `data/`).
 - Copies rendered Traefik file and systemd unit, then writes `metadata.yml` + `manifest.sha256`.

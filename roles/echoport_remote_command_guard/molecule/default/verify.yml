@@ -200,6 +200,8 @@
           tmp=$(run 'mktemp -d /var/tmp/molecule-gts.XXXXXX')
           run "chown nobody:nogroup $tmp"
           run "runuser -u nobody -- sqlite3 /srv/gts/sqlite.db \".backup '$tmp/sqlite.db'\""
+          run "runuser -u nobody -- sqlite3 /srv/gts/sqlite.db '.timeout 30000' \".backup '$tmp/retry2-sqlite.db'\""
+          test "$(run "runuser -u nobody -- sqlite3 $tmp/retry2-sqlite.db 'PRAGMA integrity_check;'")" = ok
           test "$(run "runuser -u nobody -- sqlite3 $tmp/sqlite.db 'PRAGMA integrity_check;'")" = ok
           run "cat $tmp/sqlite.db" > /root/snapshot.db
           test "$(sqlite3 /root/snapshot.db 'SELECT id FROM accounts;')" = a1
