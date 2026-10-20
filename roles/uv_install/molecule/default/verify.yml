@@ -31,3 +31,52 @@
           - uv_version.rc == 0
           - uv_version.stdout is search('uv ')
         fail_msg: "uv version check failed"
+
+
+# --check must work without -e uv_update_existing=false. Check mode is only
+# real when it comes from the command line (ansible_check_mode stays false for
+# a check_mode keyword), so run check_mode.yml with --check against the same
+# instance. Each case asserts inside the playbook; the recap must show no
+# failure, and the up-to-date case must report no change.
+- name: Verify | uv_install under ansible-playbook --check
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    uv_check_cases:
+      - name: installed, same version
+        extra: {uv_check_expect_install: false}
+        expect_changed: false
+      - name: installed, different pinned version
+        extra: {uv_check_expect_install: true, uv_version: "0.0.1", uv_checksum: {}}
+        expect_changed: true
+      - name: not installed
+        extra: {uv_check_expect_install: true, uv_install_dir: /opt/uv-check-mode-probe}
+        expect_changed: true
+  tasks:
+    - name: Verify | run check_mode.yml with --check
+      ansible.builtin.command:
+        argv:
+          - ansible-playbook
+          - --check
+          - --inventory
+          - "{{ lookup('env', 'MOLECULE_INVENTORY_FILE') }}"
+          - --extra-vars
+          - "{{ item.extra | to_json }}"
+          - "{{ playbook_dir }}/check_mode.yml"
+      loop: "{{ uv_check_cases }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: uv_check_runs
+      changed_when: false
+
+    - name: Verify | check-mode runs passed and reported the expected change
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+          - item.stdout is search('failed=0')
+          - (item.stdout is search('changed=0')) != item.item.expect_changed
+        fail_msg: "{{ item.item.name }}: {{ item.stdout_lines[-3:] }}"
+      loop: "{{ uv_check_runs.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"

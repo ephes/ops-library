@@ -1,0 +1,36 @@
+---
+# Run by verify.yml with ansible-playbook --check; see the comment there.
+- name: uv_install in check mode
+  hosts: all
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: uv_install
+
+  post_tasks:
+    - name: Check mode | the role planned the expected work
+      ansible.builtin.assert:
+        that:
+          - (needs_install | bool) == (uv_check_expect_install | bool)
+
+    - name: Check mode | the installed uv was not touched
+      ansible.builtin.command: /usr/local/bin/uv --version
+      register: uv_check_installed
+      changed_when: false
+      check_mode: false
+
+    - name: Check mode | uv is still the converged version
+      ansible.builtin.assert:
+        that:
+          - uv_check_installed.stdout is search('^uv 0\\.13\\.0')
+
+    - name: Check mode | look for the fresh-install probe directory
+      ansible.builtin.stat:
+        path: /opt/uv-check-mode-probe
+      register: uv_check_probe_dir
+
+    - name: Check mode | nothing was created for the fresh install
+      ansible.builtin.assert:
+        that:
+          - not uv_check_probe_dir.stat.exists
