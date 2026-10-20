@@ -154,3 +154,7 @@ cause, and rerun deployment; the existing index may be incomplete until recovery
 
 - Expand automated tests in `test_roles.py` (integration with paperless_backup/paperless_restore).
 - Add optional key-based authentication for the scanner user.
+
+## Secret handling
+
+The superuser bootstrap sends its Python script, including the password, on stdin to `manage.py shell`; the password is not part of the shell command line. Under `become_user`, Ansible places task `environment:` values inside the command it hands to sudo, and sudo logs that command to the journal and `/var/log/auth.log`; `no_log` does not prevent this. `tests/test_become_environment_secrets.py` (`just test-become-environment-secrets`) guards this.

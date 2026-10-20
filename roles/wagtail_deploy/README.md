@@ -124,6 +124,8 @@ wagtail_asset_build_commands:
   - "npm ci"
   - "npm run build"
 wagtail_asset_build_workdir: "{{ wagtail_site_path }}"
+# Build-only variables. Never put secrets here: the asset build runs as the site
+# user, and sudo logs the task environment as part of the command line.
 wagtail_asset_build_env: {}
 
 # Fail the deploy when these staticfiles are missing after collectstatic

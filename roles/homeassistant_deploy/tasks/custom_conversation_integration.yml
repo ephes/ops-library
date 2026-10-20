@@ -98,6 +98,7 @@
 
     - name: "Create, update, or remove the Custom Conversation config entry"
       ansible.builtin.command:
+        stdin: "{{ {'HA_TOKEN': homeassistant_api_token, 'HA_CC_API_KEY': homeassistant_custom_conversation_api_key} | to_json }}"
         argv:
           - "{{ homeassistant_virtualenv_path }}/bin/python"
           - -c
@@ -105,9 +106,15 @@
             import asyncio
             import json
             import os
+            import sys
             from urllib.parse import urlparse, urlunparse
 
             import aiohttp
+
+            # Secrets arrive on stdin, never in the task environment: under become,
+            # Ansible puts task environment values into the command it hands to sudo,
+            # and sudo logs that command.
+            STDIN_SECRETS = json.loads(sys.stdin.read())
 
             DOMAIN = "custom_conversation"
             PLATFORM = "custom_conversation"
@@ -169,13 +176,13 @@
             )
 
             API_URL = os.environ["HA_API_URL"].rstrip("/")
-            TOKEN = os.environ["HA_TOKEN"]
+            TOKEN = STDIN_SECRETS["HA_TOKEN"]
             RESULT_PATH = os.environ["HA_RESULT_PATH"]
             STORAGE_PATH = os.environ["HA_STORAGE_PATH"]
             ENABLED = os.environ.get("HA_CC_ENABLED") == "1"
             PROVIDER = os.environ.get("HA_CC_PROVIDER", "openai")
             BASE_URL = os.environ.get("HA_CC_BASE_URL", "")
-            API_KEY = os.environ.get("HA_CC_API_KEY", "")
+            API_KEY = STDIN_SECRETS.get("HA_CC_API_KEY", "")
             MODEL = os.environ.get("HA_CC_MODEL", "")
             INSTRUCTIONS = os.environ.get("HA_CC_INSTRUCTIONS", "")
             COMPONENT_VERSION = os.environ.get("HA_CC_VERSION", "")
@@ -574,13 +581,11 @@
       become_user: "{{ homeassistant_user }}"
       environment:
         HA_API_URL: "{{ _ha_cc_api_url }}"
-        HA_TOKEN: "{{ homeassistant_api_token }}"
         HA_RESULT_PATH: "{{ _ha_cc_result_path }}"
         HA_STORAGE_PATH: "{{ homeassistant_config_path }}/.storage/core.config_entries"
         HA_CC_ENABLED: "{{ '1' if (homeassistant_custom_conversation_enabled | bool) else '0' }}"
         HA_CC_PROVIDER: "{{ homeassistant_custom_conversation_provider }}"
         HA_CC_BASE_URL: "{{ homeassistant_custom_conversation_base_url }}"
-        HA_CC_API_KEY: "{{ homeassistant_custom_conversation_api_key }}"
         HA_CC_MODEL: "{{ homeassistant_custom_conversation_model }}"
         HA_CC_INSTRUCTIONS: "{{ homeassistant_custom_conversation_instructions }}"
         HA_CC_VERSION: "{{ homeassistant_custom_conversation_version }}"

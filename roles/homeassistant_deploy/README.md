@@ -229,3 +229,7 @@ password when migrating to avoid changing the integration credentials.
 checksums in `uv_install`. When overriding this version, also supply matching
 `uv_checksum` entries for each target (see the `uv_install` role README).
 Bump the version and checksum together; `latest` is no longer accepted.
+
+## Secret handling
+
+The WebSocket helpers that run as `homeassistant_user` receive `homeassistant_api_token` (and the Custom Conversation API key) as JSON on stdin, never in the task environment. Under `become_user`, Ansible places task `environment:` values inside the command it hands to sudo, and sudo logs that command to the journal and `/var/log/auth.log`; `no_log` does not prevent this. `tests/test_become_environment_secrets.py` (`just test-become-environment-secrets`) guards this.

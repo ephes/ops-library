@@ -10,10 +10,9 @@
     msg: "PostgreSQL cluster not initialized at {{ postgres_install_config_dir }}. Install/initialize the cluster before managing databases."
   when: not postgres_install_cluster_stat.stat.exists
 
-- name: databases | Build PostgreSQL admin environment
-  ansible.builtin.set_fact:
-    postgres_install_admin_env: "{{ {'PGPASSWORD': postgres_install_admin_password} if postgres_install_admin_password | default('') | length > 0 else {} }}"
-
+# The admin password is a module parameter (inside the module payload), never a task
+# environment value: under become, Ansible puts task environment values into the
+# command it hands to sudo, and sudo logs that command.
 - name: databases | Ensure PostgreSQL users exist
   community.postgresql.postgresql_user:
     name: "{{ item.name }}"
@@ -21,9 +20,9 @@
     encrypted: "{{ item.encrypted if item.encrypted is defined else omit }}"
     role_attr_flags: "{{ item.role_attr_flags | default('LOGIN') }}"
     state: "{{ item.state | default('present') }}"
+    login_password: "{{ postgres_install_admin_password if (postgres_install_admin_password | default('') | length > 0) else omit }}"
   become: true
   become_user: "{{ postgres_install_admin_user }}"
-  environment: "{{ postgres_install_admin_env }}"
   loop: "{{ postgres_install_users }}"
   loop_control:
     label: "{{ item.name }}"
@@ -38,9 +37,9 @@
     lc_ctype: "{{ item.lc_ctype | default(omit) }}"
     template: "{{ item.template | default(omit) }}"
     state: "{{ item.state | default('present') }}"
+    login_password: "{{ postgres_install_admin_password if (postgres_install_admin_password | default('') | length > 0) else omit }}"
   become: true
   become_user: "{{ postgres_install_admin_user }}"
-  environment: "{{ postgres_install_admin_env }}"
   loop: "{{ postgres_install_databases }}"
   loop_control:
     label: "{{ item.name }}"
@@ -50,12 +49,12 @@
     db: "{{ item.name }}"
     query: >-
       ALTER SCHEMA public OWNER TO "{{ item.owner | replace('"', '""') }}"
+    login_password: "{{ postgres_install_admin_password if (postgres_install_admin_password | default('') | length > 0) else omit }}"
   when:
     - item.owner is defined
     - item.state | default('present') == 'present'
   become: true
   become_user: "{{ postgres_install_admin_user }}"
-  environment: "{{ postgres_install_admin_env }}"
   loop: "{{ postgres_install_databases }}"
   loop_control:
     label: "{{ item.name }}"
@@ -65,9 +64,9 @@
     name: "{{ item.name }}"
     db: "{{ item.database }}"
     state: "{{ item.state | default('present') }}"
+    login_password: "{{ postgres_install_admin_password if (postgres_install_admin_password | default('') | length > 0) else omit }}"
   become: true
   become_user: "{{ postgres_install_admin_user }}"
-  environment: "{{ postgres_install_admin_env }}"
   loop: "{{ postgres_install_extensions }}"
   loop_control:
     label: "{{ item.database }}:{{ item.name }}"

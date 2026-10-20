@@ -35,17 +35,26 @@
   become: true
   become_user: "{{ paperless_username }}"
 
+# The password travels in the stdin script (module payload), not in the shell
+# command line, which any local user can read from the process list while it runs.
 - name: Ensure Paperless superuser exists
-  ansible.builtin.shell: |
-    set -a
-    . {{ paperless_env_file }}
-    set +a
-    {{ paperless_python_bin }} manage.py shell <<'EOF'
-    from django.contrib.auth import get_user_model
-    User = get_user_model()
-    if not User.objects.filter(username='{{ paperless_admin_user }}').exists():
-        User.objects.create_superuser('{{ paperless_admin_user }}', '{{ paperless_admin_email }}', '{{ paperless_admin_password }}')
-    EOF
+  ansible.builtin.shell:
+    cmd: |
+      set -a
+      . {{ paperless_env_file }}
+      set +a
+      exec {{ paperless_python_bin }} manage.py shell
+    stdin: |
+      import json
+      from django.contrib.auth import get_user_model
+      User = get_user_model()
+      username = json.loads({{ paperless_admin_user | to_json | to_json }})
+      if not User.objects.filter(username=username).exists():
+          User.objects.create_superuser(
+              username,
+              json.loads({{ paperless_admin_email | to_json | to_json }}),
+              json.loads({{ paperless_admin_password | to_json | to_json }}),
+          )
   args:
     chdir: "{{ paperless_manage_dir }}"
     executable: /bin/bash

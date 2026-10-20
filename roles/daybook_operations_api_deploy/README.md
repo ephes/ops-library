@@ -180,3 +180,7 @@ Monitoring makes that horizon visible before it is reached, but it does not chan
 it. Raising `daybook_operations_api_record_limit` remains a deliberate operator
 decision that must follow measured sizing, backup and restore evidence at the
 intended budget; the role never raises it automatically.
+
+## Secret handling
+
+Management commands (`migrate`, `provision_operations`) source `{{ daybook_operations_api_config_dir }}/environment.shell`, a 0600 companion of the systemd `environment` file owned by the service account with the same values shell-quoted. No secret is passed in a task environment or on a command line. Under `become_user`, Ansible places task `environment:` values inside the command it hands to sudo, and sudo logs that command to the journal and `/var/log/auth.log`; `no_log` does not prevent this. `tests/test_become_environment_secrets.py` (`just test-become-environment-secrets`) guards this.
