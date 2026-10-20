@@ -43,6 +43,12 @@
       - opsgate_uv_bin | trim | length > 0
     fail_msg: "OpsGate app deployment requires opsgate_source_path and opsgate_uv_bin."
 
+- name: validate | Ensure GitHub deploy keys are a mapping
+  ansible.builtin.assert:
+    that:
+      - opsgate_ops_github_deploy_keys is mapping
+    fail_msg: "opsgate_ops_github_deploy_keys must be a mapping of workspace repository name to key pair."
+
 - name: validate | Ensure workspace repo bootstrap inputs are coherent
   ansible.builtin.assert:
     that:
@@ -56,7 +62,7 @@
           (
             opsgate_ops_workspace_repositories
             | map(attribute='repo')
-            | select('match', '^(git@github\\.com:|ssh://git@github\\.com/)')
+            | select('match', '^(git@github[.]com:|ssh://git@github[.]com/)')
             | list
             | length
           ) == 0
@@ -64,7 +70,15 @@
         (
           opsgate_ops_github_ssh_private_key | trim | length > 0 and
           opsgate_ops_github_ssh_public_key | trim | length > 0
-        )
+        ) or
+        (
+          opsgate_ops_workspace_repositories
+          | selectattr('repo', 'match', '^(git@github[.]com:|ssh://git@github[.]com/)')
+          | map(attribute='name')
+          | reject('in', opsgate_ops_github_deploy_keys)
+          | list
+          | length
+        ) == 0
       - >-
         not (opsgate_ops_manage_workspace_repos | bool) or
         (
@@ -94,8 +108,32 @@
         ) == (opsgate_ops_workspace_repositories | length)
     fail_msg: >-
       Workspace repo bootstrap requires non-empty unique repository names and non-empty repo URLs
-      for each entry in opsgate_ops_workspace_repositories. GitHub SSH repository URLs also require
-      both opsgate_ops_github_ssh_private_key and opsgate_ops_github_ssh_public_key.
+      for each entry in opsgate_ops_workspace_repositories. Every GitHub SSH repository URL also
+      requires either both opsgate_ops_github_ssh_private_key and opsgate_ops_github_ssh_public_key
+      or an opsgate_ops_github_deploy_keys entry for that repository.
+
+- name: validate | Ensure each GitHub deploy key belongs to a GitHub SSH workspace repository
+  ansible.builtin.assert:
+    that:
+      - item.key is match('^[A-Za-z0-9._-]+$')
+      - item.value is mapping
+      - item.value.private_key | default('') | trim | length > 0
+      - item.value.public_key | default('') | trim | length > 0
+      - item.value.public_key | trim is not search('[\r\n]')
+      - >-
+        opsgate_ops_workspace_repositories
+        | selectattr('name', 'equalto', item.key)
+        | selectattr('repo', 'match', '^(git@github[.]com:|ssh://git@github[.]com/)')
+        | list
+        | length == 1
+    fail_msg: >-
+      opsgate_ops_github_deploy_keys entry {{ item.key }} needs a name of letters, digits, '.', '_'
+      or '-', a non-empty private_key and a one-line public_key, and must name exactly one
+      opsgate_ops_workspace_repositories entry with a GitHub SSH URL.
+  loop: "{{ opsgate_ops_github_deploy_keys | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  no_log: true
 
 - name: validate | Ensure launchd labels and plist paths are set
   ansible.builtin.assert:

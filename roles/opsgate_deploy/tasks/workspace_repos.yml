@@ -25,14 +25,24 @@
       (
         opsgate_ops_workspace_repositories
         | map(attribute='repo')
-        | select('match', '^(git@github\\.com:|ssh://git@github\\.com/)')
+        | select('match', '^(git@github[.]com:|ssh://git@github[.]com/)')
         | list
         | length
       ) > 0
 
+# A repo with a deploy key uses its github-<name> SSH alias, so plain git
+# commands in the workspace pick the same key. The git module rewrites the
+# origin URL of an existing clone to match.
 - name: workspace_repos | Clone or update managed ops workspaces
   ansible.builtin.git:
-    repo: "{{ item.repo }}"
+    repo: >-
+      {{
+        item.repo
+        | regex_replace('^git@github[.]com:', 'git@github-' ~ item.name ~ ':')
+        | regex_replace('^ssh://git@github[.]com/', 'ssh://git@github-' ~ item.name ~ '/')
+        if item.name in opsgate_ops_github_deploy_keys
+        else item.repo
+      }}
     dest: "{{ opsgate_ops_workspace_dir }}/{{ item.name }}"
     version: "{{ item.version | default('HEAD') }}"
     update: true

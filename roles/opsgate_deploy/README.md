@@ -17,7 +17,7 @@ Deploy OpsGate on macOS (`launchd` host model) with the Phase 4B control service
   - `{{ opsgate_app_dir }}` (API/UI runtime, `control_service_user`)
   - `{{ opsgate_runner_app_dir }}` (runner runtime, `ops`)
 - Installs runtime dependencies using `uv sync --frozen --no-dev` for both runtimes
-- Wires optional `ops` credentials (machine SSH key, dedicated GitHub SSH key, SOPS age key, GitHub token)
+- Wires optional `ops` credentials (machine SSH key, per-repository GitHub deploy keys or a dedicated GitHub account SSH key, SOPS age key, GitHub token)
 - Optionally clones/updates managed `ops` workspaces (for example `ops-control`, `ops-library`) once GitHub-side access exists
 - Renders API/runner env files under `/etc/opsgate`
 - Writes tmux defaults for the `ops` runner account
@@ -71,6 +71,29 @@ Important prerequisite:
 - the deployed GitHub SSH key or GitHub credential must already be authorized for the target repositories
 - enabling managed workspace repos before GitHub-side access exists will cause the clone/update task to fail
 
+### Per-repository deploy keys
+
+`opsgate_ops_github_deploy_keys` maps the `name` of a GitHub SSH entry in
+`opsgate_ops_workspace_repositories` to its own key pair (`private_key`,
+`public_key`), typically a read-only GitHub deploy key of that repository
+(a deploy key works for one repository only). For each entry the role:
+
+- installs the pair as `~/.ssh/id_github_deploy_<name>` (`0600`) and
+  `~/.ssh/id_github_deploy_<name>.pub`
+  (`opsgate_ops_github_deploy_key_path_prefix`);
+- renders a `Host github-<name>` block into `~/.ssh/config` (`HostName
+  github.com`, `HostKeyAlias github.com`, `IdentitiesOnly yes`);
+- clones and fetches the repository as `git@github-<name>:<owner>/<repo>.git`.
+  The git module also rewrites `origin` of an existing clone to that URL, so a
+  plain `git fetch` in the workspace uses the same key.
+
+When deploy keys are configured and `opsgate_ops_github_ssh_private_key` is
+empty, the role removes the old account key files
+(`opsgate_ops_github_ssh_private_key_path` and its `.pub`) and no longer renders
+the `Host github.com` block. Validation requires each deploy-key name to match
+exactly one GitHub SSH workspace repository, and every GitHub SSH workspace
+repository to have either a deploy key or the account key.
+
 ## Key Variables
 
 ```yaml
@@ -106,6 +129,7 @@ opsgate_allowed_cidrs:
 opsgate_ops_ssh_private_key: ""
 opsgate_ops_github_ssh_private_key: ""
 opsgate_ops_github_ssh_public_key: ""
+opsgate_ops_github_deploy_keys: {}
 opsgate_ops_age_private_key: ""
 opsgate_ops_github_username: ""
 opsgate_ops_github_token: ""
@@ -159,3 +183,5 @@ Recommended key separation:
 - `opsgate_ops_github_ssh_private_key` / `opsgate_ops_github_ssh_public_key` are the dedicated GitHub
   repo-access keypair installed as `~/.ssh/id_github_ed25519`
 - the role renders `~/.ssh/config` so `git@github.com:*` uses the dedicated GitHub key automatically
+- preferred over the account key: `opsgate_ops_github_deploy_keys`, one read-only deploy key per repository
+  (see [Per-repository deploy keys](#per-repository-deploy-keys))
