@@ -46,15 +46,27 @@ echoport_backup_minio_retired_aliases: []
 echoport_backup_minio_prefix_aliases: {}
 echoport_backup_minio_require_prefix_alias: false
 
-# FastDeploy API (for service sync)
-echoport_backup_api_base: "http://localhost:8000"
-echoport_backup_api_token: ""
+# Root-owned runner location and FastDeploy service sync
+echoport_backup_libexec_root: "/usr/local/libexec/fastdeploy"
+echoport_backup_sync_services: true
 ```
 
-When `echoport_backup_sync_services` is true and the token is set, the role calls
-`POST <echoport_backup_api_base>/services/sync`. The call runs with `no_log: true` so the bearer token
-never appears in verbose output; a failed sync does not fail the play and is reported by a separate
-task that prints only the HTTP status and response body.
+### Runner location
+
+The runner runs as root (`echoport_backup_user`) through FastDeploy's sudo
+chain, so the role installs it with
+[`fastdeploy_runner`](../fastdeploy_runner/README.md):
+`<echoport_backup_libexec_root>/<echoport_backup_service_name>/backup.py`
+(root:`deploy` `0750`, every directory above it root-owned), `config.json`
+in `echoport_backup_service_dir` names that absolute path, and
+`/etc/sudoers.d/echoport_backup` allows only that path. A runner left in the
+service directory by an older version is removed after the sync.
+
+With `echoport_backup_sync_services` true (default) the role runs
+FastDeploy's `commands.py syncservices` as the fastdeploy user.
+`echoport_backup_api_base` and `echoport_backup_api_token` are no longer used
+(the role used to call `POST /services/sync`); existing playbooks that set
+them keep working.
 
 ### MinIO alias
 
@@ -112,7 +124,8 @@ still uses the shared alias, or to roll a target back to it.
 
 ## Dependencies
 
-None.
+Includes `local.ops_library.fastdeploy_runner` (runner installation and
+registration) and `local.ops_library.minio_backup` (mc installation).
 
 ## Example Playbook
 
@@ -124,7 +137,6 @@ None.
         echoport_backup_minio_url: "{{ minio_url }}"
         echoport_backup_minio_access_key: "{{ minio_access_key }}"
         echoport_backup_minio_secret_key: "{{ minio_secret_key }}"
-        echoport_backup_api_token: "{{ fastdeploy_admin_token }}"
 ```
 
 ## Backup Context Variables

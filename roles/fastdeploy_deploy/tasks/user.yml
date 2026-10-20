@@ -55,7 +55,6 @@
     - "{{ fastdeploy_site_path }}"
     - "{{ fastdeploy_site_path }}/bin"
     - "{{ fastdeploy_site_path }}/logs"
-    - "{{ fastdeploy_services_path }}"
 
 # FastDeploy runs every service as `sudo -u deploy <deploy_script> --config <file>`;
 # each registered service installs its own narrow rule for that script. The old

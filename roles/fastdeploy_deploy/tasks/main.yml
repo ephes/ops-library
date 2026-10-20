@@ -63,6 +63,9 @@
   include_tasks: source_git.yml
   when: fastdeploy_deploy_method == 'git'
 
+- name: Keep the services root and the runner directory root-owned
+  include_tasks: runner_layout.yml
+
 - name: Create environment configuration
   include_tasks: environment.yml
 

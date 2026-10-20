@@ -1,0 +1,70 @@
+---
+# FastDeploy reads service definitions (config.json) from the services root
+# and starts each service's script through sudo. The scripts live below
+# fastdeploy_libexec_path (root:root, see the fastdeploy_runner role); the
+# services root is root-owned as well, so the fastdeploy user can read it but
+# not change it. fastdeploy still owns the site directory around it, so the
+# services root is not where root-run scripts may live.
+
+- name: runner_layout | Keep the services root root-owned
+  ansible.builtin.file:
+    path: "{{ fastdeploy_services_path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# Hosts deployed by older versions have a fastdeploy-owned services tree
+# (scripts included); registrations moved since then leave only config.json.
+# The owner becomes root and the fastdeploy group becomes root; other groups
+# stay (a runner that runs as deploy may be root:deploy 0750 until its
+# registration moves it).
+- name: runner_layout | Hand everything below the services root to root
+  ansible.builtin.command:
+    argv:
+      - find
+      - "{{ fastdeploy_services_path }}"
+      - -mindepth
+      - "1"
+      - "!"
+      - -user
+      - root
+      - -print
+      - -exec
+      - chown
+      - -h
+      - root
+      - "{}"
+      - +
+  register: fastdeploy_services_ownership
+  changed_when: fastdeploy_services_ownership.stdout | length > 0
+
+- name: runner_layout | Take the fastdeploy group off everything below the services root
+  ansible.builtin.command:
+    argv:
+      - find
+      - "{{ fastdeploy_services_path }}"
+      - -mindepth
+      - "1"
+      - -group
+      - "{{ fastdeploy_group }}"
+      - -print
+      - -exec
+      - chgrp
+      - -h
+      - root
+      - "{}"
+      - +
+  register: fastdeploy_services_group
+  changed_when: fastdeploy_services_group.stdout | length > 0
+
+- name: runner_layout | Create the root-owned runner directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ fastdeploy_libexec_path | dirname }}"
+    - "{{ fastdeploy_libexec_path }}"

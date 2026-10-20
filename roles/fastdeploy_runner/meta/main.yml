@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Install a FastDeploy runner script in a root-owned location and register it
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+    - name: Debian
+      versions:
+        - bookworm
+        - trixie
+  galaxy_tags:
+    - fastdeploy
+    - backup
+    - security
+
+dependencies: []

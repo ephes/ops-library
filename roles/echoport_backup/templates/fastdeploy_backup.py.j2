@@ -51,11 +51,19 @@ RETIRED_ENTRIES = {{ fastdeploy_echoport_backup_retired_entries | default(['fast
 # Archived sudoers files are restored only when every line is blank, a plain
 # comment or the narrow rule shape the registration roles write; anything else
 # (older fastdeploy_register_service files carried `deploy ALL=(root) NOPASSWD:
-# ALL`) stays out. Same check as fastdeploy_restore/files/sudoers_blanket_check.py
+# ALL`; older backup registrations named scripts below FastDeploy's
+# fastdeploy-owned site) stays out. Same check as fastdeploy_restore/files/sudoers_blanket_check.py
 # (tests keep them equal).
 _RESTORABLE_SUDO_RULE_RE = re.compile(
-    r"^[a-z_][a-z0-9_-]*[ \t]+ALL[ \t]*=[ \t]*\([A-Za-z_][A-Za-z0-9_-]*\)[ \t]*"
-    r"NOPASSWD:(?:NOSETENV:)?[ \t]*(?:/home/fastdeploy/site/services/|/home/deploy/runners/|/usr/local/libexec/)(?!\.\.?/)[A-Za-z0-9_][A-Za-z0-9._-]*(?:/(?!\.\.?(?:[ \t]|$))[A-Za-z0-9_][A-Za-z0-9._-]*)?(?:[ \t]+(?:\*|--config[ \t]+\*))?[ \t]*$"
+    r"^[a-z_][a-z0-9_-]*[ \t]+ALL[ \t]*=[ \t]*\("
+    # run as deploy: a root-owned runner or one in the deploy user's own runner directory
+    r"(?:deploy\)[ \t]*NOPASSWD:(?:NOSETENV:)?[ \t]*"
+    r"(?:/usr/local/libexec/(?:fastdeploy/[A-Za-z0-9_][A-Za-z0-9._-]*/[A-Za-z0-9_][A-Za-z0-9._-]*|[A-Za-z0-9_][A-Za-z0-9._-]*)"
+    r"|/home/deploy/runners/[A-Za-z0-9_][A-Za-z0-9._-]*/[A-Za-z0-9_][A-Za-z0-9._-]*)"
+    # run as anyone else (root): only a root-owned runner
+    r"|[A-Za-z_][A-Za-z0-9_-]*\)[ \t]*NOPASSWD:(?:NOSETENV:)?[ \t]*"
+    r"/usr/local/libexec/(?:fastdeploy/[A-Za-z0-9_][A-Za-z0-9._-]*/[A-Za-z0-9_][A-Za-z0-9._-]*|[A-Za-z0-9_][A-Za-z0-9._-]*))"
+    r"(?:[ \t]+(?:\*|--config[ \t]+\*))?[ \t]*$"
 )
 
 
@@ -639,8 +647,12 @@ def run_health_check() -> None:
 
 
 def apply_permissions() -> None:
+    # The services root stays root-owned: FastDeploy only reads it, and a
+    # fastdeploy-owned services tree let fastdeploy rewrite scripts that sudo
+    # runs as root (ops-library fastdeploy_runner).
+    if Path(SERVICES_PATH).exists():
+        run_cmd(["chown", "-R", "-h", "root:root", SERVICES_PATH])
     if RESTORE_OWNER_FASTDEPLOY:
-        run_cmd(["chown", "-R", RESTORE_OWNER_FASTDEPLOY, SERVICES_PATH])
         run_cmd(["chown", RESTORE_OWNER_FASTDEPLOY, ENV_FILE])
     if RESTORE_OWNER_DEPLOY:
         run_cmd(["chown", "-R", RESTORE_OWNER_DEPLOY, RUNNER_ROOT])

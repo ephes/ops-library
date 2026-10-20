@@ -323,16 +323,34 @@ FastDeploy Service (runs as: fastdeploy)
             (via the service's own /etc/sudoers.d/<service> rule)
             │
             └── optional second step to root, only for the exact script:
-                deploy ALL=(root) NOPASSWD:NOSETENV: <service>/backup.py *
+                deploy ALL=(root) NOPASSWD:NOSETENV: /usr/local/libexec/fastdeploy/<service>/backup.py *
 ```
+
+### Ownership
+
+| Path | Owner | Why |
+|---|---|---|
+| `fastdeploy_site_path` (code, `.venv`, `.env`, logs) | fastdeploy | the app writes here |
+| `fastdeploy_services_path` (`config.json` per service) | root:root `0755` | FastDeploy only reads it |
+| `fastdeploy_libexec_path` (`/usr/local/libexec/fastdeploy/<service>/`) | root:root `0755` | scripts that sudo runs as `deploy` or root |
+
+The role never hands the services root to fastdeploy: rsync skips it, the
+ownership pass after rsync (or a changed git checkout) prunes it, and every
+deploy makes the services root and everything below it root-owned again (a
+host deployed by an older version had a fastdeploy-owned tree there, with the
+root-run backup scripts in it). The services root still sits inside the
+fastdeploy-owned site, so fastdeploy could rename it; that is why scripts
+named in sudoers live below `fastdeploy_libexec_path` instead (role
+`fastdeploy_runner`) and `config.json` only names their fixed path.
 
 ### Key Components
 
 1. **fastdeploy user**: Runs the FastDeploy web service
 2. **deploy user**: Runs the service scripts; it has no general root rights
 3. **Sudoers rules**: each registered service (for example through
-   `echoport_backup` or the ops-control `register-*-backup.yml` playbooks)
-   installs rules that name its own script. This role installs no sudoers
+   `echoport_backup`, `fastdeploy_runner` or the ops-control
+   `register-*-backup.yml` playbooks) installs rules that name its own
+   root-owned script. This role installs no sudoers
    rule and removes the retired wildcard file `/etc/sudoers.d/fastdeploy`
    (`fastdeploy ALL=(deploy) NOPASSWD: <services>/*/deploy.sh *`), which let
    fastdeploy run any script it wrote into its own services directory.

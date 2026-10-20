@@ -23,9 +23,9 @@ until then its Ansible run fails at the first privileged task.
   `/home/deploy/runners/<service>/deploy-config.json`
 - optionally writes a separate deploy-user-only secret runner payload to
   `/home/deploy/runners/<service>/deploy-secrets.json`
-- copies that runner into `/home/fastdeploy/site/services/<service>/deploy.py` with owner-only
-  permissions
-- writes `/home/fastdeploy/site/services/<service>/config.json`
+- copies that runner into `/home/fastdeploy/site/services/<service>/deploy.py` (root-owned, `0700`)
+- writes `/home/fastdeploy/site/services/<service>/config.json` (root-owned, `0644`); the service
+  directory is root-owned `0755`, so FastDeploy can read but not change the registration
 - installs `/etc/sudoers.d/fastdeploy_<service>` (only `fastdeploy -> deploy` for the runner)
 - optionally calls `POST <fd_api_base>/services/sync`
 
@@ -64,7 +64,10 @@ Security notes:
   `fd_runner_config` is provided.
 - `/home/deploy/runners/<service>/deploy-secrets.json` is written `0600` and owned by `deploy`
   when `fd_runner_secret_config` is provided.
-- `/home/fastdeploy/site/services/<service>/deploy.py` is written `0700` and owned by `fastdeploy`.
+- `/home/fastdeploy/site/services/<service>/`, its `deploy.py` copy (`0700`) and `config.json`
+  are owned by `root`. Runners that need root do not belong here: the `fastdeploy` user owns the
+  site directory around the services root and could rename it. Install those with the
+  [`fastdeploy_runner`](../fastdeploy_runner/README.md) role.
 - `/home/deploy/runners/<service>/` and `/home/deploy/.ssh/` are created `0700`.
 - Keep `fd_runner_config` non-secret when possible. The default runner reads that private payload at
   execution time, merges it with `fd_runner_secret_config` if present, and writes any

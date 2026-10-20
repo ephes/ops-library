@@ -150,20 +150,24 @@
     mode: "0700"
   when: fd_runner_content | length == 0
 
+# FastDeploy only reads its services root, so the service directory, the
+# script copy and config.json are root-owned (fastdeploy_deploy keeps the
+# services root itself root-owned). The sudoers rule below names the runner
+# in the deploy user's own directory, not this copy.
 - name: Create fastDeploy service directory
   file:
     path: "{{ fd_service_config_dir }}"
     state: directory
-    owner: "{{ fd_fastdeploy_user }}"
-    group: "{{ fd_fastdeploy_user }}"
+    owner: root
+    group: root
     mode: "0755"
 
 - name: Copy deployment script to FastDeploy service directory
   copy:
     src: "{{ fd_runner_script }}"
     dest: "{{ fd_service_config_dir }}/deploy.py"
-    owner: "{{ fd_fastdeploy_user }}"
-    group: "{{ fd_fastdeploy_user }}"
+    owner: root
+    group: root
     mode: "0700"
     remote_src: yes
 
@@ -182,8 +186,8 @@
         ]
       }
     dest: "{{ fd_service_config_dir }}/config.json"
-    owner: "{{ fd_fastdeploy_user }}"
-    group: "{{ fd_fastdeploy_user }}"
+    owner: root
+    group: root
     mode: "0644"
 
 - name: Configure sudoers rules

@@ -119,11 +119,12 @@
   ansible.builtin.set_fact:
     fastdeploy_restore_sync_items:
 
+      # Root-owned like fastdeploy_deploy keeps it: FastDeploy only reads it.
       - name: "services"
         src: "{{ fastdeploy_restore_snapshot_dir }}/services"
         dest: "{{ fastdeploy_restore_services_path }}"
-        owner: "{{ fastdeploy_restore_user }}"
-        group: "{{ fastdeploy_restore_group }}"
+        owner: root
+        group: root
         include: true
 
       - name: "deploy_runners"

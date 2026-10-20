@@ -150,7 +150,23 @@
           - fd_registered_files.results[3].stat.mode == '0600'
           - fd_registered_files.results[3].stat.pw_name == 'deploy'
           - fd_registered_files.results[3].stat.gr_name == 'deploy'
+          - fd_service_dir_stat.stat.pw_name == 'root'
+          - fd_service_dir_stat.stat.gr_name == 'root'
+          - fd_service_dir_stat.stat.mode == '0755'
+          - fd_registered_files.results[0].stat.pw_name == 'root'
+          - fd_registered_files.results[0].stat.mode == '0644'
+          - fd_registered_files.results[4].stat.pw_name == 'root'
         fail_msg: "FastDeploy registration outputs did not match the expected current role behavior."
+
+    - name: Verify | Try to change the registration as fastdeploy
+      ansible.builtin.command:
+        argv: ["runuser", "-u", "fastdeploy", "--", "sh", "-c", "{{ item }}"]
+      loop:
+        - "echo x >> {{ fd_service_dir }}/config.json"
+        - "touch {{ fd_service_dir }}/planted"
+      register: fd_registration_write
+      changed_when: false
+      failed_when: fd_registration_write.rc == 0
 
     - name: Verify | Remove stale transient extra vars files
       ansible.builtin.find:
