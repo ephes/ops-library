@@ -4,7 +4,9 @@ Registers an Echoport backup service with FastDeploy.
 
 This role sets up a backup runner that can be triggered by Echoport (or directly via FastDeploy) to:
 
-1. Safely backup SQLite databases using `sqlite3 .backup`
+1. Safely backup SQLite databases using `sqlite3 .backup` (the generic
+   runner waits up to 30 s for a writer's lock with `.timeout` and retries a
+   failed backup up to 3 times; the failure step names the sqlite3 error)
 2. Archive additional files/directories
 3. Create a compressed tarball with manifest
 4. Upload to MinIO object storage

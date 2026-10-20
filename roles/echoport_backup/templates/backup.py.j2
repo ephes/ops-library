@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
@@ -32,6 +33,11 @@ MINIO_PREFIX_ALIASES = {{ echoport_backup_minio_prefix_aliases | to_json }}
 MINIO_REQUIRE_PREFIX_ALIAS = {{ 'True' if echoport_backup_minio_require_prefix_alias | bool else 'False' }}
 DEFAULT_BUCKET = "{{ echoport_backup_default_bucket }}"
 TEMP_DIR = "{{ echoport_backup_temp_dir }}"
+# SQLite backup: wait this long for a writer's lock, then retry the whole
+# backup a few times (nyxmon commits a check result every few seconds).
+SQLITE_BUSY_TIMEOUT_MS = 30000
+SQLITE_BACKUP_ATTEMPTS = 3
+SQLITE_BACKUP_RETRY_DELAY_SECONDS = 5
 
 # Security: Allowed backup path roots (defense-in-depth)
 # Only paths under these directories can be backed up.
@@ -190,52 +196,70 @@ def calculate_sha256(filepath: Path) -> str:
     return sha256_hash.hexdigest()
 
 
-def backup_sqlite(db_path: str, backup_path: Path) -> bool:
+def _sqlite_backup_attempt(db_path: str, backup_path: Path) -> Optional[str]:
+    """One `sqlite3 .backup` plus integrity check; returns an error or None."""
+    if backup_path.exists():
+        backup_path.unlink()
+
+    # `.timeout` installs a busy handler before `.backup`: a writer that is
+    # committing holds an exclusive lock for a moment, and without a handler
+    # sqlite3 fails at once with "database is locked".
+    result = subprocess.run(
+        ["sqlite3", db_path, f".timeout {SQLITE_BUSY_TIMEOUT_MS}", f".backup '{backup_path}'"],
+        capture_output=True,
+        text=True,
+        shell=False
+    )
+    if result.returncode != 0:
+        return f"sqlite3 backup failed: {result.stderr.strip() or f'exit code {result.returncode}'}"
+
+    if not backup_path.exists():
+        return "backup file not created"
+
+    integrity_result = subprocess.run(
+        ["sqlite3", str(backup_path), "PRAGMA integrity_check;"],
+        capture_output=True,
+        text=True
+    )
+    if integrity_result.returncode != 0 or integrity_result.stdout.strip().lower() != "ok":
+        detail = (integrity_result.stdout.strip() or integrity_result.stderr.strip())[:200]
+        return f"backup integrity check failed: {detail}"
+    return None
+
+
+def backup_sqlite(db_path: str, backup_path: Path) -> Optional[str]:
     """
     Perform safe SQLite backup using .backup command.
     This ensures a consistent backup even if the database is being written to.
+    Waits up to SQLITE_BUSY_TIMEOUT_MS for locks and retries a failed attempt
+    SQLITE_BACKUP_ATTEMPTS times. Returns None on success, else the last error.
     """
     print(f"Backing up SQLite database: {db_path}", file=sys.stderr)
 
     # Validate the database file exists (prevents sqlite3 from creating empty DB)
     if not os.path.isfile(db_path):
         print(f"Database file not found: {db_path}", file=sys.stderr)
-        return False
+        return "database file not found"
+
+    error = None
+    for attempt in range(1, SQLITE_BACKUP_ATTEMPTS + 1):
+        try:
+            error = _sqlite_backup_attempt(db_path, backup_path)
+        except Exception as e:
+            error = f"SQLite backup error: {e}"
+        if error is None:
+            print(f"SQLite backup successful: {backup_path}", file=sys.stderr)
+            return None
+        print(f"SQLite backup attempt {attempt}/{SQLITE_BACKUP_ATTEMPTS} failed: {error}", file=sys.stderr)
+        if attempt < SQLITE_BACKUP_ATTEMPTS:
+            time.sleep(SQLITE_BACKUP_RETRY_DELAY_SECONDS)
 
     try:
-        result = subprocess.run(
-            ["sqlite3", db_path, f".backup '{backup_path}'"],
-            capture_output=True,
-            text=True,
-            shell=False
-        )
-
-        if result.returncode != 0:
-            print(f"sqlite3 backup failed: {result.stderr}", file=sys.stderr)
-            return False
-
-        # Verify the backup
-        if not backup_path.exists():
-            print("Backup file not created", file=sys.stderr)
-            return False
-
-        # Run integrity check on backup
-        integrity_result = subprocess.run(
-            ["sqlite3", str(backup_path), "PRAGMA integrity_check;"],
-            capture_output=True,
-            text=True
-        )
-
-        if "ok" not in integrity_result.stdout.lower():
-            print(f"Backup integrity check failed: {integrity_result.stdout}", file=sys.stderr)
-            return False
-
-        print(f"SQLite backup successful: {backup_path}", file=sys.stderr)
-        return True
-
-    except Exception as e:
-        print(f"SQLite backup error: {e}", file=sys.stderr)
-        return False
+        if backup_path.exists():
+            backup_path.unlink()
+    except OSError:
+        pass
+    return error
 
 
 def _make_symlink_ignore_func(base_path: str):
@@ -1089,14 +1113,15 @@ def main_backup(config: Optional[Dict], context: Dict, cenv: Dict) -> int:
         # Backup SQLite database if specified
         if db_path:
             db_backup_path = backup_dir / Path(db_path).name
-            if backup_sqlite(db_path, db_backup_path):
+            db_error = backup_sqlite(db_path, db_backup_path)
+            if db_error is None:
                 manifest["database"] = {
                     "source": db_path,
                     "filename": db_backup_path.name,
                     "size": db_backup_path.stat().st_size,
                 }
             else:
-                update_step("backup", "failure", f"Failed to backup database: {db_path}")
+                update_step("backup", "failure", f"Failed to backup database: {db_path} ({db_error})")
                 emit_echoport_result(False, error=f"Database backup failed: {db_path}")
                 finish_deployment("failure", "Database backup failed")
                 return 1

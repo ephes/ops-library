@@ -3,6 +3,21 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Generic Echoport runner waits for SQLite writers (2.51.1)
+
+- `echoport_backup`: the generic runner (`backup.py.j2`, used by nyxmon and
+  the other `generic_paths` targets) ran `sqlite3 <db> ".backup ..."` without
+  a busy handler. A writer committing at that moment holds the exclusive lock
+  of a rollback-journal database, and sqlite3 then fails at once with
+  "database is locked"; the nyxmon backups of 2026-10-17 and 2026-10-20 failed
+  this way (the nyxmon agent commits a check result every few seconds). The
+  runner now passes `.timeout 30000` before `.backup`, retries a failed backup
+  or integrity check up to 3 times 5 s apart, removes a partial copy, requires
+  the integrity check to print exactly `ok`, and appends the sqlite3 error to
+  the `Failed to backup database: <path>` step message. New
+  `tests/test_echoport_sqlite_backup.py` (`just test-echoport-sqlite-backup`)
+  backs up a real database while another connection holds its exclusive lock.
+
 ## Unreleased — certbot_dns_deploy removes listed stray config trees (2.51.0)
 
 - `certbot_dns_deploy` gains `certbot_dns_stray_config_dirs` (default `[]`):
