@@ -1,0 +1,21 @@
+---
+_ssh_authorized_keys_manage_path: "{{ ssh_authorized_keys_manage_home }}/.ssh/authorized_keys"
+
+# An unrelated key used only on a scratch copy to make the module write.
+_ssh_authorized_keys_manage_probe_line: >-
+  ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOpsLibraryRehearsalProbeKeyNeverAuthorized0 ops-library-rehearsal-probe
+
+# Each entry as one authorized_keys line: "<key_options> <key> <comment>", the
+# same line the full-file template renders.
+_ssh_authorized_keys_manage_lines: >-
+  {%- set ns = namespace(lines=[]) -%}
+  {%- for entry in ssh_authorized_keys_manage_entries -%}
+  {%- set options = entry.key_options | default('') | string | trim -%}
+  {%- set comment = entry.comment | default('') | string | trim -%}
+  {%- set ns.lines = ns.lines + [
+        ((options ~ ' ') if options else '')
+        ~ (entry.key | string | trim)
+        ~ ((' ' ~ comment) if comment else '')
+      ] -%}
+  {%- endfor -%}
+  {{ ns.lines }}

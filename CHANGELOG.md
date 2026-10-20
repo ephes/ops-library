@@ -3,6 +3,36 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Non-exclusive authorized_keys mode and opsgate deploy keys (2.54.0)
+
+- `ssh_authorized_keys_manage` gains `ssh_authorized_keys_manage_exclusive`
+  (default `true`, the full-file rendering as before). With `false` the role
+  runs `ansible.posix.authorized_key` (`state: present`, `exclusive: false`)
+  once per entry: missing keys are appended, a listed key with other options
+  or another comment is rewritten in place, and every other line (keys other
+  roles installed, comments) stays. The declared line equals the one the
+  full-file mode renders, so switching a file rendered by the role is a no-op.
+  Before writing, the non-exclusive mode rehearses on scratch copies with the
+  module itself and refuses, changing nothing, when the module would rewrite
+  lines the role does not declare (merged duplicate keys or identical
+  comment/blank lines, rebuilt key lines, CRLF) or when two entries share a
+  key. No entry field may contain a line break any more. New
+  `tests/test_ssh_authorized_keys_manage.py` (`just
+  test-ssh-authorized-keys-manage`) runs both modes against a temporary home.
+- `opsgate_deploy` gains `opsgate_ops_github_deploy_keys`: one key pair per
+  GitHub SSH workspace repository (read-only deploy keys), installed as
+  `~/.ssh/id_github_deploy_<name>` with a `Host github-<name>` alias, and the
+  workspace is cloned/fetched as `git@github-<name>:...` (an existing clone's
+  `origin` is rewritten). Once deploy keys are configured and the account key
+  variable is empty, the old account key files are removed. The deploy-key
+  tasks run with `no_log`.
+- `opsgate_deploy`: the GitHub SSH URL checks in `validate.yml` and
+  `workspace_repos.yml` wrote `github\\.com` inside folded YAML scalars, which
+  reached the regex as a literal backslash and never matched. The GitHub host
+  key task was therefore always skipped and the "GitHub SSH repos need a key"
+  validation always passed. They now use `github[.]com`. New
+  `tests/test_opsgate_deploy_keys.py` (`just test-opsgate-deploy-keys`).
+
 ## Unreleased — Every SQLite backup waits for writers (2.53.0)
 
 - `echoport_backup`: the SQLite handling of the generic runner (2.51.1) moved

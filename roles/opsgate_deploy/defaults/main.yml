@@ -37,6 +37,16 @@ opsgate_ops_ssh_config_path: "{{ ops_home_dir }}/.ssh/config"
 opsgate_ops_github_ssh_private_key_path: "{{ ops_home_dir }}/.ssh/id_github_ed25519"
 opsgate_ops_github_ssh_public_key_path: "{{ ops_home_dir }}/.ssh/id_github_ed25519.pub"
 opsgate_ops_github_host_key: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+# Optional per-repository GitHub deploy keys, keyed by the name of an entry in
+# opsgate_ops_workspace_repositories. A repo listed here is cloned and fetched
+# through its own SSH host alias (github-<name>) with its own key, so a
+# read-only deploy key per repo replaces the account key.
+#   opsgate_ops_github_deploy_keys:
+#     ops-control:
+#       private_key: "-----BEGIN OPENSSH PRIVATE KEY-----..."
+#       public_key: "ssh-ed25519 AAAA... opsgate-ops-control"
+opsgate_ops_github_deploy_keys: {}
+opsgate_ops_github_deploy_key_path_prefix: "{{ ops_home_dir }}/.ssh/id_github_deploy_"
 
 opsgate_app_dir: "{{ control_service_home_dir }}/opsgate"
 opsgate_runner_app_dir: "{{ ops_home_dir }}/opsgate"

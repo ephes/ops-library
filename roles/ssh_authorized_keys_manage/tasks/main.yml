@@ -5,12 +5,14 @@
     - name: Validate target account settings are present
       ansible.builtin.assert:
         that:
+          - ssh_authorized_keys_manage_exclusive is boolean
           - ssh_authorized_keys_manage_user | trim | length > 0
           - ssh_authorized_keys_manage_group | trim | length > 0
           - ssh_authorized_keys_manage_home | trim | length > 0
         fail_msg: >-
           ssh_authorized_keys_manage_user, ssh_authorized_keys_manage_group, and
-          ssh_authorized_keys_manage_home must all be set when key management is enabled.
+          ssh_authorized_keys_manage_home must all be set when key management is enabled,
+          and ssh_authorized_keys_manage_exclusive must be a boolean.
         quiet: true
 
     - name: Validate at least one authorized key entry is configured
@@ -27,9 +29,10 @@
         that:
           - item.key is defined
           - item.key | string | trim | length > 0
+          - (item.key_options | default('') | string ~ item.key | string ~ item.comment | default('') | string) is not search('[\r\n]')
         fail_msg: >-
           Each ssh_authorized_keys_manage_entries item must define a non-empty
-          key. Invalid entry: {{ item | to_nice_yaml(indent=2) | trim }}
+          key, and no field may contain a line break. Invalid entry: {{ item | to_nice_yaml(indent=2) | trim }}
         quiet: true
       loop: "{{ ssh_authorized_keys_manage_entries }}"
       loop_control:
@@ -45,7 +48,9 @@
     mode: "0700"
 
 - name: Render target authorized_keys file
-  when: ssh_authorized_keys_manage_enabled | bool
+  when:
+    - ssh_authorized_keys_manage_enabled | bool
+    - ssh_authorized_keys_manage_exclusive
   ansible.builtin.template:
     src: authorized_keys.j2
     dest: "{{ ssh_authorized_keys_manage_home }}/.ssh/authorized_keys"
@@ -53,3 +58,157 @@
     group: "{{ ssh_authorized_keys_manage_group }}"
     mode: "0600"
     validate: "/bin/test -s %s"
+
+# authorized_key re-serializes the whole file whenever it writes: lines that
+# share a key (or identical unparsable lines) collapse into one, and key lines
+# are rebuilt from their parsed fields. Rehearse on scratch copies with the
+# module itself and refuse, before touching the real file, unless
+#   1. adding an unrelated probe key leaves every existing byte as it was, and
+#   2. applying the entries leaves every declared line in the result (two
+#      entries with the same key would overwrite each other).
+- name: Rehearse the non-exclusive update on scratch copies
+  when:
+    - ssh_authorized_keys_manage_enabled | bool
+    - not ssh_authorized_keys_manage_exclusive
+  check_mode: false
+  block:
+    - name: Look for an existing target authorized_keys file
+      ansible.builtin.stat:
+        path: "{{ _ssh_authorized_keys_manage_path }}"
+        get_checksum: false
+      register: _ssh_authorized_keys_manage_stat
+
+    - name: Read the existing target authorized_keys file
+      ansible.builtin.slurp:
+        path: "{{ _ssh_authorized_keys_manage_path }}"
+      register: _ssh_authorized_keys_manage_existing
+      when: _ssh_authorized_keys_manage_stat.stat.exists
+
+    - name: Create the scratch copies
+      # Scratch copy only.
+      changed_when: false
+      ansible.builtin.tempfile:
+        state: file
+        suffix: .authorized_keys
+      register: _ssh_authorized_keys_manage_scratch
+      loop: [probe, entries]
+
+    - name: Fill the scratch copies with the existing file
+      # Scratch copy only.
+      changed_when: false
+      ansible.builtin.copy:
+        src: "{{ _ssh_authorized_keys_manage_path }}"
+        dest: "{{ item.path }}"
+        remote_src: true
+        mode: "0600"
+      loop: "{{ _ssh_authorized_keys_manage_scratch.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: _ssh_authorized_keys_manage_stat.stat.exists
+
+    - name: Add the probe key to the first scratch copy
+      # Scratch copy only.
+      changed_when: false
+      ansible.posix.authorized_key:
+        user: "{{ ssh_authorized_keys_manage_user }}"
+        path: "{{ _ssh_authorized_keys_manage_scratch.results[0].path }}"
+        manage_dir: false
+        key: "{{ _ssh_authorized_keys_manage_probe_line }}"
+        state: present
+        exclusive: false
+      when: _ssh_authorized_keys_manage_stat.stat.exists
+
+    - name: Apply the entries to the second scratch copy
+      # Scratch copy only.
+      changed_when: false
+      ansible.posix.authorized_key:
+        user: "{{ ssh_authorized_keys_manage_user }}"
+        path: "{{ _ssh_authorized_keys_manage_scratch.results[1].path }}"
+        manage_dir: false
+        key: "{{ item }}"
+        state: present
+        exclusive: false
+      loop: "{{ _ssh_authorized_keys_manage_lines }}"
+      loop_control:
+        label: "{{ item.split() | last }}"
+
+    - name: Read the rehearsed results
+      ansible.builtin.slurp:
+        path: "{{ item.path }}"
+      register: _ssh_authorized_keys_manage_rehearsal
+      loop: "{{ _ssh_authorized_keys_manage_scratch.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Refuse an update that would change lines the role does not own
+      ansible.builtin.assert:
+        that:
+          - >-
+            not _ssh_authorized_keys_manage_stat.stat.exists
+            or (_ssh_authorized_keys_manage_rehearsal.results[0].content | b64decode)
+            == (_ssh_authorized_keys_manage_existing.content | b64decode) ~ _ssh_authorized_keys_manage_probe_line ~ '\n'
+        fail_msg: >-
+          ansible.posix.authorized_key would rewrite lines of
+          {{ _ssh_authorized_keys_manage_path }} that this role does not
+          declare: it merges lines with the same key or identical unparsable
+          lines (such as repeated comment or blank lines), rebuilds key lines
+          (a key without a comment gets a trailing space, runs of spaces become
+          one) and converts CRLF line ends. Nothing was changed; tidy the file
+          through its owners first.
+        quiet: true
+
+    - name: Refuse entries that would overwrite each other
+      ansible.builtin.assert:
+        that:
+          - >-
+            _ssh_authorized_keys_manage_lines
+            | reject('in', (_ssh_authorized_keys_manage_rehearsal.results[1].content | b64decode).splitlines()
+                           | map('regex_replace', ' +$', '') | list)
+            | list | length == 0
+        fail_msg: >-
+          Some ssh_authorized_keys_manage_entries use the same key, so a later
+          entry replaces an earlier one on every run. Nothing was changed;
+          declare each key once.
+        quiet: true
+
+  always:
+    - name: Delete the scratch copies
+      # Scratch copy only.
+      changed_when: false
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ _ssh_authorized_keys_manage_scratch.results | default([]) | selectattr('path', 'defined') | list }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+# Non-exclusive mode: each entry is matched by its key material. A missing key
+# is appended, a key whose options or comment differ is rewritten in place, and
+# every other line stays. Never set exclusive here: it is not loop aware and
+# each iteration would delete the entries written by the previous ones.
+- name: Add or update the declared authorized_keys entries only
+  when:
+    - ssh_authorized_keys_manage_enabled | bool
+    - not ssh_authorized_keys_manage_exclusive
+  ansible.posix.authorized_key:
+    user: "{{ ssh_authorized_keys_manage_user }}"
+    path: "{{ _ssh_authorized_keys_manage_path }}"
+    manage_dir: false
+    key: "{{ item }}"
+    state: present
+    exclusive: false
+  # Same lines the template renders, so both modes agree on an entry.
+  loop: "{{ _ssh_authorized_keys_manage_lines }}"
+  loop_control:
+    label: "{{ item.split() | last }}"
+
+- name: Enforce ownership and mode of the target authorized_keys file
+  when:
+    - ssh_authorized_keys_manage_enabled | bool
+    - not ssh_authorized_keys_manage_exclusive
+  ansible.builtin.file:
+    path: "{{ ssh_authorized_keys_manage_home }}/.ssh/authorized_keys"
+    state: file
+    owner: "{{ ssh_authorized_keys_manage_user }}"
+    group: "{{ ssh_authorized_keys_manage_group }}"
+    mode: "0600"
