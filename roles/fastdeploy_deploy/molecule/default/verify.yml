@@ -6,6 +6,10 @@
 
   vars:
     fastdeploy_site_path: /home/fastdeploy/site
+    fastdeploy_services_path: "{{ fastdeploy_site_path }}/services"
+    fastdeploy_libexec_path: /usr/local/libexec/fastdeploy
+    fastdeploy_user: fastdeploy
+    fastdeploy_group: fastdeploy
     fastdeploy_env_path: "{{ fastdeploy_site_path }}/.env"
     fastdeploy_service_unit: /etc/systemd/system/fastdeploy.service
     fastdeploy_traefik_config: /etc/traefik/dynamic/fastdeploy.yml
@@ -86,6 +90,32 @@
           - venv_python.stat.exists
         fail_msg: "FastDeploy venv python missing at {{ fastdeploy_venv_python }}"
 
+    # A host deployed by an older version: a fastdeploy-owned service
+    # directory with a runner script inside the services root.
+    - name: Verify | Plant a legacy fastdeploy-owned service directory
+      ansible.builtin.file:
+        path: "{{ fastdeploy_site_path }}/services/legacy-backup"
+        state: directory
+        owner: fastdeploy
+        group: fastdeploy
+        mode: "0755"
+
+    - name: Verify | Plant a legacy fastdeploy-owned runner script
+      ansible.builtin.copy:
+        dest: "{{ fastdeploy_site_path }}/services/legacy-backup/backup.py"
+        content: "#!/bin/sh\n"
+        owner: fastdeploy
+        group: fastdeploy
+        mode: "0755"
+
+    - name: Verify | Plant the legacy service's config.json
+      ansible.builtin.copy:
+        dest: "{{ fastdeploy_site_path }}/services/legacy-backup/config.json"
+        content: '{"name": "legacy-backup", "deploy_script": "backup.py", "steps": [{"name": "backup"}]}'
+        owner: fastdeploy
+        group: fastdeploy
+        mode: "0644"
+
     - name: Verify | Read FastDeploy MainPID before redeploy
       ansible.builtin.command:
         argv:
@@ -126,6 +156,73 @@
           - (fastdeploy_main_pid_after.stdout | trim | int) > 0
           - (fastdeploy_main_pid_before.stdout | trim) != (fastdeploy_main_pid_after.stdout | trim)
         fail_msg: "FastDeploy did not restart during the second deploy run"
+
+    - name: Verify | Stat the services root, the legacy entries and the runner directory
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ fastdeploy_site_path }}/services"
+        - "{{ fastdeploy_site_path }}/services/legacy-backup"
+        - "{{ fastdeploy_site_path }}/services/legacy-backup/backup.py"
+        - /usr/local/libexec/fastdeploy
+        - "{{ fastdeploy_site_path }}"
+      register: fastdeploy_layout_stats
+
+    - name: Verify | Assert the redeploy left the services tree and the runner directory root-owned
+      ansible.builtin.assert:
+        that:
+          - fastdeploy_layout_stats.results[0].stat.pw_name == 'root'
+          - fastdeploy_layout_stats.results[0].stat.gr_name == 'root'
+          - fastdeploy_layout_stats.results[0].stat.mode == '0755'
+          - fastdeploy_layout_stats.results[1].stat.pw_name == 'root'
+          - fastdeploy_layout_stats.results[1].stat.gr_name == 'root'
+          - fastdeploy_layout_stats.results[2].stat.pw_name == 'root'
+          - fastdeploy_layout_stats.results[2].stat.gr_name == 'root'
+          - fastdeploy_layout_stats.results[3].stat.pw_name == 'root'
+          - fastdeploy_layout_stats.results[3].stat.mode == '0755'
+          - fastdeploy_layout_stats.results[4].stat.pw_name == 'fastdeploy'
+        fail_msg: "fastdeploy_deploy handed the services tree or the runner directory to fastdeploy"
+
+    - name: Verify | Try to write into the services tree as fastdeploy
+      ansible.builtin.command:
+        argv: ["runuser", "-u", "fastdeploy", "--", "sh", "-c", "{{ item }}"]
+      loop:
+        - "touch {{ fastdeploy_site_path }}/services/planted"
+        - "echo x >> {{ fastdeploy_site_path }}/services/legacy-backup/backup.py"
+        - "touch /usr/local/libexec/fastdeploy/planted"
+      register: fastdeploy_services_write
+      changed_when: false
+      failed_when: fastdeploy_services_write.rc == 0
+
+    - name: Verify | Run the site ownership pass (what an rsync or changed git deploy does)
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/../../tasks/site_ownership.yml"
+
+    - name: Verify | Run the site ownership pass again
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/../../tasks/site_ownership.yml"
+
+    - name: Verify | Assert the second ownership pass changed nothing
+      ansible.builtin.assert:
+        that:
+          - not fastdeploy_site_ownership.changed
+
+    - name: Verify | Run the services layout pass again
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/../../tasks/runner_layout.yml"
+
+    - name: Verify | Assert the services layout pass is idempotent
+      ansible.builtin.assert:
+        that:
+          - not fastdeploy_services_ownership.changed
+          - not fastdeploy_services_group.changed
+
+    - name: Verify | Stat the services root after the ownership passes
+      ansible.builtin.stat:
+        path: "{{ fastdeploy_site_path }}/services/legacy-backup/backup.py"
+      register: fastdeploy_legacy_after
+
+    - name: Verify | Assert the site ownership pass skipped the services root
+      ansible.builtin.assert:
+        that:
+          - fastdeploy_legacy_after.stat.pw_name == 'root'
 
     - name: Verify | Assert rotated database password was rendered to .env
       ansible.builtin.command:

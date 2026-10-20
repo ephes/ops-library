@@ -13,9 +13,16 @@
     msg: "Source path {{ fastdeploy_source_path }} does not exist on local machine"
   when: not source_check.stat.exists
 
+# The services root is root-owned (tasks/runner_layout.yml): rsync must not
+# touch it, or the receiving rsync (root) would reset its owner and mode.
 - name: Build rsync exclude options
   set_fact:
-    rsync_exclude_opts: "{{ fastdeploy_rsync_excludes | map('regex_replace', '^', '--exclude=') | list }}"
+    rsync_exclude_opts: >-
+      {{
+        fastdeploy_rsync_excludes | map('regex_replace', '^', '--exclude=') | list
+        + (['--exclude=/' ~ (fastdeploy_services_path | relpath(fastdeploy_site_path)) ~ '/']
+           if (fastdeploy_services_path ~ '/').startswith(fastdeploy_site_path ~ '/') else [])
+      }}
 
 - name: Sync FastDeploy source code
   ansible.posix.synchronize:
@@ -26,8 +33,4 @@
   become: no
 
 - name: Ensure correct ownership of synced files
-  file:
-    path: "{{ fastdeploy_site_path }}"
-    owner: "{{ fastdeploy_user }}"
-    group: "{{ fastdeploy_group }}"
-    recurse: yes
+  include_tasks: site_ownership.yml

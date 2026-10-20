@@ -1,0 +1,17 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    demo_backup_marker: /var/tmp/demo-backup-ran
+    fastdeploy_runner_service: demo-backup
+    fastdeploy_runner_description: "Demo backup runner"
+    fastdeploy_runner_steps: [init, backup, result]
+    fastdeploy_runner_template: "{{ playbook_dir }}/templates/demo_backup.py.j2"
+    fastdeploy_runner_run_as: root
+    fastdeploy_runner_sudoers_file: /etc/sudoers.d/demo_backup
+
+  roles:
+    - role: fastdeploy_runner

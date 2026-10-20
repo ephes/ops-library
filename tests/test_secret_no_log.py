@@ -319,10 +319,9 @@ class SecretNoLogCheckTests(unittest.TestCase):
 
     def test_failure_reports_never_print_the_uri_msg(self):
         """uri's msg can quote request headers (e.g. an invalid header value)."""
-        for role, register in (
-            ("fastdeploy_register_service", "sync_result"),
-            ("echoport_backup", "echoport_backup_sync_result"),
-        ):
+        # echoport_backup no longer calls the sync API (fastdeploy_runner syncs
+        # locally as the fastdeploy user, without a token).
+        for role, register in (("fastdeploy_register_service", "sync_result"),):
             with self.subTest(role=role):
                 tasks = yaml.safe_load((ROOT / "roles" / role / "tasks/main.yml").read_text())
                 report = next(t for t in tasks if t.get("name") == "Report failed service sync")

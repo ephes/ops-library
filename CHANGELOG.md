@@ -3,6 +3,44 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — FastDeploy runners move to a root-owned directory (2.49.0)
+
+FastDeploy's services root was owned by the `fastdeploy` user, and every
+FastDeploy deploy handed the whole site, including the backup scripts that
+sudo runs as root, back to it: code running as fastdeploy could rewrite (or,
+by renaming a directory, replace) a script and run it as root.
+
+- New role `fastdeploy_runner`: installs a script FastDeploy starts through
+  sudo in `/usr/local/libexec/fastdeploy/<service>/` (root:root `0755`
+  directories, script root:`deploy` `0750`; fails if a directory above the
+  libexec root is not root-owned or is writable by others), writes
+  `config.json` with the absolute script path (FastDeploy runs absolute
+  `deploy_script` paths as they are; no FastDeploy change needed), writes
+  sudoers rules with that fixed path only, runs `commands.py syncservices` as
+  the fastdeploy user and then removes the old copy in the services root.
+  Idempotent; Molecule covers the migration from the old layout, tamper
+  attempts as fastdeploy and deploy, and a run through the sudo chain.
+- `echoport_backup` uses it: the runner moves to
+  `/usr/local/libexec/fastdeploy/<service>/backup.py`
+  (`echoport_backup_libexec_root`). The service sync now runs locally as the
+  fastdeploy user; `echoport_backup_api_base`/`echoport_backup_api_token` are
+  no longer used.
+- `fastdeploy_deploy`: the services root is root:root `0755` and is excluded
+  from rsync and from the ownership pass (which replaced the recursive
+  `chown` of the whole site); every deploy makes everything below the
+  services root root-owned again and creates `fastdeploy_libexec_path`
+  (`/usr/local/libexec/fastdeploy`, root:root `0755`).
+- `fastdeploy_register_service`: the service directory, the `deploy.py` copy
+  and `config.json` are root-owned.
+- FastDeploy restores (`fastdeploy_restore`, Echoport `fastdeploy-backup`)
+  leave the services root root-owned and restore an archived sudoers file
+  only when its scripts are root-owned runners below `/usr/local/libexec`
+  (or, for rules that run as `deploy`, in `/home/deploy/runners/`); rules
+  naming `/home/fastdeploy/site/services/` are skipped.
+- Rollout: deploy FastDeploy, then rerun every backup registration whose
+  playbook uses `fastdeploy_runner` (ops-control). Until a registration is
+  rerun its script stays in the (now root-owned) services root.
+
 ## Unreleased — uv_install works under --check (2.48.2)
 
 - `uv_install`: `ansible-playbook --check` no longer fails. The read-only

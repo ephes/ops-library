@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+"""Minimal runner with the same privilege pattern as the Echoport runners:
+started as the deploy user, it re-runs itself with `sudo -n` as root."""
+
+import os
+import subprocess
+import sys
+
+MARKER = "{{ demo_backup_marker }}"
+
+if os.geteuid() != 0:
+    script_path = os.path.abspath(__file__)
+    result = subprocess.run(["sudo", "-n", script_path] + sys.argv[1:])
+    sys.exit(result.returncode)
+
+with open(MARKER, "w") as handle:
+    handle.write(f"uid={os.getuid()} sudo_user={os.environ.get('SUDO_USER', '')} args={' '.join(sys.argv[1:])}\n")
+print("backup done")

@@ -45,8 +45,16 @@ SUDOERS_CASES = {
     "deploy ALL=(root) NOPASSWD: /home/deploy/runners/x/../y\n": False,
     "deploy ALL=(root) NOPASSWD: /home/deploy/runners/x/\n": False,
     "fastdeploy ALL=(deploy) NOPASSWD: /home/deploy/runners/nyxmon/deploy.py\n": True,
-    "# Stage 1\nfastdeploy ALL=(deploy) NOPASSWD:NOSETENV: /home/fastdeploy/site/services/x/backup.py *\n"
-    "deploy ALL=(root) NOPASSWD:NOSETENV: /home/fastdeploy/site/services/x/backup.py *\n": True,
+    # deploy owns its runner directory: fine to run as deploy, never as root
+    "deploy ALL=(root) NOPASSWD: /home/deploy/runners/nyxmon/deploy.py\n": False,
+    "# Stage 1\nfastdeploy ALL=(deploy) NOPASSWD:NOSETENV: /usr/local/libexec/fastdeploy/x/backup.py *\n"
+    "deploy ALL=(root) NOPASSWD:NOSETENV: /usr/local/libexec/fastdeploy/x/backup.py *\n": True,
+    "deploy ALL=(root) NOPASSWD:NOSETENV: /usr/local/libexec/fastdeploy/x/../y *\n": False,
+    "deploy ALL=(root) NOPASSWD:NOSETENV: /usr/local/libexec/fastdeploy/x/ *\n": False,
+    "deploy ALL=(root) NOPASSWD:NOSETENV: /usr/local/libexec/fastdeploy/x/y/z *\n": False,
+    # FastDeploy's services root lies in the fastdeploy-owned site
+    "fastdeploy ALL=(deploy) NOPASSWD:NOSETENV: /home/fastdeploy/site/services/x/backup.py *\n": False,
+    "deploy ALL=(root) NOPASSWD:NOSETENV: /home/fastdeploy/site/services/x/backup.py *\n": False,
     "deploy ALL=(root) NOPASSWD:NOSETENV: /usr/local/libexec/daybook-operations-backup --config *\n": True,
     "fastdeploy ALL=(ALL) NOPASSWD: /usr/bin/systemctl\n": False,
     "# deploy ALL=(root) ALL\n\n": True,
@@ -86,16 +94,21 @@ class RetiredEntriesAreNotRestored(unittest.TestCase):
         stage.mkdir()
         for name in ("fastdeploy_fastdeploy-self", "fastdeploy_self_deploy_users", "fastdeploy_backup"):
             (stage / f"{name}.rule").write_text(
-                "fastdeploy ALL=(deploy) NOPASSWD:NOSETENV: /home/fastdeploy/site/services/b/backup.py *\n"
+                "fastdeploy ALL=(deploy) NOPASSWD:NOSETENV: /usr/local/libexec/fastdeploy/b/backup.py *\n"
             )
+        # Taken before the runners moved out of FastDeploy's services root.
+        (stage / "fastdeploy_legacy.rule").write_text(
+            "fastdeploy ALL=(deploy) NOPASSWD:NOSETENV: /home/fastdeploy/site/services/l/backup.py *\n"
+            "deploy ALL=(root) NOPASSWD:NOSETENV: /home/fastdeploy/site/services/l/backup.py *\n"
+        )
         # Older fastdeploy_register_service output: a narrow rule plus a blanket one.
         (stage / "fastdeploy_nyxmon.rule").write_text(
             "fastdeploy ALL=(deploy) NOPASSWD: /home/deploy/runners/nyxmon/deploy.py\n"
             "deploy ALL=(root) NOPASSWD: ALL\n"
         )
         (stage / "fastdeploy_echoport.rule").write_text(
-            "fastdeploy ALL=(deploy) NOPASSWD:NOSETENV: /home/fastdeploy/site/services/e/backup.py *\n"
-            "deploy ALL=(root) NOPASSWD:NOSETENV: /home/fastdeploy/site/services/e/backup.py *\n"
+            "fastdeploy ALL=(deploy) NOPASSWD:NOSETENV: /usr/local/libexec/fastdeploy/e/backup.py *\n"
+            "deploy ALL=(root) NOPASSWD:NOSETENV: /usr/local/libexec/fastdeploy/e/backup.py *\n"
         )
         copied: list[str] = []
         with (
@@ -105,6 +118,20 @@ class RetiredEntriesAreNotRestored(unittest.TestCase):
         ):
             self.runner.restore_sudoers_from_stage(stage)
         self.assertEqual(copied, ["/etc/sudoers.d/fastdeploy_backup", "/etc/sudoers.d/fastdeploy_echoport"])
+
+    def test_restored_services_root_stays_root_owned(self) -> None:
+        services = self.tmp / "live-services"
+        services.mkdir()
+        calls: list[list[str]] = []
+        with (
+            mock.patch.object(self.runner, "run_cmd", side_effect=lambda args, **kw: calls.append(args)),
+            mock.patch.object(self.runner, "SERVICES_PATH", str(services)),
+            mock.patch.object(self.runner, "RESTORE_OWNER_FASTDEPLOY", "fastdeploy:fastdeploy"),
+            mock.patch.object(self.runner, "RESTORE_OWNER_DEPLOY", ""),
+        ):
+            self.runner.apply_permissions()
+        self.assertIn(["chown", "-R", "-h", "root:root", str(services)], calls)
+        self.assertFalse(any(args[0] == "chown" and str(services) in args and "fastdeploy:fastdeploy" in args for args in calls))
 
     def test_services_and_runners_are_synced_without_retired_entries(self) -> None:
         stage = self.tmp / "stage"

@@ -220,6 +220,7 @@ consumer repos depend on.
 | Service removal | [`mastodon_remove`](roles/mastodon_remove/README.md) | Remove Mastodon services, config, and user with confirmation gates. |
 | Service removal | [`ollama_remove`](roles/ollama_remove/README.md) | Remove Ollama launchd service on macOS with optional data/user/brew cleanup. |
 | Service registration | [`fastdeploy_register_service`](roles/fastdeploy_register_service/README.md) | Generic FastDeploy service registration helper. |
+| Service registration | [`fastdeploy_runner`](roles/fastdeploy_runner/README.md) | Install a script FastDeploy runs through sudo in a root-owned directory and register it. |
 | Operations | [`docker_cache_cleanup`](roles/docker_cache_cleanup/README.md) | Daily cleanup of Docker build cache unused for seven days. |
 | Operations | [`time_sync_check`](roles/time_sync_check/README.md) | Read-only check that a host's clock is NTP-synchronized (chrony or systemd-timesyncd, offset threshold, controller comparison); fails or warns. |
 | Bootstrap | [`ansible_install`](roles/ansible_install/README.md) | Ensure controller has Ansible and required plugins. |
@@ -260,6 +261,7 @@ just test-role traefik_deploy
 
 # Run focused Molecule coverage for high-risk roles
 just molecule-test fastdeploy_register_service
+just molecule-test fastdeploy_runner
 just molecule-test fastdeploy_restore
 
 # Or run test playbooks directly

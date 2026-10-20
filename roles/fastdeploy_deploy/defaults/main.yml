@@ -8,7 +8,13 @@ fastdeploy_user: fastdeploy
 fastdeploy_group: "{{ fastdeploy_user }}"
 fastdeploy_home: "/home/{{ fastdeploy_user }}"
 fastdeploy_site_path: "{{ fastdeploy_home }}/site"
+# Services root (config.json per service). root:root 0755: FastDeploy only
+# reads it, and fastdeploy_deploy never hands it to the fastdeploy user.
 fastdeploy_services_path: "{{ fastdeploy_site_path }}/services"
+# Root-owned home of the scripts FastDeploy starts through sudo (one
+# directory per service, see the fastdeploy_runner role). Outside the site:
+# fastdeploy owns the site directory and could rename anything below it.
+fastdeploy_libexec_path: "/usr/local/libexec/fastdeploy"
 fastdeploy_venv_path: "{{ fastdeploy_site_path }}/.venv"
 fastdeploy_venv_bin: "{{ fastdeploy_venv_path }}/bin"
 

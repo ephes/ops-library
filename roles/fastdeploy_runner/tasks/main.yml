@@ -1,0 +1,173 @@
+---
+# Install a script that FastDeploy starts through sudo where the fastdeploy
+# user cannot change it: a root-owned directory chain outside FastDeploy's
+# site. Everything below FastDeploy's site can be renamed by fastdeploy (it
+# owns the site directory), so no script a sudoers rule names may live there.
+
+- name: fastdeploy_runner | Validate the runner settings
+  ansible.builtin.assert:
+    that:
+      - fastdeploy_runner_service is match('^[a-z0-9][a-z0-9_-]*$')
+      - fastdeploy_runner_script_name is match('^[A-Za-z0-9][A-Za-z0-9._-]*$')
+      - fastdeploy_runner_steps | length > 0
+      - (fastdeploy_runner_template | length > 0) != (fastdeploy_runner_content | length > 0)
+      - fastdeploy_runner_libexec_root is match('^/[A-Za-z0-9._/-]+$')
+      - fastdeploy_runner_libexec_root is not search('/\\.\\.?(/|$)')
+      - fastdeploy_runner_dir is match('^/[A-Za-z0-9._/-]+$')
+      - fastdeploy_runner_dir is not search('/\\.\\.?(/|$)')
+      - fastdeploy_runner_dir | dirname == fastdeploy_runner_libexec_root
+      - not ((fastdeploy_runner_dir ~ '/').startswith(fastdeploy_runner_fastdeploy_root ~ '/'))
+      - fastdeploy_runner_fastdeploy_user is match('^[a-z_][a-z0-9_-]*$')
+      - fastdeploy_runner_deploy_user is match('^[a-z_][a-z0-9_-]*$')
+      - fastdeploy_runner_script_group is match('^[a-z_][a-z0-9_-]*$')
+      - fastdeploy_runner_run_as == '' or fastdeploy_runner_run_as is match('^[a-z_][a-z0-9_-]*$')
+      - fastdeploy_runner_sudoers_file is match('^/etc/sudoers\\.d/[A-Za-z0-9_-]+$')
+      - fastdeploy_runner_script_mode in ['0750', '0755']
+    fail_msg: >-
+      fastdeploy_runner needs a service name, steps, exactly one of
+      fastdeploy_runner_template / fastdeploy_runner_content, a script
+      directory directly below fastdeploy_runner_libexec_root and outside
+      the FastDeploy site, plain user names, a sudoers file directly in
+      /etc/sudoers.d (no dots) and script mode 0750 or 0755.
+
+# The script directory sits directly below the libexec root; both are
+# root:root 0755, and every directory above the libexec root must be
+# root-owned and not writable by group or others, so no component of the path
+# a sudoers rule names can be renamed or replaced by a non-root user.
+# /usr/local/libexec itself does not exist on a fresh Debian or Ubuntu.
+- name: fastdeploy_runner | Create the parent of the libexec root
+  ansible.builtin.file:
+    path: "{{ fastdeploy_runner_libexec_root | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: fastdeploy_runner | Check the directories above the libexec root
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ fastdeploy_runner_libexec_ancestors }}"
+  vars:
+    fastdeploy_runner_libexec_ancestors: >-
+      {%- set parts = fastdeploy_runner_libexec_root.strip('/').split('/') -%}
+      {%- set ns = namespace(paths=['/']) -%}
+      {%- for i in range(1, parts | length) -%}
+      {%- set ns.paths = ns.paths + ['/' ~ (parts[:i] | join('/'))] -%}
+      {%- endfor -%}
+      {{ ns.paths }}
+  register: fastdeploy_runner_ancestor_stats
+
+- name: fastdeploy_runner | Require root-owned, non-writable directories above the libexec root
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isdir
+      - item.stat.uid == 0
+      - not item.stat.wgrp or item.stat.gid == 0
+      - not item.stat.woth
+    fail_msg: "{{ item.item }} must be a root-owned directory that only root can write."
+    quiet: true
+  loop: "{{ fastdeploy_runner_ancestor_stats.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: fastdeploy_runner | Create the root-owned script directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ fastdeploy_runner_libexec_root }}"
+    - "{{ fastdeploy_runner_dir }}"
+
+- name: fastdeploy_runner | Install the runner script from its template
+  ansible.builtin.template:
+    src: "{{ fastdeploy_runner_template }}"
+    dest: "{{ fastdeploy_runner_script }}"
+    owner: root
+    group: "{{ fastdeploy_runner_script_group }}"
+    mode: "{{ fastdeploy_runner_script_mode }}"
+  when: fastdeploy_runner_template | length > 0
+
+- name: fastdeploy_runner | Install the runner script from its content
+  ansible.builtin.copy:
+    content: "{{ fastdeploy_runner_content }}"
+    dest: "{{ fastdeploy_runner_script }}"
+    owner: root
+    group: "{{ fastdeploy_runner_script_group }}"
+    mode: "{{ fastdeploy_runner_script_mode }}"
+  when: fastdeploy_runner_content | length > 0
+
+# FastDeploy only reads these. fastdeploy_deploy keeps the services root
+# root-owned as well; doing it here too fixes a host before FastDeploy's next
+# deploy. This is not the security boundary: fastdeploy owns the site
+# directory and can rename the services root, which is why the script lives
+# under the libexec root and config.json only names its fixed path.
+- name: fastdeploy_runner | Make the services root and the service directory root-owned
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ fastdeploy_runner_services_root }}"
+    - "{{ fastdeploy_runner_config_dir }}"
+
+- name: fastdeploy_runner | Define the FastDeploy service configuration
+  ansible.builtin.set_fact:
+    fastdeploy_runner_service_config:
+      name: "{{ fastdeploy_runner_service }}"
+      description: "{{ fastdeploy_runner_description }}"
+      deploy_script: "{{ fastdeploy_runner_script }}"
+      steps: "{{ fastdeploy_runner_steps | map('community.general.dict_kv', 'name') | list }}"
+
+- name: fastdeploy_runner | Write config.json with the fixed script path
+  ansible.builtin.copy:
+    content: "{{ fastdeploy_runner_service_config | to_nice_json }}\n"
+    dest: "{{ fastdeploy_runner_config_dir }}/config.json"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: fastdeploy_runner | Permit only the fixed script path through the runner chain
+  ansible.builtin.copy:
+    content: |  # pragma: allowlist secret (sudoers rule, no credential)
+      # FastDeploy runner {{ fastdeploy_runner_service }} (ops-library fastdeploy_runner).
+      # The script and every directory above it are root-owned; NOSETENV because
+      # FastDeploy passes the context in the --config file, not the environment.
+      {{ fastdeploy_runner_fastdeploy_user }} ALL=({{ fastdeploy_runner_deploy_user }}) NOPASSWD:NOSETENV: {{ fastdeploy_runner_script }} *
+      {% if fastdeploy_runner_run_as | length > 0 %}
+      {{ fastdeploy_runner_deploy_user }} ALL=({{ fastdeploy_runner_run_as }}) NOPASSWD:NOSETENV: {{ fastdeploy_runner_script }} *
+      {% endif %}
+    dest: "{{ fastdeploy_runner_sudoers_file }}"
+    owner: root
+    group: root
+    mode: "0440"
+    validate: "visudo -cf %s"
+
+- name: fastdeploy_runner | Sync FastDeploy services as the fastdeploy user
+  ansible.builtin.command:
+    argv:
+      - "{{ fastdeploy_runner_sync_python }}"
+      - commands.py
+      - syncservices
+    chdir: "{{ fastdeploy_runner_fastdeploy_root }}"
+  become: true
+  become_user: "{{ fastdeploy_runner_fastdeploy_user }}"
+  register: fastdeploy_runner_sync_result
+  changed_when: >-
+    fastdeploy_runner_sync_result.stdout_lines
+    | select('match', '^updated: ')
+    | reject('equalto', 'updated: -')
+    | list | length > 0
+  when: fastdeploy_runner_sync | bool
+
+- name: fastdeploy_runner | Remove the old FastDeploy-writable copies
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ fastdeploy_runner_legacy_files }}"
+  when: item != fastdeploy_runner_script
