@@ -684,8 +684,8 @@ test-shell-pipefail: venv
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_shell_pipefail
 
 test-graphyard-auth-bootstrap-changed-when: venv
-    @echo "Testing that the Grafana datasource provisioning rewrite reports changed only on a real change..."
-    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_graphyard_auth_bootstrap_changed_when
+    @echo "Testing the Graphyard auth bootstrap status-line checks (provisioning rewrite, Grafana password)..."
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_graphyard_auth_bootstrap_changed_when tests.test_graphyard_auth_bootstrap_password_check
 
 test-backup-service-restart: venv
     @echo "Testing that backup roles restart stopped services in an always block..."

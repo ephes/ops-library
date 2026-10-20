@@ -431,7 +431,7 @@
       - "{{ graphyard_auth_bootstrap_grafana_cli_bin }} cli --homepath {{ graphyard_auth_bootstrap_grafana_homepath }} admin reset-admin-password \"$GRAFANA_ADMIN_PASSWORD\""
   register: graphyard_auth_bootstrap_grafana_reset
   changed_when: true
-  when: "'MISMATCH' in graphyard_auth_bootstrap_grafana_password_check.stdout"
+  when: graphyard_auth_bootstrap_grafana_password_check.stdout | trim == "MISMATCH"
   no_log: true
   tags: [graphyard_auth_bootstrap]
 
@@ -489,11 +489,11 @@
   register: graphyard_auth_bootstrap_grafana_verify
   retries: 5
   delay: 1
-  until: "'MATCH' in graphyard_auth_bootstrap_grafana_verify.stdout"
+  until: graphyard_auth_bootstrap_grafana_verify.stdout | trim == "MATCH"
   changed_when: false
   failed_when: >-
     graphyard_auth_bootstrap_grafana_verify.rc != 0
-    or 'MATCH' not in graphyard_auth_bootstrap_grafana_verify.stdout
+    or graphyard_auth_bootstrap_grafana_verify.stdout | trim != "MATCH"
   no_log: true
   tags: [graphyard_auth_bootstrap]
 
