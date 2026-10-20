@@ -1,0 +1,8 @@
+---
+# Fixture credentials for the throwaway test container only.
+molecule_minio_root_user: moleculeadmin
+molecule_minio_root_password: molecule-root-password
+molecule_minio_fixture_user: molecule-user
+molecule_minio_fixture_secret: molecule-user-secret
+molecule_minio_data_dir: /srv/minio/data
+molecule_backup_root: /var/backups/minio-molecule

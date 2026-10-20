@@ -3,6 +3,29 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Metadata-only MinIO backups (2.52.0)
+
+- `minio_backup`: `minio_backup_include_data: false` makes a metadata-only
+  snapshot: IAM export, bucket metadata export (policies, versioning,
+  lifecycle, replication config), env file, systemd unit, Traefik/TLS config.
+  MinIO is not stopped, no data directory is checked, measured or copied, and
+  the disk check only asks for `minio_backup_metadata_min_free_bytes`.
+  `metadata.yml` records `scope: metadata` and empty `data_dirs`. The default
+  (`true`) keeps the cold full backup unchanged.
+- `minio_backup`: `minio_backup_keep_count` (default `0`, keep all) keeps the
+  newest N `<prefix>-<timestamp>` snapshots under `minio_backup_root` and
+  deletes older ones of the same prefix.
+- `minio_restore`: a `scope: metadata` snapshot only re-imports bucket
+  metadata and IAM into the running MinIO; no stop, no data rsync, no data
+  directory checks. System files come back only with
+  `minio_restore_metadata_restore_system_files: true`;
+  `minio_restore_allow_metadata_only: false` refuses such snapshots. A full
+  restore now refuses to run without a data directory.
+- New Molecule scenario `roles/minio_backup/molecule/default` (real MinIO in
+  Docker, binaries copied from a MinIO image because dl.min.io no longer
+  serves them): metadata-only backup while MinIO keeps running, retention,
+  and an IAM restore of a deleted user from that snapshot.
+
 ## Unreleased — encrypted_volume_prepare stops rewriting fstab and remounting (2.51.3)
 
 - `encrypted_volume_prepare`: every run rewrote the fstab entry twice and

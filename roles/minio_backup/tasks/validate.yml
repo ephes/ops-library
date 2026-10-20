@@ -27,13 +27,22 @@
     msg: "MinIO service {{ minio_service_name }} must be running to export metadata."
   when: minio_backup_service_check.rc != 0
 
+- name: Assert backup scope flag is a boolean
+  ansible.builtin.assert:
+    that:
+      - minio_backup_include_data | string | lower in ['true', 'false', 'yes', 'no', '1', '0']
+      - (minio_backup_keep_count | int) >= 0
+    fail_msg: "minio_backup_include_data must be a boolean and minio_backup_keep_count >= 0."
+
 - name: Verify MinIO data directories exist
   ansible.builtin.stat:
     path: "{{ item }}"
   loop: "{{ minio_data_dirs }}"
   register: minio_backup_data_dir_stats
+  when: minio_backup_include_data | bool
 
 - name: Ensure all data directories are present
+  when: minio_backup_include_data | bool
   ansible.builtin.assert:
     that:
       - (minio_backup_data_dir_stats.results | selectattr('stat.exists') | list | length) == (minio_data_dirs | length)

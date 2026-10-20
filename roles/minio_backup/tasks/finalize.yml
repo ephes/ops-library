@@ -17,7 +17,10 @@
       api_port: "{{ minio_api_port }}"
       console_port: "{{ minio_console_port }}"
       tls_enabled: "{{ minio_tls_enable | bool }}"
-      data_dirs: "{{ minio_backup_data_dirs_backed_up | default(minio_data_dirs) }}"
+      # scope: full = cold backup with object data; metadata = no object data,
+      # data_dirs stays empty so a restore never rsyncs from an empty snapshot.
+      scope: "{{ 'full' if (minio_backup_include_data | bool) else 'metadata' }}"
+      data_dirs: "{{ (minio_backup_data_dirs_backed_up | default(minio_data_dirs)) if (minio_backup_include_data | bool) else [] }}"
       metadata_exports:
         iam: "{{ minio_backup_export_iam | bool }}"
         bucket: "{{ minio_backup_export_bucket_metadata | bool }}"
@@ -55,4 +58,4 @@
 - name: Report backup snapshot details
   ansible.builtin.debug:
     msg: >-
-      MinIO backup complete at {{ minio_backup_dir }} ({{ minio_backup_metadata.size_bytes | default('unknown') }} bytes).
+      MinIO {{ minio_backup_metadata.scope }} backup complete at {{ minio_backup_dir }} ({{ minio_backup_metadata.size_bytes | default('unknown') }} bytes).

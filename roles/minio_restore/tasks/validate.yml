@@ -235,6 +235,27 @@
       args:
         executable: /bin/bash
 
+- name: Record snapshot scope
+  ansible.builtin.set_fact:
+    minio_restore_scope: "{{ minio_restore_metadata.scope | default('full') }}"
+
+- name: Validate snapshot scope
+  ansible.builtin.assert:
+    that:
+      - minio_restore_scope in ['full', 'metadata']
+      - minio_restore_scope == 'full' or (minio_restore_allow_metadata_only | bool)
+      - minio_restore_scope == 'full' or (minio_restore_metadata.data_dirs | default([]) | length == 0)
+    fail_msg: >-
+      Snapshot {{ minio_restore_content_path }} has scope {{ minio_restore_scope }};
+      metadata-only snapshots carry no object data and need minio_restore_allow_metadata_only.
+
+- name: Report metadata-only restore
+  ansible.builtin.debug:
+    msg: >-
+      Snapshot {{ minio_restore_content_path }} is metadata-only: bucket metadata and IAM
+      are re-imported into the running MinIO; object data is not touched.
+  when: minio_restore_scope == 'metadata'
+
 - name: Record data directories from metadata
   ansible.builtin.set_fact:
     minio_restore_metadata_data_dirs: "{{ minio_restore_metadata.data_dirs | default([]) }}"
@@ -243,9 +264,17 @@
   ansible.builtin.set_fact:
     minio_restore_target_data_dirs: >-
       {{
-        (minio_restore_metadata_data_dirs | length > 0)
-        | ternary(minio_restore_metadata_data_dirs, minio_data_dirs)
+        []
+        if minio_restore_scope == 'metadata'
+        else (
+          (minio_restore_metadata_data_dirs | length > 0)
+          | ternary(minio_restore_metadata_data_dirs, minio_data_dirs)
+        )
       }}
+
+- name: Initialize data directory helper
+  ansible.builtin.set_fact:
+    minio_restore_target_data_dirs_helper: []
 
 - name: Build helper metadata for data directories
   ansible.builtin.set_fact:

@@ -3,8 +3,13 @@
     - name: Gather restore context
       ansible.builtin.import_tasks: restore_context.yml
 
+    # A metadata-only snapshot has no object data; MinIO keeps running unless
+    # the system files are explicitly put back too.
     - name: Restore MinIO service and data
       ansible.builtin.import_tasks: restore_system.yml
+      when: >-
+        minio_restore_scope == 'full'
+        or (minio_restore_metadata_restore_system_files | bool)
 
     - name: Replay MinIO metadata exports
       ansible.builtin.import_tasks: restore_metadata_replay.yml

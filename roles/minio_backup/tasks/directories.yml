@@ -32,11 +32,9 @@
     owner: "{{ minio_backup_owner }}"
     group: "{{ minio_backup_group }}"
     mode: "{{ minio_backup_dir_mode }}"
-  loop:
-    - "{{ minio_backup_dir }}"
-    - "{{ minio_backup_metadata_dir }}"
-    - "{{ minio_backup_data_root }}"
-    - "{{ minio_backup_config_dir }}"
-    - "{{ minio_backup_systemd_dir }}"
-    - "{{ minio_backup_certs_dir }}"
-    - "{{ minio_backup_traefik_dir }}"
+  loop: >-
+    {{
+      [minio_backup_dir, minio_backup_metadata_dir]
+      + ([minio_backup_data_root] if (minio_backup_include_data | bool) else [])
+      + [minio_backup_config_dir, minio_backup_systemd_dir, minio_backup_certs_dir, minio_backup_traefik_dir]
+    }}

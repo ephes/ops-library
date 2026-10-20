@@ -1,0 +1,44 @@
+---
+# Keep the newest minio_backup_keep_count backups of this prefix. Names are
+# "<prefix>-<iso8601_basic_short>", so lexical order is chronological. Only
+# entries directly under minio_backup_root that match the prefix pattern are
+# considered; the run that just finished is always among the kept ones.
+- name: Find backups of this prefix
+  ansible.builtin.find:
+    paths: "{{ minio_backup_root }}"
+    patterns:
+      - "{{ minio_backup_prefix }}-*"
+    file_type: any
+    recurse: false
+  register: minio_backup_retention_found
+
+- name: Select backups beyond the retention count
+  ansible.builtin.set_fact:
+    minio_backup_retention_expired: >-
+      {{
+        minio_backup_retention_found.files
+        | map(attribute='path')
+        | map('basename')
+        | map('regex_replace', '\.(tar\.gz|tar\.zst)$', '')
+        | select('match', '^' ~ (minio_backup_prefix | regex_escape) ~ '-[0-9]{8}T[0-9]{6}$')
+        | unique | sort | reverse
+        | list
+      }}
+
+- name: Compute expired backup names
+  ansible.builtin.set_fact:
+    minio_backup_retention_expired: "{{ minio_backup_retention_expired[(minio_backup_keep_count | int):] | reject('equalto', minio_backup_dir | basename) | list }}"
+
+- name: Remove expired backup directories and archives
+  ansible.builtin.file:
+    path: "{{ minio_backup_root.rstrip('/') }}/{{ item[0] }}{{ item[1] }}"
+    state: absent
+  loop: "{{ minio_backup_retention_expired | product(['', '.tar.gz', '.tar.zst']) | list }}"
+  loop_control:
+    label: "{{ item[0] }}{{ item[1] }}"
+
+- name: Report retention result
+  ansible.builtin.debug:
+    msg: >-
+      Kept the newest {{ minio_backup_keep_count }} {{ minio_backup_prefix }} backups;
+      removed {{ minio_backup_retention_expired | length }} older ones.

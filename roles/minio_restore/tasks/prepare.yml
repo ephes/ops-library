@@ -14,18 +14,23 @@
   ansible.builtin.stat:
     path: "{{ minio_restore_content_path }}/data"
   register: minio_restore_data_stat
+  when: minio_restore_scope == 'full'
 
 - name: Fail if snapshot data directory is missing
   ansible.builtin.fail:
     msg: "Snapshot {{ minio_restore_content_path }} is missing the data/ directory."
-  when: not minio_restore_data_stat.stat.isdir | default(false)
+  when:
+    - minio_restore_scope == 'full'
+    - not minio_restore_data_stat.stat.isdir | default(false)
 
 - name: Gather snapshot size
   ansible.builtin.command:
     cmd: du -sb "{{ minio_restore_content_path }}/data"
   register: minio_restore_snapshot_size_cmd
   changed_when: false
-  when: minio_restore_check_disk_space | bool
+  when:
+    - minio_restore_scope == 'full'
+    - minio_restore_check_disk_space | bool
 
 - name: Gather available disk space for target data directories
   ansible.builtin.command:
@@ -33,7 +38,9 @@
   register: minio_restore_df_results
   loop: "{{ minio_restore_target_data_dirs_helper }}"
   changed_when: false
-  when: minio_restore_check_disk_space | bool
+  when:
+    - minio_restore_scope == 'full'
+    - minio_restore_check_disk_space | bool
 
 - name: Compute disk space facts
   ansible.builtin.set_fact:
@@ -47,7 +54,9 @@
         | map('int')
         | sum(start=0)
       }}
-  when: minio_restore_check_disk_space | bool
+  when:
+    - minio_restore_scope == 'full'
+    - minio_restore_check_disk_space | bool
 
 - name: Validate disk space
   ansible.builtin.assert:
@@ -58,7 +67,9 @@
       Not enough disk space across MinIO data directories.
       Available total={{ minio_restore_total_available_bytes }} bytes,
       required={{ ((minio_restore_snapshot_bytes | int) * (minio_restore_disk_space_multiplier | float)) | round(0, 'ceil') }} bytes.
-  when: minio_restore_check_disk_space | bool
+  when:
+    - minio_restore_scope == 'full'
+    - minio_restore_check_disk_space | bool
 
 - name: Configure safety backup path
   when: minio_restore_create_safety_backup | bool
