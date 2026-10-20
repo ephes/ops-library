@@ -1,0 +1,50 @@
+---
+# Renders two Traefik routes with basic auth: one through traefik_config (the
+# path most deploy roles take) and one through traefik_basic_auth_hash plus the
+# caller's own template (the path roles with their own template task take).
+# The idempotence step proves that a second run reuses the deployed bcrypt
+# hashes instead of rewriting both files with freshly salted ones.
+- name: Converge
+  hosts: all
+  become: true
+  vars_files:
+    - vars.yml
+
+  pre_tasks:
+    - name: Install htpasswd
+      ansible.builtin.apt:
+        name: apache2-utils
+        state: present
+        update_cache: true
+
+  tasks:
+    - name: Render a route through traefik_config
+      ansible.builtin.include_role:
+        name: local.ops_library.webapp_deploy_internal
+        tasks_from: traefik_config
+      vars:
+        webapp_deploy_internal_caller_role_path: "{{ playbook_dir }}"
+        webapp_deploy_internal_traefik_template_src: templates/route.yml.j2
+        webapp_deploy_internal_traefik_dest: "{{ molecule_shared_route }}"
+        webapp_deploy_internal_traefik_basic_auth_enabled: true
+        webapp_deploy_internal_traefik_basic_auth_user: "{{ molecule_basic_auth_user }}"
+        webapp_deploy_internal_traefik_basic_auth_password: "{{ molecule_basic_auth_password }}"
+        webapp_deploy_internal_traefik_password_hash_var: molecule_basic_auth_password_hash
+
+    - name: Resolve the hash for a role-owned route
+      ansible.builtin.include_role:
+        name: local.ops_library.webapp_deploy_internal
+        tasks_from: traefik_basic_auth_hash
+      vars:
+        webapp_deploy_internal_basic_auth_user: "{{ molecule_basic_auth_user }}"
+        webapp_deploy_internal_basic_auth_password: "{{ molecule_basic_auth_password }}"
+        webapp_deploy_internal_basic_auth_config_path: "{{ molecule_own_route }}"
+        webapp_deploy_internal_basic_auth_hash_var: molecule_basic_auth_password_hash
+
+    - name: Render the role-owned route
+      ansible.builtin.template:
+        src: templates/route.yml.j2
+        dest: "{{ molecule_own_route }}"
+        owner: root
+        group: root
+        mode: "0644"

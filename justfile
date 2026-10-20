@@ -213,7 +213,7 @@ test-daybook-weeknotes-identity-ops: venv
 test-weeknotes-home-deploy: venv
     @echo "Testing weeknotes.home deployment templates and ingress validation..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_weeknotes_home_deploy.yml
-    @UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_weeknotes_home_auth_check_mode.yml --check
+    @ANSIBLE_COLLECTIONS_PATH="$(scripts/checkout-collections-path.sh)" UV_PROJECT_ENVIRONMENT=.venv uv run ansible-playbook -i localhost, -c local tests/test_weeknotes_home_auth_check_mode.yml --check
 
 test-heis-production-backup: venv
     @echo "Testing Heis production backup safety contracts..."

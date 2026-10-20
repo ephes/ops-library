@@ -246,7 +246,7 @@ fastdeploy_internal_ip_ranges:  # Customize for your network
   - "YOUR_IPV6_PREFIX::/64"
 ```
 
-**Note:** The role expects a plain-text password in `fastdeploy_basic_auth_password`. It will automatically generate the bcrypt hash using `htpasswd` during deployment. Do NOT provide a pre-hashed password.
+**Note:** The role expects a plain-text password in `fastdeploy_basic_auth_password`. It generates the bcrypt hash with `htpasswd` during deployment and reuses the hash already in the deployed Traefik file while it still matches the password, so a deploy without a password change leaves the file unchanged. Do NOT provide a pre-hashed password.
 
 **Testing:**
 - From LAN (192.168.x): No auth prompt

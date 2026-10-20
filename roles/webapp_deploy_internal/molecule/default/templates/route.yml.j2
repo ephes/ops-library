@@ -1,0 +1,8 @@
+# Molecule fixture: a Traefik dynamic route with a basicAuth middleware.
+http:
+  middlewares:
+    molecule-auth:
+      basicAuth:
+        users:
+          - "{{ molecule_basic_auth_user }}:{{ molecule_basic_auth_password_hash }}"
+        removeHeader: true

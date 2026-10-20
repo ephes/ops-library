@@ -15,37 +15,19 @@
     - ollama_proxy_basic_auth_enabled | bool
     - ansible_facts['os_family'] == 'Debian'
 
-- name: Build basic auth hash from password
-  ansible.builtin.command:
-    argv:
-      - htpasswd
-      - -nbB
-      - "{{ ollama_proxy_basic_auth_user }}"
-      - "{{ ollama_proxy_basic_auth_password }}"
-  register: ollama_proxy_basic_auth_htpasswd
-  changed_when: false
-  no_log: true
+- name: Resolve basic auth password hash (reuse the deployed one while it matches)
+  ansible.builtin.include_role:
+    name: local.ops_library.webapp_deploy_internal
+    tasks_from: traefik_basic_auth_hash
+  vars:
+    webapp_deploy_internal_basic_auth_user: "{{ ollama_proxy_basic_auth_user }}"
+    webapp_deploy_internal_basic_auth_password: "{{ ollama_proxy_basic_auth_password }}"
+    webapp_deploy_internal_basic_auth_config_path: "{{ ollama_proxy_traefik_config_path }}"
+    webapp_deploy_internal_basic_auth_hash_var: ollama_proxy_basic_auth_password_hash
   when:
     - ollama_proxy_basic_auth_enabled | bool
     - ollama_proxy_basic_auth_password | default('') | length > 0
     - ollama_proxy_basic_auth_password_hash | length == 0
-
-- name: Set Ollama proxy basic auth hash fact (generated)
-  ansible.builtin.set_fact:
-    ollama_proxy_basic_auth_password_hash: "{{ ollama_proxy_basic_auth_htpasswd.stdout.split(':', 1)[1] }}"
-  no_log: true
-  when:
-    - ollama_proxy_basic_auth_enabled | bool
-    - ollama_proxy_basic_auth_password | default('') | length > 0
-    - ollama_proxy_basic_auth_password_hash | length == 0
-
-- name: Preserve provided Ollama proxy basic auth hash
-  ansible.builtin.set_fact:
-    ollama_proxy_basic_auth_password_hash: "{{ ollama_proxy_basic_auth_password_hash }}"
-  no_log: true
-  when:
-    - ollama_proxy_basic_auth_enabled | bool
-    - ollama_proxy_basic_auth_password_hash | length > 0
 
 - name: Render Traefik configuration for Ollama proxy
   ansible.builtin.template:
