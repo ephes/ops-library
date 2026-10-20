@@ -6,12 +6,26 @@
     name: "{{ nyxmon_group }}"
     state: present
 
+# getent fails for a missing key. failed_when: false keeps the play going, but
+# then the result is never "failed", so the existence test must read the fact:
+# getent only sets getent_passwd[<user>] when the user exists. Testing
+# `.failed` skipped the create task on a fresh host, and the group task below
+# created the user instead, with useradd's defaults (primary group users,
+# shell /bin/sh) rather than nyxmon_group and /bin/bash.
 - name: user | Check if nyxmon user exists
   getent:
     database: passwd
     key: "{{ nyxmon_user }}"
   register: nyxmon_user_check
   failed_when: false
+
+- name: user | Record whether the nyxmon user exists
+  ansible.builtin.set_fact:
+    nyxmon_user_exists: >-
+      {{
+        nyxmon_user_check.ansible_facts is defined
+        and nyxmon_user in (nyxmon_user_check.ansible_facts.getent_passwd | default({}))
+      }}
 
 - name: user | Ensure nyxmon user exists
   user:
@@ -22,14 +36,28 @@
     shell: /bin/bash
     state: present
     move_home: false  # Don't try to move home if it's in use
-  when: nyxmon_user_check.failed  # Only create if user doesn't exist
+  when: not (nyxmon_user_exists | bool)  # Only create if user doesn't exist
 
+- name: user | Read the nyxmon group
+  getent:
+    database: group
+    key: "{{ nyxmon_group }}"
+  when: nyxmon_user_exists | bool
+
+# Only an existing account whose primary group is another one needs
+# nyxmon_group as a supplementary group. Appending it to an account whose
+# primary group already is nyxmon_group (the one this role creates) adds a
+# redundant member entry and reported a change on the run after a fresh install.
 - name: user | Ensure nyxmon user is in correct group
   user:
     name: "{{ nyxmon_user }}"
     groups: "{{ nyxmon_group }}"
     append: true
-  when: not nyxmon_user_check.failed  # Only modify group if user exists
+  when:
+    - nyxmon_user_exists | bool  # Only modify group if user exists
+    - >-
+      nyxmon_user_check.ansible_facts.getent_passwd[nyxmon_user][2]
+      != ansible_facts.getent_group[nyxmon_group][1]
 
 - name: user | Create application directories
   file:

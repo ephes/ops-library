@@ -98,6 +98,7 @@ test-tailscale-metrics-timer: venv
 test-nyxmon-deploy: venv
     @echo "Testing Nyxmon rsync safety and notification policy contracts..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_nyxmon_deploy
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_nyxmon_lifecycle
 
 test-mailgun-relay-deploy: venv
     @echo "Testing the mailgun-relay rsync excludes and the Python/Rust implementation switch..."

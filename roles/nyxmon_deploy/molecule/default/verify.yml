@@ -28,6 +28,31 @@
           - nyxmon_site.stat.isdir
         fail_msg: "Nyxmon site directory missing at {{ nyxmon_site_path }}"
 
+    # The instance starts without a nyxmon user, so the role must create it
+    # itself: primary group nyxmon and /bin/bash, not useradd's defaults.
+    - name: Verify | Read the nyxmon account
+      ansible.builtin.getent:
+        database: passwd
+        key: nyxmon
+
+    - name: Verify | Read the nyxmon group
+      ansible.builtin.getent:
+        database: group
+        key: nyxmon
+
+    - name: Verify | Assert the role created the nyxmon account as configured
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.getent_passwd.nyxmon[2] == ansible_facts.getent_group.nyxmon[1]
+          - ansible_facts.getent_passwd.nyxmon[5] == '/bin/bash'
+          - ansible_facts.getent_passwd.nyxmon[4] == '/home/nyxmon'
+          # Converge applies the role several times; none of the later runs
+          # may append nyxmon as a redundant member of its own primary group.
+          - "'nyxmon' not in (ansible_facts.getent_group.nyxmon[2] | split(','))"
+        fail_msg: >-
+          nyxmon account is {{ ansible_facts.getent_passwd.nyxmon }},
+          group {{ ansible_facts.getent_group.nyxmon }}
+
     - name: Verify | .env exists
       ansible.builtin.stat:
         path: "{{ nyxmon_env_path }}"
@@ -172,3 +197,36 @@
           Rollback state is wrong: drop-in {{ nyxmon_agent_dropin.stat.exists }},
           argv {{ nyxmon_agent_cmdline.stdout_lines }},
           versions {{ nyxmon_agent_installed.files | map(attribute='path') | list }}.
+
+# Last: nyxmon_remove must take away everything nyxmon_deploy installed,
+# including the SQLite privacy drop-ins (and their then empty directories).
+- name: Verify | nyxmon_remove cleans up the deploy
+  hosts: all
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Verify | the deploy installed the SQLite privacy drop-ins
+      ansible.builtin.stat:
+        path: "/etc/systemd/system/{{ item }}.service.d/sqlite-privacy.conf"
+      loop: [nyxmon, nyxmon-monitor]
+      register: nyxmon_dropins_before
+
+    - name: Verify | assert the drop-ins were there
+      ansible.builtin.assert:
+        that: nyxmon_dropins_before.results | map(attribute='stat.exists') | list == [true, true]
+
+    - name: Verify | run nyxmon_remove
+      ansible.builtin.include_role:
+        name: nyxmon_remove
+      vars:
+        nyxmon_confirm_removal: true
+
+    - name: Verify | look for the drop-in directories
+      ansible.builtin.stat:
+        path: "/etc/systemd/system/{{ item }}.service.d"
+      loop: [nyxmon, nyxmon-monitor]
+      register: nyxmon_dropin_dirs_after
+
+    - name: Verify | assert nyxmon_remove left no drop-ins behind
+      ansible.builtin.assert:
+        that: nyxmon_dropin_dirs_after.results | map(attribute='stat.exists') | list == [false, false]

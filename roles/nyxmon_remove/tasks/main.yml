@@ -44,6 +44,38 @@
     - "/etc/systemd/system/{{ nyxmon_monitor_service_name }}.service"
   notify: reload systemd
 
+# nyxmon_deploy installs a UMask=0077 drop-in for both services
+# (tasks/sqlite_privacy.yml). Remove it, and the drop-in directory when nothing
+# else is left in it (an operator's own drop-ins stay).
+- name: Remove SQLite privacy drop-ins
+  file:
+    path: "/etc/systemd/system/{{ item }}.service.d/sqlite-privacy.conf"
+    state: absent
+  loop:
+    - "{{ nyxmon_service_name }}"
+    - "{{ nyxmon_monitor_service_name }}"
+  notify: reload systemd
+
+- name: Find what is left in the service drop-in directories
+  find:
+    paths: "/etc/systemd/system/{{ item }}.service.d"
+    file_type: any
+    hidden: true
+  loop:
+    - "{{ nyxmon_service_name }}"
+    - "{{ nyxmon_monitor_service_name }}"
+  register: nyxmon_remove_dropin_dirs
+
+- name: Remove empty service drop-in directories
+  file:
+    path: "/etc/systemd/system/{{ item.item }}.service.d"
+    state: absent
+  loop: "{{ nyxmon_remove_dropin_dirs.results }}"
+  loop_control:
+    label: "/etc/systemd/system/{{ item.item }}.service.d"
+  when: item.matched | default(0) == 0
+  notify: reload systemd
+
 - name: Remove Traefik configuration
   file:
     path: "{{ traefik_config_file }}"

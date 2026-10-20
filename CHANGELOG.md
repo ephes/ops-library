@@ -3,6 +3,28 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Nyxmon account, removal and restore fixes (2.49.2)
+
+- `nyxmon_deploy`: a fresh host gets the `nyxmon` account the role asks for
+  (primary group `nyxmon_group`, `/bin/bash`, `nyxmon_home`). The existence
+  check tested `.failed` on a `getent` task with `failed_when: false`, which is
+  never true, so the create task was skipped and the "add to group" task
+  created the account with useradd's defaults (group `users`, `/bin/sh`).
+  Files the service user then created carried group `users`, which the next
+  run's recursive ownership tasks would change once. The group task also appended
+  `nyxmon` to its own primary group on the run after a fresh install; it now
+  runs only for an existing account whose primary group differs.
+- `nyxmon_remove`: removes the `sqlite-privacy.conf` drop-ins `nyxmon_deploy`
+  installs for `nyxmon` and `nyxmon-monitor`, and their `.service.d`
+  directories when they are then empty.
+- `nyxmon_restore`: the restored directories (media, static, cache, logs) end
+  at `0755` again. `rsync -a` copied the archive directory's `0700`
+  (nyxmon_backup creates them that way) onto the live directories, so a
+  restore changed their mode and the next deploy changed it back.
+- The `nyxmon_deploy` Molecule scenario checks the created account and that
+  later runs leave its group alone, and runs `nyxmon_remove` at the end;
+  `tests/test_nyxmon_lifecycle.py` pins the task structure.
+
 ## Unreleased — Traefik basic-auth hashes stay stable across deploys (2.49.1)
 
 - New shared task file `webapp_deploy_internal/tasks/traefik_basic_auth_hash.yml`
