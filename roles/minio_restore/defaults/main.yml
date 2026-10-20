@@ -59,6 +59,16 @@ minio_restore_restore_system_files: true
 minio_restore_restore_traefik: true
 minio_restore_restore_iam: true
 minio_restore_restore_bucket_metadata: true
+# Snapshots from minio_backup with minio_backup_include_data: false carry
+# `scope: metadata` and no object data. Restoring one only re-imports bucket
+# metadata and IAM (users, groups, policies, service accounts) into the
+# running MinIO: no service stop, no data rsync. Set this to false to make
+# such a snapshot fail instead.
+minio_restore_allow_metadata_only: true
+# For a metadata-only snapshot, also put the env file, systemd unit and
+# Traefik config back (MinIO is restarted for that). Off by default: the
+# usual reason to replay metadata is lost IAM on a running instance.
+minio_restore_metadata_restore_system_files: false
 
 # Verification / health
 minio_restore_verify_http: true

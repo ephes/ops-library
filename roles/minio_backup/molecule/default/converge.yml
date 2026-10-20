@@ -1,0 +1,49 @@
+---
+- name: Metadata-only backup while MinIO keeps running
+  hosts: all
+  become: true
+  vars_files:
+    - vars.yml
+  pre_tasks:
+    - name: Record the MinIO main PID before the backup
+      ansible.builtin.command: systemctl show -p MainPID --value minio.service
+      register: molecule_minio_pid_before
+      changed_when: false
+
+    - name: Keep the PID for verify
+      ansible.builtin.copy:
+        dest: /root/minio-pid-before
+        content: "{{ molecule_minio_pid_before.stdout }}\n"
+        mode: "0600"
+  roles:
+    - role: minio_backup
+      vars:
+        minio_backup_include_data: false
+        minio_backup_keep_count: 2
+        minio_backup_prefix: molecule
+        minio_backup_root: "{{ molecule_backup_root }}"
+        minio_backup_fetch_local: false
+        minio_data_dirs: ["{{ molecule_minio_data_dir }}"]
+        minio_root_user: "{{ molecule_minio_root_user }}"
+        minio_root_password: "{{ molecule_minio_root_password }}"
+
+- name: Lose a user, then re-apply IAM from the metadata snapshot
+  hosts: all
+  become: true
+  vars_files:
+    - vars.yml
+  pre_tasks:
+    - name: Remove the fixture user
+      ansible.builtin.command: mc admin user rm fixture "{{ molecule_minio_fixture_user }}"
+      environment:
+        MC_HOST_fixture: "http://{{ molecule_minio_root_user }}:{{ molecule_minio_root_password }}@127.0.0.1:9001"
+      changed_when: true
+  roles:
+    - role: minio_restore
+      vars:
+        minio_restore_archive: latest
+        minio_restore_archive_search_root: "{{ molecule_backup_root }}"
+        minio_restore_local_cache: /nonexistent
+        minio_data_dirs: ["{{ molecule_minio_data_dir }}"]
+        minio_root_user: "{{ molecule_minio_root_user }}"
+        minio_root_password: "{{ molecule_minio_root_password }}"

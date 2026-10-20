@@ -1,0 +1,45 @@
+---
+# Metadata-only MinIO backup, retention and a metadata-only restore against a
+# real MinIO server. The platform image comes from ./Dockerfile (minio and mc
+# copied from a MinIO image, because dl.min.io no longer serves the pinned
+# builds); `just test-minio-backup-molecule` builds it and then runs Molecule.
+# A Molecule-built Dockerfile platform would sync this directory over the
+# interpolated molecule.yml, losing the run-scoped names.
+driver:
+  name: docker
+platforms:
+  - name: "minio-backup-${MOLECULE_RUN_ID:-local}"
+    image: ops-library-molecule-minio-backup:local
+    pre_build_image: true
+    privileged: true
+    cgroupns_mode: host
+    command: /lib/systemd/systemd
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+      - /run
+      - /tmp
+provisioner:
+  name: ansible
+  playbooks:
+    prepare: prepare.yml
+    converge: converge.yml
+    verify: verify.yml
+  env:
+    ANSIBLE_ROLES_PATH: "${MOLECULE_PROJECT_DIRECTORY}/..:~/.ansible/roles:/etc/ansible/roles"
+verifier:
+  name: ansible
+scenario:
+  name: default
+  # A backup run is not idempotent by design (every run writes a new snapshot).
+  test_sequence:
+    - dependency
+    - cleanup
+    - destroy
+    - syntax
+    - create
+    - prepare
+    - converge
+    - verify
+    - cleanup
+    - destroy

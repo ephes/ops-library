@@ -7,6 +7,12 @@
 
 - name: Perform cold backup of data and configuration
   ansible.builtin.import_tasks: cold_backup.yml
+  when: minio_backup_include_data | bool
+
+# Metadata-only: MinIO keeps running, no object data is copied.
+- name: Copy MinIO configuration files (metadata-only backup)
+  ansible.builtin.import_tasks: config.yml
+  when: not (minio_backup_include_data | bool)
 
 - name: Generate backup metadata, manifests, and report
   ansible.builtin.import_tasks: finalize.yml
@@ -14,3 +20,7 @@
 - name: Create archive and optionally fetch locally
   ansible.builtin.import_tasks: archive.yml
   when: minio_backup_create_archive | bool
+
+- name: Apply backup retention
+  ansible.builtin.import_tasks: retention.yml
+  when: (minio_backup_keep_count | int) > 0
