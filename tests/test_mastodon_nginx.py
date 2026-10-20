@@ -126,7 +126,7 @@ class MastodonNginxFederationCacheTests(unittest.TestCase):
         self.assertIn({"path": "/actor", "accept": "application/activity+json"}, defaults["mastodon_nginx_federation_cache_prime"])
         self.assertEqual(defaults["mastodon_nginx_federation_cache_prime_hosts"], ["{{ mastodon_traefik_host }}"])
         tasks = yaml.safe_load((ROLES / "mastodon_deploy" / "tasks" / "federation_cache.yml").read_text())
-        check = next(task for task in tasks if task["name"] == "Check that the federation documents are served from the cache")
+        check = next(task for task in tasks if task["name"] == "federation_cache | Check that the federation documents are served from the cache")
         self.assertIn("x_cache_status", check["failed_when"])
         self.assertIn("'HIT'", check["failed_when"])
         main = yaml.safe_load((ROLES / "mastodon_deploy" / "tasks" / "main.yml").read_text())
