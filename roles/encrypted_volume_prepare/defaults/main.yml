@@ -14,6 +14,10 @@ encrypted_volume_mount_point: "/mnt/cryptdata"
 encrypted_volume_fs_type: "ext4"
 encrypted_volume_fs_label: ""
 encrypted_volume_mount_opts: "defaults,noatime"
+# fstab dump and fsck pass fields of the entry the mount task writes. Changing
+# them (or the mount options) rewrites the entry and remounts the volume.
+encrypted_volume_fstab_dump: "0"
+encrypted_volume_fstab_passno: "0"
 
 # Secrets and unlock method
 encrypted_volume_passphrase: ""
