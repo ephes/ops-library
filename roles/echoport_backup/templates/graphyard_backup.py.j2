@@ -258,27 +258,22 @@ def ensure_binaries() -> None:
                 raise FileNotFoundError(f"Required binary not found in PATH: {binary}")
 
 
+{% include '_sqlite_backup.py.j2' %}
+
+
 def sqlite_backup(db_path: str, backup_path: Path) -> None:
     if not Path(db_path).is_file():
         raise FileNotFoundError(f"SQLite database missing: {db_path}")
     backup_path.parent.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(
-        ["sqlite3", db_path, f".backup '{backup_path}'"],
-        capture_output=True,
-        text=True,
-        shell=False,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"sqlite3 backup failed: {(result.stderr or result.stdout).strip()}")
-    sqlite_integrity_check(str(backup_path))
+    error = backup_sqlite(db_path, backup_path)
+    if error:
+        raise RuntimeError(f"SQLite backup of {db_path} failed: {error}")
 
 
 def sqlite_integrity_check(db_path: str) -> None:
-    result = run_cmd(["sqlite3", db_path, "PRAGMA integrity_check;"], check=False)
-    if result.returncode != 0:
-        raise RuntimeError((result.stderr or result.stdout or "").strip() or "SQLite integrity check failed")
-    if "ok" not in result.stdout.lower():
-        raise RuntimeError(f"SQLite integrity check failed for {db_path}: {result.stdout.strip()}")
+    error = sqlite_integrity_error(db_path)
+    if error:
+        raise RuntimeError(f"SQLite {error} ({db_path})")
 
 
 def remove_sqlite_wal_shm(db_path: str) -> None:

@@ -10,7 +10,7 @@ playbooks and legacy/manual workflows.
 
 ## Features
 
-- Hot SQLite backups using `sqlite3 .backup` with automatic fallback to an offline snapshot
+- Hot SQLite backups using `sqlite3 .backup` (`.timeout 30000` waits for a committing writer) with automatic fallback to an offline snapshot
 - Rsync-based copies of static/media/cache directories with optional `--delete`
 - Captures `.env`, systemd unit, and Traefik config for auditing/restores
 - Metadata (slug, timestamp, ops-library version, git commit if available) plus SHA256 manifest

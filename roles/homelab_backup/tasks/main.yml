@@ -144,7 +144,7 @@
       ansible.builtin.command:
         cmd: >
           {{ homelab_backup_sqlite_command }} "{{ homelab_database_path }}"
-          ".backup '{{ homelab_backup_sqlite_target }}'"
+          ".timeout 30000" ".backup '{{ homelab_backup_sqlite_target }}'"
       register: homelab_backup_sqlite_result
       retries: "{{ homelab_backup_sqlite_retries }}"
       delay: 2

@@ -59,7 +59,7 @@ then executes it directly (no shell) with a fixed `PATH`:
 | `chown [-R] <owner> <path>` | path inside a root whose `owner` matches |
 | `rm -f <dump>`, `rm -f <db>-wal <db>-shm` | dump file pattern, or inside a root |
 | `mktemp -d <template>`, `rm -rf -- <tmpdir>` | `<template>` in `temp_dirs` or a `sqlite_snapshots` entry's `temp_dir` |
-| `chown <owner> <tmpdir>`, `runuser -u <user> -- sqlite3 <database> ".backup '<tmpdir>/<name>'"`, `runuser -u <user> -- sqlite3 <tmpdir>/<name> 'PRAGMA integrity_check;'`, `cat <tmpdir>/<name>` | a `sqlite_snapshots` entry (the GoToSocial online snapshot): `<tmpdir>` from its `temp_dir`, `<owner>`/`<user>` its owner; `cat` is fed by the guard, which opens the file without following symlinks |
+| `chown <owner> <tmpdir>`, `runuser -u <user> -- sqlite3 <database> [".timeout <ms>"] ".backup '<tmpdir>/<name>'"`, `runuser -u <user> -- sqlite3 <tmpdir>/<name> 'PRAGMA integrity_check;'`, `cat <tmpdir>/<name>` | a `sqlite_snapshots` entry (the GoToSocial online snapshot): `<tmpdir>` from its `temp_dir`, `<owner>`/`<user>` its owner; `cat` is fed by the guard, which opens the file without following symlinks |
 | `curl -fsS -o /dev/null <url>` | `url` in `ready_urls` |
 | `sh -c '<probe>'`, `du -sb -- <p>`, `mktemp -d /tmp/echoport-pp-private-media.XXXXXXXX`, `umask 077 && tar -C <parent> -czf <tmpdir>/private_media.tar.gz -- <name>`, `rm -rf -- <tmpdir>` | the python-podcast private media backup, `<p>` in `private_media_paths` |
 

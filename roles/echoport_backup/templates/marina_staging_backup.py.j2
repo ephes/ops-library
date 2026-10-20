@@ -382,6 +382,9 @@ def validate_db_path(remote_host: str, remote_user: str, db_path: str) -> str:
     return canonical
 
 
+{% include '_sqlite_backup.py.j2' %}
+
+
 def calculate_sha256(filepath: Path) -> str:
     """Calculate SHA256 checksum of a file."""
     sha256_hash = hashlib.sha256()
@@ -569,14 +572,10 @@ def backup(
         raw_db = work_dir / "db.sqlite3"
         clean_db = work_dir / "db_backup.sqlite3"
 
-        result = subprocess.run(
-            ["sqlite3", str(raw_db), f".backup '{clean_db}'"],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            emit_step("create_snapshot", "failure", f"sqlite3 backup failed: {result.stderr}")
-            emit_result(success=False, error=f"sqlite3 backup failed: {result.stderr}")
+        snapshot_error = backup_sqlite(str(raw_db), clean_db)
+        if snapshot_error:
+            emit_step("create_snapshot", "failure", f"Snapshot failed: {snapshot_error}")
+            emit_result(success=False, error=f"Snapshot failed: {snapshot_error}")
             finish_stdout("failure", "Snapshot creation failed")
             return 1
 
@@ -584,14 +583,10 @@ def backup(
 
         # Integrity check
         emit_step("integrity_check", "running", "Verifying database integrity")
-        result = subprocess.run(
-            ["sqlite3", str(clean_db), "PRAGMA integrity_check;"],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0 or "ok" not in result.stdout.lower():
-            emit_step("integrity_check", "failure", f"Integrity check failed: {result.stdout}")
-            emit_result(success=False, error=f"Integrity check failed: {result.stdout}")
+        integrity_error = sqlite_integrity_error(clean_db)
+        if integrity_error:
+            emit_step("integrity_check", "failure", f"Database {integrity_error}")
+            emit_result(success=False, error=f"Database {integrity_error}")
             finish_stdout("failure", "Integrity check failed")
             return 1
 

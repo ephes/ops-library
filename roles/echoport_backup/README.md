@@ -4,13 +4,26 @@ Registers an Echoport backup service with FastDeploy.
 
 This role sets up a backup runner that can be triggered by Echoport (or directly via FastDeploy) to:
 
-1. Safely backup SQLite databases using `sqlite3 .backup` (the generic
-   runner waits up to 30 s for a writer's lock with `.timeout` and retries a
-   failed backup up to 3 times; the failure step names the sqlite3 error)
+1. Safely backup SQLite databases using `sqlite3 .backup` (every runner that
+   copies a live SQLite database shares `templates/_sqlite_backup.py.j2`: it
+   waits up to 30 s for a writer's lock with `.timeout`, retries a failed
+   backup up to 3 times 5 s apart, removes a partial copy, requires the
+   integrity check to print exactly `ok`, and the failure step names the
+   sqlite3 error)
 2. Archive additional files/directories
 3. Create a compressed tarball with manifest
 4. Upload to MinIO object storage
 5. Output `ECHOPORT_RESULT:{...}` for Echoport to parse
+
+The runners include `_sqlite_backup.py.j2` with a Jinja `{% include %}`, so
+render them from their file in this role's `templates/` directory (as
+`fastdeploy_runner_template` does: Ansible resolves the include next to the
+template). The GoToSocial runner takes its snapshot on the host through the
+`echoport_remote_command_guard` and sends `sqlite3 <db> ".timeout 30000"
+".backup '<tmpdir>/<name>'"`; deploy the guard (2.53.0 or later) on the
+GoToSocial host before the runner. A retry writes a new file
+(`retry<N>-sqlite.db`) in the same private temp dir. The heis and
+villakunterbunt runners keep their own snapshot code.
 
 For media backup services (for example homepage/python-podcast templates in this role), object data is
 stored in a rolling prefix (`<service>/current/objects`) while each run still writes a per-run manifest

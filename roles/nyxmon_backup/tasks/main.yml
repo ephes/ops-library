@@ -136,10 +136,13 @@
     - name: Create SQLite backup with .backup
       ansible.builtin.command:
         cmd: >
-          sqlite3 "{{ nyxmon_backup_sqlite_path }}"
+          sqlite3 "{{ nyxmon_backup_sqlite_path }}" ".timeout 30000"
           ".backup '{{ nyxmon_backup_dir }}/database/{{ nyxmon_backup_sqlite_path | basename }}'"
       when: nyxmon_backup_use_sqlite_backup
       register: nyxmon_sqlite_backup_cmd
+      retries: 2
+      delay: 5
+      until: nyxmon_sqlite_backup_cmd.rc == 0
       changed_when: true
 
     - name: Copy SQLite database file directly (fallback)

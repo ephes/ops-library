@@ -262,7 +262,11 @@ class GuardAllowsRunnerShapes(unittest.TestCase):
             "mktemp -d /var/tmp/gotosocial-echoport.XXXXXX",
             f"chown gotosocial:gotosocial {tmp}",
             f"runuser -u gotosocial -- sqlite3 /var/lib/gotosocial/sqlite.db \".backup '{tmp}/sqlite.db'\"",
+            # The runner waits for a committing writer and retries into a new file.
+            f"runuser -u gotosocial -- sqlite3 /var/lib/gotosocial/sqlite.db '.timeout 30000' \".backup '{tmp}/sqlite.db'\"",
+            f"runuser -u gotosocial -- sqlite3 /var/lib/gotosocial/sqlite.db '.timeout 30000' \".backup '{tmp}/retry2-sqlite.db'\"",
             f"runuser -u gotosocial -- sqlite3 {tmp}/sqlite.db 'PRAGMA integrity_check;'",
+            f"runuser -u gotosocial -- sqlite3 {tmp}/retry2-sqlite.db 'PRAGMA integrity_check;'",
             "scp -f /etc/gotosocial/config.yaml",
             "scp -f /var/lib/gotosocial/.ops-domain-layout",
             f"{RSYNC_DOWNLOAD} /var/lib/gotosocial/storage/",
@@ -524,6 +528,13 @@ class GuardRefusals(unittest.TestCase):
             f"{as_gts} /var/lib/gotosocial/sqlite.db '.shell id'",
             f"{as_gts} /var/lib/gotosocial/sqlite.db \".backup '/tmp/x.db'\"",
             f"{as_gts} /var/lib/gotosocial/sqlite.db \".backup '{tmp}/sqlite.db' extra\"",
+            f"{as_gts} /var/lib/gotosocial/sqlite.db '.timeout 0' \".backup '{tmp}/sqlite.db'\"",
+            f"{as_gts} /var/lib/gotosocial/sqlite.db '.timeout 30000; .shell id' \".backup '{tmp}/sqlite.db'\"",
+            f"{as_gts} /var/lib/gotosocial/sqlite.db '.shell id' \".backup '{tmp}/sqlite.db'\"",
+            f"{as_gts} /var/lib/gotosocial/sqlite.db '.timeout 30000' \".backup '/tmp/x.db'\"",
+            f"{as_gts} /var/lib/gotosocial/sqlite.db \".backup '{tmp}/sqlite.db'\" '.timeout 30000'",
+            f"{as_gts} {tmp}/sqlite.db '.timeout 30000' 'PRAGMA integrity_check;'",
+            f"{as_gts} /var/lib/gotosocial/sqlite.db '.timeout 30000' '.timeout 30000' \".backup '{tmp}/sqlite.db'\"",
             f"{as_gts} /var/lib/gotosocial/sqlite.db 'PRAGMA integrity_check;'",
             f"{as_gts} {tmp}/sqlite.db 'DELETE FROM accounts;'",
             f"runuser -u marina -- sqlite3 {tmp}/sqlite.db 'PRAGMA integrity_check;'",
@@ -764,8 +775,8 @@ class RecordingHosts:
         if isinstance(args, str):
             raise AssertionError(f"unexpected shell command in runner: {args}")
         if args[0] == "sqlite3":
-            if args[2].startswith(".backup"):
-                clean = args[2].split("'")[1]
+            if args[-1].startswith(".backup"):
+                clean = args[-1].split("'")[1]
                 shutil.copy(args[1], clean)
                 return subprocess.CompletedProcess(args, 0, "", "")
             return subprocess.CompletedProcess(args, 0, "ok\n", "")
