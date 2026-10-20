@@ -3,7 +3,7 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
-## Unreleased — Nyxmon account, removal and restore fixes
+## Unreleased — Nyxmon account, removal and restore fixes (2.49.2)
 
 - `nyxmon_deploy`: a fresh host gets the `nyxmon` account the role asks for
   (primary group `nyxmon_group`, `/bin/bash`, `nyxmon_home`). The existence
