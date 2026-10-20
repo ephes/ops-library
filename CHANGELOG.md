@@ -3,7 +3,7 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
-## Unreleased — Traefik basic-auth hashes stay stable across deploys
+## Unreleased — Traefik basic-auth hashes stay stable across deploys (2.49.1)
 
 - New shared task file `webapp_deploy_internal/tasks/traefik_basic_auth_hash.yml`
   resolves the bcrypt hash a Traefik basicAuth middleware renders: it reuses
