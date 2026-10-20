@@ -17,22 +17,17 @@
     - ansible_facts['os_family'] == "Debian"
     - homelab_basic_auth_enabled
 
-- name: Generate basic auth password hash
-  shell: |
-    set -o pipefail
-    echo '{{ homelab_basic_auth_password }}' | htpasswd -nBi {{ homelab_basic_auth_user }} | cut -d: -f2
-  args:
-    executable: /bin/bash
-  register: password_hash
-  changed_when: false
-  no_log: true
-  when: homelab_basic_auth_enabled
-
-- name: Set password hash fact
-  set_fact:
-    homelab_basic_auth_password_hash: "{{ password_hash.stdout }}"
-  no_log: true
-  when: homelab_basic_auth_enabled
+- name: Resolve basic auth password hash (reuse the deployed one while it matches)
+  ansible.builtin.include_role:
+    name: local.ops_library.webapp_deploy_internal
+    tasks_from: traefik_basic_auth_hash
+  vars:
+    webapp_deploy_internal_basic_auth_user: "{{ homelab_basic_auth_user }}"
+    webapp_deploy_internal_basic_auth_password: "{{ homelab_basic_auth_password }}"
+    webapp_deploy_internal_basic_auth_config_path: "{{ homelab_traefik_config_path }}"
+    webapp_deploy_internal_basic_auth_hash_var: homelab_basic_auth_password_hash
+  when:
+    - homelab_basic_auth_enabled | bool
 
 - name: Create Traefik configuration for Homelab
   template:

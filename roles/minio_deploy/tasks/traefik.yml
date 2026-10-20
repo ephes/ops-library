@@ -17,22 +17,17 @@
     - ansible_facts['os_family'] == "Debian"
     - minio_console_basic_auth_enabled
 
-- name: Generate basic auth password hash for MinIO Console
-  shell: |
-    set -o pipefail
-    echo '{{ minio_console_basic_auth_password }}' | htpasswd -nBi {{ minio_console_basic_auth_user }} | cut -d: -f2
-  args:
-    executable: /bin/bash
-  register: console_password_hash
-  changed_when: false
-  no_log: true
-  when: minio_console_basic_auth_enabled
-
-- name: Set console password hash fact
-  set_fact:
-    minio_console_basic_auth_password_hash: "{{ console_password_hash.stdout }}"
-  no_log: true
-  when: minio_console_basic_auth_enabled
+- name: Resolve basic auth password hash (reuse the deployed one while it matches)
+  ansible.builtin.include_role:
+    name: local.ops_library.webapp_deploy_internal
+    tasks_from: traefik_basic_auth_hash
+  vars:
+    webapp_deploy_internal_basic_auth_user: "{{ minio_console_basic_auth_user }}"
+    webapp_deploy_internal_basic_auth_password: "{{ minio_console_basic_auth_password }}"
+    webapp_deploy_internal_basic_auth_config_path: "{{ minio_traefik_config_path }}"
+    webapp_deploy_internal_basic_auth_hash_var: minio_console_basic_auth_password_hash
+  when:
+    - minio_console_basic_auth_enabled | bool
 
 - name: Create Traefik configuration for MinIO
   template:

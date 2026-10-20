@@ -3,6 +3,37 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Traefik basic-auth hashes stay stable across deploys (2.49.1)
+
+- New shared task file `webapp_deploy_internal/tasks/traefik_basic_auth_hash.yml`
+  resolves the bcrypt hash a Traefik basicAuth middleware renders: it reuses
+  the hash in the deployed dynamic file while `htpasswd -v` confirms it still
+  matches the current password, and hashes anew only when there is no
+  deployed hash, the password changed or the hash is malformed. bcrypt salts
+  are random, so hashing on every run rewrote the dynamic file on every deploy
+  and fired any notified Traefik reload or restart even when nothing changed.
+- `traefik_config.yml` uses it, so `fastdeploy_deploy`, `nyxmon_deploy`,
+  `chesslab_deploy`, `graphyard_ingress_deploy` and `work_app_deploy` no
+  longer rewrite their Traefik file on a no-op deploy. `echoport_deploy`,
+  `homelab_deploy`, `jellyfin_deploy`, `metube_deploy`, `minio_deploy`,
+  `navidrome_deploy`, `ollama_proxy_deploy`, `open_webui_deploy`,
+  `open_webui_venv_deploy` and `weeknotes_home_deploy` switch from their own
+  hash tasks to the shared one. That also stops `echoport_deploy`,
+  `homelab_deploy` and `minio_deploy` from putting the password into a shell
+  command line and `jellyfin_deploy`, `metube_deploy`, `navidrome_deploy`,
+  `ollama_proxy_deploy` and `open_webui*_deploy` from passing it as an
+  `htpasswd -b` argument: the password reaches htpasswd on stdin only. A
+  provided `*_basic_auth_password_hash` is still used as is.
+- Check mode: the hash lookup and verification run in check mode too, so a
+  `--check` run of an unchanged deploy reports the Traefik file unchanged; a
+  pending password change renders a placeholder hash instead of failing on
+  the skipped `htpasswd` call (`weeknotes_home_deploy` already did this).
+- New Molecule scenario `webapp_deploy_internal/default`: the idempotence step
+  fails if a second run rewrites either route, and verify covers a password
+  change and a malformed deployed hash. `scripts/checkout-collections-path.sh`
+  lets local playbook tests resolve `local.ops_library` roles from the
+  checkout.
+
 ## Unreleased — FastDeploy runners move to a root-owned directory (2.49.0)
 
 FastDeploy's services root was owned by the `fastdeploy` user, and every
