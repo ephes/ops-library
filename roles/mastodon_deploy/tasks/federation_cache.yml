@@ -1,10 +1,10 @@
 ---
 # Fill the nginx federation cache through nginx itself, as remote servers would
 # reach it via Traefik, and check that the second request is a cache hit.
-- name: Build the federation cache fill list
+- name: federation_cache | Build the federation cache fill list
   ansible.builtin.import_tasks: federation_cache_items.yml
 
-- name: Fill the Mastodon federation cache
+- name: federation_cache | Fill the Mastodon federation cache
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ mastodon_nginx_port }}{{ item.path }}"
     headers:
@@ -21,7 +21,7 @@
     label: "{{ item.host }}{{ item.path }}"
   changed_when: false
 
-- name: Check that the federation documents are served from the cache
+- name: federation_cache | Check that the federation documents are served from the cache
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ mastodon_nginx_port }}{{ item.path }}"
     headers:

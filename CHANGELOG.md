@@ -3,6 +3,14 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Mastodon federation cache tasks pass lint-strict (2.51.2)
+
+- `mastodon_deploy`: the tasks in `federation_cache.yml` and
+  `federation_cache_items.yml` now carry their file prefix
+  (`federation_cache | ...`, `federation_cache_items | ...`), so
+  `just lint-strict` passes again (it reported four `name[prefix]` findings).
+  Task names only; behavior is unchanged.
+
 ## Unreleased — Generic Echoport runner waits for SQLite writers (2.51.1)
 
 - `echoport_backup`: the generic runner (`backup.py.j2`, used by nyxmon and
