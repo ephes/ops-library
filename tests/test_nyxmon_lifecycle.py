@@ -111,13 +111,18 @@ class RestoreModeTests(unittest.TestCase):
         # the mode task must run afterwards to keep nyxmon_deploy's 0755.
         restore = flatten(tasks("nyxmon_restore", "restore.yml"))
         names = [t.get("name") for t in restore]
+        create = names.index("Ensure destination directories exist")
         rsync = names.index("Restore Nyxmon directories")
-        mode = names.index("Ensure destination directories exist with the deploy mode")
+        mode = names.index("Reset destination directory modes after the rsync")
+        # Created before the rsync (rsync cannot create missing parents) and
+        # reset afterwards.
+        self.assertLess(create, rsync)
         self.assertLess(rsync, mode)
-        task = restore[mode]["ansible.builtin.file"]
-        self.assertEqual(task["mode"], "0755")
-        self.assertEqual(task["state"], "directory")
-        self.assertNotIn("Ensure destination directories exist", names)
+        for index in (create, mode):
+            task = restore[index]["ansible.builtin.file"]
+            self.assertEqual(task["mode"], "0755")
+            self.assertEqual(task["state"], "directory")
+            self.assertEqual(task["path"], "{{ item.dest }}")
 
 
 if __name__ == "__main__":
