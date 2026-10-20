@@ -3,6 +3,47 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Backup archives on the host are owner-only (2.50.0)
+
+- Backup roles no longer leave archives readable by other accounts on the
+  host. They wrote them with the default umask (`0644`), e.g.
+  `/opt/backups/traefik/*.tar.gz` with `acme.json` inside; only
+  `minecraft_java_backup` set `0600`. Every `archive` task now sets
+  `mode: "0600"`, and every `tar` either runs under `umask 077` or is followed
+  by a task that sets the archive to `0600`: `certbot_dns_backup`,
+  `fastdeploy_backup`, `homeassistant_backup`, `homelab_backup`,
+  `jellyfin_backup`, `mail_backup`, `mastodon_backup`, `metube_backup`,
+  `minio_backup`, `navidrome_backup`, `nyxmon_backup`, `postfixadmin_backup`
+  (`templates_c.tar.gz`), `snappymail_backup`, `tailscale_backup`,
+  `takahe_backup`, `traefik_backup`, `unifi_backup`, `vaultwarden_backup`
+  (also the `.age` file), `wagtail_backup` and `work_app_backup`.
+- Archives from earlier runs are fixed by the next backup run: each of those
+  roles (and `minecraft_java_backup` and `paperless_backup`) finds the files
+  matching `*.tar`, `*.tar.*` and `*.tgz` directly in its backup root and sets
+  every one that is not `0600` yet to `0600` with the file module (no
+  recursive chmod; a second run changes nothing). Other files stay as they are.
+- Backup roots: `homeassistant_backup_dir_mode` and `wagtail_backup_dir_mode`
+  default to `0700` (were `0750`), and `homeassistant_backup` now creates its
+  backup root explicitly with that mode. `snappymail_backup` gets
+  `snappymail_backup_dir_mode` (default `0700`) for its root, which used
+  `snappymail_backup_mode`, and `snappymail_backup_mode` (archive and manifest)
+  defaults to `0600` (was `0640`). The roots of `fastdeploy_backup`,
+  `mail_backup` and `paperless_backup` stay group-traversable because `pg_dump`
+  writes into them as `postgres`; there `tar` runs under `umask 077`
+  (`fastdeploy_backup`, `mail_backup`) or into a private temporary file
+  (`paperless_backup`).
+- `fastdeploy_backup` no longer sets the archive to `0644` "for the fetch": it
+  applies the new `fastdeploy_backup_archive_mode` (default `0600`) whether or
+  not the archive is fetched, and `mail_backup` sets its archive to `0600`
+  also when it is not fetched. **Rollout:** the synchronize fetch reads the
+  archive as the SSH user; with a non-root SSH user give the archive a group
+  of that user and set `fastdeploy_backup_archive_mode` to `0640`.
+- `traefik_backup` has a Molecule scenario (an old world-readable archive in a
+  `0755` root ends up `0600` in a `0700` root next to a new `0600` archive);
+  the `snappymail_backup` scenario checks the root and archive modes;
+  `tests/test_backup_archive_modes.py` checks every backup role and runs
+  `traefik_backup` on localhost.
+
 ## Unreleased — Nyxmon account, removal and restore fixes (2.49.2)
 
 - `nyxmon_deploy`: a fresh host gets the `nyxmon` account the role asks for

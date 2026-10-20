@@ -33,6 +33,24 @@
     - "{{ navidrome_backup_dir }}/traefik"
     - "{{ navidrome_backup_dir }}/logs"
 
+# Archives from runs before the archive tasks set 0600 can still be readable
+# by other accounts. Tighten every archive directly in the backup root on each
+# run (idempotent: only files that are not 0600 yet are touched).
+- name: Find backup archives to restrict
+  ansible.builtin.find:
+    paths: "{{ navidrome_backup_root }}"
+    patterns: ["*.tar", "*.tar.*", "*.tgz"]
+    file_type: file
+  register: navidrome_backup_archive_modes
+
+- name: Restrict backup archives to owner-only
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    mode: "0600"
+  loop: "{{ navidrome_backup_archive_modes.files | rejectattr('mode', 'equalto', '0600') | list }}"
+  loop_control:
+    label: "{{ item.path }}"
+
 - name: Verify Navidrome paths
   ansible.builtin.stat:
     path: "{{ item.path }}"
@@ -153,6 +171,7 @@
     path: "{{ navidrome_backup_dir }}"
     dest: "{{ navidrome_backup_archive }}"
     format: "{{ navidrome_backup_archive_format }}"
+    mode: "0600"
   when: navidrome_backup_create_archive | bool
 
 - name: Ensure local backup directory exists

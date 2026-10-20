@@ -75,4 +75,4 @@ homeassistant_backup_group: root
 homeassistant_backup_file_mode: '0644'
 
 # Directory mode for created backup directories
-homeassistant_backup_dir_mode: '0750'
+homeassistant_backup_dir_mode: '0700'

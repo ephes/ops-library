@@ -23,6 +23,15 @@
   when: minio_backup_archive_format == 'tar.zst'
   changed_when: true
 
+# tar writes the archive with the default umask; make it owner-only.
+- name: Restrict archive permissions
+  ansible.builtin.file:
+    path: "{{ minio_backup_archive }}"
+    mode: "0600"
+  when:
+    - minio_backup_archive_format in ['tar.gz', 'tar.zst']
+    - not ansible_check_mode
+
 - name: Ensure local archive directory exists
   ansible.builtin.file:
     path: "{{ minio_backup_local_dir }}"

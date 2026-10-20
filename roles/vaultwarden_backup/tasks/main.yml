@@ -44,6 +44,24 @@
     - "{{ vaultwarden_backup_dir }}/systemd"
     - "{{ vaultwarden_backup_dir }}/traefik"
 
+# Archives from runs before the archive tasks set 0600 can still be readable
+# by other accounts. Tighten every archive directly in the backup root on each
+# run (idempotent: only files that are not 0600 yet are touched).
+- name: Find backup archives to restrict
+  ansible.builtin.find:
+    paths: "{{ vaultwarden_backup_root }}"
+    patterns: ["*.tar", "*.tar.*", "*.tgz"]
+    file_type: file
+  register: vaultwarden_backup_archive_modes
+
+- name: Restrict backup archives to owner-only
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    mode: "0600"
+  loop: "{{ vaultwarden_backup_archive_modes.files | rejectattr('mode', 'equalto', '0600') | list }}"
+  loop_control:
+    label: "{{ item.path }}"
+
 - name: Verify Vaultwarden paths
   ansible.builtin.stat:
     path: "{{ item.path }}"
@@ -206,6 +224,7 @@
     path: "{{ vaultwarden_backup_dir }}"
     dest: "{{ vaultwarden_backup_archive }}"
     format: "{{ vaultwarden_backup_archive_format }}"
+    mode: "0600"
   when: vaultwarden_backup_create_archive | bool
 
 - name: Remove staging directory after archive creation
@@ -241,6 +260,16 @@
     - vaultwarden_backup_encrypt | bool
     - vaultwarden_backup_create_archive | bool
   changed_when: true
+
+# age writes its output with the default umask; make it owner-only.
+- name: Restrict encrypted archive permissions
+  ansible.builtin.file:
+    path: "{{ vaultwarden_backup_archive }}.age"
+    mode: "0600"
+  when:
+    - vaultwarden_backup_encrypt | bool
+    - vaultwarden_backup_create_archive | bool
+    - not ansible_check_mode
 
 - name: Remove unencrypted archive after encryption
   ansible.builtin.file:

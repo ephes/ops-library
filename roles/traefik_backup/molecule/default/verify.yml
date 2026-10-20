@@ -1,0 +1,62 @@
+---
+- name: Verify Traefik backup permissions
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    traefik_backup_root: /tmp/traefik-backups
+
+  tasks:
+    - name: Verify | Stat the backup root
+      ansible.builtin.stat:
+        path: "{{ traefik_backup_root }}"
+      register: root_stat
+
+    - name: Verify | Assert the backup root is owner-only
+      ansible.builtin.assert:
+        that:
+          - root_stat.stat.isdir
+          - root_stat.stat.mode == "0700"
+        fail_msg: "{{ traefik_backup_root }} has mode {{ root_stat.stat.mode }}"
+
+    - name: Verify | Find archives
+      ansible.builtin.find:
+        paths: "{{ traefik_backup_root }}"
+        patterns: "*.tar.gz"
+        file_type: file
+      register: archives
+
+    - name: Verify | Assert the new and the earlier archive are 0600
+      ansible.builtin.assert:
+        that:
+          - archives.matched == 2
+          - archives.files | map(attribute='mode') | unique | list == ["0600"]
+        fail_msg: "{{ archives.files | items2dict(key_name='path', value_name='mode') | to_json }}"
+
+    - name: Verify | Stat the file that is not an archive
+      ansible.builtin.stat:
+        path: "{{ traefik_backup_root }}/README.txt"
+      register: readme_stat
+
+    - name: Verify | Assert other files are left alone
+      ansible.builtin.assert:
+        that:
+          - readme_stat.stat.mode == "0644"
+
+    - name: Verify | Select the new archive
+      ansible.builtin.set_fact:
+        new_archive: >-
+          {{ archives.files | rejectattr('path', 'search', '20260101T000000') | map(attribute='path') | first }}
+
+    - name: Verify | List the new archive
+      ansible.builtin.command:
+        argv: [tar, -tzf, "{{ new_archive }}"]
+      register: listing
+      changed_when: false
+
+    - name: Verify | Assert the archive holds acme.json and the route config
+      ansible.builtin.assert:
+        that:
+          - listing.stdout_lines | select('search', 'acme/acme.json$') | list | length == 1
+          - listing.stdout_lines | select('search', 'dynamic/whoami.yml$') | list | length == 1

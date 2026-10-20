@@ -7,7 +7,8 @@ Backs up Traefik's file-provider route configs and, optionally, its ACME state.
   - `/etc/traefik/acme/acme.json` (when enabled, default off)
 - Target: `/opt/backups/traefik/<prefix>-<timestamp>/` with `dynamic/`, `acme/` and `metadata.yml`
 - Archive: `<prefix>-<timestamp>.tar.gz` (optional, enabled by default)
-- Perms: root:root; `dynamic/` keeps the source permissions, `acme.json` is `0600`
+- Perms: root:root; `dynamic/` keeps the source permissions, `acme.json` and the archive are `0600`;
+  every run also sets older archives in the backup root (`*.tar`, `*.tar.*`, `*.tgz`) to `0600`
 - Fetch: to `~/backups/traefik/` when `traefik_backup_fetch_local` is true (local copy `0600`)
 
 The dynamic configs contain basic-auth hashes; the backup directory is `0700`.
