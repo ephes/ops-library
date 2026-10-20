@@ -3,6 +3,29 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — encrypted_volume_prepare stops rewriting fstab and remounting (2.51.3)
+
+- `encrypted_volume_prepare`: every run rewrote the fstab entry twice and
+  remounted the mounted volume. `lineinfile` wrote the line with `0 2`, then
+  `ansible.posix.mount` (`state: mounted`, no `dump`/`passno`, so both `0`)
+  wrote it back with `0 0`, and a changed fstab entry on a mounted path makes
+  the module run `mount -o remount` (macmini: `/mnt/cryptdata` under a running
+  MinIO on every `deploy-one minio`). The `lineinfile` fstab task is gone; the
+  mount task is the only writer and takes the new
+  `encrypted_volume_fstab_dump` and `encrypted_volume_fstab_passno` (default
+  `"0"`/`"0"`, the fields the mount task has been leaving on the host). A
+  matching entry is not touched and the volume is not remounted; a real change
+  (options, source, dump, passno) still rewrites the entry and remounts, so new
+  options take effect. A new `file` task keeps `/etc/fstab` `root:root 0644`.
+- Validate-only mode: the crypttab/fstab asserts used the string result of
+  `regex_search` as a conditional, which current ansible-core rejects; they
+  now test `is not none`. The fstab check uses the configured dump/passno
+  instead of a fixed `0 2` and accepts `UUID=<uuid>` (what the configure path
+  writes) only when the mapper is open and that is its filesystem UUID;
+  the mapper path is always accepted.
+- New `just test-encrypted-volume-fstab` (part of `just test`): runs the
+  role's mount task against a temporary fstab and the validate-only assert.
+
 ## Unreleased — Mastodon federation cache tasks pass lint-strict (2.51.2)
 
 - `mastodon_deploy`: the tasks in `federation_cache.yml` and
