@@ -1,5 +1,10 @@
 ---
 # Configure Django application
+#
+# The settings load {{ echoport_site_path }}/.env themselves, so management commands
+# get SECRET_KEY and the FastDeploy token from that 0600 file. Secrets never go into a
+# task environment: under become, Ansible puts those values into the command it hands
+# to sudo, and sudo logs that command.
 
 - name: Create environment file for Django
   template:
@@ -17,10 +22,6 @@
     virtualenv: "{{ echoport_venv_path }}"
   environment:
     DJANGO_SETTINGS_MODULE: "{{ echoport_django_settings_module }}"
-    SECRET_KEY: "{{ echoport_django_secret_key }}"
-    ALLOWED_HOSTS: "{{ echoport_django_allowed_hosts }}"
-    FASTDEPLOY_BASE_URL: "{{ echoport_fastdeploy_base_url }}"
-    FASTDEPLOY_SERVICE_TOKEN: "{{ echoport_fastdeploy_service_token }}"
   become_user: "{{ echoport_user }}"
   when: not echoport_skip_django_manage | default(false)
   no_log: true
@@ -32,27 +33,32 @@
     virtualenv: "{{ echoport_venv_path }}"
   environment:
     DJANGO_SETTINGS_MODULE: "{{ echoport_django_settings_module }}"
-    SECRET_KEY: "{{ echoport_django_secret_key }}"
-    ALLOWED_HOSTS: "{{ echoport_django_allowed_hosts }}"
-    FASTDEPLOY_BASE_URL: "{{ echoport_fastdeploy_base_url }}"
-    FASTDEPLOY_SERVICE_TOKEN: "{{ echoport_fastdeploy_service_token }}"
   become_user: "{{ echoport_user }}"
   when: not echoport_skip_django_manage | default(false)
   no_log: true
 
 - name: Ensure admin user exists
-  django_manage:
-    command: ensure_superuser
-    app_path: "{{ echoport_django_path }}"
-    virtualenv: "{{ echoport_venv_path }}"
+  ansible.builtin.shell:
+    cmd: |
+      # Lossless: stdin is 'x' + value with no added newline (never empty, so the
+      # command never inherits another stdin); both sentinels are stripped.
+      ADMIN_PASSWORD=$(cat; printf x)
+      ADMIN_PASSWORD=${ADMIN_PASSWORD%x}
+      ADMIN_PASSWORD=${ADMIN_PASSWORD#x}
+      export ADMIN_PASSWORD
+      exec {{ (echoport_venv_path ~ '/bin/python') | quote }} manage.py ensure_superuser
+    stdin: "x{{ echoport_admin_password }}"
+    stdin_add_newline: false
+    chdir: "{{ echoport_django_path }}"
   environment:
     DJANGO_SETTINGS_MODULE: "{{ echoport_django_settings_module }}"
-    SECRET_KEY: "{{ echoport_django_secret_key }}"
-    ALLOWED_HOSTS: "{{ echoport_django_allowed_hosts }}"
     ADMIN_USERNAME: "{{ echoport_admin_username }}"
     ADMIN_EMAIL: "{{ echoport_admin_email | default('') }}"
-    ADMIN_PASSWORD: "{{ echoport_admin_password }}"
   become_user: "{{ echoport_user }}"
+  register: echoport_ensure_superuser
+  changed_when: >-
+    'Created superuser' in echoport_ensure_superuser.stdout
+    or 'Updated superuser' in echoport_ensure_superuser.stdout
   when:
     - not echoport_skip_django_manage | default(false)
     - echoport_admin_username is defined

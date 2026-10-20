@@ -3,6 +3,42 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — No secrets in sudo-logged task environments (2.55.0)
+
+- With `become_user` set to an unprivileged account, Ansible puts every task
+  `environment:` value into the command it hands to sudo, and sudo logs that
+  command to the journal and `/var/log/auth.log`; `no_log` does not prevent it.
+  Several roles passed secrets that way, so they ended up in host logs on every
+  deploy. Fixed:
+  - `daybook_operations_api_deploy`: `migrate`/`provision_operations` source a new
+    0600 `environment.shell` companion (Django secret, database URL, signing
+    keyring were logged before).
+  - `chesslab_deploy`, `weeknotes_home_deploy`: management commands source a 0600
+    `.env.shell` companion; chesslab app-user passwords come from stdin.
+  - `echoport_deploy`: `migrate`/`collectstatic` rely on the settings reading the
+    0600 `.env`; `ensure_superuser` reads the password from stdin.
+  - `fastdeploy_backup`: `pg_dump` reads the password from stdin.
+  - `graphyard_auth_bootstrap_deploy`: the bootstrap user's credentials travel
+    inside the stdin script.
+  - `homeassistant_deploy`: the WebSocket helpers read the API token and the
+    Custom Conversation API key as JSON from stdin.
+  - `marina_deploy`: `ensure_superuser` reads the password from stdin.
+  - `postgres_install`: the admin password is a `login_password` module
+    parameter instead of a `PGPASSWORD` environment value.
+  - `paperless_deploy`: the superuser bootstrap script, password included, goes
+    to `manage.py shell` on stdin instead of a heredoc on the shell command line.
+- The service environment templates of the daybook operations API, chesslab and
+  weeknotes.home render unchanged for systemd; `task_shell_environment: true`
+  renders the shell-quoted companion.
+- New guard `tests/test_become_environment_secrets.py`
+  (`just test-become-environment-secrets`, part of `just test`): fails on
+  secret-looking names or secret-named variables in the environment or command
+  line of a task that becomes an unprivileged user. Reviewed exceptions:
+  `heis_deploy` admin password (open, outside this change's scope) and the
+  non-secret asset-build environments of `metube_deploy` and `wagtail_deploy`.
+- Values already logged are not removed by this change; rotate the affected
+  secrets and clean the host logs separately.
+
 ## Unreleased — Non-exclusive authorized_keys mode and opsgate deploy keys (2.54.0)
 
 - `ssh_authorized_keys_manage` gains `ssh_authorized_keys_manage_exclusive`

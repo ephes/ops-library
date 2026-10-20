@@ -97,6 +97,22 @@ prior stdin name vocabulary; passphrase-only stdin logging in the encrypted-volu
 and ZFS roles remains explicit follow-up debt. The changed Paperless tasks' existing
 conditional no_log values are pinned by the task-contract regressions.
 
+### Secrets under become
+
+`just test-become-environment-secrets` (`tests/test_become_environment_secrets.py`)
+fails when a role task that becomes an unprivileged user (`become_user` other than
+`root`, inherited through blocks) has a secret-looking name or a secret-named
+variable in its `environment:`, uses an expression as its environment, or puts a
+secret-named variable into command/shell/raw arguments. Under `become_user`, Ansible
+places the task environment inside the command it hands to sudo, and sudo logs that
+command to the journal and `/var/log/auth.log`, `no_log` notwithstanding. Use a 0600
+file owned by the service user (for example a shell-quoted `.shell` companion of the
+service environment, rendered with `task_shell_environment: true` and sourced with
+`set -a`), stdin, or a module parameter. The test's `ALLOWED` table names the few
+reviewed exceptions with a reason; stale entries fail. It also renders the
+companion templates with awkward values and sources them with `/bin/sh` to prove
+the values round-trip exactly.
+
 `just test-task-credentials` runs each changed role's render/static regressions,
 including executed local shell fixtures for literal secret handling. These
 checks require no hosts or databases and also run through `just test`.

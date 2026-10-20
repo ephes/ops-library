@@ -81,3 +81,7 @@ Set it to `true` to enable `NoNewPrivileges=true`, `PrivateTmp=true`,
 `marina_site_path`, `marina_cache_dir`.
 Validate custom paths and application writes on a staging host before enabling.
 Enabling or disabling rewrites the unit on the next deploy.
+
+## Secret handling
+
+`ensure_superuser` sources the 0600 `.env` and reads the admin password from stdin, never from the task environment. Under `become_user`, Ansible places task `environment:` values inside the command it hands to sudo, and sudo logs that command to the journal and `/var/log/auth.log`; `no_log` does not prevent this. `tests/test_become_environment_secrets.py` (`just test-become-environment-secrets`) guards this.

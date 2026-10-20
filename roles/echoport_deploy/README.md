@@ -123,3 +123,7 @@ defaults), the source checkout must contain both `pyproject.toml` and committed
 Missing lockfiles fail deployment. Lockfile changes notify the service restart;
 unchanged copies and uv audits do not. The lockfile is protected from the
 Django directory's deleting rsync. The pip compatibility path is unchanged.
+
+## Secret handling
+
+Echoport's settings read `{{ echoport_site_path }}/.env` (0600) themselves, so `migrate` and `collectstatic` get only `DJANGO_SETTINGS_MODULE` from the task; `ensure_superuser` reads the admin password from stdin. No secret is passed in a task environment or on a command line. Under `become_user`, Ansible places task `environment:` values inside the command it hands to sudo, and sudo logs that command to the journal and `/var/log/auth.log`; `no_log` does not prevent this. `tests/test_become_environment_secrets.py` (`just test-become-environment-secrets`) guards this.

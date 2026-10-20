@@ -96,3 +96,7 @@ topology live.
 Source and dependency changes notify the existing restart handlers after deployment.
 weeknotes.home restarts its systemd service. Unchanged syncs do not request a restart.
 The `weeknotes_home_service_restart_on_change` setting (default `true`) controls these handlers.
+
+## Secret handling
+
+`migrate` and `collectstatic` source `{{ weeknotes_home_env_path }}.shell`, a 0600 companion of the service environment file with the same values shell-quoted. No secret is passed in a task environment or on a command line. Under `become_user`, Ansible places task `environment:` values inside the command it hands to sudo, and sudo logs that command to the journal and `/var/log/auth.log`; `no_log` does not prevent this. `tests/test_become_environment_secrets.py` (`just test-become-environment-secrets`) guards this.

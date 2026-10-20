@@ -70,12 +70,15 @@
       - shell
   args:
     chdir: "{{ graphyard_auth_bootstrap_workdir }}"
+    # The credentials travel inside the stdin script, never in the task environment:
+    # under become, Ansible puts task environment values into the command it hands
+    # to sudo, and sudo logs that command.
     stdin: |
-      import os
+      import json
       from django.contrib.auth import get_user_model
 
-      username = os.environ["GRAPHYARD_BOOTSTRAP_USERNAME"]
-      password = os.environ["GRAPHYARD_BOOTSTRAP_PASSWORD"]
+      username = json.loads({{ graphyard_auth_bootstrap_django_username | to_json | to_json }})
+      password = json.loads({{ graphyard_auth_bootstrap_django_password | to_json | to_json }})
       User = get_user_model()
 
       user, created = User.objects.get_or_create(
@@ -103,9 +106,6 @@
       print("CHANGED" if changed else "UNCHANGED")
   become: true
   become_user: "{{ graphyard_auth_bootstrap_system_user }}"
-  environment:
-    GRAPHYARD_BOOTSTRAP_USERNAME: "{{ graphyard_auth_bootstrap_django_username }}"
-    GRAPHYARD_BOOTSTRAP_PASSWORD: "{{ graphyard_auth_bootstrap_django_password }}"
   register: graphyard_auth_bootstrap_django_user_result
   changed_when: >-
     (graphyard_auth_bootstrap_django_user_result.stdout_lines | last | default('')) == 'CHANGED'

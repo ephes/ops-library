@@ -70,3 +70,7 @@ This produces `/opt/backups/fastdeploy/pre-upgrade-YYYYmmddTHHMMSS/` and `pre-up
 - `metadata.yml` summarizing timestamp, host, FastDeploy version, component toggles, archive info, and extra metadata you provide.
 - `manifest.sha256` covering every file in the snapshot (when `fastdeploy_backup_generate_checksums: true`).
 - Optional tar archive (gzip by default) plus local copy when `fastdeploy_backup_fetch_local` is enabled.
+
+## Secret handling
+
+`pg_dump` runs as `fastdeploy_backup_postgres_become_user` and reads `fastdeploy_backup_postgres_password` from stdin (exported only when non-empty), never from the task environment. Under `become_user`, Ansible places task `environment:` values inside the command it hands to sudo, and sudo logs that command to the journal and `/var/log/auth.log`; `no_log` does not prevent this. `tests/test_become_environment_secrets.py` (`just test-become-environment-secrets`) guards this.

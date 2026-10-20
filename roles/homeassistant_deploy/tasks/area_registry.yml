@@ -47,6 +47,7 @@
 
 - name: "Update Home Assistant area registry via WebSocket API"
   ansible.builtin.command:
+    stdin: "{{ {'HA_TOKEN': homeassistant_api_token} | to_json }}"
     argv:
       - "{{ homeassistant_virtualenv_path }}/bin/python"
       - -c
@@ -54,9 +55,15 @@
         import asyncio
         import json
         import os
+        import sys
         from urllib.parse import urlparse, urlunparse
 
         import aiohttp
+
+        # Secrets arrive on stdin, never in the task environment: under become,
+        # Ansible puts task environment values into the command it hands to sudo,
+        # and sudo logs that command.
+        STDIN_SECRETS = json.loads(sys.stdin.read())
 
         RESULT_PATH = os.environ["HA_RESULT_PATH"]
 
@@ -117,7 +124,7 @@
 
         async def main() -> None:
             api_url = os.environ["HA_API_URL"]
-            access_token = os.environ["HA_TOKEN"]
+            access_token = STDIN_SECRETS["HA_TOKEN"]
             timeout = float(os.environ.get("HA_TIMEOUT", "30"))
             desired_updates = json.loads(os.environ["HA_AREA_UPDATES"])
             counter = {"value": 0}
@@ -213,7 +220,6 @@
   become_user: "{{ homeassistant_user }}"
   environment:
     HA_API_URL: "{{ _ha_area_registry_api_url }}"
-    HA_TOKEN: "{{ homeassistant_api_token }}"
     HA_TIMEOUT: "{{ homeassistant_api_timeout | string }}"
     HA_AREA_UPDATES: "{{ homeassistant_area_registry_updates | to_json }}"
     HA_RESULT_PATH: "{{ _ha_area_registry_result_path }}"

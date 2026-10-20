@@ -358,6 +358,7 @@
 
 - name: "Update Assist pipeline voice engines via Home Assistant WebSocket API"
   ansible.builtin.command:
+    stdin: "{{ {'HA_TOKEN': homeassistant_api_token} | to_json }}"
     argv:
       - "{{ homeassistant_virtualenv_path }}/bin/python"
       - -c
@@ -365,9 +366,15 @@
         import asyncio
         import json
         import os
+        import sys
         from urllib.parse import urlparse, urlunparse
 
         import aiohttp
+
+        # Secrets arrive on stdin, never in the task environment: under become,
+        # Ansible puts task environment values into the command it hands to sudo,
+        # and sudo logs that command.
+        STDIN_SECRETS = json.loads(sys.stdin.read())
 
         RESULT_PATH = os.environ["HA_RESULT_PATH"]
 
@@ -409,7 +416,7 @@
 
         async def main() -> None:
             api_url = os.environ["HA_API_URL"]
-            access_token = os.environ["HA_TOKEN"]
+            access_token = STDIN_SECRETS["HA_TOKEN"]
             pipeline_id = os.environ["HA_PIPELINE_ID"]
             manage_stt = os.environ["HA_MANAGE_STT"] == "true"
             manage_tts = os.environ["HA_MANAGE_TTS"] == "true"
@@ -533,7 +540,6 @@
   become_user: "{{ homeassistant_user }}"
   environment:
     HA_API_URL: "{{ _ha_assist_pipeline_api_url }}"
-    HA_TOKEN: "{{ homeassistant_api_token }}"
     HA_PIPELINE_ID: "{{ _ha_assist_pipeline_target_id }}"
     HA_MANAGE_STT: "{{ 'true' if homeassistant_manage_assist_pipeline_stt_engine | bool else 'false' }}"
     HA_STT_ENGINE_ID: "{{ _ha_assist_pipeline_desired_stt_engine_id }}"

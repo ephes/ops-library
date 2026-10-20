@@ -185,21 +185,32 @@
     fastdeploy_backup_pg_dump_port_flag: "{{ (fastdeploy_backup_postgres_port | default('') | string | length > 0) | ternary('--port=' ~ fastdeploy_backup_postgres_port, '') }}"
 
 - name: "Dump PostgreSQL database"
-  ansible.builtin.shell: |
-    set -euo pipefail
-    {{ fastdeploy_backup_postgres_dump_binary }} \
-      {{ fastdeploy_backup_pg_dump_host_flag }} \
-      {{ fastdeploy_backup_pg_dump_port_flag }} \
-      --username={{ fastdeploy_backup_postgres_user }} \
-      {{ fastdeploy_backup_postgres_dump_options }} \
-      {{ fastdeploy_backup_postgres_database }} > "{{ fastdeploy_backup_dir }}/database/{{ fastdeploy_backup_postgres_database }}.sql"
+  # The password arrives on stdin, never in the task environment: under become,
+  # Ansible puts task environment values into the command it hands to sudo, and sudo
+  # logs that command.
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      # Lossless: stdin is 'x' + value with no added newline (never empty, so the
+      # command never inherits another stdin); both sentinels are stripped.
+      PGPASSWORD=$(cat; printf x)
+      PGPASSWORD=${PGPASSWORD%x}
+      PGPASSWORD=${PGPASSWORD#x}
+      if [ -n "$PGPASSWORD" ]; then export PGPASSWORD; else unset PGPASSWORD; fi
+      {{ fastdeploy_backup_postgres_dump_binary }} \
+        {{ fastdeploy_backup_pg_dump_host_flag }} \
+        {{ fastdeploy_backup_pg_dump_port_flag }} \
+        --username={{ fastdeploy_backup_postgres_user }} \
+        {{ fastdeploy_backup_postgres_dump_options }} \
+        {{ fastdeploy_backup_postgres_database }} > "{{ fastdeploy_backup_dir }}/database/{{ fastdeploy_backup_postgres_database }}.sql"
+    stdin: "x{{ fastdeploy_backup_postgres_password | default('') }}"
+    stdin_add_newline: false
   args:
     executable: /bin/bash
   become: true
   become_user: "{{ fastdeploy_backup_postgres_become_user }}"
-  environment:
-    PGPASSWORD: "{{ fastdeploy_backup_postgres_password }}"
-  no_log: "{{ (fastdeploy_backup_postgres_password | default('') | length > 0) and not fastdeploy_backup_debug }}"
+  # Unconditional: stdin carries the password even with fastdeploy_backup_debug.
+  no_log: true
 
 - name: "Build runner exclude args"
   ansible.builtin.set_fact:

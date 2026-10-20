@@ -72,3 +72,7 @@ graphyard_auth_bootstrap_influx_container_port: 8086
   the InfluxDB container remains attached to that network.
 - If you use the IP fallback mode and the InfluxDB container IP changes later, rerun this
   role to realign datasource URLs.
+
+## Secret handling
+
+The bootstrap Django user's name and password travel JSON-encoded inside the `manage.py shell` stdin script, never in the task environment or on a command line. Under `become_user`, Ansible places task `environment:` values inside the command it hands to sudo, and sudo logs that command to the journal and `/var/log/auth.log`; `no_log` does not prevent this. `tests/test_become_environment_secrets.py` (`just test-become-environment-secrets`) guards this.

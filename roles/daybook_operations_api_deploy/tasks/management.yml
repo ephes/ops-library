@@ -2,14 +2,15 @@
 - name: management | Execute with native Ansible failure handling
   block:
     - name: management | Run one protected management command
-      ansible.builtin.command:
-        argv: "{{ [daybook_operations_api_venv + '/bin/python', daybook_operations_api_site + '/services/operations_api/manage.py'] + daybook_operations_api_management_argv }}"
-      environment:
-        OPERATIONS_SECRET_KEY: "{{ daybook_operations_api_secret_key }}"
-        OPERATIONS_DATABASE_URL: "{{ daybook_operations_api_database_url }}"
-        OPERATIONS_SIGNING_KEYS: "{{ daybook_operations_api_signing_keys | to_json }}"
-        OPERATIONS_SIGNING_KEY_ID: "{{ daybook_operations_api_signing_key_id }}"
-        OPERATIONS_ALLOWED_HOSTS: "localhost,127.0.0.1,{{ daybook_operations_api_domain }}"
+      # Secrets come from the 0600 companion file, never from the task environment:
+      # under become, Ansible places task environment values inside the command it
+      # hands to sudo, and sudo logs that command (journal and auth.log).
+      ansible.builtin.shell:
+        cmd: |
+          set -a
+          . {{ (daybook_operations_api_config_dir ~ '/environment.shell') | quote }}
+          set +a
+          exec {{ ([daybook_operations_api_venv + '/bin/python', daybook_operations_api_site + '/services/operations_api/manage.py'] + daybook_operations_api_management_argv) | map('quote') | join(' ') }}
       become: true
       become_user: "{{ daybook_operations_api_user }}"
       register: daybook_operations_api_management
