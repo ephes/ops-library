@@ -5,6 +5,8 @@ import argparse
 import concurrent.futures
 import hashlib
 import json
+import socket
+import ssl
 import subprocess
 import time
 import tomllib
@@ -35,7 +37,37 @@ def observe(probe):
     return {"status": result.stdout, "exit": result.returncode}
 
 
+def fingerprint(probe):
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    with (
+        socket.create_connection(
+            (probe["address"], probe["port"]), timeout=10
+        ) as connection,
+        context.wrap_socket(
+            connection, server_hostname=probe["host"]
+        ) as connection_tls,
+    ):
+        certificate = connection_tls.getpeercert(binary_form=True)
+        if not certificate:
+            raise RuntimeError("Missing TLS certificate")
+        return hashlib.sha256(certificate).hexdigest()
+
+
+def observe_with_fingerprint(probe):
+    result = observe(probe)
+    if probe["scheme"] == "https":
+        try:
+            result["tls_sha256"] = fingerprint(probe)
+        except (OSError, RuntimeError) as exc:
+            result.update(tls_sha256=None, tls_error=type(exc).__name__)
+    return result
+
+
 def acceptable(before, after):
+    if before.get("tls_sha256") != after.get("tls_sha256"):
+        return False
     if before == after:
         return True
     # A formerly unavailable backend recovering is not an ingress regression.
@@ -80,10 +112,26 @@ def main():
     config = json.loads(args.config.read_text())
     if not isinstance(config.get("probes"), list) or not config["probes"]:
         raise ValueError("At least one explicit ingress probe is required")
+    observer = (
+        observe_with_fingerprint if config.get("tls_fingerprints") is True else observe
+    )
+    if (
+        config.get("tls_fingerprints") is True
+        and args.mode
+        not in {
+            "capture",
+            "cleanup",
+        }
+        and any(
+            p["scheme"] == "https" and "tls_sha256" not in b
+            for p, b in zip(config["probes"], config["observations"], strict=True)
+        )
+    ):
+        raise ValueError("Missing captured TLS fingerprint baseline")
     dynamic = Path("/etc/traefik/dynamic")
     if args.mode == "capture":
         with concurrent.futures.ThreadPoolExecutor(8) as pool:
-            observed = list(pool.map(observe, config["probes"]))
+            observed = list(pool.map(observer, config["probes"]))
         print(json.dumps({"observations": observed, "dynamic": tree(dynamic)}))
         return
     if tree(dynamic) != config["dynamic"]:
@@ -99,7 +147,7 @@ def main():
         validate_static_policy(static, config["entrypoints"], args.mode)
     for attempt in range(5):
         with concurrent.futures.ThreadPoolExecutor(8) as pool:
-            actual = list(pool.map(observe, config["probes"]))
+            actual = list(pool.map(observer, config["probes"]))
         failures = [
             p["host"]
             for p, before, after in zip(

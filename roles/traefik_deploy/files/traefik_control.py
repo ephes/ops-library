@@ -137,7 +137,7 @@ def control(
             return code
         if action == "enroll" and previous is not None:
             raise ValueError("enrollment cannot overwrite a controller record")
-        if action in ["binary", "alias", "metrics_bind"] and (
+        if action in ["binary", "alias", "metrics_bind", "acme_storage"] and (
             not previous or previous.get("phase") != "clear"
         ):
             raise ValueError(
@@ -163,14 +163,14 @@ def control(
                 )
             request["controller_state"] = inspected["state"]
         required = ["evidence"]
-        if action in ["binary", "alias", "metrics_bind"]:
+        if action in ["binary", "alias", "metrics_bind", "acme_storage"]:
             required += [
                 "compatibility",
                 "baseline_probe",
                 "acceptance_probe",
                 "cleanup_probe",
             ]
-        if action in ["alias", "metrics_bind"]:
+        if action in ["alias", "metrics_bind", "acme_storage"]:
             required += ["candidate_config_base64", "approved_binary_sha256"]
         if action == "resume":
             required += ["baseline_probe", "recovery_review_reference"]
@@ -228,7 +228,20 @@ def main() -> int:
     )
     parser.add_argument(
         "action",
-        choices=["inspect", "enroll", "binary", "alias", "metrics_bind", "resume"],
+        choices=[
+            "inspect",
+            "enroll",
+            "binary",
+            "alias",
+            "metrics_bind",
+            "acme_storage",
+            "resume",
+        ],
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Offline ACME candidate validation; no host access or journal writes",
     )
     parser.add_argument("host")
     parser.add_argument("request", type=Path, nargs="?")
@@ -236,15 +249,33 @@ def main() -> int:
     os.umask(0o077)
     try:
         supplied = json.loads(args.request.read_text()) if args.request else {}
+        registry = yaml.safe_load(args.registry.read_text())
+        if args.check:
+            if args.action != "acme_storage":
+                raise ValueError("offline check supports acme_storage only")
+            import base64
+
+            from traefik_transaction import validate_acme_storage
+
+            request = make_request(registry, args.host, args.action, supplied)
+            validate_acme_storage(
+                base64.b64decode(supplied["baseline_config_base64"], validate=True),
+                base64.b64decode(supplied["candidate_config_base64"], validate=True),
+                request["policy"],
+            )
+            print(
+                "ACME candidate delta valid; offline only, no live safety evidence verified"
+            )
+            return 0
         return control(
             args.root.resolve(),
-            yaml.safe_load(args.registry.read_text()),
+            registry,
             args.host,
             args.action,
             supplied,
             args.journal,
         )
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ImportError) as exc:
         print("Refused:", exc)
         return 2
 

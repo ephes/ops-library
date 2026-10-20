@@ -3,6 +3,14 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased
+
+- `traefik_deploy` transactions add the narrow `acme_storage` action: byte-exact
+  store copy, resolver-only email/storage repair, source SHA256 and public
+  certificate-set checks, pre/post SNI fingerprint comparison, and config rollback.
+  Read-only health probes can capture/compare TLS fingerprints; the controller
+  offers an offline candidate check. No production migration has run.
+
 ## Unreleased — ansible-core 2.20.3 floor and quiet MeTube uv sync (2.56.0)
 
 - The collection now requires ansible-core >= 2.20.3 (`meta/runtime.yml`
