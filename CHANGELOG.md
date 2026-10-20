@@ -3,6 +3,18 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — Grafana password check needs an exact MATCH (2.50.1)
+
+- `graphyard_auth_bootstrap_deploy`: the final Grafana admin password
+  verification passed with a wrong password. It tested `'MATCH' in stdout`,
+  which is also true for `MISMATCH`. The verification (`until` and
+  `failed_when`) and the reset condition now compare the trimmed status line
+  exactly (`== "MATCH"` / `== "MISMATCH"`). A new regression test runs the
+  embedded check script against a temporary Grafana-style database with the
+  right and a wrong password and evaluates the tasks' own conditions. A sweep
+  of the collection for the same substring test found no other status token
+  that is contained in its opposite.
+
 ## Unreleased — Backup archives on the host are owner-only (2.50.0)
 
 - Backup roles no longer leave archives readable by other accounts on the

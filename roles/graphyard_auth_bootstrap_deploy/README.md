@@ -7,6 +7,7 @@ Idempotently bootstrap Graphyard app and Grafana login credentials on an existin
 - Ensures a Django user exists with expected privileges (`is_active`, `is_staff`, `is_superuser`) and password.
 - Verifies Grafana admin password by comparing the desired secret against Grafana's stored password hash in SQLite.
 - Resets Grafana admin password only when the desired password hash does not match.
+- Treats the password check as passed only when its status line is exactly `MATCH`; `MISMATCH` triggers the reset, and the final verification fails unless it reads `MATCH`.
 - Keeps the Grafana datasource URL aligned to a container-reachable InfluxDB target.
 - When `graphyard_auth_bootstrap_grafana_shared_network_name` is set, ensures the
   InfluxDB container is attached to that Docker network and uses
