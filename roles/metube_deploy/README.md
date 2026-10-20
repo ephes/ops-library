@@ -52,7 +52,8 @@ The build needs Node.js `metube_nodejs_version`.x at least
 that major and upgrades an older install of the same major.
 
 Python dependencies are still installed with `uv sync --frozen --no-dev` from
-upstream's `uv.lock` (yt-dlp's `deno` extra comes from PyPI that way).
+upstream's `uv.lock` (yt-dlp's `deno` extra comes from PyPI that way). The task reports
+changed (and restarts MeTube) only when uv installs or removes packages.
 
 ## Optional systemd hardening
 

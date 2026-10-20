@@ -21,7 +21,7 @@ This role restores the Minecraft server from a Tier 2 backup archive:
 
 - Minecraft Java server previously deployed via `minecraft_java_deploy` role
 - Backup archive exists in `/opt/backups/minecraft-java/`
-- ansible-core 2.20+
+- ansible-core 2.20.3+
 
 ## Role Variables
 

@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.14"
 resolution-markers = [
     "sys_platform == 'linux'",
@@ -46,7 +46,7 @@ wheels = [
 
 [[package]]
 name = "ansible-core"
-version = "2.20.0"
+version = "2.20.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
@@ -55,9 +55,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "resolvelib" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/02/5b/8992daa4102cf92eca06f7e40d9c9cfdb2d6440719dff9944417c570fea6/ansible_core-2.20.0.tar.gz", hash = "sha256:cd73faf28a056c933bc1eee8f66ab597e7ec7309d42c8a6e5d6e4294c4a78b54", size = 3315281, upload-time = "2025-11-04T23:34:42.324Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c5/c5/6056b49d3ed3a350031ddde9946ce57140097723b0408d302d27a0571b62/ansible_core-2.20.10.tar.gz", hash = "sha256:577b8d3c18e4228310a4e5180c3e133bb3955b378367077bfc643f3c21ebee5c", size = 3351936, upload-time = "2026-10-05T15:09:44.014Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f2/50/0e2057e0ba539299f8a5caf2471f80c1a69d5aad8bc38f05692ec254c3c5/ansible_core-2.20.0-py3-none-any.whl", hash = "sha256:665f9e46401509f1f799b0fc624ce162127765885d61607c5e31a0f77652d7b6", size = 2402601, upload-time = "2025-11-04T23:34:40.328Z" },
+    { url = "https://files.pythonhosted.org/packages/c2/e9/0d5b27b4fd8be3fafc76ec0c94e8b338d7ff308391f94894d7ba74651f65/ansible_core-2.20.10-py3-none-any.whl", hash = "sha256:2c7a88ff9bf36a9cfb3bc3838fa6222ea54feedf7f7d94ef9a2ae7591345bfdc", size = 2430672, upload-time = "2026-10-05T15:09:41.885Z" },
 ]
 
 [[package]]
@@ -703,7 +703,7 @@ vagrant = [
 
 [package.metadata]
 requires-dist = [
-    { name = "ansible-core", specifier = ">=2.20" },
+    { name = "ansible-core", specifier = ">=2.20.3" },
     { name = "ansible-lint", specifier = ">=6.0" },
     { name = "docker", specifier = ">=6.0" },
     { name = "docker", marker = "extra == 'docker'", specifier = ">=6.0" },
