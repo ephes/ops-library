@@ -3,7 +3,7 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
-## Unreleased — uv_install works under --check
+## Unreleased — uv_install works under --check (2.48.2)
 
 - `uv_install`: `ansible-playbook --check` no longer fails. The read-only
   `uv --version` probe ran only in real runs, so check mode reached the version
