@@ -72,9 +72,9 @@ class MetadataBackupTests(unittest.TestCase):
         retention = task(main, "Apply backup retention")
         self.assertIn("(minio_backup_keep_count | int) > 0", conditions(retention))
         tasks = load(BACKUP / "tasks" / "retention.yml")
-        find = task(tasks, "Find backups of this prefix")["ansible.builtin.find"]
+        find = task(tasks, "retention | Find backups of this prefix")["ansible.builtin.find"]
         self.assertFalse(find["recurse"])
-        select = task(tasks, "Select backups beyond the retention count")["ansible.builtin.set_fact"]
+        select = task(tasks, "retention | Select backups beyond the retention count")["ansible.builtin.set_fact"]
         self.assertIn("regex_escape", select["minio_backup_retention_expired"])
         self.assertIn("[0-9]{8}T[0-9]{6}$", select["minio_backup_retention_expired"])
 
