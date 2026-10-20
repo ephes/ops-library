@@ -21,7 +21,7 @@ This role deploys FastDeploy, a web-based platform for managing service deployme
 - Ability to install PostgreSQL (handled automatically via dependency)
 - Node.js 16+ (for frontend build)
 - Python 3.14+ (managed via uv; set `fastdeploy_python_version` if needed)
-- ansible-core 2.20+
+- ansible-core 2.20.3+
 - Required collections:
   - `ansible.posix` (for synchronize module)
   - `community.general` (for PostgreSQL modules)

@@ -53,7 +53,7 @@ See the {doc}`complete role catalog <roles/index>` for details on each role.
 
 ## Requirements
 
-- **ansible-core 2.20+** (Ansible 2.9 no longer supported)
+- **ansible-core 2.20.3+** (Ansible 2.9 no longer supported)
 - **Python 3.14+** (3.8-3.13 no longer supported as of v3.0.0)
 - Collections: `community.general`, `ansible.posix`
 

@@ -17,7 +17,10 @@
     UV_PROJECT_ENVIRONMENT: "{{ metube_venv_path }}"
     UV_NO_PROGRESS: "1"
   register: metube_uv_sync
-  changed_when: "'resolved' in metube_uv_sync.stdout | lower or 'installed' in metube_uv_sync.stdout | lower or metube_uv_sync.rc == 0"
+  # uv reports to stderr; a no-op sync prints only "Checked/Audited N packages".
+  changed_when: >-
+    'Installed ' in (metube_uv_sync.stdout ~ metube_uv_sync.stderr)
+    or 'Uninstalled ' in (metube_uv_sync.stdout ~ metube_uv_sync.stderr)
   notify: restart metube
   become: true
   become_user: "{{ metube_user }}"

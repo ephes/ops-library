@@ -21,7 +21,7 @@ This role deploys the Homelab service, a Django application for managing home in
 - Python 3.12+ installed
 - uv package manager installed globally (role uses `uv_install` by default; `/usr/local/bin/uv`, `homelab_use_uv` must be true)
 - Traefik reverse proxy installed (optional, but recommended)
-- ansible-core 2.20+
+- ansible-core 2.20.3+
 - Required collection: `ansible.posix` (for synchronize/rsync module)
 - Local source directory with homelab code (for rsync deployment)
 

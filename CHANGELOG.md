@@ -3,6 +3,21 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — ansible-core 2.20.3 floor and quiet MeTube uv sync (2.56.0)
+
+- The collection now requires ansible-core >= 2.20.3 (`meta/runtime.yml`
+  `requires_ansible`, `pyproject.toml`), and its own lock and test environment
+  move from ansible-core 2.20.0 to 2.20.10. ansible-core 2.20.0–2.20.2 write a
+  stray `Install-Python-Debian: no` line into deb822 repository files (seen on
+  macmini's PostgreSQL apt repo), which newer controllers remove again, so the
+  same deploy reported changed whenever the controller version flipped. Note
+  that Ansible only warns on a `requires_ansible` mismatch unless
+  `collections_on_ansible_version_mismatch = error` is set.
+- `metube_deploy`: the `uv sync` task no longer reports changed (and restarts
+  MeTube) on every run. Its `changed_when` ended in `or rc == 0` and only read
+  stdout, while uv prints its summary to stderr; it now reports changed only
+  when uv installs or uninstalls packages.
+
 ## Unreleased — No secrets in sudo-logged task environments (2.55.0)
 
 - With `become_user` set to an unprivileged account, Ansible puts every task
