@@ -10,6 +10,10 @@ Ansible role for deploying the Nyxmon monitoring service.
 - Traefik reverse proxy configuration
 - Telegram monitoring integration
 - Automatic migrations and static file collection
+- Creates the service account on a fresh host with `nyxmon_group` as primary
+  group, `nyxmon_home` and `/bin/bash`; an account that already exists keeps
+  its settings and only gets `nyxmon_group` added when its primary group is a
+  different one, so repeat runs leave the account unchanged
 
 ## Requirements
 
