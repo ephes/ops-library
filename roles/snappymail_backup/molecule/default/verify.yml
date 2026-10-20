@@ -52,3 +52,18 @@
         that:
           - archive_check.rc == 0
         fail_msg: "Marker file not found inside backup archive"
+
+    - name: Verify | Stat the backup root and the archive
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ snappymail_backup_root }}"
+        - "{{ snappymail_backup_latest }}"
+      register: mode_stats
+
+    - name: Verify | Assert the root is 0700 and the archive 0600
+      ansible.builtin.assert:
+        that:
+          - mode_stats.results[0].stat.mode == "0700"
+          - mode_stats.results[1].stat.mode == "0600"
+        fail_msg: "{{ mode_stats.results | map(attribute='stat.mode') | list }}"

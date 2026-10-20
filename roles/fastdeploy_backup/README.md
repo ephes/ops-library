@@ -22,7 +22,8 @@ existing playbooks and legacy/manual workflows.
 ## Security notes
 
 - The deploy user’s SOPS age key (`~deploy/.config/sops/age/keys.txt`) is **never** copied. Operators must store it separately (password manager, hardware token, etc.) and provision it manually before restoring.
-- Snapshot directories live under `/opt/backups/fastdeploy` owned by `root:root` with mode `0700` by default; adjust via vars if your policy differs.
+- Snapshot directories live under `/opt/backups/fastdeploy`, owned by `root` with the `postgres` group and mode `0750` by default, so `pg_dump` (run as `postgres`) can write `database/`; adjust via vars if your policy differs.
+- The archive is written by `tar` under `umask 077` and then set to `fastdeploy_backup_archive_mode` (default `0600`), whether or not it is fetched. Every run also sets older archives directly in the backup root (`*.tar`, `*.tar.*`, `*.tgz`) to that mode. The fetch reads the archive as the SSH user: with a non-root SSH user, give the archive a group of that user and set the mode to `0640`.
 - PostgreSQL dumps, `.env`, and sudoers files contain sensitive credentials. Treat archives as secrets and store/fetch them only over trusted channels.
 
 ## Key variables
@@ -42,6 +43,7 @@ fastdeploy_backup_postgres_password: ""  # REQUIRED when peer auth is unavailabl
 fastdeploy_backup_postgres_host: ""      # Empty = unix socket (peer auth)
 fastdeploy_backup_create_archive: true
 fastdeploy_backup_archive_format: tar.gz
+fastdeploy_backup_archive_mode: "0600"   # mode of the finished archive on the host
 fastdeploy_backup_fetch_local: true
 ```
 

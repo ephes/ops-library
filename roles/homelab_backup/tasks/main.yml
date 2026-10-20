@@ -56,6 +56,24 @@
     group: "{{ homelab_backup_group }}"
     mode: "{{ homelab_backup_dir_mode }}"
 
+# Archives from runs before the archive tasks set 0600 can still be readable
+# by other accounts. Tighten every archive directly in the backup root on each
+# run (idempotent: only files that are not 0600 yet are touched).
+- name: Find backup archives to restrict
+  ansible.builtin.find:
+    paths: "{{ homelab_backup_root }}"
+    patterns: ["*.tar", "*.tar.*", "*.tgz"]
+    file_type: file
+  register: homelab_backup_archive_modes
+
+- name: Restrict backup archives to owner-only
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    mode: "0600"
+  loop: "{{ homelab_backup_archive_modes.files | rejectattr('mode', 'equalto', '0600') | list }}"
+  loop_control:
+    label: "{{ item.path }}"
+
 - name: "Ensure backup directory exists"
   ansible.builtin.file:
     path: "{{ homelab_backup_dir }}"
@@ -266,6 +284,16 @@
   args:
     chdir: "{{ homelab_backup_root }}"
   changed_when: true
+
+# tar writes the archive with the default umask; make it owner-only.
+- name: "Restrict archive permissions"
+  ansible.builtin.file:
+    path: "{{ homelab_backup_archive }}"
+    mode: "0600"
+  when:
+    - homelab_backup_create_archive | bool
+    - homelab_backup_archive_format == 'tar.gz'
+    - not ansible_check_mode
 
 - name: "Ensure local backup directory exists"
   ansible.builtin.file:

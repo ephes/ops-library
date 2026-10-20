@@ -184,6 +184,15 @@
       failed_when: false
       changed_when: templates_c_backup.rc | default(1) == 0
 
+    - name: Restrict the templates_c archive permissions
+      ansible.builtin.file:
+        path: "{{ postfixadmin_backup_tmp_dir }}/templates_c.tar.gz"
+        mode: "0600"
+      when:
+        - postfixadmin_backup_include_templates_c | bool
+        - templates_c_backup.rc | default(1) == 0
+        - not ansible_check_mode
+
     - name: Drop a failed templates_c archive
       when:
         - postfixadmin_backup_include_templates_c | bool

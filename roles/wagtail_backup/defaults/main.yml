@@ -6,7 +6,7 @@ wagtail_service_name: ""
 # Backup destination
 wagtail_backup_root: "/opt/backups/{{ wagtail_service_name }}"
 wagtail_backup_prefix: "manual"
-wagtail_backup_dir_mode: "0750"
+wagtail_backup_dir_mode: "0700"
 wagtail_backup_file_mode: "0600"
 wagtail_backup_owner: root
 wagtail_backup_group: root

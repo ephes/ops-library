@@ -27,6 +27,24 @@
     group: "{{ mail_backup_group }}"
     mode: "{{ mail_backup_dir_mode }}"
 
+# Archives from runs before the archive tasks set 0600 can still be readable
+# by other accounts. Tighten every archive directly in the backup root on each
+# run (idempotent: only files that are not 0600 yet are touched).
+- name: Find backup archives to restrict
+  ansible.builtin.find:
+    paths: "{{ mail_backup_destination }}"
+    patterns: ["*.tar", "*.tar.*", "*.tgz"]
+    file_type: file
+  register: mail_backup_archive_modes
+
+- name: Restrict backup archives to owner-only
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    mode: "0600"
+  loop: "{{ mail_backup_archive_modes.files | rejectattr('mode', 'equalto', '0600') | list }}"
+  loop_control:
+    label: "{{ item.path }}"
+
 # The rescue below deletes this run's directory and archive. Refuse to start
 # if either already exists (for example a second run in the same play reuses
 # the cached timestamp), so a failure can never delete an earlier backup.
@@ -82,6 +100,7 @@
     - name: Backup maildir
       ansible.builtin.shell: |
         set -euo pipefail
+        umask 077
         dest="{{ mail_backup_dir }}/maildir.tar.gz"
         tmp="${dest}.tmp"
         trap 'rm -f -- "$tmp"' EXIT
@@ -99,6 +118,7 @@
         path: "{{ mail_backup_config_paths }}"
         dest: "{{ mail_backup_dir }}/config.tar.gz"
         format: gz
+        mode: "0600"
       when: mail_backup_config
 
     - name: Create backup manifest
@@ -127,28 +147,34 @@
     # =============================================================================
 
     - name: Create tar.gz archive
-      ansible.builtin.command:
-        cmd: >
-          tar -C "{{ mail_backup_destination }}"
-          -czf "{{ mail_backup_archive_path }}"
-          "{{ mail_backup_dir_name }}"
+      ansible.builtin.shell: |
+        set -euo pipefail
+        umask 077
+        tar -C {{ mail_backup_destination | quote }} \
+          -czf {{ mail_backup_archive_path | quote }} \
+          {{ mail_backup_dir_name | quote }}
+      args:
+        executable: /bin/bash
       when:
         - mail_backup_create_archive
         - mail_backup_archive_format == 'tar.gz'
       changed_when: true
 
     - name: Create tar.zst archive
-      ansible.builtin.command:
-        cmd: >
-          tar -C "{{ mail_backup_destination }}"
-          --zstd -cf "{{ mail_backup_archive_path }}"
-          "{{ mail_backup_dir_name }}"
+      ansible.builtin.shell: |
+        set -euo pipefail
+        umask 077
+        tar -C {{ mail_backup_destination | quote }} \
+          --zstd -cf {{ mail_backup_archive_path | quote }} \
+          {{ mail_backup_dir_name | quote }}
+      args:
+        executable: /bin/bash
       when:
         - mail_backup_create_archive
         - mail_backup_archive_format == 'tar.zst'
       changed_when: true
 
-    - name: Set archive permissions for fetch (owner-only read)
+    - name: Set archive permissions (owner-only read)
       ansible.builtin.file:
         path: "{{ mail_backup_archive_path }}"
         owner: "{{ mail_backup_owner }}"
@@ -156,7 +182,7 @@
         mode: "0600"
       when:
         - mail_backup_create_archive
-        - mail_backup_fetch_local
+        - not ansible_check_mode
 
   rescue:
     - name: Remove incomplete backup directory and archive
