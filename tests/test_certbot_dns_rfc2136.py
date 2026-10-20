@@ -242,5 +242,276 @@ class CertbotDnsCredentialsCleanupTests(unittest.TestCase):
         self.assertEqual(self.run_cleanup("rfc2136", confs, check=True), (True, True))
 
 
+@unittest.skipUnless(shutil.which("ansible-playbook"), "ansible-playbook not on PATH")
+class CertbotDnsStrayConfigDirTests(unittest.TestCase):
+    """Run stray.yml on localhost against temporary certbot trees."""
+
+    def setUp(self):
+        self._temp = tempfile.TemporaryDirectory()
+        self.root = Path(self._temp.name).resolve()
+        self.live = self.root / "live-config"
+        (self.live / "renewal").mkdir(parents=True)
+        (self.live / "renewal" / "home.example.conf").write_text(
+            "[renewalparams]\n"
+            f"cert = {self.live}/live/home.example/cert.pem\n"
+            f"config_dir = {self.live}\n"
+        )
+
+    def tearDown(self):
+        self._temp.cleanup()
+
+    def make_tree(self, path, renewal=True):
+        path.mkdir(parents=True)
+        if renewal:
+            (path / "renewal").mkdir()
+            (path / "renewal" / "home.example.conf").write_text("authenticator = dns-gandi\n")
+        (path / "dns-credentials.ini").write_text("dns_gandi_api_key = old\n")
+        return path
+
+    def run_stray(self, stray, check=False):
+        tasks = yaml.safe_load((ROLE / "tasks" / "stray.yml").read_text())
+        for task in tasks:
+            task.pop("become", None)
+        variables = {
+            "certbot_dns_config_dir": str(self.live),
+            "certbot_dns_stray_config_dirs": [str(p) for p in stray],
+            "role_path": str(ROLE),
+        }
+        playbook = self.root / "play.yml"
+        playbook.write_text(
+            yaml.safe_dump([{"hosts": "localhost", "gather_facts": False, "vars": variables, "tasks": tasks}])
+        )
+        command = ["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook)]
+        if check:
+            command.append("--check")
+        return subprocess.run(command, capture_output=True, text=True)
+
+    def assert_ok(self, result):
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def assert_refused(self, result):
+        # A refusal must come from a guard, not from an unrelated error.
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Refusing stray certbot dir", result.stdout + result.stderr)
+
+    def test_removes_a_listed_stray_tree(self):
+        stray = self.make_tree(self.root / "letsencrypt")
+        self.assert_ok(self.run_stray([stray]))
+        self.assertFalse(stray.exists())
+        self.assertTrue((self.live / "renewal" / "home.example.conf").exists())
+
+    def test_check_mode_and_empty_list_keep_everything(self):
+        stray = self.make_tree(self.root / "letsencrypt")
+        self.assert_ok(self.run_stray([stray], check=True))
+        self.assertTrue(stray.exists())
+        self.assert_ok(self.run_stray([]))
+        self.assertTrue(stray.exists())
+
+    def test_skips_a_missing_path(self):
+        self.assert_ok(self.run_stray([self.root / "gone"]))
+
+    def test_refuses_the_live_dir_its_parent_and_its_children(self):
+        child = self.make_tree(self.live / "nested")
+        for path in (self.live, self.root, child):
+            self.assert_refused(self.run_stray([path]))
+        self.assertTrue(child.exists())
+        self.assertTrue(self.live.exists())
+
+    def test_refuses_certbot_default_dirs_and_unnormalized_paths(self):
+        for path in ("/etc/letsencrypt", "/etc", "/", "/var/lib/letsencrypt/x",
+                     f"{self.root}/a/../live-config", f"{self.root}/le*", f"{self.root}/x/", "relative"):
+            self.assert_refused(self.run_stray([path]))
+        self.assertTrue(self.live.exists())
+
+    def test_refuses_a_path_that_reaches_the_live_dir_through_a_symlink(self):
+        (self.root / "link").symlink_to(self.live)
+        target = self.make_tree(self.live / "sub")
+        self.assert_refused(self.run_stray([self.root / "link" / "sub"]))
+        self.assertTrue(target.exists())
+
+    def test_refuses_a_symlink_and_a_non_certbot_dir(self):
+        real = self.make_tree(self.root / "real")
+        link = self.root / "letsencrypt"
+        link.symlink_to(real)
+        self.assert_refused(self.run_stray([link]))
+        plain = self.make_tree(self.root / "plain", renewal=False)
+        self.assert_refused(self.run_stray([plain]))
+        self.assertTrue(real.exists())
+        self.assertTrue(plain.exists())
+
+    def test_refuses_a_tree_a_live_renewal_configuration_uses(self):
+        stray = self.make_tree(self.root / "le.old")
+        conf = self.live / "renewal" / "home.example.conf"
+        conf.write_text(conf.read_text() + f"dns_gandi_credentials = {stray}/dns-credentials.ini\n")
+        self.assert_refused(self.run_stray([stray]))
+        self.assertTrue(stray.exists())
+        conf.write_text(conf.read_text() + f"archive_dir = {stray}\n")
+        self.assert_refused(self.run_stray([stray]))
+
+    def test_refuses_when_the_live_scan_fails(self):
+        stray = self.make_tree(self.root / "letsencrypt")
+        (self.live / "renewal" / "home.example.conf").unlink()
+        self.assert_refused(self.run_stray([stray]))
+        self.assertTrue(stray.exists())
+
+    def test_a_self_contained_live_tree_allows_removal(self):
+        # URLs are not paths; certbot's relative live -> archive links stay inside.
+        stray = self.make_tree(self.root / "le.old")
+        (self.live / "archive" / "home.example").mkdir(parents=True)
+        (self.live / "archive" / "home.example" / "cert1.pem").write_text("x")
+        (self.live / "live" / "home.example").mkdir(parents=True)
+        (self.live / "live" / "home.example" / "cert.pem").symlink_to("../../archive/home.example/cert1.pem")
+        conf = self.live / "renewal" / "home.example.conf"
+        conf.write_text(
+            conf.read_text()
+            + "server = https://acme-v02.api.letsencrypt.org/directory\n"
+            + f"archive_dir = {self.live}/archive/home.example\n"
+        )
+        self.assert_ok(self.run_stray([stray]))
+        self.assertFalse(stray.exists())
+
+    def test_refuses_when_a_live_tree_reaches_outside(self):
+        stray = self.make_tree(self.root / "stray")
+        elsewhere = self.root / "elsewhere"
+        elsewhere.mkdir()
+        conf = self.live / "renewal" / "home.example.conf"
+        original = conf.read_text()
+        conf.write_text(original + f"x = {elsewhere}/file\n")
+        self.assert_refused(self.run_stray([stray]))
+        conf.write_text(original)
+        (self.live / "link").symlink_to(elsewhere)
+        self.assert_refused(self.run_stray([stray]))
+        self.assertTrue(stray.exists())
+
+    def test_refuses_a_symlink_chain_through_the_candidate(self):
+        # live/renewal-hooks -> stray/bridge -> live/hooks: ends inside, passes through.
+        stray = self.make_tree(self.root / "stray")
+        (self.live / "hooks").mkdir()
+        (stray / "bridge").symlink_to(self.live / "hooks")
+        (self.live / "renewal-hooks").symlink_to(stray / "bridge")
+        self.assert_refused(self.run_stray([stray]))
+        self.assertTrue(stray.exists())
+
+    def test_refuses_a_path_ending_in_a_newline(self):
+        stray = self.make_tree(self.root / "stray\n")
+        self.assert_refused(self.run_stray([stray]))
+        self.assertTrue(stray.exists())
+
+    def test_refuses_a_tree_a_live_symlink_points_into(self):
+        # The live archive is a symlink into the candidate; the renewal
+        # configuration names only the live path.
+        stray = self.make_tree(self.root / "stray")
+        (stray / "archive").mkdir()
+        (self.live / "archive").symlink_to(stray / "archive")
+        self.assert_refused(self.run_stray([stray]))
+        self.assertTrue(stray.exists())
+
+    def test_refuses_a_tree_reached_through_a_symlinked_parent(self):
+        # Listed as /alias/stray, referenced as /storage/stray.
+        storage = self.root / "storage"
+        stray = self.make_tree(storage / "stray")
+        (self.root / "alias").symlink_to(storage)
+        conf = self.live / "renewal" / "home.example.conf"
+        conf.write_text(conf.read_text() + f"dns_gandi_credentials = {stray}/dns-credentials.ini\n")
+        self.assert_refused(self.run_stray([self.root / "alias" / "stray"]))
+        self.assertTrue(stray.exists())
+
+    def test_refuses_quoted_references(self):
+        stray = self.make_tree(self.root / "stray")
+        conf = self.live / "renewal" / "home.example.conf"
+        original = conf.read_text()
+        for quote in ('"', "'"):
+            conf.write_text(original + f"dns_gandi_credentials = {quote}{stray}/dns-credentials.ini{quote}\n")
+            self.assert_refused(self.run_stray([stray]))
+            self.assertTrue(stray.exists())
+
+    def test_refuses_paths_with_spaces_or_quotes(self):
+        for name in ("stray copy", "stray'x", 'stray"x'):
+            stray = self.make_tree(self.root / name)
+            self.assert_refused(self.run_stray([stray]))
+            self.assertTrue(stray.exists())
+
+    def test_a_reference_continuing_past_a_space_still_refuses(self):
+        stray = self.make_tree(self.root / "stray")
+        conf = self.live / "renewal" / "home.example.conf"
+        conf.write_text(conf.read_text() + f'x = "{stray} copy/dns.ini"\n')
+        self.assert_refused(self.run_stray([stray]))
+        self.assertTrue(stray.exists())
+
+    def test_walks_a_symlinked_live_root_and_linked_directories(self):
+        # The live config dir is itself a symlink, and a directory symlink in it
+        # leads to another directory whose symlink points into the candidate.
+        stray = self.make_tree(self.root / "stray")
+        (stray / "hooks").mkdir()
+        real_live = self.root / "real-live"
+        self.live.rename(real_live)
+        self.live.symlink_to(real_live)
+        (real_live / "renewal-hooks").symlink_to(stray / "hooks")
+        self.assert_refused(self.run_stray([stray]))
+        (real_live / "renewal-hooks").unlink()
+        other = self.root / "other"
+        other.mkdir()
+        (other / "deploy").symlink_to(stray / "hooks")
+        (real_live / "renewal-hooks").symlink_to(other)
+        self.assert_refused(self.run_stray([stray]))
+        self.assertTrue(stray.exists())
+
+    def test_resolves_dotdot_references_like_the_filesystem(self):
+        # /alias -> /storage/sub, so /alias/../stray is /storage/stray.
+        storage = self.root / "storage"
+        (storage / "sub").mkdir(parents=True)
+        stray = self.make_tree(storage / "stray")
+        (self.root / "alias").symlink_to(storage / "sub")
+        conf = self.live / "renewal" / "home.example.conf"
+        conf.write_text(conf.read_text() + f"x = {self.root}/alias/../stray/dns.ini\n")
+        self.assert_refused(self.run_stray([stray]))
+        self.assertTrue(stray.exists())
+
+    def test_refuses_dotdot_or_quoted_values_even_inside_the_live_tree(self):
+        stray = self.make_tree(self.root / "stray")
+        conf = self.live / "renewal" / "home.example.conf"
+        original = conf.read_text()
+        for value in (f"{self.live}/../stray/x", f'"{self.live}/a b/x"', f"{self.live}/"):
+            conf.write_text(original + f"x = {value}\n")
+            self.assert_refused(self.run_stray([stray]))
+        self.assertTrue(stray.exists())
+
+    def test_reads_renewal_configurations_of_every_protected_tree(self):
+        # A second protected tree (here: the live dir given with another config
+        # dir) whose renewal configuration points into the candidate.
+        stray = self.make_tree(self.root / "stray")
+        other = self.root / "other-config"
+        (other / "renewal").mkdir(parents=True)
+        (other / "renewal" / "x.conf").write_text(f"x = {stray}/dns.ini\n")
+        tasks = yaml.safe_load((ROLE / "tasks" / "stray.yml").read_text())
+        for task in tasks:
+            task.pop("become", None)
+        protected_fact = tasks[0]["ansible.builtin.set_fact"]
+        protected_fact["certbot_dns_stray_protected"] = [str(self.live), str(other)]
+        playbook = self.root / "play.yml"
+        variables = {
+            "certbot_dns_config_dir": str(self.live),
+            "certbot_dns_stray_config_dirs": [str(stray)],
+            "role_path": str(ROLE),
+        }
+        playbook.write_text(
+            yaml.safe_dump([{"hosts": "localhost", "gather_facts": False, "vars": variables, "tasks": tasks}])
+        )
+        result = subprocess.run(
+            ["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook)],
+            capture_output=True,
+            text=True,
+        )
+        self.assert_refused(result)
+        self.assertTrue(stray.exists())
+
+    def test_runs_after_cleanup(self):
+        main = yaml.safe_load((ROLE / "tasks" / "main.yml").read_text())
+        order = [t["ansible.builtin.import_tasks"] for t in main]
+        self.assertLess(order.index("cleanup.yml"), order.index("stray.yml"))
+        defaults = yaml.safe_load((ROLE / "defaults" / "main.yml").read_text())
+        self.assertEqual(defaults["certbot_dns_stray_config_dirs"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

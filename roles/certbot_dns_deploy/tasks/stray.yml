@@ -1,0 +1,72 @@
+---
+# Remove leftover certbot configuration trees outside the live config dir, for
+# example the /letsencrypt an earlier certbot_dns_restore extracted into /.
+# Only paths listed in certbot_dns_stray_config_dirs are considered (nothing is
+# found by pattern). The format checks below and files/certbot_stray_guard.py
+# must pass for every listed path, or the run fails before anything is removed.
+# The guard refuses a path that overlaps a live certbot dir (as given or after
+# resolving symlinks) or is not a real certbot tree, and it refuses everything
+# unless the live trees use only literal paths (no symlinks besides certbot's
+# lineage links, plain renewal configuration paths inside them) and are
+# completely readable. A missing path is skipped. Check
+# mode only reports.
+
+- name: stray | Protected certbot directories
+  ansible.builtin.set_fact:
+    certbot_dns_stray_protected: >-
+      {{ [certbot_dns_config_dir, '/etc/letsencrypt', '/var/lib/letsencrypt', '/var/log/letsencrypt']
+         | map('regex_replace', '/+$', '') | unique | list }}
+  when: certbot_dns_stray_config_dirs | length > 0
+
+- name: stray | Refuse paths that are not explicit and normalized
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item is match('^/[^/]')
+      - item is match('^[A-Za-z0-9._/-]+\Z')
+      - item is not search('(^|/)\.\.?(/|$)')
+      - item is not search('//')
+      - item is not search('/$')
+    fail_msg: >-
+      Refusing stray certbot dir {{ item }}: only absolute, normalized paths of
+      letters, digits, '.', '_', '-' and '/' without '.'/'..' segments or a
+      trailing slash are accepted.
+    quiet: true
+  loop: "{{ certbot_dns_stray_config_dirs }}"
+
+- name: stray | Check each stray dir on the host
+  ansible.builtin.script:
+    cmd: "{{ role_path }}/files/certbot_stray_guard.py"
+    executable: python3
+  environment:
+    CERTBOT_STRAY_INPUT: >-
+      {{ {'stray': certbot_dns_stray_config_dirs,
+          'protected': certbot_dns_stray_protected,
+          'config_dir': certbot_dns_config_dir | regex_replace('/+$', '')} | to_json }}
+  register: certbot_dns_stray_guard
+  changed_when: false
+  check_mode: false
+  become: yes
+  when: certbot_dns_stray_config_dirs | length > 0
+
+- name: stray | Read the guard's decision
+  ansible.builtin.set_fact:
+    certbot_dns_stray_decision: "{{ certbot_dns_stray_guard.stdout | from_json }}"
+  when: certbot_dns_stray_config_dirs | length > 0
+
+- name: stray | Refuse when any listed dir failed a check
+  ansible.builtin.assert:
+    that:
+      - certbot_dns_stray_decision.refused | length == 0
+      - >-
+        (certbot_dns_stray_decision.remove + certbot_dns_stray_decision.skipped) | sort
+        == certbot_dns_stray_config_dirs | sort
+    fail_msg: "Refusing stray certbot dirs, nothing removed: {{ certbot_dns_stray_decision.refused | to_json }}"
+  when: certbot_dns_stray_config_dirs | length > 0
+
+- name: stray | Remove stray certbot dirs
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ certbot_dns_stray_decision.remove | default([]) }}"
+  become: yes

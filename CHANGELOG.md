@@ -3,6 +3,27 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — certbot_dns_deploy removes listed stray config trees (2.51.0)
+
+- `certbot_dns_deploy` gains `certbot_dns_stray_config_dirs` (default `[]`):
+  an explicit list of leftover certbot config trees outside
+  `certbot_dns_config_dir` to delete, such as the `/letsencrypt` an earlier
+  `certbot_dns_restore` extracted into `/` (old account key and DNS
+  credentials). New `tasks/stray.yml` runs after `cleanup.yml`. Each path must
+  be absolute and normalized (letters, digits, `.`, `_`, `-`, `/` only) and must
+  not be equal to, inside or above the live config dir or
+  `/etc/letsencrypt`, `/var/lib/letsencrypt` and `/var/log/letsencrypt`, both as
+  given and after resolving symlinks on the host. It must be a real directory
+  (not a symlink) with a `renewal/` directory. The live trees must use
+  only literal paths: each protected dir is its own real path, the only
+  symlinks are certbot's lineage links (`live/<name>/<cert|chain|fullchain|privkey>.pem`
+  -> `../../archive/<name>/<same>N.pem`), and every value with a `/` in any
+  protected tree's `renewal/*.conf` is an `https://` URL or a plain absolute path
+  inside the protected dirs; otherwise nothing is removed. These host checks are
+  in `files/certbot_stray_guard.py`, and a read error counts as a refusal. Any
+  failed check stops the run before anything is removed; a missing path is
+  skipped; check mode only reports. Tests in `tests/test_certbot_dns_rfc2136.py`.
+
 ## Unreleased — Grafana password check needs an exact MATCH (2.50.1)
 
 - `graphyard_auth_bootstrap_deploy`: the final Grafana admin password
