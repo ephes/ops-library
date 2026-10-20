@@ -31,6 +31,8 @@
   register: current_uv_version
   changed_when: false
   failed_when: false
+  # Read-only probe: also run it under --check so the version comparison works.
+  check_mode: false
   when:
     - uv_installed.stat.exists
     - not (uv_is_symlink | default(false))
@@ -53,8 +55,18 @@
         (uv_update_existing and (current_version | default('')) != uv_version)
       }}
 
+- name: Report the pending uv install or update (check mode)
+  ansible.builtin.debug:
+    msg: "Would install uv {{ uv_version }} at {{ uv_install_dir }}/uv"
+  changed_when: true
+  when:
+    - needs_install | bool
+    - ansible_check_mode
+
 - name: Install or update uv
-  when: needs_install | bool
+  when:
+    - needs_install | bool
+    - not ansible_check_mode
   block:
     - name: Create temporary directory for installation
       tempfile:
@@ -151,17 +163,24 @@
   register: uv_version_check
   changed_when: false
   failed_when: uv_version_check.rc != 0
+  check_mode: false
+  # In check mode a pending install has not happened yet; nothing to verify.
+  when: not (ansible_check_mode and needs_install | bool)
 
 - name: Set final version fact
   set_fact:
     installed_uv_version: "{{ uv_version_check.stdout | regex_replace('^uv ([0-9.]+).*', '\\1') }}"
+  when: uv_version_check is not skipped
 
 - name: Display installation result
   debug:
     msg: "uv {{ installed_uv_version }} is installed at {{ uv_install_dir }}/uv"
+  when: uv_version_check is not skipped
 
 - name: Test uv functionality
   command: "{{ uv_install_dir }}/uv --help"
   register: uv_help_test
   changed_when: false
   failed_when: uv_help_test.rc != 0
+  check_mode: false
+  when: uv_version_check is not skipped

@@ -3,6 +3,15 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased — uv_install works under --check
+
+- `uv_install`: `ansible-playbook --check` no longer fails. The read-only
+  `uv --version` probe ran only in real runs, so check mode reached the version
+  parse without a result and failed unless `-e uv_update_existing=false` was
+  passed. The probe and the final verification now also run in check mode; a
+  pending install or update is reported as one changed task and nothing is
+  downloaded or installed. The Molecule scenario covers three `--check` cases.
+
 ## Unreleased — archive_deploy documents archive_workers
 
 - `archive_deploy`: the README lists `archive_workers` (default `2`, the

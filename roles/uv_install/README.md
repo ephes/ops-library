@@ -48,6 +48,16 @@ uv_update_existing: true
         uv_create_symlinks: true
 ```
 
+## Check mode
+
+The role supports `ansible-playbook --check` with its defaults; no
+`-e uv_update_existing=false` is needed. The read-only `uv --version` probe
+also runs in check mode, so a host that already has the pinned version reports
+no change. When an install or update is due, check mode reports it as one
+changed task and downloads, extracts and installs nothing. The Molecule
+scenario runs the role with `--check` for an up-to-date host, a pending update
+and a host without uv.
+
 ## Usage in Deployment Roles
 
 UV is typically used as a dependency in service deployment roles:
