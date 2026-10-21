@@ -74,18 +74,23 @@ class FixturesMatchThePythonProgram(unittest.TestCase):
     def test_p3_cases_are_inputs_python_accepts(self) -> None:
         import json
 
-        for name in ("policy.json", "version.json", "traefik.json"):
+        # Each group of families must hold P3 cases; a family of None is the
+        # whole file (a list).
+        groups = {
+            "policy.json": [[None]],
+            "version.json": [["cases"]],
+            "traefik.json": [["binary_info", "observe"]],
+            "lifecycle.json": [["dates"]],
+            "postgresql.json": [["clusters"], ["server_version"]],
+        }
+        for name, families in groups.items():
             data = json.loads((self.generator.FIXTURES_DIR / name).read_text(encoding="utf-8"))
-            if isinstance(data, list):
-                cases = data
-            elif name == "traefik.json":
-                cases = data["binary_info"] + data["observe"]
-            else:
-                cases = data["cases"]
-            tagged = [case for case in cases if "p3" in case]
-            self.assertTrue(tagged, name)
-            for case in tagged:
-                self.assertNotIn("error", {k for k, v in case.items() if v is not None}, case)
+            for family in families:
+                cases = [case for key in family for case in (data if key is None else data[key])]
+                tagged = [case for case in cases if "p3" in case]
+                self.assertTrue(tagged, f"{name} {family}")
+                for case in tagged:
+                    self.assertNotIn("error", {k for k, v in case.items() if v is not None}, case)
 
 
 class PythonReadsRustWrittenCaches(unittest.TestCase):

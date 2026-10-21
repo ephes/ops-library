@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased — software-live Rust port: OS and PostgreSQL observations
+
+- `rust/software-live` (slice S3c of `rust/software-live/PLAN.md`): the OS
+  observation (Python's os-release parser and fallback, lifecycle
+  evaluation) and the PostgreSQL observation (`pg_lsclusters` parsing, the
+  postmaster's `--version` run through a descriptor pinned to its image,
+  identity checks, lifecycle and drift issues), library only until
+  `collect` is wired. The `System` trait gains `read_head`, and every child
+  process now gets no descriptor of the program beyond its standard streams
+  and a passed one, as `subprocess` (`close_fds`) does (new dependency
+  `close_fds`). Fixtures `lifecycle.json`, `os.json` and `postgresql.json`
+  replay the Python functions' recorded worlds, including the order of
+  every probe. Nothing installs or runs the binary; the `software_live`
+  role is unchanged.
+
 ## Unreleased — software-live Rust port: upstream lookups and caches
 
 - `rust/software-live` gets the upstream lookups of `software_live.py` (slice S3a)
