@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — software-live Rust port: upstream lookups and caches
+
+- `rust/software-live` gets the upstream lookups of `software_live.py` (slice S3a)
+  (latest Traefik release on GitHub, endoflife.date lifecycles) with their
+  daily caches, readable by both implementations in both directions;
+  HTTPS through ureq/rustls with the system trust store only; the atomic
+  JSON write. New fixture `upstream.json` (generated from the Python
+  program) and `rust-caches.json` (written by the Rust code; the Python
+  drift test runs the Python program on it). Not wired into `collect` yet;
+  the role is unchanged.
+
 ## Unreleased — software-live Rust port: Traefik observation
 
 - `rust/software-live` gets the Traefik observation of `software_live.py`
@@ -27,7 +38,6 @@
   test-software-live-rust-fixtures`, part of `just test`) fails when a
   fixture or `TESTMAP.md` no longer matches it. New recipes `just
   rs-software-live` and `just rs-software-live-fixtures`.
-
 ## [2.64.5] - 2026-10-21
 
 ### Security

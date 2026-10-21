@@ -88,6 +88,54 @@ class FixturesMatchThePythonProgram(unittest.TestCase):
                 self.assertNotIn("error", {k for k, v in case.items() if v is not None}, case)
 
 
+class PythonReadsRustWrittenCaches(unittest.TestCase):
+    """Cache files are shared state across the implementations (PLAN.md 3.3):
+    the Python program must use a cache the Rust code wrote exactly as one it
+    wrote itself, so a rollback neither repeats the upstream request nor
+    loses the ``last_success`` evidence. ``fixtures/rust-caches.json`` holds
+    what the Rust code writes (the Rust test
+    ``upstream::tests::rust_written_caches_are_committed`` keeps it current).
+    """
+
+    live: ModuleType
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.live = load_generator().live
+
+    def lookup(self, cache: dict, directory: Path, now: float) -> dict:
+        path = directory / cache["cache"]
+        if cache["function"] == "upstream":
+            return self.live.upstream(path, now)
+        return self.live.lifecycle_upstream(cache["product"], path, now)
+
+    def test_rust_written_caches_are_fresh_hits_and_kept_evidence(self) -> None:
+        import json
+        from unittest import mock
+
+        caches = json.loads((CRATE / "fixtures" / "rust-caches.json").read_text(encoding="utf-8"))
+        self.assertGreaterEqual(len(caches["caches"]), 3)
+        for cache in caches["caches"]:
+            with self.subTest(cache["id"]), tempfile.TemporaryDirectory() as tmp:
+                directory = Path(tmp)
+                file = directory / cache["file"]
+                file.write_text(cache["text"], encoding="ascii")
+                written = json.loads(cache["text"])
+                with mock.patch.object(
+                    self.live.urllib.request, "urlopen", side_effect=AssertionError("no request")
+                ):
+                    hit = self.lookup(cache, directory, cache["now"] + 86399)
+                self.assertEqual(hit, {**written, "status": "ok", "cached": True})
+                with mock.patch.object(
+                    self.live.urllib.request, "urlopen", side_effect=OSError("offline")
+                ):
+                    stale = self.lookup(cache, directory, cache["now"] + 86400)
+                self.assertEqual(
+                    stale, {"status": "unknown", "error": "OSError", "last_success": written}
+                )
+                self.assertEqual(file.read_text(encoding="ascii"), cache["text"])
+
+
 class TestmapNamesEveryPythonTest(unittest.TestCase):
     def test_every_python_test_has_a_row(self) -> None:
         testmap = TESTMAP.read_text(encoding="utf-8")
