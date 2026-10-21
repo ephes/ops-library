@@ -23,6 +23,24 @@ homeassistant_virtualenv_path: "{{ homeassistant_site_path }}/.venv"
 homeassistant_virtualenv_link: "{{ homeassistant_site_path }}/venv"
 homeassistant_package_spec: "homeassistant"
 homeassistant_extra_package_specs: []
+
+# Keep certifi/pip at python_security_floor's floors: refuse existing
+# environments below them before changing anything, pass a constraint file to
+# every uv pip install this role runs (constraints never add packages; a
+# dependency capping certifi below the floor fails the resolution before
+# anything is installed) and verify the environments afterwards.
+homeassistant_python_security_floor_enabled: true
+homeassistant_python_security_constraints_path: "{{ homeassistant_site_path }}/.python-security-constraints.txt"
+homeassistant_python_security_constraint_argv: >-
+  {{ ['--constraint', homeassistant_python_security_constraints_path]
+     if (homeassistant_python_security_floor_enabled | bool) else [] }}
+homeassistant_python_security_constraint_args: >-
+  {{ homeassistant_python_security_constraint_argv | map('quote') | join(' ') }}
+# The environments the floors are checked in.
+homeassistant_python_security_environments: >-
+  {{ [{'path': homeassistant_virtualenv_path, 'label': 'Home Assistant environment'}]
+     + ([{'path': homeassistant_matter_server_virtualenv_path, 'label': 'Matter server environment'}]
+        if (homeassistant_manage_matter_server | bool) else []) }}
 homeassistant_force_reinstall: false
 homeassistant_virtualenv_version_file: "{{ homeassistant_virtualenv_path }}/.ansible-python-version"
 

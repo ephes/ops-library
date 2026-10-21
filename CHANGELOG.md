@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased — certifi/pip deploy-time security floor
+
+- New `python_security_floor` role and `local.ops_library.uv_lock_floor_violations`,
+  `python_security_constraints` and `python_security_report_violations` filters:
+  keep certifi at 2026.10.19 or later and upstream pip at 26.2.2 or later across
+  normal deploys (eMudhra/emSign CA compromise, GHSA-6q48-6c7w-9gw2). Nothing is
+  added to environments without certifi/pip; distrusted roots are matched by
+  SHA-256 fingerprint; system-site certifi/pip is accepted only when owned by the
+  distribution package and using the system store; explicit trust overrides are
+  left alone.
+- `metube_deploy`: resolves `metube_repo_version` to one commit in a staging
+  checkout (new `metube_source_check_dir` when the UI build is off), refuses that
+  commit's `uv.lock` below the floor before the install directory or environment
+  changes, checks out exactly that commit, and verifies the environment after
+  the sync.
+- `homeassistant_deploy`, `open_webui_venv_deploy`, `paperless_deploy`,
+  `takahe_deploy`: verify existing environments before changing anything
+  (`paperless_deploy` and `takahe_deploy` through `python_security_floor` as
+  their first role dependency, ahead of the uv/Redis/PostgreSQL installs), pass a
+  constraint file to every package install the role runs, and verify again
+  afterwards. Environments below the floor that the role's own installs would
+  not raise (for example a stale pip) now fail the deploy before any change:
+  remediate them first. Disable per role with
+  `<role>_python_security_floor_enabled: false`.
+
 ## Unreleased — interrupted trust package recovery (2.63.6)
 
 - Recover explicitly proven interrupted certifi updates with immutable prior-install evidence, exact generated-cache ownership repair and owner-identity offline restoration.

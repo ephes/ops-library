@@ -203,7 +203,7 @@
 
 - name: "Install Home Assistant via uv pip"
   ansible.builtin.command:
-    cmd: "{{ homeassistant_uv_path }} pip install --python {{ homeassistant_virtualenv_path }} {{ homeassistant_package_spec }}"
+    cmd: "{{ homeassistant_uv_path }} pip install --python {{ homeassistant_virtualenv_path }} {{ homeassistant_package_spec }} {{ homeassistant_python_security_constraint_args }}"
     chdir: "{{ homeassistant_site_path }}"
   become: true
   become_user: "{{ homeassistant_user }}"
@@ -216,7 +216,7 @@
 
 - name: "Install Home Assistant extra Python packages via uv pip"
   ansible.builtin.command:
-    argv: "{{ [homeassistant_uv_path, 'pip', 'install', '--python', homeassistant_virtualenv_path] + homeassistant_extra_package_specs }}"
+    argv: "{{ [homeassistant_uv_path, 'pip', 'install', '--python', homeassistant_virtualenv_path] + homeassistant_python_security_constraint_argv + homeassistant_extra_package_specs }}"
     chdir: "{{ homeassistant_site_path }}"
   become: true
   become_user: "{{ homeassistant_user }}"

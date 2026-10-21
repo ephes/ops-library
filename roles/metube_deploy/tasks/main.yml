@@ -2,6 +2,15 @@
 - name: "Validate required variables"
   ansible.builtin.include_tasks: validate.yml
 
+# With the dependency sync enabled the environment ends up exactly as the
+# checked lock (uv sync --frozen is exact), so only a deploy that leaves the
+# environment alone checks it before changing anything.
+- name: "Check the existing environment's certifi/pip floors"
+  ansible.builtin.include_tasks: security_preflight.yml
+  when:
+    - metube_python_security_floor_enabled | bool
+    - not (metube_sync_dependencies | bool)
+
 - name: "Ensure uv is installed"
   ansible.builtin.include_tasks: uv.yml
   when: metube_install_uv | bool
@@ -22,6 +31,10 @@
   ansible.builtin.include_tasks: ui.yml
   when: metube_ui_build | bool
 
+- name: "Check the dependency lock of the revision to deploy"
+  ansible.builtin.include_tasks: security_source.yml
+  when: metube_python_security_floor_enabled | bool
+
 - name: "Fetch MeTube sources"
   ansible.builtin.include_tasks: source.yml
 
@@ -32,6 +45,10 @@
 - name: "Create Python environment and install dependencies"
   ansible.builtin.include_tasks: python.yml
   when: metube_sync_dependencies | bool
+
+- name: "Verify the environment's certifi/pip floors"
+  ansible.builtin.include_tasks: security_verify.yml
+  when: metube_python_security_floor_enabled | bool
 
 - name: "Render environment file"
   ansible.builtin.include_tasks: env.yml

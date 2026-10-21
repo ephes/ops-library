@@ -2,6 +2,10 @@
 - name: main | Validate required variables
   ansible.builtin.import_tasks: validate.yml
 
+- name: main | Check the existing environment's certifi/pip floors
+  ansible.builtin.include_tasks: security_preflight.yml
+  when: open_webui_python_security_floor_enabled | bool
+
 - name: main | Ensure uv is installed
   ansible.builtin.import_tasks: uv.yml
 
@@ -15,8 +19,28 @@
 - name: main | Render Open WebUI environment file
   ansible.builtin.import_tasks: env.yml
 
+- name: main | Write the certifi/pip install constraints
+  ansible.builtin.include_role:
+    name: local.ops_library.python_security_floor
+    tasks_from: constraints.yml
+  vars:
+    python_security_floor_constraints_path: "{{ open_webui_python_security_constraints_path }}"
+    python_security_floor_owner: "{{ open_webui_user }}"
+    python_security_floor_group: "{{ open_webui_group }}"
+  when: open_webui_python_security_floor_enabled | bool
+
 - name: main | Provision Open WebUI Python environment
   ansible.builtin.import_tasks: python.yml
+
+- name: main | Verify the environment's certifi/pip floors
+  ansible.builtin.include_role:
+    name: local.ops_library.python_security_floor
+    tasks_from: verify.yml
+  vars:
+    python_security_floor_python: "{{ open_webui_venv_path }}/bin/python"
+    python_security_floor_user: "{{ open_webui_user }}"
+    python_security_floor_label: Open WebUI environment
+  when: open_webui_python_security_floor_enabled | bool
 
 - name: main | Configure Open WebUI systemd service
   ansible.builtin.import_tasks: systemd.yml

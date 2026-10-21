@@ -91,7 +91,7 @@
   become_user: "{{ open_webui_user }}"
 
 - name: python | Install Open WebUI via uv pip
-  ansible.builtin.command: "{{ open_webui_uv_path }} pip install --python {{ open_webui_venv_path }} {{ open_webui_package_spec }}"
+  ansible.builtin.command: "{{ open_webui_uv_path }} pip install --python {{ open_webui_venv_path }} {{ open_webui_package_spec }} {{ open_webui_python_security_constraint_args }}"
   args:
     chdir: "{{ open_webui_site_dir }}"
   environment:

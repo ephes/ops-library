@@ -1,0 +1,32 @@
+---
+# As a role dependency listed before anything that changes the host, verify
+# existing environments first (python_security_floor_preflight: list of
+# {python, user, label, deferred}). Otherwise include it with tasks_from.
+- name: main | Require preflight environments or a specific entry point
+  ansible.builtin.fail:
+    msg: >-
+      Include python_security_floor with tasks_from: lock.yml, constraints.yml
+      or verify.yml, or list python_security_floor_preflight environments when
+      using it as a role dependency (see the role README).
+  when: python_security_floor_preflight is not defined
+
+- name: main | Check for existing environments
+  ansible.builtin.stat:
+    path: "{{ item.python }}"
+  loop: "{{ python_security_floor_preflight | default([]) }}"
+  loop_control:
+    label: "{{ item.label }}"
+  register: _python_security_floor_existing
+  become: "{{ python_security_floor_become | bool }}"
+
+- name: main | Verify existing environments before the calling role changes anything
+  ansible.builtin.include_tasks: verify.yml
+  vars:
+    python_security_floor_python: "{{ _python_security_floor_env.item.python }}"
+    python_security_floor_user: "{{ _python_security_floor_env.item.user }}"
+    python_security_floor_label: "{{ _python_security_floor_env.item.label }}"
+    python_security_floor_deferred: "{{ _python_security_floor_env.item.deferred | default([]) }}"
+  loop: "{{ _python_security_floor_existing.results | default([]) | selectattr('stat.exists') | list }}"
+  loop_control:
+    loop_var: _python_security_floor_env
+    label: "{{ _python_security_floor_env.item.label }}"
