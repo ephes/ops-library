@@ -18,8 +18,9 @@
   the Layer-2 container harness `parity/e2e/run-layer2.sh` (`just
   echoport-command-guard-layer2`) that compares `realpath`, `lstat` and user
   lookups as root with Ubuntu 24.04's Python 3.12 and Debian 13's Python
-  3.13. No tool branch uses the layer yet (S3b); nothing installs the binary
-  and no role behaviour changes.
+  3.13. The binary now runs on `RealEnv`, replacing S4's placeholder whose
+  `lstat`/`realpath` failed closed; the rules that use the helpers come with
+  S3b. Nothing installs the binary and no role behaviour changes.
 
 ## Unreleased — Rust ports: echoport-command-guard runtime and exec (S4)
 
