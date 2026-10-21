@@ -136,7 +136,9 @@ it opened:
   and devices are refused;
 - `mv`: one `renameat`; the target is replaced as a name, never followed
   into (no move into a target directory, no copy across filesystems);
-  without `<p>.tmp` → `<p>` the target must still not exist;
+  without `<p>.tmp` → `<p>` the rename never replaces an existing target
+  (`renameat2` with `RENAME_NOREPLACE`), also one that appeared after the
+  check;
 - `rm -f`: `unlinkat` on the name; missing files are fine.
 
 Success is exit 0 with no output, as from the tools. A failure is exit 1

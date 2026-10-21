@@ -16,8 +16,9 @@
   (a symlink anywhere on the path is refused) and changes, renames or
   removes the entry relative to the directory it opened (`fchmod`/`fchown`
   on an `O_NOFOLLOW` descriptor of the inode `lstat` saw, one link for a
-  regular file; `renameat`; `unlinkat`; `chown -R` one open directory per
-  level, symlinks in the tree neither followed nor changed). `check()` also
+  regular file; `renameat`, or `renameat2(RENAME_NOREPLACE)` when the target
+  must not exist; `unlinkat`; `chown -R` one open directory per level,
+  symlinks in the tree neither followed nor changed). `check()` also
   requires each changed path to lie inside its root as written. Work item
   `echoport-guard-toctou-hardening`, slice H1 of
   `rust/echoport-command-guard/PLAN.md` (4.5, R12).

@@ -790,7 +790,9 @@ class GuardMutationRaces(unittest.TestCase):
         failures, skipped = races.run_all(GUARD, RACES_PATH)
         self.assertEqual(failures, [])
         if skipped:
-            self.skipTest(f"{len(skipped)} chown scenarios need a second group of the test user (or root)")
+            # Checked above: every scenario that ran passed.
+            self.skipTest(f"skipped here: {', '.join(skipped)} (a chown needs a second group of the test user "
+                          "or root; non-UTF-8 names need Linux)")
 
 
 def load_races_module() -> types.ModuleType:
