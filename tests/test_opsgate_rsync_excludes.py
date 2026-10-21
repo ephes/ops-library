@@ -14,6 +14,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -43,6 +44,9 @@ SOURCE_FILES = (
     "rust/target/release/opsgate",
 )
 
+# Itemized change line: update type, file type, attribute flags, a space.
+ITEMIZED = re.compile(r"^[<>ch.][fdLDS][^ ]* ")
+
 
 def app_source_tasks() -> list[dict]:
     tasks = yaml.safe_load((ROLE / "tasks/app_source.yml").read_text())
@@ -54,14 +58,16 @@ def changed_paths(result: dict) -> set[str]:
     """Paths from synchronize's itemized (`%i %n%L`) rsync output.
 
     The module strips its `<<CHANGED>>` marker; deletions read
-    `*deleting   <path>` and come back as `deleted:<path>`.
+    `*deleting   <path>` and come back as `deleted:<path>`. The itemize code
+    is matched by its update and file-type characters, not a fixed width:
+    rsync 3 prints 11 characters, macOS openrsync 9.
     """
     paths = set()
     for line in result["stdout_lines"]:
         if line.startswith("*deleting"):
             paths.add("deleted:" + line.split(None, 1)[1].rstrip("/"))
-        elif len(line) > 12 and line[0] in "<>ch." and line[11] == " ":
-            paths.add(line[12:].rstrip("/"))
+        elif ITEMIZED.match(line):
+            paths.add(line.split(" ", 1)[1].rstrip("/"))
     return paths
 
 
