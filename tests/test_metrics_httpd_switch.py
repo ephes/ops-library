@@ -1050,20 +1050,43 @@ class SwitchPlaybookTests(unittest.TestCase):
         self.assertEqual(ProbeHandler.requests, [{"path": "/.well-known/demo", "authorization": None}])
 
     def test_unsafe_argv_and_missing_release_are_refused(self):
-        for overrides in (
+        bad_rust_inputs = (
             {"metrics_httpd_switch_argv": ["json-file", "--realm", "100%"]},
             {"metrics_httpd_switch_argv": ["json-file", "--realm", "$USER"]},
-            {"metrics_httpd_switch_impl": "go"},
-            {"metrics_httpd_switch_service_name": "Demo.service"},
-        ):
-            result = self.failed("python", **overrides)
-            self.assertIn("select | Assert the switch inputs", result["out"])
+            {"metrics_httpd_switch_argv": 7},
+            {"metrics_httpd_switch_unit_sandbox": ["User=root"]},
+            {"metrics_httpd_switch_validate_user": ""},
+            {"metrics_httpd_switch_install_root": "/opt/../x"},
+        )
+        for overrides in bad_rust_inputs:
+            result = self.failed("rust", "0.1.0", **overrides)
+            self.assertIn("select | Assert the inputs of the Rust implementation", result["out"])
         result = self.failed("rust")  # no version
-        self.assertIn("select | Assert the switch inputs", result["out"])
+        self.assertIn("select | Assert the inputs of the Rust implementation", result["out"])
         result = self.failed("rust", "0.1.0", sha256="", metrics_httpd_switch_local_archive="")
-        self.assertIn("select | Assert the switch inputs", result["out"])
+        self.assertIn("select | Assert the inputs of the Rust implementation", result["out"])
+        for overrides in ({"metrics_httpd_switch_impl": "go"}, {"metrics_httpd_switch_service_name": "Demo.service"},
+                          {"metrics_httpd_switch_notify": "reload systemd"}):
+            result = self.failed("python", **overrides)
+            self.assertIn("select | Assert the inputs of both implementations", result["out"])
         self.assertFalse(self.root.exists())
         self.assertFalse(self.dropin.parent.exists())
+
+    def test_bad_rust_inputs_never_block_the_switch_back_to_python(self):
+        for overrides in (
+            {"metrics_httpd_switch_argv": ["json-file", "--realm", "100%"]},
+            {"metrics_httpd_switch_argv": 7},
+            {"metrics_httpd_switch_unit_sandbox": "ProtectSystem=strict"},
+            {"metrics_httpd_switch_validate_group": None},
+        ):
+            self.ok("rust", "0.1.0")
+            calls = len(self.systemd_run_calls())
+            result = self.ok("python", "0.1.0", **overrides)
+            self.assertFalse(self.dropin.exists(), overrides)
+            self.assertEqual(result["handlers"], ["reload", "restart /usr/bin/python3.12"], overrides)
+            self.assertIn("would be refused", result["out"])
+            self.assertEqual(result["recap"]["ignored"], 1, result["out"])
+            self.assertEqual(len(self.systemd_run_calls()), calls, overrides)  # no --check-config
 
     # -- verify ------------------------------------------------------------------
 

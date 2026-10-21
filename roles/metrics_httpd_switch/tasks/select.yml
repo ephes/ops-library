@@ -14,42 +14,57 @@
 # The base unit and the Python script are never touched here, so impl python
 # renders exactly what the role rendered before this switch existed.
 
-# The release inputs (version, sha256) are checked here only for impl rust:
-# with impl python a broken pin must never block the switch back, so
-# rust_release_binary's install validates them and only warns.
-- name: select | Assert the switch inputs
+# Only what the switch back to Python needs (impl, unit name, handlers) is
+# asserted for both implementations. Everything only the Rust path uses (argv,
+# sandbox, user, group, install root, release) stops impl rust, but with impl
+# python it only warns: a broken input must never block the switch back
+# (rust_release_binary's install validates the release inputs itself).
+- name: select | Assert the inputs of both implementations
   ansible.builtin.assert:
     that:
       - metrics_httpd_switch_impl in ['python', 'rust']
       - metrics_httpd_switch_service_name | local.ops_library.rust_release_consumer_ok
-      - metrics_httpd_switch_validate_user is string and metrics_httpd_switch_validate_user | length > 0
-      - metrics_httpd_switch_validate_group is string and metrics_httpd_switch_validate_group | length > 0
-      - _metrics_httpd_switch_argv_problems | length == 0
-      - _metrics_httpd_switch_sandbox_problems | length == 0
       - metrics_httpd_switch_notify is sequence and metrics_httpd_switch_notify is not string
       - metrics_httpd_switch_notify is not mapping
-      - metrics_httpd_switch_install_root | local.ops_library.rust_release_root_ok
-      - >-
-        metrics_httpd_switch_impl == 'python' or (
-          metrics_httpd_switch_version | local.ops_library.rust_release_version_ok
-          and (metrics_httpd_switch_sha256 | local.ops_library.rust_release_sha256_ok
-               or (metrics_httpd_switch_local_archive is string
-                   and metrics_httpd_switch_local_archive | length > 0)))
     fail_msg: >-
       metrics_httpd_switch needs impl python or rust (got
       {{ metrics_httpd_switch_impl | to_json }}), a unit name usable as a pin
-      consumer (got {{ metrics_httpd_switch_service_name | to_json }}), the
-      unit's user and group, a safe metrics-httpd argv
-      ({{ _metrics_httpd_switch_argv_problems | join('; ') or 'ok' }}), a
-      Key=Value sandbox list ({{ _metrics_httpd_switch_sandbox_problems | join('; ') or 'ok' }}),
-      a list of handlers to notify, a valid install root, and for impl rust a
-      release version (metrics_httpd_rust_version, got
-      {{ metrics_httpd_switch_version | to_json }}) with its 64-hex sha256
-      (metrics_httpd_rust_sha256) or a local archive.
+      consumer (got {{ metrics_httpd_switch_service_name | to_json }}) and a
+      list of handlers to notify.
     quiet: true
-  vars:
+
+- name: select | Check the inputs of the Rust path
+  ansible.builtin.set_fact:
     _metrics_httpd_switch_argv_problems: "{{ metrics_httpd_switch_argv | local.ops_library.metrics_httpd_argv_problems }}"
-    _metrics_httpd_switch_sandbox_problems: "{{ metrics_httpd_switch_unit_sandbox | local.ops_library.metrics_httpd_sandbox_problems }}"
+    _metrics_httpd_switch_problems: >-
+      {{
+        (metrics_httpd_switch_argv | local.ops_library.metrics_httpd_argv_problems)
+        + (metrics_httpd_switch_unit_sandbox | local.ops_library.metrics_httpd_sandbox_problems)
+        + ([] if (metrics_httpd_switch_validate_user is string and metrics_httpd_switch_validate_user | length > 0)
+           else ["validate_user must be the unit's User="])
+        + ([] if (metrics_httpd_switch_validate_group is string and metrics_httpd_switch_validate_group | length > 0)
+           else ["validate_group must be the unit's Group="])
+        + ([] if metrics_httpd_switch_install_root | local.ops_library.rust_release_root_ok
+           else ['install_root must be a normalised absolute path'])
+      }}
+
+- name: select | Assert the inputs of the Rust implementation
+  ansible.builtin.assert:
+    that:
+      - _metrics_httpd_switch_problems | length == 0
+      - metrics_httpd_switch_version | local.ops_library.rust_release_version_ok
+      - >-
+        metrics_httpd_switch_sha256 | local.ops_library.rust_release_sha256_ok
+        or (metrics_httpd_switch_local_archive is string and metrics_httpd_switch_local_archive | length > 0)
+    fail_msg: >-
+      impl rust needs a safe metrics-httpd argv, a Key=Value sandbox list
+      without User=/Group=, the unit's user and group and a valid install root
+      ({{ _metrics_httpd_switch_problems | join('; ') or 'ok' }}), and a release
+      version (metrics_httpd_rust_version, got
+      {{ metrics_httpd_switch_version | to_json }}) with its 64-hex sha256
+      (metrics_httpd_rust_sha256) or a local archive. Nothing was switched.
+    quiet: true
+  when: metrics_httpd_switch_impl == 'rust'
 
 # Facts persist for the rest of the play, so every derived value is set here
 # for this unit before anything reads it.
@@ -71,7 +86,8 @@
     _metrics_httpd_switch_binary: >-
       {{ (metrics_httpd_switch_install_root ~ '/' ~ _metrics_httpd_switch_version ~ '/metrics-httpd')
          if _metrics_httpd_switch_version | length > 0 else '' }}
-    _metrics_httpd_switch_exec_argv: "{{ metrics_httpd_switch_argv | map('string') | list }}"
+    _metrics_httpd_switch_exec_argv: >-
+      {{ (metrics_httpd_switch_argv | map('string') | list) if _metrics_httpd_switch_argv_problems | length == 0 else [] }}
     _metrics_httpd_switch_installed: false
 
 - name: select | Check the implementation drop-in
@@ -106,6 +122,18 @@
     state: absent
   notify: "{{ metrics_httpd_switch_notify }}"
   when: metrics_httpd_switch_impl == 'python'
+
+- name: select | Warn about inputs that would block a switch to Rust and continue with Python
+  ansible.builtin.fail:
+    msg: >-
+      WARNING: {{ metrics_httpd_switch_service_name }} stays on Python, but a
+      switch to Rust would be refused:
+      {{ _metrics_httpd_switch_problems | join('; ') }}. --check-config is
+      skipped.
+  ignore_errors: true  # noqa: ignore-errors
+  when:
+    - metrics_httpd_switch_impl == 'python'
+    - _metrics_httpd_switch_problems | length > 0
 
 - name: select | Install the pinned metrics-httpd release
   ansible.builtin.include_role:
@@ -169,7 +197,9 @@
   changed_when: false
   failed_when: false
   register: _metrics_httpd_switch_check
-  when: _metrics_httpd_switch_installed | bool
+  when:
+    - _metrics_httpd_switch_installed | bool
+    - _metrics_httpd_switch_problems | length == 0
 
 - name: select | Stop when the binary refuses the configuration
   ansible.builtin.fail:
@@ -182,7 +212,7 @@
       Nothing was switched: the drop-in and the running unit are unchanged.
   when:
     - metrics_httpd_switch_impl == 'rust'
-    - _metrics_httpd_switch_installed | bool
+    - _metrics_httpd_switch_check.rc is defined
     - _metrics_httpd_switch_check.rc != 0
 
 # A failed task that is ignored, so it stands out as `ignored=1` in the recap.
@@ -198,7 +228,7 @@
   ignore_errors: true  # noqa: ignore-errors
   when:
     - metrics_httpd_switch_impl == 'python'
-    - _metrics_httpd_switch_installed | bool
+    - _metrics_httpd_switch_check.rc is defined
     - _metrics_httpd_switch_check.rc != 0
 
 - name: select | Ensure the drop-in directory exists

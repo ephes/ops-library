@@ -96,15 +96,20 @@ Including the role without `tasks_from` fails.
 Runs after the unit file is rendered (and after the files `--check-config`
 reads, such as the htpasswd file), before the unit is enabled and started.
 
-1. Asserts the inputs: `impl` is `python` or `rust`; the service name is a
-   pin consumer name (lower-case letters, digits, `-`, `_`); user and group
-   are set; every `argv` element is a non-empty string or integer without
-   `%` (systemd specifiers), `$` (environment expansion), `"`, `\` or a
-   control character, `argv[0]` is a metrics-httpd mode and `--check-config`
-   is not in it; the sandbox is a `Key=Value` list without `User=`/`Group=`;
-   for `rust` a release version with a 64-hex sha256 (or a local archive).
-   For `python` the release inputs are not asserted here: a broken pin must
-   never block the switch back, so the install validates them and warns.
+1. Asserts what the switch back to Python needs: `impl` is `python` or
+   `rust`, the service name is a pin consumer name (lower-case letters,
+   digits, `-`, `_`) and `notify` is a list. The inputs only the Rust path
+   uses must be valid for `rust` (the play stops, nothing is switched): every
+   `argv` element is a non-empty string or integer without `%` (systemd
+   specifiers), `$` (environment expansion), `"`, `\` or a control
+   character, `argv[0]` is a metrics-httpd mode and `--check-config` is not
+   in it; the sandbox is a `Key=Value` list without `User=`/`Group=`; user,
+   group and install root are set; a release version with a 64-hex sha256
+   (or a local archive). With `python` a problem there only warns (an
+   ignored failed task) and skips `--check-config`, and the release inputs
+   are left to the install, which warns too: a broken input never blocks
+   the switch back. Malformed release values (an integer, a list) are
+   normalised to text first.
 2. Reads the drop-in to remember the binary it selected before this run
    (verify protects that version from prune).
 3. `impl: python`: removes the drop-in first, so the switch back never waits
