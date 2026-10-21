@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — Home Assistant integration downloads use the system CA store
+## Unreleased — Home Assistant integration downloads use the system CA store (2.64.1)
 
 - `homeassistant_deploy`: new `homeassistant_uv_system_certs` (default `true`)
   installs a managed drop-in with only `Environment=UV_SYSTEM_CERTS=1`, so
