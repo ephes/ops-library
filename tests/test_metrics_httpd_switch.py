@@ -1526,6 +1526,19 @@ class SwitchPlaybookTests(unittest.TestCase):
         self.assertEqual(ProbeHandler.requests, [])
         self.assertEqual(self.pins(), {UNIT: "0.1.0\n"})
 
+    def test_python_with_a_host_name_bind_skips_the_probe(self):
+        # The Python scripts accept a host name as --bind (e.g. a role run
+        # with <role>_bind: localhost); metrics-httpd does not (PLAN.md 4.9).
+        # impl python must keep deploying: the probe is skipped, the process
+        # check still runs, the pin is handled.
+        result = self.ok("python", "0.1.0", metrics_httpd_switch_probe_bind="localhost")
+        self.assertIn("Skipping the HTTP probe", result["out"])
+        self.assertIn("its bind address localhost is not an IP address", result["out"])
+        self.assertEqual(ProbeHandler.requests, [])
+        self.assertEqual(result["recap"]["ignored"], 0, result["out"])
+        self.assertFalse(self.dropin.exists())
+        self.assertEqual(self.pins(), {})
+
     def test_static_and_logyard_expectations(self):
         ProbeHandler.status = 200
         self.ok("python", metrics_httpd_switch_probe_expect="static", metrics_httpd_switch_probe_realm="")

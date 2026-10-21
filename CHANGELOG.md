@@ -133,7 +133,8 @@
 - Tests: `tests/test_metrics_httpd_switch.py` (`S5bConsumerStaticTests`,
   `S5bConsumerRenderTests` with goldens in
   `tests/fixtures/metrics_httpd_switch/<role>/`, and a switch run under a
-  tagged include).
+  tagged include; a Python unit with a host-name bind keeps deploying with
+  the probe skipped, the verify behaviour S5c added).
 
 ## Unreleased — Rust ports: metrics-httpd release 0.1.0 (S4)
 
