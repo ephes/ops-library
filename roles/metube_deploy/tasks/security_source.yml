@@ -1,0 +1,67 @@
+---
+# Resolve the exact MeTube commit once, check the uv.lock of exactly that
+# commit, and let source.yml check out the same commit. Runs before source.yml
+# changes metube_install_dir, so a stale upstream lock is refused while the
+# deployed source and environment are untouched. With the UI build enabled
+# the staging checkout from ui.yml is reused; otherwise a separate staging
+# checkout (metube_source_check_dir) is used. The configured
+# metube_repo_version is never replaced by another tag.
+- name: "security_source | Resolve the MeTube revision in a staging checkout"
+  when: not (metube_ui_build | bool)
+  block:
+    - name: "security_source | Create the MeTube source check directory"
+      ansible.builtin.file:
+        path: "{{ metube_source_check_dir }}"
+        state: directory
+        owner: "{{ metube_user }}"
+        group: "{{ metube_group }}"
+        mode: "0755"
+      become: true
+
+    - name: "security_source | Checkout MeTube sources for the dependency check"
+      ansible.builtin.git:
+        repo: "{{ metube_repo_url }}"
+        dest: "{{ metube_source_check_dir }}"
+        version: "{{ metube_repo_version }}"
+        update: true
+        force: true
+      register: metube_source_check_checkout
+      become: true
+      become_user: "{{ metube_user }}"
+
+- name: "security_source | Record the MeTube revision to deploy"
+  ansible.builtin.set_fact:
+    metube_source_rev: >-
+      {{ metube_ui_build_rev if (metube_ui_build | bool) else metube_source_check_checkout.after }}
+    metube_source_check_repo: >-
+      {{ metube_ui_build_dir if (metube_ui_build | bool) else metube_source_check_dir }}
+
+- name: "security_source | Read the uv.lock of the MeTube revision to deploy"
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ metube_source_check_repo }}"
+      - show
+      - "{{ metube_source_rev }}:uv.lock"
+  register: metube_source_lock
+  changed_when: false
+  check_mode: false
+  become: true
+  become_user: "{{ metube_user }}"
+  when:
+    - metube_sync_dependencies | bool
+    # Check mode does not update the staging checkout, so the commit may be absent.
+    - not ansible_check_mode
+
+- name: "security_source | Refuse a MeTube lock below the certifi/pip floors"
+  ansible.builtin.include_role:
+    name: local.ops_library.python_security_floor
+    tasks_from: lock.yml
+  vars:
+    python_security_floor_lock_text: "{{ metube_source_lock.stdout }}"
+    python_security_floor_label: "MeTube {{ metube_source_rev }}"
+  when:
+    - metube_sync_dependencies | bool
+    # Check mode does not update the staging checkout, so the commit may be absent.
+    - not ansible_check_mode

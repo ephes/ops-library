@@ -8,6 +8,17 @@ paperless_service_name: paperless
 paperless_home_path: "/home/{{ paperless_username }}"
 paperless_site_root: "{{ paperless_home_path }}/site"
 paperless_virtualenv: "{{ paperless_site_root }}/.venv"
+
+# Keep certifi/pip at python_security_floor's floors: refuse an existing
+# environment below them before changing anything, pass a constraint file to
+# every uv pip install this role runs (constraints never add packages; a
+# dependency capping certifi below the floor fails the resolution before
+# anything is installed) and verify the environment afterwards.
+paperless_python_security_floor_enabled: true
+paperless_python_security_constraints_path: "{{ paperless_site_root }}/.python-security-constraints.txt"
+paperless_python_security_constraint_args: >-
+  {{ ('--constraint ' ~ (paperless_python_security_constraints_path | quote))
+     if (paperless_python_security_floor_enabled | bool) else '' }}
 paperless_python_bin: "{{ paperless_virtualenv }}/bin/python"
 paperless_env_file: "{{ paperless_site_root }}/.env"
 paperless_current_symlink: "{{ paperless_site_root }}/paperless-ngx"

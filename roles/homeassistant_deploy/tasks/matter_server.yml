@@ -185,7 +185,7 @@
 
 - name: "Install Matter server via uv pip"
   ansible.builtin.command:
-    cmd: "{{ homeassistant_uv_path }} pip install --python {{ homeassistant_matter_server_virtualenv_path }} {{ homeassistant_matter_server_package_spec }}"
+    cmd: "{{ homeassistant_uv_path }} pip install --python {{ homeassistant_matter_server_virtualenv_path }} {{ homeassistant_matter_server_package_spec }} {{ homeassistant_python_security_constraint_args }}"
     chdir: "{{ homeassistant_site_path }}"
   become: true
   become_user: "{{ homeassistant_user }}"

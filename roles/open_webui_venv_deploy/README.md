@@ -141,3 +141,20 @@ Enabling or disabling rewrites the unit on the next deploy.
 checksums in `uv_install`. When overriding this version, also supply matching
 `uv_checksum` entries for each target (see the `uv_install` role README).
 Bump the version and checksum together; `latest` is no longer accepted.
+
+## Certifi/pip security floor
+
+With `open_webui_python_security_floor_enabled` (default `true`) the role uses
+[`python_security_floor`](../python_security_floor/README.md):
+
+- Before changing anything it verifies the existing environment. certifi is
+  deferred there because the `uv pip install` of Open WebUI runs on every
+  deploy with `--constraint` with `open_webui_python_security_constraints_path`
+  and raises an old certifi; pip is not installed or upgraded by this role, so
+  a pip below the floor (or with distrusted roots in its bundle) is refused
+  before anything changes.
+- Constraints never add packages; a dependency capping certifi below the floor
+  makes the install fail before anything changes.
+- Afterwards the environment is verified again without deferrals.
+
+Set `open_webui_python_security_floor_enabled: false` only for a host where the floor is handled differently; the guard then neither checks nor constrains anything.

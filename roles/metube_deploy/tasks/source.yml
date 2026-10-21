@@ -1,11 +1,12 @@
 ---
-# With the UI build enabled, check out the exact commit ui.yml just built
-# instead of re-resolving metube_repo_version (a branch could have moved).
+# Check out the exact commit security_source.yml checked (or, with the guard
+# disabled, the commit ui.yml just built) instead of re-resolving
+# metube_repo_version (a branch could have moved).
 - name: "Checkout MeTube sources"
   ansible.builtin.git:
     repo: "{{ metube_repo_url }}"
     dest: "{{ metube_install_dir }}"
-    version: "{{ metube_ui_build_rev | default(metube_repo_version) }}"
+    version: "{{ metube_source_rev | default(metube_ui_build_rev) | default(metube_repo_version) }}"
     update: true
     force: true
   register: metube_git_checkout

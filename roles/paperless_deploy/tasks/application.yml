@@ -93,6 +93,7 @@
   ansible.builtin.command:
     cmd: >-
       {{ paperless_uv_binary }} pip install --python {{ paperless_virtualenv }}
+      {{ paperless_python_security_constraint_args }}
       -e {{ paperless_release_dir }}[postgres]
     chdir: "{{ paperless_site_root }}"
   become: true
@@ -104,6 +105,7 @@
   ansible.builtin.command:
     cmd: >-
       {{ paperless_uv_binary }} pip install --python {{ paperless_virtualenv }}
+      {{ paperless_python_security_constraint_args }}
       {{ paperless_uv_extra_packages | join(' ') }}
     chdir: "{{ paperless_site_root }}"
   become: true
@@ -116,6 +118,7 @@
   ansible.builtin.command:
     cmd: >-
       {{ paperless_uv_binary }} pip install --python {{ paperless_virtualenv }}
+      {{ paperless_python_security_constraint_args }}
       --force-reinstall fido2=={{ paperless_fido2_pin_version }}
     chdir: "{{ paperless_site_root }}"
   become: true

@@ -120,6 +120,7 @@ consumer repos depend on.
 | Operations | [`macos_smb_mount_keeper`](roles/macos_smb_mount_keeper/README.md) | Remount SMB shares at their exact `/Volumes` path from a user LaunchAgent, never unmounting anything. |
 | Infrastructure | [`java_ca_refresh`](roles/java_ca_refresh/README.md) | Refresh stale Debian Java trust after patched OS CA updates. |
 | Infrastructure | [`macos_java_trust`](roles/macos_java_trust/README.md) | Maintain explicit macOS Java trust copies without editing vendor cacerts. |
+| Infrastructure | [`python_security_floor`](roles/python_security_floor/README.md) | Keep certifi/pip at security floors across application deploys: stale-lock refusal, install constraints and trust-bundle verification. |
 | Infrastructure | [`netplan_config`](roles/netplan_config/README.md) | Configure persistent netplan networking. |
 | Operations | [`journald_config`](roles/journald_config/README.md) | Size systemd-journald storage, file-count and age limits through one managed drop-in. |
 | Monitoring | [`smartd`](roles/smartd/README.md) | Configure smartmontools smartd for HDD/NVMe monitoring and scheduled tests. |

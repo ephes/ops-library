@@ -1,0 +1,15 @@
+---
+- name: "security_verify | Check for the MeTube environment after the dependency sync"
+  ansible.builtin.stat:
+    path: "{{ metube_venv_path }}/bin/python"
+  register: metube_security_venv_python_after
+
+- name: "security_verify | Verify the MeTube environment's trust floors"
+  ansible.builtin.include_role:
+    name: local.ops_library.python_security_floor
+    tasks_from: verify.yml
+  vars:
+    python_security_floor_python: "{{ metube_venv_path }}/bin/python"
+    python_security_floor_user: "{{ metube_user }}"
+    python_security_floor_label: "MeTube environment"
+  when: metube_security_venv_python_after.stat.exists

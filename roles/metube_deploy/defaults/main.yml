@@ -14,6 +14,14 @@ metube_ui_build_dir: "{{ metube_ui_build_root }}/src"
 # Commit stamp written next to ui/dist/metube/browser (not served).
 metube_ui_rev_file: .metube-ui-rev
 
+# Keep certifi/pip at python_security_floor's floors: refuse an existing
+# environment or a uv.lock below them before changing anything, and verify the
+# environment after the sync. The lock of the exact revision to deploy is read
+# from the UI staging checkout, or from metube_source_check_dir when the UI
+# build is disabled.
+metube_python_security_floor_enabled: true
+metube_source_check_dir: "{{ metube_ui_build_root }}/source-check"
+
 # Whether to run uv sync on each deploy
 metube_sync_dependencies: true
 

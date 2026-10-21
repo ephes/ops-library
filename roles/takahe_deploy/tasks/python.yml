@@ -25,6 +25,7 @@
     name: pip
     state: latest
     virtualenv: "{{ takahe_venv_path }}"
+    extra_args: "{{ takahe_python_security_pip_args | default(omit, true) }}"
   become: true
   become_user: "{{ takahe_user }}"
   when: takahe_pip_upgrade | bool
@@ -33,6 +34,7 @@
   ansible.builtin.pip:
     requirements: "{{ takahe_site_path }}/requirements.txt"
     virtualenv: "{{ takahe_venv_path }}"
+    extra_args: "{{ takahe_python_security_pip_args | default(omit, true) }}"
   become: true
   become_user: "{{ takahe_user }}"
   notify:
