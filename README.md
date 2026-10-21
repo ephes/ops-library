@@ -118,6 +118,7 @@ consumer repos depend on.
 | Storage | [`hdparm_tune`](roles/hdparm_tune/README.md) | Configure persistent hdparm power settings (APM/spindown) for disks. |
 | Operations | [`macos_time_machine_exclusions`](roles/macos_time_machine_exclusions/README.md) | Reapply audited user-scoped Time Machine exclusions daily without deleting client data. |
 | Operations | [`macos_smb_mount_keeper`](roles/macos_smb_mount_keeper/README.md) | Remount SMB shares at their exact `/Volumes` path from a user LaunchAgent, never unmounting anything. |
+| Infrastructure | [`java_ca_refresh`](roles/java_ca_refresh/README.md) | Refresh stale Debian Java trust after patched OS CA updates. |
 | Infrastructure | [`netplan_config`](roles/netplan_config/README.md) | Configure persistent netplan networking. |
 | Operations | [`journald_config`](roles/journald_config/README.md) | Size systemd-journald storage, file-count and age limits through one managed drop-in. |
 | Monitoring | [`smartd`](roles/smartd/README.md) | Configure smartmontools smartd for HDD/NVMe monitoring and scheduled tests. |

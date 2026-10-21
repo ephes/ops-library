@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- `java_ca_refresh`: refresh stale Debian Java trust through distribution hooks
+  after patched OS CA updates, then restart only explicitly selected JVMs.
+
 ## Unreleased — FastDeploy token issuance admins and restore policies (2.59.0)
 
 - `fastdeploy_deploy`: new `fastdeploy_service_token_admin_users` (list) and

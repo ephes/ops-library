@@ -1,0 +1,5 @@
+---
+ops_library_documentation_category: infrastructure
+# Explicitly enumerate long-running JVM services that must discard cached TLS state.
+java_ca_refresh_services: []
+java_ca_refresh_ports: []
