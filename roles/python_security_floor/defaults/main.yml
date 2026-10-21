@@ -25,6 +25,16 @@ python_security_floor_distrusted_roots:
 # itself (preflight only; verify again afterwards without deferrals).
 python_security_floor_deferred: []
 
+# system_store.yml: the CA file and certificate directories to check (on
+# Debian/Ubuntu, openssl-probe-based loaders such as uv's find
+# /usr/lib/ssl/cert.pem and /usr/lib/ssl/certs, which point here) and the
+# system interpreter reading them. Missing directories are skipped.
+python_security_floor_system_store: /etc/ssl/certs/ca-certificates.crt
+python_security_floor_system_store_dirs:
+  - /etc/ssl/certs
+  - /usr/lib/ssl/certs
+python_security_floor_system_python: /usr/bin/python3
+
 # Run the remote steps with become (as python_security_floor_user).
 python_security_floor_become: true
 

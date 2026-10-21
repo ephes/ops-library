@@ -49,6 +49,22 @@ homeassistant_service_name: homeassistant
 homeassistant_service_enabled: true
 homeassistant_service_state: started
 homeassistant_systemd_unit_path: "/etc/systemd/system/{{ homeassistant_service_name }}.service"
+
+# Home Assistant installs integration requirements at runtime with its own
+# bundled uv, whose built-in roots can lag behind CA distrust decisions. With
+# this on, a managed drop-in sets UV_SYSTEM_CERTS=1 so that uv uses the
+# operating system's CA store. Refused (before any change) when the unit or
+# the running service already has other trust settings, an EnvironmentFile or
+# other drop-ins, or when the system store still trusts a distrusted root.
+homeassistant_uv_system_certs: true
+homeassistant_uv_system_certs_dropin_path: "/etc/systemd/system/{{ homeassistant_service_name }}.service.d/50-uv-system-certs.conf"
+# Other drop-ins of the unit reviewed as not setting trust (paths); any other
+# drop-in makes the check refuse.
+homeassistant_uv_system_certs_allowed_dropins: []
+# Health check after a maintenance restart (no authentication needed).
+homeassistant_uv_system_certs_health_url: "{{ homeassistant_api_url }}/manifest.json"
+homeassistant_uv_system_certs_health_retries: 60
+homeassistant_uv_system_certs_health_delay: 5
 homeassistant_app_port: 10020
 homeassistant_host: "0.0.0.0"
 

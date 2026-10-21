@@ -258,3 +258,52 @@ release, and the next deploy's preflight reports any environment that fell
 below the floor.
 
 Set `homeassistant_python_security_floor_enabled: false` only for a host where the floor is handled differently; the guard then neither checks nor constrains anything.
+
+## Integration downloads: `UV_SYSTEM_CERTS`
+
+Home Assistant installs integration requirements at runtime with the uv it
+bundles (`python -m uv pip install --upgrade --constraint
+homeassistant/package_constraints.txt`), inheriting the service environment.
+That bundled uv uses its own built-in roots by default, which can lag behind CA
+distrust decisions (Home Assistant 2026.7.2's uv 0.11.25 still embeds emSign
+ECC Root CA - G3). With `homeassistant_uv_system_certs` (default `true`) the
+role installs a managed drop-in,
+`homeassistant_uv_system_certs_dropin_path`, containing only
+`Environment=UV_SYSTEM_CERTS=1` (uv's documented setting for using the
+operating system's CA store), so those downloads trust the patched system
+store. Package resolution is unchanged; Home Assistant, its bundled uv,
+`package_constraints.txt` and integration versions are not touched.
+
+Before any change the role refuses, with key names and paths only:
+
+- a unit (as systemd parsed it: `Environment`, `PassEnvironment`), the
+  service-manager environment, or a running service, that already sets `SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`,
+  `CURL_CA_BUNDLE`, `UV_SYSTEM_CERTS`, `UV_NATIVE_TLS` or `UV_INSECURE_HOST`
+  (explicit trust settings are never replaced); its own managed
+  `UV_SYSTEM_CERTS=1`, with the exact managed drop-in, is accepted on repeat;
+- an `EnvironmentFile` (precedence cannot be established), a unit changed on
+  disk but not reloaded, any other drop-in (list reviewed ones in
+  `homeassistant_uv_system_certs_allowed_dropins`) or a modified managed drop-in
+  (also on a first deploy, when the unit does not exist yet);
+- a system CA store that still holds a distrusted root, in the CA file or any
+  certificate file of the certificate directories uv's native loader reads
+  (`python_security_floor`, `tasks_from: system_store.yml`).
+
+A normal deploy installs the drop-in after the unit and restarts through the
+existing handlers, then verifies the running service. For an existing service
+without a full deploy, use the maintenance entry point; it only checks, writes
+the drop-in, restarts when it changed, waits for
+`homeassistant_uv_system_certs_health_url` and verifies the running service:
+
+```yaml
+- hosts: homeassistant
+  tasks:
+    - ansible.builtin.include_role:
+        name: local.ops_library.homeassistant_deploy
+        tasks_from: uv_system_certs.yml
+```
+
+Scope: this covers downloads made by Home Assistant's bundled uv. Custom
+components, HACS and other downloaders with their own certificate handling are
+not inspected. The legacy `UV_NATIVE_TLS` name is not used.
+
