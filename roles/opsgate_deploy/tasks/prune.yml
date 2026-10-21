@@ -1,0 +1,107 @@
+---
+# After verify.yml (opsgate repository rust/PLAN.md 10.1 step 6): remove old
+# Rust releases beyond opsgate_rust_keep_versions. Never removed: the pinned
+# version, a version a plist selects, the version a unit's live process runs,
+# and each unit's previous (rollback) version. Nothing is pruned without a
+# version, after a rejected release, in check mode, or when the live state of
+# a unit names a path under the install root that is not a versioned binary.
+
+- name: prune | Prune old Rust releases
+  when:
+    - opsgate_rust_version | length > 0
+    - not opsgate_rust_install_failed | bool
+    - not ansible_check_mode
+  block:
+    - name: prune | Find installed Rust releases
+      ansible.builtin.find:
+        paths: "{{ opsgate_rust_install_root }}"
+        file_type: directory
+        recurse: false
+        hidden: false
+      register: opsgate_rust_installed
+
+    - name: prune | Read the previous Rust versions of the units
+      ansible.builtin.slurp:
+        path: "{{ opsgate_rust_install_root }}/.previous-{{ item }}"
+      loop:
+        - api
+        - runner
+      register: opsgate_rust_previous
+      failed_when: false
+
+    - name: prune | Decide which Rust releases to keep
+      ansible.builtin.set_fact:
+        opsgate_rust_versions_installed: "{{ opsgate_rust_version_dirs | map(attribute='path') | map('basename') | list }}"
+        # Both units read (verify.yml), and every executable under the root
+        # is a versioned binary; otherwise nothing is pruned.
+        opsgate_rust_live_state_unknown: >-
+          {{
+            (opsgate_live.results | default([]) | length) != 2
+            or (opsgate_live.results | default([]) | rejectattr('rc', 'defined') | list | length) > 0
+            or (opsgate_live.results | default([]) | selectattr('rc', 'defined') | rejectattr('rc', 'equalto', 0) | list | length) > 0
+            or (opsgate_rust_live_paths | length) != (opsgate_rust_live_versions | length)
+          }}
+        opsgate_rust_versions_kept: >-
+          {{
+            (
+              [opsgate_rust_version]
+              + opsgate_rust_previous_versions
+              + opsgate_rust_live_versions
+              + (opsgate_rust_version_dirs | sort(attribute='path') | sort(attribute='mtime', reverse=true)
+                 | map(attribute='path') | map('basename') | list)[:opsgate_rust_keep_versions | int]
+            ) | select | unique | list
+          }}
+      vars:
+        opsgate_rust_version_pattern: '[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?'
+        opsgate_rust_version_dirs: >-
+          {{
+            opsgate_rust_installed.files
+            | selectattr('isdir')
+            | selectattr('path', 'regex', '/' ~ opsgate_rust_version_pattern ~ '$')
+            | list
+          }}
+        opsgate_rust_previous_versions: >-
+          {{
+            opsgate_rust_previous.results
+            | map(attribute='content', default='')
+            | map('b64decode')
+            | map('trim')
+            | select('regex', '^' ~ opsgate_rust_version_pattern ~ '$')
+            | list
+          }}
+        # Every comm= line of either unit that lies under the install root.
+        opsgate_rust_live_paths: >-
+          {{
+            opsgate_live.results | default([])
+            | map(attribute='stdout_lines', default=[]) | flatten
+            | map('trim')
+            | select('match', '^comm=' ~ (opsgate_rust_install_root | regex_escape) ~ '/')
+            | list
+          }}
+        opsgate_rust_live_versions: >-
+          {{
+            opsgate_rust_live_paths
+            | map('regex_search',
+                  '^comm=' ~ (opsgate_rust_install_root | regex_escape)
+                  ~ '/(' ~ opsgate_rust_version_pattern ~ ')/opsgate$', '\1')
+            | select
+            | map('first')
+            | list
+          }}
+
+    - name: prune | Warn that the live state is unknown and prune nothing
+      ansible.builtin.fail:
+        msg: >-
+          WARNING: the live state of the OpsGate units could not be read
+          completely, or a unit runs an executable under
+          {{ opsgate_rust_install_root }} that is not a versioned opsgate binary;
+          no Rust release is pruned in this run.
+      ignore_errors: true
+      when: opsgate_rust_live_state_unknown | bool
+
+    - name: prune | Remove Rust releases beyond the kept ones
+      ansible.builtin.file:
+        path: "{{ opsgate_rust_install_root }}/{{ item }}"
+        state: absent
+      loop: "{{ opsgate_rust_versions_installed | difference(opsgate_rust_versions_kept) }}"
+      when: not opsgate_rust_live_state_unknown | bool

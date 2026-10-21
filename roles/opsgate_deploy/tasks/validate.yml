@@ -166,3 +166,61 @@
     fail_msg: >-
       OpsGate credentials still contain placeholder values. Provide real (or at least non-placeholder)
       bcrypt/token values via ops-control secrets before deployment. OpenClaw submit token is optional in the current slice.
+
+# Before anything changes on the host (rust/PLAN.md 10.1 step 1 of the opsgate
+# repository): the switch values, and a release for any unit that runs Rust.
+- name: validate | Ensure the implementation switch is coherent
+  ansible.builtin.assert:
+    that:
+      - opsgate_api_impl in ['python', 'rust']
+      - opsgate_runner_impl in ['python', 'rust']
+      - opsgate_rust_version is string
+      - >-
+        opsgate_rust_version == '' or
+        opsgate_rust_version is regex('^[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?$')
+      - opsgate_rust_sha256 is string
+      - opsgate_rust_sha256 == '' or opsgate_rust_sha256 is regex('^[0-9a-f]{64}$')
+      - opsgate_rust_local_archive is string
+      - >-
+        opsgate_rust_version == '' or opsgate_rust_sha256 != '' or
+        opsgate_rust_local_archive != ''
+      - opsgate_rust_sha256 == '' or opsgate_rust_version != ''
+      - opsgate_rust_local_archive == '' or opsgate_rust_version != ''
+      - >-
+        (opsgate_api_impl == 'python' and opsgate_runner_impl == 'python') or
+        opsgate_rust_version != ''
+      - opsgate_rust_release_url is string
+      - opsgate_rust_local_archive != '' or opsgate_rust_release_url is regex('^https://')
+      # Absolute and normalised: no '.', '..' or empty components, no trailing
+      # slash, no characters a shell or a plist would need to quote.
+      - opsgate_rust_install_root is string
+      - opsgate_rust_install_root is regex('^(/[A-Za-z0-9_][A-Za-z0-9._-]*)+$')
+      # rsync --delete owns the app dirs; an install below them would be wiped.
+      - >-
+        not ((opsgate_rust_install_root ~ '/')
+        .startswith(opsgate_app_dir | regex_replace('/+$', '') ~ '/'))
+      - >-
+        not ((opsgate_rust_install_root ~ '/')
+        .startswith(opsgate_runner_app_dir | regex_replace('/+$', '') ~ '/'))
+      - opsgate_rust_keep_versions is not boolean
+      - (opsgate_rust_keep_versions | string) is regex('^[0-9]+$')
+      - opsgate_rust_keep_versions | int >= 1
+      - (opsgate_launchd_verify_retries | string) is regex('^[0-9]+$')
+      - opsgate_launchd_verify_retries | int >= 1
+      - (opsgate_launchd_verify_delay | string) is regex('^[0-9]+$')
+      - opsgate_launchd_python_plist_dir is string
+      - opsgate_launchd_python_plist_dir is regex('^(/[A-Za-z0-9_][A-Za-z0-9._-]*)+$')
+      - opsgate_launchd_python_plist_dir is not regex('^/(System/)?Library/Launch(Daemons|Agents)$')
+    fail_msg: >-
+      OpsGate implementation settings are invalid. opsgate_api_impl and
+      opsgate_runner_impl must be python or rust (got {{ opsgate_api_impl }} and
+      {{ opsgate_runner_impl }}); any rust needs opsgate_rust_version.
+      opsgate_rust_version must be empty or a version such as 0.3.0 (got
+      '{{ opsgate_rust_version }}') and needs opsgate_rust_sha256 (64 lowercase
+      hex digits) or opsgate_rust_local_archive; a checksum or local archive
+      without a version is refused. opsgate_rust_release_url must be an https
+      URL. opsgate_rust_install_root must be a normalised absolute path other
+      than / outside both app dirs, opsgate_rust_keep_versions a whole number
+      >= 1, opsgate_launchd_verify_retries a whole number >= 1 and
+      opsgate_launchd_verify_delay a whole number, opsgate_launchd_python_plist_dir a normalised absolute path that
+      launchd does not load.

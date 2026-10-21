@@ -234,7 +234,7 @@ consumer repos depend on.
 | Bootstrap | [`shell_basics_deploy`](roles/shell_basics_deploy/README.md) | Install fish, modern CLI tools (btop, bmon, sysstat/iotop, tealdeer, eza), set shell/editor defaults, and keep chezmoi current from upstream. |
 | Bootstrap | [`docker_install`](roles/docker_install/README.md) | Install Docker Engine + Docker Compose v2 (plugin) from the official Docker apt repository. |
 | Bootstrap | [`dpkg_arch_remove`](roles/dpkg_arch_remove/README.md) | Remove foreign dpkg architectures (defaults to i386) and optionally purge packages. |
-| Bootstrap | [`opsgate_deploy`](roles/opsgate_deploy/README.md) | Deploy OpsGate on macOS with split users (`control_service_user` + `ops`), launchd-managed API/runner processes, and tmux runner wiring. |
+| Bootstrap | [`opsgate_deploy`](roles/opsgate_deploy/README.md) | Deploy OpsGate on macOS with split users (`control_service_user` + `ops`), launchd-managed API/runner processes (each the Python venv or the pinned Rust release, per unit), and tmux runner wiring. |
 | Bootstrap | [`opsgate_ingress_deploy`](roles/opsgate_ingress_deploy/README.md) | Expose OpsGate over private HTTPS via Traefik on the edge host while proxying to the macOS backend over Tailscale. |
 | Bootstrap | [`daybook_sessions_deploy`](roles/daybook_sessions_deploy/README.md) | Run Daybook session shipping, quote classification, and a disabled-by-default draft reconcile schedule on macOS. |
 | Bootstrap | [`daybook_photos_offload_deploy`](roles/daybook_photos_offload_deploy/README.md) | Install Daybook's read-only Photos discovery ledger as a quiesce-first Aqua user LaunchAgent on macOS. |

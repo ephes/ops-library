@@ -24,8 +24,17 @@
 - name: main | Write control-plane and runner environment files
   ansible.builtin.import_tasks: service_env.yml
 
+- name: main | Install and validate the pinned Rust release
+  ansible.builtin.import_tasks: rust_binary.yml
+
 - name: main | Configure tmux defaults for ops runner sessions
   ansible.builtin.import_tasks: tmux.yml
 
 - name: main | Render and optionally manage launchd plists
   ansible.builtin.import_tasks: launchd.yml
+
+- name: main | Verify the running implementations
+  ansible.builtin.import_tasks: verify.yml
+
+- name: main | Prune old Rust releases
+  ansible.builtin.import_tasks: prune.yml

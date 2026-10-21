@@ -30,6 +30,9 @@ Deploy OpsGate on macOS (`launchd` host model) with the Phase 4B control service
 - Renders two LaunchDaemons:
   - `de.wersdoerfer.opsgate.api` as `control_service_user`
   - `de.wersdoerfer.opsgate.runner` as `ops`
+- Runs each unit as Python (the venv, default) or as the pinned Rust release
+  binary, installs and validates that release, verifies the running units and
+  prunes old releases (see [Implementation: Python or Rust](#implementation-python-or-rust))
 - Leaves HTTPS ingress to a separate Traefik-facing role on the edge host
 
 ## Important defaults
@@ -40,6 +43,109 @@ Deploy OpsGate on macOS (`launchd` host model) with the Phase 4B control service
 - `opsgate_runner_launchd_manage_state: "{{ opsgate_launchd_manage_state }}"`
 - `opsgate_api_launchd_start_service: "{{ opsgate_launchd_start_services }}"`
 - `opsgate_runner_launchd_start_service: "{{ opsgate_launchd_start_services }}"`
+
+## Implementation: Python or Rust
+
+OpsGate is being ported to one Rust binary `opsgate` (`rust/` in the opsgate
+repository, plan section 10.1; releases `rs-v<version>` on
+`github.com/ephes/opsgate`). Each launchd unit has its own switch:
+
+```yaml
+opsgate_api_impl: python          # python | rust
+opsgate_runner_impl: python       # python | rust
+opsgate_rust_version: ""          # e.g. "0.3.0"; required when any impl is rust
+opsgate_rust_sha256: ""           # sha256 of the release archive
+opsgate_rust_release_url: >-      # default: the GitHub release asset
+  https://github.com/ephes/opsgate/releases/download/rs-v{{ opsgate_rust_version }}/opsgate-{{ opsgate_rust_version }}-aarch64-apple-darwin.tar.gz
+opsgate_rust_local_archive: ""    # archive on the controller (development)
+opsgate_rust_install_root: /usr/local/libexec/opsgate-rs
+opsgate_rust_keep_versions: 3
+opsgate_launchd_python_plist_dir: "{{ opsgate_config_dir }}/launchd-python"
+opsgate_launchd_verify_retries: 10   # x delay seconds for the live checks
+opsgate_launchd_verify_delay: 3
+```
+
+Set the four `opsgate_*_impl`/`opsgate_rust_*` values in the host vars, not
+as role vars of the playbook (role vars would override the inventory).
+
+What a deploy does (`tasks/rust_binary.yml`, `launchd.yml`, `verify.yml`,
+`prune.yml`):
+
+1. **Validation** (`validate.yml`, before anything changes): both impls are
+   `python` or `rust`; any `rust` needs `opsgate_rust_version`; a version needs
+   a 64-hex `opsgate_rust_sha256` or a local archive; a checksum or local
+   archive without a version is refused.
+2. **Install** (whenever a version is set, independent of the impls, so a
+   release can be installed ahead of a switch): download with `get_url` and
+   the pinned checksum (or copy the local archive after checking it), require
+   exactly the regular files `opsgate` and `LICENSE` at the archive root,
+   unpack into `<root>/<version>/` (`root:wheel`, binary `0755`), record the
+   archive checksum in `.archive-sha256`. An installed version directory is
+   never modified; a different archive for an installed version fails.
+3. **Validation of the candidate by its versioned path**, before any plist
+   points at it: `--version` reports `opsgate <version> (<commit>)`;
+   `check-config api` as `control_service_user` and `check-config runner` as
+   `ops` (`sudo -u <user> env HOME=… PATH=… OPSGATE_ENV_FILE=<env file path>`;
+   only the env-file path is passed, never a value from it); `check-db --db
+   <opsgate_db_path>` as `control_service_user` (read-only; skipped while the
+   database does not exist yet). When a rejected release was installed by this
+   run it is removed again. If any unit runs `rust`, the play stops with the
+   plists and running units untouched. With both impls `python` the failure is
+   reported as an ignored error and the deploy goes on with Python (nothing is
+   pruned), so a broken release, or one that rejects a configuration or
+   database Python accepts, never blocks the rollback to Python.
+4. **Plists**: `python` renders today's `ProgramArguments` (the venv command,
+   `opsgate_api_program_arguments` / `opsgate_runner_program_arguments`);
+   `rust` renders `/usr/bin/env bash -lc "cd <dir> && exec
+   <root>/<version>/opsgate serve"` (`runner` for the runner), where `<dir>` is
+   the directory the Python command enters (`opsgate_app_dir`,
+   `opsgate_runner_app_dir`), so the login-shell environment and the process
+   working directory stay the same. `EnvironmentVariables`, `UserName`,
+   `GroupName`, `WorkingDirectory`, logs and labels are the same for both. A
+   version change or an impl flip changes only that unit's plist, so only that
+   unit is booted out/in and kickstarted. With both impls `python` the plists
+   are byte-identical to the ones before the switch existed. The Python source
+   sync, `uv sync` and the env files stay for both impls (the rollback path);
+   a changed Python source or venv restarts only a unit that runs Python, a
+   changed env file restarts the unit either way.
+5. **Verification** of each managed and started unit (retrying for up to
+   `retries x delay` = 30 s): `launchctl print system/<label>` shows it running
+   with a pid; `rust`: `ps -o comm=` of that pid is the versioned binary and its
+   arguments are `<binary> serve|runner`; `python`: `ps -o args=` ends in `-m
+   opsgate serve|runner` and the executable is not below the install root;
+   API: `GET http://127.0.0.1:<opsgate_api_bind_port>/api/v1/health` answers
+   `status == "ok"`.
+6. **Prune** after the verification: version directories beyond the
+   `opsgate_rust_keep_versions` newest are removed, never the pinned version,
+   a version a unit's live process runs, or a unit's previous version
+   (`<root>/.previous-api`, `<root>/.previous-runner`: written when a unit's
+   plist moves away from a Rust version, to another version or to Python).
+   Nothing is pruned in check mode, after a rejected release, or when the
+   live state of a unit cannot be read completely. Hidden entries, links and
+   directories not named like a version are never touched.
+
+### Rollback
+
+- **Normal, per unit:** set `opsgate_api_impl` or `opsgate_runner_impl` back
+  to `python` in the host vars and deploy. The plist returns to the venv
+  command and launchd restarts that unit. The database and artifacts are
+  shared by both implementations (approvers sign in again after an API
+  switch).
+- **Rust to Rust:** pin the previous version and its sha256; its directory is
+  still installed (it is the unit's previous version, which prune keeps).
+- **Emergency on the host (root, without Ansible):** every deploy renders the
+  Python variant of each plist to
+  `/etc/opsgate/launchd-python/<label>.plist` (`root:wheel 0644`, never
+  loaded):
+
+  ```bash
+  launchctl bootout system/<label>
+  cp /etc/opsgate/launchd-python/<label>.plist /Library/LaunchDaemons/
+  launchctl bootstrap system /Library/LaunchDaemons/<label>.plist
+  ```
+
+  Then set the unit's impl to `python` in the inventory before the next
+  deploy: a deploy with `rust` reinstates the Rust plist.
 
 ## macOS runtime path note
 

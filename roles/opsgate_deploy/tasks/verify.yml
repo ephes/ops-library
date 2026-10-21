@@ -1,0 +1,148 @@
+---
+# After launchd.yml: prove each managed and started unit runs the selected
+# implementation (opsgate repository rust/PLAN.md 10.1 step 5), retrying for
+# up to 30 s. A unit that is not managed or not started is only read (prune.yml
+# keeps the version it runs). A failed check stops the play before anything
+# is pruned.
+
+- name: verify | Read the live launchd units
+  # Exit 0 only with a complete reading: not loaded (launchctl's 113), loaded
+  # without a process, or loaded with a pid whose executable and arguments
+  # ps reported. Anything else exits non-zero, so a managed unit is retried
+  # and prune.yml treats the live state as unknown and prunes nothing.
+  ansible.builtin.shell: |
+    set -o pipefail
+    label={{ item.label | quote }}
+    out=$(launchctl print "system/$label" 2>&1)
+    rc=$?
+    if [ "$rc" -eq 113 ]; then
+      echo "loaded=no"
+      exit 0
+    fi
+    if [ "$rc" -ne 0 ]; then
+      printf 'launchctl print system/%s exited %s\n' "$label" "$rc" >&2
+      exit 1
+    fi
+    echo "loaded=yes"
+    state=$(awk -F' = ' '$1 == "\tstate" { print $2; exit }' <<< "$out")
+    pid=$(awk -F' = ' '$1 == "\tpid" { print $2; exit }' <<< "$out")
+    printf 'state=%s\npid=%s\n' "$state" "$pid"
+    if [ -z "$pid" ]; then
+      if [ "$state" = running ]; then
+        echo "launchd reports $label running without a pid" >&2
+        exit 1
+      fi
+      exit 0
+    fi
+    case "$pid" in
+      *[!0-9]*)
+        echo "launchd reports an invalid pid for $label" >&2
+        exit 1
+        ;;
+    esac
+    if ! comm=$(ps -o comm= -p "$pid") || [ -z "$comm" ]; then
+      echo "ps cannot read the executable of pid $pid ($label)" >&2
+      exit 1
+    fi
+    if ! args=$(ps -o args= -p "$pid"); then
+      echo "ps cannot read the arguments of pid $pid ($label)" >&2
+      exit 1
+    fi
+    printf 'comm=%s\nargs=%s\n' "$comm" "$args"
+  args:
+    executable: /bin/bash
+  loop:
+    - unit: api
+      label: "{{ opsgate_api_launchd_label }}"
+      impl: "{{ opsgate_api_impl }}"
+      command: serve
+      verify: "{{ (opsgate_api_launchd_manage_state | bool) and (opsgate_api_launchd_start_service | bool) }}"
+    - unit: runner
+      label: "{{ opsgate_runner_launchd_label }}"
+      impl: "{{ opsgate_runner_impl }}"
+      command: runner
+      verify: "{{ (opsgate_runner_launchd_manage_state | bool) and (opsgate_runner_launchd_start_service | bool) }}"
+  loop_control:
+    label: "{{ item.unit }}"
+  register: opsgate_live
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: not ansible_check_mode
+  retries: "{{ opsgate_launchd_verify_retries | int }}"
+  delay: "{{ opsgate_launchd_verify_delay | int }}"
+  # rust: the launchd pid is the versioned binary itself (the wrapper execs
+  # it); python: the wrapper's command line runs `-m opsgate serve|runner`.
+  until: >-
+    not (item.verify | bool)
+    or (
+      opsgate_live.rc | default(1) == 0
+      and 'state=running' in (opsgate_live.stdout_lines | default([]) | map('trim'))
+      and (opsgate_live.stdout_lines | default([]) | select('match', '^pid=[1-9][0-9]*$') | list | length) == 1
+      and (
+        (
+          item.impl == 'rust'
+          and ('comm=' ~ opsgate_rust_binary) in (opsgate_live.stdout_lines | default([]) | map('trim'))
+          and ('args=' ~ opsgate_rust_binary ~ ' ' ~ item.command) in (opsgate_live.stdout_lines | default([]) | map('trim'))
+        )
+        or (
+          item.impl == 'python'
+          and (
+            opsgate_live.stdout_lines | default([]) | map('trim')
+            | select('match', '^args=.* -m opsgate ' ~ item.command ~ '$') | list | length
+          ) == 1
+          and (
+            opsgate_live.stdout_lines | default([])
+            | select('match', '^comm=' ~ (opsgate_rust_install_root | regex_escape) ~ '/') | list | length
+          ) == 0
+        )
+      )
+    )
+
+- name: verify | Assert each managed unit runs the selected implementation
+  ansible.builtin.assert:
+    that:
+      - item.rc | default(1) == 0
+      - "'state=running' in opsgate_live_lines"
+      - opsgate_live_lines | select('match', '^pid=[1-9][0-9]*$') | list | length == 1
+      - >-
+        (
+          item.item.impl == 'rust'
+          and ('comm=' ~ opsgate_rust_binary) in opsgate_live_lines
+          and ('args=' ~ opsgate_rust_binary ~ ' ' ~ item.item.command) in opsgate_live_lines
+        )
+        or (
+          item.item.impl == 'python'
+          and (opsgate_live_lines | select('match', '^args=.* -m opsgate ' ~ item.item.command ~ '$') | list | length) == 1
+          and (opsgate_live_lines | select('match', '^comm=' ~ (opsgate_rust_install_root | regex_escape) ~ '/') | list | length) == 0
+        )
+    fail_msg: |-
+      {{ item.item.label }} does not run the selected implementation
+      ({{ item.item.unit }} impl {{ item.item.impl }}{{ (', ' ~ opsgate_rust_binary) if item.item.impl == 'rust' else '' }}).
+      Live state:
+      {{ opsgate_live_lines | join('\n') }}
+  loop: "{{ opsgate_live.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.unit }}"
+  vars:
+    opsgate_live_lines: "{{ item.stdout_lines | default([]) | map('trim') | list }}"
+  when:
+    - not ansible_check_mode
+    - item.item.verify | bool
+
+- name: verify | Check the API health endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ opsgate_api_bind_port }}/api/v1/health"
+    method: GET
+    return_content: true
+    status_code: 200
+  register: opsgate_api_health
+  retries: "{{ opsgate_launchd_verify_retries | int }}"
+  delay: "{{ opsgate_launchd_verify_delay | int }}"
+  until:
+    - opsgate_api_health.status | default(0) == 200
+    - (opsgate_api_health.json | default({})).status | default('') == 'ok'
+  when:
+    - not ansible_check_mode
+    - opsgate_api_launchd_manage_state | bool
+    - opsgate_api_launchd_start_service | bool

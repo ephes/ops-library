@@ -73,6 +73,36 @@ opsgate_rsync_excludes:
   # checkout so no nested directory of that name is affected.
   - "/rust/"
 
+# Implementation per launchd unit (opsgate repository rust/PLAN.md 10.1).
+# Independent switches: python runs the venv command of each unit (unchanged),
+# rust runs the pinned release binary <install_root>/<version>/opsgate.
+opsgate_api_impl: python
+opsgate_runner_impl: python
+# Release to install, e.g. "0.3.0"; required when any impl is rust. With a
+# version set the binary is installed and validated even while both impls are
+# python, so it can be installed ahead of a switch.
+opsgate_rust_version: ""
+# sha256 of the release archive (64 lowercase hex digits); required with a
+# version unless opsgate_rust_local_archive is set.
+opsgate_rust_sha256: ""
+opsgate_rust_release_url: >-
+  https://github.com/ephes/opsgate/releases/download/rs-v{{ opsgate_rust_version }}/opsgate-{{ opsgate_rust_version }}-aarch64-apple-darwin.tar.gz
+# Archive on the controller instead of the download (development); checked
+# against opsgate_rust_sha256 when that is set too.
+opsgate_rust_local_archive: ""
+opsgate_rust_install_root: /usr/local/libexec/opsgate-rs
+# Newest version directories kept after a verified deploy; the pinned, the
+# running and the previous (rollback) versions are always kept on top.
+opsgate_rust_keep_versions: 3
+# Python variant of each plist, rendered on every deploy and never loaded:
+# the emergency rollback without Ansible (README "Implementation: Python or Rust").
+opsgate_launchd_python_plist_dir: "{{ opsgate_config_dir }}/launchd-python"
+# After the plists are applied, each managed and started unit must run the
+# selected implementation (and the API answer its health check) within
+# retries x delay seconds.
+opsgate_launchd_verify_retries: 10
+opsgate_launchd_verify_delay: 3
+
 # API/UI runtime configuration
 opsgate_api_bind_host: "0.0.0.0"
 opsgate_api_bind_port: 8711

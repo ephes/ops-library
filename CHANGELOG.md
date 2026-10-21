@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased — opsgate_deploy: Python or the Rust release per launchd unit
+
+- `opsgate_deploy` gets the implementation switch of the opsgate repository's
+  `rust/PLAN.md` 10.1 (slice S10): `opsgate_api_impl` and
+  `opsgate_runner_impl` (`python`, the default and unchanged behaviour, or
+  `rust`), `opsgate_rust_version`, `opsgate_rust_sha256`,
+  `opsgate_rust_release_url`, `opsgate_rust_local_archive`,
+  `opsgate_rust_install_root` (`/usr/local/libexec/opsgate-rs`),
+  `opsgate_rust_keep_versions`, `opsgate_launchd_python_plist_dir` and
+  `opsgate_launchd_verify_retries`/`_delay`. New `tasks/rust_binary.yml`
+  installs a pinned release whenever a version is set (checksum-verified
+  download or local archive, archive members checked, `root:wheel`, never
+  modified in place) and validates it by its versioned path before any plist
+  points at it: `--version`, `check-config api` as `control_service_user`,
+  `check-config runner` as `ops` (only the env-file path is passed) and a
+  read-only `check-db`. A rejected release stops the play when a unit runs
+  Rust and is a warning with both impls `python`, so it never blocks the
+  rollback. Each plist renders the venv command or `bash -lc "cd <dir> &&
+  exec <root>/<version>/opsgate serve|runner"`; with both impls `python` the
+  plists are byte-identical to before. A changed Python source or venv no
+  longer restarts a unit that runs Rust. Every deploy renders the Python
+  variant of both plists to `/etc/opsgate/launchd-python/` for the
+  emergency rollback without Ansible. New `tasks/verify.yml` checks each
+  managed unit (`launchctl print`, `ps`, the API health endpoint) and
+  `tasks/prune.yml` then prunes old releases, keeping the pinned, the running
+  and each unit's previous version and pruning nothing when the live state
+  is unknown. README section "Implementation: Python or Rust" (switch,
+  rollback, emergency runbook). Tests `tests/test_opsgate_deploy_impl.py`
+  (`just test-opsgate-deploy-impl`, part of `just test`) with plist fixtures
+  in `tests/fixtures/opsgate_deploy/`.
+
 ## Unreleased — software_live: switch between Python and the Rust release
 
 - `software_live` gets the implementation switch of
