@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — ca_trust_consumers: Node.js trust in sudo sessions
+
+- `ca_trust_consumers` with `ca_trust_consumers_node_cli` now also gives sudo
+  sessions `NODE_OPTIONS=--use-openssl-ca`: Debian 13's sudo PAM stack does not
+  read `/etc/environment`, so `sudo -u <app>` sessions (Ansible/pyinfra
+  `become`, e.g. `npm ci`, `yarn install`) lost the flag. A visudo-validated
+  sudoers drop-in sets `Defaults env_file=` to a root-owned file with the same
+  merged value; a caller's own `NODE_OPTIONS` is never passed through, and any
+  other sudoers file mentioning `env_file` makes the role fail (fail closed,
+  no sudoers parsing).
+  `ca_trust_consumers_node_cli_sudo: false` turns this off.
+
 ## Unreleased — CA trust for Node.js and long-running TLS clients (2.63.4)
 
 - New `ca_trust_consumers` role, for the eMudhra intermediate CA key
