@@ -6,6 +6,26 @@
 
 - `container_ca_activate`: Persist CA-only overrides through existing systemd Compose owners, with guarded start/reload, explicit hash-approved reconciliation, and bounded recovery without restarting Docker.
 
+## Unreleased — Rust ports: metrics-httpd parity harness and shadow comparer (S3)
+
+- `rust/metrics-httpd` (slice S3 of `rust/metrics-httpd/PLAN.md`):
+  `parity/run_parity.py` runs the rendered Python endpoint scripts (CPython
+  3.12, as on the hosts) and the Rust binary side by side as processes on
+  loopback and compares their live answers for every gate, json-file,
+  script and apt-state fixture case, plus keep-alive, concurrent requests,
+  the slow-client difference D-1 (the single-threaded scripts stall, Rust
+  answers), the SIGTERM exit codes and credential-free logs. New recipe
+  `just rust-parity-metrics-httpd`; the `rust` CI job installs
+  `apache2-utils`, runs the harness and now also runs when an endpoint
+  script under `roles/**/*httpd*` changes. `parity/shadow_compare.py` is the
+  stdlib comparer for the 24 h shadow run (PLAN.md 10.3): probes both
+  shadows of every endpoint, accepts only the allowed differences of
+  PLAN.md 5.2, writes counts and differing keys (no payloads, no
+  credential) to a JSONL report, records the units' memory, and has
+  `preflight` and `summary` commands; tested against fake pairs and, in
+  the harness, against the live pairs. No role behaviour changes; nothing
+  is installed anywhere.
+
 ## Unreleased — Rust ports: metrics-httpd logyard-health mode (S2d)
 
 - `rust/metrics-httpd` (slice S2d of `rust/metrics-httpd/PLAN.md`): the

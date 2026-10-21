@@ -136,6 +136,22 @@ rust-test:
     cargo test --workspace $excludes --locked
     python3 -I -m unittest discover -s scripts -p 'test_*.py'
 
+# Parity harness of the Rust metrics-httpd port (rust/metrics-httpd/PLAN.md
+# 8.3): builds the binary, runs it side by side with the rendered Python
+# endpoint scripts under CPython 3.12 (the hosts' version; needs htpasswd),
+# then the shadow comparer's tests under 3.12 and 3.13. Needs cargo; not part
+# of `just test`. The `rust` CI job runs the same.
+rust-parity-metrics-httpd: venv
+    #!/usr/bin/env bash
+    set -euo pipefail
+    (cd rust && cargo build --locked -p metrics-httpd)
+    python=$(uv run --python 3.12 --no-project python -c 'import sys; print(sys.executable)')
+    UV_PROJECT_ENVIRONMENT=.venv uv run python rust/metrics-httpd/parity/run_parity.py \
+        --binary rust/target/debug/metrics-httpd --python "$python"
+    cd rust/metrics-httpd
+    uv run --python 3.12 --no-project python -I -m unittest discover -s parity -p 'test_*.py'
+    uv run --python 3.13 --no-project python -I -m unittest discover -s parity -p 'test_*.py'
+
 test-mailgun-relay-deploy: venv
     @echo "Testing the mailgun-relay rsync excludes and the Python/Rust implementation switch..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_mailgun_relay_deploy

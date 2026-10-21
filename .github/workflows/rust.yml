@@ -17,10 +17,14 @@ name: Rust
     paths:
       - "rust/**"
       - ".github/workflows/rust*.yml"
+      # The Python endpoint scripts the metrics-httpd parity harness runs.
+      - "roles/**/*httpd*"
   pull_request:
     paths:
       - "rust/**"
       - ".github/workflows/rust*.yml"
+      # The Python endpoint scripts the metrics-httpd parity harness runs.
+      - "roles/**/*httpd*"
   workflow_dispatch:
 
 permissions:
@@ -112,6 +116,22 @@ jobs:
           uv run --python 3.13 --no-project python -I "$gen" check
           uv sync --locked
           .venv/bin/python "$gen" check --record
+      - name: metrics-httpd parity harness
+        # rust/metrics-httpd/PLAN.md 8.3: the rendered Python endpoint scripts
+        # (CPython 3.12 as on the hosts; they call htpasswd) and the Rust
+        # binary side by side on loopback, then the tests of the shadow
+        # comparer (10.3). Rendering needs the repo venv (jinja2, PyYAML).
+        working-directory: .
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends apache2-utils
+          (cd rust && cargo build --locked -p metrics-httpd)
+          uv sync --locked
+          python=$(uv python find --no-project 3.12)
+          .venv/bin/python rust/metrics-httpd/parity/run_parity.py \
+            --binary rust/target/debug/metrics-httpd --python "$python"
+          cd rust/metrics-httpd
+          "$python" -I -m unittest discover -s parity -p 'test_*.py' -v
       - name: Install cargo-deny (pinned release, sha256 checked)
         env:
           CARGO_DENY_VERSION: "0.20.2"
