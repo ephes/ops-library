@@ -18,7 +18,7 @@ Install and manage the Astral uv package manager.
 
 ```yaml
 # Pinned version; update the matching uv_checksum map together.
-uv_version: "0.13.0"
+uv_version: "0.13.4"
 
 # Installation directory
 uv_install_dir: "/usr/local/bin"
@@ -44,7 +44,7 @@ uv_update_existing: true
   roles:
     - role: local.ops_library.uv_install
       vars:
-        uv_version: "0.13.0"
+        uv_version: "0.13.4"
         uv_create_symlinks: true
 ```
 
@@ -87,8 +87,8 @@ Pinned defaults (checksum map keys identify the release architecture/target):
 
 | Variable | Default |
 | --- | --- |
-| `uv_version` | `0.13.0` |
-| `uv_checksum` | x86_64-unknown-linux-gnu: `sha256:1468ebd5a5541121837c5a2817b9972ba6090fa6caa3d142620850a47fb75154`<br>aarch64-unknown-linux-gnu: `sha256:3ccfb6af6e242433eb552f7d9676abd5412c6595c497e990d9c8cb7b5bd4d2c3`<br>x86_64-apple-darwin: `sha256:5f44dcbde809b632f47c36fadb241cb4d6f9af71d0c8f172b5d2026d3dde742c`<br>aarch64-apple-darwin: `sha256:a9c1b29002cf3c83f07fa9cd8a887a3be0107d90e23189721221e7257db8e3d6` |
+| `uv_version` | `0.13.4` |
+| `uv_checksum` | x86_64-unknown-linux-gnu: `sha256:2b428396f12572d4429cf210ca234dd599a33b3af0958a4d5ed569d63e3f344f`<br>aarch64-unknown-linux-gnu: `sha256:1ae72b4718729e2ccc4f1ae2c6d1e531ca8467800e0546e9130b3886023a60ab`<br>x86_64-apple-darwin: `sha256:7be2dcd316122f4b3e5a0a7889f6248266c14425374e105ff7dc9779184603a6`<br>aarch64-apple-darwin: `sha256:e0b1d4743ce64c55d9f0f4a444afa6b81125680070ee04e853fcd0f6c1ebf8f1` |
 
 To update, bump the version and checksum together. Fetch the SHA-256 from the
 project’s published checksum file or release-page asset digest over HTTPS,

@@ -18,7 +18,7 @@ open_webui_python_version: "3.11"
 open_webui_manage_uv: true
 open_webui_uv_install_dir: /usr/local/bin
 open_webui_uv_path: "{{ open_webui_uv_install_dir }}/uv"
-open_webui_uv_version: "0.13.0"  # Keep aligned with uv_install version/checksums.
+open_webui_uv_version: "0.13.4"  # Keep aligned with uv_install version/checksums.
 open_webui_uv_update_existing: true
 open_webui_uv_force_reinstall: false
 
