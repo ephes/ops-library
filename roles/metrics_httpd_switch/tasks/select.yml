@@ -33,7 +33,8 @@
         metrics_httpd_switch_impl == 'python' or (
           metrics_httpd_switch_version | local.ops_library.rust_release_version_ok
           and (metrics_httpd_switch_sha256 | local.ops_library.rust_release_sha256_ok
-               or metrics_httpd_switch_local_archive | length > 0))
+               or (metrics_httpd_switch_local_archive is string
+                   and metrics_httpd_switch_local_archive | length > 0)))
     fail_msg: >-
       metrics_httpd_switch needs impl python or rust (got
       {{ metrics_httpd_switch_impl | to_json }}), a unit name usable as a pin
@@ -52,13 +53,24 @@
 
 # Facts persist for the rest of the play, so every derived value is set here
 # for this unit before anything reads it.
+# Release inputs as text (an unset value is ''), so nothing before the guarded
+# install can fail on a malformed value (e.g. an integer) with impl python.
+- name: select | Normalise the release inputs
+  ansible.builtin.set_fact:
+    _metrics_httpd_switch_version: >-
+      {{ '' if metrics_httpd_switch_version is none else (metrics_httpd_switch_version | string) }}
+    _metrics_httpd_switch_sha256: >-
+      {{ '' if metrics_httpd_switch_sha256 is none else (metrics_httpd_switch_sha256 | string) }}
+    _metrics_httpd_switch_local_archive: >-
+      {{ '' if metrics_httpd_switch_local_archive is none else (metrics_httpd_switch_local_archive | string) }}
+
 - name: select | Set the switch paths
   ansible.builtin.set_fact:
     _metrics_httpd_switch_dropin: >-
       {{ metrics_httpd_switch_systemd_dir }}/{{ metrics_httpd_switch_service_name }}.service.d/metrics-httpd-impl.conf
     _metrics_httpd_switch_binary: >-
-      {{ (metrics_httpd_switch_install_root ~ '/' ~ metrics_httpd_switch_version ~ '/metrics-httpd')
-         if metrics_httpd_switch_version | length > 0 else '' }}
+      {{ (metrics_httpd_switch_install_root ~ '/' ~ _metrics_httpd_switch_version ~ '/metrics-httpd')
+         if _metrics_httpd_switch_version | length > 0 else '' }}
     _metrics_httpd_switch_exec_argv: "{{ metrics_httpd_switch_argv | map('string') | list }}"
     _metrics_httpd_switch_installed: false
 
@@ -102,14 +114,14 @@
   vars:
     rust_release_binary_name: metrics-httpd
     rust_release_binary_install_root: "{{ metrics_httpd_switch_install_root }}"
-    rust_release_binary_version: "{{ metrics_httpd_switch_version }}"
-    rust_release_binary_sha256: "{{ metrics_httpd_switch_sha256 }}"
-    rust_release_binary_local_archive: "{{ metrics_httpd_switch_local_archive }}"
+    rust_release_binary_version: "{{ _metrics_httpd_switch_version }}"
+    rust_release_binary_sha256: "{{ _metrics_httpd_switch_sha256 }}"
+    rust_release_binary_local_archive: "{{ _metrics_httpd_switch_local_archive }}"
     rust_release_binary_validate_user: "{{ metrics_httpd_switch_version_check_user }}"
     rust_release_binary_owner: "{{ metrics_httpd_switch_owner }}"
     rust_release_binary_group: "{{ metrics_httpd_switch_group }}"
     rust_release_binary_fail_hard: "{{ metrics_httpd_switch_impl == 'rust' }}"
-  when: metrics_httpd_switch_version | length > 0
+  when: _metrics_httpd_switch_version | length > 0
 
 # In check mode a version that is not installed yet was not installed.
 - name: select | Check the installed binary
@@ -118,14 +130,14 @@
     get_checksum: false
   register: _metrics_httpd_switch_binary_stat
   when:
-    - metrics_httpd_switch_version | length > 0
+    - _metrics_httpd_switch_version | length > 0
     - not (rust_release_binary_failed | default(false) | bool)
 
 - name: select | Record whether the binary is installed
   ansible.builtin.set_fact:
     _metrics_httpd_switch_installed: "{{ _metrics_httpd_switch_binary_stat.stat.isreg | default(false) }}"
   when:
-    - metrics_httpd_switch_version | length > 0
+    - _metrics_httpd_switch_version | length > 0
     - not (rust_release_binary_failed | default(false) | bool)
 
 - name: select | Assert the selected binary is installed
@@ -220,5 +232,5 @@
       service: "{{ metrics_httpd_switch_service_name }}"
       impl: "{{ metrics_httpd_switch_impl }}"
       binary: "{{ _metrics_httpd_switch_binary if metrics_httpd_switch_impl == 'rust' else '' }}"
-      version: "{{ metrics_httpd_switch_version if metrics_httpd_switch_impl == 'rust' else '' }}"
+      version: "{{ _metrics_httpd_switch_version if metrics_httpd_switch_impl == 'rust' else '' }}"
       before_binary: "{{ _metrics_httpd_switch_before_binary }}"

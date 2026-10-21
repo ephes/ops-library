@@ -1033,6 +1033,13 @@ class SwitchPlaybookTests(unittest.TestCase):
         # install warned, prune refused after the failed install.
         self.assertEqual(result["recap"]["ignored"], 2, result["out"])
         self.assertEqual(self.pins(), {f"{UNIT}.previous": "0.1.0\n"})
+        # Malformed scalars (an integer, a float, a list) warn the same way.
+        for bad in (123, 1.5, ["0.1.0"]):
+            self.ok("rust", "0.1.0")
+            result = self.ok("python", metrics_httpd_switch_version=bad, metrics_httpd_switch_sha256=7)
+            self.assertFalse(self.dropin.exists(), bad)
+            self.assertEqual(result["handlers"], ["reload", "restart /usr/bin/python3.12"], bad)
+            self.assertEqual(result["recap"]["ignored"], 2, result["out"])
 
     def test_probe_ignores_netrc_credentials(self):
         netrc = self.work / "netrc"
