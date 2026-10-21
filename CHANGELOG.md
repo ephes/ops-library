@@ -6,6 +6,27 @@
 
 - `container_ca_activate`: Persist CA-only overrides through existing systemd Compose owners, with guarded start/reload, explicit hash-approved reconciliation, and bounded recovery without restarting Docker.
 
+## Unreleased — Rust ports: metrics-httpd logyard-health mode (S2d)
+
+- `rust/metrics-httpd` (slice S2d of `rust/metrics-httpd/PLAN.md`): the
+  `logyard-health` mode now serves the payload of
+  `logyard_deploy`'s `logyard_health_httpd.py`: Loki readiness and the two
+  `count_over_time` ingest windows (a `hyper-util` http client: no
+  redirects, a timeout per exchange, answers capped at 64 MiB), `systemctl
+  show` per unit of `LOGYARD_HEALTH_UNITS_B64` (parsed once at startup with
+  the script's rejection reasons), the ok/warning/critical status, and no
+  log line per request. Where the script crashes (non-object Loki answers,
+  disconnects, non-UTF-8 output, a NUL in a unit name) Rust reports the
+  error in the payload instead (D-2). `--check-config` now also fails on a
+  units list with rejected entries. `int()`/`float()` of the `LOGYARD_*`
+  numbers no longer accept U+001C–U+001F as white space (Python refuses
+  them). New fixture family `logyard_health.json` from the rendered script
+  with a fake Loki and a test-only fake `systemctl`
+  (`fixtures/fake-bin/systemctl`), replayed by `tests/logyard_health.rs`;
+  `tests/test_metrics_httpd_fixtures.py` checks that every Rust difference
+  names a PLAN.md 5.2 item. Nothing installs the binary; no role behaviour
+  changes.
+
 ## Unreleased — Rust ports: metrics-httpd json-file mode (S2a)
 
 - `rust/metrics-httpd` (slice S2a of `rust/metrics-httpd/PLAN.md`): the
