@@ -1,16 +1,20 @@
-"""metrics_httpd_switch and the five *_metrics_endpoint consumer roles.
+"""metrics_httpd_switch and its consumer roles.
 
-rust/metrics-httpd/PLAN.md 7.2/7.3 (slice S5a):
+rust/metrics-httpd/PLAN.md 7.2/7.3: slice S5a (the switch and the five
+``*_metrics_endpoint`` roles) and slice S5b (``metrics_endpoint``,
+``os_apt_maintenance``, ``dns_deploy`` DDNS status endpoint,
+``openclaw_deploy`` metrics endpoint):
 
 - unit tests of the checks in ``plugins/filter/metrics_httpd.py``;
 - the drop-in template rendered as ops-deploy renders vendored templates
   (plain Jinja2, ``trim_blocks``), parsed back with systemd's word splitting;
 - static checks of the consumer roles (where select and verify are included,
   handler names, sandbox and IP allow list mirroring the unit template);
-- one ``ansible-playbook`` run rendering every consumer's argv, drop-in and
-  base unit from its defaults: the argv equals the fixture argv of the
-  json-file variant (``rust/metrics-httpd/fixtures/json_file.json``), the
-  drop-in and the unchanged base unit equal the goldens in
+- one ``ansible-playbook`` run per slice rendering every consumer's argv,
+  drop-in and base unit from its defaults: the argv equals the fixture argv
+  of its Python script (``rust/metrics-httpd/fixtures/json_file.json``,
+  ``script.json``, ``apt_state.json``) and, for S5b, the PLAN.md 7.3 argv;
+  the drop-in and the unchanged base unit equal the goldens in
   ``tests/fixtures/metrics_httpd_switch/`` (``impl: python`` renders exactly
   what the role rendered before the switch existed);
 - ``ansible-playbook`` runs of select and verify against localhost with a
@@ -425,10 +429,12 @@ def ansible_env(base: Path, extra_path: list[Path]) -> dict[str, str]:
     }
 
 
-def run_playbook(path: Path, env: dict[str, str], check: bool = False) -> dict:
+def run_playbook(path: Path, env: dict[str, str], check: bool = False, tags: str = "") -> dict:
     argv = ["ansible-playbook", "-i", "localhost,", "-c", "local", str(path)]
     if check:
         argv.append("--check")
+    if tags:
+        argv += ["--tags", tags]
     result = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, env=env, timeout=900)
     out = result.stdout + result.stderr
     match = RECAP.search(result.stdout)
@@ -446,6 +452,75 @@ RENDER_VARS = {
 }
 
 
+def render_play(role: str, block_vars: dict, unit: Path, out: Path, extra_vars: dict | None = None) -> dict:
+    """A play that renders, from the role's defaults and the switch inputs of
+    its deploy block, the switch inputs as JSON (``switch.json``), the Rust
+    drop-in for release 0.1.0 and the role's unchanged base unit."""
+
+    return {
+        "name": role,
+        "hosts": "localhost",
+        "gather_facts": False,
+        "vars_files": [str(ROOT / "roles" / role / "defaults/main.yml")],
+        "vars": {**RENDER_VARS, **(extra_vars or {})},
+        "tasks": [
+            {
+                "name": "render",
+                "vars": block_vars,
+                "block": [
+                    {"ansible.builtin.file": {"path": str(out), "state": "directory", "mode": "0755"}},
+                    {
+                        "ansible.builtin.set_fact": {
+                            "_argv": "{{ metrics_httpd_switch_argv | map('string') | list }}",
+                        }
+                    },
+                    {
+                        "ansible.builtin.copy": {
+                            "dest": str(out / "switch.json"),
+                            "mode": "0644",
+                            "content": (
+                                "{{ {'argv': _argv,"
+                                " 'impl': metrics_httpd_switch_impl,"
+                                " 'service': metrics_httpd_switch_service_name,"
+                                " 'user': metrics_httpd_switch_validate_user,"
+                                " 'group': metrics_httpd_switch_validate_group,"
+                                " 'sandbox': metrics_httpd_switch_unit_sandbox,"
+                                " 'notify': metrics_httpd_switch_notify,"
+                                " 'python_script': metrics_httpd_switch_python_script,"
+                                " 'probe': [metrics_httpd_switch_probe_bind,"
+                                "           metrics_httpd_switch_probe_port | string,"
+                                "           metrics_httpd_switch_probe_path,"
+                                "           metrics_httpd_switch_probe_realm],"
+                                " 'allow': metrics_httpd_switch_ip_address_allow,"
+                                " 'argv_problems': metrics_httpd_switch_argv"
+                                "   | local.ops_library.metrics_httpd_argv_problems} | to_json }}"
+                            ),
+                        }
+                    },
+                    {
+                        "ansible.builtin.template": {
+                            "src": str(TEMPLATE),
+                            "dest": str(out / "metrics-httpd-impl.conf"),
+                            "mode": "0644",
+                        },
+                        "vars": {
+                            "metrics_httpd_impl_binary": "/opt/metrics-httpd/0.1.0/metrics-httpd",
+                            "metrics_httpd_impl_argv": "{{ _argv }}",
+                        },
+                    },
+                    {
+                        "ansible.builtin.template": {
+                            "src": str(unit),
+                            "dest": str(out / unit.name.removesuffix(".j2")),
+                            "mode": "0644",
+                        }
+                    },
+                ],
+            }
+        ],
+    }
+
+
 @unittest.skipUnless(shutil.which("ansible-playbook"), "ansible-playbook not on PATH")
 class ConsumerRenderTests(unittest.TestCase):
     @classmethod
@@ -455,74 +530,7 @@ class ConsumerRenderTests(unittest.TestCase):
         cls.out = base / "out"
         cls.out.mkdir()
         env = ansible_env(base, [])
-        plays = []
-        for role in CONSUMERS:
-            block_vars = deploy_block(role)["vars"]
-            out = cls.out / role
-            plays.append(
-                {
-                    "name": role,
-                    "hosts": "localhost",
-                    "gather_facts": False,
-                    "vars_files": [str(ROOT / "roles" / role / "defaults/main.yml")],
-                    "vars": dict(RENDER_VARS),
-                    "tasks": [
-                        {
-                            "name": "render",
-                            "vars": block_vars,
-                            "block": [
-                                {"ansible.builtin.file": {"path": str(out), "state": "directory", "mode": "0755"}},
-                                {
-                                    "ansible.builtin.set_fact": {
-                                        "_argv": "{{ metrics_httpd_switch_argv | map('string') | list }}",
-                                    }
-                                },
-                                {
-                                    "ansible.builtin.copy": {
-                                        "dest": str(out / "switch.json"),
-                                        "mode": "0644",
-                                        "content": (
-                                            "{{ {'argv': _argv,"
-                                            " 'impl': metrics_httpd_switch_impl,"
-                                            " 'service': metrics_httpd_switch_service_name,"
-                                            " 'user': metrics_httpd_switch_validate_user,"
-                                            " 'group': metrics_httpd_switch_validate_group,"
-                                            " 'sandbox': metrics_httpd_switch_unit_sandbox,"
-                                            " 'notify': metrics_httpd_switch_notify,"
-                                            " 'python_script': metrics_httpd_switch_python_script,"
-                                            " 'probe': [metrics_httpd_switch_probe_bind,"
-                                            "           metrics_httpd_switch_probe_port | string,"
-                                            "           metrics_httpd_switch_probe_path,"
-                                            "           metrics_httpd_switch_probe_realm],"
-                                            " 'allow': metrics_httpd_switch_ip_address_allow,"
-                                            " 'argv_problems': metrics_httpd_switch_argv"
-                                            "   | local.ops_library.metrics_httpd_argv_problems} | to_json }}"
-                                        ),
-                                    }
-                                },
-                                {
-                                    "ansible.builtin.template": {
-                                        "src": str(TEMPLATE),
-                                        "dest": str(out / "metrics-httpd-impl.conf"),
-                                        "mode": "0644",
-                                    },
-                                    "vars": {
-                                        "metrics_httpd_impl_binary": "/opt/metrics-httpd/0.1.0/metrics-httpd",
-                                        "metrics_httpd_impl_argv": "{{ _argv }}",
-                                    },
-                                },
-                                {
-                                    "ansible.builtin.template": {
-                                        "src": str(unit_template(role)),
-                                        "dest": str(out / unit_template(role).name.removesuffix(".j2")),
-                                        "mode": "0644",
-                                    }
-                                },
-                            ],
-                        }
-                    ],
-                }
-            )
+        plays = [render_play(role, deploy_block(role)["vars"], unit_template(role), cls.out / role) for role in CONSUMERS]
         path = base / "render.yml"
         path.write_text(yaml.safe_dump(plays, sort_keys=False), encoding="utf-8")
         cls.result = run_playbook(path, env)
@@ -597,6 +605,379 @@ class ConsumerRenderTests(unittest.TestCase):
             script = self.switch(role)["python_script"]
             self.assertIn(f"ExecStart=/usr/bin/python3 {script} \\\n", unit, role)
             self.assertNotIn("metrics-httpd-impl", unit)
+
+
+# --------------------------------------------------------------------------
+# S5b consumers: metrics_endpoint, os_apt_maintenance, dns_deploy (DDNS),
+# openclaw_deploy (PLAN.md 7.3)
+# --------------------------------------------------------------------------
+
+SCRIPT_FIXTURE = ROOT / "rust/metrics-httpd/fixtures/script.json"
+APT_STATE_FIXTURE = ROOT / "rust/metrics-httpd/fixtures/apt_state.json"
+
+# The switch sits inside a larger role here: the block that carries the switch
+# inputs, the tasks around select/verify and the PLAN.md 7.3 argv with the
+# role defaults (tailscale_ip 100.64.0.10).
+S5B_CONSUMERS = {
+    "metrics_endpoint": {
+        "tasks": "tasks/main.yml",
+        "block": "Deploy metrics endpoint",
+        "impl_var": "metrics_endpoint_impl",
+        "unit": "templates/metrics-endpoint.service.j2",
+        "inputs": {
+            "metrics_httpd_switch_service_name": "{{ metrics_endpoint_service_name }}",
+            "metrics_httpd_switch_validate_user": "{{ metrics_endpoint_user }}",
+            "metrics_httpd_switch_validate_group": "{{ metrics_endpoint_group }}",
+            "metrics_httpd_switch_python_script": "{{ metrics_endpoint_server_path }}",
+            "metrics_httpd_switch_probe_bind": "{{ metrics_endpoint_bind }}",
+            "metrics_httpd_switch_probe_port": "{{ metrics_endpoint_port }}",
+            "metrics_httpd_switch_probe_path": "{{ metrics_endpoint_path }}",
+            "metrics_httpd_switch_probe_realm": "metrics",
+        },
+        # Everything --check-config reads (script, htpasswd file) and the unit.
+        "before_select": ["Deploy mail metrics script", "Write htpasswd file", "Create systemd service unit"],
+        "select": "Select the HTTP server implementation",
+        "start": "Ensure metrics endpoint service is enabled and running",
+        "verify": "Verify the HTTP server implementation",
+        "when": None,
+        "restart": "restart metrics-endpoint",
+        "service": "metrics-endpoint",
+        "user": "metrics",
+        "argv": [
+            "script", "--bind", "100.64.0.10", "--port", "9100", "--path", "/.well-known/health",
+            "--script", "/usr/local/bin/mail-metrics.sh", "--script-timeout", "10",
+            "--htpasswd-file", "/etc/metrics-endpoint/htpasswd",
+            "--realm", "metrics", "--server-name", "metrics-httpd/0.1",
+        ],
+    },
+    "os_apt_maintenance": {
+        "tasks": "tasks/main.yml",
+        "block": "Deploy os_apt_maintenance",
+        "impl_var": "os_apt_maintenance_endpoint_impl",
+        "unit": "templates/os-apt-maintenance-endpoint.service.j2",
+        "inputs": {
+            "metrics_httpd_switch_service_name": "{{ os_apt_maintenance_endpoint_service_name }}",
+            "metrics_httpd_switch_validate_user": "{{ os_apt_maintenance_endpoint_user }}",
+            "metrics_httpd_switch_validate_group": "{{ os_apt_maintenance_endpoint_group }}",
+            "metrics_httpd_switch_python_script": "{{ os_apt_maintenance_endpoint_server_path }}",
+            "metrics_httpd_switch_probe_bind": "{{ os_apt_maintenance_endpoint_bind }}",
+            "metrics_httpd_switch_probe_port": "{{ os_apt_maintenance_endpoint_port }}",
+            "metrics_httpd_switch_probe_path": "{{ os_apt_maintenance_endpoint_path }}",
+            "metrics_httpd_switch_probe_realm": "os-apt-maintenance",
+        },
+        # The unit's ReadOnlyPaths= names the state file: it must exist before
+        # --check-config runs in that sandbox.
+        "before_select": [
+            "Write endpoint htpasswd file",
+            "Deploy apt maintenance endpoint service unit",
+            "Initialize apt maintenance state file without running apt",
+            "Ensure apt maintenance state permissions for endpoint",
+        ],
+        "select": "Select the endpoint's HTTP server implementation",
+        "start": "Ensure apt maintenance endpoint is enabled and running",
+        "verify": "Verify the endpoint's HTTP server implementation",
+        "when": "os_apt_maintenance_endpoint_enabled | bool",
+        "restart": "restart os-apt-maintenance-endpoint",
+        "service": "os-apt-maintenance-endpoint",
+        "user": "metrics",
+        "argv": [
+            "apt-state", "--bind", "100.64.0.10", "--port", "9106", "--path", "/.well-known/os-apt-maintenance",
+            "--json-path", "/var/lib/os-apt-maintenance/state.json",
+            "--htpasswd-file", "/etc/os-apt-maintenance-endpoint/htpasswd",
+            "--freshness-max-age", "1209600", "--state-max-age", "1296000",
+            "--realm", "os-apt-maintenance", "--server-name", "os-apt-maintenance-httpd/0.1",
+        ],
+    },
+    "dns_deploy": {
+        "tasks": "tasks/ddns.yml",
+        "block": "DDNS | Status endpoint",
+        "impl_var": "dns_ddns_status_endpoint_impl",
+        "unit": "templates/ddns-status-endpoint.service.j2",
+        "inputs": {
+            "metrics_httpd_switch_service_name": "ddns-status-endpoint",
+            "metrics_httpd_switch_validate_user": "ddns",
+            "metrics_httpd_switch_validate_group": "ddns",
+            "metrics_httpd_switch_python_script": "{{ dns_ddns_status_endpoint_server_path }}",
+            "metrics_httpd_switch_probe_bind": "{{ dns_ddns_status_endpoint_bind }}",
+            "metrics_httpd_switch_probe_port": "{{ dns_ddns_status_endpoint_port }}",
+            "metrics_httpd_switch_probe_path": "{{ dns_ddns_status_endpoint_path }}",
+            "metrics_httpd_switch_probe_realm": "ddns-status",
+        },
+        "before_select": ["DDNS | Write htpasswd file", "DDNS | Deploy status endpoint unit"],
+        "select": "DDNS | Select the status endpoint's HTTP server implementation",
+        "start": "DDNS | Enable and start status endpoint",
+        "verify": "DDNS | Verify the status endpoint's HTTP server implementation",
+        "when": None,
+        "restart": "restart ddns-status-endpoint",
+        "service": "ddns-status-endpoint",
+        "user": "ddns",
+        "argv": [
+            "json-file", "--bind", "100.64.0.10", "--port", "9112", "--path", "/.well-known/ddns",
+            "--json-path", "/var/lib/ddns/status.json", "--htpasswd-file", "/etc/ddns-status-endpoint/htpasswd",
+            "--realm", "ddns-status", "--server-name", "ddns-status-httpd/0.1",
+            "--missing-message", "Status file not found - updater may not have run yet", "--request-timeout", "10",
+        ],
+    },
+    "openclaw_deploy": {
+        "tasks": "tasks/metrics.yml",
+        "block": "metrics | Deploy OpenClaw metrics endpoint",
+        "impl_var": "openclaw_metrics_endpoint_impl",
+        "unit": "templates/openclaw-metrics-endpoint.service.j2",
+        "inputs": {
+            "metrics_httpd_switch_service_name": "{{ openclaw_metrics_endpoint_service_name }}",
+            "metrics_httpd_switch_validate_user": "{{ openclaw_metrics_endpoint_user }}",
+            "metrics_httpd_switch_validate_group": "{{ openclaw_metrics_endpoint_group }}",
+            "metrics_httpd_switch_python_script": "{{ openclaw_metrics_endpoint_server_path }}",
+            "metrics_httpd_switch_probe_bind": "{{ openclaw_metrics_endpoint_bind }}",
+            "metrics_httpd_switch_probe_port": "{{ openclaw_metrics_endpoint_port }}",
+            "metrics_httpd_switch_probe_path": "{{ openclaw_metrics_endpoint_path }}",
+            "metrics_httpd_switch_probe_realm": "openclaw-metrics",
+        },
+        "before_select": [
+            "metrics | Ensure data directory exists",
+            "metrics | Write htpasswd file",
+            "metrics | Create HTTP endpoint service unit",
+        ],
+        "select": "metrics | Select the HTTP server implementation",
+        "start": "metrics | Ensure metrics endpoint service is enabled and running",
+        "verify": "metrics | Verify the HTTP server implementation",
+        "when": None,
+        "restart": "restart openclaw-metrics-endpoint",
+        "service": "openclaw-metrics-endpoint",
+        "user": "metrics",
+        "argv": [
+            "json-file", "--bind", "127.0.0.1", "--port", "9104", "--path", "/.well-known/openclaw-health",
+            "--json-path", "/var/lib/openclaw-metrics/openclaw-health.json",
+            "--htpasswd-file", "/etc/openclaw-metrics-endpoint/htpasswd",
+            "--realm", "openclaw-metrics", "--server-name", "openclaw-metrics-httpd/0.1",
+            "--missing-message", "Metrics file not found - collector timer may not have run yet",
+        ],
+    },
+}
+
+# Fixture argv (rust/metrics-httpd/fixtures, generated from the Python
+# scripts) per S5b consumer, with the role's paths replaced by the fixture's
+# placeholders; the fixtures leave out --bind and --port.
+FIXTURE_PLACEHOLDERS = {
+    "--json-path": "{json}",
+    "--htpasswd-file": "{htpasswd}",
+    "--script": "{script}",
+    "--script-timeout": "{timeout}",
+}
+
+
+def s5b_fixture_argv(role: str) -> list[str]:
+    if role == "metrics_endpoint":
+        return json.loads(SCRIPT_FIXTURE.read_text())["argv"]
+    if role == "os_apt_maintenance":
+        argv = list(json.loads(APT_STATE_FIXTURE.read_text())["http"]["argv"])
+        # The fixture points --reboot-flag at a test file; the role keeps the
+        # default /var/run/reboot-required (PLAN.md 4.9).
+        index = argv.index("--reboot-flag")
+        del argv[index : index + 2]
+        return argv
+    variant = {"dns_deploy": "ddns", "openclaw_deploy": "openclaw"}[role]
+    return {v["variant"]: v for v in json.loads(JSON_FILE_FIXTURE.read_text())["variants"]}[variant]["argv"]
+
+
+def switch_block(role: str) -> dict:
+    """The one block of the role's task file that carries the switch inputs."""
+
+    spec = S5B_CONSUMERS[role]
+    tasks = load_yaml(ROOT / "roles" / role / spec["tasks"])
+    blocks = [t for t in walk(tasks) if "metrics_httpd_switch_impl" in (t.get("vars") or {})]
+    assert len(blocks) == 1, role
+    assert blocks[0]["name"] == spec["block"], (role, blocks[0]["name"])
+    return blocks[0]
+
+
+def handler_names(role: str) -> set[str]:
+    names = set()
+    for handler in load_yaml(ROOT / "roles" / role / "handlers/main.yml"):
+        names.add(handler["name"])
+        listen = handler.get("listen", [])
+        names.update([listen] if isinstance(listen, str) else listen)
+    return names
+
+
+class S5bConsumerStaticTests(unittest.TestCase):
+    def test_impl_default_follows_the_fleet_variable(self):
+        for role, spec in S5B_CONSUMERS.items():
+            defaults = load_yaml(ROOT / "roles" / role / "defaults/main.yml")
+            self.assertEqual(defaults[spec["impl_var"]], "{{ metrics_httpd_impl | default('python') }}", role)
+
+    def test_switch_inputs_come_from_the_role(self):
+        for role, spec in S5B_CONSUMERS.items():
+            variables = switch_block(role)["vars"]
+            self.assertEqual(variables["metrics_httpd_switch_impl"], f"{{{{ {spec['impl_var']} }}}}", role)
+            for key, value in spec["inputs"].items():
+                self.assertEqual(variables[key], value, (role, key))
+            self.assertNotIn("metrics_httpd_switch_probe_expect", variables)  # default: unauthorized
+
+    def test_select_and_verify_are_placed_around_the_start(self):
+        for role, spec in S5B_CONSUMERS.items():
+            tasks = switch_block(role)["block"]
+            names = [t.get("name", "") for t in tasks]
+            select = names.index(spec["select"])
+            start = names.index(spec["start"])
+            verify = names.index(spec["verify"])
+            for name in spec["before_select"]:
+                self.assertLess(names.index(name), select, (role, name))
+            self.assertLess(select, start, role)
+            self.assertLess(start, verify, role)
+            flushes = [i for i, t in enumerate(tasks) if t.get("ansible.builtin.meta") == "flush_handlers"]
+            self.assertTrue(any(start < i < verify for i in flushes), role)
+            for index, tasks_from in ((select, "select"), (verify, "verify")):
+                include = tasks[index]["ansible.builtin.include_role"]
+                self.assertEqual(include, {"name": FQCN, "tasks_from": tasks_from}, role)
+                self.assertNotIn("vars", tasks[index], role)
+                self.assertEqual(tasks[index].get("when"), spec["when"], role)
+
+    def test_notified_handlers_exist(self):
+        for role, spec in S5B_CONSUMERS.items():
+            notify = switch_block(role)["vars"]["metrics_httpd_switch_notify"]
+            self.assertEqual(notify, ["reload systemd", spec["restart"]], role)
+            self.assertLessEqual(set(notify), handler_names(role), role)
+
+    def test_identity_sandbox_and_ip_allow_mirror_the_unit(self):
+        for role, spec in S5B_CONSUMERS.items():
+            unit = (ROOT / "roles" / role / spec["unit"]).read_text(encoding="utf-8")
+            variables = switch_block(role)["vars"]
+            self.assertEqual(re.findall(r"(?m)^User=(.*)$", unit), [variables["metrics_httpd_switch_validate_user"]], role)
+            self.assertEqual(re.findall(r"(?m)^Group=(.*)$", unit), [variables["metrics_httpd_switch_validate_group"]], role)
+            for line in ("NoNewPrivileges=true", "ProtectSystem=strict", "ProtectHome=true", "PrivateTmp=true"):
+                self.assertIn(line + "\n", unit, role)
+            sandbox = variables["metrics_httpd_switch_unit_sandbox"]
+            self.assertEqual(
+                sandbox[:4], ["NoNewPrivileges=yes", "ProtectSystem=strict", "ProtectHome=yes", "PrivateTmp=yes"], role
+            )
+            read_only = re.findall(r"(?m)^ReadOnlyPaths=(.*)$", unit)
+            self.assertEqual([s.removeprefix("ReadOnlyPaths=") for s in sandbox[4:]], read_only, role)
+            self.assertIn("IPAddressDeny=any\n", unit, role)
+            allow = variables["metrics_httpd_switch_ip_address_allow"]
+            literal = re.findall(r"(?m)^IPAddressAllow=(.*)$", unit)
+            if role == "os_apt_maintenance":
+                self.assertEqual(literal, ["localhost", "{{ cidr }}"])
+                self.assertIn("{% for cidr in os_apt_maintenance_endpoint_ip_allow %}", unit)
+                self.assertEqual(allow, "{{ ['localhost'] + os_apt_maintenance_endpoint_ip_allow }}")
+            else:
+                self.assertEqual(allow, literal, role)
+
+    def test_python_unit_name_matches_the_service(self):
+        # dns_deploy names its unit literally; the others through a variable
+        # whose default is the service name.
+        for role, spec in S5B_CONSUMERS.items():
+            tasks = list(walk(load_yaml(ROOT / "roles" / role / spec["tasks"])))
+            dests = [
+                t["ansible.builtin.template"]["dest"]
+                for t in tasks
+                if (t.get("ansible.builtin.template") or {}).get("src") == Path(spec["unit"]).name
+            ]
+            self.assertEqual(len(dests), 1, role)
+            service = switch_block(role)["vars"]["metrics_httpd_switch_service_name"]
+            self.assertEqual(dests[0], f"/etc/systemd/system/{service}.service", role)
+
+    def test_disabled_openclaw_endpoint_removes_the_dropin(self):
+        tasks = list(walk(load_yaml(ROOT / "roles/openclaw_deploy/tasks/metrics.yml")))
+        removal = next(t for t in tasks if t.get("name") == "metrics | Remove metrics systemd units")
+        self.assertNotIn("when", removal)
+        self.assertIn(
+            "/etc/systemd/system/{{ openclaw_metrics_endpoint_service_name }}.service.d/metrics-httpd-impl.conf",
+            removal["loop"],
+        )
+        disable = next(t for t in tasks if t.get("name") == "metrics | Disable OpenClaw metrics endpoint when disabled")
+        self.assertIn(removal, disable["block"])
+
+    def test_ddns_switch_runs_under_the_ddns_tag(self):
+        # deploy-dns.yml --tags ddns: the include of ddns.yml applies the tag
+        # to every task in it, nested includes (the switch) included.
+        main = load_yaml(ROOT / "roles/dns_deploy/tasks/main.yml")
+        include = next(
+            t for t in main if isinstance(t.get("include_tasks"), dict) and t["include_tasks"].get("file") == "ddns.yml"
+        )
+        self.assertEqual(include["include_tasks"]["apply"], {"tags": ["ddns"]})
+        self.assertEqual(include["tags"], ["ddns"])
+
+
+@unittest.skipUnless(shutil.which("ansible-playbook"), "ansible-playbook not on PATH")
+class S5bConsumerRenderTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.TemporaryDirectory()
+        base = Path(cls._tmp.name)
+        cls.out = base / "out"
+        cls.out.mkdir()
+        env = ansible_env(base, [])
+        plays = [
+            render_play(role, switch_block(role)["vars"], ROOT / "roles" / role / spec["unit"], cls.out / role)
+            for role, spec in S5B_CONSUMERS.items()
+        ]
+        path = base / "render.yml"
+        path.write_text(yaml.safe_dump(plays, sort_keys=False), encoding="utf-8")
+        cls.result = run_playbook(path, env)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmp.cleanup()
+
+    def setUp(self):
+        self.assertEqual(self.result["rc"], 0, self.result["out"])
+
+    def switch(self, role: str) -> dict:
+        return json.loads((self.out / role / "switch.json").read_text())
+
+    def unit_name(self, role: str) -> str:
+        return Path(S5B_CONSUMERS[role]["unit"]).name.removesuffix(".j2")
+
+    def test_plan_argv_per_role(self):
+        for role, spec in S5B_CONSUMERS.items():
+            switch = self.switch(role)
+            self.assertEqual(switch["argv"], spec["argv"], role)
+            self.assertEqual(switch["argv_problems"], [], role)
+            self.assertEqual(switch["impl"], "python", role)
+            self.assertEqual(switch["service"], spec["service"], role)
+            self.assertEqual((switch["user"], switch["group"]), (spec["user"], spec["user"]), role)
+            argv = switch["argv"]
+            self.assertEqual(switch["probe"], [argv[2], argv[4], argv[6], argv[argv.index("--realm") + 1]], role)
+            self.assertTrue(FILTERS.metrics_httpd_probe_covered(argv[2], switch["allow"]), role)
+
+    def test_argv_matches_the_python_fixture_argv(self):
+        # The fixtures are generated from the Python scripts (realm, server
+        # version, messages, timeouts), so this ties each argv to its script.
+        for role in S5B_CONSUMERS:
+            argv = self.switch(role)["argv"]
+            rest = [argv[0]] + argv[5:]
+            placeholders = [
+                FIXTURE_PLACEHOLDERS.get(rest[i - 1], word) if i > 0 else word for i, word in enumerate(rest)
+            ]
+            self.assertEqual(placeholders, s5b_fixture_argv(role), role)
+
+    def test_dropin_and_unit_goldens(self):
+        for role in S5B_CONSUMERS:
+            for name in ("metrics-httpd-impl.conf", self.unit_name(role)):
+                rendered = (self.out / role / name).read_text()
+                golden = GOLDENS / role / name
+                if WRITE_GOLDENS:
+                    golden.parent.mkdir(parents=True, exist_ok=True)
+                    golden.write_text(rendered)
+                self.assertEqual(rendered, golden.read_text(), f"{role}/{name}")
+
+    def test_dropin_execstart_is_the_argv(self):
+        for role in S5B_CONSUMERS:
+            switch = self.switch(role)
+            dropin = (self.out / role / "metrics-httpd-impl.conf").read_text()
+            self.assertEqual(exec_start(dropin), ["/opt/metrics-httpd/0.1.0/metrics-httpd"] + switch["argv"], role)
+            self.assertEqual(dropin, render_vendored("/opt/metrics-httpd/0.1.0/metrics-httpd", switch["argv"]), role)
+            if "--missing-message" in switch["argv"]:
+                message = switch["argv"][switch["argv"].index("--missing-message") + 1]
+                self.assertIn(f' "{message}"', dropin, role)
+
+    def test_python_unit_still_runs_the_script(self):
+        for role in S5B_CONSUMERS:
+            unit = (self.out / role / self.unit_name(role)).read_text()
+            script = self.switch(role)["python_script"]
+            self.assertRegex(unit, rf"(?m)^ExecStart=/usr/bin/python3 {re.escape(script)}( \\)?$", role)
+            self.assertNotIn("metrics-httpd-impl", unit, role)
 
 
 # --------------------------------------------------------------------------
@@ -764,7 +1145,7 @@ class SwitchPlaybookTests(unittest.TestCase):
         return self.archives[key]
 
     def play(self, impl: str, version: str = "", *, check: bool = False, sha256: str | None = None,
-             restart_follows: bool = True, **overrides) -> dict:
+             restart_follows: bool = True, tags: str = "", **overrides) -> dict:
         self.runs += 1
         variables = {
             "metrics_httpd_switch_impl": impl,
@@ -846,9 +1227,21 @@ class SwitchPlaybookTests(unittest.TestCase):
                 },
             ],
         }
+        if tags:
+            # As dns_deploy includes ddns.yml for `--tags ddns`: the tag is
+            # applied to the included file and reaches the switch's tasks.
+            tasks = self.work / f"tasks-{self.runs}.yml"
+            tasks.write_text(yaml.safe_dump(play["tasks"], sort_keys=False), encoding="utf-8")
+            play["tasks"] = [
+                {
+                    "name": "tagged include",
+                    "ansible.builtin.include_tasks": {"file": str(tasks), "apply": {"tags": [tags]}},
+                    "tags": [tags],
+                }
+            ]
         path = self.work / f"play-{self.runs}.yml"
         path.write_text(yaml.safe_dump([play], sort_keys=False), encoding="utf-8")
-        result = run_playbook(path, self.env, check=check)
+        result = run_playbook(path, self.env, check=check, tags=tags)
         result["facts"] = json.loads(facts.read_text()) if facts.exists() else None
         result["handlers"] = self.log.read_text().splitlines() if self.log.exists() else []
         self.log.write_text("")
@@ -953,6 +1346,21 @@ class SwitchPlaybookTests(unittest.TestCase):
         self.assertEqual(back["recap"]["ignored"], 0, back["out"])
         # The installed release is still checked with impl python.
         self.assertEqual(len(self.systemd_run_calls()), 4)
+
+    def test_switch_runs_under_a_tagged_include(self):
+        # dns_deploy's DDNS status endpoint is deployed with `--tags ddns`
+        # (S5b): every switch task must run under the include's tag.
+        result = self.ok("rust", "0.1.0", tags="ddns")
+        self.assertEqual(result["handlers"], ["reload", f"restart {self.binary('0.1.0')}"], result["out"])
+        self.assertTrue(self.dropin.exists(), result["out"])
+        self.assertEqual(len(self.systemd_run_calls()), 1)
+        self.assertEqual(self.live_exe(), self.binary("0.1.0"))
+        self.assertIn("verify | Assert the endpoint answers as expected", result["out"])
+        self.assertEqual(self.pins(), {UNIT: "0.1.0\n"})
+        result = self.ok("python", "0.1.0", tags="ddns")
+        self.assertEqual(result["handlers"], ["reload", "restart /usr/bin/python3.12"], result["out"])
+        self.assertFalse(self.dropin.exists(), result["out"])
+        self.assertEqual(self.pins(), {f"{UNIT}.previous": "0.1.0\n"})
 
     def test_prune_keeps_pins_of_other_units_and_the_rollback_pin(self):
         (self.root / ".pins").mkdir(parents=True)

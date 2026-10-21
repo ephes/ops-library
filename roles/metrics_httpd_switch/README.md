@@ -204,17 +204,19 @@ of select step 1). The template uses no Ansible filter.
 inputs of `logyard_deploy` and `static_site_deploy`, whose `--check-config`
 sandbox is their unit's own `[Service]` lines). The first holds unit tests of
 `plugins/filter/metrics_httpd.py`; the drop-in rendered with plain Jinja2 and
-split back like systemd; static checks of the five consumer roles; one
-`ansible-playbook` run that renders each consumer's argv, drop-in and base
-unit from its defaults (the argv equals the json-file fixture argv of
-`rust/metrics-httpd/fixtures/json_file.json`; drop-ins and the unchanged
+split back like systemd; static checks of the consumer roles (S5a and S5b);
+`ansible-playbook` runs that render each consumer's argv, drop-in and base
+unit from its defaults (the argv equals the fixture argv of the role's Python
+script in `rust/metrics-httpd/fixtures/`; drop-ins and the unchanged
 base units equal the goldens in `tests/fixtures/metrics_httpd_switch/`); and
 `ansible-playbook` runs of select and verify on localhost with a fake
 release archive, fake `systemd-run` and `systemctl`, a fake `/proc` and a
 probe server (switch, idempotent re-run, upgrade, switch back, pins and
 prune, quoting, refused `--check-config`, refused and warned installs,
 input refusals, failed process check, wrong realm, open endpoint, skipped
-probe, check mode). On macOS the runs need Homebrew coreutils (`gmv`). The
-`tailscale_metrics_endpoint` Molecule scenario (`just
-test-tailscale-metrics-timer`) runs select and verify with `impl: python`
-against real systemd.
+probe, check mode, a switch under `--tags` through a tagged include as
+`dns_deploy` runs it). On macOS the runs need Homebrew coreutils (`gmv`). The
+`tailscale_metrics_endpoint` (`just test-tailscale-metrics-timer`),
+`os_apt_maintenance` (`just test-os-apt-maintenance-failed-run`) and
+`metrics_endpoint` (`just molecule-test metrics_endpoint`) Molecule scenarios
+run select and verify with `impl: python` against real systemd.

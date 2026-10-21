@@ -163,6 +163,50 @@
 
     - name: DDNS | Status endpoint
       when: dns_ddns_status_endpoint_enabled | bool
+      # Inputs of the HTTP server's implementation switch (select and verify
+      # below; rust/metrics-httpd/PLAN.md 7.2, argv of 7.3). The argv, sandbox
+      # and IP allow list mirror templates/ddns-status-endpoint.service.j2 and
+      # the constants of files/ddns_status_httpd.py.
+      vars:
+        metrics_httpd_switch_impl: "{{ dns_ddns_status_endpoint_impl }}"
+        metrics_httpd_switch_service_name: ddns-status-endpoint
+        metrics_httpd_switch_validate_user: ddns
+        metrics_httpd_switch_validate_group: ddns
+        metrics_httpd_switch_argv:
+          - json-file
+          - --bind
+          - "{{ dns_ddns_status_endpoint_bind }}"
+          - --port
+          - "{{ dns_ddns_status_endpoint_port | string }}"
+          - --path
+          - "{{ dns_ddns_status_endpoint_path }}"
+          - --json-path
+          - "{{ dns_ddns_status_path }}"
+          - --htpasswd-file
+          - "{{ dns_ddns_status_endpoint_htpasswd_path }}"
+          - --realm
+          - ddns-status
+          - --server-name
+          - ddns-status-httpd/0.1
+          - --missing-message
+          - Status file not found - updater may not have run yet
+          - --request-timeout
+          - "10"
+        metrics_httpd_switch_unit_sandbox:
+          - NoNewPrivileges=yes
+          - ProtectSystem=strict
+          - ProtectHome=yes
+          - PrivateTmp=yes
+          - "ReadOnlyPaths={{ dns_ddns_state_dir }}"
+        metrics_httpd_switch_notify:
+          - reload systemd
+          - restart ddns-status-endpoint
+        metrics_httpd_switch_python_script: "{{ dns_ddns_status_endpoint_server_path }}"
+        metrics_httpd_switch_probe_bind: "{{ dns_ddns_status_endpoint_bind }}"
+        metrics_httpd_switch_probe_port: "{{ dns_ddns_status_endpoint_port }}"
+        metrics_httpd_switch_probe_path: "{{ dns_ddns_status_endpoint_path }}"
+        metrics_httpd_switch_probe_realm: ddns-status
+        metrics_httpd_switch_ip_address_allow: [localhost, 100.64.0.0/10]
       block:
         - name: DDNS | Deploy status HTTP server
           ansible.builtin.copy:
@@ -220,12 +264,32 @@
             group: root
           notify: restart ddns-status-endpoint
 
+        # Python or the pinned Rust metrics-httpd (drop-in
+        # metrics-httpd-impl.conf); a change notifies the handlers flushed
+        # below. The htpasswd file and the state directory that
+        # --check-config reads are in place above.
+        - name: DDNS | Select the status endpoint's HTTP server implementation
+          ansible.builtin.include_role:
+            name: local.ops_library.metrics_httpd_switch
+            tasks_from: select
+
         - name: DDNS | Enable and start status endpoint
           ansible.builtin.systemd:
             name: ddns-status-endpoint.service
             state: started
             enabled: true
             daemon_reload: true
+
+        - name: DDNS | Apply a pending implementation switch before verifying it
+          ansible.builtin.meta: flush_handlers
+
+        # The endpoint runs the selected implementation and answers 401 with
+        # its realm; then the metrics-httpd pin moves and old releases are
+        # pruned.
+        - name: DDNS | Verify the status endpoint's HTTP server implementation
+          ansible.builtin.include_role:
+            name: local.ops_library.metrics_httpd_switch
+            tasks_from: verify
 
     - name: DDNS | Stop a status endpoint that is no longer enabled
       ansible.builtin.systemd:

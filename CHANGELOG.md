@@ -107,6 +107,34 @@
   merged and released before any Rust guard install (S9); 0.1.0 is installed
   nowhere and must never be.
 
+## Unreleased — Rust ports: metrics-httpd role switch of four more endpoints (S5b)
+
+- `metrics_endpoint`, `os_apt_maintenance`, `dns_deploy` (DDNS status
+  endpoint) and `openclaw_deploy` (metrics endpoint) use the internal helper
+  `metrics_httpd_switch` (slice S5b of `rust/metrics-httpd/PLAN.md`, argv of
+  section 7.3): new `metrics_endpoint_impl`,
+  `os_apt_maintenance_endpoint_impl`, `dns_ddns_status_endpoint_impl` and
+  `openclaw_metrics_endpoint_impl` (default
+  `{{ metrics_httpd_impl | default('python') }}`). `rust` runs the pinned
+  `metrics-httpd` release in its `script` (`metrics-endpoint`), `apt-state`
+  (`os-apt-maintenance-endpoint`) or `json-file` mode (`ddns-status-endpoint`
+  with the updater's missing-file message and a 10 s request timeout;
+  `openclaw-metrics-endpoint` with the collector's missing-file message)
+  through the drop-in `metrics-httpd-impl.conf`; it needs
+  `metrics_httpd_rust_version` and `metrics_httpd_rust_sha256`. With the
+  default `python` the deploy renders exactly the same units and scripts as
+  before and changes nothing on the host; it now also checks after each
+  deploy that the unit runs the Python script and answers 401 with its
+  realm. `os_apt_maintenance` selects the implementation only with
+  `os_apt_maintenance_endpoint_enabled` and after the state file exists (the
+  unit's `ReadOnlyPaths=` names it); the DDNS switch runs under
+  `--tags ddns`; disabling the OpenClaw metrics endpoint also removes the
+  drop-in.
+- Tests: `tests/test_metrics_httpd_switch.py` (`S5bConsumerStaticTests`,
+  `S5bConsumerRenderTests` with goldens in
+  `tests/fixtures/metrics_httpd_switch/<role>/`, and a switch run under a
+  tagged include).
+
 ## Unreleased — Rust ports: metrics-httpd release 0.1.0 (S4)
 
 - `rust/metrics-httpd` (slice S4 of `rust/metrics-httpd/PLAN.md`): the
