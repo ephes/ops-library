@@ -15,6 +15,9 @@
       - ca_trust_consumers_node_flag is match('^--[a-z][a-z0-9-]*$')
       - ca_trust_consumers_node_dropin_name is match('^[A-Za-z0-9_.-]+\.conf$')
       - ca_trust_consumers_systemd_dir is match('^/')
+      # sudo skips sudoers.d files whose names contain a dot or end in "~".
+      - ca_trust_consumers_sudoers_dropin | basename is match('^[A-Za-z0-9_-]+$')
+      - ca_trust_consumers_sudo_env_file is match('^/')
       - (ca_trust_consumers_node_units + ca_trust_consumers_restart_units)
         | map(attribute='name') | select('match', '^[A-Za-z0-9@_.:-]+\.service$') | list | length
         == (ca_trust_consumers_node_units + ca_trust_consumers_restart_units) | length

@@ -122,6 +122,10 @@ class RoleRunTests(unittest.TestCase):
                 ca_trust_consumers_root_paths: ["{self.bundle}", "{self.certs}"]
                 ca_trust_consumers_ca_bundle: "{self.bundle}"
                 ca_trust_consumers_environment_file: "{self.envfile}"
+                ca_trust_consumers_sudo_env_file: "{self.tmp}/ca-trust-consumers/sudo.env"
+                ca_trust_consumers_sudoers_dropin: "{self.tmp}/sudoers.d/ca-trust-consumers"
+                ca_trust_consumers_sudoers_sources: ["{self.tmp}/sudoers", "{self.tmp}/sudoers.d"]
+                ca_trust_consumers_visudo: /usr/bin/true
                 ca_trust_consumers_node_dropin_name: 99-ca-trust-node.conf
                 ca_trust_consumers_node_units: []
                 ca_trust_consumers_restart_units:
@@ -213,12 +217,35 @@ class RoleRunTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, out[-4000:])
         self.assertIn("No forbidden root among 2 certificates", out)
         self.assertIn("environment: NODE_OPTIONS updated --use-openssl-ca", out)
+        self.assertIn("sudo sessions: NODE_OPTIONS from", out)
         self.assertNotIn("do-not-print-me", out)  # no diff or log of the environment file
         self.assertNotIn("max-old-space-size", out)
         self.assertIn("old.service: WOULD RESTART (check mode)", out)
         self.assertIn("fresh.service: started after the CA bundle changed, no restart needed", out)
         self.assertIn("stopped.service: inactive, not started by this role", out)
         self.assertIn('NODE_OPTIONS="--max-old-space-size=1536"', self.envfile.read_text())
+
+    def test_existing_sudoers_env_file_is_refused(self) -> None:
+        (self.tmp / "sudoers.d").mkdir()
+        (self.tmp / "sudoers.d" / "proxy").write_text('Defaults env_reset, \\\n    env_file="/etc/proxy.env"\n')
+        (self.tmp / "sudoers.d" / "restricted").write_text('Defaults restricted_env_file="/etc/r.env"\n')
+        (self.tmp / "sudoers").write_text("Defaults env_reset\nroot ALL=(ALL) ALL\n")
+        result = self._run()
+        out = result.stdout + result.stderr
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("proxy already", out)
+        self.assertNotIn("sudoers already", out)  # a file without the word does not count
+        self.assertNotIn("restricted", out)  # restricted_env_file is another option
+        self.assertNotIn("sudo sessions: NODE_OPTIONS from", out)
+
+    def test_lookalike_sudoers_options_do_not_block(self) -> None:
+        (self.tmp / "sudoers.d").mkdir()
+        (self.tmp / "sudoers.d" / "restricted").write_text('Defaults restricted_env_file="/etc/r.env"\n')
+        (self.tmp / "sudoers").write_text("Defaults env_reset # no mention here\n")
+        result = self._run()
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, out[-3000:])
+        self.assertIn("sudo sessions: NODE_OPTIONS from", out)
 
     def test_pending_daemon_reload_stops_before_any_change(self) -> None:
         units = json.loads(self.units.read_text())

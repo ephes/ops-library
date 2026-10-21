@@ -35,6 +35,7 @@ def _load(name: str, path: Path):
 
 filters = _load("ca_trust_consumers_filters", ROOT / "plugins/filter/ca_trust_consumers.py")
 roots = _load("ca_trust_roots_check", ROLE / "files/ca_trust_roots_check.py")
+sudoers = _load("ca_trust_sudoers_env_file", ROLE / "files/ca_trust_sudoers_env_file.py")
 
 FLAG = "--use-openssl-ca"
 
@@ -206,6 +207,49 @@ class RootsCheckTests(unittest.TestCase):
         self.assertEqual(json.loads(out.getvalue())["found"][0]["sha256"], sha)
 
 
+class SudoersEnvFileTests(unittest.TestCase):
+    def test_any_whole_word_mention_counts(self):
+        sets = sudoers.sets_env_file
+        for text in (
+            'Defaults env_file="/etc/proxy.env"\n',
+            "Defaults\tenv_reset, env_file=/etc/x\n",
+            "Defaults:root, daemon env_file=/etc/proxy.env\n",  # selector list with a blank
+            "Defaults env_reset, \\\n    env_file=\"/etc/proxy.env\"\n",  # continued line
+            '# comment ending in a backslash \\\nDefaults env_file=/etc/proxy.env\n',
+            'Defaults env_keep += "FOO \\\n#BAR", env_file="/etc/proxy.env"\n',  # quote across lines
+            "Defaults !env_file\n",
+            "# Defaults env_file=/commented\n",  # fail closed: a comment counts too
+        ):
+            with self.subTest(text=text):
+                self.assertTrue(sets(text))
+
+    def test_longer_names_and_absent_option_do_not_count(self):
+        sets = sudoers.sets_env_file
+        for text in (
+            'Defaults restricted_env_file="/etc/proxy.env"\n',
+            'Defaults secure_path="/usr/bin:/bin"\n',
+            'Defaults env_keep += "LANG env_file_hint"\n',
+            "root ALL=(ALL) ALL\n#includedir /etc/sudoers.d\n",
+        ):
+            with self.subTest(text=text):
+                self.assertFalse(sets(text))
+
+    def test_cli_scans_like_includedir_and_excludes_own_dropin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / "sudoers").write_text("#includedir /etc/sudoers.d\n")
+            d = base / "sudoers.d"
+            d.mkdir()
+            (d / "ca-trust-consumers").write_text('Defaults env_file="/etc/ca-trust-consumers/sudo.env"\n')
+            (d / "proxy").write_text("Defaults env_reset,\\\n env_file=/etc/proxy.env\n")
+            (d / "ignored.bak").write_text("Defaults env_file=/x\n")  # sudo skips names with a dot
+            (d / "README~").write_text("Defaults env_file=/x\n")
+            out = io.StringIO()
+            with redirect_stdout(out):
+                self.assertEqual(sudoers.main(["--exclude", str(d / "ca-trust-consumers"), str(base / "sudoers"), str(d)]), 0)
+        self.assertEqual(out.getvalue().splitlines(), [str(d / "proxy")])
+
+
 class RoleStructureTests(unittest.TestCase):
     def test_all_role_yaml_parses(self):
         for path in ROLE.rglob("*.yml"):
@@ -339,6 +383,26 @@ class RoleStructureTests(unittest.TestCase):
         self.assertEqual(pending[1]["ansible.builtin.assert"]["that"], "_ca_trust_consumers_pending.stdout | trim | length == 0")
         defaults = yaml.safe_load((ROLE / "defaults/main.yml").read_text())
         self.assertTrue(defaults["ca_trust_consumers_node_dropin_name"].startswith("99-"))
+
+    def test_sudo_sessions_get_the_flag_from_a_root_owned_env_file(self):
+        cli = _tasks("node_cli.yml")
+        block = next(t for t in cli if t.get("name") == "node_cli | Configure sudo sessions")
+        inner = {t["name"]: t for t in block["block"]}
+        dropin = inner["node_cli | Point sudo at the environment file"]["ansible.builtin.copy"]
+        self.assertIn('Defaults env_file="{{ ca_trust_consumers_sudo_env_file }}"', dropin["content"])
+        self.assertEqual(dropin["mode"], "0440")
+        self.assertEqual(dropin["validate"], "{{ ca_trust_consumers_visudo }} -cf %s")
+        env = inner["node_cli | Write sudo environment file"]
+        self.assertIn('NODE_OPTIONS="{{ _ca_trust_consumers_cli_node_options }}"', env["ansible.builtin.copy"]["content"])
+        self.assertTrue(env["no_log"])
+        self.assertFalse(env["diff"])
+        line = next(t for t in cli if t.get("name") == "node_cli | Set NODE_OPTIONS in environment file")
+        self.assertEqual(line["ansible.builtin.lineinfile"]["line"], 'NODE_OPTIONS="{{ _ca_trust_consumers_cli_node_options }}"')
+        for text in (str(block), (ROLE / "defaults/main.yml").read_text()):
+            self.assertNotIn("env_keep", text.replace("unlike env_keep", ""))
+        defaults = yaml.safe_load((ROLE / "defaults/main.yml").read_text())
+        self.assertTrue(defaults["ca_trust_consumers_node_cli_sudo"])
+        self.assertNotIn(".", Path(defaults["ca_trust_consumers_sudoers_dropin"]).name)
 
     def test_report_mode_does_not_fail_on_unrestarted_processes(self):
         verify = _tasks("verify_node_unit.yml")[-1]
