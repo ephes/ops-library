@@ -967,7 +967,7 @@ test-chrome-ca-distrust: venv
 
 # Validate trust-only activation and recovery
 test-container-ca-activate: venv
-    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_container_ca_activate tests.test_livekit_idle_preflight
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_container_ca_activate tests.test_livekit_idle_preflight tests.test_container_ca_owners
 
 # Verify idle and launchd trust refresh guards
 test-voxhelm-trust-refresh: venv
@@ -980,3 +980,7 @@ test-ca-trust-consumers: venv
 # Explicit required Docker/real-UV recovery integration gate.
 test-security-trust-recover: venv
     @uv run python -m unittest tests.test_security_trust_recover_live
+
+# Opt-in privileged isolated real-systemd/nested-Docker regression (local Docker only).
+test-container-ca-owner-systemd:
+    @python3 tests/run_container_ca_owner_systemd.py

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — container_ca_activate: native owner trust persistence
+
+- Persist CA-only overrides through existing systemd Compose owners, with guarded start/reload, explicit hash-approved reconciliation, and bounded recovery without restarting Docker.
+
 ## Unreleased — Rust ports: metrics-httpd json-file mode (S2a)
 
 - `rust/metrics-httpd` (slice S2a of `rust/metrics-httpd/PLAN.md`): the
@@ -111,6 +115,7 @@
   S3b. Nothing installs the binary and no role behaviour changes.
 
 ||||||| parent of b91b0cf4 (Add the metrics-httpd script mode with fixtures from metrics_httpd.py.j2)
+
 ## Unreleased — Rust ports: echoport-command-guard runtime and exec (S4)
 
 - `echoport-command-guard` (slice S4 of `rust/echoport-command-guard/PLAN.md`):
@@ -133,6 +138,7 @@
   Nothing installs the binary; no role behaviour changes.
 
 ||||||| parent of cb28bea1 (Add the metrics-httpd script mode with fixtures from metrics_httpd.py.j2)
+
 ## Unreleased — Rust ports: metrics-httpd core (S1)
 
 - `rust/metrics-httpd` (slice S1 of `rust/metrics-httpd/PLAN.md`): the
