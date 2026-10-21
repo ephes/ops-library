@@ -2,6 +2,10 @@
 - name: "Run Home Assistant validation tasks"
   ansible.builtin.import_tasks: validate.yml
 
+- name: "Check existing environments' certifi/pip floors"
+  ansible.builtin.include_tasks: security_preflight.yml
+  when: homeassistant_python_security_floor_enabled | bool
+
 - name: "Install required packages"
   ansible.builtin.import_tasks: packages.yml
 
@@ -18,12 +22,20 @@
 - name: "Ensure uv runtime prerequisites"
   ansible.builtin.import_tasks: uv.yml
 
+- name: "Write the certifi/pip install constraints"
+  ansible.builtin.include_tasks: security_constraints.yml
+  when: homeassistant_python_security_floor_enabled | bool
+
 - name: "Provision Python environment"
   ansible.builtin.import_tasks: python.yml
 
 - name: "Manage Matter server"
   ansible.builtin.import_tasks: matter_server.yml
   when: homeassistant_manage_matter_server
+
+- name: "Verify the environments' certifi/pip floors"
+  ansible.builtin.include_tasks: security_verify.yml
+  when: homeassistant_python_security_floor_enabled | bool
 
 - name: "Resolve UniFi integration secrets"
   ansible.builtin.import_tasks: unifi.yml

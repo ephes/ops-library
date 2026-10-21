@@ -182,3 +182,24 @@ Set it to `true` to enable `NoNewPrivileges=true`, `PrivateTmp=true`,
 The nginx unit instead allows the cache, runtime and nginx log directories.
 Validate custom paths and application writes on a staging host before enabling.
 Enabling or disabling rewrites the unit on the next deploy.
+
+## Certifi/pip security floor
+
+With `takahe_python_security_floor_enabled` (default `true`) the role uses
+[`python_security_floor`](../python_security_floor/README.md):
+
+- Before changing anything, as the first role dependency (ahead of the
+  uv/Redis/PostgreSQL installs), it verifies the existing environment. certifi is
+  deferred because the requirements install runs on every deploy with
+  `-c` with `takahe_python_security_constraints_path` (kept outside the synced
+  source tree) and raises an old certifi, which a plain `pip install -r` would
+  leave in place. pip is deferred only while `takahe_pip_upgrade` is on, since
+  that step upgrades pip under the same constraints, and only when the
+  environment's Python supports pip 26.2.2 (3.10 or later); otherwise a pip
+  below the floor is refused before anything changes.
+- Constraints never add packages; a requirement capping certifi below the floor
+  fails before anything is installed.
+- Afterwards the environment is verified again without deferrals. pip 26.2.2
+  requires Python 3.10 or later; an older environment is reported, not migrated.
+
+Set `takahe_python_security_floor_enabled: false` only for a host where the floor is handled differently; the guard then neither checks nor constrains anything.

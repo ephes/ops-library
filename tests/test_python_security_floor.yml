@@ -1,0 +1,147 @@
+---
+# Runs python_security_floor's entry points and filters through the collection
+# loader (FQCN). Driven by tests/test_python_security_floor.py, which sets
+# ANSIBLE_COLLECTIONS_PATH to this checkout.
+- name: python_security_floor through the collection loader
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    fixtures: "{{ playbook_dir }}/fixtures/python_security"
+    python_security_floor_become: false
+    python_security_floor_user: "{{ lookup('ansible.builtin.env', 'USER') }}"
+
+  tasks:
+    - name: Create a scratch directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: ops-library-python-security-play-
+      register: scratch
+
+    - name: Run the checks
+      block:
+        - name: Filters resolve by FQCN
+          ansible.builtin.assert:
+            that:
+              - >-
+                (lookup('ansible.builtin.file', fixtures ~ '/uv-lock-stale.txt')
+                 | local.ops_library.uv_lock_floor_violations({'certifi': '2026.10.19'}))
+                == ['certifi 2026.7.22 is locked; 2026.10.19 or later is required']
+              - >-
+                ({'certifi': '2026.10.19', 'pip': '26.2.2'} | local.ops_library.python_security_constraints)
+                == 'certifi>=2026.10.19\npip>=26.2.2\n'
+
+        - name: A current lock passes lock.yml
+          ansible.builtin.include_role:
+            name: local.ops_library.python_security_floor
+            tasks_from: lock.yml
+          vars:
+            python_security_floor_lock_text: "{{ lookup('ansible.builtin.file', fixtures ~ '/uv-lock-current.txt') }}"
+            python_security_floor_label: current fixture
+
+        - name: A stale lock fails lock.yml
+          block:
+            - name: Check the stale lock
+              ansible.builtin.include_role:
+                name: local.ops_library.python_security_floor
+                tasks_from: lock.yml
+              vars:
+                python_security_floor_lock_text: "{{ lookup('ansible.builtin.file', fixtures ~ '/uv-lock-stale.txt') }}"
+                python_security_floor_label: stale fixture
+            - name: The stale lock must not pass
+              ansible.builtin.set_fact:
+                stale_lock_passed: true
+          rescue:
+            - name: The failure names the stale packages
+              ansible.builtin.assert:
+                that:
+                  - "'certifi 2026.7.22 is locked' in ansible_failed_result.msg"
+                  - "'pip 26.2.1 is locked' in ansible_failed_result.msg"
+                  - "'Nothing was installed' in ansible_failed_result.msg"
+
+        - name: Write constraints
+          ansible.builtin.include_role:
+            name: local.ops_library.python_security_floor
+            tasks_from: constraints.yml
+          vars:
+            python_security_floor_constraints_path: "{{ scratch.path }}/constraints.txt"
+            python_security_floor_owner: "{{ omit }}"
+            python_security_floor_group: "{{ omit }}"
+
+        - name: Constraints contain only the floors
+          ansible.builtin.assert:
+            that:
+              - lookup('ansible.builtin.file', scratch.path ~ '/constraints.txt') == 'certifi>=2026.10.19\npip>=26.2.2'
+
+        - name: Build environments with current and stale certifi
+          ansible.builtin.command:
+            argv: [sh, -c, 'uv venv -q --python 3.12 "$1" && uv pip install -q --python "$1/bin/python" "certifi==$2"', sh, "{{ scratch.path }}/{{ item.name }}", "{{ item.certifi }}"]
+          loop:
+            - {name: current, certifi: "2026.10.19"}
+            - {name: stale, certifi: "2026.7.22"}
+          changed_when: true
+
+        - name: The current environment passes verify.yml
+          ansible.builtin.include_role:
+            name: local.ops_library.python_security_floor
+            tasks_from: verify.yml
+          vars:
+            python_security_floor_python: "{{ scratch.path }}/current/bin/python"
+            python_security_floor_label: current environment
+
+        - name: The stale environment fails verify.yml
+          block:
+            - name: Verify the stale environment
+              ansible.builtin.include_role:
+                name: local.ops_library.python_security_floor
+                tasks_from: verify.yml
+              vars:
+                python_security_floor_python: "{{ scratch.path }}/stale/bin/python"
+                python_security_floor_label: stale environment
+            - name: The stale environment must not pass
+              ansible.builtin.set_fact:
+                stale_env_passed: true
+          rescue:
+            - name: The failure names the version and the distrusted root
+              ansible.builtin.assert:
+                that:
+                  - "'certifi 2026.7.22 is installed' in ansible_failed_result.msg"
+                  - "'emSign ECC Root CA - G3' in ansible_failed_result.msg"
+
+        - name: Preflight mode passes current and missing environments
+          ansible.builtin.include_role:
+            name: local.ops_library.python_security_floor
+          vars:
+            python_security_floor_preflight:
+              - {python: "{{ scratch.path }}/current/bin/python", user: "{{ python_security_floor_user }}", label: current}
+              - {python: "{{ scratch.path }}/missing/bin/python", user: "{{ python_security_floor_user }}", label: missing}
+
+        - name: Preflight mode refuses a stale environment
+          block:
+            - name: Preflight the stale environment
+              ansible.builtin.include_role:
+                name: local.ops_library.python_security_floor
+              vars:
+                python_security_floor_preflight:
+                  - {python: "{{ scratch.path }}/stale/bin/python", user: "{{ python_security_floor_user }}", label: stale}
+            - name: The stale preflight must not pass
+              ansible.builtin.set_fact:
+                stale_preflight_passed: true
+          rescue:
+            - name: The preflight failure names the version
+              ansible.builtin.assert:
+                that:
+                  - "'certifi 2026.7.22 is installed' in ansible_failed_result.msg"
+
+        - name: Neither negative case passed
+          ansible.builtin.assert:
+            that:
+              - not (stale_lock_passed | default(false))
+              - not (stale_env_passed | default(false))
+              - not (stale_preflight_passed | default(false))
+      always:
+        - name: Remove the scratch directory
+          ansible.builtin.file:
+            path: "{{ scratch.path }}"
+            state: absent

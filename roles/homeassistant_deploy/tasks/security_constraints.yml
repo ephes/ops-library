@@ -1,0 +1,9 @@
+---
+- name: "security_constraints | Write the certifi/pip constraint file for Home Assistant installs"
+  ansible.builtin.include_role:
+    name: local.ops_library.python_security_floor
+    tasks_from: constraints.yml
+  vars:
+    python_security_floor_constraints_path: "{{ homeassistant_python_security_constraints_path }}"
+    python_security_floor_owner: "{{ homeassistant_user }}"
+    python_security_floor_group: "{{ homeassistant_group }}"

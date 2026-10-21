@@ -15,6 +15,7 @@ macos_ca_remediate
 java_ca_refresh
 macos_ssh_tunnel
 macos_java_trust
+python_security_floor
 ssh_forwarding_identity
 ssh_restricted_forwarding_account
 ```

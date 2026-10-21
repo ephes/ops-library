@@ -21,6 +21,15 @@ galaxy_info:
     - deployment
 
 dependencies:
+  # First: refuse an environment below the certifi/pip floor before the
+  # dependencies below change packages, Redis or PostgreSQL.
+  - role: local.ops_library.python_security_floor
+    vars:
+      python_security_floor_preflight:
+        - python: "{{ paperless_virtualenv }}/bin/python"
+          user: "{{ paperless_username }}"
+          label: Paperless environment
+    when: paperless_python_security_floor_enabled | bool
   - role: local.ops_library.uv_install
     vars:
       uv_install_dir: "{{ paperless_uv_install_dir }}"

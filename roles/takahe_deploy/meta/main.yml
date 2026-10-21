@@ -20,6 +20,17 @@ galaxy_info:
 
 dependencies:
   - role: local.ops_library.takahe_shared
+  # Before postgres_install: refuse an environment below the certifi/pip
+  # floor before anything changes. certifi is deferred (the constrained
+  # requirements install runs on every deploy), pip while takahe_pip_upgrade.
+  - role: local.ops_library.python_security_floor
+    vars:
+      python_security_floor_preflight:
+        - python: "{{ takahe_python_bin }}"
+          user: "{{ takahe_user }}"
+          label: Takahe environment
+          deferred: "{{ ['certifi'] + (['pip'] if takahe_pip_upgrade | bool else []) }}"
+    when: takahe_python_security_floor_enabled | bool
   - role: local.ops_library.postgres_install
     vars:
       postgres_install_version: "{{ takahe_postgres_version }}"

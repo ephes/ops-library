@@ -21,8 +21,28 @@
 - name: Prepare Python environment
   ansible.builtin.import_tasks: python.yml
 
+- name: Write the certifi/pip install constraints
+  ansible.builtin.include_role:
+    name: local.ops_library.python_security_floor
+    tasks_from: constraints.yml
+  vars:
+    python_security_floor_constraints_path: "{{ paperless_python_security_constraints_path }}"
+    python_security_floor_owner: "{{ paperless_username }}"
+    python_security_floor_group: "{{ paperless_group }}"
+  when: paperless_python_security_floor_enabled | bool
+
 - name: Install Paperless application
   ansible.builtin.import_tasks: application.yml
+
+- name: Verify the environment's certifi/pip floors
+  ansible.builtin.include_role:
+    name: local.ops_library.python_security_floor
+    tasks_from: verify.yml
+  vars:
+    python_security_floor_python: "{{ paperless_virtualenv }}/bin/python"
+    python_security_floor_user: "{{ paperless_username }}"
+    python_security_floor_label: Paperless environment
+  when: paperless_python_security_floor_enabled | bool
 
 - name: Configure Paperless runtime
   ansible.builtin.import_tasks: configuration.yml

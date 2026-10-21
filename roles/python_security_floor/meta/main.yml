@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  author: Jochen Wersdörfer
+  description: Keep certifi/pip at their security floors across application deploys
+  license: MIT
+  min_ansible_version: '2.20'
+  platforms:
+    - name: Debian
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+dependencies: []

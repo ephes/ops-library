@@ -233,3 +233,28 @@ Bump the version and checksum together; `latest` is no longer accepted.
 ## Secret handling
 
 The WebSocket helpers that run as `homeassistant_user` receive `homeassistant_api_token` (and the Custom Conversation API key) as JSON on stdin, never in the task environment. Under `become_user`, Ansible places task `environment:` values inside the command it hands to sudo, and sudo logs that command to the journal and `/var/log/auth.log`; `no_log` does not prevent this. `tests/test_become_environment_secrets.py` (`just test-become-environment-secrets`) guards this.
+
+## Certifi/pip security floor
+
+With `homeassistant_python_security_floor_enabled` (default `true`) the role uses
+[`python_security_floor`](../python_security_floor/README.md):
+
+- Before changing anything it verifies the existing Home Assistant (and, when
+  managed, Matter server) environment: certifi/pip at their floors, no
+  distrusted root in their bundles. The installs below run only on a version
+  change, a recreated environment or `homeassistant_force_reinstall`, so an
+  environment below the floor is refused rather than left as it is; bring it to
+  the floor with the host's supported remediation first.
+- Every `uv pip install` the role runs (Home Assistant, extra packages, Matter
+  server) gets `--constraint` with `homeassistant_python_security_constraints_path`.
+  Constraints never add packages; a dependency capping certifi below the floor
+  makes the install fail before anything changes.
+- Afterwards the environments are verified again.
+
+Home Assistant installs integration requirements itself at runtime with its
+bundled uv, `--upgrade` and its own `package_constraints.txt`; those installs do
+not use this constraint file. `--upgrade` resolves certifi to the newest allowed
+release, and the next deploy's preflight reports any environment that fell
+below the floor.
+
+Set `homeassistant_python_security_floor_enabled: false` only for a host where the floor is handled differently; the guard then neither checks nor constrains anything.

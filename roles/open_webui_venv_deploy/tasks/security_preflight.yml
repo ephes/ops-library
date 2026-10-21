@@ -1,0 +1,20 @@
+---
+# Before any change: the existing environment must meet the certifi/pip
+# floors (python_security_floor). certifi is deferred: the constrained
+# Open WebUI install below runs on every deploy and raises it; pip is not
+# installed or upgraded by this role, so a stale pip is refused here.
+- name: security_preflight | Check for an existing Open WebUI environment
+  ansible.builtin.stat:
+    path: "{{ open_webui_venv_path }}/bin/python"
+  register: _open_webui_security_venv
+
+- name: security_preflight | Verify the existing environment's trust floors
+  ansible.builtin.include_role:
+    name: local.ops_library.python_security_floor
+    tasks_from: verify.yml
+  vars:
+    python_security_floor_python: "{{ open_webui_venv_path }}/bin/python"
+    python_security_floor_user: "{{ open_webui_user }}"
+    python_security_floor_label: Open WebUI environment
+    python_security_floor_deferred: [certifi]
+  when: _open_webui_security_venv.stat.exists

@@ -67,3 +67,25 @@ Enabling or disabling rewrites the unit on the next deploy.
 With hardening disabled, existing unit rendering is preserved. Setting both
 `metube_systemd_tasks_max` and `metube_systemd_memory_max` currently joins the
 settings on one line; correcting that existing behavior is a separate follow-up.
+
+## Certifi/pip security floor
+
+With `metube_python_security_floor_enabled` (default `true`) the role uses
+[`python_security_floor`](../python_security_floor/README.md):
+
+- It resolves `metube_repo_version` to one commit in a staging checkout (the UI
+  build checkout, or `metube_source_check_dir` when `metube_ui_build` is off),
+  reads `uv.lock` of exactly that commit with `git show` and refuses it when it
+  locks certifi or pip below the floor. This happens before `source.yml`
+  changes `metube_install_dir` or the environment; `source.yml` then checks out
+  that same commit, so a moving branch cannot slip a different lock in. The
+  configured `metube_repo_version` is never replaced: deploy a revision whose
+  lock meets the floor.
+- `uv sync --frozen` makes the environment exactly the checked lock, so the
+  existing environment is only checked first when `metube_sync_dependencies`
+  is off. After the sync the environment's certifi/pip versions and bundles are
+  verified.
+- In check mode the staging checkout is not updated, so the lock is not read
+  and only the existing environment is verified.
+
+Set `metube_python_security_floor_enabled: false` only for a host where the floor is handled differently; the guard then neither checks nor constrains anything.

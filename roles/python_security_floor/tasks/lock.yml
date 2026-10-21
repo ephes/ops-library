@@ -1,0 +1,20 @@
+---
+# Refuse a uv.lock that locks certifi/pip below their floor. Called before the
+# deploy changes the operational source or environment, with the text of the
+# exact lock it is about to install.
+- name: lock | Check the lock floors of {{ python_security_floor_label }}
+  ansible.builtin.assert:
+    that:
+      - _python_security_floor_lock_problems | length == 0
+    fail_msg: >-
+      {{ python_security_floor_label }}: the uv.lock about to be installed is
+      below the certifi/pip security floor
+      ({{ _python_security_floor_lock_problems | join('; ') }}). Nothing was
+      installed. Deploy a source revision whose lock meets the floor (update
+      the stale lock in the source, or deploy a reviewed source revision with
+      the role's normal source settings).
+    quiet: true
+  vars:
+    _python_security_floor_lock_problems: >-
+      {{ python_security_floor_lock_text
+         | local.ops_library.uv_lock_floor_violations(python_security_floor_packages) }}
