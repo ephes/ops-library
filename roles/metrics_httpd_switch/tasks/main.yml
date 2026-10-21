@@ -1,0 +1,10 @@
+---
+# metrics_httpd_switch has no default entry point: a consumer includes
+# select.yml and verify.yml with tasks_from (README.md).
+- name: metrics_httpd_switch | Refuse an include without tasks_from
+  ansible.builtin.fail:
+    msg: >-
+      metrics_httpd_switch is an internal helper; include it with
+      tasks_from: select (before the unit is enabled and started) and
+      tasks_from: verify (after meta: flush_handlers); see
+      roles/metrics_httpd_switch/README.md.

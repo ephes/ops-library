@@ -1,0 +1,78 @@
+---
+# Internal helper: select the Python script or the Rust metrics-httpd for one
+# endpoint unit (rust/metrics-httpd/PLAN.md 7.2). A consumer role includes
+# tasks_from: select (before it enables and starts the unit) and
+# tasks_from: verify (after meta: flush_handlers); see README.md.
+
+# --- select -------------------------------------------------------------------
+# python | rust. Consumers pass <role>_impl, which defaults to the fleet
+# variable metrics_httpd_impl (PLAN.md 7.1).
+metrics_httpd_switch_impl: ""
+# The unit (without .service); also the pin consumer name in
+# <install_root>/.pins/.
+metrics_httpd_switch_service_name: ""
+# The metrics-httpd command line after the binary (PLAN.md 7.3), e.g.
+# ["json-file", "--bind", "100.64.0.1", "--port", "9103", ...]. Strings or
+# integers; no %, $, ", \ or control characters; the role appends
+# --check-config for the check.
+metrics_httpd_switch_argv: []
+# The unit's User= and Group=: --check-config runs as them.
+metrics_httpd_switch_validate_user: ""
+metrics_httpd_switch_validate_group: ""
+# systemd-run --property values mirroring the unit's sandbox for
+# --check-config (User/Group come from validate_user/validate_group). A
+# consumer whose unit sets ReadOnlyPaths= or Environment= appends them.
+metrics_httpd_switch_unit_sandbox:
+  - NoNewPrivileges=yes
+  - ProtectSystem=strict
+  - ProtectHome=yes
+  - PrivateTmp=yes
+# The consumer's handlers to notify when the drop-in appears, changes or
+# disappears (its "reload systemd" and the unit's restart handler).
+metrics_httpd_switch_notify: []
+
+# The pinned release (fleet variables, PLAN.md 7.1). With a version set the
+# binary is installed even with impl python, so it can be installed ahead of
+# the switch; a failure then only warns.
+metrics_httpd_switch_version: "{{ metrics_httpd_rust_version | default('') }}"
+metrics_httpd_switch_sha256: "{{ metrics_httpd_rust_sha256 | default('') }}"
+# An archive on the controller instead of the download (development).
+metrics_httpd_switch_local_archive: "{{ metrics_httpd_rust_local_archive | default('') }}"
+metrics_httpd_switch_install_root: /opt/metrics-httpd
+
+# --- verify -------------------------------------------------------------------
+# With impl python the live process's command line must contain this path
+# (the role's Python script).
+metrics_httpd_switch_python_script: ""
+# Unauthenticated probe of the endpoint from the host after the switch.
+metrics_httpd_switch_probe_bind: ""
+metrics_httpd_switch_probe_port: 0
+metrics_httpd_switch_probe_path: ""
+# unauthorized: 401 with WWW-Authenticate: Basic realm="<probe_realm>"
+#   (json-file, script, apt-state);
+# logyard-health: 200 with a JSON object holding "status";
+# static: 200.
+metrics_httpd_switch_probe_expect: unauthorized
+metrics_httpd_switch_probe_realm: ""
+# The unit's IPAddressAllow= values (all units set IPAddressDeny=any). The
+# probe is skipped with a message when they do not cover the probed address,
+# which is also the probe's source address. ["any"]: no IP filter.
+metrics_httpd_switch_ip_address_allow:
+  - any
+# Retries of the live-process check and of the probe (about 30 s each).
+metrics_httpd_switch_verify_retries: 15
+metrics_httpd_switch_verify_delay: 2
+# Newest version directories kept by prune on top of every pin and the live
+# versions (rust_release_binary prune).
+metrics_httpd_switch_keep_versions: 3
+
+# --- test-only knobs ----------------------------------------------------------
+# The localhost playbook tests (tests/test_metrics_httpd_switch.py) run
+# unprivileged in a temporary tree; production keeps these defaults.
+metrics_httpd_switch_systemd_dir: /etc/systemd/system
+metrics_httpd_switch_proc_root: /proc
+metrics_httpd_switch_owner: root
+metrics_httpd_switch_group: root
+# User for `metrics-httpd --version` after the install (rust_release_binary;
+# empty: the connection user, without become).
+metrics_httpd_switch_version_check_user: "{{ metrics_httpd_switch_validate_user }}"

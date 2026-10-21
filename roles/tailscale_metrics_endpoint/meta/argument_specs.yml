@@ -27,3 +27,8 @@ argument_specs:
         elements: str
       tailscale_metrics_endpoint_require_effective_ip_filter:
         type: bool
+      tailscale_metrics_endpoint_impl:
+        type: str
+        choices:
+          - python
+          - rust

@@ -111,6 +111,34 @@
   names a PLAN.md 5.2 item. Nothing installs the binary; no role behaviour
   changes.
 
+## Unreleased — Rust ports: metrics-httpd role switch (S5a)
+
+- New internal helper role `metrics_httpd_switch` (slice S5a of
+  `rust/metrics-httpd/PLAN.md`, section 7.2): `tasks_from: select` installs
+  the pinned `metrics-httpd` release through `rust_release_binary` when
+  `metrics_httpd_rust_version` is set, runs its `--check-config` as the
+  unit's user in the unit's sandbox (`systemd-run`), and selects the
+  implementation with the drop-in
+  `/etc/systemd/system/<unit>.service.d/metrics-httpd-impl.conf` (present
+  only for `rust`; removed first for `python`); `tasks_from: verify` checks
+  after the restart that the unit runs the selected implementation
+  (`/proc/<pid>/exe` or the Python script in the command line) and that an
+  unauthenticated request gets the expected answer (401 with the realm),
+  then moves the unit's pin and prunes old releases. A failure stops the
+  play for `rust` and only warns for `python`; no credential is used. New
+  filters `plugins/filter/metrics_httpd.py`.
+- `backup_metrics_endpoint`, `storage_metrics_endpoint`,
+  `thermal_metrics_endpoint`, `tailscale_metrics_endpoint`,
+  `dns_metrics_endpoint`: new `<role>_impl` (default
+  `{{ metrics_httpd_impl | default('python') }}`) with the argv of PLAN.md
+  7.3. With the default `python` the deploy renders exactly the same unit
+  and script as before and changes nothing on the host; it now also checks
+  after each deploy that the unit runs the Python script and answers 401
+  with its realm. `rust` needs `metrics_httpd_rust_version` and
+  `metrics_httpd_rust_sha256` (released by S4).
+- Tests: `tests/test_metrics_httpd_switch.py` (`just
+  test-metrics-httpd-switch`, in `just test`).
+
 ## Unreleased — Rust ports: metrics-httpd json-file mode (S2a)
 
 - `rust/metrics-httpd` (slice S2a of `rust/metrics-httpd/PLAN.md`): the

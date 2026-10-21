@@ -1,0 +1,222 @@
+---
+# Select the implementation of one endpoint unit (rust/metrics-httpd/PLAN.md
+# 7.2). Included by the consumer role after it rendered the unit and before it
+# enables and starts it:
+#
+#   impl python: the drop-in metrics-httpd-impl.conf is removed first, so the
+#     switch back never waits on a Rust download or check; a pinned version is
+#     still installed and checked, but a failure there only warns.
+#   impl rust: the pinned release is installed (failure stops the play), its
+#     --check-config must pass in the unit's sandbox, then the drop-in sets
+#     ExecStart= to the versioned binary.
+#
+# A drop-in change notifies the consumer's handlers (daemon-reload, restart).
+# The base unit and the Python script are never touched here, so impl python
+# renders exactly what the role rendered before this switch existed.
+
+- name: select | Assert the switch inputs
+  ansible.builtin.assert:
+    that:
+      - metrics_httpd_switch_impl in ['python', 'rust']
+      - metrics_httpd_switch_service_name | local.ops_library.rust_release_consumer_ok
+      - metrics_httpd_switch_validate_user is string and metrics_httpd_switch_validate_user | length > 0
+      - metrics_httpd_switch_validate_group is string and metrics_httpd_switch_validate_group | length > 0
+      - _metrics_httpd_switch_argv_problems | length == 0
+      - _metrics_httpd_switch_sandbox_problems | length == 0
+      - metrics_httpd_switch_notify is sequence and metrics_httpd_switch_notify is not string
+      - metrics_httpd_switch_notify is not mapping
+      - metrics_httpd_switch_install_root | local.ops_library.rust_release_root_ok
+      - metrics_httpd_switch_version == '' or metrics_httpd_switch_version | local.ops_library.rust_release_version_ok
+      - >-
+        metrics_httpd_switch_impl == 'python' or (
+          metrics_httpd_switch_version | local.ops_library.rust_release_version_ok
+          and (metrics_httpd_switch_sha256 | local.ops_library.rust_release_sha256_ok
+               or metrics_httpd_switch_local_archive | length > 0))
+    fail_msg: >-
+      metrics_httpd_switch needs impl python or rust (got
+      {{ metrics_httpd_switch_impl | to_json }}), a unit name usable as a pin
+      consumer (got {{ metrics_httpd_switch_service_name | to_json }}), the
+      unit's user and group, a safe metrics-httpd argv
+      ({{ _metrics_httpd_switch_argv_problems | join('; ') or 'ok' }}), a
+      Key=Value sandbox list ({{ _metrics_httpd_switch_sandbox_problems | join('; ') or 'ok' }}),
+      a list of handlers to notify, a valid install root, and for impl rust a
+      release version (metrics_httpd_rust_version, got
+      {{ metrics_httpd_switch_version | to_json }}) with its 64-hex sha256
+      (metrics_httpd_rust_sha256) or a local archive.
+    quiet: true
+  vars:
+    _metrics_httpd_switch_argv_problems: "{{ metrics_httpd_switch_argv | local.ops_library.metrics_httpd_argv_problems }}"
+    _metrics_httpd_switch_sandbox_problems: "{{ metrics_httpd_switch_unit_sandbox | local.ops_library.metrics_httpd_sandbox_problems }}"
+
+# Facts persist for the rest of the play, so every derived value is set here
+# for this unit before anything reads it.
+- name: select | Set the switch paths
+  ansible.builtin.set_fact:
+    _metrics_httpd_switch_dropin: >-
+      {{ metrics_httpd_switch_systemd_dir }}/{{ metrics_httpd_switch_service_name }}.service.d/metrics-httpd-impl.conf
+    _metrics_httpd_switch_binary: >-
+      {{ (metrics_httpd_switch_install_root ~ '/' ~ metrics_httpd_switch_version ~ '/metrics-httpd')
+         if metrics_httpd_switch_version | length > 0 else '' }}
+    _metrics_httpd_switch_exec_argv: "{{ metrics_httpd_switch_argv | map('string') | list }}"
+    _metrics_httpd_switch_installed: false
+
+- name: select | Check the implementation drop-in
+  ansible.builtin.stat:
+    path: "{{ _metrics_httpd_switch_dropin }}"
+    get_checksum: false
+  register: _metrics_httpd_switch_dropin_stat
+
+- name: select | Read the implementation drop-in
+  ansible.builtin.slurp:
+    path: "{{ _metrics_httpd_switch_dropin }}"
+  register: _metrics_httpd_switch_dropin_before
+  when: _metrics_httpd_switch_dropin_stat.stat.exists
+
+# The binary the drop-in selected before this run: verify protects it from
+# prune (it may still run if this run fails after the drop-in changed).
+- name: select | Record the selection before this run
+  ansible.builtin.set_fact:
+    _metrics_httpd_switch_before_binary: >-
+      {{
+        ((_metrics_httpd_switch_dropin_before.content | b64decode)
+          | regex_findall('(?m)^ExecStart=(\S+)') | last)
+        if (_metrics_httpd_switch_dropin_stat.stat.exists
+            and ((_metrics_httpd_switch_dropin_before.content | b64decode)
+                 | regex_findall('(?m)^ExecStart=(\S+)') | length > 0))
+        else ''
+      }}
+
+- name: select | Select the Python implementation
+  ansible.builtin.file:
+    path: "{{ _metrics_httpd_switch_dropin }}"
+    state: absent
+  notify: "{{ metrics_httpd_switch_notify }}"
+  when: metrics_httpd_switch_impl == 'python'
+
+- name: select | Install the pinned metrics-httpd release
+  ansible.builtin.include_role:
+    name: local.ops_library.rust_release_binary
+    tasks_from: install
+  vars:
+    rust_release_binary_name: metrics-httpd
+    rust_release_binary_install_root: "{{ metrics_httpd_switch_install_root }}"
+    rust_release_binary_version: "{{ metrics_httpd_switch_version }}"
+    rust_release_binary_sha256: "{{ metrics_httpd_switch_sha256 }}"
+    rust_release_binary_local_archive: "{{ metrics_httpd_switch_local_archive }}"
+    rust_release_binary_validate_user: "{{ metrics_httpd_switch_version_check_user }}"
+    rust_release_binary_owner: "{{ metrics_httpd_switch_owner }}"
+    rust_release_binary_group: "{{ metrics_httpd_switch_group }}"
+    rust_release_binary_fail_hard: "{{ metrics_httpd_switch_impl == 'rust' }}"
+  when: metrics_httpd_switch_version | length > 0
+
+# In check mode a version that is not installed yet was not installed.
+- name: select | Check the installed binary
+  ansible.builtin.stat:
+    path: "{{ _metrics_httpd_switch_binary }}"
+    get_checksum: false
+  register: _metrics_httpd_switch_binary_stat
+  when:
+    - metrics_httpd_switch_version | length > 0
+    - not (rust_release_binary_failed | default(false) | bool)
+
+- name: select | Record whether the binary is installed
+  ansible.builtin.set_fact:
+    _metrics_httpd_switch_installed: "{{ _metrics_httpd_switch_binary_stat.stat.isreg | default(false) }}"
+  when:
+    - metrics_httpd_switch_version | length > 0
+    - not (rust_release_binary_failed | default(false) | bool)
+
+- name: select | Assert the selected binary is installed
+  ansible.builtin.assert:
+    that:
+      - _metrics_httpd_switch_installed | bool
+    fail_msg: "{{ _metrics_httpd_switch_binary }} is not installed; nothing was switched."
+    quiet: true
+  when:
+    - metrics_httpd_switch_impl == 'rust'
+    - not ansible_check_mode
+
+# The unit's identity and sandbox, so the binary proves it can read the
+# htpasswd file, the JSON directory or the script as the unit will run it.
+# Binds nothing, sends nothing, prints no hash or password.
+- name: select | Check the configuration with the installed binary
+  ansible.builtin.command:
+    argv: >-
+      {{
+        ['systemd-run', '--wait', '--pipe', '--collect', '--quiet',
+         '--property=User=' ~ metrics_httpd_switch_validate_user,
+         '--property=Group=' ~ metrics_httpd_switch_validate_group]
+        + (metrics_httpd_switch_unit_sandbox | map('regex_replace', '^', '--property=') | list)
+        + [_metrics_httpd_switch_binary]
+        + _metrics_httpd_switch_exec_argv
+        + ['--check-config']
+      }}
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  register: _metrics_httpd_switch_check
+  when: _metrics_httpd_switch_installed | bool
+
+- name: select | Stop when the binary refuses the configuration
+  ansible.builtin.fail:
+    msg: >-
+      {{ _metrics_httpd_switch_binary }} --check-config for
+      {{ metrics_httpd_switch_service_name }} exited
+      {{ _metrics_httpd_switch_check.rc }}:
+      {{ _metrics_httpd_switch_check.stderr | trim }}
+      {{ _metrics_httpd_switch_check.stdout | trim }}.
+      Nothing was switched: the drop-in and the running unit are unchanged.
+  when:
+    - metrics_httpd_switch_impl == 'rust'
+    - _metrics_httpd_switch_installed | bool
+    - _metrics_httpd_switch_check.rc != 0
+
+# A failed task that is ignored, so it stands out as `ignored=1` in the recap.
+- name: select | Warn that the binary refuses the configuration and continue with Python
+  ansible.builtin.fail:
+    msg: >-
+      WARNING: {{ _metrics_httpd_switch_binary }} --check-config for
+      {{ metrics_httpd_switch_service_name }} exited
+      {{ _metrics_httpd_switch_check.rc }}:
+      {{ _metrics_httpd_switch_check.stderr | trim }}
+      {{ _metrics_httpd_switch_check.stdout | trim }}.
+      The unit stays on Python (impl python); fix this before switching it to Rust.
+  ignore_errors: true  # noqa: ignore-errors
+  when:
+    - metrics_httpd_switch_impl == 'python'
+    - _metrics_httpd_switch_installed | bool
+    - _metrics_httpd_switch_check.rc != 0
+
+- name: select | Ensure the drop-in directory exists
+  ansible.builtin.file:
+    path: "{{ _metrics_httpd_switch_dropin | dirname }}"
+    state: directory
+    owner: "{{ metrics_httpd_switch_owner }}"
+    group: "{{ metrics_httpd_switch_group }}"
+    mode: "0755"
+  when: metrics_httpd_switch_impl == 'rust'
+
+# The version is part of ExecStart=, so every version change and every impl
+# flip changes the file and restarts the unit; an unchanged deploy restarts
+# nothing.
+- name: select | Select the Rust implementation
+  ansible.builtin.template:
+    src: metrics-httpd-impl.conf.j2
+    dest: "{{ _metrics_httpd_switch_dropin }}"
+    owner: "{{ metrics_httpd_switch_owner }}"
+    group: "{{ metrics_httpd_switch_group }}"
+    mode: "0644"
+  vars:
+    metrics_httpd_impl_binary: "{{ _metrics_httpd_switch_binary }}"
+    metrics_httpd_impl_argv: "{{ _metrics_httpd_switch_exec_argv }}"
+  notify: "{{ metrics_httpd_switch_notify }}"
+  when: metrics_httpd_switch_impl == 'rust'
+
+- name: select | Record the selection for verify
+  ansible.builtin.set_fact:
+    _metrics_httpd_switch_selected:
+      service: "{{ metrics_httpd_switch_service_name }}"
+      impl: "{{ metrics_httpd_switch_impl }}"
+      binary: "{{ _metrics_httpd_switch_binary if metrics_httpd_switch_impl == 'rust' else '' }}"
+      version: "{{ metrics_httpd_switch_version if metrics_httpd_switch_impl == 'rust' else '' }}"
+      before_binary: "{{ _metrics_httpd_switch_before_binary }}"
