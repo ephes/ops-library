@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Rust ports: foundation and metrics-httpd plans
+
+- Add `rust/PLAN-foundation.md` (shared Cargo workspace under `rust/`, toolchain and cargo-deny policy, CI, per-binary release tags such as `metrics-httpd-v0.1.0`, glibc 2.35 floor, collection `build_ignore`, and the shared install helper for pinned release binaries) and `rust/metrics-httpd/PLAN.md` (Rust replacement for the Python HTTP endpoint daemons of the `*_metrics_endpoint`, `metrics_endpoint`, `os_apt_maintenance`, `dns_deploy`, `openclaw_deploy`, `logyard_deploy` and `static_site_deploy` roles). Plans only; no role behaviour changes.
+
 ## Unreleased — Home Assistant integration downloads use the system CA store (2.64.1)
 
 - `homeassistant_deploy`: new `homeassistant_uv_system_certs` (default `true`)
@@ -45,6 +49,7 @@
 
 - Recover explicitly proven interrupted certifi updates with immutable prior-install evidence, exact generated-cache ownership repair and owner-identity offline restoration.
 
+||||||| parent of 8e6bf8bb (Plan the Rust foundation and the metrics-httpd port)
 ## Unreleased — loopback trust preflight and validation labels (2.63.5)
 
 - Correct OpenClaw trust validation task-name prefixes so strict role lint accepts the incident checks; validation behavior is unchanged.
