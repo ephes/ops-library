@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Correct OpenClaw trust validation task-name prefixes so strict role lint accepts the incident checks; validation behavior is unchanged.
+- Keep LiveKit idle-preflight bearer-token API requests on loopback even when ambient HTTP proxies are configured; exercise the actual CLI under a hostile proxy environment.
+
 ## Unreleased — CA trust for Node.js and long-running TLS clients (2.63.4)
 
 - New `ca_trust_consumers` role, for the eMudhra intermediate CA key

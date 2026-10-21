@@ -4,6 +4,7 @@ import hmac
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -57,8 +58,10 @@ class TestLivekitIdle(unittest.TestCase):
             with tempfile.TemporaryDirectory() as tmp:
                 config = Path(tmp) / 'server.yml'
                 config.write_text(json.dumps({'keys': {'testkey': 'testsecret'}, 'port': server.server_port}))
-                result = subprocess.run([sys.executable, str(SCRIPT), str(config)], capture_output=True, text=True)
+                env = dict(os.environ, HTTP_PROXY='http://127.0.0.1:9', http_proxy='http://127.0.0.1:9', NO_PROXY='', no_proxy='')
+                result = subprocess.run([sys.executable, str(SCRIPT), str(config)], capture_output=True, text=True, env=env)
             self.assertEqual(result.returncode, 1)
+            self.assertTrue(result.stdout.strip(), result.stderr)
             self.assertEqual(json.loads(result.stdout), {'active_rooms': 1, 'active_egress_jobs': 0})
             for value in ('testsecret', 'private-room-name', 'private-media'):
                 self.assertNotIn(value, result.stdout + result.stderr)

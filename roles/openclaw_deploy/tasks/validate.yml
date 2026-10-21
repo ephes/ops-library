@@ -850,19 +850,19 @@
       extension and its management before upgrading; revalidate against upstream.
   when: openclaw_heartbeat_recovery_managed | bool
 
-- name: Validate optional replacement CA store path
+- name: validate | Validate optional replacement CA store path
   ansible.builtin.assert:
     that:
       - openclaw_ca_store_path is match('^/[^\r\n]+$')
   when: openclaw_ca_store_path | length > 0
 
-- name: Check prepared replacement CA bundle
+- name: validate | Check prepared replacement CA bundle
   ansible.builtin.stat:
     path: "{{ openclaw_ca_store_path }}/bundle.pem"
   register: openclaw_ca_bundle
   when: openclaw_ca_store_path | length > 0
 
-- name: Require prepared replacement CA bundle before activation
+- name: validate | Require prepared replacement CA bundle before activation
   ansible.builtin.assert:
     that:
       - openclaw_ca_bundle.stat.isreg | default(false)

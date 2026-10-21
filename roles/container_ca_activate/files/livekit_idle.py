@@ -20,7 +20,11 @@ def token(key, secret):
     return (message + b'.' + base64.urlsafe_b64encode(hmac.new(secret.encode(), message, hashlib.sha256).digest()).rstrip(b'=')).decode()
 
 
-def counts(configuration, request=urllib.request.urlopen):
+def counts(configuration, request=None):
+    # These API calls are fixed to loopback and carry a private bearer token.
+    # Never forward them through ambient HTTP proxy configuration.
+    if request is None:
+        request = urllib.request.build_opener(urllib.request.ProxyHandler({})).open
     import yaml
     config = yaml.safe_load(Path(configuration).read_text())
     keys = config['keys']
