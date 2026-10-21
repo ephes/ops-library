@@ -2,7 +2,7 @@
 
 ## Unreleased — Rust ports: foundation and metrics-httpd plans
 
-- Add `rust/PLAN-foundation.md` (shared Cargo workspace under `rust/`, toolchain and cargo-deny policy, CI, per-binary release tags such as `metrics-httpd-v0.1.0`, glibc 2.35 floor, collection `build_ignore`, and the shared install helper for pinned release binaries) and `rust/metrics-httpd/PLAN.md` (Rust replacement for the Python HTTP endpoint daemons of the `*_metrics_endpoint`, `metrics_endpoint`, `os_apt_maintenance`, `dns_deploy`, `openclaw_deploy`, `logyard_deploy` and `static_site_deploy` roles). Plans only; no role behaviour changes.
+- Add `rust/PLAN-foundation.md` (shared Cargo workspace under `rust/`, toolchain and cargo-deny policy, CI, per-binary release tags such as `metrics-httpd-v0.1.0`, glibc 2.35 floor, collection `build_ignore`, and the shared install helper for pinned release binaries) and `rust/metrics-httpd/PLAN.md` (Rust replacement for the Python HTTP endpoint daemons of the `*_metrics_endpoint`, `metrics_endpoint`, `os_apt_maintenance`, `dns_deploy`, `openclaw_deploy`, `logyard_deploy` and `static_site_deploy` roles). Both plans record the owner decisions of 2026-10-21 (first GitHub Actions workflows, coordinator-made collection releases, static site as the last cutover, 7-day Python retirement, the separate GPL `software-live-apt` helper, up to three review rounds). Plans only; no role behaviour changes.
 
 ## Unreleased — Home Assistant integration downloads use the system CA store (2.64.1)
 
