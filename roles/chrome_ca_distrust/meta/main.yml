@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  author: Jochen Wersdörfer
+  description: Prepare Chrome managed distrust of compromised eMudhra CA keys
+  license: MIT
+  min_ansible_version: '2.20.3'
+dependencies: []

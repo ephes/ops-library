@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add chrome_ca_distrust, the supported managed Chrome distrust policy for eight compromised eMudhra keys.
+
 ## Unreleased — distribution Java trust refresh (2.60.0)
 
 - `java_ca_refresh`: refresh stale Debian Java trust through distribution hooks

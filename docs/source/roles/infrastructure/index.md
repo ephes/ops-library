@@ -6,6 +6,7 @@ Reusable host identity, access-control, networking, and storage building blocks.
 :maxdepth: 1
 
 echoport_remote_command_guard
+chrome_ca_distrust
 java_ca_refresh
 macos_ssh_tunnel
 ssh_forwarding_identity
