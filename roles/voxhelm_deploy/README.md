@@ -393,6 +393,27 @@ To switch it off again, set `voxhelm_prune_enabled: false` and deploy.
   (HA pipeline voices are Piper voices), then
   `voxhelm_tts_kokoro_enabled: false` to remove Kokoro voices entirely.
 
+### Refresh cached Python trust without deploying source
+
+After updating the explicitly managed environments, call this role with
+`tasks_from: refresh_python_trust`. Set `voxhelm_trust_refresh_units` to explicit
+`{label, environment}` records for existing system LaunchDaemons, and set
+`voxhelm_trust_idle_host` to the inventory host running the Voxhelm database.
+The delegated read-only idle check requires zero queued/running jobs, live leases
+and worker-reported jobs before each unit refresh, after the networked trust preflight. This is a bounded idle snapshot, not a transaction that prevents new job submission; the remaining local provenance/trust checks minimize the race before restart. No job payloads are read.
+`voxhelm_trust_idle_database` defaults to the deployed SQLite path.
+
+Python trust probes run as the existing unit owner with a minimal environment, including when root orchestrates the refresh.
+The helper requires Darwin, an unchanged root-owned KeepAlive plist, the expected
+Python prefix and process owner, and patched certifi with negative/positive TLS
+probes. Root uses `launchctl kickstart -k`; a non-root owner of a system-domain
+child uses SIGTERM after revalidation because launchctl(1) reserves system-domain
+modifications to root. Existing launchd respawns the child. A new PID with matching
+provenance is required; server health is checked after each restart. Check mode
+runs the idle/provenance/trust checks without restarting. Only the four existing
+Voxhelm Python labels are accepted. Manual processes, source, migrations, models,
+plist configuration and unrelated native services are untouched.
+
 ## License
 
 MIT

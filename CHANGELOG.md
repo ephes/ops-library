@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add an explicit Voxhelm Python trust-cache refresh entrypoint with read-only aggregate idle checks, existing-unit provenance validation, patched certifi TLS probes, and verified launchd child replacement without source deployment.
+
 ## Unreleased — legacy trust metadata and check-mode compatibility (2.63.2)
 
 - Keep narrowly scoped trust updates compatible with malformed unrelated legacy dependency metadata while rejecting malformed trust-package constraints. Preserve inherited collection paths in the fresh-host check-mode fixture and prevent fresh AWS drop-in parent failures under check mode.
