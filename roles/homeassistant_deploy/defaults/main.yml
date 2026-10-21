@@ -14,7 +14,7 @@ homeassistant_bin_path: "{{ homeassistant_site_path }}/bin"
 homeassistant_manage_uv: true
 homeassistant_uv_install_dir: /usr/local/bin
 homeassistant_uv_install_user: root
-homeassistant_uv_version: "0.13.0"  # Keep aligned with uv_install version/checksums.
+homeassistant_uv_version: "0.13.4"  # Keep aligned with uv_install version/checksums.
 homeassistant_uv_update_existing: true
 homeassistant_uv_force_reinstall: false
 homeassistant_uv_path: "{{ homeassistant_uv_install_dir }}/uv"

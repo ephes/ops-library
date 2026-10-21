@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Pin uv 0.13.4 with verified Linux/macOS release hashes and matching Home Assistant, MeTube and OpenWebUI installer defaults.
+- Update controller certifi to 2026.10.19 for the eMudhra trust incident.
+
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
