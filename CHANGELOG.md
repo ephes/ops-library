@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — Home Assistant integration downloads use the system CA store
+
+- `homeassistant_deploy`: new `homeassistant_uv_system_certs` (default `true`)
+  installs a managed drop-in with only `Environment=UV_SYSTEM_CERTS=1`, so
+  Home Assistant's bundled uv (integration requirement installs) trusts the
+  patched operating-system CA store instead of its built-in roots, which for
+  Home Assistant 2026.7.2 (uv 0.11.25) still include emSign ECC Root CA - G3.
+  Before any change it refuses existing trust settings (unit, unit file,
+  service-manager environment or running service), EnvironmentFiles, other
+  drop-ins and a system store that still holds a distrusted root; its own
+  managed setting is accepted on repeat. New maintenance entry point
+  `tasks_from: uv_system_certs.yml` applies only the drop-in to an existing
+  service, restarts when it changed, waits for health and verifies. No Home
+  Assistant, uv, package or integration-constraint changes.
+- `python_security_floor`: new read-only `tasks_from: system_store.yml`.
+
 ## Unreleased — certifi/pip deploy-time security floor
 
 - New `python_security_floor` role and `local.ops_library.uv_lock_floor_violations`,

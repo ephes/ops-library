@@ -6,6 +6,19 @@
   ansible.builtin.include_tasks: security_preflight.yml
   when: homeassistant_python_security_floor_enabled | bool
 
+- name: "Check the unit's trust settings before the UV_SYSTEM_CERTS drop-in"
+  ansible.builtin.include_tasks: uv_system_certs_check.yml
+  vars:
+    _ha_uv_certs_mode: preflight
+    _ha_uv_certs_allow_missing: true
+  when: homeassistant_uv_system_certs | bool
+
+- name: "Check the system CA store for the UV_SYSTEM_CERTS drop-in"
+  ansible.builtin.include_role:
+    name: local.ops_library.python_security_floor
+    tasks_from: system_store.yml
+  when: homeassistant_uv_system_certs | bool
+
 - name: "Install required packages"
   ansible.builtin.import_tasks: packages.yml
 
@@ -45,6 +58,21 @@
 
 - name: "Install systemd service"
   ansible.builtin.import_tasks: systemd.yml
+
+- name: "Install the managed UV_SYSTEM_CERTS drop-in"
+  ansible.builtin.include_tasks: uv_system_certs_dropin.yml
+  when: homeassistant_uv_system_certs | bool
+
+- name: "Reload and restart for a changed UV_SYSTEM_CERTS drop-in"
+  ansible.builtin.debug:
+    msg: The managed UV_SYSTEM_CERTS drop-in changed.
+  changed_when: true
+  notify:
+    - reload systemd
+    - restart homeassistant
+  when:
+    - homeassistant_uv_system_certs | bool
+    - _ha_uv_certs_dropin is changed
 
 - name: "Configure Traefik"
   ansible.builtin.import_tasks: traefik.yml
@@ -104,3 +132,15 @@
 - name: "Validate Matter server after Home Assistant requirements"
   ansible.builtin.import_tasks: matter_server_postcheck.yml
   when: homeassistant_manage_matter_server | bool
+
+- name: "Apply pending handlers before verifying UV_SYSTEM_CERTS"
+  ansible.builtin.meta: flush_handlers
+
+- name: "Verify the running service has the managed UV_SYSTEM_CERTS"
+  ansible.builtin.include_tasks: uv_system_certs_check.yml
+  vars:
+    _ha_uv_certs_mode: verify
+  when:
+    - homeassistant_uv_system_certs | bool
+    - homeassistant_service_state == 'started'
+    - not ansible_check_mode

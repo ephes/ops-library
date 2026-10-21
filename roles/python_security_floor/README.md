@@ -19,6 +19,7 @@ as they are and are not inspected). Everything it cannot establish fails closed.
 | `lock.yml` | `python_security_floor_lock_text`, `python_security_floor_label` | Fails when the `uv.lock` text locks a floor package below its floor. Call it with the lock of exactly the revision the role is about to install, before it changes the deployed source or environment. |
 | `constraints.yml` | `python_security_floor_constraints_path`, `python_security_floor_owner`, `python_security_floor_group` | Writes a pip/uv constraint file (`certifi>=…`, `pip>=…`). Pass it to every package install the role runs. |
 | `verify.yml` | `python_security_floor_python`, `python_security_floor_user`, `python_security_floor_label`, optional `python_security_floor_deferred` | Runs `files/inspect_python_security.py` with the environment's interpreter (`-I`, as the application user, importing only certifi and pip's vendored certifi) and fails on any problem below. |
+| `system_store.yml` | optional `python_security_floor_system_store` (default `/etc/ssl/certs/ca-certificates.crt`), `python_security_floor_system_store_dirs` (default `/etc/ssl/certs`, `/usr/lib/ssl/certs`), `python_security_floor_system_python` (default `/usr/bin/python3`) | Read-only: fails when the CA file or any certificate file in those directories, as OpenSSL loads them, holds a distrusted root (native-store loaders such as uv's read both). Use before pointing a client at the system store. |
 
 `verify.yml` checks, per package that is installed:
 
