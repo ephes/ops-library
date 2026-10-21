@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased — CA trust for Node.js and long-running TLS clients
+
+- New `ca_trust_consumers` role, for the eMudhra intermediate CA key
+  compromise (October 2026): a fixed system CA store does not reach Node.js,
+  which verifies against its compiled-in Mozilla store, nor running Go services,
+  which load system roots once per process. Behind a CA readiness gate (minimum
+  `ca-certificates` version and no forbidden root, by SHA-256, in the bundle,
+  `/etc/ssl/cert.pem`, `/etc/ssl/certs` or `/etc/pki/tls/certs`) the role
+  - merges `--use-openssl-ca` into `NODE_OPTIONS` in `/etc/environment` for
+    login/SSH/sudo/cron sessions (npm, corepack, yarn, deploy tools), keeping
+    existing options;
+  - adds a `NODE_OPTIONS` drop-in to listed Node.js services, keeping the
+    unit's own options and refusing to shadow one set by an `EnvironmentFile=`;
+  - restarts listed services, one at a time with health checks, only when
+    running and started before the CA bundle changed (or, for Node.js
+    services, while a running process lacks the flag), never starting a
+    stopped unit and refusing restarts that would activate staged binary,
+    unit or config changes; a detached `systemd-run` restart covers
+    `tailscaled`;
+  - verifies the flag in the environment of every running Node.js process of
+    the listed services.
+  `--use-system-ca` and `NODE_EXTRA_CA_CERTS` only add roots and leave the
+  bundled copy of a distrusted root trusted, so the role does not use them.
+
 ## Unreleased — bounded container trust activation (2.63.1)
 
 - Add bounded trust-only Compose fleet activation with exact installed image retention, private receipts, recovery, and one Docker daemon restart. Optional `container_ca_activate_livekit_config` performs read-only room/egress idle preflight and requires existing target PyYAML.

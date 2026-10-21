@@ -1,0 +1,77 @@
+---
+- name: preflight | Read installed CA package version
+  ansible.builtin.command:
+    argv: [dpkg-query, -W, "--showformat=${Status} ${Version}", "{{ ca_trust_consumers_ca_package }}"]
+  register: _ca_trust_consumers_ca_package
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: preflight | Require an installed CA package
+  ansible.builtin.assert:
+    that:
+      - _ca_trust_consumers_ca_package.rc == 0
+      - _ca_trust_consumers_ca_package.stdout is match('^install ok installed ')
+    fail_msg: "{{ ca_trust_consumers_ca_package }} is not installed."
+    quiet: true
+
+- name: preflight | Compare CA package version with the fixed version
+  ansible.builtin.command:
+    argv:
+      - dpkg
+      - --compare-versions
+      - "{{ _ca_trust_consumers_ca_package.stdout.split(' ')[-1] }}"
+      - ge
+      - "{{ ca_trust_consumers_ca_min_version }}"
+  register: _ca_trust_consumers_ca_compare
+  changed_when: false
+  failed_when: _ca_trust_consumers_ca_compare.rc not in [0, 1]
+  check_mode: false
+
+- name: preflight | Require the fixed CA package
+  ansible.builtin.assert:
+    that: _ca_trust_consumers_ca_compare.rc == 0
+    fail_msg: >-
+      {{ ca_trust_consumers_ca_package }} {{ _ca_trust_consumers_ca_package.stdout.split(' ')[-1] }}
+      is older than {{ ca_trust_consumers_ca_min_version }}. Update the CA store first;
+      nothing was changed or restarted.
+    success_msg: >-
+      {{ ca_trust_consumers_ca_package }} {{ _ca_trust_consumers_ca_package.stdout.split(' ')[-1] }}
+      >= {{ ca_trust_consumers_ca_min_version }}
+
+- name: preflight | Scan the system CA store for forbidden roots
+  ansible.builtin.script:
+    cmd: >-
+      ca_trust_roots_check.py
+      {% for fingerprint in ca_trust_consumers_forbidden_root_sha256 %}--forbid {{ fingerprint }} {% endfor %}
+      {{ ca_trust_consumers_root_paths | map('quote') | join(' ') }}
+    executable: /usr/bin/python3
+  register: _ca_trust_consumers_roots
+  changed_when: false
+  check_mode: false
+
+- name: preflight | Require that no forbidden root is trusted
+  vars:
+    _report: "{{ _ca_trust_consumers_roots.stdout | from_json }}"
+  ansible.builtin.assert:
+    that:
+      - _report.found | length == 0
+      - _report.certificates > 0
+    fail_msg: >-
+      Forbidden roots are still visible in the system CA store ({{ _report.found }});
+      certificates scanned: {{ _report.certificates }}. Nothing was changed or restarted.
+    success_msg: >-
+      No forbidden root among {{ _report.certificates }} certificates in
+      {{ _report.files_scanned }} files.
+
+- name: preflight | Read CA bundle modification time
+  ansible.builtin.stat:
+    path: "{{ ca_trust_consumers_ca_bundle }}"
+    get_checksum: false
+  register: _ca_trust_consumers_bundle
+
+- name: preflight | Require the CA bundle
+  ansible.builtin.assert:
+    that: _ca_trust_consumers_bundle.stat.exists
+    fail_msg: "{{ ca_trust_consumers_ca_bundle }} does not exist."
+    quiet: true

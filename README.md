@@ -122,6 +122,7 @@ consumer repos depend on.
 | Infrastructure | [`macos_java_trust`](roles/macos_java_trust/README.md) | Maintain explicit macOS Java trust copies without editing vendor cacerts. |
 | Infrastructure | [`netplan_config`](roles/netplan_config/README.md) | Configure persistent netplan networking. |
 | Operations | [`journald_config`](roles/journald_config/README.md) | Size systemd-journald storage, file-count and age limits through one managed drop-in. |
+| Operations | [`ca_trust_consumers`](roles/ca_trust_consumers/README.md) | After a CA store fix, switch Node.js to the system store and serially restart TLS clients (such as Go services) still holding old roots, behind a CA readiness gate. |
 | Monitoring | [`smartd`](roles/smartd/README.md) | Configure smartmontools smartd for HDD/NVMe monitoring and scheduled tests. |
 | Monitoring | [`zed`](roles/zed/README.md) | Configure ZFS Event Daemon notifications and optional zpool scrub timers. |
 | Monitoring | [`nyxmon_storage_exporter`](roles/nyxmon_storage_exporter/README.md) | Install `nyxmon-storage-metrics` JSON exporter for storage health monitoring via HTTP endpoints, including read-only per-client Time Machine sparsebundle metrics. |
