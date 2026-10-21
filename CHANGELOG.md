@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — Rust ports: echoport-command-guard rules without filesystem (S3a)
+
+- `echoport-command-guard` (slice S3a of `rust/echoport-command-guard/PLAN.md`):
+  `check()` now decides the branches of the Python guard that need no
+  filesystem, in Python's order and with Python's refusal reasons: `sudo -u
+  postgres` and `runuser -u postgres --` with every PostgreSQL branch
+  (`pg_dump`, `dropdb`, `createdb`, `pg_restore` including the scratch
+  restore with its `< file` redirect, `psql`), `runuser -u <user> -- sqlite3`
+  (`.backup`, `.timeout`, the integrity check), `systemctl`, `curl`, `rm -f`
+  of temp dumps, `rm -rf --` of temp dirs, `mktemp`, `du` and the `sh -c`
+  probe. The Layer-1 runner now requires every fixture case outside the
+  filesystem branches (S3b) to be decided as Python decides, and lets a `p3`
+  case differ only when the prefilter refuses it or Python's `check()`
+  crashes. Forced-command mode still refuses everything until S4; nothing
+  installs the binary; no role behaviour changes.
+
 ## Unreleased — Rust ports: echoport-command-guard crate skeleton, policy and tokeniser (S1)
 
 - Add the `echoport-command-guard` crate to the Rust workspace (slice S1 of
