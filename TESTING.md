@@ -401,3 +401,27 @@ proxy addresses, password-bearing queries, UniFi credentials, remote temporary p
 cleanup, default-off unit hardening, and conflict markers in tracked text files.
 These checks do not validate service behavior on a host; run Molecule separately
 before merging or enabling hardening.
+
+### Rustup manager security patch
+
+`just test-rustup-security` exercises guarded check mode, unknown proxies, busy
+owners, artifact integrity and failed-updater restoration. The opt-in
+`just test-rustup-security-native` runs the exact pinned upstream updater in a
+disposable native macOS CARGO_HOME/RUSTUP_HOME or local Linux Docker fixture,
+with SDK/environment/settings sentinels. It never targets an existing manager.
+Provide the official downloaded binary using `RUSTUP_SECURITY_FIXTURE_UPDATER`;
+the fixture checks its pinned digest and platform. The Docker mode supports only
+local `colima` or `desktop-linux` contexts with a Unix endpoint. On macOS invoke
+`python tests/run_rustup_security_native.py --docker` directly and supply the
+Linux updater binary, rather than the macOS updater used by the native recipe.
+Linux uses an existing local
+`python:3.11-slim` image with `--pull never --network none`; no production SDKs.
+
+`tests/run_rustup_security_loader.py` additionally exercises the actual FQCN role
+on genuine macOS with disposable synthetic SDK state: check/apply/repeat, local
+current-owner connection, become disabled, and explicit Ansible-compatible module
+Python. Set `RUSTUP_SECURITY_FIXTURE_CA_FILE` to the patched native PEM and
+`RUSTUP_SECURITY_FIXTURE_MODULE_PYTHON` to the approved module interpreter. It
+uses the real OS-CA-verified pinned download. Native vendor-only fixture receipts
+name macOS Seatbelt write confinement separately from Linux disposable-container
+isolation; a Linux `false` for the macOS-only flag is not a preservation failure.

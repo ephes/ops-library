@@ -7,6 +7,7 @@ Reusable host identity, access-control, networking, and storage building blocks.
 
 echoport_remote_command_guard
 container_ca_activate
+rustup_security
 chrome_ca_distrust
 container_ca_remediate
 macos_python_ca_remediate
