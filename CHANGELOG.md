@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — certifi/pip deploy-time security floor
+## Unreleased — certifi/pip deploy-time security floor (2.64.0)
 
 - New `python_security_floor` role and `local.ops_library.uv_lock_floor_violations`,
   `python_security_constraints` and `python_security_report_violations` filters:
