@@ -7,7 +7,9 @@ import hashlib
 import importlib.util
 import io
 import json
+import shlex
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -94,7 +96,7 @@ class EnvironmentFileTests(unittest.TestCase):
 
 
 class SystemdUnitTests(unittest.TestCase):
-    DROPIN = "/etc/systemd/system/app.service.d/50-ca-trust-node.conf"
+    DROPIN = "/etc/systemd/system/app.service.d/99-ca-trust-node.conf"
 
     def test_ignores_own_dropin_and_other_sections(self):
         cat = f"""# /etc/systemd/system/app.service
@@ -232,11 +234,12 @@ class RoleStructureTests(unittest.TestCase):
         names = [task["name"] for task in main]
         self.assertEqual(names[0], "Validate ca_trust_consumers settings")
         self.assertEqual(main[1]["ansible.builtin.import_tasks"], "preflight.yml")
-        later = [task.get("ansible.builtin.import_tasks") or task.get("ansible.builtin.include_tasks") for task in main[2:]]
+        self.assertEqual(main[2]["ansible.builtin.import_tasks"], "pending_units.yml")
+        later = [task.get("ansible.builtin.import_tasks") or task.get("ansible.builtin.include_tasks") for task in main[3:]]
         self.assertEqual(
             later, ["node_cli.yml", "node_unit.yml", "restart_unit.yml", "restart_unit.yml", "verify_node_unit.yml"]
         )
-        node_restart, other_restart = main[4], main[5]
+        node_restart, other_restart = main[5], main[6]
         self.assertEqual(node_restart["loop"], "{{ ca_trust_consumers_node_units }}")
         self.assertTrue(node_restart["vars"]["ca_trust_consumers_unit_is_node"])
         self.assertEqual(other_restart["loop"], "{{ ca_trust_consumers_restart_units }}")
@@ -299,20 +302,57 @@ class RoleStructureTests(unittest.TestCase):
         self.assertLess(look, refuse)
         self.assertLess(refuse, block)
         cmd = tasks[look]["ansible.builtin.shell"]["cmd"]
-        for needle in ('*" (deleted)")', "NeedDaemonReload", "FragmentPath", "DropInPaths", "guard_paths", 'stat -c %Y "$path"'):
+        for needle in ('*" (deleted)")', "NeedDaemonReload", "FragmentPath", "DropInPaths", "EnvironmentFiles",
+                       "guard_paths", 'stat -c %Y "$path"', "set -o pipefail"):
             self.assertIn(needle, cmd)
-        self.assertNotIn("stat -L", cmd)  # a retargeted symlink must count
+        self.assertIn('stat -L -c %Y "$path"', cmd)  # the link target must count too
         self.assertIn("_own_dropin", cmd)
         guard = tasks[refuse]
         self.assertEqual(guard["ansible.builtin.assert"]["that"], "_ca_trust_consumers_staged.stdout | trim | length == 0")
         self.assertIn("not (ca_trust_consumers_unit.allow_staged_changes | default(false) | bool)", guard["when"])
+
+    def test_no_secret_bearing_content_is_logged_or_diffed(self):
+        cli = {t["name"]: t for t in _tasks("node_cli.yml")}
+        self.assertTrue(cli["node_cli | Read environment file"]["no_log"])
+        line = cli["node_cli | Set NODE_OPTIONS in environment file"]
+        self.assertTrue(line["no_log"])
+        self.assertFalse(line["diff"])
+        unit = _tasks("node_unit.yml")
+        cat = next(t for t in unit if t["name"] == "node_unit | Read unit definition")
+        self.assertTrue(cat["no_log"])
+        block = next(t for t in unit if "block" in t)
+        template = next(t for t in block["block"] if "ansible.builtin.template" in t)
+        self.assertFalse(template["diff"])
+
+    def test_effective_value_and_pending_reload_are_checked(self):
+        unit = {t["name"]: t for t in _tasks("node_unit.yml")}
+        effective = unit["node_unit | Check the effective NODE_OPTIONS of the unit"]["ansible.builtin.shell"]["cmd"]
+        self.assertIn("-p Environment --value", effective)
+        self.assertIn("echo effective=yes", effective)
+        self.assertIn("-p UnsetEnvironment --value", effective)
+        self.assertEqual(
+            unit["node_unit | Require the flag in the unit's effective environment"]["ansible.builtin.assert"]["that"],
+            "_ca_trust_consumers_node_effective.stdout | trim == 'effective=yes'",
+        )
+        pending = _tasks("pending_units.yml")
+        self.assertIn("NeedDaemonReload", pending[0]["ansible.builtin.shell"]["cmd"])
+        self.assertEqual(pending[1]["ansible.builtin.assert"]["that"], "_ca_trust_consumers_pending.stdout | trim | length == 0")
+        defaults = yaml.safe_load((ROLE / "defaults/main.yml").read_text())
+        self.assertTrue(defaults["ca_trust_consumers_node_dropin_name"].startswith("99-"))
+
+    def test_report_mode_does_not_fail_on_unrestarted_processes(self):
+        verify = _tasks("verify_node_unit.yml")[-1]
+        self.assertEqual(verify["when"], ["not ansible_check_mode", "ca_trust_consumers_restart | bool"])
 
     def test_node_unit_refuses_environment_file_override(self):
         tasks = _tasks("node_unit.yml")
         refuse = next(t for t in tasks if t["name"].endswith("Refuse to override NODE_OPTIONS from an environment file"))
         self.assertIn("stdout | trim | length == 0", refuse["ansible.builtin.assert"]["that"])
         look = next(t for t in tasks if t["name"].endswith("Look for NODE_OPTIONS in the unit's environment files"))
-        self.assertIn("grep -l", look["ansible.builtin.shell"]["cmd"])  # file names only, never values
+        cmd = look["ansible.builtin.shell"]["cmd"]
+        self.assertIn("grep -q -F NODE_OPTIONS", cmd)  # any mention; file names only, never values
+        self.assertIn("(wildcard pattern)", cmd)
+        self.assertIn("(unreadable)", cmd)
 
     def test_dropin_template_renders_single_environment_line(self):
         template = Environment(undefined=StrictUndefined).from_string(
@@ -332,6 +372,123 @@ class RoleStructureTests(unittest.TestCase):
         self.assertNotIn("cat /proc", cmd)
         self.assertIn(">/dev/null", cmd)
 
+
+
+STUB_SYSTEMCTL = """#!/usr/bin/env python3
+import json, os, sys
+units = json.load(open(os.environ["CA_TRUST_TEST_UNITS"]))
+args = sys.argv[1:]
+if args[:1] == ["show"]:
+    unit = units.get(args[1], {})
+    for i, a in enumerate(args):
+        if a == "-p":
+            print(unit.get(args[i + 1], ""))
+    sys.exit(0)
+sys.exit(1)
+"""
+
+
+def _gnu_stat() -> str | None:
+    import shutil
+
+    for name in ("gstat", "stat"):
+        path = shutil.which(name)
+        if path and subprocess.run([path, "-c", "%Y", "/"], capture_output=True).returncode == 0:
+            return path
+    return None
+
+
+@unittest.skipUnless(_gnu_stat(), "GNU stat needed")
+class ShellBehaviourTests(unittest.TestCase):
+    """Run the role's rendered shell snippets against a stub systemctl."""
+
+    def setUp(self):
+        import shutil
+
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        bin_dir = self.tmp / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "systemctl").write_text(STUB_SYSTEMCTL)
+        (bin_dir / "stat").write_text(f'#!/bin/sh\nexec {_gnu_stat()} "$@"\n')
+        for stub in bin_dir.iterdir():
+            stub.chmod(0o755)
+        self.units = self.tmp / "units.json"
+        self.env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+                    "CA_TRUST_TEST_UNITS": str(self.units)}
+        self.jinja = Environment(undefined=StrictUndefined)
+        self.jinja.filters["quote"] = shlex.quote
+
+    def _run(self, task_file, task_name, unit, **context):
+        self.units.write_text(json.dumps({"app.service": unit}))
+        task = next(t for t in _tasks(task_file) if t["name"] == task_name)
+        variables = {"ca_trust_consumers_unit": {"name": "app.service"}, "ca_trust_consumers_node_flag": FLAG,
+                     **context}
+        for key, value in (task.get("vars") or {}).items():
+            variables[key] = self.jinja.from_string(value).render(**variables)
+        cmd = self.jinja.from_string(task["ansible.builtin.shell"]["cmd"]).render(**variables)
+        import shutil
+
+        result = subprocess.run([shutil.which("bash"), "-c", cmd], env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
+
+    def test_environment_files_with_blanks_unparsed_and_wildcards_are_refused(self):
+        spaced = self.tmp / "app config.env"
+        spaced.write_text("NODE_OPTIONS=--use-bundled-ca\n")
+        clean = self.tmp / "clean.env"
+        clean.write_text("PORT=1\n")
+        name = "node_unit | Look for NODE_OPTIONS in the unit's environment files"
+        out = self._run("node_unit.yml", name, {"EnvironmentFiles": f"{spaced} (ignore_errors=no)\n{clean} (ignore_errors=yes)"})
+        self.assertEqual(out.splitlines(), [str(spaced)])
+        out = self._run("node_unit.yml", name, {"EnvironmentFiles": "something odd"})
+        self.assertIn("(unparsed entry)", out)
+        out = self._run("node_unit.yml", name, {"EnvironmentFiles": f"{self.tmp}/*.env (ignore_errors=no)"})
+        self.assertIn("(wildcard pattern)", out)
+        out = self._run("node_unit.yml", name, {"EnvironmentFiles": f"{clean} (ignore_errors=no)"})
+        self.assertEqual(out, "")
+
+    def test_effective_value_handles_quoting_and_unset(self):
+        name = "node_unit | Check the effective NODE_OPTIONS of the unit"
+        quoted = f'"NODE_OPTIONS=--max-old-space-size=512 {FLAG}" PORT=1'
+        self.assertEqual(self._run("node_unit.yml", name, {"Environment": quoted}).strip(), "effective=yes")
+        self.assertEqual(self._run("node_unit.yml", name, {"Environment": "NODE_OPTIONS=--other"}).strip(),
+                         "effective=no")
+        unset = {"Environment": quoted, "UnsetEnvironment": f'"NODE_OPTIONS=--max-old-space-size=512 {FLAG}"'}
+        self.assertEqual(self._run("node_unit.yml", name, unset).strip(), "effective=unset")
+
+    def test_staged_check_sees_link_targets_blank_paths_and_unparsable_dropins(self):
+        import time
+
+        started = int(time.time()) - 1000
+        old = started - 1000
+        target = self.tmp / "real.env"
+        target.write_text("A=1\n")
+        link = self.tmp / "linked.env"
+        link.symlink_to(target)
+        os.utime(link, (old, old), follow_symlinks=False)
+        spaced = self.tmp / "app config.env"
+        spaced.write_text("A=1\n")
+        quiet = self.tmp / "quiet.env"
+        quiet.write_text("A=1\n")
+        os.utime(quiet, (old, old))
+        name = "restart_unit | Look for changes a restart would activate"
+        context = {"_ca_trust_consumers_before": {"MainPID": "0"}, "_ca_trust_consumers_started": started,
+                   "ca_trust_consumers_systemd_dir": "/etc/systemd/system",
+                   "ca_trust_consumers_node_dropin_name": "99-ca-trust-node.conf"}
+        unit = {"NeedDaemonReload": "no", "FragmentPath": "", "DropInPaths": "",
+                "EnvironmentFiles": f"{link} (ignore_errors=no)\n{spaced} (ignore_errors=yes)\n{quiet} (ignore_errors=no)"}
+        out = self._run("restart_unit.yml", name, unit, **context)
+        self.assertIn(f"staged: {link} changed after the process started", out)
+        self.assertIn(f"staged: {spaced} changed after the process started", out)
+        self.assertNotIn(str(quiet), out)
+        unit = {"NeedDaemonReload": "no", "FragmentPath": "", "DropInPaths": f"{self.tmp}/a b.conf",
+                "EnvironmentFiles": "odd entry"}
+        out = self._run("restart_unit.yml", name, unit, **context)
+        self.assertIn("staged: cannot parse DropInPaths of app.service", out)
+        self.assertIn("staged: cannot parse EnvironmentFiles entry of app.service", out)
+        unit = {"NeedDaemonReload": "no", "FragmentPath": "", "DropInPaths": "", "EnvironmentFiles": ""}
+        self.assertEqual(self._run("restart_unit.yml", name, unit, **context), "")
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,7 @@
 ---
 # pam_env reads /etc/environment for SSH, sudo, su, login and cron sessions.
 # The line is merged, not replaced: existing NODE_OPTIONS stay in place.
+# The file may hold unrelated secrets: its content is never logged or diffed.
 
 - name: node_cli | Check environment file
   ansible.builtin.stat:
@@ -13,6 +14,7 @@
     src: "{{ ca_trust_consumers_environment_file }}"
   register: _ca_trust_consumers_envfile
   when: _ca_trust_consumers_envfile_stat.stat.exists
+  no_log: true
 
 - name: node_cli | Set NODE_OPTIONS in environment file
   vars:
@@ -30,3 +32,13 @@
     owner: "0"
     group: "0"
     mode: "0644"
+  diff: false
+  no_log: true
+  register: _ca_trust_consumers_envfile_line
+
+- name: node_cli | Report environment file change
+  ansible.builtin.debug:
+    msg: >-
+      {{ ca_trust_consumers_environment_file }}: NODE_OPTIONS
+      {{ 'updated' if _ca_trust_consumers_envfile_line is changed else 'already carries' }}
+      {{ ca_trust_consumers_node_flag }}

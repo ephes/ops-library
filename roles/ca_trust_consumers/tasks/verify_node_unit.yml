@@ -17,4 +17,7 @@
       {{ ca_trust_consumers_unit.name }}: {{ _ca_trust_consumers_node_runtime.stdout_lines | join(', ') }}
     success_msg: >-
       {{ ca_trust_consumers_unit.name }}: {{ _ca_trust_consumers_node_runtime.stdout_lines | join(', ') }}
-  when: not ansible_check_mode
+  # Check and report modes leave old processes running on purpose.
+  when:
+    - not ansible_check_mode
+    - ca_trust_consumers_restart | bool
