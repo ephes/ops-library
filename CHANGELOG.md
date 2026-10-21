@@ -34,6 +34,21 @@
   Molecule scenario (`just test-graphyard-deploy-molecule`) and contract
   tests (`just test-graphyard-deploy-agent`, part of `just test`).
 
+## Unreleased — Rust ports: echoport-command-guard contract fixtures (S0)
+
+- Add the Python oracle and fixture generator for the Rust port of the
+  `echoport_remote_command_guard` forced-command guard
+  (`rust/echoport-command-guard/parity/oracle.py`, `gen_fixtures.py`) and the
+  generated Layer-1 decision fixtures (`rust/echoport-command-guard/fixtures/`,
+  about 13.4k cases: every runner command, the live journal shapes, every
+  unit-test call, mutations, filesystem states and `--check-policy`
+  documents), plus `TESTMAP.md`. `just test-echoport-remote-command-guard`
+  now also runs `tests/test_echoport_command_guard_fixtures.py`: the
+  fixtures must match the guard's sha256 and regenerate byte for byte
+  (runners re-recorded), and the Python guard must accept only printable
+  ASCII and tab. New recipe `just echoport-command-guard-fixtures`
+  regenerates them after a guard or runner change. No role behaviour changes.
+
 ## Unreleased — Rust ports: echoport-command-guard plan
 
 - Add `rust/echoport-command-guard/PLAN.md`, the plan for a Rust port of the `echoport_remote_command_guard` forced-command guard (Python guard as oracle, generated decision fixtures, stricter refusals only, an impl selector `python | shadow | rust` with Python as rollback, shadow runs, staging canary with rollback drills, and Python retirement), including the owner decisions of 2026-10-21. Plan only; no role behaviour changes.

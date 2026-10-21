@@ -232,10 +232,21 @@ test-heis-production-backup: venv
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_heis_production_backup
 
 # Forced-command allowlist for the Echoport remote runners' root SSH key: guard
-# rules, plus every command each remote runner template really sends.
+# rules, plus every command each remote runner template really sends, plus the
+# Rust port's decision fixtures (GUARD_SHA256, drift, prefilter contract).
 test-echoport-remote-command-guard: venv
     @echo "Testing the Echoport remote command guard..."
-    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_echoport_remote_command_guard
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_echoport_remote_command_guard tests.test_echoport_command_guard_fixtures
+
+# Regenerate the Rust guard port's Layer-1 fixtures from the Python guard
+# (rust/echoport-command-guard/PLAN.md 7.2): record the test policies and the
+# runners' commands in the repo venv, generate under Python 3.12 (production),
+# and require identical output under 3.13 (staging) and the venv.
+echoport-command-guard-fixtures: venv
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python rust/echoport-command-guard/parity/gen_fixtures.py record
+    @uv run --python 3.12 --no-project python -I rust/echoport-command-guard/parity/gen_fixtures.py generate
+    @uv run --python 3.13 --no-project python -I rust/echoport-command-guard/parity/gen_fixtures.py check
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python rust/echoport-command-guard/parity/gen_fixtures.py check --record
 
 # A FastDeploy restore must not bring back what the privilege reduction retired
 # (services, sudoers files, rules with more than one narrow script).

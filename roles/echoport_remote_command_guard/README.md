@@ -194,3 +194,17 @@ symlinks, devices, FIFOs and hard links, the redirect files). Molecule runs
 the runners' rsync/scp options, a SQLite snapshot fetched through the guard's
 `cat` (a symlink in its place is refused) and a dump upload into a root-only
 temp dir against a real sshd.
+
+The guard is being ported to Rust (`rust/echoport-command-guard/PLAN.md`);
+the Python guard stays the reference. Its decisions are frozen as fixtures in
+`rust/echoport-command-guard/fixtures/`, generated from this guard and the
+runners' recorded commands. `just test-echoport-remote-command-guard` fails
+when the guard or a runner template changed without them, so after such a
+change run
+
+```bash
+just echoport-command-guard-fixtures   # needs uv; generates under Python 3.12, checks 3.13
+```
+
+and commit the regenerated fixtures (and, once the port has rules, the Rust
+rule) in the same change.

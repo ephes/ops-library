@@ -250,7 +250,9 @@ only the commands these templates send are accepted, so:
 - a new remote command in a template needs a matching guard rule.
   `just test-echoport-remote-command-guard` renders each runner, drives a
   backup and a restore with the network faked, and fails on any command the
-  guard would refuse;
+  guard would refuse. When the commands a runner sends change, it also fails
+  until the Rust port's fixtures, which record them, are regenerated with
+  `just echoport-command-guard-fixtures`;
 - the opt-in python-podcast private media restore (`--include-private-media`)
   is refused by the guard.
 
