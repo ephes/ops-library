@@ -139,6 +139,8 @@ class StaticTaskTests(unittest.TestCase):
         text = (TASKS / "prune.yml").read_text(encoding="utf-8")
         for needle in (
             "rust_release_prune_plan",
+            "_rust_release_binary_pin_files.skipped_paths",
+            "_rust_release_binary_version_dirs.skipped_paths",
             "rust_release_binary_protect",
             "rust_release_binary_live_state_unknown",
             "rust_release_binary_failed_names",
@@ -860,6 +862,27 @@ class PlaybookTests(unittest.TestCase):
         (self.root / ".pins/odd").rmdir()
         self.ok(self.prune(keep_versions=1))
         self.assertEqual(self.versions(), ["3.0.0"])
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads a directory with mode 000")
+    def test_unlistable_pins_prune_nothing(self):
+        # find reports an unreadable directory in skipped_paths and succeeds;
+        # an incomplete pin listing must not count as "no pins".
+        self.ok(*[self.install(v) for v in ("1.0.0", "2.0.0")])
+        self.ok(self.pin("svc", "1.0.0"), self.pin("svc", "2.0.0"), self.pin("svc", state="absent"))
+        self.assertEqual(self.pins(), {"svc.previous": "2.0.0\n"})
+        self.ok(self.install("3.0.0"))
+        self.age("1.0.0", "2.0.0", "3.0.0")
+        pins = self.root / ".pins"
+        pins.chmod(0o000)
+        self.addCleanup(pins.chmod, 0o755)
+        result = self.ok(self.prune(keep_versions=1))
+        self.assertIn("cannot list every pin", result["out"])
+        self.assertEqual(result["recap"]["ignored"], 1)
+        self.assertEqual(result["facts"]["prune"]["removed"], [])
+        pins.chmod(0o755)
+        self.assertEqual(self.versions(), ["1.0.0", "2.0.0", "3.0.0"])
+        self.ok(self.prune(keep_versions=1))
+        self.assertEqual(self.versions(), ["2.0.0", "3.0.0"])
 
     def test_prune_input_validation(self):
         for params in ({"keep_versions": 0}, {"protect": "1.0.0"}, {"live_state_unknown": "maybe"}):

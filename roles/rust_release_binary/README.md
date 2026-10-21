@@ -150,7 +150,9 @@ instead of a failure, when
   normalised (`//`, `.`, `..`), lies under the root but not as
   `<version>/<file>`, or names the binary `<name>` outside both spellings of
   the root (an alias the role cannot map),
-- `.pins` is not a directory, or an entry in it is not a regular file or does
+- `.pins` is not a directory, the root or `.pins` cannot be listed
+  completely (`find` reports skipped paths, e.g. an unreadable directory,
+  instead of failing), or an entry in `.pins` is not a regular file or does
   not hold exactly one version.
 
 In check mode nothing is deleted (the removal tasks report what they would

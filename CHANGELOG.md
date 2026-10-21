@@ -17,7 +17,8 @@
   consumer's live-state `protect` list, which also takes executable paths
   such as `/proc/<pid>/exe` of a still-running oneshot run; deletes nothing
   when the live state is marked unknown, after a failed install of the crate
-  in the same run, or when a pin or protect entry cannot be interpreted).
+  in the same run, when the root or `.pins` cannot be listed completely, or
+  when a pin or protect entry cannot be interpreted).
   The decisions live in the new filter plugin `plugins/filter/rust_release.py`.
   New `tests/test_rust_release_binary.py` (`just test-rust-release-binary`,
   part of `just test`) with filter unit tests and localhost

@@ -8,8 +8,10 @@
 # ExecStart or /proc/<pid>/exe of a still-running oneshot run).
 #
 # Fails closed: nothing is deleted when the consumer marks its live state as
-# unknown, when an install of this crate failed earlier in the run, or when a
-# pin file or a protect entry cannot be interpreted. Such a skip warns and does
+# unknown, when an install of this crate failed earlier in the run, when the
+# root or .pins cannot be listed completely (find reports skipped paths
+# instead of failing), or when a pin file or a protect entry cannot be
+# interpreted. Such a skip warns and does
 # not fail the play.
 
 - name: prune | Validate the common inputs
@@ -43,6 +45,7 @@
   ansible.builtin.stat:
     path: "{{ rust_release_binary_install_root }}"
     get_checksum: false
+    follow: true
   register: _rust_release_binary_root_stat
 
 - name: prune | Prune the installed versions
@@ -121,6 +124,10 @@
             + _rust_release_binary_prune_plan.unknown
             + ([rust_release_binary_install_root ~ '/.pins is not a directory']
               if _rust_release_binary_pins_unusable | bool else [])
+            + (['cannot list every pin: ' ~ (_rust_release_binary_pin_files.skipped_paths | to_json)]
+              if (_rust_release_binary_pin_files.skipped_paths | default({})) | length > 0 else [])
+            + (['cannot list every version: ' ~ (_rust_release_binary_version_dirs.skipped_paths | to_json)]
+              if (_rust_release_binary_version_dirs.skipped_paths | default({})) | length > 0 else [])
           }}
 
     # A failed task that is ignored: red in the output and `ignored=1` in the
