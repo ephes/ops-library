@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## Unreleased — explicit Java fresh-trigger recovery (2.62.1)
 
 - `java_ca_refresh`: explicitly process the distribution Java fresh trigger when
   Ubuntu does not forward `--fresh` to hooks; retain backup provenance and an
