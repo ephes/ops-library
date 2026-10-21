@@ -1,0 +1,17 @@
+---
+- name: Create root-owned Chrome policy staging directory
+  ansible.builtin.file:
+    path: /var/lib/managed-container-ca/chrome
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install narrowly scoped eMudhra SPKI distrust policy
+  ansible.builtin.copy:
+    src: 99-emudhra.json
+    dest: /var/lib/managed-container-ca/chrome/99-emudhra.json
+    owner: root
+    group: root
+    mode: '0644'
+    validate: /usr/bin/python3 -m json.tool %s

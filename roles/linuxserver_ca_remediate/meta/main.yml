@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  author: Jochen Wersdörfer
+  description: Prepare a fail-closed LinuxServer CA repair startup hook
+  license: MIT
+  min_ansible_version: '2.20'
+dependencies: []

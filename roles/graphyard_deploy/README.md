@@ -222,3 +222,8 @@ This role configures receiver access; check provisioning belongs to orchestratio
 
 Source and dependency changes notify the existing restart handlers after deployment.
 Graphyard restarts both its web and agent services. Unchanged syncs do not request a restart.
+
+Set `graphyard_ca_store_root` to the prepared per-container CA root to mount
+replacement native trust stores; prepare with `container_ca_remediate` before
+deploying and refresh after image/custom CA changes. The empty default leaves
+image trust unchanged. Verify actual runtime TLS before claiming protection.

@@ -1,0 +1,5 @@
+---
+# Infrastructure > Containers
+container_ca_activate_projects: []
+# Optional existing local server YAML; require idle room/egress aggregate before activation.
+container_ca_activate_livekit_config: ''

@@ -1,0 +1,3 @@
+---
+# Documentation catalog placement; this role deliberately has no path knobs.
+ops_library_documentation_category: infrastructure

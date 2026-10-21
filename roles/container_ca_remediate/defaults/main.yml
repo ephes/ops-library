@@ -1,0 +1,7 @@
+---
+ops_library_documentation_category: infrastructure
+# Explicit container names only. Preparation does not restart/recreate workloads.
+container_ca_remediate_containers: []
+
+# Optional target images for preparing ahead of an image rollout (must exist locally).
+container_ca_remediate_images: {}

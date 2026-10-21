@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Activate trust-only Compose overlays with exact image retention, bounded recovery and one Docker restart. Optional `container_ca_activate_livekit_config` checks aggregate room/egress idle state using existing target PyYAML.
+
+- Remediate Apple curl's separate macOS CA bundle with atomic trust-preserving backups and TLS probes.
+- Patch explicitly allowlisted macOS Python environments and certifi-only deployed lock records without adding packages.
+- Prepare isolated per-image replacement container CA stores; optional Graphyard, Logyard and OpenClaw settings consume them.
+- Repair LinuxServer native Qt/OpenSSL trust before application startup, failing closed on unknown trust formats.
+- Add supported managed Chrome distrust policy for eight compromised eMudhra keys, covering the browser's independent root store.
+
 ## Unreleased — explicit Java fresh-trigger recovery (2.62.1)
 
 - `java_ca_refresh`: explicitly process the distribution Java fresh trigger when

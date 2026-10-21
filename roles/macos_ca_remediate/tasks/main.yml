@@ -1,0 +1,57 @@
+---
+- name: Read native platform without broad facts
+  ansible.builtin.command:
+    argv: [/usr/bin/uname, -s]
+  register: macos_ca_native_platform
+  changed_when: false
+  check_mode: false
+
+- name: Require macOS
+  ansible.builtin.assert:
+    that: macos_ca_native_platform.stdout == 'Darwin'
+
+- name: Validate and atomically remediate Apple curl CA bundle
+  ansible.builtin.script:
+    cmd: "filter_bundle.py {{ '--check' if ansible_check_mode else '' }}"
+    executable: /usr/bin/python3
+  register: macos_ca_result
+  changed_when: "'CHANGED' in macos_ca_result.stdout_lines"
+  check_mode: false
+
+- name: Report remediation and backup path
+  ansible.builtin.debug:
+    var: macos_ca_result.stdout_lines
+
+- name: Confirm curl rejects both compromised chain families
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/curl
+      - --silent
+      - --show-error
+      - --output
+      - /dev/null
+      - --max-time
+      - '20'
+      - "{{ item }}"
+  register: macos_ca_negative
+  changed_when: false
+  failed_when: macos_ca_negative.rc != 60
+  loop:
+    - https://dv-g3b-emudhra.we-have-a-problem.com/
+    - https://dv-g3b-aaa-emudhra.we-have-a-problem.com/
+  when: not ansible_check_mode
+
+- name: Confirm curl still accepts an unaffected HTTPS site
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/curl
+      - --fail
+      - --silent
+      - --show-error
+      - --output
+      - /dev/null
+      - --max-time
+      - '20'
+      - https://www.python.org/
+  changed_when: false
+  when: not ansible_check_mode
