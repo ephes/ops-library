@@ -28,8 +28,10 @@ defaults are that incident's four roots.
   CA package itself.
 - **Existing configuration is kept.** An existing `NODE_OPTIONS` in
   `/etc/environment` or in the unit's own `Environment=` is preserved and the
-  flag appended. A `NODE_OPTIONS` set by the unit's `EnvironmentFile=` (which
-  takes precedence over a drop-in) makes the role fail and name the file;
+  flag appended. `EnvironmentFile=` values take precedence over a drop-in, so
+  the role fails closed instead of parsing them: any mention of `NODE_OPTIONS`
+  in such a file (an assignment in any spelling, a continuation or a comment),
+  a wildcard pattern or an unreadable file makes it fail and name the file;
   values are never printed. `--use-bundled-ca` already present also fails,
   because Node.js refuses both selectors together.
 - **Only running units are restarted**, and only when their main process
@@ -38,12 +40,24 @@ defaults are that incident's four roots.
   are read from the host, so a rerun after an interrupted run makes the same
   decisions. A stopped or disabled unit is never started; it still gets its
   drop-in, so a later start uses the system store.
-- **No side-loaded changes.** A restart is refused (the role fails, naming
-  the cause) when it would also activate something staged since the process
-  started: a replaced executable, a unit file or drop-in changed (or awaiting
-  `daemon-reload`), or a listed `guard_paths` entry (static config, a release
-  symlink, compared with `lstat`) newer than the process.
+- **No side-loaded changes.** Before anything is written the role fails if a
+  listed unit already awaits `daemon-reload` (its own drop-in change triggers
+  one, which would load that pending change unseen). A restart is refused (the
+  role fails, naming the cause) when it would also activate something staged
+  since the process started: a replaced executable, a unit file, drop-in or
+  `EnvironmentFile=` file changed, or a listed `guard_paths` entry (static
+  config, a release symlink) newer than the process — a symlink counts when
+  either the link or its target changed. Unit properties the role cannot
+  parse unambiguously (drop-in or environment-file paths with blanks in an
+  unexpected shape) also refuse the restart.
   `allow_staged_changes: true` on the entry overrides this.
+- **No secrets in output.** `/etc/environment` and `systemctl cat` output are
+  read with `no_log` and written without diffs; checks of environments and
+  environment files print only file names, PIDs and yes/no.
+- **Effective value checked.** After writing a drop-in the role checks the
+  unit's effective `Environment=` (a later drop-in could override it) and
+  `UnsetEnvironment=`, also for stopped units, and fails unless the flag is
+  effective. The drop-in is named `99-…` to apply last.
 - **Serial restarts with checks.** After each restart the role waits for an
   active, newer main process and runs the unit's optional `health_command`
   before moving on. The pre-restart PID, start time, executable and its
@@ -53,8 +67,9 @@ defaults are that incident's four roots.
   in each listed unit's cgroup must carry the flag in its actual environment
   (only `pid=… flag=yes/no` is printed).
 - **Report-only mode.** `ca_trust_consumers_restart: false` writes the trust
-  configuration but only reports which units would be restarted. Check mode
-  (`--check`) changes nothing and also only reports.
+  configuration but only reports which units would be restarted (the runtime
+  flag check then reports instead of failing). Check mode (`--check`) changes
+  nothing and also only reports.
 
 ## Why these mechanisms
 
@@ -96,7 +111,8 @@ defaults are that incident's four roots.
 | `ca_trust_consumers_node_cli` | `false` | Manage `NODE_OPTIONS` in `/etc/environment`. |
 | `ca_trust_consumers_environment_file` | `/etc/environment` | pam_env file. |
 | `ca_trust_consumers_node_units` | `[]` | Node.js services: `{name, health_command?, guard_paths?, allow_staged_changes?}`. Get a drop-in (also when inactive), restart while a running process lacks the flag or roots are old, runtime-verified. |
-| `ca_trust_consumers_node_dropin_name` | `50-ca-trust-node.conf` | Drop-in file name under `/etc/systemd/system/<unit>.d/`. |
+| `ca_trust_consumers_node_dropin_name` | `99-ca-trust-node.conf` | Drop-in file name under `/etc/systemd/system/<unit>.d/`. |
+| `ca_trust_consumers_systemd_dir` | `/etc/systemd/system` | Parent of the `<unit>.d/` drop-in directories. |
 | `ca_trust_consumers_restart_units` | `[]` | Other TLS clients: `{name, health_command?, detached?, guard_paths?, allow_staged_changes?}`. Restarted when started before the bundle changed. |
 | `ca_trust_consumers_restart` | `true` | `false` = report which units would be restarted. |
 | `ca_trust_consumers_health_retries` / `_health_delay` | `12` / `5` | Polling for the new process and the health command. |
@@ -147,7 +163,7 @@ ordinary sites still succeed.
 
 When every Node.js runtime in use ships the upstream fix, delete the
 `NODE_OPTIONS` line (or the flag) from `/etc/environment` and the
-`/etc/systemd/system/<unit>.d/50-ca-trust-node.conf` drop-ins, then
+`/etc/systemd/system/<unit>.d/99-ca-trust-node.conf` drop-ins, then
 `systemctl daemon-reload` and restart the units. Keeping the flag is also
 fine: it makes Node.js follow future system store updates.
 

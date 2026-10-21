@@ -14,16 +14,22 @@
   - merges `--use-openssl-ca` into `NODE_OPTIONS` in `/etc/environment` for
     login/SSH/sudo/cron sessions (npm, corepack, yarn, deploy tools), keeping
     existing options;
-  - adds a `NODE_OPTIONS` drop-in to listed Node.js services, keeping the
-    unit's own options and refusing to shadow one set by an `EnvironmentFile=`;
+  - adds a `NODE_OPTIONS` drop-in to listed Node.js services (stopped ones
+    too, without starting them), keeping the unit's own options, failing
+    closed on any `EnvironmentFile=` that mentions `NODE_OPTIONS`, uses a
+    wildcard or cannot be read, and checking the effective value (later
+    drop-ins, `UnsetEnvironment=`);
   - restarts listed services, one at a time with health checks, only when
     running and started before the CA bundle changed (or, for Node.js
     services, while a running process lacks the flag), never starting a
     stopped unit and refusing restarts that would activate staged binary,
     unit or config changes; a detached `systemd-run` restart covers
     `tailscaled`;
-  - verifies the flag in the environment of every running Node.js process of
-    the listed services.
+  - verifies the flag in the unit's effective environment and in every
+    running Node.js process of the listed services;
+  - refuses, before writing anything, when a listed unit already awaits
+    `daemon-reload`, and never logs or diffs `/etc/environment` or unit
+    definitions (they can hold secrets).
   `--use-system-ca` and `NODE_EXTRA_CA_CERTS` only add roots and leave the
   bundled copy of a distrusted root trusted, so the role does not use them.
 
