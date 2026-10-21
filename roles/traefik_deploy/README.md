@@ -541,5 +541,6 @@ transaction-managed hosts until they share its locks and recovery records.
 
 Transaction-managed hosts can use `acme_storage` to copy `/acme.json` into the
 private ACME directory and repair only resolver email/storage. Full deployment
-remains guarded. See [TRANSACTIONS.md](https://github.com/ephes/ops-library/blob/main/roles/traefik_deploy/TRANSACTIONS.md#acme-storage-adoption-acme_storage)
+remains guarded. `tasks_from: health_probe_capture` captures a fresh read-only
+probe baseline (optionally with TLS fingerprints) for such a window. See [TRANSACTIONS.md](https://github.com/ephes/ops-library/blob/main/roles/traefik_deploy/TRANSACTIONS.md#acme-storage-adoption-acme_storage)
 for candidate validation, fingerprint checks, offline check and rollback semantics.

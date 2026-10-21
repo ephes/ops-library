@@ -209,9 +209,11 @@ This phase-1 action moves the populated `/acme.json` to
 `/etc/traefik/acme/acme.json` without changing the binary, unit or routing.
 Policy must name those exact `acme_source` and `acme_target` paths. The source
 must be a root-owned regular 0600 file with a nonempty `letsencrypt` certificate
-list. The destination must be absent or a root-owned empty regular file; parent
+list. The destination must be absent, a root-owned empty regular file, or an
+exact byte copy of the source (what a rolled-back attempt leaves behind, so a
+reviewed retry needs no manual cleanup); any other content is refused. Parent
 directories must be real root-owned directories without group/world write access.
-The engine saves the previous empty target as `acme-target.orig`, copies the
+The engine saves the previous target as `acme-target.orig`, copies the
 source bytes atomically at 0600, and sets the ACME directory to 0700.
 
 Supply the same evidence, probes, approved binary hash and isolated compatibility
@@ -239,7 +241,10 @@ failure cannot prevent attempting config rollback. Both stores remain on disk;
 the source is never written or deleted, and no ACME archive is restored.
 
 For independent `capture`/`health` probe use, set `tls_fingerprints: true` in the
-private probe configuration. Capture adds `tls_sha256` to each HTTPS observation;
+private probe configuration. The `health_probe_capture` task entry runs `capture`
+read-only from a temporary directory (input `traefik_health_probe_spec` with
+probes and entrypoints, output fact `traefik_health_probe_captured`), so a fresh
+baseline needs no manual host access. Capture adds `tls_sha256` to each HTTPS observation;
 health requires a captured TLS observation and refuses fingerprint changes,
 including when a backend recovers from 5xx. TCP/TLS failures are recorded with a
 null fingerprint and error class, preserving known baseline failures and allowing
@@ -263,3 +268,18 @@ synthetic keys, the production-shaped misplaced tables and cwd `/`, and an
 unreachable CA endpoint: prove unchanged fingerprints, no CA connection/order,
 and automatic recovery after a forced acceptance failure. Keep its report and
 exact candidate hash as compatibility evidence. Unit tests are not this VM proof.
+
+Observed in that VM proof (2026-10-21, ARM64, 13 test-CA certificates, 16
+hostnames, routers with and without `certResolver`): the forced acceptance failure
+restored the old TOML with two restarts and unchanged fingerprints; the reviewed
+retry over the exact-copy target then succeeded with one restart, identical
+fingerprints and certificate set, an unchanged source, a byte-identical target
+after start, and only the new store opened by Traefik. There were no CA
+connections in either run. Each restart refused connections for 0.05–1.8 s, and
+the first handshake right after the listener opens can still get Traefik's
+generated default certificate; the bounded fingerprint retries absorb that.
+Traefik 3.7.14 picks among overlapping stored certificates deterministically
+(reverse-sorted SAN keys), so the served leaf per hostname stays stable across
+restarts. A refusal before any change (for example a missing backup path) still
+leaves the controller record pending, as for every action; reconcile it with
+inspection and `resume` before the next attempt.

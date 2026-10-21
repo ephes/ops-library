@@ -136,6 +136,27 @@ class HealthProbeTests(unittest.TestCase):
                 )
 
 
+class HealthProbeCaptureTaskTests(unittest.TestCase):
+    def test_capture_is_read_only_and_cleans_its_temporary_directory(self):
+        import yaml
+
+        tasks = yaml.safe_load(
+            (ROOT / "roles/traefik_deploy/tasks/health_probe_capture.yml").read_text()
+        )
+        text = json.dumps(tasks)  # task values only, not comments
+        self.assertNotIn("/var/lib/traefik-update-probes", text)
+        self.assertNotIn("systemctl", text)
+        guard = tasks[0]["ansible.builtin.assert"]["that"]
+        self.assertIn("traefik_health_probe_spec.observations is not defined", guard)
+        block = next(task for task in tasks if "block" in task)
+        run = next(t for t in block["block"] if "ansible.builtin.command" in t)
+        self.assertEqual(run["ansible.builtin.command"]["argv"][2], "capture")
+        self.assertIs(run["changed_when"], False)
+        cleanup = block["always"][0]["ansible.builtin.file"]
+        self.assertEqual(cleanup["state"], "absent")
+        self.assertIn("traefik_health_probe_capture_dir.path", cleanup["path"])
+
+
 class RecoveryEvidenceTests(unittest.TestCase):
     def test_verified_ssh_or_legacy_console_reference_is_required(self):
         proof = {
@@ -437,6 +458,12 @@ entryPoint = "web"
                 self.assertEqual(data, source.read_bytes())
                 self.assertEqual(len(certificates), 1)
                 target.write_bytes(b"existing store")
+                with self.assertRaises(tx.Refused):
+                    tx.acme_preflight(policy)
+                # A rolled-back attempt leaves an exact copy; a retry may reuse it.
+                target.write_bytes(source.read_bytes())
+                self.assertEqual(tx.acme_preflight(policy)[0], source.read_bytes())
+                target.write_bytes(source.read_bytes() + b" ")
                 with self.assertRaises(tx.Refused):
                     tx.acme_preflight(policy)
                 target.unlink()

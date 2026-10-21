@@ -411,10 +411,14 @@ def acme_preflight(
             and not info.st_mode & 0o022,
             "unsafe ACME parent directory",
         )
+    data = source.read_bytes()
     if target.exists() or target.is_symlink():
         trusted_file(target)
-        require(target.stat().st_size == 0, "ACME target must be absent or empty")
-    data = source.read_bytes()
+        # An exact copy is what a rolled-back attempt leaves; anything else is foreign.
+        require(
+            target.stat().st_size == 0 or target.read_bytes() == data,
+            "ACME target must be absent, empty or an exact copy of the source",
+        )
     return data, certificate_set(data)
 
 
