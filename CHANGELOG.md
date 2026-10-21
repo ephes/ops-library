@@ -14,9 +14,16 @@
   `metrics-httpd-v0.1.0` through `rust-release.yml`: the GitHub release
   `metrics-httpd 0.1.0` carries
   `metrics-httpd-0.1.0-x86_64-unknown-linux-gnu.tar.gz` (binary and
-  `LICENSE`, built on ubuntu-22.04, glibc floor 2.35) and its `.sha256`.
-  `rust/metrics-httpd/README.md` has a "Release" section. No role pins the
-  release yet (S5a–S5e); nothing is installed anywhere.
+  `LICENSE`, built on ubuntu-22.04, glibc floor 2.35) and its `.sha256`:
+  archive sha256
+  `7befbd0f4151d6eb11009d7a93a7e7defbd4559cb0c2086915fa598c6d85fc27`,
+  stripped binary 2,249,216 bytes (2.14 MiB, limit 4 MiB), highest symbol
+  version `GLIBC_2.34`. `rust/metrics-httpd/README.md` has a "Release"
+  section with these values. GitHub shows this first release of the
+  repository as "Latest" despite `--latest=false` (no other release to
+  fall back to); `rust/README.md` notes that nothing may resolve a binary
+  through "latest". No role pins the release yet (S5a–S5e); nothing is
+  installed anywhere.
 
 ## Unreleased — Rust ports: metrics-httpd parity harness and shadow comparer (S3)
 
