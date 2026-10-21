@@ -12,7 +12,12 @@ here:
 - the stdlib families give the same bytes under the hosts' CPython 3.12 and
   3.13 when ``uv`` has them (no download);
 - every case where the Rust expectation differs from Python names an
-  allowed difference of PLAN.md section 5.2, and none widens access;
+  allowed difference of PLAN.md section 5.2, and none widens access (auth)
+  or serves a document Python does not serve (json-file);
+- the json-file fixture covers all eight variants of PLAN.md 4.3; the
+  torrent-vpn script lives in ops-control, so its cases are regenerated only
+  where an ops-control checkout is found (``METRICS_HTTPD_OPS_CONTROL``, a
+  sibling ``ops-control`` or ``~/projects/ops-control``) and kept otherwise;
 - the float fixture has the size PLAN.md D-5 asks for, in files the
   repository's large-file hook accepts.
 
@@ -121,6 +126,8 @@ class DifferencesAreNamedAndNarrow(unittest.TestCase):
         tags += [
             case["d"] for case in load("apt_state.json")["http"]["cases"] if "d" in case
         ]
+        for variant in load("json_file.json")["variants"]:
+            tags += [case["d"] for case in variant["cases"] if "d" in case]
         self.assertTrue(tags)
         for tag in tags:
             self.assertIn(tag, items)
@@ -162,7 +169,7 @@ class DifferencesAreNamedAndNarrow(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
         ids = [case["id"] for case in load("auth.json")]
         self.assertEqual(len(ids), len(set(ids)))
-        for variant in load("http_common.json"):
+        for variant in load("http_common.json") + load("json_file.json")["variants"]:
             ids = [case["id"] for case in variant["cases"]]
             self.assertEqual(len(ids), len(set(ids)), variant["variant"])
         ids = [case["id"] for case in load("script.json")["cases"]]
@@ -191,6 +198,58 @@ class DifferencesAreNamedAndNarrow(unittest.TestCase):
             else:
                 self.assertIn(case["compare"], {"bytes", "error_type_only"}, case["id"])
                 self.assertNotIn("d", case, case["id"])
+
+
+class JsonFileFixture(unittest.TestCase):
+    VARIANTS = [
+        "backup",
+        "storage",
+        "thermal",
+        "tailscale",
+        "dns",
+        "openclaw",
+        "ddns",
+        "torrent-vpn",
+    ]
+
+    def test_all_eight_variants_with_the_same_cases(self) -> None:
+        fixture = load("json_file.json")
+        variants = fixture["variants"]
+        self.assertEqual([v["variant"] for v in variants], self.VARIANTS)
+        ids = [case["id"] for case in variants[0]["cases"]]
+        self.assertGreaterEqual(len(ids), 40)
+        for variant in variants:
+            self.assertEqual(
+                [case["id"] for case in variant["cases"]], ids, variant["variant"]
+            )
+            self.assertEqual(variant["argv"][0], "json-file")
+            for case in variant["cases"]:
+                self.assertIn(case["state"], fixture["states"], case["id"])
+
+    def test_differences_never_serve_what_python_refuses(self) -> None:
+        for variant in load("json_file.json")["variants"]:
+            for case in variant["cases"]:
+                label = f'{variant["variant"]}/{case["id"]}'
+                if case["status"] is None:
+                    # Python's handler raised and dropped the connection (D-2).
+                    self.assertIn("rust_status", case, label)
+                if "rust_status" in case:
+                    self.assertIn("d", case, label)
+                    self.assertGreaterEqual(case["rust_status"], 500, label)
+                    self.assertNotEqual(case["rust_status"], case["status"], label)
+
+    def test_torrent_vpn_variant_comes_from_ops_control(self) -> None:
+        sys.path.insert(0, str(FIXTURES))
+        try:
+            import generate  # noqa: PLC0415
+        finally:
+            sys.path.pop(0)
+        if generate.ops_control_checkout() is None:
+            self.skipTest(
+                "no ops-control checkout: the committed torrent-vpn cases were kept, not regenerated"
+            )
+        torrent = load("json_file.json")["variants"][-1]
+        self.assertEqual(torrent["repo"], "ops-control")
 
 
 class FloatFixture(unittest.TestCase):

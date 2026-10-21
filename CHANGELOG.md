@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased — Rust ports: metrics-httpd json-file mode (S2a)
+
+- `rust/metrics-httpd` (slice S2a of `rust/metrics-httpd/PLAN.md`): the
+  `json-file` mode now serves the JSON file like the eight Python scripts it
+  replaces (backup, storage, thermal, tailscale, dns, openclaw, ddns and
+  ops-control's torrent-vpn): the `meta` block (replaced, or merged for
+  dns), `json.dumps(..., sort_keys=True)` bytes, 503 `metrics_file_missing`
+  with the variant's message, 503 `read_error`, 502 `invalid_json`, and
+  answers where Python's handler drops the connection (top-level value not
+  an object, invalid UTF-8, ints over 4300 digits; PLAN.md D-2/D-5). Each
+  5xx answer writes one cause line to stderr (D-9). New fixture family
+  `json_file` in `rust/metrics-httpd/fixtures/generate.py`: the eight
+  scripts served on loopback through 39 file states and five gate cases,
+  replayed by the Rust tests; the torrent-vpn script is read from an
+  ops-control checkout (`METRICS_HTTPD_OPS_CONTROL`, a sibling
+  `ops-control` or `~/projects/ops-control`), otherwise its committed cases
+  are kept and `tests/test_metrics_httpd_fixtures.py` reports a skip. The
+  plan gains the D-4 writer audit (section 5.3): no writer emits `NaN`,
+  `Infinity` or lone surrogates today; backup, thermal, storage and
+  openclaw could in principle. No role behaviour changes; nothing is
+  installed anywhere.
+
 ## Unreleased — Rust ports: metrics-httpd apt-state mode (S2c)
 
 - `rust/metrics-httpd` (slice S2c of `rust/metrics-httpd/PLAN.md`): the
