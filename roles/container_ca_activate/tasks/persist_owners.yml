@@ -1,0 +1,55 @@
+---
+- name: persist_owners | Require explicitly inventoried native Compose owners
+  ansible.builtin.assert:
+    that: container_ca_activate_projects | length > 0
+
+- name: persist_owners | Require idle LiveKit before owner activation
+  ansible.builtin.script:
+    cmd: "livekit_idle.py {{ container_ca_activate_livekit_config | quote }}"
+    executable: /usr/bin/python3
+  changed_when: false
+  check_mode: false
+  when: container_ca_activate_livekit_config | length > 0
+
+- name: persist_owners | Stage owner activation tools temporarily
+  block:
+    - name: persist_owners | Allocate private temporary tool directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: container-ca-owner-
+      register: container_ca_owner_tools
+      check_mode: false
+      changed_when: false
+
+    - name: persist_owners | Stage reviewed owner tools
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ container_ca_owner_tools.path }}/{{ item }}"
+        mode: '0600'
+      loop: [activate.py, persist_owners.py]
+      check_mode: false
+      changed_when: false
+
+    - name: persist_owners | Persist CA-only native Compose ownership without restarting Docker
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ container_ca_owner_tools.path }}/persist_owners.py"
+          - "{{ container_ca_activate_projects | to_json }}"
+          - "{{ '--check' if ansible_check_mode else '--apply' }}"
+          - "{{ container_ca_activate_owner_reconcile_sha256 | to_json }}"
+      register: container_ca_owner_result
+      changed_when: "'CHANGED' in container_ca_owner_result.stdout_lines"
+      check_mode: false
+
+    - name: persist_owners | Report owner activation outcome
+      ansible.builtin.debug:
+        var: container_ca_owner_result.stdout_lines
+  always:
+    - name: persist_owners | Remove private temporary owner tools
+      ansible.builtin.file:
+        path: "{{ container_ca_owner_tools.path }}"
+        state: absent
+      when: container_ca_owner_tools.path is defined
+      check_mode: false
+      changed_when: false
