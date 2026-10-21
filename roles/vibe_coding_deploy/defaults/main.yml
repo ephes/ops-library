@@ -60,7 +60,7 @@ vibe_coding_github_token: ""
 # SSH hardening — Match User block in sshd_config
 vibe_coding_sshd_hardening: true
 
-vibe_coding_rustup_version: "1.29.1"
+vibe_coding_rustup_version: "1.29.2"
 vibe_coding_zellij_version: "0.45.1"
 
 vibe_coding_lazygit_checksum:
@@ -91,7 +91,7 @@ vibe_coding_zellij_binary_checksum:
   aarch64: "sha256:2a2c0621e6f3b11ecbb05d66939a48000a2508604620aa20727a5fd61c49f451"
 
 vibe_coding_rustup_checksum:
-  # https://static.rust-lang.org/rustup/archive/1.29.1/x86_64-unknown-linux-gnu/rustup-init.sha256
-  x86_64: "sha256:dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71"
-  # https://static.rust-lang.org/rustup/archive/1.29.1/aarch64-unknown-linux-gnu/rustup-init.sha256
-  aarch64: "sha256:15f6e4ce9f583b929c996c91562bad6d4454f3281de858b02cdfdef615fac433"
+  # https://static.rust-lang.org/rustup/archive/1.29.2/x86_64-unknown-linux-gnu/rustup-init.sha256
+  x86_64: "sha256:5be191e8c70a5007074254cb74d78dbfdd25cd5a61c27de7b8e5410122ec24f4"
+  # https://static.rust-lang.org/rustup/archive/1.29.2/aarch64-unknown-linux-gnu/rustup-init.sha256
+  aarch64: "sha256:a9c168dbea81a84671c6b7a5c1795cb0eb699020110d107ddfca427bd797e697"

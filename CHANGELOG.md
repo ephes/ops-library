@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Security
+
+- Add a guarded security-only Rustup 1.29.2 manager/proxy patch entrypoint that
+  preserves existing coding toolchains and settings; use patched OS trust and
+  pinned official updater checksums instead of the old embedded downloader.
+
 ## [2.64.4] - 2026-10-21
 
 ### Fixed

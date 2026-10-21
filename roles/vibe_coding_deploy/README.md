@@ -42,7 +42,7 @@ vibe_coding_chezmoi_source_dir: ""
 
 # Environment variables deployed to fish conf.d/secrets.fish
 vibe_coding_fish_env: {}
-#   ANTHROPIC_API_KEY: "sk-ant-..."
+#   ANTHROPIC_API_KEY: "CHANGEME"  # pragma: allowlist secret
 
 # Extra packages passed through to shell_basics_deploy
 vibe_coding_shell_basics_extra_packages:
@@ -151,13 +151,13 @@ Pinned defaults (checksum map keys identify the release architecture/target):
 | --- | --- |
 | `vibe_coding_neovim_version` | `0.12.5` |
 | `vibe_coding_lazygit_version` | `0.65.1` |
-| `vibe_coding_rustup_version` | `1.29.1` |
+| `vibe_coding_rustup_version` | `1.29.2` |
 | `vibe_coding_zellij_version` | `0.45.1` |
-| `vibe_coding_lazygit_checksum` | x86_64: `sha256:02beacbcda0fa342e50ae3480ba8147307353af3fb28e1d5f790e02329c201a6`<br>arm64: `sha256:49abecdf6adf4f2dfdb11bf7b9bfada267ea523612ed809d1c6d87f6c04000a7` |
-| `vibe_coding_neovim_checksum` | x86_64: `sha256:bce0f56eda1f1b1db6eee8f4133d7a38813ea07933837dd1777411ca384c6875`<br>arm64: `sha256:1aa5ca085249580ae0f91eb14f27ec0919773ff2d99a163d03f3d6c21ac29725` |
-| `vibe_coding_zellij_checksum` | x86_64: `sha256:40bcc2e03f5d5ae8e054e39f676081fe12ab70871506996ba595834c3718eefc`<br>aarch64: `sha256:05f0802afadd53f8db9514e7cae53c9ae8432fed1b35b8294aa816ee3044a16b` |
-| `vibe_coding_zellij_binary_checksum` | x86_64: `sha256:d006c521dcb475a6005d741e9dd7c5758e5a23b28dd60a5c10cebfa4876319dd`<br>aarch64: `sha256:2a2c0621e6f3b11ecbb05d66939a48000a2508604620aa20727a5fd61c49f451` |
-| `vibe_coding_rustup_checksum` | x86_64: `sha256:dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71`<br>aarch64: `sha256:15f6e4ce9f583b929c996c91562bad6d4454f3281de858b02cdfdef615fac433` |
+| `vibe_coding_lazygit_checksum` | x86_64: `sha256:02beacbcda0fa342e50ae3480ba8147307353af3fb28e1d5f790e02329c201a6`; arm64: `sha256:49abecdf6adf4f2dfdb11bf7b9bfada267ea523612ed809d1c6d87f6c04000a7` |
+| `vibe_coding_neovim_checksum` | x86_64: `sha256:bce0f56eda1f1b1db6eee8f4133d7a38813ea07933837dd1777411ca384c6875`; arm64: `sha256:1aa5ca085249580ae0f91eb14f27ec0919773ff2d99a163d03f3d6c21ac29725` |
+| `vibe_coding_zellij_checksum` | x86_64: `sha256:40bcc2e03f5d5ae8e054e39f676081fe12ab70871506996ba595834c3718eefc`; aarch64: `sha256:05f0802afadd53f8db9514e7cae53c9ae8432fed1b35b8294aa816ee3044a16b` |
+| `vibe_coding_zellij_binary_checksum` | x86_64: `sha256:d006c521dcb475a6005d741e9dd7c5758e5a23b28dd60a5c10cebfa4876319dd`; aarch64: `sha256:2a2c0621e6f3b11ecbb05d66939a48000a2508604620aa20727a5fd61c49f451` |
+| `vibe_coding_rustup_checksum` | x86_64: `sha256:5be191e8c70a5007074254cb74d78dbfdd25cd5a61c27de7b8e5410122ec24f4`; aarch64: `sha256:a9c168dbea81a84671c6b7a5c1795cb0eb699020110d107ddfca427bd797e697` |
 
 Sources of the hashes:
 
@@ -177,3 +177,9 @@ project’s published checksum file or release-page asset digest over HTTPS,
 and update the source URL comment beside the checksum in `defaults/main.yml`.
 Never reuse the old checksum for a new version. Supply matching checksums for
 every enabled architecture. Run `just test-root-downloads` before deploying.
+
+## Rustup security updates
+
+Fresh installs now pin Rustup 1.29.2. Existing installations must use the
+separate `local.ops_library.rustup_security` role; rerunning this full role also
+manages SDK components, shell configuration and coding applications.
