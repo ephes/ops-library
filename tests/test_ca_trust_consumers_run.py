@@ -72,6 +72,8 @@ class RoleRunTests(unittest.TestCase):
             "dpkg-query": "#!/bin/sh\necho 'install ok installed 20260816ubuntu0.24.04.1'\n",
             # dpkg --compare-versions A ge B: CA_TRUST_TEST_GE decides.
             "dpkg": "#!/bin/sh\nexit \"${CA_TRUST_TEST_GE:-0}\"\n",
+            # cvtsudoers -f json: the policy fixture, or a parse failure.
+            "cvtsudoers": "#!/bin/sh\n[ -f \"$CA_TRUST_TEST_POLICY\" ] || exit 1\ncat \"$CA_TRUST_TEST_POLICY\"\n",
         }
         for name, body in stubs.items():
             path = bin_dir / name
@@ -88,6 +90,7 @@ class RoleRunTests(unittest.TestCase):
         self.envfile.write_text(
             'PATH="/usr/bin"\nAPI_TOKEN=do-not-print-me\nNODE_OPTIONS="--max-old-space-size=1536"\n'
         )
+        (self.tmp / "policy.json").write_text(json.dumps({"Defaults": [{"Options": [{"env_reset": True}]}], "User_Specs": []}))
         self.units = self.tmp / "units.json"
         self.units.write_text(json.dumps({
             "old.service": {"LoadState": "loaded", "ActiveState": "active", "MainPID": "4242",
@@ -107,6 +110,7 @@ class RoleRunTests(unittest.TestCase):
             "ANSIBLE_LOCALHOST_WARNING": "0",
             "ANSIBLE_INVENTORY_UNPARSED_WARNING": "0",
             "CA_TRUST_TEST_UNITS": str(self.units),
+            "CA_TRUST_TEST_POLICY": str(self.tmp / "policy.json"),
         }
 
     def _run(self, *, ge: int = 0) -> subprocess.CompletedProcess:
@@ -122,6 +126,11 @@ class RoleRunTests(unittest.TestCase):
                 ca_trust_consumers_root_paths: ["{self.bundle}", "{self.certs}"]
                 ca_trust_consumers_ca_bundle: "{self.bundle}"
                 ca_trust_consumers_environment_file: "{self.envfile}"
+                ca_trust_consumers_sudo_env_file: "{self.tmp}/ca-trust-consumers/sudo.env"
+                ca_trust_consumers_sudoers_dropin: "{self.tmp}/sudoers.d/ca-trust-consumers"
+                ca_trust_consumers_sudoers: "{self.tmp}/sudoers"
+                ca_trust_consumers_cvtsudoers: "{self.tmp}/bin/cvtsudoers"
+                ca_trust_consumers_visudo: /usr/bin/true
                 ca_trust_consumers_node_dropin_name: 99-ca-trust-node.conf
                 ca_trust_consumers_node_units: []
                 ca_trust_consumers_restart_units:
@@ -213,12 +222,47 @@ class RoleRunTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, out[-4000:])
         self.assertIn("No forbidden root among 2 certificates", out)
         self.assertIn("environment: NODE_OPTIONS updated --use-openssl-ca", out)
+        self.assertIn("sudo sessions: NODE_OPTIONS from", out)
         self.assertNotIn("do-not-print-me", out)  # no diff or log of the environment file
         self.assertNotIn("max-old-space-size", out)
         self.assertIn("old.service: WOULD RESTART (check mode)", out)
         self.assertIn("fresh.service: started after the CA bundle changed, no restart needed", out)
         self.assertIn("stopped.service: inactive, not started by this role", out)
         self.assertIn('NODE_OPTIONS="--max-old-space-size=1536"', self.envfile.read_text())
+
+    def _policy(self, *entries) -> None:
+        defaults = [{"Options": [{"env_reset": True}]}] + list(entries)
+        (self.tmp / "policy.json").write_text(json.dumps({"Defaults": defaults, "User_Specs": []}))
+
+    def test_foreign_or_scoped_sudoers_env_file_is_refused(self) -> None:
+        for name, entry in {
+            "foreign": {"Options": [{"env_file": "/etc/proxy.env"}]},
+            "scoped": {"Binding": [{"username": "root"}, {"username": "app"}],
+                       "Options": [{"env_file": str(self.tmp / "ca-trust-consumers/sudo.env")}]},
+        }.items():
+            with self.subTest(case=name):
+                self._policy(entry)
+                result = self._run()
+                out = result.stdout + result.stderr
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("sudoers already uses env_file in a way this role does not own", out)
+                self.assertNotIn("/etc/proxy.env", out)  # the verdict never echoes values
+                self.assertNotIn("sudo sessions: NODE_OPTIONS from", out)
+
+    def test_unexportable_sudoers_is_refused(self) -> None:
+        (self.tmp / "policy.json").unlink()  # stub cvtsudoers exits 1, like a syntax error
+        result = self._run()
+        out = result.stdout + result.stderr
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cvtsudoers exited 1", out)
+
+    def test_managed_env_file_is_accepted_on_rerun(self) -> None:
+        self._policy({"Options": [{"env_file": str(self.tmp / "ca-trust-consumers/sudo.env")}]},
+                     {"Options": [{"restricted_env_file": "/etc/r.env"}]})
+        result = self._run()
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, out[-3000:])
+        self.assertIn("sudo sessions: NODE_OPTIONS from", out)
 
     def test_pending_daemon_reload_stops_before_any_change(self) -> None:
         units = json.loads(self.units.read_text())

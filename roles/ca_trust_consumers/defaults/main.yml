@@ -39,11 +39,23 @@ ca_trust_consumers_ca_bundle: /etc/ssl/certs/ca-certificates.crt
 ca_trust_consumers_node_flag: "--use-openssl-ca"
 
 # Add the flag to NODE_OPTIONS in /etc/environment (read by pam_env), so login,
-# SSH, sudo, su and cron sessions (npm, npx, corepack, yarn, pnpm and other
+# SSH, su and cron sessions (and sudo sessions, see below) (npm, npx, corepack, yarn, pnpm and other
 # Node CLIs, including those run by Ansible and pyinfra deploys) get it. An
 # existing NODE_OPTIONS line is kept and the flag appended.
 ca_trust_consumers_node_cli: false
 ca_trust_consumers_environment_file: /etc/environment
+
+# Also give sudo sessions the flag (sudo resets the environment, and not every
+# sudo PAM stack reads /etc/environment): a sudoers drop-in sets env_file to a
+# root-owned file holding the same NODE_OPTIONS. Skipped when sudo is absent.
+ca_trust_consumers_node_cli_sudo: true
+ca_trust_consumers_sudo_env_file: /etc/ca-trust-consumers/sudo.env
+ca_trust_consumers_sudoers_dropin: /etc/sudoers.d/ca-trust-consumers
+# Main sudoers file and sudo's exporter, used to read the effective policy
+# (includes followed) before and after the change.
+ca_trust_consumers_sudoers: /etc/sudoers
+ca_trust_consumers_cvtsudoers: /usr/bin/cvtsudoers
+ca_trust_consumers_visudo: /usr/sbin/visudo
 
 # Node.js systemd services that get a drop-in setting NODE_OPTIONS (pam_env
 # does not apply to services). The unit's own NODE_OPTIONS from Environment= is
