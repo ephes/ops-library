@@ -35,6 +35,9 @@ SYSTEMCTL = textwrap.dedent(
     import json, os, sys
     units = json.load(open(os.environ["CA_TRUST_TEST_UNITS"]))
     args = sys.argv[1:]
+    if args[:1] == ["cat"]:
+        print(units.get(args[1], {}).get("cat", ""))
+        sys.exit(0)
     if args[:1] == ["show"]:
         unit = units.get(args[1], {"LoadState": "not-found", "ActiveState": "inactive", "MainPID": "0"})
         props = [args[i + 1] for i, a in enumerate(args) if a == "-p"]
@@ -82,7 +85,9 @@ class RoleRunTests(unittest.TestCase):
         self.bundle_mtime = int(time.time()) - 600
         os.utime(self.bundle, (self.bundle_mtime, self.bundle_mtime))
         self.envfile = self.tmp / "environment"
-        self.envfile.write_text('PATH="/usr/bin"\nNODE_OPTIONS="--max-old-space-size=1536"\n')
+        self.envfile.write_text(
+            'PATH="/usr/bin"\nAPI_TOKEN=do-not-print-me\nNODE_OPTIONS="--max-old-space-size=1536"\n'
+        )
         self.units = self.tmp / "units.json"
         self.units.write_text(json.dumps({
             "old.service": {"LoadState": "loaded", "ActiveState": "active", "MainPID": "4242",
@@ -117,12 +122,17 @@ class RoleRunTests(unittest.TestCase):
                 ca_trust_consumers_root_paths: ["{self.bundle}", "{self.certs}"]
                 ca_trust_consumers_ca_bundle: "{self.bundle}"
                 ca_trust_consumers_environment_file: "{self.envfile}"
-                ca_trust_consumers_node_dropin_name: 50-ca-trust-node.conf
+                ca_trust_consumers_node_dropin_name: 99-ca-trust-node.conf
+                ca_trust_consumers_node_units: []
+                ca_trust_consumers_restart_units:
+                  - {{name: old.service}}
+                  - {{name: fresh.service}}
+                  - {{name: stopped.service}}
               tasks:
                 - ansible.builtin.include_role:
                     name: local.ops_library.ca_trust_consumers
                     tasks_from: "{{{{ item }}}}"
-                  loop: [preflight.yml, node_cli.yml]
+                  loop: [preflight.yml, pending_units.yml, node_cli.yml]
                 - ansible.builtin.include_role:
                     name: local.ops_library.ca_trust_consumers
                     tasks_from: restart_unit.yml
@@ -138,26 +148,88 @@ class RoleRunTests(unittest.TestCase):
             cwd=self.tmp,
         )
 
+    def _run_node_unit(self, environment_files: str) -> subprocess.CompletedProcess:
+        units = json.loads(self.units.read_text())
+        units["app.service"] = {
+            "LoadState": "loaded", "ActiveState": "inactive", "MainPID": "0",
+            "EnvironmentFiles": environment_files,
+            "cat": "# /etc/systemd/system/app.service\n[Service]\n"
+                   'Environment="NODE_OPTIONS=--max-old-space-size=512" "API_TOKEN=do-not-print-me"\n'
+                   "ExecStart=/usr/bin/node app.js\n",
+        }
+        self.units.write_text(json.dumps(units))
+        playbook = self.tmp / "node.yml"
+        playbook.write_text(textwrap.dedent(f"""\
+            - hosts: localhost
+              connection: local
+              gather_facts: false
+              vars:
+                ca_trust_consumers_node_flag: "--use-openssl-ca"
+                ca_trust_consumers_node_dropin_name: 99-ca-trust-node.conf
+                ca_trust_consumers_systemd_dir: "{self.tmp / 'systemd'}"
+              tasks:
+                - ansible.builtin.include_role:
+                    name: local.ops_library.ca_trust_consumers
+                    tasks_from: node_unit.yml
+                  vars:
+                    ca_trust_consumers_unit: {{name: app.service}}
+                - ansible.builtin.debug:
+                    msg: "planned={{{{ _ca_trust_consumers_node_dropin is changed }}}}"
+            """))
+        return subprocess.run(
+            [_ansible_playbook(), "-i", "localhost,", str(playbook), "--check", "--diff", "-v",
+             "-e", f"ansible_python_interpreter={sys.executable}"],
+            env=self.env, capture_output=True, text=True, check=False, cwd=self.tmp,
+        )
+
+    def test_node_unit_plans_dropin_without_printing_unit_secrets(self) -> None:
+        clean = self.tmp / "app.env"
+        clean.write_text("PORT=1\nAPI_TOKEN=do-not-print-me\n")
+        result = self._run_node_unit(f"{clean} (ignore_errors=no)")
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, out[-3000:])
+        self.assertIn("planned=True", out)
+        self.assertNotIn("do-not-print-me", out)
+
+    def test_node_unit_refuses_environment_files_it_cannot_rule_out(self) -> None:
+        mention = self.tmp / "mention.env"
+        mention.write_text("PORT=1\nNODE_OPTIONS = --use-bundled-ca\n")
+        cases = {
+            f"{mention} (ignore_errors=no)": "mention.env",
+            f"{self.tmp}/*.env (ignore_errors=yes)": "(wildcard pattern)",
+        }
+        for value, expected in cases.items():
+            with self.subTest(environment_files=value):
+                result = self._run_node_unit(value)
+                out = result.stdout + result.stderr
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("may set NODE_OPTIONS", out)
+                self.assertIn(expected, out)
+                self.assertNotIn("planned=", out)
+
     def test_ready_host_merges_node_options_and_plans_only_stale_running_units(self) -> None:
         result = self._run()
         out = result.stdout + result.stderr
         self.assertEqual(result.returncode, 0, out[-4000:])
         self.assertIn("No forbidden root among 2 certificates", out)
-        self.assertIn('+NODE_OPTIONS="--max-old-space-size=1536 --use-openssl-ca"', out)
-        self.assertIn('-NODE_OPTIONS="--max-old-space-size=1536"', out)
+        self.assertIn("environment: NODE_OPTIONS updated --use-openssl-ca", out)
+        self.assertNotIn("do-not-print-me", out)  # no diff or log of the environment file
+        self.assertNotIn("max-old-space-size", out)
         self.assertIn("old.service: WOULD RESTART (check mode)", out)
         self.assertIn("fresh.service: started after the CA bundle changed, no restart needed", out)
         self.assertIn("stopped.service: inactive, not started by this role", out)
         self.assertIn('NODE_OPTIONS="--max-old-space-size=1536"', self.envfile.read_text())
 
-    def test_restart_that_would_activate_staged_unit_change_is_refused(self) -> None:
+    def test_pending_daemon_reload_stops_before_any_change(self) -> None:
         units = json.loads(self.units.read_text())
         units["old.service"]["NeedDaemonReload"] = "yes"
         self.units.write_text(json.dumps(units))
         result = self._run()
         out = result.stdout + result.stderr
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("old.service was not restarted: staged: unit needs daemon-reload", out)
+        self.assertIn("old.service await daemon-reload", out)
+        self.assertNotIn("NODE_OPTIONS updated", out)
+        self.assertNotIn("WOULD RESTART", out)
 
     def test_forbidden_root_stops_before_any_change(self) -> None:
         (self.certs / "14bc7599.0").write_text(_pem(BAD))

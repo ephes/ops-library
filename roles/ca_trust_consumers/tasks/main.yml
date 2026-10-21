@@ -14,6 +14,7 @@
         == ca_trust_consumers_forbidden_root_sha256 | length
       - ca_trust_consumers_node_flag is match('^--[a-z][a-z0-9-]*$')
       - ca_trust_consumers_node_dropin_name is match('^[A-Za-z0-9_.-]+\.conf$')
+      - ca_trust_consumers_systemd_dir is match('^/')
       - (ca_trust_consumers_node_units + ca_trust_consumers_restart_units)
         | map(attribute='name') | select('match', '^[A-Za-z0-9@_.:-]+\.service$') | list | length
         == (ca_trust_consumers_node_units + ca_trust_consumers_restart_units) | length
@@ -27,6 +28,9 @@
 
 - name: Check CA readiness
   ansible.builtin.import_tasks: preflight.yml
+
+- name: Check listed units for pending unit-file changes
+  ansible.builtin.import_tasks: pending_units.yml
 
 - name: Configure Node.js CLI trust
   ansible.builtin.import_tasks: node_cli.yml

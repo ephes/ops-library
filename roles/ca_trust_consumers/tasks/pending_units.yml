@@ -1,0 +1,36 @@
+---
+# A drop-in change makes this role run daemon-reload, which would also load
+# every other pending unit-file change (a deleted drop-in leaves no file whose
+# time a later check could compare). So, before anything is written, refuse
+# when a listed unit already awaits daemon-reload.
+- name: pending_units | Look for listed units awaiting daemon-reload
+  vars:
+    _units: >-
+      {{ (ca_trust_consumers_node_units + ca_trust_consumers_restart_units)
+         | rejectattr('allow_staged_changes', 'defined')
+         | map(attribute='name') | list
+         + (ca_trust_consumers_node_units + ca_trust_consumers_restart_units)
+         | selectattr('allow_staged_changes', 'defined')
+         | rejectattr('allow_staged_changes')
+         | map(attribute='name') | list }}
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      for unit in {{ _units | map('quote') | join(' ') }}; do
+        if [ "$(systemctl show "$unit" -p NeedDaemonReload --value)" = yes ]; then
+          echo "$unit"
+        fi
+      done
+    executable: /bin/bash
+  register: _ca_trust_consumers_pending
+  changed_when: false
+  check_mode: false
+
+- name: pending_units | Refuse units awaiting daemon-reload
+  ansible.builtin.assert:
+    that: _ca_trust_consumers_pending.stdout | trim | length == 0
+    fail_msg: >-
+      {{ _ca_trust_consumers_pending.stdout_lines | join(', ') }} await daemon-reload: their
+      unit files changed after systemd last loaded them. Apply that change through its
+      owning deploy first (or set allow_staged_changes on the entry); nothing was changed.
+    quiet: true

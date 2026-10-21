@@ -52,7 +52,11 @@ ca_trust_consumers_environment_file: /etc/environment
 #     - name: mastodon-streaming.service
 #       health_command: curl -fsS -o /dev/null http://127.0.0.1:4000/api/v1/streaming/health
 ca_trust_consumers_node_units: []
-ca_trust_consumers_node_dropin_name: 50-ca-trust-node.conf
+# Late in name order so it applies after the unit's other drop-ins; the role
+# still checks the effective value and fails if something overrides it.
+ca_trust_consumers_node_dropin_name: 99-ca-trust-node.conf
+# Directory for the drop-in directories (<dir>/<unit>.d/).
+ca_trust_consumers_systemd_dir: /etc/systemd/system
 
 # --- Restarts --------------------------------------------------------------------
 # Other long-running TLS clients (for example Go services, which load system

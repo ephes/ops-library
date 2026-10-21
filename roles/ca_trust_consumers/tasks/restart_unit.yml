@@ -70,24 +70,43 @@
 # release symlink counts).
 - name: restart_unit | Look for changes a restart would activate
   vars:
-    _own_dropin: "/etc/systemd/system/{{ ca_trust_consumers_unit.name }}.d/{{ ca_trust_consumers_node_dropin_name }}"
+    _own_dropin: "{{ ca_trust_consumers_systemd_dir }}/{{ ca_trust_consumers_unit.name }}.d/{{ ca_trust_consumers_node_dropin_name }}"
   ansible.builtin.shell:
     cmd: |
+      set -o pipefail
       pid={{ _ca_trust_consumers_before.MainPID | int }}
       started={{ _ca_trust_consumers_started | int }}
       case "$(readlink "/proc/$pid/exe")" in *" (deleted)") echo "staged: running executable was replaced" ;; esac
       unit={{ ca_trust_consumers_unit.name | quote }}
       [ "$(systemctl show "$unit" -p NeedDaemonReload --value)" = no ] || echo "staged: unit needs daemon-reload"
+      # DropInPaths is blank-separated: a token that is not an existing path
+      # (a name with blanks) is refused rather than skipped.
+      read -r -a dropins <<< "$(systemctl show "$unit" -p DropInPaths --value)"
+      for dropin in "${dropins[@]}"; do
+        [ -e "$dropin" ] || [ -L "$dropin" ] || echo "staged: cannot parse DropInPaths of $unit"
+      done
       { systemctl show "$unit" -p FragmentPath --value
         systemctl show "$unit" -p DropInPaths --value | tr ' ' '\n'
+        systemctl show "$unit" -p EnvironmentFiles --value | while IFS= read -r entry; do
+          [ -n "$entry" ] || continue
+          case "$entry" in
+            *" (ignore_errors=yes)" | *" (ignore_errors=no)") compgen -G "${entry% (ignore_errors=*)}" || true ;;
+            *) echo "staged: cannot parse EnvironmentFiles entry of $unit" ;;
+          esac
+        done
         printf '%s\n' {{ (ca_trust_consumers_unit.guard_paths | default([])) | map('quote') | join(' ') }}
-      } | while read -r path; do
+      } | while IFS= read -r path; do
+        case "$path" in "staged: "*) echo "$path"; continue ;; esac
         [ -n "$path" ] && [ "$path" != {{ _own_dropin | quote }} ] || continue
         if [ -e "$path" ] || [ -L "$path" ]; then
-          [ "$(stat -c %Y "$path")" -gt "$started" ] && echo "staged: $path changed after the process started"
+          # The path itself (a retargeted link) and what it resolves to.
+          link=$(stat -c %Y "$path")
+          target=$(stat -L -c %Y "$path" 2>/dev/null || echo 0)
+          if [ "$link" -gt "$started" ] || [ "$target" -gt "$started" ]; then
+            echo "staged: $path changed after the process started"
+          fi
         fi
       done
-      true
     executable: /bin/bash
   register: _ca_trust_consumers_staged
   changed_when: false
