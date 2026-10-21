@@ -12,7 +12,8 @@
   `parity/run_parity.py` runs the rendered Python endpoint scripts (CPython
   3.12, as on the hosts) and the Rust binary side by side as processes on
   loopback and compares their live answers for every gate, json-file,
-  script and apt-state fixture case, plus keep-alive, concurrent requests,
+  script, apt-state, logyard-health and static fixture case, plus
+  keep-alive, concurrent requests,
   the slow-client difference D-1 (the single-threaded scripts stall, Rust
   answers), the SIGTERM exit codes and credential-free logs. New recipe
   `just rust-parity-metrics-httpd`; the `rust` CI job installs
