@@ -48,6 +48,9 @@ tmp/
 temp/
 *.tmp
 
+# Rust workspace build output (rust/README.md)
+/rust/target/
+
 # Documentation build artifacts
 docs/build/
 docs/source/_build/

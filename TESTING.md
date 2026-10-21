@@ -295,6 +295,27 @@ When adding coverage, prefer small role-local fixtures that prove the risky beha
 - idempotent file rendering and ownership
 - validation-only dry runs
 
+## Rust workspace and collection packaging
+
+The Rust binaries under `rust/` (see `rust/README.md`) have their own gate,
+which the GitHub Actions workflow `.github/workflows/rust.yml` also runs:
+
+```bash
+just rust-check   # cargo fmt --check, clippy -D warnings, cargo test, cargo deny, rust/scripts tests
+just rust-test    # cargo test and the rust/scripts tests only
+```
+
+Both need `cargo` (toolchain pinned in `rust/rust-toolchain.toml`);
+`rust-check` also needs `cargo-deny` 0.20.2. Run them in a worktree (they
+write `rust/target/`). They are not part of `just test`, so the Ansible suite
+keeps working without a Rust toolchain.
+
+`just test` does run `just test-collection-build-ignore`: it checks that
+`galaxy.yml` `build_ignore` lists `rust` and `.github` and, with
+`ansible-galaxy` from the project environment, builds the collection into a
+temporary directory and fails if any archive member comes from `rust/` or
+`.github/` (a checkout's `rust/target/` can be hundreds of MB).
+
 ## Legacy Shell Helpers
 
 Legacy shell helpers still exist for repo-local syntax and ad-hoc checks:

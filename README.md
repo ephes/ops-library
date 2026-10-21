@@ -280,6 +280,22 @@ Use `just validate-strict` when you want `ansible-lint` failures to stop the run
 only as a quick summary helper. `just lint-strict` passes against the reviewed baseline in
 `.ansible-lint-ignore`; new findings fail it (see `TESTING.md`).
 
+### Rust binaries
+
+`rust/` holds a Cargo workspace for small Rust binaries that replace
+long-running Python processes of this collection (first: `metrics-httpd`).
+See [rust/README.md](rust/README.md) and
+[rust/PLAN-foundation.md](rust/PLAN-foundation.md). It has its own checks,
+which also run in GitHub Actions (`.github/workflows/rust.yml`):
+
+```bash
+just rust-check   # fmt, clippy, tests, cargo-deny (needs cargo and cargo-deny)
+just rust-test    # tests only
+```
+
+They are not part of `just test`. `rust/` and `.github/` are excluded from the
+collection archive (`galaxy.yml` `build_ignore`).
+
 ### Developer Setup
 
 ```bash

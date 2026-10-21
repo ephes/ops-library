@@ -1,0 +1,101 @@
+---
+name: Rust
+
+# CI of the Rust workspace in rust/ (rust/PLAN-foundation.md section 3,
+# rust/README.md): fmt, clippy, tests, cargo-deny and the stdlib Python
+# script tests. The Ansible/Python test suite of the collection stays local
+# (`just test`). Members listed in `[workspace.metadata.ci] exclude` of
+# rust/Cargo.toml are left out of this job; their stream adds its own job.
+# Actions are pinned by commit SHA (the ones mailgun-relay's workflows use).
+
+"on":
+  push:
+    branches:
+      - main
+    paths:
+      - "rust/**"
+      - ".github/workflows/rust*.yml"
+  pull_request:
+    paths:
+      - "rust/**"
+      - ".github/workflows/rust*.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Runs on main are never cancelled; a newer push to a branch or PR supersedes.
+  group: rust-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || 'supersedable' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  rust:
+    name: Rust workspace (fmt, clippy, tests, deny)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        # An explicit bash adds `-o pipefail`.
+        shell: bash
+        working-directory: rust
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned toolchain (rust/rust-toolchain.toml)
+        run: |
+          rustup toolchain install
+          rustc --version
+          python3 --version
+      - name: Cache cargo registry and build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            rust/target
+          key: rust-${{ runner.os }}-ubuntu-22.04-${{ hashFiles('rust/rust-toolchain.toml', 'rust/Cargo.lock') }}
+          restore-keys: rust-${{ runner.os }}-ubuntu-22.04-
+      - name: Members left out of this job ([workspace.metadata.ci] exclude)
+        id: excludes
+        run: |
+          cargo metadata --format-version 1 --no-deps --locked > "$RUNNER_TEMP/metadata.json"
+          args=$(python3 -I scripts/ci_excludes.py "$RUNNER_TEMP/metadata.json")
+          echo "exclude arguments: ${args:-(none)}"
+          echo "args=${args}" >> "$GITHUB_OUTPUT"
+      - name: Format (cargo fmt)
+        run: cargo fmt --check
+      - name: Lint (cargo clippy)
+        env:
+          EXCLUDES: ${{ steps.excludes.outputs.args }}
+        # EXCLUDES holds package names only (validated by ci_excludes.py).
+        run: |
+          read -r -a exclude_args <<< "$EXCLUDES"
+          cargo clippy --workspace "${exclude_args[@]}" --all-targets --locked -- -D warnings
+      - name: Tests (cargo test)
+        env:
+          EXCLUDES: ${{ steps.excludes.outputs.args }}
+        run: |
+          read -r -a exclude_args <<< "$EXCLUDES"
+          cargo test --workspace "${exclude_args[@]}" --locked
+      - name: Install cargo-deny (pinned release, sha256 checked)
+        env:
+          CARGO_DENY_VERSION: "0.20.2"
+          CARGO_DENY_SHA256: 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f
+        run: |
+          name="cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl"
+          curl --proto '=https' --tlsv1.2 -sSfL -o "$RUNNER_TEMP/${name}.tar.gz" \
+            "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/${name}.tar.gz"
+          echo "${CARGO_DENY_SHA256}  $RUNNER_TEMP/${name}.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/${name}.tar.gz" -C "$RUNNER_TEMP"
+          install -m 0755 "$RUNNER_TEMP/${name}/cargo-deny" "$HOME/.cargo/bin/cargo-deny"
+          cargo deny --version
+      - name: Supply chain (cargo deny, rust/deny.toml)
+        run: cargo deny --locked check
+      - name: Script tests (rust/scripts, stdlib Python)
+        run: python3 -I -m unittest discover -s scripts -p 'test_*.py' -v
