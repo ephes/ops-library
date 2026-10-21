@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## Unreleased — Voxhelm Python trust cache refresh (2.63.3)
 
 - Add an explicit Voxhelm Python trust-cache refresh entrypoint with read-only aggregate idle checks, existing-unit provenance validation, patched certifi TLS probes, and verified launchd child replacement without source deployment.
 
