@@ -188,7 +188,7 @@ class OracleServer(unittest.TestCase):
 
     def test_round_trip(self) -> None:
         case = next(c for c in read_jsonl("fs.jsonl") if c["env"]["users"])
-        ping, check, inline, split, broken, policy, bad, link, loop, odd = self.ask(
+        ping, check, inline, split, broken, policy, bad, link, loop, real, odd = self.ask(
             {"op": "ping", "id": 1},
             {"op": "check", "id": 2, "policy_ref": case["policy"], "command": case["command"], "env": case["env"]},
             {"op": "check", "policy": {"units": ["x.service"]}, "command": "systemctl start x.service"},
@@ -203,6 +203,7 @@ class OracleServer(unittest.TestCase):
             {"op": "realpath", "path": "/l1/x",
              "fs": {"/l1": {"kind": "lnk", "mode": 0o777, "uid": 0, "nlink": 1, "target": "/l2"},
                     "/l2": {"kind": "lnk", "mode": 0o777, "uid": 0, "nlink": 1, "target": "/l1"}}},
+            {"op": "os_realpath", "path": "/"},
             {"op": "nope", "id": "x"},
         )
         self.assertEqual((ping["ok"], ping["id"], ping["guard_sha256"]), (True, 1, oracle.guard_sha256()))
@@ -215,6 +216,7 @@ class OracleServer(unittest.TestCase):
         self.assertEqual(link["resolved"], "/b/y")
         self.assertTrue(loop["ok"])
         self.assertTrue(loop["resolved"].startswith("/l"))
+        self.assertEqual(real["resolved"], "/")
         self.assertEqual((odd["ok"], odd["id"]), (False, "x"))
 
 

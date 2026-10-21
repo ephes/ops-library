@@ -293,6 +293,13 @@ metrics-httpd-fixtures: venv
     @uv run --python 3.12 --no-project python -I rust/metrics-httpd/fixtures/generate.py check --stdlib-only
     @uv run --python 3.13 --no-project python -I rust/metrics-httpd/fixtures/generate.py check --stdlib-only
 
+# Layer 2 of the Rust echoport-command-guard, filesystem part
+# (rust/echoport-command-guard/PLAN.md 7.5): realpath, lstat and user lookups
+# of the Rust guard against Python 3.12 (Ubuntu 24.04) and 3.13 (Debian 13),
+# as root on real trees in containers. Needs Docker.
+echoport-command-guard-layer2:
+    @rust/echoport-command-guard/parity/e2e/run-layer2.sh
+
 # A FastDeploy restore must not bring back what the privilege reduction retired
 # (services, sudoers files, rules with more than one narrow script).
 test-fastdeploy-retired-restore: venv

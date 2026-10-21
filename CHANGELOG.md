@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased — Rust ports: echoport-command-guard filesystem layer (S2)
+
+- `echoport-command-guard` gets its filesystem layer (slice S2 of
+  `rust/echoport-command-guard/PLAN.md`): the real `GuardEnv` (`geteuid`,
+  `getpwnam_r` through NSS via `nix`, `lstat` with glibc's `strerror` texts),
+  a port of CPython's non-strict `os.path.realpath` (`pyrealpath`) and the
+  plain-file, private-directory and policy-root helpers of `check()` with the
+  Python guard's refusal reasons. `realpath` refuses where Python returns a
+  partly resolved path: symlink loops, more than 40 links, `lstat` errors
+  other than `ENOENT`/`ENOTDIR`, `readlink` errors and link targets that are
+  not UTF-8 (`path not checkable`, PLAN.md 4.2). The `soft-canonicalize`
+  crate was evaluated against the oracle and rejected (265 of 1,531 probes
+  differ, 49 of them resolving inside a tree that Python resolves outside).
+  New differential tests against the Python oracle over random virtual and
+  real trees (`tests/realpath.rs`; the oracle gets an `os_realpath` op), and
+  the Layer-2 container harness `parity/e2e/run-layer2.sh` (`just
+  echoport-command-guard-layer2`) that compares `realpath`, `lstat` and user
+  lookups as root with Ubuntu 24.04's Python 3.12 and Debian 13's Python
+  3.13. No tool branch uses the layer yet (S3b); nothing installs the binary
+  and no role behaviour changes.
+
 ## Unreleased — Rust ports: echoport-command-guard runtime and exec (S4)
 
 - `echoport-command-guard` (slice S4 of `rust/echoport-command-guard/PLAN.md`):
