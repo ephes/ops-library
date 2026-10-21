@@ -88,6 +88,23 @@ def shadow_command(version: str, root: str = INSTALL_ROOT) -> str:
 class StaticTaskTests(unittest.TestCase):
     FILES = ("main.yml", "rust.yml", "forced_command.yml", "confirm_live.yml")
 
+    def test_molecule_installs_the_crate_version(self):
+        # The shadow and rust scenarios install the guard built from the
+        # checkout, whose `--version` the install step checks against the
+        # version the scenario names: it must follow every crate release.
+        import tomllib
+
+        cargo = tomllib.loads((ROOT / "rust/echoport-command-guard/Cargo.toml").read_text())
+        version = cargo["package"]["version"]
+        shared = ROLE / "molecule/shared"
+        converge = (shared / "converge.yml").read_text()
+        verify = (shared / "verify.yml").read_text()
+        self.assertIn(f"else '{version}' }}}}", converge)
+        self.assertIn(f"{INSTALL_ROOT}/{version}/{BINARY}\n", verify)
+        self.assertIn(f"== '{version}\\n')", verify)
+        stale = {v for v in re.findall(r"(?<![\d.])\d+\.\d+\.\d+(?![\d.])", converge + verify) if v != version}
+        self.assertEqual(stale, set())
+
     def test_task_names_carry_their_file_prefix(self):
         # ansible-lint name[prefix] outside main.yml.
         for name in self.FILES[1:]:
