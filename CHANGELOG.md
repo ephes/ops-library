@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased — Rust ports: metrics-httpd apt-state mode (S2c)
+
+- `rust/metrics-httpd` (slice S2c of `rust/metrics-httpd/PLAN.md`): the
+  `apt-state` mode now serves the os_apt_maintenance state file like
+  `os_apt_maintenance_httpd.py.j2`: the `meta` block with
+  `state_file_fresh`, `state_max_age_seconds` and `state_reboot_required`,
+  the `summary` (last run, freshness, `overall_ok`) and the reboot state of
+  `reboot_state()` (live flag plus the persisted kernel signal; the flag
+  file and `uname` are read per request), with exact integer arithmetic.
+  Where the Python handler crashes (a `reasons` value `in` cannot search, a
+  top-level value that is not an object, invalid UTF-8) Rust answers with a
+  JSON error (D-2), and every 5xx gets one error line on stderr (D-9).
+  `EndpointRebootStateTests` is ported to Rust unit tests; the new fixture
+  family `apt_state` (`fixtures/apt_state.json`, replayed by
+  `tests/apt_state.rs`) records the rendered script's `reboot_state()` and
+  its handler's answers for 47 state files, and
+  `tests/test_metrics_httpd_fixtures.py` checks that every Rust/Python
+  difference there is a named error answer. No role behaviour changes.
+
 ## Unreleased — Rust ports: rust_release_binary install helper (F3)
 
 - New internal helper role `rust_release_binary` (slice F3 of
