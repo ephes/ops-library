@@ -8,7 +8,7 @@
   a port of CPython's non-strict `os.path.realpath` (`pyrealpath`) and the
   plain-file, private-directory and policy-root helpers of `check()` with the
   Python guard's refusal reasons. `realpath` refuses where Python returns a
-  partly resolved path: symlink loops, more than 40 links, `lstat` errors
+  partly resolved path: symlink loops, more than 40 symlink traversals, `lstat` errors
   other than `ENOENT`/`ENOTDIR`, `readlink` errors and link targets that are
   not UTF-8 (`path not checkable`, PLAN.md 4.2). The `soft-canonicalize`
   crate was evaluated against the oracle and rejected (265 of 1,531 probes
