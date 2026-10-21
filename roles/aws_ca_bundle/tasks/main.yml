@@ -1,0 +1,13 @@
+---
+- name: Validate supported platform and explicit service allowlist
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == 'Debian'
+      - aws_ca_bundle_path == '/etc/ssl/certs/ca-certificates.crt'
+      - aws_ca_bundle_services | length > 0
+
+- name: Configure each AWS SDK consumer serially
+  ansible.builtin.include_tasks: service.yml
+  loop: "{{ aws_ca_bundle_services }}"
+  loop_control:
+    loop_var: aws_trust_service
