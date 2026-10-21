@@ -116,6 +116,7 @@ class DifferencesAreNamedAndNarrow(unittest.TestCase):
             tags += list(case.get("d", {}).values())
         for variant in load("http_common.json"):
             tags += [case["d"] for case in variant["cases"] if "d" in case]
+        tags += [case["d"] for case in load("script.json")["cases"] if "d" in case]
         self.assertTrue(tags)
         for tag in tags:
             self.assertIn(tag, items)
@@ -138,6 +139,20 @@ class DifferencesAreNamedAndNarrow(unittest.TestCase):
                 if rust == "ok":
                     self.assertEqual(python, "ok", case["id"])
 
+    def test_script_differences_are_named(self) -> None:
+        # Where Python drops the connection or the plan allows a different
+        # answer, the case carries the D item and the Rust expectation;
+        # every other case is compared with Python's answer.
+        for case in load("script.json")["cases"]:
+            if case["status"] is None or case["compare"] == "status":
+                self.assertIn("d", case, case["id"])
+                self.assertIn("rust_status", case, case["id"])
+                if case["status"] is not None:
+                    self.assertEqual(case["rust_status"], case["status"], case["id"])
+            else:
+                self.assertNotIn("d", case, case["id"])
+                self.assertIn(case["compare"], ("bytes", "html"), case["id"])
+
     def test_case_ids_are_unique(self) -> None:
         ids = [case["id"] for case in load("pyjson.json")["dumps"]]
         self.assertEqual(len(ids), len(set(ids)))
@@ -146,6 +161,8 @@ class DifferencesAreNamedAndNarrow(unittest.TestCase):
         for variant in load("http_common.json"):
             ids = [case["id"] for case in variant["cases"]]
             self.assertEqual(len(ids), len(set(ids)), variant["variant"])
+        ids = [case["id"] for case in load("script.json")["cases"]]
+        self.assertEqual(len(ids), len(set(ids)))
 
 
 class FloatFixture(unittest.TestCase):

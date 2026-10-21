@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased — Rust ports: metrics-httpd script mode (S2b)
+
+- `rust/metrics-httpd` (slice S2b of `rust/metrics-httpd/PLAN.md`): the
+  `script` mode now serves `metrics_endpoint`'s requests past the gate as
+  `metrics_httpd.py.j2` does: it runs the metrics script without a shell or
+  arguments and answers 200 with its stdout (Python's universal-newline
+  translation, no JSON validation), 502 with the stripped stderr or
+  "Metrics script failed" for an exit ≠ 0, and 504 after
+  `--script-timeout`. Allowed differences pinned by tests: a timeout kills
+  the script's whole process group (D-8), the stderr text goes into the
+  page body instead of the reason phrase (D-3), a missing or
+  non-executable script and non-UTF-8 output get answers where Python
+  drops the connection (D-2), stdout is capped at 64 MiB (D-12), and each
+  5xx logs one error line (D-9). New fixture family `script`
+  (`fixtures/script.json`, generated from the rendered template with real
+  fixture scripts) checked by `just test-metrics-httpd-fixtures`. The plan
+  now records the newline translation and the script's stdin. No role
+  behaviour changes.
+
 ## Unreleased — Rust ports: echoport-command-guard filesystem layer (S2)
 
 - `echoport-command-guard` gets its filesystem layer (slice S2 of
@@ -22,6 +41,7 @@
   `lstat`/`realpath` failed closed; the rules that use the helpers come with
   S3b. Nothing installs the binary and no role behaviour changes.
 
+||||||| parent of b91b0cf4 (Add the metrics-httpd script mode with fixtures from metrics_httpd.py.j2)
 ## Unreleased — Rust ports: echoport-command-guard runtime and exec (S4)
 
 - `echoport-command-guard` (slice S4 of `rust/echoport-command-guard/PLAN.md`):
@@ -43,6 +63,7 @@
   3.12 and 3.13. Until S2 the binary's filesystem lookups fail closed.
   Nothing installs the binary; no role behaviour changes.
 
+||||||| parent of cb28bea1 (Add the metrics-httpd script mode with fixtures from metrics_httpd.py.j2)
 ## Unreleased — Rust ports: metrics-httpd core (S1)
 
 - `rust/metrics-httpd` (slice S1 of `rust/metrics-httpd/PLAN.md`): the
@@ -120,6 +141,7 @@
   `ca_trust_consumers_node_cli_sudo: false` turns this off.
 
 ||||||| parent of 050a2521 (Add the Rust release pipeline with per-binary tags, release_checks.py and the release.json variant format)
+
 ## Unreleased — opsgate_deploy leaves the Rust port out of the Python app dirs
 
 - `opsgate_deploy`: `opsgate_rsync_excludes` gains `/rust/`, so the source
