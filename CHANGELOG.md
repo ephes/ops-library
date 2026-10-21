@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased — software-live Rust port: endpoint
+
+- `rust/software-live` gets `serve` (slice S4 of
+  `rust/software-live/PLAN.md`): the authenticated JSON endpoint of
+  `software_live.py` on hyper 1 and a current-thread tokio runtime, behind
+  a small `Endpoint` boundary (bind check, Basic auth, server loop). Same
+  contract as Python (GET of the exact path, 404 before auth, 401 with
+  `WWW-Authenticate`, the state re-read per request through
+  `with_freshness`, 503 when missing or invalid, no request logging);
+  documented divergences in PLAN.md 4.2 items 1, 2 and 14 (HTTP/1.1 framing,
+  one 5 s budget per connection and up to 16 connections at a time, the
+  endpoint configuration checked at startup).
+- `htpasswd -vi` is reproduced in process (bcrypt through the `bcrypt`
+  crate) with Apache's password, file and comparison rules; new fixture
+  `htpasswd.json` with the real `htpasswd` verdicts of Debian 13 and Ubuntu
+  24.04, recorded by `fixtures/htpasswd.py` in containers. New fixture
+  `serve.json` runs the Python endpoint's startup and request handling.
+  Nothing installs or runs the binary; the `software_live` role is
+  unchanged.
+
 ## [2.65.0] - 2026-10-22
 
 ### opsgate_deploy: Python or the Rust release per launchd unit
