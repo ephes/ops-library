@@ -16,6 +16,12 @@ Deploy OpsGate on macOS (`launchd` host model) with the Phase 4B control service
 - Syncs local app source (`opsgate_source_path`) into:
   - `{{ opsgate_app_dir }}` (API/UI runtime, `control_service_user`)
   - `{{ opsgate_runner_app_dir }}` (runner runtime, `ops`)
+  - `opsgate_rsync_excludes` keeps VCS metadata, virtualenvs, caches and the
+    top-level Rust port workspace `rust/` (sources and `cargo build` output in
+    `rust/target/`) out of both app directories. `rsync --delete` never
+    removes excluded paths on the target, so a `rust/` synced by an older role
+    version stays in the app directories; it is inert (the Python runtime
+    never reads it) and can be removed by hand.
 - Installs runtime dependencies using `uv sync --frozen --no-dev` for both runtimes
 - Wires optional `ops` credentials (machine SSH key, per-repository GitHub deploy keys or a dedicated GitHub account SSH key, SOPS age key, GitHub token)
 - Optionally clones/updates managed `ops` workspaces (for example `ops-control`, `ops-library`) once GitHub-side access exists

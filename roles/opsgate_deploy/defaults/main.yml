@@ -68,6 +68,10 @@ opsgate_rsync_excludes:
   - ".mypy_cache"
   - ".ruff_cache"
   - "__pycache__"
+  # Rust port workspace (sources and `cargo build` output in rust/target/,
+  # gigabytes); the Python runtime never uses it. Anchored to the top of the
+  # checkout so no nested directory of that name is affected.
+  - "/rust/"
 
 # API/UI runtime configuration
 opsgate_api_bind_host: "0.0.0.0"

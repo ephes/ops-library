@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — opsgate_deploy leaves the Rust port out of the Python app dirs
+
+- `opsgate_deploy`: `opsgate_rsync_excludes` gains `/rust/`, so the source
+  sync no longer copies the opsgate repository's Rust port workspace (sources,
+  plans and, after a local `cargo build`, gigabytes of `rust/target/`) into the
+  API and runner app directories. The pattern is anchored to the top of the
+  checkout; a nested directory named `rust` still ships. A `rust/` an older
+  role version already synced stays in place (`rsync --delete` never removes
+  excluded paths) and is inert. New `tests/test_opsgate_rsync_excludes.py`
+  (`just test-opsgate-rsync-excludes`) runs the role's own sync tasks with its
+  defaults in check mode against a temporary opsgate-shaped checkout.
+
 ## Unreleased — graphyard_deploy: Python/Rust agent selector
 
 - `graphyard_deploy`: new `graphyard_agent_impl` (`python`, the default, or
