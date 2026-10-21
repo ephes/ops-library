@@ -17,6 +17,15 @@
   changed_when: false
   check_mode: false
 
+- name: Export original Java certificate identities for preservation checks
+  ansible.builtin.command:
+    argv: [keytool, -list, -rfc, -keystore, /etc/ssl/certs/java/cacerts, -storepass, changeit]
+  environment:
+    LC_ALL: C
+  register: java_ca_refresh_rfc_before
+  changed_when: false
+  check_mode: false
+
 - name: Identify stale affected distribution aliases
   ansible.builtin.set_fact:
     java_ca_refresh_needed: >-
@@ -44,6 +53,66 @@
     path: /var/lib/ops-library-java-ca-refresh.pending
   register: java_ca_refresh_pending
 
+- name: Inspect pre-refresh store checksum for immutable backup provenance
+  ansible.builtin.stat:
+    path: /etc/ssl/certs/java/cacerts
+    checksum_algorithm: sha256
+  register: java_ca_refresh_original
+  when: java_ca_refresh_needed
+
+- name: Create private Java trust recovery directory
+  ansible.builtin.file:
+    path: /var/lib/ops-library-java-ca-refresh
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  when: java_ca_refresh_needed
+
+- name: Preserve a checksum-addressed pre-refresh Java trust backup
+  ansible.builtin.copy:
+    src: /etc/ssl/certs/java/cacerts
+    dest: "/var/lib/ops-library-java-ca-refresh/cacerts.{{ java_ca_refresh_original.stat.checksum }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+  when: java_ca_refresh_needed and not ansible_check_mode
+
+- name: Record pre-refresh Java certificate identities alongside the backup
+  ansible.builtin.copy:
+    dest: "/var/lib/ops-library-java-ca-refresh/cacerts.{{ java_ca_refresh_original.stat.checksum }}.rfc"
+    content: "{{ java_ca_refresh_rfc_before.stdout }}\n"
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+  when: java_ca_refresh_needed and not ansible_check_mode
+
+- name: Inspect the persistent pre-refresh identity baseline
+  ansible.builtin.stat:
+    path: /var/lib/ops-library-java-ca-refresh/baseline.rfc
+  register: java_ca_refresh_baseline_file
+
+- name: Refuse unanchored recovery after stale aliases have disappeared
+  ansible.builtin.assert:
+    that:
+      - not java_ca_refresh_pending.stat.exists or java_ca_refresh_needed or java_ca_refresh_baseline_file.stat.exists
+    fail_msg: Pending Java recovery lacks its pre-refresh identity baseline; reconcile the saved backup before restarting JVMs.
+
+- name: Anchor pre-refresh identities before recording pending mutation
+  ansible.builtin.copy:
+    dest: /var/lib/ops-library-java-ca-refresh/baseline.rfc
+    content: "{{ java_ca_refresh_rfc_before.stdout }}\n"
+    owner: root
+    group: root
+    mode: '0600'
+  when:
+    - java_ca_refresh_needed
+    - not java_ca_refresh_pending.stat.exists or not java_ca_refresh_baseline_file.stat.exists
+    - not ansible_check_mode
+
 - name: Persist pending restart before changing trust
   ansible.builtin.copy:
     dest: /var/lib/ops-library-java-ca-refresh.pending
@@ -53,9 +122,32 @@
     mode: '0600'
   when: java_ca_refresh_needed
 
+
+- name: Read the persistent identity baseline on initial and resumed recovery
+  ansible.builtin.slurp:
+    src: /var/lib/ops-library-java-ca-refresh/baseline.rfc
+  register: java_ca_refresh_saved_baseline
+  when:
+    - java_ca_refresh_needed or java_ca_refresh_pending.stat.exists
+    - not ansible_check_mode
+
 - name: Refresh Java trust through the supported distribution hook
   ansible.builtin.command:
     argv: [update-ca-certificates, --fresh]
+  when: java_ca_refresh_needed
+  changed_when: true
+
+# Ubuntu's update-ca-certificates does not pass --fresh to hook argv. Explicitly
+# select the distribution fresh trigger so stale aliases absent from PEM are pruned.
+- name: Schedule the distribution Java fresh rebuild trigger
+  ansible.builtin.command:
+    argv: [dpkg-trigger, --no-await, update-ca-certificates-java-fresh]
+  when: java_ca_refresh_needed
+  changed_when: true
+
+- name: Process only the distribution Java certificate triggers
+  ansible.builtin.command:
+    argv: [dpkg, --triggers-only, ca-certificates-java]
   when: java_ca_refresh_needed
   changed_when: true
 
@@ -73,6 +165,29 @@
     that:
       - "'debian:comodo_aaa_services_root.pem,' not in java_ca_refresh_after.stdout"
       - "'debian:emsign_ecc_root_ca_-_g3.pem,' not in java_ca_refresh_after.stdout"
+  when: not ansible_check_mode
+
+- name: Export refreshed Java certificate identities
+  ansible.builtin.command:
+    argv: [keytool, -list, -rfc, -keystore, /etc/ssl/certs/java/cacerts, -storepass, changeit]
+  environment:
+    LC_ALL: C
+  register: java_ca_refresh_rfc_after
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Require every non-distribution certificate identity preserved
+  ansible.builtin.assert:
+    that:
+      - >-
+        (java_ca_refresh_expected_rfc | regex_findall(java_ca_refresh_custom_pattern) | sort)
+        == (java_ca_refresh_rfc_after.stdout | regex_findall(java_ca_refresh_custom_pattern) | sort)
+  vars:
+    java_ca_refresh_expected_rfc: >-
+      {{ (java_ca_refresh_saved_baseline.content | b64decode)
+         if java_ca_refresh_needed or java_ca_refresh_pending.stat.exists
+         else java_ca_refresh_rfc_before.stdout }}
+    java_ca_refresh_custom_pattern: '(?ms)^Alias name: (?!debian:)([^\n]+)\n.*?-----BEGIN CERTIFICATE-----\n(.*?)-----END CERTIFICATE-----'
   when: not ansible_check_mode
 
 - name: Restart explicitly selected JVM services after trust refresh

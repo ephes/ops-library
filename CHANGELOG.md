@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `java_ca_refresh`: explicitly process the distribution Java fresh trigger when
+  Ubuntu does not forward `--fresh` to hooks; retain backup provenance and an
+  anchored custom-certificate identity baseline across recovery before JVM restarts.
+
 ## Unreleased — Linux trust remediation (2.62.0)
 
 - Add narrowly scoped Linux CA and virtual-environment trust remediation with offline verified wheels, dependency preflight, rollback evidence and serial health-checked restarts.
