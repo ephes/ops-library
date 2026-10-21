@@ -28,24 +28,56 @@
       - echoport_remote_command_guard_confirm_public_key is string
       - echoport_remote_command_guard_confirm_public_key | trim | length > 0
       - echoport_remote_command_guard_authorized_keys_path is match('^/[A-Za-z0-9._/-]+$')
-      - echoport_remote_command_guard_rust_install_root | local.ops_library.rust_release_root_ok
-      - >-
-        echoport_remote_command_guard_rust_version | string | length == 0
-        or echoport_remote_command_guard_rust_version | local.ops_library.rust_release_version_ok
     fail_msg: >-
       confirm_live.yml runs after the role's main tasks (which publish
       echoport_remote_command_guard_forced_command) in the same play and needs
       echoport_remote_command_guard_confirm_public_key (the pinned key,
-      "<type> <base64> [comment]"), a plain authorized_keys path, a valid Rust
-      install root and an empty or valid rust_version.
+      "<type> <base64> [comment]") and a plain authorized_keys path.
     quiet: true
 
+# The Rust inputs are checked separately: with impl python a mistake there only
+# warns and skips the Rust steps (rollback independence), as in main.yml.
 - name: confirm_live | Set the Rust guard state
   ansible.builtin.set_fact:
     _echoport_guard_live_fatal: "{{ echoport_remote_command_guard_impl != 'python' }}"
+    _echoport_guard_live_rust_inputs_ok: >-
+      {{
+        (echoport_remote_command_guard_rust_install_root | local.ops_library.rust_release_root_ok)
+        and echoport_remote_command_guard_rust_install_root is match('^/[A-Za-z0-9._/-]+$')
+        and (echoport_remote_command_guard_rust_version | string | length == 0
+             or echoport_remote_command_guard_rust_version | local.ops_library.rust_release_version_ok)
+        and (echoport_remote_command_guard_rust_keep_versions | string) is match('^[1-9][0-9]*$')
+        and (echoport_remote_command_guard_impl == 'python'
+             or echoport_remote_command_guard_rust_version | string | length > 0)
+      }}
     _echoport_guard_live_binary: >-
       {{ echoport_remote_command_guard_rust_install_root }}/{{ echoport_remote_command_guard_rust_version }}/echoport-command-guard
     _echoport_guard_live_pins_moved: false
+
+- name: confirm_live | Stop on invalid Rust inputs
+  ansible.builtin.fail:
+    msg: >-
+      impl {{ echoport_remote_command_guard_impl }} needs a valid
+      echoport_remote_command_guard_rust_version (got
+      {{ echoport_remote_command_guard_rust_version | to_json }}), a plain
+      normalised install root (got {{ echoport_remote_command_guard_rust_install_root | to_json }})
+      and rust_keep_versions >= 1. No pin moves and nothing is pruned.
+  when:
+    - not _echoport_guard_live_rust_inputs_ok | bool
+    - _echoport_guard_live_fatal | bool
+
+# An ignored failed task: red, and `ignored=1` in the recap.
+- name: confirm_live | Warn about invalid Rust inputs and skip the Rust steps
+  ansible.builtin.fail:
+    msg: >-
+      WARNING: the Rust inputs are invalid (rust_version
+      {{ echoport_remote_command_guard_rust_version | to_json }}, install root
+      {{ echoport_remote_command_guard_rust_install_root | to_json }},
+      keep_versions {{ echoport_remote_command_guard_rust_keep_versions | to_json }}).
+      impl is python, so the line is still verified, but no pin moves and
+      nothing is pruned.
+  ignore_errors: true
+  when: not _echoport_guard_live_rust_inputs_ok | bool
 
 # --- 1. Verify live ------------------------------------------------------------
 
@@ -70,6 +102,7 @@
   check_mode: false
   changed_when: false
   failed_when: false
+  when: _echoport_guard_live_rust_inputs_ok | bool
 
 - name: confirm_live | Parse the live state
   ansible.builtin.set_fact:
@@ -79,14 +112,15 @@
           if _echoport_guard_live_keys.content is defined else none)
         | local.ops_library.echoport_guard_live_state(
             echoport_remote_command_guard_confirm_public_key,
-            ([echoport_remote_command_guard_rust_install_root]
+            (([echoport_remote_command_guard_rust_install_root]
               + ([_echoport_guard_live_root_real.stdout]
-                 if _echoport_guard_live_root_real.rc == 0
+                 if _echoport_guard_live_root_real.rc | default(1) == 0
                     and _echoport_guard_live_root_real.stdout is match('^/[^\n]+$')
                     and _echoport_guard_live_root_real.stdout != '/' else []))
+             if _echoport_guard_live_rust_inputs_ok | bool else [])
             | unique)
       }}
-    _echoport_guard_live_root_resolved: "{{ _echoport_guard_live_root_real.rc == 0 }}"
+    _echoport_guard_live_root_resolved: "{{ _echoport_guard_live_root_real.rc | default(1) == 0 }}"
 
 - name: confirm_live | Decide whether the written line is the published forced command
   ansible.builtin.set_fact:
@@ -122,6 +156,7 @@
   when:
     - echoport_remote_command_guard_impl != 'python'
     - _echoport_guard_live_line_ok | bool
+    - _echoport_guard_live_rust_inputs_ok | bool
   block:
     - name: confirm_live | Read the version of the live Rust guard
       ansible.builtin.command:
@@ -156,7 +191,9 @@
     follow: true
     get_checksum: false
   register: _echoport_guard_live_root_stat
-  when: _echoport_guard_live_line_ok | bool
+  when:
+    - _echoport_guard_live_line_ok | bool
+    - _echoport_guard_live_rust_inputs_ok | bool
 
 - name: confirm_live | Collect the protect list from the live state
   ansible.builtin.set_fact:
@@ -173,11 +210,14 @@
         + ([] if _echoport_guard_live_root_resolved | bool
            else ['cannot resolve ' ~ echoport_remote_command_guard_rust_install_root])
       }}
-  when: _echoport_guard_live_line_ok | bool
+  when:
+    - _echoport_guard_live_line_ok | bool
+    - _echoport_guard_live_rust_inputs_ok | bool
 
 - name: confirm_live | Move the pins and prune old Rust versions
   when:
     - _echoport_guard_live_line_ok | bool
+    - _echoport_guard_live_rust_inputs_ok | bool
     - _echoport_guard_live_root_stat.stat.isdir | default(false)
   block:
     # shadow/rust: pin the target (its old current pin becomes the previous

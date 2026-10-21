@@ -154,7 +154,8 @@ def echoport_guard_live_state(content: Any, public_key: Any, roots: Any) -> dict
 
     ``content`` is the file's text (None when it could not be read),
     ``public_key`` the pinned deploy key (``<type> <base64> [comment]``) and
-    ``roots`` the spellings of the Rust install root (configured and resolved).
+    ``roots`` the spellings of the Rust install root (configured and resolved;
+    empty when the Rust inputs are unusable: then no version is read).
 
     Returns ``{'commands': [...], 'versions': [...], 'unknown': [...]}``:
     ``commands`` holds, for every line with that key, its ``command="…"``
@@ -165,7 +166,7 @@ def echoport_guard_live_state(content: Any, public_key: Any, roots: Any) -> dict
     """
 
     unknown: list[str] = []
-    if not isinstance(roots, list) or not roots or not all(
+    if not isinstance(roots, list) or not all(
         isinstance(r, str) and r.startswith("/") and r != "/" and not r.endswith("/") for r in roots
     ):
         raise ValueError(f"roots must be absolute paths: {roots!r}")

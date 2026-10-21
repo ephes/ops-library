@@ -252,7 +252,11 @@ class LiveStateFilterTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             FILTERS.echoport_guard_live_state("", KEY, ["relative"])
         with self.assertRaises(ValueError):
-            FILTERS.echoport_guard_live_state("", KEY, [])
+            FILTERS.echoport_guard_live_state("", KEY, "/x")
+        # No roots (unusable Rust inputs): only the key's commands are read.
+        state = FILTERS.echoport_guard_live_state(line(rust_command("0.1.0")) + "\n", KEY, [])
+        self.assertEqual(state["versions"], [])
+        self.assertEqual(state["commands"], [[rust_command("0.1.0")]])
 
     def test_path_chain(self):
         self.assertEqual(
@@ -566,6 +570,38 @@ class PlaybookTests(unittest.TestCase):
         result = self.confirm("rust", "0.1.0")
         self.assertNotEqual(result["rc"], 0)
         self.assertIn("no pin moved and nothing was pruned", result["out"])
+
+    def test_invalid_rust_inputs_only_warn_with_python(self):
+        # Rollback independence: a Rust mistake never blocks the switch back.
+        self.stub("0.1.0")
+        (self.root / ".pins").mkdir()
+        (self.root / ".pins/echoport_remote_command_guard").write_text("0.1.0\n")
+        self.write_keys(line(PYTHON_COMMAND))
+        for extra in (
+            {"echoport_remote_command_guard_rust_version": "not-a-version"},
+            {"echoport_remote_command_guard_rust_install_root": "relative/root"},
+            {"echoport_remote_command_guard_rust_install_root": "/a/../b"},
+            {"echoport_remote_command_guard_rust_keep_versions": 0},
+        ):
+            with self.subTest(extra=extra):
+                task = self.include("confirm_live.yml", "python")
+                task["vars"].update(extra)
+                result = self.play(task, fact_vars={"echoport_remote_command_guard_forced_command": PYTHON_COMMAND})
+                self.assertEqual(result["rc"], 0, result["out"])
+                self.assertIn("WARNING: the Rust inputs are invalid", result["out"])
+                self.assertEqual(self.pins(), {"echoport_remote_command_guard": "0.1.0\n"})
+                self.assertEqual(self.versions(), ["0.1.0"])
+        # The line is still verified with impl python.
+        self.write_keys(line(rust_command("0.1.0", str(self.root))))
+        task = self.include("confirm_live.yml", "python", echoport_remote_command_guard_rust_version="bad")
+        result = self.play(task, fact_vars={"echoport_remote_command_guard_forced_command": PYTHON_COMMAND})
+        self.assertNotEqual(result["rc"], 0)
+        # shadow and rust stop.
+        task = self.include("confirm_live.yml", "rust", "not-a-version")
+        result = self.play(task, fact_vars={"echoport_remote_command_guard_forced_command": rust_command("0.1.0", str(self.root))})
+        self.assertNotEqual(result["rc"], 0)
+        self.assertIn("needs a valid", result["out"])
+        self.assertEqual(self.pins(), {"echoport_remote_command_guard": "0.1.0\n"})
 
     def test_idempotent(self):
         self.stub("0.1.0")

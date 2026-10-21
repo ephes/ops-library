@@ -262,7 +262,8 @@ it (in the same play, for every impl, the rollback included):
    version and the protect list.
 
 A play that stops before step 3 moves no pin and prunes nothing. With impl
-`python` steps 3 and 4 only warn. In check mode nothing changes; a line that
+`python` steps 3 and 4, and invalid Rust inputs (version, install root,
+`keep_versions`), only warn; the line is still verified. In check mode nothing changes; a line that
 is not written yet is reported instead of failing.
 
 Switch and rollback are the same play with another impl: set
