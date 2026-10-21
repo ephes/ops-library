@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased — software-live Rust port: collect
+
+- `rust/software-live` gets `collect` of `software_live.py` (slice S3f of
+  `rust/software-live/PLAN.md`): the policy check, the observation steps in
+  the Python program's order (Traefik upstream and Traefik, OS lifecycle and
+  OS, PostgreSQL lifecycle and PostgreSQL, APT through the helper),
+  `generated_at_epoch` read after the last observation, the atomic state
+  write with the group looked up after the collection (the previous state
+  stays on an unknown group or a failed write), and the manual stdout mode
+  without `--output`. New flag `collect --report-usage`: one stderr line
+  with wall time, CPU time and peak memory of the process and its children,
+  for the shadow units. Fixtures from the Python program: every step's
+  call order and arguments (`fixtures/report.json`) and `collect` end to end
+  in recorded worlds with the call log of every host access
+  (`fixtures/collect.json`). Nothing installs or runs the binary; the
+  `software_live` role is unchanged.
+
 ## Unreleased — software-live Rust port: inventory export
 
 - `rust/software-live` gets `export-inventory` of `software_live.py` (slice
