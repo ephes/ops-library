@@ -1,0 +1,107 @@
+---
+# Steps 2 and 3 of rust/software-live/PLAN.md 7.3 (impl rust or the shadow):
+# install the pinned release with rust_release_binary and validate the
+# candidate by its versioned path before anything points at it. Runs after
+# the Python rollback of impl.yml, so a failure here never leaves or puts a
+# Rust process in the production units. A failure stops the play with the
+# running units, the drop-ins and every installed version untouched.
+
+- name: rust | Assert the Rust inputs
+  ansible.builtin.include_tasks: rust_inputs.yml
+
+# rust_release_binary layout inside the dedicated directory: <install_dir>/
+# releases/<version>/{software-live,software-live-apt,LICENSE,LICENSE.GPL-3.0},
+# .archive-sha256 and .pins/ (root:root 0755). An installed version is never
+# modified; a different archive for it fails the run. Its --version check
+# (`software-live <version> (<commit>)`) is the first candidate check.
+- name: rust | Install the pinned software-live release
+  ansible.builtin.include_role:
+    name: local.ops_library.rust_release_binary
+    tasks_from: install
+  vars:
+    rust_release_binary_name: software-live
+    rust_release_binary_install_root: '{{ _software_live_releases_dir }}'
+    rust_release_binary_version: '{{ software_live_rust_version }}'
+    rust_release_binary_sha256: '{{ software_live_rust_sha256[_software_live_variant] | default("") }}'
+    rust_release_binary_release_url: '{{ software_live_rust_release_url }}'
+    rust_release_binary_local_archive: '{{ software_live_rust_local_archive }}'
+    rust_release_binary_members: [software-live, software-live-apt, LICENSE, LICENSE.GPL-3.0]
+    rust_release_binary_executables: [software-live, software-live-apt]
+    rust_release_binary_validate_user: '{{ software_live_rust_version_check_user }}'
+    rust_release_binary_owner: '{{ software_live_rust_owner }}'
+    rust_release_binary_group: '{{ software_live_rust_group }}'
+    rust_release_binary_fail_hard: true
+
+# In check mode a version that is not installed yet cannot be validated.
+- name: rust | Check the candidate
+  ansible.builtin.stat:
+    path: '{{ _software_live_rust_binary }}'
+    follow: false
+    get_checksum: false
+  register: _software_live_rust_binary_stat
+
+- name: rust | Report a candidate check mode cannot validate
+  ansible.builtin.debug:
+    msg: >-
+      Check mode: {{ _software_live_rust_binary }} is not installed yet; the
+      real run validates it before anything points at it.
+  when:
+    - ansible_check_mode
+    - not _software_live_rust_binary_stat.stat.exists
+
+- name: rust | Validate the candidate
+  when: _software_live_rust_binary_stat.stat.exists
+  block:
+    - name: rust | Validate the policy with the candidate
+      ansible.builtin.command:
+        argv:
+          - '{{ _software_live_rust_binary }}'
+          - validate
+          - --config
+          - '{{ software_live_config_dir }}/policy.json'
+      check_mode: false
+      changed_when: false
+      failed_when: false
+      register: _software_live_rust_validate
+
+    - name: rust | Read the host clock for the APT check
+      ansible.builtin.command:
+        argv: [date, '+%s']
+      check_mode: false
+      changed_when: false
+      register: _software_live_rust_now
+
+    # As root and read-only: the helper takes no APT lock and never writes
+    # under /var/cache/apt (PLAN.md 5.2). Its package list is not printed.
+    - name: rust | Run the candidate's APT observation
+      ansible.builtin.command:
+        argv:
+          - '{{ _software_live_rust_apt_binary }}'
+          - observe
+          - --max-age
+          - '{{ software_live_policy.apt_max_age_seconds | default(172800) | string }}'
+          - --now
+          - '{{ _software_live_rust_now.stdout | trim }}'
+      check_mode: false
+      changed_when: false
+      failed_when: false
+      timeout: 120
+      register: _software_live_rust_apt
+
+    - name: rust | Assert the candidate validates the policy and observes APT
+      ansible.builtin.assert:
+        that:
+          - _software_live_rust_validate.rc == 0
+          - _software_live_rust_apt.rc | default(-1) == 0
+          - (_software_live_rust_apt.stdout | default('') | local.ops_library.software_live_apt_status) == 'ok'
+        fail_msg: >-
+          The candidate {{ _software_live_rust_binary }} is refused:
+          validate --config {{ software_live_config_dir }}/policy.json exited
+          {{ _software_live_rust_validate.rc }}
+          ({{ _software_live_rust_validate.stderr | default('') | trim | truncate(300) }});
+          software-live-apt observe exited {{ _software_live_rust_apt.rc | default('none') }}
+          with status {{ (_software_live_rust_apt.stdout | default('') | local.ops_library.software_live_apt_status) or 'none' }}
+          ({{ _software_live_rust_apt.stderr | default(_software_live_rust_apt.msg | default('')) | trim | truncate(300) }}).
+          Nothing points at it: the running units, the drop-ins and every
+          installed version are unchanged.
+        quiet: true

@@ -12,3 +12,13 @@
   ansible.builtin.systemd_service:
     name: software-live-collector.timer
     state: restarted
+
+- name: Restart software live shadow endpoint
+  ansible.builtin.systemd_service:
+    name: software-live-shadow-endpoint.service
+    state: restarted
+
+- name: Restart software live shadow timer
+  ansible.builtin.systemd_service:
+    name: software-live-shadow-collector.timer
+    state: restarted

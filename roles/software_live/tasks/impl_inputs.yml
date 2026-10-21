@@ -1,0 +1,51 @@
+---
+# The implementation selection (rust/software-live/PLAN.md 7.3 steps 1-2),
+# validated before main.yml changes anything. Read-only.
+#
+# Only what the switch back to Python needs is asserted for every impl. The
+# Rust inputs (variant, version, checksum) stop impl rust here; with impl
+# python and the shadow on they are asserted in rust.yml, after the Python
+# rollback, so a broken release never blocks the switch back.
+
+- name: impl_inputs | Assert the implementation selection
+  ansible.builtin.assert:
+    that:
+      - software_live_impl in ['python', 'rust']
+      - software_live_rust_shadow is boolean
+      - (software_live_rust_keep_versions | string) is match('^[1-9][0-9]*$')
+      - software_live_rust_keep_versions | int >= 2
+      - (software_live_verify_retries | string) is match('^[1-9][0-9]*$')
+      - (software_live_verify_delay | string) is match('^[0-9]+$')
+      - (software_live_collector_wait_retries | string) is match('^[1-9][0-9]*$')
+      - (software_live_shadow_port | string) is match('^[1-9][0-9]*$')
+      - software_live_shadow_port | int > 1024
+      - software_live_shadow_port | int < 65536
+      - software_live_shadow_port | int != software_live_port | int
+    fail_msg: >-
+      software_live_impl must be python or rust (got {{ software_live_impl | to_json }}),
+      software_live_rust_shadow a boolean (got {{ software_live_rust_shadow | to_json }}),
+      software_live_rust_keep_versions at least 2 (got
+      {{ software_live_rust_keep_versions | to_json }}) and
+      software_live_shadow_port a port above 1024 other than software_live_port.
+    quiet: true
+
+- name: impl_inputs | Read the distribution of the host
+  ansible.builtin.slurp:
+    src: '{{ software_live_os_release_path }}'
+  register: _software_live_os_release
+  failed_when: false
+
+# ubuntu 24.04 -> ubuntu24.04, debian 13 -> debian13, anything else "" (7.3 step 2).
+- name: impl_inputs | Determine the release variant
+  ansible.builtin.set_fact:
+    _software_live_variant: >-
+      {{
+        (_software_live_os_release.content | b64decode)
+        | local.ops_library.software_live_variant
+        if _software_live_os_release.content is defined else ''
+      }}
+    _software_live_rust_wanted: '{{ software_live_impl == "rust" or software_live_rust_shadow | bool }}'
+
+- name: impl_inputs | Assert the Rust inputs
+  ansible.builtin.include_tasks: rust_inputs.yml
+  when: software_live_impl == 'rust'

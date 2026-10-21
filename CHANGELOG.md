@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased — software_live: switch between Python and the Rust release
+
+- `software_live` gets the implementation switch of
+  `rust/software-live/PLAN.md` 7.3 (slice S6): `software_live_impl: python`
+  (default, unchanged behaviour) or `rust`, with `software_live_rust_version`,
+  the per-variant archive checksums `software_live_rust_sha256`
+  (`ubuntu24.04`, `debian13`, read from `/etc/os-release`),
+  `software_live_rust_keep_versions` and `software_live_rust_shadow`. The
+  release is installed with `rust_release_binary` into
+  `<install_dir>/releases/<version>/` (with `software-live-apt` and
+  `LICENSE.GPL-3.0`) and validated by its versioned path (`validate`, the
+  APT helper) before drop-ins point the endpoint and collector units at it.
+  `impl: python` removes the drop-ins and restarts the units with Python
+  before any Rust task, so a broken release never blocks the rollback. After
+  the initial collection the role verifies the running program; only then
+  does it move the pins (`software-live` and the `previous` rollback pin,
+  which always names the version verified live before) and prune old
+  releases, keeping every version the live state names (drop-ins, shadow
+  units, loaded commands, and every process of the units, including a
+  collector run and its APT child still executing an older release) and
+  pruning nothing when that state cannot be read completely. New shadow
+  units (`software-live-shadow-collector.service`/`.timer` at `*:7/15`,
+  `software-live-shadow-endpoint.service` on `127.0.0.1:9119`) run the
+  release next to the production units. New filter plugin
+  `plugins/filter/software_live_impl.py`; tests `tests/test_software_live_impl.py`
+  (`just test-software-live-impl`, part of `just test`).
+- `software_live_remove` also removes the shadow units and their state and
+  the implementation drop-in directories.
+
 ## Unreleased — software-live Rust port: collect
 
 - `rust/software-live` gets `collect` of `software_live.py` (slice S3f of

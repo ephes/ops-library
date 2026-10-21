@@ -1,0 +1,25 @@
+---
+# The inputs every Rust task needs (PLAN.md 7.3 step 2): a known release
+# variant, a release version and the archive checksum of this variant (or a
+# local archive). Read-only.
+- name: rust_inputs | Assert the release variant, version and checksum
+  ansible.builtin.assert:
+    that:
+      - _software_live_variant in ['ubuntu24.04', 'debian13']
+      - software_live_rust_version | local.ops_library.rust_release_version_ok
+      - software_live_rust_local_archive is string
+      - software_live_rust_sha256 is mapping
+      - >-
+        (software_live_rust_sha256[_software_live_variant] | default(''))
+        | local.ops_library.rust_release_sha256_ok
+        or software_live_rust_local_archive | length > 0
+    fail_msg: >-
+      impl {{ software_live_impl }}{{ ' with the shadow' if software_live_rust_shadow | bool else '' }}
+      needs a host of a released variant (ubuntu 24.04 or debian 13 in
+      {{ software_live_os_release_path }}; found
+      {{ _software_live_variant | to_json if _software_live_variant else 'none' }}),
+      software_live_rust_version (got {{ software_live_rust_version | to_json }}) and
+      the archive's sha256 for this variant in software_live_rust_sha256
+      ({ubuntu24.04: <64 hex>, debian13: <64 hex>}) or
+      software_live_rust_local_archive. Nothing was changed by the switch.
+    quiet: true

@@ -3,6 +3,13 @@
 Stop and remove the `software_live` collector, timer and authenticated endpoint.
 Traefik, OS maintenance, shared metrics accounts and package dependencies are not
 changed. Existing JSON state is preserved unless `software_live_remove_data=true`.
+It also stops and removes the Rust shadow units
+(`software-live-shadow-collector.service`/`.timer`,
+`software-live-shadow-endpoint.service`) and their state in
+`<data_dir>/shadow`, and the implementation drop-in directories
+`software-live-endpoint.service.d` and `software-live-collector.service.d`.
+The Rust releases and their pins live in `<install_dir>/releases` and go with
+the installation directory.
 
 ```yaml
 - role: local.ops_library.software_live_remove

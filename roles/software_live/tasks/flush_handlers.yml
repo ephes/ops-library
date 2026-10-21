@@ -1,0 +1,5 @@
+---
+# Included only when the drop-ins were removed (impl.yml, rollback first), so
+# the flush runs when the units exist; meta tasks take no `when`.
+- name: flush_handlers | Restart the production units with Python
+  ansible.builtin.meta: flush_handlers

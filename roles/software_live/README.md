@@ -98,9 +98,100 @@ rejected as stale/invalid until the schema-2 collector completes successfully.
 Use `software_live_remove` to stop/remove this monitoring component. State is
 retained by default. Removal does not alter Traefik or package maintenance.
 
+## Python or Rust (`software_live_impl`)
+
+The programs can run as the Python file (default) or as the pinned Rust
+release `software-live` of this repository (`rust/software-live/PLAN.md` 7.3).
+The base units always render the Python commands; `impl: rust` adds drop-ins
+that point them at the versioned binary.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `software_live_impl` | `python` | `python` or `rust`: what the production units run. |
+| `software_live_rust_version` | `""` | Release, e.g. `0.1.0`; required for `rust` or the shadow. |
+| `software_live_rust_sha256` | `{}` | sha256 of the release archive per variant: `{ubuntu24.04: <64 hex>, debian13: <64 hex>}`. |
+| `software_live_rust_release_url` | GitHub release of `software-live-v<version>`, archive `…-x86_64-unknown-linux-gnu-<variant>.tar.gz` | Download URL. |
+| `software_live_rust_local_archive` | `""` | Controller path of an archive instead of the download (development). |
+| `software_live_rust_keep_versions` | `3` | Newest release directories kept on top of the pins and the live versions (at least 2). |
+| `software_live_rust_shadow` | `false` | Shadow units next to the production units (below). |
+| `software_live_shadow_port` / `software_live_shadow_on_calendar` | `9119` / `*:7/15` | Shadow endpoint port (loopback only) and shadow collector schedule. |
+
+**Variants.** `software-live-apt` (the APT observation, a separate
+GPL-3.0-or-later helper) links the distribution's libapt-pkg, so each release
+has one archive per variant. The role reads `/etc/os-release`: Ubuntu 24.04 is
+`ubuntu24.04`, Debian 13 is `debian13`; any other system fails an `impl: rust`
+or shadow deploy before the switch changes anything.
+
+**Install.** The internal role `rust_release_binary` installs the archive
+(`software-live`, `software-live-apt`, `LICENSE`, `LICENSE.GPL-3.0`) into
+`<software_live_install_dir>/releases/<version>/` (root:root 0755, never
+modified in place, a different archive for an installed version fails the
+run) and checks `--version`. The candidate is then validated by its versioned
+path before anything points at it: `validate --config policy.json` and
+`software-live-apt observe` (as root, read-only, must report `status: ok`).
+A failure stops the play; the running units, the drop-ins and the installed
+versions stay as they were.
+
+**Switch.** With `impl: rust` the drop-ins
+`/etc/systemd/system/software-live-endpoint.service.d/impl.conf` and
+`/etc/systemd/system/software-live-collector.service.d/impl.conf` reset
+`ExecStart=` (and the collector's `ExecStartPost=`) and run
+`releases/<version>/software-live` with the same arguments; any change reloads
+systemd and restarts the endpoint and the timer. After the initial collection
+(which first waits for a collector run still in progress
+to end, since that run executes the previous program) the role verifies the
+running program (for about 30 s): the endpoint is
+active and `/proc/<MainPID>/exe` is the versioned binary (Python: its command
+line runs `software_live.py serve`), the collector exited 0 with the selected
+program and rewrote `state.json`.
+
+**Rollback.** `software_live_impl: python` removes the drop-ins and restarts
+the units with Python before any Rust task runs, so a missing, broken or
+refused release never blocks it (with the shadow on, a broken release still
+fails the play, but only after the production units run Python again). Python
+reads the state and caches the Rust program wrote. Emergency path on the
+host: remove both `impl.conf` files, `systemctl daemon-reload`, restart
+`software-live-endpoint.service`, start `software-live-collector.service`,
+then set the inventory to `python` before the next deploy.
+
+**Pins and prune.** Only after the verification the role moves the pins of
+`rust_release_binary` in `releases/.pins/`: `software-live` names the version
+the production units run (removed with `impl: python`), and
+`software-live.previous` names the version that ran before it (the version
+last verified live: the old pin, or the release the endpoint ran). So a
+Rust-to-Rust rollback target is always installed: v1 live, switch to v2
+(previous v1), back to v1 (previous v2), on to v3 (previous v1). Then old
+releases are pruned: kept are the newest `software_live_rust_keep_versions`,
+every pin, every previous pin, and every version the host ran or was
+configured to run when the play started: the drop-ins, the shadow units,
+systemd's loaded commands, and every process of the four units (for a
+running collector every PID of its control group, so a collector run still
+executing an older release and its `software-live-apt` child keep that
+release). If any of that cannot be read (an unreadable drop-in, a path below
+`releases/` that is not `<version>/<file>`, a running unit whose control
+group or process executable cannot be resolved), nothing is pruned in that
+play. A failed verification moves no pin and prunes nothing.
+
+**Shadow.** `software_live_rust_shadow: true` installs, next to the untouched
+production units, `software-live-shadow-collector.service`/`.timer` (the Rust
+`collect --report-usage` into `<data_dir>/shadow/`, root:metrics 0750, with
+its own caches and projection, at `*:7/15`) and
+`software-live-shadow-endpoint.service` (the Rust endpoint on
+`127.0.0.1:9119`, `IPAddressAllow=localhost` only, serving the production
+`state.json` with the production credentials, configured in
+`<config_dir>/shadow-endpoint.json`). The shadow's release is pinned as
+`.pins/software-live-shadow` (no rollback pin). Turning the flag off stops
+and removes the shadow units, their configuration, `<data_dir>/shadow` and
+the shadow pin. Deploying with the shadow on and `impl: python` puts a release
+in place ahead of a switch.
+
+`nyxmon_checks.py` stays Python and is installed in every mode.
+
 ## Validation
 
-`just test-software-live` exercises version/hash drift, OS/PostgreSQL lifecycle,
+`just test-software-live-impl` runs the switch (filters, templates, and
+`ansible-playbook` runs against localhost with fake releases, `systemctl` and
+`/proc`). `just test-software-live` exercises version/hash drift, OS/PostgreSQL lifecycle,
 additional PostgreSQL clusters, PID races, lookup failures, APT security/hold
 classification, freshness, HTTP authentication and check upserts.
 Use synthetic identifiers in public tests; operator inventory belongs downstream.
