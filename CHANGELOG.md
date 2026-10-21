@@ -3,6 +3,11 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased
+
+- Add `linuxserver_ca_remediate`, a guarded LinuxServer startup hook to repair native Qt CA stores
+  without changing pinned application images.
+
 ## Unreleased — ansible-core 2.20.3 floor and quiet MeTube uv sync (2.56.0)
 
 - The collection now requires ansible-core >= 2.20.3 (`meta/runtime.yml`
