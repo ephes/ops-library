@@ -94,6 +94,23 @@
   now records the newline translation and the script's stdin. No role
   behaviour changes.
 
+## Unreleased — Rust ports: echoport-command-guard rules with filesystem (S3b)
+
+- `echoport-command-guard` (slice S3b of `rust/echoport-command-guard/PLAN.md`):
+  `check()` now decides the remaining branches of the Python guard, in
+  Python's order and with Python's refusal reasons, through the filesystem
+  helpers of S2: the raw `umask 077 && tar …` shape (the private media
+  archive, umask `077`) and `umask 077 && cat > …` (the restore dump as a
+  created stdout redirect), `scp -f/-t` (uploads as `runuser -u <owner>`),
+  the three rsync server forms (receivers as the root's owner), `rm -f` of
+  SQLite `-wal`/`-shm` files, the snapshot `cat` (a stdin redirect owned by
+  the service user), `sha256sum`, `readlink -f`, `test`, `mv`, `mkdir -p`
+  (as the root's owner), `chmod` and `chown`. An unbalanced quote in the
+  `tar` shape, where the Python guard crashes, is refused as an unparsable
+  command. Every Layer-1 fixture case is now decided: each case Python allows
+  (3,505) is allowed with an identical decision, and no branch is pending
+  any more. Nothing installs the binary; no role behaviour changes.
+
 ## Unreleased — Rust ports: echoport-command-guard filesystem layer (S2)
 
 - `echoport-command-guard` gets its filesystem layer (slice S2 of
