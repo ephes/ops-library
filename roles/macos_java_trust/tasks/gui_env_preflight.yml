@@ -1,0 +1,26 @@
+---
+- name: gui_env_preflight | Require the GUI environment to use one of the managed VM option files
+  ansible.builtin.assert:
+    that:
+      - macos_java_trust_pycharm_vm_options in (macos_java_trust_targets | selectattr('options', 'defined') | map(attribute='options') | list)
+
+- name: gui_env_preflight | Inspect the owning GUI launchd domain without exposing its environment
+  ansible.builtin.command:
+    argv: [/bin/launchctl, print, "gui/{{ macos_java_trust_context.uid }}"]
+  register: macos_java_trust_gui_before
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: gui_env_preflight | Extract only the per-app VM options variable
+  ansible.builtin.set_fact:
+    macos_java_trust_gui_current: >-
+      {{ macos_java_trust_gui_before.stdout
+         | regex_findall('(?m)^[\t ]*PYCHARM_VM_OPTIONS => (.*)$') }}
+  no_log: true
+
+- name: gui_env_preflight | Refuse to overwrite another per-app VM options setting
+  ansible.builtin.assert:
+    that:
+      - macos_java_trust_gui_current in [[], [macos_java_trust_pycharm_vm_options]]
+    fail_msg: An existing PYCHARM_VM_OPTIONS value must be reconciled before deployment.

@@ -1,0 +1,10 @@
+---
+galaxy_info:
+  author: ops-library
+  description: Maintain explicit JSSE trust copies without editing vendor cacerts
+  license: MIT
+  min_ansible_version: '2.20'
+  platforms:
+    - name: macOS
+      versions: [all]
+dependencies: []

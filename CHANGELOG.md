@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `macos_java_trust`: maintain fingerprint-filtered JSSE trust copies and explicit
+  PyCharm VM options while preserving vendor bundles and unrelated trust. A narrow
+  GUI LaunchAgent supplies per-app options without suppressing IDE settings import.
+
 ## Unreleased — distribution Java trust refresh (2.60.0)
 
 - `java_ca_refresh`: refresh stale Debian Java trust through distribution hooks

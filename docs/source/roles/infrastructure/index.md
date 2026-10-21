@@ -8,6 +8,7 @@ Reusable host identity, access-control, networking, and storage building blocks.
 echoport_remote_command_guard
 java_ca_refresh
 macos_ssh_tunnel
+macos_java_trust
 ssh_forwarding_identity
 ssh_restricted_forwarding_account
 ```

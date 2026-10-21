@@ -1,0 +1,74 @@
+---
+- name: Read the effective native platform and account without broad facts
+  ansible.builtin.command:
+    argv:
+      - "{{ macos_java_trust_python }}"
+      - -c
+      - >-
+        import json, os, platform, pwd;
+        account = pwd.getpwuid(os.getuid());
+        print(json.dumps({'system': platform.system(), 'uid': os.getuid(),
+        'user': account.pw_name, 'home': account.pw_dir}))
+  register: macos_java_trust_native
+  changed_when: false
+  check_mode: false
+
+- name: Store the narrow native account context
+  ansible.builtin.set_fact:
+    macos_java_trust_context: "{{ macos_java_trust_native.stdout | from_json }}"
+
+- name: Require macOS user context and explicit trust targets
+  ansible.builtin.assert:
+    that:
+      - macos_java_trust_context.system == 'Darwin'
+      - macos_java_trust_context.uid | int != 0
+      - macos_java_trust_targets is sequence
+      - macos_java_trust_targets is not string
+
+- name: Validate each explicit trust target before changes
+  ansible.builtin.assert:
+    that:
+      - item.jdk is defined
+      - item.output is defined
+      - (item.options is defined) == (item.default_options is defined)
+  loop: "{{ macos_java_trust_targets }}"
+
+- name: Validate the optional PyCharm GUI environment before changes
+  ansible.builtin.include_tasks: gui_env_preflight.yml
+  when: macos_java_trust_pycharm_vm_options | length > 0
+
+- name: Create managed Java trust helper directory
+  ansible.builtin.file:
+    path: "{{ macos_java_trust_directory }}"
+    state: directory
+    mode: '0755'
+
+- name: Install Java trust helper
+  ansible.builtin.copy:
+    src: manage_trust.py
+    dest: "{{ macos_java_trust_directory }}/manage_trust.py"
+    mode: '0644'
+
+- name: Maintain explicit Java trust copies
+  ansible.builtin.command:
+    argv: >-
+      {{ [macos_java_trust_python, macos_java_trust_directory + '/manage_trust.py',
+          '--jdk', item.jdk, '--output', item.output]
+         + (['--options', item.options, '--default-options', item.default_options]
+            if item.options is defined else []) }}
+  loop: "{{ macos_java_trust_targets }}"
+  register: macos_java_trust_result
+  changed_when: (macos_java_trust_result.stdout | from_json).changed
+  when: not ansible_check_mode
+
+- name: Report effective trust files and restart requirements
+  ansible.builtin.debug:
+    msg: "{{ item.stdout | from_json }}"
+  loop: "{{ macos_java_trust_result.results | default([]) }}"
+  when: not ansible_check_mode
+
+- name: Configure the optional PyCharm GUI next-launch environment
+  ansible.builtin.include_tasks: gui_env_apply.yml
+  when:
+    - macos_java_trust_pycharm_vm_options | length > 0
+    - not ansible_check_mode
