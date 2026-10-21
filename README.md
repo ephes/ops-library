@@ -319,3 +319,6 @@ Operations coordination: [API deployment](roles/daybook_operations_api_deploy/RE
 [backup](roles/daybook_operations_api_backup/README.md),
 [restore](roles/daybook_operations_api_restore/README.md),
 and [removal](roles/daybook_operations_api_remove/README.md). Disabled-first; live acceptance pending.
+
+`macos_python_ca_remediate` patches explicit existing macOS Python environments;
+see its role README for security floors, guarded locks and receipts.

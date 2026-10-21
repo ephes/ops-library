@@ -3,6 +3,11 @@
 <!-- Historical release notes repeat category headings within a release. -->
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased
+
+- Add `macos_python_ca_remediate` for guarded certifi-only updates for explicit macOS tool/service environments
+  and deployed lock records, with original-version receipts.
+
 ## Unreleased — ansible-core 2.20.3 floor and quiet MeTube uv sync (2.56.0)
 
 - The collection now requires ansible-core >= 2.20.3 (`meta/runtime.yml`

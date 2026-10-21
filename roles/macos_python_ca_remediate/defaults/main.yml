@@ -1,0 +1,4 @@
+---
+ops_library_documentation_category: infrastructure
+# Each item: path, owner; optional lockfile for an already-deployed uv environment.
+macos_python_ca_environments: []
