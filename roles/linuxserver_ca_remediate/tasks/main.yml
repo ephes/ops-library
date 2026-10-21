@@ -1,0 +1,23 @@
+---
+- name: Require Linux
+  ansible.builtin.assert:
+    that: ansible_system == 'Linux'
+
+- name: Create root-owned LinuxServer trust hook directory
+  ansible.builtin.file:
+    path: /var/lib/managed-container-ca/linuxserver-init
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install fail-closed trust hook
+  ansible.builtin.copy:
+    src: "{{ item.name }}"
+    dest: "/var/lib/managed-container-ca/linuxserver-init/{{ item.name }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - {name: repair_ca.py, mode: '0644'}
+    - {name: 10-emudhra-ca.sh, mode: '0755'}

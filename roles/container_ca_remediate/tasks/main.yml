@@ -1,0 +1,21 @@
+---
+- name: Validate Linux Docker remediation scope
+  ansible.builtin.assert:
+    that:
+      - ansible_system == 'Linux'
+      - container_ca_remediate_containers | length > 0
+
+- name: Validate individual container names
+  ansible.builtin.assert:
+    that:
+      - item is match('^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$')
+  loop: "{{ container_ca_remediate_containers }}"
+
+- name: Prepare per-container replacement trust stores
+  ansible.builtin.script:
+    cmd: "prepare_store.py {{ item | quote }} {{ '--check' if ansible_check_mode else '' }}{{ (' --image ' + (container_ca_remediate_images[item] | quote)) if item in container_ca_remediate_images else '' }}"
+    executable: /usr/bin/python3
+  register: container_ca_prepared
+  changed_when: "'CHANGED' in container_ca_prepared.stdout_lines"
+  check_mode: false
+  loop: "{{ container_ca_remediate_containers }}"

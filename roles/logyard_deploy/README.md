@@ -187,3 +187,8 @@ docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep logyard-lo
 curl -fsS http://127.0.0.1:3101/ready
 curl -fsS http://127.0.0.1:9105/.well-known/logyard | jq .
 ```
+
+Set `logyard_ca_store_root` to the prepared per-container CA root to mount
+replacement native trust stores; prepare with `container_ca_remediate` before
+deploying and refresh after image/custom CA changes. The empty default leaves
+image trust unchanged. Verify actual runtime TLS before claiming protection.

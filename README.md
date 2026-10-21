@@ -323,3 +323,13 @@ Operations coordination: [API deployment](roles/daybook_operations_api_deploy/RE
 [backup](roles/daybook_operations_api_backup/README.md),
 [restore](roles/daybook_operations_api_restore/README.md),
 and [removal](roles/daybook_operations_api_remove/README.md). Disabled-first; live acceptance pending.
+
+`macos_ca_remediate`: see [role documentation](roles/macos_ca_remediate/README.md).
+
+`linuxserver_ca_remediate`: see [role documentation](roles/linuxserver_ca_remediate/README.md).
+
+`macos_python_ca_remediate`: see [role documentation](roles/macos_python_ca_remediate/README.md).
+
+`container_ca_remediate`: see [role documentation](roles/container_ca_remediate/README.md).
+
+`chrome_ca_distrust`: see [role documentation](roles/chrome_ca_distrust/README.md).

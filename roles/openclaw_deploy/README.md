@@ -1005,3 +1005,13 @@ curl -k https://openclaw.macmini.tailde2ec.ts.net/
 ## License
 
 MIT
+
+## Incident trust override
+
+Set `openclaw_ca_store_path` to a prepared per-container store from
+`container_ca_remediate` to mount it read-only and replace Node’s bundled CA
+store with `--use-openssl-ca`. Existing memory limits remain in `NODE_OPTIONS`.
+Prepare before deploy and after image/custom-CA changes, verify negative and
+positive TLS probes, then recreate the gateway. This also protects its CLI
+and native Go helper through `SSL_CERT_FILE`/`SSL_CERT_DIR`. An empty value
+(the default) preserves the image trust behavior.
