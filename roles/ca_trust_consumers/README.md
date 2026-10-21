@@ -85,6 +85,20 @@ defaults are that incident's four roots.
 - OpenSSL caches the issuers it has looked up in a process, so a Node.js
   service started before the store changed is restarted like a Go service.
 - pam_env does not apply to systemd services, hence the per-unit drop-in.
+- sudo resets the environment, and Debian 13's sudo PAM stack (unlike
+  Ubuntu's) does not read `/etc/environment`, so `sudo -u <app>` sessions —
+  how Ansible and pyinfra run `become` steps such as `npm ci` or `yarn
+  install` — would lose the flag. A sudoers drop-in
+  (`/etc/sudoers.d/ca-trust-consumers`, validated with `visudo -cf`) sets
+  `Defaults env_file=` to a root-owned file holding the same `NODE_OPTIONS`.
+  Unlike `env_keep`, this never passes a caller's own `NODE_OPTIONS` through.
+  sudoers takes one `env_file`, so the role reads the effective policy with
+  sudo's own exporter (`cvtsudoers -c /dev/null -i sudoers -d all -f json`:
+  real grammar, includes followed, its own configuration file ignored so no
+  filter can hide an entry) and refuses unless there is no `env_file` at all or exactly one
+  unbound `env_file` equal to its own file; a scoped, negated or foreign
+  `env_file`, or a policy `cvtsudoers` cannot export, also refuses. It checks
+  again after writing the drop-in. Only a verdict is printed, never the policy.
   The drop-in is a separate file the owning service role does not manage, so
   application redeploys keep it.
 - Go's `crypto/x509` loads system roots once per process (`sync.Once`). Go
@@ -110,6 +124,12 @@ defaults are that incident's four roots.
 | `ca_trust_consumers_node_flag` | `--use-openssl-ca` | Flag merged into `NODE_OPTIONS`. |
 | `ca_trust_consumers_node_cli` | `false` | Manage `NODE_OPTIONS` in `/etc/environment`. |
 | `ca_trust_consumers_environment_file` | `/etc/environment` | pam_env file. |
+| `ca_trust_consumers_node_cli_sudo` | `true` | With `node_cli`, also configure sudo sessions (skipped when `ca_trust_consumers_visudo` is absent). |
+| `ca_trust_consumers_sudo_env_file` | `/etc/ca-trust-consumers/sudo.env` | Root-owned file sudo reads (`env_file`). |
+| `ca_trust_consumers_sudoers_dropin` | `/etc/sudoers.d/ca-trust-consumers` | Drop-in setting `Defaults env_file=`; its name must not contain a dot. |
+| `ca_trust_consumers_sudoers` | `/etc/sudoers` | Main sudoers file given to `cvtsudoers` (includes are followed). |
+| `ca_trust_consumers_cvtsudoers` | `/usr/bin/cvtsudoers` | sudo's exporter; its absence refuses the sudo step. |
+| `ca_trust_consumers_visudo` | `/usr/sbin/visudo` | Validates the drop-in. |
 | `ca_trust_consumers_node_units` | `[]` | Node.js services: `{name, health_command?, guard_paths?, allow_staged_changes?}`. Get a drop-in (also when inactive), restart while a running process lacks the flag or roots are old, runtime-verified. |
 | `ca_trust_consumers_node_dropin_name` | `99-ca-trust-node.conf` | Drop-in file name under `/etc/systemd/system/<unit>.d/`. |
 | `ca_trust_consumers_systemd_dir` | `/etc/systemd/system` | Parent of the `<unit>.d/` drop-in directories. |
@@ -162,7 +182,8 @@ ordinary sites still succeed.
 ## Removing
 
 When every Node.js runtime in use ships the upstream fix, delete the
-`NODE_OPTIONS` line (or the flag) from `/etc/environment` and the
+`NODE_OPTIONS` line (or the flag) from `/etc/environment`, the sudo pair
+`/etc/sudoers.d/ca-trust-consumers` and `/etc/ca-trust-consumers/sudo.env`, and the
 `/etc/systemd/system/<unit>.d/99-ca-trust-node.conf` drop-ins, then
 `systemctl daemon-reload` and restart the units. Keeping the flag is also
 fine: it makes Node.js follow future system store updates.

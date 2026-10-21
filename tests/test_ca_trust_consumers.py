@@ -35,6 +35,7 @@ def _load(name: str, path: Path):
 
 filters = _load("ca_trust_consumers_filters", ROOT / "plugins/filter/ca_trust_consumers.py")
 roots = _load("ca_trust_roots_check", ROLE / "files/ca_trust_roots_check.py")
+sudoers = _load("ca_trust_sudoers_env_file", ROLE / "files/ca_trust_sudoers_env_file.py")
 
 FLAG = "--use-openssl-ca"
 
@@ -206,6 +207,86 @@ class RootsCheckTests(unittest.TestCase):
         self.assertEqual(json.loads(out.getvalue())["found"][0]["sha256"], sha)
 
 
+MANAGED = "/etc/ca-trust-consumers/sudo.env"
+# Defaults entries as cvtsudoers -f json printed them (sudo 1.9.13p3/1.9.15p5/1.9.16p2).
+BASE_DEFAULTS = [{"Options": [{"env_reset": True}]}, {"Options": [{"secure_path": "/usr/bin:/bin"}]}]
+
+
+def _policy(*entries):
+    return {"Defaults": BASE_DEFAULTS + list(entries), "User_Specs": []}
+
+
+class SudoersEnvFileTests(unittest.TestCase):
+    def test_verdicts_from_real_cvtsudoers_shapes(self):
+        cases = {
+            "none": _policy(),
+            "managed": _policy({"Options": [{"env_file": MANAGED}]}),
+        }
+        for verdict, policy in cases.items():
+            with self.subTest(verdict=verdict):
+                self.assertEqual(sudoers.inspect(policy, MANAGED), {"verdict": verdict, "reasons": []})
+
+    def test_everything_else_refuses(self):
+        cases = {
+            "foreign value": _policy({"Options": [{"env_file": "/etc/proxy.env"}]}),
+            "scoped selector list": _policy(
+                {"Binding": [{"username": "root"}, {"username": "app"}], "Options": [{"env_file": MANAGED}]}
+            ),
+            "runas": _policy({"Binding": [{"username": "root"}], "Options": [{"env_file": "/x"}]}),
+            "command": _policy({"Binding": [{"command": "/bin/sh"}], "Options": [{"env_file": "/x"}]}),
+            "host": _policy({"Binding": [{"hostname": "localhost"}], "Options": [{"env_file": "/x"}]}),
+            "alias": _policy({"Binding": [{"useralias": "U"}], "Options": [{"env_file": "/x"}]}),
+            "negated": _policy({"Options": [{"env_file": False}]}),
+            "duplicate managed": _policy({"Options": [{"env_file": MANAGED}]}, {"Options": [{"env_file": MANAGED}]}),
+            "managed plus foreign": _policy({"Options": [{"env_file": MANAGED}]}, {"Options": [{"env_file": "/y"}]}),
+        }
+        for name, policy in cases.items():
+            with self.subTest(case=name):
+                report = sudoers.inspect(policy, MANAGED)
+                self.assertEqual(report["verdict"], "refuse")
+                self.assertNotIn("/etc/proxy.env", json.dumps(report))  # values are never echoed
+
+    def test_lookalikes_are_not_env_file(self):
+        policy = _policy(
+            {"Options": [{"restricted_env_file": "/etc/r.env"}]},
+            {"Options": [{"env_keep": [{"operation": "list_add", "value": ["env_file_hint"]}]}]},
+        )
+        self.assertEqual(sudoers.inspect(policy, MANAGED)["verdict"], "none")
+
+    def _cli(self, script: str) -> dict:
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp) / "cvtsudoers"
+            fake.write_text(script)
+            fake.chmod(0o755)
+            out = io.StringIO()
+            with redirect_stdout(out):
+                self.assertEqual(sudoers.main(["--cvtsudoers", str(fake), "--sudoers", "/etc/sudoers", "--managed", MANAGED]), 0)
+        return json.loads(out.getvalue())
+
+    def test_exporter_configuration_is_disabled(self):
+        self.assertEqual(sudoers.PINNED_ARGS[:2], ("-c", "/dev/null"))
+        self.assertEqual(sudoers.PINNED_ARGS[sudoers.PINNED_ARGS.index("-d") + 1], "all")
+        self.assertEqual(sudoers.PINNED_ARGS[sudoers.PINNED_ARGS.index("-i") + 1], "sudoers")
+
+    def test_cli_fails_closed_when_the_exporter_cannot_be_trusted(self):
+        self.assertIn("exited 1", self._cli("#!/bin/sh\necho 'syntax error' >&2\nexit 1\n")["reasons"][0])
+        self.assertEqual(self._cli("#!/bin/sh\necho not-json\n")["reasons"], ["cvtsudoers printed no valid JSON"])
+        self.assertEqual(self._cli("#!/bin/sh\necho '[1]'\n")["verdict"], "refuse")
+        out = io.StringIO()
+        with redirect_stdout(out):
+            sudoers.main(["--cvtsudoers", "/nonexistent/cvtsudoers", "--sudoers", "/etc/sudoers", "--managed", MANAGED])
+        self.assertEqual(json.loads(out.getvalue())["verdict"], "refuse")
+
+    def test_cli_passes_policy_through_inspection(self):
+        policy = json.dumps(_policy({"Options": [{"env_file": MANAGED}]}))
+        # Exactly the pinned arguments: no /etc/cvtsudoers.conf filter can hide entries.
+        report = self._cli(
+            f"#!/bin/sh\n[ \"$*\" = '-c /dev/null -i sudoers -d all -f json /etc/sudoers' ] || exit 9\n"
+            f"cat <<'J'\n{policy}\nJ\n"
+        )
+        self.assertEqual(report, {"verdict": "managed", "reasons": []})
+
+
 class RoleStructureTests(unittest.TestCase):
     def test_all_role_yaml_parses(self):
         for path in ROLE.rglob("*.yml"):
@@ -339,6 +420,26 @@ class RoleStructureTests(unittest.TestCase):
         self.assertEqual(pending[1]["ansible.builtin.assert"]["that"], "_ca_trust_consumers_pending.stdout | trim | length == 0")
         defaults = yaml.safe_load((ROLE / "defaults/main.yml").read_text())
         self.assertTrue(defaults["ca_trust_consumers_node_dropin_name"].startswith("99-"))
+
+    def test_sudo_sessions_get_the_flag_from_a_root_owned_env_file(self):
+        cli = _tasks("node_cli.yml")
+        block = next(t for t in cli if t.get("name") == "node_cli | Configure sudo sessions")
+        inner = {t["name"]: t for t in block["block"]}
+        dropin = inner["node_cli | Point sudo at the environment file"]["ansible.builtin.copy"]
+        self.assertIn('Defaults env_file="{{ ca_trust_consumers_sudo_env_file }}"', dropin["content"])
+        self.assertEqual(dropin["mode"], "0440")
+        self.assertEqual(dropin["validate"], "{{ ca_trust_consumers_visudo }} -cf %s")
+        env = inner["node_cli | Write sudo environment file"]
+        self.assertIn('NODE_OPTIONS="{{ _ca_trust_consumers_cli_node_options }}"', env["ansible.builtin.copy"]["content"])
+        self.assertTrue(env["no_log"])
+        self.assertFalse(env["diff"])
+        line = next(t for t in cli if t.get("name") == "node_cli | Set NODE_OPTIONS in environment file")
+        self.assertEqual(line["ansible.builtin.lineinfile"]["line"], 'NODE_OPTIONS="{{ _ca_trust_consumers_cli_node_options }}"')
+        for text in (str(block), (ROLE / "defaults/main.yml").read_text()):
+            self.assertNotIn("env_keep", text.replace("unlike env_keep", ""))
+        defaults = yaml.safe_load((ROLE / "defaults/main.yml").read_text())
+        self.assertTrue(defaults["ca_trust_consumers_node_cli_sudo"])
+        self.assertNotIn(".", Path(defaults["ca_trust_consumers_sudoers_dropin"]).name)
 
     def test_report_mode_does_not_fail_on_unrestarted_processes(self):
         verify = _tasks("verify_node_unit.yml")[-1]
