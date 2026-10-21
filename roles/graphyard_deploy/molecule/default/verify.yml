@@ -1,0 +1,72 @@
+---
+# converge.yml ends with a rollback from the fake Rust agent 0.1.1 to Python.
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Verify | Agent implementation drop-in is gone
+      ansible.builtin.stat:
+        path: /etc/systemd/system/graphyard-agent.service.d/agent-impl.conf
+      register: graphyard_agent_dropin
+
+    - name: Verify | Read the agent process
+      ansible.builtin.shell: |
+        set -euo pipefail
+        systemctl is-active graphyard-agent
+        pid=$(systemctl show --property=MainPID --value graphyard-agent)
+        readlink "/proc/$pid/exe"
+        tr '\0' '\n' < "/proc/$pid/cmdline"
+      args:
+        executable: /bin/bash
+      changed_when: false
+      register: graphyard_agent_process
+
+    - name: Verify | List installed Rust agent versions
+      ansible.builtin.find:
+        paths: /opt/graphyard-agent
+        file_type: directory
+      register: graphyard_agent_installed
+
+    - name: Verify | Read the remembered previous Rust version
+      ansible.builtin.slurp:
+        path: /opt/graphyard-agent/.previous-version
+      register: graphyard_agent_previous
+
+    - name: Verify | Read the base unit
+      ansible.builtin.slurp:
+        path: /etc/systemd/system/graphyard-agent.service
+      register: graphyard_agent_unit_file
+
+    - name: Verify | Assert the rollback left the Python agent running
+      ansible.builtin.assert:
+        that:
+          - not graphyard_agent_dropin.stat.exists
+          - graphyard_agent_process.stdout_lines[0] == 'active'
+          - not graphyard_agent_process.stdout_lines[1].startswith('/opt/graphyard-agent/')
+          - >-
+            graphyard_agent_process.stdout_lines[2:]
+            == ['/opt/apps/graphyard/site/.venv/bin/python', 'manage.py', 'start_agent']
+          - graphyard_agent_installed.files | map(attribute='path') | map('basename') | sort == ['0.1.1', 'keep-me']
+          - graphyard_agent_previous.content | b64decode | trim == '0.1.1'
+          - >-
+            'ExecStart=/opt/apps/graphyard/site/.venv/bin/python manage.py start_agent'
+            in (graphyard_agent_unit_file.content | b64decode)
+        fail_msg: >-
+          Rollback state is wrong: drop-in {{ graphyard_agent_dropin.stat.exists }},
+          process {{ graphyard_agent_process.stdout_lines }},
+          versions {{ graphyard_agent_installed.files | map(attribute='path') | list }}.
+
+    - name: Verify | Web health endpoint answers
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8051/v1/health
+        headers:
+          X-Forwarded-Proto: https
+        status_code: 200
+      register: graphyard_health
+
+    - name: Verify | Assert the health payload
+      ansible.builtin.assert:
+        that:
+          - graphyard_health.json.status in ['ok', 'warning', 'critical']

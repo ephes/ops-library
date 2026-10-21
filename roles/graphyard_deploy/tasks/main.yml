@@ -69,6 +69,38 @@
     fail_msg: Inventory monitor secret must be empty or 32-128 URL-safe characters.
   no_log: true
 
+- name: main | Validate agent implementation settings
+  ansible.builtin.assert:
+    that:
+      - graphyard_agent_impl in ['python', 'rust']
+      - graphyard_agent_rust_version is string
+      - >-
+        graphyard_agent_rust_version == '' or
+        graphyard_agent_rust_version is regex('^[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?$')
+      - graphyard_agent_rust_sha256 is string
+      - graphyard_agent_rust_sha256 == '' or graphyard_agent_rust_sha256 is regex('^[0-9a-f]{64}$')
+      - graphyard_agent_rust_local_archive is string
+      - >-
+        graphyard_agent_rust_version == '' or graphyard_agent_rust_sha256 != '' or
+        graphyard_agent_rust_local_archive != ''
+      - graphyard_agent_rust_sha256 == '' or graphyard_agent_rust_version != ''
+      - graphyard_agent_rust_local_archive == '' or graphyard_agent_rust_version != ''
+      - graphyard_agent_impl == 'python' or graphyard_agent_rust_version != ''
+      - graphyard_agent_rust_install_root is string
+      - graphyard_agent_rust_install_root is regex('^/[^ ]*[^/ ]$')
+      - graphyard_agent_rust_keep_versions is not boolean
+      - (graphyard_agent_rust_keep_versions | string) is regex('^[0-9]+$')
+      - graphyard_agent_rust_keep_versions | int >= 1
+    fail_msg: >-
+      Agent implementation settings are invalid. graphyard_agent_impl must be
+      python or rust (got {{ graphyard_agent_impl }}). graphyard_agent_rust_version
+      must be empty or a version such as 0.1.0 (got '{{ graphyard_agent_rust_version }}'),
+      and impl rust needs a version. A version needs graphyard_agent_rust_sha256
+      (64 lowercase hex digits) or graphyard_agent_rust_local_archive; a checksum
+      or local archive without a version is refused.
+      graphyard_agent_rust_install_root must be an absolute path other than /,
+      graphyard_agent_rust_keep_versions a whole number >= 1.
+
 - name: main | Ensure graphyard user and directories
   ansible.builtin.import_tasks: user.yml
 
@@ -90,6 +122,9 @@
 - name: main | Apply Django environment and management tasks
   ansible.builtin.import_tasks: django.yml
 
+- name: main | Install the Rust agent and select the agent implementation
+  ansible.builtin.import_tasks: agent_rust.yml
+
 - name: main | Enforce InfluxDB bucket retention
   ansible.builtin.import_tasks: influx_retention.yml
   when: graphyard_influx_retention_apply | bool
@@ -102,6 +137,9 @@
 
 - name: main | Apply handlers before health verification
   ansible.builtin.meta: flush_handlers
+
+- name: main | Verify the running agent implementation and prune old Rust agents
+  ansible.builtin.import_tasks: agent_verify.yml
 
 - name: main | Verify Graphyard health endpoint and services
   ansible.builtin.import_tasks: health.yml

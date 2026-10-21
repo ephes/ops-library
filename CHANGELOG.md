@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased — graphyard_deploy: Python/Rust agent selector
+
+- `graphyard_deploy`: new `graphyard_agent_impl` (`python`, the default, or
+  `rust`) with `graphyard_agent_rust_version`, `_sha256`, `_release_url`,
+  `_local_archive`, `_install_root` (`/opt/graphyard-agent`) and
+  `_keep_versions` (3), per section 8.3 of graphyard's `agent-rs/PLAN.md`. A
+  pinned version is installed after the migrations into
+  `<root>/<version>/graphyard-agent` (sha256-checked download or local
+  archive, only the regular files `graphyard-agent` and `LICENSE`, an
+  installed version is never replaced) and validated as `graphyard_user`
+  with `--version` and `--check-schema --db <django path>/db.sqlite3` before
+  anything switches. With `rust` the drop-in
+  `graphyard-agent.service.d/agent-impl.conf` replaces only `ExecStart`; with
+  `python` it is removed. A version change or switch reloads systemd and
+  restarts the agent; afterwards the role checks the live process
+  (`/proc/<pid>/exe` for Rust, `manage.py start_agent` argv for Python) and
+  prunes old versions, keeping the pinned, live and previously selected ones.
+  The default stays Python and installs nothing, so existing deploys are
+  unchanged. `graphyard_rsync_excludes` gains `agent-rs/target/`. New
+  Molecule scenario (`just test-graphyard-deploy-molecule`) and contract
+  tests (`just test-graphyard-deploy-agent`, part of `just test`).
+
 ## Unreleased — Rust ports: echoport-command-guard plan
 
 - Add `rust/echoport-command-guard/PLAN.md`, the plan for a Rust port of the `echoport_remote_command_guard` forced-command guard (Python guard as oracle, generated decision fixtures, stricter refusals only, an impl selector `python | shadow | rust` with Python as rollback, shadow runs, staging canary with rollback drills, and Python retirement), including the owner decisions of 2026-10-21. Plan only; no role behaviour changes.

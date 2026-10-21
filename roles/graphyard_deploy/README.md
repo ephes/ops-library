@@ -22,6 +22,10 @@ core Django runtime plus automation-owned InfluxDB and Grafana containers.
   - `graphyard-runtime.service`
   - `graphyard-web.service`
   - `graphyard-agent.service`
+- Optionally installs a pinned release of the Rust agent `graphyard-agent` and
+  selects it for `graphyard-agent.service` with a systemd drop-in (see
+  [Agent implementation](#agent-implementation-python-or-rust)); the default is
+  the Python agent.
 - Verifies deploy health via `GET /v1/health` on localhost.
 
 ## Requirements
@@ -69,6 +73,7 @@ core Django runtime plus automation-owned InfluxDB and Grafana containers.
 | `graphyard_web_workers` | `1` | Keep conservative for SQLite profile |
 | `graphyard_healthcheck_enabled` | `true` | Enable post-deploy health verification |
 | `graphyard_skip_django_manage` | `false` | Skip migrate/collectstatic in rollback workflows |
+| `graphyard_agent_impl` | `python` | `python` or `rust`; see [Agent implementation](#agent-implementation-python-or-rust) |
 
 See `defaults/main.yml` for the full variable set.
 
@@ -217,6 +222,124 @@ authentication or Basic username `inventory-monitor` and this secret as password
 This credential grants no ingest, UI-session or admin access. An external monitor
 must check expected host/source identities and freshness, not only zero failures.
 This role configures receiver access; check provisioning belongs to orchestration.
+
+## Agent implementation (Python or Rust)
+
+`graphyard-agent.service` runs either the Python agent from the venv
+(`manage.py start_agent`, the default) or its Rust port `graphyard-agent`, a
+single binary published as a GitHub release of graphyard (tag
+`agent-rs-v<version>`, asset
+`graphyard-agent-<version>-x86_64-unknown-linux-gnu.tar.gz`; the release build
+needs no glibc symbol newer than 2.35, so Ubuntu 22.04 or newer runs it). Both
+use the same database, `/etc/graphyard/graphyard.env`, user and working
+directory; only one of them runs at a time. The contract is section 8.3 of
+graphyard's `agent-rs/PLAN.md`.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `graphyard_agent_impl` | `python` | `python` or `rust`: which agent the unit starts |
+| `graphyard_agent_rust_version` | `""` | Release to install, e.g. `0.1.0`. Empty: nothing is installed, validated or pruned. Required for `rust` |
+| `graphyard_agent_rust_sha256` | `""` | sha256 of the release archive (64 lowercase hex digits); required with a version unless a local archive is used |
+| `graphyard_agent_rust_release_url` | GitHub release asset of `graphyard_agent_rust_version` | Download URL |
+| `graphyard_agent_rust_local_archive` | `""` | Controller path of an archive with the release layout; replaces the download (development). Checked against `graphyard_agent_rust_sha256` when both are set |
+| `graphyard_agent_rust_install_root` | `/opt/graphyard-agent` | Versions are installed to `<root>/<version>/graphyard-agent` |
+| `graphyard_agent_rust_keep_versions` | `3` | Newest installed versions kept by pruning |
+
+Set these in host variables, not in the play's role `vars:`, so the inventory
+is the one place to switch. A pinned version is installed with either
+implementation, which allows installing the binary ahead of the switch.
+
+What the role does, in order:
+
+1. Validates the settings before anything changes (`rust` needs a version; a
+   version needs a checksum or a local archive; a checksum or local archive
+   without a version is refused).
+2. After the migrations (`django.yml`), with a version set and
+   `<root>/<version>/` missing: downloads the archive with `get_url` and the
+   pinned checksum (or copies the local archive and checks its checksum),
+   refuses an archive that does not hold exactly the regular files
+   `graphyard-agent` and `LICENSE` at its root (checked with `tar --list`
+   before extraction; links and devices are refused), unpacks it into
+   `<root>/.staging/`, records the archive checksum in
+   `<root>/<version>/.archive-sha256` and moves the directory into place
+   (root-owned, `0755`). An installed version is never modified: the same
+   version from a different archive fails the run.
+3. Runs, as `graphyard_user` by the versioned path and without the
+   environment file (no secrets needed), `graphyard-agent --version` (must
+   print `graphyard-agent <version> (<commit>)`) and
+   `graphyard-agent --check-schema --db <django path>/db.sqlite3` (read-only).
+   A failure stops the play; a version installed in this run is removed
+   again, the drop-in, the running unit and the other versions stay as they
+   were.
+4. Writes `/etc/systemd/system/graphyard-agent.service.d/agent-impl.conf` for
+   `rust` and removes it for `python`:
+
+   ```ini
+   [Service]
+   ExecStart=
+   ExecStart=/opt/graphyard-agent/<version>/graphyard-agent --db /opt/apps/graphyard/site/src/django/db.sqlite3
+   ```
+
+   The base unit is unchanged: its Python `ExecStart`, `User`,
+   `EnvironmentFile`, `WorkingDirectory` and `Requires=graphyard-runtime.service`
+   apply to both implementations. The version is part of the drop-in, so a
+   version change or a switch changes the file, reloads systemd and restarts
+   the agent (`restart graphyard agent`); a deploy that changes neither
+   restarts nothing on its account.
+5. After the handlers ran: waits up to 30 s until the unit is active and its
+   main process is the selected agent: for `rust`, `readlink /proc/<pid>/exe`
+   equals the versioned binary; for `python`, the argv in `/proc/<pid>/cmdline`
+   is `<venv>/bin/python manage.py start_agent` and the executable is not
+   below the install root. Not in check mode.
+6. Only then, with a version set: prunes version directories beyond the
+   newest `graphyard_agent_rust_keep_versions` (by modification time). The
+   pinned version, the version the live process runs and the previously
+   selected one (`<root>/.previous-version`, written when the selection moves
+   away from a Rust version) are always kept; directories that are not
+   version-shaped are never touched.
+
+The Python venv keeps being built and updated for both implementations: the
+web app needs it and it is the rollback path.
+
+Example (host variables):
+
+```yaml
+# Install 0.1.0 next to the running Python agent, nothing switched
+graphyard_agent_impl: python
+graphyard_agent_rust_version: "0.1.0"
+graphyard_agent_rust_sha256: "<sha256 from the release's .sha256 asset>"
+
+# Switch: the next deploy writes the drop-in and restarts graphyard-agent
+graphyard_agent_impl: rust
+```
+
+Development build instead of a release (archive with the release layout):
+
+```yaml
+graphyard_agent_impl: rust
+graphyard_agent_rust_version: "0.1.0"
+graphyard_agent_rust_local_archive: /path/to/graphyard-agent-0.1.0-x86_64-unknown-linux-gnu.tar.gz
+```
+
+The default `graphyard_rsync_excludes` contain `agent-rs/target/`, so an
+`rsync` deploy from a local checkout never ships the Cargo build output of the
+Rust port.
+
+### Rollback
+
+- Back to Python: set `graphyard_agent_impl: python` and deploy. The drop-in
+  is removed and the unit restarts with the venv `manage.py start_agent` on
+  the same database; nothing in the database or InfluxDB depends on which
+  agent wrote it. The binary stays installed, so switching forward again
+  needs no download.
+- Emergency without Ansible, on the host:
+  `rm /etc/systemd/system/graphyard-agent.service.d/agent-impl.conf && systemctl daemon-reload && systemctl restart graphyard-agent`.
+  Set `graphyard_agent_impl: python` in the inventory before the next deploy,
+  or that deploy writes the drop-in again.
+- Bad Rust release: pin the previous `graphyard_agent_rust_version` and
+  `graphyard_agent_rust_sha256` again and deploy. Its directory is still
+  installed (pruning keeps the previously selected version), the drop-in
+  changes and the unit restarts.
 
 ## Restart behavior
 

@@ -1,0 +1,80 @@
+---
+# Run the role with settings it must refuse and prove that nothing switched:
+# same agent process, same drop-in, same installed versions and binaries.
+# Variables: refused_vars (role variables), refused_message (text expected in
+# the failure message).
+
+- name: Read the agent state before the refused run
+  ansible.builtin.shell: |
+    set -euo pipefail
+    printf 'pid=%s\n' "$(systemctl show --property=MainPID --value graphyard-agent)"
+    if [ -f "$dropin" ]; then printf 'dropin=%s\n' "$(sha256sum < "$dropin")"; fi
+    # .staging holds the archive of a run refused before extraction until the
+    # next run removes it; it is never selected or pruned.
+    find /opt/graphyard-agent -mindepth 1 -maxdepth 2 -not -path '/opt/graphyard-agent/.staging*' \
+      -printf '%P %y\n' | sort
+    for f in /opt/graphyard-agent/*/graphyard-agent; do
+      if [ -e "$f" ]; then printf 'binary=%s %s\n' "$f" "$(sha256sum < "$f")"; fi
+    done
+  args:
+    executable: /bin/bash
+  environment:
+    dropin: /etc/systemd/system/graphyard-agent.service.d/agent-impl.conf
+  changed_when: false
+  register: refused_state_before
+
+- name: Run the role with refused settings
+  block:
+    - name: Run graphyard_deploy
+      ansible.builtin.include_role:
+        name: graphyard_deploy
+      vars:
+        graphyard_agent_impl: "{{ refused_vars.graphyard_agent_impl }}"
+        graphyard_agent_rust_version: "{{ refused_vars.graphyard_agent_rust_version }}"
+        graphyard_agent_rust_local_archive: "{{ refused_vars.graphyard_agent_rust_local_archive }}"
+        graphyard_agent_rust_keep_versions: 1
+
+    - name: Record an unexpected success
+      ansible.builtin.set_fact:
+        refused_run_succeeded: true
+  rescue:
+    - name: Record the failure message
+      ansible.builtin.set_fact:
+        refused_run_message: "{{ ansible_failed_result.msg | default('') }}"
+
+- name: Read the agent state after the refused run
+  ansible.builtin.shell: |
+    set -euo pipefail
+    printf 'pid=%s\n' "$(systemctl show --property=MainPID --value graphyard-agent)"
+    if [ -f "$dropin" ]; then printf 'dropin=%s\n' "$(sha256sum < "$dropin")"; fi
+    # .staging holds the archive of a run refused before extraction until the
+    # next run removes it; it is never selected or pruned.
+    find /opt/graphyard-agent -mindepth 1 -maxdepth 2 -not -path '/opt/graphyard-agent/.staging*' \
+      -printf '%P %y\n' | sort
+    for f in /opt/graphyard-agent/*/graphyard-agent; do
+      if [ -e "$f" ]; then printf 'binary=%s %s\n' "$f" "$(sha256sum < "$f")"; fi
+    done
+  args:
+    executable: /bin/bash
+  environment:
+    dropin: /etc/systemd/system/graphyard-agent.service.d/agent-impl.conf
+  changed_when: false
+  register: refused_state_after
+
+- name: Assert the run was refused and nothing switched
+  ansible.builtin.assert:
+    that:
+      - not (refused_run_succeeded | default(false))
+      - refused_message in (refused_run_message | default(''))
+      - refused_state_after.stdout_lines == refused_state_before.stdout_lines
+    fail_msg: >-
+      The refused run changed the agent or was not refused as expected
+      (succeeded={{ refused_run_succeeded | default(false) }},
+      message={{ refused_run_message | default('') }}). Before:
+      {{ refused_state_before.stdout_lines }} After:
+      {{ refused_state_after.stdout_lines }}
+
+- name: Reset the outcome for the next refused run
+  ansible.builtin.set_fact:
+    refused_run_succeeded: false
+    refused_run_message: ""

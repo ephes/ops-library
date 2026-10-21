@@ -1,0 +1,126 @@
+---
+# After the handlers ran: prove graphyard-agent.service runs the selected
+# agent, then prune old Rust agent versions. A failed check stops the play
+# before anything is pruned.
+
+- name: agent_verify | Verify the running agent implementation
+  when: not ansible_check_mode
+  block:
+    # The uv venv interpreter is a symlink to a uv-managed Python outside the
+    # venv, so the Python agent is identified by its argv, the Rust agent by
+    # /proc/<pid>/exe.
+    - name: agent_verify | Read the live graphyard-agent process
+      ansible.builtin.shell: |
+        unit={{ graphyard_agent_unit | quote }}
+        printf 'state=%s\n' "$(systemctl is-active "$unit")"
+        pid=$(systemctl show --property=MainPID --value "$unit")
+        printf 'pid=%s\n' "$pid"
+        if [ "${pid:-0}" -gt 0 ] 2>/dev/null; then
+          printf 'exe=%s\n' "$(readlink "/proc/$pid/exe")"
+          while IFS= read -r -d '' arg; do
+            printf 'arg=%s\n' "$arg"
+          done < "/proc/$pid/cmdline"
+        fi
+      args:
+        executable: /bin/bash
+      changed_when: false
+      failed_when: false
+      register: graphyard_agent_live
+      retries: 10
+      delay: 3
+      until:
+        - "'state=active' in graphyard_agent_live.stdout_lines | default([])"
+        - >-
+          graphyard_agent_expected_lines
+          | difference(graphyard_agent_live.stdout_lines | default([]))
+          | length == 0
+      vars:
+        graphyard_agent_expected_lines: >-
+          {{
+            ['exe=' ~ graphyard_agent_rust_binary]
+            if graphyard_agent_impl == 'rust'
+            else ['arg=' ~ graphyard_venv_bin ~ '/python', 'arg=manage.py', 'arg=start_agent']
+          }}
+
+    - name: agent_verify | Assert graphyard-agent runs the selected agent
+      ansible.builtin.assert:
+        that:
+          - "'state=active' in graphyard_agent_live.stdout_lines"
+          - >-
+            graphyard_agent_expected_lines
+            | difference(graphyard_agent_live.stdout_lines)
+            | length == 0
+          - >-
+            graphyard_agent_impl == 'rust' or
+            graphyard_agent_live.stdout_lines
+            | select('match', 'exe=' ~ (graphyard_agent_rust_install_root | regex_escape) ~ '/')
+            | list | length == 0
+        fail_msg: |-
+          {{ graphyard_agent_unit }}.service does not run the selected agent
+          (graphyard_agent_impl={{ graphyard_agent_impl }}); expected
+          {{ graphyard_agent_expected_lines | join(', ') }}. Live process:
+          {{ graphyard_agent_live.stdout_lines | join('\n') }}
+      vars:
+        graphyard_agent_expected_lines: >-
+          {{
+            ['exe=' ~ graphyard_agent_rust_binary]
+            if graphyard_agent_impl == 'rust'
+            else ['arg=' ~ graphyard_venv_bin ~ '/python', 'arg=manage.py', 'arg=start_agent']
+          }}
+
+- name: agent_verify | Prune old Rust agent versions
+  when:
+    - graphyard_agent_rust_version | length > 0
+    - not ansible_check_mode
+  block:
+    - name: agent_verify | Find installed Rust agent versions
+      ansible.builtin.find:
+        paths: "{{ graphyard_agent_rust_install_root }}"
+        file_type: directory
+        recurse: false
+        hidden: false
+      register: graphyard_agent_rust_installed
+
+    - name: agent_verify | Read the previously selected Rust version
+      ansible.builtin.slurp:
+        path: "{{ graphyard_agent_rust_install_root }}/.previous-version"
+      register: graphyard_agent_rust_previous
+      failed_when: false
+
+    # Kept: the pinned version (active with impl rust), the rollback target,
+    # the version the live process runs and the newest
+    # graphyard_agent_rust_keep_versions installs. Directories that are not
+    # version-shaped are never touched.
+    - name: agent_verify | Decide which Rust agent versions to keep
+      ansible.builtin.set_fact:
+        graphyard_agent_rust_versions_installed: "{{ graphyard_agent_rust_version_dirs | map(attribute='path') | map('basename') | list }}"
+        graphyard_agent_rust_versions_kept: >-
+          {{
+            (
+              [graphyard_agent_rust_version, graphyard_agent_rust_previous_version, graphyard_agent_rust_live_version]
+              + (graphyard_agent_rust_version_dirs | sort(attribute='mtime', reverse=true)
+                 | map(attribute='path') | map('basename') | list)[:graphyard_agent_rust_keep_versions | int]
+            ) | select | unique | list
+          }}
+      vars:
+        graphyard_agent_rust_version_dirs: >-
+          {{
+            graphyard_agent_rust_installed.files
+            | selectattr('path', 'regex', '/[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?$')
+            | list
+          }}
+        graphyard_agent_rust_previous_version: "{{ graphyard_agent_rust_previous.content | default('') | b64decode | trim }}"
+        graphyard_agent_rust_live_version: >-
+          {{
+            (
+              graphyard_agent_live.stdout_lines | default([])
+              | map('regex_search', '^exe=' ~ (graphyard_agent_rust_install_root | regex_escape) ~ '/([^/]+)/', '\1')
+              | select | map('first') | list | first
+            ) | default('', true)
+          }}
+
+    - name: agent_verify | Remove Rust agent versions beyond the kept ones
+      ansible.builtin.file:
+        path: "{{ graphyard_agent_rust_install_root }}/{{ item }}"
+        state: absent
+      loop: "{{ graphyard_agent_rust_versions_installed | difference(graphyard_agent_rust_versions_kept) }}"
