@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Rust ports: release pipeline with per-binary tags (foundation F2)
+
+- New GitHub Actions workflow `.github/workflows/rust-release.yml` (slice F2 of `rust/PLAN-foundation.md`): a pushed tag `metrics-httpd-v<semver>`, `echoport-command-guard-v<semver>` or `software-live-v<semver>` builds that crate for `x86_64-unknown-linux-gnu` on `ubuntu-22.04` (glibc 2.35) after fmt, clippy and the workspace tests, checks every binary's glibc ceiling and `NEEDED` libraries and its `--version` line (`<binary> <version> (<commit>)`), packs a deterministic `<crate>-<version>-x86_64-unknown-linux-gnu[-<variant>].tar.gz` with a `.sha256` file and publishes the GitHub release `<crate> <version>` (never marked latest; only the publish job may write). `workflow_dispatch` with a crate runs the same build and checks and keeps the archives as workflow artifacts. New stdlib script `rust/scripts/release_checks.py` (`tag`, `matrix`, `glibc-floor`, `smoke`, `verify`, `pack`) with tests and a two-variant fixture; an optional `rust/<crate>/release.json` declares build variants (container image, apt packages, members to build, archive binaries with their own glibc ceiling, extra `NEEDED` sonames and smoke commands, archive files). Release how-to in `rust/README.md` "Releases". No role behaviour changes; nothing is installed anywhere.
+
 ## Unreleased — ca_trust_consumers: Node.js trust in sudo sessions (2.64.2)
 
 - `ca_trust_consumers` with `ca_trust_consumers_node_cli` now also gives sudo
@@ -14,6 +18,7 @@
   makes the role fail.
   `ca_trust_consumers_node_cli_sudo: false` turns this off.
 
+||||||| parent of 050a2521 (Add the Rust release pipeline with per-binary tags, release_checks.py and the release.json variant format)
 ## Unreleased — opsgate_deploy leaves the Rust port out of the Python app dirs
 
 - `opsgate_deploy`: `opsgate_rsync_excludes` gains `/rust/`, so the source

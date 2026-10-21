@@ -1,0 +1,295 @@
+---
+name: Rust release
+
+# Release pipeline of the Rust workspace in rust/ (rust/PLAN-foundation.md
+# section 4, rust/README.md "Releases"), adapted from mailgun-relay's
+# rust-release.yml for several binaries with their own tags.
+#
+# - Tag `<crate>-v<semver>`: rust/scripts/release_checks.py resolves the
+#   crate (the longest workspace member whose `<member>-v` prefixes the tag;
+#   it must have a binary of its name and exactly that version). Then fmt,
+#   clippy and the workspace tests on the runner (without the CI-excluded
+#   members, as rust.yml), one build job per variant of the crate's
+#   rust/<crate>/release.json (default: one unnamed variant on the runner),
+#   each with its glibc/NEEDED check, `--version` smoke test and a
+#   deterministic archive + sha256 file, and finally one GitHub release
+#   `<crate> <version>` with every archive (never marked "latest").
+# - workflow_dispatch with a crate: the same checks and builds, uploaded as
+#   workflow artifacts only (no tag, no release).
+#
+# No cargo cache: release builds start from a clean state. Only the publish
+# job gets `contents: write`. Actions are pinned by commit SHA (the ones
+# mailgun-relay's workflows use).
+
+"on":
+  push:
+    tags:
+      - "metrics-httpd-v*"
+      - "echoport-command-guard-v*"
+      - "software-live-v*"
+  workflow_dispatch:
+    inputs:
+      crate:
+        description: Crate to build and check (no release)
+        type: choice
+        required: true
+        default: metrics-httpd
+        options:
+          - metrics-httpd
+          - echoport-command-guard
+          - software-live
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-release-${{ github.ref }}-${{ inputs.crate || 'tag' }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  TARGET: x86_64-unknown-linux-gnu
+
+jobs:
+  prepare:
+    name: Resolve the crate, workspace checks
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        # An explicit bash adds `-o pipefail`: a failing check piped into
+        # `tee` still fails the step.
+        shell: bash
+        working-directory: rust
+    outputs:
+      crate: ${{ steps.crate.outputs.crate }}
+      version: ${{ steps.crate.outputs.version }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      mtime: ${{ steps.mtime.outputs.mtime }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned toolchain (rust/rust-toolchain.toml)
+        run: |
+          rustup toolchain install
+          rustc --version
+          python3 --version
+      - name: Resolve the crate and version (a tag must equal the crate version)
+        id: crate
+        env:
+          INPUT_CRATE: ${{ inputs.crate }}
+        run: |
+          cargo metadata --format-version 1 --no-deps --locked > "$RUNNER_TEMP/metadata.json"
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            if [ "$GITHUB_REF_TYPE" != tag ]; then
+              echo "release check failed: push of $GITHUB_REF is not a tag" >&2
+              exit 1
+            fi
+            python3 -I scripts/release_checks.py tag --metadata "$RUNNER_TEMP/metadata.json" --tag "$GITHUB_REF_NAME" \
+              | tee -a "$GITHUB_OUTPUT"
+          else
+            python3 -I scripts/release_checks.py tag --metadata "$RUNNER_TEMP/metadata.json" --crate "$INPUT_CRATE" \
+              | tee -a "$GITHUB_OUTPUT"
+          fi
+      - name: Build matrix (rust/<crate>/release.json or the defaults)
+        id: matrix
+        env:
+          CRATE: ${{ steps.crate.outputs.crate }}
+        run: |
+          python3 -I scripts/release_checks.py matrix --metadata "$RUNNER_TEMP/metadata.json" --crate "$CRATE" \
+            | tee -a "$GITHUB_OUTPUT"
+      - name: Archive mtime (commit time)
+        id: mtime
+        run: echo "mtime=$(git log -1 --format=%ct)" | tee -a "$GITHUB_OUTPUT"
+      - name: Members left out of the runner checks ([workspace.metadata.ci] exclude)
+        id: excludes
+        run: |
+          args=$(python3 -I scripts/ci_excludes.py "$RUNNER_TEMP/metadata.json")
+          echo "exclude arguments: ${args:-(none)}"
+          echo "args=${args}" >> "$GITHUB_OUTPUT"
+      - name: Format (cargo fmt)
+        run: cargo fmt --check
+      - name: Lint (cargo clippy)
+        env:
+          EXCLUDES: ${{ steps.excludes.outputs.args }}
+        # EXCLUDES holds package names only (validated by ci_excludes.py).
+        run: |
+          read -r -a exclude_args <<< "$EXCLUDES"
+          cargo clippy --workspace "${exclude_args[@]}" --all-targets --locked -- -D warnings
+      - name: Tests (cargo test)
+        env:
+          EXCLUDES: ${{ steps.excludes.outputs.args }}
+        run: |
+          read -r -a exclude_args <<< "$EXCLUDES"
+          cargo test --workspace "${exclude_args[@]}" --locked
+      - name: Script tests (rust/scripts, stdlib Python)
+        run: python3 -I -m unittest discover -s scripts -p 'test_*.py' -v
+
+  build:
+    name: Build ${{ matrix.archive }}
+    needs: prepare
+    runs-on: ubuntu-22.04
+    # An empty image (the default variant) runs the job on the runner itself
+    # (ubuntu-22.04, glibc 2.35).
+    container: ${{ matrix.image }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: rust
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      ENTRY: ${{ toJSON(matrix) }}
+    steps:
+      - name: Base and build packages of the variant image
+        if: matrix.image != ''
+        working-directory: .
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          # Debian package names only (validated by release_checks.py).
+          PACKAGES: ${{ matrix.packages }}
+        run: |
+          read -r -a packages <<< "$PACKAGES"
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            binutils ca-certificates curl gcc git libc6-dev python3 "${packages[@]}"
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install rustup in the variant image (pinned release, sha256 checked)
+        if: matrix.image != ''
+        working-directory: .
+        env:
+          RUSTUP_VERSION: "1.29.1"
+          RUSTUP_SHA256: dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71  # pragma: allowlist secret
+        run: |
+          init="$RUNNER_TEMP/rustup-init"
+          curl --proto '=https' --tlsv1.2 -sSfL -o "$init" \
+            "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${TARGET}/rustup-init"
+          echo "${RUSTUP_SHA256}  ${init}" | sha256sum --check
+          chmod 0755 "$init"
+          "$init" -y --no-modify-path --profile minimal --default-toolchain none
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Install the pinned toolchain (rust/rust-toolchain.toml)
+        run: |
+          rustup toolchain install
+          rustc --version
+          python3 --version
+          objdump --version | head -n 1
+      - name: Commit for the --version lines (<CRATE>_GIT_COMMIT of each build.rs)
+        env:
+          # Variable names derived from package names (validated by release_checks.py).
+          COMMIT_ENV: ${{ matrix.commit_env }}
+        run: |
+          read -r -a names <<< "$COMMIT_ENV"
+          for name in "${names[@]}"; do
+            echo "${name}=${GITHUB_SHA}" | tee -a "$GITHUB_ENV"
+          done
+      - name: Lint and test the CI-excluded members inside the variant image
+        if: matrix.container_checks != ''
+        env:
+          CHECKS: ${{ matrix.container_checks }}
+        run: |
+          read -r -a members <<< "$CHECKS"
+          cargo clippy "${members[@]}" --all-targets --locked -- -D warnings
+          cargo test "${members[@]}" --locked
+      - name: Release build
+        env:
+          BUILD_ARGS: ${{ matrix.build_args }}
+        run: |
+          read -r -a members <<< "$BUILD_ARGS"
+          cargo build --release --locked --target "$TARGET" "${members[@]}"
+      - name: GLIBC ceiling, NEEDED allowlist and smoke test of every binary
+        run: |
+          python3 -I scripts/release_checks.py verify --entry "$ENTRY" \
+            --bin-dir "target/$TARGET/release" --commit "$GITHUB_SHA" \
+            | tee -a "$RUNNER_TEMP/checks.log"
+      - name: Pack archive and checksum
+        env:
+          ARCHIVE: ${{ matrix.archive }}
+          MTIME: ${{ needs.prepare.outputs.mtime }}
+        run: |
+          dist="$RUNNER_TEMP/dist"
+          python3 -I scripts/release_checks.py pack --entry "$ENTRY" \
+            --bin-dir "target/$TARGET/release" --repo-root .. \
+            --mtime "$MTIME" --out-dir "$dist"
+          (cd "$dist" && sha256sum --check "${ARCHIVE}.sha256")
+          sha256=$(cut -d ' ' -f 1 "$dist/${ARCHIVE}.sha256")
+          {
+            echo "### ${ARCHIVE}"
+            echo
+            echo "- commit: \`${GITHUB_SHA}\`"
+            echo "- sha256: \`${sha256}\`"
+            tar -tzvf "$dist/${ARCHIVE}" | while read -r mode owner size rest; do
+              echo "- member: \`${rest##* }\` (${mode}, ${owner}, ${size} bytes)"
+            done
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/checks.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload archive and checksum
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ runner.temp }}/dist/${{ matrix.archive }}
+            ${{ runner.temp }}/dist/${{ matrix.archive }}.sha256
+          if-no-files-found: error
+
+  publish:
+    name: GitHub release
+    needs: [prepare, build]
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Download archives and checksums
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: ${{ needs.prepare.outputs.crate }}-${{ needs.prepare.outputs.version }}-*
+          merge-multiple: true
+          path: dist
+      - name: Verify the checksums (exactly the archives of the matrix)
+        env:
+          MATRIX: ${{ needs.prepare.outputs.matrix }}
+        run: |
+          expected=$(python3 -I -c 'import json, os; print("\n".join(sorted(n for e in json.loads(os.environ["MATRIX"])["include"] for n in (e["archive"], e["archive"] + ".sha256"))))')
+          found=$(cd dist && ls -1 | LC_ALL=C sort)
+          if [ "$found" != "$(printf '%s\n' "$expected" | LC_ALL=C sort)" ]; then
+            printf 'release check failed: dist holds\n%s\nexpected\n%s\n' "$found" "$expected" >&2
+            exit 1
+          fi
+          cd dist && sha256sum --check ./*.sha256
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CRATE: ${{ needs.prepare.outputs.crate }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          notes="${CRATE} ${VERSION}, built from ${GITHUB_SHA} for ${TARGET} by .github/workflows/rust-release.yml.
+
+          sha256:
+          $(cd dist && cat ./*.sha256)"
+          # A semver pre-release version (0.3.0-rc.1) becomes a GitHub pre-release.
+          prerelease=()
+          case "$VERSION" in *-*) prerelease=(--prerelease) ;; esac
+          files=()
+          for checksum in dist/*.sha256; do
+            files+=("${checksum%.sha256}" "$checksum")
+          done
+          # --latest=false: the repository's "latest release" never points at a binary.
+          gh release create "$GITHUB_REF_NAME" "${files[@]}" \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --latest=false "${prerelease[@]}" \
+            --title "${CRATE} ${VERSION}" --notes "$notes"
