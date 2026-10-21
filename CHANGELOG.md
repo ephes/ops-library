@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## Unreleased — bounded container trust activation (2.63.1)
 
 - Add bounded trust-only Compose fleet activation with exact installed image retention, private receipts, recovery, and one Docker daemon restart. Optional `container_ca_activate_livekit_config` performs read-only room/egress idle preflight and requires existing target PyYAML.
 
