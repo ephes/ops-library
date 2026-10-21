@@ -186,6 +186,9 @@
         rust_release_binary_consumer: "{{ metrics_httpd_switch_service_name }}"
         rust_release_binary_state: "{{ 'present' if metrics_httpd_switch_impl == 'rust' else 'absent' }}"
         rust_release_binary_version: "{{ _metrics_httpd_switch_selected.version }}"
+      # Only impl python gets here with an invalid root (select warned): no
+      # release can be installed there, so there is no pin to move.
+      when: metrics_httpd_switch_install_root | local.ops_library.rust_release_root_ok
 
     # Never pruned: every pin of every unit, the newest keep_versions, the
     # version this unit runs and the one its drop-in named before this run.
@@ -205,3 +208,4 @@
              + [_metrics_httpd_switch_selected.before_binary])
             | select | unique | list
           }}
+      when: metrics_httpd_switch_install_root | local.ops_library.rust_release_root_ok

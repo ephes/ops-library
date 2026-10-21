@@ -1087,6 +1087,12 @@ class SwitchPlaybookTests(unittest.TestCase):
             self.assertIn("would be refused", result["out"])
             self.assertEqual(result["recap"]["ignored"], 1, result["out"])
             self.assertEqual(len(self.systemd_run_calls()), calls, overrides)  # no --check-config
+        # An invalid install root: the install warns too; no pin or prune runs.
+        self.ok("rust", "0.1.0")
+        result = self.ok("python", "0.1.0", metrics_httpd_switch_install_root="/opt/../x")
+        self.assertFalse(self.dropin.exists())
+        self.assertEqual(result["recap"]["ignored"], 2, result["out"])
+        self.assertEqual(self.pins()[UNIT], "0.1.0\n")  # the pin step did not run
 
     # -- verify ------------------------------------------------------------------
 
