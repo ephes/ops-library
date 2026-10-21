@@ -347,6 +347,13 @@ echoport-command-guard-layer2:
 echoport-command-guard-layer3:
     @rust/echoport-command-guard/parity/e2e/run-layer3.sh
 
+# Lean measurements of the Rust echoport-command-guard (PLAN.md 8.3): the Rust
+# and the Python guard in the Layer-3 containers, median of 20 runs, against
+# the budgets. Needs Docker; the recorded numbers come from the x86_64 runner
+# of the `rust` workflow started by hand (`gh workflow run rust.yml`).
+echoport-command-guard-lean:
+    @rust/echoport-command-guard/parity/e2e/run-lean.sh
+
 # Fuzz the Rust echoport-command-guard (PLAN.md 7.4): the four cargo-fuzz
 # targets for an hour each (or `seconds`), in containers with a pinned
 # nightly. Needs Docker; updates rust/echoport-command-guard/fuzz/corpus/.

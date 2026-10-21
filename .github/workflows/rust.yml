@@ -148,3 +148,28 @@ jobs:
         run: cargo deny --locked check
       - name: Script tests (rust/scripts, stdlib Python)
         run: python3 -I -m unittest discover -s scripts -p 'test_*.py' -v
+
+  echoport-command-guard-lean:
+    name: echoport-command-guard lean measurements (manual runs only)
+    # rust/echoport-command-guard/PLAN.md 8.3: the Rust and the Python guard in
+    # both Layer-3 containers (Ubuntu 24.04, Debian 13) on this x86_64 runner,
+    # median of 20 runs; fails when the Rust guard exceeds a budget. Only when
+    # the workflow is started by hand (gh workflow run rust.yml --ref <ref>),
+    # not on pushes or pull requests. The report is the job summary.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Lean measurements (parity/e2e/run-lean.sh)
+        env:
+          ECHOPORT_E2E_SUFFIX: -ci
+        run: |
+          echo "runner: $(uname -m), $(nproc) CPUs"
+          rust/echoport-command-guard/parity/e2e/run-lean.sh | tee -a "$GITHUB_STEP_SUMMARY"
