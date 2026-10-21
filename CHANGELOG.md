@@ -6,6 +6,18 @@
 
 - `container_ca_activate`: Persist CA-only overrides through existing systemd Compose owners, with guarded start/reload, explicit hash-approved reconciliation, and bounded recovery without restarting Docker.
 
+## Unreleased — Rust ports: metrics-httpd release 0.1.0 (S4)
+
+- `rust/metrics-httpd` (slice S4 of `rust/metrics-httpd/PLAN.md`): the
+  crate version is now `0.1.0` (`metrics-httpd --version` prints
+  `metrics-httpd 0.1.0 (<commit>)`) and is released by the tag
+  `metrics-httpd-v0.1.0` through `rust-release.yml`: the GitHub release
+  `metrics-httpd 0.1.0` carries
+  `metrics-httpd-0.1.0-x86_64-unknown-linux-gnu.tar.gz` (binary and
+  `LICENSE`, built on ubuntu-22.04, glibc floor 2.35) and its `.sha256`.
+  `rust/metrics-httpd/README.md` has a "Release" section. No role pins the
+  release yet (S5a–S5e); nothing is installed anywhere.
+
 ## Unreleased — Rust ports: metrics-httpd parity harness and shadow comparer (S3)
 
 - `rust/metrics-httpd` (slice S3 of `rust/metrics-httpd/PLAN.md`):
