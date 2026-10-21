@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased — container_ca_activate: native owner trust persistence
+## [2.64.3] - 2026-10-21
 
-- Persist CA-only overrides through existing systemd Compose owners, with guarded start/reload, explicit hash-approved reconciliation, and bounded recovery without restarting Docker.
+### Security
+
+- `container_ca_activate`: Persist CA-only overrides through existing systemd Compose owners, with guarded start/reload, explicit hash-approved reconciliation, and bounded recovery without restarting Docker.
 
 ## Unreleased — Rust ports: metrics-httpd json-file mode (S2a)
 
