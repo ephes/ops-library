@@ -1,0 +1,87 @@
+---
+ops_library_documentation_category: operations
+
+# --- CA readiness gate -------------------------------------------------------
+# The role changes and restarts nothing until the host's CA store is fixed:
+# the CA package must be at least this dpkg version, and none of the forbidden
+# roots may be visible in the scanned paths. Required (distribution-specific),
+# for example "20260816ubuntu0.24.04.1" (Ubuntu 24.04) or "20250419+deb13u1".
+ca_trust_consumers_ca_package: ca-certificates
+ca_trust_consumers_ca_min_version: ""
+
+# SHA-256 certificate fingerprints that must not be trusted. Defaults: the four
+# roots behind the October 2026 eMudhra intermediate CA key compromise
+# (https://emudhra.we-have-a-problem.com/roots.json): emSign ECC Root CA - G3,
+# AAA Certificate Services, emSign Root TLS CA - G3, emSign Root CS CA - G3.
+ca_trust_consumers_forbidden_root_sha256:
+  - 86A1ECBA089C4A8D3BBE2734C612BA341D813E043CF9E8A862CD5C57A36BBE6B
+  - D7A7A0FB5D7E2731D771E9484EBCDEF71D5F0C3E0A2948782BC83EE0EA699EF4
+  - 7DD78D5F4F13459A83DFF9ABBBA62EDBAF6F2D102BF257FD712F4D9F2746ED8D
+  - F2EDAAFF3D9B701FB4D14C9F285F8C0BAD90FC3BCC1FA07D47F4718EDABA34A5
+
+# What Go's crypto/x509 reads on Linux (first bundle file plus every file in
+# the certificate directories) and what Node.js's bundled OpenSSL
+# (OPENSSLDIR /etc/ssl: cert.pem, then hashed lookups in certs/) resolves to.
+ca_trust_consumers_root_paths:
+  - /etc/ssl/certs/ca-certificates.crt
+  - /etc/ssl/cert.pem
+  - /etc/ssl/certs
+  - /etc/pki/tls/certs
+
+# Bundle whose modification time marks the last CA store update. A consumer
+# whose main process started before it still holds the old roots in memory.
+ca_trust_consumers_ca_bundle: /etc/ssl/certs/ca-certificates.crt
+
+# --- Node.js trust mode --------------------------------------------------------
+# Node.js uses its compiled-in Mozilla store unless told otherwise, so a fixed
+# OS store does not help it. --use-openssl-ca replaces that store with OpenSSL's
+# default store (the system one). --use-system-ca is additive and NOT enough.
+ca_trust_consumers_node_flag: "--use-openssl-ca"
+
+# Add the flag to NODE_OPTIONS in /etc/environment (read by pam_env), so login,
+# SSH, sudo, su and cron sessions (npm, npx, corepack, yarn, pnpm and other
+# Node CLIs, including those run by Ansible and pyinfra deploys) get it. An
+# existing NODE_OPTIONS line is kept and the flag appended.
+ca_trust_consumers_node_cli: false
+ca_trust_consumers_environment_file: /etc/environment
+
+# Node.js systemd services that get a drop-in setting NODE_OPTIONS (pam_env
+# does not apply to services). The unit's own NODE_OPTIONS from Environment= is
+# kept; one set by an EnvironmentFile= makes the role fail instead.
+#   ca_trust_consumers_node_units:
+#     - name: mastodon-streaming.service
+#       health_command: curl -fsS -o /dev/null http://127.0.0.1:4000/api/v1/streaming/health
+ca_trust_consumers_node_units: []
+ca_trust_consumers_node_dropin_name: 50-ca-trust-node.conf
+
+# --- Restarts --------------------------------------------------------------------
+# Other long-running TLS clients (for example Go services, which load system
+# roots once per process) to restart when their main process started before
+# the CA bundle changed. Units that are not running are never started.
+# detached: true restarts through a transient systemd-run unit and then waits
+# for the connection, for units the controller's SSH path may depend on
+# (tailscaled); connect over another path when it does.
+# A restart is refused when it would also activate something staged since the
+# process started: a replaced executable, a changed unit file or drop-in, or
+# a path in guard_paths (config files, release symlinks) changed after the
+# process started. allow_staged_changes: true overrides that per entry.
+# guard_paths and allow_staged_changes apply to node_units entries too.
+#   ca_trust_consumers_restart_units:
+#     - name: traefik.service
+#       guard_paths: [/etc/traefik/traefik.toml]
+#       health_command: ss -ltnH 'sport = :443' | grep -q .
+#     - name: tailscaled.service
+#       detached: true
+#       health_command: tailscale status --json | python3 -c 'import json,sys; sys.exit(json.load(sys.stdin)["BackendState"] != "Running")'
+ca_trust_consumers_restart_units: []
+
+# false: only report which units would be restarted (drop-ins and the
+# environment file are still written).
+ca_trust_consumers_restart: true
+
+# Health command polling after each restart.
+ca_trust_consumers_health_retries: 12
+ca_trust_consumers_health_delay: 5
+
+# Detached restarts: how long to wait for the controller connection.
+ca_trust_consumers_reconnect_timeout: 180

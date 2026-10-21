@@ -1,0 +1,5 @@
+# {{ ansible_managed }} (ops-library ca_trust_consumers)
+# Node.js uses its compiled-in CA store unless told otherwise;
+# {{ ca_trust_consumers_node_flag }} makes it use the system (OpenSSL) store.
+[Service]
+Environment="NODE_OPTIONS={{ ca_trust_consumers_node_options }}"
