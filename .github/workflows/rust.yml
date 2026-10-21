@@ -7,7 +7,9 @@ name: Rust
 # 8.1: Python 3.12 for the oracle tests, the fixture drift check). The
 # Ansible/Python test suite of the collection stays local (`just test`).
 # Members listed in `[workspace.metadata.ci] exclude` of rust/Cargo.toml are
-# left out of this job; their stream adds its own job.
+# left out of this job; their stream adds its own job: software-live-apt
+# (libapt-pkg, rust-apt) is built and tested in the job `software-live-apt`
+# inside its two variant images (rust/software-live/PLAN.md 7.4).
 # Actions are pinned by commit SHA (the ones mailgun-relay's workflows use).
 
 "on":
@@ -19,12 +21,16 @@ name: Rust
       - ".github/workflows/rust*.yml"
       # The Python endpoint scripts the metrics-httpd parity harness runs.
       - "roles/**/*httpd*"
+      # The python-apt oracle of the software-live-apt comparison.
+      - "roles/software_live/files/software_live.py"
   pull_request:
     paths:
       - "rust/**"
       - ".github/workflows/rust*.yml"
       # The Python endpoint scripts the metrics-httpd parity harness runs.
       - "roles/**/*httpd*"
+      # The python-apt oracle of the software-live-apt comparison.
+      - "roles/software_live/files/software_live.py"
   workflow_dispatch:
 
 permissions:
@@ -135,7 +141,7 @@ jobs:
       - name: Install cargo-deny (pinned release, sha256 checked)
         env:
           CARGO_DENY_VERSION: "0.20.2"
-          CARGO_DENY_SHA256: 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f
+          CARGO_DENY_SHA256: 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f  # pragma: allowlist secret
         run: |
           name="cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl"
           curl --proto '=https' --tlsv1.2 -sSfL -o "$RUNNER_TEMP/${name}.tar.gz" \
@@ -146,6 +152,14 @@ jobs:
           cargo deny --version
       - name: Supply chain (cargo deny, rust/deny.toml)
         run: cargo deny --locked check
+      - name: rust-apt only in software-live-apt (release_checks.py apt-isolation)
+        # rust/software-live/PLAN.md 7.4: deny.toml allows GPL-3.0-or-later
+        # for rust-apt and software-live-apt by crate; this check fails when
+        # any other member can reach rust-apt (normal, build or dev edges,
+        # every feature and platform). cargo metadata needs no libapt-pkg.
+        run: |
+          cargo metadata --format-version 1 --locked --all-features > "$RUNNER_TEMP/metadata-full.json"
+          python3 -I scripts/release_checks.py apt-isolation --metadata "$RUNNER_TEMP/metadata-full.json"
       - name: Script tests (rust/scripts, stdlib Python)
         run: python3 -I -m unittest discover -s scripts -p 'test_*.py' -v
 
@@ -173,3 +187,50 @@ jobs:
         run: |
           echo "runner: $(uname -m), $(nproc) CPUs"
           rust/echoport-command-guard/parity/e2e/run-lean.sh | tee -a "$GITHUB_STEP_SUMMARY"
+
+  software-live-apt:
+    # rust/software-live/PLAN.md 7.1, 7.4, 13.6: the APT helper links the
+    # distribution's libapt-pkg (rust-apt), so it is built per variant inside
+    # the variant's image: clippy and tests (including version comparison
+    # against python-apt), the release build with its GLIBC ceiling and
+    # NEEDED allowlist, `--version`, then the fake APT world of
+    # container/setup-world.sh and the comparison with software_live.py's
+    # observe_apt (container/compare.py). `just rs-software-live-apt` runs
+    # the same scripts locally in Docker.
+    name: software-live-apt (${{ matrix.variant }})
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: ubuntu24.04
+            image: ubuntu:24.04
+          - variant: debian13
+            image: debian:13
+    defaults:
+      run:
+        shell: bash
+        working-directory: rust
+    env:
+      CARGO_TERM_COLOR: always
+      SOFTWARE_LIVE_APT_CONTAINER: "yes"
+    steps:
+      - name: Base packages for the checkout (git, ca-certificates)
+        working-directory: /
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates git
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build and test dependencies, rustup (container/deps.sh)
+        run: |
+          software-live-apt/container/deps.sh
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Checks inside the variant image (container/run.sh)
+        run: software-live-apt/container/run.sh

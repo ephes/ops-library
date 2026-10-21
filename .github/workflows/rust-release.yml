@@ -9,8 +9,9 @@ name: Rust release
 #   crate (the longest workspace member whose `<member>-v` prefixes the tag;
 #   it must have a binary of its name and exactly that version). Then fmt,
 #   clippy and the workspace tests on the runner (without the CI-excluded
-#   members, as rust.yml), one build job per variant of the crate's
-#   rust/<crate>/release.json (default: one unnamed variant on the runner),
+#   members, as rust.yml) and the rust-apt isolation check, one build job
+#   per variant of the crate's rust/<crate>/release.json (default: one
+#   unnamed variant on the runner),
 #   each with its glibc/NEEDED check, `--version` smoke test and a
 #   deterministic archive + sha256 file, and finally one GitHub release
 #   `<crate> <version>` with every archive (never marked "latest").
@@ -126,6 +127,12 @@ jobs:
           cargo test --workspace "${exclude_args[@]}" --locked
       - name: Script tests (rust/scripts, stdlib Python)
         run: python3 -I -m unittest discover -s scripts -p 'test_*.py' -v
+      - name: rust-apt only in software-live-apt (release_checks.py apt-isolation)
+        # rust/software-live/PLAN.md 7.4: before any archive is packed, no
+        # MIT member may reach the GPL-3.0-or-later rust-apt.
+        run: |
+          cargo metadata --format-version 1 --locked --all-features > "$RUNNER_TEMP/metadata-full.json"
+          python3 -I scripts/release_checks.py apt-isolation --metadata "$RUNNER_TEMP/metadata-full.json"
 
   build:
     name: Build ${{ matrix.archive }}

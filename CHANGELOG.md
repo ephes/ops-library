@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased — software-live Rust port: APT helper
+
+- New Rust crate `rust/software-live-apt` (slice S3d of
+  `rust/software-live/PLAN.md`): the APT observation of `software_live.py`
+  (`observe_apt`, `security_packages`, holds, index ages) through
+  `rust-apt`, as a separate helper binary licensed GPL-3.0-or-later
+  (`LICENSE.GPL-3.0`); `software-live` runs it as a child process
+  (`src/apt.rs`) and links no libapt-pkg. `rust/deny.toml` allows
+  GPL-3.0-or-later for `rust-apt` and the helper only; the new
+  `rust/scripts/release_checks.py apt-isolation` (CI and the release
+  `prepare` job) fails when any other member can reach `rust-apt`. Nothing
+  installs or runs the helper; the `software_live` role is unchanged.
+- CI: the helper is left out of the default `rust` job and built, linted
+  and tested in the new `software-live-apt` job inside `ubuntu:24.04` and
+  `debian:13`, which also compares it with python-apt (`software_live.py`)
+  on a fake APT world. New recipe `just rs-software-live-apt` runs the same
+  in Docker.
+- The S1 mapping of `apt_pkg.version_compare` to rust-apt's `cmp_versions`
+  read past the end of non-NUL-terminated strings (libapt-pkg's
+  `CmpFragment` expects C strings); the helper compares NUL-terminated
+  copies (PLAN.md 13.4).
+
 ## Unreleased — software-live Rust port: OS and PostgreSQL observations
 
 - `rust/software-live` (slice S3c of `rust/software-live/PLAN.md`): the OS
@@ -53,6 +75,7 @@
   test-software-live-rust-fixtures`, part of `just test`) fails when a
   fixture or `TESTMAP.md` no longer matches it. New recipes `just
   rs-software-live` and `just rs-software-live-fixtures`.
+
 ## [2.64.5] - 2026-10-21
 
 ### Security
