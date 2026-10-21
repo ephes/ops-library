@@ -82,6 +82,8 @@ def remediate(path, lockfile=None, check=False):
     path = Path(path)
     if not path.is_absolute() or not (path/'pyvenv.cfg').is_file():
         raise ValueError('Target must be an explicit existing virtual environment')
+    if lockfile and not Path(lockfile).is_absolute():
+        raise ValueError('Lockfile must be an explicit absolute path')
     python = str(path/'bin/python')
     metadata = json.loads(run(python,'-c',INSPECT))
     if Path(metadata['prefix']).resolve()!=path.resolve():

@@ -75,3 +75,13 @@ class TestMacPythonCA(unittest.TestCase):
         text = 'version = 1\n[options]\nexclude-newer-package = {certifi = "2026-10-01T00:00:00Z"}\n\n' + module.STANZA.replace('2026.10.19', '2026.2.25')
         with self.assertRaises(ValueError):
             module.patch_lock(text)
+
+    def test_relative_lockfile_rejected_before_inspection(self):
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            env = Path(temporary); (env / 'pyvenv.cfg').write_text('home = /example')
+            with patch.object(module, 'run') as run:
+                with self.assertRaisesRegex(ValueError, 'absolute path'):
+                    module.remediate(env, 'relative.lock', check=True)
+                run.assert_not_called()

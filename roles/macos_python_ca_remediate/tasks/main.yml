@@ -27,6 +27,7 @@
   ansible.builtin.script:
     cmd: "remediate_ca.py {{ item.path | quote }}{{ (' --lockfile ' + (item.lockfile | quote)) if item.lockfile is defined else '' }}{{ ' --check' if ansible_check_mode else '' }}"
     executable: /opt/homebrew/bin/python3
+    chdir: /
   become: "{{ item.owner != macos_python_ca_context.user }}"
   become_user: "{{ item.owner }}"
   register: macos_python_ca_result
