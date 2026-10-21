@@ -46,6 +46,42 @@
   the harness, against the live pairs. No role behaviour changes; nothing
   is installed anywhere.
 
+## Unreleased — Rust ports: echoport-command-guard role switch (S6)
+
+- `echoport_remote_command_guard` (slice S6 of
+  `rust/echoport-command-guard/PLAN.md`, section 6.2): new impl selector
+  `echoport_remote_command_guard_impl` (`python`, the default, `shadow` or
+  `rust`). With `python` and no `echoport_remote_command_guard_rust_version`
+  nothing changes: the forced command is byte for byte the old one. A set
+  `rust_version` installs the Rust guard through `rust_release_binary` under
+  `/usr/local/lib/echoport-command-guard/<version>/` (also with impl python,
+  for a quick switch), asserts that root owns every path component and
+  nobody else can write it, and runs the Rust `--check-policy` on the
+  rendered policy before it is installed; the Python guard stays installed
+  and always validates the policy. With impl python every Rust step only
+  warns (a broken release never blocks a rollback); with shadow or rust it
+  stops the play before the forced command is published. `shadow` publishes
+  `<bin> --shadow <policy> <python> -I <guard> <policy>`, `rust` publishes
+  `<bin> <policy>`.
+- New `tasks_from: confirm_live.yml`, for the playbook to include after its
+  post-probe: it verifies that the pinned key's `authorized_keys` line
+  carries exactly the published forced command, protects every Rust version
+  any line names (a mention of the install root in another form, or an
+  unreadable file, skips the prune), then moves the `rust_release_binary`
+  pins (impl python keeps the last Rust version as the previous pin) and
+  prunes. The main tasks never pin or prune. New filters
+  `echoport_guard_live_state` and `echoport_guard_path_chain`
+  (`plugins/filter/echoport_guard.py`); new variables
+  `echoport_remote_command_guard_authorized_keys_path` and
+  `echoport_remote_command_guard_confirm_public_key`.
+- Tests: `tests/test_echoport_remote_command_guard_role.py` (in `just
+  test-echoport-remote-command-guard`); molecule scenarios `default`
+  (python), `shadow` and `rust` on Ubuntu 24.04 and Debian 13 with the guard
+  built from the checkout (`rust/echoport-command-guard/parity/e2e/build-local-archive.sh`),
+  and `pins` (stub releases: repeated failed deployments, stale and
+  unverified lines, live-state protection, the switch to Python, check mode,
+  rollback independence). Nothing is deployed; ops-control wiring is S8.
+
 ## Unreleased — Rust ports: metrics-httpd logyard-health mode (S2d)
 
 - `rust/metrics-httpd` (slice S2d of `rust/metrics-httpd/PLAN.md`): the

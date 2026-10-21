@@ -1,8 +1,13 @@
 ---
+# The same checks for every impl (MOLECULE_GUARD_IMPL): python and shadow
+# decide with the Python guard, rust with the Rust guard
+# (rust/echoport-command-guard/PLAN.md 6.2).
 - name: Verify the guard through a real sshd
   hosts: all
   become: true
   vars:
+    guard_impl: "{{ lookup('env', 'MOLECULE_GUARD_IMPL') or 'python' }}"
+    guard_rust_binary: /usr/local/lib/echoport-command-guard/0.0.0/echoport-command-guard
     guard_ssh: >-
       /usr/bin/ssh -p 2222 -i /root/molecule_deploy_key -o BatchMode=yes
       -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
@@ -20,6 +25,12 @@
       - systemctl stop ssh.service
       - sudo -u postgres psql -d postgres -c 'SELECT 1'
   tasks:
+    - name: Note the probe start for the journal checks
+      ansible.builtin.command:
+        argv: [date, +%s]
+      register: guard_verify_start
+      changed_when: false
+
     - name: Stat the installed guard and policy
       ansible.builtin.stat:
         path: "{{ item }}"
@@ -35,6 +46,44 @@
           - guard_files.results[0].stat.mode == '0755'
           - guard_files.results[1].stat.pw_name == 'root'
           - guard_files.results[1].stat.mode == '0644'
+
+    - name: Stat the Rust guard and its pins
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ guard_rust_binary }}"
+        - /usr/local/lib/echoport-command-guard/.pins/echoport_remote_command_guard
+      register: guard_rust_files
+      when: guard_impl != 'python'
+
+    - name: Read the Rust guard's current pin
+      ansible.builtin.slurp:
+        src: /usr/local/lib/echoport-command-guard/.pins/echoport_remote_command_guard
+      register: guard_rust_pin
+      when: guard_impl != 'python'
+
+    - name: Read the forced command
+      ansible.builtin.slurp:
+        src: /root/.ssh/authorized_keys
+      register: guard_authorized_keys
+
+    - name: Assert the forced command of the impl and the Rust install
+      ansible.builtin.assert:
+        that:
+          - >-
+            ('command="' ~ guard_command[guard_impl] ~ '"') in (guard_authorized_keys.content | b64decode)
+          - >-
+            guard_impl == 'python' or (
+              guard_rust_files.results[0].stat.pw_name == 'root'
+              and guard_rust_files.results[0].stat.mode == '0755'
+              and (guard_rust_pin.content | b64decode) == '0.0.0\n')
+          - guard_impl != 'python' or not (guard_rust_files.results | default([{}]))[0].stat is defined
+      vars:
+        guard_python: /usr/bin/python3 -I /usr/local/sbin/echoport-remote-command-guard /etc/echoport/remote-command-guard.json
+        guard_command:
+          python: "{{ guard_python }}"
+          shadow: "{{ guard_rust_binary }} --shadow /etc/echoport/remote-command-guard.json {{ guard_python }}"
+          rust: "{{ guard_rust_binary }} /etc/echoport/remote-command-guard.json"
 
     - name: Run allowed commands over SSH
       ansible.builtin.shell:
@@ -74,7 +123,6 @@
         dest: /root/transfer.bin
         content: "fixture\n"
         mode: "0600"
-
     - name: Upload and download with classic scp inside the root
       ansible.builtin.shell:
         cmd: >-
@@ -86,7 +134,6 @@
           root@127.0.0.1:/srv/marina/site/db.sqlite3.tmp /root/transfer.back &&
           cmp /root/transfer.bin /root/transfer.back
       changed_when: false
-
     - name: Try SFTP-mode scp and an upload outside the root
       ansible.builtin.shell:
         cmd: "{{ item }}"
@@ -103,6 +150,11 @@
       changed_when: false
       failed_when: false
 
+    - name: Assert SFTP and the upload outside the root are refused
+      ansible.builtin.assert:
+        that:
+          - guard_scp_refused.results | map(attribute='rc') | select('equalto', 0) | list | length == 0
+
     # The runners' exact client options: download -a --safe-links, upload
     # -a --no-D with and without --delete.
     - name: Sync a directory down and back up with rsync inside the root
@@ -117,7 +169,6 @@
           /usr/bin/rsync -a --no-D --delete -e "{{ guard_ssh }}"
           /root/rsync-down/ root@127.0.0.1:/srv/marina/site/media/
       changed_when: false
-
     - name: Try rsync outside the root and with options the runners do not use
       ansible.builtin.shell:
         cmd: "{{ item }}"
@@ -129,7 +180,6 @@
       register: guard_rsync_refused
       changed_when: false
       failed_when: false
-
     # The link stays inside the root, so only the plain-file check refuses it.
     - name: Make a would-be upload target a symlink
       ansible.builtin.file:
@@ -138,7 +188,6 @@
         state: link
         follow: false
         force: true
-
     - name: Try scp -O onto the symlink
       ansible.builtin.shell:
         cmd: >-
@@ -148,7 +197,6 @@
       register: guard_scp_symlink
       changed_when: false
       failed_when: false
-
     - name: Stat transfer results
       ansible.builtin.stat:
         path: "{{ item }}"
@@ -160,7 +208,6 @@
         - /srv/marina/site/media/link-target
         - /srv/marina/site/db.sqlite3.tmp
       register: guard_transfer_results
-
     - name: Assert transfer decisions
       ansible.builtin.assert:
         that:
@@ -175,7 +222,6 @@
           # Uploads run as the root's owner, never as root.
           - guard_transfer_results.results[3].stat.pw_name == 'nobody'
           - guard_transfer_results.results[5].stat.pw_name == 'nobody'
-
     - name: Write a policy the guard must reject
       ansible.builtin.copy:
         dest: /root/broken-policy.json
@@ -188,6 +234,29 @@
       register: guard_broken_policy
       changed_when: false
       failed_when: guard_broken_policy.rc != 1
+
+    - name: Check the broken policy with the Rust guard
+      ansible.builtin.command:
+        argv: ["{{ guard_rust_binary }}", --check-policy, /root/broken-policy.json]
+      register: guard_rust_broken_policy
+      changed_when: false
+      failed_when: >-
+        guard_rust_broken_policy.rc != 1
+        or 'echoport-remote-command-guard: invalid policy:' not in guard_rust_broken_policy.stderr
+      when: guard_impl != 'python'
+
+    # A root-only restore temp dir: mktemp -d and rm -rf -- through the guard.
+    - name: Create and remove a temp dir through the guard
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -euo pipefail
+          run() { {{ guard_ssh }} root@127.0.0.1 "$1"; }
+          tmp=$(run 'mktemp -d /var/tmp/molecule-restore.XXXXXXXX')
+          test -d "$tmp"
+          run "rm -rf -- $tmp"
+          test ! -e "$tmp"
+      changed_when: false
 
     # GoToSocial-style online snapshot: a temp dir handed to the service user,
     # sqlite3 as that user, the snapshot read back through the guard's own open.
@@ -213,7 +282,6 @@
           run "rm -rf -- $tmp"
           test ! -e "$tmp"
       changed_when: false
-
     # Django Chat-style restore upload: a root-only temp dir, the dump written
     # by the guard into a file it creates exclusively (mode 0600).
     - name: Upload a dump on stdin into a root-only temp dir
@@ -231,3 +299,38 @@
           test ! -e /srv/outside/x.dump
           run "rm -rf -- $tmp"
       changed_when: false
+
+    # Every guard line has exactly one shadow line with the same _PID (the
+    # Rust guard logs, then execs the Python guard in the same process).
+    - name: Pair the guard and shadow journal lines by _PID
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -euo pipefail
+          journalctl --sync 2>/dev/null || true
+          journalctl -o json --since "@{{ guard_verify_start.stdout }}" \
+            -t echoport-remote-command-guard -t echoport-remote-command-guard-shadow \
+          | python3 -I -c '
+          import collections, json, sys
+          pids = collections.defaultdict(lambda: collections.Counter())
+          verdicts = {}
+          for raw in sys.stdin:
+              record = json.loads(raw)
+              ident = record["SYSLOG_IDENTIFIER"]
+              pids[record["_PID"]][ident] += 1
+              if ident.endswith("-shadow"):
+                  verdicts[record["_PID"]] = json.loads(record["MESSAGE"])["verdict"]
+          bad = {pid: dict(c) for pid, c in pids.items() if c != collections.Counter(
+              {"echoport-remote-command-guard": 1, "echoport-remote-command-guard-shadow": 1})}
+          if not pids or bad:
+              sys.exit(f"unpaired journal lines: {bad} of {len(pids)} PIDs")
+          print(len(pids), sorted(collections.Counter(verdicts.values()).items()))
+          '
+      register: guard_shadow_pairs
+      changed_when: false
+      when: guard_impl == 'shadow'
+
+    - name: Show the shadow pairs
+      ansible.builtin.debug:
+        var: guard_shadow_pairs.stdout
+      when: guard_impl == 'shadow'

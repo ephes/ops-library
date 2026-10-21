@@ -1,4 +1,6 @@
 ---
+# impl python: the Python guard decides (the forced command is unchanged), on Ubuntu 24.04 and Debian 13.
+# Playbooks in ../shared (the same sequence for every impl, PLAN.md 6.2).
 driver:
   name: docker
 platforms:
@@ -13,17 +15,30 @@ platforms:
     tmpfs:
       - /run
       - /tmp
+  - name: "debian13-${MOLECULE_RUN_ID:-local}"
+    image: geerlingguy/docker-debian13-ansible
+    pre_build_image: true
+    privileged: true
+    cgroupns_mode: host
+    command: /lib/systemd/systemd
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+      - /run
+      - /tmp
 provisioner:
   name: ansible
   playbooks:
-    prepare: prepare.yml
-    converge: converge.yml
-    verify: verify.yml
+    prepare: ../shared/prepare.yml
+    converge: ../shared/converge.yml
+    verify: ../shared/verify.yml
   env:
     ANSIBLE_ROLES_PATH: "${MOLECULE_PROJECT_DIRECTORY}/..:~/.ansible/roles:/etc/ansible/roles"
+    MOLECULE_GUARD_IMPL: python
 verifier:
   name: ansible
 scenario:
+  name: default
   test_sequence:
     - dependency
     - cleanup

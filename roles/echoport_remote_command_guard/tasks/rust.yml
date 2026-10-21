@@ -1,0 +1,197 @@
+---
+# Install and check the Rust guard (rust/echoport-command-guard/PLAN.md 6.2),
+# included by main.yml when echoport_remote_command_guard_rust_version is set.
+#
+# Rollback independence: with impl python every step here only warns, so a
+# broken, missing or unrunnable Rust binary or release never blocks a switch
+# back to Python. With impl shadow or rust a failure stops the play before the
+# forced command is published.
+#
+# No pin and no prune here: the playbook has not written the new
+# authorized_keys line yet, and the forced command may still name an older
+# version. Pins move and old versions are pruned only in confirm_live.yml,
+# after the line is verified live. Installing never deletes a version.
+- name: rust | Install and check the Rust guard
+  block:
+    - name: rust | Assert the Rust inputs
+      ansible.builtin.assert:
+        that:
+          - echoport_remote_command_guard_rust_version | local.ops_library.rust_release_version_ok
+          - echoport_remote_command_guard_rust_install_root | local.ops_library.rust_release_root_ok
+          - echoport_remote_command_guard_rust_install_root is match('^/[A-Za-z0-9._/-]+$')
+          - (echoport_remote_command_guard_rust_keep_versions | string) is match('^[1-9][0-9]*$')
+        fail_msg: >-
+          echoport_remote_command_guard_rust_version must be a release version
+          (got {{ echoport_remote_command_guard_rust_version | to_json }}),
+          echoport_remote_command_guard_rust_install_root a plain normalised
+          absolute path (got {{ echoport_remote_command_guard_rust_install_root | to_json }})
+          and echoport_remote_command_guard_rust_keep_versions at least 1.
+        quiet: true
+
+    # F3's install: verified download (or the local archive), exact archive
+    # members, root:root, binary and directories 0755, and `<bin> --version`
+    # (as nobody) must start with "echoport-command-guard <version> (".
+    - name: rust | Install the pinned Rust guard release
+      ansible.builtin.include_role:
+        name: local.ops_library.rust_release_binary
+        tasks_from: install
+      vars:
+        rust_release_binary_name: echoport-command-guard
+        rust_release_binary_version: "{{ echoport_remote_command_guard_rust_version }}"
+        rust_release_binary_sha256: "{{ echoport_remote_command_guard_rust_sha256 }}"
+        rust_release_binary_local_archive: "{{ echoport_remote_command_guard_rust_local_archive }}"
+        rust_release_binary_install_root: "{{ echoport_remote_command_guard_rust_install_root }}"
+        rust_release_binary_fail_hard: "{{ _echoport_guard_rust_fatal | bool }}"
+
+    # Without fail_hard F3 has already warned (an ignored failed task); the
+    # checks below need the binary.
+    - name: rust | Skip the checks of a rejected release
+      ansible.builtin.set_fact:
+        _echoport_guard_rust_checkable: >-
+          {{ not (rust_release_binary_failed | default(true) | bool) }}
+
+    - name: rust | Set the Rust guard paths
+      ansible.builtin.set_fact:
+        _echoport_guard_rust_binary: >-
+          {{ echoport_remote_command_guard_rust_install_root }}/{{ echoport_remote_command_guard_rust_version }}/echoport-command-guard
+
+    - name: rust | Check the Rust guard binary
+      ansible.builtin.stat:
+        path: "{{ _echoport_guard_rust_binary }}"
+        follow: false
+        get_checksum: false
+      register: _echoport_guard_rust_binary_stat
+      when: _echoport_guard_rust_checkable | bool
+
+    # In check mode a version that is not installed yet cannot be checked.
+    - name: rust | Report a version check mode cannot check
+      ansible.builtin.debug:
+        msg: >-
+          Check mode: {{ _echoport_guard_rust_binary }} is not installed yet; its
+          permissions and --check-policy are checked by the real run.
+      when:
+        - _echoport_guard_rust_checkable | bool
+        - ansible_check_mode
+        - not _echoport_guard_rust_binary_stat.stat.exists
+
+    - name: rust | Check the installed binary
+      when:
+        - _echoport_guard_rust_checkable | bool
+        - not ansible_check_mode or _echoport_guard_rust_binary_stat.stat.exists
+      block:
+        # sshd runs this file as root: nobody but root may be able to replace
+        # it or any directory above it.
+        - name: rust | Stat every component of the binary's path
+          ansible.builtin.stat:
+            path: "{{ item }}"
+            follow: false
+            get_checksum: false
+          loop: "{{ _echoport_guard_rust_binary | local.ops_library.echoport_guard_path_chain }}"
+          register: _echoport_guard_rust_path_stats
+
+        - name: rust | Assert root owns every component and nobody else can write it
+          ansible.builtin.assert:
+            that:
+              - item.stat.exists
+              - not item.stat.islnk
+              - item.stat.uid == 0
+              - not item.stat.wgrp
+              - not item.stat.woth
+            fail_msg: >-
+              {{ item.item }} must exist, be no symlink, belong to root and not be
+              group- or world-writable (uid {{ item.stat.uid | default('n/a') }},
+              mode {{ item.stat.mode | default('n/a') }}): sshd runs
+              {{ _echoport_guard_rust_binary }} as root.
+            quiet: true
+          loop: "{{ _echoport_guard_rust_path_stats.results }}"
+          loop_control:
+            label: "{{ item.item }}"
+
+        - name: rust | Assert the binary, its version directory and the install root are root:root 0755
+          ansible.builtin.assert:
+            that:
+              - item.stat.gid == 0
+              - item.stat.mode == '0755'
+              - item.stat.isreg if loop_index == 0 else item.stat.isdir
+            fail_msg: >-
+              {{ item.item }} must be root:root and 0755 (gid {{ item.stat.gid }},
+              mode {{ item.stat.mode }}).
+            quiet: true
+          loop: "{{ _echoport_guard_rust_path_stats.results[:3] }}"
+          loop_control:
+            label: "{{ item.item }}"
+            index_var: loop_index
+
+        # The policy main.yml is about to install, rendered the same way, so a
+        # policy the Rust guard refuses shows before any switch (and with impl
+        # shadow or rust never reaches the host).
+        - name: rust | Check the policy with the Rust guard
+          check_mode: false
+          block:
+            - name: rust | Create a scratch policy file
+              ansible.builtin.tempfile:
+                state: file
+                suffix: .echoport-guard-policy.json
+              register: _echoport_guard_rust_scratch
+              changed_when: false
+
+            - name: rust | Render the policy into the scratch file
+              ansible.builtin.copy:
+                content: "{{ echoport_remote_command_guard_policy | to_nice_json }}\n"
+                dest: "{{ _echoport_guard_rust_scratch.path }}"
+                owner: root
+                group: root
+                mode: "0600"
+              changed_when: false
+
+            - name: rust | Run the Rust --check-policy
+              ansible.builtin.command:
+                argv:
+                  - "{{ _echoport_guard_rust_binary }}"
+                  - --check-policy
+                  - "{{ _echoport_guard_rust_scratch.path }}"
+              register: _echoport_guard_rust_check_policy
+              changed_when: false
+              failed_when: false
+
+            - name: rust | Assert the Rust guard accepts the policy
+              ansible.builtin.assert:
+                that:
+                  - _echoport_guard_rust_check_policy.rc == 0
+                fail_msg: >-
+                  The Rust guard refuses the policy (exit
+                  {{ _echoport_guard_rust_check_policy.rc }}):
+                  {{ _echoport_guard_rust_check_policy.stderr | default('') | trim }}
+                quiet: true
+          always:
+            - name: rust | Remove the scratch policy file
+              ansible.builtin.file:
+                path: "{{ _echoport_guard_rust_scratch.path }}"
+                state: absent
+              changed_when: false
+              when: _echoport_guard_rust_scratch.path is defined
+
+        - name: rust | Record the checked Rust guard
+          ansible.builtin.set_fact:
+            _echoport_guard_rust_ok: true
+
+  rescue:
+    - name: rust | Stop on a failed Rust guard
+      ansible.builtin.fail:
+        msg: >-
+          The Rust guard {{ echoport_remote_command_guard_rust_version }} failed at
+          '{{ ansible_failed_task.name | default('?') }}'
+          ({{ ansible_failed_result.msg | default('see above') }}). impl
+          {{ echoport_remote_command_guard_impl }} needs it, so the forced command
+          is not published. Deploy with impl python to roll back.
+      when: _echoport_guard_rust_fatal | bool
+
+    # An ignored failed task: red, and `ignored=1` in the recap.
+    - name: rust | Warn about the failed Rust guard and continue with Python
+      ansible.builtin.fail:
+        msg: >-
+          WARNING: the Rust guard {{ echoport_remote_command_guard_rust_version }}
+          failed at '{{ ansible_failed_task.name | default('?') }}'
+          ({{ ansible_failed_result.msg | default('see above') }}). impl is python,
+          so the play goes on with the Python forced command.
+      ignore_errors: true

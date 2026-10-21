@@ -1,0 +1,53 @@
+---
+# impl shadow: the Rust guard built from this checkout logs its decision and execs the Python guard, which decides.
+# Playbooks in ../shared (the same sequence for every impl, PLAN.md 6.2).
+driver:
+  name: docker
+platforms:
+  - name: "instance-${MOLECULE_RUN_ID:-local}"
+    image: geerlingguy/docker-ubuntu2404-ansible
+    pre_build_image: true
+    privileged: true
+    cgroupns_mode: host
+    command: /lib/systemd/systemd
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+      - /run
+      - /tmp
+  - name: "debian13-${MOLECULE_RUN_ID:-local}"
+    image: geerlingguy/docker-debian13-ansible
+    pre_build_image: true
+    privileged: true
+    cgroupns_mode: host
+    command: /lib/systemd/systemd
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+      - /run
+      - /tmp
+provisioner:
+  name: ansible
+  playbooks:
+    prepare: ../shared/prepare.yml
+    converge: ../shared/converge.yml
+    verify: ../shared/verify.yml
+  env:
+    ANSIBLE_ROLES_PATH: "${MOLECULE_PROJECT_DIRECTORY}/..:~/.ansible/roles:/etc/ansible/roles"
+    MOLECULE_GUARD_IMPL: shadow
+verifier:
+  name: ansible
+scenario:
+  name: shadow
+  test_sequence:
+    - dependency
+    - cleanup
+    - destroy
+    - syntax
+    - create
+    - prepare
+    - converge
+    - idempotence
+    - verify
+    - cleanup
+    - destroy

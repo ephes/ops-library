@@ -19,8 +19,12 @@ and paths named in a per-host policy.
 - writes the policy as JSON to `/etc/echoport/remote-command-guard.json`
   (root, `0644`), validated by the guard itself (`--check-policy`) before it
   replaces the old one;
-- sets the fact `echoport_remote_command_guard_forced_command`
-  (`/usr/bin/python3 -I <guard> <policy>`) for the `authorized_keys` entry.
+- sets the fact `echoport_remote_command_guard_forced_command` for the
+  `authorized_keys` entry: `/usr/bin/python3 -I <guard> <policy>` with the
+  default impl `python` (see [Rust guard](#rust-guard-impl-selector) for
+  `shadow` and `rust`);
+- with `echoport_remote_command_guard_rust_version` set, installs the Rust
+  port of the guard as well (below).
 
 The role does not touch `authorized_keys`. The consumer pins the key, for
 example with `ssh_authorized_keys_manage`:
@@ -129,6 +133,14 @@ exactly. Restore private media through ops-control instead.
 | `echoport_remote_command_guard_path` | `/usr/local/sbin/echoport-remote-command-guard` | Guard location. |
 | `echoport_remote_command_guard_policy_path` | `/etc/echoport/remote-command-guard.json` | Policy location. |
 | `echoport_remote_command_guard_python` | `/usr/bin/python3` | Interpreter for the forced command. |
+| `echoport_remote_command_guard_impl` | `python` | Which guard decides: `python`, `shadow` or `rust` (below). |
+| `echoport_remote_command_guard_rust_version` | `""` | Rust guard release to install (e.g. `0.1.0`); installed even with impl `python`. Empty: no Rust guard. |
+| `echoport_remote_command_guard_rust_sha256` | `""` | sha256 of the release archive; required unless a local archive is set. |
+| `echoport_remote_command_guard_rust_local_archive` | `""` | Archive on the controller instead of the GitHub release (development, molecule). |
+| `echoport_remote_command_guard_rust_install_root` | `/usr/local/lib/echoport-command-guard` | `<root>/<version>/echoport-command-guard`. |
+| `echoport_remote_command_guard_rust_keep_versions` | `3` | Newest Rust versions `confirm_live.yml` keeps, on top of the pins and the versions `authorized_keys` names. |
+| `echoport_remote_command_guard_authorized_keys_path` | `/root/.ssh/authorized_keys` | `confirm_live.yml`: the file the playbook wrote. |
+| `echoport_remote_command_guard_confirm_public_key` | `""` | `confirm_live.yml`: the pinned key (`<type> <base64> [comment]`) whose line carries the forced command. |
 
 Policy shape:
 
@@ -178,11 +190,93 @@ echoport_remote_command_guard_policy:
               from="100.64.0.10",restrict,command="{{ echoport_remote_command_guard_forced_command }}"
 ```
 
+## Rust guard (impl selector)
+
+The guard is being ported to Rust (`rust/echoport-command-guard/PLAN.md`,
+binary `echoport-command-guard`, released as
+`echoport-command-guard-v<version>` on GitHub). The role switches between
+them with `echoport_remote_command_guard_impl`:
+
+| impl | Forced command | Who decides |
+|---|---|---|
+| `python` (default) | `/usr/bin/python3 -I <guard> <policy>`, byte for byte as before | the Python guard |
+| `shadow` | `<bin> --shadow <policy> /usr/bin/python3 -I <guard> <policy>` | the Python guard; the Rust guard logs its decision first (identifier `echoport-remote-command-guard-shadow`, one JSON record, same `_PID` as the Python line) and then always execs Python |
+| `rust` | `<bin> <policy>` | the Rust guard |
+
+`<bin>` is `<rust_install_root>/<rust_version>/echoport-command-guard`.
+Every part is a plain path, so nothing needs quoting inside `command="…"`.
+
+With `echoport_remote_command_guard_rust_version` set (required for `shadow`
+and `rust`, together with `_rust_sha256` or `_rust_local_archive`) the main
+tasks also
+
+- install the release through the internal helper `rust_release_binary`
+  (verified download, exact archive members, root:root `0755`, and
+  `<bin> --version` as `nobody` must name the version);
+- assert that every component of `<bin>`'s path up to `/` is no symlink,
+  belongs to root and is not group- or world-writable (sshd runs it as
+  root), and that `<bin>`, its version directory and the install root are
+  root:root `0755`;
+- run the Rust `--check-policy` on the rendered policy before the policy is
+  installed (the Python guard still validates it on install, as before).
+
+The Python guard is always installed: it is the rollback target and what
+`shadow` execs.
+
+**Rollback independence.** With impl `python` every Rust step only warns
+(an ignored failed task): a missing, broken or unrunnable Rust release
+never blocks a switch back to Python. With `shadow` or `rust` a Rust failure
+stops the play before the forced command is published, so the old line
+stays.
+
+**No pin and no prune in the main tasks.** When they run, the new
+`authorized_keys` line is not written yet. The consumer includes
+`tasks_from: confirm_live.yml` after it wrote the line and probed through
+it (in the same play, for every impl, the rollback included):
+
+```yaml
+- name: Confirm the guard live, pin and prune
+  ansible.builtin.include_role:
+    name: local.ops_library.echoport_remote_command_guard
+    tasks_from: confirm_live.yml
+  vars:
+    echoport_remote_command_guard_confirm_public_key: "{{ deploy_public_key }}"
+```
+
+`confirm_live.yml`
+
+1. reads `authorized_keys` and requires exactly one line for the pinned key,
+   with exactly the published `command="…"` (fatal for every impl); with
+   `shadow`/`rust`, `<bin> --version` must name the target version;
+2. builds the protect list: every version any line names as
+   `<root>/<version>/echoport-command-guard` (also other keys' and hand-edited
+   lines), plus `rust_version`. A line that mentions the install root in any
+   other form, or an unreadable file, makes the live state unknown and the
+   prune deletes nothing;
+3. moves the pins of the consumer `echoport_remote_command_guard`
+   (`<root>/.pins/`): `shadow`/`rust` pin the target version (the old one
+   becomes the previous pin); `python` removes the current pin and keeps its
+   version as the previous pin, so the last Rust version verified live stays
+   installed for a quick switch back;
+4. prunes: keeps the `rust_keep_versions` newest versions, every pinned
+   version and the protect list.
+
+A play that stops before step 3 moves no pin and prunes nothing. With impl
+`python` steps 3 and 4 only warn. In check mode nothing changes; a line that
+is not written yet is reported instead of failing.
+
+Switch and rollback are the same play with another impl: set
+`echoport_remote_command_guard_impl: rust` (or `shadow`) and run it; to roll
+back, run it with `python`. The ops-control wiring (pins in the inventory,
+the playbook's `confirm_live.yml` include, the pre-probe switch for a broken
+Rust binary, the shadow compare script) is slice S8 of the plan.
+
 ## Testing
 
 ```bash
-just test-echoport-remote-command-guard   # guard rules + every remote runner's real commands
-just molecule-test echoport_remote_command_guard  # real sshd, fish login shell, scp -O, rsync, snapshot, dump upload
+just test-echoport-remote-command-guard   # guard rules + every remote runner's real commands + the impl selector
+just molecule-test echoport_remote_command_guard  # impl python: real sshd, fish login shell, scp -O, rsync, snapshot, dump upload
+just test-echoport-remote-command-guard-molecule  # the scenarios default, shadow, rust and pins
 ```
 
 The unit tests render each remote runner template, drive a backup and a
@@ -194,6 +288,24 @@ symlinks, devices, FIFOs and hard links, the redirect files). Molecule runs
 the runners' rsync/scp options, a SQLite snapshot fetched through the guard's
 `cat` (a symlink in its place is refused) and a dump upload into a root-only
 temp dir against a real sshd.
+
+The molecule scenarios `default` (impl python), `shadow` and `rust` run the
+same playbooks (`molecule/shared/`) on Ubuntu 24.04 and Debian 13: the role,
+the `authorized_keys` line, the post-probe and `confirm_live.yml`, then the
+verify above. `shadow` and `rust` install the guard built from the checkout
+as version `0.0.0` (`rust/echoport-command-guard/parity/e2e/build-local-archive.sh`
+builds it in a Debian 12 container for the Docker host's architecture; set
+`ECHOPORT_GUARD_LOCAL_ARCHIVE` to use another archive). The shadow run also
+requires one shadow journal line per guard line with the same `_PID`.
+The `pins` scenario runs simulated playbook runs cut after any step with
+stub releases and impl `shadow`: repeated failed deployments with different
+targets, a stale line, a written but unverified line, protection from the
+live state alone, an unknown live state, the switch to Python, check mode,
+and the rollback-independence cases (a binary that exits 1 and an archive
+that is not gzip converge with impl `python`; `rust` stops).
+`tests/test_echoport_remote_command_guard_role.py` covers the live-state
+filter, the forced command per impl and `confirm_live.yml` against
+localhost.
 
 The guard is being ported to Rust (`rust/echoport-command-guard/PLAN.md`);
 the Python guard stays the reference. Its decisions are frozen as fixtures in

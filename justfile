@@ -285,10 +285,21 @@ test-heis-production-backup: venv
 
 # Forced-command allowlist for the Echoport remote runners' root SSH key: guard
 # rules, plus every command each remote runner template really sends, plus the
-# Rust port's decision fixtures (GUARD_SHA256, drift, prefilter contract).
+# Rust port's decision fixtures (GUARD_SHA256, drift, prefilter contract), plus
+# the role's impl selector and confirm_live.yml (localhost ansible-playbook runs).
 test-echoport-remote-command-guard: venv
     @echo "Testing the Echoport remote command guard..."
-    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_echoport_remote_command_guard tests.test_echoport_command_guard_fixtures
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_echoport_remote_command_guard tests.test_echoport_command_guard_fixtures tests.test_echoport_remote_command_guard_role
+
+# The guard role's molecule scenarios (rust/echoport-command-guard/PLAN.md 6.2):
+# impl python, shadow and rust on Ubuntu 24.04 and Debian 13 against a real
+# sshd (shadow and rust build the guard from this checkout in Docker), and the
+# pin/prune scenario with stub releases. Needs Docker; not part of `just test`.
+test-echoport-remote-command-guard-molecule:
+    @just molecule-test-scenario echoport_remote_command_guard default
+    @just molecule-test-scenario echoport_remote_command_guard shadow
+    @just molecule-test-scenario echoport_remote_command_guard rust
+    @just molecule-test-scenario echoport_remote_command_guard pins
 
 # Regenerate the Rust guard port's Layer-1 fixtures from the Python guard
 # (rust/echoport-command-guard/PLAN.md 7.2): record the test policies and the
@@ -829,7 +840,7 @@ test-software-live: venv
 
 # Typed Python added by the software observation roles.
 typecheck: venv
-    @uv run --with mypy mypy --ignore-missing-imports --check-untyped-defs roles/software_estate/files/collect.py roles/software_estate/files/emit.py roles/software_estate/files/outbox.py roles/software_estate/files/send.py roles/software_estate/files/publish.py roles/software_estate/files/vector_inventory_config.py roles/software_estate/files/sbom.py roles/software_live/files/software_live.py roles/software_live/files/nyxmon_checks.py roles/traefik_deploy/files/traefik_transaction.py roles/traefik_deploy/files/traefik_control.py roles/zfs_usb_replication/files/zfs_usb_bookmark_anchors.py roles/zfs_usb_replication/files/zfs_usb_replication_state.py roles/zfs_usb_replication/files/zfs_usb_snapshot_retention.py roles/ca_trust_consumers/files/ca_trust_roots_check.py plugins/filter/ca_trust_consumers.py roles/ca_trust_consumers/files/ca_trust_sudoers_env_file.py plugins/filter/rust_release.py
+    @uv run --with mypy mypy --ignore-missing-imports --check-untyped-defs roles/software_estate/files/collect.py roles/software_estate/files/emit.py roles/software_estate/files/outbox.py roles/software_estate/files/send.py roles/software_estate/files/publish.py roles/software_estate/files/vector_inventory_config.py roles/software_estate/files/sbom.py roles/software_live/files/software_live.py roles/software_live/files/nyxmon_checks.py roles/traefik_deploy/files/traefik_transaction.py roles/traefik_deploy/files/traefik_control.py roles/zfs_usb_replication/files/zfs_usb_bookmark_anchors.py roles/zfs_usb_replication/files/zfs_usb_replication_state.py roles/zfs_usb_replication/files/zfs_usb_snapshot_retention.py roles/ca_trust_consumers/files/ca_trust_roots_check.py plugins/filter/ca_trust_consumers.py roles/ca_trust_consumers/files/ca_trust_sudoers_env_file.py plugins/filter/rust_release.py plugins/filter/echoport_guard.py
 
 # Exercise guarded binary/config transactions and controller failure journaling.
 test-unifi-traefik-allowlist: venv

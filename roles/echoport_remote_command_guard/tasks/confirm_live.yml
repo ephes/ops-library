@@ -1,0 +1,242 @@
+---
+# Pin and prune after the forced command is verified live
+# (rust/echoport-command-guard/PLAN.md 6.2). The playbook includes this with
+# tasks_from: confirm_live.yml after it wrote root's authorized_keys and its
+# fatal post-probe went through the new line, for every impl (the rollback to
+# python included), in the same run as the role's main tasks.
+#
+# 1. Verify live: the pinned key's line carries exactly the forced command
+#    main.yml published (fatal for every impl), and with impl shadow or rust
+#    the binary it names reports the target version.
+# 2. Protect list from the live state: every version any authorized_keys line
+#    names, plus the configured rust_version. Any other mention of the install
+#    root, or an unreadable file, makes the live state unknown: no prune.
+# 3. Move the pins (rust_release_binary pin), only now.
+# 4. Prune (rust_release_binary prune) with keep_versions and the protect list.
+#
+# A play that stops before step 3 moves no pin and prunes nothing. With impl
+# python, steps 3 and 4 only warn (rollback independence). In check mode
+# nothing changes: a line that is not written yet is reported, and pin and
+# prune only report what they would do.
+
+- name: confirm_live | Assert the inputs
+  ansible.builtin.assert:
+    that:
+      - echoport_remote_command_guard_impl in ['python', 'shadow', 'rust']
+      - echoport_remote_command_guard_forced_command is defined
+      - echoport_remote_command_guard_forced_command is string
+      - echoport_remote_command_guard_confirm_public_key is string
+      - echoport_remote_command_guard_confirm_public_key | trim | length > 0
+      - echoport_remote_command_guard_authorized_keys_path is match('^/[A-Za-z0-9._/-]+$')
+      - echoport_remote_command_guard_rust_install_root | local.ops_library.rust_release_root_ok
+      - >-
+        echoport_remote_command_guard_rust_version | string | length == 0
+        or echoport_remote_command_guard_rust_version | local.ops_library.rust_release_version_ok
+    fail_msg: >-
+      confirm_live.yml runs after the role's main tasks (which publish
+      echoport_remote_command_guard_forced_command) in the same play and needs
+      echoport_remote_command_guard_confirm_public_key (the pinned key,
+      "<type> <base64> [comment]"), a plain authorized_keys path, a valid Rust
+      install root and an empty or valid rust_version.
+    quiet: true
+
+- name: confirm_live | Set the Rust guard state
+  ansible.builtin.set_fact:
+    _echoport_guard_live_fatal: "{{ echoport_remote_command_guard_impl != 'python' }}"
+    _echoport_guard_live_binary: >-
+      {{ echoport_remote_command_guard_rust_install_root }}/{{ echoport_remote_command_guard_rust_version }}/echoport-command-guard
+    _echoport_guard_live_pins_moved: false
+
+# --- 1. Verify live ------------------------------------------------------------
+
+# The file also holds other keys and their from= addresses: keep it out of
+# the output.
+- name: confirm_live | Read root's authorized_keys
+  ansible.builtin.slurp:
+    path: "{{ echoport_remote_command_guard_authorized_keys_path }}"
+  register: _echoport_guard_live_keys
+  failed_when: false
+  no_log: true
+
+# /proc and a forced command may name the resolved root; a mention of either
+# spelling counts.
+- name: confirm_live | Resolve the Rust install root
+  ansible.builtin.command:
+    argv:
+      - realpath
+      - --
+      - "{{ echoport_remote_command_guard_rust_install_root }}"
+  register: _echoport_guard_live_root_real
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: confirm_live | Parse the live state
+  ansible.builtin.set_fact:
+    _echoport_guard_live: >-
+      {{
+        (_echoport_guard_live_keys.content | b64decode
+          if _echoport_guard_live_keys.content is defined else none)
+        | local.ops_library.echoport_guard_live_state(
+            echoport_remote_command_guard_confirm_public_key,
+            ([echoport_remote_command_guard_rust_install_root]
+              + ([_echoport_guard_live_root_real.stdout]
+                 if _echoport_guard_live_root_real.rc == 0
+                    and _echoport_guard_live_root_real.stdout is match('^/[^\n]+$')
+                    and _echoport_guard_live_root_real.stdout != '/' else []))
+            | unique)
+      }}
+    _echoport_guard_live_root_resolved: "{{ _echoport_guard_live_root_real.rc == 0 }}"
+
+- name: confirm_live | Decide whether the written line is the published forced command
+  ansible.builtin.set_fact:
+    _echoport_guard_live_line_ok: >-
+      {{ _echoport_guard_live.commands == [[echoport_remote_command_guard_forced_command]] }}
+
+- name: confirm_live | Assert the pinned key's line carries the published forced command
+  ansible.builtin.assert:
+    that:
+      - _echoport_guard_live_line_ok | bool
+    fail_msg: >-
+      {{ echoport_remote_command_guard_authorized_keys_path }} does not hold
+      exactly one line for the pinned key with
+      command="{{ echoport_remote_command_guard_forced_command }}" (found the
+      command= values {{ _echoport_guard_live.commands | to_json }} on the
+      lines with that key{{ '; the file cannot be read' if _echoport_guard_live_keys.content is not defined else '' }}).
+      No pin moves and nothing is pruned.
+    quiet: true
+  when: not ansible_check_mode
+
+- name: confirm_live | Report a line that is not written yet (check mode)
+  ansible.builtin.debug:
+    msg: >-
+      Check mode: the pinned key's line does not carry
+      command="{{ echoport_remote_command_guard_forced_command }}" yet
+      ({{ _echoport_guard_live.commands | to_json }}); the real run writes it
+      first. No pin would move and nothing would be pruned before that.
+  when:
+    - ansible_check_mode
+    - not _echoport_guard_live_line_ok | bool
+
+- name: confirm_live | Check the version of the live Rust guard
+  when:
+    - echoport_remote_command_guard_impl != 'python'
+    - _echoport_guard_live_line_ok | bool
+  block:
+    - name: confirm_live | Read the version of the live Rust guard
+      ansible.builtin.command:
+        argv:
+          - "{{ _echoport_guard_live_binary }}"
+          - --version
+      register: _echoport_guard_live_version
+      check_mode: false
+      changed_when: false
+      failed_when: false
+
+    - name: confirm_live | Assert the live Rust guard is the target version
+      ansible.builtin.assert:
+        that:
+          - _echoport_guard_live_version.rc == 0
+          - >-
+            (_echoport_guard_live_version.stdout_lines | first | default('')).startswith(
+            'echoport-command-guard ' ~ echoport_remote_command_guard_rust_version ~ ' (')
+        fail_msg: >-
+          {{ _echoport_guard_live_binary }} --version exited
+          {{ _echoport_guard_live_version.rc }} with
+          '{{ _echoport_guard_live_version.stdout | default('') | trim }}';
+          expected echoport-command-guard {{ echoport_remote_command_guard_rust_version }}.
+          No pin moves and nothing is pruned.
+        quiet: true
+
+# --- 2.-4. Protect, pin, prune -------------------------------------------------
+
+- name: confirm_live | Check the Rust install root
+  ansible.builtin.stat:
+    path: "{{ echoport_remote_command_guard_rust_install_root }}"
+    follow: true
+    get_checksum: false
+  register: _echoport_guard_live_root_stat
+  when: _echoport_guard_live_line_ok | bool
+
+- name: confirm_live | Collect the protect list from the live state
+  ansible.builtin.set_fact:
+    _echoport_guard_live_protect: >-
+      {{
+        (_echoport_guard_live.versions
+         + ([echoport_remote_command_guard_rust_version]
+            if echoport_remote_command_guard_rust_version | string | length > 0 else []))
+        | unique | sort
+      }}
+    _echoport_guard_live_unknown: >-
+      {{
+        _echoport_guard_live.unknown
+        + ([] if _echoport_guard_live_root_resolved | bool
+           else ['cannot resolve ' ~ echoport_remote_command_guard_rust_install_root])
+      }}
+  when: _echoport_guard_live_line_ok | bool
+
+- name: confirm_live | Move the pins and prune old Rust versions
+  when:
+    - _echoport_guard_live_line_ok | bool
+    - _echoport_guard_live_root_stat.stat.isdir | default(false)
+  block:
+    # shadow/rust: pin the target (its old current pin becomes the previous
+    # pin). python: remove the current pin and keep its version as the
+    # previous pin, so the last Rust version verified live stays installed.
+    - name: confirm_live | Pin the live Rust version
+      ansible.builtin.include_role:
+        name: local.ops_library.rust_release_binary
+        tasks_from: pin
+      vars:
+        rust_release_binary_name: echoport-command-guard
+        rust_release_binary_install_root: "{{ echoport_remote_command_guard_rust_install_root }}"
+        rust_release_binary_consumer: echoport_remote_command_guard
+        rust_release_binary_state: "{{ 'absent' if echoport_remote_command_guard_impl == 'python' else 'present' }}"
+        rust_release_binary_version: >-
+          {{ '' if echoport_remote_command_guard_impl == 'python' else echoport_remote_command_guard_rust_version }}
+
+    - name: confirm_live | Record the pin move
+      ansible.builtin.set_fact:
+        _echoport_guard_live_pins_moved: true
+
+    - name: confirm_live | Prune old Rust versions
+      ansible.builtin.include_role:
+        name: local.ops_library.rust_release_binary
+        tasks_from: prune
+      vars:
+        rust_release_binary_name: echoport-command-guard
+        rust_release_binary_install_root: "{{ echoport_remote_command_guard_rust_install_root }}"
+        rust_release_binary_keep_versions: "{{ echoport_remote_command_guard_rust_keep_versions }}"
+        rust_release_binary_protect: "{{ _echoport_guard_live_protect }}"
+        rust_release_binary_live_state_unknown: "{{ _echoport_guard_live_unknown | length > 0 }}"
+
+  rescue:
+    - name: confirm_live | Stop on a failed pin or prune
+      ansible.builtin.fail:
+        msg: >-
+          Moving the pins or pruning {{ echoport_remote_command_guard_rust_install_root }}
+          failed at '{{ ansible_failed_task.name | default('?') }}'
+          ({{ ansible_failed_result.msg | default('see above') }});
+          {{ 'the pins moved, the prune did not run' if _echoport_guard_live_pins_moved | bool
+             else 'no pin moved and nothing was pruned' }}.
+      when: _echoport_guard_live_fatal | bool
+
+    - name: confirm_live | Warn about the failed pin or prune and continue
+      ansible.builtin.fail:
+        msg: >-
+          WARNING: moving the pins or pruning {{ echoport_remote_command_guard_rust_install_root }}
+          failed at '{{ ansible_failed_task.name | default('?') }}'
+          ({{ ansible_failed_result.msg | default('see above') }});
+          {{ 'the pins moved, the prune did not run' if _echoport_guard_live_pins_moved | bool
+             else 'no pin moved and nothing was pruned' }}. impl is python, so
+          the play goes on.
+      ignore_errors: true
+
+- name: confirm_live | Report the live state
+  ansible.builtin.debug:
+    msg:
+      forced_command_verified: "{{ _echoport_guard_live_line_ok | bool }}"
+      protect: "{{ _echoport_guard_live_protect | default([]) }}"
+      live_state_unknown: "{{ _echoport_guard_live_unknown | default([]) }}"
+      pins: "{{ rust_release_binary_pins | default(none) }}"
+      prune: "{{ rust_release_binary_prune | default(none) }}"

@@ -1,0 +1,72 @@
+---
+# One simulated run of ops-control's authorize-root-ssh.yml, cut after any
+# step (rust/echoport-command-guard/PLAN.md 6.2, the pins scenario):
+#   role     the role's main tasks (install, check, publish the fact)
+#   write    the authorized_keys line with the published forced command
+#   probe    the fatal post-probe through that line
+#   confirm  confirm_live.yml (verify, pin, prune)
+# Variables: deploy_name, deploy_impl, deploy_version, deploy_steps,
+# deploy_expect_fail (default false), deploy_extra_lines (other
+# authorized_keys lines, default none).
+
+# A fresh playbook run starts without the previous run's facts.
+- name: "{{ deploy_name }}: start a fresh run"
+  ansible.builtin.set_fact:
+    rust_release_binary_failed_names: []
+    echoport_remote_command_guard_forced_command: ""
+    deploy_failed: false
+    deploy_failed_task: ""
+
+- name: "{{ deploy_name }}: run the steps"
+  vars:
+    echoport_remote_command_guard_impl: "{{ deploy_impl }}"
+    echoport_remote_command_guard_rust_version: "{{ deploy_version }}"
+    echoport_remote_command_guard_rust_local_archive: >-
+      {{ (pins_archives ~ '/' ~ deploy_version ~ '.tar.gz') if deploy_version else '' }}
+    echoport_remote_command_guard_rust_sha256: "{{ pins_sha256[deploy_version] | default('') }}"
+    echoport_remote_command_guard_confirm_public_key: "{{ pins_deploy_key }}"
+  block:
+    - name: "{{ deploy_name }}: the role's main tasks"
+      ansible.builtin.include_role:
+        name: echoport_remote_command_guard
+      when: "'role' in deploy_steps"
+
+    - name: "{{ deploy_name }}: write the authorized_keys line"
+      ansible.builtin.copy:
+        dest: /root/.ssh/authorized_keys
+        owner: root
+        group: root
+        mode: "0600"
+        content: |
+          from="127.0.0.1",restrict,command="{{ echoport_remote_command_guard_forced_command }}" {{ pins_deploy_key }}
+          {% for line in deploy_extra_lines | default([]) %}
+          {{ line }}
+          {% endfor %}
+      when: "'write' in deploy_steps"
+
+    - name: "{{ deploy_name }}: post-probe through the line"
+      ansible.builtin.shell:
+        cmd: "{{ pins_ssh }} -T root@127.0.0.1 < /dev/null"
+      register: deploy_probe
+      changed_when: false
+      failed_when: "'interactive sessions are not allowed' not in deploy_probe.stderr"
+      when: "'probe' in deploy_steps"
+
+    - name: "{{ deploy_name }}: confirm_live.yml"
+      ansible.builtin.include_role:
+        name: echoport_remote_command_guard
+        tasks_from: confirm_live.yml
+      when: "'confirm' in deploy_steps"
+  rescue:
+    - name: "{{ deploy_name }}: record the stop"
+      ansible.builtin.set_fact:
+        deploy_failed: true
+        deploy_failed_task: "{{ ansible_failed_task.name | default('?') }}"
+
+- name: "{{ deploy_name }}: assert how the run ended"
+  ansible.builtin.assert:
+    that:
+      - deploy_failed == (deploy_expect_fail | default(false))
+    fail_msg: >-
+      {{ deploy_name }}: expected {{ 'a failure' if deploy_expect_fail | default(false) else 'success' }},
+      got {{ ('a failure at ' ~ deploy_failed_task) if deploy_failed else 'success' }}.

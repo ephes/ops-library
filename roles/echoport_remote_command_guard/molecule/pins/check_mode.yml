@@ -1,0 +1,63 @@
+---
+# Run by converge.yml with `ansible-playbook --check`: the role's main tasks
+# and confirm_live.yml change nothing in check mode, neither when the line
+# is not written yet (a switch preview) nor when it is (a re-run whose prune
+# would remove a version).
+- name: Preview a switch to shadow 0.4.0 in check mode
+  hosts: all
+  become: true
+  vars:
+    echoport_remote_command_guard_impl: shadow
+    echoport_remote_command_guard_rust_version: 0.4.0
+    echoport_remote_command_guard_rust_local_archive: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/stubs/0.4.0.tar.gz"
+    echoport_remote_command_guard_policy:
+      units: [cron.service]
+  tasks:
+    - name: Read the client public key
+      ansible.builtin.slurp:
+        src: /root/molecule_deploy_key.pub
+      register: pins_key_read
+
+    - name: Run the role's main tasks
+      ansible.builtin.include_role:
+        name: echoport_remote_command_guard
+
+    - name: Run confirm_live.yml
+      ansible.builtin.include_role:
+        name: echoport_remote_command_guard
+        tasks_from: confirm_live.yml
+      vars:
+        echoport_remote_command_guard_confirm_public_key: "{{ pins_key_read.content | b64decode | trim }}"
+
+- name: Re-run impl python with keep_versions 1 in check mode
+  hosts: all
+  become: true
+  vars:
+    echoport_remote_command_guard_impl: python
+    echoport_remote_command_guard_rust_version: 0.5.0
+    echoport_remote_command_guard_rust_local_archive: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/stubs/0.5.0.tar.gz"
+    echoport_remote_command_guard_rust_keep_versions: 1
+    echoport_remote_command_guard_policy:
+      units: [cron.service]
+  tasks:
+    - name: Read the client public key
+      ansible.builtin.slurp:
+        src: /root/molecule_deploy_key.pub
+      register: pins_key_read
+
+    - name: Run the role's main tasks
+      ansible.builtin.include_role:
+        name: echoport_remote_command_guard
+
+    - name: Run confirm_live.yml
+      ansible.builtin.include_role:
+        name: echoport_remote_command_guard
+        tasks_from: confirm_live.yml
+      vars:
+        echoport_remote_command_guard_confirm_public_key: "{{ pins_key_read.content | b64decode | trim }}"
+
+    - name: Assert the prune would have removed 0.4.0
+      ansible.builtin.assert:
+        that:
+          - rust_release_binary_prune.removed == ['0.4.0']
+          - rust_release_binary_prune.skipped == []

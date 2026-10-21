@@ -31,6 +31,25 @@
       the install paths must be plain absolute paths.
     quiet: true
 
+# The Rust inputs themselves are checked in the Rust block below, where a
+# mistake only warns with impl python (rollback independence, PLAN.md 6.2).
+- name: Validate the guard implementation
+  ansible.builtin.assert:
+    that:
+      - echoport_remote_command_guard_impl in ['python', 'shadow', 'rust']
+      - >-
+        echoport_remote_command_guard_impl == 'python'
+        or (echoport_remote_command_guard_rust_version | string | length > 0
+            and (echoport_remote_command_guard_rust_sha256 | string | length > 0
+                 or echoport_remote_command_guard_rust_local_archive | string | length > 0))
+    fail_msg: >-
+      echoport_remote_command_guard_impl must be python, shadow or rust (got
+      {{ echoport_remote_command_guard_impl | to_json }}); shadow and rust need
+      echoport_remote_command_guard_rust_version and either
+      echoport_remote_command_guard_rust_sha256 or
+      echoport_remote_command_guard_rust_local_archive.
+    quiet: true
+
 - name: Check that the guard's interpreter exists
   ansible.builtin.stat:
     path: "{{ echoport_remote_command_guard_python }}"
@@ -59,8 +78,21 @@
     group: root
     mode: "0755"
 
+# The Python guard stays installed as the rollback target and as what shadow
+# execs (until S12).
+- name: Set the Rust guard state
+  ansible.builtin.set_fact:
+    _echoport_guard_rust_wanted: "{{ echoport_remote_command_guard_rust_version | string | length > 0 }}"
+    _echoport_guard_rust_fatal: "{{ echoport_remote_command_guard_impl != 'python' }}"
+    _echoport_guard_rust_ok: false
+
+- name: Install and check the Rust guard
+  ansible.builtin.include_tasks: rust.yml
+  when: _echoport_guard_rust_wanted | bool
+
 # The guard validates the policy itself before it is put in place, so a policy
-# it would refuse at login never reaches the host.
+# it would refuse at login never reaches the host. (rust.yml has already run
+# the Rust --check-policy on the same rendering.)
 - name: Install the guard policy
   ansible.builtin.copy:
     content: "{{ echoport_remote_command_guard_policy | to_nice_json }}\n"
@@ -70,8 +102,8 @@
     mode: "0644"
     validate: "{{ echoport_remote_command_guard_python }} -I {{ echoport_remote_command_guard_path }} --check-policy %s"
 
+# Fatal Rust failures stop the play in rust.yml, so with impl shadow or rust
+# this is only reached with a checked binary. Every part is a safe path
+# (asserted above and in rust.yml), so nothing needs quoting inside command="".
 - name: Publish the forced command for authorized_keys
-  ansible.builtin.set_fact:
-    echoport_remote_command_guard_forced_command: >-
-      {{ echoport_remote_command_guard_python }} -I {{ echoport_remote_command_guard_path }}
-      {{ echoport_remote_command_guard_policy_path }}
+  ansible.builtin.include_tasks: forced_command.yml
