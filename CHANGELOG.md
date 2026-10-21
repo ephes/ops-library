@@ -5,6 +5,9 @@
 
 ## Unreleased — ansible-core 2.20.3 floor and quiet MeTube uv sync (2.56.0)
 
+- Add macos_ca_remediate to remove the two affected eMudhra chain roots from
+  Apple curl’s separate PEM bundle with validation and a backup.
+
 - The collection now requires ansible-core >= 2.20.3 (`meta/runtime.yml`
   `requires_ansible`, `pyproject.toml`), and its own lock and test environment
   move from ansible-core 2.20.0 to 2.20.10. ansible-core 2.20.0–2.20.2 write a
