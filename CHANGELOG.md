@@ -216,6 +216,29 @@
   now records the newline translation and the script's stdin. No role
   behaviour changes.
 
+## Unreleased — Rust ports: echoport-command-guard parity gate (S5)
+
+- `echoport-command-guard` (slice S5 of `rust/echoport-command-guard/PLAN.md`):
+  the parity gate against the Python guard. New decision property tests
+  (`tests/decisions.rs`: grammar-aware random commands with the PLAN.md 7.2
+  mutations in random virtual hosts, against the Python guard through the
+  oracle; Rust may only accept what Python accepts, with the same decision,
+  and refusals carry Python's reason outside the PLAN.md 4.4 classes) and
+  the decision invariants (`tests/common/invariants.rs`). Layer 2 gains the
+  decision comparison on real trees (`parity/e2e/layer2_decide.py`: every
+  path state of each path-taking shape, the real-tree scp test, runs as
+  `nobody`, random trees). New Layer 3 (`parity/e2e/layer3_sshd.py`, `just
+  echoport-command-guard-layer3`): the Python, Rust and shadow forced
+  commands through sshd on Ubuntu 24.04 and Debian 13 with every runner
+  command, real scp/rsync transfers, redirects, refusals, SFTP and the
+  locale cases, compared on exit codes, output, files, the exec'd tools'
+  argv/environment/fds/signals/umask and the syslog lines. New cargo-fuzz
+  targets (`fuzz/`, `just echoport-command-guard-fuzz`) for the prefilter
+  and tokeniser, `check()`, the policy loader and `repr`, run for an hour
+  each with the corpus committed. The PLAN.md 4.4 classes are reviewed in
+  the crate README; `parity/allowed_differences.json` stays empty. No guard
+  behaviour changes; nothing is installed anywhere.
+
 ## Unreleased — Rust ports: echoport-command-guard rules with filesystem (S3b)
 
 - `echoport-command-guard` (slice S3b of `rust/echoport-command-guard/PLAN.md`):

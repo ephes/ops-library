@@ -326,12 +326,24 @@ metrics-httpd-fixtures: venv
     @uv run --python 3.12 --no-project python -I rust/metrics-httpd/fixtures/generate.py check --stdlib-only
     @uv run --python 3.13 --no-project python -I rust/metrics-httpd/fixtures/generate.py check --stdlib-only
 
-# Layer 2 of the Rust echoport-command-guard, filesystem part
-# (rust/echoport-command-guard/PLAN.md 7.5): realpath, lstat and user lookups
-# of the Rust guard against Python 3.12 (Ubuntu 24.04) and 3.13 (Debian 13),
-# as root on real trees in containers. Needs Docker.
+# Layer 2 of the Rust echoport-command-guard (rust/echoport-command-guard/PLAN.md
+# 7.5): realpath, lstat and user lookups, then the decisions (Python's check()
+# against `--decide`), of the Rust guard against Python 3.12 (Ubuntu 24.04)
+# and 3.13 (Debian 13), as root on real trees in containers. Needs Docker.
 echoport-command-guard-layer2:
     @rust/echoport-command-guard/parity/e2e/run-layer2.sh
+
+# Layer 3 of the Rust echoport-command-guard (PLAN.md 7.6): the Python, Rust
+# and shadow forced commands end to end through sshd in Ubuntu 24.04 and
+# Debian 13 containers, compared. Needs Docker.
+echoport-command-guard-layer3:
+    @rust/echoport-command-guard/parity/e2e/run-layer3.sh
+
+# Fuzz the Rust echoport-command-guard (PLAN.md 7.4): the four cargo-fuzz
+# targets for an hour each (or `seconds`), in containers with a pinned
+# nightly. Needs Docker; updates rust/echoport-command-guard/fuzz/corpus/.
+echoport-command-guard-fuzz seconds="3600":
+    @rust/echoport-command-guard/fuzz/run-fuzz.sh {{seconds}}
 
 # A FastDeploy restore must not bring back what the privilege reduction retired
 # (services, sudoers files, rules with more than one narrow script).
