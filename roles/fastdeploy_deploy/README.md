@@ -166,6 +166,34 @@ Removal, once every consumer uses a re-issued token (step 3 above) under a real 
    they are deleted they stay ordinary users without a usable password, and deleting one
    invalidates every service token issued for that name.
 
+#### Token issuance admins and restore policies
+
+FastDeploy main `8faa9bd` and later fail closed on two settings:
+
+- `SERVICE_TOKEN_ADMIN_USERS`: only these existing users may issue service tokens through the API
+  (`POST /service-token`, which the web UI's deploy button also uses). Unset, every user gets 403.
+  Minting on the host with `commands.py issueservicetoken` is not affected.
+- `RESTORE_POLICIES`: per FastDeploy service, the bucket and the key prefixes an Echoport restore
+  may read from. A restore for a service without a policy, or with another bucket or a key outside
+  the prefixes, is refused with 422 before a deployment starts. Unset, every restore is refused.
+  Scheduled backups are not affected.
+
+```yaml
+fastdeploy_service_token_admin_users: ["{{ fastdeploy_initial_user }}"]
+fastdeploy_restore_policies:
+  echoport-backup: {bucket: backups, prefixes: ["archive/", "nyxmon/"]}
+  weeknotes-home-backup: {bucket: backups, prefixes: ["weeknotes_home/", "weeknotes-home/"]}
+```
+
+Both default to empty and are then not written. When set, each is written as compact JSON (keys
+sorted, list order kept) in single quotes, in `.env` and `.env.shell` alike, so systemd's
+`EnvironmentFile=`, dotenv and `sh` all read the JSON literally. The role refuses, before `.env` is
+written, a user name outside letters, digits, `.`, `_`, `@`, `-`; a policy that is not
+`{bucket, prefixes}`; a bucket that is not a lowercase S3 name; an empty prefix list; and a prefix
+that is absolute, contains `..` or an empty component, or does not end in `/`. None of the accepted
+values can contain a quote. ops-deploy's `FastdeployConfig.service_token_admin_users` and
+`restore_policies` write the same bytes.
+
 ### Rollout behavior
 
 Every successful role run is treated as a rollout of the live FastDeploy service:
