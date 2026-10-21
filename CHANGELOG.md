@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — ca_trust_consumers: Node.js trust in sudo sessions
+## Unreleased — ca_trust_consumers: Node.js trust in sudo sessions (2.64.2)
 
 - `ca_trust_consumers` with `ca_trust_consumers_node_cli` now also gives sudo
   sessions `NODE_OPTIONS=--use-openssl-ca`: Debian 13's sudo PAM stack does not
