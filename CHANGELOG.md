@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — software-live Rust port: inventory export
+
+- `rust/software-live` gets `export-inventory` of `software_live.py` (slice
+  S3e of `rust/software-live/PLAN.md`): the safe source read (root-owned
+  export directory and state file, `O_NOFOLLOW|O_NONBLOCK`, one link, not
+  group/world-writable, 1 MiB bound), the allowlisted projection and the
+  atomic write of S3a (mode 0640, group set through the descriptor,
+  `fsync`, rename; the previous projection stays on any failure), with the Python
+  program's order of checks and its `inventory export failed: <Class>`
+  line. Fixtures from the Python program (`fixtures/export.json`, including
+  the real export on disk with root ownership emulated), and
+  `fixtures/rust-export.json`, written by the Rust code and read by the
+  `software_estate` reader in `tests/test_software_live_rust_fixtures.py`.
+  Nothing installs or runs the binary; the `software_live` role is
+  unchanged.
+
 ## Unreleased — software-live Rust port: APT helper
 
 - New Rust crate `rust/software-live-apt` (slice S3d of

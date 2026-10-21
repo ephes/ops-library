@@ -141,6 +141,60 @@ class PythonReadsRustWrittenCaches(unittest.TestCase):
                 self.assertEqual(file.read_text(encoding="ascii"), cache["text"])
 
 
+class PythonReaderAcceptsRustExport(unittest.TestCase):
+    """The projection is read by the unprivileged software_estate collector
+    (``roles/software_estate/files/collect.py``, ``software_health``), whose
+    key sets and types are exact (PLAN.md 3.6). ``fixtures/rust-export.json``
+    holds what the Rust ``export-inventory`` writes for every source the
+    Python projection accepts (the Rust test
+    ``export::tests::rust_written_exports_are_committed`` keeps it current).
+    The reader must accept each file and return what Python's own projection
+    of the same source is.
+    """
+
+    def test_reader_accepts_every_rust_written_projection(self) -> None:
+        import json
+        import os
+        import stat
+        from unittest import mock
+
+        live = load_generator().live
+        spec = importlib.util.spec_from_file_location(
+            "software_estate_reader", ROOT / "roles" / "software_estate" / "files" / "collect.py"
+        )
+        assert spec is not None and spec.loader is not None
+        collector = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(collector)
+
+        def root_owned(value: os.stat_result) -> os.stat_result:
+            fields = list(value)
+            fields[4] = 0
+            return os.stat_result(fields)
+
+        exports = json.loads((CRATE / "fixtures" / "rust-export.json").read_text(encoding="utf-8"))
+        self.assertGreaterEqual(len(exports["exports"]), 20)
+        lstat, fstat = Path.lstat, os.fstat
+        for export in exports["exports"]:
+            with self.subTest(export["id"]), tempfile.TemporaryDirectory() as tmp:
+                folder = Path(tmp)
+                folder.chmod(0o750)
+                target = folder / "software-health.json"
+                target.write_text(export["text"], encoding="ascii")
+                target.chmod(0o640)
+                written = json.loads(export["text"])
+                self.assertEqual(written, live.inventory_projection(json.loads(export["source"])))
+                with (
+                    mock.patch.object(collector, "HEALTH_EXPORT", target),
+                    mock.patch.object(Path, "lstat", lambda p: root_owned(lstat(p))),
+                    mock.patch.object(os, "fstat", lambda fd: root_owned(fstat(fd))),
+                    mock.patch.object(
+                        collector.time, "time", return_value=float(written["observed_at_epoch"]) + 60
+                    ),
+                ):
+                    self.assertEqual(collector.software_health(written["host"]), written)
+                self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o640)
+
+
 class TestmapNamesEveryPythonTest(unittest.TestCase):
     def test_every_python_test_has_a_row(self) -> None:
         testmap = TESTMAP.read_text(encoding="utf-8")
