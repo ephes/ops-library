@@ -31,6 +31,11 @@
       - (aws_trust_existing.content | b64decode) == '[Service]\nEnvironment="AWS_CA_BUNDLE=' + aws_ca_bundle_path + '"\n'
   when: aws_trust_dropin.stat.exists
 
+- name: service | Inspect service drop-in directory
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ aws_trust_service.unit }}.d"
+  register: aws_trust_dropin_dir_before
+
 - name: service | Create service drop-in directory
   ansible.builtin.file:
     path: "/etc/systemd/system/{{ aws_trust_service.unit }}.d"
@@ -47,6 +52,7 @@
     group: root
     mode: '0644'
   register: aws_trust_config
+  when: not ansible_check_mode or aws_trust_dropin_dir_before.stat.isdir | default(false)
 
 - name: service | Restart changed SDK consumer with refreshed manager configuration
   ansible.builtin.systemd_service:

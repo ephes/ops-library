@@ -78,3 +78,62 @@ class AwsTrustTests(unittest.TestCase):
     def test_custom_shared_config_is_refused(self):
         with self.assertRaisesRegex(RuntimeError, "shared-config"):
             self.run_check(shared_config="[default]\nca_bundle = /custom.pem\n")
+
+
+class FreshDropinCheckModeTests(unittest.TestCase):
+    def test_actual_fresh_dropin_tasks_check_mode_leave_no_files(self):
+        import subprocess
+        import tempfile
+        import uuid
+        import yaml
+
+        unit = "emudhra-check-" + uuid.uuid4().hex + ".service"
+        directory = Path("/etc/systemd/system") / (unit + ".d")
+        self.assertFalse(directory.exists())
+        tasks = yaml.safe_load(
+            (ROOT / "roles/aws_ca_bundle/tasks/service.yml").read_text()
+        )
+        selected = [
+            task
+            for task in tasks
+            if task["name"]
+            in (
+                "service | Inspect service drop-in directory",
+                "service | Create service drop-in directory",
+                "service | Persist supported botocore trust bundle override",
+            )
+        ]
+        self.assertEqual(len(selected), 3)
+        with tempfile.TemporaryDirectory() as scratch:
+            play = Path(scratch) / "check.yml"
+            play.write_text(
+                yaml.safe_dump(
+                    [
+                        {
+                            "hosts": "localhost",
+                            "gather_facts": False,
+                            "vars": {
+                                "aws_trust_service": {"unit": unit},
+                                "aws_ca_bundle_path": BUNDLE,
+                            },
+                            "tasks": selected,
+                        }
+                    ]
+                )
+            )
+            checked = subprocess.run(
+                [
+                    "ansible-playbook",
+                    "--check",
+                    "-i",
+                    "localhost,",
+                    "-c",
+                    "local",
+                    str(play),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+            self.assertFalse(directory.exists())

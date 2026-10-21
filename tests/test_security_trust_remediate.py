@@ -57,6 +57,33 @@ class TrustPreflightTests(unittest.TestCase):
             ["pip target requires Python >=3.10"],
         )
 
+    def test_malformed_unrelated_legacy_requirement_does_not_block_trust_update(self):
+        self.assertEqual(
+            module.trust_update_conflicts(
+                self.report("yapf>='0.28'; python_version < \"3.6\""),
+                {"certifi": "2026.10.19"},
+            ),
+            [],
+        )
+
+    def test_malformed_target_or_ambiguous_requirement_still_fails_closed(self):
+        from packaging.requirements import InvalidRequirement
+
+        for requirement in (
+            "certifi>='2026.0'",
+            "Certifi>='2026.0'",
+            "certifi->=1",
+            "pip.>=1",
+            "???",
+        ):
+            with (
+                self.subTest(requirement=requirement),
+                self.assertRaises(InvalidRequirement),
+            ):
+                module.trust_update_conflicts(
+                    self.report(requirement), {"certifi": "2026.10.19"}
+                )
+
     def test_remote_python_markers(self):
         self.assertTrue(
             module.trust_update_conflicts(
@@ -383,6 +410,19 @@ class FreshHostCheckModeTests(unittest.TestCase):
                 collection = base / "collections/ansible_collections/local/ops_library"
                 collection.parent.mkdir(parents=True)
                 collection.symlink_to(ROOT, target_is_directory=True)
+                configuration = json.loads(
+                    subprocess.check_output(
+                        ["ansible-config", "dump", "--format", "json"], text=True
+                    )
+                )
+                inherited_collection_paths = next(
+                    entry["value"]
+                    for entry in configuration
+                    if entry.get("name") == "COLLECTIONS_PATHS"
+                )
+                fixture_collection_paths = os.pathsep.join(
+                    [str(base / "collections"), *inherited_collection_paths]
+                )
                 backup = "/var/backups/" + name
                 cache = "/var/cache/" + name
                 paths = [
@@ -517,7 +557,7 @@ class FreshHostCheckModeTests(unittest.TestCase):
                         check=False,
                         env={
                             **os.environ,
-                            "ANSIBLE_COLLECTIONS_PATH": str(base / "collections"),
+                            "ANSIBLE_COLLECTIONS_PATH": fixture_collection_paths,
                             "ANSIBLE_CALLBACK_PLUGINS": str(callbacks),
                             "ANSIBLE_STDOUT_CALLBACK": "trust_lifecycle",
                         },
@@ -581,6 +621,100 @@ class FreshHostCheckModeTests(unittest.TestCase):
                     before,
                     checked.stdout + checked.stderr + rejected.stdout + rejected.stderr,
                 )
+                # Exercise both fresh and existing AWS drop-in check paths as root
+                # inside this disposable host, using the actual production tasks.
+                aws_tasks = yaml.safe_load(
+                    (ROOT / "roles/aws_ca_bundle/tasks/service.yml").read_text()
+                )
+                selected = [
+                    task
+                    for task in aws_tasks
+                    if task["name"]
+                    in (
+                        "service | Inspect service drop-in directory",
+                        "service | Create service drop-in directory",
+                        "service | Persist supported botocore trust bundle override",
+                    )
+                ]
+                self.assertEqual(len(selected), 3)
+                aws_dir = "/etc/systemd/system/emudhra-fixture.service.d"
+                play.write_text(
+                    yaml.safe_dump(
+                        [
+                            {
+                                "hosts": "fixture",
+                                "gather_facts": False,
+                                "vars": {
+                                    "aws_trust_service": {
+                                        "unit": "emudhra-fixture.service"
+                                    },
+                                    "aws_ca_bundle_path": "/etc/ssl/certs/ca-certificates.crt",
+                                },
+                                "tasks": selected,
+                            }
+                        ]
+                    )
+                )
+                fresh = run_check()
+                self.assertEqual(fresh.returncode, 0, fresh.stdout + fresh.stderr)
+                fresh_events = [
+                    json.loads(line)
+                    for line in fresh.stdout.splitlines()
+                    if line.startswith('{"task":')
+                ]
+                self.assertEqual(fresh_events[-1]["status"], "skipped", fresh_events)
+                absent = subprocess.run(
+                    ["docker", "exec", name, "test", "!", "-e", aws_dir],
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertEqual(absent.returncode, 0)
+                subprocess.run(
+                    ["docker", "exec", name, "install", "-d", "-m", "0755", aws_dir],
+                    check=True,
+                    capture_output=True,
+                )
+                existing = run_check()
+                self.assertEqual(
+                    existing.returncode, 0, existing.stdout + existing.stderr
+                )
+                existing_events = [
+                    json.loads(line)
+                    for line in existing.stdout.splitlines()
+                    if line.startswith('{"task":')
+                ]
+                self.assertFalse(existing_events[0]["changed"], existing_events)
+                self.assertEqual(existing_events[-1]["status"], "ok", existing_events)
+                self.assertTrue(existing_events[-1]["changed"], existing_events)
+                subprocess.run(
+                    ["docker", "exec", name, "chmod", "0700", aws_dir],
+                    check=True,
+                    capture_output=True,
+                )
+                drifted = run_check()
+                self.assertEqual(drifted.returncode, 0, drifted.stdout + drifted.stderr)
+                drifted_events = [
+                    json.loads(line)
+                    for line in drifted.stdout.splitlines()
+                    if line.startswith('{"task":')
+                ]
+                self.assertTrue(drifted_events[1]["changed"], drifted_events)
+                self.assertEqual(drifted_events[-1]["status"], "ok", drifted_events)
+                self.assertTrue(drifted_events[-1]["changed"], drifted_events)
+                untouched = subprocess.run(
+                    [
+                        "docker",
+                        "exec",
+                        name,
+                        "test",
+                        "!",
+                        "-e",
+                        aws_dir + "/50-aws-ca-bundle.conf",
+                    ],
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertEqual(untouched.returncode, 0)
                 print(
                     "Fresh-host lifecycle unchanged:",
                     json.dumps(

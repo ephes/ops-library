@@ -1,6 +1,8 @@
 """Controller-side preflight for narrowly scoped trust-package updates."""
 
-from packaging.requirements import Requirement
+import re
+
+from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import Version
 
@@ -19,7 +21,21 @@ def trust_update_conflicts(report, targets):
         conflicts.append("pip target requires Python >=3.10")
     for name, package in installed.items():
         for raw in package["requires"]:
-            requirement = Requirement(raw)
+            try:
+                requirement = Requirement(raw)
+            except InvalidRequirement:
+                # Legacy metadata can contain malformed unrelated requirements.
+                # Only a clear non-target name is irrelevant to this narrow update.
+                leading_name = re.match(
+                    r"^\s*([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)(?=\s|[<>=!~@\[(;]|$)",
+                    raw,
+                )
+                if (
+                    leading_name
+                    and canonicalize_name(leading_name.group(1)) not in active
+                ):
+                    continue
+                raise
             target = canonicalize_name(requirement.name)
             if target not in active:
                 continue

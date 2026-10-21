@@ -21,7 +21,10 @@ root-only metadata and complete environment tar snapshots under
 The controller needs `packaging` (provided by Ansible's dependencies).
 
 Preflight evaluates installed base dependency requirements with remote Python
-markers. Extras are not recorded in installed metadata: selected extra constraints
+markers. Malformed legacy requirements are ignored only when their leading
+package name clearly names an unrelated, non-updated package. Malformed trust
+package requirements and ambiguous names still fail closed. Extras are not
+recorded in installed metadata: selected extra constraints
 and reproducibility must be fixed in owning lockfiles. Python <3.10 cannot install
 the pinned pip. Such environments must be handled separately, never bypassed.
 The role rejects environments exposing system site-packages. Application-owned

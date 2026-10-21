@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Keep narrowly scoped trust updates compatible with malformed unrelated legacy dependency metadata while rejecting malformed trust-package constraints. Preserve inherited collection paths in the fresh-host check-mode fixture and prevent fresh AWS drop-in parent failures under check mode.
+
 ## Unreleased — bounded container trust activation (2.63.1)
 
 - Add bounded trust-only Compose fleet activation with exact installed image retention, private receipts, recovery, and one Docker daemon restart. Optional `container_ca_activate_livekit_config` performs read-only room/egress idle preflight and requires existing target PyYAML.
