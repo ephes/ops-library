@@ -1,0 +1,12 @@
+---
+# OS package revision is distribution-specific and must be supplied by inventory.
+security_trust_ca_version: ""
+security_trust_environments: []
+security_trust_lockfiles: []
+security_trust_certifi_version: "2026.10.19"
+security_trust_pip_version: "26.2.2"
+security_trust_uv_bin: /usr/local/bin/uv
+security_trust_wheel_dir: /var/cache/security-trust-remediation
+security_trust_backup_dir: /var/backups/security-trust-remediation
+# Hash-pinned wheels supplied by the controller after verification against upstream metadata.
+security_trust_wheels: []

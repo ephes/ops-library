@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add narrowly scoped Linux CA and virtual-environment trust remediation with offline verified wheels, dependency preflight, rollback evidence and serial health-checked restarts.
+
 ## Unreleased — macOS Java trust copies (2.61.0)
 
 - `macos_java_trust`: maintain fingerprint-filtered JSSE trust copies and explicit
