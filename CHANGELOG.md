@@ -158,8 +158,6 @@
   `lstat`/`realpath` failed closed; the rules that use the helpers come with
   S3b. Nothing installs the binary and no role behaviour changes.
 
-||||||| parent of b91b0cf4 (Add the metrics-httpd script mode with fixtures from metrics_httpd.py.j2)
-
 ## Unreleased — Rust ports: echoport-command-guard runtime and exec (S4)
 
 - `echoport-command-guard` (slice S4 of `rust/echoport-command-guard/PLAN.md`):
@@ -180,8 +178,6 @@
   executed command inherits and compare the locale coercion with CPython
   3.12 and 3.13. Until S2 the binary's filesystem lookups fail closed.
   Nothing installs the binary; no role behaviour changes.
-
-||||||| parent of cb28bea1 (Add the metrics-httpd script mode with fixtures from metrics_httpd.py.j2)
 
 ## Unreleased — Rust ports: metrics-httpd core (S1)
 
@@ -258,8 +254,6 @@
   role's file (scoped, negated, foreign, duplicated) or an unexportable policy
   makes the role fail.
   `ca_trust_consumers_node_cli_sudo: false` turns this off.
-
-||||||| parent of 050a2521 (Add the Rust release pipeline with per-binary tags, release_checks.py and the release.json variant format)
 
 ## Unreleased — opsgate_deploy leaves the Rust port out of the Python app dirs
 
