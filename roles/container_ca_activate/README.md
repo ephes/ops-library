@@ -106,6 +106,20 @@ missing-store fail-before-recreation, and fault-injected owner recovery. Image
 IDs, phase logs, and cleanup outcome are recorded in its unique scratch result.
 Only the disposable nested daemon is restarted by this regression.
 
+### Native owner health convergence
+
+The persisted-owner transaction allows a 600-second health convergence budget
+for activation and a separate 600-second budget after automatic recovery starts
+all original owners. This accommodates native checks with a 180-second interval
+and startup grace: a successful next check may arrive after the legacy
+180-second polling budget. Each phase still requires every selected container
+to be running and its native health check healthy; an exhausted budget fails
+closed and the recovery outcome is recorded. Commands and health-check execution
+have their existing semantics; these budgets do not bound total transaction time.
+No health-check interval, startup period, retries, image, application configuration
+or Docker daemon state is changed. The older non-owner activation path keeps its
+existing health budget.
+
 ### Explicit managed reconciliation
 
 Ordinary runs accept only the exact installed managed artifacts. A reviewed tool

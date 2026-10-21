@@ -449,6 +449,98 @@ class TestOwners(unittest.TestCase):
                 "unchanged",
             )
 
+    def owner_health_case(self, activation_ready, recovery_ready=None):
+        # Exercise the actual health polling loop through the production caller.
+        # A 194-second native check models startup grace plus a 180-second interval.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact = root / "managed.conf"
+            artifact.write_bytes(b"original")
+            projects = [
+                {"owner": {"unit": n + ".service"}} for n in ("first", "second")
+            ]
+            original = [{"Name": "/first"}, {"Name": "/second"}]
+            calls = []
+            clock = [0.0]
+            starts = [0]
+            phase_started = [0.0]
+
+            def execute(argv, input_text=None):
+                calls.append(argv)
+                if argv == ["systemctl", "start", "first.service"]:
+                    starts[0] += 1
+                    phase_started[0] = clock[0]
+                return ""
+
+            def states(names, execute):
+                ready = activation_ready if starts[0] == 1 else recovery_ready
+                healthy = ready is not None and clock[0] - phase_started[0] >= ready
+                return [
+                    {
+                        "State": {
+                            "Running": True,
+                            "Health": {"Status": "healthy" if healthy else "starting"},
+                        }
+                    }
+                    for _ in names
+                ]
+
+            def sleep(seconds):
+                clock[0] += seconds
+
+            real_healthy = module.activate.healthy
+            with (
+                patch.object(
+                    module, "plan", return_value=({artifact: b"new"}, original)
+                ),
+                patch.object(module.activate, "inspect", side_effect=states),
+                patch.object(
+                    module.activate.time, "monotonic", side_effect=lambda: clock[0]
+                ),
+                patch.object(module.activate.time, "sleep", side_effect=sleep),
+                patch.object(module.activate, "healthy", wraps=real_healthy) as health,
+            ):
+                if activation_ready is None:
+                    with self.assertRaisesRegex(
+                        RuntimeError, "Owner activation failed"
+                    ):
+                        module.apply(projects, root / "receipt", execute)
+                else:
+                    self.assertTrue(module.apply(projects, root / "receipt", execute))
+            expected_calls = 2 if activation_ready is None else 1
+            self.assertEqual(health.call_count, expected_calls)
+            for call in health.call_args_list:
+                self.assertEqual(call.args, (["first", "second"], execute))
+                self.assertEqual(call.kwargs, {"timeout": 600})
+            self.assertFalse(
+                any("restart" in c or "docker.service" in c for c in calls)
+            )
+            outcome = json.loads((root / "receipt/result.json").read_text())
+            self.assertFalse(outcome["docker_restart_attempted"])
+            if activation_ready is None:
+                self.assertEqual(artifact.read_bytes(), b"original")
+                for name in ("first", "second"):
+                    self.assertEqual(
+                        calls.count(["systemctl", "start", name + ".service"]), 2
+                    )
+            return outcome, clock[0]
+
+    def test_native_owner_activation_waits_for_delayed_native_health(self):
+        outcome, elapsed = self.owner_health_case(194)
+        self.assertEqual(outcome["status"], "activated")
+        self.assertEqual(elapsed, 194)
+
+    def test_native_owner_recovery_has_its_own_extended_health_budget(self):
+        outcome, elapsed = self.owner_health_case(None, 194)
+        self.assertEqual(outcome["status"], "rolled_back")
+        self.assertEqual(elapsed, 600 + 194)
+
+    def test_native_owner_health_budgets_exhaust_and_fail_closed(self):
+        outcome, elapsed = self.owner_health_case(None, None)
+        self.assertEqual(outcome["status"], "recovery_failed")
+        self.assertEqual(elapsed, 600 + 600)
+        self.assertIn("recovery-health", outcome["failures"])
+
     def recovery_case(self, root, fail_recovery):
         artifact = root / "managed.conf"
         artifact.write_bytes(b"original")

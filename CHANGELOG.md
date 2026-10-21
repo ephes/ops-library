@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- `container_ca_activate`: allow a bounded 600-second native-owner health
+  convergence budget for both activation and automatic recovery, retaining
+  native health requirements and the legacy non-owner path.
+
 ## [2.64.3] - 2026-10-21
 
 ### Security

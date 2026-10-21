@@ -45,11 +45,15 @@ class TestLivekitIdle(unittest.TestCase):
 
     def test_actual_cli_defers_active_room_without_emitting_metadata(self):
         paths = []
+        request_bodies = []
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self):
                 paths.append(self.path)
+                request_bodies.append(json.loads(self.rfile.read(int(self.headers['Content-Length']))))
                 body = b'{"rooms":[{"name":"private-room-name","metadata":"private-media"}]}' if self.path.endswith('/ListRooms') else b'{"items":[]}'
-                self.send_response(200); self.end_headers(); self.wfile.write(body)
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers(); self.wfile.write(body)
             def log_message(self, *args):
                 pass
         server = HTTPServer(('127.0.0.1', 0), Handler)
@@ -66,5 +70,6 @@ class TestLivekitIdle(unittest.TestCase):
             for value in ('testsecret', 'private-room-name', 'private-media'):
                 self.assertNotIn(value, result.stdout + result.stderr)
             self.assertEqual(paths, ['/twirp/livekit.RoomService/ListRooms', '/twirp/livekit.Egress/ListEgress'])
+            self.assertEqual(request_bodies, [{}, {'active': True}])
         finally:
             server.shutdown(); server.server_close(); thread.join()

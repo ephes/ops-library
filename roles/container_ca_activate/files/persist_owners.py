@@ -16,6 +16,8 @@ import activate
 
 ROOT = Path("/var/lib/managed-container-ca/owners")
 UNIT_ROOT = Path("/etc/systemd/system")
+# Native health checks may run only every 180 seconds after startup.
+OWNER_HEALTH_TIMEOUT_SECONDS = 600
 
 
 def digest(path):
@@ -444,7 +446,11 @@ def apply(projects, receipt, execute=None, approved=None):
             private_file(path, content)
         execute(["systemctl", "daemon-reload"])
         attempt_all("start")
-        activate.healthy([r["Name"].lstrip("/") for r in original], execute)
+        activate.healthy(
+            [r["Name"].lstrip("/") for r in original],
+            execute,
+            timeout=OWNER_HEALTH_TIMEOUT_SECONDS,
+        )
         outcome("activated")
         return True
     except Exception:
@@ -472,7 +478,11 @@ def apply(projects, receipt, execute=None, approved=None):
         except Exception:
             failures.append("recovery-start")
         try:
-            activate.healthy([r["Name"].lstrip("/") for r in original], execute)
+            activate.healthy(
+                [r["Name"].lstrip("/") for r in original],
+                execute,
+                timeout=OWNER_HEALTH_TIMEOUT_SECONDS,
+            )
         except Exception:
             failures.append("recovery-health")
         outcome("recovery_failed" if len(failures) > 1 else "rolled_back")
