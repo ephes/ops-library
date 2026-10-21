@@ -1,0 +1,27 @@
+---
+# Report, for every Node.js process in the unit's cgroup, whether the flag is in
+# its actual environment (a wrapper script or login shell could still drop it).
+# Prints only process ids and yes/no, never environment values. Stateless: a
+# rerun after an interrupted run sees the same processes and decides the same.
+- name: node_runtime | Check NODE_OPTIONS of running Node.js processes
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      [ "$(systemctl show {{ ca_trust_consumers_unit.name | quote }} -p ActiveState --value)" = active ] || { echo inactive; exit 0; }
+      cg=$(systemctl show {{ ca_trust_consumers_unit.name | quote }} -p ControlGroup --value)
+      found=0
+      while read -r pid; do
+        case "$(basename "$(readlink "/proc/$pid/exe" 2>/dev/null)")" in node|nodejs) ;; *) continue ;; esac
+        found=1
+        if tr '\0' '\n' < "/proc/$pid/environ" | grep -E '^NODE_OPTIONS=' | tr ' =' '\n\n' \
+            | grep -xF -- {{ ca_trust_consumers_node_flag | quote }} >/dev/null; then
+          echo "pid=$pid flag=yes"
+        else
+          echo "pid=$pid flag=no"
+        fi
+      done < "/sys/fs/cgroup$cg/cgroup.procs"
+      [ "$found" = 1 ] || echo "no-node-process"
+    executable: /bin/bash
+  register: _ca_trust_consumers_node_runtime
+  changed_when: false
+  check_mode: false

@@ -1,0 +1,32 @@
+---
+# pam_env reads /etc/environment for SSH, sudo, su, login and cron sessions.
+# The line is merged, not replaced: existing NODE_OPTIONS stay in place.
+
+- name: node_cli | Check environment file
+  ansible.builtin.stat:
+    path: "{{ ca_trust_consumers_environment_file }}"
+    get_checksum: false
+  register: _ca_trust_consumers_envfile_stat
+
+- name: node_cli | Read environment file
+  ansible.builtin.slurp:
+    src: "{{ ca_trust_consumers_environment_file }}"
+  register: _ca_trust_consumers_envfile
+  when: _ca_trust_consumers_envfile_stat.stat.exists
+
+- name: node_cli | Set NODE_OPTIONS in environment file
+  vars:
+    _existing: >-
+      {{ (_ca_trust_consumers_envfile.content | b64decode)
+         | local.ops_library.ca_trust_environment_file_node_options
+         if _ca_trust_consumers_envfile_stat.stat.exists else '' }}
+  ansible.builtin.lineinfile:
+    path: "{{ ca_trust_consumers_environment_file }}"
+    regexp: '^\s*(export\s+)?NODE_OPTIONS='
+    line: >-
+      NODE_OPTIONS="{{ _existing | local.ops_library.ca_trust_node_options_with_flag(ca_trust_consumers_node_flag) }}"
+    create: true
+    # Numeric root ids: no name lookup (the check-mode test runs on macOS).
+    owner: "0"
+    group: "0"
+    mode: "0644"

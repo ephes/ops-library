@@ -1,0 +1,75 @@
+---
+- name: node_unit | Read unit state
+  ansible.builtin.command:
+    argv: [systemctl, show, "{{ ca_trust_consumers_unit.name }}", -p, LoadState, -p, EnvironmentFiles]
+  register: _ca_trust_consumers_node_show
+  changed_when: false
+  check_mode: false
+
+- name: node_unit | Require a loaded unit
+  ansible.builtin.assert:
+    that: "'LoadState=loaded' in _ca_trust_consumers_node_show.stdout_lines"
+    fail_msg: "{{ ca_trust_consumers_unit.name }} is not a loaded unit on this host."
+    quiet: true
+
+# Key names only; values (which may be secrets) are never read into output.
+- name: node_unit | Look for NODE_OPTIONS in the unit's environment files
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      systemctl show {{ ca_trust_consumers_unit.name | quote }} -p EnvironmentFiles --value \
+        | sed -n 's/^\(\S\+\) (ignore_errors=.*$/\1/p' \
+        | while read -r file; do
+            [ -f "$file" ] && grep -l -E '^[[:space:]]*(export[[:space:]]+)?NODE_OPTIONS=' "$file" || true
+          done
+    executable: /bin/bash
+  register: _ca_trust_consumers_node_envfiles
+  changed_when: false
+  check_mode: false
+
+- name: node_unit | Refuse to override NODE_OPTIONS from an environment file
+  ansible.builtin.assert:
+    that: _ca_trust_consumers_node_envfiles.stdout | trim | length == 0
+    fail_msg: >-
+      {{ ca_trust_consumers_unit.name }} sets NODE_OPTIONS in
+      {{ _ca_trust_consumers_node_envfiles.stdout_lines | join(', ') }}, which takes
+      precedence over a drop-in. Add {{ ca_trust_consumers_node_flag }} there instead.
+    quiet: true
+
+- name: node_unit | Read unit definition
+  ansible.builtin.command:
+    argv: [systemctl, cat, "{{ ca_trust_consumers_unit.name }}"]
+  register: _ca_trust_consumers_node_cat
+  changed_when: false
+  check_mode: false
+
+- name: node_unit | Write NODE_OPTIONS drop-in
+  vars:
+    _dropin: "/etc/systemd/system/{{ ca_trust_consumers_unit.name }}.d/{{ ca_trust_consumers_node_dropin_name }}"
+    _existing: >-
+      {{ _ca_trust_consumers_node_cat.stdout
+         | local.ops_library.ca_trust_systemd_unit_node_options(_dropin) }}
+    ca_trust_consumers_node_options: >-
+      {{ _existing | local.ops_library.ca_trust_node_options_with_flag(ca_trust_consumers_node_flag) }}
+  block:
+    - name: node_unit | Ensure drop-in directory
+      ansible.builtin.file:
+        path: "{{ _dropin | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: node_unit | Template drop-in
+      ansible.builtin.template:
+        src: node-trust.conf.j2
+        dest: "{{ _dropin }}"
+        owner: root
+        group: root
+        mode: "0644"
+      register: _ca_trust_consumers_node_dropin
+
+- name: node_unit | Reload systemd after a drop-in change
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: _ca_trust_consumers_node_dropin is changed
