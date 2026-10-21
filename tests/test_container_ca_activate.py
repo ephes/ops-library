@@ -27,7 +27,7 @@ class TestActivation(unittest.TestCase):
         return projects, state
 
     def runner(self, state, calls, failure=None):
-        def execute(argv):
+        def execute(argv, input_text=None):
             calls.append(argv)
             if argv[:2] == ['docker', 'inspect']:
                 return json.dumps([state])
@@ -35,6 +35,8 @@ class TestActivation(unittest.TestCase):
                 return 'example-server\n'
             if '--hash' in argv:
                 return 'server original-hash\n'
+            if '--format' in argv and 'json' in argv:
+                return '{"services":{"server":{}}}'
             if failure:
                 failure(argv)
             return ''
@@ -57,7 +59,7 @@ class TestActivation(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); projects, state = self.fixture(root); calls = []
             state['Config']['Labels']['com.docker.compose.config-hash'] = 'changed'
-            with self.assertRaises(ValueError):
+            with self.assertRaisesRegex(ValueError, 'configuration drift'):
                 module.transaction(projects, root / 'receipt', self.runner(state, calls))
             self.assertFalse((root / 'receipt').exists())
             self.assertFalse(any('stop' in c or 'create' in c or 'restart' in c for c in calls))
@@ -159,3 +161,39 @@ class TestActivation(unittest.TestCase):
             self.assertEqual(health_calls, 2)
             self.assertTrue(any('create' in c and any('rollback-0' in x for x in c) for c in calls))
             self.assertEqual(sum(c == ['systemctl', 'restart', 'docker.service'] for c in calls), 1)
+
+    def test_namespace_hash_equivalence_preserves_other_hash_guards(self):
+        import copy
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); projects, state = self.fixture(root)
+            state['Id'] = 'server-id'
+            state['HostConfig'] = {'NetworkMode': 'container:vpn-id'}
+            vpn = copy.deepcopy(state)
+            vpn['Id'] = 'vpn-id'; vpn['Name'] = '/vpn'
+            vpn['Config']['Labels']['com.docker.compose.service'] = 'vpn'
+            vpn['Config']['Labels']['com.docker.compose.config-hash'] = 'vpn-hash'
+            projects[0]['containers'].append({'name': 'vpn', 'store': str(root / 'store')})
+            states = {'example-server': state, 'vpn': vpn}
+            canonical = []
+            def execute(argv, input_text=None):
+                if input_text is not None:
+                    canonical.append(json.loads(input_text))
+                    return 'server original-hash\nvpn vpn-hash\n'
+                if '--hash' in argv:
+                    return 'server unresolved-hash\nvpn vpn-hash\n'
+                if '--format' in argv and 'json' in argv:
+                    return '{"services":{"server":{"network_mode":"service:vpn"},"vpn":{}}}'
+                if argv[:2] == ['docker', 'ps']:
+                    return 'example-server\nvpn\n'
+                raise AssertionError(argv)
+            module.validate(projects, states, execute)
+            self.assertEqual(canonical, [{'services': {'server': {'network_mode': 'container:vpn-id'}}}])
+            def changed(argv, input_text=None):
+                if input_text is not None:
+                    return 'server unrelated-change-hash\nvpn vpn-hash\n'
+                return execute(argv, input_text)
+            with self.assertRaisesRegex(ValueError, 'configuration drift'):
+                module.validate(projects, states, changed)
+            state['HostConfig']['NetworkMode'] = 'container:unexpected-id'
+            with self.assertRaisesRegex(ValueError, 'namespace differs'):
+                module.validate(projects, states, execute)

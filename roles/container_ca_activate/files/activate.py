@@ -14,8 +14,8 @@ import ssl
 import time
 
 
-def run(argv):
-    result = subprocess.run(argv, capture_output=True, text=True)
+def run(argv, input_text=None):
+    result = subprocess.run(argv, input=input_text, capture_output=True, text=True)
     if result.returncode:
         # Compose output may contain interpolated credentials. Keep it private.
         raise RuntimeError(f"Command failed: {argv[0]} {argv[1]}; exit {result.returncode}")
@@ -100,6 +100,36 @@ def overlay_for(project, states):
     return {'services': services}
 
 
+def configuration_hashes(project, states, execute):
+    command = compose(project)
+    hashes = dict(line.split() for line in execute(command + ['config', '--hash', '*']).splitlines())
+    services = {states[r['name']]['Config']['Labels']['com.docker.compose.service']: states[r['name']]
+                for r in project['containers']}
+    if len(services) != len(project['containers']):
+        raise ValueError('One explicitly inventoried container per Compose service required')
+    mismatches = [name for name, state in services.items()
+                  if hashes.get(name) != state['Config']['Labels']['com.docker.compose.config-hash']]
+    if not mismatches:
+        return hashes
+    # Compose stamps a service namespace after resolving its dependency to a
+    # container ID; config --hash retains service:<name>. Normalize ONLY that
+    # proven equivalence, then let Compose hash every other setting unchanged.
+    configuration = json.loads(execute(command + ['config', '--format', 'json']))
+    overrides = {}
+    for name in mismatches:
+        mode = configuration.get('services', {}).get(name, {}).get('network_mode', '')
+        dependency = mode.removeprefix('service:')
+        actual = services[name].get('HostConfig', {}).get('NetworkMode')
+        if not mode.startswith('service:') or dependency not in services:
+            raise ValueError('Original Compose configuration drift requires review')
+        expected = 'container:' + services[dependency]['Id']
+        if actual != expected:
+            raise ValueError('Compose service namespace differs from inventoried dependency')
+        overrides[name] = {'network_mode': actual}
+    return dict(line.split() for line in execute(command + ['-f', '-', 'config', '--hash', '*'],
+                                                 input_text=json.dumps({'services': overrides})).splitlines())
+
+
 def validate(projects, states, execute=run):
     names = [r['name'] for p in projects for r in p['containers']]
     if not names or len(names) != len(set(names)):
@@ -117,7 +147,7 @@ def validate(projects, states, execute=run):
         for source in project['files']:
             if not Path(source).is_absolute() or not Path(source).is_file():
                 raise ValueError('Original Compose file is missing')
-        hashes = dict(line.split() for line in execute(compose(project) + ['config', '--hash', '*']).splitlines())
+        hashes = configuration_hashes(project, states, execute)
         seen = set()
         for record in project['containers']:
             state = states[record['name']]
