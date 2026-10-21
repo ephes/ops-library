@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased — ca_trust_consumers: Node.js trust in sudo sessions
+
+- `ca_trust_consumers` with `ca_trust_consumers_node_cli` now also gives sudo
+  sessions `NODE_OPTIONS=--use-openssl-ca`: Debian 13's sudo PAM stack does not
+  read `/etc/environment`, so `sudo -u <app>` sessions (Ansible/pyinfra
+  `become`, e.g. `npm ci`, `yarn install`) lost the flag. A visudo-validated
+  sudoers drop-in sets `Defaults env_file=` to a root-owned file with the same
+  merged value; a caller's own `NODE_OPTIONS` is never passed through. The
+  effective policy is read with sudo's own `cvtsudoers -f json` before and
+  after the change: any `env_file` other than exactly one unbound entry for the
+  role's file (scoped, negated, foreign, duplicated) or an unexportable policy
+  makes the role fail.
+  `ca_trust_consumers_node_cli_sudo: false` turns this off.
+
 ## Unreleased — Home Assistant integration downloads use the system CA store (2.64.1)
 
 - `homeassistant_deploy`: new `homeassistant_uv_system_certs` (default `true`)
