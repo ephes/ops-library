@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## Unreleased — macOS Java trust copies (2.61.0)
 
 - `macos_java_trust`: maintain fingerprint-filtered JSSE trust copies and explicit
   PyCharm VM options while preserving vendor bundles and unrelated trust. A narrow
