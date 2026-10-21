@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## Unreleased — eMudhra macOS and container trust remediation (2.63.0)
 
 - Remediate Apple curl's separate macOS CA bundle with atomic trust-preserving backups and TLS probes.
 - Patch explicitly allowlisted macOS Python environments and certifi-only deployed lock records without adding packages.
