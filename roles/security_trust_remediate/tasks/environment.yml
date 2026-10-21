@@ -91,6 +91,30 @@
           - .
       changed_when: true
 
+    - name: environment | Hash the immutable archive for explicitly allowlisted cache recovery
+      ansible.builtin.stat:
+        path: "{{ security_trust_snapshot.path }}/environment.tar"
+        checksum_algorithm: sha256
+      register: security_trust_recovery_archive
+      when: trust_env.cache_recovery_paths | default([]) | length > 0
+
+    - name: environment | Recover explicitly allowlisted generated cache before package replacement
+      ansible.builtin.include_role:
+        name: local.ops_library.security_trust_recover
+      vars:
+        security_trust_recover_wheel: "{{ security_trust_wheel_dir }}/{{ (security_trust_wheels | selectattr('package', 'equalto', 'certifi') | first).name }}"
+        security_trust_recover_sha256: "{{ (security_trust_wheels | selectattr('package', 'equalto', 'certifi') | first).sha256 }}"
+        security_trust_recover_version: "{{ security_trust_certifi_version }}"
+        security_trust_recover_uv_bin: "{{ security_trust_uv_bin }}"
+        security_trust_recover_entries:
+          - path: "{{ trust_env.path }}"
+            owner: "{{ security_trust_owner.stat.pw_name }}"
+            before: "{{ security_trust_snapshot.path }}/before.json"
+            before_sha256: "{{ (security_trust_before | to_nice_json) | hash('sha256') }}"
+            archive_sha256: "{{ security_trust_recovery_archive.stat.checksum }}"
+            cache_paths: "{{ trust_env.cache_recovery_paths }}"
+      when: trust_env.cache_recovery_paths | default([]) | length > 0
+
     - name: environment | Install only existing trust packages from offline pinned wheels
       ansible.builtin.command:
         argv: "{{ [security_trust_uv_bin, 'pip', 'install', '--python', trust_env.path + '/bin/python', '--no-deps', '--no-index'] + (security_trust_wheels | selectattr('package', 'in', security_trust_updates) | map(attribute='name') | map('regex_replace', '^', security_trust_wheel_dir + '/') | list) }}"

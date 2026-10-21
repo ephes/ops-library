@@ -884,3 +884,7 @@ test-voxhelm-trust-refresh: venv
 # NODE_OPTIONS merging, forbidden-root scan and restart gating for ca_trust_consumers.
 test-ca-trust-consumers: venv
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_ca_trust_consumers tests.test_ca_trust_consumers_run
+
+# Explicit required Docker/real-UV recovery integration gate.
+test-security-trust-recover: venv
+    @uv run python -m unittest tests.test_security_trust_recover_live

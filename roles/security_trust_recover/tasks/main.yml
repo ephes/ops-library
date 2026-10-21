@@ -1,0 +1,6 @@
+---
+- name: Recover explicitly proven interrupted trust updates
+  ansible.builtin.include_tasks: entry.yml
+  loop: "{{ security_trust_recover_entries }}"
+  loop_control:
+    loop_var: recovery

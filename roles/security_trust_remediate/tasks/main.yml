@@ -14,6 +14,12 @@
     that:
       - item.path is match('^/(home|opt)/[a-zA-Z0-9_./-]+$')
       - "'/../' not in item.path"
+      - item.cache_recovery_paths | default([]) is sequence
+      - item.cache_recovery_paths | default([]) is not string
+      - item.cache_recovery_paths | default([]) is not mapping
+      - item.cache_recovery_paths | default([]) | select('string') | list | length == item.cache_recovery_paths | default([]) | length
+      - item.cache_recovery_paths | default([]) | length == 0 or item.path is match('^/home/[a-zA-Z0-9_-]+/(site/)?\\.?venv$')
+      - item.cache_recovery_paths | default([]) | reject('match', '^' ~ (item.path | regex_escape) ~ '/lib/python3\\.[0-9]+/site-packages/certifi/__pycache__(/[a-zA-Z0-9_.-]+\\.pyc)?$') | list | length == 0
       - item.services is defined
       - item.health_urls is defined
       - item.services | length == 0 or item.health_urls | length > 0

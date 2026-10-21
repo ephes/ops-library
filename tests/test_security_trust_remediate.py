@@ -732,3 +732,74 @@ class FreshHostCheckModeTests(unittest.TestCase):
             subprocess.run(
                 ["docker", "rm", "-f", name], check=False, capture_output=True
             )
+
+
+class CacheRecoveryScopeGuardTests(unittest.TestCase):
+    def test_actual_early_assert_rejects_invalid_cache_paths_before_mutation(self):
+        import subprocess
+        import tempfile
+        import yaml
+
+        tasks = yaml.safe_load(
+            (ROOT / "roles/security_trust_remediate/tasks/main.yml").read_text()
+        )
+        task = next(
+            t
+            for t in tasks
+            if t["name"]
+            == "Validate every environment before OS mutation or restart evidence"
+        )
+        prefix = "/home/fixture/site/.venv"
+        cache = prefix + "/lib/python3.13/site-packages/certifi/__pycache__"
+        cases = [
+            ([], 0),
+            ([cache], 0),
+            ([cache + "/core.cpython-313.pyc"], 0),
+            (cache, 2),
+            ({"bad": cache}, 2),
+            ([123], 2),
+            ([prefix + "/lib/python3.13/site-packages/requests/__pycache__"], 2),
+            (
+                [
+                    "/home/other/site/.venv/lib/python3.13/site-packages/certifi/__pycache__"
+                ],
+                2,
+            ),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            play = Path(directory) / "guard.yml"
+            for paths, expected in cases:
+                with self.subTest(paths=paths):
+                    entry = {
+                        "path": prefix,
+                        "services": [],
+                        "health_urls": [],
+                        "cache_recovery_paths": paths,
+                    }
+                    play.write_text(
+                        yaml.safe_dump(
+                            [
+                                {
+                                    "hosts": "localhost",
+                                    "gather_facts": False,
+                                    "vars": {"security_trust_environments": [entry]},
+                                    "tasks": [task],
+                                }
+                            ]
+                        )
+                    )
+                    result = subprocess.run(
+                        [
+                            "ansible-playbook",
+                            "-i",
+                            "localhost,",
+                            "-c",
+                            "local",
+                            str(play),
+                        ],
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(
+                        result.returncode, expected, result.stdout + result.stderr
+                    )

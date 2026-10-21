@@ -207,6 +207,7 @@ consumer repos depend on.
 | Service removal | [`software_live_remove`](roles/software_live_remove/README.md) | Remove software observation components while preserving application state. |
 | Service operations | [`os_apt_maintenance`](roles/os_apt_maintenance/README.md) | Run host-local apt update/dist-upgrade/autoremove/autoclean via systemd timer with durable state and optional Nyxmon endpoint. |
 | Service operations | [`security_trust_remediate`](roles/security_trust_remediate/README.md) | Remediate explicit OS/Python trust stores with verified offline wheels, rollback evidence and serial restarts. |
+| Service operations | [`security_trust_recover`](roles/security_trust_recover/README.md) | Recover proven interrupted certifi replacement using immutable evidence and exact cache ownership repair. |
 | Service operations | [`aws_ca_bundle`](roles/aws_ca_bundle/README.md) | Use patched system trust for explicit botocore consumers while preserving custom AWS bundles. |
 | Service removal | [`daybook_voice_memo_attention_remove`](roles/daybook_voice_memo_attention_remove/README.md) | Unload only the attention LaunchAgent while preserving tracking and native history. |
 | Service removal | [`daybook_voice_memo_attention_notifier_remove`](roles/daybook_voice_memo_attention_notifier_remove/README.md) | Revoke only the dedicated notifier key and executable while preserving other authorizations. |

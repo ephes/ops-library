@@ -1,0 +1,6 @@
+---
+security_trust_recover_entries: []
+security_trust_recover_wheel: /var/cache/security-trust-remediation/certifi-2026.10.19-py3-none-any.whl
+security_trust_recover_sha256: 42d35340cc5b9ba78e818ddbff0c5b1c2b779de448a340fd1b989f5fa8670e1b
+security_trust_recover_version: "2026.10.19"
+security_trust_recover_uv_bin: /usr/local/bin/uv

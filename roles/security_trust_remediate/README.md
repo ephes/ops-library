@@ -63,3 +63,9 @@ Example private orchestration:
   roles:
     - local.ops_library.security_trust_remediate
 ```
+
+For explicitly audited root-owned certifi bytecode, optional environment-entry
+`cache_recovery_paths` selects exact generated cache paths. After creating its
+normal immutable before.json/full-environment archive, the role invokes
+`security_trust_recover` with both SHA256 digests before package replacement.
+It never changes ownership recursively or outside those guarded cache paths.

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Recover explicitly proven interrupted certifi updates with immutable prior-install evidence, exact generated-cache ownership repair and owner-identity offline restoration.
+
 ## Unreleased — loopback trust preflight and validation labels (2.63.5)
 
 - Correct OpenClaw trust validation task-name prefixes so strict role lint accepts the incident checks; validation behavior is unchanged.
