@@ -43,9 +43,14 @@
 - `rust/echoport-command-guard` (slice S7 of
   `rust/echoport-command-guard/PLAN.md`): the crate version is now `0.1.0`
   and is released by the tag `echoport-command-guard-v0.1.0` through
-  `rust-release.yml` (archive
-  `echoport-command-guard-0.1.0-x86_64-unknown-linux-gnu.tar.gz` and its
-  `.sha256`). The role's `shadow` and `rust` molecule scenarios install the
+  `rust-release.yml`: the GitHub release `echoport-command-guard 0.1.0`
+  carries `echoport-command-guard-0.1.0-x86_64-unknown-linux-gnu.tar.gz`
+  (binary and `LICENSE`, built on ubuntu-22.04, glibc floor 2.35) and its
+  `.sha256`: archive sha256
+  `300c849c7883275b600054e4e41d457f49d90ec61d116cb2d63dbeea2f4953c9`,
+  stripped binary 668,632 bytes (0.64 MiB, budget 2 MiB), highest symbol
+  version `GLIBC_2.34`; `rust/echoport-command-guard/README.md` "Release"
+  has these values. The role's `shadow` and `rust` molecule scenarios install the
   guard built from the checkout under the crate's version; a role test
   requires the two to match.
 - Lean measurements (PLAN.md 8.3): `parity/e2e/lean.py` measures the Rust and
