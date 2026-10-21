@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## Unreleased — loopback trust preflight and validation labels (2.63.5)
 
 - Correct OpenClaw trust validation task-name prefixes so strict role lint accepts the incident checks; validation behavior is unchanged.
 - Keep LiveKit idle-preflight bearer-token API requests on loopback even when ambient HTTP proxies are configured; exercise the actual CLI under a hostile proxy environment.
