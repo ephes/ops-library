@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased — Rust ports: echoport-command-guard runtime and exec (S4)
+
+- `echoport-command-guard` (slice S4 of `rust/echoport-command-guard/PLAN.md`):
+  forced-command mode now runs the Python guard's flow instead of refusing
+  everything: interactive sessions refused before the policy is read,
+  `policy error` refusals, `check()`, the umask, the redirects (opened with
+  `O_NOFOLLOW` relative to a checked private directory, as Python does), the
+  `allowed from` log line, and the exec with `PATH = SAFE_PATH`, CPython's
+  PEP 538 `LC_CTYPE` coercion, SIGPIPE and SIGXFSZ ignored and CPython's
+  `os.execvp` search (no `/bin/sh` fallback, exit 127 with `cannot run`).
+  Log lines go to syslog under the Python guard's identifier, facility and
+  priorities, with Python's `repr` of the command (undecodable bytes as
+  `\udcNN`) cut at 1000 characters. New modes a client cannot reach:
+  `--decide <policy>` (the decision as JSON on stdout) and `--shadow <policy>
+  <python> -I <guard> <policy>` (logs the Rust decision under
+  `echoport-remote-command-guard-shadow`, then execs the Python guard with the
+  same PID). New process tests (`tests/flow.rs`, Linux) record what the
+  executed command inherits and compare the locale coercion with CPython
+  3.12 and 3.13. Until S2 the binary's filesystem lookups fail closed.
+  Nothing installs the binary; no role behaviour changes.
+
 ## Unreleased — Rust ports: metrics-httpd core (S1)
 
 - `rust/metrics-httpd` (slice S1 of `rust/metrics-httpd/PLAN.md`): the
