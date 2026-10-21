@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — software-live Rust port: crate skeleton
+
+- New Rust crate `rust/software-live` in the `rust/` workspace (slice S2 of
+  `rust/software-live/PLAN.md`): the command line of `software_live.py`
+  (modes, options, exit codes; `--version`), `validate`, policy validation
+  and the Python-compatible `policy_sha256`, the report types, summary and
+  `with_freshness`, and the `System` trait the observation slices build on.
+  `collect`, `serve` and `export-inventory` stop with exit 1 until their
+  slices. Nothing installs or runs the binary; the `software_live` role is
+  unchanged.
+- `rust/software-live/fixtures/generate.py` writes the Rust fixtures from the
+  Python program; `tests/test_software_live_rust_fixtures.py` (`just
+  test-software-live-rust-fixtures`, part of `just test`) fails when a
+  fixture or `TESTMAP.md` no longer matches it. New recipes `just
+  rs-software-live` and `just rs-software-live-fixtures`.
+
 ## [2.64.5] - 2026-10-21
 
 ### Security
