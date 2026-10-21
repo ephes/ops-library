@@ -5,8 +5,8 @@
 - Add the `echoport-command-guard` crate to the Rust workspace (slice S1 of
   `rust/echoport-command-guard/PLAN.md`): `--version`, `--check-policy` (the
   Python guard's validation and messages, with strict JSON types: duplicate
-  keys, `NaN`/`Infinity`, out-of-range numbers and lone surrogates are
-  refused), the command prefilter (printable ASCII and tab only, no `\` or
+  keys, `NaN`/`Infinity`, out-of-range numbers, lone surrogates and nesting
+  deeper than 127 arrays and objects are refused), the command prefilter (printable ASCII and tab only, no `\` or
   `#`), the tokeniser (`shlex` crate, proven equal to Python's `shlex.split`
   by differential tests against the Python oracle), the `Decision` types,
   the virtual `GuardEnv` and a fail-closed dispatcher that still refuses
@@ -15,7 +15,8 @@
   this crate's steps: Python 3.12 from uv for the oracle tests and the
   fixture drift check (`gen_fixtures.py check` under 3.12 and 3.13, `check
   --record` in the repo venv). The fixture generator now tags numbers
-  outside the double range as `policy-type` (new case `raw-big-integer`).
+  outside the double range and nesting deeper than 127 as `policy-type` (new
+  cases `raw-big-integer`, `raw-nesting-127`, `raw-nesting-128`).
   Nothing installs the binary; no role behaviour changes.
 
 ## Unreleased — Rust ports: release pipeline with per-binary tags (foundation F2)
