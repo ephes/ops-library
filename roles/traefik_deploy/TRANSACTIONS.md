@@ -202,3 +202,84 @@ recapture after an acceptance failure. The probe refuses an empty list, preserve
 exact authentication/redirect expectations, and records bounded curl timeouts.
 An explicitly invalid `recovery_access` value is refused even if a legacy console
 field is also present; fallback applies only when the new field is absent.
+
+## ACME storage adoption (`acme_storage`)
+
+This phase-1 action moves the populated `/acme.json` to
+`/etc/traefik/acme/acme.json` without changing the binary, unit or routing.
+Policy must name those exact `acme_source` and `acme_target` paths. The source
+must be a root-owned regular 0600 file with a nonempty `letsencrypt` certificate
+list. The destination must be absent, a root-owned empty regular file, or an
+exact byte copy of the source (what a rolled-back attempt leaves behind, so a
+reviewed retry needs no manual cleanup); any other content is refused. Parent
+directories must be real root-owned directories without group/world write access.
+The engine saves the previous target as `acme-target.orig`, copies the
+source bytes atomically at 0600, and sets the ACME directory to 0700.
+
+Supply the same evidence, probes, approved binary hash and isolated compatibility
+proof as an alias transaction, plus `candidate_config_base64`. No TOML serializer
+is used: the supplied bytes are installed intact, preserving comments and order.
+Prepare the candidate by replacing the misplaced `[acme]` header with
+`[certificatesResolvers.letsencrypt.acme]` and removing `[letsencrypt]` only if
+empty. Parsed validation permits only moving the old top-level email and setting
+resolver storage to the target. All other fields, including `httpChallenge`,
+`keyType` and `caServer`, must stay identical. Existing resolver email/storage or
+extra misplaced keys are refused. This is a forward-only narrow repair, not a
+reverse migration or general configuration adoption action.
+
+Before writing, the engine records source SHA256, certificate domains/notAfter,
+and local port-443 SNI leaf SHA256 fingerprints for every hostname in the store
+in the private transaction directory (`acme-baseline.json`). OpenSSL is required
+for public leaf expiry parsing. The copy is hash-checked before the single restart.
+After acceptance, the source hash must still match, certificate sets (including
+multiplicity) must match, and all served leaf fingerprints must match. Account
+metadata may change without invalidating the certificate comparison. TLS identity
+comparison uses DER fingerprints; ordinary ingress probes retain CA verification.
+A failure restores the previous TOML and restarts against the baseline, checking
+fingerprints again, leaving recovery/degraded state for explicit review. Cleanup
+failure cannot prevent attempting config rollback. Both stores remain on disk;
+the source is never written or deleted, and no ACME archive is restored.
+
+For independent `capture`/`health` probe use, set `tls_fingerprints: true` in the
+private probe configuration. The `health_probe_capture` task entry runs `capture`
+read-only from a temporary directory (input `traefik_health_probe_spec` with
+probes and entrypoints, output fact `traefik_health_probe_captured`), so a fresh
+baseline needs no manual host access. Capture adds `tls_sha256` to each HTTPS observation;
+health requires a captured TLS observation and refuses fingerprint changes,
+including when a backend recovers from 5xx. TCP/TLS failures are recorded with a
+null fingerprint and error class, preserving known baseline failures and allowing
+health's bounded retries. Transaction post-start and recovery fingerprint checks
+also retry five times with two-second delays for resolver startup settling.
+Capture/install a fresh baseline before migration. Traefik-generated default
+certificates change at restart, so they cannot provide a stable migration baseline:
+finish the www resolver fix first. Overlapping stored certificates (expected after
+the six-name www fix) are allowed; record the chosen served leaf per hostname.
+If Traefik selects a different leaf after settling, exact-identity acceptance
+intentionally fails and rolls back, even if the alternate leaf is valid.
+
+The controller supports `--check acme_storage HOST REQUEST` as a wholly offline
+candidate check. Include `baseline_config_base64` alongside the candidate; it
+validates the exact TOML delta against registry policy without invoking Ansible,
+creating a journal, or touching a host. It does not validate live ownership,
+source contents, probes, recovery records, or compatibility attestations.
+
+Before production use, run the native isolated Traefik 3.7.14 VM scenario with
+synthetic keys, the production-shaped misplaced tables and cwd `/`, and an
+unreachable CA endpoint: prove unchanged fingerprints, no CA connection/order,
+and automatic recovery after a forced acceptance failure. Keep its report and
+exact candidate hash as compatibility evidence. Unit tests are not this VM proof.
+
+Observed in that VM proof (2026-10-21, ARM64, 13 test-CA certificates, 16
+hostnames, routers with and without `certResolver`): the forced acceptance failure
+restored the old TOML with two restarts and unchanged fingerprints; the reviewed
+retry over the exact-copy target then succeeded with one restart, identical
+fingerprints and certificate set, an unchanged source, a byte-identical target
+after start, and only the new store opened by Traefik. There were no CA
+connections in either run. Each restart refused connections for 0.05–1.8 s, and
+the first handshake right after the listener opens can still get Traefik's
+generated default certificate; the bounded fingerprint retries absorb that.
+Traefik 3.7.14 picks among overlapping stored certificates deterministically
+(reverse-sorted SAN keys), so the served leaf per hostname stays stable across
+restarts. A refusal before any change (for example a missing backup path) still
+leaves the controller record pending, as for every action; reconcile it with
+inspection and `resume` before the next attempt.

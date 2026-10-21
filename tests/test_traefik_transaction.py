@@ -75,17 +75,19 @@ class HealthProbeTests(unittest.TestCase):
             )
             with patch("sys.argv", ["probe", "cleanup", str(config)]):
                 output = io.StringIO()
-                with patch.object(
-                    health, "tree", return_value={"route.yml": "before"}
-                ), patch("sys.stdout", output):
+                with (
+                    patch.object(health, "tree", return_value={"route.yml": "before"}),
+                    patch("sys.stdout", output),
+                ):
                     health.main()
                 self.assertEqual(
                     json.loads(output.getvalue()),
                     {"cleanup": "no temporary resources", "dynamic_verified": True},
                 )
-                with patch.object(
-                    health, "tree", return_value={"route.yml": "changed"}
-                ), self.assertRaisesRegex(RuntimeError, "Permanent routing changed"):
+                with (
+                    patch.object(health, "tree", return_value={"route.yml": "changed"}),
+                    self.assertRaisesRegex(RuntimeError, "Permanent routing changed"),
+                ):
                     health.main()
 
     def test_empty_capture_and_acceptance_are_refused(self):
@@ -95,9 +97,10 @@ class HealthProbeTests(unittest.TestCase):
                 json.dumps({"probes": [], "observations": [], "dynamic": {}})
             )
             for mode in ("capture", "health", "alias"):
-                with patch(
-                    "sys.argv", ["probe", mode, str(config)]
-                ), self.assertRaisesRegex(ValueError, "At least one"):
+                with (
+                    patch("sys.argv", ["probe", mode, str(config)]),
+                    self.assertRaisesRegex(ValueError, "At least one"),
+                ):
                     health.main()
 
     def test_metrics_bind_probe_requires_exact_loopback_static_policy(self):
@@ -131,6 +134,27 @@ class HealthProbeTests(unittest.TestCase):
                 health.validate_static_policy(
                     broken, ["web", "web-secure", "traefik"], "metrics_bind"
                 )
+
+
+class HealthProbeCaptureTaskTests(unittest.TestCase):
+    def test_capture_is_read_only_and_cleans_its_temporary_directory(self):
+        import yaml
+
+        tasks = yaml.safe_load(
+            (ROOT / "roles/traefik_deploy/tasks/health_probe_capture.yml").read_text()
+        )
+        text = json.dumps(tasks)  # task values only, not comments
+        self.assertNotIn("/var/lib/traefik-update-probes", text)
+        self.assertNotIn("systemctl", text)
+        guard = tasks[0]["ansible.builtin.assert"]["that"]
+        self.assertIn("traefik_health_probe_spec.observations is not defined", guard)
+        block = next(task for task in tasks if "block" in task)
+        run = next(t for t in block["block"] if "ansible.builtin.command" in t)
+        self.assertEqual(run["ansible.builtin.command"]["argv"][2], "capture")
+        self.assertIs(run["changed_when"], False)
+        cleanup = block["always"][0]["ansible.builtin.file"]
+        self.assertEqual(cleanup["state"], "absent")
+        self.assertIn("traefik_health_probe_capture_dir.path", cleanup["path"])
 
 
 class RecoveryEvidenceTests(unittest.TestCase):
@@ -248,7 +272,7 @@ entryPoint="traefik"
         candidates = (
             self.after.replace(b"127.0.0.1:8080", b":8080"),
             self.after.replace(b'entryPoint="traefik"\n', b""),
-            self.after + b'\n[api]\ninsecure=true\n',
+            self.after + b"\n[api]\ninsecure=true\n",
         )
         for candidate in candidates:
             with self.subTest(candidate=candidate), self.assertRaises(tx.Refused):
@@ -261,6 +285,238 @@ entryPoint="traefik"
             )
         with self.assertRaises(tx.Refused):
             tx.validate_metrics_bind(self.after, self.after, self.policy)
+
+
+class AcmeStorageTests(unittest.TestCase):
+    before = b"""# preserve this header
+[certificatesResolvers]
+[letsencrypt] # misplaced empty table
+[acme] # retain resolver comment
+email = "operator@example.invalid" # contact
+storage = "/etc/traefik/acme/acme.json"
+[certificatesResolvers.letsencrypt.acme.httpChallenge]
+entryPoint = "web"
+"""
+    after = before.replace(b"[letsencrypt] # misplaced empty table\n", b"").replace(
+        b"[acme]", b"[certificatesResolvers.letsencrypt.acme]"
+    )
+    policy: ClassVar[dict] = {
+        "acme_source": "/acme.json",
+        "acme_target": "/etc/traefik/acme/acme.json",
+    }
+
+    def test_exact_candidate_bytes_comments_and_order_preserved(self):
+        tx.validate_acme_storage(self.before, self.after, self.policy)
+        for suffix in (b'keyType="EC256"\n', b'caServer="https://invalid"\n'):
+            candidate = self.after.replace(b"# contact\n", b"# contact\n" + suffix)
+            with self.assertRaises(tx.Refused):
+                tx.validate_acme_storage(self.before, candidate, self.policy)
+        for candidate in (
+            self.after.replace(b'entryPoint = "web"', b'entryPoint = "other"'),
+            self.after.replace(b"operator@", b"changed@"),
+        ):
+            with self.assertRaises(tx.Refused):
+                tx.validate_acme_storage(self.before, candidate, self.policy)
+        with self.assertRaises(tx.Refused):
+            tx.validate_acme_storage(
+                self.before,
+                self.after,
+                {**self.policy, "acme_target": "/tmp/acme.json"},
+            )
+
+    @staticmethod
+    def store(names=("example.invalid",), certificate=b"public leaf"):
+        return json.dumps(
+            {
+                "letsencrypt": {
+                    "Account": {"Email": ""},
+                    "Certificates": [
+                        {
+                            "domain": {"main": names[0], "sans": list(names[1:])},
+                            "certificate": base64.b64encode(certificate).decode(),
+                            "key": "fixture",
+                        }
+                    ],
+                }
+            }
+        ).encode()
+
+    def test_certificate_set_ignores_account_but_detects_names_expiry_and_count(self):
+        original = self.store()
+        with patch.object(tx, "run", return_value="notAfter=Jan 1 00:00:00 2027 GMT"):
+            before = tx.certificate_set(original)
+            changed = json.loads(original)
+            changed["letsencrypt"]["Account"]["Email"] = "new@example.invalid"
+            self.assertEqual(before, tx.certificate_set(json.dumps(changed).encode()))
+            self.assertNotEqual(
+                before, tx.certificate_set(self.store(("other.invalid",)))
+            )
+            changed["letsencrypt"]["Certificates"] *= 2
+            self.assertNotEqual(
+                before, tx.certificate_set(json.dumps(changed).encode())
+            )
+            with self.assertRaises(tx.Refused):
+                tx.certificate_set(b'{"letsencrypt":{"Certificates":[]}}')
+        with patch.object(tx, "run", return_value="notAfter=Jan 2 00:00:00 2027 GMT"):
+            self.assertNotEqual(before, tx.certificate_set(original))
+
+    def test_tls_fingerprint_settles_and_persistent_failures_are_bounded(self):
+        baseline = {"example.invalid": "a" * 64}
+        with (
+            patch.object(
+                tx,
+                "tls_fingerprints",
+                side_effect=[
+                    ConnectionRefusedError(),
+                    {"example.invalid": "b" * 64},
+                    baseline,
+                ],
+            ) as probe,
+            patch.object(tx.time, "sleep") as sleep,
+        ):
+            tx.verify_tls_fingerprints(list(baseline), baseline)
+            self.assertEqual(probe.call_count, 3)
+            self.assertEqual(sleep.call_count, 2)
+        with (
+            patch.object(
+                tx, "tls_fingerprints", side_effect=OSError("not ready")
+            ) as probe,
+            patch.object(tx.time, "sleep"),
+            self.assertRaises(tx.Refused),
+        ):
+            tx.verify_tls_fingerprints(list(baseline), baseline)
+        self.assertEqual(probe.call_count, 5)
+
+    def test_fingerprint_transport_errors_are_observations_and_health_retries(self):
+        probe = {"scheme": "https", "host": "example.invalid"}
+        with (
+            patch.object(health, "observe", return_value={"status": "000", "exit": 7}),
+            patch.object(health, "fingerprint", side_effect=ConnectionRefusedError()),
+        ):
+            result = health.observe_with_fingerprint(probe)
+        self.assertIsNone(result["tls_sha256"])
+        self.assertEqual(result["tls_error"], "ConnectionRefusedError")
+        self.assertTrue(health.acceptable(result, result))
+        healthy = {"status": "200", "exit": 0, "tls_sha256": "a" * 64}
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "checks.json"
+            config.write_text(
+                json.dumps(
+                    {
+                        "probes": [probe],
+                        "tls_fingerprints": True,
+                        "observations": [healthy],
+                        "dynamic": {},
+                    }
+                )
+            )
+            with (
+                patch("sys.argv", ["health", "health", str(config)]),
+                patch.object(health, "tree", return_value={}),
+                patch.object(
+                    health, "observe_with_fingerprint", side_effect=[result, healthy]
+                ) as observe,
+                patch.object(health.time, "sleep") as sleep,
+                patch("sys.stdout", io.StringIO()),
+            ):
+                health.main()
+            self.assertEqual(observe.call_count, 2)
+            sleep.assert_called_once_with(2)
+
+    def test_store_preflight_refuses_unsafe_modes_invalid_json_and_nonempty_target(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            target = root / "acme" / "target"
+            target.parent.mkdir(mode=0o700)
+            source.write_bytes(self.store())
+            source.chmod(0o600)
+            policy = {"acme_source": str(source), "acme_target": str(target)}
+            real_lstat = Path.lstat
+
+            def owned(path, *args, **kwargs):
+                from types import SimpleNamespace
+
+                info = real_lstat(path, *args, **kwargs)
+                return SimpleNamespace(st_mode=info.st_mode, st_uid=0, st_gid=0)
+
+            original_require = tx.require
+
+            def require_fixture(ok, message):
+                if message.startswith("unsafe parent:"):
+                    return
+                original_require(ok, message)
+
+            with (
+                patch.object(tx, "require", side_effect=require_fixture),
+                patch.object(Path, "lstat", owned),
+                patch.object(tx, "run", return_value="notAfter=expiry"),
+            ):
+                data, certificates = tx.acme_preflight(policy)
+                self.assertEqual(data, source.read_bytes())
+                self.assertEqual(len(certificates), 1)
+                target.write_bytes(b"existing store")
+                with self.assertRaises(tx.Refused):
+                    tx.acme_preflight(policy)
+                # A rolled-back attempt leaves an exact copy; a retry may reuse it.
+                target.write_bytes(source.read_bytes())
+                self.assertEqual(tx.acme_preflight(policy)[0], source.read_bytes())
+                target.write_bytes(source.read_bytes() + b" ")
+                with self.assertRaises(tx.Refused):
+                    tx.acme_preflight(policy)
+                target.unlink()
+                target.symlink_to(source)
+                with self.assertRaises(tx.Refused):
+                    tx.acme_preflight(policy)
+                target.unlink()
+                for data, mode in (
+                    (b"invalid JSON", 0o600),
+                    (self.store(), 0o644),
+                    (b'{"letsencrypt":{"Certificates":[]}}', 0o600),
+                ):
+                    source.write_bytes(data)
+                    source.chmod(mode)
+                    with self.assertRaises((tx.Refused, ValueError)):
+                        tx.acme_preflight(policy)
+
+    def test_fingerprint_change_rejected_even_when_backend_recovers(self):
+        before = {"status": "502", "exit": 0, "tls_sha256": "a" * 64}
+        self.assertFalse(
+            health.acceptable(
+                before, {**before, "status": "200", "tls_sha256": "b" * 64}
+            )
+        )
+        self.assertTrue(health.acceptable(before, {**before, "status": "200"}))
+
+    def test_fingerprint_uses_der_and_sni(self):
+        from unittest.mock import MagicMock
+
+        for mod, call in (
+            (tx, lambda: tx.tls_fingerprints(["example.invalid"])),
+            (
+                health,
+                lambda: health.fingerprint(
+                    {"address": "127.0.0.1", "port": 443, "host": "example.invalid"}
+                ),
+            ),
+        ):
+            context = MagicMock()
+            context.wrap_socket.return_value.__enter__.return_value.getpeercert.return_value = b"DER fixture"
+            with (
+                patch.object(mod.ssl, "SSLContext", return_value=context),
+                patch.object(mod.socket, "create_connection"),
+            ):
+                result = call()
+            expected = hashlib.sha256(b"DER fixture").hexdigest()
+            self.assertEqual(
+                result, {"example.invalid": expected} if mod is tx else expected
+            )
+            self.assertEqual(
+                context.wrap_socket.call_args.kwargs["server_hostname"],
+                "example.invalid",
+            )
 
 
 class TransactionTests(unittest.TestCase):
@@ -520,6 +776,117 @@ class TransactionTests(unittest.TestCase):
             tx.candidate_binary(archive, "0" * 64, self.root, "3.7.12")
         probe.assert_not_called()
 
+    def configure_acme(self):
+        self.config.write_bytes(AcmeStorageTests.before)
+        self.source = self.root / "acme.json"
+        self.source.write_bytes(AcmeStorageTests.store())
+        self.source.chmod(0o600)
+        self.target = self.root / "acme" / "acme.json"
+        self.target.parent.mkdir(mode=0o700)
+        self.target.write_bytes(b"")
+        self.policy.update(
+            acme_source=str(self.source),
+            acme_target=str(self.target),
+            acme_paths=[str(self.source)],
+            backup_paths=[str(self.source)],
+        )
+        self.live["config_sha256"] = tx.digest(self.config)
+        self.state["identity"] = self.live
+        tx.save(self.state_path, self.state)
+        self.request.update(
+            action="acme_storage",
+            candidate_config_base64=base64.b64encode(AcmeStorageTests.after).decode(),
+        )
+        self.request["compatibility"]["candidate_config_sha256"] = hashlib.sha256(
+            AcmeStorageTests.after
+        ).hexdigest()
+        # Exercise live file/copy/recovery logic with fixture paths and ownership.
+        for name, kwargs in (
+            ("validate_acme_storage", {}),
+            (
+                "acme_preflight",
+                {
+                    "return_value": (
+                        self.source.read_bytes(),
+                        [(("example.invalid",), "expiry")],
+                    )
+                },
+            ),
+            ("certificate_set", {"return_value": [(("example.invalid",), "expiry")]}),
+            ("tls_fingerprints", {"return_value": {"example.invalid": "a" * 64}}),
+        ):
+            p = patch.object(tx, name, **kwargs)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_acme_copy_success_one_restart(self):
+        self.configure_acme()
+        expected = dict(
+            self.live, config_sha256=hashlib.sha256(AcmeStorageTests.after).hexdigest()
+        )
+        with patch.object(tx, "restart_verify", return_value=expected) as restart:
+            result = tx.execute(self.request)
+        restart.assert_called_once()
+        self.assertEqual(result["state"]["phase"], "clear")
+        self.assertEqual(self.target.read_bytes(), self.source.read_bytes())
+        self.assertEqual(self.target.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.target.parent.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(self.config.read_bytes(), AcmeStorageTests.after)
+
+    def test_acme_post_start_failures_restore_config_and_retain_both_stores(self):
+        for failure in ("start", "source-race", "certificates", "fingerprint"):
+            with self.subTest(failure=failure):
+                if hasattr(self, "target"):
+                    self.target.unlink()
+                    self.target.parent.rmdir()
+                self.configure_acme()
+                original = self.source.read_bytes()
+
+                def restart(*args, failure=failure, original=original):
+                    if self.config.read_bytes() == AcmeStorageTests.after:
+                        if failure == "start":
+                            raise tx.Refused("start failed")
+                        if failure == "source-race":
+                            self.source.write_bytes(original + b" ")
+                    return self.live
+
+                tx.certificate_set.return_value = (
+                    []
+                    if failure == "certificates"
+                    else [(("example.invalid",), "expiry")]
+                )
+                if failure == "fingerprint":
+                    tx.tls_fingerprints.side_effect = [
+                        {"example.invalid": "a" * 64},
+                        *[{"example.invalid": "b" * 64}] * 5,
+                        {"example.invalid": "a" * 64},
+                    ]
+                with (
+                    patch.object(tx, "restart_verify", side_effect=restart),
+                    patch.object(tx.time, "sleep"),
+                ):
+                    result = tx.execute(self.request)
+                self.assertEqual(result["state"]["phase"], "recovery")
+                self.assertEqual(self.config.read_bytes(), AcmeStorageTests.before)
+                self.assertEqual(self.target.read_bytes(), original)
+                self.assertEqual(
+                    self.source.read_bytes(),
+                    original + (b" " if failure == "source-race" else b""),
+                )
+
+    def test_cleanup_failure_still_restores_and_restarts(self):
+        self.configure_acme()
+        with (
+            patch.object(
+                tx, "restart_verify", side_effect=[tx.Refused("acceptance"), self.live]
+            ) as restart,
+            patch.object(tx, "check_probe", side_effect=[None, tx.Refused("cleanup")]),
+        ):
+            result = tx.execute(self.request)
+        self.assertEqual(restart.call_count, 2)
+        self.assertEqual(self.config.read_bytes(), AcmeStorageTests.before)
+        self.assertEqual(result["state"]["phase"], "degraded")
+
 
 class AcceptanceTests(unittest.TestCase):
     def test_failed_acceptance_runs_cleanup_once_without_retrying_traffic(self):
@@ -558,6 +925,64 @@ class ControllerTests(unittest.TestCase):
             }
         },
     }
+
+    def test_offline_check_has_no_transport_or_journal_side_effects(self):
+        import subprocess
+        import sys
+
+        import yaml
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            registry = copy.deepcopy(self.registry)
+            registry["hosts"]["fixture"].update(AcmeStorageTests.policy)
+            registry_path = root / "registry.yml"
+            registry_path.write_text(yaml.safe_dump(registry))
+            request = root / "request.json"
+            request.write_text(
+                json.dumps(
+                    {
+                        "baseline_config_base64": base64.b64encode(
+                            AcmeStorageTests.before
+                        ).decode(),
+                        "candidate_config_base64": base64.b64encode(
+                            AcmeStorageTests.after
+                        ).decode(),
+                    }
+                )
+            )
+            fake = root / "ansible-playbook"
+            fake.write_text("#!/bin/sh\nexit 99\n")
+            fake.chmod(0o700)
+            for action, supplied, code in (
+                ("acme_storage", True, 0),
+                ("alias", True, 2),
+                ("acme_storage", False, 2),
+            ):
+                if not supplied:
+                    request.write_text("{}")
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(ROOT / "roles/traefik_deploy/files/traefik_control.py"),
+                        "--root",
+                        str(root),
+                        "--registry",
+                        str(registry_path),
+                        "--journal",
+                        str(root / "journal"),
+                        "--check",
+                        action,
+                        "fixture",
+                        str(request),
+                    ],
+                    env=dict(os.environ, PATH=str(root)),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, code, result.stdout + result.stderr)
+                self.assertFalse((root / "journal").exists())
 
     def test_unknown_host_and_request_policy_override(self):
         with self.assertRaises(ValueError):
