@@ -11,7 +11,8 @@
       - static_site_path != '/'
       - static_site_python_path is match('^/[A-Za-z0-9_./-]+\Z')
       - static_site_server_path is match('^/[A-Za-z0-9_./-]+\Z')
-      - static_site_systemd_unit_name is match('^[a-z][a-z0-9_.-]{1,62}\Z')
+      # Also the metrics-httpd pin name (metrics_httpd_switch): no dot.
+      - static_site_systemd_unit_name is match('^[a-z][a-z0-9_-]{1,62}\Z')
       - static_site_systemd_unit_path is match('^/[A-Za-z0-9_./-]+[.]service\Z')
       - not (static_site_traefik_enabled | bool) or static_site_traefik_cert_resolver is match('^[A-Za-z0-9_.-]*\Z')
       - static_site_bind_host == '127.0.0.1'

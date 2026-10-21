@@ -19,6 +19,14 @@
     - static site | Reload systemd
     - static site | Restart static site
 
+# Python or the pinned Rust metrics-httpd (drop-in metrics-httpd-impl.conf);
+# the inputs are the vars of the including block in main.yml, and a change
+# notifies the handlers flushed there.
+- name: service | Select the HTTP server implementation
+  ansible.builtin.include_role:
+    name: local.ops_library.metrics_httpd_switch
+    tasks_from: select
+
 - name: service | Enable and start static site service
   ansible.builtin.systemd:
     name: "{{ static_site_systemd_unit_name }}"

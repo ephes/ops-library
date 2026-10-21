@@ -8,15 +8,76 @@
 - name: main | Publish generated site content
   ansible.builtin.include_tasks: content.yml
 
-- name: main | Configure static content service
-  ansible.builtin.include_tasks: service.yml
+- name: main | Serve, route and verify the static site
+  # Inputs of the HTTP server's implementation switch (select in service.yml,
+  # verify below; rust/metrics-httpd/PLAN.md 7.2, argv of 7.3). The sandbox of
+  # --check-config is every [Service] line of templates/static-site.service.j2
+  # except the identity, ExecStart= and restart lines; the unit has no IP
+  # filter.
+  vars:
+    metrics_httpd_switch_impl: "{{ static_site_impl }}"
+    metrics_httpd_switch_service_name: "{{ static_site_systemd_unit_name }}"
+    metrics_httpd_switch_validate_user: "{{ static_site_user }}"
+    metrics_httpd_switch_validate_group: "{{ static_site_group }}"
+    metrics_httpd_switch_argv:
+      - static
+      - --bind
+      - "{{ static_site_bind_host }}"
+      - --port
+      - "{{ static_site_port | string }}"
+      - --root
+      - "{{ static_site_path }}"
+    metrics_httpd_switch_unit_sandbox:
+      - UMask=0027
+      - TasksMax=128
+      - MemoryMax=256M
+      - NoNewPrivileges=true
+      - PrivateDevices=true
+      - PrivateTmp=true
+      - ProtectClock=true
+      - ProtectControlGroups=true
+      - ProtectHome=true
+      - ProtectHostname=true
+      - ProtectKernelLogs=true
+      - ProtectKernelModules=true
+      - ProtectKernelTunables=true
+      - ProtectSystem=strict
+      - RestrictAddressFamilies=AF_UNIX AF_INET
+      - RestrictNamespaces=true
+      - RestrictRealtime=true
+      - RestrictSUIDSGID=true
+      - LockPersonality=true
+      - MemoryDenyWriteExecute=true
+      - CapabilityBoundingSet=
+      - AmbientCapabilities=
+      - "ReadOnlyPaths={{ static_site_path }}"
+    metrics_httpd_switch_notify:
+      - static site | Reload systemd
+      - static site | Restart static site
+    metrics_httpd_switch_python_script: "{{ static_site_server_path }}"
+    metrics_httpd_switch_probe_bind: "{{ static_site_bind_host }}"
+    metrics_httpd_switch_probe_port: "{{ static_site_port }}"
+    metrics_httpd_switch_probe_path: /
+    metrics_httpd_switch_probe_expect: static
+    metrics_httpd_switch_ip_address_allow:
+      - any
+  block:
+    - name: main | Configure static content service
+      ansible.builtin.include_tasks: service.yml
 
-- name: main | Configure Traefik route
-  ansible.builtin.include_tasks: traefik.yml
-  when: static_site_traefik_enabled | bool
+    - name: main | Configure Traefik route
+      ansible.builtin.include_tasks: traefik.yml
+      when: static_site_traefik_enabled | bool
 
-- name: main | Apply service handlers before verification
-  ansible.builtin.meta: flush_handlers
+    - name: main | Apply service handlers before verification
+      ansible.builtin.meta: flush_handlers
 
-- name: main | Verify local and public serving paths
-  ansible.builtin.include_tasks: verify.yml
+    # The unit runs the selected implementation and answers 200 for /; then
+    # the metrics-httpd pin moves and old releases are pruned.
+    - name: main | Verify the HTTP server implementation
+      ansible.builtin.include_role:
+        name: local.ops_library.metrics_httpd_switch
+        tasks_from: verify
+
+    - name: main | Verify local and public serving paths
+      ansible.builtin.include_tasks: verify.yml

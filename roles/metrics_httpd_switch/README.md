@@ -195,7 +195,10 @@ of select step 1). The template uses no Ansible filter.
 ## Tests
 
 `just test-metrics-httpd-switch` (part of `just test`) runs
-`tests/test_metrics_httpd_switch.py`: unit tests of
+`tests/test_metrics_httpd_switch.py` and
+`tests/test_metrics_httpd_switch_logyard_static.py` (the same checks for the
+inputs of `logyard_deploy` and `static_site_deploy`, whose `--check-config`
+sandbox is their unit's own `[Service]` lines). The first holds unit tests of
 `plugins/filter/metrics_httpd.py`; the drop-in rendered with plain Jinja2 and
 split back like systemd; static checks of the five consumer roles; one
 `ansible-playbook` run that renders each consumer's argv, drop-in and base

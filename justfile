@@ -114,10 +114,11 @@ test-rust-release-binary: venv
 
 # The metrics-httpd implementation switch (rust/metrics-httpd/PLAN.md 7.2/7.3):
 # filter unit tests, consumer argv/drop-in/unit renders against goldens and
-# ansible-playbook runs of select/verify against localhost with fakes.
+# ansible-playbook runs of select/verify against localhost with fakes
+# (logyard_deploy and static_site_deploy in their own module).
 test-metrics-httpd-switch: venv
     @echo "Testing metrics_httpd_switch and its consumer roles (drop-in, check-config, verify, pins)..."
-    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_metrics_httpd_switch
+    @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_metrics_httpd_switch tests.test_metrics_httpd_switch_logyard_static
 
 # Needs cargo and cargo-deny 0.20.2 (rust/README.md); run it from a worktree.
 # Not part of `just test`, which works without a Rust toolchain.

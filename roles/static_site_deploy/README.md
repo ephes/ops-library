@@ -81,6 +81,7 @@ has to run from an allowed address.
 | `static_site_private` | `false` | Publish directories `0750` and files `0640` (root, service group) instead of `0755`/`0644`, and verify after every run that nothing is accessible to others. |
 | `static_site_traefik_allowed_networks` | `[]` | CIDR ranges allowed by an `ipAllowList` on both the HTTPS and the HTTP-redirect router; empty leaves the routes open as before. |
 | `static_site_rsync_delete` | `true` | Remove remote content absent from the selected source. |
+| `static_site_impl` | `{{ metrics_httpd_impl \| default('python') }}` | HTTP server implementation, `python` or `rust` (see below); override per host for a canary. |
 | `static_site_python_path` | `/usr/bin/python3` | Target Python interpreter. |
 | `static_site_server_path` | `/usr/local/libexec/<service>-httpd.py` | Managed static server. |
 | `static_site_bind_host` | `127.0.0.1` | IPv4 loopback bind address; every other value is rejected. |
@@ -98,6 +99,40 @@ has to run from an allowed address.
 | `static_site_public_healthcheck_retries` | `20` | Public verification attempts. |
 | `static_site_public_healthcheck_delay` | `3` | Seconds between public verification attempts. |
 
+## HTTP server implementation (Python or Rust)
+
+`static_site_impl` selects the content server: `python` runs
+`static_site_server_path` (the unit's `ExecStart=`), `rust` runs the pinned
+`metrics-httpd` release (mode `static`) through the drop-in
+`/etc/systemd/system/<unit>.service.d/metrics-httpd-impl.conf`
+([`metrics_httpd_switch`](../metrics_httpd_switch/README.md),
+`rust/metrics-httpd/PLAN.md` section 7). The service keeps its address, port,
+document root, user, sandbox and Traefik route; the unit file and the Python
+script stay as they are with either value.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `static_site_impl` | `{{ metrics_httpd_impl \| default('python') }}` | `python` or `rust`. |
+| `metrics_httpd_impl` | (unset: `python`) | Fleet-wide default for every metrics-httpd endpoint. |
+| `metrics_httpd_rust_version` / `metrics_httpd_rust_sha256` | (unset) | Pinned release and the sha256 of its archive. Required for `rust`; with `python` a set version is installed and checked ahead of the switch. |
+
+With `rust` the binary runs `metrics-httpd static --bind
+<static_site_bind_host> --port <static_site_port> --root <static_site_path>`.
+Before the drop-in is written its `--check-config` (the document root is a
+directory) must pass as `static_site_user` under the unit's own sandbox
+(`MemoryDenyWriteExecute=`, `RestrictAddressFamilies=`, `ProtectSystem=strict`,
+`ReadOnlyPaths=` and the rest of the unit's `[Service]` hardening). After the
+restart the deploy checks that the unit runs the selected implementation and
+that `GET /` answers 200, then pins the version in
+`/opt/metrics-httpd/.pins/<unit>` and runs the role's usual local and public
+checks. Switching back to `python` removes the drop-in and restarts the Python
+script. `static_site_systemd_unit_name` is also the pin name, so it must not
+contain a dot.
+
+On staging `benchmarks-static` is deployed by pyinfra (`ops-deploy`
+`services/static_site`), which gets the same switch in its own slice; this role
+is the Ansible path and the rollback engine of that service.
+
 ## Deployment and recovery
 
 Re-run the role with the same source path to publish an updated snapshot. The
@@ -106,5 +141,6 @@ change.
 
 If a publication is bad, regenerate or select the previous static output and
 run the role again. The role owns only its service user, document root, server
-script, systemd unit, and Traefik file. It does not remove unrelated services or
+script, systemd unit, its `metrics-httpd-impl.conf` drop-in, its metrics-httpd
+pin, and Traefik file. It does not remove unrelated services or
 Traefik configuration.

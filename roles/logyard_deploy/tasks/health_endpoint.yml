@@ -1,27 +1,78 @@
 ---
-- name: health_endpoint | Render Logyard health endpoint script
-  ansible.builtin.template:
-    src: logyard_health_httpd.py.j2
-    dest: "{{ logyard_health_script_path }}"
-    owner: root
-    group: root
-    mode: "0755"
-  notify: restart logyard health endpoint
+- name: health_endpoint | Deploy the Logyard health endpoint
+  # Inputs of the HTTP server's implementation switch (select and verify
+  # below; rust/metrics-httpd/PLAN.md 7.2, argv of 7.3). metrics-httpd
+  # logyard-health reads the unit's LOGYARD_* environment, so the sandbox of
+  # its --check-config is exactly the Environment= lines of the rendered unit
+  # (read below; the unit sets no other hardening and no IP filter).
+  vars:
+    metrics_httpd_switch_impl: "{{ logyard_health_impl }}"
+    metrics_httpd_switch_service_name: "{{ logyard_health_service_name }}"
+    metrics_httpd_switch_validate_user: "{{ logyard_user }}"
+    metrics_httpd_switch_validate_group: "{{ logyard_group }}"
+    metrics_httpd_switch_argv:
+      - logyard-health
+    metrics_httpd_switch_unit_sandbox: "{{ _logyard_health_unit_environment }}"
+    metrics_httpd_switch_notify:
+      - reload systemd
+      - restart logyard health endpoint
+    metrics_httpd_switch_python_script: "{{ logyard_health_script_path }}"
+    metrics_httpd_switch_probe_bind: "{{ logyard_health_bind_host }}"
+    metrics_httpd_switch_probe_port: "{{ logyard_health_port }}"
+    metrics_httpd_switch_probe_path: "{{ logyard_health_path }}"
+    metrics_httpd_switch_probe_expect: logyard-health
+    metrics_httpd_switch_ip_address_allow:
+      - any
+  block:
+    - name: health_endpoint | Render Logyard health endpoint script
+      ansible.builtin.template:
+        src: logyard_health_httpd.py.j2
+        dest: "{{ logyard_health_script_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+      notify: restart logyard health endpoint
 
-- name: health_endpoint | Render Logyard health endpoint systemd unit
-  ansible.builtin.template:
-    src: logyard-health-endpoint.service.j2
-    dest: "/etc/systemd/system/{{ logyard_health_service_name }}.service"
-    owner: root
-    group: root
-    mode: "0644"
-  notify:
-    - reload systemd
-    - restart logyard health endpoint
+    - name: health_endpoint | Render Logyard health endpoint systemd unit
+      ansible.builtin.template:
+        src: logyard-health-endpoint.service.j2
+        dest: "/etc/systemd/system/{{ logyard_health_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart logyard health endpoint
 
-- name: health_endpoint | Ensure Logyard health endpoint is enabled and started
-  ansible.builtin.systemd:
-    name: "{{ logyard_health_service_name }}"
-    enabled: true
-    state: started
-    daemon_reload: true
+    # The Environment= lines exactly as the unit has them (quoting and
+    # escapes included), so systemd-run parses them as systemd parses the
+    # unit; rendered on the controller, so check mode sees them too.
+    - name: health_endpoint | Read the unit's environment for the implementation check
+      ansible.builtin.set_fact:
+        _logyard_health_unit_environment: >-
+          {{ lookup('ansible.builtin.template', 'logyard-health-endpoint.service.j2')
+             | regex_findall('(?m)^Environment=.*$') }}
+
+    # Python or the pinned Rust metrics-httpd (drop-in metrics-httpd-impl.conf);
+    # a change notifies the handlers flushed below.
+    - name: health_endpoint | Select the HTTP server implementation
+      ansible.builtin.include_role:
+        name: local.ops_library.metrics_httpd_switch
+        tasks_from: select
+
+    - name: health_endpoint | Ensure Logyard health endpoint is enabled and started
+      ansible.builtin.systemd:
+        name: "{{ logyard_health_service_name }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: health_endpoint | Apply a pending implementation switch before verifying it
+      ansible.builtin.meta: flush_handlers
+
+    # The unit runs the selected implementation and answers 200 with a JSON
+    # status; then the metrics-httpd pin moves and old releases are pruned.
+    - name: health_endpoint | Verify the HTTP server implementation
+      ansible.builtin.include_role:
+        name: local.ops_library.metrics_httpd_switch
+        tasks_from: verify

@@ -119,6 +119,32 @@
   names a PLAN.md 5.2 item. Nothing installs the binary; no role behaviour
   changes.
 
+## Unreleased — Rust ports: metrics-httpd switch for logyard and static sites (S5c)
+
+- `logyard_deploy` and `static_site_deploy` (slice S5c of
+  `rust/metrics-httpd/PLAN.md`, section 7.3): new `logyard_health_impl` and
+  `static_site_impl` (default `{{ metrics_httpd_impl | default('python') }}`)
+  select the health endpoint's and the static site's HTTP server through
+  `metrics_httpd_switch`: `rust` runs `metrics-httpd logyard-health` (the
+  unit's `LOGYARD_*` environment) or `metrics-httpd static --bind --port
+  --root` from the drop-in `metrics-httpd-impl.conf`; its `--check-config`
+  runs as the unit's user with the unit's own `[Service]` lines (logyard: its
+  `Environment=` lines exactly as rendered; static: the full hardening incl.
+  `MemoryDenyWriteExecute=` and `RestrictAddressFamilies=`). With the default
+  `python` both roles render exactly the same unit and script as before; the
+  deploy now also checks that the unit runs the Python script and answers
+  (logyard: 200 with a JSON `status`; static: 200 for `/`) and moves the
+  metrics-httpd pin. These roles are the Ansible path and the rollback engine
+  of the pyinfra-deployed `logyard` and `benchmarks_static` services.
+- `static_site_deploy`: `static_site_systemd_unit_name` no longer accepts a
+  dot (it is also the switch's pin name). The service, the Traefik route,
+  the handler flush and the checks now run in one block that carries the
+  switch inputs, in the same order as before.
+- Tests: `tests/test_metrics_httpd_switch_logyard_static.py` (in `just
+  test-metrics-httpd-switch`), goldens in
+  `tests/fixtures/metrics_httpd_switch/{logyard_deploy,static_site_deploy}/`;
+  `tests/test_logyard_deploy.yml` checks the impl default and the drop-in.
+
 ## Unreleased — Rust ports: metrics-httpd role switch (S5a)
 
 - New internal helper role `metrics_httpd_switch` (slice S5a of

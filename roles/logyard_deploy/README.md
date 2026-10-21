@@ -165,6 +165,39 @@ Notes:
 - The default is `[]`, since the producer is not necessarily colocated with the
   Logyard server. Set it per host.
 
+### HTTP server implementation (Python or Rust)
+
+`logyard_health_impl` selects the health endpoint's HTTP server: `python` runs
+`logyard_health_script_path` (the unit's `ExecStart=`), `rust` runs the pinned
+`metrics-httpd` release (mode `logyard-health`) through the drop-in
+`/etc/systemd/system/<service>.service.d/metrics-httpd-impl.conf`
+([`metrics_httpd_switch`](../metrics_httpd_switch/README.md),
+`rust/metrics-httpd/PLAN.md` section 7). The endpoint keeps its address, path,
+payload, user and `LOGYARD_*` environment; the unit file and the Python script
+stay as they are with either value.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `logyard_health_impl` | `{{ metrics_httpd_impl \| default('python') }}` | `python` or `rust`; override per host for a canary. |
+| `metrics_httpd_impl` | (unset: `python`) | Fleet-wide default for every metrics-httpd endpoint. |
+| `metrics_httpd_rust_version` / `metrics_httpd_rust_sha256` | (unset) | Pinned release and the sha256 of its archive. Required for `rust`; with `python` a set version is installed and checked ahead of the switch. |
+
+With `rust` the binary runs `metrics-httpd logyard-health`, which reads the
+same `LOGYARD_*` environment as the Python script. Before the drop-in is
+written its `--check-config` must pass as `logyard_user` with exactly the
+unit's `Environment=` lines (the unit has no other sandbox settings): an
+invalid number, a non-IP bind address, a Loki URL that is not `http://` or a
+`logyard_health_units` entry the payload would list under `units_rejected`
+stops a switch to Rust. After the restart the deploy checks that the unit runs
+the selected implementation and that `GET` on the health path answers 200 with
+a JSON object holding `status`, then pins the version in
+`/opt/metrics-httpd/.pins/<service>`. Switching back to `python` removes the
+drop-in and restarts the Python script.
+
+On macmini the endpoint is deployed by pyinfra (`ops-deploy`
+`services/logyard`), which gets the same switch in its own slice; this role is
+the Ansible path and the rollback engine of that service.
+
 ## Example Playbook
 
 ```yaml
