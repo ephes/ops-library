@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: rust_release_binary
+  author: Jochen Wersdörfer
+  description: >-
+    Internal helper: install, pin and prune pinned ops-library Rust release
+    binaries (/opt/<crate>/<version>/).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+    - name: Debian
+      versions:
+        - bookworm
+        - trixie
+
+dependencies: []

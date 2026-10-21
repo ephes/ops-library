@@ -1,0 +1,19 @@
+---
+# Inputs every entry point needs, validated before anything is read or changed.
+- name: common | Assert the crate name and install root
+  ansible.builtin.assert:
+    that:
+      - rust_release_binary_name | local.ops_library.rust_release_name_ok
+      - rust_release_binary_install_root | local.ops_library.rust_release_root_ok
+      - rust_release_binary_owner is string and rust_release_binary_owner | length > 0
+      - rust_release_binary_group is string and rust_release_binary_group | length > 0
+    fail_msg: >-
+      rust_release_binary_name must be a crate name (lower-case letters, digits
+      and '-'; got {{ rust_release_binary_name | to_json }}) and
+      rust_release_binary_install_root a normalised absolute path other than /
+      without '.' or '..' components (got {{ rust_release_binary_install_root | to_json }}).
+    quiet: true
+
+- name: common | Set the layout paths
+  ansible.builtin.set_fact:
+    _rust_release_binary_pins_dir: "{{ rust_release_binary_install_root }}/.pins"

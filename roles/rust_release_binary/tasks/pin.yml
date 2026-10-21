@@ -1,0 +1,160 @@
+---
+# Write or remove the pins of one consumer (rust/PLAN-foundation.md 6.1/6.2):
+#   <root>/.pins/<consumer>           the version the consumer runs, verified live
+#   <root>/.pins/<consumer>.previous  the rollback pin: the version it ran before
+#
+# A consumer includes this only after it verified that its unit (or other
+# entry point) runs the version, so the previous pin moves only when a new
+# version was verified live. Pinning a new version moves the old current pin to
+# the previous pin; removing the current pin (switch back to Python) keeps its
+# version as the previous pin unless keep_previous is false. The previous pin
+# is written before the current pin changes, so a version that was live is
+# never unpinned in between.
+
+- name: pin | Validate the common inputs
+  ansible.builtin.include_tasks: common.yml
+
+- name: pin | Assert the pin inputs
+  ansible.builtin.assert:
+    that:
+      - rust_release_binary_consumer | local.ops_library.rust_release_consumer_ok
+      - rust_release_binary_state in ['present', 'absent']
+      - >-
+        rust_release_binary_state == 'absent' or
+        rust_release_binary_version | local.ops_library.rust_release_version_ok
+      - >-
+        rust_release_binary_previous == '' or
+        rust_release_binary_previous | local.ops_library.rust_release_version_ok
+    fail_msg: >-
+      rust_release_binary pin needs a consumer name (lower-case letters, digits,
+      '-', '_'; got {{ rust_release_binary_consumer | to_json }}), state present
+      or absent (got {{ rust_release_binary_state | to_json }}), a release
+      version with state present (got {{ rust_release_binary_version | to_json }})
+      and an empty or valid previous (got {{ rust_release_binary_previous | to_json }}).
+    quiet: true
+
+- name: pin | Set the pin paths
+  ansible.builtin.set_fact:
+    _rust_release_binary_pin_current: "{{ _rust_release_binary_pins_dir }}/{{ rust_release_binary_consumer }}"
+    _rust_release_binary_pin_previous: "{{ _rust_release_binary_pins_dir }}/{{ rust_release_binary_consumer }}.previous"
+
+# A pin names an installed version. In check mode a fresh install did not
+# happen, so the check is left to the real run.
+- name: pin | Check the binary of the pinned version
+  ansible.builtin.stat:
+    path: "{{ rust_release_binary_install_root }}/{{ rust_release_binary_version }}/{{ rust_release_binary_name }}"
+    follow: false
+    get_checksum: false
+  register: _rust_release_binary_pin_binary
+  when: rust_release_binary_state == 'present'
+
+- name: pin | Assert the pinned version is installed
+  ansible.builtin.assert:
+    that:
+      - _rust_release_binary_pin_binary.stat.isreg | default(false)
+    fail_msg: >-
+      {{ rust_release_binary_install_root }}/{{ rust_release_binary_version }}/{{ rust_release_binary_name }}
+      is not installed; install it (tasks_from: install) before pinning it.
+    quiet: true
+  when:
+    - rust_release_binary_state == 'present'
+    - not ansible_check_mode
+
+- name: pin | Check the existing pin files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    get_checksum: false
+  loop:
+    - "{{ _rust_release_binary_pin_current }}"
+    - "{{ _rust_release_binary_pin_previous }}"
+  register: _rust_release_binary_pin_stats
+
+- name: pin | Assert existing pins are regular files
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or item.stat.isreg
+    fail_msg: "{{ item.item }} exists but is not a regular file; fix it by hand."
+    quiet: true
+  loop: "{{ _rust_release_binary_pin_stats.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: pin | Read the existing pins
+  ansible.builtin.slurp:
+    path: "{{ item.item }}"
+  loop: "{{ _rust_release_binary_pin_stats.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stat.exists
+  register: _rust_release_binary_pin_reads
+
+- name: pin | Decide the new pins
+  ansible.builtin.set_fact:
+    _rust_release_binary_pin_plan: >-
+      {{
+        (_rust_release_binary_pin_reads.results[0].content | b64decode
+          if _rust_release_binary_pin_reads.results[0].content is defined else none)
+        | local.ops_library.rust_release_pin_plan(
+            (_rust_release_binary_pin_reads.results[1].content | b64decode
+              if _rust_release_binary_pin_reads.results[1].content is defined else none),
+            rust_release_binary_state,
+            rust_release_binary_version if rust_release_binary_state == 'present' else '',
+            rust_release_binary_previous,
+            rust_release_binary_keep_previous | bool)
+      }}
+
+- name: pin | Assert the existing pins are readable
+  ansible.builtin.assert:
+    that:
+      - _rust_release_binary_pin_plan.error == ''
+    fail_msg: >-
+      Cannot move the pins of {{ rust_release_binary_consumer }}:
+      {{ _rust_release_binary_pin_plan.error }}. Nothing was changed; fix the
+      pin files in {{ _rust_release_binary_pins_dir }} by hand.
+    quiet: true
+
+- name: pin | Ensure the pin directory exists
+  ansible.builtin.file:
+    path: "{{ _rust_release_binary_pins_dir }}"
+    state: directory
+    owner: "{{ rust_release_binary_owner }}"
+    group: "{{ rust_release_binary_group }}"
+    mode: "0755"
+  when: _rust_release_binary_pin_plan.current is not none or _rust_release_binary_pin_plan.previous is not none
+
+- name: pin | Write the previous pin
+  ansible.builtin.copy:
+    content: "{{ _rust_release_binary_pin_plan.previous | local.ops_library.rust_release_pin_content }}"
+    dest: "{{ _rust_release_binary_pin_previous }}"
+    owner: "{{ rust_release_binary_owner }}"
+    group: "{{ rust_release_binary_group }}"
+    mode: "0644"
+  when: _rust_release_binary_pin_plan.previous is not none
+
+- name: pin | Remove the previous pin
+  ansible.builtin.file:
+    path: "{{ _rust_release_binary_pin_previous }}"
+    state: absent
+  when: _rust_release_binary_pin_plan.previous is none
+
+- name: pin | Write the current pin
+  ansible.builtin.copy:
+    content: "{{ _rust_release_binary_pin_plan.current | local.ops_library.rust_release_pin_content }}"
+    dest: "{{ _rust_release_binary_pin_current }}"
+    owner: "{{ rust_release_binary_owner }}"
+    group: "{{ rust_release_binary_group }}"
+    mode: "0644"
+  when: _rust_release_binary_pin_plan.current is not none
+
+- name: pin | Remove the current pin
+  ansible.builtin.file:
+    path: "{{ _rust_release_binary_pin_current }}"
+    state: absent
+  when: _rust_release_binary_pin_plan.current is none
+
+- name: pin | Report the pins
+  ansible.builtin.set_fact:
+    rust_release_binary_pins:
+      current: "{{ _rust_release_binary_pin_plan.current }}"
+      previous: "{{ _rust_release_binary_pin_plan.previous }}"

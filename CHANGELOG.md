@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased — Rust ports: rust_release_binary install helper (F3)
+
+- New internal helper role `rust_release_binary` (slice F3 of
+  `rust/PLAN-foundation.md`, section 6.2) for the pinned release binaries of
+  the Rust ports, included with `tasks_from`: `install` (checksum-verified
+  download or local archive, exact regular-file member check, staging and
+  `mv --no-target-directory` into `/opt/<crate>/<version>/`, `--version`
+  validation as an unprivileged user, never replaces an installed version;
+  on failure it removes only its own fresh install and either stops the play
+  or warns with `rust_release_binary_failed` so a Python rollback is never
+  blocked), `pin` (`.pins/<consumer>` plus the rollback pin
+  `.pins/<consumer>.previous`, which moves only when the consumer pins a new,
+  verified version) and `prune` (keeps the newest `keep_versions`, every
+  current and previous pin of every consumer and every version in the
+  consumer's live-state `protect` list, which also takes executable paths
+  such as `/proc/<pid>/exe` of a still-running oneshot run; deletes nothing
+  when the live state is marked unknown, after a failed install of the crate
+  in the same run, or when a pin or protect entry cannot be interpreted).
+  The decisions live in the new filter plugin `plugins/filter/rust_release.py`.
+  New `tests/test_rust_release_binary.py` (`just test-rust-release-binary`,
+  part of `just test`) with filter unit tests and localhost
+  `ansible-playbook` runs, including the owner's 2026-10-21 cases (v1 → v2 →
+  v1 → v3 keeps v1 as the previous pin; repeated failed deploys with
+  different targets never prune the live version). No role uses the helper
+  yet; `rust/PLAN-foundation.md` 6.1/6.2 now describe the previous pin, the
+  `protect` input and the fail-closed prune.
+
 ## Unreleased — Rust ports: metrics-httpd script mode (S2b)
 
 - `rust/metrics-httpd` (slice S2b of `rust/metrics-httpd/PLAN.md`): the

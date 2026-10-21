@@ -1,0 +1,55 @@
+---
+# Internal helper: install, pin and prune pinned Rust release binaries of
+# ops-library (rust/PLAN-foundation.md 6.1/6.2). Include it with
+# `include_role` + `tasks_from: install | pin | prune`; see README.md.
+
+# --- all entry points ---------------------------------------------------------
+# Crate name = binary name = tag prefix (`metrics-httpd`).
+rust_release_binary_name: ""
+# Root of the on-host layout: <root>/<version>/<name>, <root>/.pins/<consumer>.
+rust_release_binary_install_root: "/opt/{{ rust_release_binary_name }}"
+# Owner and group of everything the role creates. The layout is root:root;
+# only the localhost tests override them (they run unprivileged).
+rust_release_binary_owner: root
+rust_release_binary_group: root
+
+# --- install ------------------------------------------------------------------
+rust_release_binary_version: ""
+# sha256 of the release archive (64 hex). Required for a download; optional
+# with a local archive (then it must match when set).
+rust_release_binary_sha256: ""
+rust_release_binary_release_url: >-
+  https://github.com/ephes/ops-library/releases/download/{{ rust_release_binary_name }}-v{{ rust_release_binary_version }}/{{ rust_release_binary_name }}-{{ rust_release_binary_version }}-x86_64-unknown-linux-gnu.tar.gz
+# Archive on the controller instead of the download (development and tests).
+rust_release_binary_local_archive: ""
+# The archive must hold exactly these regular files at its root, once each.
+# Empty means [<name>, LICENSE].
+rust_release_binary_members: []
+# Members installed 0755 (the rest 0644). Empty means [<name>].
+rust_release_binary_executables: []
+# `<binary> --version` runs as this user (become). Empty runs it as the
+# connection user without become (localhost tests only).
+rust_release_binary_validate_user: nobody
+# true: a failed install stops the play. false: it removes what it installed,
+# sets rust_release_binary_failed and warns, so a consumer's Python rollback is
+# never blocked by a broken release.
+rust_release_binary_fail_hard: true
+
+# --- pin ----------------------------------------------------------------------
+# Pin file name: .pins/<consumer> (current) and .pins/<consumer>.previous
+# (the rollback pin). Lower-case letters, digits, '-' and '_'.
+rust_release_binary_consumer: ""
+# present: pin rust_release_binary_version. absent: remove the current pin.
+rust_release_binary_state: present
+# Optional explicit previous version (overrides the automatic move).
+rust_release_binary_previous: ""
+# With state absent: keep the removed version as the previous pin.
+rust_release_binary_keep_previous: true
+
+# --- prune --------------------------------------------------------------------
+rust_release_binary_keep_versions: 3
+# Versions or absolute executable paths (as `readlink /proc/<pid>/exe` prints
+# them) the consumer read from the live state; never pruned.
+rust_release_binary_protect: []
+# The consumer could not read its live state completely: prune deletes nothing.
+rust_release_binary_live_state_unknown: false
