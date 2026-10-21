@@ -75,6 +75,31 @@
   yet; `rust/PLAN-foundation.md` 6.1/6.2 now describe the previous pin, the
   `protect` input and the fail-closed prune.
 
+## Unreleased — Rust ports: metrics-httpd static mode (S2e)
+
+- `rust/metrics-httpd` (slice S2e of `rust/metrics-httpd/PLAN.md`): the
+  `static` mode now serves `static_site_deploy`'s site (the port of
+  `static-site-httpd.py.j2`) with `tower-http`'s `ServeDir`: files with
+  `Content-Type`, `Content-Length` and `Last-Modified`, `index.html` for a
+  directory, Python's 301 for a directory without trailing `/`,
+  `If-Modified-Since` → 304, Python's 404 page, 501 for methods other than
+  GET and HEAD, and the four `end_headers` headers (`Cache-Control`,
+  `Referrer-Policy`, `X-Content-Type-Options`, `X-Frame-Options`) on every
+  answer; access lines on stdout as Python writes them. Files are streamed
+  in chunks (the response body of all modes is now a boxed body). Allowed
+  differences pinned by the new fixture family `static`
+  (`fixtures/static.json`, the rendered template on a sample tree): `Range`
+  is honoured (206/416, plus `Accept-Ranges`), a directory with only
+  `index.htm` and targets with `..` segments get 404, an
+  `If-Modified-Since` that is not an HTTP date is ignored (D-11), the 404
+  page of a directory without index says "File not found" (D-3), and a NUL
+  in the path gets 404 where Python drops the connection (D-2). New
+  `parity/static_site.py` compares the Rust binary with the Python server
+  on a site directory; run against the deployed benchmark site on staging
+  (2026-10-21, `fixtures/static_real_site.json`), every published file had
+  the same status, body, type and headers, so the static cutover (S9e)
+  stays in the plan. No role behaviour changes.
+
 ## Unreleased — Rust ports: metrics-httpd script mode (S2b)
 
 - `rust/metrics-httpd` (slice S2b of `rust/metrics-httpd/PLAN.md`): the

@@ -128,6 +128,8 @@ class DifferencesAreNamedAndNarrow(unittest.TestCase):
         ]
         for variant in load("json_file.json")["variants"]:
             tags += [case["d"] for case in variant["cases"] if "d" in case]
+
+        tags += [case["d"] for case in load("static.json")["cases"] if "d" in case]
         self.assertTrue(tags)
         for tag in tags:
             self.assertIn(tag, items)
@@ -163,6 +165,30 @@ class DifferencesAreNamedAndNarrow(unittest.TestCase):
             else:
                 self.assertNotIn("d", case, case["id"])
                 self.assertIn(case["compare"], ("bytes", "html"), case["id"])
+
+    def test_static_differences_are_named_and_never_serve_more(self) -> None:
+        # The sample-tree cases of the static mode (D-2, D-3, D-11): a
+        # difference is written next to the case, and Rust never serves a
+        # file (200, 206) where Python does not serve it (200, 304).
+        for case in load("static.json")["cases"]:
+            if case["status"] is None or case["compare"] == "status":
+                self.assertIn("d", case, case["id"])
+                self.assertIn("rust_status", case, case["id"])
+                if case["rust_status"] in (200, 206):
+                    self.assertIn(case["status"], (200, 304), case["id"])
+            else:
+                self.assertNotIn("d", case, case["id"])
+                self.assertNotIn("rust_status", case, case["id"])
+                self.assertIn(case["compare"], ("bytes", "html"), case["id"])
+
+    def test_real_site_record_names_every_published_file(self) -> None:
+        # parity/static_site.py --record against the deployed benchmark site
+        # (PLAN.md 4.7, D-11); tests/fixtures.rs replays the types.
+        record = load("static_real_site.json")
+        self.assertTrue(record["files"])
+        for entry in record["files"]:
+            self.assertRegex(entry["sha256"], r"^[0-9a-f]{64}$")
+            self.assertTrue(entry["content_type"], entry["path"])
 
     def test_case_ids_are_unique(self) -> None:
         ids = [case["id"] for case in load("pyjson.json")["dumps"]]
@@ -250,6 +276,9 @@ class JsonFileFixture(unittest.TestCase):
             )
         torrent = load("json_file.json")["variants"][-1]
         self.assertEqual(torrent["repo"], "ops-control")
+
+        ids = [case["id"] for case in load("static.json")["cases"]]
+        self.assertEqual(len(ids), len(set(ids)))
 
 
 class FloatFixture(unittest.TestCase):
