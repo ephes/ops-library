@@ -101,6 +101,7 @@ zfs_usb_replication
 macos_time_machine_exclusions
 macos_smb_mount_keeper
 aws_ca_bundle
+security_trust_remediate
 ```
 
 Operations roles provide consistent snapshot, restore, and maintenance tooling that can be composed with deployment/removal roles to rehearse disaster-recovery scenarios.
