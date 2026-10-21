@@ -858,6 +858,14 @@ class PlaybookTests(unittest.TestCase):
         (self.root / ".pins/odd").mkdir()
         result = self.ok(self.prune(keep_versions=1))
         self.assertIn("is not a regular file", result["out"])
+        # .pins replaced by a file: blocked, not failed
+        shutil.rmtree(self.root / ".pins")
+        (self.root / ".pins").write_text("1.0.0\n")
+        result = self.ok(self.prune(keep_versions=1))
+        self.assertIn("is not a directory", result["out"])
+        (self.root / ".pins").unlink()
+        (self.root / ".pins").mkdir()
+        (self.root / ".pins/odd").mkdir()
         self.assertEqual(self.versions(), ["1.0.0", "2.0.0", "3.0.0"])
         (self.root / ".pins/odd").rmdir()
         self.ok(self.prune(keep_versions=1))
@@ -883,6 +891,26 @@ class PlaybookTests(unittest.TestCase):
         self.assertEqual(self.versions(), ["1.0.0", "2.0.0", "3.0.0"])
         self.ok(self.prune(keep_versions=1))
         self.assertEqual(self.versions(), ["2.0.0", "3.0.0"])
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads a directory with mode 000")
+    def test_unlistable_root_prunes_nothing_and_does_not_fail(self):
+        real = self.work / "real"
+        real.mkdir()
+        self.root = self.work / "link"
+        self.root.symlink_to(real)  # a symlinked root is followed
+        self.ok(*[self.install(v) for v in ("1.0.0", "2.0.0")])
+        self.age("1.0.0", "2.0.0")
+        real.chmod(0o000)
+        self.addCleanup(real.chmod, 0o755)
+        result = self.ok(self.prune(keep_versions=1))
+        self.assertEqual(result["recap"]["failed"], 0)
+        self.assertEqual(result["recap"]["ignored"], 1, result["out"])
+        self.assertIn("cannot list every version", result["out"])
+        self.assertEqual(result["facts"]["prune"]["removed"], [])
+        real.chmod(0o755)
+        self.assertEqual(self.versions(), ["1.0.0", "2.0.0"])
+        self.ok(self.prune(keep_versions=1))
+        self.assertEqual(self.versions(), ["2.0.0"])
 
     def test_prune_input_validation(self):
         for params in ({"keep_versions": 0}, {"protect": "1.0.0"}, {"live_state_unknown": "maybe"}):

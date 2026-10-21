@@ -60,7 +60,11 @@
           - "{{ rust_release_binary_install_root }}"
       check_mode: false
       changed_when: false
+      failed_when: false
       register: _rust_release_binary_root_real
+
+    # Every listing below may fail or come back incomplete (an unreadable
+    # directory); that never fails the play, it only blocks the removal.
 
     - name: prune | List the installed versions
       ansible.builtin.find:
@@ -68,6 +72,7 @@
         file_type: directory
         recurse: false
         hidden: false
+      failed_when: false
       register: _rust_release_binary_version_dirs
 
     - name: prune | Check the pin directory
@@ -75,6 +80,7 @@
         path: "{{ rust_release_binary_install_root }}/.pins"
         follow: false
         get_checksum: false
+      failed_when: false
       register: _rust_release_binary_pins_stat
 
     - name: prune | List the pins
@@ -83,6 +89,7 @@
         file_type: any
         recurse: false
         hidden: true
+      failed_when: false
       register: _rust_release_binary_pin_files
       when: _rust_release_binary_pins_stat.stat.isdir | default(false)
 
@@ -100,20 +107,23 @@
       ansible.builtin.set_fact:
         _rust_release_binary_prune_plan: >-
           {{
-            _rust_release_binary_version_dirs.files
+            (_rust_release_binary_version_dirs.files | default([]))
             | local.ops_library.rust_release_prune_plan(
                 (_rust_release_binary_pin_reads.results | default([]))
                   | local.ops_library.rust_release_pin_records,
                 rust_release_binary_protect,
                 rust_release_binary_keep_versions | int,
-                [rust_release_binary_install_root, _rust_release_binary_root_real.stdout]
+                ([rust_release_binary_install_root]
+                  + ([_rust_release_binary_root_real.stdout]
+                     if _rust_release_binary_root_real.rc | default(1) == 0 else []))
                   | unique,
                 rust_release_binary_name)
           }}
         _rust_release_binary_pins_unusable: >-
           {{
-            _rust_release_binary_pins_stat.stat.exists
-            and not (_rust_release_binary_pins_stat.stat.isdir and not _rust_release_binary_pins_stat.stat.islnk)
+            _rust_release_binary_pins_stat.stat is not defined
+            or (_rust_release_binary_pins_stat.stat.exists
+                and not (_rust_release_binary_pins_stat.stat.isdir and not _rust_release_binary_pins_stat.stat.islnk))
           }}
 
     - name: prune | Collect the reasons the live state is unknown
@@ -122,8 +132,15 @@
           {{
             _rust_release_binary_prune_blocked
             + _rust_release_binary_prune_plan.unknown
-            + ([rust_release_binary_install_root ~ '/.pins is not a directory']
+            + (['cannot resolve ' ~ rust_release_binary_install_root]
+              if _rust_release_binary_root_real.rc | default(1) != 0 else [])
+            + (['cannot list ' ~ rust_release_binary_install_root]
+              if _rust_release_binary_version_dirs.files is not defined else [])
+            + ([rust_release_binary_install_root ~ '/.pins cannot be read or is not a directory']
               if _rust_release_binary_pins_unusable | bool else [])
+            + (['cannot list ' ~ rust_release_binary_install_root ~ '/.pins']
+              if _rust_release_binary_pins_stat.stat.isdir | default(false)
+                 and _rust_release_binary_pin_files.files is not defined else [])
             + (['cannot list every pin: ' ~ (_rust_release_binary_pin_files.skipped_paths | to_json)]
               if (_rust_release_binary_pin_files.skipped_paths | default({})) | length > 0 else [])
             + (['cannot list every version: ' ~ (_rust_release_binary_version_dirs.skipped_paths | to_json)]
