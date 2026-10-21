@@ -24,8 +24,15 @@
     fastdeploy_postgres_port: 5432
     fastdeploy_postgres_database: fastdeploy
     fastdeploy_secret_key: secret
-    # role default, for the validation tasks included below
+    # role defaults, for the templates and validation tasks included below
     fastdeploy_legacy_token_users: []
+    fastdeploy_service_token_admin_users: []
+    fastdeploy_restore_policies: {}
+    # admin users and restore policies for the render and validation cases
+    access_admin_users: [admin, "ops@example.com"]
+    access_restore_policies:
+      weeknotes-home-backup: {prefixes: ["weeknotes_home/", "weeknotes-home/"], bucket: backups}
+      echoport-backup: {bucket: backups, prefixes: ["archive/", "nyxmon/"]}
     # inputs of env.j2
     secret_key: secret
     postgres_password: pw
@@ -53,6 +60,8 @@
           - deploy_defaults.fastdeploy_service_token_max_expire_days == ""
           - deploy_defaults.fastdeploy_service_token_retention_days == ""
           - deploy_defaults.fastdeploy_legacy_token_users == []
+          - deploy_defaults.fastdeploy_service_token_admin_users == []
+          - deploy_defaults.fastdeploy_restore_policies == {}
           - self_defaults.fd_self_legacy_service_tokens_accepted_until == ""
           - self_defaults.fd_self_service_token_max_expire_days == ""
           - self_defaults.fd_self_service_token_retention_days == ""
@@ -96,6 +105,26 @@
         fastdeploy_service_token_max_expire_days: ""
         fastdeploy_service_token_retention_days: ""
 
+    - name: Render fastdeploy.env.j2 with admin users and restore policies
+      ansible.builtin.template:
+        src: "{{ deploy_role }}/templates/fastdeploy.env.j2"
+        dest: "{{ render_dir }}/{{ item.name }}"
+        mode: "0600"
+      vars:
+        task_shell_environment: "{{ item.shell }}"
+        fastdeploy_legacy_service_tokens_accepted_until: ""
+        fastdeploy_service_token_max_expire_days: ""
+        fastdeploy_service_token_retention_days: ""
+        fastdeploy_service_token_admin_users: "{{ item.users }}"
+        fastdeploy_restore_policies: "{{ item.policies }}"
+      loop:
+        - {name: access.env, shell: false, users: "{{ access_admin_users }}", policies: "{{ access_restore_policies }}"}
+        - {name: access.env.shell, shell: true, users: "{{ access_admin_users }}", policies: "{{ access_restore_policies }}"}
+        - {name: admins-only.env, shell: false, users: [admin], policies: {}}
+        - {name: policies-only.env, shell: false, users: [], policies: "{{ access_restore_policies }}"}
+      loop_control:
+        label: "{{ item.name }}"
+
     - name: Render env.j2 (self deploy) with the defaults
       ansible.builtin.template:
         src: "{{ self_role }}/templates/env.j2"
@@ -119,7 +148,7 @@
     - name: Read rendered files
       ansible.builtin.slurp:
         src: "{{ render_dir }}/{{ item }}"
-      loop: [default.env, set.env, grace-only.env, self-default.env, self-set.env]
+      loop: [default.env, set.env, grace-only.env, self-default.env, self-set.env, access.env, access.env.shell, admins-only.env, policies-only.env]
       register: rendered_files
 
     - name: Collect rendered lines
@@ -134,6 +163,7 @@
         that:
           - rendered[item] | select('search', 'SERVICE_TOKEN') | list == []
           - rendered[item] | select('search', 'Service tokens') | list == []
+          - rendered[item] | select('search', 'RESTORE_POLICIES|Restores') | list == []
           - rendered[item] | select('match', '^SECRET_KEY=secret$') | list | length == 1
       loop: [default.env, self-default.env]
 
@@ -150,6 +180,33 @@
         that:
           - "'LEGACY_SERVICE_TOKENS_ACCEPTED_UNTIL=2026-11-01T00:00:00+00:00' in rendered['grace-only.env']"
           - rendered['grace-only.env'] | select('search', '^SERVICE_TOKEN_') | list == []
+
+    # Compact JSON, keys sorted, prefixes in their given order, in single
+    # quotes in both files (systemd, dotenv and sh read it literally); byte
+    # for byte what ops-deploy's FastdeployConfig writes.
+    - name: Assert admin users and restore policies are rendered as quoted compact JSON
+      ansible.builtin.assert:
+        that:
+          - rendered[item][-6:] == expected
+      vars:
+        expected:
+          - ""
+          - "# Service tokens"
+          - "SERVICE_TOKEN_ADMIN_USERS='[\"admin\",\"ops@example.com\"]'"
+          - ""
+          - "# Restores"
+          - >-
+            RESTORE_POLICIES='{"echoport-backup":{"bucket":"backups","prefixes":["archive/","nyxmon/"]},"weeknotes-home-backup":{"bucket":"backups","prefixes":["weeknotes_home/","weeknotes-home/"]}}'
+      loop: [access.env, access.env.shell]
+
+    - name: Assert admin users and restore policies are rendered independently
+      ansible.builtin.assert:
+        that:
+          - rendered['admins-only.env'][-3:] == ['', '# Service tokens', "SERVICE_TOKEN_ADMIN_USERS='[\"admin\"]'"]
+          - rendered['admins-only.env'] | select('search', 'RESTORE_POLICIES|Restores') | list == []
+          - rendered['policies-only.env'] | select('search', 'SERVICE_TOKEN|Service tokens') | list == []
+          - rendered['policies-only.env'][-3:-1] == ['', '# Restores']
+          - rendered['policies-only.env'][-1] is match("^RESTORE_POLICIES='[{].*[}]'\\Z")
 
     - name: Assert the fastdeploy_self_deploy settings are rendered when set
       ansible.builtin.assert:
@@ -264,6 +321,84 @@
         - ["line\nbreak"]
         - [42]
         - [[nested]]
+
+    # ------------------------------------------------------------------
+    # Service token admin users and restore policies
+    # ------------------------------------------------------------------
+    - name: Accept valid admin users and restore policies
+      ansible.builtin.include_tasks: "{{ deploy_role }}/tasks/validate_service_token_settings.yml"
+      vars:
+        fastdeploy_service_token_admin_users: "{{ item.users }}"
+        fastdeploy_restore_policies: "{{ item.policies }}"
+        fastdeploy_legacy_service_tokens_accepted_until: ""
+        fastdeploy_service_token_max_expire_days: ""
+        fastdeploy_service_token_retention_days: ""
+      loop:
+        - {users: [], policies: {}}
+        - {users: "{{ access_admin_users }}", policies: "{{ access_restore_policies }}"}
+        - {users: [admin], policies: {svc.backup_1: {bucket: my.bucket-1, prefixes: [a/b/]}}}
+      loop_control:
+        label: "{{ item.users }}"
+
+    - name: Refuse invalid admin users
+      ansible.builtin.include_tasks: tasks/fastdeploy_service_token_refused.yml
+      vars:
+        validate_tasks: "{{ deploy_role }}/tasks/validate_service_token_settings.yml"
+        expected_message: "fastdeploy_service_token_admin_users must be a list of user names"
+        fastdeploy_service_token_admin_users: "{{ item }}"
+        fastdeploy_legacy_service_tokens_accepted_until: ""
+        fastdeploy_service_token_max_expire_days: ""
+        fastdeploy_service_token_retention_days: ""
+      loop:
+        - admin
+        - {name: admin}
+        - [""]
+        - ["two words"]
+        - ["it's"]
+        - ["admin\n"]
+        - [42]
+
+    - name: Refuse restore policies that are not a mapping
+      ansible.builtin.include_tasks: tasks/fastdeploy_service_token_refused.yml
+      vars:
+        validate_tasks: "{{ deploy_role }}/tasks/validate_service_token_settings.yml"
+        expected_message: "fastdeploy_restore_policies must map FastDeploy service names"
+        fastdeploy_restore_policies: "{{ item }}"
+        fastdeploy_legacy_service_tokens_accepted_until: ""
+        fastdeploy_service_token_max_expire_days: ""
+        fastdeploy_service_token_retention_days: ""
+      loop:
+        - echoport-backup
+        - [echoport-backup]
+
+    - name: Refuse invalid restore policies
+      ansible.builtin.include_tasks: tasks/fastdeploy_service_token_refused.yml
+      vars:
+        validate_tasks: "{{ deploy_role }}/tasks/validate_service_token_settings.yml"
+        expected_message: 'fastdeploy_restore_policies["{{ item.keys() | first }}"] must be'
+        fastdeploy_restore_policies: "{{ item }}"
+        fastdeploy_legacy_service_tokens_accepted_until: ""
+        fastdeploy_service_token_max_expire_days: ""
+        fastdeploy_service_token_retention_days: ""
+      loop:
+        - {svc: {bucket: backups, prefixes: []}}
+        - {svc: {bucket: backups, prefixes: archive/}}
+        - {svc: {bucket: backups, prefixes: [archive]}}
+        - {svc: {bucket: backups, prefixes: [/archive/]}}
+        - {svc: {bucket: backups, prefixes: [../archive/]}}
+        - {svc: {bucket: backups, prefixes: [a//b/]}}
+        - {svc: {bucket: backups, prefixes: ["it's/"]}}
+        - {svc: {bucket: backups, prefixes: ["archive/\n"]}}
+        - {svc: {bucket: backups, prefixes: [42]}}
+        - {svc: {bucket: Backups, prefixes: [archive/]}}
+        - {svc: {bucket: "backups'", prefixes: [archive/]}}
+        - {svc: {prefixes: [archive/]}}
+        - {svc: {bucket: backups}}
+        - {svc: {bucket: backups, prefix: archive/}}
+        - {svc: {bucket: backups, prefixes: [archive/], extra: 1}}
+        - {svc: backups}
+        - {"svc'": {bucket: backups, prefixes: [archive/]}}
+        - {"-svc": {bucket: backups, prefixes: [archive/]}}
 
     # initialize.yml against a stand-in site: commands.py records the users it
     # created and answers like FastDeploy does for an existing one.

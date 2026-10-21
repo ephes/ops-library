@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased — FastDeploy token issuance admins and restore policies (2.59.0)
+
+- `fastdeploy_deploy`: new `fastdeploy_service_token_admin_users` (list) and
+  `fastdeploy_restore_policies` (service name to `{bucket, prefixes}`) write
+  FastDeploy's `SERVICE_TOKEN_ADMIN_USERS` and `RESTORE_POLICIES` (FastDeploy
+  main `8faa9bd`). Without them FastDeploy refuses API token issuance (403,
+  also the web UI deploy button) and every restore (422). Each is written only
+  when non-empty, as compact JSON in single quotes in `.env` and `.env.shell`,
+  byte-identical to ops-deploy's `FastdeployConfig`. Values that FastDeploy
+  would not parse, or that could break the quoting, fail the role before
+  `.env` is written. See "Token issuance admins and restore policies" in the
+  role README.
+
 ## Unreleased — explicit AWS system trust (2.58.0)
 
 - Support an explicit system CA bundle override for allowlisted botocore consumers without certifi, preserving custom trust configuration and serial health-checked restarts.

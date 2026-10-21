@@ -88,6 +88,18 @@ fastdeploy_service_token_retention_days: ""
 # password login). Remove the names again and delete the users once the tokens
 # are rotated: see "Legacy token users" in the README.
 fastdeploy_legacy_token_users: []
+# SERVICE_TOKEN_ADMIN_USERS (FastDeploy >= 2026-10-21, main 8faa9bd): names of
+# existing FastDeploy users allowed to issue service tokens through the API
+# (POST /service-token, also the web UI deploy button). Empty: not rendered,
+# and FastDeploy refuses API token issuance to everyone (403). Minting on the
+# host with "commands.py issueservicetoken" is not affected.
+fastdeploy_service_token_admin_users: []
+# RESTORE_POLICIES: per FastDeploy service name, the bucket and the key
+# prefixes (each ending in "/") an Echoport restore may read from, e.g.
+#   fastdeploy_restore_policies:
+#     echoport-backup: {bucket: backups, prefixes: ["archive/", "nyxmon/"]}
+# Empty: not rendered, and FastDeploy refuses every restore (422).
+fastdeploy_restore_policies: {}
 
 # Node.js and npm
 fastdeploy_nodejs_version: 24  # Major version for Node.js (LTS)
