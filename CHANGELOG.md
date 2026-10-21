@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add bounded trust-only Compose fleet activation with exact installed image retention, private receipts, recovery, and one Docker daemon restart. Optional `container_ca_activate_livekit_config` performs read-only room/egress idle preflight and requires existing target PyYAML.
+
 ## Unreleased — eMudhra macOS and container trust remediation (2.63.0)
 
 - Remediate Apple curl's separate macOS CA bundle with atomic trust-preserving backups and TLS probes.

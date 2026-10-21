@@ -333,3 +333,5 @@ and [removal](roles/daybook_operations_api_remove/README.md). Disabled-first; li
 `container_ca_remediate`: see [role documentation](roles/container_ca_remediate/README.md).
 
 `chrome_ca_distrust`: see [role documentation](roles/chrome_ca_distrust/README.md).
+
+`container_ca_activate`: see [role documentation](roles/container_ca_activate/README.md).

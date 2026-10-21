@@ -6,6 +6,7 @@ Reusable host identity, access-control, networking, and storage building blocks.
 :maxdepth: 1
 
 echoport_remote_command_guard
+container_ca_activate
 chrome_ca_distrust
 container_ca_remediate
 macos_python_ca_remediate

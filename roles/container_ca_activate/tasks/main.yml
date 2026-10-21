@@ -1,0 +1,24 @@
+---
+- name: Require explicit activation scope
+  ansible.builtin.assert:
+    that: container_ca_activate_projects | length > 0
+
+- name: Require idle LiveKit before the daemon restart window
+  ansible.builtin.script:
+    cmd: "livekit_idle.py {{ container_ca_activate_livekit_config | quote }}"
+    executable: /usr/bin/python3
+  changed_when: false
+  check_mode: false
+  when: container_ca_activate_livekit_config | length > 0
+
+- name: Activate prepared trust-only Compose overlays with bounded recovery
+  ansible.builtin.script:
+    cmd: "activate.py {{ container_ca_activate_projects | to_json | quote }}{{ ' --check' if ansible_check_mode else '' }}"
+    executable: /usr/bin/python3
+  register: container_ca_activate_result
+  changed_when: not ansible_check_mode
+  check_mode: false
+
+- name: Report private activation receipt
+  ansible.builtin.debug:
+    var: container_ca_activate_result.stdout_lines
