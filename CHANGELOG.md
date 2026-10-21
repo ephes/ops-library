@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## Unreleased — interrupted trust package recovery (2.63.6)
 
 - Recover explicitly proven interrupted certifi updates with immutable prior-install evidence, exact generated-cache ownership repair and owner-identity offline restoration.
 
