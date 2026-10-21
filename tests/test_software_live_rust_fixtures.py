@@ -74,9 +74,14 @@ class FixturesMatchThePythonProgram(unittest.TestCase):
     def test_p3_cases_are_inputs_python_accepts(self) -> None:
         import json
 
-        for name in ("policy.json", "version.json"):
+        for name in ("policy.json", "version.json", "traefik.json"):
             data = json.loads((self.generator.FIXTURES_DIR / name).read_text(encoding="utf-8"))
-            cases = data if isinstance(data, list) else data["cases"]
+            if isinstance(data, list):
+                cases = data
+            elif name == "traefik.json":
+                cases = data["binary_info"] + data["observe"]
+            else:
+                cases = data["cases"]
             tagged = [case for case in cases if "p3" in case]
             self.assertTrue(tagged, name)
             for case in tagged:

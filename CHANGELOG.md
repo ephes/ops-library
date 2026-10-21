@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — software-live Rust port: Traefik observation
+
+- `rust/software-live` gets the Traefik observation of `software_live.py`
+  (slice S3b of `rust/software-live/PLAN.md`): `MainPID`, the
+  `/proc/<pid>/exe` link checks, hashing and version probes of the installed
+  and the running binary, the identity checks and the bounded retry. The
+  running image is executed only through a pinned, inherited descriptor
+  (`/proc/self/fd/<fd>`), never through the `/proc/<pid>/exe` link. Fixtures
+  from the Python program (`fixtures/traefik.json`, with the call order) and
+  a Linux test with real processes. `collect` does not use it yet; nothing
+  installs or runs the binary.
+
 ## Unreleased — software-live Rust port: crate skeleton
 
 - New Rust crate `rust/software-live` in the `rust/` workspace (slice S2 of
