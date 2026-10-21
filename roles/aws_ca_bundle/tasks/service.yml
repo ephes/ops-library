@@ -1,0 +1,75 @@
+---
+- name: service | Validate allowlisted service metadata
+  ansible.builtin.assert:
+    that:
+      - aws_trust_service.unit is match('^[a-zA-Z0-9_.@-]+\.service$')
+      - aws_trust_service.health_url is match('^http://127\.0\.0\.1:[0-9]+/')
+      - (aws_trust_service.health_headers | default({})).keys() | difference(['Host', 'X-Forwarded-Proto']) | length == 0
+
+- name: service | Refuse existing custom AWS trust settings and verify patched OS bundle
+  ansible.builtin.script:
+    cmd: "check_aws_trust.py {{ aws_trust_service.unit | quote }} {{ aws_ca_bundle_path | quote }} preflight"
+    executable: /usr/bin/python3
+  register: aws_trust_preflight
+  changed_when: false
+  check_mode: false
+
+- name: service | Inspect existing dedicated drop-in
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ aws_trust_service.unit }}.d/50-aws-ca-bundle.conf"
+  register: aws_trust_dropin
+
+- name: service | Read existing dedicated drop-in
+  ansible.builtin.slurp:
+    src: "/etc/systemd/system/{{ aws_trust_service.unit }}.d/50-aws-ca-bundle.conf"
+  register: aws_trust_existing
+  when: aws_trust_dropin.stat.exists
+
+- name: service | Preserve any unmanaged dedicated drop-in
+  ansible.builtin.assert:
+    that:
+      - (aws_trust_existing.content | b64decode) == '[Service]\nEnvironment="AWS_CA_BUNDLE=' + aws_ca_bundle_path + '"\n'
+  when: aws_trust_dropin.stat.exists
+
+- name: service | Create service drop-in directory
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ aws_trust_service.unit }}.d"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: service | Persist supported botocore trust bundle override
+  ansible.builtin.copy:
+    content: "[Service]\nEnvironment=\"AWS_CA_BUNDLE={{ aws_ca_bundle_path }}\"\n"
+    dest: "/etc/systemd/system/{{ aws_trust_service.unit }}.d/50-aws-ca-bundle.conf"
+    owner: root
+    group: root
+    mode: '0644'
+  register: aws_trust_config
+
+- name: service | Restart changed SDK consumer with refreshed manager configuration
+  ansible.builtin.systemd_service:
+    name: "{{ aws_trust_service.unit }}"
+    daemon_reload: true
+    state: restarted
+  when: aws_trust_config.changed or not (aws_trust_preflight.stdout | from_json).uses_system_bundle
+
+- name: service | Verify effective AWS trust environment after restart
+  ansible.builtin.script:
+    cmd: "check_aws_trust.py {{ aws_trust_service.unit | quote }} {{ aws_ca_bundle_path | quote }} verify"
+    executable: /usr/bin/python3
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: service | Verify application health before proceeding
+  ansible.builtin.uri:
+    url: "{{ aws_trust_service.health_url }}"
+    headers: "{{ aws_trust_service.health_headers | default({}) }}"
+    status_code: "{{ aws_trust_service.status_codes | default([200, 302]) }}"
+    follow_redirects: none
+  register: aws_trust_health
+  retries: 30
+  delay: 2
+  until: aws_trust_health is succeeded
+  when: not ansible_check_mode

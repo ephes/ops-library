@@ -203,6 +203,7 @@ consumer repos depend on.
 | Service operations | [`software_live`](roles/software_live/README.md) | Observe live Traefik and pending APT security updates through SSH or authenticated JSON. |
 | Service removal | [`software_live_remove`](roles/software_live_remove/README.md) | Remove software observation components while preserving application state. |
 | Service operations | [`os_apt_maintenance`](roles/os_apt_maintenance/README.md) | Run host-local apt update/dist-upgrade/autoremove/autoclean via systemd timer with durable state and optional Nyxmon endpoint. |
+| Service operations | [`aws_ca_bundle`](roles/aws_ca_bundle/README.md) | Use patched system trust for explicit botocore consumers while preserving custom AWS bundles. |
 | Service removal | [`daybook_voice_memo_attention_remove`](roles/daybook_voice_memo_attention_remove/README.md) | Unload only the attention LaunchAgent while preserving tracking and native history. |
 | Service removal | [`daybook_voice_memo_attention_notifier_remove`](roles/daybook_voice_memo_attention_notifier_remove/README.md) | Revoke only the dedicated notifier key and executable while preserving other authorizations. |
 | Service removal | [`fastdeploy_remove`](roles/fastdeploy_remove/README.md) | Remove FastDeploy and related resources safely. |

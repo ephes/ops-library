@@ -1,0 +1,4 @@
+---
+aws_ca_bundle_path: /etc/ssl/certs/ca-certificates.crt
+# Explicit allowlist: unit, health_url, optional health_headers/status_codes.
+aws_ca_bundle_services: []

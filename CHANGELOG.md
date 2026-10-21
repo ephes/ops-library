@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Support an explicit system CA bundle override for allowlisted botocore consumers without certifi, preserving custom trust configuration and serial health-checked restarts.
+
 ## Unreleased — maintained Python trust tools (2.57.1)
 
 - Pin uv 0.13.4 with verified Linux/macOS release hashes and matching Home Assistant, MeTube and OpenWebUI installer defaults.
