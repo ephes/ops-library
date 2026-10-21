@@ -10,8 +10,9 @@
   `WWW-Authenticate`, the state re-read per request through
   `with_freshness`, 503 when missing or invalid, no request logging);
   documented divergences in PLAN.md 4.2 items 1, 2 and 14 (HTTP/1.1 framing,
-  one 5 s budget per connection and up to 16 connections at a time, the
-  endpoint configuration checked at startup).
+  up to 16 connections at a time with the request head due within 5 s and
+  the password check, on a blocking thread, stopped after 5 s, the endpoint
+  configuration checked at startup).
 - `htpasswd -vi` is reproduced in process (bcrypt through the `bcrypt`
   crate) with Apache's password, file and comparison rules; new fixture
   `htpasswd.json` with the real `htpasswd` verdicts of Debian 13 and Ubuntu
