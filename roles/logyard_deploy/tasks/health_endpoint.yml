@@ -21,6 +21,12 @@
     metrics_httpd_switch_probe_port: "{{ logyard_health_port }}"
     metrics_httpd_switch_probe_path: "{{ logyard_health_path }}"
     metrics_httpd_switch_probe_expect: logyard-health
+    # One answer waits for Loki /ready and two queries (request timeout each)
+    # and then for systemctl per listed unit, one after the other.
+    metrics_httpd_switch_probe_timeout: >-
+      {{ ((logyard_health_timeout_seconds | float) * 3
+          + (logyard_health_systemctl_timeout_seconds | float) * (logyard_health_units | length)
+          + 5) | round(0, 'ceil') | int }}
     metrics_httpd_switch_ip_address_allow:
       - any
   block:

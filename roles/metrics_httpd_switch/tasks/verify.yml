@@ -19,14 +19,15 @@
       - metrics_httpd_switch_probe_expect in ['unauthorized', 'logyard-health', 'static']
       - metrics_httpd_switch_probe_expect != 'unauthorized' or metrics_httpd_switch_probe_realm | length > 0
       - (metrics_httpd_switch_probe_port | string) is match('^[1-9][0-9]*$')
+      - (metrics_httpd_switch_probe_timeout | string) is match('^[1-9][0-9]*$')
       - metrics_httpd_switch_probe_path is match('^/')
       - metrics_httpd_switch_ip_address_allow is sequence and metrics_httpd_switch_ip_address_allow is not string
     fail_msg: >-
       metrics_httpd_switch verify needs a preceding select for
       {{ metrics_httpd_switch_service_name }} with the same impl, the role's
       Python script path (impl python), a probe expectation (unauthorized with
-      a realm, logyard-health or static), a probe port and path, and the unit's
-      IPAddressAllow= list.
+      a realm, logyard-health or static), a probe port, path and timeout
+      (whole seconds), and the unit's IPAddressAllow= list.
     quiet: true
 
 - name: verify | Verify the switch
@@ -96,22 +97,37 @@
           {{ _metrics_httpd_switch_live.stderr | default('') }}
         quiet: true
 
+    # A bind address that is not an IP literal (a Python unit may bind a host
+    # name such as localhost; metrics-httpd's --check-config refuses one, so
+    # only impl python gets here with it) is not probed: which address it
+    # resolves to, and so whether the IP filter admits the probe, is unknown.
+    # Every IP literal is covered by "any".
     - name: verify | Decide how to probe the endpoint
+      ansible.builtin.set_fact:
+        _metrics_httpd_switch_probe_ip: >-
+          {{ metrics_httpd_switch_probe_bind | local.ops_library.metrics_httpd_probe_covered(['any']) }}
+        _metrics_httpd_switch_probe_covered: >-
+          {{ metrics_httpd_switch_probe_bind
+             | local.ops_library.metrics_httpd_probe_covered(metrics_httpd_switch_ip_address_allow) }}
+
+    - name: verify | Set the probe URL
       ansible.builtin.set_fact:
         _metrics_httpd_switch_probe_url: >-
           http://{{ metrics_httpd_switch_probe_bind | local.ops_library.metrics_httpd_probe_host }}:{{
           metrics_httpd_switch_probe_port }}{{ metrics_httpd_switch_probe_path }}
-        _metrics_httpd_switch_probe_covered: >-
-          {{ metrics_httpd_switch_probe_bind
-             | local.ops_library.metrics_httpd_probe_covered(metrics_httpd_switch_ip_address_allow) }}
+      when: _metrics_httpd_switch_probe_covered | bool
 
     - name: verify | Report a probe the unit's IP filter would drop
       ansible.builtin.debug:
         msg: >-
           Skipping the HTTP probe of {{ metrics_httpd_switch_service_name }}:
-          its IPAddressAllow= ({{ metrics_httpd_switch_ip_address_allow | join(', ') }})
-          does not cover {{ metrics_httpd_switch_probe_bind }}, the source
-          address of a probe from this host. The process check above passed.
+          {{ ('its IPAddressAllow= (' ~ (metrics_httpd_switch_ip_address_allow | join(', '))
+              ~ ') does not cover ' ~ metrics_httpd_switch_probe_bind
+              ~ ', the source address of a probe from this host')
+             if _metrics_httpd_switch_probe_ip | bool
+             else ('its bind address ' ~ metrics_httpd_switch_probe_bind
+                   ~ ' is not an IP address, so the address to probe is unknown') }}.
+          The process check above passed.
       when: not _metrics_httpd_switch_probe_covered | bool
 
     # Unauthenticated on purpose: no credential is used anywhere in the switch
@@ -124,7 +140,7 @@
         use_proxy: false
         use_netrc: false
         force_basic_auth: false
-        timeout: 5
+        timeout: "{{ metrics_httpd_switch_probe_timeout | int }}"
         return_content: true
         status_code: [200, 401]
       failed_when: false

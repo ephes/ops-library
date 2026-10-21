@@ -140,6 +140,12 @@
   dot (it is also the switch's pin name). The service, the Traefik route,
   the handler flush and the checks now run in one block that carries the
   switch inputs, in the same order as before.
+- `metrics_httpd_switch`: new `metrics_httpd_switch_probe_timeout` (default
+  `5` s, as before); `logyard_deploy` raises it to three Loki request
+  timeouts plus one `systemctl` timeout per listed unit plus 5 s, since the
+  health endpoint answers only after those calls. verify skips the probe with
+  a message when the bind address is a host name (e.g. `localhost`, which
+  only a Python unit accepts) instead of failing on it.
 - Tests: `tests/test_metrics_httpd_switch_logyard_static.py` (in `just
   test-metrics-httpd-switch`), goldens in
   `tests/fixtures/metrics_httpd_switch/{logyard_deploy,static_site_deploy}/`;

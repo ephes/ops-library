@@ -190,7 +190,10 @@ invalid number, a non-IP bind address, a Loki URL that is not `http://` or a
 `logyard_health_units` entry the payload would list under `units_rejected`
 stops a switch to Rust. After the restart the deploy checks that the unit runs
 the selected implementation and that `GET` on the health path answers 200 with
-a JSON object holding `status`, then pins the version in
+a JSON object holding `status` (waiting up to three Loki request timeouts plus
+one `systemctl` timeout per listed unit, plus 5 s; skipped when
+`logyard_health_bind_host` is a host name rather than an IP address, which
+only Python accepts), then pins the version in
 `/opt/metrics-httpd/.pins/<service>`. Switching back to `python` removes the
 drop-in and restarts the Python script.
 

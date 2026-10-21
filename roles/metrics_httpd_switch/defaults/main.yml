@@ -54,6 +54,10 @@ metrics_httpd_switch_probe_path: ""
 # static: 200.
 metrics_httpd_switch_probe_expect: unauthorized
 metrics_httpd_switch_probe_realm: ""
+# Seconds the probe waits for the answer (whole seconds). A consumer whose
+# endpoint answers slowly by design raises it (logyard-health queries Loki
+# and systemctl for every request).
+metrics_httpd_switch_probe_timeout: 5
 # The unit's IPAddressAllow= values (all units set IPAddressDeny=any). The
 # probe is skipped with a message when they do not cover the probed address,
 # which is also the probe's source address. ["any"]: no IP filter.

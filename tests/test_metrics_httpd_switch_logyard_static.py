@@ -38,6 +38,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -232,6 +233,13 @@ class RoleStaticTests(unittest.TestCase):
             self.assertEqual(variables["metrics_httpd_switch_notify"], spec["notify"], role)
             self.assertEqual(variables["metrics_httpd_switch_probe_expect"], spec["expect"], role)
             self.assertNotIn("metrics_httpd_switch_probe_realm", variables, role)
+            if role == "logyard_deploy":
+                timeout = variables["metrics_httpd_switch_probe_timeout"]
+                for name in ("logyard_health_timeout_seconds", "logyard_health_systemctl_timeout_seconds",
+                             "logyard_health_units"):
+                    self.assertIn(name, timeout)
+            else:
+                self.assertNotIn("metrics_httpd_switch_probe_timeout", variables, role)
             # Neither unit has an IP filter: the probe always runs.
             self.assertEqual(variables["metrics_httpd_switch_ip_address_allow"], ["any"], role)
             unit = (ROOT / "roles" / role / "templates" / spec["unit"]).read_text(encoding="utf-8")
@@ -378,7 +386,8 @@ def render_play(role: str, out: Path, overrides: dict) -> dict:
                                 " 'probe': [metrics_httpd_switch_probe_bind,"
                                 "           metrics_httpd_switch_probe_port | string,"
                                 "           metrics_httpd_switch_probe_path,"
-                                "           metrics_httpd_switch_probe_expect],"
+                                "           metrics_httpd_switch_probe_expect,"
+                                "           metrics_httpd_switch_probe_timeout | default('switch default') | string],"
                                 " 'allow': metrics_httpd_switch_ip_address_allow,"
                                 " 'argv_problems': metrics_httpd_switch_argv"
                                 "   | local.ops_library.metrics_httpd_argv_problems,"
@@ -473,12 +482,16 @@ class RoleRenderTests(unittest.TestCase):
         self.assertEqual(logyard["service"], "logyard-health-endpoint")
         self.assertEqual((logyard["user"], logyard["group"]), ("logyard", "logyard"))
         self.assertEqual(logyard["python_script"], "/usr/local/bin/logyard_health_httpd.py")
-        self.assertEqual(logyard["probe"], ["127.0.0.1", "9105", "/.well-known/logyard", "logyard-health"])
+        # Three Loki requests of 10 s, no listed unit, 5 s spare.
+        self.assertEqual(logyard["probe"], ["127.0.0.1", "9105", "/.well-known/logyard", "logyard-health", "35"])
+        # One listed unit adds one systemctl timeout (5 s).
+        self.assertEqual(self.switch("logyard_deploy")["probe"][4], "40")
         static = self.switch("static_site_deploy")
         self.assertEqual(static["service"], "static-site")
         self.assertEqual((static["user"], static["group"]), ("static-site", "static-site"))
         self.assertEqual(static["python_script"], "/usr/local/libexec/static-site-httpd.py")
-        self.assertEqual(static["probe"], ["127.0.0.1", "10061", "/", "static"])
+        self.assertEqual(static["probe"], ["127.0.0.1", "10061", "/", "static", "switch default"])
+        self.assertEqual(load_yaml(ROOT / "roles/metrics_httpd_switch/defaults/main.yml")["metrics_httpd_switch_probe_timeout"], 5)
         for switch in (logyard, static):
             self.assertTrue(FILTERS.metrics_httpd_probe_covered(switch["probe"][0], switch["allow"]))
 
@@ -575,9 +588,11 @@ class EndpointHandler(http.server.BaseHTTPRequestHandler):
 
     requests: list[dict] = []
     body = b'{"status": "ok", "loki": {"ready": true}}'
+    delay = 0.0
 
     def do_GET(self):  # noqa: N802 - http.server API
         type(self).requests.append({"path": self.path, "authorization": self.headers.get("Authorization")})
+        time.sleep(type(self).delay)
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(type(self).body)))
@@ -628,7 +643,7 @@ class RoleSwitchPlaybookTests(unittest.TestCase):
         self.log = self.work / "handlers.log"
         self.env = {**self.env_base, "FAKE_SYSTEMD_DIR": str(self.state)}
         self.runs = 0
-        EndpointHandler.requests = []
+        EndpointHandler.requests, EndpointHandler.delay = [], 0.0
 
     def role_vars(self, role: str) -> dict:
         overrides = {
@@ -641,10 +656,10 @@ class RoleSwitchPlaybookTests(unittest.TestCase):
         return [sys.executable, str(self.base / "fake_restart.py"), str(self.systemd), unit, str(self.proc),
                 str(self.state), script, str(self.log)]
 
-    def play(self, role: str, fleet_impl: str, version: str = "") -> dict:
+    def play(self, role: str, fleet_impl: str, version: str = "", *, expect_ok: bool = True, **overrides) -> dict:
         self.runs += 1
         spec = ROLES[role]
-        variables = self.role_vars(role)
+        variables = {**self.role_vars(role), **overrides}
         unit = {"logyard_deploy": "logyard-health-endpoint", "static_site_deploy": "benchmarks-static"}[role]
         script = {"logyard_deploy": "/usr/local/bin/logyard_health_httpd.py",
                   "static_site_deploy": "/usr/local/libexec/benchmarks-static-httpd.py"}[role]
@@ -712,6 +727,9 @@ class RoleSwitchPlaybookTests(unittest.TestCase):
         path.write_text(yaml.safe_dump([play], sort_keys=False), encoding="utf-8")
         link_templates(self.work)
         result = BASE.run_playbook(path, self.env)
+        if not expect_ok:
+            self.assertNotEqual(result["rc"], 0, result["out"])
+            return result
         self.assertEqual(result["rc"], 0, result["out"])
         result["facts"] = json.loads(facts.read_text())
         result["handlers"] = self.log.read_text().splitlines() if self.log.exists() else []
@@ -784,6 +802,29 @@ class RoleSwitchPlaybookTests(unittest.TestCase):
             if line.split("=", 1)[0] not in NOT_SANDBOX
         ]
         self.roundtrip("static_site_deploy", argv, sandbox, "benchmarks-static", "/")
+
+    def test_logyard_probe_waits_for_a_slow_answer(self):
+        # Python answers after its Loki requests; the probe waits for them
+        # (default: 3 x 10 s + 5 s), not the switch's 5 s.
+        EndpointHandler.delay = 6.0
+        result = self.play("logyard_deploy", "python")
+        self.assertEqual(EndpointHandler.requests, [{"path": "/.well-known/logyard", "authorization": None}])
+        self.assertEqual(result["recap"]["failed"], 0, result["out"])
+        # A probe timeout below the answer time fails the check (the knob is
+        # used): no Loki timeout and no unit leave the 5 s spare.
+        failed = self.play("logyard_deploy", "python", expect_ok=False, logyard_health_timeout_seconds=0,
+                           logyard_health_units=[], metrics_httpd_switch_verify_retries=1)
+        self.assertIn("verify | Assert the endpoint answers as expected", failed["out"])
+
+    def test_logyard_host_name_bind_stays_deployable_with_python(self):
+        result = self.play("logyard_deploy", "python", logyard_health_bind_host="localhost")
+        self.assertIn("is not an IP address, so the address to probe is unknown", result["out"])
+        self.assertEqual(EndpointHandler.requests, [])
+        self.assertEqual(result["recap"]["failed"], 0, result["out"])
+
+    def test_probe_timeout_must_be_whole_seconds(self):
+        failed = self.play("static_site_deploy", "python", expect_ok=False, metrics_httpd_switch_probe_timeout=0)
+        self.assertIn("verify | Assert select ran for this unit", failed["out"])
 
 
 if __name__ == "__main__":

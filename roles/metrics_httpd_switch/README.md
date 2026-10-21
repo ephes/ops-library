@@ -148,7 +148,10 @@ mode. Every check retries for about 30 s (`verify_retries` ×
    apt-state); `logyard-health` 200 with a JSON object holding `status`;
    `static` 200. The probe's source address is the bind address (the
    unspecified address is probed on loopback), so it is skipped with a message
-   when the unit's `IPAddressAllow=` (`ip_address_allow`) does not cover it.
+   when the unit's `IPAddressAllow=` (`ip_address_allow`) does not cover it,
+   and when the bind address is a host name rather than an IP address (only
+   a Python unit can have one: `--check-config` refuses it for Rust). The
+   probe waits `probe_timeout` seconds for the answer.
    No credential is used anywhere in the switch.
 3. Only then: `rust_release_binary` `pin` (`state: present` with the version
    for `rust`; `state: absent` for `python`, which keeps the last version as
@@ -175,6 +178,7 @@ A failed check stops the play before any pin moves or anything is pruned.
 | `metrics_httpd_switch_probe_bind` / `_probe_port` / `_probe_path` | `""` / `0` / `""` | Where the probe goes. |
 | `metrics_httpd_switch_probe_expect` | `unauthorized` | `unauthorized`, `logyard-health` or `static`. |
 | `metrics_httpd_switch_probe_realm` | `""` | Realm of the 401 (`unauthorized`). |
+| `metrics_httpd_switch_probe_timeout` | `5` | Seconds the probe waits for the answer (whole seconds; `logyard_deploy` raises it to its Loki and `systemctl` timeouts). |
 | `metrics_httpd_switch_ip_address_allow` | `[any]` | The unit's `IPAddressAllow=` values (`any`, `localhost`, `link-local`, `multicast`, addresses, prefixes). |
 | `metrics_httpd_switch_verify_retries` / `_verify_delay` | `15` / `2` | Retries of the process check and of the probe. |
 | `metrics_httpd_switch_keep_versions` | `3` | Newest versions prune keeps on top of every pin and the live versions. |
