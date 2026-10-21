@@ -18,10 +18,12 @@ its register playbooks.
 from __future__ import annotations
 
 import contextlib
+import grp
 import importlib.util
 import io
 import json
 import os
+import pwd
 import re
 import secrets
 import shlex
@@ -44,6 +46,8 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 ROOT = Path(__file__).resolve().parents[1]
 GUARD_PATH = ROOT / "roles" / "echoport_remote_command_guard" / "files" / "echoport-remote-command-guard.py"
+# Race regressions of the root-run mutations, shared with the Rust guard (tests/mutations.rs).
+RACES_PATH = ROOT / "rust" / "echoport-command-guard" / "parity" / "races.json"
 TEMPLATE_DIR = ROOT / "roles" / "echoport_backup" / "templates"
 
 PRODUCTION_POLICY = {
@@ -287,6 +291,35 @@ class GuardAllowsRunnerShapes(unittest.TestCase):
         self.assertEqual(read.argv, ["cat"])
         self.assertEqual((read.stdin.directory, read.stdin.name, read.stdin.owners), (tmp, "sqlite.db", ("gotosocial",)))
 
+    def test_root_changes_are_made_by_the_guard(self) -> None:
+        """chmod, chown, mv and rm -f of side files run nothing: perform() makes them."""
+        tmp = "/var/tmp/gotosocial-echoport.Ab12Cd"
+        db = "/var/lib/gotosocial/sqlite.db"
+        for command, host, mutation in (
+            ("chmod 0600 /var/lib/gotosocial/sqlite.db", self.production, GUARD.Mutation("chmod", [db], mode=0o600)),
+            ("chmod 0700 /home/marina/site/media", self.staging,
+             GUARD.Mutation("chmod", ["/home/marina/site/media"], mode=0o700)),
+            ("chown marina:marina /home/marina/site/db.sqlite3", self.staging,
+             GUARD.Mutation("chown", ["/home/marina/site/db.sqlite3"], owner="marina:marina")),
+            ("chown -R gotosocial:gotosocial /var/lib/gotosocial/storage", self.production,
+             GUARD.Mutation("chown", ["/var/lib/gotosocial/storage"], owner="gotosocial:gotosocial", recursive=True)),
+            (f"chown gotosocial:gotosocial {tmp}", self.production,
+             GUARD.Mutation("chown", [tmp], owner="gotosocial:gotosocial", private=True)),
+            ("mv /home/marina/site/db.sqlite3.tmp /home/marina/site/db.sqlite3", self.staging,
+             GUARD.Mutation("mv", ["/home/marina/site/db.sqlite3.tmp", "/home/marina/site/db.sqlite3"], replace=True)),
+            (f"mv {db} {db}.pre-restore-20261015T020000Z", self.production,
+             GUARD.Mutation("mv", [db, f"{db}.pre-restore-20261015T020000Z"])),
+            (f"mv {db}.restore-tmp {db}", self.production, GUARD.Mutation("mv", [f"{db}.restore-tmp", db])),
+            ("rm -f /home/marina/site/db.sqlite3-wal /home/marina/site/db.sqlite3-shm", self.staging,
+             GUARD.Mutation("rm", ["/home/marina/site/db.sqlite3-wal", "/home/marina/site/db.sqlite3-shm"])),
+        ):
+            with self.subTest(command=command):
+                decision = GUARD.check(command, host, realpath=identity, lstat=lstat_runner_view)
+                self.assertEqual(decision, GUARD.Decision(argv=[], mutation=mutation))
+        # Everything else still runs a tool and changes nothing itself.
+        self.assertIsNone(self.allowed("rm -f /tmp/echoport_pp_dump_x.dump", self.production).mutation)
+        self.assertIsNone(self.allowed("mkdir -p /home/marina/site/media", self.staging).mutation)
+
     def test_policy_rejects_unsafe_entries(self) -> None:
         for broken in (
             {"units": ["a b"]},
@@ -391,6 +424,31 @@ class GuardRefusals(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertRefused(command, self.staging, realpath=escaping)
 
+
+    def test_mutations_name_their_root_as_written(self) -> None:
+        """perform() walks the path as written, so it must lie inside the root before resolving."""
+
+        def into_the_root(path: str) -> str:
+            # /home/marina/alias is a symlink to the root.
+            return os.path.normpath(path.replace("/home/marina/alias", "/home/marina/site", 1))
+
+        for command, path in (
+            ("chmod 0600 /home/marina/alias/db.sqlite3", "/home/marina/alias/db.sqlite3"),
+            ("chown marina:marina /home/marina/alias/db.sqlite3", "/home/marina/alias/db.sqlite3"),
+            ("chown -R marina:marina /home/marina/alias/media", "/home/marina/alias/media"),
+            ("mv /home/marina/alias/a /home/marina/site/b", "/home/marina/alias/a"),
+            ("mv /home/marina/site/a.tmp /home/marina/alias/a", "/home/marina/alias/a"),
+            ("rm -f /home/marina/alias/db-wal /home/marina/alias/db-shm", "/home/marina/alias/db-wal"),
+            ("chmod 0600 /home/marina/site/media/", "/home/marina/site/media/"),
+            ("chown -R marina:marina /home/marina/site/", "/home/marina/site/"),
+        ):
+            with self.subTest(command=command):
+                with self.assertRaises(GUARD.Refused) as caught:
+                    GUARD.check(command, self.staging, realpath=into_the_root, lstat=lstat_absent)
+                self.assertEqual(str(caught.exception), f"path not inside its root as written: {path!r}")
+        # Reading and uploading through such a path is unchanged.
+        GUARD.check("test -e /home/marina/alias/db.sqlite3", self.staging, realpath=into_the_root)
+        GUARD.check("chmod 0600 /home/marina/site/media", self.staging, realpath=into_the_root)
 
     def test_rsync_options_must_match_exactly(self) -> None:
         media = "/home/marina/site/media/"
@@ -644,8 +702,8 @@ class GuardMain(unittest.TestCase):
         with (
             mock.patch.dict(os.environ, env, clear=True),
             mock.patch.object(GUARD.os, "execvp") as execvp,
-            mock.patch.object(GUARD, "_log"),
-            contextlib.redirect_stderr(io.StringIO()),
+            mock.patch.object(GUARD, "_log") as self.log,
+            contextlib.redirect_stderr(io.StringIO()) as self.stderr,
         ):
             rc = GUARD.main(["guard", str(self.policy_file)])
             self.path_at_exec = os.environ.get("PATH")
@@ -667,6 +725,38 @@ class GuardMain(unittest.TestCase):
         self.assertEqual(self.path_at_exec, GUARD.SAFE_PATH)
         self.assertEqual(rc, 0)
 
+    def test_allowed_mutation_is_made_without_exec(self) -> None:
+        base = Path(os.path.realpath(self.tmp))
+        root = base / "root"
+        root.mkdir()
+        (root / "db").write_text("db")
+        (root / "db").chmod(0o644)
+        outside = base / "secret"
+        outside.write_text("secret")
+        outside.chmod(0o644)
+        me = pwd.getpwuid(os.geteuid()).pw_name
+        group = grp.getgrgid(os.getegid()).gr_name
+        self.policy_file.write_text(json.dumps({"path_roots": [{"path": str(root), "owner": f"{me}:{group}"}]}))
+        command = f"chmod 0600 {root}/db"
+        rc, execvp = self.run_main(command)
+        self.assertEqual(rc, 0)
+        execvp.assert_not_called()
+        self.assertEqual(stat.S_IMODE((root / "db").stat().st_mode), 0o600)
+        self.assertEqual(self.log.call_args.args[1], f"allowed from 100.93.155.101: {command!r}")
+        self.assertEqual(self.stderr.getvalue(), "")
+        # A symlink put there after check(): refused and logged, nothing changed outside.
+        (root / "db").unlink()
+        (root / "db").symlink_to(outside)
+        checked = GUARD.Decision(argv=[], mutation=GUARD.Mutation("chmod", [f"{root}/db"], mode=0o600))
+        with mock.patch.object(GUARD, "check", return_value=checked):
+            rc, execvp = self.run_main(command)
+        self.assertEqual(rc, 1)
+        execvp.assert_not_called()
+        self.assertEqual(self.stderr.getvalue(), "echoport-remote-command-guard: command not allowed\n")
+        self.assertEqual(self.log.call_args.args[1],
+                         f"refused from 100.93.155.101: chmod target is a symbolic link: '{root}/db': {command!r}")
+        self.assertEqual(stat.S_IMODE(outside.stat().st_mode), 0o644)
+
     def test_broken_policy_refuses_everything(self) -> None:
         for broken in ("{not json", "[]", json.dumps({"units": ["a b"]})):
             with self.subTest(policy=broken):
@@ -683,6 +773,32 @@ class GuardMain(unittest.TestCase):
             for broken in ("{not json", "[]", json.dumps({"path_roots": [{"path": "/"}]})):
                 self.policy_file.write_text(broken)
                 self.assertEqual(GUARD.main(["guard", "--check-policy", str(self.policy_file)]), 1)
+
+
+class GuardMutationRaces(unittest.TestCase):
+    """The race regressions of rust/echoport-command-guard/parity/races.json.
+
+    The table is run by parity/races.py here and, as root on the hosts'
+    distributions, in the Layer-2 containers; the Rust guard runs it too
+    (tests/mutations.rs). A change between check() and perform(), or during
+    perform()'s walk (its test hook), must never make the guard change, move
+    or remove anything outside the root.
+    """
+
+    def test_scenarios(self) -> None:
+        races = load_races_module()
+        failures, skipped = races.run_all(GUARD, RACES_PATH)
+        self.assertEqual(failures, [])
+        if skipped:
+            self.skipTest(f"{len(skipped)} chown scenarios need a second group of the test user (or root)")
+
+
+def load_races_module() -> types.ModuleType:
+    spec = importlib.util.spec_from_file_location("echoport_guard_races", RACES_PATH.with_suffix(".py"))
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 # --- Runner templates -------------------------------------------------------
