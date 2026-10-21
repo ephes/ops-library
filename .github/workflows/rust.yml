@@ -3,9 +3,11 @@ name: Rust
 
 # CI of the Rust workspace in rust/ (rust/PLAN-foundation.md section 3,
 # rust/README.md): fmt, clippy, tests, cargo-deny and the stdlib Python
-# script tests. The Ansible/Python test suite of the collection stays local
-# (`just test`). Members listed in `[workspace.metadata.ci] exclude` of
-# rust/Cargo.toml are left out of this job; their stream adds its own job.
+# script tests, plus the crate steps of echoport-command-guard (its PLAN.md
+# 8.1: Python 3.12 for the oracle tests, the fixture drift check). The
+# Ansible/Python test suite of the collection stays local (`just test`).
+# Members listed in `[workspace.metadata.ci] exclude` of rust/Cargo.toml are
+# left out of this job; their stream adds its own job.
 # Actions are pinned by commit SHA (the ones mailgun-relay's workflows use).
 
 "on":
@@ -51,6 +53,21 @@ jobs:
           rustup toolchain install
           rustc --version
           python3 --version
+      - name: Set up uv (echoport-command-guard oracle and fixture drift check)
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.23"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Python 3.12 for the echoport-command-guard oracle tests
+        # rust/echoport-command-guard/PLAN.md 7.3, 8.1: the tokeniser
+        # differential tests run the Python guard (parity/oracle.py) under
+        # production's Python. They fail, never skip, without it.
+        run: |
+          uv python install 3.12
+          python=$(uv python find --no-project 3.12)
+          "$python" --version
+          echo "ECHOPORT_ORACLE_PYTHON=${python}" >> "$GITHUB_ENV"
       - name: Cache cargo registry and build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -83,6 +100,18 @@ jobs:
         run: |
           read -r -a exclude_args <<< "$EXCLUDES"
           cargo test --workspace "${exclude_args[@]}" --locked
+      - name: echoport-command-guard fixture drift check
+        # rust/echoport-command-guard/PLAN.md 7.2: the committed Layer-1
+        # fixtures must be what the Python guard decides. Regenerated from
+        # the recorded corpus under the hosts' Pythons (3.12, 3.13), then
+        # with the runners re-recorded in the repo venv (ansible-core, jinja2).
+        working-directory: .
+        run: |
+          gen=rust/echoport-command-guard/parity/gen_fixtures.py
+          uv run --python 3.12 --no-project python -I "$gen" check
+          uv run --python 3.13 --no-project python -I "$gen" check
+          uv sync --locked
+          .venv/bin/python "$gen" check --record
       - name: Install cargo-deny (pinned release, sha256 checked)
         env:
           CARGO_DENY_VERSION: "0.20.2"

@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — Rust ports: echoport-command-guard crate skeleton, policy and tokeniser (S1)
+
+- Add the `echoport-command-guard` crate to the Rust workspace (slice S1 of
+  `rust/echoport-command-guard/PLAN.md`): `--version`, `--check-policy` (the
+  Python guard's validation and messages, with strict JSON types: duplicate
+  keys, `NaN`/`Infinity`, out-of-range numbers and lone surrogates are
+  refused), the command prefilter (printable ASCII and tab only, no `\` or
+  `#`), the tokeniser (`shlex` crate, proven equal to Python's `shlex.split`
+  by differential tests against the Python oracle), the `Decision` types,
+  the virtual `GuardEnv` and a fail-closed dispatcher that still refuses
+  every command; forced-command mode refuses everything and executes nothing
+  until S4. New Layer-1 runner over all committed fixtures. `rust.yml` gains
+  this crate's steps: Python 3.12 from uv for the oracle tests and the
+  fixture drift check (`gen_fixtures.py check` under 3.12 and 3.13, `check
+  --record` in the repo venv). The fixture generator now tags numbers
+  outside the double range as `policy-type` (new case `raw-big-integer`).
+  Nothing installs the binary; no role behaviour changes.
+
 ## Unreleased — Rust ports: release pipeline with per-binary tags (foundation F2)
 
 - New GitHub Actions workflow `.github/workflows/rust-release.yml` (slice F2 of `rust/PLAN-foundation.md`): a pushed tag `metrics-httpd-v<semver>`, `echoport-command-guard-v<semver>` or `software-live-v<semver>` builds that crate for `x86_64-unknown-linux-gnu` on `ubuntu-22.04` (glibc 2.35) after fmt, clippy and the workspace tests, checks every binary's glibc ceiling and `NEEDED` libraries and its `--version` line (`<binary> <version> (<commit>)`), packs a deterministic `<crate>-<version>-x86_64-unknown-linux-gnu[-<variant>].tar.gz` with a `.sha256` file and publishes the GitHub release `<crate> <version>` (never marked latest; only the publish job may write). `workflow_dispatch` with a crate runs the same build and checks and keeps the archives as workflow artifacts. New stdlib script `rust/scripts/release_checks.py` (`tag`, `matrix`, `glibc-floor`, `smoke`, `verify`, `pack`) with tests and a two-variant fixture; an optional `rust/<crate>/release.json` declares build variants (container image, apt packages, members to build, archive binaries with their own glibc ceiling, extra `NEEDED` sonames and smoke commands, archive files). Release how-to in `rust/README.md` "Releases". No role behaviour changes; nothing is installed anywhere.
