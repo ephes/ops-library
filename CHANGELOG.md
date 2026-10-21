@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — CA trust for Node.js and long-running TLS clients
+## Unreleased — CA trust for Node.js and long-running TLS clients (2.63.4)
 
 - New `ca_trust_consumers` role, for the eMudhra intermediate CA key
   compromise (October 2026): a fixed system CA store does not reach Node.js,
