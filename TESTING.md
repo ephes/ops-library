@@ -316,6 +316,15 @@ keeps working without a Rust toolchain.
 temporary directory and fails if any archive member comes from `rust/` or
 `.github/` (a checkout's `rust/target/` can be hundreds of MB).
 
+`just test` also runs `just test-metrics-httpd-fixtures`: the
+`rust/metrics-httpd/fixtures/` that the Rust port replays must regenerate
+byte for byte from the rendered Python endpoint scripts, the real `htpasswd`
+(apache2-utils; without it only the stdlib families are checked) and
+CPython, also under 3.12 and 3.13 when `uv` has them; every Rust/Python
+difference must name an allowed difference of `rust/metrics-httpd/PLAN.md`
+5.2. After changing an endpoint script, run `just metrics-httpd-fixtures`
+and update the Rust side in the same change.
+
 ## Legacy Shell Helpers
 
 Legacy shell helpers still exist for repo-local syntax and ad-hoc checks:

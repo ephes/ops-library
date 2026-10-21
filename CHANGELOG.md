@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased — Rust ports: metrics-httpd core (S1)
+
+- `rust/metrics-httpd` (slice S1 of `rust/metrics-httpd/PLAN.md`): the
+  command line of all five modes (`json-file`, `script`, `apt-state`,
+  `logyard-health`, `static`) with `--check-config` (validates the htpasswd
+  file, JSON directory, script, site root and logyard environment without
+  binding; exit 0 or 2), the HTTP server core (IPv4/IPv6, request timeout,
+  64 connections, graceful SIGTERM, Python's access line), Basic auth with
+  the rules of the `htpasswd` binary in process (bcrypt `$2y$`/`$2a$`), a
+  `serde_json` formatter that writes `json.dumps(..., sort_keys=True)` byte
+  for byte (including `float.__repr__`), the `meta` helpers and
+  `TESTMAP.md`. Every mode answers the 501/404/401 gate of the Python
+  scripts; the mode bodies arrive with S2a–S2e. New Python oracle
+  `rust/metrics-httpd/fixtures/generate.py` with committed fixtures (float
+  reprs, JSON round trips, meta, auth decisions with the real `htpasswd`,
+  gate answers of the rendered scripts) and test-only htpasswd files; new
+  `tests/test_metrics_httpd_fixtures.py` (`just test-metrics-httpd-fixtures`,
+  part of `just test`) fails when the fixtures drift from the Python
+  scripts or a Rust/Python difference is not an allowed one; new recipe
+  `just metrics-httpd-fixtures` regenerates them. The plan records the
+  allowed differences found on the way (D-4 nesting depth, D-6 `htpasswd`
+  rules, new D-14 request parsing). No role behaviour changes.
+
 ## Unreleased — Rust ports: echoport-command-guard rules without filesystem (S3a)
 
 - `echoport-command-guard` (slice S3a of `rust/echoport-command-guard/PLAN.md`):
