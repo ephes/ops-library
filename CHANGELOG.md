@@ -5,6 +5,9 @@
 
 ## Unreleased — ansible-core 2.20.3 floor and quiet MeTube uv sync (2.56.0)
 
+- Add per-container CA preparation for the October 2026 eMudhra incident,
+  retaining each image’s unrelated trusted certificates.
+
 - The collection now requires ansible-core >= 2.20.3 (`meta/runtime.yml`
   `requires_ansible`, `pyproject.toml`), and its own lock and test environment
   move from ansible-core 2.20.0 to 2.20.10. ansible-core 2.20.0–2.20.2 write a
@@ -433,6 +436,8 @@ deployment that leaves the new switches off.
   `VOXHELM_FFPROBE_BIN`, and requires Parakeet to be enabled.
 
 ## Unreleased
+
+- Add optional `graphyard_ca_store_root`, `logyard_ca_store_root`, and `openclaw_ca_store_path` settings for replacement native trust stores; prepare stores before enabling mounts.
 
 - Remove `stsPreload: true` from all role Traefik templates so their HSTS
   middleware no longer advertises `preload`. No domains were submitted to the

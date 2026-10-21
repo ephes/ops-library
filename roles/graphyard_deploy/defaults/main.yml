@@ -164,3 +164,6 @@ graphyard_skip_django_manage: false
 # Optional weekly lookup of explicit public release sources. No inventory host access.
 graphyard_inventory_releases_enabled: false
 graphyard_inventory_release_sources: []
+
+# Optional root containing prepared per-container replacement CA stores.
+graphyard_ca_store_root: ""

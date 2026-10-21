@@ -319,3 +319,5 @@ Operations coordination: [API deployment](roles/daybook_operations_api_deploy/RE
 [backup](roles/daybook_operations_api_backup/README.md),
 [restore](roles/daybook_operations_api_restore/README.md),
 and [removal](roles/daybook_operations_api_remove/README.md). Disabled-first; live acceptance pending.
+
+`container_ca_remediate` prepares per-image replacement CA bundles; see its role README.
