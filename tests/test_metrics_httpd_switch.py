@@ -345,8 +345,10 @@ class SwitchStaticTests(unittest.TestCase):
                 self.assertNotIn("become", task, task.get("name"))
                 uri = task.get("ansible.builtin.uri")
                 if uri is not None:
-                    for key in ("url_username", "url_password", "headers", "force_basic_auth"):
+                    for key in ("url_username", "url_password", "headers"):
                         self.assertNotIn(key, uri)
+                    self.assertIs(uri["use_netrc"], False)
+                    self.assertIs(uri["force_basic_auth"], False)
 
     def test_python_selection_comes_before_any_rust_step(self):
         tasks = list(walk(load_yaml(ROLE / "tasks/select.yml")))
@@ -1022,6 +1024,23 @@ class SwitchPlaybookTests(unittest.TestCase):
         self.assertEqual(result["recap"]["ignored"], 2, result["out"])
         self.assertEqual(self.versions(), ["0.1.0"])
         self.assertEqual(self.pins(), {f"{UNIT}.previous": "0.1.0\n"})
+
+    def test_python_rollback_is_not_blocked_by_an_invalid_version(self):
+        self.ok("rust", "0.1.0")
+        result = self.ok("python", "not-a-version")
+        self.assertFalse(self.dropin.exists())
+        self.assertEqual(result["handlers"], ["reload", "restart /usr/bin/python3.12"])
+        # install warned, prune refused after the failed install.
+        self.assertEqual(result["recap"]["ignored"], 2, result["out"])
+        self.assertEqual(self.pins(), {f"{UNIT}.previous": "0.1.0\n"})
+
+    def test_probe_ignores_netrc_credentials(self):
+        netrc = self.work / "netrc"
+        netrc.write_text("default login someone password secret\n")
+        netrc.chmod(0o600)
+        self.env["NETRC"] = str(netrc)
+        self.ok("python")
+        self.assertEqual(ProbeHandler.requests, [{"path": "/.well-known/demo", "authorization": None}])
 
     def test_unsafe_argv_and_missing_release_are_refused(self):
         for overrides in (

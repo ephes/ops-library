@@ -103,6 +103,8 @@ reads, such as the htpasswd file), before the unit is enabled and started.
    control character, `argv[0]` is a metrics-httpd mode and `--check-config`
    is not in it; the sandbox is a `Key=Value` list without `User=`/`Group=`;
    for `rust` a release version with a 64-hex sha256 (or a local archive).
+   For `python` the release inputs are not asserted here: a broken pin must
+   never block the switch back, so the install validates them and warns.
 2. Reads the drop-in to remember the binary it selected before this run
    (verify protects that version from prune).
 3. `impl: python`: removes the drop-in first, so the switch back never waits
@@ -136,7 +138,7 @@ mode. Every check retries for about 30 s (`verify_retries` ×
    /proc/<pid>/exe` is the versioned binary (either spelling of the install
    root); `python`: `/proc/<pid>/cmdline` contains `python_script`.
 2. An unauthenticated `GET http://<probe_bind>:<probe_port><probe_path>` from
-   the host (no proxy, no redirects): `unauthorized` expects 401 with
+   the host (no proxy, no redirects, no `.netrc`): `unauthorized` expects 401 with
    `WWW-Authenticate: Basic realm="<probe_realm>"` (json-file, script,
    apt-state); `logyard-health` 200 with a JSON object holding `status`;
    `static` 200. The probe's source address is the bind address (the

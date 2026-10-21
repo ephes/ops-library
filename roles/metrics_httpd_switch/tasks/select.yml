@@ -14,6 +14,9 @@
 # The base unit and the Python script are never touched here, so impl python
 # renders exactly what the role rendered before this switch existed.
 
+# The release inputs (version, sha256) are checked here only for impl rust:
+# with impl python a broken pin must never block the switch back, so
+# rust_release_binary's install validates them and only warns.
 - name: select | Assert the switch inputs
   ansible.builtin.assert:
     that:
@@ -26,7 +29,6 @@
       - metrics_httpd_switch_notify is sequence and metrics_httpd_switch_notify is not string
       - metrics_httpd_switch_notify is not mapping
       - metrics_httpd_switch_install_root | local.ops_library.rust_release_root_ok
-      - metrics_httpd_switch_version == '' or metrics_httpd_switch_version | local.ops_library.rust_release_version_ok
       - >-
         metrics_httpd_switch_impl == 'python' or (
           metrics_httpd_switch_version | local.ops_library.rust_release_version_ok

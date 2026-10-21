@@ -114,13 +114,16 @@
           address of a probe from this host. The process check above passed.
       when: not _metrics_httpd_switch_probe_covered | bool
 
-    # Unauthenticated on purpose: no credential is used anywhere in the switch.
+    # Unauthenticated on purpose: no credential is used anywhere in the switch
+    # (also none from a ~/.netrc of the connection user).
     - name: verify | Probe the endpoint without credentials
       ansible.builtin.uri:
         url: "{{ _metrics_httpd_switch_probe_url }}"
         method: GET
         follow_redirects: none
         use_proxy: false
+        use_netrc: false
+        force_basic_auth: false
         timeout: 5
         return_content: true
         status_code: [200, 401]
