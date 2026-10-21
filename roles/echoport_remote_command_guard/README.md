@@ -111,6 +111,20 @@ their own paths after the guard's checks: a local user who can write inside a
 root could swap a path for a symlink in between and have root read another
 file into the backup (not new; the runners did the same before the pin).
 
+**Known race, accepted for the Rust guard 0.1.0 only (owner decision
+2026-10-21):** `chmod 0600|0700 <path>`, `chown [-R] <owner> <path>`, both
+`mv` forms (including `mv <p>.tmp <p>`) and `rm -f <db>-wal <db>-shm` are
+checked on the resolved path, then run **as root** on the original pathname,
+which the tool resolves again. A local user who can write inside a policy
+root (its service user) can swap the path, or a directory on it, for a
+symlink in between and have root change the mode or owner of a file outside
+the root, or rename or delete one there (service user → root). The Python
+guard has this race today, and the Rust guard 0.1.0 ports it unchanged
+(`rust/echoport-command-guard/PLAN.md` 4.5 and R12). The fix, in both guards,
+is work item `echoport-guard-toctou-hardening` (slice H1 of that plan); it
+must be merged and released before the Rust guard is installed on any host,
+so no host runs 0.1.0.
+
 Everything else is refused with `command not allowed` (exit 1), including an
 interactive session, the SFTP subsystem (which is why the runners call
 `scp -O`), command chaining and any other user than `postgres` for `sudo`.

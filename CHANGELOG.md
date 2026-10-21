@@ -38,6 +38,33 @@
 
 - `container_ca_activate`: Persist CA-only overrides through existing systemd Compose owners, with guarded start/reload, explicit hash-approved reconciliation, and bounded recovery without restarting Docker.
 
+## Unreleased — Rust ports: echoport-command-guard release 0.1.0 (S7)
+
+- `rust/echoport-command-guard` (slice S7 of
+  `rust/echoport-command-guard/PLAN.md`): the crate version is now `0.1.0`
+  and is released by the tag `echoport-command-guard-v0.1.0` through
+  `rust-release.yml` (archive
+  `echoport-command-guard-0.1.0-x86_64-unknown-linux-gnu.tar.gz` and its
+  `.sha256`). The role's `shadow` and `rust` molecule scenarios install the
+  guard built from the checkout under the crate's version; a role test
+  requires the two to match.
+- Lean measurements (PLAN.md 8.3): `parity/e2e/lean.py` measures the Rust and
+  the Python guard in both Layer-3 containers (median of 20 runs: wall time
+  and peak RSS for `--check-policy`, a refusal and an allowed command, plus
+  the stripped binary size) and fails over budget; `just
+  echoport-command-guard-lean` runs it locally, and the `rust` workflow runs
+  it on its x86_64 runner only when started by hand (`workflow_dispatch`).
+- Security review of the whole crate (PLAN.md R2): no acceptance drift; one
+  race the Python guard has as well. The root-run `chmod 0600|0700`, `chown
+  [-R]`, `mv` and `rm -f` of `-wal`/`-shm` are checked on the resolved path
+  and executed as root on the original pathname, so a service user who can
+  write inside a policy root can swap in a symlink and redirect them outside
+  it. Accepted for 0.1.0 only (owner decision 2026-10-21) and documented in
+  the role README and PLAN.md 4.5/R12. The hardening slice H1 (work item
+  `echoport-guard-toctou-hardening`, Python guard first, then Rust) must be
+  merged and released before any Rust guard install (S9); 0.1.0 is installed
+  nowhere and must never be.
+
 ## Unreleased — Rust ports: metrics-httpd release 0.1.0 (S4)
 
 - `rust/metrics-httpd` (slice S4 of `rust/metrics-httpd/PLAN.md`): the
