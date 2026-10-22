@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased — software-live Rust port: manual CLI on Rust hosts (S11)
+## [2.66.2] - 2026-10-22
+
+### software-live Rust port: manual CLI on Rust hosts (S11)
 
 - `rust/software-live/PLAN.md` (status, 4.2 item 10, 7.5) and `README.md`:
   the ops-control manual CLI `just software-live --host H` runs the
@@ -10,7 +12,7 @@
   (version from the inventory pin) and keeps streaming `software_live.py` on
   the others. No role or collection change.
 
-## Unreleased — software-live Rust port: inventory pin and runbook (S8)
+### software-live Rust port: inventory pin and runbook (S8)
 
 - `rust/software-live/PLAN.md` (status, 7.5, 8.1) and `README.md`: the
   ops-control side of slice S8 is done — the inventory pins
@@ -20,7 +22,7 @@
   the shadow endpoint against production when the shadow is on. No role or
   collection change.
 
-## Unreleased — Rust ports: echoport-command-guard ops-control wiring (S8)
+### Rust ports: echoport-command-guard ops-control wiring (S8)
 
 - `rust/echoport-command-guard/PLAN.md` 6.3 ("As built (S8)") and the crate
   README record the ops-control side of slice S8: the 0.2.0 pin, impl
@@ -30,7 +32,7 @@
   collection 2.66.1 or later, the first release with both the S6 impl
   selector and the H1 guard. No role or crate change.
 
-## Unreleased — graphyard_deploy: web and agent survive a runtime stop/start
+### graphyard_deploy: web and agent survive a runtime stop/start
 
 - `graphyard_deploy`: `graphyard-web.service` and `graphyard-agent.service`
   now declare `Wants=` + `After=` on `graphyard-runtime.service` instead of
@@ -50,7 +52,7 @@
   Python and the Rust agent selected. A `Requires=` control unit shows the old
   behaviour.
 
-## Unreleased — software-live Rust port: release 0.1.0 (S7)
+### software-live Rust port: release 0.1.0 (S7)
 
 - `rust/software-live/release.json` and version 0.1.0 of `software-live`
   and `software-live-apt` (slice S7 of `rust/software-live/PLAN.md`, 7.1,
@@ -83,7 +85,7 @@
   MiB), every binary at most `GLIBC_2.34`. GitHub's `/releases/latest` now
   answers with this release despite `--latest=false`; pins never use it.
 
-## Unreleased — software-live Rust port: parity harness
+### software-live Rust port: parity harness
 
 - `rust/software-live/parity/` (slice S5 of `rust/software-live/PLAN.md`,
   section 6.2): `run_parity.py` runs `software_live.py` and the Rust
@@ -107,9 +109,18 @@
   the head limits exactly. Nothing installs or runs the binary; the
   `software_live` role is unchanged.
 
-## Unreleased — echoport_remote_command_guard: root-run mutations on file descriptors (H1)
+## [2.66.1] - 2026-10-22
 
-### Security
+### Fixed
+
+- `homeassistant_deploy`: normalize surrounding conversation prompt whitespace
+  the same way as Core's TemplateSelector. YAML block prompts with a final newline
+  no longer trigger repeated subentry updates and agent reloads on every deploy.
+  Reject whitespace-only prompts during validation.
+
+### echoport_remote_command_guard: root-run mutations on file descriptors (H1)
+
+#### Security
 
 - `echoport_remote_command_guard`: the guard no longer runs `chmod
   0600|0700`, `chown [-R]`, `mv` (both forms) and `rm -f <db>-wal <db>-shm`
@@ -151,7 +162,7 @@
   pin-deploy-backup-key <host>` in ops-control); the ops coordination rolls
   it out together with the `.timeout` runner change.
 
-### Rust ports
+#### Rust ports
 
 - `rust/echoport-command-guard` 0.2.0: the same hardening in the Rust guard
   (`src/mutate.rs`, the `Mutation` decision with an empty `argv` in
@@ -167,7 +178,18 @@
   `24bd2a52b1c2aed194ac642fbb0f41e377c47a84a4c94536167ca5f513adec4f`,
   stripped binary 705,952 bytes, highest glibc symbol version `GLIBC_2.34`.
 
-## Unreleased — software-live Rust port: endpoint
+## [2.66.0] - 2026-10-22
+
+### Home Assistant built-in voice bridge
+
+- Add opt-in core `llama_cpp` provisioning, explicit no-control options, live
+  canary and `auto:llama_cpp` pipeline selection. Retire Custom Conversation
+  through the HA API before upgrading and rebuild environments containing its
+  component or LiteLLM, preserving the separate Matter environment and Python
+  trust/security floors. Credentials travel only on stdin. Existing deployments
+  retain their legacy behavior unless the built-in bridge is enabled.
+
+### software-live Rust port: endpoint
 
 - `rust/software-live` gets `serve` (slice S4 of
   `rust/software-live/PLAN.md`): the authenticated JSON endpoint of
@@ -187,26 +209,6 @@
   `serve.json` runs the Python endpoint's startup and request handling.
   Nothing installs or runs the binary; the `software_live` role is
   unchanged.
-
-## [2.66.1] - 2026-10-22
-
-### Fixed
-
-- `homeassistant_deploy`: normalize surrounding conversation prompt whitespace
-  the same way as Core's TemplateSelector. YAML block prompts with a final newline
-  no longer trigger repeated subentry updates and agent reloads on every deploy.
-  Reject whitespace-only prompts during validation.
-
-## [2.66.0] - 2026-10-22
-
-### Home Assistant built-in voice bridge
-
-- Add opt-in core `llama_cpp` provisioning, explicit no-control options, live
-  canary and `auto:llama_cpp` pipeline selection. Retire Custom Conversation
-  through the HA API before upgrading and rebuild environments containing its
-  component or LiteLLM, preserving the separate Matter environment and Python
-  trust/security floors. Credentials travel only on stdin. Existing deployments
-  retain their legacy behavior unless the built-in bridge is enabled.
 
 ## [2.65.0] - 2026-10-22
 
