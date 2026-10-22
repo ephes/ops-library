@@ -191,9 +191,11 @@
         - name: Assert runtime-enabled unit directives are not joined
           ansible.builtin.assert:
             that:
-              - "'After=network-online.target graphyard-runtime.service\nWants=network-online.target' in graphyard_agent_unit_runtime_enabled"
-              - "'Wants=network-online.target\nRequires=graphyard-runtime.service' in graphyard_agent_unit_runtime_enabled"
+              - "'After=network-online.target graphyard-runtime.service\nWants=network-online.target\n' in graphyard_agent_unit_runtime_enabled"
+              - "'\nWants=graphyard-runtime.service\n' in graphyard_agent_unit_runtime_enabled"
               - "'graphyard-runtime.serviceWants=' not in graphyard_agent_unit_runtime_enabled"
-              - "'graphyard-runtime.serviceRequires=' not in graphyard_agent_unit_runtime_enabled"
-              - "'After=network.target graphyard-runtime.service\nRequires=graphyard-runtime.service' in graphyard_web_unit_runtime_enabled"
-              - "'graphyard-runtime.serviceRequires=' not in graphyard_web_unit_runtime_enabled"
+              - "'\nRequires=' not in graphyard_agent_unit_runtime_enabled"
+              - "'After=network.target graphyard-runtime.service\n' in graphyard_web_unit_runtime_enabled"
+              - "'\nWants=graphyard-runtime.service\n' in graphyard_web_unit_runtime_enabled"
+              - "'graphyard-runtime.serviceWants=' not in graphyard_web_unit_runtime_enabled"
+              - "'\nRequires=' not in graphyard_web_unit_runtime_enabled"
