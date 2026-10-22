@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased — graphyard_deploy: web and agent survive a runtime stop/start
+
+- `graphyard_deploy`: `graphyard-web.service` and `graphyard-agent.service`
+  now declare `Wants=` + `After=` on `graphyard-runtime.service` instead of
+  `Requires=`. Before, a stop of the runtime stopped them too, and starting
+  it again did not bring them back. The container CA activation stops and
+  then starts its owner units, and on 2026-10-21 this left Graphyard's web
+  and agent down for four hours. Now a restart, a stop and start or a failed
+  start of the runtime leaves both running. They still pull the runtime in
+  and start after it. The README's "Unit dependencies" section compares
+  `Requires=`/`PartOf=`/`BindsTo=`. The Rust agent drop-in (`agent-impl.conf`)
+  is unchanged and inherits the new dependency. On the next deploy the
+  changed unit files restart web and agent once.
+- New Molecule scenario `graphyard_deploy/runtime_deps`
+  (`just test-graphyard-deploy-runtime-deps-molecule`, Ubuntu 24.04 and
+  Debian 13). It runs the rendered units under systemd with stub programs
+  through restart, stop/start, failed-start and cold-start cases, with the
+  Python and the Rust agent selected. A `Requires=` control unit shows the old
+  behaviour.
+
 ## Unreleased — software-live Rust port: release 0.1.0 (S7)
 
 - `rust/software-live/release.json` and version 0.1.0 of `software-live`

@@ -185,6 +185,13 @@ test-graphyard-deploy-agent: venv
 test-graphyard-deploy-molecule: venv
     @just molecule-test graphyard_deploy
 
+# graphyard-web/graphyard-agent as the role renders them, with stub programs,
+# against systemd on Ubuntu 24.04 and Debian 13: a restart, a stop and start
+# and a failed start of graphyard-runtime leave both running, with the Python
+# and the Rust agent selected (no Docker or downloads inside the instances).
+test-graphyard-deploy-runtime-deps-molecule: venv
+    @just molecule-test-scenario graphyard_deploy runtime_deps
+
 test-deploy-restart-notifications: venv
     @echo "Testing that app deploy roles restart after source and dependency changes..."
     @UV_PROJECT_ENVIRONMENT=.venv uv run python -m unittest tests.test_deploy_restart_notifications

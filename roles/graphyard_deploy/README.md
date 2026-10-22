@@ -281,7 +281,8 @@ What the role does, in order:
    ```
 
    The base unit is unchanged: its Python `ExecStart`, `User`,
-   `EnvironmentFile`, `WorkingDirectory` and `Requires=graphyard-runtime.service`
+   `EnvironmentFile`, `WorkingDirectory` and the dependency on
+   `graphyard-runtime.service` ([Unit dependencies](#unit-dependencies))
    apply to both implementations. The version is part of the drop-in, so a
    version change or a switch changes the file, reloads systemd and restarts
    the agent (`restart graphyard agent`); a deploy that changes neither
@@ -345,6 +346,50 @@ Rust port.
 
 Source and dependency changes notify the existing restart handlers after deployment.
 Graphyard restarts both its web and agent services. Unchanged syncs do not request a restart.
+
+### Unit dependencies
+
+With the dependency runtime enabled, `graphyard-web.service` and
+`graphyard-agent.service` declare `Wants=` and `After=` on
+`graphyard-runtime.service`, nothing stronger:
+
+- Starting web or agent (boot, deploy) pulls the runtime in and waits until
+  its `docker compose up` has finished (`After=`).
+- A `systemctl restart`, a `stop` followed by a `start`, or a failed start of
+  the runtime leaves web and agent running. While InfluxDB/Grafana are away,
+  requests and agent runs that need them fail one by one and
+  `/v1/health` reports `influxdb` as not ok. Both programs recover by
+  themselves once the containers are back. `Restart=always` covers a crash.
+- Web and agent also start when the runtime fails to start.
+
+The stronger directives keep the units down after a stop:
+
+| Directive | Runtime stopped | Runtime started again | Runtime restarted |
+| --- | --- | --- | --- |
+| `Requires=` (before 2026-10) | stops web/agent | they stay stopped | restarts them |
+| `PartOf=` | stops web/agent | they stay stopped | restarts them |
+| `BindsTo=` | stops web/agent, also when the runtime fails | they stay stopped | restarts them |
+| `Wants=` + `After=` | keeps them running | nothing to do | keeps them running |
+
+systemd propagates a stop (and a restart) from the runtime to the units that
+`Requires=`, `PartOf=` or `BindsTo=` it. Starting the runtime starts only the
+units that the runtime itself wants. The container CA activation
+(`container_ca_activate`, `persist_owners.py`) stops its owner units and then
+starts them. On 2026-10-21 that left web and agent down for four hours while
+`graphyard-runtime` was active again. Adding `Wants=` on web/agent to the
+runtime unit would bring them back after a start, but they would still be down
+between the stop and the start. It would also tie the runtime unit to their
+names. To stop all of Graphyard, stop the three units:
+`systemctl stop graphyard-web graphyard-agent graphyard-runtime`.
+
+The `runtime_deps` Molecule scenario
+(`just test-graphyard-deploy-runtime-deps-molecule`) checks this against systemd
+on Ubuntu 24.04 and Debian 13. It renders the units with the role's own
+templates and `tasks/service.yml`, with stub programs in place of granian,
+the agents and `docker compose`. Then it runs a restart, a stop and start, a
+failed start and a cold start of the runtime, once with the Python agent and
+once with the Rust drop-in selected. A unit with the old `Requires=` runs
+alongside as a control: it stays down after the stop and start.
 
 Set `graphyard_ca_store_root` to the prepared per-container CA root to mount
 replacement native trust stores; prepare with `container_ca_remediate` before

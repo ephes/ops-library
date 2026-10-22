@@ -51,12 +51,18 @@ def render(template_name: str, **overrides: object) -> str:
         "graphyard_runtime_service_name": "graphyard-runtime",
         "graphyard_agent_restart_sec": 5,
         "graphyard_agent_rust_binary": BINARY,
+        "graphyard_web_bind_host": "127.0.0.1",
+        "graphyard_web_bind_port": 8051,
+        "graphyard_web_workers": 1,
+        "graphyard_web_restart_sec": 5,
     }
     context.update(overrides)
+    # Like ansible.builtin.template (trim_blocks defaults to true).
     environment = Environment(
         loader=FileSystemLoader(ROLE / "templates"),
         undefined=StrictUndefined,
         keep_trailing_newline=True,
+        trim_blocks=True,
     )
     environment.filters["bool"] = to_bool
     return environment.get_template(template_name).render(**context)
@@ -218,7 +224,7 @@ class AgentImplementationTests(unittest.TestCase):
             "WorkingDirectory=/opt/apps/graphyard/site/src/django\n",
             "EnvironmentFile=/etc/graphyard/graphyard.env\n",
             "ExecStart=/opt/apps/graphyard/site/.venv/bin/python manage.py start_agent\n",
-            "Requires=graphyard-runtime.service\n",
+            "Wants=graphyard-runtime.service\n",
             "User=graphyard\n",
         ):
             with self.subTest(line=line):
@@ -793,6 +799,87 @@ class AgentImplementationTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIn(text, readme)
 
+
+class RuntimeDependencyTests(unittest.TestCase):
+    """graphyard-web and graphyard-agent survive graphyard-runtime transitions.
+
+    Requires=, PartOf= and BindsTo= all stop the units with the runtime, and
+    a later start of the runtime does not start them again (the container CA
+    activation stops and starts its owner units; 2026-10-21 outage). Wants=
+    plus After= keeps the boot order and pulls the runtime in without tying
+    their lifetime to it. The runtime_deps Molecule scenario runs this
+    against systemd.
+    """
+
+    UNITS = ("graphyard-web.service.j2", "graphyard-agent.service.j2")
+
+    @staticmethod
+    def unit_lines(template: str, **overrides: object) -> list[str]:
+        unit = render(template, **overrides)
+        section = unit.split("[Service]", 1)[0]
+        return [
+            line
+            for line in section.splitlines()
+            if line and not line.startswith("#")
+        ]
+
+    def test_units_want_and_follow_the_runtime_without_stop_propagation(
+        self,
+    ) -> None:
+        for template in self.UNITS:
+            with self.subTest(template=template):
+                lines = self.unit_lines(
+                    template, graphyard_runtime_service_name="gy-runtime"
+                )
+                self.assertIn("Wants=gy-runtime.service", lines)
+                after = next(line for line in lines if line.startswith("After="))
+                self.assertIn("gy-runtime.service", after.split("=", 1)[1].split())
+                for directive in ("Requires=", "Requisite=", "BindsTo=", "PartOf="):
+                    self.assertFalse(
+                        [line for line in lines if line.startswith(directive)],
+                        f"{template}: {directive} ties the unit to the runtime",
+                    )
+
+    def test_units_without_a_runtime_do_not_name_it(self) -> None:
+        for template in self.UNITS:
+            with self.subTest(template=template):
+                unit = render(template, graphyard_runtime_enabled=False)
+                self.assertNotIn("graphyard-runtime", unit)
+                self.assertNotIn("\n\n\n", unit)
+
+    def test_runtime_unit_is_a_oneshot_that_stays_active(self) -> None:
+        unit = render(
+            "graphyard-runtime.service.j2",
+            graphyard_home="/opt/apps/graphyard",
+            graphyard_compose_project_name="graphyard-runtime",
+            graphyard_compose_path="/opt/apps/graphyard/docker-compose.yml",
+        )
+
+        for line in ("Type=oneshot\n", "RemainAfterExit=yes\n"):
+            with self.subTest(line=line):
+                self.assertIn(line, unit)
+        # The runtime does not pull the app units in; they pull it in.
+        self.assertNotIn("graphyard-web", unit)
+        self.assertNotIn("graphyard-agent", unit)
+
+    def test_molecule_scenario_covers_the_runtime_transitions(self) -> None:
+        scenario = ROLE / "molecule" / "runtime_deps"
+        cases = (scenario / "cases.yml").read_text()
+        converge = (scenario / "converge.yml").read_text()
+
+        self.assertIn("tasks_from: service.yml", converge)
+        self.assertIn("templates/graphyard-runtime.service.j2", converge)
+        self.assertIn("templates/agent-impl.conf.j2", cases)
+        for case in ("restart", "stop/start", "failed start", "cold start"):
+            with self.subTest(case=case):
+                self.assertIn(f"| Case {case}:", cases)
+
+    def test_readme_explains_the_dependency_choice(self) -> None:
+        readme = (ROLE / "README.md").read_text()
+
+        for text in ("### Unit dependencies", "`Wants=`", "`PartOf=`", "`BindsTo=`", "runtime_deps"):
+            with self.subTest(text=text):
+                self.assertIn(text, readme)
 
 if __name__ == "__main__":
     unittest.main()
