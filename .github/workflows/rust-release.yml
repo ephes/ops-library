@@ -9,11 +9,14 @@ name: Rust release
 #   crate (the longest workspace member whose `<member>-v` prefixes the tag;
 #   it must have a binary of its name and exactly that version). Then fmt,
 #   clippy and the workspace tests on the runner (without the CI-excluded
-#   members, as rust.yml) and the rust-apt isolation check, one build job
-#   per variant of the crate's rust/<crate>/release.json (default: one
-#   unnamed variant on the runner),
-#   each with its glibc/NEEDED check, `--version` smoke test and a
-#   deterministic archive + sha256 file, and finally one GitHub release
+#   members, as rust.yml) and the rust-apt isolation check; if the crate's
+#   rust/<crate>/release.json has a `shared` section, one job builds those
+#   binaries once on the runner (ubuntu-22.04, glibc 2.35), checks them and
+#   hands them with their sha256 to every variant; then one build job per
+#   variant (default: one unnamed variant on the runner), each with its
+#   glibc/NEEDED check and `--version` smoke test of every binary (the
+#   shared ones again, inside the variant image) and a deterministic
+#   archive + sha256 file, and finally one GitHub release
 #   `<crate> <version>` with every archive (never marked "latest").
 # - workflow_dispatch with a crate: the same checks and builds, uploaded as
 #   workflow artifacts only (no tag, no release).
@@ -66,6 +69,7 @@ jobs:
       crate: ${{ steps.crate.outputs.crate }}
       version: ${{ steps.crate.outputs.version }}
       matrix: ${{ steps.matrix.outputs.matrix }}
+      shared: ${{ steps.matrix.outputs.shared }}
       mtime: ${{ steps.mtime.outputs.mtime }}
     steps:
       - name: Check out repository
@@ -134,9 +138,94 @@ jobs:
           cargo metadata --format-version 1 --locked --all-features > "$RUNNER_TEMP/metadata-full.json"
           python3 -I scripts/release_checks.py apt-isolation --metadata "$RUNNER_TEMP/metadata-full.json"
 
+  shared:
+    # Binaries packed into every variant's archive, built once on the runner
+    # (rust/<crate>/release.json `shared`; software-live PLAN.md 7.1, 7.2:
+    # the same software-live build, glibc floor 2.35, in both archives).
+    name: Build the binaries shared by every variant
+    needs: prepare
+    if: needs.prepare.outputs.shared != ''
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: rust
+    env:
+      ENTRY: ${{ needs.prepare.outputs.shared }}
+    outputs:
+      sha256: ${{ steps.checksums.outputs.sha256 }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned toolchain (rust/rust-toolchain.toml)
+        run: |
+          rustup toolchain install
+          rustc --version
+          python3 --version
+          objdump --version | head -n 1
+      - name: Commit for the --version lines (<CRATE>_GIT_COMMIT of each build.rs)
+        env:
+          # Variable names derived from package names (validated by release_checks.py).
+          COMMIT_ENV: ${{ fromJSON(needs.prepare.outputs.shared).commit_env }}
+        run: |
+          read -r -a names <<< "$COMMIT_ENV"
+          for name in "${names[@]}"; do
+            echo "${name}=${GITHUB_SHA}" | tee -a "$GITHUB_ENV"
+          done
+      - name: Release build
+        env:
+          BUILD_ARGS: ${{ fromJSON(needs.prepare.outputs.shared).build_args }}
+        run: |
+          read -r -a members <<< "$BUILD_ARGS"
+          cargo build --release --locked --target "$TARGET" "${members[@]}"
+      - name: GLIBC ceiling, NEEDED allowlist and smoke test of every shared binary
+        run: |
+          python3 -I scripts/release_checks.py verify --entry "$ENTRY" \
+            --bin-dir "target/$TARGET/release" --commit "$GITHUB_SHA" \
+            | tee -a "$RUNNER_TEMP/checks.log"
+      - name: Checksums for the variant jobs
+        id: checksums
+        run: |
+          python3 -I scripts/release_checks.py checksums --entry "$ENTRY" \
+            --bin-dir "target/$TARGET/release" | tee -a "$GITHUB_OUTPUT"
+          shared="$GITHUB_WORKSPACE/release-shared"
+          mkdir -p "$shared"
+          echo "### Shared binaries (built once, packed into every variant)" >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+          read -r -a names <<< "$(python3 -I -c 'import json, os
+          print(" ".join(b["name"] for b in json.loads(os.environ["ENTRY"])["binaries"]))')"
+          for name in "${names[@]}"; do
+            cp "target/$TARGET/release/${name}" "$shared/${name}"
+            size=$(stat -c %s "$shared/${name}")
+            sha256=$(sha256sum "$shared/${name}" | cut -d ' ' -f 1)
+            echo "- \`${name}\`: ${size} bytes, sha256 \`${sha256}\`" >> "$GITHUB_STEP_SUMMARY"
+          done
+          {
+            echo
+            echo "- commit: \`${GITHUB_SHA}\`"
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/checks.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the shared binaries
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ fromJSON(needs.prepare.outputs.shared).artifact }}
+          path: release-shared/
+          if-no-files-found: error
+
   build:
     name: Build ${{ matrix.archive }}
-    needs: prepare
+    needs: [prepare, shared]
+    # Also when `shared` was skipped (no shared binaries), never after a
+    # failure of prepare or shared.
+    if: >-
+      !cancelled() && needs.prepare.result == 'success'
+      && (needs.shared.result == 'success' || needs.shared.result == 'skipped')
     runs-on: ubuntu-22.04
     # An empty image (the default variant) runs the job on the runner itself
     # (ubuntu-22.04, glibc 2.35).
@@ -152,6 +241,7 @@ jobs:
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       ENTRY: ${{ toJSON(matrix) }}
+      SHARED_SHA256: ${{ needs.shared.outputs.sha256 }}
     steps:
       - name: Base and build packages of the variant image
         if: matrix.image != ''
@@ -207,25 +297,49 @@ jobs:
           cargo clippy "${members[@]}" --all-targets --locked -- -D warnings
           cargo test "${members[@]}" --locked
       - name: Release build
+        # An empty build list (every binary comes from the shared job) builds
+        # nothing; `cargo build` without -p would build the whole workspace.
+        if: matrix.build_args != ''
         env:
           BUILD_ARGS: ${{ matrix.build_args }}
         run: |
           read -r -a members <<< "$BUILD_ARGS"
           cargo build --release --locked --target "$TARGET" "${members[@]}"
+      - name: Download the shared binaries (built once on the runner)
+        if: matrix.shared_artifact != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ matrix.shared_artifact }}
+          # Relative to the workspace: inside a container job the runner
+          # context's paths are the host's.
+          path: release-shared
+      - name: Make the shared binaries executable (artifacts drop the mode)
+        if: matrix.shared_artifact != ''
+        run: chmod 0755 "$GITHUB_WORKSPACE"/release-shared/*
       - name: GLIBC ceiling, NEEDED allowlist and smoke test of every binary
+        # The shared binaries are checked again inside the variant image, after
+        # release_checks.py compared their sha256 with the shared job's.
         run: |
+          shared_args=()
+          if [ -n "$SHARED_SHA256" ]; then
+            shared_args=(--shared-bin-dir "$GITHUB_WORKSPACE/release-shared" --shared-sha256 "$SHARED_SHA256")
+          fi
           python3 -I scripts/release_checks.py verify --entry "$ENTRY" \
-            --bin-dir "target/$TARGET/release" --commit "$GITHUB_SHA" \
+            --bin-dir "target/$TARGET/release" --commit "$GITHUB_SHA" "${shared_args[@]}" \
             | tee -a "$RUNNER_TEMP/checks.log"
       - name: Pack archive and checksum
         env:
           ARCHIVE: ${{ matrix.archive }}
           MTIME: ${{ needs.prepare.outputs.mtime }}
         run: |
-          dist="$RUNNER_TEMP/dist"
+          shared_args=()
+          if [ -n "$SHARED_SHA256" ]; then
+            shared_args=(--shared-bin-dir "$GITHUB_WORKSPACE/release-shared" --shared-sha256 "$SHARED_SHA256")
+          fi
+          dist="$GITHUB_WORKSPACE/release-dist"
           python3 -I scripts/release_checks.py pack --entry "$ENTRY" \
             --bin-dir "target/$TARGET/release" --repo-root .. \
-            --mtime "$MTIME" --out-dir "$dist"
+            --mtime "$MTIME" --out-dir "$dist" "${shared_args[@]}"
           (cd "$dist" && sha256sum --check "${ARCHIVE}.sha256")
           sha256=$(cut -d ' ' -f 1 "$dist/${ARCHIVE}.sha256")
           {
@@ -245,15 +359,20 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ matrix.artifact }}
+          # Relative to the workspace (see the download of the shared binaries).
           path: |
-            ${{ runner.temp }}/dist/${{ matrix.archive }}
-            ${{ runner.temp }}/dist/${{ matrix.archive }}.sha256
+            release-dist/${{ matrix.archive }}
+            release-dist/${{ matrix.archive }}.sha256
           if-no-files-found: error
 
   publish:
     name: GitHub release
     needs: [prepare, build]
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+    # Explicit results instead of the implicit success(): a skipped `shared`
+    # job (no shared binaries) must not skip the release.
+    if: >-
+      !cancelled() && github.event_name == 'push' && github.ref_type == 'tag'
+      && needs.prepare.result == 'success' && needs.build.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
