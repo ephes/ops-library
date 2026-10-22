@@ -23,6 +23,15 @@
   container job). Crates without `release.json` (metrics-httpd,
   echoport-command-guard) release as before. Nothing installs the release;
   no inventory pins it yet (S8).
+- Released: the GitHub release `software-live 0.1.0` (tag
+  `software-live-v0.1.0`, commit `98c68001`) has the archive sha256
+  `89c940d73ab5eaf6c7064e1b5d4974b54783ed0891076cfdb50b2478ca00c765`
+  (`ubuntu24.04`) and
+  `9a233b5e6711033f06b8c7998a95d94a90a7870a6472696c3970fbd78b58baa3`
+  (`debian13`); `software-live` is 3,464,320 bytes (the same file in both,
+  budget 6 MiB), `software-live-apt` 464,144 / 461,984 bytes (budget 2
+  MiB), every binary at most `GLIBC_2.34`. GitHub's `/releases/latest` now
+  answers with this release despite `--latest=false`; pins never use it.
 
 ## Unreleased — software-live Rust port: parity harness
 
