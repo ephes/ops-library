@@ -21,16 +21,22 @@ name: Rust
       - ".github/workflows/rust*.yml"
       # The Python endpoint scripts the metrics-httpd parity harness runs.
       - "roles/**/*httpd*"
-      # The python-apt oracle of the software-live-apt comparison.
+      # The python-apt oracle of the software-live-apt comparison and the
+      # Python side of the software-live parity harness.
       - "roles/software_live/files/software_live.py"
+      # The software_estate reader the software-live parity harness runs.
+      - "roles/software_estate/files/collect.py"
   pull_request:
     paths:
       - "rust/**"
       - ".github/workflows/rust*.yml"
       # The Python endpoint scripts the metrics-httpd parity harness runs.
       - "roles/**/*httpd*"
-      # The python-apt oracle of the software-live-apt comparison.
+      # The python-apt oracle of the software-live-apt comparison and the
+      # Python side of the software-live parity harness.
       - "roles/software_live/files/software_live.py"
+      # The software_estate reader the software-live parity harness runs.
+      - "roles/software_estate/files/collect.py"
   workflow_dispatch:
 
 permissions:
@@ -162,6 +168,10 @@ jobs:
           python3 -I scripts/release_checks.py apt-isolation --metadata "$RUNNER_TEMP/metadata-full.json"
       - name: Script tests (rust/scripts, stdlib Python)
         run: python3 -I -m unittest discover -s scripts -p 'test_*.py' -v
+      - name: software-live parity comparator tests (stdlib Python)
+        # rust/software-live/PLAN.md 6.2: the P1/P2 rules of parity/compare.py;
+        # the harness itself runs in the software-live-apt job below.
+        run: python3 -I -m unittest discover -s software-live/parity -p 'test_*.py' -v
 
   echoport-command-guard-lean:
     name: echoport-command-guard lean measurements (manual runs only)
@@ -196,8 +206,11 @@ jobs:
     # NEEDED allowlist, `--version`, then the fake APT world of
     # container/setup-world.sh and the comparison with software_live.py's
     # observe_apt (container/compare.py). `just rs-software-live-apt` runs
-    # the same scripts locally in Docker.
-    name: software-live-apt (${{ matrix.variant }})
+    # the same scripts locally in Docker. Then, in the same container and on
+    # the same APT world, the software-live parity harness (PLAN.md 6.2,
+    # software-live/parity/container-run.sh; `just rs-software-live-parity`
+    # locally): software_live.py and the Rust release builds side by side.
+    name: software-live-apt and parity (${{ matrix.variant }})
     runs-on: ubuntu-latest
     container: ${{ matrix.image }}
     timeout-minutes: 45
@@ -234,3 +247,5 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - name: Checks inside the variant image (container/run.sh)
         run: software-live-apt/container/run.sh
+      - name: software-live parity harness (software-live/parity/container-run.sh)
+        run: software-live/parity/container-run.sh

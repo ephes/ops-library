@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased — software-live Rust port: parity harness
+
+- `rust/software-live/parity/` (slice S5 of `rust/software-live/PLAN.md`,
+  section 6.2): `run_parity.py` runs `software_live.py` and the Rust
+  release binaries side by side as root in throwaway `ubuntu:24.04` and
+  `debian:13` containers — `validate` for the policy matrix, the `serve`
+  start-up matrix, every raw endpoint request of `fixtures/serve.json`
+  against both live servers with the real `htpasswd`, `export-inventory`
+  with real root ownership, and `collect` on a real host (fake Traefik and
+  PostgreSQL processes, `systemctl`/`pg_lsclusters` shims, GitHub and
+  endoflife.date over HTTPS on loopback through `/etc/hosts` and a
+  throwaway CA in the system trust store, APT on real lists and the fake
+  repositories), including cache and state cross-reads and the
+  software_estate reader on the Rust projections. CI runs it as the last
+  step of the `software-live-apt` job; locally `just
+  rs-software-live-parity` (Docker). The comparator's tests run in the
+  workspace job.
+- Fix found by it: the Rust endpoint takes at most 99 header lines, as
+  Python's `http.client` does, and refuses every request head over 64 KiB
+  with 431 however the bytes arrive (hyper alone let heads of up to about
+  128 KiB through when they came in one read). PLAN.md 4.2 item 2 lists
+  the head limits exactly. Nothing installs or runs the binary; the
+  `software_live` role is unchanged.
+
 ## Unreleased — echoport_remote_command_guard: root-run mutations on file descriptors (H1)
 
 ### Security

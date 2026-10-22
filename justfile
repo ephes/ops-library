@@ -902,6 +902,11 @@ rs-software-live:
 rs-software-live-apt *variants:
     @rust/software-live-apt/container/docker-check.sh {{variants}}
 
+# rust/software-live/PLAN.md 6.2, 6.4: the parity harness in Docker (variants: ubuntu24.04 debian13; default both; after `--`: run_parity.py arguments).
+# software-live Rust port: the Python program and the Rust binary side by side (validate, serve, export, collect)
+rs-software-live-parity *args:
+    @rust/software-live/parity/docker-parity.sh {{args}}
+
 # Typed Python added by the software observation roles.
 typecheck: venv
     @uv run --with mypy mypy --ignore-missing-imports --check-untyped-defs roles/software_estate/files/collect.py roles/software_estate/files/emit.py roles/software_estate/files/outbox.py roles/software_estate/files/send.py roles/software_estate/files/publish.py roles/software_estate/files/vector_inventory_config.py roles/software_estate/files/sbom.py roles/software_live/files/software_live.py roles/software_live/files/nyxmon_checks.py roles/traefik_deploy/files/traefik_transaction.py roles/traefik_deploy/files/traefik_control.py roles/zfs_usb_replication/files/zfs_usb_bookmark_anchors.py roles/zfs_usb_replication/files/zfs_usb_replication_state.py roles/zfs_usb_replication/files/zfs_usb_snapshot_retention.py roles/ca_trust_consumers/files/ca_trust_roots_check.py plugins/filter/ca_trust_consumers.py roles/ca_trust_consumers/files/ca_trust_sudoers_env_file.py plugins/filter/rust_release.py plugins/filter/echoport_guard.py plugins/filter/metrics_httpd.py plugins/filter/software_live_impl.py roles/rustup_security/files/rustup_security.py
