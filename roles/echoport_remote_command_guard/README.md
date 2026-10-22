@@ -125,7 +125,9 @@ root's service user could redirect with a symlink after the guard's checks
 `rust/echoport-command-guard/PLAN.md` 4.5 and R12). The guard opens `/` and
 each directory of the path with `O_NOFOLLOW|O_DIRECTORY`, so a symlink
 anywhere on the path is refused, and works relative to the last directory
-it opened:
+it opened. `chmod`, `mv` and `rm` run as the root's owner (the guard drops to
+that user first), so they can only do what that user could do itself;
+`chown` needs root:
 
 - `chmod`/`chown`: the entry is opened with `O_NOFOLLOW` and must be the
   inode `lstat` saw, a directory or a regular file with one link (a hard

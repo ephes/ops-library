@@ -296,9 +296,10 @@ class GuardAllowsRunnerShapes(unittest.TestCase):
         tmp = "/var/tmp/gotosocial-echoport.Ab12Cd"
         db = "/var/lib/gotosocial/sqlite.db"
         for command, host, mutation in (
-            ("chmod 0600 /var/lib/gotosocial/sqlite.db", self.production, GUARD.Mutation("chmod", [db], mode=0o600)),
+            ("chmod 0600 /var/lib/gotosocial/sqlite.db", self.production,
+             GUARD.Mutation("chmod", [db], mode=0o600, user="gotosocial")),
             ("chmod 0700 /home/marina/site/media", self.staging,
-             GUARD.Mutation("chmod", ["/home/marina/site/media"], mode=0o700)),
+             GUARD.Mutation("chmod", ["/home/marina/site/media"], mode=0o700, user="marina")),
             ("chown marina:marina /home/marina/site/db.sqlite3", self.staging,
              GUARD.Mutation("chown", ["/home/marina/site/db.sqlite3"], owner="marina:marina")),
             ("chown -R gotosocial:gotosocial /var/lib/gotosocial/storage", self.production,
@@ -306,12 +307,15 @@ class GuardAllowsRunnerShapes(unittest.TestCase):
             (f"chown gotosocial:gotosocial {tmp}", self.production,
              GUARD.Mutation("chown", [tmp], owner="gotosocial:gotosocial", private=True)),
             ("mv /home/marina/site/db.sqlite3.tmp /home/marina/site/db.sqlite3", self.staging,
-             GUARD.Mutation("mv", ["/home/marina/site/db.sqlite3.tmp", "/home/marina/site/db.sqlite3"], replace=True)),
+             GUARD.Mutation("mv", ["/home/marina/site/db.sqlite3.tmp", "/home/marina/site/db.sqlite3"], replace=True,
+                            user="marina")),
             (f"mv {db} {db}.pre-restore-20261015T020000Z", self.production,
-             GUARD.Mutation("mv", [db, f"{db}.pre-restore-20261015T020000Z"])),
-            (f"mv {db}.restore-tmp {db}", self.production, GUARD.Mutation("mv", [f"{db}.restore-tmp", db])),
+             GUARD.Mutation("mv", [db, f"{db}.pre-restore-20261015T020000Z"], user="gotosocial")),
+            (f"mv {db}.restore-tmp {db}", self.production,
+             GUARD.Mutation("mv", [f"{db}.restore-tmp", db], user="gotosocial")),
             ("rm -f /home/marina/site/db.sqlite3-wal /home/marina/site/db.sqlite3-shm", self.staging,
-             GUARD.Mutation("rm", ["/home/marina/site/db.sqlite3-wal", "/home/marina/site/db.sqlite3-shm"])),
+             GUARD.Mutation("rm", ["/home/marina/site/db.sqlite3-wal", "/home/marina/site/db.sqlite3-shm"],
+                            user="marina")),
         ):
             with self.subTest(command=command):
                 decision = GUARD.check(command, host, realpath=identity, lstat=lstat_runner_view)
@@ -756,6 +760,59 @@ class GuardMain(unittest.TestCase):
         self.assertEqual(self.log.call_args.args[1],
                          f"refused from 100.93.155.101: chmod target is a symbolic link: '{root}/db': {command!r}")
         self.assertEqual(stat.S_IMODE(outside.stat().st_mode), 0o644)
+
+    def test_mutations_drop_to_the_roots_owner_except_chown(self) -> None:
+        """As root, chmod, mv and rm run as the root's owner; chown keeps root."""
+        me = pwd.getpwuid(os.geteuid())
+        state = {"uid": 0, "calls": []}
+
+        def setuid(uid: int) -> None:
+            state["calls"].append(("setuid", uid))
+            state["uid"] = uid
+
+        def performed(mutation: Any, hook: Any = None) -> None:
+            state["calls"].append(("perform", mutation.op, state["uid"]))
+
+        for mutation, dropped in (
+            (GUARD.Mutation("chmod", ["/x/db"], mode=0o600, user=me.pw_name), True),
+            (GUARD.Mutation("mv", ["/x/a", "/x/b"], user=me.pw_name), True),
+            (GUARD.Mutation("rm", ["/x/a-wal", "/x/a-shm"], user=me.pw_name), True),
+            (GUARD.Mutation("chown", ["/x/db"], owner=f"{me.pw_name}:x"), False),
+        ):
+            with self.subTest(op=mutation.op):
+                state.update(uid=0, calls=[])
+                with (
+                    mock.patch.object(GUARD, "check", return_value=GUARD.Decision(argv=[], mutation=mutation)),
+                    mock.patch.object(GUARD, "perform", side_effect=performed),
+                    mock.patch.object(GUARD.os, "geteuid", side_effect=lambda: state["uid"]),
+                    mock.patch.object(GUARD.os, "getuid", side_effect=lambda: state["uid"]),
+                    mock.patch.object(GUARD.os, "setgroups", side_effect=lambda g: state["calls"].append(("setgroups", g))),
+                    mock.patch.object(GUARD.os, "setgid", side_effect=lambda g: state["calls"].append(("setgid", g))),
+                    mock.patch.object(GUARD.os, "setuid", side_effect=setuid),
+                ):
+                    rc, execvp = self.run_main("x")
+                self.assertEqual(rc, 0)
+                execvp.assert_not_called()
+                expected = [("perform", mutation.op, me.pw_uid if dropped else 0)]
+                if dropped:
+                    expected = [("setgroups", [me.pw_gid]), ("setgid", me.pw_gid), ("setuid", me.pw_uid), *expected]
+                self.assertEqual(state["calls"], expected)
+        # An unknown owner, or root as the owner, refuses before anything is changed.
+        for user, reason in (("no-such-user-h1", "unknown user: 'no-such-user-h1'"),
+                             ("root", "will not run as root: 'root'")):
+            with self.subTest(user=user):
+                state.update(uid=0, calls=[])
+                bad = GUARD.Mutation("chmod", ["/x/db"], mode=0o600, user=user)
+                with (
+                    mock.patch.object(GUARD, "check", return_value=GUARD.Decision(argv=[], mutation=bad)),
+                    mock.patch.object(GUARD, "perform", side_effect=performed),
+                    mock.patch.object(GUARD.os, "geteuid", side_effect=lambda: state["uid"]),
+                    mock.patch.object(GUARD.os, "setuid", side_effect=setuid),
+                ):
+                    rc, _execvp = self.run_main("x")
+                self.assertEqual(rc, 1)
+                self.assertEqual(state["calls"], [])
+                self.assertIn(reason, self.log.call_args.args[1])
 
     def test_broken_policy_refuses_everything(self) -> None:
         for broken in ("{not json", "[]", json.dumps({"units": ["a b"]})):

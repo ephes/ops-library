@@ -18,7 +18,10 @@
   on an `O_NOFOLLOW` descriptor of the inode `lstat` saw, one link for a
   regular file; `renameat`, or `renameat2(RENAME_NOREPLACE)` when the target
   must not exist; `unlinkat`; `chown -R` one open directory per level,
-  symlinks in the tree neither followed nor changed). `check()` also
+  symlinks in the tree neither followed nor changed). `chmod`, `mv` and `rm`
+  run as the root's owner (the guard drops to that user first), so the
+  kernel checks them with that user's own rights; `chown` keeps root.
+  `check()` also
   requires each changed path to lie inside its root as written. Work item
   `echoport-guard-toctou-hardening`, slice H1 of
   `rust/echoport-command-guard/PLAN.md` (4.5, R12).
@@ -28,7 +31,8 @@
   the tool's message) and a `refused from` log line with the reason
   (before: `allowed from`). Stricter than the tools: a symlink on a changed
   path is refused even when it resolves inside the root, a regular file with
-  more than one link and special files are not changed, `chown -R` leaves
+  more than one link and special files are not changed, a root-owned file
+  or directory in a root is not changed by `chmod`/`mv`/`rm`, `chown -R` leaves
   symlinks' own owners alone, and `mv` never moves into an existing target
   directory or across filesystems. The `echoport_backup` runners' tests pass
   unchanged.

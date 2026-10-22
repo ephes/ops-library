@@ -224,7 +224,9 @@
           - guard_transfer_results.results[5].stat.pw_name == 'nobody'
     # The guard's own mutations (H1): made on file descriptors, never through
     # a symlink, also not one check() allows because it resolves inside the
-    # root; chown -R leaves a link out of the root and its target alone.
+    # root; chown -R leaves a link out of the root and its target alone;
+    # chmod, mv and rm run as the root's owner (nobody), so a root-owned file
+    # in the root is not theirs to change.
     - name: Change, move and remove inside the root, never through a symlink
       ansible.builtin.shell:
         executable: /bin/bash
@@ -236,6 +238,7 @@
           chmod 0644 /srv/outside/target
           echo db > $site/mut.db
           chmod 0644 $site/mut.db
+          chown nobody:nogroup $site/mut.db
           run "chmod 0600 $site/mut.db"
           test "$(stat -c %a $site/mut.db)" = 600
           run "chown nobody:nogroup $site/mut.db"
@@ -257,7 +260,11 @@
           test "$(stat -c %U:%G /srv/outside/target)" = root:root
           test "$(stat -c %a /srv/outside/target)" = 644
           test "$(stat -L -c %U $site/media)" = nobody
-          rm -f $site/media/out $site/alias $site/mut.db
+          echo root > $site/root-owned
+          chmod 0644 $site/root-owned
+          if run "chmod 0600 $site/root-owned" 2> /dev/null; then exit 1; fi
+          test "$(stat -c %a:%U $site/root-owned)" = 644:root
+          rm -f $site/media/out $site/alias $site/mut.db $site/root-owned
       changed_when: false
 
     - name: Write a policy the guard must reject
