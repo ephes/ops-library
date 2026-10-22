@@ -9,6 +9,24 @@
   runs are idempotent. `tasks_from: repo_cleanup.yml` supports repository-only
   repairs without package installation or service changes.
 
+## Unreleased — software-live Rust port: collector CPU (S9b)
+
+- `rust/software-live`: the collector hashes the 185 MB Traefik binary once
+  per run instead of twice: the running image (`/proc/<pid>/exe`) gets the
+  installed binary's digest when it has the identity the installed binary
+  kept while it was hashed, and is read as before otherwise; the descriptor
+  check, the probe through the descriptor and the identity checks are
+  unchanged (PLAN.md 4.2 item 15). SHA-256 now comes from `ring` (already in
+  the tree through `rustls`) instead of `sha2` 0.11, whose software code
+  made the Rust collector use more CPU than the Python one on hosts without
+  the SHA CPU extensions. Reports are unchanged. Benchmark (185 MB, CPU s
+  per hash without SHA extensions: `sha2` 0.71, `ring` 0.43, `aws-lc-rs`
+  0.43, Python/OpenSSL 0.40; on staging and macmini OpenSSL 0.38–0.44) and
+  the coordinator's decisions of 2026-10-22 (collector peak below Python's
+  per host; collector CPU not above Python's on any host before S10) in
+  PLAN.md section 10. Both crates are at 0.1.1. No role or collection
+  change; the ops-control pin stays at 0.1.0.
+
 ## Unreleased — software-live Rust port: shadow comparison (S9)
 
 - `rust/software-live/parity/shadow_compare.py` (PLAN.md 6.3, 8.1): compares
@@ -27,6 +45,11 @@
   CI job now runs the comparator tests under Python 3.12 (the projection
   check imports the Python program). README and PLAN.md 6.3 describe it. No
   role or collection change.
+- PLAN.md section 10 records the S9 measurements of the shadow on the four
+  hosts (collector cgroup peak Python 80–105 MiB vs Rust 61–75 MiB; endpoint
+  about 0.55 MiB cgroup memory vs 9–14 MiB; the collector CPU budget is not
+  met on the hosts without SHA CPU extensions because of hashing the Traefik
+  binary). Budgets unchanged.
 
 ## [2.66.2] - 2026-10-22
 
