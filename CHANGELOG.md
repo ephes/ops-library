@@ -25,8 +25,8 @@
 ### Rust ports: echoport-command-guard ops-control wiring (S8)
 
 - `rust/echoport-command-guard/PLAN.md` 6.3 ("As built (S8)") and the crate
-  README record the ops-control side of slice S8: the 0.2.0 pin, impl
-  `python` on both pinned hosts, `confirm_live.yml` right after the
+  README record the ops-control side of slice S8: impl `python` on both
+  pinned hosts, no Rust pin until S9 (it adds 0.2.0), `confirm_live.yml` right after the
   post-probe of `authorize-root-ssh.yml`, the `deploy_backup_route_probe_fatal`
   rollback switch and the strict shadow compare. That playbook now requires
   collection 2.66.1 or later, the first release with both the S6 impl
