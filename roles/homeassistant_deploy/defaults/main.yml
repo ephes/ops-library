@@ -109,6 +109,15 @@ homeassistant_manage_wyoming_integration: false
 homeassistant_wyoming_host: ""
 homeassistant_wyoming_port: 10300
 
+# Core llama_cpp conversation agent (no custom component or LiteLLM).
+homeassistant_llama_cpp_enabled: false
+homeassistant_llama_cpp_base_url: ""
+homeassistant_llama_cpp_api_key: ""
+homeassistant_llama_cpp_model: ""
+homeassistant_llama_cpp_instructions: ""
+homeassistant_llama_cpp_canary_text: "Reply with the single word OK."
+homeassistant_llama_cpp_helper_path: "{{ homeassistant_bin_path }}/llama_cpp_provision.py"
+
 # Custom Conversation integration (HA config entry + pinned custom component)
 # Bridges Home Assistant Assist to an OpenAI-compatible Chat Completions endpoint
 # (e.g. the OpenClaw gateway) via the michelle-avery/custom-conversation component.
@@ -117,7 +126,7 @@ homeassistant_custom_conversation_enabled: false
 homeassistant_custom_conversation_version: "1.6.1"
 # sha256 of the pinned GitHub release tarball
 # https://github.com/michelle-avery/custom-conversation/archive/refs/tags/<version>.tar.gz
-homeassistant_custom_conversation_sha256: "6397258af29908ffed7b0eaa79c332ddce7000cb9b9faec5e3bf0e399c020382"
+homeassistant_custom_conversation_sha256: "6397258af29908ffed7b0eaa79c332ddce7000cb9b9faec5e3bf0e399c020382"  # pragma: allowlist secret
 homeassistant_custom_conversation_download_url: >-
   https://github.com/michelle-avery/custom-conversation/archive/refs/tags/{{ homeassistant_custom_conversation_version }}.tar.gz
 # LiteLLM provider key the component routes through. "openai" selects the
@@ -202,8 +211,8 @@ homeassistant_enable_udev_rule: true
 homeassistant_udev_rule_path: /etc/udev/rules.d/99-homeassistant-zbt1.rules
 
 # UniFi password discovery
-homeassistant_unifi_password_source: "file"  # file|variable
-homeassistant_unifi_password_file: /home/unifi/.homeassistant_unifi_password
+homeassistant_unifi_password_source: "file"  # pragma: allowlist secret; file|variable
+homeassistant_unifi_password_file: /home/unifi/.homeassistant_unifi_password  # pragma: allowlist secret
 homeassistant_unifi_password_variable: ""
 
 # Traefik integration

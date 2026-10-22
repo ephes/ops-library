@@ -83,6 +83,7 @@
     _ha_replace_virtualenv: >-
       {{
         homeassistant_force_reinstall | bool
+        or (_ha_llama_cpp_rebuild | default(false) | bool)
         or not _ha_venv_python_stat.stat.exists
         or (_ha_python_mismatch | default(false))
         or ((_ha_current_pip_check.rc | default(0)) != 0)
@@ -208,6 +209,7 @@
   become: true
   become_user: "{{ homeassistant_user }}"
   when: homeassistant_force_reinstall | bool
+        or (_ha_llama_cpp_rebuild | default(false) | bool)
         or not _ha_hass_binary.stat.exists
         or (_ha_version_mismatch | default(false))
   register: _ha_install

@@ -2,6 +2,42 @@
 
 Ansible role that installs and configures a Home Assistant Core instance on bare metal/VM hosts using `uv` managed Python environments. The role mirrors the previous bespoke playbook but adapts it to the shared `ops-library` conventions (idempotent tasks, guard rails, and Traefik integration).
 
+## Built-in OpenAI-compatible voice bridge
+
+Set `homeassistant_llama_cpp_enabled: true` on Core 2026.10.2 or newer to use
+Home Assistant's built-in `llama_cpp` conversation agent. Configure
+`homeassistant_llama_cpp_base_url`, `homeassistant_llama_cpp_api_key`,
+`homeassistant_llama_cpp_model` and `homeassistant_llama_cpp_instructions`, then
+select `conversation_engine: "auto:llama_cpp"` in managed Assist pipelines.
+Keep `prefer_local_intents: true` for local device commands. The endpoint must
+support authenticated model listing and Chat Completions, including the built-in
+setup probe. No llama.cpp server is required when another compatible gateway is used.
+
+The role owns at most one `llama_cpp` entry titled `Managed voice bridge` with
+one conversation subentry; other entries are left alone. Duplicate managed
+entries fail before any change. On enable, an unmarked entry at the configured endpoint
+(for example after an interrupted creation) also fails with an ownership/rename
+diagnostic, preventing duplicate credentials. It creates the entry
+through supported config flows, sets the instructions and **no HA LLM tools**
+through the subentry flow, and requires a live entity and a successful canary
+before switching pipelines. The built-in integration sends the HA conversation
+ID to the gateway as `user`, allowing per-conversation gateway sessions.
+Connection/key changes recreate the managed entry; prompt/model changes update
+its subentry. Credentials travel on stdin under `no_log`, never in argv or the
+sudo-logged environment. Disabling this flag while retaining `auto:llama_cpp` in the managed pipelines
+moves them to `conversation.home_assistant` and removes only the managed entry
+and its stored gateway credential.
+
+This flag is mutually exclusive with `homeassistant_custom_conversation_enabled`.
+When enabled, the role removes the legacy Custom Conversation entry through HA's
+API before upgrading, removes its component directory, and rebuilds HA's venv if
+the old component or LiteLLM package metadata exists. This prevents the legacy
+integration from reinstalling LiteLLM at startup. Configuration, recorder data and
+the separate Matter environment are retained. A pre-upgrade backup is required
+operationally: after Core storage migrations, restore the matching configuration
+and recorder before downgrading Core. No custom integration or LiteLLM is installed
+by this bridge. `homeassistant_llama_cpp_canary_text` defaults to a request for OK.
+
 ## Features
 
 - Creates the `homeassistant` unix user, directory layout, and Zigbee/Matter udev rule.
@@ -306,4 +342,3 @@ the drop-in, restarts when it changed, waits for
 Scope: this covers downloads made by Home Assistant's bundled uv. Custom
 components, HACS and other downloaders with their own certificate handling are
 not inspected. The legacy `UV_NATIVE_TLS` name is not used.
-

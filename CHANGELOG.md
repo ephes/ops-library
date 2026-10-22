@@ -21,6 +21,17 @@
   Nothing installs or runs the binary; the `software_live` role is
   unchanged.
 
+## [2.66.0] - 2026-10-22
+
+### Home Assistant built-in voice bridge
+
+- Add opt-in core `llama_cpp` provisioning, explicit no-control options, live
+  canary and `auto:llama_cpp` pipeline selection. Retire Custom Conversation
+  through the HA API before upgrading and rebuild environments containing its
+  component or LiteLLM, preserving the separate Matter environment and Python
+  trust/security floors. Credentials travel only on stdin. Existing deployments
+  retain their legacy behavior unless the built-in bridge is enabled.
+
 ## [2.65.0] - 2026-10-22
 
 ### opsgate_deploy: Python or the Rust release per launchd unit
