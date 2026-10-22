@@ -40,7 +40,10 @@ command does not exist yet and every run fails.
 
 sshd hands the requested command to the guard in `SSH_ORIGINAL_COMMAND`. It
 is parsed with `shlex` and must match one of these shapes exactly; the guard
-then executes it directly (no shell) with a fixed `PATH`:
+then executes it directly (no shell) with a fixed `PATH`, except `chmod`,
+`chown`, `mv` and `rm -f <db>-wal <db>-shm`, which the guard carries out
+itself on file descriptors (see [Files the guard opens
+itself](#files-the-guard-opens-itself)):
 
 | Shape | Allowed when |
 |---|---|
@@ -68,8 +71,11 @@ then executes it directly (no shell) with a fixed `PATH`:
 | `sh -c '<probe>'`, `du -sb -- <p>`, `mktemp -d /tmp/echoport-pp-private-media.XXXXXXXX`, `umask 077 && tar -C <parent> -czf <tmpdir>/private_media.tar.gz -- <name>`, `rm -rf -- <tmpdir>` | the python-podcast private media backup, `<p>` in `private_media_paths` |
 
 "Inside a root" is decided on the resolved path (`os.path.realpath`), so a
-symlink inside a root that points elsewhere is refused. Paths may only
-contain `[A-Za-z0-9._/-]` and no `.`/`..` components.
+symlink inside a root that points elsewhere is refused. A path the guard
+changes (`chmod`, `chown`, `mv`, `rm -f` of side files) must also lie inside
+the root as written (no trailing `/`, no detour through a symlink), and the
+guard then refuses any symlink on it. Paths may only contain
+`[A-Za-z0-9._/-]` and no `.`/`..` components.
 
 Uploads run as an unprivileged user (`runuser -u <user> --`): into a root as
 the root's `owner` (which must not be root), restore dumps as `postgres`. The
@@ -111,19 +117,40 @@ their own paths after the guard's checks: a local user who can write inside a
 root could swap a path for a symlink in between and have root read another
 file into the backup (not new; the runners did the same before the pin).
 
-**Known race, accepted for the Rust guard 0.1.0 only (owner decision
-2026-10-21):** `chmod 0600|0700 <path>`, `chown [-R] <owner> <path>`, both
-`mv` forms (including `mv <p>.tmp <p>`) and `rm -f <db>-wal <db>-shm` are
-checked on the resolved path, then run **as root** on the original pathname,
-which the tool resolves again. A local user who can write inside a policy
-root (its service user) can swap the path, or a directory on it, for a
-symlink in between and have root change the mode or owner of a file outside
-the root, or rename or delete one there (service user → root). The Python
-guard has this race today, and the Rust guard 0.1.0 ports it unchanged
-(`rust/echoport-command-guard/PLAN.md` 4.5 and R12). The fix, in both guards,
-is work item `echoport-guard-toctou-hardening` (slice H1 of that plan); it
-must be merged and released before the Rust guard is installed on any host,
-so no host runs 0.1.0.
+**Changes as root are made by the guard itself.** `chmod 0600|0700 <path>`,
+`chown [-R] <owner> <path>` (also the snapshot temp dir), both `mv` forms
+and `rm -f <db>-wal <db>-shm` are not run as tools on a pathname, which the
+root's service user could redirect with a symlink after the guard's checks
+(service user → root; fixed in work item `echoport-guard-toctou-hardening`,
+`rust/echoport-command-guard/PLAN.md` 4.5 and R12). The guard opens `/` and
+each directory of the path with `O_NOFOLLOW|O_DIRECTORY`, so a symlink
+anywhere on the path is refused, and works relative to the last directory
+it opened. `chmod`, `mv` and `rm` run as the root's owner (the guard drops to
+that user first), so they can only do what that user could do itself, and
+since the guard opens what it walks for reading, not a `chmod` of a file or
+`mv`/`rm` in a directory that user cannot read; `chown` needs root:
+
+- `chmod`/`chown`: the entry is opened with `O_NOFOLLOW` and must be the
+  inode `lstat` saw, a directory or a regular file with one link (a hard
+  link cannot bring an outside file into the root); then `fchmod`/`fchown`.
+  The snapshot temp dir must still be root's with no group/other access;
+- `chown -R`: the same for every entry, one open directory per level;
+  symlinks inside the tree are neither followed nor changed, fifos, sockets
+  and devices are refused;
+- `mv`: one `renameat`; the target is replaced as a name, never followed
+  into (no move into a target directory, no copy across filesystems);
+  without `<p>.tmp` → `<p>` the rename never replaces an existing target
+  (`renameat2` with `RENAME_NOREPLACE`), also one that appeared after the
+  check;
+- `rm -f`: `unlinkat` on the name; missing files are fine.
+
+Success is exit 0 with no output, as from the tools. A failure is exit 1
+with `command not allowed` on stderr and the reason in the `refused from`
+log line (for example `symbolic link in the path: '/home/marina/site/dir'`
+or `mv failed: '<a>' -> '<b>': No such file or directory`); before, the
+tool printed its own message and the guard logged `allowed from`. The Rust
+guard does the same from 0.2.0 on (0.1.0 still ran the tools and is never
+installed).
 
 Everything else is refused with `command not allowed` (exit 1), including an
 interactive session, the SFTP subsystem (which is why the runners call
@@ -299,16 +326,20 @@ restore from that backup with the network faked, and require every command
 the runner would send to pass the guard for its host; rsync calls are mapped
 from the runner's real client options to the server command (unknown options
 fail). They also cover the refusals (rsync `-L`/`-K`/devices, scp onto
-symlinks, devices, FIFOs and hard links, the redirect files). Molecule runs
-the runners' rsync/scp options, a SQLite snapshot fetched through the guard's
-`cat` (a symlink in its place is refused) and a dump upload into a root-only
-temp dir against a real sshd.
+symlinks, devices, FIFOs and hard links, the redirect files) and the race
+regressions of the guard's own mutations
+(`rust/echoport-command-guard/parity/races.json`, which the Rust guard runs
+too: a symlink, renamed directory or hard link put in place between the
+check and the change, or at exact points of the walk). Molecule runs the
+runners' rsync/scp options, a SQLite snapshot fetched through the guard's
+`cat` (a symlink in its place is refused), a dump upload into a root-only
+temp dir and the mutations through symlinks against a real sshd.
 
 The molecule scenarios `default` (impl python), `shadow` and `rust` run the
 same playbooks (`molecule/shared/`) on Ubuntu 24.04 and Debian 13: the role,
 the `authorized_keys` line, the post-probe and `confirm_live.yml`, then the
 verify above. `shadow` and `rust` install the guard built from the checkout
-as its crate version (`rust/echoport-command-guard/Cargo.toml`, `0.1.0`;
+as its crate version (`rust/echoport-command-guard/Cargo.toml`, `0.2.0`;
 `rust/echoport-command-guard/parity/e2e/build-local-archive.sh`
 builds it in a Debian 12 container for the Docker host's architecture; set
 `ECHOPORT_GUARD_LOCAL_ARCHIVE` to use another archive). The shadow run also

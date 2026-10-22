@@ -4,7 +4,7 @@
 # post-probe through that line, then confirm_live.yml. The scenario sets the
 # impl in MOLECULE_GUARD_IMPL (python, shadow, rust; molecule.yml); shadow and
 # rust install the guard built from this checkout (prepare.yml) as its crate
-# version (rust/echoport-command-guard/Cargo.toml, 0.1.0; the role tests
+# version (rust/echoport-command-guard/Cargo.toml, 0.2.0; the role tests
 # check that the scenario follows it) from a local archive.
 - name: Converge
   hosts: all
@@ -15,7 +15,7 @@
       {{ lookup('env', 'ECHOPORT_GUARD_LOCAL_ARCHIVE')
          or lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') ~ '/echoport-command-guard-local.tar.gz' }}
     echoport_remote_command_guard_impl: "{{ guard_impl }}"
-    echoport_remote_command_guard_rust_version: "{{ '' if guard_impl == 'python' else '0.1.0' }}"
+    echoport_remote_command_guard_rust_version: "{{ '' if guard_impl == 'python' else '0.2.0' }}"
     echoport_remote_command_guard_rust_local_archive: "{{ '' if guard_impl == 'python' else guard_archive }}"
     echoport_remote_command_guard_policy:
       postgres:

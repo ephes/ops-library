@@ -7,7 +7,7 @@
   become: true
   vars:
     guard_impl: "{{ lookup('env', 'MOLECULE_GUARD_IMPL') or 'python' }}"
-    guard_rust_binary: /usr/local/lib/echoport-command-guard/0.1.0/echoport-command-guard
+    guard_rust_binary: /usr/local/lib/echoport-command-guard/0.2.0/echoport-command-guard
     guard_ssh: >-
       /usr/bin/ssh -p 2222 -i /root/molecule_deploy_key -o BatchMode=yes
       -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
@@ -76,7 +76,7 @@
             guard_impl == 'python' or (
               guard_rust_files.results[0].stat.pw_name == 'root'
               and guard_rust_files.results[0].stat.mode == '0755'
-              and (guard_rust_pin.content | b64decode) == '0.1.0\n')
+              and (guard_rust_pin.content | b64decode) == '0.2.0\n')
           - guard_impl != 'python' or not (guard_rust_files.results | default([{}]))[0].stat is defined
       vars:
         guard_python: /usr/bin/python3 -I /usr/local/sbin/echoport-remote-command-guard /etc/echoport/remote-command-guard.json
@@ -222,6 +222,51 @@
           # Uploads run as the root's owner, never as root.
           - guard_transfer_results.results[3].stat.pw_name == 'nobody'
           - guard_transfer_results.results[5].stat.pw_name == 'nobody'
+    # The guard's own mutations (H1): made on file descriptors, never through
+    # a symlink, also not one check() allows because it resolves inside the
+    # root; chown -R leaves a link out of the root and its target alone;
+    # chmod, mv and rm run as the root's owner (nobody), so the chmod of a
+    # root-owned file in the root fails.
+    - name: Change, move and remove inside the root, never through a symlink
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -euo pipefail
+          run() { {{ guard_ssh }} root@127.0.0.1 "$1"; }
+          site=/srv/marina/site
+          echo outside > /srv/outside/target
+          chmod 0644 /srv/outside/target
+          echo db > $site/mut.db
+          chmod 0644 $site/mut.db
+          chown nobody:nogroup $site/mut.db
+          run "chmod 0600 $site/mut.db"
+          test "$(stat -c %a $site/mut.db)" = 600
+          run "chown nobody:nogroup $site/mut.db"
+          test "$(stat -c %U:%G $site/mut.db)" = nobody:nogroup
+          echo wal > $site/mut.db-wal
+          run "rm -f $site/mut.db-wal $site/mut.db-shm"
+          test ! -e $site/mut.db-wal
+          echo new > $site/mut.db.tmp
+          run "mv $site/mut.db.tmp $site/mut.db"
+          test "$(cat $site/mut.db)" = new
+          ln -sfn $site/mut.db $site/alias
+          if run "chmod 0600 $site/alias" 2> /root/mut.err; then exit 1; fi
+          grep -q 'command not allowed' /root/mut.err
+          ln -sfn $site $site/media/loop
+          if run "chown nobody:nogroup $site/media/loop/mut.db" 2> /dev/null; then exit 1; fi
+          rm $site/media/loop
+          ln -sfn /srv/outside/target $site/media/out
+          run "chown -R nobody:nogroup $site/media"
+          test "$(stat -c %U:%G /srv/outside/target)" = root:root
+          test "$(stat -c %a /srv/outside/target)" = 644
+          test "$(stat -L -c %U $site/media)" = nobody
+          echo root > $site/root-owned
+          chmod 0644 $site/root-owned
+          if run "chmod 0600 $site/root-owned" 2> /dev/null; then exit 1; fi
+          test "$(stat -c %a:%U $site/root-owned)" = 644:root
+          rm -f $site/media/out $site/alias $site/mut.db $site/root-owned
+      changed_when: false
+
     - name: Write a policy the guard must reject
       ansible.builtin.copy:
         dest: /root/broken-policy.json

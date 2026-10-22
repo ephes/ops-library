@@ -1,5 +1,61 @@
 # Changelog
 
+## Unreleased — echoport_remote_command_guard: root-run mutations on file descriptors (H1)
+
+### Security
+
+- `echoport_remote_command_guard`: the guard no longer runs `chmod
+  0600|0700`, `chown [-R]`, `mv` (both forms) and `rm -f <db>-wal <db>-shm`
+  as root on the pathname it checked. A local user who can write inside a
+  policy root (the root's service user, e.g. `gotosocial` in
+  `/var/lib/gotosocial`) could swap the path, or a directory on it, for a
+  symlink between the check and the tool's system call and have root
+  change the mode or owner of a file outside the root, or rename or remove
+  one there (service user → root). The guard now makes these changes itself:
+  it opens `/` and each directory of the path with `O_NOFOLLOW|O_DIRECTORY`
+  (a symlink anywhere on the path is refused) and changes, renames or
+  removes the entry relative to the directory it opened (`fchmod`/`fchown`
+  on an `O_NOFOLLOW` descriptor of the inode `lstat` saw, one link for a
+  regular file; `renameat`, or `renameat2(RENAME_NOREPLACE)` when the target
+  must not exist; `unlinkat`; `chown -R` one open directory per level,
+  symlinks in the tree neither followed nor changed). `chmod`, `mv` and `rm`
+  run as the root's owner (the guard drops to that user first), so the
+  kernel checks them with that user's own rights; `chown` keeps root.
+  `check()` also
+  requires each changed path to lie inside its root as written. Work item
+  `echoport-guard-toctou-hardening`, slice H1 of
+  `rust/echoport-command-guard/PLAN.md` (4.5, R12).
+- Runner-facing: the commands the runners send are allowed as before and
+  succeed with exit 0 and no output. A failed change is exit 1 with
+  `echoport-remote-command-guard: command not allowed` on stderr (before:
+  the tool's message) and a `refused from` log line with the reason
+  (before: `allowed from`). Stricter than the tools: a symlink on a changed
+  path is refused even when it resolves inside the root, a regular file with
+  more than one link and special files are not changed, `chmod` of a
+  root-owned file and `mv`/`rm` inside a root-owned directory fail (as with
+  any change the root's owner may not make; `mv`/`rm` of an entry in a
+  directory the owner can write follow that directory's permissions, as
+  `rename`/`unlink` do; also `chmod` of a file and `mv`/`rm` in a directory
+  the owner cannot read, which the guard opens for reading), `chown -R` leaves
+  symlinks' own owners alone, and `mv` never moves into an existing target
+  directory or across filesystems. The `echoport_backup` runners' tests pass
+  unchanged.
+- The hosts get the hardened guard with the next role run (`just
+  pin-deploy-backup-key <host>` in ops-control); the ops coordination rolls
+  it out together with the `.timeout` runner change.
+
+### Rust ports
+
+- `rust/echoport-command-guard` 0.2.0: the same hardening in the Rust guard
+  (`src/mutate.rs`, the `Mutation` decision with an empty `argv` in
+  `--decide`/`--shadow` records), Layer-1 fixtures regenerated from the
+  hardened Python guard (`fixtures/GUARD_SHA256`), the race table
+  `parity/races.json` that both guards run (`parity/races.py`,
+  `tests/mutations.rs`; as root in the Layer-2 containers), mutation
+  scenarios in Layer 3 and the role's molecule verify. 0.2.0 is the first
+  release a host may get (S9); 0.1.0 is never installed. The guard role's
+  molecule scenarios install 0.2.0 built from the checkout.
+
 ## Unreleased — software-live Rust port: endpoint
 
 - `rust/software-live` gets `serve` (slice S4 of
