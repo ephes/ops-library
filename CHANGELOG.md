@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased — software-live Rust port: shadow comparison (S9)
+
+- `rust/software-live/parity/shadow_compare.py` (PLAN.md 6.3, 8.1): compares
+  a host's production (Python) and shadow (Rust) observation, fetched
+  read-only over one `ssh` or from a saved bundle. Hard checks: same host and
+  policy hash, each summary derived from its observations, each projection
+  exactly the Python program's projection of its own state. Every other
+  difference is ignored (time and separate-cache fields), explained by a
+  change between the two observation times with its evidence (upstream data,
+  Traefik restart, dpkg or Traefik binary change, APT index refresh; an index
+  age crossing its limit explains only `apt.indexes_fresh`), or unexplained.
+  Verdict `match` (exit 0) without any other difference, `mismatch` (exit 1)
+  with an unexplained difference or failed hard check, `inconclusive` (exit
+  3) with explained differences only: an explanation never passes a sample,
+  it is repeated and does not count for the shadow period. Tests in `parity/test_shadow_compare.py`; the `rust`
+  CI job now runs the comparator tests under Python 3.12 (the projection
+  check imports the Python program). README and PLAN.md 6.3 describe it. No
+  role or collection change.
+
 ## [2.66.2] - 2026-10-22
 
 ### software-live Rust port: manual CLI on Rust hosts (S11)

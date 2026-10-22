@@ -170,8 +170,10 @@ jobs:
         run: python3 -I -m unittest discover -s scripts -p 'test_*.py' -v
       - name: software-live parity comparator tests (stdlib Python)
         # rust/software-live/PLAN.md 6.2: the P1/P2 rules of parity/compare.py;
-        # the harness itself runs in the software-live-apt job below.
-        run: python3 -I -m unittest discover -s software-live/parity -p 'test_*.py' -v
+        # 6.3: parity/shadow_compare.py, whose projection check imports the
+        # Python program (3.11 or later, hence uv's 3.12, not the runner's
+        # 3.10); the harness itself runs in the software-live-apt job below.
+        run: uv run --python 3.12 --no-project python -I -m unittest discover -s software-live/parity -p 'test_*.py' -v
 
   echoport-command-guard-lean:
     name: echoport-command-guard lean measurements (manual runs only)
