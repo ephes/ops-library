@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased — software-live Rust port: release 0.1.0 (S7)
+
+- `rust/software-live/release.json` and version 0.1.0 of `software-live`
+  and `software-live-apt` (slice S7 of `rust/software-live/PLAN.md`, 7.1,
+  7.2, 7.4): the tag `software-live-v0.1.0` publishes
+  `software-live-0.1.0-x86_64-unknown-linux-gnu-ubuntu24.04.tar.gz` and
+  `…-debian13.tar.gz` (plus `.sha256`), each with `software-live`,
+  `software-live-apt`, `LICENSE` and `LICENSE.GPL-3.0`.
+- `rust-release.yml` and `rust/scripts/release_checks.py`: a
+  `release.json` may declare `shared` binaries. The new job `shared` builds
+  them once on the `ubuntu-22.04` runner (glibc floor 2.35), checks them and
+  hands them with their sha256 (`release_checks.py checksums`) to every
+  variant job, whose `verify` and `pack` accept only that build
+  (`--shared-bin-dir`, `--shared-sha256`) and run its `--version` again in
+  the variant's image; so both software-live archives carry the same
+  `software-live`. The variant jobs build, lint and test only the helper
+  (packages `g++ libapt-pkg-dev python3-apt`), check its glibc ceiling and
+  `NEEDED` allowlist and run `observe` as an extra smoke command. The build
+  and publish jobs now run after a skipped `shared` job; archives are
+  written and uploaded from the workspace (paths that also hold inside a
+  container job). Crates without `release.json` (metrics-httpd,
+  echoport-command-guard) release as before. Nothing installs the release;
+  no inventory pins it yet (S8).
+
 ## Unreleased — software-live Rust port: parity harness
 
 - `rust/software-live/parity/` (slice S5 of `rust/software-live/PLAN.md`,
