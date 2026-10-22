@@ -25,7 +25,12 @@
   the coordinator's decisions of 2026-10-22 (collector peak below Python's
   per host; collector CPU not above Python's on any host before S10) in
   PLAN.md section 10. Both crates are at 0.1.1. No role or collection
-  change; the ops-control pin stays at 0.1.0.
+  change; the ops-control pin stays at 0.1.0. Released by the tag
+  `software-live-v0.1.1` (`2f6091e9`): archive sha256 `ubuntu24.04`
+  `65be5aa98574b73f87e385610d4fa9ffebad99d4ecf64238991abeef5662fc10`,
+  `debian13` `502663e0d25bdb750996801c28bc6dfc8d5e5b5e7bc0910c89d2cb62d889aec4`;
+  `software-live` 3,454,264 bytes in both, highest glibc symbol version
+  `GLIBC_2.34`.
 
 ## Unreleased — software-live Rust port: shadow comparison (S9)
 
