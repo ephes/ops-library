@@ -18,6 +18,11 @@
   CI job now runs the comparator tests under Python 3.12 (the projection
   check imports the Python program). README and PLAN.md 6.3 describe it. No
   role or collection change.
+- PLAN.md section 10 records the S9 measurements of the shadow on the four
+  hosts (collector cgroup peak Python 80–105 MiB vs Rust 61–75 MiB; endpoint
+  about 0.55 MiB cgroup memory vs 9–14 MiB; the collector CPU budget is not
+  met on the hosts without SHA CPU extensions because of hashing the Traefik
+  binary). Budgets unchanged.
 
 ## [2.66.2] - 2026-10-22
 
